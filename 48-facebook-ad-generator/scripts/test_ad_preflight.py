@@ -58,16 +58,30 @@ def _write(rd: Path, rel: str, obj) -> None:
 _PAD = " padding to clear the 256-byte deliverable size floor for the bundle check;"
 
 
-def _good_qc(maker: str, grader: str) -> dict:
+def _good_qc(maker: str, grader: str, session_id: str = "sess-default") -> dict:
     return {
         "categories": {"rules": 9.0, "mission": 9.0, "craft": 8.5, "clarity": 9.0,
                        "variety": 8.5},
-        "average": 8.8,
+        "average": 8.8,  # == the average computed from the categories above (44/5)
         "pass": True,
         "maker": maker,
         "grader": grader,
+        "grader_session_id": session_id,
         "independent": True,
     }
+
+
+# The registered QC/reviewer role slugs (AD-PIPELINE-MANIFEST roles[].id) a grade may
+# name; the ledger's qc_sessions[] ties each scorecard back to a real grading session.
+_QC_ROLE = "qc-role--paid-advertisement"
+_DEVILS = "devils-advocate--paid-advertisement"
+_QC_SESSIONS = [
+    {"gate": "copy", "grader": _QC_ROLE, "session_id": "sess-copy-01"},
+    {"gate": "prompt", "grader": _QC_ROLE, "session_id": "sess-prompt-01"},
+    {"gate": "image", "grader": _QC_ROLE, "session_id": "sess-image-01"},
+    {"gate": "targeting", "grader": _QC_ROLE, "session_id": "sess-targeting-01"},
+    {"gate": "package", "grader": _DEVILS, "session_id": "sess-package-01"},
+]
 
 
 def _good(rd: Path) -> None:
@@ -89,6 +103,8 @@ def _good(rd: Path) -> None:
         "spent_usd": 0.50,
         "events": [{"kind": "image", "idx": i, "task_id": f"tid{i}", "usd": 0.05}
                    for i in range(10)],
+        # the conductor's independent record of each grading session it dispatched
+        "qc_sessions": [dict(s) for s in _QC_SESSIONS],
     })
     # S1 overlays
     _write(rd, "working/s1-overlays.md", "# 70 overlays (fixture)\n" + "\n".join(
@@ -176,17 +192,18 @@ def _good(rd: Path) -> None:
         "approval_received_at": "2026-06-25T18:00:00-0400",
         "owner_confirmed": True,
     })
-    # QC scorecards (Gate A..E) — all independent (maker != grader)
-    _write(rd, "working/qc/copy-qc.json", _good_qc("direct-response-ad-copywriter",
-                                                   "ad-quality-reviewer"))
-    _write(rd, "working/qc/prompt-qc.json", _good_qc("ai-image-generator-specialist",
-                                                     "independent-prompt-reviewer"))
-    _write(rd, "working/qc/image-qc.json", _good_qc("ai-image-generator-specialist",
-                                                    "independent-vision-reviewer"))
-    _write(rd, "working/qc/targeting-qc.json", _good_qc("audience-research-specialist",
-                                                        "independent-targeting-reviewer"))
-    _write(rd, "working/qc/package-qc.json", _good_qc("facebook-ads-specialist",
-                                                      "devils-advocate--paid-advertisement"))
+    # QC scorecards (Gate A..E) — independent (grader != maker), graders are REGISTERED
+    # role slugs, and each grader_session_id ties back to the ledger's qc_sessions[].
+    _write(rd, "working/qc/copy-qc.json",
+           _good_qc("direct-response-ad-copywriter", _QC_ROLE, "sess-copy-01"))
+    _write(rd, "working/qc/prompt-qc.json",
+           _good_qc("ai-image-generator-specialist", _QC_ROLE, "sess-prompt-01"))
+    _write(rd, "working/qc/image-qc.json",
+           _good_qc("ai-image-generator-specialist", _QC_ROLE, "sess-image-01"))
+    _write(rd, "working/qc/targeting-qc.json",
+           _good_qc("audience-research-specialist", _QC_ROLE, "sess-targeting-01"))
+    _write(rd, "working/qc/package-qc.json",
+           _good_qc("facebook-ads-specialist", _DEVILS, "sess-package-01"))
 
 
 def _load(rd: Path, rel: str) -> dict:
@@ -438,6 +455,48 @@ def _bad_approve(rd):
             "owner_confirmed": False})
 
 
+def _bad_qc_declared_lie(rd):
+    """FIX-XC-03i: a SELF-DECLARED average may never override the computed one. Every
+    category is 7.0 (computes to 7.0, all above the 7.0 category floor) but the
+    scorecard declares 9.9 — the >0.05 declared-vs-computed disagreement must autofail,
+    NOT sail through on the fabricated 9.9."""
+    _good(rd)
+    sc = _good_qc("direct-response-ad-copywriter", _QC_ROLE, "sess-copy-01")
+    sc["categories"] = {"rules": 7.0, "mission": 7.0, "craft": 7.0, "clarity": 7.0}
+    sc["average"] = 9.9
+    _write(rd, "working/qc/copy-qc.json", sc)
+
+
+def _bad_overlay_measured(rd):
+    """FIX-XC-03i: MEASURE the source file. The receipt keeps every word_count at 6
+    (all in-range, so the range check passes), but the real s1-overlays.md has an
+    over-long line — the receipt-vs-measured mismatch must trip."""
+    _good(rd)
+    lines = ["# 70 overlays (fixture)"]
+    for i in range(70):
+        if i == 3:
+            lines.append(f"{i+1}. " + " ".join(["word"] * 25))  # 25 words, receipt says 6
+        else:
+            lines.append(f"{i+1}. punchy guest spotlight overlay line {i+1}")  # 6 words
+    _write(rd, "working/s1-overlays.md", "\n".join(lines) + "\n")
+
+
+def _bad_qc_unregistered_grader(rd):
+    """FIX-S36-45(iii): a grade must name REGISTERED role slugs, not free text."""
+    _good(rd)
+    sc = _good_qc("direct-response-ad-copywriter", "some-freetext-reviewer", "sess-copy-01")
+    _write(rd, "working/qc/copy-qc.json", sc)
+
+
+def _bad_qc_no_ledger_session(rd):
+    """FIX-S36-45(iii): a scorecard whose grading session the run ledger never recorded
+    is a self-attested grade — the ledger tie-back must fail closed."""
+    _good(rd)
+    led = _load(rd, "working/checkpoints/ad_run_ledger.json")
+    led["qc_sessions"] = [s for s in led.get("qc_sessions", []) if s.get("gate") != "copy"]
+    _write(rd, "working/checkpoints/ad_run_ledger.json", led)
+
+
 # Each entry: (af_code, checker_name, make_bad, make_good)
 CASES = [
     ("AF-FBAD-BRIEF-INCOMPLETE", "_chk_brief_complete", _bad_brief, _good),
@@ -475,6 +534,12 @@ CASES = [
     ("AF-FBAD-PACKAGE-QC", "_chk_package_qc", _bad_package_qc, _good),
     ("AF-FBAD-QC-INDEPENDENCE", "_chk_qc_independence", _bad_independence, _good),
     ("AF-FBAD-APPROVE", "_chk_approve", _bad_approve, _good),
+    # FIX-XC-03i — computed average wins; MEASURE the artifact.
+    ("AF-FBAD-COPY-QC", "_chk_copy_qc", _bad_qc_declared_lie, _good),
+    ("AF-FBAD-OVERLAY-WORDCOUNT", "_chk_overlay_wordcount", _bad_overlay_measured, _good),
+    # FIX-S36-45(iii) — registered role slugs + run-ledger session tie-back.
+    ("AF-FBAD-QC-INDEPENDENCE", "_chk_qc_independence", _bad_qc_unregistered_grader, _good),
+    ("AF-FBAD-QC-INDEPENDENCE", "_chk_qc_independence", _bad_qc_no_ledger_session, _good),
 ]
 
 

@@ -6198,8 +6198,20 @@ def _sp_prover(mod_name: str):
     import importlib.util
     here = Path(__file__).resolve().parent
     cands = [here / (mod_name + ".py")]
+    # Repo / worktree layout: a sibling 51-signature-presentation/scripts/ up-tree.
     cands += [anc / "51-signature-presentation" / "scripts" / (mod_name + ".py")
               for anc in here.parents]
+    # FIX-PRES-09(i): a MATERIALIZED department tree (build_deck runs from
+    # <workspace>/…/presentations/scripts/) cannot reach skill 51 by walking bare
+    # ancestors. Mirror deck-intake-driver._sp_skill_roots(): also try an ancestor's
+    # `skills/51-signature-presentation/scripts/` (installed SKILLS_DIR layout) and
+    # the canonical installed roots (VPS /data, Mac ~/.openclaw).
+    cands += [anc / "skills" / "51-signature-presentation" / "scripts" / (mod_name + ".py")
+              for anc in here.parents]
+    for _base in ("/data/.openclaw/skills",
+                  str(Path.home() / ".openclaw" / "skills")):
+        cands.append(Path(_base) / "51-signature-presentation" / "scripts"
+                     / (mod_name + ".py"))
     mod = None
     for cand in cands:
         if cand.exists():
@@ -8429,13 +8441,27 @@ def main():
     if not adhoc:
         try:
             import cc_board as _cc_board
-            _cc_title = deck_slug
-            _cc_desc = f"Deck build: {deck_slug}"
-            _cc_task_id = _cc_board.ingest_deck_task(
-                run_dir, deck_slug, title=_cc_title, description=_cc_desc
-            )
-            if _cc_task_id:
-                _cc_board.stamp_task_id(run_dir, _cc_task_id)
+            # FIX-PRES-08(a): the runner's Phase-0 pre-flight already opened this
+            # deck's card so pre-render phases are board-visible. If a task_id is
+            # already stamped in the manifest, REUSE it here rather than re-ingest
+            # — the run-begin ingest is idempotent (idempotency_key) and local reuse
+            # guarantees a SINGLE card even if the runner's slug differs from
+            # out_path.stem. A direct/standalone build_deck run (no runner) finds no
+            # stamp and ingests as before (backward-compatible).
+            _existing = _cc_board._read_manifest(run_dir).get("cc_task_id") \
+                if hasattr(_cc_board, "_read_manifest") else None
+            if _existing:
+                _cc_task_id = str(_existing)
+                print(f"[cc_board] reusing Phase-0 card task_id={_cc_task_id} "
+                      "(runner pre-flight ingest).", file=sys.stderr)
+            else:
+                _cc_title = deck_slug
+                _cc_desc = f"Deck build: {deck_slug}"
+                _cc_task_id = _cc_board.ingest_deck_task(
+                    run_dir, deck_slug, title=_cc_title, description=_cc_desc
+                )
+                if _cc_task_id:
+                    _cc_board.stamp_task_id(run_dir, _cc_task_id)
         except Exception as _cc_exc:  # noqa: BLE001
             print(
                 f"[cc_board] run-begin ingest raised ({_cc_exc}) — "

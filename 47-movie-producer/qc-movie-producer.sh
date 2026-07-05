@@ -238,6 +238,8 @@ VID_GUARDA="${SELF_SKILL_DIR}/scripts/video_gate_integrity_check.py"
 VID_TEST="${SELF_SKILL_DIR}/scripts/test_video_preflight.py"
 VID_FIXTURES="${SELF_SKILL_DIR}/test-fixtures/make-video-fixtures.sh"
 VID_CI="${REPO_ROOT_QC}/.github/workflows/video-pipeline-lockstep.yml"
+VID_CCBOARD="${SELF_SKILL_DIR}/scripts/cc_board.py"
+VID_CCBOARD_TEST="${SELF_SKILL_DIR}/scripts/test_cc_board.py"
 
 assert "VIDEO-PIPELINE-MANIFEST.json present (single source of truth)" "[ -f \"${VID_MANIFEST}\" ]"
 assert "MASTER-VIDEO-QC-AUTOFAIL-RULESET.md present" "[ -f \"${VID_RULESET}\" ]"
@@ -247,11 +249,30 @@ assert "video_sync_check.py lockstep present" "[ -f \"${VID_SYNC}\" ]"
 assert "video_gate_integrity_check.py (Guard A) present" "[ -f \"${VID_GUARDA}\" ]"
 assert "test_video_preflight.py negative-test suite present" "[ -f \"${VID_TEST}\" ]"
 assert "make-video-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${VID_FIXTURES}\" ]"
-assert "video-pipeline-lockstep.yml CI workflow present" "[ -f \"${VID_CI}\" ]"
+assert "cc_board.py producer-side board caller present" "[ -f \"${VID_CCBOARD}\" ]"
+assert "test_cc_board.py present" "[ -f \"${VID_CCBOARD_TEST}\" ]"
+
+# FIX-S36-38: the CI workflow file lives at the REPO ROOT under .github/ and is
+# intentionally NOT copied to client boxes by any installer (only the skill dir +
+# its universal-sops clusters are). A HARD assert here aborted EVERY client install
+# (install.sh Step 8). Gate it behind repo detection: HARD in the repo / CI (where
+# a .git or .github tree exists beside the skill), a non-blocking PRE note on a
+# client box where the file legitimately does not exist.
+if [ -d "${REPO_ROOT_QC}/.github" ] || [ -d "${REPO_ROOT_QC}/.git" ]; then
+  assert "video-pipeline-lockstep.yml CI workflow present" "[ -f \"${VID_CI}\" ]"
+else
+  blue "  PRE  -- video-pipeline-lockstep.yml CI workflow (repo-only; not copied to client boxes)"; PREFLAG=$((PREFLAG+1))
+fi
 
 # The enforcement code must parse.
 assert "executive_producer.py parses" "python3 -c \"import ast; ast.parse(open('${VID_DRIVER}').read())\""
 assert "video_build_check.py parses" "python3 -c \"import ast; ast.parse(open('${VID_BUILDCHK}').read())\""
+assert "cc_board.py parses" "python3 -c \"import ast; ast.parse(open('${VID_CCBOARD}').read())\""
+
+# FIX-S36-40: the producer-side board caller must be fail-soft + walk the legal
+# review->done path (never skip the QC review column). The offline test proves it.
+assert "test_cc_board.py — fail-soft no-op + legal review->done path + receipt stamping (exit 0)" \
+  "python3 \"${VID_CCBOARD_TEST}\" >/dev/null 2>&1"
 
 # The manifest must declare exactly the 5 DMAIC phases in ascending order.
 assert "VIDEO-PIPELINE-MANIFEST declares 5 ordered DMAIC phases (V-DEFINE..V-CONTROL)" \

@@ -7,8 +7,22 @@ One canonical helper, dropped byte-for-byte into each productized campaign skill
 Command Center board visibility: it lands ONE Kanban card per run via the generic
 mc-route task endpoints and advances that card as the run progresses:
 
-    run begin      -> open card (POST /api/tasks/ingest) + move in_progress
-    run delivered  -> move done   (PATCH /api/tasks/{task_id})
+    run begin      -> open card (POST /api/tasks/ingest) + move backlog->in_progress
+    per phase      -> card_advance(phase_id, "in_progress", note)   (heartbeat)
+    run delivered  -> move ...->review   (NEVER 'done' — see THE BOARD CONTRACT)
+
+THE BOARD CONTRACT (the review-skip root fix, FIX-XC-01a)
+  A PRODUCER never posts 'done'. The Command Center lifecycle is
+  `in_progress -> review -> done`; only the independent QC sweep (the auto-scorer,
+  PASS >= 8.5) may promote a card from `review` to `done`. So the terminal move a
+  run makes is to `review` ("certified — awaiting QC promotion"), with the
+  deliverable link registered on the card. `card_advance(..., status="done")` is
+  hard-blocked here exactly as Skill 6's `cc_board.update_status` and Skill 41's
+  `cc_move_task` block it, so no code path can skip the QC column. This mirrors the
+  server's own LEGAL_TRANSITIONS map (`48-facebook-ad-generator/scripts/cc_board.py`)
+  and the Done-Gate in `32-command-center-setup/scripts/move-task.py` (a card must
+  pass through `review` before `done`, and only a passing independent sign-off
+  promotes it).
 
 It is a direct port of the proven Skill-48 (ad_director/cc_board) and presentations
 (build_deck/_board_patch_phase, v17.0.6) pattern, generalized so any skill supplies
@@ -28,6 +42,13 @@ NON-NEGOTIABLE DESIGN RULES (mirrored verbatim from the reference)
     <run_dir>/working/checkpoints/mc-board.json so a later advance can recover it
     and repeated opens are idempotent.
 
+  * LEGAL-PATH WALKING. A move to a target status walks the shortest legal path
+    from the card's CURRENT status (fetched via GET) over the CC LEGAL_TRANSITIONS
+    map, rather than issuing an illegal direct jump — e.g. backlog->in_progress
+    ->review. The server is always the final authority; this only avoids obviously
+    illegal transitions client-side and keeps board state honest. Verification of
+    board state is ALWAYS by querying CC rows (never file mtime — WAL lag).
+
   * AUTH PARITY with the CC endpoint (same as cc_board.py):
       - Authorization: Bearer <CC_API_TOKEN|MC_API_TOKEN>   (global middleware; no-op if unset)
       - x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (per-route; no-op if unset)
@@ -41,14 +62,23 @@ Config (env; absent base URL => board disabled, clean no-op):
   CC_API_TOKEN / MC_API_TOKEN                 long-lived bearer (optional)
   WEBHOOK_SECRET / CC_WEBHOOK_SECRET          HMAC secret (optional)
   CC_BOARD_TIMEOUT                            per-request timeout seconds (default 8)
+  CC_STATUS_PATH_TEMPLATE                     status-write path with a literal '{id}'
+                                              (default '/api/tasks/{id}'; route parity
+                                              with Skill 6, e.g. '/api/tasks/{id}/status')
+  CC_STATUS_METHOD                            status-write HTTP method (default 'PATCH')
+  CC_TASK_PATH_TEMPLATE                       task-read path with a literal '{id}' used to
+                                              GET the card's current status (default
+                                              '/api/tasks/{id}')
 
 PUBLIC API
   card_open(run_dir, *, slug, title, department, persona="", source="",
             description="", priority="medium", env=None)         -> task_id str | None
-  card_advance(run_dir, task_id=None, *, phase_id, status, note="", env=None) -> bool
+  card_advance(run_dir, task_id=None, *, phase_id, status, note="",
+               deliverable_url="", env=None)                     -> bool
   begin_run(run_dir, *, slug, title, department, persona="", source="",
-            description="")                                       -> task_id str | None  (never raises)
-  complete_run(run_dir, task_id=None, *, phase_id="deliver", note="") -> bool            (never raises)
+            description="", env=None)                             -> task_id str | None  (never raises)
+  complete_run(run_dir, task_id=None, *, phase_id="deliver", note="",
+               status="review", deliverable_url="", env=None)    -> bool                (never raises)
 """
 
 from __future__ import annotations
@@ -60,10 +90,30 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from collections import deque
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 _DEFAULT_TIMEOUT = 8
+
+# Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map, ported verbatim
+# from 48-facebook-ad-generator/scripts/cc_board.py (which reads them from
+# src/lib/validation.ts + src/lib/task-lifecycle.ts). Kept here ONLY to walk a
+# minimal legal path client-side; the server is always the final authority. The
+# producer NEVER targets 'done' (review->done is the QC sweep's job), but 'done'
+# stays in the map so a legal walk from a mistakenly-'done' card is still possible.
+VALID_STATUSES = ("backlog", "in_progress", "review", "blocked", "done")
+_LEGAL = {
+    "backlog": {"in_progress", "blocked"},
+    "in_progress": {"review", "blocked", "backlog"},
+    "review": {"done", "in_progress", "blocked", "backlog"},
+    "done": {"backlog"},
+    "blocked": {"backlog", "in_progress"},
+}
+
+# A producer helper may NEVER move a card here — only the independent QC scorer can
+# (review -> done). Hard-blocked in card_advance, identical to Skill 6 / Skill 41.
+_PRODUCER_FORBIDDEN = ("done",)
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +133,22 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
         timeout = int(env.get("CC_BOARD_TIMEOUT", "") or _DEFAULT_TIMEOUT)
     except (TypeError, ValueError):
         timeout = _DEFAULT_TIMEOUT
+    status_tmpl = (env.get("CC_STATUS_PATH_TEMPLATE") or "/api/tasks/{id}").strip()
+    if "{id}" not in status_tmpl:
+        _log(f"CC_STATUS_PATH_TEMPLATE missing '{{id}}' ({status_tmpl!r}); using default '/api/tasks/{{id}}'.")
+        status_tmpl = "/api/tasks/{id}"
+    task_tmpl = (env.get("CC_TASK_PATH_TEMPLATE") or "/api/tasks/{id}").strip()
+    if "{id}" not in task_tmpl:
+        _log(f"CC_TASK_PATH_TEMPLATE missing '{{id}}' ({task_tmpl!r}); using default '/api/tasks/{{id}}'.")
+        task_tmpl = "/api/tasks/{id}"
     return {
         "base_url": base,
         "token": (env.get("CC_API_TOKEN") or env.get("MC_API_TOKEN") or "").strip(),
         "secret": (env.get("WEBHOOK_SECRET") or env.get("CC_WEBHOOK_SECRET") or "").strip(),
         "timeout": timeout,
+        "status_tmpl": status_tmpl,
+        "status_method": (env.get("CC_STATUS_METHOD") or "PATCH").strip().upper() or "PATCH",
+        "task_tmpl": task_tmpl,
     }
 
 
@@ -105,17 +166,21 @@ def _sign(secret: str, raw_body: bytes) -> Optional[str]:
     return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
 
 
-def _request(method: str, url: str, payload: dict, cfg: dict):
+def _request(method: str, url: str, payload: Optional[dict], cfg: dict):
     """One signed JSON request. Returns (status_code, parsed_json_or_None). Raises
-    only urllib/OS errors, which the public callers catch (fail-soft)."""
-    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    only urllib/OS errors, which the public callers catch (fail-soft). A None
+    payload issues a bodyless request (GET) signed over empty bytes."""
+    raw_body = b"" if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     if cfg["token"]:
         headers["Authorization"] = f"Bearer {cfg['token']}"
     sig = _sign(cfg["secret"], raw_body)
     if sig is not None:
         headers["x-webhook-signature"] = sig
-    req = urllib.request.Request(url, data=raw_body, headers=headers, method=method)
+    data = raw_body if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
             body = resp.read().decode("utf-8", "replace")
@@ -131,15 +196,50 @@ def _request(method: str, url: str, payload: dict, cfg: dict):
 
 
 # ---------------------------------------------------------------------------
-# Receipt — atomic read / merge under <run_dir>/working/checkpoints/mc-board.json.
-# Only written when the board is ENABLED (a disabled run touches nothing).
+# Legal-transition walking (ported from cc_board._legal_path). The server owns
+# the final say; this only avoids obviously-illegal client-side direct jumps.
 # ---------------------------------------------------------------------------
-def _receipt_path(run_dir) -> Path:
-    return Path(run_dir) / "working" / "checkpoints" / "mc-board.json"
+def _legal_path(src: str, dst: str) -> Optional[List[str]]:
+    """Shortest legal status path src..dst (inclusive of dst, excluding src) over
+    the CC LEGAL_TRANSITIONS map. [] when src == dst (a no-op). None when
+    unreachable. 'blocked' is reachable from any state in one hop."""
+    if src == dst:
+        return []
+    if dst == "blocked":
+        return ["blocked"]
+    q = deque([(src, [])])
+    seen = {src}
+    while q:
+        node, path = q.popleft()
+        for nxt in sorted(_LEGAL.get(node, ())):  # sorted => deterministic path
+            if nxt in seen:
+                continue
+            npath = path + [nxt]
+            if nxt == dst:
+                return npath
+            seen.add(nxt)
+            q.append((nxt, npath))
+    return None
 
 
-def _read_receipt(run_dir) -> dict:
-    p = _receipt_path(run_dir)
+# ---------------------------------------------------------------------------
+# Receipt — atomic read / merge under <run_dir>/<receipt_subdir>/mc-board.json.
+# The subdir is PARAMETERIZED (default working/checkpoints, the shared productized
+# layout) so a skill whose documented run layout differs can pin its own — Skill 53
+# passes ("run", "checkpoints") to keep the board receipt inside the SAME
+# run/checkpoints/ dir that holds its front-door nonce. Only written when the board
+# is ENABLED (a disabled run touches nothing).
+# ---------------------------------------------------------------------------
+_DEFAULT_RECEIPT_SUBDIR = ("working", "checkpoints")
+
+
+def _receipt_path(run_dir, receipt_subdir=None) -> Path:
+    parts = receipt_subdir or _DEFAULT_RECEIPT_SUBDIR
+    return Path(run_dir).joinpath(*parts) / "mc-board.json"
+
+
+def _read_receipt(run_dir, receipt_subdir=None) -> dict:
+    p = _receipt_path(run_dir, receipt_subdir)
     if not p.exists():
         return {}
     try:
@@ -149,12 +249,12 @@ def _read_receipt(run_dir) -> dict:
         return {}
 
 
-def _merge_receipt(run_dir, updates: dict) -> bool:
+def _merge_receipt(run_dir, updates: dict, receipt_subdir=None) -> bool:
     """Merge `updates` into the receipt atomically. Never raises."""
-    p = _receipt_path(run_dir)
+    p = _receipt_path(run_dir, receipt_subdir)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        receipt = _read_receipt(run_dir)
+        receipt = _read_receipt(run_dir, receipt_subdir)
         receipt.update(updates)
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2))
@@ -179,6 +279,7 @@ def card_open(
     description: str = "",
     priority: str = "medium",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open (or idempotently re-fetch) this run's board card. Returns the task_id
     string on success, else None. FAIL-SOFT — a None return never blocks the run.
@@ -194,12 +295,12 @@ def card_open(
         return None
 
     # Idempotent: reuse a task_id already recorded for this run dir.
-    existing = _read_receipt(run_dir).get("mc_task_id")
+    existing = _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if existing:
         return str(existing)
 
     # Mark the attempt (receipt-backed) BEFORE the network call.
-    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug})
+    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug}, receipt_subdir)
 
     source_ref = slug or source or "run"
     idem_input = f"{source_ref}{title}".encode("utf-8")
@@ -229,7 +330,7 @@ def card_open(
         task_id = str(body["task_id"])
         deduped = body.get("deduped", False)
         _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}")
-        _merge_receipt(run_dir, {"mc_task_id": task_id})
+        _merge_receipt(run_dir, {"mc_task_id": task_id}, receipt_subdir)
         return task_id
 
     _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
@@ -237,8 +338,53 @@ def card_open(
 
 
 # ---------------------------------------------------------------------------
-# ADVANCE — PATCH /api/tasks/{task_id} (one transition).
+# Current status — GET the card and read its status (rows, not mtime). None when
+# the board is unreachable or the card/status is absent.
 # ---------------------------------------------------------------------------
+def _current_status(tid: str, cfg: dict) -> Optional[str]:
+    """GET the task and return its current board status, or None when the board is
+    unreachable or the status is absent. Tolerant of a few common response shapes
+    ({status}, {task:{status}}, {task:{...}})."""
+    url = f"{cfg['base_url']}{cfg['task_tmpl'].format(id=tid)}"
+    try:
+        st, body = _request("GET", url, None, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"status GET failed for task {tid} ({type(exc).__name__}: {exc}).")
+        return None
+    if st != 200 or not isinstance(body, dict):
+        return None
+    cur = body.get("status")
+    if not cur and isinstance(body.get("task"), dict):
+        cur = body["task"].get("status")
+    cur = (cur or "").strip().lower()
+    return cur or None
+
+
+# ---------------------------------------------------------------------------
+# ADVANCE — move the card to (phase_id, status), walking the legal path.
+# ---------------------------------------------------------------------------
+def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
+               note: str = "", deliverable_url: str = "") -> bool:
+    """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
+    Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS."""
+    payload: dict = {"phase_id": phase_id, "status": status}
+    if note:
+        payload["note"] = note
+    if deliverable_url:
+        payload["deliverable_url"] = deliverable_url
+    url = f"{cfg['base_url']}{cfg['status_tmpl'].format(id=tid)}"
+    try:
+        st, body = _request(cfg["status_method"], url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
+        return False
+    if 200 <= st < 300:
+        _log(f"advance {phase_id}->{status} OK (task_id={tid}).")
+        return True
+    _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
+    return False
+
+
 def card_advance(
     run_dir,
     task_id: Optional[str] = None,
@@ -246,34 +392,62 @@ def card_advance(
     phase_id: str,
     status: str,
     note: str = "",
+    deliverable_url: str = "",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> bool:
-    """Advance this run's card to (phase_id, status). FAIL-SOFT: returns False
-    (never raises) on any board problem; the run is never blocked. task_id is
-    recovered from the receipt when not supplied. Disabled board => no-op False."""
+    """Advance this run's card to (phase_id, status), walking the shortest LEGAL
+    path from its current status. FAIL-SOFT: returns False (never raises) on any
+    board problem; the run is never blocked. task_id is recovered from the receipt
+    when not supplied. Disabled board => no-op False.
+
+    THE BOARD CONTRACT: a producer may never target 'done'. review->done is owned
+    exclusively by the independent QC scorer, so status='done' is HARD-BLOCKED here
+    (identical to Skill 6 cc_board.update_status and Skill 41 cc_move_task)."""
     cfg = board_config(env)
     if cfg is None:
         return False
-    tid = task_id or _read_receipt(run_dir).get("mc_task_id")
+
+    target = (status or "").strip().lower()
+    if target not in VALID_STATUSES:
+        _log(f"advance refused — invalid target status {status!r} "
+             f"(allowed: {', '.join(VALID_STATUSES)}).")
+        return False
+    if target in _PRODUCER_FORBIDDEN:
+        _log("advance BLOCKED — a producer must never post 'done' directly. The ONLY "
+             "valid path to 'done' is review -> done via the independent QC scorer "
+             "(PASS >= 8.5). Post 'review' and let the QC sweep promote the card.")
+        return False
+
+    tid = task_id or _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if not tid:
-        _log(f"advance {phase_id}->{status} skipped — no task_id (card never opened).")
+        _log(f"advance {phase_id}->{target} skipped — no task_id (card never opened).")
         return False
+    tid = str(tid)
 
-    payload: dict = {"phase_id": phase_id, "status": status}
-    if note:
-        payload["note"] = note
-
-    url = f"{cfg['base_url']}/api/tasks/{tid}"
-    try:
-        st, body = _request("PATCH", url, payload, cfg)
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
-        return False
-    if st == 200:
-        _log(f"advance {phase_id}->{status} OK (task_id={tid}).")
+    current = _current_status(tid, cfg)
+    if current is None:
+        # Card status unknown (board unreachable / card missing): attempt a single
+        # direct move and let the server reject an illegal jump (fail-soft).
+        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url)
+    if current == target:
+        _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
         return True
-    _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
-    return False
+    path = _legal_path(current, target)
+    if path is None:
+        _log(f"no legal path {current}->{target} for task {tid}; skipping (server owns the truth).")
+        return False
+    ok = True
+    for i, step in enumerate(path):
+        last = i == len(path) - 1
+        ok = _move_once(
+            tid, phase_id, step, cfg,
+            note=note if last else f"auto-step toward {target}",
+            deliverable_url=deliverable_url if last else "",
+        )
+        if not ok:
+            break
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -290,17 +464,20 @@ def begin_run(
     persona: str = "",
     source: str = "",
     description: str = "",
+    env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open the run's card and move it to in_progress. Returns the task_id or None.
     Never raises — the board is a view, never a gate."""
     try:
         tid = card_open(
             run_dir, slug=slug, title=title, department=department,
-            persona=persona, source=source, description=description,
+            persona=persona, source=source, description=description, env=env,
+            receipt_subdir=receipt_subdir,
         )
         if tid:
             card_advance(run_dir, tid, phase_id="run", status="in_progress",
-                         note="run started")
+                         note="run started", env=env, receipt_subdir=receipt_subdir)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
@@ -308,12 +485,24 @@ def begin_run(
 
 
 def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "deliver",
-                 note: str = "") -> bool:
-    """Move the run's card to done. Recovers the task_id from the receipt when not
-    supplied. Never raises — the board is a view, never a gate."""
+                 note: str = "", status: str = "review", deliverable_url: str = "",
+                 env: Optional[dict] = None, receipt_subdir=None) -> bool:
+    """Move the run's card to its TERMINAL producer status — `review` by default,
+    NEVER `done`. review->done is owned exclusively by the independent QC scorer
+    (PASS >= 8.5); a producer that posted `done` here would skip the QC column,
+    which is THE board bug this helper exists to prevent. The deliverable link, when
+    supplied, is registered on the card. Recovers the task_id from the receipt when
+    not supplied. Never raises — the board is a view, never a gate."""
     try:
-        return card_advance(run_dir, task_id, phase_id=phase_id, status="done",
-                            note=note or "run delivered")
+        target = (status or "review").strip().lower() or "review"
+        if target in _PRODUCER_FORBIDDEN:
+            _log("complete_run refused 'done' — the terminal producer status is 'review'; "
+                 "the QC scorer owns review -> done. Falling back to 'review'.")
+            target = "review"
+        default_note = "certified — awaiting QC promotion"
+        return card_advance(run_dir, task_id, phase_id=phase_id, status=target,
+                            note=note or default_note, deliverable_url=deliverable_url,
+                            env=env, receipt_subdir=receipt_subdir)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False

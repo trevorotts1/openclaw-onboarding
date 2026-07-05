@@ -17,16 +17,75 @@ Every production run follows this order, regardless of pipeline:
 
 ---
 
+## Attestation spine (BINDING — the run is NOT valid without it)
+
+This skill is **not** a free-form invocation. Every production run is gated by the
+deterministic **attestation spine** in `scripts/` (the analogue of the Presentation
+department's `build_deck.py` chain). It is OUR code that gates *around* OpenMontage —
+it never vendors upstream source. **You MUST drive the 5 DMAIC phases through the
+driver, in order, and attest each one before the next can dispatch.** Skipping,
+reordering, or forging a phase is structurally impossible: the driver refuses it with
+`AF-VID-PHASE-SKIPPED` (exit 2).
+
+Run each phase after its receipt has been produced (never before):
+
+```bash
+D=~/.openclaw/skills/47-movie-producer/scripts
+RUN=~/.openclaw/openmontage-runtime/OpenMontage/runs/<job-id>
+
+python3 $D/executive_producer.py --run-dir "$RUN" --plan          # see the phase plan
+python3 $D/executive_producer.py --run-dir "$RUN" --phase V-DEFINE
+python3 $D/executive_producer.py --run-dir "$RUN" --phase V-MEASURE
+python3 $D/executive_producer.py --run-dir "$RUN" --phase V-ANALYZE   # paid jobs; free path uses a logged owner-authorized skip
+python3 $D/executive_producer.py --run-dir "$RUN" --phase V-IMPROVE
+python3 $D/executive_producer.py --run-dir "$RUN" --phase V-CONTROL
+```
+
+Binding rules:
+
+- **Per-phase attestation is mandatory.** Each `--phase V-*` call checks that every
+  lower-order phase is attested + its artifact present, VALIDATES the phase's receipt
+  (e.g. V-IMPROVE requires `ffprobe_pass:true` + a real Kie task id when Kie was in
+  scope), then appends an attestation to `working/checkpoints/video_process_manifest.json`.
+- **No `--adhoc` without a logged owner authorization** (`working/checkpoints/adhoc_authorization.json`, `owner_approved:true` + approver + reason). Ad-hoc output is NOT a process-compliant client deliverable.
+- **The free documentary-montage path** is exactly a logged owner-authorized skip of
+  V-ANALYZE (Rule-Zero) in `working/checkpoints/phase_skip_approvals.json` — never an
+  unlogged bypass.
+- **Command Center carding is automatic and fail-soft.** When `MISSION_CONTROL_URL` is
+  set, the driver lands the run as one campaign with 5 phase cards and walks each
+  attested phase card `in_progress → review → done` (the QC `review` column is never
+  skipped). A disabled board is a clean no-op; the run is unaffected.
+
+The enforcement scripts live in `scripts/` (see the file inventory in `SKILL.md` /
+`INSTALL.md`): `executive_producer.py` (driver), `video_build_check.py` (receipt
+validators), `video_sync_check.py` (manifest↔code↔ruleset lockstep),
+`video_gate_integrity_check.py` (Guard A), `test_video_preflight.py` (negative-test
+suite), `cc_board.py` (fail-soft board caller) + `test_cc_board.py`.
+
+---
+
 ## Pipeline selection guide
 
-| Brief type | Recommended pipeline | Cost |
+The pipelines below are the **real** `pipeline_defs/*.yaml` shipped by the pinned
+OpenMontage tree (`OPENMONTAGE_PINNED_SHA` in `install.sh`, commit
+`ce11f6a`). Run `ls pipeline_defs/` in the clone to confirm — this table is
+generated from that tree, not invented. There are **13** pipelines.
+
+| Brief type | Pipeline (`pipeline_defs/…`) | Cost |
 |---|---|---|
-| Documentary / educational / history | `documentary-montage.yaml` | Free (public-domain stock footage) |
-| Short social video from a script | `script-to-video.yaml` | Kie.AI usage |
-| Product demo or explainer | `explainer-video.yaml` | Kie.AI usage |
-| Brand video with visuals | `brand-video.yaml` | Kie.AI usage |
-| News-style recap | `news-recap.yaml` | Free + optional Kie |
-| Fully generated AI video | run `image_selector` / `video_selector` directly | Kie.AI usage |
+| Documentary / educational / history — retrieval-first montage of real public-domain footage | `documentary-montage.yaml` | Free (public-domain stock) |
+| Fully AI-produced explainer from a topic/idea (narration + visuals + music) | `animated-explainer.yaml` | Kie.AI usage |
+| Motion graphics, kinetic typography, diagram-led / math-visual explainers | `animation.yaml` | Kie.AI usage |
+| Presenter-led avatar: spokesperson, onboarding, sales intros, short scripted explainers | `avatar-spokesperson.yaml` | Kie.AI usage |
+| Local, reusable cartoon character animation (SVG/Canvas/Remotion/HyperFrames) | `character-animation.yaml` | Free (browser-rendered) + optional Kie |
+| Mood-led trailers, brand films, dramatic montages (best with supplied footage) | `cinematic.yaml` | Free + optional Kie |
+| Long-form (webinar/stream/interview) → multiple short social clips | `clip-factory.yaml` | Free |
+| Source footage + designed/generated support assets (interviews + diagrams, product + overlays) | `hybrid.yaml` | Free + optional Kie |
+| Translated subtitles / dubbed audio / lip-synced language variants from a source video | `localization-dub.yaml` | Free + optional Kie |
+| Podcast audio → audiogram/caption clips, quote assets, optional companion video | `podcast-repurpose.yaml` | Free + optional Kie |
+| Screen recording (app demo, tutorial) — real capture or generated walkthrough | `screen-demo.yaml` | Free + optional Kie |
+| Raw talking-head footage → transcribe, edit, subtitle, mix, compose | `talking-head.yaml` | Free |
+| Framework smoke-test manifest (Phase-0 contract exercise — not a client deliverable) | `framework-smoke.yaml` | Free (internal) |
 
 ### The free documentary-montage path (zero API keys needed)
 

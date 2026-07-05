@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.26"
+ONBOARDING_VERSION="v17.0.29"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.26 - safe_json_edit
+# v17.0.29 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1203,10 +1203,32 @@ main() {
         _U6B_TRIAD_OK=0
       fi
     fi
+    # ASSET-FRESHNESS PRE-ROLL (FDN-7 / F1.3 gate 2). A manifest carrying
+    # asset_rebuild_required:true was count-synced by a --no-asset staging bump:
+    # the four SET counts agree (so the triad guard above passes) but the
+    # published gemini-index.sqlite.gz still lacks vectors for the newest
+    # persona(s). Provisioning from it would ship a counted-but-vector-less
+    # library (Layer-5 degrades to keyword for those personas). REFUSE and KEEP
+    # the box's current index until a real build-and-publish.sh clears the flag.
+    # Coordinates with the FDN-6 triad pre-roll above — BOTH must pass to
+    # provision. Fail-open on a read error (never block a roll on a parse hiccup).
+    _U6B_ASSET_OK=1
+    if command -v python3 >/dev/null 2>&1; then
+      _U6B_ASSET_REBUILD="$(python3 -c 'import json,sys
+try:
+    print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")
+except Exception:
+    print("false")' "$_U6B_MANIFEST" 2>/dev/null || echo false)"
+      [ "$_U6B_ASSET_REBUILD" = "true" ] && _U6B_ASSET_OK=0
+    fi
     if [ "$_U6B_TRIAD_OK" != "1" ]; then
       _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-set triad DIVERGENT in the pulled repo (blueprint dirs / categories keys / INDEX-MANIFEST persona_count disagree) — persona provisioning SKIPPED (refused to ship a stale library). Run 22-…/pipeline/publish-personas-to-fleet.sh, merge, and re-roll."
       echo "  ✗ PRE-ROLL persona-set triad DIVERGENT — REFUSING to provision a stale/divergent persona library on this box."
       echo "     Fix the repo with 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh and re-roll."
+    elif [ "$_U6B_ASSET_OK" != "1" ]; then
+      _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }INDEX-MANIFEST asset_rebuild_required:true (a --no-asset staging manifest — the published asset lacks vectors for the newest persona(s)) — persona index provisioning SKIPPED (kept the box's current index). Rebuild+publish the asset via shared-utils/prebuilt-index/build-and-publish.sh, merge, and re-roll."
+      echo "  ✗ PRE-ROLL asset_rebuild_required:true — REFUSING to (re)provision from a staged --no-asset manifest (would ship a counted-but-vector-less library). Keeping the box's current persona index."
+      echo "     Rebuild+publish the real asset with shared-utils/prebuilt-index/build-and-publish.sh and re-roll."
     else
       # Reconcile categories + blueprints to the workspace FIRST so the index
       # gate sees the persona dirs (furnace-safe), then provision the index.
@@ -2535,6 +2557,75 @@ PYEOF
   else
     echo "  ℹ Routing config unchanged — no gateway restart needed"
   fi
+
+  # ----------------------------------------------------------
+  # FIX-PRES-02: PRESENTATION DEPS CONVERGE (idempotent, fail-soft). A Mac box that
+  # predates install.sh Step 6.5 never receives the four presentation-pipeline
+  # runtime deps (soffice, pdftoppm, reportlab, python-pptx) from update-skills.sh,
+  # so it would forever refuse every deck build at GATE 1 even after pulling the
+  # latest skills. Converge them here exactly like install.sh Step 6.5's Mac branch
+  # (VPS is handled by the reassert script the same step writes), then hard-WARN if
+  # any dep is still missing. It never blocks the update; the following
+  # qc-completeness gate re-checks the same four deps.
+  # ----------------------------------------------------------
+  converge_presentation_deps() {
+    echo ""
+    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx)..."
+    if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
+      local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+      if [ -x "$_reassert" ]; then
+        echo "    VPS: running the idempotent reassert script ($_reassert)..."
+        bash "$_reassert" >/dev/null 2>&1 || echo "    ⚠ reassert script reported an issue (non-fatal)"
+      else
+        echo "    VPS: reassert script not present yet ($_reassert) — run install.sh Step 6.5 once to create it."
+      fi
+    else
+      # Mac: brew formula for poppler, NONINTERACTIVE cask for LibreOffice (loud
+      # warn on failure — a cask can need an admin password), pip --user for the
+      # two Python modules. NONINTERACTIVE + no `read` so a silent roll never hangs.
+      if command -v pdftoppm >/dev/null 2>&1; then
+        echo "    pdftoppm (poppler) already present"
+      elif command -v brew >/dev/null 2>&1; then
+        brew install poppler >/dev/null 2>&1 && echo "    poppler (pdftoppm) installed" \
+          || echo "    ⚠ brew install poppler failed — pdftoppm unavailable (Phase-6 QC PNG extraction will fail)"
+      else
+        echo "    ⚠ Homebrew not found — cannot install poppler (pdftoppm)"
+      fi
+      if command -v soffice >/dev/null 2>&1 || [ -x /Applications/LibreOffice.app/Contents/MacOS/soffice ]; then
+        echo "    soffice (LibreOffice) already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing LibreOffice (soffice) via NONINTERACTIVE Homebrew cask..."
+        NONINTERACTIVE=1 brew install --cask libreoffice >/dev/null 2>&1 \
+          && echo "    LibreOffice cask install completed" \
+          || echo "    ⚠ NONINTERACTIVE LibreOffice cask install failed (may need an admin password). Run once interactively: brew install --cask libreoffice"
+      else
+        echo "    ⚠ Homebrew not found — cannot install LibreOffice (soffice)"
+      fi
+      if command -v python3 >/dev/null 2>&1; then
+        if python3 -c "import reportlab, pptx" >/dev/null 2>&1; then
+          echo "    reportlab + python-pptx already importable"
+        else
+          echo "    Installing reportlab + python-pptx (pip --user --break-system-packages)..."
+          python3 -m pip install --user --break-system-packages reportlab python-pptx >/dev/null 2>&1 \
+            && echo "    reportlab + python-pptx installed" \
+            || echo "    ⚠ pip install reportlab/python-pptx failed — deck assembly + presenter PDF will fail"
+        fi
+      fi
+    fi
+    # Hard end-of-converge WARNING when any of the four deps is STILL missing.
+    local _pres_missing=""
+    command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
+    command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _pres_missing="${_pres_missing} python(reportlab+python-pptx)"
+    fi
+    if [ -n "$_pres_missing" ]; then
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Mac: brew install poppler; brew install --cask libreoffice; python3 -m pip install --user --break-system-packages reportlab python-pptx. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+    else
+      echo "  ✓ presentation deps converged: soffice + pdftoppm + reportlab + python-pptx all present"
+    fi
+  }
+  converge_presentation_deps
 
   # ----------------------------------------------------------
   # v10.15.4: Post-pull qc-completeness check. Read-only. Runs against the live

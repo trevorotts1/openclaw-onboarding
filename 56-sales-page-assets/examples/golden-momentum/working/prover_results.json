@@ -13,6 +13,13 @@
       "RESULT: PASS \u2014 contiguous prompt set; every stage slice has >=1 image."
     ]
   },
+  "prove_sp_prompt_floor.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: every image prompt clears the two-floor gate (5000-19000)."
+    ]
+  },
   "prove_sp_main_structure.py": {
     "rc": 0,
     "pass": true,

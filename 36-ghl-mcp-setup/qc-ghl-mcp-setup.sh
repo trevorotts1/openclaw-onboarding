@@ -193,7 +193,7 @@ assert "ghl-mcp-setup-full.md copied to master files folder" "find \"$MASTER_FIL
 
 echo ""
 echo "── Section H: Tier 0 (Convert and Flow CLI, skill 44) ──"
-SKILL44_PRESENT="[ -d \"$(dirname "$MASTER_FILES_DIR")/44-convert-and-flow-operator\" ] || [ -d \"$HOME/.openclaw/tools/convert-and-flow-cli\" ]"
+SKILL44_PRESENT="[ -d \"$MASTER_FILES_DIR/44-convert-and-flow-operator\" ] || [ -d \"$SKILLS_DIR_DEFAULT/44-convert-and-flow-operator\" ] || [ -d \"$HOME/.openclaw/tools/convert-and-flow-cli\" ]"
 if eval "$SKILL44_PRESENT" 2>/dev/null; then
   assert "caf wrapper resolves on PATH"                       "command -v caf >/dev/null 2>&1 || command -v convertandflow >/dev/null 2>&1"
   assert "caf doctor exits green"                             "caf doctor >/dev/null 2>&1"
@@ -225,5 +225,9 @@ elif [ "$WARN" -gt 3 ]; then
   exit 0
 else
   green "Skill 36 install QC PASS."
+  # Command Center: move the install card to `review` (fail-soft; never blocks
+  # the PASS). The independent CC auto-scorer — not this script — promotes
+  # review -> done. See scripts/cc-task.sh (FIX-S36-01).
+  bash "$SKILL_DIR/scripts/cc-task.sh" review || true
   exit 0
 fi

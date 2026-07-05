@@ -39,7 +39,7 @@ This skill is shipped as an MVP. Every component is marked below as **REAL** (wo
 | Address normalization + geocoding | PROVIDER-GATED | Census Geocoder (free, no key — REAL) + optional Google/Mapbox (key) |
 | Property lookup (Zillow / RentSpree / MLS-adjacent) | PROVIDER-GATED | Adapter stubs + contract; live only with the provider's key + ToS acceptance |
 | Comps lookup | PROVIDER-GATED | Same provider abstraction; honest gap when no comps source is keyed |
-| Street View image generation | PROVIDER-GATED | Google Street View Static API (key) — REAL when `GOOGLE_MAPS_API_KEY` set |
+| Street View image generation | PROVIDER-GATED | Google Street View Static API (key) — REAL when `GOOGLE_MAPS_API_KEY` set; probes metadata first, fetches bytes server-side to a local `image_path` (the key is never placed in the emitted output) |
 | Buyer qualification questions | REAL | `templates/buyer-qualification.md` — timeline / financing / neighborhood / must-haves |
 | Seller qualification questions | REAL | `templates/seller-qualification.md` — motivation / timeline / price / occupancy |
 | Showing scheduler (lockbox / MLS rules) | REAL (scaffold) | `protocols/showing-scheduler-protocol.md` + `06-scaffold-showing-scheduler.sh` |
@@ -48,6 +48,7 @@ This skill is shipped as an MVP. Every component is marked below as **REAL** (wo
 | Open-house automation | REAL (scaffold) | `protocols/open-house-automation-protocol.md` |
 | Pre-foreclosure outreach playbook | REAL (scaffold) | `protocols/pre-foreclosure-outreach-protocol.md` — pairs with Skill 40 |
 | Sales-Brain RE extension (additive) | REAL (additive) | `references/sales-brain-real-estate-extension.md` — drop-in, does NOT edit Skill 38 |
+| GHL + Command Center write layer | REAL (fail-soft) | `scripts/lib-ghl-sync.sh` — tagging / pipeline / booking via caf + Kanban PATCH; HONEST no-op without credentials, never fabricates |
 | `real-estate-events.jsonl` emission | REAL | `lib-re-events.sh` append helper; schema documented in INSTRUCTIONS.md |
 
 ## How Skill 39 fits in the pipeline
@@ -112,7 +113,7 @@ Skill 39 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/real-estat
 | `CORE_UPDATES.md` | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | `EXAMPLES.md` | Worked example flows (UNIVERSAL placeholders) |
 | `CHANGELOG.md` | Version history |
-| `skill-version.txt` | Currently `1.0.0` |
+| `skill-version.txt` | Currently `1.0.5` |
 | `scripts/00-verify-prerequisites.sh` | Verifies Skill 38, MASTER_FILES_DIR, jq, curl; reports provider-key presence |
 | `scripts/01-locate-master-files-folder.sh` | Resolves + persists MASTER_FILES_DIR (reuses Skill 38 selection if present) |
 | `scripts/02-configure-providers.sh` | Records which property/geocode/StreetView providers are keyed; honest-gap report |
@@ -122,8 +123,10 @@ Skill 39 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/real-estat
 | `scripts/06-scaffold-showing-scheduler.sh` | Scaffolds the showing-scheduler state + lockbox/MLS-rules config |
 | `scripts/07-register-crons.sh` | Registers open-house follow-up + post-close anniversary scan crons |
 | `scripts/08-update-core-files.sh` | Appends the AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
-| `scripts/lib-property.sh` | Provider-abstraction library: geocode, lookup, comps, Street View (honest-gap aware) |
-| `scripts/lib-re-events.sh` | Append-one-line helper for `real-estate-events.jsonl` |
+| `scripts/property-lookup.sh` | RUNTIME worker (not an install step): resolves provider status, prints AVAILABLE vs HONEST GAP per capability, appends one F52 `property_lookup` event |
+| `scripts/lib-property.sh` | Provider-abstraction library: geocode, lookup, comps, Street View (honest-gap aware; Street View key kept out of the emitted output) |
+| `scripts/lib-re-events.sh` | Append-one-line helper for `real-estate-events.jsonl` (resolves `MASTER_FILES_DIR` from persisted state; loud-fails, no Downloads fallback) |
+| `scripts/lib-ghl-sync.sh` | Fail-soft GHL (via caf) + Command Center write layer: `ghl_tag` / `ghl_opportunity` / `ghl_book` / `cc_move`; HONEST no-op without credentials |
 | `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) |
 | `scripts/qc-no-fabrication.sh` | Asserts no script returns invented property data on a provider miss |
 | `protocols/showing-scheduler-protocol.md` | Lockbox / MLS-rules showing scheduler runtime |

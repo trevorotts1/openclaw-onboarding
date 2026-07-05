@@ -14,6 +14,13 @@
 #
 # State lives under the cache dir (per-day counter + per-target last-fetch ts).
 # OS-aware. Uses jq when present; degrades gracefully.
+#
+# _cache_dir resolves MASTER_FILES_DIR from the env, then the persisted
+# ~/.openclaw/.skill-40-master-files-dir selection written by
+# 01-locate-master-files-folder.sh. It NEVER silently falls back to Downloads:
+# an unresolved master-files dir means the per-day counter/rate-state would land
+# in a fresh throwaway path, resetting the 200/day cap to zero — so it FAILS LOUD
+# (nonzero + stderr) and the caller refuses rather than weakening the cap.
 
 set -uo pipefail
 
@@ -22,9 +29,21 @@ PR_PER_TARGET_MIN_INTERVAL_S="${PR_PER_TARGET_MIN_INTERVAL_S:-5}"
 PR_BULK_CONFIRM_THRESHOLD="${PR_BULK_CONFIRM_THRESHOLD:-25}"
 PR_COST_PER_QUERY="${PR_COST_PER_QUERY:-0.00}"
 
-_cache_dir() {
+_master_files_dir() {
   local mfd="${MASTER_FILES_DIR:-}"
-  if [ -z "$mfd" ]; then case "$(uname -s)" in Darwin) mfd="$HOME/Downloads" ;; *) mfd="/data" ;; esac; fi
+  local state="${HOME:-/root}/.openclaw/.skill-40-master-files-dir"
+  if [ -z "$mfd" ] && [ -f "$state" ]; then
+    mfd="$(tr -d '[:space:]' < "$state" 2>/dev/null || true)"
+  fi
+  if [ -z "$mfd" ]; then
+    echo "[skill 40][cost-cap] FATAL: MASTER_FILES_DIR unresolved — set MASTER_FILES_DIR or run scripts/01-locate-master-files-folder.sh (refusing to weaken the daily cap by writing state to a throwaway path)." >&2
+    return 1
+  fi
+  printf '%s' "$mfd"
+}
+
+_cache_dir() {
+  local mfd; mfd="$(_master_files_dir)" || return 1
   printf '%s/public-records-cache' "$mfd"
 }
 
@@ -47,25 +66,31 @@ estimate() {
 
 _today() { date -u +%Y-%m-%d; }
 
-_counter_file() { printf '%s/.daily-count-%s' "$(_cache_dir)" "$(_today)"; }
+_counter_file() { local d; d="$(_cache_dir)" || return 1; printf '%s/.daily-count-%s' "$d" "$(_today)"; }
 
+# FAIL CLOSED: if the master-files dir is unresolved, treat the cap as reached
+# (return nonzero) rather than comparing against a phantom 0-count file that
+# would let the cap be bypassed forever.
 under_daily_cap() {
-  local cf n; cf="$(_counter_file)"
+  local cf n; cf="$(_counter_file)" || {
+    echo "[skill 40][cost-cap] cap state unresolved — failing CLOSED (treating as over cap)." >&2; return 1; }
   n=0; [ -f "$cf" ] && n="$(tr -d '[:space:]' < "$cf" 2>/dev/null || echo 0)"
   [ "${n:-0}" -lt "$PR_DAILY_CAP" ]
 }
 
 record_query() {
-  local cf n; cf="$(_counter_file)"
-  mkdir -p "$(_cache_dir)" 2>/dev/null || true
+  local cf n d; cf="$(_counter_file)" || return 1
+  d="$(_cache_dir)" || return 1
+  mkdir -p "$d" 2>/dev/null || true
   n=0; [ -f "$cf" ] && n="$(tr -d '[:space:]' < "$cf" 2>/dev/null || echo 0)"
   printf '%s\n' "$(( ${n:-0} + 1 ))" > "$cf"
 }
 
 rate_wait() {
-  local target="${1:-default}" lf last now diff
-  lf="$(_cache_dir)/.last-fetch-$(printf '%s' "$target" | tr -c 'A-Za-z0-9_-' '_')"
-  mkdir -p "$(_cache_dir)" 2>/dev/null || true
+  local target="${1:-default}" lf last now diff d
+  d="$(_cache_dir)" || return 1
+  lf="$d/.last-fetch-$(printf '%s' "$target" | tr -c 'A-Za-z0-9_-' '_')"
+  mkdir -p "$d" 2>/dev/null || true
   now="$(date +%s)"
   last=0; [ -f "$lf" ] && last="$(tr -d '[:space:]' < "$lf" 2>/dev/null || echo 0)"
   diff=$(( now - ${last:-0} ))

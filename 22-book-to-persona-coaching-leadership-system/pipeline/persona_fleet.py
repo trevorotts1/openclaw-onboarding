@@ -232,30 +232,70 @@ def triad_counts(repo_root):
                  if personas_dir.is_dir() else None)
     cats_count = (len(_load_json(cats_path).get("personas", {}))
                   if cats_path.is_file() else None)
-    man_count = man_canon = None
+    man_count = man_canon = man_embedded = None
+    asset_rebuild = False
     if manifest_path.is_file():
         m = _load_json(manifest_path)
         man_count = int(m.get("persona_count", -1))
         man_canon = int(m.get("canonical_persona_count", -1))
+        # FDN-7 / F1.3 gate 3 — 5th SET-triad member: personas actually embedded
+        # in the PUBLISHED asset. Absent (-1) on legacy manifests → treated as
+        # "not present" and skipped from the agreement check (additive).
+        if "embedded_persona_count" in m:
+            man_embedded = int(m.get("embedded_persona_count", -1))
+        asset_rebuild = bool(m.get("asset_rebuild_required", False))
     return {
         "blueprint_dirs": dir_count,
         "categories.json_keys": cats_count,
         "manifest.persona_count": man_count,
         "manifest.canonical_persona_count": man_canon,
-    }
+        "manifest.embedded_persona_count": man_embedded,
+    }, asset_rebuild
 
 
 def cmd_triad(args):
-    vals = triad_counts(args.repo_root)
-    present = {k: v for k, v in vals.items() if v is not None}
-    agree = len(set(present.values())) == 1 and len(present) == 4
+    vals, asset_rebuild = triad_counts(args.repo_root)
+
+    # The four SET-count members must ALWAYS agree (the original N38 invariant).
+    core_keys = ("blueprint_dirs", "categories.json_keys",
+                 "manifest.persona_count", "manifest.canonical_persona_count")
+    core = {k: vals[k] for k in core_keys if vals.get(k) is not None}
+    core_agree = len(set(core.values())) == 1 and len(core) == 4
+
+    # 5th member — embedded_persona_count. When asset_rebuild_required is true
+    # (a --no-asset staging bump) it lags BY DESIGN, so it is carved out of the
+    # hard gate here (the release/main guard persona-set-asset-consistency-guard.yml
+    # is what refuses to merge/publish a pending-rebuild manifest). When the
+    # manifest claims a fresh asset (asset_rebuild_required:false) but embedded
+    # still disagrees, the SET carries a counted-but-vector-less persona → FAIL.
+    embedded = vals.get("manifest.embedded_persona_count")
+    set_count = vals.get("manifest.persona_count")
+    embedded_ok = True
+    embedded_carveout = False
+    if embedded is not None and embedded >= 0 and set_count is not None:
+        if embedded != set_count:
+            if asset_rebuild:
+                embedded_carveout = True
+            else:
+                embedded_ok = False
+
+    agree = core_agree and embedded_ok
+
     if args.json:
-        print(json.dumps({"counts": vals, "agree": agree}))
+        print(json.dumps({
+            "counts": vals,
+            "asset_rebuild_required": asset_rebuild,
+            "embedded_carveout": embedded_carveout,
+            "agree": agree,
+        }))
     else:
         print("Persona-SET count triad:")
         for k, v in vals.items():
             print(f"  {k} = {v}")
-    if not agree:
+        if embedded_carveout:
+            print("  (embedded_persona_count carve-out: asset_rebuild_required=true)")
+
+    if not core_agree:
         sys.stderr.write(
             "\nTRIAD DISAGREES — a persona is in the workspace/asset but the repo "
             "library was not caught up (or a count was bumped without a blueprint). "
@@ -263,6 +303,25 @@ def cmd_triad(args):
             "    22-book-to-persona-coaching-leadership-system/pipeline/"
             "publish-personas-to-fleet.sh\n")
         return 5
+    if not embedded_ok:
+        sys.stderr.write(
+            f"\nASSET DISAGREES — embedded_persona_count={embedded} != SET "
+            f"count={set_count} while asset_rebuild_required is false. The "
+            "published release asset (gemini-index.sqlite.gz) lacks vectors for "
+            f"{set_count - embedded} persona(s) (counted-but-vector-less; Layer-5 "
+            "degrades to keyword for them). Rebuild + publish a real asset:\n"
+            "    shared-utils/prebuilt-index/build-and-publish.sh\n")
+        return 5
+    if embedded_carveout:
+        sys.stderr.write(
+            f"\nNOTE (--no-asset carve-out) — the four SET counts agree at "
+            f"{set_count}, but embedded_persona_count={embedded} lags because "
+            "asset_rebuild_required:true (a hermetic --no-asset staging bump). "
+            "The release ASSET still needs a real delta embed+publish before the "
+            "fleet points at it:\n"
+            "    shared-utils/prebuilt-index/build-and-publish.sh\n"
+            "This is not fatal HERE (staging is legitimate mid-flight); "
+            "persona-set-asset-consistency-guard.yml blocks it from main/release.\n")
     return 0
 
 
@@ -377,6 +436,13 @@ def set_manifest_counts(manifest_path, count, repo_cat_path, no_asset=False):
     m["persona_set_md5"] = hashlib.md5(
         Path(repo_cat_path).read_bytes()).hexdigest()
     m["manifest_last_updated"] = _today()
+    # FDN-7 / F1.3 gate 3: deliberately DO NOT touch embedded_persona_count here.
+    # A --no-asset run syncs the four SET counts but embeds NOTHING, so the 5th
+    # triad member must keep reflecting the OLD published asset. Leaving it stale
+    # is what makes `asset_rebuild_required:true` provable downstream (persona_fleet
+    # triad carve-out + persona-set-asset-consistency-guard.yml) instead of a
+    # silent counted-but-vector-less state. build-and-publish.sh (full path) is
+    # the ONLY writer that advances embedded_persona_count.
     if no_asset:
         m["asset_rebuild_required"] = True
         m["fleet_sync_note"] = (
