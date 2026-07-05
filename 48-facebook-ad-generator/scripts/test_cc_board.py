@@ -139,8 +139,32 @@ class AuthAndContractTest(unittest.TestCase):
         self.assertEqual(body["owner"], "Trev")
         self.assertEqual(body["money_ceiling_usd"], 200)
         self.assertEqual(body["agent_id"], "agent-x")
-        self.assertEqual(body["stages"][0], {"slug": "s0-intake", "title": "Intake"})
-        self.assertEqual(body["stages"][1], {"slug": "publish"})  # no title key
+        # An "epic" rollup stage card is always created FIRST, then the caller's stages.
+        self.assertEqual(body["stages"][0]["slug"], "epic")
+        self.assertEqual(body["stages"][1], {"slug": "s0-intake", "title": "Intake"})
+        self.assertEqual(body["stages"][2], {"slug": "publish"})  # no title key
+
+    def test_epic_stage_always_created(self):
+        """The end-of-run _board_move(job_id, 'epic', 'done') must target a real card:
+        create_campaign always includes an 'epic' stage, exactly once, even when the
+        caller passes no stages (or already included their own epic)."""
+        # No stages passed -> epic is still created.
+        self.rec.queue(201, {"ok": True, "created": True, "campaign_id": "j9",
+                             "parent_id": "p", "stages": [{"slug": "epic"}]})
+        cc_board.create_campaign("j9", "Lonely Show", env=ENV)
+        stages = json.loads(self.rec.requests[-1]["body"])["stages"]
+        slugs = [s["slug"] for s in stages]
+        self.assertIn("epic", slugs)
+        self.assertEqual(slugs.count("epic"), 1)
+        self.assertEqual(slugs[0], "epic")
+        # A caller that already supplies an epic stage must not get a duplicate.
+        self.rec.queue(201, {"ok": True, "created": True, "campaign_id": "j10",
+                             "parent_id": "p", "stages": [{"slug": "epic"}]})
+        cc_board.create_campaign("j10", "S", env=ENV,
+                                 stages=[{"slug": "epic", "title": "Mine"},
+                                         {"slug": "s0-intake"}])
+        slugs2 = [s["slug"] for s in json.loads(self.rec.requests[-1]["body"])["stages"]]
+        self.assertEqual(slugs2.count("epic"), 1)
 
     def test_no_secret_means_no_signature_header(self):
         self.rec.queue(200, {"ok": True, "created": False, "campaign_id": "j2",
