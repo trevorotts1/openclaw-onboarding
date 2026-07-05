@@ -1,71 +1,45 @@
 #!/usr/bin/env python3
 """
-cc_board.py — Skill 48 PRODUCER-SIDE Command Center board caller (FAIL-SOFT).
+cc_board.py — Skill 47 (Movie Producer) PRODUCER-SIDE Command Center board caller
+(FAIL-SOFT). Ported from Skill 48's cc_board.py (FIX-S36-40) so a video production
+RUN actually lands on the Kanban board — one campaign with one card per DMAIC
+phase — instead of finishing off-board with V-CONTROL "done" decided only by
+self-written receipts.
 
-This is the producer half of the board hookup whose server half is
-``POST /api/ad-campaigns`` (+ ``PATCH /api/ad-campaigns/[id]``) in
-trevorotts1/blackceo-command-center (>= v4.50.0). It lands a Skill 48
-Facebook/Instagram ad run on the Kanban board as ONE campaign with one card per
-phase, and moves those cards through the lifecycle as the run progresses.
+WHY THIS EXISTS (FIX-S36-40)
+  Before this file the movie-producer spine attested phases to a local process
+  manifest but nothing carded the run on the Command Center, and there was no
+  caller that walked the QC `review` column — so an enforcing board would strand
+  every run at in_progress and a lenient one would let V-CONTROL jump straight to
+  `done`, skipping review. This is the producer half that fixes that: it posts 5
+  stage cards and moves each attested phase card to its target by walking the
+  LEGAL status path (in_progress -> review -> done), so the QC `review` column is
+  never skipped. The board is a CONVENIENCE, never a gate.
 
-NON-NEGOTIABLE DESIGN RULES
+NON-NEGOTIABLE DESIGN RULES (identical contract to Skill 48's cc_board)
   * FAIL-SOFT. A board outage, a missing token, an unreachable URL, an HTTP
     error, a timeout, or any other failure is CAUGHT, LOGGED to stderr, and the
-    ad job CONTINUES. Boarding the run is a convenience, never a gate. The ONLY
-    thing that actually fails an ad job for "not on the board" is the offline
-    ``_chk_board`` check (AF-FBAD-BOARD) reading ``campaign_id`` out of
-    ``s7-deliver-receipt.json`` — and even that "degrade-to-ungrouped is logged,
-    not silent." So every public function here returns a value (campaign_id /
+    production job CONTINUES. Every public function returns a value (campaign_id /
     bool) and NEVER raises.
-
-  * AUTH PARITY with the endpoint (read verbatim from the route handlers):
-      - ``Authorization: Bearer <MC_API_TOKEN>``  — the global middleware layer
-        (src/middleware.ts). No-op for same-origin / when MC_API_TOKEN is unset.
-      - ``x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, rawBody)`` hex — the
-        per-route layer copied verbatim from /api/tasks/ingest. The endpoint
-        no-ops the check when WEBHOOK_SECRET is unset (dev mode). We sign the
-        EXACT bytes we send, so a configured secret matches byte-for-byte.
-
-  * STDLIB ONLY (urllib) — zero third-party deps, mirrors ad_build_check's Kie
-    balance call and the rest of the deterministic spine.
-
-  * CREDENTIALS FROM ENV, never hardcoded; absent => fail-soft no-op.
-      MISSION_CONTROL_URL   base URL of the Command Center (e.g.
-                            https://<client>.zerohumanworkforce.com). Absent =>
-                            board disabled (clean no-op; the run is unaffected).
+  * LEGAL PATH ONLY. Cards move backlog->in_progress->review->done via the CC
+    LEGAL_TRANSITIONS map; the client never issues an illegal in_progress->done
+    jump that skips the QC `review` column.
+  * STDLIB ONLY (urllib/hmac/hashlib/json) — zero third-party deps, mirrors the
+    rest of the deterministic spine.
+  * CREDENTIALS FROM ENV, never hardcoded; absent base URL => clean no-op.
+      MISSION_CONTROL_URL   base URL of the Command Center. Absent => board
+                            disabled (clean no-op; the run is unaffected).
       MC_API_TOKEN          long-lived bearer (middleware layer). Optional.
       WEBHOOK_SECRET        HMAC secret (per-route layer). Optional.
       CC_BOARD_TIMEOUT      per-request timeout seconds (default 8).
+      MC_CAMPAIGN_PATH      campaign resource path (default /api/campaigns) —
+                            overridable so the same server family can serve video
+                            runs without editing this file.
 
-REQUEST CONTRACT (matched to the live endpoint — see module docstring of
-src/lib/ad-campaigns.ts and src/lib/validation.ts):
-
-  CREATE   POST {base}/api/ad-campaigns
-    headers: Authorization: Bearer <MC_API_TOKEN> (if set),
-             x-webhook-signature: <hmac> (if WEBHOOK_SECRET set),
-             Content-Type: application/json
-    body:    {job_id, show_name, owner?, department?, workspace?, agent_id?,
-              money_ceiling_usd?, estimated_cost_usd?, show_date?,
-              stages?: [{slug, title?}]}
-    return:  201 (created) / 200 (idempotent re-call) ->
-             {ok, created, campaign_id, parent_id, stages:[{slug,id,status}]}
-
-  MOVE     PATCH {base}/api/ad-campaigns/{job_id}
-    headers: same as CREATE
-    body:    {stage_slug, status, reason?, actor?,
-              blocked_reason?, blocked_on_human?, ask?}
-    return:  200 -> {task}
-    status vocabulary (CC TaskStatus): backlog | in_progress | review | blocked | done
-    legal moves (CC LEGAL_TRANSITIONS): backlog->in_progress; in_progress->review;
-             review->done; *->blocked; blocked->{backlog,in_progress}; done->backlog
-    blocked REQUIRES blocked_reason in {decision,approval,credential,payment}
-             AND a non-empty ask.
-
-The campaign_id (== job_id) is written into
-``working/checkpoints/s7-deliver-receipt.json`` so the offline AF-FBAD-BOARD
-check passes whether or not the live POST succeeded against a degraded board:
-when the board is reachable we use its echoed campaign_id; when it is not, we
-still record the deterministic job_id (the receipt-number) and log the degrade.
+The campaign_id (== job_id server-side) and the finished MP4 path are stamped
+into working/checkpoints/render-receipt.json so the run's board grouping + final
+deliverable are recorded whether or not the live POST landed (degrade-to-
+ungrouped is LOGGED, not silent).
 """
 
 from __future__ import annotations
@@ -80,9 +54,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-# Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map
-# (src/lib/validation.ts + src/lib/task-lifecycle.ts). Kept here ONLY to walk a
-# minimal legal path client-side; the server is always the final authority.
+# Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map. Kept here
+# ONLY to walk a minimal legal path client-side; the server is the final authority.
 VALID_STATUSES = ("backlog", "in_progress", "review", "blocked", "done")
 _LEGAL = {
     "backlog": {"in_progress", "blocked"},
@@ -94,15 +67,15 @@ _LEGAL = {
 VALID_BLOCKED_REASONS = ("decision", "approval", "credential", "payment")
 
 _DEFAULT_TIMEOUT = 8
+_DEFAULT_CAMPAIGN_PATH = "/api/campaigns"
 
 
 # ---------------------------------------------------------------------------
 # Config — read from the environment; absent base URL => board disabled.
 # ---------------------------------------------------------------------------
 def board_config(env: Optional[dict] = None) -> Optional[dict]:
-    """Resolve board config from the environment. Returns None (board disabled,
-    a clean no-op) when MISSION_CONTROL_URL is not set — exactly the
-    INSTALL.md "graceful degradation" contract. Never raises."""
+    """Resolve board config from the environment. Returns None (board disabled, a
+    clean no-op) when MISSION_CONTROL_URL is not set. Never raises."""
     env = env if env is not None else os.environ
     base = (env.get("MISSION_CONTROL_URL") or "").strip().rstrip("/")
     if not base:
@@ -111,8 +84,12 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
         timeout = int(env.get("CC_BOARD_TIMEOUT", "") or _DEFAULT_TIMEOUT)
     except (TypeError, ValueError):
         timeout = _DEFAULT_TIMEOUT
+    path = (env.get("MC_CAMPAIGN_PATH") or _DEFAULT_CAMPAIGN_PATH).strip()
+    if not path.startswith("/"):
+        path = "/" + path
     return {
         "base_url": base,
+        "campaign_path": path.rstrip("/"),
         "token": (env.get("MC_API_TOKEN") or "").strip(),
         "secret": (env.get("WEBHOOK_SECRET") or env.get("CC_WEBHOOK_SECRET") or "").strip(),
         "timeout": timeout,
@@ -120,31 +97,34 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
 
 
 def _log(msg: str) -> None:
-    """Single, greppable degrade line. Board failures are logged, not silent,
-    and never fatal."""
+    """Single, greppable degrade line. Board failures are logged, not silent, and
+    never fatal."""
     print(f"[cc_board] {msg}", file=sys.stderr, flush=True)
 
 
 def _sign(secret: str, raw_body: bytes) -> Optional[str]:
-    """x-webhook-signature = HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex — byte-for-
-    byte parity with verifyWebhookSignature() in the route handlers. None when no
+    """x-webhook-signature = HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex. None when no
     secret (the endpoint also no-ops in that case)."""
     if not secret:
         return None
     return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
 
 
-def _request(method: str, url: str, payload: dict, cfg: dict):
-    """One signed JSON request. Returns (status_code, parsed_json_or_None).
-    Raises only urllib/OS errors, which the public callers catch (fail-soft)."""
-    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+def _request(method: str, url: str, payload: Optional[dict], cfg: dict):
+    """One signed JSON request. Returns (status_code, parsed_json_or_None). Raises
+    only urllib/OS errors, which the public callers catch (fail-soft)."""
+    raw_body = b"" if payload is None else \
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     if cfg["token"]:
         headers["Authorization"] = f"Bearer {cfg['token']}"
     sig = _sign(cfg["secret"], raw_body)
     if sig is not None:
         headers["x-webhook-signature"] = sig
-    req = urllib.request.Request(url, data=raw_body, headers=headers, method=method)
+    req = urllib.request.Request(url, data=(raw_body if payload is not None else None),
+                                 headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
             body = resp.read().decode("utf-8", "replace")
@@ -160,7 +140,7 @@ def _request(method: str, url: str, payload: dict, cfg: dict):
 
 
 # ---------------------------------------------------------------------------
-# CREATE — POST /api/ad-campaigns (idempotent on job_id, server-side)
+# CREATE — POST {campaign_path} (idempotent on job_id, server-side)
 # ---------------------------------------------------------------------------
 def create_campaign(
     job_id: str,
@@ -176,10 +156,8 @@ def create_campaign(
     show_date: Optional[str] = None,
     env: Optional[dict] = None,
 ) -> Optional[str]:
-    """Create (or idempotently re-fetch) the ad-run campaign + stage cards.
-    Returns the echoed campaign_id on success, else None (FAIL-SOFT — a None
-    return never blocks the ad job; the caller falls back to the deterministic
-    job_id as the receipt-number)."""
+    """Create (or idempotently re-fetch) the production campaign + stage cards.
+    Returns the echoed campaign_id on success, else None (FAIL-SOFT)."""
     cfg = board_config(env)
     if cfg is None:
         _log("MISSION_CONTROL_URL unset — board disabled (no-op); run continues ungrouped.")
@@ -203,19 +181,14 @@ def create_campaign(
         payload["estimated_cost_usd"] = estimated_cost_usd
     if show_date:
         payload["show_date"] = show_date
-    # Always create an "epic" rollup stage card FIRST so the end-of-run
-    # set_stage_status(job_id, "epic", "done") (ad_director closes the whole campaign
-    # here) targets a REAL card, never a phantom the server never created.
-    stage_list = list(stages or [])
-    if not any(isinstance(s, dict) and s.get("slug") == "epic" for s in stage_list):
-        stage_list.insert(0, {"slug": "epic", "title": f"{show_name} — campaign"})
-    payload["stages"] = [
-        {"slug": s["slug"], **({"title": s["title"]} if s.get("title") else {})}
-        for s in stage_list
-        if isinstance(s, dict) and s.get("slug")
-    ]
+    if stages:
+        payload["stages"] = [
+            {"slug": s["slug"], **({"title": s["title"]} if s.get("title") else {})}
+            for s in stages
+            if isinstance(s, dict) and s.get("slug")
+        ]
 
-    url = f"{cfg['base_url']}/api/ad-campaigns"
+    url = f"{cfg['base_url']}{cfg['campaign_path']}"
     try:
         status, body = _request("POST", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -230,7 +203,7 @@ def create_campaign(
 
 
 # ---------------------------------------------------------------------------
-# MOVE — PATCH /api/ad-campaigns/{job_id} (one transition)
+# MOVE — PATCH {campaign_path}/{job_id} (one transition)
 # ---------------------------------------------------------------------------
 def _move_once(
     job_id: str,
@@ -254,7 +227,7 @@ def _move_once(
         if blocked_on_human:
             payload["blocked_on_human"] = blocked_on_human
         payload["ask"] = ask
-    url = f"{cfg['base_url']}/api/ad-campaigns/{job_id}"
+    url = f"{cfg['base_url']}{cfg['campaign_path']}/{job_id}"
     try:
         st, body = _request("PATCH", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -267,21 +240,20 @@ def _move_once(
 
 
 def _legal_path(src: str, dst: str) -> Optional[list]:
-    """Shortest legal status path src..dst (inclusive of dst, excluding src) over
-    the CC LEGAL_TRANSITIONS map. None when unreachable. 'blocked' is reachable
-    from any state in one hop. Used to walk e.g. backlog->in_progress->review->done
-    rather than issue an illegal direct jump."""
+    """Shortest legal status path src..dst (inclusive of dst, excluding src) over the
+    CC LEGAL_TRANSITIONS map. None when unreachable. 'blocked' is reachable from any
+    state in one hop. Walks e.g. in_progress->review->done rather than an illegal
+    direct jump that would SKIP the QC review column."""
     if src == dst:
         return []
     if dst == "blocked":
         return ["blocked"]
-    # BFS
     from collections import deque
     q = deque([(src, [])])
     seen = {src}
     while q:
         node, path = q.popleft()
-        for nxt in _LEGAL.get(node, ()):  # deterministic enough for our small map
+        for nxt in sorted(_LEGAL.get(node, ())):  # sorted => deterministic path
             if nxt in seen:
                 continue
             npath = path + [nxt]
@@ -298,17 +270,16 @@ def set_stage_status(
     target: str,
     *,
     reason: Optional[str] = None,
-    actor: str = "skill48-producer",
+    actor: str = "skill47-movie-producer",
     blocked_reason: Optional[str] = None,
     blocked_on_human: Optional[str] = None,
     ask: Optional[str] = None,
     env: Optional[dict] = None,
 ) -> bool:
     """Drive ONE stage card to `target`, walking the minimal legal path from its
-    current status (fetched via GET). FAIL-SOFT: returns False (never raises) on
-    any board problem; the ad job is unaffected. For target='blocked', supply a
-    blocked_reason in {decision,approval,credential,payment} and a non-empty ask
-    (the endpoint rejects a blocked move without them)."""
+    current status (fetched via GET). FAIL-SOFT: returns False (never raises) on any
+    board problem; the production job is unaffected. For target='blocked', supply a
+    blocked_reason in {decision,approval,credential,payment} and a non-empty ask."""
     cfg = board_config(env)
     if cfg is None:
         return False
@@ -351,56 +322,62 @@ def set_stage_status(
 def _current_status(job_id: str, stage_slug: str, cfg: dict) -> Optional[str]:
     """GET the run and return one stage card's status, or None when the board is
     unreachable or the card is absent."""
-    url = f"{cfg['base_url']}/api/ad-campaigns/{job_id}"
-    raw_body = b""
-    headers = {"Accept": "application/json"}
-    if cfg["token"]:
-        headers["Authorization"] = f"Bearer {cfg['token']}"
-    sig = _sign(cfg["secret"], raw_body)
-    if sig is not None:
-        headers["x-webhook-signature"] = sig
-    req = urllib.request.Request(url, headers=headers, method="GET")
+    url = f"{cfg['base_url']}{cfg['campaign_path']}/{job_id}"
     try:
-        with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
-            body = json.loads(resp.read().decode("utf-8", "replace"))
-    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        st, body = _request("GET", url, None, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"status GET failed for {job_id} ({type(exc).__name__}: {exc}).")
         return None
-    for card in (body.get("cards") or []) if isinstance(body, dict) else []:
+    if st != 200 or not isinstance(body, dict):
+        return None
+    for card in (body.get("cards") or body.get("stages") or []):
         if isinstance(card, dict) and card.get("stage_slug") == stage_slug:
             return card.get("status")
     return None
 
 
 # ---------------------------------------------------------------------------
-# Receipt stamping — write campaign_id into s7-deliver-receipt.json so the
-# offline AF-FBAD-BOARD check passes (degrade-to-ungrouped is logged, not silent).
+# Receipt stamping — write campaign_id + the finished MP4 path into
+# render-receipt.json so the run's board grouping + deliverable are recorded
+# (degrade-to-ungrouped is LOGGED, not silent). MERGE-IF-EXISTS only: never mint a
+# premature render receipt before V-IMPROVE has produced one.
 # ---------------------------------------------------------------------------
-def _deliver_receipt_path(run_dir: Path) -> Path:
-    return Path(run_dir) / "working" / "checkpoints" / "s7-deliver-receipt.json"
+def _render_receipt_path(run_dir: Path) -> Path:
+    return Path(run_dir) / "working" / "checkpoints" / "render-receipt.json"
 
 
-def stamp_campaign_id(run_dir: Path, campaign_id: str) -> bool:
-    """Merge campaign_id into s7-deliver-receipt.json without disturbing other
-    fields. Atomic replace. Returns True on success. Never raises."""
-    if not campaign_id:
+def stamp_receipt(run_dir: Path, *, campaign_id: Optional[str] = None,
+                  final_mp4_path: Optional[str] = None) -> bool:
+    """Merge campaign_id and/or final_mp4_path into an EXISTING render-receipt.json
+    without disturbing other fields. Atomic replace. Returns True when a field was
+    written. Never raises; never creates the receipt if it does not already exist."""
+    if not campaign_id and not final_mp4_path:
         return False
-    p = _deliver_receipt_path(run_dir)
+    p = _render_receipt_path(run_dir)
+    if not p.exists():
+        _log("stamp_receipt skipped — render-receipt.json not present yet "
+             "(will not mint a premature receipt).")
+        return False
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        receipt = {}
-        if p.exists():
-            try:
-                receipt = json.loads(p.read_text())
-                if not isinstance(receipt, dict):
-                    receipt = {}
-            except (json.JSONDecodeError, OSError):
-                receipt = {}
-        receipt["campaign_id"] = campaign_id
+        try:
+            receipt = json.loads(p.read_text())
+            if not isinstance(receipt, dict):
+                return False
+        except (json.JSONDecodeError, OSError):
+            return False
+        changed = False
+        if campaign_id and receipt.get("campaign_id") != campaign_id:
+            receipt["campaign_id"] = campaign_id
+            changed = True
+        if final_mp4_path and not str(receipt.get("final_mp4_path") or "").strip():
+            receipt["final_mp4_path"] = final_mp4_path
+            changed = True
+        if not changed:
+            return False
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2))
         os.replace(tmp, p)
         return True
     except OSError as exc:
-        _log(f"stamp_campaign_id failed ({exc}).")
+        _log(f"stamp_receipt failed ({exc}).")
         return False

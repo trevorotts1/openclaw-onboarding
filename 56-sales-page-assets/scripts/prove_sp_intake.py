@@ -39,8 +39,42 @@ AF_IMGCOUNT = "AF-SP56-INTAKE-IMGCOUNT"
 AF_OFFER = "AF-SP56-INTAKE-OFFER"
 AF_SLUG = "AF-SP56-INTAKE-SLUG"
 AF_UNLOCKED = "AF-SP56-INTAKE-UNLOCKED"
+AF_PERSONA_LOG = "AF-SP56-INTAKE-PERSONA-LOG"   # FIX-XC-02a — fail-closed persona grounding
 
 FUNNEL_TYPE = "sales_page_assets"
+
+# FIX-XC-02a — the copywriter-persona Step-0 grounding is a hard, fail-closed gate
+# (mirrors FAB-QC D4): a runtime brief may NOT unlock generation until a
+# persona-selection-log names a registered persona slug.
+_PERSONA_KEY_RE = re.compile(
+    r'(?:selected|applied|copy)[_\- ]?persona["\s]*[:=]\s*"?([a-z0-9][a-z0-9\-]{2,})', re.I)
+_SLUG_SHAPE_RE = re.compile(r'^[a-z0-9][a-z0-9\-]{2,}$')
+
+
+def _persona_registry_dir() -> "Path | None":
+    root = _SCRIPT_DIR.parent.parent  # 56-sales-page-assets/scripts -> repo root
+    for cand in (root / "22-book-to-persona-coaching-leadership-system" / "personas",
+                 root / "23-ai-workforce-blueprint" / "personas"):
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def _log_names_registered_persona(log_text) -> Tuple[bool, str]:
+    if not log_text or not str(log_text).strip():
+        return (False, "persona-selection-log absent/empty — persona never grounded (SOP-SALESPAGE-01 §3)")
+    m = _PERSONA_KEY_RE.search(log_text)
+    if not m:
+        return (False, "persona-selection-log names no selected/applied persona slug")
+    slug = m.group(1).lower()
+    if not _SLUG_SHAPE_RE.match(slug):
+        return (False, f"persona slug {slug!r} is not a valid registered-slug shape")
+    reg = _persona_registry_dir()
+    if reg is not None:
+        registered = {p.name.lower() for p in reg.iterdir() if p.is_dir()}
+        if registered and slug not in registered:
+            return (False, f"persona slug {slug!r} is not a registered persona under {reg.name}/")
+    return (True, slug)
 
 # The 12-field contract (sane keys — the legacy 'Sales_Page_Writer_Product _Info' and
 # 'upsellOneProductDescription ' embedded-space keys are repaired to product_info / upsell_desc).
@@ -72,7 +106,7 @@ def _answered(v: Any) -> bool:
     return True  # ints (e.g. image_prompt_count) count as answered
 
 
-def evaluate(intake: Any) -> List[Tuple[str, str]]:
+def evaluate(intake: Any, persona_log=None) -> List[Tuple[str, str]]:
     failures: List[Tuple[str, str]] = []
     if not isinstance(intake, dict):
         return [(AF_TYPE, "intake root is not a JSON object")]
@@ -104,6 +138,11 @@ def evaluate(intake: Any) -> List[Tuple[str, str]]:
 
         if intake.get("locked") is not True:
             failures.append((AF_UNLOCKED, "brief is not locked (provenance-gated) — generation must not start"))
+
+        # FIX-XC-02a — fail-closed copywriter-persona grounding (mirrors FAB-QC D4).
+        ok_pl, why_pl = _log_names_registered_persona(persona_log)
+        if not ok_pl:
+            failures.append((AF_PERSONA_LOG, why_pl))
     else:
         # spec-contract shape: every required field must be defined with an 'asks'.
         defined = {}
@@ -123,7 +162,27 @@ def decide_exit(failures) -> int:
     return EXIT_PASS if not failures else EXIT_AUTOFAIL
 
 
-def prove(path: str, as_json: bool = False) -> int:
+def _resolve_persona_log(brief_path: Path, intake: Any, explicit):
+    """Resolve persona-selection-log text: --persona-log, the brief's
+    `persona_selection_log` ref, then a sibling persona-selection-log.md."""
+    cands: List[Path] = []
+    if explicit:
+        cands.append(Path(explicit))
+    ref = intake.get("persona_selection_log") if isinstance(intake, dict) else None
+    if isinstance(ref, str) and ref.strip():
+        rp = Path(ref)
+        cands.append(rp if rp.is_absolute() else brief_path.parent / rp)
+    cands.append(brief_path.parent / "persona-selection-log.md")
+    for c in cands:
+        try:
+            if c and c.is_file():
+                return c.read_text(encoding="utf-8")
+        except OSError:
+            continue
+    return None
+
+
+def prove(path: str, as_json: bool = False, persona_log_path=None) -> int:
     p = Path(path)
     if not p.is_file():
         _emit(str(p), [("USAGE", f"intake file not found: {p}")], as_json)
@@ -133,7 +192,8 @@ def prove(path: str, as_json: bool = False) -> int:
     except (ValueError, OSError) as exc:
         _emit(str(p), [("USAGE", f"cannot read/parse intake JSON: {exc}")], as_json)
         return EXIT_USAGE
-    failures = evaluate(intake)
+    persona_log = _resolve_persona_log(p, intake, persona_log_path)
+    failures = evaluate(intake, persona_log=persona_log)
     _emit(str(p), failures, as_json)
     return decide_exit(failures)
 
@@ -184,20 +244,24 @@ def _valid_runtime() -> Dict[str, Any]:
     }
 
 
+_VALID_PERSONA_LOG = (
+    "# persona-selection-log\n- selected_persona: hormozi-100m-offers\n- selector_ran: true\n")
+
+
 def self_test() -> int:
     ok = True
 
-    def check_pass(name, fixture):
+    def check_pass(name, fixture, persona_log=_VALID_PERSONA_LOG):
         nonlocal ok
-        fails = evaluate(fixture)
+        fails = evaluate(fixture, persona_log=persona_log)
         good = not fails and decide_exit(fails) == EXIT_PASS
         ok = ok and good
         print(f"  [{'PASS' if good else 'MISS'}] VALID {name:16s} -> exit {decide_exit(fails)}"
               + ("" if good else f" (unexpected: {fails})"))
 
-    def check_fail(name, fixture, expect):
+    def check_fail(name, fixture, expect, persona_log=_VALID_PERSONA_LOG):
         nonlocal ok
-        fails = evaluate(fixture)
+        fails = evaluate(fixture, persona_log=persona_log)
         codes = [c for c, _ in fails]
         good = bool(fails) and expect in codes
         ok = ok and good
@@ -228,6 +292,11 @@ def self_test() -> int:
     f = _valid_runtime(); f["locked"] = False
     check_fail("brief-unlocked", f, AF_UNLOCKED)
 
+    # FIX-XC-02a — fail-closed persona grounding
+    check_fail("no-persona-log", _valid_runtime(), AF_PERSONA_LOG, persona_log=None)
+    check_fail("unregistered-persona", _valid_runtime(), AF_PERSONA_LOG,
+               persona_log="- selected_persona: not-a-real-persona-xyz\n")
+
     print("== self-test:", "ALL ASSERTIONS PASSED ==" if ok else "FAILED ==")
     return 0 if ok else 1
 
@@ -238,12 +307,15 @@ def main(argv=None) -> int:
     ap.add_argument("intake", nargs="?", default=str(DEFAULT_INTAKE),
                     help="path to the intake/brief JSON (default: intake/spa-intake.schema.json)")
     ap.add_argument("--json", action="store_true", help="machine-readable JSON output")
+    ap.add_argument("--persona-log", dest="persona_log", default=None,
+                    help="path to persona-selection-log.md (FIX-XC-02a; else resolved from the "
+                         "brief's persona_selection_log ref or a sibling persona-selection-log.md)")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run built-in VALID + VIOLATION fixtures and exit")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    return prove(args.intake, as_json=args.json)
+    return prove(args.intake, as_json=args.json, persona_log_path=args.persona_log)
 
 
 if __name__ == "__main__":
