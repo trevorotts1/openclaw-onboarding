@@ -1,5 +1,22 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.2.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **Brief-stage canonical persona resolution** (`scripts/persona_brief.py`): resolves the
+  sales-page's governing persona through the ONE shared entry point
+  `shared-utils/persona_for_job.py` (canonical 5-layer selector) at the brief stage. The resolved
+  persona id + Section-4 governance excerpt are written to `persona-selection.json` for the copy
+  prompts, and the signed **PROCESS-CERTIFICATE** now names the canonical persona
+  (`cert["persona"]`, added before signing). The A/B baked variant personas become the variant axis
+  ON TOP of the matched persona, not instead of it.
+- A brief-declared client persona choice is **FINAL** (client sovereignty).
+
+### Notes
+- Fail-soft: an unreachable selector / bare box is a clean skip and never blocks a run.
+
 ## 1.1.1 — 2026-07-05 — fix(Copy routing): baked-prompt hygiene + manifest
 
 ### FIX-COPY-04(iii) — junk baked prompts archived; runtime iterates a manifest

@@ -191,10 +191,26 @@ def _check_front_door(run_dir: Path, nonce: Optional[str], nonce_file: Optional[
     return True, supplied.strip()
 
 
+def _resolve_persona(run_dir: Path) -> None:
+    """F4.3 — resolve the funnel's canonical governing persona at the brief stage
+    (best-effort; never blocks the run). Writes persona-selection.json for the copy
+    prompts and the certificate. A bare box / unreachable selector is a clean skip."""
+    try:
+        sys.path.insert(0, str(_SCRIPTS))
+        import persona_brief
+        sel = persona_brief.resolve(run_dir)
+        if sel:
+            print(f"  [persona] {sel.get('persona_id')} ({sel.get('persona_name')}) "
+                  f"via {sel.get('source')}")
+    except Exception as exc:  # noqa: BLE001 — persona resolution must never break a funnel run
+        print(f"  [persona] best-effort skip ({exc})")
+
+
 def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     phases_attested: List[Dict] = []
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
+    _resolve_persona(run_dir)
     for order, (pid, prover, gate) in enumerate(gates):
         _mc_board_phase(run_dir, pid)  # per-phase board heartbeat (fail-soft, never a gate)
         ok, detail = gate()
@@ -240,6 +256,16 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
                      "preview_only": True,
                      "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"},
     }
+    # F4.3 — name the canonical governing persona on the signed certificate when one
+    # was resolved at the brief stage (added BEFORE signing, so it is covered by the
+    # HMAC; verify() does not reject extra keys).
+    try:
+        import persona_brief
+        _pcb = persona_brief.cert_block(run_dir)
+        if _pcb:
+            cert["persona"] = _pcb
+    except Exception:  # noqa: BLE001 — never block certification on persona surfacing
+        pass
     cert["signature"] = prove_sf_cert.sign(prove_sf_cert.canonical_payload(cert), nonce)
     (run_dir / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert, indent=2), encoding="utf-8")
 

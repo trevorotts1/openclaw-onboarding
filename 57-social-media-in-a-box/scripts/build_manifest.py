@@ -280,6 +280,26 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
     return manifest, fails
 
 
+def _canonical_persona(run_dir):
+    """The C10 adapter's resolved canonical persona for the certificate, or None
+    for the baseline (config) path. Compact shape — id, name, source, mode — read
+    from working/copy/persona-selection.json (written by persona_adapter.py)."""
+    sel = _read_json(Path(run_dir) / "working" / "copy" / "persona-selection.json")
+    if not isinstance(sel, dict) or sel.get("error"):
+        return None
+    pid = sel.get("persona_id")
+    gov = sel.get("governance_persona_id")
+    if not pid and not gov:
+        return None
+    return {
+        "persona_id": pid,
+        "persona_name": sel.get("persona_name"),
+        "persona_source": sel.get("source"),
+        "no_persona_required": bool(sel.get("no_persona_required")),
+        "governance_persona_id": gov,
+    }
+
+
 def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
     """The signed certificate's `creative` block (§6 step 6). Proves the client got
     EXACTLY what they asked for: mode, brief sha, theme source, per-band logged
@@ -290,7 +310,7 @@ def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
     brief_sha = None
     if isinstance(brief, (dict, list)):
         brief_sha = hashlib.sha256(json.dumps(brief, sort_keys=True).encode("utf-8")).hexdigest()
-    return {
+    block = {
         "mode": cre.get("mode"),
         "theme_source": cre.get("theme_source"),
         "brief_sha": brief_sha,
@@ -302,6 +322,14 @@ def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
         "arc_template": cfg.get("arcTemplate", "tv-season"),
         "style_pick": cfg.get("stylePick"),
     }
+    # F4.3 — surface the C10-adapter's resolved canonical persona on the certificate
+    # WHEN one was resolved (personaSource:adapter/client-choice). The baseline
+    # personaSource:config path writes no persona-selection.json, so this key is
+    # ABSENT there and a default week's creative block stays byte-for-byte identical.
+    cp = _canonical_persona(run_dir)
+    if cp:
+        block["canonical_persona"] = cp
+    return block
 
 
 def _write_certificate(run_dir, manifest):
