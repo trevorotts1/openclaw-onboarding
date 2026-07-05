@@ -2889,6 +2889,14 @@ async def main(args=None):
     log(f"\nPersona blueprints saved to: {PERSONAS_DIR}")
     log(f"Status file: {STATUS_FILE}")
     log(f"Full log: {LOG_FILE}")
+    # F1.2 (FDN-5): propagate an embedding failure as a distinct non-zero exit
+    # (8 = EMBED_FAILED) end-to-end, even in full-batch mode, so no wrapper can
+    # log a false success over a vector-less persona. Blueprints stay on disk;
+    # an idempotent re-run re-embeds only. Runs BEFORE the Phase-6 categories
+    # gate so an embed failure surfaces first (mirrors the single-book tail).
+    if embed_failed:
+        sys.exit(8)
+    # F1.4 (DEP-12): Phase-6 categories fail-loud gate (exit 9), after the embed gate.
     _exit_if_categories_failed()
 
 
@@ -2911,12 +2919,6 @@ def _exit_if_categories_failed() -> None:
     log("="*60)
     sys.exit(PHASE6_CATEGORIES_EXIT_CODE)
 
-    # F1.2 (FDN-5): propagate an embedding failure as a distinct non-zero exit
-    # (8 = EMBED_FAILED) end-to-end, even in full-batch mode, so no wrapper can
-    # log a false success over a vector-less persona. Blueprints stay on disk;
-    # an idempotent re-run re-embeds only.
-    if embed_failed:
-        sys.exit(8)
 
 # ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":

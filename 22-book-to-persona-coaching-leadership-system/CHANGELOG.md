@@ -48,6 +48,20 @@ fail-loud exit pattern:
   resolved the single-book `main()`-tail conflict by KEEPING BOTH fail-loud gates
   in order — Phase-5 embed (exit 8) then Phase-6 categories (exit 9);
   skill-version `v6.15.2 → v6.16.0`.
+- **Re-land onto v17.0.33 (post Wave-0):** merged latest `main`; resolved the two
+  skill-22-local conflicts (`skill-version.txt` → `v6.16.0`, CHANGELOG head).
+  Re-pinned `shared-utils/prebuilt-index/INDEX-MANIFEST.json`
+  `persona_set_md5` `e57f4150…` → `925207fd…` so the D13 provision-idempotency
+  5d/5e assertion (which hashes the schema-1.2 `persona-categories.json` against
+  the manifest pin) goes green — metadata-only, persona MEMBERSHIP unchanged at
+  81 (`persona_count`/`canonical`/`embedded` and `asset_rebuild_required:false`
+  untouched → protected-ref asset-consistency guard stays green). Also fixed a
+  full-batch `main()`-tail regression introduced by the earlier tail merge: the
+  F1.2/FDN-5 `if embed_failed: sys.exit(8)` gate had been relocated into the dead
+  tail of `_exit_if_categories_failed()` (after its unconditional `sys.exit(9)`),
+  so full-batch mode had silently lost its exit-8 embed fail-loud gate. Restored
+  it INSIDE `main()` before the Phase-6 categories gate, matching the single-book
+  ordering (embed 8 → categories 9).
 ## v6.15.3 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
 
 FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2). A client box that ran this skill on the client's OWN book had its persona DEREGISTERED and its vectors CLOBBERED at every `openclaw update`, via two compounding mechanisms in `shared-utils/provision-persona-index.sh` (the helper that reconciles this skill's `persona-categories.json` + blueprints onto client boxes):
