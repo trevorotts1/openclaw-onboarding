@@ -58,6 +58,19 @@ Legacy provider framing was rewritten to be provider-agnostic (zero Anthropic id
 A/B variants are produced by **two client models OR two persona prompts on one client model** — never an
 Anthropic/Gemini split as in the legacy engine.
 
+## 2b. Optional image Brand-Style block from a design style card (FIX-XC-02c)
+
+The image-prompt template carries an OPTIONAL Brand-Style seam. When the intake supplies
+`${INTAKE.style_card_id}` (a registered Skill 45 `FN-...` card), DIU Workflow B resolves the card and its
+**LONG tier** is embedded VERBATIM as the **Brand-Style block (block 8)** of every image prompt, ahead of
+the always-on negative directives — the same block-8 contract the Skill 6 rail
+(`ghl_image_stage._derive_copy_specs`) and Skill 49 (PROMPT 7) use, so a page and its sales-page assets
+can share ONE registered style. **Unset `style_card_id` = current behavior** (brand-color default; block 8
+is the default Brand-Style + Negative paragraph). Purely additive — the intake field is `required:false`
+and the image floor prover (`prove_sp_prompt_floor.py`) is unaffected when it is absent. The per-image
+`aspect_ratio` remains an API parameter carried on the prompt entry (FIX-IMG-03), never baked into prompt
+text.
+
 ## 3. Prior-client content — GENERALIZED
 
 The legacy main-page prompts (01, 02) embedded a real prior client's full page HTML (brand name, logo

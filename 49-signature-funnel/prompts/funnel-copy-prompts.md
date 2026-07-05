@@ -133,8 +133,19 @@ Aspect ratios: all 16:9 except **Sec 12 → 3:4** (aspect_ratio is an API parame
 Non-text sections must state "No text, no letters, no words anywhere in the image." Reference-image hook
 defaults to `mode: none` (pure text-to-image); when populated, append the style-only guard.
 
+**OPTIONAL — Brand-Style block 8 from a design style card (FIX-XC-02c):** when the intake carries a
+`style_card_id` (a registered Skill 45 `FN-…` card, Q18), resolve it via DIU Workflow B and embed the
+card's **LONG tier** VERBATIM as the Brand-Style portion of **block 8**, ahead of the always-on negative
+directives. The Signature Grade Block (block 4) is unchanged. Unset `style_card_id` = current behavior
+(brand colors carry the look; block 8 is the default Brand-Style + Negative paragraph).
+
+**Aspect-ratio pass-through (FIX-IMG-03):** each prompt-ledger record's `aspect_ratio` is carried
+VERBATIM into its `prompts.json` entry — the Skill 6 rail's `kie_generate.py` reads
+`slide.get("aspect_ratio", …)`, so **Sec 12's 3:4 (and any per-section ratio) is honored** at generation
+instead of silently defaulting to 16:9.
+
 Output JSON per prompt: `{"page_type":"…","section":N,"aspect_ratio":"16:9","text_bearing":false,"prompt":"…5,000–19,000 chars…"}`
-(for Sec 11: `"text_bearing":true,"words":["DECIDE","COMMIT","RISE"]`).
+(for Sec 11: `"text_bearing":true,"words":["DECIDE","COMMIT","RISE"]`; Sec 12: `"aspect_ratio":"3:4"`).
 
 Then generation is DELEGATED to Skill 47 `kie_image.py`; media folder + upload and the GHL build are
 DELEGATED to Skill 6. This skill never hand-rolls a Kie call or a GHL REST call (the entry shell's

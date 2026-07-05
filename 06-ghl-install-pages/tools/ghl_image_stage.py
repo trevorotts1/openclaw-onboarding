@@ -420,10 +420,176 @@ def _brand_grade_block(brand_colors: list[str]) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# FIX-XC-02c — DIU style-card resolution (Skill 45 design-intelligence-library)
+#
+# When a ``page_spec`` carries an OPTIONAL ``style_card_id`` (e.g. "FN-003"), the
+# image pipeline resolves that card via DIU Workflow B (Skill 45 MASTER-SOP §7):
+# look the id up in the library ``INDEX.md``, open the registered card file, and
+# lift its LONG-tier prompt text.  That text is embedded VERBATIM as the
+# Brand-Style portion of block 8 in every derived section prompt so a registered
+# funnel / landing / website style governs the page's imagery.  Unset ==> exact
+# current behavior (purely additive).
+#
+# Resolution is FAIL-LOUD: an id that is set but cannot be resolved (no library,
+# not registered in INDEX, missing card file, or no LONG tier) raises
+# ``ImagePipelineError`` rather than silently dropping the operator's requested
+# brand style — a dropped style card would ship off-brand art (honest-fail).
+# ---------------------------------------------------------------------------
+
+_DIU_LIBRARY_ENV = "DIU_LIBRARY_DIR"
+
+# Candidate ``library/`` locations, tried in order; the first with an INDEX.md
+# wins.  Repo layout: tools/ -> 06-ghl-install-pages/ -> repo root -> 45-.../library.
+_DIU_LIBRARY_RELCANDIDATES = (
+    os.path.join("..", "..", "45-design-intelligence-library", "library"),
+)
+_DIU_LIBRARY_HOMECANDIDATES = (
+    "~/.openclaw/skills/45-design-intelligence-library/library",
+    "~/.openclaw/onboarding/45-design-intelligence-library/library",
+)
+
+
+def _diu_library_dir() -> Path | None:
+    """Resolve Skill 45's ``library/`` dir, or None when the library is absent.
+
+    Honors the ``DIU_LIBRARY_DIR`` env override (must itself contain INDEX.md),
+    then the sibling-skill repo path, then the materialized ``~/.openclaw`` paths.
+    """
+    override = os.environ.get(_DIU_LIBRARY_ENV, "").strip()
+    if override:
+        p = Path(os.path.expanduser(override))
+        return p if (p / "INDEX.md").is_file() else None
+    for rel in _DIU_LIBRARY_RELCANDIDATES:
+        p = Path(os.path.join(_TOOLS_DIR, rel))
+        if (p / "INDEX.md").is_file():
+            return p.resolve()
+    for home_rel in _DIU_LIBRARY_HOMECANDIDATES:
+        p = Path(os.path.expanduser(home_rel))
+        if (p / "INDEX.md").is_file():
+            return p
+    return None
+
+
+def _diu_index_lookup(index_path: Path, card_id: str) -> str | None:
+    """Return the File-Path cell for ``card_id`` from a markdown INDEX.md, else None.
+
+    Scans every table row; a row matches when any cell equals ``card_id`` exactly
+    (case-insensitive).  The card file path is the row's last non-empty cell — the
+    INDEX contract puts File Path last in every category table."""
+    target = card_id.strip().lower()
+    if not target:
+        return None
+    for line in index_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not any(c.lower() == target for c in cells):
+            continue
+        for cell in reversed(cells):
+            if cell and cell not in ("-",):
+                # strip a markdown link wrapper [text](path) -> path
+                if cell.startswith("[") and "](" in cell and cell.endswith(")"):
+                    cell = cell.split("](", 1)[1][:-1].strip()
+                return cell
+        return None
+    return None
+
+
+def _diu_resolve_card_path(lib: Path, rel: str) -> Path | None:
+    """Resolve a card File-Path cell to an on-disk file under the library.
+
+    The INDEX documents paths as "relative from design-library/"; the on-disk
+    root is ``library/``.  We try the path as-is under ``library/``, under its
+    parent, and with a leading ``design-library/`` or ``library/`` prefix stripped."""
+    rel = rel.strip().lstrip("/")
+    rel_stripped = rel
+    for pref in ("design-library/", "library/"):
+        if rel_stripped.startswith(pref):
+            rel_stripped = rel_stripped[len(pref):]
+            break
+    for base, r in ((lib, rel_stripped), (lib, rel), (lib.parent, rel)):
+        p = base / r
+        if p.is_file():
+            return p
+    return None
+
+
+def _diu_extract_long_tier(card_text: str) -> str | None:
+    """Lift the LONG-tier prompt text from a style-card markdown body.
+
+    Finds the ``### LONG`` heading, collects lines until the next markdown
+    heading, and returns the first fenced code block's inner text when present
+    (the STYLE-CARD-TEMPLATE fences each tier), else the raw section text."""
+    lines = card_text.splitlines()
+    start = None
+    for idx, ln in enumerate(lines):
+        if ln.lstrip().startswith("### LONG"):
+            start = idx + 1
+            break
+    if start is None:
+        return None
+    section: list[str] = []
+    for ln in lines[start:]:
+        s = ln.lstrip()
+        if s.startswith("### ") or s.startswith("## "):
+            break
+        section.append(ln)
+    body = "\n".join(section)
+    if "```" in body:
+        parts = body.split("```")
+        if len(parts) >= 3 and parts[1].strip():
+            return parts[1].strip()
+    stripped = body.strip()
+    return stripped or None
+
+
+def _resolve_style_card_block(style_card_id: str) -> str:
+    """Resolve ``style_card_id`` to its LONG-tier prompt text (DIU Workflow B).
+
+    Returns the LONG-tier text on success.  Raises ``ImagePipelineError`` when the
+    id is set but cannot be resolved — a requested brand style is NEVER silently
+    dropped.  Never called with a blank id (the caller guards that)."""
+    cid = str(style_card_id or "").strip()
+    if not cid:
+        return ""
+    lib = _diu_library_dir()
+    if lib is None:
+        raise ImagePipelineError(
+            f"style_card_id={cid!r} was requested but the Skill 45 design library "
+            f"could not be located (set {_DIU_LIBRARY_ENV} or install "
+            "45-design-intelligence-library). Refusing to ship off-brand imagery by "
+            "silently dropping the requested style card."
+        )
+    rel = _diu_index_lookup(lib / "INDEX.md", cid)
+    if not rel:
+        raise ImagePipelineError(
+            f"style_card_id={cid!r} is not registered in the design library "
+            f"INDEX.md ({lib / 'INDEX.md'}). Register the card (DIU Workflow A) "
+            "before referencing it from a page spec."
+        )
+    card_path = _diu_resolve_card_path(lib, rel)
+    if card_path is None:
+        raise ImagePipelineError(
+            f"style_card_id={cid!r} resolves to card path {rel!r} in INDEX.md, but "
+            f"no such file exists under the design library at {lib}."
+        )
+    long_tier = _diu_extract_long_tier(card_path.read_text(encoding="utf-8"))
+    if not long_tier:
+        raise ImagePipelineError(
+            f"style_card_id={cid!r} card {card_path.name} carries no LONG-tier prompt "
+            "text (a '### LONG' section). A funnel/website style card must ship a LONG "
+            "tier to feed the Brand-Style block."
+        )
+    return long_tier
+
+
 def _build_section_prompt(
     page_name: str,
     section: dict,
     brand_colors: list[str],
+    style_card_text: str = "",
 ) -> tuple[str, bool]:
     """Build one 8-block image prompt for a page section.
 
@@ -431,7 +597,11 @@ def _build_section_prompt(
     1 Subject & Wardrobe · 2 Composition & Shot · 3 Typography (text-bearing only)
     · 4 Signature/Brand Grade Block · 5 Lighting · 6 Quality & Render · 7 Facial
     Intelligence · 8 Brand-Style + Negative Block. The Grade Block is templated from
-    the client brand colors. The prompt is written to clear PROMPT_CHAR_FLOOR."""
+    the client brand colors. The prompt is written to clear PROMPT_CHAR_FLOOR.
+
+    FIX-XC-02c: when ``style_card_text`` is supplied (a resolved DIU LONG-tier
+    style card), it is embedded VERBATIM as the Brand-Style portion of block 8,
+    ahead of the always-on negative directives; empty ==> the default block 8."""
     heading = str(section.get("heading") or section.get("title") or "").strip()
     body = str(section.get("copy") or section.get("body") or section.get("text") or "").strip()
     role = str(section.get("role") or section.get("type") or "content").strip() or "content"
@@ -483,13 +653,21 @@ def _build_section_prompt(
         "symmetrical, and emotionally engaged, with authentic expression, realistic "
         "eyes and skin texture, and melanin-true tones; never uncanny, never distorted."
     )
-    negative = (
-        "Block 8 — Brand-Style and Negative Block: Keep the whole frame consistent "
-        "with a premium, trustworthy brand. Do not include: distorted anatomy, extra "
-        "or missing fingers, warped faces, garbled or misspelled text, logos of other "
-        "brands, low-resolution blur, heavy noise, watermark stamps, or stock-photo "
-        "cheesiness."
+    _negative_directives = (
+        "Keep the whole frame consistent with a premium, trustworthy brand. Do not "
+        "include: distorted anatomy, extra or missing fingers, warped faces, garbled "
+        "or misspelled text, logos of other brands, low-resolution blur, heavy noise, "
+        "watermark stamps, or stock-photo cheesiness."
     )
+    if style_card_text.strip():
+        # FIX-XC-02c: a resolved DIU LONG-tier style card leads block 8's Brand-Style
+        # direction; the always-on negative directives still close the block.
+        negative = (
+            "Block 8 — Brand-Style and Negative Block: " + style_card_text.strip()
+            + " " + _negative_directives
+        )
+    else:
+        negative = "Block 8 — Brand-Style and Negative Block: " + _negative_directives
 
     prompt = "\n\n".join([
         subject, composition, typography, grade, lighting, quality, facial, negative,
@@ -513,6 +691,14 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
       given.
     * ``page_id``: the GoHighLevel page id (for ``used_on_page_id``).
     * ``name``: the page name / title (used in the derived prompt and id).
+    * ``style_card_id``: OPTIONAL (FIX-XC-02c). When set, the DIU style card's
+      LONG tier is resolved (fail-loud) and embedded as block 8's Brand-Style
+      direction in every prompt; unset ==> exact current behavior.
+
+    Per-image (explicit) and per-section entries may carry an OPTIONAL
+    ``aspect_ratio`` / ``resolution`` (FIX-IMG-03); when present these are carried
+    onto the spec so ``build_prompts_json`` -> ``kie_generate.py`` renders that
+    ratio (e.g. a 3:4 portrait) instead of the hardcoded 16:9 default.
 
     Every derived spec uses ``mode='t2i'`` explicitly (a fictional brand has no
     logo; ``i2i`` is NEVER emitted here).  No ``i2i`` spec is ever emitted
@@ -526,6 +712,19 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
     page_id = str(page_spec.get("page_id") or page_spec.get("id") or "").strip()
     page_name = str(page_spec.get("name") or page_spec.get("title") or "page").strip()
 
+    # FIX-XC-02c: resolve an OPTIONAL DIU style card ONCE, up front, so a
+    # set-but-unresolvable id fails loud regardless of which branch below runs.
+    style_card_id = str(page_spec.get("style_card_id") or "").strip()
+    style_card_text = _resolve_style_card_block(style_card_id) if style_card_id else ""
+
+    def _carry_ratio(dst: dict, src: dict) -> None:
+        """FIX-IMG-03: copy an optional aspect_ratio / resolution from src->dst."""
+        for _rk in ("aspect_ratio", "resolution"):
+            if src.get(_rk) is not None:
+                _rv = str(src.get(_rk)).strip()
+                if _rv:
+                    dst[_rk] = _rv
+
     # 1) Explicit images list — use directly (add explicit mode='t2i').
     explicit = page_spec.get("images")
     if isinstance(explicit, list) and explicit:
@@ -537,6 +736,13 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
             prompt = str(entry.get("prompt") or "").strip()
             if not sid or not prompt:
                 continue
+            # FIX-XC-02c: an operator-supplied style card also governs pre-authored
+            # explicit prompts — append its Brand-Style direction as an extra block.
+            if style_card_text.strip():
+                prompt = (
+                    prompt + "\n\nBlock 8 — Brand-Style (style card "
+                    + style_card_id + "): " + style_card_text.strip()
+                )
             spec: dict[str, Any] = {
                 "id": sid,
                 "prompt": prompt,
@@ -548,6 +754,7 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
                 spec["used_on_page_id"] = page_id
             if "locator" in entry:
                 spec["locator"] = entry["locator"]
+            _carry_ratio(spec, entry)
             specs.append(spec)
         if specs:
             return specs
@@ -598,7 +805,9 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
         slide_id = candidate
         used_ids.add(slide_id)
 
-        prompt, text_bearing = _build_section_prompt(page_name, section, brand_colors)
+        prompt, text_bearing = _build_section_prompt(
+            page_name, section, brand_colors, style_card_text=style_card_text
+        )
         alt = str(section.get("alt") or section.get("heading") or section.get("title")
                   or f"{page_name} {role or 'section'} image").strip()
 
@@ -613,6 +822,7 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
             spec["used_on_page_id"] = page_id
         if isinstance(section.get("locator"), dict):
             spec["locator"] = section["locator"]
+        _carry_ratio(spec, section)
         specs.append(spec)
 
     return specs

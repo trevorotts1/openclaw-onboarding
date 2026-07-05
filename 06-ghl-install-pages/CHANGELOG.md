@@ -4,6 +4,40 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v17.0.34] - 2026-07-05 — feat(image rail): DIU style-card block 8 + optional per-entry aspect_ratio (T-w1-06-ghl-rail)
+
+Wave-1 train T-w1-06-ghl-rail — FIX-XC-02c, FIX-XC-05c, FIX-IMG-03. All additive; unset inputs
+reproduce prior behavior byte-for-byte.
+
+### FIX-XC-02c — optional DIU style card governs the page's imagery (Brand-Style block 8)
+- `tools/ghl_image_stage.py`: a `page_spec` may now carry an OPTIONAL `style_card_id` (a registered
+  Skill 45 `FN-…` card). New `_resolve_style_card_block()` resolves it via DIU Workflow B — INDEX.md
+  lookup → card file → `### LONG` tier — and embeds that text VERBATIM as the Brand-Style portion of
+  **block 8** in every derived section prompt (and appends it to explicit pre-authored prompts). The
+  block-4 Signature Grade Block is unchanged. Resolution is FAIL-LOUD: a set-but-unresolvable id
+  (no library / not registered / missing card / no LONG tier) raises `ImagePipelineError` rather than
+  silently shipping off-brand art. Library located via `DIU_LIBRARY_DIR` override or sibling/`~/.openclaw`
+  candidates. Unset `style_card_id` ⇒ exact prior behavior.
+- Cross-skill (additive data/doc): Skill 45 `library/INDEX.md` gains the `FN-` funnel/landing/website
+  category + prefix and a new `library/funnel-page-designs/_RULES.md`; Skill 49 intake gains optional
+  Q18 `q18_style_card_id` + PROMPT 7 / MASTERDOC §4 block-8 notes; Skill 56 intake schema gains optional
+  `style_card_id` + a PROMPT-SEAMS image Brand-Style seam.
+
+### FIX-IMG-03 — per-entry aspect_ratio / resolution (no more silently-forced 16:9)
+- `tools/ghl_media.py::build_prompts_json`: carries an OPTIONAL per-spec `aspect_ratio` / `resolution`
+  straight through into `prompts.json`. `presentation-render/kie_generate.py` (the REUSED generator) now
+  reads `slide.get("aspect_ratio", ASPECT_RATIO)` / `slide.get("resolution", RESOLUTION)` — a section's
+  mandated ratio (e.g. 49 Section 12 → 3:4) is honored; entries without the keys render exactly as before.
+
+### FIX-XC-05c — Skill-6 rail contract parity test
+- New `tests/test_cc_rail_contract.py`: mirrors `test_cc_contract.py` for the rail's `cc_board.py`
+  (producer terminates at `review`, `done` hard-blocked on both `move_task`/`update_status`, enum parity,
+  deterministic ingest routing, disabled-board no-op) **plus** the front-door/nonce entry discipline of
+  `ghl_gate.py` (a hand-written / wrong-writer / nonce-less / MOCK / missing-evidence verdict can never
+  pass the gate; only a real writer+nonce+consistent PASS returns 0). 17 tests, stdlib+pytest, zero network.
+
+---
+
 ## [v17.0.29] - 2026-07-05 - test(fab-qc): re-author passing-path fixtures for the new lengthClass floors (T-funnel-copy-engine)
 
 - **FIX-XC-04a (consumer)** — `tests/test_v2_dispatcher.py`: the shared `shared-utils/fab_qc.py` D2
