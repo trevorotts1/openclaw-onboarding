@@ -287,8 +287,10 @@ store, or its own UI.
 Emit a card / status update at these moments:
 
 - **Install start** — open/append a card: "GHL MCP setup — started (box, platform)".
-- **Install complete** — move that card to done with the QC result (e.g. "qc-ghl-mcp-setup.sh
-  exit 0; Tier 1 >=36 tools, Tier 2 >=500 on-demand").
+- **Install complete** — move that card to **review** (NEVER straight to done) with the QC
+  result (e.g. "certified — awaiting QC promotion; qc-ghl-mcp-setup.sh exit 0; Tier 1 >=36
+  tools, Tier 2 >=500 on-demand"). A producer never self-promotes to done: the independent
+  auto-scorer is the ONLY authority that moves a card review->done.
 - **Tier incident — 429 lockout** — status card: "GHL rate-limit lockout; daily reset ~HH:MM
   ET; all tiers share one bucket — paused" (matches the Rate-Limit Protocol above).
 - **Tier incident — missing credential** — status card: "GHL blocked: missing PIT / Location

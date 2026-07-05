@@ -127,6 +127,7 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
     for order, (pid, prover, gate) in enumerate(gates):
+        _mc_board_phase(run_dir, pid)  # per-phase board heartbeat (fail-soft, never a gate)
         ok, detail = gate()
         status = "pass" if ok else "fail"
         print(f"  [{status.upper():4s}] {pid:12s} ({prover}) :: {detail}")
@@ -278,10 +279,40 @@ def _mc_board_begin(run_dir: Path) -> Optional[str]:
         return None
 
 
-def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+def _mc_board_phase(run_dir: Path, phase_id: str) -> None:
+    """Per-phase board heartbeat: advance this run's card to (phase_id, in_progress).
+    FAIL-SOFT — the board is a VIEW, never a gate; any failure is swallowed."""
     try:
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+        mc_board.card_advance(run_dir, phase_id=phase_id, status="in_progress",
+                              note=f"phase {phase_id} running")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print(f"[mc_board] phase {phase_id} best-effort skip ({exc})", file=sys.stderr)
+
+
+def _mc_deliverable_url(run_dir: Path) -> str:
+    """Best-effort deliverable link to register on the card: the first http(s) URL
+    found in the run's media ledger. Empty string when none — never raises."""
+    try:
+        led = run_dir / "media_ledger.json"
+        if led.exists():
+            import re
+            m = re.search(r"https?://[^\s\"']+", led.read_text(encoding="utf-8"))
+            if m:
+                return m.group(0)
+    except Exception:  # noqa: BLE001 — deliverable link is best-effort only.
+        pass
+    return ""
+
+
+def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+    """Terminal producer move: card -> REVIEW (never done). review->done is owned by
+    the independent QC scorer. The deliverable link is registered on the card."""
+    try:
+        import mc_board
+        mc_board.complete_run(run_dir, task_id,
+                              note="certified — awaiting QC promotion",
+                              deliverable_url=_mc_deliverable_url(run_dir))
     except Exception as exc:  # noqa: BLE001
         print(f"[mc_board] done best-effort skip ({exc})", file=sys.stderr)
 
