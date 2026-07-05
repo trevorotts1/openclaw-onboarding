@@ -23,19 +23,19 @@ Here is the information you need to write the page:
 
 Avatar Info (who this page is for):
 [
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
 ]
 
 Brand Info:
 [
-{{artifact.upstream}}
+{{artifact.16-brand-bio}}
 ]
 
 Product Info:
 [
-Product Bio [ {{artifact.upstream}} ]
+Product Bio [ {{artifact.17-product-bio}} ]
 
 Product Name [ {{intake.offer_name}} ]
 
@@ -50,7 +50,7 @@ Supporting research (the 9-question landing-page questionnaire answers — use t
 MATERIAL for the pain points, benefits, and story; do NOT reproduce them question-by-question,
 this stage's output is the 12-section hero page, not the questionnaire):
 [
-{{artifact.upstream}}
+{{artifact.38-landing-questionnaire}}
 ]
 
 Founder's Name [ {{intake.first_name}} {{intake.last_name}} ]

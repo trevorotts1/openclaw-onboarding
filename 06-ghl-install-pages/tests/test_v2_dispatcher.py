@@ -703,3 +703,84 @@ class TestIntakeExecutorWiring:
         assert result.get("think_model_receipt") is not None, (
             "think_model_receipt must be set when the branch runs with a stub executor"
         )
+
+
+# ── FIX-COPY-01: copy-dependency routing (write-it-for-me page/website) ───────
+
+class TestCopyDependency:
+    """A "write it for me" page/website with no APPROVED copy.md must be HELD on a
+    P2-COPY dependency (never improvised inline by the build session model)."""
+
+    def _tracking_builder(self, calls):
+        def _b(task, evidence_root):
+            calls.append("built")
+            os.makedirs(os.path.join(evidence_root, "funnel"), exist_ok=True)
+            return {"pages": [{"step": "optin", "preview_url": "u", "marker": "m"}],
+                    "location_gate_ok": True, "duration_s": 5.0}
+        return _b
+
+    def test_write_it_for_me_page_is_held_waiting(self, tmp_path):
+        calls = []
+        task = {"id": "pageWRITE", "brand": "Fictional Soap Co",
+                "location_id": "LOCATIONfake0000",
+                "brief": "build me a landing page for a webinar",
+                "has_copy": "write it for me"}
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_WAITING, \
+            "a write-it-for-me page with no APPROVED copy.md must be held waiting_on_dependency"
+        assert not bool(res), "a held task is not a shippable (truthy) result"
+        assert calls == [], "the builder must NOT run while copy.md is unapproved"
+        # The dependency receipt + task flag are written.
+        dep_path = os.path.join(str(tmp_path), "routing", "copy-dependency.json")
+        assert os.path.isfile(dep_path), "routing/copy-dependency.json must be written"
+        with open(dep_path) as f:
+            dep = json.load(f)
+        assert dep["owning_department"] == "marketing"
+        assert dep["mini_epic"] == ["p1-spec", "p2-copy", "p4-build"]
+
+    def test_write_it_for_me_page_proceeds_when_copy_approved(self, tmp_path):
+        calls = []
+        # An APPROVED copy.md present under the run dir clears the dependency.
+        os.makedirs(os.path.join(str(tmp_path), "working", "copy"), exist_ok=True)
+        with open(os.path.join(str(tmp_path), "working", "copy", "copy.md"), "w") as f:
+            f.write("# Copy\nstatus: APPROVED\n\nHero headline...\n")
+        task = {"id": "pageAPPROVED", "brand": "Fictional Soap Co",
+                "location_id": "LOCATIONfake0000",
+                "brief": "build me a landing page for a webinar",
+                "has_copy": "write it for me"}
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED, \
+            "with an APPROVED copy.md the page build proceeds normally"
+        assert calls == ["built"], "the builder must run once copy.md is APPROVED"
+
+    def test_have_copy_page_proceeds(self, tmp_path):
+        calls = []
+        task = {"id": "pageHAVE", "brand": "Fictional Soap Co",
+                "location_id": "LOCATIONfake0000",
+                "brief": "build me a landing page",
+                "has_copy": "I have copy"}
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED, \
+            "'I have copy' has no copywriter dependency — the build proceeds"
+        assert calls == ["built"]
+
+    def test_funnel_never_triggers_copy_dependency(self, tmp_path):
+        # Funnels carry copy through the P0–P2 pipeline; the has_copy question is
+        # page-only, so a funnel build is never held by this gate.
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="funnelNODEP"), str(tmp_path),
+            builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED
+        assert calls == ["built"]

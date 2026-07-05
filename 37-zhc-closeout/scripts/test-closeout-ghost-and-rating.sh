@@ -207,22 +207,61 @@ fi
 printf '\n=== BUG B: deterministic rate+release (never silent null) ===\n'
 
 # ---------------------------------------------------------------------
-# B1: flow_diagram artifact present (remote https URL). Rater must RELEASE it:
-#     write a real rating with qc=pass and score >= 8.5 — not leave it null.
+# B1: flow_diagram artifact present (remote https URL) that is REACHABLE
+#     (FIX-S36-04: HEAD 200 + image/* + Content-Length>10KB). Rater must RELEASE
+#     it: a real rating with qc=pass and score >= 8.5 — not leave it null.
+#     Reachability is mocked via ZHC_ASSET_HEAD_CMD so the test is hermetic.
 # ---------------------------------------------------------------------
 tmpD=$(mktemp -d)
 stateD="$tmpD/state.json"
 cat > "$stateD" <<'JSON'
 { "infographic2Url": "https://kie.ai/flow-diagram.png" }
 JSON
-ZHC_STATE_FILE="$stateD" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key flow_diagram --state "$stateD" >/dev/null 2>&1 || true
+ZHC_ASSET_HEAD_CMD='printf "HTTP/2 200\r\nContent-Type: image/png\r\nContent-Length: 48213\r\n\r\n"' \
+  ZHC_STATE_FILE="$stateD" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key flow_diagram --state "$stateD" >/dev/null 2>&1 || true
 scoreD=$(jq -r '.qualityRatings.flow_diagram.score // "null"' "$stateD")
 qcD=$(jq -r '.qualityRatings.flow_diagram.qc // "null"' "$stateD")
 info "B1 flow_diagram score=$scoreD qc=$qcD"
 if [[ "$scoreD" != "null" ]] && awk -v s="$scoreD" 'BEGIN{exit !(s+0>=8.5)}' && [[ "$qcD" == "pass" ]]; then
-  pass "B1: present artifact RATED + RELEASED (score=$scoreD>=8.5, qc=pass) -- not silent null"
+  pass "B1: REACHABLE remote artifact RATED + RELEASED (score=$scoreD>=8.5, qc=pass) -- not silent null"
 else
-  fail "B1: artifact NOT released (score=$scoreD qc=$qcD)"
+  fail "B1: reachable artifact NOT released (score=$scoreD qc=$qcD)"
+fi
+
+# ---------------------------------------------------------------------
+# B1b (FIX-S36-04): a 404'd / expired remote URL must be HELD, not passed.
+#     Before the fix any well-formed URL scored 8.7/pass with zero reachability.
+# ---------------------------------------------------------------------
+tmpD2=$(mktemp -d)
+stateD2="$tmpD2/state.json"
+echo '{ "infographic2Url": "https://kie.ai/expired.png" }' > "$stateD2"
+ZHC_ASSET_HEAD_CMD='printf "HTTP/2 404\r\nContent-Type: text/html\r\nContent-Length: 27\r\n\r\n"' \
+  ZHC_STATE_FILE="$stateD2" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key flow_diagram --state "$stateD2" >/dev/null 2>&1 || true
+scoreD2=$(jq -r '.qualityRatings.flow_diagram.score // "null"' "$stateD2")
+qcD2=$(jq -r '.qualityRatings.flow_diagram.qc // "null"' "$stateD2")
+info "B1b flow_diagram(404) score=$scoreD2 qc=$qcD2"
+if [[ "$scoreD2" != "null" && "$qcD2" == "fail" ]] && awk -v s="$scoreD2" 'BEGIN{exit !(s+0<8.5)}'; then
+  pass "B1b: 404'd remote URL HELD (score=$scoreD2<8.5, qc=fail) -- dead link cannot self-pass"
+else
+  fail "B1b: 404'd remote URL not held (score=$scoreD2 qc=$qcD2)"
+fi
+
+# ---------------------------------------------------------------------
+# B1c (FIX-S36-03): celebration_video rater. A reachable remote video HEAD
+#     (200 + video/* + size) RELEASES; a missing video FAILS loud.
+# ---------------------------------------------------------------------
+tmpD3=$(mktemp -d)
+stateD3="$tmpD3/state.json"
+echo '{ "celebrationVideoUrl": "https://kie.ai/celebration.mp4" }' > "$stateD3"
+ZHC_ASSET_HEAD_CMD='printf "HTTP/2 200\r\nContent-Type: video/mp4\r\nContent-Length: 812345\r\n\r\n"' \
+  ZHC_STATE_FILE="$stateD3" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key celebration_video --state "$stateD3" >/dev/null 2>&1 || true
+scoreV=$(jq -r '.qualityRatings.celebration_video.score // "null"' "$stateD3")
+qcV=$(jq -r '.qualityRatings.celebration_video.qc // "null"' "$stateD3")
+info "B1c celebration_video score=$scoreV qc=$qcV"
+if [[ "$scoreV" != "null" ]] && awk -v s="$scoreV" 'BEGIN{exit !(s+0>=8.5)}' && [[ "$qcV" == "pass" ]]; then
+  pass "B1c: reachable celebration video RATED + RELEASED (score=$scoreV>=8.5, qc=pass)"
+else
+  fail "B1c: reachable celebration video not released (score=$scoreV qc=$qcV)"
 fi
 
 # ---------------------------------------------------------------------

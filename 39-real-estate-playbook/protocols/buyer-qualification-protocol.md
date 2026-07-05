@@ -29,7 +29,7 @@ investment," ALSO tag `ZHC-investor-lead` and switch to investor questions
 
 ## Honest-data rule
 When the buyer asks about a specific property (price, comps, days-on-market),
-use `scripts/03-property-lookup.sh`. If the relevant capability is an HONEST GAP,
+use `scripts/property-lookup.sh`. If the relevant capability is an HONEST GAP,
 say so — do NOT invent a number.
 
 ## Routing + logging

@@ -1,8 +1,14 @@
 # PROMPT SEAMS — Skill 56 baked prompts (credential + intake neutralization)
 
-The 14 legacy "Sales Page Writer" prompts (Airtable-sourced) are baked into `prompts/baked/` as
+The legacy "Sales Page Writer" prompts (Airtable-sourced) are baked into `prompts/baked/` as
 **provider-agnostic** artifacts. This file documents every seam that was neutralized so the shipped
 prompts carry **zero secrets, zero Anthropic ids, and zero prior-client content**.
+
+**Runtime set = 12 active prompts (FIX-COPY-04(iii)).** Of the 14 legacy extracts, **12 ship as active
+runtime prompts** and **2 legacy stubs** (`13-test-prompt-airtable-mcp-demo.md`, `14-empty-record.md`)
+were **archived** to `prompts/baked/_archive/` — they were never real generation prompts (an Airtable
+MCP test stub and an empty record). The runtime iterates **`prompts/baked/_index.json`** (the canonical
+ordered manifest), never a directory glob, so a stray/junk `.md` is never silently picked up.
 
 ## 1. The three legacy secrets — NEUTRALIZED to env placeholders (`secrets_scrubbed = 3`)
 
@@ -67,7 +73,9 @@ to the fleet-clean intake contract (`intake/spa-intake.schema.json`):
 
 Airtable `rec…`/`app…`/`tbl…` ids and the "Source: base … table …" provenance lines were dropped.
 
-## 5. The 14 baked prompts
+## 5. The baked prompts (12 active + 2 archived)
+
+The runtime set is the 12 active prompts below, in `prompts/baked/_index.json` order:
 
 | File | Asset | Prover that gates its output |
 |---|---|---|
@@ -83,8 +91,14 @@ Airtable `rec…`/`app…`/`tbl…` ids and the "Source: base … table …" pro
 | `10-high-ticket-page-c-prompt.md` | high-ticket C | `prove_sp_highticket_band.py` |
 | `11-hight-ticket-product-overview-prompt.md` | high-ticket product overview | — |
 | `12-high-ticket-product-ad-copy-prompt.md` | high-ticket ad copy | — |
-| `13-test-prompt-airtable-mcp-demo.md` | legacy test stub (kept for parity) | — |
-| `14-empty-record.md` | legacy empty record (kept for parity) | — |
 
-All 14 verified clean: zero `api.anthropic.com` / `claude-*` / `Gemini` / `OpenAI` / `gpt-image-1` ids,
-zero `ibb.co` / Drive URLs, zero Airtable/webhook infra ids, zero prior-client tokens, zero secrets.
+**Archived (not in the runtime set)** — moved to `prompts/baked/_archive/`:
+
+| File | Why archived |
+|---|---|
+| `_archive/13-test-prompt-airtable-mcp-demo.md` | legacy Airtable MCP test stub — never a real generation prompt |
+| `_archive/14-empty-record.md` | legacy empty Airtable record — never a real generation prompt |
+
+All (12 active + 2 archived) verified clean: zero `api.anthropic.com` / `claude-*` / `Gemini` /
+`OpenAI` / `gpt-image-1` ids, zero `ibb.co` / Drive URLs, zero Airtable/webhook infra ids, zero
+prior-client tokens, zero secrets.

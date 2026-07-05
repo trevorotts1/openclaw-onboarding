@@ -4,7 +4,7 @@ Three integration surfaces. Everything below is FLEXIBLE: a template/sequence is
 and a RESOURCE, never a rule. `imposes_on_user` is always `false`; `override_allowed` is
 always `true`; the matcher NEVER blocks a build.
 
-## Artifacts (working copies in this scratchpad)
+## Artifacts (shipped skill files — paths are relative to the skill root)
 - `automation-templates/_matcher/flex.py` — shared intent-mode + decision core.
 - `automation-templates/_matcher/automation_matcher.py` — Skill-44 flexible matcher
   (`match_automation`, `step0_match`, `expand_funnel_to_automations`, `save_new_template`).

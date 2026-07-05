@@ -8,9 +8,9 @@
 
 Using the following informatiion to create my booking bot instructions
 
-Here is the original booking bot instructions that I used to create the appointment with the client: [{{artifact.upstream}}]
+Here is the original booking bot instructions that I used to create the appointment with the client: [{{artifact.19-booking-bot}}]
 
-Here is the ai bot prep doc that i have created to help you create my booking bot instructions [{{artifact.upstream}}]
+Here is the ai bot prep doc that i have created to help you create my booking bot instructions [{{artifact.18-bot-prep}}]
 
 Fonders Name [  {{intake.first_name}}  {{intake.last_name}}]
 
@@ -20,8 +20,8 @@ Brand Orgin  [  {{intake.brand_why}} ]
 
 Brand Info [{{intake.brand_info}}   ]
 
-Who this brand is for [ {{artifact.upstream}}
-{{artifact.upstream}} ]
+Who this brand is for [ {{artifact.03-rewrite-avatar}}
+{{artifact.01-avatar-questions-1-30}} ]
 
 
 The product we are offering, its benefits, info on it, and this is what we will be  booking an appointment around:
@@ -40,17 +40,17 @@ Product info [{{intake.product_info}}]
 ]
 
 
-Tone (this is the specific instruction your are to to tell the bot to write in use it verbatim do not truncate it) [{{artifact.upstream}}]
+Tone (this is the specific instruction your are to to tell the bot to write in use it verbatim do not truncate it) [{{artifact.08-blended-tone}}]
 
 Avatar info you should consider when writing about who we do serve:
  [
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 
 ]
 
 Here is the brand bio so you understand what we do:
-[{{artifact.upstream}}]
+[{{artifact.16-brand-bio}}]
 
 
 

@@ -51,6 +51,8 @@
 # presentation build cannot be declared complete with a broken pipeline. The check
 # runs BEFORE the workforce resolution so it fires even on a not-yet-built company.
 # Set QC_SKIP_PRESENTATION_DEPS=1 to bypass (e.g. a non-presentation install).
+# FIX-PRES-01 (mirror): a honored bypass is NEVER silent — it is logged as a
+# DEP_GATE_BYPASSED audit line and written into the JSON artifact.
 
 set -uo pipefail
 
@@ -120,6 +122,14 @@ if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
     exit 6
   fi
   log "presentation deps OK: soffice + pdftoppm + reportlab + python-pptx all present"
+else
+  # FIX-PRES-01 (mirror): the presentation-deps bypass is honored here (this is a
+  # fleet-wide read-only QC gate — a non-presentation install legitimately skips
+  # it), but it must NEVER be silent. Record a loud, audited dep_gate_bypassed
+  # line in both the log and the JSON artifact so an operator can always see that
+  # the deps gate was skipped and why.
+  log "DEP_GATE_BYPASSED: QC_SKIP_PRESENTATION_DEPS=1 — presentation-deps hard gate skipped (non-presentation install / explicit bypass). This is recorded, not silent."
+  printf '{"status":"DEP_GATE_BYPASSED","ts":"%s","gate":"PRESENTATION_DEPS_MISSING","via":"env:QC_SKIP_PRESENTATION_DEPS"}\n' "$TS" > "$JSON_FILE"
 fi
 
 # ----- Resolve active company via vendored detect_platform -----

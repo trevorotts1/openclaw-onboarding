@@ -30,7 +30,9 @@ else
   exit 0
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# FIX-XC-10a: honor ZHC_STATE_FILE so a test run never reads the LIVE client
+# state (this script can send a REAL operator summary message off it).
+STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

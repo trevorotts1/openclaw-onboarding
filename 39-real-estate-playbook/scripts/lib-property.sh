@@ -10,12 +10,16 @@
 # provider, and qc-no-fabrication.sh which machine-enforces this floor.
 #
 # Subcommands:
-#   geocode "<raw address>"     -> normalize + geocode (keyless US Census first)
-#   lookup "<normalized addr>"  -> property record (provider-gated)
-#   comps "<normalized addr>"   -> comparable sales (provider-gated)
-#   streetview "<lat>,<lon>"    -> Street View image URL (Google key-gated)
+#   geocode "<raw address>"          -> normalize + geocode (keyless US Census first)
+#   lookup "<normalized addr>"       -> property record (provider-gated)
+#   comps "<normalized addr>"        -> comparable sales (provider-gated)
+#   streetview "<lat>,<lon>" [out]   -> fetch the Street View image BYTES
+#                                       server-side and emit a local image_path
+#                                       (Google key-gated; the API key is NEVER
+#                                        placed in the emitted URL/output)
 #
-# OS-aware, requires curl + jq. Read-only (no state writes beyond stdout).
+# OS-aware, requires curl + jq. Read-only apart from the streetview image file
+# it writes (a local artifact for the agent to attach) — no other state writes.
 
 set -uo pipefail
 
@@ -136,19 +140,65 @@ comps() {
 }
 
 # ---------- streetview (Google key-gated; honest gap without a key) ----------
+# SECURITY (FIX-S36-09): the API key is used ONLY in server-side requests inside
+# this process — it is NEVER placed in the emitted image_url (which would ship the
+# raw key into the client conversation and the event log). We (1) probe the free
+# Street View METADATA endpoint and honest-gap when status != OK (no imagery at
+# that point), then (2) fetch the image BYTES server-side and emit a LOCAL
+# image_path. The caller attaches that file; no keyed URL ever leaves the process.
 streetview() {
-  local latlon="${1:-}"
+  local latlon="${1:-}" out="${2:-}"
   [ -n "$latlon" ] || { echo '{"available":false,"reason":"empty lat,lon"}'; return 0; }
   if [ -z "${GOOGLE_MAPS_API_KEY:-}" ]; then
     # HONEST GAP — no Street View key. NEVER fabricate an image.
     echo '{"available":false,"source":"none","reason":"GOOGLE_MAPS_API_KEY not set"}'
     return 0
   fi
-  _need jq
-  local enc url
+  _need curl; _need jq
+  local enc meta status
   enc="$(jq -rn --arg s "$latlon" '$s|@uri')"
-  url="https://maps.googleapis.com/maps/api/streetview?size=640x640&location=${enc}&key=${GOOGLE_MAPS_API_KEY}"
-  jq -cn --arg url "$url" '{available:true, source:"google_streetview", image_url:$url}'
+
+  # 1) Probe the metadata endpoint FIRST (free, no image quota). Only "OK" means
+  #    imagery exists for this location — anything else is an honest gap, never a
+  #    fabricated / blank tile.
+  meta="$(curl -fsS --max-time 20 \
+    "https://maps.googleapis.com/maps/api/streetview/metadata?size=640x640&location=${enc}&key=${GOOGLE_MAPS_API_KEY}" \
+    2>/dev/null || true)"
+  status=""
+  [ -n "$meta" ] && status="$(printf '%s' "$meta" | jq -r '.status // empty' 2>/dev/null || true)"
+  if [ "$status" != "OK" ]; then
+    jq -cn --arg st "${status:-unreachable}" \
+      '{available:false, source:"google_streetview", reason:("street view metadata status: " + $st)}'
+    return 0
+  fi
+
+  # 2) Fetch the image BYTES server-side to a local file (key stays in-process).
+  local dest
+  if [ -n "$out" ]; then
+    dest="$out"
+    mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+  else
+    dest="$(mktemp -t skill39-streetview.XXXXXX 2>/dev/null || mktemp)"
+  fi
+  if curl -fsS --max-time 25 -o "$dest" \
+      "https://maps.googleapis.com/maps/api/streetview?size=640x640&location=${enc}&key=${GOOGLE_MAPS_API_KEY}" \
+      2>/dev/null && [ -s "$dest" ]; then
+    local bytes ctype
+    case "$(uname -s)" in
+      Darwin) bytes="$(stat -f%z "$dest" 2>/dev/null || echo 0)" ;;
+      *)      bytes="$(stat -c%s "$dest" 2>/dev/null || echo 0)" ;;
+    esac
+    ctype="image/jpeg"
+    command -v file >/dev/null 2>&1 && ctype="$(file --brief --mime-type "$dest" 2>/dev/null || echo image/jpeg)"
+    # Emit the LOCAL path + metadata only. NO url, NO key.
+    jq -cn --arg path "$dest" --argjson bytes "${bytes:-0}" --arg ctype "$ctype" \
+      '{available:true, source:"google_streetview", image_path:$path, bytes:$bytes, content_type:$ctype}'
+    return 0
+  fi
+
+  # Fetch failed after an OK metadata probe — honest gap, no fabrication.
+  [ -z "$out" ] && [ -f "$dest" ] && rm -f "$dest" 2>/dev/null || true
+  echo '{"available":false,"source":"google_streetview","reason":"street view image fetch failed"}'
   return 0
 }
 
