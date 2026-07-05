@@ -8,7 +8,7 @@ contract. The file is append-only; one JSON object per line; never rewritten.
 (the SAME folder Skill 38 uses — Skill 39 reuses Skill 38's selection if present).
 
 ## Event types
-- `property_lookup` — emitted on every property lookup (`03-property-lookup.sh`).
+- `property_lookup` — emitted on every property lookup (`property-lookup.sh`).
 - `showing` — emitted when a showing is confirmed (incl. open-house subtype).
 - `cma_request` — emitted when a seller CMA is requested.
 

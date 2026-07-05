@@ -77,10 +77,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+import struct
 import sys
 import urllib.error
 import urllib.request
+import zlib
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -221,6 +225,279 @@ def _append_cdn_log(log_path: str, status: int, cdn_url: str, label: str) -> Non
 
 
 # ---------------------------------------------------------------------------
+# FIX-IMG-01 — deterministic PNG sanity (blank / garbled / off-size detection)
+# ---------------------------------------------------------------------------
+#
+# Image QC used to be existence + provenance ONLY (PNG magic, CDN 200, taskId), so
+# a BLANK, solid-color, or truncated raster passed every gate and shipped. This
+# deterministic stage inspects the actual bytes of each generated PNG BEFORE it is
+# uploaded: it parses the IHDR dimensions, enforces a resolution-scaled size floor
+# (a solid-color 2K PNG compresses FAR below a real photo), and rejects near-zero
+# color entropy (a blank frame). A failing slot is regenerated up to 2 times, then
+# hard-FAILs with the slot id. No network, no model — purely mechanical.
+
+# resolution-class → (minimum longest-edge px, minimum file bytes).
+_PNG_RES_FLOORS: dict[str, tuple[int, int]] = {
+    "2K":    (1400, 150_000),
+    "1080P": (900,  90_000),
+    "720P":  (600,  45_000),
+}
+_PNG_RES_DEFAULT = "2K"
+# Minimum Shannon entropy (bits/byte) of the DECOMPRESSED scanline stream. A real
+# photo is > 4 bits/byte; a solid / near-blank frame is ~0. 0.5 only trips on the
+# genuinely blank, never on a real (even flat-graphic) image.
+_PNG_ENTROPY_MIN_BITS = 0.5
+
+
+def _png_ihdr_dims(png_path: str) -> tuple[int, int]:
+    """Return ``(width, height)`` parsed from the PNG IHDR chunk.
+
+    Raises ``ValueError`` if the file is not a PNG with a well-formed IHDR (the
+    first chunk after the 8-byte signature)."""
+    with open(png_path, "rb") as fh:
+        head = fh.read(26)
+    if head[:8] != ghl_media.PNG_MAGIC or head[12:16] != b"IHDR":
+        raise ValueError(f"{png_path!r}: not a PNG with a valid IHDR chunk")
+    width, height = struct.unpack(">II", head[16:24])
+    return int(width), int(height)
+
+
+def _png_decompressed_entropy(png_path: str) -> float:
+    """Shannon entropy (bits/byte) of the concatenated, zlib-decompressed IDAT
+    stream. A blank / solid-color frame decompresses to a near-constant byte
+    stream (entropy ~0); a real image is high-entropy. Returns 0.0 when no IDAT
+    is present (also a fail signal)."""
+    idat = bytearray()
+    with open(png_path, "rb") as fh:
+        if fh.read(8) != ghl_media.PNG_MAGIC:
+            return 0.0
+        while True:
+            length_bytes = fh.read(4)
+            if len(length_bytes) < 4:
+                break
+            (length,) = struct.unpack(">I", length_bytes)
+            ctype = fh.read(4)
+            payload = fh.read(length)
+            fh.read(4)  # CRC
+            if ctype == b"IDAT":
+                idat += payload
+            elif ctype == b"IEND":
+                break
+    if not idat:
+        return 0.0
+    try:
+        raw = zlib.decompress(bytes(idat))
+    except zlib.error:
+        raw = bytes(idat)  # fall back to compressed-stream entropy
+    if not raw:
+        return 0.0
+    counts = Counter(raw)
+    n = len(raw)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def _png_sanity(png_path: str, resolution_class: str = _PNG_RES_DEFAULT) -> tuple[bool, str]:
+    """Deterministic content sanity for one generated PNG.
+
+    Returns ``(ok, reason)``. ``ok`` is True only when the file is a real PNG that
+    (a) meets the resolution-scaled BYTE floor, (b) has IHDR dimensions whose
+    longest edge meets the class floor, and (c) has decompressed-IDAT entropy above
+    ``_PNG_ENTROPY_MIN_BITS``. Any failure returns a specific human reason. NEVER
+    raises — a parse error is reported as a sanity failure so the caller can retry."""
+    floors = _PNG_RES_FLOORS.get((resolution_class or _PNG_RES_DEFAULT).upper(),
+                                 _PNG_RES_FLOORS[_PNG_RES_DEFAULT])
+    min_long_edge, min_bytes = floors
+    try:
+        if not ghl_media.verify_png(png_path):
+            return False, "not a valid PNG (magic-byte check failed)"
+        size = os.path.getsize(png_path)
+        if size < min_bytes:
+            return False, (
+                f"file size {size}B below the {resolution_class} floor of "
+                f"{min_bytes}B (a solid-color / blank frame compresses this small)"
+            )
+        width, height = _png_ihdr_dims(png_path)
+        if width <= 0 or height <= 0:
+            return False, f"non-positive IHDR dimensions {width}x{height}"
+        if max(width, height) < min_long_edge:
+            return False, (
+                f"IHDR {width}x{height}: longest edge {max(width, height)}px is "
+                f"below the {resolution_class} floor of {min_long_edge}px"
+            )
+        entropy = _png_decompressed_entropy(png_path)
+        if entropy < _PNG_ENTROPY_MIN_BITS:
+            return False, (
+                f"decompressed entropy {entropy:.3f} bits/byte below "
+                f"{_PNG_ENTROPY_MIN_BITS} — image is blank / near-solid-color"
+            )
+    except (OSError, ValueError, struct.error) as exc:
+        return False, f"sanity inspection error: {exc}"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# FIX-XC-04f — 8-block, brand-graded image prompt derivation (client brand)
+# ---------------------------------------------------------------------------
+#
+# Skill 6 used to fabricate a ~200-char generic hero prompt (copy truncated at
+# 300 chars, ONE image per page). A prompt that thin cannot carry the on-brand,
+# art-directed look a real page image needs, and Skill 6's own paid path had no
+# floor to catch it. This builder emits ONE spec per major page SECTION, each a
+# full 8-block prompt (order from 49 MASTERDOC §4) whose block 4 is a client-brand
+# Grade Block templated from the intake brand colors — so the prompt clears the
+# 1,500-char PROMPT_CHAR_FLOOR and looks like the client's brand, not a stock stub.
+
+# Copy context is now capped at 2,000 chars (was 300) so section copy can actually
+# inform the scene.
+_COPY_CONTEXT_CAP = 2000
+
+
+def _brand_colors(page_spec: dict) -> list[str]:
+    """Resolve the client's brand colors from the page/intake spec.
+
+    Accepts a ``brand_colors`` list, or a ``brand`` dict carrying ``colors`` /
+    ``palette`` / ``primary_color`` + ``secondary_color`` / ``accent_color``.
+    Returns a de-duplicated, order-preserving list of colour strings (hex or
+    named); ``[]`` when the spec carries no brand colour (the Grade Block then
+    falls back to a neutral, still-graded direction)."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(v: Any) -> None:
+        s = str(v).strip()
+        key = s.lower()
+        if s and key not in seen:
+            seen.add(key)
+            out.append(s)
+
+    raw = page_spec.get("brand_colors")
+    brand = page_spec.get("brand")
+    if isinstance(raw, (list, tuple)):
+        for c in raw:
+            _add(c)
+    if isinstance(brand, dict):
+        for coll_key in ("colors", "palette", "brand_colors"):
+            coll = brand.get(coll_key)
+            if isinstance(coll, (list, tuple)):
+                for c in coll:
+                    _add(c)
+        for scalar_key in ("primary_color", "secondary_color", "accent_color"):
+            if brand.get(scalar_key):
+                _add(brand[scalar_key])
+    return out
+
+
+def _brand_grade_block(brand_colors: list[str]) -> str:
+    """Return the block-4 client-brand Grade Block (a full paragraph of grading
+    direction) anchored to the client's brand colors. Templated so the palette is
+    named verbatim; falls back to a neutral-but-graded direction when no brand
+    colour is supplied."""
+    if brand_colors:
+        palette = ", ".join(brand_colors)
+        anchor = (
+            f"The palette is anchored to this brand's colors ({palette}), pushed to "
+            "their richest, most luminous expression so the frame is unmistakably "
+            "on-brand."
+        )
+    else:
+        anchor = (
+            "The palette is a confident, cohesive brand grade with punchy "
+            "complementary relationships, pushed to its richest, most luminous "
+            "expression."
+        )
+    return (
+        "Grade this image as a high-fashion editorial cover and treat this grading "
+        "direction as the single most important instruction in the prompt. Color is "
+        "vibrant and boldly saturated: push global saturation well above natural so "
+        "every hue reads jewel-rich and electric, never muddy, never washed out. Use "
+        "a distinct cinematic grade with deep, inky shadows against luminous, glowing "
+        "highlights and high, confident contrast. " + anchor + " Every human subject "
+        "is lit and graded with melanin-true intelligence: deep skin tones rendered "
+        "rich, dimensional, and radiant, warm undertones preserved, never ashy, never "
+        "grey, never flattened. This is not natural documentary color; this is "
+        "signature brand color: vivid, graded, and unforgettable, composed like a "
+        "single standalone piece of art a scrolling thumb stops for."
+    )
+
+
+def _build_section_prompt(
+    page_name: str,
+    section: dict,
+    brand_colors: list[str],
+) -> tuple[str, bool]:
+    """Build one 8-block image prompt for a page section.
+
+    Returns ``(prompt, text_bearing)``. The 8-block order follows 49 MASTERDOC §4:
+    1 Subject & Wardrobe · 2 Composition & Shot · 3 Typography (text-bearing only)
+    · 4 Signature/Brand Grade Block · 5 Lighting · 6 Quality & Render · 7 Facial
+    Intelligence · 8 Brand-Style + Negative Block. The Grade Block is templated from
+    the client brand colors. The prompt is written to clear PROMPT_CHAR_FLOOR."""
+    heading = str(section.get("heading") or section.get("title") or "").strip()
+    body = str(section.get("copy") or section.get("body") or section.get("text") or "").strip()
+    role = str(section.get("role") or section.get("type") or "content").strip() or "content"
+    text_bearing = bool(section.get("text_bearing"))
+
+    copy_context = " ".join(p for p in (heading, body) if p)[:_COPY_CONTEXT_CAP]
+    if not copy_context:
+        copy_context = f"the {role} section of the page titled '{page_name}'"
+
+    subject = (
+        f"Block 1 — Subject and Wardrobe: A premium, art-directed marketing image "
+        f"for the {role} section of a web page titled '{page_name}'. The scene "
+        f"visually expresses this section's message: {copy_context}. Feature a "
+        "credible, aspirational real-world subject (people, product, or environment) "
+        "styled with modern, tasteful wardrobe and props that fit the brand's "
+        "premium positioning."
+    )
+    composition = (
+        "Block 2 — Composition and Shot: Editorial composition with intentional "
+        "negative space for overlaid web copy, a clear focal hierarchy, and a "
+        "confident rule-of-thirds or centered hero framing. Shot on a full-frame "
+        "camera look, shallow-to-medium depth of field, crisp foreground subject "
+        "against a softly separated background."
+    )
+    if text_bearing:
+        typography = (
+            "Block 3 — Typography: Any lettering that appears must be spelled "
+            "correctly, letter-for-letter, in clean modern sans-serif, integrated as "
+            "designed graphic type (not a caption bar)."
+        )
+    else:
+        typography = (
+            "Block 3 — Typography: This is a photographic, no-text section; render no "
+            "lettering, words, captions, or watermarks anywhere in the frame."
+        )
+    grade = "Block 4 — Grade Block: " + _brand_grade_block(brand_colors)
+    lighting = (
+        "Block 5 — Lighting: Dramatic, directional editorial lighting with a soft key, "
+        "gentle rim separation, and controlled falloff; luminous highlights and rich "
+        "shadow detail that make the subject feel dimensional and premium."
+    )
+    quality = (
+        "Block 6 — Quality and Render: Ultra-high-detail, photorealistic, sharp "
+        "focus on the subject, clean micro-contrast, no artifacts, no plastic skin, "
+        "no oversmoothing; magazine-cover finish suitable for a full-bleed hero at 2K."
+    )
+    facial = (
+        "Block 7 — Facial Intelligence: If any face is present, render it natural, "
+        "symmetrical, and emotionally engaged, with authentic expression, realistic "
+        "eyes and skin texture, and melanin-true tones; never uncanny, never distorted."
+    )
+    negative = (
+        "Block 8 — Brand-Style and Negative Block: Keep the whole frame consistent "
+        "with a premium, trustworthy brand. Do not include: distorted anatomy, extra "
+        "or missing fingers, warped faces, garbled or misspelled text, logos of other "
+        "brands, low-resolution blur, heavy noise, watermark stamps, or stock-photo "
+        "cheesiness."
+    )
+
+    prompt = "\n\n".join([
+        subject, composition, typography, grade, lighting, quality, facial, negative,
+    ])
+    return prompt, text_bearing
+
+
+# ---------------------------------------------------------------------------
 # copy_specs derivation from page_spec
 # ---------------------------------------------------------------------------
 
@@ -265,6 +542,7 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
                 "prompt": prompt,
                 "mode": "t2i",  # always explicit; i2i is never emitted here
                 "alt": str(entry.get("alt") or f"{page_name} image"),
+                "text_bearing": bool(entry.get("text_bearing")),
             }
             if page_id:
                 spec["used_on_page_id"] = page_id
@@ -274,43 +552,70 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
         if specs:
             return specs
 
-    # 2) Derive a hero image from the page copy.
-    copy_block = page_spec.get("copy") or {}
-    headline = str(copy_block.get("headline") or "").strip()
-    subheadline = str(copy_block.get("subheadline") or "").strip()
-    body = str(copy_block.get("body") or "").strip()
-
-    # Build a concise scene brief from whatever copy fields are present.
-    scene_parts = [p for p in [headline, subheadline, body] if p]
-    if not scene_parts:
-        # Last-resort: use the page name as the scene context if nothing else.
-        scene_parts = [page_name]
-
-    # Cap prompt length before the English/Latin pin is appended (the pin is
-    # appended by build_prompts_json, not here).
-    scene_brief = " | ".join(scene_parts)[:300]
-
-    hero_prompt = (
-        f"Professional marketing hero image for a web page titled '{page_name}'. "
-        f"Scene context: {scene_brief}. "
-        "Clean, modern, high-quality lifestyle photo, no text overlaid on the image."
-    )
-
-    # Derive a URL-safe slug from the page name for the slide id.
+    # 2) FIX-XC-04f: derive ONE 8-block, brand-graded spec per major page SECTION
+    #    (not a single ~200-char generic hero). Brand colors template the block-4
+    #    Grade Block; each prompt clears PROMPT_CHAR_FLOOR at generation time.
     import re as _re
-    slug = _re.sub(r"[^A-Za-z0-9]+", "-", page_name.lower()).strip("-") or "hero"
-    slide_id = f"{slug}-hero"
+    brand_colors = _brand_colors(page_spec)
 
-    spec = {
-        "id": slide_id,
-        "prompt": hero_prompt,
-        "mode": "t2i",
-        "alt": f"{page_name} hero image",
-    }
-    if page_id:
-        spec["used_on_page_id"] = page_id
+    def _slug(text: str, fallback: str) -> str:
+        return _re.sub(r"[^A-Za-z0-9]+", "-", str(text).lower()).strip("-") or fallback
 
-    return [spec]
+    page_slug = _slug(page_name, "page")
+
+    sections = page_spec.get("sections")
+    section_list: list[dict] = []
+    if isinstance(sections, list):
+        section_list = [s for s in sections if isinstance(s, dict)]
+
+    if not section_list:
+        # No explicit sections: synthesize a single hero section from page copy so
+        # the page still gets one full 8-block prompt (never the old thin stub).
+        copy_block = page_spec.get("copy") or {}
+        section_list = [{
+            "role": "hero",
+            "heading": str(copy_block.get("headline") or page_name).strip(),
+            "copy": " ".join(
+                p for p in (
+                    str(copy_block.get("subheadline") or "").strip(),
+                    str(copy_block.get("body") or "").strip(),
+                ) if p
+            ),
+        }]
+
+    specs = []
+    used_ids: set[str] = set()
+    for idx, section in enumerate(section_list):
+        role = str(section.get("role") or section.get("type") or "").strip()
+        base = _slug(section.get("id") or role or f"section-{idx + 1}", f"section-{idx + 1}")
+        slide_id = f"{page_slug}-{base}"
+        # Guarantee unique ids across sections (build_prompts_json rejects dupes).
+        candidate = slide_id
+        n = 2
+        while candidate in used_ids:
+            candidate = f"{slide_id}-{n}"
+            n += 1
+        slide_id = candidate
+        used_ids.add(slide_id)
+
+        prompt, text_bearing = _build_section_prompt(page_name, section, brand_colors)
+        alt = str(section.get("alt") or section.get("heading") or section.get("title")
+                  or f"{page_name} {role or 'section'} image").strip()
+
+        spec = {
+            "id": slide_id,
+            "prompt": prompt,
+            "mode": "t2i",
+            "alt": alt,
+            "text_bearing": text_bearing,
+        }
+        if page_id:
+            spec["used_on_page_id"] = page_id
+        if isinstance(section.get("locator"), dict):
+            spec["locator"] = section["locator"]
+        specs.append(spec)
+
+    return specs
 
 
 # ---------------------------------------------------------------------------
@@ -324,11 +629,13 @@ def run_image_pipeline(
     location_id: str | None = None,
     location_pit: str | None = None,
     env: dict | None = None,
+    resolution_class: str = _PNG_RES_DEFAULT,
     # Injected for tests — never set in production.
     _generate_runner=None,
     _upload_opener=None,
     _folder_opener=None,
     _cdn_fetcher=None,
+    _sanity_checker=None,
 ) -> dict:
     """Run the complete image pipeline for one page and return a result dict.
 
@@ -435,17 +742,23 @@ def run_image_pipeline(
     # Specs from _derive_copy_specs always carry mode='t2i'; build_prompts_json
     # receives them with default_mode='t2i' as a belt-and-suspenders guard so
     # a hypothetical spec that omits mode also lands on 't2i' and never on 'i2i'.
+    # FIX-XC-04f (d): enforce_floor=True — a prompt below PROMPT_CHAR_FLOOR raises
+    # here, so a weak prompt can never reach the paid Kie subprocess below.
     try:
         enriched_specs = ghl_media.build_prompts_json(
             copy_specs,
             out_path=prompts_path,
             default_mode="t2i",
+            enforce_floor=True,
         )
     except (ValueError, RuntimeError) as exc:
         logger.error("IMAGE PIPELINE FAIL (build_prompts_json): %s", exc)
         return _fail(str(exc), honest=True)
 
     expected_ids = [s["slide"] for s in enriched_specs]
+    # Map slide id -> enriched spec (prompt/mode/alt/locator) — needed both by the
+    # sanity-regen stage (to rebuild a single-slot prompts.json) and the upload loop.
+    spec_map = {s["slide"]: s for s in enriched_specs}
 
     # ── Step 4: Generate images (shells kie_generate.py, verifies PNG bytes). ──
     # Retry up to 3 attempts with 30-second backoff to handle transient KIE latency.
@@ -491,6 +804,76 @@ def run_image_pipeline(
         logger.error("IMAGE PIPELINE FAIL (generate_images result): %s", reason)
         return _fail(reason, honest=True)
 
+    # FIX-IMG-08: record the prompt-count-scaled subprocess cap into run evidence.
+    _append_cdn_log(
+        cdn_log_path,
+        0,
+        f"kie-subprocess-timeout={gen_result.get('subprocess_timeout')}s",
+        f"prompts={len(expected_ids)}",
+    )
+
+    # ── Step 4.5: FIX-IMG-01 deterministic PNG sanity + bounded regeneration. ──
+    # Existence + provenance are NOT enough — a blank / garbled / off-size raster
+    # passes PNG-magic + CDN-200 + taskId. Inspect each PNG's bytes; regenerate a
+    # failing SLOT up to 2 times; then hard FAIL with the slot id (never upload a
+    # bad image, never silently skip).
+    _sanity = _sanity_checker or (lambda p: _png_sanity(p, resolution_class))
+
+    def _regenerate_slot(slide_id: str) -> dict:
+        """Re-run generation for ONE slide into images_dir; returns the
+        generate_images result for that single slot."""
+        enriched = spec_map.get(slide_id, {})
+        file_entry: dict[str, Any] = {
+            "slide": slide_id,
+            "prompt": str(enriched.get("prompt") or ""),
+            "mode": str(enriched.get("mode") or "t2i"),
+        }
+        if file_entry["mode"] == "i2i" and enriched.get("input_urls"):
+            file_entry["input_urls"] = list(enriched["input_urls"])
+        single_path = os.path.join(images_dir, f"__regen_{slide_id}.json")
+        with open(single_path, "w", encoding="utf-8") as fh:
+            json.dump([file_entry], fh)
+        try:
+            return ghl_media.generate_images(
+                single_path, images_dir,
+                expected_ids=[slide_id], runner=_generate_runner,
+            )
+        finally:
+            try:
+                os.remove(single_path)
+            except OSError:
+                pass
+
+    _SANITY_MAX_REGEN = 2
+    for img_entry in gen_result["images"]:
+        slide_id = img_entry["id"]
+        png_path = img_entry["file"]
+        ok_sane, reason = _sanity(png_path)
+        regens = 0
+        while not ok_sane and regens < _SANITY_MAX_REGEN:
+            regens += 1
+            logger.warning(
+                "IMAGE SANITY FAIL slot %r (%s) — regenerating %d/%d",
+                slide_id, reason, regens, _SANITY_MAX_REGEN,
+            )
+            _append_cdn_log(cdn_log_path, 0, f"sanity-regen-{regens} | {slide_id}", reason)
+            regen_result = _regenerate_slot(slide_id)
+            if not regen_result.get("ok"):
+                reason = (
+                    f"regeneration attempt {regens} failed to produce a PNG "
+                    f"(missing={regen_result.get('missing')})"
+                )
+                continue
+            png_path = os.path.join(images_dir, f"{slide_id}.png")
+            ok_sane, reason = _sanity(png_path)
+        if not ok_sane:
+            fail_reason = (
+                f"image sanity FAIL for slot {slide_id!r} after {regens} "
+                f"regeneration(s): {reason}"
+            )
+            logger.error("IMAGE PIPELINE FAIL (sanity): %s", fail_reason)
+            return _fail(fail_reason, honest=True)
+
     # ── Step 5: (Optional) create a per-run media folder. ─────────────────────
     folder_id: str | None = None
     page_name = str(page_spec.get("name") or page_spec.get("title") or "skill6-run").strip()
@@ -519,9 +902,7 @@ def run_image_pipeline(
     manifest_records: list[dict] = []
     img_tags: list[str] = []
 
-    # Build a map from slide id -> enriched spec for alt text / locator lookup.
-    spec_map = {s["slide"]: s for s in enriched_specs}
-
+    # spec_map (slide id -> enriched spec) was built right after build_prompts_json.
     for img_entry in gen_result["images"]:
         slide_id = img_entry["id"]
         png_path = img_entry["file"]

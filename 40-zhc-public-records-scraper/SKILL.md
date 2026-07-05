@@ -1,5 +1,6 @@
 ---
 name: zhc-public-records-scraper
+version: 1.1.0
 description: 4-tier public records lookup system — auto-detects and routes queries through cached results, free public APIs, paid data providers, and Playwright scraping as last resort. Enforces cost caps, rate limits, and compliance rules with a public-records-queries.jsonl audit trail.
 ---
 
@@ -136,9 +137,11 @@ Skill 40 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/public-rec
 | `scripts/05-validate-target.sh` | Dry-probe validator for a Tier-1/Tier-3 target (robots + selectors) BEFORE live |
 | `scripts/06-build-tier3-config.sh` | Interactive builder for an operator Tier-3 scraper config (validated) |
 | `scripts/07-update-core-files.sh` | Appends AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
-| `scripts/lib-records.sh` | The router: detect county/state, tier selection, robots check, cache, fetch, honest gap |
+| `scripts/lib-records.sh` | The router: detect county/state, tier selection (Tier-1 → adapters → Tier-3 → honest gap), wildcard-safe robots check, persisted-ToS-ack + attribution gate, cache read + `cache_put` write, honest gap |
+| `scripts/adapters/*.sh` | Executable Tier-2 vendor adapters (`tyler-technologies.sh`, `govos-landmark.sh`) — each honors the `--covers`/`--plan`/`--vendor` contract; `tier()` iterates them on a Tier-1 miss |
 | `scripts/lib-pr-events.sh` | Append-one-line helper for `public-records-queries.jsonl` |
-| `scripts/lib-cost-cap.sh` | Cost estimate + per-day + per-target rate-limit guard (bulk confirm) |
+| `scripts/lib-cost-cap.sh` | Cost estimate + per-day + per-target rate-limit guard (bulk confirm); state under the resolved master-files dir (no Downloads fallback) |
+| `scripts/lib-command-center.sh` | Fail-soft, health-gated Command Center Kanban reflection for bulk scans (silent no-op when the Command Center is down; never fatal) |
 | `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) |
 | `scripts/qc-no-fabrication.sh` | Asserts the router returns Tier-4 honest gap (never invented records) on a miss |
 | `scripts/qc-compliance.sh` | Asserts robots respected, ToS referenced per target, attribution required |

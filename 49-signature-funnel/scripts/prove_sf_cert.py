@@ -42,10 +42,10 @@ EXPECTED_PHASES = (
     ("P2-PROMPTS", "prove_sf_prompt_floor.py"),
     ("P3-IMAGES", "kie_image.py"),          # Skill 47 delegation (provenance checked at P4/P9)
     ("P4-MEDIA", "ghl_media.py"),           # Skill 6 delegation
-    ("P5-HTML", "html_assembly"),
-    ("P6-COMPOSE", "funnel_graph"),
-    ("P7-BUILD", "ghl_rest_canvas.py"),     # Skill 6 delegation
-    ("P8-DERIVE", "derived_pages"),
+    ("P5-HTML", "html_fragments"),          # artifact-backed gate (pages/<profile>.fragment.html)
+    ("P6-COMPOSE", "prove_sf_graph.py"),    # funnel_graph.json vs MASTERDOC §3
+    ("P7-BUILD", "prove_sf_build.py"),      # build_receipt.json (QC >= 8.5 + previews); Skill 6 build
+    ("P8-DERIVE", "derived_pages_ledger"),
     ("P9-CERTIFY", "prove_sf_no_pitch.py"),
 )
 

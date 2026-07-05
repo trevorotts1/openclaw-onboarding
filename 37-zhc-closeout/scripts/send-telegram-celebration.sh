@@ -32,7 +32,9 @@ else
   exit 1
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# FIX-XC-10a: honor ZHC_STATE_FILE so a test run never reads/writes the LIVE
+# client state (this script FIRES 6 REAL Telegram celebration messages off it).
+STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 STEP_LABEL="telegram"
 

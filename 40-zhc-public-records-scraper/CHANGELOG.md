@@ -1,5 +1,41 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
+## [1.1.0] - 2026-07-05 - Enforcement-not-description: wire the compliance + cost gates into query()
+
+Merge-train **T-40-public-records-scraper** (Wave-0). The tiered router documented caps + compliance
+but never executed them in the query path; this release makes every claimed gate a real, tested code
+path. Changes are scoped entirely to `40-zhc-public-records-scraper/`.
+
+### Fixed
+- **Caps now bite (FIX-S36-12):** `query()` invokes `estimate` (logs `cost_estimate`), `rate_wait`
+  (per-target min interval, logs `rate_limit_wait`), and `record_query` (increments today's counter) at
+  the real fetch call site — previously `record_query`/`rate_wait` were defined but called by nothing, so
+  the counter file never existed and the 200/day cap could never block.
+- **Compliance is in the execution path (FIX-S36-13):** `query()` itself now gates a live fetch on
+  `robots_ok` passing, a **persisted per-target ToS acknowledgement** (`ack_tos`/`tos_ack_present`), and
+  attribution — emitting `compliance_block` (`robots_disallow` / `tos_unacknowledged` / `unattributed`)
+  instead of the events being emitted by zero code.
+- **Tier 2/3 routing is real (FIX-S36-14):** `tier()` iterates the executable adapters in
+  `scripts/adapters/*.sh` (`--covers`) on a Tier-1 miss, then an operator Tier-3 config, before falling
+  to Tier-4. `scripts/adapters/` + `lib-command-center.sh` documented in the SKILL.md files table.
+- **Validation gate exists (FIX-S36-15):** a Tier-1 config is servable only when `validated:true` AND its
+  `portal_url`/`tos_url` are non-placeholder; `validated:false` or a placeholder URL falls through,
+  forcing `05-validate-target.sh` (all 21 shipped configs ship `validated:false`).
+- **Cache write path (FIX-S36-16):** new attribution-gated `cache_put` helper (refuses a record missing
+  `source`+`retrieved_at`) is the sole cache writer, so `cache_hit` is reachable and never fabricated.
+- **CC integration + robots wildcards (FIX-S36-17):** added `scripts/lib-command-center.sh` — Skill 41's
+  fail-soft, health-gated Kanban helper (silent no-op when the Command Center is down, never fatal); and
+  replaced the literal robots matcher (`Disallow: /*` never matched) with a wildcard-safe matcher that
+  fails CLOSED on any unevaluable wildcard.
+- **Persisted-state cache dir, no Downloads fallback (FIX-XC-10c):** `_cache_dir` in both `lib-records.sh`
+  and `lib-cost-cap.sh` resolves `MASTER_FILES_DIR` from env → persisted `~/.openclaw` selection, and
+  FAILS LOUD (fail-closed on the cap) if unresolved, instead of silently using `~/Downloads` and handing a
+  fresh caller a zero-count cap.
+- **Behavioral compliance QC (FIX-XC-03e):** `qc-compliance.sh` rewritten from comment-greps to behavioral
+  assertions against a mock target — asserts a disallowed-robots path blocks, a placeholder `tos_url` is
+  rejected and non-servable, a persisted ToS-ack is required, and a record missing `source`/`retrieved_at`
+  is refused.
+
 ## [1.0.1] - 2026-05-30 - Round-3 canonical reconciliation: add executable Tier-2 adapters + F52 contract
 
 Aligns Skill 40 with the canonical Round-3 decision (this repo's build is the canonical base; the

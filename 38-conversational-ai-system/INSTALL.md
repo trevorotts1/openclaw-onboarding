@@ -51,6 +51,19 @@ cd ~/.openclaw/skills/38-conversational-ai-system/scripts
 
 After scripts run, follow INSTRUCTIONS.md for the interactive Phases 0-7 of the v5.14 playbook (Cloudflare tunnel creation, hook mappings configuration, Notion playbook scaffolding, channel-specific tone configuration, QC handoff).
 
+## Command Center reporting (optional environment variables)
+
+`scripts/cc-task.sh` cards this install onto the Command Center Kanban (created + moved to `in_progress` by `00-verify-prerequisites.sh`, moved to `review` by the QC step). It is **graceful-degrading**: it never fails the install and never messages a client — if it is not configured it prints one operator-only stderr note and no-ops. To turn it on, export these before running the install scripts:
+
+| Env var | Required? | What it does |
+| --- | --- | --- |
+| `MC_API_TOKEN` | **Required for any board post** | Bearer token from the Command Center app's `.env.local`. **Unset ⇒ Command Center reporting is INACTIVE** and the install task never lands on the board (install still completes normally). `00-verify-prerequisites.sh` prints `Command Center reporting: ACTIVE` / `INACTIVE` so you can see which state you are in. |
+| `MC_SKILL38_SOP_ID` | Optional | SOP UUID → written as `sop_id` on the card. Part of the "leave-backlog Triad": until it is supplied the Command Center keeps the card in backlog (still graceful — no failure). |
+| `MC_SKILL38_AGENT_ID` | Optional | Agent UUID → written as `created_by_agent_id` / `updated_by_agent_id` on the card and its transitions (for a live board audit trail). |
+| `MISSION_CONTROL_URL` | Optional | Command Center base URL (default `http://localhost:4000`). |
+
+The token is never printed and never sent to a client. Supply all three of `MC_API_TOKEN` + `MC_SKILL38_SOP_ID` + `MC_SKILL38_AGENT_ID` for a fully-carded, out-of-backlog install; supply `MC_API_TOKEN` alone for a minimal board post; supply none to skip Command Center reporting entirely.
+
 ## OS support
 
 `darwin` (Mac mini operators) and `linux` (VPS operators). All scripts detect OS at runtime via `uname -s` and use OS-appropriate paths:

@@ -30,10 +30,10 @@ Before starting Step 1, verify ALL of the following:
 6. `curl` and `openclaw` CLI are on PATH.
 7. The scripts in `scripts/` exist and are executable.
 
-If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The dedicated closeout-resume cron will retry on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`). Resolve via:
+If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The dedicated closeout-resume cron will retry on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to the operator's Telegram chat. The chat is OPT-IN via `env.vars.OPERATOR_ESCALATION_CHAT_ID` (back-compat `ZHC_OPERATOR_CHAT_ID`) — there is NO hardcoded default, so if it is unset, SKIP the escalation (never route this client's escalations to another box's chat). Resolve via:
 ```bash
 source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
-openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+[ -n "$OPERATOR_CHAT_ID" ] && openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
 ```
 
 ---
@@ -284,7 +284,7 @@ Runs AFTER Telegram delivery (the owner already has their celebration). The payl
 
 After every artifact cleared the 8.5 gate, was delivered, the phantom-closeout guard passed, AND the Telegram delivery was confirmed against the sent-registry, `run-closeout.sh` runs one final step BEFORE writing `closeoutStatus: "done"`:
 
-1. `scripts/send-operator-summary.sh`: sends Trevor (`ZHC_OPERATOR_CHAT_ID`, default `5252140759`) a single Telegram message via the OpenClaw gateway with the DURABLE openable LINK to every delivered artifact — preferring the GHL public URL, then Drive, then the remote URL — (dashboard, both infographics, celebration video, Notion page, GHL media library). Idempotent via `operatorSummarySentAt`.
+1. `scripts/send-operator-summary.sh`: sends the operator (OPT-IN `env.vars.OPERATOR_ESCALATION_CHAT_ID`, back-compat `ZHC_OPERATOR_CHAT_ID` — NO hardcoded default; skips the send when unset) a single Telegram message via the OpenClaw gateway with the DURABLE openable LINK to every delivered artifact — preferring the GHL public URL, then Drive, then the remote URL — (dashboard, both infographics, celebration video, Notion page, GHL media library). Idempotent via `operatorSummarySentAt`.
 
 **Retries per message:** 3 (with 2s/4s/8s backoff). If a message fails 3x:
 - If it's Message 1 (the announcement), abort the whole delivery, mark `closeoutStatus: "failed"`, set `closeoutFailureReason: "telegram-message-1: <error>"`. Resume cron will retry on next fire.
@@ -341,8 +341,8 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
   },
 
   "messagesDelivered": [
-    { "n": 1, "messageId": "51678", "chatId": "5252140759", "ts": "2026-05-23T20:44:00Z" },
-    { "n": 6, "messageId": "51690", "chatId": "5252140759", "ts": "2026-05-23T20:44:40Z" }
+    { "n": 1, "messageId": "51678", "chatId": "<CLIENT_CHAT_ID>", "ts": "2026-05-23T20:44:00Z" },
+    { "n": 6, "messageId": "51690", "chatId": "<CLIENT_CHAT_ID>", "ts": "2026-05-23T20:44:40Z" }
   ],
   "telegramDeliveryVerification": {
     "status": "pass",
@@ -414,10 +414,10 @@ Re-running `run-closeout.sh` on a partially-complete closeout is safe.
 ## 7. Failure Escalation
 
 If `closeoutStatus == "failed"` AND the resume cron has retried 3+ times without progress:
-- Send escalation message to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`):
+- Send escalation message to the operator's Telegram chat. OPT-IN via `env.vars.OPERATOR_ESCALATION_CHAT_ID` (back-compat `ZHC_OPERATOR_CHAT_ID`) — NO hardcoded default; if unset, SKIP (never route this client's escalation to another box's chat):
   ```bash
   source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
-  openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "🚨 Closeout stuck for {{OWNER_NAME}} ({{COMPANY_NAME}}). closeoutStatus=failed, closeoutFailureReason={{REASON}}, resumeAttempts={{N}}. State file: {{STATE_FILE_PATH}}"
+  [ -n "$OPERATOR_CHAT_ID" ] && openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "🚨 Closeout stuck for {{OWNER_NAME}} ({{COMPANY_NAME}}). closeoutStatus=failed, closeoutFailureReason={{REASON}}, resumeAttempts={{N}}. State file: {{STATE_FILE_PATH}}"
   ```
 - Do NOT send anything to the owner about the failure. They've heard nothing yet (Step 6 hasn't fired) — silence is fine. The operator handles it.
 

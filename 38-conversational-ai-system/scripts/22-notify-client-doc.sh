@@ -46,7 +46,21 @@
 #   DOC_LINK                  (required unless --print-chat) the link to deliver
 #   CLIENT_TELEGRAM_CHAT_ID   (optional) preferred chat id; skips discovery when set+non-empty
 #   CLIENT_FIRST_NAME         (optional, default "there")
-#   OPERATOR_TELEGRAM_CHAT_ID (optional, default <OPERATOR_TELEGRAM_CHAT_ID> — the operator) — excluded from discovery
+#   OPERATOR_TELEGRAM_CHAT_ID (optional) the operator's chat id — EXCLUDED from
+#                             transcript discovery so the client doc is never sent
+#                             to the operator. When UNSET this script cross-checks
+#                             the shared resolver shared-utils/operator-chat-id.sh
+#                             (OPERATOR_ESCALATION_CHAT_ID / OPERATOR_TELEGRAM_CHAT_ID
+#                             config + env / ZHC_OPERATOR_CHAT_ID). If it STILL
+#                             cannot resolve the operator id AND discovery is the
+#                             path (no CLIENT_TELEGRAM_CHAT_ID), the discovered
+#                             "most-frequent" chat could BE the operator — so the
+#                             script FAILS LOUDLY and requires an explicit ack
+#                             (SKILL38_ACK_OPERATOR_CHAT_UNSET=1) to proceed.
+#   SKILL38_ACK_OPERATOR_CHAT_UNSET=1  (optional) operator ack that discovery may
+#                             run with NO operator id to exclude (e.g. a box with
+#                             no operator paired). Without it, an unresolved
+#                             operator id on the discovery path is a hard failure.
 #   OPENCLAW_DATA_DIR         (optional) override the OpenClaw data dir to scan/resolve from
 #   MASTER_FILES_DIR          (optional) where the run-state file is written
 #   RUN_STATE_FILE            (optional) explicit path to the run-state file
@@ -70,6 +84,32 @@ CLIENT_TELEGRAM_CHAT_ID="${CLIENT_TELEGRAM_CHAT_ID:-}"
 CLIENT_FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
 OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-}"
 DOC_LINK="${DOC_LINK:-}"
+
+# ---- cross-check the OPERATOR chat id via the shared resolver (FIX-S36-08) ----
+# The operator id is what transcript discovery EXCLUDES so the client doc is never
+# sent to the operator. If OPERATOR_TELEGRAM_CHAT_ID was not passed directly, fall
+# back to the fleet-standard resolver shared-utils/operator-chat-id.sh (which reads
+# OPERATOR_ESCALATION_CHAT_ID / OPERATOR_TELEGRAM_CHAT_ID from openclaw config or
+# env, plus ZHC_OPERATOR_CHAT_ID). This never bakes in a personal id — it returns
+# empty when nothing is configured, and the discovery guard below handles that.
+if [ -z "$OPERATOR_TELEGRAM_CHAT_ID" ]; then
+  if [ -d /data/.openclaw ]; then _OC_ROOT="/data/.openclaw"; else _OC_ROOT="$HOME/.openclaw"; fi
+  for _op_util in \
+    "$_OC_ROOT/skills/shared-utils/operator-chat-id.sh" \
+    "$SCRIPT_DIR/../../shared-utils/operator-chat-id.sh" \
+    "$SCRIPT_DIR/../shared-utils/operator-chat-id.sh"; do
+    if [ -f "$_op_util" ]; then
+      OPERATOR_CHAT_ID=""
+      # shellcheck disable=SC1090
+      source "$_op_util" 2>/dev/null || true
+      if [ -n "${OPERATOR_CHAT_ID:-}" ]; then
+        OPERATOR_TELEGRAM_CHAT_ID="$OPERATOR_CHAT_ID"
+        echo "[22-notify-client-doc] resolved operator chat id via $_op_util (excluded from discovery)." >&2
+        break
+      fi
+    fi
+  done
+fi
 
 # ---- resolve the OpenClaw data dir we scan for transcripts ----
 resolve_data_dir() {
@@ -126,10 +166,20 @@ discover_chat_from_transcripts() {
   [ -n "$ids" ] || return 1
 
   # Drop the operator id, tally, take the most frequent.
+  # FIX-S36-08: only apply the exclusion when the operator id is NON-EMPTY.
+  # `grep -vxF ""` matches only empty lines, so with an empty operator id it
+  # excludes NOTHING — meaning the most-frequent chat could be the operator's.
+  # The unset-operator case is gated LOUDLY before discovery is ever called, so
+  # here we simply skip the filter safely when there is no operator id to drop.
+  local filtered
+  if [ -n "$OPERATOR_TELEGRAM_CHAT_ID" ]; then
+    filtered="$(printf '%s\n' "$ids" | grep -vxF "$OPERATOR_TELEGRAM_CHAT_ID")"
+  else
+    filtered="$ids"
+  fi
   local best
   best="$(
-    printf '%s\n' "$ids" \
-      | grep -vxF "$OPERATOR_TELEGRAM_CHAT_ID" \
+    printf '%s\n' "$filtered" \
       | sort \
       | uniq -c \
       | sort -rn \
@@ -146,6 +196,42 @@ if [ -n "$CLIENT_TELEGRAM_CHAT_ID" ] && [ "$CLIENT_TELEGRAM_CHAT_ID" != "0" ]; t
   RESOLVED_CHAT="$CLIENT_TELEGRAM_CHAT_ID"
   CHAT_SOURCE="env(CLIENT_TELEGRAM_CHAT_ID)"
 else
+  # DISCOVERY PATH — the operator id is what we exclude. If it is unresolved
+  # (FIX-S36-08), discovery could pick the OPERATOR's own chat and we would then
+  # send the client doc to the operator while recording clientDocDelivered=true.
+  # Refuse to guess: warn LOUDLY and require an explicit operator ack to proceed.
+  if [ -z "$OPERATOR_TELEGRAM_CHAT_ID" ]; then
+    {
+      echo ""
+      echo "================================================================================"
+      echo "  [22-notify-client-doc] *** OPERATOR CHAT ID UNRESOLVED — DISCOVERY UNSAFE ***"
+      echo "================================================================================"
+      echo "  No CLIENT_TELEGRAM_CHAT_ID was provided, so the client chat is discovered from"
+      echo "  the transcripts — but the OPERATOR chat id could NOT be resolved (env unset AND"
+      echo "  shared-utils/operator-chat-id.sh returned empty). Discovery cannot exclude the"
+      echo "  operator, so the 'most-frequent' chat it picks MIGHT BE THE OPERATOR — which"
+      echo "  would send the client's setup doc to the operator while marking it delivered."
+      echo ""
+      echo "  RESOLVE ONE of the following, then re-run:"
+      echo "    1. Provide the client id directly:  CLIENT_TELEGRAM_CHAT_ID=<id>"
+      echo "    2. Configure the operator id so it can be excluded:"
+      echo "         openclaw config set env.vars.OPERATOR_ESCALATION_CHAT_ID \"<operator id>\" --strict-json"
+      echo "       (or export OPERATOR_TELEGRAM_CHAT_ID=<id>)"
+      echo "    3. If this box genuinely has NO operator paired and discovery is safe,"
+      echo "       ACKNOWLEDGE explicitly:  SKILL38_ACK_OPERATOR_CHAT_UNSET=1"
+      echo "================================================================================"
+      echo ""
+    } >&2
+    if [ "${SKILL38_ACK_OPERATOR_CHAT_UNSET:-0}" != "1" ]; then
+      if [ "$PRINT_CHAT_ONLY" != "1" ]; then
+        write_state "clientDocDelivered" "false"
+        write_state "clientDocDeliveryError" "operator-chat-id-unresolved-no-ack"
+      fi
+      echo "[22-notify-client-doc] *** REFUSING to discover a client chat without a known operator id to exclude. Set CLIENT_TELEGRAM_CHAT_ID, configure the operator id, or pass SKILL38_ACK_OPERATOR_CHAT_UNSET=1 to acknowledge. ***" >&2
+      exit 1
+    fi
+    echo "[22-notify-client-doc] SKILL38_ACK_OPERATOR_CHAT_UNSET=1 — proceeding with UN-EXCLUDED discovery (operator id unknown; acknowledged)." >&2
+  fi
   if DISC="$(discover_chat_from_transcripts)"; then
     RESOLVED_CHAT="$DISC"
     CHAT_SOURCE="transcripts($DATA_DIR/agents/*/sessions/*.jsonl)"

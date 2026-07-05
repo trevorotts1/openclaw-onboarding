@@ -70,10 +70,25 @@ state_set() {
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# FIX-S36-06: fail-soft Command Center card for the closeout ITSELF, keyed per
+# client slug, so a stuck closeout is board-VISIBLE. The helper never fails the
+# caller and never messages a client (no MC_API_TOKEN -> silent no-op). Callable
+# even before $_lock_slug is computed (defaults the slug to "default").
+cc_card() {
+  local sub="${1:-}"; [[ "$#" -gt 0 ]] && shift
+  local helper="$SKILL_DIR/scripts/cc-closeout-task.sh"
+  [[ -n "$sub" && -f "$helper" ]] || return 0
+  ZHC_CLOSEOUT_SLUG="${_lock_slug:-default}" \
+  ZHC_CLOSEOUT_COMPANY="$(state_get '.companyName' 2>/dev/null)" \
+    bash "$helper" "$sub" "$@" >>"$LOG_FILE" 2>&1 || true
+}
+
 fail_closeout() {
   local reason="$1"
   log "ERROR" "marking closeout failed: $reason"
   state_set ".closeoutStatus = \"failed\" | .closeoutFailureReason = \"$reason\""
+  # FIX-S36-06: mark the closeout card blocked so the stall is visible (fail-soft).
+  cc_card blocked "$reason"
   exit 1
 }
 
@@ -401,11 +416,29 @@ if [[ -z "$existing_cron_uuid" || "$existing_cron_uuid" == "null" ]]; then
   RESUME_CRON_SCRIPT="$SKILL_DIR/scripts/resume-closeout-cron.sh"
   if [[ -f "$RESUME_CRON_SCRIPT" ]] && command -v openclaw >/dev/null 2>&1; then
     log "INFO" "registering dedicated closeout-resume cron (PRD-2.8 loop registry)"
+    # FIX-XC-08a: use `--cron` (the real flag; `--schedule` DOES NOT EXIST and
+    # fails registration) and `--no-deliver` so this */15 operator-plumbing cron
+    # stays SILENT — on CLI 2026.6.8 `cron add --command` defaults to
+    # delivery=announce, which would spam the client's chat 96×/day. --no-deliver
+    # is feature-detected and dropped (with a no-flag retry) on older CLIs.
+    closeout_cron_help="$(openclaw cron add --help 2>&1 || true)"
+    closeout_no_deliver=()
+    if printf '%s' "$closeout_cron_help" | grep -qE '(^|[[:space:]])--no-deliver([[:space:]]|$)'; then
+      closeout_no_deliver=(--no-deliver)
+    fi
     cron_register_output=$(openclaw cron add \
       --name "closeout-resume" \
-      --schedule "*/15 * * * *" \
+      --cron "*/15 * * * *" \
       --command "bash $RESUME_CRON_SCRIPT" \
+      "${closeout_no_deliver[@]}" \
       --json 2>>"$LOG_FILE" || true)
+    if [[ -z "$cron_register_output" && ${#closeout_no_deliver[@]} -gt 0 ]]; then
+      cron_register_output=$(openclaw cron add \
+        --name "closeout-resume" \
+        --cron "*/15 * * * *" \
+        --command "bash $RESUME_CRON_SCRIPT" \
+        --json 2>>"$LOG_FILE" || true)
+    fi
     cron_uuid=$(printf '%s' "$cron_register_output" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
     if [[ -n "$cron_uuid" && "$cron_uuid" != "null" ]]; then
       state_set ".closeoutResumeUuid = \"$cron_uuid\" | .closeoutResumeRegisteredAt = \"$(now_iso)\""
@@ -486,6 +519,10 @@ else
 
   log "INFO" "step=1 command-center: done -- commandCenterUrl=$(state_get '.commandCenterUrl')"
 fi
+
+# FIX-S36-06: land a card on the Command Center kanban the closeout just built,
+# and move it to in_progress (pending -> generating). Fail-soft: never blocks.
+cc_card start
 
 # ----------------------------------------------------------------------
 # v10.X.4: step-level idempotency.
@@ -663,6 +700,7 @@ STEP_NOTION_STATUS=skipped
 STEP_TELEGRAM_STATUS=skipped
 GATE_INF1_RESULT=held
 GATE_INF2_RESULT=held
+GATE_VIDEO_RESULT=held
 GATE_NOTION_RESULT=held
 
 # ----------------------------------------------------------------------
@@ -815,15 +853,31 @@ fi
 # ----------------------------------------------------------------------
 # STEP 4 -- Celebration Video
 # ----------------------------------------------------------------------
-if [[ -n "$(state_get '.celebrationVideoUrl')" && "$(state_get '.celebrationVideoUrl')" != "null" ]]; then
-  log "INFO" "step=4 celebration-video: already done -- skipping"
+if [[ -n "$(state_get '.celebrationVideoUrl')" && "$(state_get '.celebrationVideoUrl')" != "null" && "$(gate_get_score celebration_video)" != "" ]] && rate_meets_gate "$(gate_get_score celebration_video)" && [[ "$(gate_get_qc celebration_video)" == "pass" ]]; then
+  log "INFO" "step=4 celebration-video: already done + gate-passed -- skipping"
   STEP_VIDEO_STATUS=ok
+  GATE_VIDEO_RESULT=pass
 else
-  run_step VIDEO "$SKILL_DIR/scripts/generate-celebration-video.sh"
+  # FIX-S36-03: the celebration video previously ran through run_step with NO
+  # rate gate — a garbled or dead-link video shipped "8.5-certified" with zero
+  # verification. Route it through the SAME generate_rate_gate as the
+  # infographics + Notion doc so it is deterministically rated (local container +
+  # size, or remote HEAD reachability) and HELD (never delivered) when it fails
+  # the 8.5 floor. The gate's held-list guard also prevents re-spending on the
+  # paid Veo backend on every resume-cron re-entry.
+  generate_rate_gate celebration_video VIDEO "$SKILL_DIR/scripts/generate-celebration-video.sh"
+  # A gate HOLD means the generator succeeded but the artifact failed the floor;
+  # surface that as a non-ok video status so slot 4 substitutes the text-only
+  # "video deferred" message and the deliverable link below is NOT written.
+  if [[ "${GATE_VIDEO_RESULT:-}" != "pass" && "$STEP_VIDEO_STATUS" == "ok" ]]; then
+    STEP_VIDEO_STATUS=held
+    log "WARN" "step=4 celebration-video: gate did not pass (result=${GATE_VIDEO_RESULT:-held}) -- delivering text-only; video HELD for review"
+  fi
 fi
 
-# PRD-2.8: write closeoutDeliverables.celebrationVideoUrl when step succeeds
-if [[ "$STEP_VIDEO_STATUS" == "ok" ]]; then
+# PRD-2.8: write closeoutDeliverables.celebrationVideoUrl ONLY when the video
+# cleared the 8.5 gate (never register a held/dead video as a deliverable link).
+if [[ "$GATE_VIDEO_RESULT" == "pass" ]]; then
   video_url=$(state_get '.ghlVideoPublicUrl // .celebrationVideoUrl')
   state_set ".closeoutDeliverables.celebrationVideoUrl = \"$video_url\"" || true
 fi
@@ -1117,6 +1171,10 @@ else
   # confirmation both passed above). Clear any sticky critical-failure marker /
   # pending slots from a prior failed attempt so the cron guard does not block a
   # genuinely-recovered closeout.
+  # FIX-S36-06: move the closeout card to `review` BEFORE writing done — the
+  # independent Command Center auto-scorer (never this script) promotes it to the
+  # done column. Fail-soft.
+  cc_card review
   state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\" | .closeoutPendingSlots = [] | del(.closeoutCriticalFailed) | .closeoutFailureReason = null" || \
     state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
   log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written + critical legs verified, resume cron removed)"
