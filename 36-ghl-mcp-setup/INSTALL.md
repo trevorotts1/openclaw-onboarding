@@ -222,33 +222,42 @@ Only proceed after explicit permission.
 Before asking the user, search ALL standard locations:
 
 ```bash
-# 1. Canonical secrets file (the source of truth)
-grep -iE "GOHIGHLEVEL_API_KEY|GHL_API_KEY|GHL_PIT|GHL_TOKEN|GHL_PRIVATE_INTEGRATION_TOKEN|PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_TOKEN|PIT_TOKEN|GHL_PIT_TOKEN|GOHIGHLEVEL_LOCATION_PIT|GHL_LOCATION_PIT|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID" "$SECRETS_ENV" 2>/dev/null
+# Every check below is EXISTENCE-ONLY: it reports which credential key NAMES are
+# present, never their values. Never grep a secrets file in a way that prints the
+# matched line — the repo qc-static secret-printing gate fails any secret-pattern
+# grep that lacks -q/-l/-L.
 
-# 2. OpenClaw config env.vars (gateway runtime)
+# 1. Canonical secrets file (the source of truth) — names only
+for k in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT GHL_LOCATION_ID GOHIGHLEVEL_LOCATION_ID; do
+  grep -qE "^(export )?${k}=" "$SECRETS_ENV" 2>/dev/null && echo "$k=SET"
+done
+
+# 2. OpenClaw config env.vars (gateway runtime) — names only, values never printed
 python3 -c "
 import json
 cfg=json.load(open('$CONFIG_JSON'))
 ev=cfg.get('env',{}).get('vars',{})
-for k,v in ev.items():
+for k in ev:
     if any(s in k.upper() for s in ['GHL','GOHIGH','LEADCONN','LOCATION']):
-        print(f'{k} = {str(v)[:10]}...')
+        print(f'{k}=SET')
 "
 
-# 3. Legacy location (skill 05 pre-v2.0)
-grep -iE "GHL_API_KEY|GHL_PIT|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID" "$WORKSPACE/secrets/.env" 2>/dev/null
+# 3. Legacy location (skill 05 pre-v2.0) — names only
+for k in GHL_API_KEY GHL_PIT GOHIGHLEVEL_API_KEY GHL_LOCATION_ID; do
+  grep -qE "^(export )?${k}=" "$WORKSPACE/secrets/.env" 2>/dev/null && echo "$k=SET"
+done
 
-# 4. Live env
-printenv | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID" | sed 's/=\(.\{0,10\}\).*/=\1.../'
+# 4. Live env — key NAMES only (cut strips the value before grep ever sees it)
+printenv | cut -d= -f1 | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID" || true
 
-# 5. Home dotfile
-grep -iE "GHL|GOHIGH|LOCATION_ID" ~/.env 2>/dev/null
+# 5. Home dotfile — key NAMES only
+cut -d= -f1 ~/.env 2>/dev/null | grep -iE "GHL|GOHIGH|LOCATION_ID" || true
 
-# 6. clawd repo env files
-grep -riE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|leadconnector" "$WORKSPACE"/.env* "$WORKSPACE"/*/.env* 2>/dev/null
+# 6. clawd repo env files — matching FILE names only (-l), never the values
+grep -rilE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|leadconnector" "$WORKSPACE"/.env* "$WORKSPACE"/*/.env* 2>/dev/null
 
-# 7. Master files folder
-grep -riE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID" "$MASTER_FILES_DIR/" 2>/dev/null
+# 7. Master files folder — matching FILE names only (-l), never the values
+grep -rilE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID" "$MASTER_FILES_DIR/" 2>/dev/null
 ```
 
 **Decision tree:**

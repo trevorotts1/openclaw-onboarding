@@ -1,0 +1,7 @@
+{
+  "stage": "04-tone-style-1",
+  "sha256": "bd72c5112ded88490dd14941e296b92af96d69f7ace5628c8039fd03682ddb8a",
+  "attested_by": "foreman",
+  "model": "openrouter/deepseek-chat-v3-0324",
+  "words": 419
+}
