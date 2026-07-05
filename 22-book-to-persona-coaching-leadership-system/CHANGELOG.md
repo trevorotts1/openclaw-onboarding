@@ -4,6 +4,46 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.16.0 - 2026-07-05 - fix(F1.4): Phase-6 categories write is FAIL-LOUD + AUTO-REPAIR — a lint failure can no longer strand an unselectable persona
+
+A blueprint that finished the pipeline could be left with NO key under
+`persona-categories.json.personas` — invisible to `persona-selector-v2.py`'s
+`list_available_personas()` universe (which reads exactly that dict's keys), an
+unselectable orphan. Root cause: `pipeline/orchestrator.py` Phase 6 wrapped
+`_append_persona_to_categories` in a `try/except` that caught EVERY exception
+(including the P13-2 schema-lint `PersonaCategoriesSchemaError`) and logged a
+WARNING — the run still exited 0 (a silent success, the categories-side mirror
+of F1.2's "registered but not embedded"). Fixes, mirroring F1.2 / FDN-5's
+fail-loud exit pattern:
+
+- **NEW `_phase6_register_categories()`** replaces the swallow-and-warn call
+  site. It gives the contract TWO independent guarantees:
+  1. **Never-to-zero on registration itself (AUTO-REPAIR):** when the normal
+     auto-classified append fails, the persona is re-registered with a
+     SAFE-DEFAULT tag set (`domain: ["leadership"]`, a controlled-vocab member
+     so it passes both the schema-lint gate and `persona_fleet.py sync-categories`
+     validation) plus an additive `needs_retag: true` marker — rather than
+     skipping the entry. The persona ALWAYS gets a categories key and stays
+     selectable.
+  2. **Fail-loud:** a Phase-6 write that needed the repair (or failed even that)
+     is recorded in a module-level accumulator; `main()` then exits the distinct
+     `PHASE6_CATEGORIES_EXIT_CODE = 9` (never 0), so the caller
+     (`add-persona-from-source.sh` / the inbox watcher) can tell "operator must
+     re-tag" apart from a clean build and route to retry/quarantine.
+- **`_append_persona_to_categories(..., domain_override=, needs_retag=)`**:
+  additive params power the auto-repair path (bypass the auto-classifier, write
+  the safe-default entry, stamp the marker). Existing callers are unchanged.
+- **`persona-categories.json` → schema 1.2**: registers the optional additive
+  `needs_retag` marker (documented in `persona-categories.README.md`). It is a
+  workspace-only field — `sync-categories` ships only the canonical seed fields,
+  so it never leaks into the shipped seed.
+- **Test:** `tests/unit/phase6-categories-fail-loud.test.sh` — 21 assertions
+  driving the happy path, the lint-failure auto-repair (safe default + marker),
+  the SystemExit(9) fail-loud gate (and its no-op on a clean run), the hard-fail
+  (both writes raise) path, never-to-zero selector-universe visibility, and
+  multi-book accumulator aggregation. Hermetic (no network / no Gemini key;
+  sandboxed log/status/categories paths — never touches the real workspace).
+
 ## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
 
 A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.
