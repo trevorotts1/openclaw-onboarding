@@ -82,21 +82,6 @@ _sync_event() {
   return 0
 }
 
-# GET the task and return its builder id (created_by_agent_id) or "".
-# Used only by the cc_move done self-grade guard. Never raises.
-_cc_task_builder() { # base task_id -> created_by_agent_id (or "")
-  local base="$1" task_id="$2" json builder=""
-  command -v curl >/dev/null 2>&1 || { printf ''; return 0; }
-  json="$(curl -sS --connect-timeout 5 --max-time 12 \
-    -H "Authorization: Bearer ${MC_API_TOKEN:-}" \
-    "$base/api/tasks/$task_id" 2>/dev/null)" || { printf ''; return 0; }
-  [ -n "$json" ] || { printf ''; return 0; }
-  if command -v jq >/dev/null 2>&1; then
-    builder="$(printf '%s' "$json" | jq -r '.created_by_agent_id // empty' 2>/dev/null || printf '')"
-  fi
-  printf '%s' "${builder:-}"
-}
-
 # --------------------------------------------------------------------------- #
 # public: GHL writes via caf (Tier-0, draft-only, safe-by-default)
 # --------------------------------------------------------------------------- #
@@ -249,21 +234,15 @@ cc_move() {
   base="${MISSION_CONTROL_URL:-http://localhost:4000}"
   base="${base%/}"
 
-  # SELF-GRADE GUARD: a builder never promotes its OWN task to done. NO PATCH is
-  # sent unless the acting agent is PROVEN to differ from the task builder.
+  # DONE-GUARD (unconditional): a PRODUCER may NEVER move a card to done — not even
+  # when it can prove it differs from the builder. review->done is owned exclusively
+  # by the Command Center's independent QC scorer (PASS >= 8.5). This matches Skill 41
+  # lib-command-center.sh cc_move_task (:62-65) and Skill 6 cc_board.update_status, and
+  # closes the hole where the old self-grade guard was bypassed when agent_id was omitted.
   if [ "$status" = "done" ]; then
-    local builder
-    builder="$(_cc_task_builder "$base" "$task_id")"
-    if [ -z "$builder" ]; then
-      echo "$CC_P honest no-op: cannot confirm the builder of task '$task_id' (board unreachable or field absent) — refusing self-promotion to done (NO PATCH)."
-      _sync_event command-center cc_move false done-builder-unknown
-      return 0
-    fi
-    if [ -n "$agent_id" ] && [ "$agent_id" = "$builder" ]; then
-      echo "$CC_P honest no-op: acting agent is the task builder — a builder never self-PATCHes its own task to done (independent QC owns review->done). NO PATCH."
-      _sync_event command-center cc_move false done-self-grade
-      return 0
-    fi
+    echo "$CC_P refusing 'done': review->done is set by the Command Center QC scorer, not the builder — post 'review' and let the QC sweep promote it (NO PATCH)."
+    _sync_event command-center cc_move false done-refused-producer
+    return 0
   fi
 
   # Perform the PATCH (fail-soft).

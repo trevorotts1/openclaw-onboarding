@@ -2371,3 +2371,26 @@ jobs:
 
           [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / Anthropic / bare Kimi)"
           exit $fail
+
+      - name: No secret-printing greps in 36/38 shipped SOPs (FIX-XC-07)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Deterministic shipped gate: a bare `grep -iE 'GHL_API_KEY|...' "$SECRETS_ENV"`
+          # in a shipped SOP prints the MATCHED LINE — the secret's VALUE — into
+          # transcripts/logs. Every secret-pattern grep in the cross-skill 36+38 docs
+          # must be existence-only (-q, or -l/-L for filenames), or read names only
+          # (a value-stripping `cut -d= -f1` stage before it). The gate inspects the
+          # grep PATTERN, not the file argument, so reading a NON-secret value like a
+          # model id out of the secrets file is correctly NOT flagged.
+          bash scripts/qc-assert-no-secret-printing-grep.sh .
+          # Negative self-test: a planted value-printing secret grep MUST FAIL (exit 1).
+          ng="$(mktemp -d)"
+          mkdir -p "$ng/36-ghl-mcp-setup" "$ng/scripts"
+          cp scripts/qc-assert-no-secret-printing-grep.sh "$ng/scripts/"
+          printf 'grep -iE "GHL_API_KEY|GHL_PIT" "$SECRETS_ENV"\n' > "$ng/36-ghl-mcp-setup/BAD.md"
+          rc=0
+          bash "$ng/scripts/qc-assert-no-secret-printing-grep.sh" "$ng" >/dev/null 2>&1 || rc=$?
+          rm -rf "$ng"
+          [ "$rc" -eq 1 ] || { echo "✗ secret-printing gate should FAIL (exit 1) on a planted value-printing grep, got $rc"; exit 1; }
+          echo "✓ Secret-printing grep gate is clean and proven to bite on a value-printing grep"

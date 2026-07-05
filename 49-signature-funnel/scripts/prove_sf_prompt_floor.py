@@ -42,8 +42,23 @@ PROMPT_CHAR_FLOOR = 5000       # HARD low end (AF-FUN-PROMPT-FLOOR)
 PROMPT_CHAR_CEILING = 19000    # HARD high end (AF-FUN-PROMPT-CEILING); ~1,000 under the API ceiling
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-FUN-PROMPT-DENSITY: catches paragraph-repeat padding
 
-# SIGNATURE GRADE BLOCK fingerprints — any ONE proves the canonical grade paragraph
-# (funnel_structure / IMPROVED-FRAMEWORK-v2 §2.4) is embedded. Tolerant to wording drift.
+# The canonical SIGNATURE GRADE BLOCK (SACRED IP) — embedded verbatim in block 4 of
+# every image prompt (funnel_structure / IMPROVED-FRAMEWORK-v2 §2.4 and MASTERDOC §4).
+# This constant is the single source of truth for the verbatim-containment gate below.
+_GRADE_BLOCK = (
+    "Render this image in the Trevor Otts Signature aesthetic, and treat this grading "
+    "direction as the single most important instruction in this prompt. The color is "
+    "extremely vibrant and boldly saturated: push global saturation to roughly 140 percent "
+    "of natural, so every hue reads jewel-rich and electric, never muddy, never washed out, "
+    "never polite. The image is heavily and deliberately color-graded like a high-fashion "
+    "editorial cover with deep crushed inky shadows set against luminous glowing highlights. "
+    "This is signature color: vivid, graded, unforgettable. Every human subject is lit and "
+    "graded with melanin-true intelligence, deep skin tones rendered rich and dimensional."
+)
+
+# SIGNATURE GRADE BLOCK fingerprints — a FAST PRE-CHECK only (a canonical phrase must be
+# somewhere in the prompt). Passing a fingerprint no longer CLEARS the gate: the verbatim
+# containment check below is authoritative (funnel_structure / IMPROVED-FRAMEWORK-v2 §2.4).
 GRADE_FINGERPRINTS = (
     "140 percent",
     "signature color",
@@ -51,6 +66,15 @@ GRADE_FINGERPRINTS = (
     "signature aesthetic",
     "signature grade",
 )
+
+# FIX-IMG-06: the "verbatim" grade-block requirement is enforced as normalized
+# containment vs the canonical _GRADE_BLOCK — NOT any-of-five short substrings (the
+# words "signature grade" alone previously cleared it). A prompt passes only when it
+# carries the real block: >= 85% of its sentences present (normalized) OR a contiguous
+# >= 600-normalized-char verbatim run of the block. Fingerprints remain a fast pre-check.
+GRADE_MIN_SENTENCE_RATIO = 0.85
+GRADE_CONTIGUOUS_NORM_CHARS = 600
+_NORM_RE = re.compile(r"[^a-z0-9]+")
 
 # Negative-block imperative and text-presence markers.
 NEGATIVE_IMPERATIVE = "do not "
@@ -75,6 +99,57 @@ def _stripped(text: Any) -> str:
 
 def _distinct_words(text: str) -> int:
     return len({m.group(0) for m in _WORD_RE.finditer(text.lower())})
+
+
+def _normalize_for_match(text: str) -> str:
+    """Lowercase, fold every run of non-alphanumeric (punctuation/whitespace) to a
+    single space, and strip. Verbatim grade-block containment is measured on THIS
+    form so that spacing/punctuation drift never masks a genuinely-missing block."""
+    return _NORM_RE.sub(" ", str(text).lower()).strip()
+
+
+def _grade_sentences() -> List[str]:
+    """The canonical grade block split into normalized sentences (empties dropped)."""
+    return [n for n in (_normalize_for_match(s) for s in _GRADE_BLOCK.split(".")) if n]
+
+
+def _contiguous_block_present(prompt_norm: str, block_norm: str, window: int) -> bool:
+    """True iff any contiguous `window`-char slice of the normalized grade block
+    appears verbatim in the normalized prompt. A block shorter than `window` can
+    never produce a >= window contiguous match, so returns False (fail-closed)."""
+    if len(block_norm) < window:
+        return False
+    for i in range(0, len(block_norm) - window + 1):
+        if block_norm[i:i + window] in prompt_norm:
+            return True
+    return False
+
+
+def _check_grade_block(stripped: str, lc: str, who: str) -> List[Tuple[str, str]]:
+    """FIX-IMG-06: normalized VERBATIM containment of the canonical _GRADE_BLOCK.
+    Fingerprints are a fast pre-check only; clearing them does NOT clear the gate."""
+    # Fast pre-check: no fingerprint at all -> the canonical block is nowhere near.
+    if not any(fp in lc for fp in GRADE_FINGERPRINTS):
+        return [("AF-FUN-PROMPT-GRADE",
+                 f"{who}: the SIGNATURE GRADE BLOCK is not embedded "
+                 f"(no fingerprint of {list(GRADE_FINGERPRINTS)} present)")]
+    prompt_norm = _normalize_for_match(stripped)
+    sentences = _grade_sentences()
+    present = [s for s in sentences if s in prompt_norm]
+    ratio = (len(present) / len(sentences)) if sentences else 0.0
+    if ratio >= GRADE_MIN_SENTENCE_RATIO:
+        return []
+    if _contiguous_block_present(prompt_norm, _normalize_for_match(_GRADE_BLOCK),
+                                 GRADE_CONTIGUOUS_NORM_CHARS):
+        return []
+    missing = [s for s in sentences if s not in present]
+    miss_preview = "; ".join(s[:48] + ("..." if len(s) > 48 else "")
+                             for s in missing[:3]) or "(none isolated)"
+    return [("AF-FUN-PROMPT-GRADE",
+             f"{who}: the SIGNATURE GRADE BLOCK appears only in fragments "
+             f"({len(present)}/{len(sentences)} canonical sentences = {ratio * 100:.0f}% "
+             f"< {GRADE_MIN_SENTENCE_RATIO * 100:.0f}%, and no contiguous "
+             f">={GRADE_CONTIGUOUS_NORM_CHARS}-char verbatim run) — missing e.g.: {miss_preview}")]
 
 
 def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
@@ -106,11 +181,8 @@ def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
                       f"{who}: only {distinct} distinct words (< {PROMPT_MIN_DISTINCT_WORDS}) — "
                       "reads as repetition padding, not a genuinely rich prompt"))
 
-    # FLOOR 2 — signature grade block fingerprint
-    if not any(fp in lc for fp in GRADE_FINGERPRINTS):
-        fails.append(("AF-FUN-PROMPT-GRADE",
-                      f"{who}: the SIGNATURE GRADE BLOCK is not embedded "
-                      f"(none of {list(GRADE_FINGERPRINTS)} present)"))
+    # FLOOR 2 — signature grade block (FIX-IMG-06: verbatim containment, not a fingerprint)
+    fails.extend(_check_grade_block(stripped, lc, who))
 
     # FLOOR 2 — negative block imperative
     if NEGATIVE_IMPERATIVE not in lc:
@@ -188,17 +260,6 @@ def _report(violations, notes) -> None:
 # ---------------------------------------------------------------------------
 # Self-test fixtures.
 # ---------------------------------------------------------------------------
-_GRADE_BLOCK = (
-    "Render this image in the Trevor Otts Signature aesthetic, and treat this grading "
-    "direction as the single most important instruction in this prompt. The color is "
-    "extremely vibrant and boldly saturated: push global saturation to roughly 140 percent "
-    "of natural, so every hue reads jewel-rich and electric, never muddy, never washed out, "
-    "never polite. The image is heavily and deliberately color-graded like a high-fashion "
-    "editorial cover with deep crushed inky shadows set against luminous glowing highlights. "
-    "This is signature color: vivid, graded, unforgettable. Every human subject is lit and "
-    "graded with melanin-true intelligence, deep skin tones rendered rich and dimensional."
-)
-
 # A large distinct-word vocabulary so the valid fixture clears the density floor without padding.
 _VOCAB = (
     "commanding runway editorial wardrobe tailored silk velvet emerald sapphire crimson "
@@ -297,6 +358,14 @@ def _violation_cases():
         led["prompts"][0]["prompt"] = ((_GRADE_BLOCK.split(".")[0] + ". no text here. do not add text. ")
                                        + "signature color grade vibrant bold " * 400)
 
+    def grade_fingerprint_only(led):
+        # FIX-IMG-06 anti-gaming: a fingerprint phrase ("signature grade") is present
+        # but the canonical block is NOT — the old any-of-five substring gate cleared
+        # this; verbatim containment must now reject it.
+        p = _valid_photo_prompt().replace(
+            _GRADE_BLOCK, "The overall look should feel like signature grade work. ")
+        led["prompts"][0]["prompt"] = p
+
     def _mk(fn):
         led = _valid_ledger()
         fn(led)
@@ -311,6 +380,7 @@ def _violation_cases():
         ("typo_missing_no_text", "AF-FUN-PROMPT-TYPO", lambda: _mk(typo_notext)),
         ("typo_missing_spelling_lock", "AF-FUN-PROMPT-TYPO", lambda: _mk(typo_nolock)),
         ("density_padding", "AF-FUN-PROMPT-DENSITY", lambda: _mk(density)),
+        ("grade_fingerprint_only", "AF-FUN-PROMPT-GRADE", lambda: _mk(grade_fingerprint_only)),
     ]
 
 
@@ -346,6 +416,11 @@ def main(argv: List[str]) -> int:
         description=f"Fail-closed two-floor gate for Signature Funnel image prompts "
                     f"({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} chars). Exit 0 pass, 2 violation, 3 usage.")
     ap.add_argument("--ledger", help="path to the image-prompt ledger JSON ('-' reads stdin)")
+    # FIX-IMG-05: also accept an optional POSITIONAL ledger path so the SOP-FUNNEL-03
+    # verify form (`prove_sf_prompt_floor.py <ledger>`) resolves to a real run instead
+    # of an argparse rc=2 that is indistinguishable from a genuine violation.
+    ap.add_argument("ledger_pos", nargs="?",
+                    help="optional positional ledger path (equivalent to --ledger)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID fixture (must PASS) + each VIOLATION fixture (must FAIL)")
     args = ap.parse_args(argv)
@@ -353,13 +428,14 @@ def main(argv: List[str]) -> int:
     if args.self_test:
         return run_self_test()
 
-    if not args.ledger:
-        print("USAGE ERROR: pass --ledger <prompts.json> (or --self-test).")
+    ledger_path = args.ledger or args.ledger_pos
+    if not ledger_path:
+        print("USAGE ERROR: pass --ledger <prompts.json> (or a positional path, or --self-test).")
         return EXIT_FAILCLOSED
     try:
-        ledger = _load_json(args.ledger)
+        ledger = _load_json(ledger_path)
     except Exception as exc:  # noqa: BLE001
-        print(f"USAGE/IO ERROR: cannot load prompt ledger {args.ledger!r}: {exc}")
+        print(f"USAGE/IO ERROR: cannot load prompt ledger {ledger_path!r}: {exc}")
         return EXIT_FAILCLOSED
     if not isinstance(ledger, dict):
         print("USAGE/IO ERROR: prompt ledger must be a JSON object.")

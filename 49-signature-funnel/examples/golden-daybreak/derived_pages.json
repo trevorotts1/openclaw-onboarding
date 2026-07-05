@@ -1,0 +1,26 @@
+{
+  "funnel_type": "signature_funnel",
+  "funnel_size": 7,
+  "derived_pages": [
+    {
+      "id": "upsell",
+      "label": "U1"
+    },
+    {
+      "id": "downsell",
+      "label": "D1"
+    },
+    {
+      "id": "upsell-2",
+      "label": "U2"
+    },
+    {
+      "id": "downsell-2",
+      "label": "D2"
+    },
+    {
+      "id": "thank-you",
+      "label": "TY"
+    }
+  ]
+}

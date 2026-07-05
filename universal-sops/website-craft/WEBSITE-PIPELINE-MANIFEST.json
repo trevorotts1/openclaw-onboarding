@@ -1,0 +1,46 @@
+{
+  "cluster": "website-craft",
+  "purpose": "Shared cross-department procedure for authoring and shipping a multi-page marketing WEBSITE (Home / Services / About / FAQ / Contact) with a real per-page-type copy contract. Mirrors funnel-craft; the build/delivery rail is DELEGATED to Skill 6 (06-ghl-install-pages).",
+  "owning_role": "conversion-copywriter",
+  "delivery_rail": "06-ghl-install-pages (v2_dispatcher / ghl_builder)",
+  "authored_from": "FIX-COPY-03 (MASTER-fix-plan-2026-07-05)",
+  "persona_step_0": {
+    "required": true,
+    "how": "persona-selector-v2.py --task '<website copy task>' --department marketing -> persona-selection-log.md",
+    "gate": "AF-WEB-PERSONA-LOG",
+    "note": "Same persona Step 0 as funnel-craft; the copywriter persona must be logged before a section is written."
+  },
+  "brand_voice": {
+    "primary": "brand-voice-lock.md",
+    "fallback": "provisional lock derived from Skill 55 Product Bio / Skill 52 brand intelligence when brand-voice-lock.md is absent (SOP-WEB-02 §1b)",
+    "gate": "AF-WEB-VOICE-UNANCHORED",
+    "note": "Never author voice-unanchored copy."
+  },
+  "prover": "prove_web_pages.py",
+  "prover_gates": [
+    "AF-WEB-VOICE-UNANCHORED",
+    "AF-WEB-PERSONA-LOG",
+    "AF-WEB-NO-PAGES",
+    "AF-WEB-UNKNOWN-PAGETYPE",
+    "AF-WEB-HOME-SB7",
+    "AF-WEB-HOME-THIN",
+    "AF-WEB-SERVICES-EMPTY",
+    "AF-WEB-SERVICE-THIN",
+    "AF-WEB-ABOUT-THIN",
+    "AF-WEB-FAQ-COUNT"
+  ],
+  "page_floors": {
+    "home": {"framework": "StoryBrand SB7 wireframe (7 roles)", "min_words": 250},
+    "services": {"min_words_per_service": 400},
+    "about": {"min_words": 500},
+    "faq": {"min_pairs": 8}
+  },
+  "phases": [
+    {"id": "P0-INTAKE", "sop": "SOP-WEB-01-INTAKE.md", "owning_role": "conversion-copywriter", "produces": "working/copy/website-brief.json"},
+    {"id": "P1-COPY", "sop": "SOP-WEB-02-COPY.md", "owning_role": "conversion-copywriter", "produces": "working/copy/website_copy_ledger.json", "prover": "prove_web_pages.py", "gates": ["AF-WEB-HOME-SB7", "AF-WEB-HOME-THIN", "AF-WEB-SERVICE-THIN", "AF-WEB-ABOUT-THIN", "AF-WEB-FAQ-COUNT", "AF-WEB-VOICE-UNANCHORED", "AF-WEB-PERSONA-LOG"]},
+    {"id": "P2-PROMPTS-IMAGES", "sop": "SOP-WEB-03-PROMPTS-IMAGES.md", "owning_role": "conversion-copywriter", "delegated_to": "06-ghl-install-pages image stage"},
+    {"id": "P3-BUILD", "sop": "SOP-WEB-04-BUILD.md", "owning_role": "web-development", "delegated_to": "06-ghl-install-pages (v2_dispatcher)"},
+    {"id": "P4-CERTIFY", "sop": "SOP-WEB-05-CERTIFY.md", "owning_role": "qc-specialist--marketing", "produces": "website-certificate.json"}
+  ],
+  "client_runtime_rule": "The shipped engine on a client box NEVER uses Anthropic / claude-* models or operator keys. Generation + adversarial verify run on the CLIENT's own strongest configured provider; prove_web_pages.py is provider-neutral stdlib Python."
+}

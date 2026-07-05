@@ -190,7 +190,10 @@ Thank-You gets one celebratory hero or a "WELCOME" gallery-typography treatment.
 2. After P2 — image-prompt two-floor prover (`prove_sf_prompt_floor.py`, 5,000–19,000).
 3. During P3 — Kie taskId provenance (no placeholder/native images).
 4. After P4 — every `<img>` resolves to the GHL media host.
-5. After P7 — GHL fragment + reachability invariants; funnel-build QC ≥ 8.5 (Skill 6).
+5. At P5 — a non-empty `pages/<profile>.fragment.html` per 3/5/7 matrix page (`AF-FUN-HTML-FRAGMENT`);
+   at P6 — `funnel_graph.json` reachability/branching vs §3 (`prove_sf_graph.py`); at P7 — `build_receipt.json`
+   funnel-build QC ≥ 8.5 + a preview URL per page (`prove_sf_build.py`); at P8 — the U1/D1/U2/D2/TY
+   derived-page ledger (`AF-FUN-DERIVE-LEDGER`). Each fails closed — a certificate can no longer mint with zero pages built.
 6. At P9 — no-pitch (Thank-You clean) + signed `PROCESS-CERTIFICATE.json` (`prove_sf_cert.py`); no cert
    = `AF-FUN-PROCESS-INTEGRITY`.
 7. Publish guard — the pipeline stops at preview URLs + a labeled `~/Downloads/` bundle; going live is

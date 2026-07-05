@@ -14,6 +14,8 @@ WHAT IT ENFORCES (measuring the declared section ledger, ignoring any self-repor
   * every canonical section is present.                          -> AF-SP56-MAIN-SECTION-MISSING
   * no section outside the canonical set.                        -> AF-SP56-MAIN-SECTION-UNKNOWN
   * sections are in canonical ascending order.                   -> AF-SP56-MAIN-SECTION-ORDER
+  * every section's STRIPPED copy clears its SACRED per-section
+    word_min floor (measured, self-report ignored) (FIX-XC-04c). -> AF-SP56-MAIN-SECTION-BAND
   * a countdown timer is present (has_countdown_timer OR the
     fragment carries countdown JS).                              -> AF-SP56-MAIN-NO-COUNTDOWN
   * at least one MAIN asset exists (else fail-closed).           -> AF-SP56-MAIN-EMPTY
@@ -39,8 +41,12 @@ AF_COUNT = "AF-SP56-MAIN-SECTION-COUNT"
 AF_MISSING = "AF-SP56-MAIN-SECTION-MISSING"
 AF_UNKNOWN = "AF-SP56-MAIN-SECTION-UNKNOWN"
 AF_ORDER = "AF-SP56-MAIN-SECTION-ORDER"
+AF_BAND = "AF-SP56-MAIN-SECTION-BAND"
 AF_COUNTDOWN = "AF-SP56-MAIN-NO-COUNTDOWN"
 AF_EMPTY = "AF-SP56-MAIN-EMPTY"
+
+# HTML-tag stripper for measuring genuine copy length (self-report is ignored).
+_TAG_RE = re.compile(r"<[^>]+>")
 
 STAGE = "main"
 REQUIRED_VARIANTS = ("a", "b")
@@ -86,6 +92,21 @@ def _assets_for_stage(ledger: Any) -> List[Dict[str, Any]]:
     return [a for a in items if isinstance(a, dict) and _norm(a.get("stage")) == STAGE]
 
 
+def _section_copy(sec: Any) -> str:
+    if not isinstance(sec, dict):
+        return ""
+    for k in ("copy", "text", "body", "content"):
+        v = sec.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return ""
+
+
+def _stripped_words(blob: str) -> int:
+    text = _TAG_RE.sub(" ", str(blob or ""))
+    return len([w for w in re.split(r"\s+", text.strip()) if w])
+
+
 def _has_countdown(asset: Dict[str, Any]) -> bool:
     if asset.get("has_countdown_timer") is True:
         return True
@@ -99,14 +120,22 @@ def _verify_variant(asset: Dict[str, Any], canon: List[Dict[str, Any]], vlabel: 
     if not isinstance(secs, list) or not secs:
         return [(AF_MISSING, f"variant {vlabel}: no sections declared")]
 
+    word_min_by_id = {c["id"]: c.get("word_min") for c in canon}
     resolved: List[str] = []
     for s in secs:
         name = s.get("name") if isinstance(s, dict) else s
         cid = _match_section(name, canon)
         if cid is None:
             fails.append((AF_UNKNOWN, f"variant {vlabel}: section {name!r} matches no canonical main section"))
-        else:
-            resolved.append(cid)
+            continue
+        resolved.append(cid)
+        # SACRED per-section word-band floor — MEASURED on the stripped copy (FIX-XC-04c).
+        floor = word_min_by_id.get(cid)
+        if isinstance(floor, int) and floor > 0:
+            wc = _stripped_words(_section_copy(s))
+            if wc < floor:
+                fails.append((AF_BAND, f"variant {vlabel}: section {cid!r} has {wc} stripped words, "
+                                       f"under the {floor}-word floor (under-length is a hard miss)"))
 
     canon_ids = [c["id"] for c in canon]
     if len(secs) != len(canon_ids):
@@ -194,12 +223,22 @@ _CANON_ORDER = ["Attention-Grabbing Header", "Hero Section", "Problem & Solution
                 "Final Call to Action", "Footer"]
 
 
+# A ~46-word body that clears every main-section word_min floor (max floor is 35).
+_FIXTURE_COPY = (
+    "This section speaks directly to the founder who is tired of trading raw hours for the "
+    "same flat result, naming the exact frustration they feel every morning and promising a "
+    "calmer, more deliberate path forward that respects their time, rebuilds their confidence, "
+    "and shows one clear first move they can make today without any hype whatsoever."
+)
+
+
 def _valid_main_asset(variant: str) -> Dict[str, Any]:
     return {
         "stage": "main", "variant": variant, "type": "page",
         "asset_key": f"jane-doe__glow-method__main__page__v01{variant}",
         "has_countdown_timer": True,
-        "sections": [{"order": i + 1, "name": nm} for i, nm in enumerate(_CANON_ORDER)],
+        "sections": [{"order": i + 1, "name": nm, "copy": _FIXTURE_COPY}
+                     for i, nm in enumerate(_CANON_ORDER)],
     }
 
 
@@ -237,13 +276,16 @@ def self_test() -> int:
     check_fail("seven-sections", f, AF_COUNT)
 
     f = _valid_ledger()
-    f["assets"][1]["sections"] = [{"order": i + 1, "name": nm} for i, nm in enumerate(
+    f["assets"][1]["sections"] = [{"order": i + 1, "name": nm, "copy": _FIXTURE_COPY} for i, nm in enumerate(
         ["Attention-Grabbing Header", "Hero Section", "Benefits Section", "Problem & Solution",
          "Product Details", "Credibility Section", "Final Call to Action", "Footer"])]
     check_fail("swapped-order", f, AF_ORDER)
 
     f = _valid_ledger(); f["assets"][0]["sections"][5] = {"order": 6, "name": "Bonus Stack"}
     check_fail("unknown-section", f, AF_UNKNOWN)
+
+    f = _valid_ledger(); f["assets"][0]["sections"][1]["copy"] = "Too thin to convert."
+    check_fail("hero-under-band", f, AF_BAND)
 
     f = _valid_ledger(); f["assets"][1]["has_countdown_timer"] = False
     check_fail("no-countdown", f, AF_COUNTDOWN)

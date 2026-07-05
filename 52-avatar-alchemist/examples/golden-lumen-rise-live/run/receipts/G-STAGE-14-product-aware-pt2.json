@@ -1,0 +1,7 @@
+{
+  "stage": "14-product-aware-pt2",
+  "sha256": "1a2e086a85255d1c70b1e4fd7c4591978b6b01845289b7ce21b1d8ad9f56aebd",
+  "attested_by": "foreman",
+  "model": "openrouter/deepseek-chat-v3-0324",
+  "words": 183
+}
