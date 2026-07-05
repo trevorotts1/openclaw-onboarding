@@ -6,12 +6,14 @@
 # Proves that provision_persona_index() RE-PROVISIONS a non-canonical partial
 # index (the 6260 / 7615 / 9456-row locally-re-embedded indexes the OLD
 # "has section_number column ⇒ done" gate wrongly SKIPPED) while genuinely
-# SKIPPING the canonical asset (manifest chunk_count, v2.2.1 = 935 rows) — and the live-operator
+# SKIPPING the canonical asset (manifest chunk_count, v2.3.0 = 1161 rows) — and the live-operator
 # index (content-canonical but unstamped sentinel) self-heals instead of
 # triggering a 90MB re-download (furnace guard).
 #
 # Also proves reconcile_persona_assets() converges a drifted 40-persona box to
-# the canonical 65 personas + canonical persona-categories.json md5.
+# the canonical persona set (manifest persona_count, v2.3.0 = 81) + canonical
+# persona-categories.json md5. All canonical counts + the md5 are read from the
+# manifest so this test never hard-locks to a stale number again.
 #
 # Fully offline: PROVISION_DRY_RUN=1 stops the gate before any network I/O.
 # Requires python3 with the stdlib sqlite3 module (present on ubuntu-latest).
@@ -25,16 +27,22 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HELPER="$REPO_ROOT/shared-utils/provision-persona-index.sh"
 MANIFEST="$REPO_ROOT/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 SK22="$REPO_ROOT/22-book-to-persona-coaching-leadership-system"
-CANON_CAT_MD5="e7b29db3e82b056a484cba2114fcf77f"
+# Read the canonical persona-SET md5 from the manifest (persona_set_md5) so the
+# reconcile assertions track whatever the current canonical persona-categories.json
+# hashes to and can never hard-lock to a stale md5 again (mirrors MANIFEST_CHUNKS).
+CANON_CAT_MD5="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["persona_set_md5"])' "$MANIFEST" 2>/dev/null || echo "e7b29db3e82b056a484cba2114fcf77f")"
 
 # Read the canonical release_tag from the manifest so the test always tracks the
 # current release. Using release_tag (not base_tag) because provision_persona_index
 # stamps the sentinel from release_tag.
 MANIFEST_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release_tag"])' "$MANIFEST" 2>/dev/null || echo "prebuilt-index-v2.2.0")"
 # Read the canonical chunk_count from the manifest too, so the "canonical index"
-# fixtures track the current asset (v2.2.1 = 935) and can never hard-lock to a stale
+# fixtures track the current asset (v2.3.0 = 1161) and can never hard-lock to a stale
 # row count again. A non-canonical fixture is then any count != this.
 MANIFEST_CHUNKS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["chunk_count"])' "$MANIFEST" 2>/dev/null || echo "935")"
+# Read the canonical persona_count from the manifest so the persona-dir fixtures
+# match the gate's (d) persona-dir-count == manifest.persona_count check (v2.3.0 = 81).
+MANIFEST_PERSONAS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["persona_count"])' "$MANIFEST" 2>/dev/null || echo "65")"
 
 PASS=0
 FAIL=0
@@ -54,19 +62,21 @@ trap 'rm -rf "$WORK"' EXIT
 
 # Helper: write a sqlite index with section_number+mode columns and N rows.
 _mk_index() {
-    python3 - "$1" "$2" <<'PY'
+    python3 - "$1" "$2" "$MANIFEST_PERSONAS" <<'PY'
 import sqlite3, sys
-p, n = sys.argv[1], int(sys.argv[2])
+p, n, pn = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 c = sqlite3.connect(p)
 c.execute("CREATE TABLE embeddings(id INTEGER, file_path TEXT, section_number INTEGER, mode TEXT)")
 c.executemany("INSERT INTO embeddings VALUES(?,?,?,?)",
-              [(i, f"/x/personas/p{i % 65}/f.md", 3, "both") for i in range(n)])
+              [(i, f"/x/personas/p{i % pn}/f.md", 3, "both") for i in range(n)])
 c.commit(); c.close()
 PY
 }
-_mk_65_dirs() {
+# Create as many blueprint dirs as the manifest declares (persona_count) so the
+# provision gate's (d) persona-dir-count == manifest.persona_count check is satisfied.
+_mk_persona_dirs() {
     mkdir -p "$1/personas"
-    for i in $(seq 1 65); do mkdir -p "$1/personas/persona-$i"; done
+    for i in $(seq 1 "$MANIFEST_PERSONAS"); do mkdir -p "$1/personas/persona-$i"; done
 }
 
 export PROVISION_DRY_RUN=1
@@ -76,7 +86,7 @@ echo "--- (1) non-canonical 6260-row index re-provisions ---"
 D1="$WORK/box-6260"; mkdir -p "$D1"
 _mk_index "$D1/gemini-index.sqlite" 6260
 printf '%s\n' "$MANIFEST_TAG" > "$D1/.prebuilt-index-version"
-_mk_65_dirs "$D1"
+_mk_persona_dirs "$D1"
 OUT1="$(provision_persona_index "$MANIFEST" "$D1" 2>&1)"
 echo "$OUT1" | grep -q "NEEDS (re)provision" \
     && pass "1a: 6260-row index triggers NEEDS (re)provision" \
@@ -93,7 +103,7 @@ echo "--- (2) canonical ${MANIFEST_CHUNKS}-row index skips ---"
 D2="$WORK/box-canon"; mkdir -p "$D2"
 _mk_index "$D2/gemini-index.sqlite" "$MANIFEST_CHUNKS"
 printf '%s\n' "$MANIFEST_TAG" > "$D2/.prebuilt-index-version"
-_mk_65_dirs "$D2"
+_mk_persona_dirs "$D2"
 OUT2="$(provision_persona_index "$MANIFEST" "$D2" 2>&1)"
 # Accept either "already canonical" (sentinel matches) or "content-canonical...self-heal"
 # (sentinel tag differs from release_tag — both result in a SKIP, not a re-provision).
@@ -109,7 +119,7 @@ echo "--- (3) operator-like index self-heals sentinel, skips download ---"
 D3="$WORK/box-operator"; mkdir -p "$D3"
 _mk_index "$D3/gemini-index.sqlite" "$MANIFEST_CHUNKS"
 : > "$D3/.prebuilt-index-version"   # empty sentinel (built locally, never stamped)
-_mk_65_dirs "$D3"
+_mk_persona_dirs "$D3"
 OUT3="$(provision_persona_index "$MANIFEST" "$D3" 2>&1)"
 echo "$OUT3" | grep -q "self-heal" \
     && pass "3a: empty-sentinel canonical index self-heals" \
@@ -132,15 +142,15 @@ c.execute("CREATE TABLE embeddings(id INTEGER, section_number INTEGER)")
 c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(50)])  # arbitrary count; re-provision is driven by the MISSING mode column, not the row count
 c.commit(); c.close()
 PY
-_mk_65_dirs "$D4"
+_mk_persona_dirs "$D4"
 printf '%s\n' "$MANIFEST_TAG" > "$D4/.prebuilt-index-version"
 OUT4="$(provision_persona_index "$MANIFEST" "$D4" 2>&1)"
 echo "$OUT4" | grep -q "missing-column:mode" \
     && pass "4a: missing 'mode' column triggers re-provision" \
     || fail "4a: missing mode column not caught (out: $OUT4)"
 
-# ─── (5) reconcile_persona_assets converges 40 → 65 + canonical categories md5
-echo "--- (5) reconcile converges drifted 40-persona box to canonical 65 ---"
+# ─── (5) reconcile_persona_assets converges 40 → manifest persona_count + canonical categories md5
+echo "--- (5) reconcile converges drifted 40-persona box to canonical ${MANIFEST_PERSONAS} ---"
 if [ ! -d "$SK22/personas" ] || [ ! -f "$SK22/persona-categories.json" ]; then
     fail "5: Skill-22 source missing — cannot test reconcile"
 else
@@ -162,8 +172,8 @@ else
     DATA_MD5="$(_pidx_md5 "$CDB/persona-categories.json")"
     LEG_MD5="$(_pidx_md5 "$WS/coaching-personas/persona-categories.json")"
 
-    [ "$DIRS" = "65" ] && pass "5a: persona dirs converged 40 → 65" || fail "5a: dirs=$DIRS (expected 65)"
-    [ "$NONEMPTY" = "65" ] && pass "5b: 65 non-empty blueprints on disk" || fail "5b: non-empty=$NONEMPTY"
+    [ "$DIRS" = "$MANIFEST_PERSONAS" ] && pass "5a: persona dirs converged 40 → $MANIFEST_PERSONAS" || fail "5a: dirs=$DIRS (expected $MANIFEST_PERSONAS)"
+    [ "$NONEMPTY" = "$MANIFEST_PERSONAS" ] && pass "5b: $MANIFEST_PERSONAS non-empty blueprints on disk" || fail "5b: non-empty=$NONEMPTY (expected $MANIFEST_PERSONAS)"
     [ "$STALE" = "0" ] && pass "5c: stale placeholder blueprints overwritten" || fail "5c: $STALE stale remain"
     [ "$DATA_MD5" = "$CANON_CAT_MD5" ] && pass "5d: data/ categories md5 == canonical" || fail "5d: data md5=$DATA_MD5"
     [ "$LEG_MD5" = "$CANON_CAT_MD5" ] && pass "5e: legacy categories md5 == canonical" || fail "5e: legacy md5=$LEG_MD5"
