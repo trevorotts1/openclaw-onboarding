@@ -23,6 +23,9 @@
 #   7. bigger questions hand off to F44 (ZHC-faq-detoured)
 #   8. tag ZHC-faq-answered
 #   9. faq-detour-log.jsonl + schema fields (faq_topic, in_scope, returned_to_step)
+#  10. Learning Loop section (U-3): unknown-becomes-known, ZHC-faq-unknown
+#  11. the two new event types faq_unknown_flagged + faq_learned
+#  12. the operator-only write rule (only an operator Telegram reply writes faqs.md)
 #
 # F45 (geo-qualification-protocol.md):
 #   1. toggle default OFF (geo_qualification.enabled false)
@@ -94,6 +97,12 @@ require_in "$F47" "F47.9 faq-detour-log.jsonl"                                  
 require_in "$F47" "F47.9 schema field returned_to_step"                                  "returned_to_step"
 require_in "$F47" "F47.9 schema field in_scope"                                          "in_scope"
 require_in "$F47" "F47.9 schema field faq_topic"                                         "faq_topic"
+require_in "$F47" "F47.10 Learning Loop section (U-3)"                                   "Learning Loop"
+require_in "$F47" "F47.10 unknown-becomes-known loop (CloseBot CB-6)"                    "unknown-becomes-known"
+require_in "$F47" "F47.10 unknown FAQ tag ZHC-faq-unknown"                               "ZHC-faq-unknown"
+require_in "$F47" "F47.11 new event type faq_unknown_flagged"                            "faq_unknown_flagged"
+require_in "$F47" "F47.11 new event type faq_learned"                                    "faq_learned"
+require_in "$F47" "F47.12 operator-only write rule (only an operator Telegram reply)"    "ONLY an operator Telegram reply writes knowledge to faqs.md"
 
 echo ""
 echo "--- F45 (geo-qualification-protocol.md) ---"

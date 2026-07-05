@@ -63,6 +63,13 @@ and the order in which a human-readable copy is placed in the client's account.
 - [ ] **(i) Per-channel formatting constraints.** The channel's hard formatting rules — SMS ≤160 chars
       where possible; Email 2-4 short paragraphs + subject mirroring; FB/IG 1-3 conversational sentences +
       the 24-hour reply window; LinkedIn professional concise; Live Chat / Chat Widget short real-time turns.
+- [ ] **(j) Persona reference (U-5) — OPTIONAL, with a default.** A playbook MAY carry a `persona:` header
+      line naming a reusable persona id from the persona registry (`protocols/persona-registry-protocol.md`).
+      When absent, resolution falls back to the channel default and then the always-present house default
+      `personas/house-standard.md`, so an install without a custom persona still resolves cleanly. This item
+      is **OPTIONAL-with-default**: the QC gate **WARNS (never FAILS)** when a persona line is absent, so
+      existing installs are not broken. Scaffolded channel playbooks get `persona: house-standard` seeded by
+      `scripts/12-scaffold-channel-playbooks.sh`.
 
 > **Plus (the full per-item detail still required):** the must-appear checklist in Section 2 (slug/id,
 > owner agent, trigger phrases, step-by-step flow, cross-playbook transitions, edge cases, on-success

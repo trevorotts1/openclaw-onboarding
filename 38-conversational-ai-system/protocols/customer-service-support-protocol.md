@@ -82,6 +82,19 @@ If a customer is asking for something the agent can't promise, the
 agent says: "Let me get [operator name] on this directly — they can
 make that call. I've flagged it as urgent."
 
+## Escalation creates a handoff task (U-14 cross-reference)
+
+Whenever this protocol escalates to a human (a refund/legal/emotionally-charged
+case, a cancellation, or any NEEDS_HUMAN handoff), the escalation is not just a
+tag and a notification. The moment `ZHC-ai-handoff` fires
+(zhc-tag-prefix-protocol.md, Lifecycle Status Tags), the agent ALSO creates a GHL
+Task on the contact - title `Handoff: <workflow name>`, the handoff reason plus
+the last three customer messages (PII-intact, in the client's own CRM), a due time
+of now plus the configured SLA (`skill38.handoff_task.sla_minutes`, default 60),
+assigned to the configured user. This makes the support handoff ACTIONABLE, not
+just passive. See `protocols/notification-routing-protocol.md` (Handoff Task
+Creation, U-14) for the full task format and the assignee configuration.
+
 ## AGENTS.md Step 1.9 — Apply Customer Service & Support if post-purchase
 
 Inserted between Step 1.8 (Sales Best Practices) and Step 1.75 (Workflow
