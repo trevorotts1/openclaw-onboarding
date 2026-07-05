@@ -97,6 +97,20 @@ provision_persona_index() {
         return 0
     fi
 
+    # ── FIX F1.3/F2.2 — STALE-ASSET REFUSAL (fail-closed) ────────────────────
+    # A manifest with asset_rebuild_required==true is a --no-asset STAGING bump:
+    # its counts were synced but the release ASSET (embeddings) was NOT rebuilt,
+    # so the asset it points at lacks vectors for the newest persona(s). NEVER
+    # (re)provision a client box from a stale manifest — that would propagate a
+    # counted-but-vector-less persona as "canonical" and clobber the box's current
+    # (good) index. Keep the box's existing index and warn the operator loudly.
+    local _PIDX_REBUILD
+    _PIDX_REBUILD="$(python3 -c 'import json,sys; print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")' "$MANIFEST_PATH" 2>/dev/null || echo false)"
+    if [ "$_PIDX_REBUILD" = "true" ]; then
+        _pidx_skip_warn "manifest asset_rebuild_required=true (staged --no-asset bump: counts synced but the embeddings asset was NOT rebuilt) — REFUSING to provision a stale/vector-less index; keeping this box's current index. Run shared-utils/prebuilt-index/build-and-publish.sh (or a FULL publish-personas-to-fleet.sh) and re-roll."
+        return 0
+    fi
+
     # Read manifest fields
     local _PIDX_ASSET_URL _PIDX_SHA _PIDX_CHUNKS _PIDX_TAG _PIDX_COLS _PIDX_PERSONAS
     _PIDX_ASSET_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_url"])' "$MANIFEST_PATH" 2>/dev/null || true)"

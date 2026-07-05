@@ -245,23 +245,84 @@ def triad_counts(repo_root):
     }
 
 
+def manifest_asset_meta(repo_root):
+    """FIX F1.3/F2.2 — read the 5th triad member (embedded_persona_count) and the
+    asset-freshness flag from the manifest. Returns (embedded, rebuild_required):
+      embedded          int | None  (None ⇒ field absent — legacy/pre-feature
+                                      manifest; the 5th check is skipped additively)
+      rebuild_required  bool        (True ⇒ a --no-asset staging bump synced the
+                                      counts but did NOT re-embed the asset; the
+                                      embedded member is CARVED OUT of the triad)
+    """
+    manifest_path = Path(repo_root) / MANIFEST_REL
+    if not manifest_path.is_file():
+        return None, False
+    m = _load_json(manifest_path)
+    embedded = m.get("embedded_persona_count")
+    embedded = int(embedded) if embedded is not None else None
+    return embedded, bool(m.get("asset_rebuild_required", False))
+
+
+def _embedded_member_failure(core_n, embedded, rebuild):
+    """Evaluate the 5th persona-SET triad member (the published asset's embedded
+    persona count). Returns a failure-detail string, or "" when the member
+    passes / is carved out. Single source of truth shared by cmd_triad here and
+    mirrored by qc-assert-repo-consistency.py:_persona_set_triad_failures.
+
+    Contract:
+      * asset_rebuild_required == True  → CARVE-OUT: the asset is a known staging
+        bump; embedded is expected to lag; no failure (branch-level enforcement
+        for main/release lives in persona-set-asset-consistency-guard.yml).
+      * field absent (embedded is None) → additive tolerance (legacy manifest).
+      * else (fresh asset claimed) → embedded MUST equal the SET count, otherwise
+        the served asset is STALE (a persona was counted but its vectors were
+        never embedded/published — the exact F1.3 defect).
+    """
+    if rebuild:
+        return ""
+    if embedded is None:
+        return ""
+    if core_n is not None and embedded != core_n:
+        return (f"manifest.embedded_persona_count={embedded} != persona-SET count "
+                f"{core_n} while asset_rebuild_required=false — the PUBLISHED asset "
+                f"is STALE (a persona was counted but its vectors were not embedded/"
+                f"published). Rebuild via shared-utils/prebuilt-index/"
+                f"build-and-publish.sh, then commit the refreshed manifest.")
+    return ""
+
+
 def cmd_triad(args):
     vals = triad_counts(args.repo_root)
+    embedded, rebuild = manifest_asset_meta(args.repo_root)
     present = {k: v for k, v in vals.items() if v is not None}
-    agree = len(set(present.values())) == 1 and len(present) == 4
+    core_agree = len(set(present.values())) == 1 and len(present) == 4
+    core_n = next(iter(present.values())) if (core_agree and present) else None
+    embed_fail = _embedded_member_failure(core_n, embedded, rebuild) if core_agree else ""
+    agree = core_agree and not embed_fail
     if args.json:
-        print(json.dumps({"counts": vals, "agree": agree}))
+        print(json.dumps({
+            "counts": vals,
+            "embedded_persona_count": embedded,
+            "asset_rebuild_required": rebuild,
+            "agree": agree,
+        }))
     else:
         print("Persona-SET count triad:")
         for k, v in vals.items():
             print(f"  {k} = {v}")
-    if not agree:
+        print(f"  manifest.embedded_persona_count = {embedded}"
+              + ("  [CARVED OUT: asset_rebuild_required=true]" if rebuild else ""))
+    if not core_agree:
         sys.stderr.write(
             "\nTRIAD DISAGREES — a persona is in the workspace/asset but the repo "
             "library was not caught up (or a count was bumped without a blueprint). "
             "Bring all four into lockstep in ONE run:\n"
             "    22-book-to-persona-coaching-leadership-system/pipeline/"
             "publish-personas-to-fleet.sh\n")
+        return 5
+    if embed_fail:
+        sys.stderr.write("\nTRIAD DISAGREES (5th member — embedded asset): "
+                         + embed_fail + "\n")
         return 5
     return 0
 
@@ -379,6 +440,14 @@ def set_manifest_counts(manifest_path, count, repo_cat_path, no_asset=False):
     m["manifest_last_updated"] = _today()
     if no_asset:
         m["asset_rebuild_required"] = True
+        # FIX F1.3/F2.2 — DELIBERATELY do NOT touch embedded_persona_count here.
+        # This is a counts-only staging bump; the release ASSET was NOT re-embedded,
+        # so embedded_persona_count must stay at the PRIOR asset's value (truthful).
+        # The asset_rebuild_required=True flag we just set is the carve-out signal
+        # the triad checkers read (see _embedded_member_failure): the 5th member is
+        # skipped while this flag is true, and persona-set-asset-consistency-guard.yml
+        # refuses to merge this staged manifest to main/release until a real
+        # build-and-publish.sh run refreshes both the asset and embedded_persona_count.
         m["fleet_sync_note"] = (
             "Count fields synced hermetically by publish-personas-to-fleet.sh "
             "(--no-asset): blueprint dirs == categories keys == persona_count "

@@ -1203,10 +1203,22 @@ main() {
         _U6B_TRIAD_OK=0
       fi
     fi
+    # FIX F1.3/F2.2 — PRE-ROLL STALE-ASSET REFUSAL. The persona-set triad guard
+    # above CARVES OUT the 5th member (embedded_persona_count) when
+    # asset_rebuild_required==true, so a --no-asset STAGING bump (counts synced,
+    # embeddings asset NOT rebuilt) still passes the triad. That manifest must
+    # never provision a client box: the asset it points at lacks vectors for the
+    # newest persona(s). Refuse the whole persona-provisioning block (keep the
+    # box's current set) so a counted-but-vector-less persona can't propagate.
+    _U6B_ASSET_STALE="$(python3 -c 'import json,sys; print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")' "$_U6B_MANIFEST" 2>/dev/null || echo false)"
     if [ "$_U6B_TRIAD_OK" != "1" ]; then
       _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-set triad DIVERGENT in the pulled repo (blueprint dirs / categories keys / INDEX-MANIFEST persona_count disagree) — persona provisioning SKIPPED (refused to ship a stale library). Run 22-…/pipeline/publish-personas-to-fleet.sh, merge, and re-roll."
       echo "  ✗ PRE-ROLL persona-set triad DIVERGENT — REFUSING to provision a stale/divergent persona library on this box."
       echo "     Fix the repo with 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh and re-roll."
+    elif [ "$_U6B_ASSET_STALE" = "true" ]; then
+      _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }INDEX-MANIFEST asset_rebuild_required=true (staged --no-asset bump: counts synced but the embeddings asset was NOT rebuilt) — persona provisioning SKIPPED (refused to ship a stale/vector-less index). Run shared-utils/prebuilt-index/build-and-publish.sh (or a FULL publish-personas-to-fleet.sh), merge, and re-roll."
+      echo "  ✗ PRE-ROLL persona asset STALE (asset_rebuild_required=true) — REFUSING to provision a counted-but-vector-less index on this box."
+      echo "     Rebuild the asset with shared-utils/prebuilt-index/build-and-publish.sh and re-roll."
     else
       # Reconcile categories + blueprints to the workspace FIRST so the index
       # gate sees the persona dirs (furnace-safe), then provision the index.

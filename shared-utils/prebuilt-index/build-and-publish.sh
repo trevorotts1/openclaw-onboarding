@@ -261,9 +261,9 @@ PY
 fi
 NEW_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/$NEW_TAG/gemini-index.sqlite.gz"
 echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG persona_count=$DIR_PERSONAS chunk_count=$CHUNKS file_count=$FILES"
-python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" "$FILES" <<'PY'
+python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" "$FILES" "$PERSONAS" <<'PY'
 import json, sys, datetime
-(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon, files) = sys.argv[1:12]
+(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon, files, embedded) = sys.argv[1:13]
 m = json.load(open(mp))
 today = datetime.date.today().isoformat()
 m["persona_count"] = int(personas)
@@ -279,6 +279,13 @@ m["source_db_bytes"] = int(db)
 m["build_date"] = today
 m["manifest_last_updated"] = today
 m["persona_set_md5"] = set_md5
+# FIX F1.3/F2.2 — 5th persona-SET triad member. This FULL build actually
+# embedded the asset, so embedded_persona_count is authoritative and equals the
+# just-verified COUNT(DISTINCT persona_id) (== the triad count via the guard at
+# step 4). Written on every real publish so the triad checkers can prove the
+# SERVED asset carries vectors for every persona in the SET (not just that the
+# counts were bumped). The triad guard above already asserted embedded==dirs.
+m["embedded_persona_count"] = int(embedded)
 m["asset_rebuild_required"] = False
 # Clear the base_tag / base_sha256 / base_asset_url staging fields once the
 # build has succeeded — the new release_tag IS the canonical asset now.

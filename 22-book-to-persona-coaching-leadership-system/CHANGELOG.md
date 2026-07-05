@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.15.0 - 2026-07-05 - fix(fleet-freshness): 5th persona-SET triad member (embedded_persona_count) + asset_rebuild_required contract (F1.3 / F2.2)
+
+Closes the last way the persona-SET count triad could go green while the fleet-served embeddings asset lacked vectors for the newest persona(s). A `--no-asset` staging bump synced the four count fields and set `asset_rebuild_required:true` — but nothing read that flag, so a counted-but-vector-less persona could ship to client boxes as "canonical". Three cheap gates, no new machinery:
+
+- `pipeline/persona_fleet.py`: `triad` now evaluates a 5th member — `INDEX-MANIFEST.embedded_persona_count` (the DISTINCT persona_id count actually embedded in the published asset). When `asset_rebuild_required==false` it MUST equal the agreed SET count, else `triad` exits 5 (stale asset). When `asset_rebuild_required==true` the 5th member is CARVED OUT (staging stays possible off protected refs); a legacy manifest without the field is tolerated additively. Single source of truth `_embedded_member_failure()`, mirrored by `23-…/scripts/qc-assert-repo-consistency.py:_persona_set_triad_failures`. `set-manifest-counts --no-asset` deliberately leaves `embedded_persona_count` at the prior asset's value (truthful) — the flag is the carve-out signal.
+- `shared-utils/prebuilt-index/build-and-publish.sh`: writes `embedded_persona_count` (== the just-verified `COUNT(DISTINCT persona_id)`) on every FULL build, alongside `asset_rebuild_required:false`.
+- `.github/workflows/persona-set-asset-consistency-guard.yml`: refuses to merge `asset_rebuild_required:true` to a PROTECTED ref (main / release/* / tag) while allowing it on feature/PR branches for staging; also enforces the 5th member.
+- `shared-utils/provision-persona-index.sh` + `update-skills.sh` Step U6b: REFUSE to (re)provision a client box from a stale (`asset_rebuild_required:true`) manifest — keep the box's current index and warn the operator (never propagate a vector-less persona).
+
+Regression lock: `tests/unit/persona-asset-freshness.test.sh` (stale FAILs, staged carve-out PASSes, fresh PASSes, legacy tolerated, provision refuses a stale manifest before any download). Existing `tests/unit/publish-personas-to-fleet.test.sh` + `provision-idempotency.test.sh` stay green.
+
 ## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
 
 The book pipeline writes the WORKSPACE only; the repo library (blueprint dirs + `persona-categories.json` seed), the INDEX-MANIFEST, and the release asset used to be caught up by hand, so they lagged and the N38 count triad went red at CI/roll. New `pipeline/publish-personas-to-fleet.sh` moves all four together atomically (sanitized blueprints, controlled-vocab categories, delegated HASH-SKIP asset rebuild) and refuses (rolling back — no half-commit) unless the triad + asset sha256 all agree at N. New `pipeline/assert-personas-published.sh` (standalone + pre-commit + `update-skills.sh` pre-roll) and `pipeline/fleet-publish-status.sh` (terminal-phase pending marker written by `add-persona-from-source.sh`) make a forgotten publish impossible. Hermetic core: `pipeline/persona_fleet.py`. Regression lock: `tests/unit/publish-personas-to-fleet.test.sh`. Runbook: `PIPELINE.md` → "Adding books → publishing personas to the fleet".

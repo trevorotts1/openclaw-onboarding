@@ -43,9 +43,19 @@ jobs:
           python-version: "3.11"
 
       - name: Assert persona-SET count triad agrees
+        env:
+          # Branch context for the FIX F1.3/F2.2 asset-freshness gate. On a
+          # PROTECTED ref (main / release/* / any tag) a manifest with
+          # asset_rebuild_required==true is UN-MERGEABLE — a --no-asset staging bump
+          # may live on a feature/PR branch but must never reach the fleet-serving
+          # branches without a real embeddings rebuild. Feature branches stay
+          # stage-able.
+          GH_EVENT: ${{ github.event_name }}
+          GH_REF: ${{ github.ref }}
+          GH_BASE_REF: ${{ github.base_ref }}
         run: |
           python3 - <<'PYEOF'
-          import json, sys
+          import json, os, sys
           from pathlib import Path
 
           root = Path(".")
@@ -65,11 +75,15 @@ jobs:
           else:
               fails.append(f"persona-categories.json missing: {cats_path}")
 
-          man_count = man_canon = None
+          man_count = man_canon = man_embedded = None
+          man_rebuild = False
           if manifest_path.is_file():
               m = json.loads(manifest_path.read_text())
               man_count = int(m.get("persona_count", -1))
               man_canon = int(m.get("canonical_persona_count", -1))
+              man_rebuild = m.get("asset_rebuild_required") is True
+              _emb = m.get("embedded_persona_count")
+              man_embedded = int(_emb) if _emb is not None else None
           else:
               fails.append(f"INDEX-MANIFEST.json missing: {manifest_path}")
 
@@ -82,14 +96,55 @@ jobs:
           print("Persona-SET count triad:")
           for k, v in vals.items():
               print(f"  {k} = {v}")
+          print(f"  manifest.embedded_persona_count = {man_embedded}")
+          print(f"  manifest.asset_rebuild_required = {man_rebuild}")
 
           present = {k: v for k, v in vals.items() if v is not None}
+          core_agree = bool(present) and len(set(present.values())) == 1
           if len(set(present.values())) > 1:
               fails.append("triad DISAGREES — a persona shipped to the SET without "
                            "an embedded asset, or the manifest was bumped without a "
                            "blueprint. Run shared-utils/prebuilt-index/build-and-publish.sh "
                            "and commit the bumped INDEX-MANIFEST.json. See "
                            "23-ai-workforce-blueprint/ADDING-PERSONAS.md.")
+
+          # ── FIX F1.3/F2.2 — branch-aware asset-freshness gate ────────────────
+          # Enforce on PROTECTED refs only (merge gate); allow staging on feature
+          # branches so a --no-asset bump can still be pushed for review.
+          event = os.environ.get("GH_EVENT", "")
+          ref = os.environ.get("GH_REF", "")
+          base = os.environ.get("GH_BASE_REF", "")
+          def _protected(name):
+              return name == "main" or name.startswith("release/")
+          protected = False
+          if event == "pull_request":
+              protected = _protected(base)
+          elif event == "push":
+              protected = (ref.startswith("refs/tags/")
+                           or ref == "refs/heads/main"
+                           or ref.startswith("refs/heads/release/"))
+          # workflow_dispatch stays lenient (manual runs may inspect staging).
+
+          if protected and man_rebuild:
+              fails.append("asset_rebuild_required=true on a PROTECTED ref "
+                           f"(event={event} ref={ref} base={base}) — the published "
+                           "embeddings asset is STALE (a persona was counted but its "
+                           "vectors were not embedded/published). A --no-asset staging "
+                           "bump is UN-MERGEABLE to main/release. Run "
+                           "shared-utils/prebuilt-index/build-and-publish.sh and commit "
+                           "the refreshed INDEX-MANIFEST.json before merging.")
+
+          # ── FIX F1.3/F2.2 — 5th triad member (served asset embed count) ──────
+          # Carve-out when asset_rebuild_required==true (handled above for protected
+          # refs). Field absent ⇒ additive tolerance. Else embedded MUST equal SET.
+          if core_agree and not man_rebuild and man_embedded is not None:
+              set_n = next(iter(present.values()))
+              if man_embedded != set_n:
+                  fails.append(f"5th member DISAGREES — embedded_persona_count="
+                               f"{man_embedded} != SET count {set_n} while "
+                               "asset_rebuild_required=false: the PUBLISHED asset is "
+                               "STALE (counted-but-vector-less persona). Rebuild via "
+                               "shared-utils/prebuilt-index/build-and-publish.sh.")
 
           if fails:
               print("\nFAIL:")
