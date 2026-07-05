@@ -51,6 +51,7 @@
 #   5  — BYPASS-SCAN tripped (hand-rolled renderer present, no owner skip)
 #   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
+#   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
 #   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
 # ============================================================================
 
@@ -189,6 +190,50 @@ sys.exit(1)
 PY
 }
 
+# ---------------------------------------------------------------------------
+# _record_dep_gate_bypassed — append a dep_gate_bypassed audit record to
+# working/checkpoints/process_manifest.json (FIX-PRES-01). Every honored skip of
+# the runtime-deps gate — a test-context env bypass OR a logged owner token —
+# leaves a durable, timestamped trail so a bypass is never silent. Never fatal:
+# a manifest it cannot write is logged, not raised.
+# ---------------------------------------------------------------------------
+_record_dep_gate_bypassed() {
+    local via="$1" reason="${2:-}"
+    command -v python3 >/dev/null 2>&1 || return 0
+    VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" python3 - <<'PY' || true
+import json, os, time
+pm = os.environ["PM"]
+rec = {
+    "gate": "PRESENTATION_DEPS_MISSING",
+    "via": os.environ.get("VIA", ""),
+    "reason": os.environ.get("REASON", ""),
+    "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+}
+try:
+    os.makedirs(os.path.dirname(pm), exist_ok=True)
+    obj = {}
+    if os.path.exists(pm):
+        try:
+            obj = json.load(open(pm))
+            if not isinstance(obj, dict):
+                obj = {"_prior": obj}
+        except Exception:
+            obj = {}
+    lst = obj.get("dep_gate_bypassed")
+    if not isinstance(lst, list):
+        lst = []
+    lst.append(rec)
+    obj["dep_gate_bypassed"] = lst
+    tmp = pm + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(obj, fh, indent=2)
+    os.replace(tmp, pm)
+    print(f"  [dep_gate_bypassed] recorded ({rec['via']}) in {pm}")
+except Exception as exc:  # noqa: BLE001 — an audit-write failure never blocks the run
+    print(f"  [dep_gate_bypassed] could not record ({exc}) — non-fatal")
+PY
+}
+
 # A gate that tripped: honor a logged owner skip, else fail-closed with the code.
 gate_fail() {
     local code="$1" exitcode="$2"; shift 2
@@ -240,10 +285,25 @@ fi
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx)"
+# FIX-PRES-01: the bare env short-circuit that used to sit at the TOP of this
+# function (`QC_SKIP_PRESENTATION_DEPS=1 -> return 0`) was a live process-skip
+# vector — any agent could export it, sail past GATE 1, burn the full Kie render
+# budget, then die at PPTX/PDF. It is REMOVED. A LIVE run may skip this gate ONLY
+# via a logged owner_skip_approval token (handled at the call site below). The env
+# var is honored ONLY in a TEST context — a `.test-context` marker file the harness
+# drops in the run dir — and every honored bypass is recorded as a
+# dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
+_TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
-        echo "  SKIP: QC_SKIP_PRESENTATION_DEPS=1 (dep gate bypassed by env)"
-        return 0
+        if [ -f "$_TEST_CONTEXT_MARKER" ]; then
+            echo "  SKIP: QC_SKIP_PRESENTATION_DEPS=1 honored — test-context marker present ($_TEST_CONTEXT_MARKER)"
+            _record_dep_gate_bypassed "env:QC_SKIP_PRESENTATION_DEPS" "test-context marker present"
+            return 0
+        fi
+        echo "  NOTE: QC_SKIP_PRESENTATION_DEPS=1 IGNORED on a live run (no test-context marker)." >&2
+        echo "        To skip a live run, log an owner_skip_approval token for PRESENTATION_DEPS_MISSING in" >&2
+        echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
     command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
@@ -255,6 +315,19 @@ deps_check() {
         missing+=("python3")
     fi
     if [ "${#missing[@]}" -gt 0 ]; then
+        # FIX-PRES-09(iv): event-shaped reassert. On a VPS the four deps do not
+        # survive a Docker force-recreate; rather than lean solely on a periodic
+        # cron, self-heal HERE on the GATE-1 failure path — run the idempotent
+        # reassert script ONCE, then re-check, before failing the run.
+        local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+        if [ "${OPENCLAW_PLATFORM:-}" = "vps" ] && [ -x "$_reassert" ] \
+           && [ "${_DEPS_REASSERT_TRIED:-0}" != "1" ]; then
+            _DEPS_REASSERT_TRIED=1
+            echo "  GATE-1 deps missing on VPS — running event-shaped reassert once ($_reassert)…" >&2
+            bash "$_reassert" >&2 2>&1 || true
+            deps_check
+            return $?
+        fi
         echo "PRESENTATION_DEPS_MISSING: ${missing[*]}" >&2
         return 6
     fi
@@ -265,6 +338,42 @@ deps_check || {
     rc=$?
     if owner_skip_approved "PRESENTATION_DEPS_MISSING"; then
         echo "!! [$PROG] deps missing but OWNER-APPROVED skip logged; proceeding." >&2
+        _record_dep_gate_bypassed "owner_skip_approval:PRESENTATION_DEPS_MISSING" \
+            "owner-approved skip token honored at GATE 1"
+    else
+        exit "$rc"
+    fi
+}
+
+# ===========================================================================
+# GATE 1b — SKILL-48 GHL MODULE CO-LOCATION (FIX-PRES-03)
+# ghl_media.py re-exports Skill-48 helpers; delivery_gate.py requires the
+# resulting pptx_ghl_media_id. If the module is absent, a deck renders on PAID
+# Kie credits and then dies at delivery. Assert importability HERE, before any
+# render spend. Owner-token skippable (PRESENTATION_GHL_MODULE_MISSING).
+# ===========================================================================
+note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
+ghl_module_check() {
+    command -v python3 >/dev/null 2>&1 || {
+        echo "  (python3 absent; GHL module check skipped)"; return 0; }
+    if PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 -c "import ghl_media" >/dev/null 2>&1; then
+        echo "  OK: ghl_media importable from $SCRIPTS_DIR"
+        return 0
+    fi
+    # Fall back to a resolved-path existence check (import can fail for a reason
+    # other than absence, e.g. a transitive dep) so the message is accurate.
+    if [ -f "$SCRIPTS_DIR/ghl_media.py" ]; then
+        echo "PRESENTATION_GHL_MODULE_MISSING: ghl_media.py is present at $SCRIPTS_DIR but not importable (check its Skill-48 dependency co-location)." >&2
+    else
+        echo "PRESENTATION_GHL_MODULE_MISSING: ghl_media.py not found at $SCRIPTS_DIR (Skill-48 co-location missing)." >&2
+    fi
+    return 8
+}
+ghl_module_check || {
+    rc=$?
+    if owner_skip_approved "PRESENTATION_GHL_MODULE_MISSING"; then
+        echo "!! [$PROG] ghl_media missing but OWNER-APPROVED skip logged; proceeding." >&2
     else
         exit "$rc"
     fi

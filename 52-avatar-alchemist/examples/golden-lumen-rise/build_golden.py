@@ -50,7 +50,16 @@ import secrets                        # noqa: E402
 # The golden is the FLAGSHIP reference run and is built with the source repairs
 # APPLIED (apply_repairs=True) so it exercises the repair-gated invariant G-ADSET-CAT
 # (R4). A default client run is faithful-to-live (repairs OFF); see REPAIRS.md.
+# --no-repairs flips these to build the DEFAULT-mode reference golden-lumen-rise-live
+# (FIX-AVATAR-04) so the faithful-to-live default output is itself regression-covered
+# and visibly graded. Both are module globals so the builder functions pick them up.
 APPLY_REPAIRS = True
+# semantic-verifier base grade. The repairs-ON flagship grades higher (9.0); the
+# faithful-live default (repairs OFF) is graded visibly lower (8.7) — it still
+# clears the 8.5 delivery floor (a default run must remain deliverable) but the
+# lower grade makes the known live-fidelity gaps (frozen ad category, unused
+# blended-tone/cheat-sheet, empty product line) VISIBLE in the certificate.
+SEMANTIC_BASE = 9.0
 
 MANIFEST = json.loads((SKILL_ROOT / "AA-PIPELINE-MANIFEST.json").read_text(encoding="utf-8"))
 
@@ -1800,6 +1809,14 @@ def write_run(art: Dict[str, str], out: Path) -> None:
     key = bytes.fromhex((out / ".foreman-key").read_text(encoding="utf-8").strip())
     qc_cert = qc.build_certificate(MANIFEST, out, RUN_ID, key)
     (out / "QC-CERTIFICATE.json").write_text(json.dumps(qc_cert, indent=2) + "\n", encoding="utf-8")
+    # the SECOND, SEMANTIC certificate (FIX-XC-03d): an independent verifier
+    # sub-agent (!= any author), client TIER-A model, 10-category OpenClaw QC
+    # Protocol per artifact, HMAC-signed. The golden builder uses the DETERMINISTIC
+    # stand-in judgment (offline reference run only; a client run runs a real
+    # verifier via aa_qc_cert.py --semantic --verifier-cmd).
+    qc_sem = qc.build_semantic_certificate(MANIFEST, out, RUN_ID, key,
+                                           qc.synth_semantic_judgment(MANIFEST, out, base=SEMANTIC_BASE))
+    (out / "QC-SEMANTIC.json").write_text(json.dumps(qc_sem, indent=2) + "\n", encoding="utf-8")
 
 
 def self_verify(run_dir: Path) -> int:
@@ -1859,7 +1876,16 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--out", help="run directory to write (artifacts/, receipts/, ledger, delivery-state)")
     ap.add_argument("--deliver", help="delivery directory to assemble (16 deliverables + certificate)")
     ap.add_argument("--self-test", action="store_true", help="build to a temp dir and assert the provers PASS")
+    ap.add_argument("--no-repairs", action="store_true",
+                    help="build the DEFAULT-mode (faithful-to-live, repairs OFF) reference "
+                         "golden-lumen-rise-live (FIX-AVATAR-04) instead of the repairs-ON flagship")
     args = ap.parse_args(argv)
+
+    global APPLY_REPAIRS, RUN_ID, SEMANTIC_BASE
+    if args.no_repairs:
+        APPLY_REPAIRS = False
+        RUN_ID = "golden-lumen-rise-live"
+        SEMANTIC_BASE = 8.7
 
     art = build_artifacts()
 

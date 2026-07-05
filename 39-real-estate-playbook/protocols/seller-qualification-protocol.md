@@ -18,7 +18,7 @@ sell (or to learn what their property is worth). Tag `ZHC-seller-lead`.
 
 ## CMA request
 When the seller wants a value, log a `cma_request` event and run
-`scripts/03-property-lookup.sh --address "<addr>" --want comps`. If comps are an
+`scripts/property-lookup.sh --address "<addr>" --want comps`. If comps are an
 HONEST GAP (no comps provider configured), say so and offer to pull a manual CMA
 once a provider key is added — never fabricate a value.
 

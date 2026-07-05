@@ -44,7 +44,8 @@ else
   exit 0
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# FIX-XC-10a: honor ZHC_STATE_FILE (Skill-23-class state-path split-brain guard).
+STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
 _log() { echo "[install-closeout-resume-cron] $*"; }
@@ -81,13 +82,38 @@ if [[ -z "$RESUME_CRON_SCRIPT" ]]; then
 fi
 chmod +x "$RESUME_CRON_SCRIPT" 2>/dev/null || true
 
+# FIX-XC-08a: the flag is `--cron` (5-field expression) — `--schedule` DOES NOT
+# EXIST in the OpenClaw CLI and makes registration fail outright. And on
+# CLI 2026.6.8 `cron add --command` DEFAULTS delivery=announce, which would spam
+# the client's chat every */15 fire (96/day) — so we pass `--no-deliver` to keep
+# this operator-plumbing cron SILENT. `--no-deliver` is feature-detected against
+# `cron add --help` and dropped (with a no-flag retry) on CLIs that predate it.
+_cron_add_help="$(openclaw cron add --help 2>&1 || true)"
+NO_DELIVER_FLAG=()
+if printf '%s' "$_cron_add_help" | grep -qE '(^|[[:space:]])--no-deliver([[:space:]]|$)'; then
+  NO_DELIVER_FLAG=(--no-deliver)
+fi
+
 # Register COMMAND mode (no --channel/--to/--message). No owner chat required.
-OUT=""
-if OUT=$(openclaw cron add \
+OUT=$(openclaw cron add \
     --name "closeout-resume" \
-    --schedule "*/15 * * * *" \
+    --cron "*/15 * * * *" \
     --command "bash $RESUME_CRON_SCRIPT" \
-    --json 2>/dev/null); then
+    "${NO_DELIVER_FLAG[@]}" \
+    --json 2>/dev/null) || OUT=""
+
+# If the CLI advertised --no-deliver but still rejected the combined argv,
+# retry once WITHOUT it so a flag-shape mismatch never blocks registration.
+if [[ -z "$OUT" && ${#NO_DELIVER_FLAG[@]} -gt 0 ]]; then
+  OUT=$(openclaw cron add \
+    --name "closeout-resume" \
+    --cron "*/15 * * * *" \
+    --command "bash $RESUME_CRON_SCRIPT" \
+    --json 2>/dev/null) || OUT=""
+fi
+
+# Verify the job actually landed (assert delivery mode + payload via cron list).
+if [[ -n "$OUT" ]] && openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
   UUID=$(printf '%s' "$OUT" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
   if [[ -n "$UUID" && "$UUID" != "null" ]] && [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
     _TMP=$(mktemp)
@@ -99,10 +125,10 @@ if OUT=$(openclaw cron add \
       rm -f "$_TMP"
     fi
   fi
-  _log "closeout-resume cron installed (*/15, command mode — dedicated REDUNDANT closeout trigger, no owner chat needed)."
+  _log "closeout-resume cron installed (*/15, command mode, --no-deliver — dedicated REDUNDANT closeout trigger, no owner chat needed)."
   exit 0
 fi
 
 _log "closeout-resume cron creation failed (non-fatal)."
-_log "  Manual: openclaw cron add --name closeout-resume --schedule '*/15 * * * *' --command 'bash $RESUME_CRON_SCRIPT' --json"
+_log "  Manual: openclaw cron add --name closeout-resume --cron '*/15 * * * *' --command 'bash $RESUME_CRON_SCRIPT' --no-deliver --json"
 exit 1

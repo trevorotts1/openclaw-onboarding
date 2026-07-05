@@ -308,6 +308,20 @@ ensure_public_url() {
   return 1
 }
 
+# FIX-S36-03 (idempotency guard): this generator is now invoked through
+# run-closeout.sh's generate_rate_gate, which ALWAYS calls it (the old Step-4
+# `celebrationVideoUrl already set` short-circuit was removed when the video was
+# brought under the 8.5 gate). To avoid RE-SPENDING on the paid Veo/KIE backend
+# on every resume-cron re-entry, self-skip when the video is already produced:
+# a non-null celebrationVideoUrl AND a non-empty local mp4 on disk. The gate then
+# rates the existing artifact instead of regenerating it. Mirrors the infographic
+# generators' own "already populated -> skip" idempotency.
+_existing_video_url=$(state_get '.celebrationVideoUrl')
+if [[ -n "$_existing_video_url" && "$_existing_video_url" != "null" && -s "$LOCAL_MP4" ]]; then
+  log "INFO" "celebration video already produced (url set + $LOCAL_MP4 present) -- skipping regeneration (idempotent; no paid re-spend)"
+  exit 0
+fi
+
 COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
 OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
 AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"

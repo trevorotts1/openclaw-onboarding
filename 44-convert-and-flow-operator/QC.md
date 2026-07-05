@@ -35,7 +35,7 @@ human-readable companion checklist. All items below are machine-asserted by the 
 
 ## Section E: TRINITY and self-test
 
-- [ ] `qc-trinity-registry.sh` called for any conversational build (hard gate)
+- [ ] `qc-built-workflow.sh --conversational` EXECUTES `qc-trinity-registry.sh` and FAILs WF-19 mechanically on non-zero exit (hard gate — not an existence-assert / human-review note)
 - [ ] `24-self-test-hook.sh` invoked post-build for brain-containing workflows
 - [ ] Self-test credential read alias-aware: accepts `GOHIGHLEVEL_API_KEY` OR `GHL_PRIVATE_INTEGRATION_TOKEN`
 

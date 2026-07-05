@@ -119,15 +119,53 @@ def _customcode_blob(raw: str = '<img src="file:///placeholder.svg">') -> dict:
 
 class TestBuildPromptsJson:
     def test_appends_english_latin_pin_verbatim(self):
-        enriched = m.build_prompts_json([{"id": "hero", "prompt": "A trio of soap bars"}])
+        # FIX-IMG-09 (ii): the English/Latin SPELLING pin is for text_bearing specs.
+        enriched = m.build_prompts_json(
+            [{"id": "hero", "prompt": "A trio of soap bars", "text_bearing": True}]
+        )
         assert m.ENGLISH_LATIN_PIN in enriched[0]["prompt"]
         # The pin is appended after the copy-derived brief.
         assert enriched[0]["prompt"].startswith("A trio of soap bars")
 
+    def test_non_text_spec_gets_no_text_pin(self):
+        # FIX-IMG-09 (ii): a photographic (non-text) spec is told to render NO
+        # text, and does NOT carry the English/Latin spelling pin.
+        enriched = m.build_prompts_json([{"id": "hero", "prompt": "A trio of soap bars"}])
+        assert m.TEXT_ABSENT_PIN in enriched[0]["prompt"]
+        assert m.ENGLISH_LATIN_PIN not in enriched[0]["prompt"]
+
     def test_pin_is_idempotent(self):
+        first = m.build_prompts_json(
+            [{"id": "a", "prompt": "scene", "text_bearing": True}]
+        )[0]["prompt"]
+        second = m.build_prompts_json(
+            [{"id": "a", "prompt": first, "text_bearing": True}]
+        )[0]["prompt"]
+        assert second.count(m.ENGLISH_LATIN_PIN) == 1
+
+    def test_no_text_pin_is_idempotent(self):
         first = m.build_prompts_json([{"id": "a", "prompt": "scene"}])[0]["prompt"]
         second = m.build_prompts_json([{"id": "a", "prompt": first}])[0]["prompt"]
-        assert second.count(m.ENGLISH_LATIN_PIN) == 1
+        assert second.count(m.TEXT_ABSENT_PIN) == 1
+
+    def test_prompt_char_floor_enforced_when_requested(self):
+        # FIX-XC-04f (d): a thin prompt is refused when the floor is enforced …
+        with pytest.raises(ValueError):
+            m.build_prompts_json(
+                [{"id": "a", "prompt": "a short weak prompt"}], enforce_floor=True
+            )
+        # … but a prompt whose CONTENT clears the floor is accepted.
+        long_prompt = "Rich brand-graded scene. " * 80  # ~2000 chars of content
+        ok = m.build_prompts_json(
+            [{"id": "a", "prompt": long_prompt}], enforce_floor=True
+        )
+        assert ok[0]["mode"] == "t2i"
+
+    def test_prompt_char_floor_off_by_default(self):
+        # Default (enforce_floor=False) never rejects a short prompt — the floor
+        # is a paid-path guard, not a mechanical constraint on the utility.
+        ok = m.build_prompts_json([{"id": "a", "prompt": "short"}])
+        assert ok[0]["prompt"].startswith("short")
 
     def test_default_mode_is_t2i(self):
         enriched = m.build_prompts_json([{"id": "a", "prompt": "p"}])
@@ -414,7 +452,9 @@ class TestMockImagePipelineWireIn:
                   "locator": {"section_idx": 0, "element_idx": 2}}]
         prompts = str(tmp_path / "prompts.json")
         enriched = m.build_prompts_json(specs, out_path=prompts)
-        assert m.ENGLISH_LATIN_PIN in enriched[0]["prompt"]
+        # Photographic hero (no text_bearing flag) => the no-text pin, not the
+        # spelling pin (FIX-IMG-09 ii).
+        assert m.TEXT_ABSENT_PIN in enriched[0]["prompt"]
 
         # 2) generate (MOCK runner writes a real-PNG fixture)
         out_dir = str(tmp_path / "images")

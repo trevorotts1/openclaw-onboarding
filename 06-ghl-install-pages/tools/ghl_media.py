@@ -67,6 +67,7 @@ upload that returns no ``fileId``/``url`` raises (never a fake CDN URL). The
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -77,6 +78,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 # ── Constants (ported from the PROVEN upload-ghl-media.sh + kie_generate.py) ──
 
@@ -99,6 +102,26 @@ ENGLISH_LATIN_PIN = (
     "Chinese/CJK or non-Latin characters anywhere. Render the copy spelled "
     "correctly, letter-for-letter. No garbled, misspelled, or invented text."
 )
+
+# The NO-TEXT pin — appended VERBATIM to every prompt whose spec is NOT
+# ``text_bearing``. FIX-IMG-09 (ii): the English/Latin pin was previously
+# appended to EVERY prompt, including photographic no-text scenes, which
+# ironically INVITES gpt-image-2 to render (correctly-spelled) text where none
+# was wanted. A no-text section must instead be told, unambiguously, to render
+# no lettering at all; only text-bearing sections carry the spelling pin.
+TEXT_ABSENT_PIN = (
+    "Absolutely no text, lettering, words, captions, watermarks, logos with "
+    "text, or typography of any kind anywhere in the image."
+)
+
+# Minimum stripped length (characters, excluding the appended pin) of an image
+# prompt before it may reach a PAID Kie call. FIX-XC-04f (d): Skill 6 previously
+# fabricated a ~200-char generic hero prompt; a prompt that thin can never carry
+# the 8-block, brand-graded direction a real page image needs. ``build_prompts_json``
+# raises ``ValueError`` when ``enforce_floor=True`` and a prompt is below this
+# floor, so a weak prompt physically cannot reach the paid generator. The build
+# path (``ghl_image_stage.run_image_pipeline``) always enforces it.
+PROMPT_CHAR_FLOOR = 1500
 
 # PNG magic bytes — a real raster starts with these. A non-PNG download is a hard
 # FAIL (never stubbed). Mirrors the verify in kie_generate.py.
@@ -378,6 +401,7 @@ def build_prompts_json(
     out_path: str | None = None,
     *,
     default_mode: str = "t2i",
+    enforce_floor: bool = False,
 ) -> list[dict]:
     """Mechanically build the KIE ``prompts.json`` array from page-copy specs.
 
@@ -390,12 +414,16 @@ def build_prompts_json(
             "input_urls": ["https://..."],    # required ONLY when mode == "i2i"
             "used_on_page_id": "PAGEID...",   # optional provenance (carried through)
             "alt": "...",                     # optional <img> alt text
+            "text_bearing": False,            # optional; True => copy renders IN the image
             "locator": {"section_idx": 0, "element_idx": 2}  # optional splice target
         }
 
     The output array matches what ``kie_generate.py`` consumes
-    (``[{"slide", "prompt", "mode", ["input_urls"]}]``) and appends the mandatory
-    ``ENGLISH_LATIN_PIN`` to EVERY prompt verbatim (idempotent — never doubled).
+    (``[{"slide", "prompt", "mode", ["input_urls"]}]``) and appends a mandatory
+    pin to EVERY prompt verbatim (idempotent — never doubled): the
+    ``ENGLISH_LATIN_PIN`` spelling pin when the spec is ``text_bearing``, else the
+    ``TEXT_ABSENT_PIN`` (a photographic section is told to render NO text at all
+    rather than being invited to spell nonexistent copy).
     ``t2i`` (``gpt-image-2-text-to-image``) is the default because the fictional
     brand has no logo to seed image-to-image; an ``i2i`` entry MUST carry
     ``input_urls`` (the generator enforces this too).
@@ -411,6 +439,12 @@ def build_prompts_json(
             (the file ``kie_generate.py`` is then pointed at).
         default_mode: Fallback mode for entries that omit ``mode`` (default
             ``"t2i"``).
+        enforce_floor: When True, every prompt's CONTENT (measured before the pin
+            is appended) must be at least ``PROMPT_CHAR_FLOOR`` characters or a
+            ``ValueError`` is raised. Default False so the mechanical unit tests of
+            pin/mode/dup behaviour are unaffected; the paid build path
+            (``ghl_image_stage.run_image_pipeline``) always passes True, which is
+            what makes it impossible for a weak prompt to reach a paid Kie call.
 
     Returns:
         The list of ENRICHED prompt dicts (generator fields + carried-through
@@ -419,7 +453,8 @@ def build_prompts_json(
 
     Raises:
         ValueError: empty specs, a missing/blank ``id`` or ``prompt``, a duplicate
-            ``id``, an unknown ``mode``, or an ``i2i`` entry without ``input_urls``.
+            ``id``, an unknown ``mode``, an ``i2i`` entry without ``input_urls``,
+            or (when ``enforce_floor``) a prompt below ``PROMPT_CHAR_FLOOR``.
     """
     if not isinstance(copy_specs, list) or not copy_specs:
         raise ValueError("copy_specs must be a non-empty list of image specs")
@@ -446,9 +481,31 @@ def build_prompts_json(
                 f"copy_specs[{i}] ({slide_id}): mode must be 't2i' or 'i2i' (got {mode!r})"
             )
 
-        # Append the English/Latin pin verbatim — idempotent (never double-append).
-        if ENGLISH_LATIN_PIN not in prompt:
-            prompt = f"{prompt} {ENGLISH_LATIN_PIN}"
+        # FIX-XC-04f (d): the FLOOR is measured on the creative prompt CONTENT —
+        # BEFORE any boilerplate pin is appended — so the pin can never inflate a
+        # thin prompt over the bar. A weak prompt then physically cannot reach a
+        # paid Kie call (the build path passes enforce_floor=True).
+        content_len = len(prompt.strip())
+
+        # FIX-IMG-09 (ii): pick the pin by whether the spec renders copy.
+        #   * text_bearing spec  → the English/Latin SPELLING pin (render text
+        #     correctly, Latin only) so on-image copy is not garbled/CJK.
+        #   * non-text spec      → the NO-TEXT pin, so a photographic scene is not
+        #     seeded with unwanted (however well-spelled) lettering.
+        # Both are appended VERBATIM and idempotently (never doubled).
+        text_bearing = bool(spec.get("text_bearing"))
+        pin = ENGLISH_LATIN_PIN if text_bearing else TEXT_ABSENT_PIN
+        if pin not in prompt:
+            prompt = f"{prompt} {pin}"
+
+        if enforce_floor and content_len < PROMPT_CHAR_FLOOR:
+            raise ValueError(
+                f"copy_specs[{i}] ({slide_id}): prompt content is {content_len} "
+                f"chars, below the PROMPT_CHAR_FLOOR of {PROMPT_CHAR_FLOOR} "
+                "(measured before the pin). A prompt this thin is refused so it "
+                "can never reach a paid Kie call — build an 8-block, brand-graded "
+                "prompt (see ghl_image_stage._derive_copy_specs)."
+            )
 
         # Generator-shaped entry (exactly what kie_generate.py consumes).
         gen_entry: dict[str, Any] = {"slide": slide_id, "prompt": prompt, "mode": mode}
@@ -523,8 +580,10 @@ def generate_images(
         python_exe: Python interpreter for the subprocess (default ``sys.executable``).
 
     Returns:
-        ``{ok, exit_code, out_dir, images: [{id, file, png_verified, bytes}], missing}``.
-        ``ok`` is True iff the generator exited 0 AND every expected PNG verified.
+        ``{ok, exit_code, out_dir, images: [{id, file, png_verified, bytes}],
+        missing, subprocess_timeout}``. ``ok`` is True iff the generator exited 0
+        AND every expected PNG verified. ``subprocess_timeout`` is the prompt-count-
+        scaled cap actually applied (FIX-IMG-08), for the run evidence log.
 
     Raises:
         ValueError: empty/missing ``prompts_path``.
@@ -542,11 +601,22 @@ def generate_images(
     gen = kie_generate_path()  # raises if the reused tool is missing
     argv = [python_exe or sys.executable, gen, prompts_path, out_dir]
 
+    # FIX-IMG-08: the flat 1800 s (30 min) cap KILLED large image sets mid-run,
+    # orphaning already-PAID images. KIE generates in rate-capped waves, so wall
+    # time scales with the number of prompts. Scale the cap by prompt count —
+    # 5 min base + 2 min per prompt, never below the old 1800 s floor — so a big
+    # multi-section page can finish. KIE_SUBPROCESS_TIMEOUT still overrides. The
+    # computed cap is logged into run evidence (also returned in the result).
+    n_prompts = len(expected_ids)
+    _scaled_timeout = max(1800, 300 + 120 * n_prompts)
+    _kie_timeout = int(os.environ.get("KIE_SUBPROCESS_TIMEOUT", str(_scaled_timeout)))
+    logger.info(
+        "KIE subprocess timeout cap = %ds (%d prompt(s); scaled=%ds, env-override=%s)",
+        _kie_timeout, n_prompts, _scaled_timeout,
+        os.environ.get("KIE_SUBPROCESS_TIMEOUT", "<none>"),
+    )
+
     if runner is None:
-        # KIE.ai generate can take 5–15 min (submit + 5-min initial wait + polling).
-        # Hard timeout: 1800 s (30 min) — generous enough for normal latency while
-        # preventing a hung process from stalling the build indefinitely.
-        _kie_timeout = int(os.environ.get("KIE_SUBPROCESS_TIMEOUT", "1800"))
         try:
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=_kie_timeout)
             exit_code = proc.returncode
@@ -576,6 +646,7 @@ def generate_images(
         "out_dir": out_dir,
         "images": images,
         "missing": missing,
+        "subprocess_timeout": _kie_timeout,  # FIX-IMG-08: scaled cap (run evidence)
     }
 
 
@@ -1055,6 +1126,8 @@ __all__ = [
     "GHL_MEDIA_FOLDER_PATH",
     "GHL_MEDIA_VERSION",
     "ENGLISH_LATIN_PIN",
+    "TEXT_ABSENT_PIN",
+    "PROMPT_CHAR_FLOOR",
     "PNG_MAGIC",
     "kie_generate_path",
     "resolve_location_pit",

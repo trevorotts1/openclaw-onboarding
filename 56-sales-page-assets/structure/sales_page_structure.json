@@ -11,15 +11,16 @@
     "variants_required": ["a", "b"],
     "requires_countdown_timer": true,
     "section_count": 8,
+    "section_band_note": "word_min is the SACRED per-section stripped-word floor (FIX-XC-04c). The Skill 56 provers MEASURE the stripped section copy and IGNORE any self-reported count; a section under its word_min is a HARD MISS (AF-SP56-MAIN-SECTION-BAND). Header/footer carry lighter floors (chrome/legal), body sections carry substance floors.",
     "sections": [
-      {"order": 1, "id": "header",           "aliases": ["attention-grabbing header", "notification banner", "header", "banner"]},
-      {"order": 2, "id": "hero",             "aliases": ["hero", "hero section", "above the fold"]},
-      {"order": 3, "id": "problem-solution", "aliases": ["problem & solution", "problem and solution", "problem/solution", "problem solution"]},
-      {"order": 4, "id": "benefits",         "aliases": ["benefits", "benefits section", "core benefits"]},
-      {"order": 5, "id": "product-details",  "aliases": ["product details", "product detail", "what it is", "product details section"]},
-      {"order": 6, "id": "credibility",      "aliases": ["credibility", "credibility section", "social proof", "testimonials"]},
-      {"order": 7, "id": "final-cta",        "aliases": ["final call to action", "final cta", "final call-to-action", "closing cta"]},
-      {"order": 8, "id": "footer",           "aliases": ["footer"]}
+      {"order": 1, "id": "header",           "word_min": 18, "aliases": ["attention-grabbing header", "notification banner", "header", "banner"]},
+      {"order": 2, "id": "hero",             "word_min": 35, "aliases": ["hero", "hero section", "above the fold"]},
+      {"order": 3, "id": "problem-solution", "word_min": 35, "aliases": ["problem & solution", "problem and solution", "problem/solution", "problem solution"]},
+      {"order": 4, "id": "benefits",         "word_min": 30, "aliases": ["benefits", "benefits section", "core benefits"]},
+      {"order": 5, "id": "product-details",  "word_min": 35, "aliases": ["product details", "product detail", "what it is", "product details section"]},
+      {"order": 6, "id": "credibility",      "word_min": 30, "aliases": ["credibility", "credibility section", "social proof", "testimonials"]},
+      {"order": 7, "id": "final-cta",        "word_min": 30, "aliases": ["final call to action", "final cta", "final call-to-action", "closing cta"]},
+      {"order": 8, "id": "footer",           "word_min": 18, "aliases": ["footer"]}
     ]
   },
 
@@ -29,16 +30,17 @@
     "variants_required": ["a", "b"],
     "personas": {"a": "conversion copywriter + web developer", "b": "Emotional Hijacking Expert"},
     "section_count": 9,
+    "section_band_note": "word_min is the SACRED per-section stripped-word floor (FIX-XC-04c). The prover MEASURES the stripped section copy and IGNORES any self-report; under-band = HARD MISS (AF-SP56-UPSELL-SECTION-BAND).",
     "sections": [
-      {"order": 1, "id": "hook",                  "aliases": ["hook", "hook acknowledging purchase", "acknowledge purchase", "upgrade opportunity"]},
-      {"order": 2, "id": "pain-1",                "aliases": ["pain 1", "first pain point", "pain point one", "pain one", "big bold pain one"]},
-      {"order": 3, "id": "pain-2",                "aliases": ["pain 2", "second pain point", "pain point two", "pain two", "big bold pain two"]},
-      {"order": 4, "id": "pain-3",                "aliases": ["pain 3", "third pain point", "pain point three", "pain three", "big bold pain three"]},
-      {"order": 5, "id": "hope",                  "aliases": ["hope", "hope introduction", "hope intro"]},
-      {"order": 6, "id": "solution",              "aliases": ["solution", "solution positioning", "the solution"]},
-      {"order": 7, "id": "value-stack",           "aliases": ["value stack", "value stacking", "value stacking presentation", "the big bold what"]},
-      {"order": 8, "id": "logical-justification", "aliases": ["logical justification", "logical justification with founder credibility", "founder credibility", "justification"]},
-      {"order": 9, "id": "identity-challenge",    "aliases": ["identity challenge", "identity challenge close", "identity-based close", "the powerful question moment"]}
+      {"order": 1, "id": "hook",                  "word_min": 30, "aliases": ["hook", "hook acknowledging purchase", "acknowledge purchase", "upgrade opportunity"]},
+      {"order": 2, "id": "pain-1",                "word_min": 25, "aliases": ["pain 1", "first pain point", "pain point one", "pain one", "big bold pain one"]},
+      {"order": 3, "id": "pain-2",                "word_min": 30, "aliases": ["pain 2", "second pain point", "pain point two", "pain two", "big bold pain two"]},
+      {"order": 4, "id": "pain-3",                "word_min": 30, "aliases": ["pain 3", "third pain point", "pain point three", "pain three", "big bold pain three"]},
+      {"order": 5, "id": "hope",                  "word_min": 30, "aliases": ["hope", "hope introduction", "hope intro"]},
+      {"order": 6, "id": "solution",              "word_min": 30, "aliases": ["solution", "solution positioning", "the solution"]},
+      {"order": 7, "id": "value-stack",           "word_min": 30, "aliases": ["value stack", "value stacking", "value stacking presentation", "the big bold what"]},
+      {"order": 8, "id": "logical-justification", "word_min": 35, "aliases": ["logical justification", "logical justification with founder credibility", "founder credibility", "justification"]},
+      {"order": 9, "id": "identity-challenge",    "word_min": 30, "aliases": ["identity challenge", "identity challenge close", "identity-based close", "the powerful question moment"]}
     ]
   },
 

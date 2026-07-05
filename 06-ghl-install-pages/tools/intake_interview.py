@@ -132,7 +132,7 @@ def _p(*patterns: str) -> tuple:
     return tuple(re.compile(p, re.IGNORECASE) for p in patterns)
 
 
-# --- FUNNEL (up to 3 questions) -------------------------------------------
+# --- FUNNEL (3 core + 2 shared copy-context = up to 5 questions) -----------
 FUNNEL_QUESTIONS: List[Question] = [
     Question(
         qid="goal",
@@ -172,7 +172,7 @@ FUNNEL_QUESTIONS: List[Question] = [
     ),
 ]
 
-# --- PAGE (up to 3 questions) ---------------------------------------------
+# --- PAGE (3 core + 2 shared copy-context = up to 5 questions) -------------
 PAGE_QUESTIONS: List[Question] = [
     Question(
         qid="page_type",
@@ -214,6 +214,45 @@ PAGE_QUESTIONS: List[Question] = [
         required=False,
     ),
 ]
+
+# --- COPY-CONTEXT (shared; appended to FUNNEL + PAGE) ----------------------
+# FIX-COPY-04(i): capture the two copy-depth/voice signals the copywriter needs
+# so the P2 brief and funnel-spec are never authored voice-unanchored or at the
+# wrong length. Both are OPTIONAL and skip cleanly when already inferable, so the
+# per-type set stays well within MAX_QUESTIONS=7 (funnel 3→5, page 3→5).
+COPY_CONTEXT_QUESTIONS: List[Question] = [
+    Question(
+        qid="traffic_source",
+        text="Where will visitors come from — paste the ad or email headline they'll click.",
+        hint="e.g. the Facebook ad hook or the email subject line that sends them here",
+        task_keys=("traffic_source", "ad_headline", "email_headline", "source_headline",
+                   "traffic"),
+        brief_patterns=_p(
+            r"traffic\s+source[:\s]+(.+?)[\.\n]",
+            r"from\s+(?:a|an|the)\s+(facebook|instagram|google|youtube|tiktok|email|newsletter)\s+ad",
+            r"ad\s+headline[:\s]+(.+?)[\.\n]",
+        ),
+        required=False,
+    ),
+    Question(
+        qid="copy_depth",
+        text="How deep should the copy go?",
+        hint="short (punchy), standard (balanced), or long-form (full direct-response)",
+        task_keys=("copy_depth", "depth", "copy_length", "length_class"),
+        brief_patterns=_p(
+            r"\b(short[- ]?form|short|punchy|minimal)\b",
+            r"\b(standard|balanced|medium)\b",
+            r"\b(long[- ]?form|long|detailed|in[- ]?depth)\b",
+        ),
+        options=("short", "standard", "long-form"),
+        required=False,
+    ),
+]
+
+# Extend the funnel + page sets in place (same list objects QUESTION_SETS binds).
+FUNNEL_QUESTIONS.extend(COPY_CONTEXT_QUESTIONS)
+PAGE_QUESTIONS.extend(COPY_CONTEXT_QUESTIONS)
+
 
 # --- SURVEY (up to 4 questions) -------------------------------------------
 SURVEY_QUESTIONS: List[Question] = [
@@ -528,6 +567,9 @@ def _scaffold_structure(build_type: str, answers: dict) -> dict:
             ],
             "cta": answers.get("cta_offer", "[infer from context]"),
             "copy_source": answers.get("has_copy", "write it for me"),
+            # FIX-COPY-04(i): thread copy depth + traffic source into the P2 brief.
+            "copy_depth": answers.get("copy_depth", "standard"),
+            "traffic_source": answers.get("traffic_source", "[infer from context]"),
         }
     else:  # funnel
         return {
@@ -535,6 +577,9 @@ def _scaffold_structure(build_type: str, answers: dict) -> dict:
             "goal": answers.get("goal", "[infer from context]"),
             "page_count": answers.get("page_count", "[THINK phase will decide]"),
             "audience_offer": answers.get("audience_offer", "[infer from context]"),
+            # FIX-COPY-04(i): thread copy depth + traffic source into the funnel-spec.
+            "copy_depth": answers.get("copy_depth", "standard"),
+            "traffic_source": answers.get("traffic_source", "[infer from context]"),
             "pages": [
                 {"page": 1, "type": "opt-in", "name": "Lead Capture"},
                 {"page": "...", "type": "...", "name": "..."},
@@ -818,12 +863,15 @@ def _merge_structure_into_answers(
                 answers[key] = str(structure[key])
     elif build_type == BUILD_TYPE_PAGE:
         _map = {"page_type": "page_type", "cta": "cta_offer",
-                "copy_source": "has_copy"}
+                "copy_source": "has_copy",
+                # FIX-COPY-04(i): carry the copy-context signals back.
+                "copy_depth": "copy_depth", "traffic_source": "traffic_source"}
         for src, dst in _map.items():
             if src in structure and dst not in answers:
                 answers[dst] = str(structure[src])
     else:  # funnel
-        for key in ("goal", "page_count", "audience_offer"):
+        for key in ("goal", "page_count", "audience_offer",
+                    "copy_depth", "traffic_source"):
             if key in structure and key not in answers:
                 answers[key] = str(structure[key])
 
@@ -899,6 +947,10 @@ def _selftest() -> int:
         "goal": "generate coaching leads",
         "page_count": "3",
         "audience_offer": "coaches, 6-week program",
+        # FIX-COPY-04(i): the shared copy-context questions are part of the funnel
+        # set now, so a fully pre-filled task must supply them too.
+        "copy_depth": "standard",
+        "traffic_source": "facebook ad — 'Scale your coaching to 6 figures'",
         "brief": "a simple 3-page funnel for coaches to generate leads",
     }
     result = run_interview(pre_filled_funnel_task, _recording_ask)
