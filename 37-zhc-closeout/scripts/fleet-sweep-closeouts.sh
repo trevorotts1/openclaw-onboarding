@@ -25,7 +25,8 @@
 #
 # OUTPUT:
 #   Per-box table in dry-run. JSON report to --report-json or stdout with --json.
-#   Telegram summary to operator (ZHC_OPERATOR_CHAT_ID, default 5252140759)
+#   Telegram summary to operator (opt-in OPERATOR_ESCALATION_CHAT_ID, back-compat
+#   ZHC_OPERATOR_CHAT_ID — no hardcoded default; skips when unset)
 #   when --apply completes.
 #
 # EXIT CODES:

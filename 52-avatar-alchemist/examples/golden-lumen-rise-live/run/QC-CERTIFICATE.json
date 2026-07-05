@@ -1,0 +1,26 @@
+{
+  "certificate": "avatar-alchemist-qc-cert",
+  "run_id": "golden-lumen-rise-live",
+  "issued_utc": "2026-07-05T15:06:49Z",
+  "qc_score": 10.0,
+  "content_gate_pass": true,
+  "content_gate_violation_count": 0,
+  "categories": {
+    "stage_completeness": 10.0,
+    "word_floor_margin": 10.0,
+    "count_structure": 10.0,
+    "image_band_compliance": 10.0,
+    "adset_category_fidelity": 10.0,
+    "botdoc_structure": 10.0,
+    "hero_structure": 10.0,
+    "placeholder_cleanliness": 10.0,
+    "provider_purity": 10.0,
+    "section_relevance": 10.0
+  },
+  "notes": [
+    "adset_category_fidelity: N/A (repairs OFF, faithful-to-live run) -> scored 10"
+  ],
+  "qc_methodology": "deterministic 10-category structural/provenance composite computed by aa_qc_cert.py (a separate program from the generator and the delivery gate) over the on-disk run; NOT a human or LLM semantic prose-quality grade.",
+  "verifier": "aa_qc_cert.py",
+  "signature": "b74467e9baab07b76a85f34c91df752f059f6928759c250243ff8d19d7ea5955"
+}

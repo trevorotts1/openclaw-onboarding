@@ -1,4 +1,4 @@
-# Starter Page Prompt
+# Starter Page Prompt (MAIN sales page — 8 sections, A/B)
 
 > BAKED for Skill 56 (Sales Page Assets) — PROVIDER-AGNOSTIC. Runtime uses the CLIENT's OWN
 > configured providers/keys (NEVER Anthropic, NEVER the operator's accounts). Credential seams:
@@ -7,100 +7,117 @@
 > model names generalized. The SACRED frameworks + word/section bands are preserved and are
 > machine-enforced by the Skill 56 provers.
 
+> COPY AND CODE ARE TWO SEPARATE STEPS (FIX-XC-04c). One completion must NEVER author copy AND a
+> full HTML page at the same time — that is how the DR structure and the per-section word floors
+> got lost. STEP A emits an approved, per-section `copy_ledger.json` FIRST (measured against the
+> SACRED bands by `prove_sp_main_structure.py`); STEP B renders that ALREADY-APPROVED copy into HTML
+> and authors NO new copy. Do the steps in order; never merge them.
+
 ---
 
+## The MAIN page section spec (SACRED — the "Advanced Sales Page Creation" 8-section structure)
 
+Author BOTH variants (`a` and `b`). Variant `a` and variant `b` are two distinct angles on the SAME
+offer (e.g. a proof-led angle vs. a story-led angle) — never the same copy twice. Every section is
+mandatory, in THIS order. `word_min` is the SACRED stripped-word floor per section; the prover
+MEASURES the copy and rejects anything under-band (AF-SP56-MAIN-SECTION-BAND) — under-length is as
+much a failure as skipping the section. Write to the TOP of each band, not the floor.
 
-## System
+| # | section id       | word_min | intent (what this section must accomplish) |
+|---|------------------|----------|--------------------------------------------|
+| 1 | header           | 18 | Attention-grabbing notification banner / headline: the single biggest promise or pattern-interrupt, in the reader's own language. |
+| 2 | hero             | 35 | Above-the-fold hero: name the dream outcome, who it is for, and the primary CTA promise. Earn the scroll. |
+| 3 | problem-solution | 35 | Agitate the specific problem the reader lives with, then pivot to the mechanism/solution that resolves it. |
+| 4 | benefits         | 30 | The core transformation as concrete, felt benefits (not features) — what life looks like after. |
+| 5 | product-details  | 35 | What the offer actually IS: deliverables, format, what they get, how it works. Make it tangible. |
+| 6 | credibility      | 30 | Proof: testimonials, results, founder credibility, social proof that de-risks the decision. |
+| 7 | final-cta        | 30 | The closing call to action with urgency (the countdown timer lives here) and a risk-reversal. |
+| 8 | footer           | 18 | Footer: guarantee restatement, legal/utility links, and a final one-line reassurance. |
 
-you are a expert creating html pages. and you are also a expert copy writer  specializing in writing high converting sales page copy.
+A mandated **countdown timer** must be present on the page (set `has_countdown_timer: true` on each
+MAIN asset, or embed real countdown JS in the rendered fragment). Voice, offer names, brand color, and
+proof all come from `${INTAKE.*}` — never invent facts the intake did not provide.
 
-Important Formatting Instructions
-Please note that for proper code functionality:
+---
 
-Do not use backtick characters in your output as this will break the code
-Avoid using triple backtick characters anywhere in your output
-Never include this specific character sequence: ```
-Do not include this line anywhere in your output: ```html
+## STEP A — COPY ONLY (emit copy_ledger.json; write NO HTML)
 
-These restrictions help ensure the code will function properly when implemented.
+### System
+You are an expert direct-response sales-page copywriter. You write ONLY structured copy in this step.
+You do not write HTML, CSS, or JavaScript here. You return machine-readable JSON only.
 
-## User
+### User
+Using the offer, audience, brand voice, proof, and CTA link from `${INTAKE.*}`, write the MAIN sales
+page copy for BOTH variants `a` and `b`, section by section, following the 8-section spec above. For
+every section, write to the TOP of its word band with genuine, specific, non-repetitive copy (no
+filler, no padding, no placeholder text, no mid-phrase cutoffs).
 
-you must write the page and create the html code for the landing page. i need perfect html/html 5 responsive design using best design practices
+Return ONE JSON object shaped EXACTLY like this (no commentary before or after):
 
-do not add any extra commentary. before or after your output
+    {
+      "funnel_type": "sales_page_assets",
+      "assets": [
+        {
+          "stage": "main", "variant": "a", "type": "page",
+          "asset_key": "${INTAKE.client_slug}__${INTAKE.funnel_slug}__main__page__v01a",
+          "has_countdown_timer": true,
+          "sections": [
+            {"order": 1, "name": "Attention-Grabbing Header", "copy": "..."},
+            {"order": 2, "name": "Hero Section",              "copy": "..."},
+            {"order": 3, "name": "Problem & Solution",        "copy": "..."},
+            {"order": 4, "name": "Benefits Section",          "copy": "..."},
+            {"order": 5, "name": "Product Details",           "copy": "..."},
+            {"order": 6, "name": "Credibility Section",       "copy": "..."},
+            {"order": 7, "name": "Final Call to Action",      "copy": "..."},
+            {"order": 8, "name": "Footer",                    "copy": "..."}
+          ]
+        },
+        { "stage": "main", "variant": "b", "type": "page", "has_countdown_timer": true, "sections": [ ...same 8 sections, a DIFFERENT angle... ] }
+      ]
+    }
 
-so at the end  i should have a hightly converting sales pages that follows best sales conversion practices, and best copywriting practices AND BEST DESIGN PRACTICES!!
+This JSON is written to `copy_ledger.json` and gated by `prove_sp_main_structure.py` (8 sections in
+order, both variants, per-section word floors, countdown). It only advances to STEP B once it PASSES.
+DO NOT emit HTML in this step.
 
-I LIKE DISRUPTIVE AND PROVATIVE COPY
+---
 
-REMEBEME THAT YOU MUST EMBED AND USE ALL OF THE IMAGES  THAT I SHARE WITH YOU IIN THE HTML THAT YOU WRITE ANDIT YOUMUST ALSO USE THE LOGO WHICH I PROVIDED YOU WITH.  I WANT A BEAUTIFUL PAGE THAT HAS A MODENRN AESHTIC LIKE AN APPLE PAGE
+## STEP B — RENDER ONLY (inject the APPROVED copy into HTML; author NO new copy)
 
+Run this step ONLY after the STEP-A `copy_ledger.json` has passed its prover. Your input is the
+APPROVED copy — use it VERBATIM. You are a front-end engineer, not a copywriter, in this step: do not
+rewrite, shorten, expand, or invent copy. If a section reads thin, STOP and return to STEP A; never
+"fix" copy inside the render.
 
-you must make sure that all cta buttons are properly centered!!
+Important Formatting Instructions (so the code functions when pasted into the platform code-snippet area):
 
-If a link is shared in the instructions THEN YOU MUST  MAKE SURE THAT THE CTA BUTTONS WHEN CLICKED LEAD TO THE LINK THAT WAS SHARED!!!
+- Do not use backtick characters in your output.
+- Avoid using triple backtick characters anywhere in your output.
+- Never include the character sequence of three backticks, with or without a language tag.
 
-MAKE SURE THE DESIGN AND TYPOGRAPHY IS WELL BALANCED IE. I DONT WANT TO SEE  A SECTION WHERE YOU HAVE 3 TEXT BOXES ON ONE ROW AND THEN ON THE NEXT ROW YOU HAVE ONE BOX THIS IS POOR DESIGN STRUCTURE
-YOU MUST INVESTIGATE AND USE BEST DESIGN PRACTICES
+### System
+You are an expert front-end engineer building a responsive, high-converting sales page in clean,
+valid HTML5. You render approved copy; you never author copy.
 
-avoid situations whe you have part of a word on one line and the rest of the word on another line that is bad design
+### User
+Build the complete HTML page for one MAIN variant, injecting the approved section copy from
+`copy_ledger.json` in the exact 8-section order. Requirements:
 
-make sure all images are  properly linked  and pullling in to the pages
+1. **Complete HTML only** — begin with the DOCTYPE, include full HEAD and BODY, all valid HTML/CSS/JS.
+   No commentary before or after the code. Pure HTML output only.
+2. **Embed all assets** — all CSS in a style tag in the head; all JS in script tags at the end of the
+   body; embed every image using the GHL-CDN URLs provided; use the logo from `${INTAKE.brand_logo}`.
+3. **Use the approved copy verbatim** — one rendered section per copy_ledger section, in order. Author
+   nothing new.
+4. **Responsive** — mobile-first with appropriate breakpoints; touch-friendly interactive elements.
+5. **Visual design** — use `${INTAKE.primary_brand_color}` for CTAs and key headlines; clear visual
+   hierarchy; balanced typography (never 3 boxes in one row and 1 in the next); adequate whitespace;
+   readable contrast (never white text on a white background). Avoid breaking a word across lines.
+6. **Functionality** — a working countdown timer for urgency; ALL CTA buttons centered and linking to
+   the exact CTA URL from the intake; make every CTA prominent.
 
-here is an example of a diffrent page where the images are linked and pulled into the page correctly you must payattetion to how the code is written around  pulling in the images. check your code against this code so you can determine if you have pulled in the image links in correctly!!! [
+The HTML is inserted directly into the Go High Level code-snippet area without modification, so it
+must be complete, valid, and ready to use.
 
-
-[NEUTRALIZED: prior-client example page HTML removed for fleet hygiene — use the CLIENT's own brand inputs; follow the section spec above.]
-
-```
-</example_analysis>
-
-<output_instructions>
-Your final output must follow these critical requirements:
-
-1. **Complete HTML Code Only**
-   - The final output must be pure HTML code only, with no backticks or any other formatting characters
-   - Begin with the proper DOCTYPE declaration
-   - Include complete HEAD and BODY tags
-   - Ensure all code is complete and valid HTML/CSS/JS
-
-2. **Embed All Content Within the HTML**
-   - Include all CSS within a style tag in the head
-   - Include all JavaScript within script tags at the end of the body
-   - Embed all images using the provided URLs
-
-3. **Responsive Design**
-   - Ensure the page is fully responsive for all device sizes
-   - Create a mobile-first design with appropriate breakpoints
-   - Test all interactive elements for touch compatibility
-
-4. **Content Creation**
-   - Write compelling, conversion-focused copy based on the provided variables
-   - Create a coherent sales message that flows naturally through all sections
-   - Structure the content to build desire and overcome objections
-
-5. **Visual Design**
-   - Use the primary brand color for key elements like CTAs and headlines
-   - Create a visual hierarchy that guides the eye to conversion points
-   - Ensure adequate whitespace and readability
-
-6. **Functionality**
-   - Include a working countdown timer for urgency
-   - Ensure all links use the format provided by the user
-   - Make all CTAs prominent and compelling
-
-CRITICAL WARNINGS:
-- DO NOT use ANY backtick symbols (`) in your output
-- DO NOT use triple backticks (```) in your output
-- DO NOT use triple backticks with html (```html) in your output
-- DO NOT add any commentary before or after your HTML code
-- OUTPUT PURE HTML CODE ONLY
-
-The HTML code you create will be directly inserted into the Go High Level platform's code snippet area without any modifications. It must be complete, valid, and ready to use.
-</output_instructions>
-
-
-NOTE: 
-When selecting font color, size and style make sure the background color and font color is visible and in line recommendations for readability. it must be in line with html guidlines.  so for example you would not have white font on a white background
+NOTE: when choosing font color, size, and style, keep background/foreground contrast within standard
+readability guidelines.

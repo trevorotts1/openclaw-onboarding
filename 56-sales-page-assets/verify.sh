@@ -102,6 +102,7 @@ if [ -d "$GOLDEN" ]; then
   run "golden content authenticity (--content-check)" "$PY" "$GOLDEN/build_golden.py" --content-check
   run "golden brief   -> prove_sp_intake"          "$PY" "$SCRIPTS/prove_sp_intake.py" "$GOLDEN/brief.json"
   run "golden images  -> prove_sp_image_plan"      "$PY" "$SCRIPTS/prove_sp_image_plan.py" --plan "$GOLDEN/image_plan.json"
+  run "golden prompts -> prove_sp_prompt_floor"    "$PY" "$SCRIPTS/prove_sp_prompt_floor.py" --ledger "$GOLDEN/image_plan.json"
   run "golden main    -> prove_sp_main_structure"  "$PY" "$SCRIPTS/prove_sp_main_structure.py" --ledger "$GOLDEN/copy_ledger.json"
   run "golden upsell  -> prove_sp_upsell_structure" "$PY" "$SCRIPTS/prove_sp_upsell_structure.py" --ledger "$GOLDEN/copy_ledger.json"
   run "golden hi-tkt  -> prove_sp_highticket_band" "$PY" "$SCRIPTS/prove_sp_highticket_band.py" --ledger "$GOLDEN/copy_ledger.json"
@@ -123,6 +124,11 @@ if [ -d "$GOLDEN" ]; then
   mkdir -p "$RD"
   cp "$GOLDEN/brief.json" "$GOLDEN/image_plan.json" "$GOLDEN/copy_ledger.json" \
      "$GOLDEN/media_ledger.json" "$GOLDEN/funnel-manifest.json" "$RD/"
+  # P5-P9 artifact-backed gates (FIX-XC-03b): carry the committed build artifacts into the run dir.
+  [ -d "$GOLDEN/pages" ] && cp -R "$GOLDEN/pages" "$RD/pages"
+  for a in drive_docs.json delivery.json build_receipt.json; do
+    [ -f "$GOLDEN/$a" ] && cp "$GOLDEN/$a" "$RD/$a"
+  done
   FRESH_NONCE="verify-golden-$$-$RANDOM"
   printf '%s' "$FRESH_NONCE" > "$RD/.spa_run_nonce"; chmod 600 "$RD/.spa_run_nonce"
   if "$PY" "$ORCH" --run-dir "$RD" --nonce "$FRESH_NONCE" >"$TMP/orch.log" 2>&1 && [ -f "$RD/PROCESS-CERTIFICATE.json" ]; then

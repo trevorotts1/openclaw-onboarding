@@ -48,7 +48,7 @@ gated at P4 by AF-FUN-IMG-HOST — see SOP-FUNNEL-04.)
 ## 5. VERIFY BEFORE ADVANCING
 
 ```
-python3 49-signature-funnel/scripts/prove_sf_prompt_floor.py working/copy/prompt_ledger.json
+python3 49-signature-funnel/scripts/prove_sf_prompt_floor.py --ledger working/copy/prompt_ledger.json
 ```
 
 Exit 0 = every prompt cleared both floors and P3-IMAGES may run. Any `AF-FUN-PROMPT-*` code = fix the
