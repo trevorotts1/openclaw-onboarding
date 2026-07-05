@@ -21,10 +21,10 @@ Product info [{{intake.product_info}}]
 
 Additonal info you consider and infuse in to your output  
 [
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 
 ]
 

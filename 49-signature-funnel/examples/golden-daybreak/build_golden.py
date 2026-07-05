@@ -32,6 +32,12 @@ SCRIPTS = SKILL_DIR / "scripts"
 ORCH = SKILL_DIR / "run_signature_funnel.py"
 PY = sys.executable or "python3"
 
+sys.path.insert(0, str(SCRIPTS))
+import prove_sf_graph  # noqa: E402  (canonical 3/5/7 matrix + graph/derived fixtures)
+from prove_sf_prompt_floor import _GRADE_BLOCK as SIG_GRADE_BLOCK  # noqa: E402  (canonical verbatim grade block)
+
+GOLDEN_SIZE = 7
+
 # Documented example nonce (NOT a secret — this is a golden specimen, not a live run).
 GOLDEN_NONCE = "golden-daybreak-nonce-v1"
 
@@ -1703,7 +1709,10 @@ def build_prompt_ledger() -> dict:
     prompts = []
     for idx, (meta, body) in enumerate(entries):
         rec = dict(meta)
-        rec["prompt"] = _vary(body, idx)
+        # MASTERDOC §4: the canonical SIGNATURE GRADE BLOCK is embedded VERBATIM in every
+        # prompt. Append it AFTER _vary so the per-prompt craft-phrase rotation never mutates
+        # the constant — this is what the FIX-IMG-06 verbatim-containment gate now requires.
+        rec["prompt"] = _p(_vary(body, idx), SIG_GRADE_BLOCK)
         prompts.append(rec)
     return {"funnel_type": "signature_funnel", "prompts": prompts}
 
@@ -1828,6 +1837,38 @@ def _emit_golden(dst: Path) -> dict:
     return ledgers
 
 
+def _emit_build_artifacts(dst: Path) -> list:
+    """Emit the P5-P8 artifacts for the committed 7-step golden: a non-empty page
+    fragment per matrix page, the canonical funnel_graph.json (MASTERDOC §3), a
+    build_receipt.json (QC >= 8.5 + a preview URL per page), and the U1/D1/U2/D2/TY
+    derived-page ledger. Returns the run-dir-relative paths to copy into the run dir."""
+    pages = prove_sf_graph.funnel_pages(GOLDEN_SIZE)
+    rels = []
+    (dst / "pages").mkdir(parents=True, exist_ok=True)
+    for profile in pages:
+        rel = f"pages/{profile}.fragment.html"
+        (dst / rel).write_text(
+            f"<section class=\"sf-page\" data-stage=\"{profile}\">\n"
+            f"  <h1>{PRODUCT} — {profile} page</h1>\n"
+            f"  <div class=\"sf-body\">Signature-styled {profile} fragment for the golden funnel.</div>\n"
+            f"</section>\n", encoding="utf-8")
+        rels.append(rel)
+    _write_json(dst / "funnel_graph.json", prove_sf_graph._valid_graph(GOLDEN_SIZE))
+    receipt = {
+        "funnel_type": "signature_funnel",
+        "funnel_size": GOLDEN_SIZE,
+        "qc_score": 9.2,
+        "pages": [
+            {"page_type": p, "status": "built",
+             "preview_url": f"https://app.gohighlevel.com/funnels/preview/daybreak/{p}"}
+            for p in pages
+        ],
+    }
+    _write_json(dst / "build_receipt.json", receipt)
+    _write_json(dst / "derived_pages.json", prove_sf_graph._valid_derived_ledger(GOLDEN_SIZE))
+    return rels + ["funnel_graph.json", "build_receipt.json", "derived_pages.json"]
+
+
 def _orchestrate(run_dir: Path, nonce: str) -> tuple:
     nf = run_dir / ".sf_run_nonce"
     nf.write_text(nonce, encoding="utf-8")
@@ -1899,12 +1940,16 @@ def main() -> int:
 
     ledgers = _emit_golden(HERE)
     print(f"emitted 4 golden ledgers into {HERE}")
+    build_artifacts = _emit_build_artifacts(HERE)
+    print(f"emitted {len(build_artifacts)} P5-P8 build artifacts (fragments + graph + receipt + derived ledger)")
 
-    # 1) prove each golden ledger PASSES its gate (exit 0)
+    # 1) prove each golden ledger/artifact PASSES its gate (exit 0)
     checks = [
         ("prove_sf_intake.py", [str(HERE / "brief.json")]),
         ("prove_sf_copy.py", ["--ledger", str(HERE / "copy_ledger.json")]),
         ("prove_sf_prompt_floor.py", ["--ledger", str(HERE / "prompt_ledger.json")]),
+        ("prove_sf_graph.py", ["--graph", str(HERE / "funnel_graph.json")]),
+        ("prove_sf_build.py", ["--receipt", str(HERE / "build_receipt.json")]),
         ("prove_sf_no_pitch.py", ["--ledger", str(HERE / "media_ledger.json")]),
     ]
     prover_results = {}
@@ -1923,6 +1968,10 @@ def main() -> int:
         run_dir.mkdir()
         for name in ledgers:
             (run_dir / name).write_text((HERE / name).read_text(encoding="utf-8"), encoding="utf-8")
+        for rel in build_artifacts:
+            dst_p = run_dir / rel
+            dst_p.parent.mkdir(parents=True, exist_ok=True)
+            dst_p.write_text((HERE / rel).read_text(encoding="utf-8"), encoding="utf-8")
         rc, out = _orchestrate(run_dir, GOLDEN_NONCE)
         cert_path = run_dir / "PROCESS-CERTIFICATE.json"
         certified = rc == 0 and cert_path.exists()

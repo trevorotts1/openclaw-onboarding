@@ -1,5 +1,13 @@
 #!/bin/bash
-# persona-inbox-watcher.sh — v6.6.0
+# persona-inbox-watcher.sh — v6.6.1
+#
+# v6.6.1 — F1.1 (skill 22 v6.15.0): the success branch now asserts the shared
+#   usable-persona contract (pipeline/usable-persona-contract.sh: blueprint +
+#   categories key + >=1 index row) BEFORE moving a source to processed/. A zero
+#   exit from add-persona-from-source.sh is necessary but NOT sufficient; any
+#   missing leg routes the source through the existing failure/retry/quarantine
+#   path, never processed/. Kills the "book consumed, logged SUCCESS, no persona
+#   built, no retry" false-success.
 #
 # Cron-driven inbox watcher for Skill 22. Scans a drop-folder for new source
 # files and automatically converts them into personas without operator interaction.
@@ -119,6 +127,10 @@ if [ ! -f "$ORCHESTRATOR" ]; then
     exit 0
 fi
 
+# Resolve the shared usable-persona contract (F1.1). A book is only "processed"
+# once this asserts blueprint + categories key + >=1 index row for the slug.
+USABLE_CONTRACT="$(dirname "$SCRIPT_DIR")/pipeline/usable-persona-contract.sh"
+
 # ─── STALE LOCK REAPING ──────────────────────────────────────────────────────
 # Find lock files older than LOCK_TTL_MINUTES and remove them
 stale_reaped=0
@@ -217,13 +229,24 @@ for _source_file in "$INBOX_DIR"/*; do
         fi
     fi
 
-    # Idempotency check: skip if blueprint already exists
+    # Idempotency check: a persona is only "already done" when the FULL
+    # usable-persona contract holds. "Blueprint present" is just 1 of 3 legs —
+    # a blueprint with no categories key or no index rows is a half-built persona
+    # that must NOT be moved to processed/ (F1.1). If the blueprint exists AND the
+    # contract passes → truly done, move to processed/. If the blueprint exists
+    # but the contract fails → fall through and re-run the converter to complete
+    # the missing legs (idempotent re-embed); never short-circuit a half-built
+    # persona out of the inbox.
     _blueprint="$PERSONAS_DIR/$_slug/persona-blueprint.md"
     if [ -f "$_blueprint" ]; then
-        echo "$(TS) [persona-inbox-watcher] Blueprint already exists for '$_slug' — moving to processed."
-        mv "$_source_file" "$PROCESSED_DIR/" 2>/dev/null || true
-        [ -f "$_sidecar" ] && mv "$_sidecar" "$PROCESSED_DIR/" 2>/dev/null || true
-        continue
+        if [ -f "$USABLE_CONTRACT" ] && bash "$USABLE_CONTRACT" "$PERSONA_BASE" "$_slug" >/dev/null 2>&1; then
+            echo "$(TS) [persona-inbox-watcher] '$_slug' already fully built (usable-persona contract satisfied) — moving to processed."
+            mv "$_source_file" "$PROCESSED_DIR/" 2>/dev/null || true
+            [ -f "$_sidecar" ] && mv "$_sidecar" "$PROCESSED_DIR/" 2>/dev/null || true
+            rm -f "$FAILCOUNT_DIR/$_slug.failcount" 2>/dev/null || true
+            continue
+        fi
+        echo "$(TS) [persona-inbox-watcher] Blueprint for '$_slug' exists but usable-persona contract NOT satisfied — re-running to complete missing legs (not moving to processed/)."
     fi
 
     # Quarantine GATE (G4 furnace fix): if this slug already hit the failure cap,
@@ -256,15 +279,45 @@ for _source_file in "$INBOX_DIR"/*; do
     [ -n "$_title"  ] && _add_args+=("--title"  "$_title")
     [ -n "$_author" ] && _add_args+=("--author" "$_author")
 
-    if bash "$ADD_PERSONA_SCRIPT" "${_add_args[@]}" ; then
-        echo "$(TS) [persona-inbox-watcher] SUCCESS: '$_slug' processed."
+    # Run the converter. A ZERO exit is necessary but NOT sufficient: pre-F1.1 a
+    # missing orchestrator (now exit 7) or a silently-empty pipeline could exit 0
+    # having written source.json but NO blueprint / categories key / index row,
+    # and this branch moved the source to processed/ with a SUCCESS log — losing
+    # the book with no retry. So we now assert the shared usable-persona contract
+    # (blueprint AND categories key AND >=1 index row) BEFORE declaring success.
+    _add_rc=0
+    bash "$ADD_PERSONA_SCRIPT" "${_add_args[@]}" || _add_rc=$?
+
+    _contract_rc=0
+    if [ "$_add_rc" -eq 0 ]; then
+        if [ -f "$USABLE_CONTRACT" ]; then
+            bash "$USABLE_CONTRACT" "$PERSONA_BASE" "$_slug" || _contract_rc=$?
+        else
+            echo "$(TS) [persona-inbox-watcher] WARN: usable-persona-contract.sh not found at $USABLE_CONTRACT — cannot verify '$_slug'; treating as failure (fail-closed, never processed/)."
+            _contract_rc=127
+        fi
+    fi
+
+    if [ "$_add_rc" -eq 0 ] && [ "$_contract_rc" -eq 0 ]; then
+        echo "$(TS) [persona-inbox-watcher] SUCCESS: '$_slug' processed (usable-persona contract satisfied)."
         mv "$_source_file" "$PROCESSED_DIR/" 2>/dev/null || true
         [ -f "$_sidecar" ] && mv "$_sidecar" "$PROCESSED_DIR/" 2>/dev/null || true
         # Clear any prior consecutive-failure count (success resets the counter)
         rm -f "$FAILCOUNT_DIR/$_slug.failcount" 2>/dev/null || true
         processed_count=$((processed_count + 1))
     else
-        _rc=$?
+        # Failure path — reached when the converter failed (nonzero exit) OR it
+        # exited 0 but the usable-persona contract was not satisfied. In the
+        # latter case the source is NEVER moved to processed/: it stays in the
+        # inbox for retry and, after MAX_FAILURES, is quarantined like any other
+        # un-convertible source.
+        if [ "$_add_rc" -ne 0 ]; then
+            _rc=$_add_rc
+            echo "$(TS) [persona-inbox-watcher] add-persona-from-source.sh exited $_add_rc for '$_slug'."
+        else
+            _rc=$_contract_rc
+            echo "$(TS) [persona-inbox-watcher] '$_slug': add-persona-from-source.sh exited 0 but the usable-persona contract FAILED (code $_contract_rc) — no blueprint/categories/index row; NOT moving to processed/."
+        fi
         # Per-slug FAILURE BACKOFF + QUARANTINE (G4 furnace fix). Increment the
         # consecutive-failure counter; once it reaches MAX_FAILURES, move the
         # source (and sidecar) out of the active inbox so it is NEVER reprocessed,

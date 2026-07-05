@@ -255,6 +255,163 @@ def _resolve_builder_for_task(task: dict) -> "Callable[[dict, str], dict] | None
 
 
 # ---------------------------------------------------------------------------
+# Copy-dependency routing (FIX-COPY-01)
+#
+# The single largest copy-quality lever in the repo: a plain "build me a landing
+# page / website" whose answer to "do you already have copy, or should I write
+# it?" is "write it for me" must NOT have its copy improvised inline by the build
+# session model. Instead intake opens a 3-card mini-epic (P1-spec → P2-copy →
+# P4-build): a P2-COPY card routed to the MARKETING department (the Conversion
+# Copywriter, per SOP-07 Step 3) and the build task is HELD waiting_on_dependency
+# until an APPROVED copy.md exists. All board work here is FAIL-SOFT — the local
+# waiting_on_dependency receipt is the binding gate, the card is visibility only.
+# ---------------------------------------------------------------------------
+
+# Answers to the intake "has_copy" question that mean "the client wants US to
+# write the copy" (the write-path that must be routed to a copywriter).
+_COPY_WRITE_SIGNALS = (
+    "write it for me", "write it", "write the", "write my", "write our",
+    "you write", "write copy", "please write", "need copy",
+)
+# Answers that mean the client already HAS copy — no copywriter dependency.
+_COPY_HAVE_SIGNALS = (
+    "i have copy", "have copy", "have the copy", "my own", "own copy",
+    "copy is ready", "copy ready", "already have", "provided", "supplied",
+)
+
+
+def _resolve_has_copy(task: dict, intake_result: "dict | None") -> str:
+    """Return the raw ``has_copy`` answer from the intake result or the task dict."""
+    if isinstance(intake_result, dict):
+        ans = intake_result.get("answers")
+        if isinstance(ans, dict) and ans.get("has_copy"):
+            return str(ans["has_copy"])
+    ia = task.get("intake_answers")
+    if isinstance(ia, dict) and ia.get("has_copy"):
+        return str(ia["has_copy"])
+    for k in ("has_copy", "copy_provided", "copy_ready"):
+        v = task.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return ""
+
+
+def _copy_write_requested(has_copy_val: str) -> bool:
+    """True iff the ``has_copy`` answer signals the client wants us to author copy.
+
+    Unknown / empty answers return False (never block on ambiguity). An explicit
+    "I have copy" signal returns False even if a stray write-word co-occurs."""
+    v = (has_copy_val or "").strip().lower()
+    if not v:
+        return False
+    if any(sig in v for sig in _COPY_HAVE_SIGNALS):
+        return False
+    return any(sig in v for sig in _COPY_WRITE_SIGNALS)
+
+
+def _approved_copy_exists(task: dict, evidence_root: str) -> bool:
+    """True iff an APPROVED copy.md (or explicitly-provided copy) is available.
+
+    Checks an explicit ``task['copy_md_path']`` first, then the conventional
+    locations under the run dir. A copy.md counts only when its header declares
+    status APPROVED — a PENDING-QC / REVISED-PENDING-QC doc does NOT satisfy the
+    dependency (mirrors v2-autonomous-build-sop.md P2 step 1)."""
+    # Explicitly-provided inline copy short-circuits the dependency.
+    for k in ("copy_md_path", "approved_copy_path"):
+        p = task.get(k)
+        if isinstance(p, str) and p.strip() and os.path.isfile(p) and _copy_md_is_approved(p):
+            return True
+    candidates = [
+        os.path.join(evidence_root, "copy.md"),
+        os.path.join(evidence_root, "copy", "copy.md"),
+        os.path.join(evidence_root, "working", "copy", "copy.md"),
+        os.path.join(evidence_root, "routing", "copy.md"),
+    ]
+    return any(os.path.isfile(c) and _copy_md_is_approved(c) for c in candidates)
+
+
+def _copy_md_is_approved(path: str) -> bool:
+    """Read a copy.md header and return True iff it declares status APPROVED."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            head = "\n".join(f.readline() for _ in range(60)).lower()
+    except OSError:
+        return False
+    if "pending-qc" in head or "revised-pending" in head:
+        return False
+    # Accept `status: APPROVED`, `**status:** approved`, or a bare APPROVED marker.
+    import re as _re
+    return bool(_re.search(r"status[\s*:=_-]+approved", head) or _re.search(r"(^|\n)[*_>\s]*approved\b", head))
+
+
+def _open_copy_dependency(task: dict, evidence_root: str, intake_result: "dict | None") -> dict:
+    """Open the P2-COPY mini-epic when copy must be authored and none is APPROVED.
+
+    Fail-soft: on the write-path with no APPROVED copy.md it (1) posts a P2-COPY
+    card to the MARKETING department (best-effort), (2) flags the build task
+    ``waiting_on_dependency``, and (3) writes ``routing/copy-dependency.json``.
+    Returns a small status dict; never raises. When copy is already provided /
+    approved, or the client has their own copy, it is a clean no-op."""
+    has_copy = _resolve_has_copy(task, intake_result)
+    if not _copy_write_requested(has_copy):
+        return {"opened": False, "reason": "copy not write-requested (client has copy or answer absent)"}
+    if _approved_copy_exists(task, evidence_root):
+        return {"opened": False, "reason": "APPROVED copy.md already present"}
+
+    build_task_id = str(task.get("board_task_id") or task.get("id") or "task")
+    brand = str(task.get("brand") or "").strip()
+    brief = str(task.get("brief") or task.get("text") or task.get("description") or "").strip()
+
+    # (1) P2-COPY card → MARKETING department (Conversion Copywriter), fail-soft.
+    p2_card_id = None
+    if _cc_board is not None:
+        try:
+            p2_card_id = _cc_board.ingest_task(
+                title=f"P2 Copy — Conversion Copywriter{(' — ' + brand) if brand else ''}",
+                description=(
+                    "Author + QC-approve copy.md before the page/website build runs. "
+                    "Build task is held waiting_on_dependency until copy.md is APPROVED.\n\n"
+                    f"Request brief: {brief}" if brief else
+                    "Author + QC-approve copy.md before the page/website build runs."
+                ),
+                job_type="website",
+                department_slug="marketing",
+                source="marketing",
+                priority="high",
+                idempotency_key=f"skill6-p2copy-{build_task_id}",
+            )
+        except Exception as exc:  # noqa: BLE001 — board is best-effort
+            p2_card_id = None
+            _ = exc
+
+    # (2) Flag the build task so the builder / orchestrator halts.
+    dependency = {
+        "status": STATE_WAITING,
+        "required_artifact": "copy.md (status: APPROVED)",
+        "owning_department": "marketing",
+        "owning_role": "conversion-copywriter",
+        "p2_copy_card_id": p2_card_id,
+        "build_task_id": build_task_id,
+        "has_copy_answer": has_copy,
+        "mini_epic": ["p1-spec", "p2-copy", "p4-build"],
+        "note": "SOP-07 Step 3 — copy authored + QC-approved before P4 build (FIX-COPY-01).",
+    }
+    task["waiting_on_dependency"] = "p2-copy: copy.md APPROVED"
+    task["copy_dependency"] = dependency
+
+    # (3) Persist the dependency receipt.
+    try:
+        receipt_dir = os.path.join(evidence_root, "routing")
+        os.makedirs(receipt_dir, exist_ok=True)
+        with open(os.path.join(receipt_dir, "copy-dependency.json"), "w", encoding="utf-8") as _f:
+            json.dump(dependency, _f, indent=2)
+    except OSError:
+        pass  # receipt is best-effort; the in-memory flag still gates the build
+
+    return {"opened": True, "p2_copy_card_id": p2_card_id, "dependency": dependency}
+
+
+# ---------------------------------------------------------------------------
 # Intake interview (Wiring-Map Step 1)
 # ---------------------------------------------------------------------------
 
@@ -297,6 +454,14 @@ def _run_intake(task: dict, evidence_root: str, executor: "Any | None" = None) -
         with open(os.path.join(receipt_dir, "intake-receipt.json"),
                   "w", encoding="utf-8") as _f:
             json.dump(result, _f, indent=2)
+
+        # FIX-COPY-01: route "write it for me" page/website copy to a P2-COPY card
+        # (marketing) and HOLD the build waiting_on_dependency until copy.md is
+        # APPROVED. Fail-soft: never blocks intake, only flags the task + receipt.
+        copy_dep = _open_copy_dependency(task, evidence_root, result)
+        if copy_dep.get("opened"):
+            result["copy_dependency"] = copy_dep.get("dependency")
+
         return result
     except Exception as exc:  # noqa: BLE001 — intake never blocks a build
         return {"skipped": True, "reason": f"{type(exc).__name__}: {exc}"}
@@ -359,6 +524,10 @@ STATE_DISPATCHED = "dispatched"
 STATE_BUILDING = "building"
 STATE_VERIFIED = "verified"
 STATE_FAILED = "FAILED"
+# FIX-COPY-01: a "write it for me" page/website request whose copy.md is not yet
+# APPROVED is HELD here (never improvised inline by the build session model). The
+# build resumes on a later dispatch once the P2-COPY dependency clears.
+STATE_WAITING = "waiting_on_dependency"
 
 # Bounded defaults (SOP §1). max_inflight is a HARD cap of 1.
 DEFAULT_MAX_INFLIGHT = 1
@@ -641,6 +810,26 @@ def dispatch_one(
     # the task dict AND write routing/model-<role>-receipt.json so the executing
     # agent knows which client-owned model to use for each phase.
     _select_and_thread_models(task, evidence_root)
+
+    # ── COPY-DEPENDENCY HALT GATE (FIX-COPY-01) ──────────────────────────────
+    # A "write it for me" page/website whose copy.md is not yet APPROVED must NOT
+    # be improvised inline by the build session model. _run_intake has opened the
+    # P2-COPY card (marketing) and flagged the build task; HOLD the build here
+    # until copy.md is APPROVED (a later dispatch re-checks and proceeds). This is
+    # a no-op for funnels (whose copy runs through the P0–P2 pipeline) and for any
+    # request that already carries an APPROVED copy.md or the client's own copy.
+    _copy_dep = task.get("copy_dependency") or {}
+    if _copy_dep.get("status") == STATE_WAITING and not _approved_copy_exists(task, evidence_root):
+        rec = {
+            "task_id": task_id, "state": STATE_WAITING,
+            "reason": ("copy.md not APPROVED — held on P2-COPY dependency "
+                       "(marketing). Build resumes once copy.md is APPROVED "
+                       "(FIX-COPY-01: no inline-improvised copy)."),
+            "copy_dependency": _copy_dep,
+        }
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_WAITING, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
 
     # Builder auto-resolution: if no builder was injected by the caller, attempt
     # to resolve from task job_type (survey/quiz → ghl_survey_builder;
