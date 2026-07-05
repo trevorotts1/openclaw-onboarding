@@ -10,6 +10,27 @@ As of v17.0.4, `SKILL.md` `metadata.version` is rolled automatically by `bump-ve
 
 ---
 
+## [v17.0.27] - 2026-07-05 — fix(image delivery rail): 8-block brand prompts, PNG sanity, rendered-<img> gate, media adapters
+
+Wave-0 merge-train **T-06-ghl-delivery-rail** (fix IDs FIX-XC-03c, FIX-XC-04f, FIX-IMG-01, FIX-IMG-08, FIX-IMG-09).
+
+### Fixed — the "un-fakeable" rendered-`<img>` gate now exists (FIX-XC-03c)
+`ghl_verify.verify_page` loads `<run_dir>/images/manifest.json`, filters records by `used_on_page_id`, and asserts each `cdn_url` literally appears in the fetched rendered DOM (raw HTML, not tag-stripped). A missing image folds into `render_errors` → `PASS:False` (no override) and is stamped on the raw record as `missing_images`. `assert_consistent` adds Invariant 6 (a `missing_images` row can never be `PASS`) as the summary-layer mirror. Opt-in: fires only when a success manifest targets the page. The live-path HTML-repair retry re-folds the gate against the repaired DOM so a clean preview repair can't mask a still-missing image.
+
+### Fixed — Skill-6 no longer fabricates a ~200-char generic hero prompt (FIX-XC-04f)
+`ghl_image_stage._derive_copy_specs` now emits ONE spec per major page **section** (not a single hero), each a full 8-block prompt (order from 49 MASTERDOC §4) whose block-4 Grade Block is templated from the intake brand colors. Copy context cap raised 300 → 2,000 chars. `ghl_media.build_prompts_json` gained `enforce_floor` + `PROMPT_CHAR_FLOOR = 1500` (measured on prompt content, before the pin) raising `ValueError`; the paid path (`run_image_pipeline`) always enforces it, so a weak prompt can never reach a paid Kie call.
+
+### Fixed — deterministic image sanity + bounded regeneration (FIX-IMG-01)
+`ghl_image_stage.run_image_pipeline` runs a deterministic PNG sanity stage between generate and upload: IHDR-dimension vs resolution-class floor, resolution-scaled byte floor (≥150 KB for 2K), and near-zero decompressed-IDAT color-entropy rejection. A failing slot is regenerated ≤2 times, then hard-FAILs with the slot id. No network, no model.
+
+### Fixed — KIE subprocess timeout scales with prompt count (FIX-IMG-08)
+`ghl_media.generate_images` computes `timeout = max(1800, 300 + 120 * n_prompts)` (from prompts.json length); `KIE_SUBPROCESS_TIMEOUT` still overrides. The computed cap is logged into the run's `asset-cdn.log` evidence and returned in the result. This stops large image sets from being killed mid-run with paid images orphaned.
+
+### Fixed — prompt/QC bundle (FIX-IMG-09)
+(i) Skill 47 `kie_image.py` now forwards the accepted-but-dropped `negative_prompt` in-prompt (`Do not include: …`) for gpt-image-2. (ii) `ghl_media.build_prompts_json` appends the English/Latin **spelling** pin only to `text_bearing` specs; photographic specs get a **no-text** pin (`TEXT_ABSENT_PIN`) instead of being invited to render lettering. (iii) `qc-built-funnel.sh` media-delivery pre-gate upgraded WARN → FAIL when `images/manifest.json` is present but the rendered/preview evidence has no `<img>` referencing a manifest CDN URL, and when no media-folder receipt is present (WARN kept for image-less/legacy evidence). (iv) Added a repo lint (`scripts/qc-assert-skill-version-newline.sh` + workflow) that every `skill-version.txt` ends with a trailing newline, and repaired the two offenders (`32`, `56`) that could concat into a corrupt version token.
+
+---
+
 ## [v17.0.7] - 2026-07-03 — fix(audit): Skill-6 form-id hardening + iframe regression tests
 
 ### Fixed — Skill-6 form-id server-side re-validation (P1-5 remainder)
