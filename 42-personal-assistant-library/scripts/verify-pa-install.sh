@@ -25,6 +25,8 @@ SPECIALISTS=(
   "28-celebration-agent" "29-greatness-agent"
 )
 ROLE_FILES=("00-START-HERE.md" "IDENTITY.md" "SOUL.md" "governing-personas.md" "how-to.md" "ROSTER.md")
+# Specialist 19 (Study Partner) ships the standard 6 role files PLUS 6 sub-role files.
+STUDY_PARTNER_SUBROLES=("01-snippet-curator.md" "02-reflection-guide.md" "03-book-curator.md" "04-knowledge-briefer.md" "05-accountability-coach.md" "06-study-partner-director.md")
 
 echo ""
 echo "Personal Assistant Library — install verification"
@@ -37,7 +39,10 @@ for slug in "${SPECIALISTS[@]}"; do
   d="$SPEC_DIR/$slug"
   if [ ! -d "$d" ]; then bad "$slug folder MISSING"; continue; fi
   if [ "$slug" = "19-study-partner" ]; then
-    { [ -f "$d/00-START-HERE.md" ] && [ -f "$d/ROSTER.md" ]; } && ok "$slug (sub-specialist roster)" || bad "$slug missing orientation/roster"
+    # Assert ALL 12 role files: the standard 6 AND the 6 sub-roles.
+    miss=""
+    for rf in "${ROLE_FILES[@]}" "${STUDY_PARTNER_SUBROLES[@]}"; do [ -f "$d/$rf" ] || miss="$miss $rf"; done
+    [ -z "$miss" ] && ok "$slug role files (all 12 — sub-specialist roster)" || bad "$slug missing:$miss"
   else
     miss=""
     for rf in "${ROLE_FILES[@]}"; do [ -f "$d/$rf" ] || miss="$miss $rf"; done

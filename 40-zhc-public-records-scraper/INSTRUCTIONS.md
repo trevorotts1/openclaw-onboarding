@@ -11,20 +11,20 @@ Operator-facing runtime guide. Read top to bottom before acting (N3). Assumes th
 `scripts/lib-records.sh query "<address-or-zip>" "<record-type>"` runs the router:
 
 1. **Resolve county + state.** From a full address, reuse Skill 39's geocode (Census FIPS) when available; from a ZIP, map ZIP → county (the router uses the matched FIPS). If county/state cannot be resolved → Tier 4 honest gap.
-2. **Tier 1?** Is there a curated config for this county (`references/tier1-counties/<slug>.json`)? If yes AND the target passes the compliance + validation gate → use it.
-3. **Tier 2?** Does this county run on a known platform vendor with an adapter (`references/tier2-adapters/`)? If yes → use the vendor adapter parameterized for this county.
-4. **Tier 3?** Has the operator built a validated Tier-3 config for this target (`06-build-tier3-config.sh`)? If yes → use it.
+2. **Tier 1?** Is there a curated config for this county (`references/tier1-counties/<slug>.json`)? It is only *servable* when `validated:true` AND its `portal_url`/`tos_url` are real (not `<OPERATOR_FILLS_…>` placeholders). A config that is unvalidated or still carries placeholders is NOT served — it falls through, forcing the operator through `05-validate-target.sh` first (never a fabricated route).
+3. **Tier 2?** Does this county run on a known platform vendor? `tier()` iterates the executable adapters in `scripts/adapters/*.sh` (`tyler-technologies.sh`, `govos-landmark.sh`), calling each adapter's `--covers "<county>" "<state>"`. A covered county routes to that vendor adapter (`--plan`); vendor coverage is operator-confirmed (empty by default).
+4. **Tier 3?** Has the operator built a validated Tier-3 config for this target (`06-build-tier3-config.sh`, stored under `<MASTER_FILES_DIR>/public-records-tier3/`)? If it matches the county and is servable → use it.
 5. **Else Tier 4** — honest gap. Log `tier_decision` = `tier4_honest_gap` and tell the operator.
 
 Every routing decision appends a `tier_decision` event.
 
 ## Compliance gate (runs before any live fetch)
 
-`protocols/compliance-protocol.md`, enforced by `lib-records.sh`:
+`protocols/compliance-protocol.md`, enforced INSIDE `query()` in `lib-records.sh` (the gate runs before any live fetch — it is not advisory):
 
-- **robots.txt** — fetch + parse the target's robots.txt; if the path is disallowed for our user-agent → Tier 4 honest gap (`compliance_block`, reason `robots_disallow`). Never override.
-- **ToS reference** — each target config carries `tos_url`; the operator must have acknowledged it (recorded by `04-configure-caps.sh` / per-target). An unacknowledged target → `compliance_block`, reason `tos_unacknowledged`.
-- **Attribution** — every retrieved record is stamped `source` + `retrieved_at`. The router refuses to return an unattributed record.
+- **robots.txt** — fetch + parse the target's robots.txt with a wildcard-safe matcher (`Disallow: /` and `Disallow: /*` both block; any embedded/multiple-wildcard rule that cannot be evaluated safely FAILS CLOSED). If the search path is disallowed → `compliance_block`, reason `robots_disallow`, and the query returns an honest gap. Never override.
+- **ToS acknowledgement (persisted, per target)** — each target config carries a `tos_url`; the operator records an explicit acknowledgement with `bash scripts/lib-records.sh ack_tos <target-slug> <tos_url>` (a placeholder tos_url is refused). `query()` refuses a target with no persisted ack → `compliance_block`, reason `tos_unacknowledged`.
+- **Attribution** — every retrieved record is stamped `source` + `retrieved_at`. The ONLY cache writer is `cache_put`, which REFUSES a record missing either field (an unattributed result is not a record) → `compliance_block`, reason `unattributed`.
 - **Permissible use** — the operator is responsible for lawful, permissible-purpose use (FCRA/DPPA/state limits). The skill surfaces the reminder; it does not give legal advice.
 
 ## Cost cap + rate limits
@@ -39,8 +39,9 @@ Every routing decision appends a `tier_decision` event.
 
 `protocols/cache-protocol.md`, in `lib-records.sh`:
 
-- Results cache at `<MASTER_FILES_DIR>/public-records-cache/` for `PR_CACHE_TTL_DAYS` (default 30).
+- Results cache at `<MASTER_FILES_DIR>/public-records-cache/` for `PR_CACHE_TTL_DAYS` (default 30). `<MASTER_FILES_DIR>` is resolved from the env or the persisted `~/.openclaw/.skill-40-master-files-dir` selection — if it cannot be resolved the router FAILS LOUD rather than writing the cache/cap counter to a throwaway path (which would silently reset the 200/day cap).
 - Cache key = a hash of (normalized target + query) — never a raw address as a filename.
+- Entries are written ONLY by the attribution-gated `cache_put` helper at retrieval completion (source + retrieved_at required), so a `cache_hit` is always a previously-attributed record — never a fabricated one.
 - A fresh cache hit returns instantly, free, and logs `cache_hit`.
 - `--force-refresh` bypasses the cache for one query (logs `force_refresh`).
 - Expired entries are re-fetched (subject to the compliance + cost gates).

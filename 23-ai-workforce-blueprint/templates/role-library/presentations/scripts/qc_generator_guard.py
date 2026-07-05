@@ -8,7 +8,7 @@ THE GAP THIS CLOSES (deep-diagnosis item #8). The anti-bypass surface
 has NO detection for hand-rolled *QC-report generators*. On the reference-case
 client box a hand-authored `working/qc/_build_qc_report.py` scored prompts by a
 WORD-COUNT rubric (80–180 words == 10/10) — so a sub-floor ~800-char prompt
-scored "perfect" and a COMPLIANT 5,000-char prompt would have scored 3/10 and
+scored "perfect" and a COMPLIANT 9,000-char prompt would have scored 3/10 and
 FAILED. A hand-authored image-QC generator added a `typography_overlay_readiness`
 criterion that REWARDED a blank overlay-ready canvas and an "out of scope" escape
 that excused the three Pillow hook cards. These corrupt generators emitted
@@ -128,7 +128,7 @@ _CORRUPT_RUBRIC_PATTERNS = [
     (re.compile(r"score_prompt_length", re.IGNORECASE),
      "word-count prompt-length rubric (scores SHORT prompts high, FAILS compliant ones)"),
     (re.compile(r"prompt[_ ]?word[_ ]?count", re.IGNORECASE),
-     "prompt word-count scoring (length-by-words, not the 5,000-char floor)"),
+     "prompt word-count scoring (length-by-words, not the 9,000-char floor)"),
     (re.compile(r"words?[_ ]?in[_ ]?band", re.IGNORECASE),
      "word-band scoring (e.g. 80-180 words == pass)"),
     (re.compile(r"\b80\s*[-–]\s*180\b"),

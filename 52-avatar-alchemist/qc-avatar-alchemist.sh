@@ -17,6 +17,7 @@ run "delivery-gate --self-test" python3 "$HERE/scripts/aa_delivery_gate.py" --se
 run "links-gate --self-test"    python3 "$HERE/scripts/aa_links_gate.py" --self-test
 run "egress-gate --self-test"   python3 "$HERE/scripts/aa_egress_gate.py" --self-test
 run "qc-cert --self-test"       python3 "$HERE/scripts/aa_qc_cert.py" --self-test
+run "token-lockstep --self-test" python3 "$HERE/scripts/aa_token_lockstep.py" --self-test
 run "director --self-test"      python3 "$HERE/scripts/aa_director.py" --self-test
 run "package --self-test"       python3 "$HERE/scripts/aa_package.py" --self-test
 run "handoff --self-test"       python3 "$HERE/scripts/aa_handoff.py" --self-test
@@ -31,6 +32,8 @@ run "tone-core sync"            python3 "$HERE/scripts/verify_tone_core_sync.py"
 echo "== manifest ↔ prompts lockstep (40/40) =="
 DIRS=$(find "$HERE/prompts" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 if [ "$DIRS" != "40" ]; then echo "  FAIL: $DIRS prompt dirs != 40"; fail=1; else echo "  ok: 40 prompt dirs"; fi
+run "artifact-token lockstep (every {{artifact.X}} is a declared dep; every dep consumed; no generic tokens)" \
+    python3 "$HERE/scripts/aa_token_lockstep.py"
 
 echo "== no usable Anthropic model id baked =="
 if grep -REn 'anthropic/[a-z]|claude-sonnet-[0-9]|claude-opus|claude-haiku|claude-[0-9]' "$HERE/prompts" "$HERE"/*.json >/dev/null 2>&1; then

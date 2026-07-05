@@ -7,11 +7,11 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 - **Certificate kind:** `signature-funnel-process-certificate`
 - **Run id:** `run-golden-daybreak`
 - **Funnel type / size:** `signature_funnel` / **7-step**
-- **Skill version:** `1.0.0`
-- **Issued at:** `2026-07-02T12:39:25Z`
+- **Skill version:** `1.0.5`
+- **Issued at:** `2026-07-05T15:03:11Z`
 - **All phases pass:** **True**
 - **Nonce fingerprint:** `19dd9294004d6460` (specimen nonce `golden-daybreak-nonce-v1`)
-- **HMAC signature:** `e638428d45b76b66f0077bfec7a4ac246ab5f8faa83d8573bcea7e4820abdb50`
+- **HMAC signature:** `f728de0482cfbc46b35e75c66c1036b1535e8b2eb58b88dd630d619231734cad`
 - **Delivery:** preview-only; publishing requires explicit human approval (PRD §7 gate 7).
 
 ## Phase spine (attested in order)
@@ -23,10 +23,10 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 | 2 | `P2-PROMPTS` | `prove_sf_prompt_floor.py` | PASS |
 | 3 | `P3-IMAGES` | `kie_image.py` | PASS |
 | 4 | `P4-MEDIA` | `ghl_media.py` | PASS |
-| 5 | `P5-HTML` | `html_assembly` | PASS |
-| 6 | `P6-COMPOSE` | `funnel_graph` | PASS |
-| 7 | `P7-BUILD` | `ghl_rest_canvas.py` | PASS |
-| 8 | `P8-DERIVE` | `derived_pages` | PASS |
+| 5 | `P5-HTML` | `html_fragments` | PASS |
+| 6 | `P6-COMPOSE` | `prove_sf_graph.py` | PASS |
+| 7 | `P7-BUILD` | `prove_sf_build.py` | PASS |
+| 8 | `P8-DERIVE` | `derived_pages_ledger` | PASS |
 | 9 | `P9-CERTIFY` | `prove_sf_no_pitch.py` | PASS |
 
 ## Verify

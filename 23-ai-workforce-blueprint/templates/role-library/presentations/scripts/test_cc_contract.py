@@ -33,6 +33,7 @@ WHAT IS CHECKED
 """
 
 import ast
+import os
 import re
 import unittest
 from pathlib import Path
@@ -56,11 +57,15 @@ AUTHORITATIVE_CC_TASK_STATUSES = frozenset({
 })
 
 # Read-only CC clone used ONLY for an optional self-check of the hardcode above.
-# Absent on fleet boxes / CI, so the cross-check skips rather than fails there.
-_CC_VALIDATION_TS = Path(
-    "/private/tmp/claude-501/-Users-blackceomacmini/"
-    "da3798a6-b7fe-4f30-9b4f-52a657c9e5e8/scratchpad/cc-clone/src/lib/validation.ts"
-)
+# FIX-PRES-05: NO hardcoded operator-machine path (the old literal embedded the
+# operator home in its dash-separated scratchpad spelling — a fleet
+# no-operator-identifiers violation that also evaded qc-assert-no-client-names.sh,
+# which banned only the slash form; the dash form is now a banned token too). The
+# cross-check is now enabled ONLY when the operator points CC_VALIDATION_TS_PATH at
+# a local blackceo-command-center validation.ts; unset (the fleet / CI default) =>
+# the self-check skips rather than runs against a machine-specific path.
+_CC_VALIDATION_TS_ENV = os.environ.get("CC_VALIDATION_TS_PATH", "").strip()
+_CC_VALIDATION_TS = Path(_CC_VALIDATION_TS_ENV) if _CC_VALIDATION_TS_ENV else None
 
 # Function names whose STATUS argument (positional index 3) is a task-level status.
 #   patch_phase(run_dir, task_id, phase_id, status, note="", env=None)
@@ -250,6 +255,8 @@ class ContractTest(unittest.TestCase):
         self.assertNotIn("delivered", emitted)
 
     def test_hardcode_matches_cc_clone_validation_ts_when_present(self):
+        if _CC_VALIDATION_TS is None:
+            self.skipTest("CC_VALIDATION_TS_PATH unset — CC clone cross-check skipped")
         if not _CC_VALIDATION_TS.exists():
             self.skipTest(f"CC clone validation.ts not present at {_CC_VALIDATION_TS}")
         ts = _CC_VALIDATION_TS.read_text()

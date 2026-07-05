@@ -86,6 +86,103 @@ def _copy_suite(run_dir: Path) -> Tuple[bool, str]:
     return all_ok, " | ".join(details)
 
 
+def _image_plan_suite(run_dir: Path) -> Tuple[bool, str]:
+    """P1 runs BOTH image-plan provers: slice COVERAGE (prove_sp_image_plan) AND prompt
+    STRENGTH (prove_sp_prompt_floor, FIX-XC-04e) — a weak prompt can never reach a paid call."""
+    plan = str(run_dir / "image_plan.json")
+    details, all_ok = [], True
+    for script, args in (("prove_sp_image_plan.py", ["--plan", plan]),
+                         ("prove_sp_prompt_floor.py", ["--ledger", plan])):
+        ok, detail = _shell_prover(script, args)
+        all_ok = all_ok and ok
+        details.append(detail)
+    return all_ok, " | ".join(details)
+
+
+def _load_run_json(run_dir: Path, name: str) -> Tuple[Optional[Dict], str]:
+    p = run_dir / name
+    if not p.is_file():
+        return None, f"{name} absent"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")), ""
+    except (ValueError, OSError) as exc:
+        return None, f"cannot parse {name} ({exc})"
+
+
+def _fragments_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P5 — artifact-backed (FIX-XC-03b): every PAGE step in the funnel-manifest must have a
+    non-empty fragment file on disk. Fragments are the deterministic sanitize/fragment-ize
+    output (Skill 6); a missing/empty fragment fails CLOSED."""
+    data, err = _load_run_json(run_dir, "funnel-manifest.json")
+    if data is None:
+        return False, f"AF-SP56-FRAGMENT-MISSING: {err} (cannot verify P5 fragments)"
+    steps = data.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return False, "AF-SP56-FRAGMENT-MISSING: funnel-manifest carries no steps"
+    page_steps = [s for s in steps if isinstance(s, dict)
+                  and str(s.get("stage", "")).strip().lower() != "bump"
+                  and isinstance(s.get("fragment_path"), str) and s["fragment_path"].strip()]
+    if not page_steps:
+        return False, "AF-SP56-FRAGMENT-MISSING: no page step declares a fragment_path"
+    missing = []
+    for s in page_steps:
+        fp = run_dir / s["fragment_path"]
+        if not fp.is_file() or not fp.read_text(encoding="utf-8", errors="ignore").strip():
+            missing.append(s["fragment_path"])
+    if missing:
+        return False, (f"AF-SP56-FRAGMENT-MISSING: {len(missing)} fragment file(s) absent/empty "
+                       f"(e.g. {missing[:3]})")
+    return True, f"P5 fragments present + non-empty for all {len(page_steps)} page step(s)"
+
+
+def _docs_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P6 — artifact-backed (FIX-XC-03b): the Track-1 client Docs manifest must exist and name
+    at least one client-editable Doc."""
+    data, err = _load_run_json(run_dir, "drive_docs.json")
+    if data is None:
+        return False, f"AF-SP56-DOCS-MISSING: {err} (Track-1 client Docs artifact)"
+    docs = data.get("docs")
+    if not isinstance(docs, list) or not [d for d in docs if isinstance(d, dict)]:
+        return False, "AF-SP56-DOCS-MISSING: drive_docs.json carries no docs entries"
+    return True, f"P6 Track-1 Docs manifest present ({len(docs)} doc(s))"
+
+
+def _deliver_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P8 — artifact-backed (FIX-XC-03b): the delivery record must exist with a productionized
+    (non-test) subject and a folder link."""
+    data, err = _load_run_json(run_dir, "delivery.json")
+    if data is None:
+        return False, f"AF-SP56-DELIVER-MISSING: {err}"
+    subject = str(data.get("subject", "")).strip()
+    if not subject:
+        return False, "AF-SP56-DELIVER-MISSING: delivery.json has no subject"
+    if "test" in subject.lower():
+        return False, f"AF-SP56-DELIVER-SUBJECT: leftover test subject {subject!r} (productionize it)"
+    if not str(data.get("folder_link", "")).strip():
+        return False, "AF-SP56-DELIVER-MISSING: delivery.json has no folder_link"
+    return True, f"P8 delivery artifact present (subject productionized)"
+
+
+def _build_receipt_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P9 — artifact-backed (FIX-XC-03b): a Skill 6 build receipt must exist with non-empty
+    preview URLs and a build QC score >= 8.5 (in addition to the funnel-manifest)."""
+    if not (run_dir / "funnel-manifest.json").is_file():
+        return False, "AF-SP56-BUILD-RECEIPT: funnel-manifest.json absent (no build to hand off)"
+    data, err = _load_run_json(run_dir, "build_receipt.json")
+    if data is None:
+        return False, f"AF-SP56-BUILD-RECEIPT: {err} (Skill 6 build handoff receipt)"
+    urls = data.get("preview_urls")
+    if not (isinstance(urls, list) and [u for u in urls if str(u).strip()]):
+        return False, "AF-SP56-BUILD-RECEIPT: build_receipt.json carries no non-empty preview_urls"
+    try:
+        score = float(data.get("qc_score"))
+    except (TypeError, ValueError):
+        return False, "AF-SP56-BUILD-RECEIPT: build_receipt.json qc_score missing/non-numeric"
+    if score < 8.5:
+        return False, f"AF-SP56-BUILD-RECEIPT: build QC {score} < 8.5 (fail-closed)"
+    return True, f"P9 build receipt present (QC {score}, {len(urls)} preview url(s))"
+
+
 def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) -> Tuple[bool, str]:
     if required_file is not None:
         p = run_dir / required_file
@@ -105,8 +202,8 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
     return [
         ("P0-INTAKE", "prove_sp_intake.py",
          lambda: _shell_prover("prove_sp_intake.py", [str(run_dir / "brief.json")])),
-        ("P1-IMAGE-PLAN", "prove_sp_image_plan.py",
-         lambda: _shell_prover("prove_sp_image_plan.py", ["--plan", str(run_dir / "image_plan.json")])),
+        ("P1-IMAGE-PLAN", "prove_sp_image_plan.py + prove_sp_prompt_floor.py",
+         lambda: _image_plan_suite(run_dir)),
         ("P2-IMAGES", "kie_image.py",
          lambda: _delegation_seam(run_dir, "media_ledger.json",
                                   "Skill 47 kie_image.py OR the client's own image provider")),
@@ -115,16 +212,15 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P4-MEDIA", "ghl_media.py",
          lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 6 ghl_media.py (media folder + upload)")),
         ("P5-FRAGMENTS", "fragment_strip",
-         lambda: _delegation_seam(run_dir, None, "deterministic sanitize/fragment-ize (P5, NOT an LLM pass)")),
+         lambda: _fragments_gate(run_dir)),
         ("P6-DOCS", "drive_docs",
-         lambda: _delegation_seam(run_dir, None, "Track 1 client-editable Google Docs in the client Drive folder")),
+         lambda: _docs_gate(run_dir)),
         ("P7-BUNDLE", "prove_sp_bundle.py",
          lambda: _shell_prover("prove_sp_bundle.py", ["--manifest", str(run_dir / "funnel-manifest.json")])),
         ("P8-DELIVER", "delivery_email",
-         lambda: _delegation_seam(run_dir, None, "delivery email (productionized subject + Drive folder link)")),
+         lambda: _deliver_gate(run_dir)),
         ("P9-HANDOFF", "ghl_rest_canvas.py",
-         lambda: _delegation_seam(run_dir, "funnel-manifest.json",
-                                  "Skill 6 ghl_rest_canvas.py build handoff (+ Skill 44 bump seam); preview -> human approval -> publish")),
+         lambda: _build_receipt_gate(run_dir)),
     ]
 
 
@@ -146,6 +242,7 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     gates = _phase_gates(run_dir)
     print(f"== Sales Page Assets orchestrator :: run {run_dir} ==")
     for order, (pid, prover, gate) in enumerate(gates):
+        _mc_board_phase(run_dir, pid)  # per-phase board heartbeat (fail-soft, never a gate)
         ok, detail = gate()
         status = "pass" if ok else "fail"
         print(f"  [{status.upper():4s}] {pid:14s} ({prover}) :: {detail}")
@@ -200,12 +297,18 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
 # front-door refusal and the no-skip abort.
 # ---------------------------------------------------------------------------
 def _write_valid_run(rd: Path, nonce: str) -> None:
-    import prove_sp_intake, prove_sp_image_plan, prove_sp_bundle  # noqa: E402
+    import prove_sp_intake, prove_sp_prompt_floor, prove_sp_bundle  # noqa: E402
     import prove_sp_main_structure, prove_sp_upsell_structure  # noqa: E402
     import prove_sp_highticket_band, prove_sp_bump_band  # noqa: E402
 
     (rd / "brief.json").write_text(json.dumps(prove_sp_intake._valid_runtime()), encoding="utf-8")
-    (rd / "image_plan.json").write_text(json.dumps(prove_sp_image_plan._valid_plan(12)), encoding="utf-8")
+    # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the run dir must
+    # carry a persona-selection-log naming a registered persona slug (SOP-SALESPAGE-01 §3).
+    (rd / "persona-selection-log.md").write_text(
+        "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
+        encoding="utf-8")
+    # floor-compliant, slice-complete image plan (clears BOTH P1 provers).
+    (rd / "image_plan.json").write_text(json.dumps(prove_sp_prompt_floor._valid_plan(12)), encoding="utf-8")
 
     # merged copy ledger with all 7 assets (main a/b, upsell a/b, downsell, high-ticket, bump)
     copy_assets = []
@@ -218,11 +321,42 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     (rd / "media_ledger.json").write_text(json.dumps({"images": [
         {"asset_key": "jane-doe__glow-method__main__img-01__v01", "task_id": "t1",
          "ghl_media_url": "https://msgsndr-media/x.png"}]}), encoding="utf-8")
-    (rd / "funnel-manifest.json").write_text(json.dumps(prove_sp_bundle._valid_manifest()), encoding="utf-8")
+    manifest = prove_sp_bundle._valid_manifest()
+    (rd / "funnel-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    # P5/P6/P8/P9 artifact-backed gates (FIX-XC-03b) — materialize the build artifacts.
+    _write_build_artifacts(rd, manifest)
 
     nf = rd / ".spa_run_nonce"
     nf.write_text(nonce, encoding="utf-8")
     os.chmod(nf, 0o600)
+
+
+def _write_build_artifacts(rd: Path, manifest: Dict) -> None:
+    """Create the deterministic P5-P9 artifacts a real run's Skill-6 handoff produces: a
+    non-empty fragment per page step, a Track-1 Docs manifest, a delivery record, and a build
+    receipt. Shared by the orchestrator self-test and (in spirit) the golden reproducer."""
+    steps = manifest.get("steps") or []
+    for s in steps:
+        fp = s.get("fragment_path") if isinstance(s, dict) else None
+        if isinstance(fp, str) and fp.strip() and str(s.get("stage", "")).lower() != "bump":
+            frag = rd / fp
+            frag.parent.mkdir(parents=True, exist_ok=True)
+            frag.write_text(
+                f"<section data-zhc-fragment=\"{s.get('asset_key', fp)}\">"
+                f"<h1>{s.get('step_name', 'section')}</h1><p>approved copy injected here</p></section>\n",
+                encoding="utf-8")
+    docs = [{"label": s.get("asset_key", "doc"), "url": f"https://docs.example.com/{s.get('asset_key', 'doc')}"}
+            for s in steps if isinstance(s, dict)]
+    (rd / "drive_docs.json").write_text(json.dumps({"docs": docs}), encoding="utf-8")
+    (rd / "delivery.json").write_text(json.dumps({
+        "subject": "Your sales page assets are ready",
+        "folder_link": "https://drive.example.com/folder/sales-page-assets"}), encoding="utf-8")
+    (rd / "build_receipt.json").write_text(json.dumps({
+        "qc_score": 8.7,
+        "preview_urls": [f"https://preview.example.com/{s.get('asset_key')}"
+                         for s in steps if isinstance(s, dict) and s.get("fragment_path")],
+        "built_by": "skill-6-ghl-rest-canvas"}), encoding="utf-8")
 
 
 def self_test() -> int:
@@ -297,17 +431,48 @@ def _mc_board_begin(run_dir: Path) -> Optional[str]:
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title=f"Sales Page Assets — {run_dir.name}",
-            department="sales-pages", persona="Sales Page Assets",
+            department="funnels", persona="Sales Page Assets",
             source="sales-page-assets")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print(f"[mc_board] begin best-effort skip ({exc})", file=sys.stderr)
         return None
 
 
-def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+def _mc_board_phase(run_dir: Path, phase_id: str) -> None:
+    """Per-phase board heartbeat: advance this run's card to (phase_id, in_progress).
+    FAIL-SOFT — the board is a VIEW, never a gate; any failure is swallowed."""
     try:
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+        mc_board.card_advance(run_dir, phase_id=phase_id, status="in_progress",
+                              note=f"phase {phase_id} running")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print(f"[mc_board] phase {phase_id} best-effort skip ({exc})", file=sys.stderr)
+
+
+def _mc_deliverable_url(run_dir: Path) -> str:
+    """Best-effort deliverable link to register on the card: the first http(s) URL
+    found in the run's media ledger or funnel manifest. Empty when none — never raises."""
+    try:
+        import re
+        for name in ("media_ledger.json", "funnel-manifest.json"):
+            p = run_dir / name
+            if p.exists():
+                m = re.search(r"https?://[^\s\"']+", p.read_text(encoding="utf-8"))
+                if m:
+                    return m.group(0)
+    except Exception:  # noqa: BLE001 — deliverable link is best-effort only.
+        pass
+    return ""
+
+
+def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+    """Terminal producer move: card -> REVIEW (never done). review->done is owned by
+    the independent QC scorer. The deliverable link is registered on the card."""
+    try:
+        import mc_board
+        mc_board.complete_run(run_dir, task_id,
+                              note="certified — awaiting QC promotion",
+                              deliverable_url=_mc_deliverable_url(run_dir))
     except Exception as exc:  # noqa: BLE001
         print(f"[mc_board] done best-effort skip ({exc})", file=sys.stderr)
 

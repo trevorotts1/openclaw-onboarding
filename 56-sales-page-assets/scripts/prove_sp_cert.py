@@ -50,6 +50,38 @@ EXPECTED_PHASES = (
 )
 
 
+# ── FIX-XC-09e — model-content receipt (the client's OWN strongest model wrote copy) ──
+AF_MODEL_TIER = "AF-SP56-MODEL-TIER"
+AF_MODEL_NOANTHROPIC = "AF-SP56-MODEL-NOANTHROPIC"
+EXECUTION_TIERS = {"content", "execution", "exec", "strong", "strongest",
+                   "authoring", "primary", "tier-a", "tier_a", "a"}
+_ANTHROPIC_PROVIDERS = {"anthropic", "claude"}
+
+
+def evaluate_model_receipt(receipt: Any) -> List[Tuple[str, str]]:
+    """Fail-closed: the run must record that the CLIENT's own execution-tier model wrote the
+    copy (routing/model-content-receipt.json). Anthropic is hard-banned by provider FIELD."""
+    fails: List[Tuple[str, str]] = []
+    if not isinstance(receipt, dict):
+        return [(AF_MODEL_TIER, "model-content-receipt is missing/not a JSON object — "
+                 "the authoring model was never resolved/recorded (fail-closed)")]
+    model = str(receipt.get("model") or receipt.get("model_id") or "").strip()
+    provider = str(receipt.get("provider") or "").strip().lower()
+    tier = str(receipt.get("tier") or receipt.get("role") or "").strip().lower()
+    if not model:
+        fails.append((AF_MODEL_TIER, "model-content-receipt names no resolved model id"))
+    if provider in _ANTHROPIC_PROVIDERS or model.lower().startswith(("claude", "anthropic")) \
+            or "anthropic" in model.lower():
+        fails.append((AF_MODEL_NOANTHROPIC,
+                      f"authoring model is Anthropic (provider={provider!r}, model={model!r}) — "
+                      "client skills never use Anthropic models"))
+    if tier not in EXECUTION_TIERS:
+        fails.append((AF_MODEL_TIER,
+                      f"authoring tier {tier!r} is not an execution/content tier {sorted(EXECUTION_TIERS)} — "
+                      "the client's OWN strongest model must write the copy"))
+    return fails
+
+
 def canonical_payload(cert: Dict[str, Any]) -> bytes:
     """The signed portion = the whole certificate MINUS its 'signature' field, serialized
     deterministically (sorted keys, tight separators). Orchestrator + verifier must agree."""
@@ -194,7 +226,23 @@ def self_test() -> int:
     else:
         ok = False; print(f"SELF-TEST FAIL: wrong-nonce -> {fails}")
 
-    print(f"SELF-TEST FIXTURES: 1 valid-pass, {caught}/4 tamper-catch")
+    # FIX-XC-09e — model-content receipt fixtures
+    mr_ok = evaluate_model_receipt(
+        {"role": "content", "model": "deepseek-v3-chat", "provider": "deepseek", "tier": "content"})
+    mr_absent = evaluate_model_receipt(None)
+    mr_anthropic = evaluate_model_receipt(
+        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"})
+    mr_cheaptier = evaluate_model_receipt(
+        {"role": "content", "model": "some-mini", "provider": "openrouter", "tier": "simple"})
+    if not mr_ok and any(c == AF_MODEL_TIER for c, _ in mr_absent) \
+            and any(c == AF_MODEL_NOANTHROPIC for c, _ in mr_anthropic) \
+            and any(c == AF_MODEL_TIER for c, _ in mr_cheaptier):
+        print("SELF-TEST ok: model-tier receipt (valid pass; absent/anthropic/cheap fail).")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: model receipt -> {mr_ok}/{mr_absent}/{mr_anthropic}/{mr_cheaptier}")
+
+    print(f"SELF-TEST FIXTURES: 1 valid-pass, {caught}/4 tamper-catch + model-tier receipt")
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -205,24 +253,43 @@ def main(argv: List[str]) -> int:
                     "Exit 0 valid, 2 invalid/tampered, 3 usage.")
     ap.add_argument("--cert", help="path to PROCESS-CERTIFICATE.json ('-' reads stdin)")
     ap.add_argument("--nonce", help="the run-scoped front-door nonce (or set SPA_RUN_NONCE)")
+    ap.add_argument("--model-receipt", help="path to routing/model-content-receipt.json "
+                    "(FIX-XC-09e — proves the client's own execution-tier model wrote the copy)")
     ap.add_argument("--self-test", action="store_true", help="run built-in fixtures and assert")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
-    if not args.cert:
-        print("USAGE ERROR: pass --cert <PROCESS-CERTIFICATE.json> (or --self-test).")
-        return EXIT_FAILCLOSED
-    nonce = args.nonce or os.environ.get("SPA_RUN_NONCE")
-    try:
-        cert = _load_json(args.cert)
-    except Exception as exc:  # noqa: BLE001
-        print(f"USAGE/IO ERROR: cannot load certificate {args.cert!r}: {exc}")
+    if not args.cert and not args.model_receipt:
+        print("USAGE ERROR: pass --cert <PROCESS-CERTIFICATE.json> and/or --model-receipt (or --self-test).")
         return EXIT_FAILCLOSED
 
-    code, fails = evaluate_cert(cert, nonce)
-    _report(code, fails)
+    code = EXIT_OK
+    if args.cert:
+        nonce = args.nonce or os.environ.get("SPA_RUN_NONCE")
+        try:
+            cert = _load_json(args.cert)
+        except Exception as exc:  # noqa: BLE001
+            print(f"USAGE/IO ERROR: cannot load certificate {args.cert!r}: {exc}")
+            return EXIT_FAILCLOSED
+        code, fails = evaluate_cert(cert, nonce)
+        _report(code, fails)
+
+    if args.model_receipt:
+        try:
+            receipt = _load_json(args.model_receipt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"USAGE/IO ERROR: cannot load model receipt {args.model_receipt!r}: {exc}")
+            return EXIT_FAILCLOSED
+        mfails = evaluate_model_receipt(receipt)
+        if mfails:
+            print(f"FAIL: model-content receipt invalid ({len(mfails)} finding(s)) — asset stack is NOT done.")
+            for c, m in mfails:
+                print(f"  [{c}] {m}")
+            code = EXIT_VIOLATION
+        else:
+            print("PASS: model-content receipt valid — client execution-tier model, no Anthropic.")
     return code
 
 

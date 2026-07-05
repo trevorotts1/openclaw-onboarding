@@ -4,6 +4,56 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.15.1 - 2026-07-05 - fix(pipeline): Phase-5 embed failure is fatal end-to-end (F1.2 / FDN-5)
+
+Persona-Matching-Overhaul FOUNDATION train FDN-5, fix F1.2 — "registered but not
+embedded ships silently". Before this, `pipeline/orchestrator.py` marked
+`phase5: FAILED` in `pipeline-status.json` but `process_book()` never checked
+Phase 5's outcome, so the orchestrator exited 0; `add-persona-from-source.sh`
+saw `PIPELINE_RC=0` and marked the persona ready-to-publish even though its
+blueprint was **matchable but vector-less** on that box (Layer-5 semantic
+retrieval can never surface it — the exact failure class N38 guards against, but
+on the workspace side where N38 does not run).
+
+- **`pipeline/orchestrator.py`** — Phase-5 `FAILED` now propagates a DISTINCT
+  process exit code (`8` = EMBED_FAILED) end-to-end, in BOTH `--single-book`
+  mode and full-batch mode. The blueprint is deliberately LEFT ON DISK so an
+  idempotent retry re-embeds only: `run_synthesis` gained a `_phase3_already`
+  re-entry that SKIPS the costly LLM synthesis (and an already-COMPLETE Phase 3b)
+  when the blueprint exists and `phase3 == COMPLETE`, running Phase 5/6 only; the
+  single-book early-return is now `phase5`-aware so a retry re-enters to re-embed
+  instead of short-circuiting.
+- **`scripts/add-persona-from-source.sh`** — on `rc 8` it prints a LOUD
+  EMBED_FAILED banner and propagates `exit 8` (so `persona-inbox-watcher.sh`
+  quarantines/retries) WITHOUT marking fleet-publish pending. Added the
+  WORKSPACE triad-equivalent as a terminal gate: blueprint on disk + registered
+  in `persona-categories.json` + ≥1 index row — a second net for the case where
+  the pipeline exits 0 but Phase 5's safety-net indexer silently no-ops. Warn-only
+  under `--skip-index`.
+- **Reconciled to the FDN-4 shared contract (no duplicate helper).** The terminal
+  gate delegates to the ONE shared `pipeline/usable-persona-contract.sh` (landed
+  in v6.15.0 / FDN-4) via a thin shim in the wrapper — it does NOT re-implement
+  the three-leg contract, so the workspace triad-equivalent (F1.2) and the inbox
+  watcher's `processed/` gate (F1.1) share exactly one source of truth.
+- **Tests** — `tests/unit/workspace-usable-persona-triad.test.sh` (5 hermetic
+  cases against the shared contract script, incl. the vector-less / "registered
+  but not embedded" FAIL and no cross-slug credit) and
+  `tests/unit/orchestrator-embed-fail-exit8.test.py` (Phase-5 FAILED → exit 8,
+  DONE → exit 0, blueprint left on disk).
+- **Re-land:** rebased onto `main` (v6.15.0) after the FDN-4 shared-contract
+  merge; resolved the `tests/unit/usable-persona-contract.test.sh` add/add
+  collision by renaming this train's test and dropping the redundant
+  `lib-usable-persona-contract.sh`; skill-version `v6.15.0 → v6.15.1`.
+
+## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
+
+A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.
+
+- **`scripts/add-persona-from-source.sh`** (→ v10.14.35): the orchestrator-missing branch now exits **7 (`ORCHESTRATOR_MISSING`)** instead of 0, so the caller can tell "environment broken, retry later" apart from "usable persona built". Retired the dead `pipeline_status` field from the written `source.json` (it was written in two places and read nowhere — a no-op that pretended to carry state). Also hoisted `SCRIPT_DIR_APS` to an unconditional definition up front so the terminal fleet-publish phase can never hit a `set -u` unbound-variable abort on an installed box (pre-fix it was only defined inside the orchestrator-fallback branch).
+- **NEW `pipeline/usable-persona-contract.sh`** (v1.0.0): the ONE shared, fail-closed "is this persona actually usable on this box?" contract — asserts all three legs (blueprint present + non-empty; slug is a key under `.personas` in `persona-categories.json`; ≥1 row in the `gemini-index.sqlite` `embeddings` table whose `file_path` is under `coaching-personas/personas/<slug>/`). Distinct exit codes per missing leg (2/3/4). Prefix-slug-safe (a `foo-bar` index row does not satisfy `foo`). Modelled on Skill 23 SOP-07 `assert_persona_grounded()`.
+- **`scripts/persona-inbox-watcher.sh`** (→ v6.6.1): the success branch now asserts the usable-persona contract BEFORE any `mv` to `processed/`. A zero exit from the converter is necessary but not sufficient; any missing leg routes the source through the existing failure/retry/quarantine path (never `processed/`), so a book can no longer be lost silently.
+- **Test:** `tests/unit/usable-persona-contract.test.sh` — per-leg exit codes + prefix-slug safety, plus an end-to-end watcher harness (sandboxed HOME, stub converter) proving the watcher never moves a source to `processed/` on false-success, on a vector-less (no-index-row) persona, or on an `ORCHESTRATOR_MISSING` (exit 7) result.
+
 ## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
 
 The book pipeline writes the WORKSPACE only; the repo library (blueprint dirs + `persona-categories.json` seed), the INDEX-MANIFEST, and the release asset used to be caught up by hand, so they lagged and the N38 count triad went red at CI/roll. New `pipeline/publish-personas-to-fleet.sh` moves all four together atomically (sanitized blueprints, controlled-vocab categories, delegated HASH-SKIP asset rebuild) and refuses (rolling back — no half-commit) unless the triad + asset sha256 all agree at N. New `pipeline/assert-personas-published.sh` (standalone + pre-commit + `update-skills.sh` pre-roll) and `pipeline/fleet-publish-status.sh` (terminal-phase pending marker written by `add-persona-from-source.sh`) make a forgotten publish impossible. Hermetic core: `pipeline/persona_fleet.py`. Regression lock: `tests/unit/publish-personas-to-fleet.test.sh`. Runbook: `PIPELINE.md` → "Adding books → publishing personas to the fleet".

@@ -27,7 +27,7 @@
 #   ZHC_DISABLE_AUTO_RATE=1 to defer entirely to a human/agent rating (legacy).
 #
 # USAGE:
-#   qc-rate-artifacts.sh --key <org_chart|flow_diagram|closeout_docs> [--state <path>]
+#   qc-rate-artifacts.sh --key <org_chart|flow_diagram|celebration_video|closeout_docs> [--state <path>]
 #
 # EXIT CODES:
 #   0  → rating written (whether pass or fail — check .qualityRatings.<key>.qc)
@@ -54,7 +54,7 @@ ZHC_QUALITY_MIN="${ZHC_QUALITY_MIN:-8.5}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --key)   KEY="$2"; shift 2 ;;
+    --key)   KEY="$2"; shift 2 ;;   # org_chart|flow_diagram|celebration_video|closeout_docs
     --state) STATE_FILE="$2"; shift 2 ;;
     *) shift ;;
   esac
@@ -105,6 +105,55 @@ if [[ "${ZHC_DISABLE_AUTO_RATE:-0}" == "1" ]]; then
   log "INFO" "ZHC_DISABLE_AUTO_RATE=1 — deferring to human/agent rating (no deterministic floor written)"
   exit 0
 fi
+
+# ----------------------------------------------------------------------
+# FIX-S36-04: remote-asset REACHABILITY floor.
+#   Before v12.14.x the raters PASSED any well-formed http(s) URL at 8.7 with
+#   ZERO reachability — a 404'd / expired KIE URL scored 8.7/pass on the
+#   unattended cron path and shipped a dead link to the client. This helper
+#   turns the remote-URL branch into a real (still deterministic, no-LLM) floor:
+#   an HTTP HEAD must return 200 + the expected content-type family + a
+#   Content-Length above a minimum before the artifact may pass.
+#
+# remote_asset_reachable <url> <type-prefix e.g. image/> <min_bytes>
+#   stdout: a short "HTTP <code>, type=<t>, len=<n>" detail string
+#   return: 0 = reachable & valid   (200 + type match + size > min)
+#           1 = reached but INVALID (non-200 / wrong type / too small / no size)
+#           2 = COULD NOT verify    (no curl and no override, or transport error)
+# Testable offline: set ZHC_ASSET_HEAD_CMD to a command that prints canned HEAD
+# response headers ($ZHC_ASSET_HEAD_URL holds the requested URL) — used so the
+# unit test can exercise the 200/404/tiny/type paths without live network.
+remote_asset_reachable() {
+  local url="$1" type_prefix="$2" min_bytes="$3"
+  local headers status ctype clen detail
+  if [[ -n "${ZHC_ASSET_HEAD_CMD:-}" ]]; then
+    headers="$(ZHC_ASSET_HEAD_URL="$url" bash -c "$ZHC_ASSET_HEAD_CMD" 2>/dev/null)" || headers=""
+  elif command -v curl >/dev/null 2>&1; then
+    headers="$(curl -sSIL -m 8 "$url" 2>/dev/null)" || headers=""
+  else
+    echo "no curl available and no ZHC_ASSET_HEAD_CMD override"; return 2
+  fi
+  if [[ -z "$headers" ]]; then
+    echo "no HEAD response (transport error / timeout)"; return 2
+  fi
+  status="$(printf '%s\n' "$headers" | grep -iE '^HTTP/' | tail -1 | awk '{print $2}' | tr -d '\r')"
+  ctype="$(printf '%s\n' "$headers" | grep -iE '^content-type:' | tail -1 | sed 's/^[^:]*:[[:space:]]*//' | tr -d '\r' | tr 'A-Z' 'a-z')"
+  clen="$(printf '%s\n' "$headers" | grep -iE '^content-length:' | tail -1 | awk '{print $2}' | tr -d '\r')"
+  detail="HTTP ${status:-?}, type=${ctype:-?}, len=${clen:-?}"
+  [[ "$status" == 2* ]] || { echo "$detail (not a 2xx status)"; return 1; }
+  case "$ctype" in
+    "${type_prefix}"*) : ;;
+    *) echo "$detail (content-type not ${type_prefix}*)"; return 1 ;;
+  esac
+  if [[ -n "$clen" && "$clen" =~ ^[0-9]+$ ]]; then
+    if (( clen <= min_bytes )); then
+      echo "$detail (Content-Length <= ${min_bytes}B — error/placeholder page)"; return 1
+    fi
+  else
+    echo "$detail (no numeric Content-Length — cannot confirm size floor)"; return 1
+  fi
+  echo "$detail"; return 0
+}
 
 # ----------------------------------------------------------------------
 # Per-class deterministic raters. Each returns by calling write_rating.
@@ -167,9 +216,65 @@ rate_flow_diagram() {
     write_rating 8.7 pass "flow_diagram: image materialized ($sz bytes at $local_path); URL present"; return
   fi
   if [[ "$url" =~ ^https?:// ]]; then
-    write_rating 8.7 pass "flow_diagram: remote image URL present and well-formed ($url)"; return
+    # FIX-S36-04: a well-formed URL is NOT enough — HEAD it and require a live
+    # 200 + image/* + a non-trivial Content-Length before releasing, so a 404'd
+    # or expired KIE link can never score 8.7/pass on the unattended cron path.
+    local detail rc
+    detail="$(remote_asset_reachable "$url" "image/" 10240)"; rc=$?
+    case "$rc" in
+      0) write_rating 8.7 pass "flow_diagram: remote image URL reachable ($detail) — deterministic floor only (reachability, not aesthetics); $url"; return ;;
+      1) write_rating 4.0 fail "flow_diagram: remote image URL UNREACHABLE/invalid ($detail) at $url — dead or non-image link, HOLD"; return ;;
+      *) write_rating 5.0 fail "flow_diagram: could not verify remote image URL ($detail) at $url — no reachability proof, HOLD (fail-closed)"; return ;;
+    esac
   fi
   write_rating 5.0 fail "flow_diagram: infographic2Url='$url' is neither a reachable local file nor an http(s) URL — cannot confirm artifact"
+}
+
+# FIX-S36-03: deterministic rater for the celebration video. Before this the
+# video ran through run_step with NO rate gate at all — a garbled/dead-link
+# video shipped "8.5-certified" without any check. Same conservative floor as
+# the image raters: a present, non-trivial video CONTAINER (local file > 10KB
+# with a video extension, OR a remote URL that HEADs 200 + video/* + size) is a
+# deterministic PASS; anything missing/tiny/unreachable FAILS loud.
+rate_celebration_video() {
+  local url local_path
+  # Prefer the GHL public URL (what the client actually receives), fall back to
+  # the raw KIE/Veo result URL.
+  url=$(state_get '.ghlVideoPublicUrl')
+  [[ -z "$url" || "$url" == "null" ]] && url=$(state_get '.celebrationVideoUrl')
+  if [[ -z "$url" || "$url" == "null" ]]; then
+    write_rating 2.0 fail "celebration_video: no ghlVideoPublicUrl/celebrationVideoUrl — no video to rate"; return
+  fi
+
+  local_path=$(state_get '.celebrationVideoLocalPath')
+  [[ -z "$local_path" && "$url" == file://* ]] && local_path="${url#file://}"
+
+  # Local file present: verify it is a non-trivial video container.
+  if [[ -n "$local_path" && -f "$local_path" ]]; then
+    local sz ext
+    sz=$(wc -c < "$local_path" 2>/dev/null | tr -d '[:space:]')
+    ext="${local_path##*.}"; ext="$(printf '%s' "$ext" | tr 'A-Z' 'a-z')"
+    case "$ext" in
+      mp4|mov|webm|m4v|mkv) : ;;
+      *) write_rating 4.0 fail "celebration_video: local file '$local_path' is not a known video container (.$ext) — cannot confirm a real video"; return ;;
+    esac
+    if [[ -z "$sz" || "$sz" -lt 10240 ]]; then
+      write_rating 4.0 fail "celebration_video: local file '$local_path' is ${sz:-0} bytes (< 10KB) — empty/error placeholder, not a real video"; return
+    fi
+    write_rating 8.7 pass "celebration_video: video materialized ($sz bytes, .$ext at $local_path) — deterministic floor only (container + size, not motion quality)"; return
+  fi
+
+  # No usable local file: the client link is remote. HEAD it (FIX-S36-04 floor).
+  if [[ "$url" =~ ^https?:// ]]; then
+    local detail rc
+    detail="$(remote_asset_reachable "$url" "video/" 10240)"; rc=$?
+    case "$rc" in
+      0) write_rating 8.7 pass "celebration_video: remote video URL reachable ($detail) — deterministic floor only (reachability, not motion quality); $url"; return ;;
+      1) write_rating 4.0 fail "celebration_video: remote video URL UNREACHABLE/invalid ($detail) at $url — dead or non-video link, HOLD"; return ;;
+      *) write_rating 5.0 fail "celebration_video: could not verify remote video URL ($detail) at $url — no reachability proof, HOLD (fail-closed)"; return ;;
+    esac
+  fi
+  write_rating 5.0 fail "celebration_video: url='$url' is neither a reachable local video file nor an http(s) URL — cannot confirm artifact"
 }
 
 rate_closeout_docs() {
@@ -205,10 +310,11 @@ rate_closeout_docs() {
 }
 
 case "$KEY" in
-  org_chart)      rate_org_chart ;;
-  flow_diagram)   rate_flow_diagram ;;
-  closeout_docs)  rate_closeout_docs ;;
-  *) log "ERROR" "unknown --key '$KEY' (expected org_chart|flow_diagram|closeout_docs)"; exit 2 ;;
+  org_chart)          rate_org_chart ;;
+  flow_diagram)       rate_flow_diagram ;;
+  celebration_video)  rate_celebration_video ;;
+  closeout_docs)      rate_closeout_docs ;;
+  *) log "ERROR" "unknown --key '$KEY' (expected org_chart|flow_diagram|celebration_video|closeout_docs)"; exit 2 ;;
 esac
 
 exit 0
