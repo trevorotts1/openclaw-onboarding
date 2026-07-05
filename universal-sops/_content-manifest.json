@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-05T20:08:25Z",
+  "generated_at": "2026-07-05T20:36:10Z",
   "file_count": 83,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -29,8 +29,8 @@
       "bytes": 10022
     },
     "book-writer-craft/SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md": {
-      "sha256": "86fa54a25fa8806f71f63780cf85f01201dfe78449c5d307e1e50ca9c271864f",
-      "bytes": 11496
+      "sha256": "48dfec5841569081ed7e498d888340a6ad4be91b60f66444e407a88d8db26dee",
+      "bytes": 11951
     },
     "cross-dept-request-template.md": {
       "sha256": "90b4692a5f9381bb1e99e51f6b485bc90c4dcb556d401d8d2953992a44538b5e",
