@@ -20,6 +20,20 @@
       "PASS: every image prompt clears the two-floor gate (5000-19000)."
     ]
   },
+  "prove_sf_graph.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: funnel step graph is valid vs MASTERDOC \u00a73 (nodes, branching, reachability)."
+    ]
+  },
+  "prove_sf_build.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: funnel build receipt clears QC >= 8.5 with a preview URL per page."
+    ]
+  },
   "prove_sf_no_pitch.py": {
     "rc": 0,
     "pass": true,

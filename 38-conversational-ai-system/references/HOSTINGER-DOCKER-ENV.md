@@ -78,8 +78,9 @@ cat /docker/<project>/.env
 #   …or just LIST the key NAMES without exposing values:
 grep -oE "^[A-Z_]+=" /docker/<project>/.env | sort -u
 
-# Step 3 — ground-truth: what the live process actually sees
-docker exec <container> printenv | grep -E "API_KEY|TOKEN"
+# Step 3 — ground-truth: what the live process actually sees (key NAMES only —
+#   cut strips the value before grep ever sees it, so no secret is printed)
+docker exec <container> printenv | cut -d= -f1 | grep -E "API_KEY|TOKEN"
 #   <container> is the name from Step 1, e.g. openclaw-hy5t-openclaw-1
 ```
 
@@ -122,8 +123,8 @@ echo 'NEW_API_KEY=the-value-here' >> /docker/<project>/data/.openclaw/.env
 #    plain `restart` does NOT reload env_file changes — you MUST force-recreate.
 docker compose -f /docker/<project>/docker-compose.yml up -d --force-recreate
 
-# 4) Verify the live process now sees it
-docker exec <container> printenv | grep NEW_API_KEY
+# 4) Verify the live process now sees it (existence only — never prints the value)
+docker exec <container> printenv | grep -q '^NEW_API_KEY=' && echo "NEW_API_KEY loaded" || echo "NEW_API_KEY NOT loaded"
 ```
 
 > **`docker compose restart` does NOT reload `env_file` changes.** Use
