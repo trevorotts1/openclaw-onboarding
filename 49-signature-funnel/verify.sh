@@ -107,7 +107,8 @@ if [ -d "$GOLDEN" ]; then
   trap 'rm -rf "$TMP"' EXIT
   RD="$TMP/run-golden"
   mkdir -p "$RD"
-  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" "$RD/"
+  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" \
+     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
   # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
   cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
   cp -R "$GOLDEN/pages" "$RD/pages"

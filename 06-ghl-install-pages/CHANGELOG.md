@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v17.0.29] - 2026-07-05 - test(fab-qc): re-author passing-path fixtures for the new lengthClass floors (T-funnel-copy-engine)
+
+- **FIX-XC-04a (consumer)** — `tests/test_v2_dispatcher.py`: the shared `shared-utils/fab_qc.py` D2
+  gate now enforces lengthClass-keyed floors (body slots ≥40 words; page-level lengthClass floors).
+  Re-authored the two passing-path golden hero copies (`_write_fab_evidence` non-placeholder hero and
+  `TestFabArtifactProducer` real_copy) to genuinely clear the 40-word body floor, so the gate tests
+  assert the new behavior instead of the old flat 4-word floor. No shipped-behavior change in this
+  wrapper; test-fixture depth only.
+
+---
+
 ## Version tracking
 
 As of v17.0.4, `SKILL.md` `metadata.version` is rolled automatically by `bump-version.sh` in lockstep with the repository `/version`. The nested skill version now tracks the repo version by design (not a separate content version). The gate deliberately skips validation on this nested `metadata.version` since `bump-version.sh` step-12 keeps it current.

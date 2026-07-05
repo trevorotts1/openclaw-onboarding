@@ -56,8 +56,19 @@ never trusted: `prove_sp_intake.py` reads the actual fields (any missing / empty
 Every stage is deterministic and fail-closed. A violating artifact is NOT built, NOT delivered, NOT
 certified. Bands are MEASURED on the STRIPPED text; a model's self-reported count is never trusted.
 
+### Step 0 — Copywriter-persona grounding (MANDATORY, fail-closed — FIX-XC-02a)
+
+Before any asset copy is written: select the copy persona against the CLIENT's providers with
+`python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py --task "<asset> sales-page <ICP>" --department marketing`,
+log `selected_persona: <registered-slug>` + `selector_ran: true` to `persona-selection-log.md` in the
+run dir, and load the matched persona-blueprint's **Section 4 "Agent Governance Framework"** via the
+seam in `56-sales-page-assets/prompts/PROMPT-SEAMS.md` (`{{PERSONA_TASK_MODE}}` / `{{SELECTED_PERSONA_ID}}`).
+`prove_sp_intake.py` fails closed with **AF-SP56-INTAKE-PERSONA-LOG** when the log is absent or names no
+registered slug (mirrors FAB-QC D4) — no grounding, no generation.
+
 | Stage | Gate | Rule |
 |---|---|---|
+| P0-INTAKE | `AF-SP56-INTAKE-PERSONA-LOG` | persona-selection-log present in the run dir AND names a registered persona slug (copywriter-persona Step-0 grounding). Fail-closed. |
 | P1-IMAGE-PLAN | `AF-SP56-IMGPLAN-SLICE-EMPTY` | every stage (main / upsell-1 / downsell-1 / high-ticket) has >= 1 image (closes the legacy default-4 bug); contiguous prompt indices; no empty prompt text. |
 | P3-COPY | `AF-SP56-MAIN-SECTION-*` / `AF-SP56-MAIN-NO-COUNTDOWN` | the 8-section main present + IN ORDER, both A/B variants, each with a countdown timer. |
 | P3-COPY | `AF-SP56-UPSELL-SECTION-*` | the 9-section Trevor Otts upsell present + IN the exact order, both A/B variants. |
@@ -69,6 +80,7 @@ certified. Bands are MEASURED on the STRIPPED text; a model's self-reported coun
 | P7-BUNDLE | `AF-SP56-BUNDLE-BUMP-ROUTE` | the bump routes to the Skill 44 seam as COPY (route `SKILL44_WIDGET`), never hand-wired. |
 | P9 / run | `AF-SP56-CERT-PHASE-GAP` / `AF-SP56-PROCESS-INTEGRITY` | a signed certificate requires a full P0->P9 pass, no phase skips, valid HMAC. |
 | entry | `AF-SP56-CANONICAL-BYPASS` / `AF-SP56-FRONT-DOOR` / `AF-SP56-HASH-PIN` | no hand-rolled GHL REST / ImgBB / raw image createTask / mail sender in the run dir; the enforcement core matches its pinned head; the orchestrator refuses without the front-door nonce. |
+| entry | `AF-SP56-MODEL-TIER` / `AF-SP56-MODEL-NOANTHROPIC` | the entry shell resolves the CLIENT's own execution-tier authoring model (role=content), records `routing/model-content-receipt.json`, and `prove_sp_cert.py --model-receipt` gates it fail-closed — execution/content tier required, Anthropic hard-banned by provider field (FIX-XC-09e). |
 
 **Rework loop:** a QC failure returns the exact `AF-SP56-*` code; a bounded re-author loop (verifier !=
 author) re-authors then re-proves the WHOLE affected asset. The ONLY deterministic repair is the P5

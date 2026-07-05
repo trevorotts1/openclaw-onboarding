@@ -14,6 +14,30 @@ Nine hardening fixes to the presentation department (the gold-standard enforceme
 - **FIX-PRES-07 (P3)** — `run_signature_deck.py` fails CLOSED when `phase_verifiers.py` is missing beside the runner AND the phase is in the governed verifier set; a degraded pass is allowed ONLY under an explicit test/CI marker (`PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1` / `CI` / `OPENCLAW_TEST` / `.test-context`).
 - **FIX-PRES-08 (P3)** — CC card is opened at the runner's Phase-0 pre-flight (`_board_ingest_preflight`, idempotent; build_deck render-begin reuses the stamped `cc_task_id`) so pre-render phases are board-visible and a pre-render death still lands a card; new `cc_board.py --reconcile <run_dir>` (and in-process `reconcile()` from the end-of-run visibility check) replays a transport-failed advance so a delivered deck is never stranded at `in_progress`.
 - **FIX-PRES-09 (P3 bundle)** — (i) `build_deck._sp_prover` gains `skills/51-signature-presentation/scripts` + `/data`/`~` `.openclaw/skills` candidate roots so a materialized dept tree can find Skill 51; (ii) legacy renderer pair already retired on main (no-op, verified); (iii) presentations dept agent gets a per-dept tools allow-list (`tts,exec,read,write,edit,web_fetch,web_search`) WITHOUT `image_generate`/`video_generate`/`music_generate` — its imagery goes through the governed kie pipeline, not the free-form built-in; (iv) reassert-presentation-deps cron dropped from a `*/15` furnace to a daily `0 4 * * *` backstop, with event-shaped self-heal on the GATE-1 deps-missing path; (v) stale comments corrected to the 9,000-char floor / manifest v23 (`qc_generator_guard.py`, `phase_verifiers.py`) and the retired 5,000-char floor added to `retired-doctrine-patterns.json` (Guard B).
+## [v17.0.29] - 2026-07-05 - fix(funnel copy scoring + persona wiring): T-funnel-copy-engine (Wave-0 merge-train)
+
+Funnel copy quality + persona grounding hardened in the full-funnel pipeline and marketing role library.
+
+- **FIX-XC-02b** — `full-funnel-pipeline/funnel_rubrics.py`: de-hardcoded the `hormozi-100m-offers`
+  persona award in R-COPY (persona_grounded) and R-STRUCTURE. Both now read the ACTUAL
+  `selected_persona` from `persona-selection-log.md` (both `- selected_persona:` and
+  `"applied_persona":` forms) and credit the matched slug — a correct non-hormozi match is no longer
+  punished; miss only when the log is absent or the slug is unechoed.
+- **FIX-XC-04a** — `shared-utils/fab_qc.py` D2 now enforces lengthClass-keyed copy floors (body slots
+  ≥40 words; page-level lengthClass floors), a HARD MISS below floor with a bounded re-author, so a
+  thin fab-artifact can no longer clear the FAB-QC gate. Consumer test fixtures re-authored
+  (`06-ghl-install-pages/tests/test_v2_dispatcher.py`, `tests/unit/fab-qc.test.py`).
+- **FIX-XC-04h** — `funnel_rubrics.py` R-COPY gains a load-bearing `length_vs_funnel_type` sub-check
+  (weight 3.0, hard-miss below floor) keyed to the per-funnel-type depth table (squeeze/opt-in 300 /
+  2-step-application 400 / webinar-VSL 800 / long-form-sales 1,500) — an approved 150-word copy.md can
+  no longer score 10/10. `conversion-copywriter.md` Gate 1/Gate 2 + `qc-specialist--marketing.md`
+  SOP 9.1 gain the depth criterion (f): under-band or thin-section copy is returned as a revision.
+- **FIX-XC-04b** — `conversion-copywriter.md` §8 copy.md contract expanded to the full direct-response
+  section inventory keyed to funnel-spec `pageStructure`, with a §8a per-funnel-type depth-band table
+  and SOP 9.2 steps 10a/10b (section-by-section authoring + one expansion pass before PENDING-QC).
+- **FIX-XC-02a** — copywriter-persona Step-0 grounding wired: goldens/harness now carry a real
+  `persona-selection-log.md`; re-authored the scent-bar and FocusForge copy goldens to genuinely clear
+  the long-form depth floor (teach-the-right-behavior).
 
 ## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
 
