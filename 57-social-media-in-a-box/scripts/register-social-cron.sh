@@ -106,6 +106,22 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 gateway_list() { "$OPENCLAW_BIN" cron list 2>/dev/null || true; }
 
+# FIX-XC-08d: on CLI 2026.6.8 `cron add` defaults delivery=announce (spams the
+# client's chat every fire — a silence-doctrine violation). Feature-detect the
+# `--no-deliver` flag from the CLI's own help so this stays a SILENT trigger.
+supports_no_deliver() { "$OPENCLAW_BIN" cron add --help 2>&1 | grep -q -- '--no-deliver'; }
+
+# Best-effort delivery-mode assertion: if `cron list` exposes an announce/channel
+# delivery mode for our cron, that is a silence-doctrine violation. Returns 1 when
+# an announce/channel delivery is detected on the CRON_NAME entry; 0 otherwise
+# (including when the listing does not expose a delivery mode — nothing to assert).
+delivery_is_announcing() {
+    local gw line
+    gw="$(gateway_list)"
+    line="$(printf '%s\n' "$gw" | grep -A2 "$CRON_NAME" 2>/dev/null || true)"
+    printf '%s\n' "$line" | grep -qiE 'deliver[y]?[[:space:]:=]*(announce|channel)|(^|[[:space:]])announce([[:space:]]|$)|channel-deliver'
+}
+
 count_in() {  # count_in <needle> <text>
     local n
     n="$(printf '%s\n' "$2" | grep -c "$1" 2>/dev/null || true)"
@@ -302,15 +318,40 @@ if [ "$own_n" != "KEEP" ]; then
         "$OPENCLAW_BIN" cron delete --name "$CRON_NAME" 2>/dev/null || true
     fi
     echo "  registering '$CRON_NAME' ($SCHEDULE, sessionTarget=$SESSION_TARGET, agent=$AGENT_ID)..."
+    # FIX-XC-08d: register as a SILENT trigger. Prefer feature-detected --no-deliver;
+    # if the flag is unknown to this CLI, fall back to a no-flag retry (and warn).
+    ND_ARGS=()
+    if supports_no_deliver; then
+        ND_ARGS=(--no-deliver)
+        echo "  delivery : --no-deliver (silent — the weekly trigger never announces to a chat)"
+    else
+        echo "  WARN [$PROG]: this openclaw CLI has no '--no-deliver' flag; the weekly trigger may ANNOUNCE to the last chat every fire (silence-doctrine risk). Upgrade the CLI." >&2
+    fi
     if ! "$OPENCLAW_BIN" cron add \
         --name "$CRON_NAME" \
         --cron "$SCHEDULE" \
         --agent "$AGENT_ID" \
         --session-target "$SESSION_TARGET" \
         --message "$CRON_MESSAGE" \
+        ${ND_ARGS[@]+"${ND_ARGS[@]}"} \
         --light-context; then
-        echo "FATAL [$PROG]: 'openclaw cron add' failed — '$CRON_NAME' NOT registered. If a legacy Skill-35 cron was just retired, this box currently has NO weekly trigger: RE-RUN this script (idempotent) until it exits 0." >&2
-        exit 2
+        # no-flag retry: some CLIs reject an unknown flag AFTER the help probe passed.
+        if [ "${#ND_ARGS[@]}" -gt 0 ]; then
+            echo "  WARN [$PROG]: 'cron add' with --no-deliver failed; retrying WITHOUT it (the trigger may announce — upgrade the CLI)." >&2
+            if ! "$OPENCLAW_BIN" cron add \
+                --name "$CRON_NAME" \
+                --cron "$SCHEDULE" \
+                --agent "$AGENT_ID" \
+                --session-target "$SESSION_TARGET" \
+                --message "$CRON_MESSAGE" \
+                --light-context; then
+                echo "FATAL [$PROG]: 'openclaw cron add' failed — '$CRON_NAME' NOT registered. If a legacy Skill-35 cron was just retired, this box currently has NO weekly trigger: RE-RUN this script (idempotent) until it exits 0." >&2
+                exit 2
+            fi
+        else
+            echo "FATAL [$PROG]: 'openclaw cron add' failed — '$CRON_NAME' NOT registered. If a legacy Skill-35 cron was just retired, this box currently has NO weekly trigger: RE-RUN this script (idempotent) until it exits 0." >&2
+            exit 2
+        fi
     fi
 fi
 
@@ -321,6 +362,14 @@ GW="$(gateway_list)"
 n="$(count_in "$CRON_NAME" "$GW")"
 legacy_gw="$(count_in "$LEGACY_GATEWAY_NAME" "$GW")"
 legacy_ct="$(count_crontab_legacy)"
+# FIX-XC-08d: assert the registered job's delivery mode is SILENT (never announce/
+# channel). If the CLI exposes the mode in `cron list` and it is announcing, that
+# is a silence-doctrine violation -> loud WARN (the cron is registered but noisy).
+if delivery_is_announcing; then
+    echo "  WARN [$PROG]: '$CRON_NAME' appears to deliver in ANNOUNCE/channel mode (silence-doctrine violation). Re-register on a CLI that supports --no-deliver." >&2
+else
+    echo "  delivery-mode assert: no announce/channel delivery detected for '$CRON_NAME' (silent trigger)"
+fi
 if [ "$n" = "1" ] && [ "$legacy_gw" = "0" ] && [ "$legacy_ct" = "0" ]; then
     echo "  APPLIED + QC OK: exactly one '$CRON_NAME' gateway cron; zero legacy in either store."
     exit 0

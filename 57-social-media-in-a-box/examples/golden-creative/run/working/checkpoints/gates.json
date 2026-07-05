@@ -17,6 +17,9 @@
   "P5-SCRUB": {
     "passed": true
   },
+  "P13-DELIVER": {
+    "passed": true
+  },
   "P6-MANIFEST": {
     "passed": true
   },
