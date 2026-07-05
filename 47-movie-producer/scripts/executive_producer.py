@@ -64,6 +64,13 @@ HERE = Path(__file__).resolve().parent  # .../47-movie-producer/scripts
 
 # Receipt validators + Phase-0 balance live in our sibling library (OUR code).
 import video_build_check as vbc
+# Producer-side Command Center board caller (OUR code). FAIL-SOFT by contract:
+# every cc_board call catches its own errors and returns a value, so a board outage
+# / missing token NEVER affects this driver's exit codes or flow. (FIX-S36-40)
+try:
+    import cc_board
+except Exception:  # noqa: BLE001 — the board is a convenience, never a hard dep.
+    cc_board = None
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +170,95 @@ def _job_id(run_dir: Path) -> str:
 def _pipeline_selected(run_dir: Path) -> str:
     jm = vbc._load_job_manifest(run_dir)
     return jm.get("pipeline_selected", "") if isinstance(jm, dict) else ""
+
+
+# ---------------------------------------------------------------------------
+# Command Center board hookup (FAIL-SOFT). Lands the run on the Kanban board as one
+# campaign + one card per DMAIC phase, and moves each attested phase card to `done`
+# by walking the LEGAL status path (in_progress -> review -> done) so the QC review
+# column is never skipped. A disabled board (no MISSION_CONTROL_URL) makes all of
+# this a clean no-op, and the campaign_id + finished MP4 path are stamped into the
+# render receipt at V-CONTROL. (FIX-S36-40)
+# ---------------------------------------------------------------------------
+def _board_stage_slug(phase_id: str) -> str:
+    return str(phase_id).lower()[:64]
+
+
+def _board_stages(phases: list) -> list:
+    return [{"slug": _board_stage_slug(p["id"]), "title": p.get("name") or p["id"]}
+            for p in sorted(phases, key=lambda x: x.get("order", 0))]
+
+
+def _board_marker(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "cc-board.created"
+
+
+def _board_ensure_campaign(run_dir: Path, manifest: dict) -> None:
+    """Create the campaign + its 5 phase cards. Idempotent via a marker file.
+    NEVER raises (board hookup must not break the driver)."""
+    if cc_board is None:
+        return
+    try:
+        job_id = _job_id(run_dir)
+        if not job_id:
+            return
+        marker = _board_marker(run_dir)
+        if marker.exists():
+            return
+        jm = vbc._load_job_manifest(run_dir)
+        jm = jm if isinstance(jm, dict) else {}
+        show_name = str(jm.get("title") or jm.get("topic") or job_id)
+        campaign_id = cc_board.create_campaign(
+            job_id,
+            show_name,
+            stages=_board_stages(manifest.get("phases", [])),
+            owner=jm.get("owner"),
+            department=jm.get("department") or "video",
+            workspace=jm.get("workspace"),
+            agent_id=jm.get("agent_id"),
+            money_ceiling_usd=jm.get("budget_ceiling_usd"),
+            estimated_cost_usd=jm.get("estimated_cost_usd"),
+            show_date=jm.get("show_date"),
+        )
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(campaign_id or job_id)
+    except Exception:  # noqa: BLE001 — board hookup must NEVER break the driver.
+        pass
+
+
+def _board_move(run_dir: Path, phase_id: str, status: str, *, reason: str = "") -> None:
+    """Drive one phase card to `status` (fail-soft, never raises). set_stage_status
+    walks the legal path, so a move to `done` traverses `review` — the QC column is
+    never skipped (the V-CONTROL card lands via review -> done)."""
+    if cc_board is None:
+        return
+    try:
+        job_id = _job_id(run_dir)
+        if not job_id:
+            return
+        cc_board.set_stage_status(job_id, _board_stage_slug(phase_id), status,
+                                  reason=reason or None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _board_stamp_control(run_dir: Path) -> None:
+    """At V-CONTROL, stamp campaign_id (from the board marker == job_id fallback) and
+    the finished MP4 path into the render receipt. Fail-soft; merge-if-exists."""
+    if cc_board is None:
+        return
+    try:
+        job_id = _job_id(run_dir)
+        marker = _board_marker(run_dir)
+        campaign_id = marker.read_text().strip() if marker.exists() else (job_id or None)
+        rr = vbc._render_receipt(run_dir)
+        final_mp4 = None
+        if isinstance(rr, dict):
+            final_mp4 = (str(rr.get("final_mp4_path") or rr.get("output_path") or "").strip()
+                         or None)
+        cc_board.stamp_receipt(run_dir, campaign_id=campaign_id, final_mp4_path=final_mp4)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +511,12 @@ def main():
             print(f"FATAL: unknown phase id {args.phase!r}.", file=sys.stderr)
             sys.exit(2)
 
+        # Board (FAIL-SOFT): ensure the campaign + 5 phase cards exist, then reflect
+        # this phase as in_progress. A disabled board makes both a clean no-op.
+        _board_ensure_campaign(run_dir, manifest)
+        _board_move(run_dir, args.phase, "in_progress",
+                    reason=f"{args.phase} dispatched")
+
         # 1) Preconditions — every lower-order phase attested + artifact present (or
         #    owner-skipped). Skipping/reordering/wrong-role = AF-VID-PHASE-SKIPPED (exit 2).
         if not args.adhoc:
@@ -440,6 +542,12 @@ def main():
 
         attest_phase(run_dir, args.phase, target.get("owning_role", ""), "attested",
                      checker=(target.get("preflight") or {}).get("checker", ""))
+        # Board (FAIL-SOFT): move this phase card to `done`, walking the legal path
+        # (in_progress -> review -> done) so the QC review column is never skipped.
+        # At V-CONTROL also stamp campaign_id + the finished MP4 path into the receipt.
+        if args.phase == "V-CONTROL":
+            _board_stamp_control(run_dir)
+        _board_move(run_dir, args.phase, "done", reason=f"{args.phase} attested")
         print(f"=== PHASE {args.phase} ATTESTED (preconditions met + receipt validated) ===",
               flush=True)
         sys.exit(0)
