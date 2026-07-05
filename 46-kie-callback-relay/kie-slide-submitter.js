@@ -66,25 +66,24 @@ class KieSlideSubmitter {
    * @param {string} opts.kieApiKey        -- Kie API key (Bearer token)
    * @param {string} opts.kvWorkerUrl      -- Worker base URL
    * @param {string} opts.workspaceDir     -- path to workspace directory
-   * @param {string} opts.callbackHmacKey  -- shared HMAC key for callback validator + secret HMAC
-   *                                          (must match Worker KIE_CALLBACK_HMAC_KEY secret)
-   * @param {string} opts.kvReadToken      -- bearer token for /kv-read authentication
-   *                                          (must match Worker KVREAD_TOKEN secret)
+   * @param {string} [opts.callbackHmacKey] -- this client's PER-CLIENT derived callback key
+   *                                          (fix F): HMAC-SHA256(clientSlug, fleet master).
+   *                                          The Worker re-derives the same value from its
+   *                                          master + the c= slug. Required for callback mode
+   *                                          only (large decks); omit for small decks (fix 33).
+   * @param {string} [opts.kvReadToken]     -- this client's PER-CLIENT derived /kv-read bearer
+   *                                          token (fix F). Required for callback mode only.
    */
   constructor(opts) {
     this.clientSlug      = opts.clientSlug;
     this.kieApiKey       = opts.kieApiKey;
     this.kvWorkerUrl     = opts.kvWorkerUrl || CALLBACK_WORKER_URL;
     this.workspaceDir    = opts.workspaceDir;
-    this.callbackHmacKey = opts.callbackHmacKey;
-    this.kvReadToken     = opts.kvReadToken;
-
-    if (!this.callbackHmacKey) {
-      throw new Error('[kie-submit] opts.callbackHmacKey is required (KIE_CALLBACK_HMAC_KEY)');
-    }
-    if (!this.kvReadToken) {
-      throw new Error('[kie-submit] opts.kvReadToken is required (KVREAD_TOKEN)');
-    }
+    // Fix 33: the per-client callback key + /kv-read token are ONLY needed on the
+    // callback (large-deck) path. They are validated lazily in submitDeck() once the
+    // deck size decides useCallbacks -- a small deck needs neither Worker secret.
+    this.callbackHmacKey = opts.callbackHmacKey || '';
+    this.kvReadToken     = opts.kvReadToken || '';
 
     this.registryDir  = path.join(this.workspaceDir, '.kie', 'registry');
     this.indexDir     = path.join(this.workspaceDir, '.kie', 'index');
@@ -93,12 +92,8 @@ class KieSlideSubmitter {
     fs.mkdirSync(this.indexDir,    { recursive: true });
     fs.mkdirSync(this.doneDir,     { recursive: true });
 
-    this.poller = new KieKvPoller({
-      clientSlug:   this.clientSlug,
-      kvWorkerUrl:  this.kvWorkerUrl,
-      workspaceDir: this.workspaceDir,
-      kvReadToken:  this.kvReadToken     // Fix B: pass bearer token to poller
-    });
+    // Poller is created lazily in submitDeck() with callbacksEnabled set from deck size.
+    this.poller = null;
 
     // Token bucket for rate limiting (20 per 10s)
     this._bucket = { tokens: RATE_LIMIT_MAX, lastRefill: Date.now() };
@@ -119,6 +114,27 @@ class KieSlideSubmitter {
     const useCallbacks = slides.length > threshold;
 
     console.log(`[kie-submit] deck of ${slides.length} slides; callbacks=${useCallbacks} (threshold=${threshold})`);
+
+    // Fix 33: only the callback (large-deck) path needs the Worker secrets. Validate
+    // them here, after the deck size decides useCallbacks, instead of in the constructor.
+    if (useCallbacks) {
+      if (!this.callbackHmacKey) {
+        throw new Error('[kie-submit] callbackHmacKey is required for callback mode (KIE_CALLBACK_HMAC_KEY)');
+      }
+      if (!this.kvReadToken) {
+        throw new Error('[kie-submit] kvReadToken is required for callback mode (KVREAD_TOKEN)');
+      }
+    }
+
+    // Build the poller lazily with the right mode. When callbacks are disabled the poller
+    // skips the KV phase entirely and polls Kie recordInfo directly (fix 33) -- no secret.
+    this.poller = new KieKvPoller({
+      clientSlug:       this.clientSlug,
+      kvWorkerUrl:      this.kvWorkerUrl,
+      workspaceDir:     this.workspaceDir,
+      kvReadToken:      this.kvReadToken,   // Fix B/F: per-client bearer token (callback path only)
+      callbacksEnabled: useCallbacks        // Fix 33: false => direct Kie recordInfo poll
+    });
 
     // --- Phase 1: Resume-safe registry load; skip already-submitted slides ---
     // Fix A: submitId is now a 128-bit random hex. Registry files are keyed by that random ID.
@@ -158,22 +174,33 @@ class KieSlideSubmitter {
     for (const slide of pending.filter(s => !s.existing)) {
       await this._throttle();
 
-      const model         = slide.model || opts.model || 'gpt-image-2-text-to-image';
-      const perTaskSecret = crypto.randomBytes(32).toString('hex');
-      const submitId      = slide.submitId; // already a 128-bit random hex (fix A)
+      const model    = slide.model || opts.model || 'gpt-image-2-text-to-image';
+      const submitId = slide.submitId; // already a 128-bit random hex (fix A)
 
-      // Fix D: callback validator = HMAC-SHA256(clientSlug + ":" + submitId, callbackHmacKey)
-      //   Nothing secret in the URL; the Worker recomputes and verifies.
-      // Fix C: perTaskSecretHmac = HMAC-SHA256(perTaskSecret, callbackHmacKey)
-      //   A hash of the secret, safe to pass through Kie logs. Stored in KV by Worker.
-      const callbackValidator = crypto
-        .createHmac('sha256', this.callbackHmacKey)
-        .update(`${this.clientSlug}:${submitId}`)
-        .digest('hex');
-      const perTaskSecretHmac = crypto
-        .createHmac('sha256', this.callbackHmacKey)
-        .update(perTaskSecret)
-        .digest('hex');
+      // Fix 33: the per-task secret + callback URL only exist on the callback path.
+      // A small deck (useCallbacks=false) never sends a callBackUrl, so it needs neither.
+      let perTaskSecret = null;
+      let callBackUrl   = null;
+      if (useCallbacks) {
+        perTaskSecret = crypto.randomBytes(32).toString('hex');
+        // Fix D: callback validator = HMAC-SHA256(clientSlug + ":" + submitId, callbackHmacKey)
+        //   Nothing secret in the URL; the Worker recomputes and verifies.
+        // Fix C: perTaskSecretHmac = HMAC-SHA256(perTaskSecret, callbackHmacKey)
+        //   A hash of the secret, safe to pass through Kie logs. Stored in KV by Worker.
+        // NOTE (fix F): this.callbackHmacKey is the PER-CLIENT derived key (not the fleet
+        //   master); the Worker re-derives the same value from the master + slug.
+        const callbackValidator = crypto
+          .createHmac('sha256', this.callbackHmacKey)
+          .update(`${this.clientSlug}:${submitId}`)
+          .digest('hex');
+        const perTaskSecretHmac = crypto
+          .createHmac('sha256', this.callbackHmacKey)
+          .update(perTaskSecret)
+          .digest('hex');
+        // Fix C + D: no raw secret in URL; s= is the callback validator, h= is the secret HMAC
+        callBackUrl = `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}` +
+          `&j=${encodeURIComponent(submitId)}&s=${callbackValidator}&h=${perTaskSecretHmac}`;
+      }
 
       // Write registry BEFORE submitting (crash-safe: write first, then submit).
       // Store deckId + slideId as human-readable label fields alongside the random submitId.
@@ -185,11 +212,8 @@ class KieSlideSubmitter {
         slideId:      slide.slideId,
         model,
         targetPath:   slide.targetPath,
-        perTaskSecret,                         // stays on box in local registry only
-        callBackUrl:  useCallbacks
-          // Fix C + D: no raw secret in URL; s= is the callback validator, h= is the secret HMAC
-          ? `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}&j=${encodeURIComponent(submitId)}&s=${callbackValidator}&h=${perTaskSecretHmac}`
-          : null,
+        perTaskSecret,                         // stays on box in local registry only (null for small decks)
+        callBackUrl,                           // null when callbacks are disabled (fix 33)
         submittedAt:  new Date().toISOString(),
         status:       'submitting',
         taskId:       null,
@@ -257,20 +281,29 @@ class KieSlideSubmitter {
         { timeoutMs, kieApiKey: this.kieApiKey }
       );
 
-      // Update registry with final status
-      const reg = this._readRegistry(slide.submitId) || {};
-      reg.status = done.status;
-      reg.fallbackPolledAt = done.fallbackPolledAt || reg.fallbackPolledAt;
-      this._writeRegistry(slide.submitId, reg);
-
       // Download image if done and has URLs
       let localPath = slide.targetPath;
+      let status    = done.status;
       if (done.status === 'done' && done.resultUrls?.length && slide.targetPath) {
         localPath = await this._downloadFirst(done.resultUrls, slide.targetPath);
       }
 
+      // Fix 35: 'done' means a real file on disk. A status of 'done' with no downloadable
+      // file (download failed, or a 200 that yielded zero allowlisted URLs) is a failure --
+      // never report a slide complete when there is nothing rendered on disk.
+      if (status === 'done' && !(localPath && fs.existsSync(localPath))) {
+        console.warn(`[kie-submit] slide ${slide.slideId}: status 'done' but no file on disk -- marking failed`);
+        status = 'failed';
+      }
+
+      // Update registry with the reconciled final status
+      const reg = this._readRegistry(slide.submitId) || {};
+      reg.status = status;
+      reg.fallbackPolledAt = done.fallbackPolledAt || reg.fallbackPolledAt;
+      this._writeRegistry(slide.submitId, reg);
+
       return { slideId: slide.slideId, submitId: slide.submitId, taskId: slide.taskId,
-               status: done.status, resultUrls: done.resultUrls, localPath, code: done.code };
+               status, resultUrls: done.resultUrls, localPath, code: done.code };
     }));
 
     // Merge already-done slides
@@ -345,14 +378,22 @@ class KieSlideSubmitter {
    * Scan the registry directory and build an index keyed by human-readable label
    * (deckId_slideId). Used for crash-safe resume now that submitId is random (fix A).
    * Returns: { [label]: registryRow, ... }
+   *
+   * Fix 37(i): a crash BETWEEN the createTask POST and its response can leave two rows
+   * for one label -- an orphan with taskId=null (looks un-submitted) and, if Kie did
+   * accept it, a paid task with no local taskId. Choosing the orphan would RE-SUBMIT and
+   * pay twice. So per label we pick the winner deterministically: prefer the row that
+   * already has a taskId; among ties (or all-null) prefer the newest submittedAt. Every
+   * other row for that label is marked status 'superseded' on disk so it is never
+   * re-submitted and the double-charge is contained.
    */
   _loadRegistryByLabel() {
-    const result = {};
+    const groups = {}; // label -> [{ row, file }]
     let files;
     try {
       files = fs.readdirSync(this.registryDir);
     } catch (_) {
-      return result;
+      return {};
     }
     for (const f of files) {
       if (!f.endsWith('.json')) continue;
@@ -360,9 +401,37 @@ class KieSlideSubmitter {
         const row = JSON.parse(fs.readFileSync(path.join(this.registryDir, f), 'utf8'));
         // Support both new-style (row.label) and legacy (deckId_slideId filename-based) rows
         const label = row.label || (row.deckId && row.slideId ? `${row.deckId}_${row.slideId}` : null);
-        if (label) result[label] = row;
+        if (!label) continue;
+        (groups[label] ||= []).push({ row, file: f });
       } catch (_) {
         // Corrupt or partial file; skip
+      }
+    }
+
+    const result = {};
+    for (const [label, entries] of Object.entries(groups)) {
+      // Deterministic winner: taskId present beats taskId absent; then newest submittedAt.
+      const ranked = entries.slice().sort((a, b) => {
+        const at = a.row.taskId ? 1 : 0;
+        const bt = b.row.taskId ? 1 : 0;
+        if (at !== bt) return bt - at;                       // taskId-present first
+        const as = Date.parse(a.row.submittedAt || '') || 0;
+        const bs = Date.parse(b.row.submittedAt || '') || 0;
+        return bs - as;                                      // newest submittedAt first
+      });
+      const winner = ranked[0];
+      result[label] = winner.row;
+
+      // Mark every non-winning duplicate as superseded so it is never re-submitted (fix 37i).
+      for (const loser of ranked.slice(1)) {
+        if (loser.row.status === 'superseded') continue;
+        loser.row.status = 'superseded';
+        loser.row.supersededBy = winner.row.submitId || null;
+        try {
+          fs.writeFileSync(path.join(this.registryDir, loser.file),
+            JSON.stringify(loser.row, null, 2));
+          console.warn(`[kie-submit] resume: superseded duplicate registry row ${loser.file} for label ${label}`);
+        } catch (_) { /* best-effort; skip on write failure */ }
       }
     }
     return result;

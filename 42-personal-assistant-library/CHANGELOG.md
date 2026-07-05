@@ -1,5 +1,32 @@
 # Skill 42 — Personal Assistant Library — Changelog
 
+## 1.0.5 — 2026-07-05
+
+Materialization contract hardening (FIX-XC-11b, FIX-S36-19, FIX-S36-20).
+
+- **Mandatory closing Command Center converge (FIX-XC-11b).** Materialization never ran
+  the CC converge, so a materialized specialist could land in the workspace un-registered.
+  Added a fail-soft closing `sync-extensions.sh --converge` step to INSTALL.md §3 and
+  INSTRUCTIONS.md §2 (skipped when Skill 32 is absent), plus QC doc-truth asserts that
+  both docs wire it and a `--live` assert that the converge tool is reachable when a PA
+  department is materialized.
+- **Complete placeholder table + residual scan (FIX-S36-19).** INSTRUCTIONS.md §3
+  documented only 8 placeholders while specialists use 40+ owner-data tokens (and the
+  example fill pass substituted 2). Completed the owner-data placeholder table from the
+  real inventory, split it from the runtime output-template slots (`{{PERCENT}}`,
+  `{{WIN_1}}`, `{{COUNT}}`, … — filled each run, left in place), expanded the example
+  fill pass, and added a post-materialization residual scan that **exits 1** on any
+  surviving owner-data placeholder. A `--live` QC assert enforces zero residuals on a
+  materialized department.
+- **Specialist-19 QC tightened (FIX-S36-20 i).** `qc-personal-assistant-library.sh` and
+  `scripts/verify-pa-install.sh` previously checked only 2 of Study Partner's role files;
+  they now assert all 12 (the standard 6 + the 6 sub-role files). SKILL.md updated to match.
+- **QC path resolution fixed (FIX-S36-20 ii).** `qc-personal-assistant-library.sh` now
+  resolves its own dir absolutely, falls back to the skill's own dir when the installed
+  copy is absent (repo/pre-deploy QC — sibling-43 pattern), and its lib-shared fallback
+  sets `WORKSPACE=$HOME/.openclaw/workspace` (the old `$HOME/clawd` literal was bogus).
+- No specialist content or SOP logic changed; all `{{TOKEN}}` templates unchanged.
+
 ## 1.0.2 — 2026-07-01
 
 Client-name redaction (fleet privacy invariant).

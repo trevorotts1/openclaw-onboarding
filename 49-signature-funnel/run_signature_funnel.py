@@ -260,6 +260,11 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
 def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     import prove_sf_intake, prove_sf_copy, prove_sf_prompt_floor, prove_sf_no_pitch  # noqa: E402
     (rd / "brief.json").write_text(json.dumps(prove_sf_intake._valid_runtime(size)), encoding="utf-8")
+    # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the run dir must
+    # carry a persona-selection-log naming a registered persona slug (SOP 9.2 Step 0).
+    (rd / "persona-selection-log.md").write_text(
+        "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
+        encoding="utf-8")
     (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger()), encoding="utf-8")
     (rd / "prompt_ledger.json").write_text(json.dumps(prove_sf_prompt_floor._valid_ledger()), encoding="utf-8")
     (rd / "media_ledger.json").write_text(json.dumps(prove_sf_no_pitch._valid_ledger()), encoding="utf-8")

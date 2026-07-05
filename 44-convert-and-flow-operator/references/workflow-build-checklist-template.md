@@ -215,8 +215,8 @@ For each Webhook node:
 - GHL automation built (skill 44 — the HANDS): `[ ] DONE  [ ] N/A`
 - Communications playbook built (skill 38 — the BRAIN): `[ ] DONE  [ ] N/A`
 - Build-with-AI / Workflow-AI prompt built (skill 38): `[ ] DONE  [ ] N/A`
-- qc-trinity-registry.sh hard gate passed: `[ ] DONE  [ ] N/A`
-- Status: `[ ] PASS  [ ] FAIL  [ ] N/A (purely-mechanical workflow)`
+- `qc-built-workflow.sh --conversational` executed qc-trinity-registry.sh, exit 0 (hard gate — any non-zero exit is a mechanical WF-19 FAIL): `[ ] DONE  [ ] N/A`
+- Status: `[ ] PASS  [ ] FAIL  [ ] N/A (purely-mechanical workflow — run without --conversational)`
 
 ### WF-20 — No Hallucinated Artifacts
 

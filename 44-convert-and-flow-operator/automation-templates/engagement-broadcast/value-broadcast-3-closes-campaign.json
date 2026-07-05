@@ -11,18 +11,31 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["The Funnel Hacker's Cookbook", "DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "books": [
+      "The Funnel Hacker's Cookbook",
+      "DotCom Secrets (Russell Brunson)",
+      "Copywriting Secrets (Jim Edwards)"
+    ],
     "sections": [
       "Funnel Hacker's Cookbook #24 — Follow-Up Funnel ('moves leads through the 3 Closes framework: Emotion close -> Logic close -> Fear close')",
       "DotCom Secrets — Star/Story/Solution closes: Emotional/If-All close (#27), Guarantee/Logic (#29), Scarcity/Fear close (#30), Takeaway selling (#34)",
       "Copywriting Secrets — Ten Reasons People Buy, honest-scarcity integrity rule, takeaway/FOMO close"
     ]
   },
+  "source_books": [
+    "The Funnel Hacker's Cookbook",
+    "DotCom Secrets (Russell Brunson)",
+    "Copywriting Secrets (Jim Edwards)"
+  ],
   "trigger": {
     "primary": "A scheduled PROMO WINDOW to the engaged broadcast segment — new offer, open cart, event-registration push, or value-ladder ascension. Layered ON TOP of the daily Seinfeld cadence for ~5-7 days.",
     "trigger_type_ghl": "Tag Added 'promo-{offer}' to the seinfeld-broadcast segment, OR a scheduled campaign start date."
   },
-  "channels": ["Email (primary)", "SMS (reminder on the Fear/urgency close)", "Retargeting ads (optional)"],
+  "channels": [
+    "Email (primary)",
+    "SMS (reminder on the Fear/urgency close)",
+    "Retargeting ads (optional)"
+  ],
   "sequence": [
     {
       "step": 1,
@@ -61,7 +74,24 @@
   "copyPersona": {
     "primary": "Brunson Star/Story/Solution closes mapped to the 3 Closes: Emotional/If-All (#27), Guarantee/Logic (#29), Scarcity+Takeaway (#30/#34).",
     "secondary": "Edwards — Ten Reasons People Buy, dollars-for-dimes value framing, and the non-negotiable honest-scarcity rule.",
-    "scripts": ["3 Closes: Emotion -> Logic -> Fear", "If-All emotional anchor", "Fake-price/real-price", "Takeaway selling"]
+    "scripts": [
+      "3 Closes: Emotion -> Logic -> Fear",
+      "If-All emotional anchor",
+      "Fake-price/real-price",
+      "Takeaway selling"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Brunson Star/Story/Solution closes mapped to the 3 Closes: Emotional/If-All (#27), Guarantee/Logic (#29), Scarcity+Takeaway (#30/#34).",
+    "supporting": [
+      "Edwards — Ten Reasons People Buy, dollars-for-dimes value framing, and the non-negotiable honest-scarcity rule."
+    ],
+    "frameworks": [
+      "3 Closes: Emotion -> Logic -> Fear",
+      "If-All emotional anchor",
+      "Fake-price/real-price",
+      "Takeaway selling"
+    ]
   },
   "ghlBuild": {
     "buildType": "A REAL GoHighLevel WORKFLOW (autoresponder-style mini-drip) — distinct from the daily broadcast; this one IS sequenced.",
@@ -80,6 +110,11 @@
     "goalEvent": "Configure a Goal / If-Else on 'Purchase made' (opportunity stage or product/order tag) so buyers exit immediately and stop receiving promo emails.",
     "notes": "Set action order + parentKey before the first save (Skill 44 reliability). Use Wait-until-date for the real deadline. Suppress these contacts from competing promos while in-campaign."
   },
-  "kpis": ["campaign conversion rate", "revenue per recipient", "open/click by close type (which close converts your list)", "unsubscribe spike check (over-promotion guard)"],
+  "kpis": [
+    "campaign conversion rate",
+    "revenue per recipient",
+    "open/click by close type (which close converts your list)",
+    "unsubscribe spike check (over-promotion guard)"
+  ],
   "faithfulness": "The 3 Closes framework (Emotion -> Logic -> Fear) is stated in Funnel Hacker's Cookbook #24 (Follow-Up Funnel). The specific close mechanics (If-All emotional anchor, fake/real price, crazy-named guarantee, scarcity, takeaway selling) are the Star/Story/Solution closes from DotCom Secrets. Honest-scarcity is an Edwards non-negotiable. The 3-email cadence and GHL workflow are the Skill-44 operationalization; exact day-gaps are a sensible default, not a fixed book number."
 }

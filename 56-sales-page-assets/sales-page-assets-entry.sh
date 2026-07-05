@@ -115,6 +115,34 @@ step_nonce() {
   printf '%s' "$nonce"
 }
 
+# FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
+# record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sp_cert
+# --model-receipt. The client's OWN strongest model writes the copy; Anthropic is hard-banned.
+step_model_receipt() {
+  local rd="$1"
+  "$PY" - "$rd" <<'PYEOF'
+import json, os, sys, datetime
+rd = sys.argv[1]
+model = os.environ.get("SP_CONTENT_MODEL", "")
+provider = os.environ.get("SP_CONTENT_PROVIDER", "")
+tier = os.environ.get("SP_CONTENT_TIER", "content")
+receipt = {
+    "role": "content",
+    "resolved_from": "client-provider-chain" if model else "unresolved",
+    "model": model,
+    "provider": provider.lower(),
+    "tier": tier,
+    "anthropic_banned": True,
+    "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
+}
+os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
+with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encoding="utf-8") as fh:
+    json.dump(receipt, fh, indent=2)
+PYEOF
+  "$PY" "$SCRIPTS_DIR/prove_sp_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
+    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier / no-Anthropic gate — set SP_CONTENT_MODEL + SP_CONTENT_PROVIDER (+ SP_CONTENT_TIER) to the CLIENT's own strongest model"
+}
+
 run_pipeline() {
   local rd="$1"
   [ -n "$rd" ] || die "USAGE" "--run-dir is required"
@@ -124,9 +152,10 @@ run_pipeline() {
   step_version
   step_hashpin
   step_bypass_scan "$rd"
+  step_model_receipt "$rd"
   local nonce; nonce="$(step_nonce "$rd")"
   export SPA_RUN_NONCE="$nonce"
-  echo "== sales-page-assets-entry :: front door cleared (deps/version/hash-pin/bypass/nonce) =="
+  echo "== sales-page-assets-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier/nonce) =="
   "$PY" "$SKILL_DIR/run_sales_page_assets.py" --run-dir "$rd" --nonce "$nonce"
 }
 

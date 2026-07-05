@@ -1,5 +1,22 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.0.7 — 2026-07-05 — persona grounding (P0) + client model-content receipt (P9)
+
+Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.
+
+### Changed
+- **FIX-XC-02a** — `scripts/prove_sf_intake.py`: new fail-closed **AF-FUN-INTAKE-PERSONA-LOG** gate.
+  A runtime brief may not unlock generation without a `persona-selection-log.md` (resolved from
+  `--persona-log`, the brief's `persona_selection_log` ref, or a sibling file) that names a REGISTERED
+  persona slug (mirrors FAB-QC D4). Wired the golden (`examples/golden-daybreak/persona-selection-log.md`),
+  the orchestrator self-run, and `verify.sh` reproduce. Copy-persona Step-0 + Section-4 Task-Mode seam
+  documented in `prompts/funnel-copy-prompts.md` and `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`.
+- **FIX-XC-09e** — `signature-funnel-entry.sh` resolves the CLIENT's own execution-tier authoring model
+  (role=content), writes `routing/model-content-receipt.json`, and gates it via
+  `scripts/prove_sf_cert.py --model-receipt` (new **AF-FUN-MODEL-TIER** / **AF-FUN-MODEL-NOANTHROPIC**;
+  execution/content tier required, Anthropic hard-banned by provider field).
+- Re-minted `scripts/SF-PROVER-PIN.sha256`; added the new AF codes to `FUNNEL-MANIFEST.json`.
+
 ## 1.0.6 — 2026-07-05 — artifact-backed phase gates + verbatim grade-block containment
 
 Train **T-49-signature-funnel** (Wave-0). Fix IDs: FIX-XC-03a, FIX-IMG-05, FIX-IMG-06.

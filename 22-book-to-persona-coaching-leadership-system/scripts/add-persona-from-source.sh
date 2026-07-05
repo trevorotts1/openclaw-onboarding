@@ -141,6 +141,30 @@ green()  { printf "\033[32m%s\033[0m\n" "$1"; }
 yellow() { printf "\033[33m%s\033[0m\n" "$1"; }
 blue()   { printf "\033[34m%s\033[0m\n" "$1"; }
 
+# ── Shared "usable-persona contract" helper (F1.1/F1.2) ──────────────────────
+# The three-leg "is this persona actually usable on this box?" contract lives in
+# ONE place: pipeline/usable-persona-contract.sh (the FDN-4 shared, fail-closed
+# standalone gate, also called by persona-inbox-watcher.sh). This wrapper does
+# NOT re-implement the contract — it delegates to that single source of truth via
+# a thin shim so the workspace triad-equivalent here (F1.2) and the watcher's
+# processed/ gate (F1.1) can never drift apart. Base dir semantics match the
+# script: <persona_dir> is the coaching-personas root holding both
+# persona-categories.json and personas/<slug>/.
+_APS_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_USABLE_CONTRACT="$_APS_SELF_DIR/../pipeline/usable-persona-contract.sh"
+verify_usable_persona_contract() {
+  # <persona_dir(base)> <slug> → 0 iff all three legs (blueprint + registered +
+  # >=1 index row) pass; nonzero (2/3/4) names the missing leg. Graceful no-op if
+  # an older install predates the shared helper so the wrapper still runs.
+  local _base="$1" _slug="$2"
+  if [ -f "$_USABLE_CONTRACT" ]; then
+    bash "$_USABLE_CONTRACT" "$_base" "$_slug"
+    return $?
+  fi
+  yellow "  (usable-persona-contract helper not found — skipping workspace triad check)"
+  return 0
+}
+
 # ─── SOURCE TYPE DETECTION ───────────────────────────────────────────────────
 detect_source_type() {
   local s="$1"
@@ -555,6 +579,23 @@ echo "  Running: python3 $ORCHESTRATOR --single-book --slug $SLUG"
 python3 "$ORCHESTRATOR" --single-book --slug "$SLUG" 2>&1 | tail -20
 PIPELINE_RC=$?
 
+if [ "$PIPELINE_RC" -eq 8 ]; then
+  # F1.2 (FDN-5): EMBED_FAILED — the blueprint was synthesized but Phase 5
+  # embedding FAILED. The persona is REGISTERED BUT NOT SEARCHABLE (vector-less).
+  # Do NOT fall through to the fleet-publish "pending" marker (that would
+  # advertise a broken persona as ready to publish). Fail LOUD and propagate 8
+  # so persona-inbox-watcher.sh quarantines/retries. The blueprint is left on
+  # disk; a retry re-embeds only.
+  red "═══════════════════════════════════════════════════"
+  red "  ✗ EMBED FAILED (exit 8): '$SLUG' blueprint written but NOT embedded."
+  red "═══════════════════════════════════════════════════"
+  yellow "  The persona is registered but vector-less — Layer-5 semantic"
+  yellow "  retrieval cannot surface it. Fix the indexer/GOOGLE_API_KEY and"
+  yellow "  re-run; the retry re-embeds only (blueprint stays on disk):"
+  yellow "    $0 --source \"$SOURCE\"${TITLE:+ --title \"$TITLE\"}${AUTHOR:+ --author \"$AUTHOR\"}"
+  exit 8
+fi
+
 if [ "$PIPELINE_RC" -ne 0 ]; then
   red "Pipeline reported non-zero exit ($PIPELINE_RC). Persona may be partial."
   yellow "Check $PERSONA_FOLDER for what was produced."
@@ -763,6 +804,31 @@ echo ""
 yellow "  NEXT STEP (optional): review domain[] and perspective[] tags in persona-categories.json"
 yellow "  for $SLUG.  Auto-classification has assigned initial tags from title/author/slug —"
 yellow "  verify they match the content and add any extras from PERSONA-ROUTER.md §Domain Tags."
+
+# ── WORKSPACE TRIAD-EQUIVALENT (F1.2 / FDN-5) ────────────────────────────────
+# Before advertising the persona as ready-to-publish, assert the same three-leg
+# "usable-persona contract" the inbox watcher uses: blueprint on disk +
+# registered in persona-categories.json + >= 1 index row. Even when the pipeline
+# exits 0, Phase 5's safety-net indexer can silently no-op (no indexer wrapper
+# found), leaving a REGISTERED-BUT-NOT-EMBEDDED persona. Catch that here and
+# fail with EMBED_FAILED (8) so a forgotten/failed embed can never be marked
+# "pending publish". Skipped (warn-only) when the operator passed --skip-index.
+if [ "$SKIP_INDEX" = "false" ]; then
+  blue "── Verifying workspace usable-persona contract (blueprint + registered + embedded) ──"
+  if ! verify_usable_persona_contract "$PERSONA_DIR" "$SLUG"; then
+    red "═══════════════════════════════════════════════════"
+    red "  ✗ USABLE-PERSONA CONTRACT FAILED (exit 8): '$SLUG'"
+    red "═══════════════════════════════════════════════════"
+    yellow "  The persona is NOT usable on this box (see the per-leg verdict above)."
+    yellow "  NOT marking fleet-publish pending. Re-run to re-embed only:"
+    yellow "    $0 --source \"$SOURCE\"${TITLE:+ --title \"$TITLE\"}${AUTHOR:+ --author \"$AUTHOR\"}"
+    exit 8
+  fi
+  green "  Usable-persona contract PASSED — '$SLUG' is blueprint + registered + embedded."
+else
+  yellow "  --skip-index set: skipping the embedded leg of the usable-persona contract."
+  yellow "  '$SLUG' is registered but intentionally NOT embedded on this box."
+fi
 
 # ── MANDATED TERMINAL PHASE — fleet-publish status (structural anti-divergence) ─
 # The persona is now live in the WORKSPACE, but the REPO library

@@ -300,6 +300,28 @@ provision_persona_index() {
         return 0
     fi
 
+    # ── ASSET-FRESHNESS GATE (FDN-7 / F1.3 gate 2) ───────────────────────────
+    # A manifest carrying asset_rebuild_required:true was count-synced by a
+    # --no-asset staging bump (persona_fleet.py set-manifest-counts): the SET
+    # counts were lifted but the published gemini-index.sqlite.gz still lacks
+    # vectors for the newest persona(s). (Re)provisioning from it would download
+    # / stamp a counted-but-vector-less asset as "canonical", degrading Layer-5
+    # to keyword for those personas. REFUSE and KEEP the box's current index
+    # until a real build-and-publish.sh (or full publish-personas-to-fleet.sh)
+    # rebuilds+publishes the asset and clears the flag. Mirrors the
+    # update-skills.sh U6b pre-roll so a DIRECT caller (install.sh Step 6b) is
+    # protected identically. Fail-open on a read error (never block on a hiccup).
+    local _PIDX_ASSET_REBUILD
+    _PIDX_ASSET_REBUILD="$(python3 -c 'import json,sys
+try:
+    print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")
+except Exception:
+    print("false")' "$MANIFEST_PATH" 2>/dev/null || echo false)"
+    if [ "$_PIDX_ASSET_REBUILD" = "true" ]; then
+        _pidx_skip_warn "INDEX-MANIFEST asset_rebuild_required:true (a --no-asset staging manifest — the published asset lacks vectors for the newest persona(s)); KEEPING the current persona index and skipping provisioning until shared-utils/prebuilt-index/build-and-publish.sh rebuilds+publishes the asset (clears the flag)"
+        return 0
+    fi
+
     # Read manifest fields
     local _PIDX_ASSET_URL _PIDX_SHA _PIDX_CHUNKS _PIDX_TAG _PIDX_COLS _PIDX_PERSONAS
     _PIDX_ASSET_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_url"])' "$MANIFEST_PATH" 2>/dev/null || true)"

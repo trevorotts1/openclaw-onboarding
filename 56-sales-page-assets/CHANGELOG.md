@@ -1,5 +1,22 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.1.2 — 2026-07-05 — persona grounding (P0) + client model-content receipt
+
+Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.
+
+- **FIX-XC-02a** — `scripts/prove_sp_intake.py`: new fail-closed **AF-SP56-INTAKE-PERSONA-LOG** gate.
+  A runtime brief may not unlock generation without a `persona-selection-log.md` (resolved from
+  `--persona-log`, the brief's `persona_selection_log` ref, or a sibling file) that names a REGISTERED
+  persona slug (mirrors FAB-QC D4). Wired the golden (`examples/golden-momentum/persona-selection-log.md`
+  + `build_golden.py`), the orchestrator self-run, and `verify.sh` reproduce. Copy-persona Step-0 +
+  Section-4 Task-Mode seam documented in `prompts/PROMPT-SEAMS.md` and
+  `universal-sops/sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md`.
+- **FIX-XC-09e** — `sales-page-assets-entry.sh` resolves the CLIENT's own execution-tier authoring model
+  (role=content), writes `routing/model-content-receipt.json`, and gates it via
+  `scripts/prove_sp_cert.py --model-receipt` (new **AF-SP56-MODEL-TIER** / **AF-SP56-MODEL-NOANTHROPIC**;
+  execution/content tier required, Anthropic hard-banned by provider field).
+- Re-minted `scripts/SPA-PROVER-PIN.sha256`; added the new AF codes to `SALESPAGE-MANIFEST.json`.
+
 ## 1.1.1 — 2026-07-05 — fix(Copy routing): baked-prompt hygiene + manifest
 
 ### FIX-COPY-04(iii) — junk baked prompts archived; runtime iterates a manifest
