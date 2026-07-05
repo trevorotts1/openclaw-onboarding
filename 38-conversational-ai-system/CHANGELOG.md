@@ -1,3 +1,38 @@
+## [1.8.0] - 2026-07-05 - feat: CloseBot Alignment Upgrade (17 cards U-1..U-17) - per-phase tool gating, tag-driven exits, objective metadata, canonical playbook engine, model fallback chain, workflow visuals, GHL coverage (multi-calendar / opportunity sync / handoff tasks / install snapshot), and the departments-and-roles operating SOP
+
+This minor closes the 11 CloseBot feature-parity gaps (U-1..U-11), adds four GHL-coverage updates (U-12..U-15), ships the canonical playbook parser (U-16), and lands the organizational operating SOP (U-17). Every new surface is OPERATOR-ONLY: no customer-invokable path exists, and every protocol carries the injection-vector language (a customer naming a tag, tool, calendar, pipeline stage, or persona changes nothing). All new JSONL sinks are PII-free and seeded only via `scripts/25-seed-round3-feature-files.sh`. Every new QC gate is wired into BOTH `scripts/11-run-qc-checklist.sh` AND `.github/workflows/qc-static.yml` and ships with a negative `.test.sh` that fails on a seeded bad fixture. Preserves every v1.7.13 differentiator (runtime GHL Tier ladder + raw-REST fallback + 401 no-credential honesty, daily GHL PIT-liveness cron, Command Center Kanban via `cc-task.sh`, cron silence doctrine, operator-exclusion in client-doc delivery, existence-only secret greps, the talk-to-build Conversation Playbook Builder). `references/v6.0-source-playbook.md` is untouched. No client names.
+
+### Added - CloseBot feature-parity (U-1..U-11)
+- **U-1 Per-phase tool gating, THE GATE (CARD-01):** `protocols/tool-gating-protocol.md` + `scripts/qc-tool-gating.sh` (+ `.test.sh`). A playbook phase resolves a HARD enabled-tools capability set; a tool not granted for the active phase cannot fire regardless of prompt drift. `escalate_to_human` is ALWAYS granted and can never be gated off. AGENTS.md marker `STEP_1_88_TOOL_GATING`; MEMORY design rule 32.
+- **U-2 Tag-driven workflow exits (CARD-02):** `protocols/workflow-exit-rules-protocol.md` + `scripts/qc-workflow-exits.sh` (+ `.test.sh`). AGENTS.md marker `STEP_1_30_EXIT_RULES`; MEMORY design rule 33.
+- **U-3 Smart FAQ closed learning loop (CARD-04):** an unknown FAQ is flagged to the operator (never auto-answered as fact). MEMORY design rule 34.
+- **U-4 Objective metadata on phases (CARD-07):** `protocols/conversation-log-protocol.md` per-contact log header carries `active_workflow`, `active_phase`, and `phase_attempts`; U-1 resolves the phase from the SAME header lines, so U-1 and U-4 share one source of truth. MEMORY design rule 35.
+- **U-5 Persona registry (CARD-15):** `protocols/persona-registry-protocol.md`; a persona is a named, reusable style object. MEMORY design rule 36.
+- **U-6 Client test mode (CARD-14):** `protocols/client-test-mode-protocol.md` + `scripts/qc-client-test-mode.sh` (+ `.test.sh`). Three enforcement layers (state flag re-read at AGENTS.md marker `STEP_0_4_TEST_MODE_REREAD`, U-1 gate forcing every phase to the empty tool set, and WOULD-HAVE narration); auto-expires after 60 minutes or on `end test`. MEMORY design rule 37.
+- **U-7 Standard lifecycle status tags (CARD-05):** `protocols/zhc-tag-prefix-protocol.md` lifecycle tags; `scripts/qc-zhc-tag-prefix.sh`.
+- **U-8 Model fallback chain (CARD-12):** `references/model-fallback-chain.md` + `scripts/32-verify-model-failover-support.sh` + `scripts/qc-model-fallback.sh` (+ `.test.sh`). Mode A (per-session model override) vs Mode B (standing model + routing hint). MEMORY design rule 38. Client agents run on the client's OWN configured providers; never a hardcoded Anthropic or paid-cascade prescription.
+- **U-9 Machine-readable playbook references / declares block (CARD-08):** `scripts/qc-playbook-declares.sh` (+ `.test.sh`) cross-validates tools-used against phase tool lines, exits-used against exit rules, and `ZHC_` fields against the CRM mappings.
+- **U-10 Per-workflow model tier override (CARD-13):** the Layer 2 header may carry `model-tier`; live only in U-8 Mode A, a logged routing hint in Mode B. Documented in `references/model-fallback-chain.md`.
+- **U-11 Workflow visual diagram on every build, Part 4 (CARD-03):** `protocols/workflow-visual-protocol.md` + `scripts/31-generate-workflow-visual.sh` + `scripts/qc-workflow-visual.sh` (+ `.test.sh`). Kie.ai plus Mermaid. MEMORY design rule 39; the 3-PART Build Rule (rule 17) becomes the 4-PART Build Rule.
+
+### Added - GHL coverage (U-12..U-15)
+- **U-12 Multi-calendar routing (CARD-09):** the declares block carries a `calendars` map; `scripts/qc-playbook-declares.sh` validates every calendar id against a cached caf calendars export. MEMORY design rule 40.
+- **U-13 Opportunity and pipeline stage sync (CARD-10):** `protocols/opportunity-sync-protocol.md` + `scripts/qc-opportunity-sync.sh` (+ `.test.sh`). MEMORY design rule 41.
+- **U-14 Human task creation on handoff (CARD-06):** when `ZHC-ai-handoff` fires, the brain creates a GHL Task on the contact (PII lives inside the client's own CRM, not the PII-free JSONL logs) with an SLA due time; documented in `protocols/notification-routing-protocol.md`. MEMORY design rule 42.
+- **U-15 Convert and Flow install snapshot (CARD-11):** `references/convert-and-flow-snapshot-guide.md` + the raw fixture `references/snapshot-inbound-workflow-fixture.json` (no backtick fences; validated by `scripts/qc-23-key-bodies.sh` so snapshot drift from the FLAT 23-key raw-body standard fails CI). MEMORY design rule 43.
+
+### Added - engine and organization (U-16, U-17)
+- **U-16 playbook_engine.py, the canonical parser (CARD-16):** `tools/playbook_engine.py` with `validate`, `hash`, `mermaid`, and `resolve --log` subcommands + `tools/tests/test_playbook_engine.py`; driven by `scripts/qc-playbook-engine.sh`. MEMORY design rule 44. Runs FIRST since every later gate calls it.
+- **U-17 Departments, roles, and the operating SOP (CARD-17):** `references/departments-and-roles.md` + the operating SOP `universal-sops/SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md`.
+
+### Changed
+- SELF-COUNTS in SKILL.md recounted on disk: protocols/ 45 to 51, scripts/ 70 to 88, references/ 22 to 25 (journey templates unchanged at 8).
+- `scripts/00-verify-prerequisites.sh` STEP G appended (kie-image-events prerequisites) without disturbing the PR #511 Command Center ACTIVE/INACTIVE additions.
+- `PREREQS.json` lists Skill 07 as required and Skill 46 as recommended.
+
+### Notes
+- Bumped to 1.8.0 (one minor above the live 1.7.13). SKILL.md carries no top-level frontmatter `version:`, so the frontmatter-version guard skips this skill by design; `skill-version.txt` is the single source (one line, no v prefix, trailing newline). Ships in the repo unified train v17.0.32. There is no per-skill git tag; per-skill tags are not part of the repo's unified scheme.
+
 ## 1.7.15 — Wave-2 train W2-doc-38 (FIX-XC-13c — INSTALL.md doc/count drift)
 
 ### Fixed (FIX-XC-13c — INSTALL.md regenerated from SELF-COUNTS)
