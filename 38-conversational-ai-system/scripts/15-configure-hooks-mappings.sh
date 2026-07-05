@@ -292,14 +292,24 @@ if command -v openclaw >/dev/null 2>&1; then
   if openclaw cron list 2>/dev/null | grep -q "system-health-heartbeat"; then
     echo "cron system-health-heartbeat already registered — skipping" >&2
   else
-    if openclaw cron add \
-        --name system-health-heartbeat \
-        --cron "0 9 1 * *" \
-        --agent main \
-        --light-context \
-        --best-effort-deliver \
-        --message "Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across playbooks, GHL workflows, knowledge bases, model configs, tune-ups, bug log." >&2; then
-      echo "registered cron: system-health-heartbeat (0 9 1 * *) via openclaw cron add" >&2
+    # SILENCE DOCTRINE (FIX-XC-08b): 2026.6.8+ `cron add` fallback-delivers the
+    # job's final text to the last (client) chat every fire. This monthly review
+    # is headless operator housekeeping and notifies the operator from inside its
+    # own prompt — it must NOT surface in the client conversation. Register it
+    # silenced (--no-deliver) in an isolated operator-side session (--session
+    # isolated). Both flags are feature-detected with a no-flag retry.
+    _sh_cron_help="$(openclaw cron add --help 2>&1 || true)"
+    _sh_has_flag() { printf '%s' "$_sh_cron_help" | grep -qE -- "(^|[[:space:]])$1([[:space:]<=]|\$)"; }
+    SH_SILENCE_ARGS=()
+    _sh_has_flag '--no-deliver' && SH_SILENCE_ARGS+=(--no-deliver)
+    _sh_has_flag '--session'    && SH_SILENCE_ARGS+=(--session isolated)
+    _sh_msg="Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across playbooks, GHL workflows, knowledge bases, model configs, tune-ups, bug log."
+    if openclaw cron add --name system-health-heartbeat --cron "0 9 1 * *" \
+         --agent main --light-context \
+         ${SH_SILENCE_ARGS[@]+"${SH_SILENCE_ARGS[@]}"} --message "$_sh_msg" >&2 \
+       || openclaw cron add --name system-health-heartbeat --cron "0 9 1 * *" \
+         --agent main --light-context --message "$_sh_msg" >&2; then
+      echo "registered cron: system-health-heartbeat (0 9 1 * *) via openclaw cron add [delivery silenced]" >&2
     else
       echo "WARN: 'openclaw cron add system-health-heartbeat' failed — register it manually (cron.jobs JSON is invalid on 2026.5.27)" >&2
     fi

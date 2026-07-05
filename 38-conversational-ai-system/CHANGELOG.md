@@ -1,3 +1,19 @@
+## [1.7.12] - 2026-07-05 — fix: cron silence-doctrine (--no-deliver + isolated session), Command Center env docs + ACTIVE/INACTIVE, safe operator-exclusion in client-doc discovery
+
+### Fixed (FIX-XC-08b — cron delivery silencing / silence doctrine)
+- `scripts/04-register-crons.sh`: replaced `--best-effort-deliver` on the agent-message cron path with `--no-deliver` **plus** `--session isolated`, so the 5 maintenance crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) never fallback-deliver their output to the client chat and run off the client-facing main session. On CLI 2026.6.8+ `cron add` defaults to announcing the job's final text to the last chat, which would have spammed the client on every fire. Both flags are FEATURE-DETECTED against `cron add --help` with a no-flag retry (older CLIs register without them rather than fail). The `ghl-pit-liveness` command-cron gains `--no-deliver` too (silences the runner's stdout dump; the script's own deliberate client 401-notice still sends). Added a soft `cron list` delivery-mode assertion after each add (pure bash, stock-3.2 safe).
+- `scripts/15-configure-hooks-mappings.sh`: same silencing (`--no-deliver` + `--session isolated`, feature-detected + no-flag retry) on the `system-health-heartbeat` cron it registers.
+
+### Fixed (FIX-S36-07 — Command Center reporting config was undocumented)
+- `INSTALL.md`: documented the three `cc-task.sh` env vars — `MC_API_TOKEN` (required for any board post), `MC_SKILL38_SOP_ID`, `MC_SKILL38_AGENT_ID` (the optional leave-backlog Triad) — plus `MISSION_CONTROL_URL`. Previously undocumented, so `cc-task.sh` silently no-op'd and the install task never landed on the board.
+- `scripts/00-verify-prerequisites.sh`: prints an explicit `Command Center reporting: ACTIVE` / `INACTIVE` line (keyed on `MC_API_TOKEN`) right before the `cc-task.sh start` call, so the operator sees whether the install is being carded instead of guessing.
+
+### Fixed (FIX-S36-08 — client doc could be sent to the operator when the operator id was unset)
+- `scripts/22-notify-client-doc.sh`: transcript discovery excludes the OPERATOR chat id so the client doc is never sent to the operator — but the exclusion only worked when `OPERATOR_TELEGRAM_CHAT_ID` was set (`grep -vxF ""` excludes nothing). Now: (1) when the var is unset, cross-check the fleet resolver `shared-utils/operator-chat-id.sh` (config + env, incl. `OPERATOR_ESCALATION_CHAT_ID` / `ZHC_OPERATOR_CHAT_ID`); (2) if the operator id is STILL unresolved on the discovery path, FAIL LOUDLY with a banner and require an explicit `SKILL38_ACK_OPERATOR_CHAT_UNSET=1` ack to proceed (writes `clientDocDelivered=false` on refusal); (3) the exclusion filter now only runs when the operator id is non-empty, removing the empty-pattern footgun. A provided `CLIENT_TELEGRAM_CHAT_ID` bypasses the gate (no discovery needed).
+
+### Notes
+- Bumped from 1.7.11 (which shipped with no CHANGELOG entry, mirroring the 1.7.9 gap below) → 1.7.12. Wave-0 merge-train T-38-conversational-ai; changes are scoped to `38-conversational-ai-system/` only. SKILL.md carries no top-level frontmatter `version:`, so the frontmatter-version guard skips this skill by design (skill-version.txt is the single source).
+
 ## [1.7.10] - 2026-07-01 — docs: caf-first banners on 7 automation-proposing protocols + caf-path verify mandate + qc-built-workflow.sh gate in monthly-review cron
 
 ### Added (caf-first banner — final-review Points 2/3/7-fix7)
