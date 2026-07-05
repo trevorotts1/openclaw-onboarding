@@ -1203,10 +1203,32 @@ main() {
         _U6B_TRIAD_OK=0
       fi
     fi
+    # ASSET-FRESHNESS PRE-ROLL (FDN-7 / F1.3 gate 2). A manifest carrying
+    # asset_rebuild_required:true was count-synced by a --no-asset staging bump:
+    # the four SET counts agree (so the triad guard above passes) but the
+    # published gemini-index.sqlite.gz still lacks vectors for the newest
+    # persona(s). Provisioning from it would ship a counted-but-vector-less
+    # library (Layer-5 degrades to keyword for those personas). REFUSE and KEEP
+    # the box's current index until a real build-and-publish.sh clears the flag.
+    # Coordinates with the FDN-6 triad pre-roll above — BOTH must pass to
+    # provision. Fail-open on a read error (never block a roll on a parse hiccup).
+    _U6B_ASSET_OK=1
+    if command -v python3 >/dev/null 2>&1; then
+      _U6B_ASSET_REBUILD="$(python3 -c 'import json,sys
+try:
+    print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")
+except Exception:
+    print("false")' "$_U6B_MANIFEST" 2>/dev/null || echo false)"
+      [ "$_U6B_ASSET_REBUILD" = "true" ] && _U6B_ASSET_OK=0
+    fi
     if [ "$_U6B_TRIAD_OK" != "1" ]; then
       _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-set triad DIVERGENT in the pulled repo (blueprint dirs / categories keys / INDEX-MANIFEST persona_count disagree) — persona provisioning SKIPPED (refused to ship a stale library). Run 22-…/pipeline/publish-personas-to-fleet.sh, merge, and re-roll."
       echo "  ✗ PRE-ROLL persona-set triad DIVERGENT — REFUSING to provision a stale/divergent persona library on this box."
       echo "     Fix the repo with 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh and re-roll."
+    elif [ "$_U6B_ASSET_OK" != "1" ]; then
+      _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }INDEX-MANIFEST asset_rebuild_required:true (a --no-asset staging manifest — the published asset lacks vectors for the newest persona(s)) — persona index provisioning SKIPPED (kept the box's current index). Rebuild+publish the asset via shared-utils/prebuilt-index/build-and-publish.sh, merge, and re-roll."
+      echo "  ✗ PRE-ROLL asset_rebuild_required:true — REFUSING to (re)provision from a staged --no-asset manifest (would ship a counted-but-vector-less library). Keeping the box's current persona index."
+      echo "     Rebuild+publish the real asset with shared-utils/prebuilt-index/build-and-publish.sh and re-roll."
     else
       # Reconcile categories + blueprints to the workspace FIRST so the index
       # gate sees the persona dirs (furnace-safe), then provision the index.
