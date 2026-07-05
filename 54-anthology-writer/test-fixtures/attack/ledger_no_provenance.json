@@ -1,0 +1,7 @@
+{
+  "skill": "anthology-writer",
+  "contributor": "Marcus Bell",
+  "rewrite_count": 0,
+  "note": "SEEDED DEFECT — the run recorded NO resolved model id (empty stages). aw_build_check.py must hard-fail this (AF-AW-PROVENANCE-MISSING): model provenance is required so the no-Anthropic gate can never pass vacuously on an unproven run.",
+  "stages": []
+}

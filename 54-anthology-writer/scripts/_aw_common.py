@@ -188,6 +188,76 @@ def story_phrases(intake: dict) -> list:
     return anchors
 
 
+# ---- client-exact band overrides (fleet law: an exact ask WINS over a default) --
+# "Client gets EXACTLY what they ask for — never floor/cap/change it." A default
+# band (chapter 2,000-3,500; tone floor 3,000) is the fallback; a client-stated
+# EXACT word target is honored verbatim. But — enforcement, not description — an
+# exact target is honored ONLY through an AUDITED channel: a logged override
+# object that is recorded, approved, reasoned, and provably TIED to the locked
+# brief. An override applied without that log is a silent floor-swap and fails
+# CLOSED (AF-AW-OVERRIDE-UNLOGGED). Mirrors the Skill-57 override shape.
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+
+
+def brief_identity(brief) -> set:
+    """The set of acceptable brief_ref values a logged override may cite to tie
+    itself to the LOCKED brief (intake.json). An override whose brief_ref is not
+    in this set is UNLOGGED — not provably tied to THIS contributor's brief."""
+    if not isinstance(brief, dict):
+        return set()
+    title = str(brief.get("anthology_title", "")).strip().lower()
+    slug = _slugify("%s %s %s" % (brief.get("anthology_title", "anthology"),
+                                  brief.get("first_name", ""), brief.get("last_name", "")))
+    return {r for r in (title, slug) if r}
+
+
+def resolve_band_override(override, brief, keys):
+    """Resolve a client-exact band override from a LOGGED overrides channel.
+
+    Returns (status, reason, applied):
+      "none"     — no override supplied; use the DEFAULT band.
+      "unlogged" — an override was supplied but is NOT provably logged and tied to
+                   the locked brief -> the caller fails CLOSED (an exact ask is
+                   honored only when it is recorded, approved, reasoned, and cites
+                   this brief; an unlogged override is a silent floor-swap).
+      "applied"  — the override is logged + tied; `applied` holds the requested
+                   numeric keys to use INSTEAD of the defaults.
+
+    keys: the numeric override keys to extract (e.g. ("chapter_word_min",
+    "chapter_word_max") or ("tone_word_floor",))."""
+    if override is None:
+        return "none", "no client band override supplied (default band)", {}
+    if not isinstance(override, dict) or not override:
+        return "unlogged", "override channel present but not a non-empty object", {}
+    for field in ("source", "approved_by", "reason", "brief_ref"):
+        if not str(override.get(field, "")).strip():
+            return ("unlogged", "override is missing a logged %r — an applied override MUST be "
+                    "recorded, approved, reasoned, and cite the locked brief" % field, {})
+    refs = brief_identity(brief)
+    if not refs:
+        return "unlogged", "no locked brief supplied to tie the override to", {}
+    if str(override.get("brief_ref", "")).strip().lower() not in refs:
+        return ("unlogged", "override brief_ref %r does not match the locked brief (%s) — "
+                "not provably tied" % (override.get("brief_ref"), ", ".join(sorted(refs))), {})
+    applied = {}
+    for k in keys:
+        if k in override and override.get(k) is not None:
+            try:
+                applied[k] = int(override[k])
+            except (TypeError, ValueError):
+                return "unlogged", "override %r is not an integer" % k, {}
+    if not applied:
+        # The override IS logged and tied, it simply does not target THIS band
+        # (e.g. a chapter-band override reaching the tone prover). That is not an
+        # unlogged swap — this prover just uses its DEFAULT floor.
+        return ("none", "logged override does not target this band (%s) — default applies"
+                % ", ".join(keys), {})
+    return ("applied", "client-exact override applied from the logged channel "
+            "(source=%r, approved_by=%r)" % (override.get("source"), override.get("approved_by")),
+            applied)
+
+
 # ---- result plumbing --------------------------------------------------------
 class Result:
     """Accumulates AF-AW-* violations; decides the exit code fail-closed."""

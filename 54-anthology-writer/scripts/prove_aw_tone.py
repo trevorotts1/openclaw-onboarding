@@ -28,6 +28,7 @@ import _aw_common as c  # noqa: E402
 
 AF_TONE_4 = "AF-AW-TONE-4"
 AF_TONE_FLOOR = "AF-AW-TONE-FLOOR"
+AF_OVERRIDE_UNLOGGED = "AF-AW-OVERRIDE-UNLOGGED"
 _FIX = Path(__file__).resolve().parent.parent / "test-fixtures"
 
 # An influence-analysis header carries an explicit index 1..4, e.g.
@@ -46,7 +47,7 @@ def _influence_indices(text: str) -> set:
     return idx
 
 
-def evaluate(text: str) -> c.Result:
+def evaluate(text: str, override: dict = None, brief: dict = None) -> c.Result:
     r = c.Result("prove_aw_tone")
     idx = _influence_indices(text)
     if idx != {1, 2, 3, 4}:
@@ -56,18 +57,30 @@ def evaluate(text: str) -> c.Result:
     else:
         r.note("all 4 tone-style influence analyses present (indices 1-4)")
 
+    # DEFAULT floor unless a client-exact override wins through the LOGGED,
+    # brief-tied channel; an unlogged override fails closed (no silent swap).
+    floor = c.TONE_WORD_FLOOR
+    status, reason, applied = c.resolve_band_override(override, brief, ("tone_word_floor",))
+    if status == "unlogged":
+        r.fail(AF_OVERRIDE_UNLOGGED, reason)
+    elif status == "applied":
+        floor = applied.get("tone_word_floor", floor)
+        r.note("%s — tone floor overridden to %d" % (reason, floor))
+
     words = c.word_count(text)
-    if words < c.TONE_WORD_FLOOR:
+    if words < floor:
         r.fail(AF_TONE_FLOOR, "measured stripped word count %d below the %d floor "
                "(self-reported counts are ignored; padding is inert)"
-               % (words, c.TONE_WORD_FLOOR))
+               % (words, floor))
     else:
-        r.note("measured stripped word count %d meets the %d floor" % (words, c.TONE_WORD_FLOOR))
+        r.note("measured stripped word count %d meets the %d floor" % (words, floor))
     return r
 
 
-def prove(path, as_json=False) -> int:
-    return evaluate(c.read_text(path)).emit(as_json)
+def prove(path, override_path=None, brief_path=None, as_json=False) -> int:
+    override = c.read_json(override_path) if override_path else None
+    brief = c.read_json(brief_path) if brief_path else None
+    return evaluate(c.read_text(path), override=override, brief=brief).emit(as_json)
 
 
 def self_test() -> int:
@@ -82,12 +95,31 @@ def self_test() -> int:
     short = evaluate(c.read_text(_FIX / "attack" / "tone_short.md"))
     checks.append(("short tone doc AUTOFAILs AF-AW-TONE-FLOOR",
                    any(code == AF_TONE_FLOOR for code, _ in short.violations)))
+
+    # client-exact override: a LOGGED, brief-tied lower floor lets a shorter tone
+    # doc pass; an UNLOGGED override fails closed.
+    gintake = c.read_json(_FIX / "golden" / "intake.json")
+    ref = sorted(c.brief_identity(gintake))[0]
+    short_txt = c.read_text(_FIX / "attack" / "tone_short.md")
+    logged = {"tone_word_floor": 1, "source": "client-exact-request", "approved_by": "operator",
+              "reason": "client accepts a shorter tone doc", "brief_ref": ref}
+    ov_short = evaluate(short_txt, override=logged, brief=gintake)
+    checks.append(("logged brief-tied override lowers the tone floor (no AF-AW-TONE-FLOOR)",
+                   not any(code == AF_TONE_FLOOR for code, _ in ov_short.violations)))
+    unlogged = {"tone_word_floor": 1}
+    un = evaluate(short_txt, override=unlogged, brief=gintake)
+    checks.append(("unlogged tone override AUTOFAILs AF-AW-OVERRIDE-UNLOGGED",
+                   any(code == AF_OVERRIDE_UNLOGGED for code, _ in un.violations)))
     return c.selftest_report("prove_aw_tone", checks)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Anthology Writer blended-tone gate (Skill 54).")
     ap.add_argument("path", nargs="?", help="tone-doc.md to prove")
+    ap.add_argument("--band-override", dest="band_override",
+                    help="a LOGGED overrides.json declaring a client-exact tone_word_floor "
+                         "tied to the locked brief")
+    ap.add_argument("--brief", help="the locked brief (intake.json) the override must cite")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
@@ -95,7 +127,8 @@ def main(argv=None):
         return self_test()
     if not args.path:
         ap.error("a path is required (or use --self-test)")
-    return prove(args.path, as_json=args.json)
+    return prove(args.path, override_path=args.band_override,
+                 brief_path=args.brief, as_json=args.json)
 
 
 if __name__ == "__main__":
