@@ -243,6 +243,11 @@ LEDGER
 # Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
 SCAN_RUN="$TMPDIR_TEST/scan-run"
 mkdir -p "$SCAN_RUN/working/checkpoints"
+# FIX-PRES-01: the entry's GATE 1 honors QC_SKIP_PRESENTATION_DEPS=1 ONLY in a
+# test context — a `.test-context` marker file the harness drops in the run dir.
+# Drop it so these functional tests can reach GATE 2 (bypass-scan) on a runner
+# that lacks the four presentation deps (soffice/pdftoppm/reportlab/python-pptx).
+touch "$SCAN_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$SCAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$SCAN_RUN/slides.json"
 cat > "$SCAN_RUN/working/phase6_assemble.py" <<'PYBAD'
@@ -286,6 +291,8 @@ fi
 # Functional: a CLEAN run dir does NOT trip the scan (exit code is not 5).
 CLEAN_RUN="$TMPDIR_TEST/clean-run"
 mkdir -p "$CLEAN_RUN/working/checkpoints"
+# FIX-PRES-01: test-context marker so GATE 1 honors the deps-skip on a dep-less runner.
+touch "$CLEAN_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$CLEAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
 ENTRY_RC=0

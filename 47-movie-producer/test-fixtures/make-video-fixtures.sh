@@ -70,6 +70,7 @@ RENDER_RECEIPT='{
   "job_id": "fixture-good-001",
   "kie_in_scope": false,
   "output_path": "working/final.mp4",
+  "final_mp4_path": "working/final.mp4",
   "ffprobe_pass": true,
   "ffprobe_duration": 30.0,
   "ffprobe_codec": "h264",

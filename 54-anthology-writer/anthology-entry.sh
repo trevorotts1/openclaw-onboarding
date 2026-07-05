@@ -10,6 +10,10 @@
 # fail-closed gates and mints a run-scoped nonce the orchestrator requires:
 #
 #   1. DEPS CHECK       — python3 must be present (exit 6, AW_DEPS_MISSING).
+#   1b. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
+#                         it must carry NO <CLIENT_*> placeholder and no Anthropic
+#                         id (exit 8, AF-AW-UNRESOLVED-MODELMAP). preflight.sh is
+#                         the resolver; here it runs as a fail-closed pre-gate.
 #   2. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
 #                         exists in the run directory: a Google Drive upload, a
 #                         Slack post, a Gmail/SMTP send, an n8n webhook, or an
@@ -31,6 +35,7 @@
 #   5  — BYPASS-SCAN tripped (hand-rolled external uploader/notifier present)
 #   6  — DEPS CHECK failed (AW_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (hash mismatch, no owner skip)
+#   8  — MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic id)
 # ============================================================================
 
 set -uo pipefail
@@ -140,6 +145,31 @@ else
     else
         echo "AW_DEPS_MISSING: python3" >&2; exit 6
     fi
+fi
+
+# ===========================================================================
+# GATE 1b — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
+# preflight.sh is the resolver AND (here) a fail-closed pre-gate: a resolved
+# run-dir model-map.json that still carries <CLIENT_*> placeholders (installer
+# not run) or a banned Anthropic id is refused BEFORE any authoring/QC. A missing
+# map is a clean pass (the fleet installer resolves per box).
+# ===========================================================================
+note "GATE 1b/3 — MODEL-MAP PRE-GATE (preflight.sh --check)"
+if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
+    if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
+        :
+    else
+        PF_RC=$?
+        if [ "$PF_RC" -eq 2 ]; then
+            gate_fail "AF-AW-UNRESOLVED-MODELMAP" 8 "the run-dir model-map.json still carries \
+<CLIENT_*> placeholders (or a banned Anthropic id) — the fleet installer has not resolved this \
+box's providers. Resolve the tier map on a configured box (preflight.sh) and re-run."
+        else
+            echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"
+        fi
+    fi
+else
+    echo "  (model-map pre-gate skipped: --plan, python3 absent, or preflight.sh missing)"
 fi
 
 # ===========================================================================
