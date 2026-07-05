@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the 5,000-19,000-char image-prompt two-floor gate, and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: 1.0.4
+version: 1.0.6
 ---
 
 # Signature Funnel (Skill 49)
@@ -65,10 +65,10 @@ P1 Copy        -> prove_sf_copy.py           (SACRED 12-section bands, all profi
 P2 Prompts     -> prove_sf_prompt_floor.py   (5,000-19,000-char two-floor gate)
 P3 Images      -> Skill 47 kie_image.py      (text-to-image default + reference_images hook)
 P4 Media       -> Skill 6 ghl_media.py       (media folder + upload)
-P5 HTML        -> per-page fragment assembly
-P6 Compose     -> 3/5/7 step graph + accept/decline branching
-P7 Build       -> Skill 6 ghl_rest_canvas.py (funnel/page build; QC >= 8.5)
-P8 Derive      -> loop P1-P7 per derived page
+P5 HTML        -> per-page fragment assembly    (pages/<profile>.fragment.html per matrix page; AF-FUN-HTML-FRAGMENT)
+P6 Compose     -> prove_sf_graph.py              (funnel_graph.json vs MASTERDOC §3: nodes/branch/reachability)
+P7 Build       -> prove_sf_build.py              (build_receipt.json: QC >= 8.5 + preview URL per page)
+P8 Derive      -> derived_pages.json ledger      (U1/D1/U2/D2/TY derived-page set; AF-FUN-DERIVE-LEDGER)
 P9 Certify     -> prove_sf_no_pitch.py + prove_sf_cert.py  (signed PROCESS-CERTIFICATE)
 P10 Email      -> optional handoff to the Email Skill project (10 promo emails)
 ```

@@ -107,8 +107,60 @@ if seo_bad:
 print(f"PASS {seo_seen} seoMeta object(s) populated (author=founder, length/keyword/canonical/lang gates ok)"
       if seo_seen else
       "WARN no seoMeta found in evidence — §2 SEO panel end-state not demonstrated")
-print("PASS media-folder receipt(s) present" if media_seen else
-      "WARN no media-folder receipt found in evidence — §3 folder discipline not demonstrated")
+
+# ── §3/§4 image-delivery gate (FIX-XC-03c + FIX-IMG-09 iii) ──────────────────
+# A SUCCESS images/manifest.json (>=1 record with a real https cdn_url) means the
+# build PROMISED rendered images. When it exists, two checks become HARD (FAIL):
+#   (a) the rendered/preview evidence must contain an <img> AND at least one of the
+#       manifest cdn_urls (the un-fakeable rendered-DOM gate, mirrored from
+#       ghl_verify — an image confirmed only in stored bytes is not confirmed), and
+#   (b) a media-folder receipt must be present (folder discipline).
+# With NO success manifest (image-less / legacy evidence) both stay WARN.
+manifest_cdn_urls = []
+for fp in glob.glob(os.path.join(root, "**", "images", "manifest.json"), recursive=True):
+    try:
+        recs = json.load(open(fp))
+    except Exception:
+        continue
+    if isinstance(recs, list):
+        for r in recs:
+            if isinstance(r, dict):
+                u = str(r.get("cdn_url", "")).strip()
+                if u.lower().startswith("https://"):
+                    manifest_cdn_urls.append(u)
+manifest_present = len(manifest_cdn_urls) > 0
+
+if manifest_present:
+    # Gather all rendered/preview evidence (raw HTML + preview verify JSON).
+    rendered = []
+    for pat in ("**/*.html", "**/*preview*.json", "**/final-preview-verify.json"):
+        for fp in glob.glob(os.path.join(root, pat), recursive=True):
+            try:
+                rendered.append(open(fp, encoding="utf-8", errors="replace").read())
+            except Exception:
+                continue
+    rendered_text = "\n".join(rendered)
+    has_img_tag = "<img" in rendered_text.lower()
+    landed = [u for u in manifest_cdn_urls if u in rendered_text]
+    if has_img_tag and landed:
+        print(f"PASS rendered-<img> gate — {len(landed)}/{len(manifest_cdn_urls)} "
+              "manifest cdn_url(s) present in an <img> in the rendered/preview evidence")
+    else:
+        missing = [u for u in manifest_cdn_urls if u not in rendered_text]
+        print("FAIL images/manifest.json present with "
+              f"{len(manifest_cdn_urls)} cdn_url(s) but the rendered/preview evidence "
+              f"has no <img> referencing a CDN URL (has_img_tag={has_img_tag}, "
+              f"landed={len(landed)}/{len(manifest_cdn_urls)}, "
+              f"missing_sample={(missing[:1] or ['-'])[0]})")
+    if media_seen:
+        print("PASS media-folder receipt(s) present")
+    else:
+        print("FAIL images/manifest.json present but NO media-folder receipt "
+              "(folderId/name_prefix) in evidence — §3 folder discipline not demonstrated")
+else:
+    print("PASS media-folder receipt(s) present" if media_seen else
+          "WARN no media-folder receipt / image manifest found in evidence — "
+          "§3 folder discipline not demonstrated (no images promised)")
 PY
 )"
 echo "$SEO_PREGATE"

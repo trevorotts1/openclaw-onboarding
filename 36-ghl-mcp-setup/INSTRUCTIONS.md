@@ -196,9 +196,11 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
   Missing `text/event-stream` returns HTTP 406 (content-negotiation failure, not auth).
 - ❌ `grep -P` in any shell script on a Mac client box. BSD grep has no -P flag.
   Use `python3 -c "import json,sys; ..."` or `jq` for all JSON/SSE parsing.
-- ❌ Metered `:cloud` model for a contact lookup. Use `deepseek-v4-flash` (direct) or
-  any free fallback. Lookups are cheap data-retrieval — not reasoning tasks that justify
-  metered quota burn.
+- ❌ Metered `:cloud` model for a contact lookup. Use the cheapest non-metered model
+  configured on THIS box: preflight the client's actual providers (the configured model
+  list) and pick the lowest-cost free/local model they genuinely have — never hardcode a
+  specific model id, since the provisioned providers differ per box. Lookups are cheap
+  data-retrieval — not reasoning tasks that justify metered quota burn.
 - ❌ Routing a contact lookup to Tier 4 (browser). The browser tier is for UI-only flows
   and workflow-build backstops when the Firebase token is unavailable. Lookups never go
   to the browser.
@@ -287,8 +289,10 @@ store, or its own UI.
 Emit a card / status update at these moments:
 
 - **Install start** — open/append a card: "GHL MCP setup — started (box, platform)".
-- **Install complete** — move that card to done with the QC result (e.g. "qc-ghl-mcp-setup.sh
-  exit 0; Tier 1 >=36 tools, Tier 2 >=500 on-demand").
+- **Install complete** — move that card to **review** (NEVER straight to done) with the QC
+  result (e.g. "certified — awaiting QC promotion; qc-ghl-mcp-setup.sh exit 0; Tier 1 >=36
+  tools, Tier 2 >=500 on-demand"). A producer never self-promotes to done: the independent
+  auto-scorer is the ONLY authority that moves a card review->done.
 - **Tier incident — 429 lockout** — status card: "GHL rate-limit lockout; daily reset ~HH:MM
   ET; all tiers share one bucket — paused" (matches the Rate-Limit Protocol above).
 - **Tier incident — missing credential** — status card: "GHL blocked: missing PIT / Location

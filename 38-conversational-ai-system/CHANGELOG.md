@@ -1,3 +1,25 @@
+## [1.7.12] - 2026-07-05 — fix: secret-printing greps → existence-only (FIX-XC-07); ANTHROPIC verify branch annotated operator-only (FIX-XC-09g)
+
+### Security (FIX-XC-07 — no secret VALUES in transcripts/logs)
+- `references/v6.0-source-playbook.md`: every credential-verification grep in the setup flow is now
+  EXISTENCE-ONLY (`grep -qE '^(export )?KEY=' && echo SET || echo MISSING`) instead of printing the
+  matched line — the GEMINI/GOOGLE embedding check, the OpenRouter/Ollama/direct-provider model-pick
+  checks, and both Notion three-layer checks.
+- `references/HOSTINGER-DOCKER-ENV.md`: the live-process env checks no longer print values — Step 3
+  strips the value with `cut -d= -f1` (key NAMES only) and the post-recreate verify uses
+  `grep -q '^NEW_API_KEY=' && echo "NEW_API_KEY loaded"`.
+
+### Changed (FIX-XC-09g — Anthropic is operator-only, never a client model pick)
+- `references/v6.0-source-playbook.md` model-provider preflight: split the combined
+  `ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY` check so Anthropic is no longer verified/wired as a
+  client provider, and annotated it OPERATOR-ONLY (cost-prohibitive; client agents run on the client's
+  OWN configured providers only — never a hardcoded Anthropic or paid-cascade prescription).
+
+### Notes
+- Supersedes 1.7.11 (which shipped with no CHANGELOG entry, mirroring the earlier 1.7.9/1.7.7 gaps below).
+- Repo-level: a new deterministic shipped gate `scripts/qc-assert-no-secret-printing-grep.sh`
+  (wired into `qc-static.yml`) fails any secret-pattern grep in the 36/38 SOPs that lacks `-q`/`-l`/`-L`.
+
 ## [1.7.10] - 2026-07-01 — docs: caf-first banners on 7 automation-proposing protocols + caf-path verify mandate + qc-built-workflow.sh gate in monthly-review cron
 
 ### Added (caf-first banner — final-review Points 2/3/7-fix7)
