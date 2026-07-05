@@ -62,6 +62,47 @@ if [ ! -f "$TEMPLATE_PATH" ]; then
   exit 1
 fi
 
+# -------- Persona registry (U-5) --------
+# Seed the house-default persona once so persona resolution NEVER fails (playbook
+# persona line -> channel default -> house default). Idempotent: an existing file
+# is preserved. See protocols/persona-registry-protocol.md.
+PERSONAS_DIR="$MASTER_FILES_DIR/personas"
+HOUSE_PERSONA_PATH="$PERSONAS_DIR/house-standard.md"
+PERSONA_ID="house-standard"
+
+seed_house_persona() {
+  mkdir -p "$PERSONAS_DIR"
+  if [ -s "$HOUSE_PERSONA_PATH" ]; then
+    echo "[SKIP] persona house-standard (already seeded)"
+    return 0
+  fi
+  cat > "$HOUSE_PERSONA_PATH" <<PERSONA_EOF
+# Persona: house-standard
+
+voice-summary: warm, clear, and helpful - a friendly professional who gets to the point
+formality-level: balanced
+message-length-bias: short
+emoji-policy: sparing
+typo-policy: off
+pacing: measured
+
+## Vertical variables
+business_name: $CLIENT_BUSINESS_NAME
+service_noun: service
+appointment_noun: appointment
+PERSONA_EOF
+  echo "[OK] persona house-standard -> $HOUSE_PERSONA_PATH"
+}
+
+# Prepend the persona: header line to a rendered playbook body (U-5). The line
+# lets the runtime resolve the active persona (playbook persona line first).
+add_persona_line() {
+  # $1 = body text (stdin-free helper: passed as arg via command substitution)
+  printf 'persona: %s\n\n%s' "$PERSONA_ID" "$1"
+}
+
+seed_house_persona
+
 # -------- Notion helpers --------
 NOTION_VERSION="2022-06-28"
 notion_available() { [ -n "${NOTION_API_KEY:-}" ] && command -v curl >/dev/null 2>&1; }
@@ -127,6 +168,8 @@ for ch in "${CHANNELS[@]}"; do
   fi
 
   body="$(render_template "$ch")"
+  # U-5: every scaffolded channel playbook references the house default persona.
+  body="$(add_persona_line "$body")"
 
   if [ -n "$PARENT_ID" ]; then
     new_id="$(notion_create_page "$PARENT_ID" "$ch Communication Playbook — $CLIENT_BUSINESS_NAME" "$body" || true)"
