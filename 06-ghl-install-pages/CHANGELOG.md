@@ -10,6 +10,32 @@ As of v17.0.4, `SKILL.md` `metadata.version` is rolled automatically by `bump-ve
 
 ---
 
+## [v17.0.27] - 2026-07-05 — fix(Copy routing): wire has_copy → P2-COPY mini-epic + deeper intake
+
+### FIX-COPY-01 — a standalone "write it for me" page/website now reaches a copywriter
+`tools/v2_dispatcher.py::_run_intake` (via the new `_open_copy_dependency`) detects the intake
+`has_copy == "write it for me"` answer with no APPROVED `copy.md` and opens a 3-card mini-epic
+(`p1-spec → p2-copy → p4-build`): it posts a **P2-COPY** card routed to the **marketing** department
+(the Conversion Copywriter, per SOP-07 Step 3), flags the build task `waiting_on_dependency`, and writes
+`routing/copy-dependency.json`. `dispatch_one` HOLDS the build (new `STATE_WAITING`, builder never called)
+until an APPROVED `copy.md` exists — closing the "build session model improvises copy inline" hole (the
+single largest copy-quality lever). Fail-soft: the board card is visibility-only; the local
+`waiting_on_dependency` receipt is the binding gate. Funnels are unaffected (`has_copy` is page-only).
+
+- `tools/cc_board.py::ingest_task` gained additive `department_slug` / `source` overrides so a P2-COPY
+  card can pin to `marketing` (selftest case added).
+- `v2-autonomous-build-sop.md`: new **P2.5** section documents the routing + the SOP-07 Step-1
+  intent-signal amendment ("landing page" / "website" / "sales page" are copy-authoring intents).
+- Tests: `tests/test_v2_dispatcher.py::TestCopyDependency` (held-waiting, proceeds-when-approved,
+  I-have-copy, funnel-never-triggers).
+
+### FIX-COPY-04(i) — intake now captures copy depth + traffic source
+`tools/intake_interview.py`: two shared copy-context questions (`traffic_source`, `copy_depth`) are
+appended to the funnel + page question sets (still within `MAX_QUESTIONS=7`) and threaded into the
+funnel-spec / P2 brief scaffold. Selftest fixture updated for the new fields.
+
+---
+
 ## [v17.0.7] - 2026-07-03 — fix(audit): Skill-6 form-id hardening + iframe regression tests
 
 ### Fixed — Skill-6 form-id server-side re-validation (P1-5 remainder)
