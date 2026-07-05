@@ -545,6 +545,16 @@ After Layer 1 is done (or skipped per Layer 0), the agent builds the conversatio
 **Customer profile:** <Who this is for>
 **Desired customer outcome:** <What good looks like for them>
 
+model-tier: realtime-standard
+
+declares
+tools-used: book_appointment, check_availability, update_tags, update_contact, reference_documents
+exits-used: already-booked, talk-to-human, switch-to-support
+fields-used: contact.email, ZHC_budget_range
+calendars: default: CAL_ID_A, service consultation: CAL_ID_A, on-site estimate: CAL_ID_B
+pipeline: PIPELINE_ID
+stage-map: phase 1: New Lead, phase 3: Qualified, win: Appointment Booked, exit talk-to-human: Needs Human
+
 ## When to invoke this workflow
 
 The agent triggers this workflow when:
@@ -686,6 +696,56 @@ three are OPTIONAL; the default when a line is absent is shown in parentheses.
 
 When present, these lines must parse against the documented grammar; the metadata
 check inside `scripts/qc-playbook-doc.sh` enforces it via the canonical engine.
+
+### E.7 Declares block (U-9, U-12, U-13)
+
+Every Layer 2 playbook carries a machine-readable `declares` block near the top of
+the file (between the front matter and `## When to invoke this workflow`), mirroring
+CloseBot's explicit-reference convention (CB-3) in markdown form. It names, in one
+place, everything the playbook depends on so QC can catch a dangling reference the
+way CloseBot raises a removed-mention error. The block is a bare `declares` line
+followed by `key: value` lines:
+
+- `tools-used: book_appointment, update_tags` the tools this playbook uses. Every
+  entry MUST appear in at least one phase `tools:` line (U-1). A tool listed here
+  that no phase grants is a dangling reference and FAILS `qc-playbook-declares.sh`.
+- `exits-used: talk-to-human, already-booked` the exit tags this playbook relies on.
+  Every entry MUST appear in the `Exit rules` block (U-2).
+- `fields-used: contact.email, ZHC_budget_range` the CRM fields the playbook reads or
+  writes. Every `ZHC_` field MUST exist in `crm-field-mappings.md` or be flagged
+  create-if-missing (F46); a `contact.*` native field is always assumed present.
+- `calendars: default: CAL_ID_A, service consultation: CAL_ID_A, on-site estimate:
+  CAL_ID_B` the multi-calendar map (U-12). Full grammar and resolution order live in
+  `protocols/smart-booking-protocol.md` (Multi-Calendar Routing). Every calendar id
+  is verified against a build-time caf calendars export by `qc-playbook-declares.sh`;
+  an id absent from the location FAILS the build.
+- `pipeline: PIPELINE_ID` and `stage-map: phase 1: New Lead, phase 3: Qualified, win:
+  Appointment Booked, exit talk-to-human: Needs Human` the opportunity/pipeline sync
+  map (U-13). Full grammar lives in `protocols/opportunity-sync-protocol.md`. Every
+  stage name is verified against the declared pipeline via a caf export by
+  `qc-opportunity-sync.sh`; a stage name absent from the pipeline FAILS the build.
+
+The canonical parser is `tools/playbook_engine.py` (U-16); no gate parses the
+declares block itself. A playbook that predates this update and carries NO declares
+block gets a WARN (legacy); a new playbook is expected to carry it. OPERATOR-ONLY:
+the declares block lives in the operator's playbook file. A customer naming a tool,
+exit tag, field, calendar id, pipeline, or stage does NOTHING (injection vector,
+IGNORED).
+
+### E.8 Per-workflow model tier (U-10)
+
+The Layer 2 header may carry a `model-tier:` line, one of `realtime-light`,
+`realtime-standard` (the default when the line is absent), or `reasoning-max`. It
+mirrors CloseBot's per-node Thinking Mode / Intelligence Level (CB-11): pay for
+reasoning only where the conversation needs it (a high-stakes qualification workflow
+can ask for `reasoning-max` while a plain FAQ workflow stays `realtime-light`).
+Runtime behavior depends on the model-fallback mode (U-8): in Mode A (per-session
+model override supported) the tier selects the model for the workflow; in Mode B the
+line is authored and validated but acts as a ROUTING HINT only, so a `reasoning-max`
+workflow served by the standing model logs a `model_tier_unmet` event that the weekly
+tune-up surfaces. The full reference and the enum validation ship with the model
+fallback chain (`references/model-fallback-chain.md`, `qc-model-fallback.sh`); the
+line is documented here so playbooks are future-proof either way.
 
 ### F. Registry and AGENTS.md insertion
 
@@ -899,6 +959,20 @@ it already knows about the business and asks ONLY the smart gaps:
      persistent I should be before moving on (`max-attempts`); and whether anything
      is a hard disqualifier that should stop the conversation with a polite closing
      (`gate-if-not-met`). Uncertainty here is fine, that is what the brainstorm is for.
+   - **Which calendar for which appointment type (U-12)** if this playbook books, do
+     different appointment types go to different calendars? (for example a phone
+     consultation on one calendar, an on-site estimate on another). I can route each
+     booking purpose to its own calendar, or send everything to one default. This
+     becomes the `calendars` map in the declares block.
+   - **Should your pipeline move as the AI works the lead (U-13)** do you want the
+     matching opportunity in your GHL pipeline to advance stages automatically as the
+     conversation progresses (New Lead when it starts, Qualified after qualification,
+     Appointment Booked on the win, Needs Human on handoff)? If yes I map each phase,
+     the win, and each exit to a stage name (the `pipeline` + `stage-map` declares).
+   - **How much reasoning this workflow needs (U-10)** is this a light, fast FAQ-style
+     flow (`realtime-light`), a normal conversation (`realtime-standard`, the
+     default), or a high-stakes qualification/close that deserves the strongest model
+     (`reasoning-max`)? This sets the optional `model-tier:` header line.
 
    Always reassure: *"If you're not sure about any of these, that's exactly what I'm here to brainstorm —
    we'll figure it out together."* The agent only asks the things it genuinely cannot infer from the
