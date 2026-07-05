@@ -1,0 +1,7 @@
+{
+  "stage": "35-top-39",
+  "sha256": "c9239e666f585f52e2f3aeabb6168650afe48a61c537432cda9d763bae483442",
+  "attested_by": "foreman",
+  "model": "ollama-cloud/qwen3-235b",
+  "words": 1715
+}

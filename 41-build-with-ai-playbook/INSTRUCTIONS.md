@@ -4,7 +4,7 @@ This is the operator-facing runtime guide. It assumes the install scripts (00--0
 
 ## The non-fabrication floor (read first)
 
-**NEVER fabricate GHL capabilities.** This is the #1 rule of this skill, enforced by scripts/qc-prompt-completeness.sh. This rule extends to skill 44 (failed probe / unknown endpoint -> say so and degrade, never claim an unverified build). When a trigger or action is not available in the operator's plan tier, a lookup returns nothing, or a value is uncertain:
+**NEVER fabricate GHL capabilities.** This is the #1 rule of this skill, enforced by scripts/qc-no-fabrication.sh. This rule extends to skill 44 (failed probe / unknown endpoint -> say so and degrade, never claim an unverified build). When a trigger or action is not available in the operator's plan tier, a lookup returns nothing, or a value is uncertain:
 
 - Report the honest gap: "That trigger is not available on your current plan tier. I can suggest an alternative, or you can upgrade."
 - Offer the operator the manual path: the GHL help docs, the API reference, or a manual build in the workflow builder.
@@ -199,6 +199,35 @@ Run protocols/verification-checklist.md after every build:
 12. Test the workflow with a test contact before going live
 
 **If any checklist item fails:** note the failure, suggest the fix, and re-verify.
+
+**Machine gate on the REAL generated prompt (not the template).** Before you paste
+the Step-4 prompt into GHL, save it to a file and run the completeness gate in
+`--prompt` mode against that real output — this is the check that actually bites on a
+thin or fabricated prompt (the default template-mode run only proves the shipped
+template is well-formed):
+
+```bash
+# $PROMPT_FILE = the real prompt you are about to paste (from Step 4)
+bash "$HOME/.openclaw/skills/41-build-with-ai-playbook/scripts/qc-prompt-completeness.sh" --prompt "$PROMPT_FILE"
+# non-zero exit -> the prompt is missing a section, is a stub, or left [ ] placeholders
+# unfilled. FIX it before building; do NOT paste an incomplete prompt into a paid build.
+```
+
+**Closed-loop browser/build harness (publish gate).** Run the L1-L5 browser-execution
+harness — it is the proof that browser/build execution works end-to-end and is the
+publish/escalate gate for this skill:
+
+```bash
+bash "$HOME/.openclaw/skills/41-build-with-ai-playbook/scripts/12-run-browser-harness.sh"
+# exit 0  -> publish=PASS      (L1-L5 green -> safe to publish/enable)
+# exit 2  -> publish=ESCALATED (>=1 level failed/escalated -> BLOCKED build: do NOT
+#            publish; move the card to `blocked` and return to the orchestrator)
+# exit 3  -> WARN (a level SKIPPED for host-tooling; not proven-green)
+```
+
+A `publish=ESCALATED` result is a **blocked build**: the harness itself reflects the
+Command Center card to `blocked`, and you must not toggle the workflow to Published
+until a human resolves the escalation.
 
 > Best-effort Command Center: on a clean pass, `cc_move_task "${TASK_ID:-}" review "${AGENT_ID:-}"` (let the Command Center QC scorer promote review->done -- never self-promote). On a failure that cannot be fixed in-line, `cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}"` and return to the orchestrator. Silent no-op if no Command Center.
 

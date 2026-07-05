@@ -105,7 +105,7 @@
     },
     "word_band_override": {
       "type": "array",
-      "description": "Client-exact override [min, max] word band. Honored verbatim over the 150-300 default and logged on the certificate.",
+      "description": "Client-exact override [min, max] word band. Honored verbatim over the 150-300 default ONLY when the identical value is echoed in the LOCKED brief's locked_overrides channel (an unlogged override on the email is refused — AF-EMAIL-OVERRIDE-UNLOGGED — and the SACRED default re-applies); the honored override's source is logged on the process certificate.",
       "minItems": 2,
       "maxItems": 2,
       "items": { "type": "integer", "minimum": 1 }

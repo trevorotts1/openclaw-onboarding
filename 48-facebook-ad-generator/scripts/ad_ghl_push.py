@@ -71,7 +71,16 @@ def push(run_dir: Path, images: list, opener=None) -> dict:
     for i, img in enumerate(images):
         key = f"upload:{Path(img).name}"
         if ledger.is_done(run_dir, key):
-            continue  # already hosted under this run-id — never re-upload
+            # Already hosted under this run-id — never re-upload. But if this run's
+            # receipt lost the delivered[] entry (a crash between the ledger record and
+            # the receipt save, or a regenerated receipt), seed by_idx from the DURABLE
+            # ledger so the rebuilt delivered[] stays complete and the fan-out / GHL-URL
+            # gates still pass — recovering the stored entry instead of dropping it.
+            if i not in by_idx:
+                stored = ledger.result_for(run_dir, key)
+                if isinstance(stored, dict) and str(stored.get("image_url", "")).strip():
+                    by_idx[i] = stored
+            continue
         name = f"{name_prefix}ad {i}"
         res = ghl_media.upload_media(str(img), location_id, name, pit,
                                      parent_id=parent_id, opener=opener)

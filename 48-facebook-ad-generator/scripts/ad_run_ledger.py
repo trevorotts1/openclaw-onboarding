@@ -14,7 +14,14 @@ arithmetic the foreman gates on (AF-FBAD-TALLY-CROSS), NOT a balance lookup per 
 Ledger shape (working/checkpoints/ad_run_ledger.json):
     { "run_id": "<run-id>", "spent_usd": 0.0, "ceiling_usd": 5.0,
       "events": [ { "kind": "image|upload", "key": "<idempotency key>",
-                    "usd": 0.05, "result": {...}, "at": "<iso>" } ] }
+                    "usd": 0.05, "result": {...}, "at": "<iso>" } ],
+      "qc_sessions": [ { "gate": "copy|prompt|image|targeting|package",
+                         "grader": "<registered role slug>",
+                         "session_id": "<grading session id>", "at": "<iso>" } ] }
+
+The qc_sessions[] list is the CONDUCTOR's independent record of each grading session it
+dispatched; ad_build_check._chk_qc_independence cross-checks every scorecard's
+grader_session_id against it so a self-attested grade the ledger never saw fails closed.
 
 CLI:
     python3 ad_run_ledger.py --run-dir DIR init --run-id ID --ceiling 5.0
@@ -22,6 +29,8 @@ CLI:
         --result '{"kie_task_id":"abc","width":1500,"height":1500,"model":"gpt-image-2-text-to-image"}'
     python3 ad_run_ledger.py --run-dir DIR done --key img-3      # -> "DONE" or "PENDING"
     python3 ad_run_ledger.py --run-dir DIR can-spend --usd 0.05  # -> "OK" / "WOULD_CROSS"
+    python3 ad_run_ledger.py --run-dir DIR qc-session --gate copy \
+        --grader qc-role--paid-advertisement --session-id sess-copy-01
 """
 
 import argparse
@@ -104,6 +113,46 @@ def record(run_dir: Path, kind: str, key: str, usd: float, result: dict) -> dict
     return event
 
 
+def result_for(run_dir: Path, key: str):
+    """Return the stored `result` payload of a recorded event with this key, or None
+    when no such event exists. Lets a RESUME recover an already-hosted/already-paid
+    entry from the durable ledger (e.g. the delivered[] entry for an image whose upload
+    was recorded but whose receipt was lost) instead of dropping it — never re-uploading
+    or re-charging."""
+    for e in load(run_dir).get("events", []):
+        if isinstance(e, dict) and e.get("key") == key:
+            return e.get("result")
+    return None
+
+
+def record_qc_session(run_dir: Path, gate: str, grader: str, session_id: str) -> dict:
+    """Record — INDEPENDENTLY of the maker/grader — that the conductor dispatched a
+    grading session for `gate`. Idempotent on `gate`: a repeat updates that gate's
+    entry. This qc_sessions[] list is what ad_build_check._chk_qc_independence
+    cross-checks a scorecard's grader_session_id against, so a self-attested grade the
+    ledger never saw fails closed. Never charges (a QC dispatch is not a paid Kie call)."""
+    led = load(run_dir)
+    if not led:
+        raise RuntimeError("ledger not initialized — call init first")
+    sessions = led.setdefault("qc_sessions", [])
+    entry = {"gate": str(gate), "grader": str(grader), "session_id": str(session_id),
+             "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    for i, s in enumerate(sessions):
+        if isinstance(s, dict) and str(s.get("gate")) == str(gate):
+            sessions[i] = entry
+            break
+    else:
+        sessions.append(entry)
+    _atomic_write(run_dir, led)
+    return entry
+
+
+def qc_sessions(run_dir: Path) -> list:
+    """The recorded independent grading sessions [{gate, grader, session_id, at}]."""
+    led = load(run_dir)
+    return [s for s in led.get("qc_sessions", []) if isinstance(s, dict)]
+
+
 def main():
     ap = argparse.ArgumentParser(description="Run-id no-double-charge ledger.")
     ap.add_argument("--run-dir", required=True)
@@ -116,6 +165,9 @@ def main():
     pr.add_argument("--result", default="{}")
     pd = sub.add_parser("done"); pd.add_argument("--key", required=True)
     pc = sub.add_parser("can-spend"); pc.add_argument("--usd", type=float, required=True)
+    pq = sub.add_parser("qc-session")
+    for a in ("--gate", "--grader", "--session-id"):
+        pq.add_argument(a, required=True)
     args = ap.parse_args()
     rd = Path(args.run_dir).resolve()
 
@@ -131,6 +183,9 @@ def main():
         print("DONE" if is_done(rd, args.key) else "PENDING")
     elif args.cmd == "can-spend":
         print("OK" if can_spend(rd, args.usd) else "WOULD_CROSS")
+    elif args.cmd == "qc-session":
+        print(json.dumps(record_qc_session(rd, args.gate, args.grader, args.session_id),
+                         indent=2))
 
 
 if __name__ == "__main__":

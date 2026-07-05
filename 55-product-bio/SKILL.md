@@ -1,7 +1,7 @@
 ---
 name: product-bio
 description: The Product Bio Engine — a governed skill that turns a 4-field intake into the master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML. It bakes Trevor Otts's two verbatim system prompts (sha256-pinned), replaces the 25-node n8n / Google Drive / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED count with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. Cross-linked with (never merged into) Skill 52 Avatar Alchemist.
-version: 1.0.4
+version: 1.0.6
 ---
 
 # Product Bio Engine (Skill 55)
@@ -52,6 +52,12 @@ no Slack, no Gmail, no Airtable** at runtime.
   hash-pin / nonce, fail-closed).
 - `run_product_bio.py` — the deterministic state machine over the manifest
   (P0→P6, no phase skips, front-door nonce, signed certificate on a full pass).
+- `roles/product-bio-specialist.role.md` — the **registered role recipe** (slug
+  `product-bio-specialist`, department **`marketing`**): trigger phrases, success
+  criteria, and the provider rule. Its Command Center card lands in the real
+  `marketing` fleet department (the one that owns the brand-positioning /
+  signature-funnel / sales-page-assets specialists) — never a non-existent
+  `product-bio` department that would strand the card unrouted.
 - `verify.sh` — the READ-ONLY self-verify gate.
 
 ## The SACRED invariants the provers enforce
@@ -70,10 +76,19 @@ no Slack, no Gmail, no Airtable** at runtime.
 | No custom CSS | nothing beyond `page-break-after` | AF-PB-HTML-CSS |
 | No content loss | ≥ 90% normalized-token coverage vs the source bio | AF-PB-HTML-LOSS |
 | Process integrity | a signed certificate requires a full P0→P5 pass; no phase skips | AF-PB-PROCESS-INTEGRITY / AF-PB-STAGE-SKIPPED |
+| Override discipline | a client-exact word/section override is honored ONLY when logged in the locked brief; an applied-but-unlogged override is fail-closed | AF-PB-OVERRIDE-UNLOGGED |
 
 **Client-exact overrides win.** The 6,000–7,000 band is the DEFAULT floor; a
 client-stated exact word target is honored verbatim and logged on the
 certificate, never floored, capped, or substituted (fleet-wide absolute law).
+The channel is the **locked brief** (`working/intake.json`): a `word_count_override`
+(band / exact / `{min,max}`) or a per-section `section_count_overrides` map is
+read via `--intake` and wins over the default band; an override *applied* on the
+command line that is **not** present-and-equal in the locked brief is rejected
+(`AF-PB-OVERRIDE-UNLOGGED`), so a SACRED floor can never be relaxed by an unlogged
+value. The **SACRED STRUCTURE never overrides** — the 10 sections, their order,
+the 24 named signature closes, and the 7 StoryBrand beats have no override
+channel. (Mirrors Skill 57's logged-override-wins-and-is-recorded pattern.)
 
 ## How it runs — THROUGH one canonical entry
 
@@ -93,11 +108,17 @@ and is FORBIDDEN** (`AF-PB-ENTRY-BYPASS`) — delivery is a labeled LOCAL bundle
 
 ## Delivery is local-only
 
-The deliverable bundle is `~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/`:
+After a full P0→P5 pass issues the signed certificate, the client-facing bundle
+is assembled at `~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/`:
 `Product-Bio-<slug>.md`, `Product-Bio-<slug>.html` (Google-Docs-importable),
-`DELIVERY-NOTE.md`, `handoff.json`, and `PROCESS-CERTIFICATE.json`. No n8n / Drive
-/ Slack / Gmail / Airtable. Any push notification is per-client config through the
-client's own OpenClaw gateway (never bypassed), client-silent by default.
+`DELIVERY-NOTE.md`, `handoff.json`, and `PROCESS-CERTIFICATE.json`/`.md` — each
+copied byte-for-byte from the P3/P5-proven working copies. The Downloads root is
+overridable via `PRODUCT_BIO_DELIVERY_ROOT` (state-path discipline: a test / a
+`verify.sh` run redirects it into a throwaway dir and never touches the real
+`~/Downloads`). The Command Center card carries the **deliverable pointer** — the
+bundle path + certificate sha — in its terminal note. No n8n / Drive / Slack /
+Gmail / Airtable. Any push notification is per-client config through the client's
+own OpenClaw gateway (never bypassed), client-silent by default.
 
 ## Relationship to Avatar Alchemist (Skill 52) — cross-linked, NEVER merged
 

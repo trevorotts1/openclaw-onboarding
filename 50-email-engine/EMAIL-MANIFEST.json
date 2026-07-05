@@ -4,17 +4,19 @@
   "skill_number": 50,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Email Engine pipeline. Cloned in shape from universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json. The deterministic orchestrator run_email_engine.py walks these phases in order (P1->P2->P3->P4) with NO phase skips. Each phase declares its produces_artifact, its _chk_* preflight symbol(s), and its AF-* gate codes. Every AF-EMAIL-* code below is enforced by tools/prove-email.py (a fail-closed, model-free, stdlib-only measurer); py_symbol names the function that decides it. Editing this file is step (i) of any Email Engine change: add the gate, add the AF code here with its trigger, add the checker, add the self-test fixture.",
   "design_law": "Enforcement, not description. Bands are the DEFAULT floor; a logged client-exact override wins and is recorded on the process certificate. Client runtime uses the CLIENT's own provider chain — NEVER Anthropic/claude-* ids or operator keys. The deterministic gates are provider-neutral Python that run identically everywhere.",
+  "role_reconciliation_note": "owning_role values are the REGISTERED role-library slugs (23-ai-workforce-blueprint/templates/role-library/), IDENTICAL to the owning_role set in universal-sops/email-craft/EMAIL-PIPELINE-MANIFEST.json: P1-SELECT=email-campaign-strategist (marketing), P2-GENERATE=conversion-copywriter (marketing), P3-QC=qc-specialist--marketing (marketing), P4-DEPLOY=automation-workflow-specialist (crm). Earlier phantom slugs (email-strategist / email-copywriter / email-qc-specialist / convert-and-flow-operator) named no registered role and were corrected (FIX-XC-11d).",
+  "phase_reconciliation_note": "This 4-phase MACHINE SPINE reconciles with the 6-phase department-facing universal-sops/email-craft/EMAIL-PIPELINE-MANIFEST.json (P0-INTAKE..P5-APPROVE): universal P0-INTAKE folds into this P1-SELECT's brief preflight (_chk_email_brief over working/copy/brief.json), and universal P5-APPROVE folds into this P4-DEPLOY's approval preflight (_chk_deploy_approval over working/deploy/approval.json + the process certificate). P1-SELECT..P4-DEPLOY map 1:1; the gate_codes and produces_artifact for the shared phases match across the two manifests.",
   "phases": [
     {
       "id": "P1-SELECT",
       "order": 1,
       "name": "Select (intake brief -> framework / buyer-type / objective / sequence)",
-      "owning_role": "email-strategist",
+      "owning_role": "email-campaign-strategist",
       "produces_artifact": "working/routing/email-match.json",
       "preflight": {
         "required": true,
         "checker": "_chk_email_brief",
-        "label": "locked brief (working/copy/brief.json from the ONE-block turn-gated ledger; skill==email-engine; asked_all_at_once:true; all six brief fields present; a self-attested completeness flag is NEVER trusted). AF-EMAIL-TYPE-MISMATCH / AF-EMAIL-INTAKE-SPLIT / AF-EMAIL-BRIEF-INCOMPLETE."
+        "label": "locked brief (working/copy/brief.json from the ONE-block turn-gated ledger; skill==email-engine; asked_all_at_once:true; all six brief fields present). The one-block property is verified against an INDEPENDENT conversation-ledger export when the brief carries one (authoritative); absent an export the self-attested one-block flags are accepted as a recorded attestation (labeled attestation-based). AF-EMAIL-TYPE-MISMATCH / AF-EMAIL-INTAKE-SPLIT / AF-EMAIL-BRIEF-INCOMPLETE."
       },
       "additional_preflights": [
         {
@@ -32,7 +34,7 @@
       "id": "P2-GENERATE",
       "order": 2,
       "name": "Generate (author corpus-faithful copy against the selected structures)",
-      "owning_role": "email-copywriter",
+      "owning_role": "conversion-copywriter",
       "produces_artifact": "working/copy/emails.json",
       "preflight": {
         "required": true,
@@ -45,7 +47,7 @@
       "id": "P3-QC",
       "order": 3,
       "name": "QC (fail-closed floor prover over the authored copy)",
-      "owning_role": "email-qc-specialist",
+      "owning_role": "qc-specialist--marketing",
       "produces_artifact": "working/qc/email_qc_report.json",
       "preflight": {
         "required": true,
@@ -58,21 +60,28 @@
         "AF-EMAIL-PERSONA-INVALID", "AF-EMAIL-PERSONA-NAMED", "AF-EMAIL-SUBJECT-COUNT",
         "AF-EMAIL-PREVIEW-COUNT", "AF-EMAIL-WORDBAND", "AF-EMAIL-CTA-COUNT",
         "AF-EMAIL-SUBJECT-CHARBAND", "AF-EMAIL-FIRSTNAME-PLACEMENT", "AF-EMAIL-FORMAT",
-        "AF-EMAIL-SIGNATURE-PLACEHOLDER", "AF-EMAIL-DISRUPTIVE-MISSING"
+        "AF-EMAIL-SIGNATURE-PLACEHOLDER", "AF-EMAIL-DISRUPTIVE-MISSING", "AF-EMAIL-OVERRIDE-UNLOGGED"
       ]
     },
     {
       "id": "P4-DEPLOY",
       "order": 4,
       "name": "Deploy (DRAFT-ONLY Skill-44 build plan; human approval before any send)",
-      "owning_role": "convert-and-flow-operator",
+      "owning_role": "automation-workflow-specialist",
       "produces_artifact": "working/deploy/build-plan.json",
       "preflight": {
         "required": true,
         "checker": "_chk_deploy_approval",
-        "label": "signed process certificate + explicit human approval; the emitted GHL workflow is a DRAFT. Nothing sends. A hand-rolled sender in the run dir is refused. AF-PROCESS-INTEGRITY / AF-EMAIL-DEPLOY-UNAPPROVED / AF-EMAIL-SEND-BYPASS."
+        "label": "explicit human approval (approval.json approved:true + approved_by). When the deploy ARTIFACT (working/deploy/build-plan.json) is present, the REAL delivery/PROCESS-CERTIFICATE.json is mandatory and must carry all_phases_pass:true AND a certificate_sha that RECOMPUTES (an inline self-signed dict is never accepted; artifact presence — not a self-set deploy_requested flag — is the trigger). The emitted GHL workflow is a DRAFT. Nothing sends. A hand-rolled sender in the run dir is refused. AF-PROCESS-INTEGRITY / AF-EMAIL-DEPLOY-UNAPPROVED / AF-EMAIL-SEND-BYPASS."
       },
-      "gate_codes": ["AF-PROCESS-INTEGRITY", "AF-EMAIL-DEPLOY-UNAPPROVED", "AF-EMAIL-SEND-BYPASS"]
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_build_plan",
+          "label": "the declared produces_artifact working/deploy/build-plan.json is validated against schema/build-plan.schema.json's contract WHEN present (it is emitted after this gate on the first governed pass, so absence passes; present-but-malformed fails closed). AF-EMAIL-DEPLOY-PLAN-INVALID."
+        }
+      ],
+      "gate_codes": ["AF-PROCESS-INTEGRITY", "AF-EMAIL-DEPLOY-UNAPPROVED", "AF-EMAIL-SEND-BYPASS", "AF-EMAIL-DEPLOY-PLAN-INVALID"]
     }
   ],
   "autofails": [
@@ -86,16 +95,18 @@
     {"code": "AF-EMAIL-PERSONA-NAMED", "stage": "P3", "level": "email", "trigger": "a persona person's name is present in the copy (styles adopt tone/rhetoric only; the person is NEVER named or quoted)", "enforced_by": "prove-email", "py_symbol": "_has_persona_name"},
     {"code": "AF-EMAIL-SUBJECT-COUNT", "stage": "P3", "level": "email", "trigger": "not exactly two non-empty A/B subject lines", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
     {"code": "AF-EMAIL-PREVIEW-COUNT", "stage": "P3", "level": "email", "trigger": "preview count != the sequence's declared count (Convert&Flow master=1 / high-ticket=2)", "enforced_by": "prove-email", "py_symbol": "_expected_previews"},
-    {"code": "AF-EMAIL-WORDBAND", "stage": "P3", "level": "email", "trigger": "body outside 150-300 words (or outside a logged client-exact override); the 3-B Plan must be < 150", "enforced_by": "prove-email", "py_symbol": "_words"},
+    {"code": "AF-EMAIL-WORDBAND", "stage": "P3", "level": "email", "trigger": "body outside 150-300 words (or outside a client-exact override that is ECHOED in the LOCKED brief); the 3-B Plan must be < 150", "enforced_by": "prove-email", "py_symbol": "_words"},
     {"code": "AF-EMAIL-CTA-COUNT", "stage": "P3", "level": "email", "trigger": "fewer than 1 CTA (or fewer than 3 for the landing-page PASTOR emails E1-3)", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
     {"code": "AF-EMAIL-SUBJECT-CHARBAND", "stage": "P3", "level": "email", "trigger": "Convert&Flow subject outside 8-12 words or contains a pricing token / high-ticket subject outside 80-87 rendered chars or not exactly one emoji", "enforced_by": "prove-email", "py_symbol": "_subject_words"},
     {"code": "AF-EMAIL-FIRSTNAME-PLACEMENT", "stage": "P3", "level": "email", "trigger": "{{contact.first_name}} not placed in a subject (first 40 chars for Convert&Flow; present for high-ticket)", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
     {"code": "AF-EMAIL-FORMAT", "stage": "P3", "level": "email", "trigger": "more than 4 emojis in the body, or a paragraph runs more than 3 sentences without a break", "enforced_by": "prove-email", "py_symbol": "_count_emojis"},
     {"code": "AF-EMAIL-SIGNATURE-PLACEHOLDER", "stage": "P3", "level": "email", "trigger": "a placeholder signature token is present, or the founder's actual name is absent from the close", "enforced_by": "prove-email", "py_symbol": "_PLACEHOLDER_RE"},
     {"code": "AF-EMAIL-DISRUPTIVE-MISSING", "stage": "P3", "level": "email", "trigger": "a high-ticket appointment email carries no disruptive element", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
-    {"code": "AF-PROCESS-INTEGRITY", "stage": "P4", "level": "sequence", "trigger": "deploy requested without a signed process certificate (signed:true + signed_by), or a phase was skipped", "enforced_by": "prove-email / run_email_engine", "py_symbol": "evaluate_sequence"},
+    {"code": "AF-PROCESS-INTEGRITY", "stage": "P4", "level": "sequence", "trigger": "a deploy ARTIFACT (working/deploy/build-plan.json) is present but the REAL delivery/PROCESS-CERTIFICATE.json is missing / does not carry all_phases_pass:true / its certificate_sha does not recompute (artifact presence — not a self-set deploy_requested flag — is the trigger; an inline self-signed dict is never accepted), or a phase was skipped", "enforced_by": "run_email_engine / prove-email", "py_symbol": "_chk_deploy_approval / _verify_process_certificate"},
+    {"code": "AF-EMAIL-OVERRIDE-UNLOGGED", "stage": "P3", "level": "email", "trigger": "a client-exact override on the authoring-written email (word_band_override / expected_preview_count / subject_mode) is NOT echoed in the LOCKED brief's override channel — the override is refused and the SACRED default is re-enforced (a logged override wins; an unlogged one can never loosen a gate)", "enforced_by": "prove-email", "py_symbol": "_override_honored"},
+    {"code": "AF-EMAIL-DEPLOY-PLAN-INVALID", "stage": "P4", "level": "run-dir", "trigger": "the emitted working/deploy/build-plan.json does not satisfy schema/build-plan.schema.json's contract (folder + per-workflow name/templates + per-step id/type/name + email attributes subject/body/html/fromName)", "enforced_by": "run_email_engine", "py_symbol": "_chk_build_plan / _validate_build_plan"},
     {"code": "AF-EMAIL-TYPE-MISMATCH", "stage": "P1", "level": "brief", "trigger": "brief skill != email-engine, or an unknown sequence_position/type", "enforced_by": "prove-email", "py_symbol": "evaluate_intake"},
-    {"code": "AF-EMAIL-INTAKE-SPLIT", "stage": "P1", "level": "brief", "trigger": "the intake questions were not delivered in ONE block (asked_all_at_once not true / one_question_per_turn true / multiple block ids)", "enforced_by": "prove-email", "py_symbol": "evaluate_intake"},
+    {"code": "AF-EMAIL-INTAKE-SPLIT", "stage": "P1", "level": "brief", "trigger": "the intake questions were not delivered in ONE block — verified against an INDEPENDENT conversation-ledger export when present (authoritative), else from the self-attested one-block flags (asked_all_at_once not true / one_question_per_turn true / multiple block ids)", "enforced_by": "prove-email", "py_symbol": "evaluate_intake / _ledger_oneblock"},
     {"code": "AF-EMAIL-BRIEF-INCOMPLETE", "stage": "P1", "level": "brief", "trigger": "any of the six required brief fields missing/empty, or an invalid objective value", "enforced_by": "prove-email", "py_symbol": "REQUIRED_BRIEF"},
     {"code": "AF-EMAIL-DEPLOY-UNAPPROVED", "stage": "P4", "level": "sequence", "trigger": "deploy attempted without explicit logged human approval (the emitted GHL workflow is DRAFT-ONLY; nothing sends without approval)", "enforced_by": "run_email_engine", "py_symbol": "_chk_deploy_approval"},
     {"code": "AF-EMAIL-SEND-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled email sender is present in the run directory (a direct GHL/SMTP send outside the sanctioned draft-only handoff)", "enforced_by": "email-engine-entry", "py_symbol": "bypass_scan"}

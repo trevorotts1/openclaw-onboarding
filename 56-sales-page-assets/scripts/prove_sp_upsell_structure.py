@@ -16,6 +16,8 @@ WHAT IT ENFORCES (measuring the declared section ledger, ignoring any self-repor
   * every canonical section is present.                         -> AF-SP56-UPSELL-SECTION-MISSING
   * no section outside the canonical set.                       -> AF-SP56-UPSELL-SECTION-UNKNOWN
   * sections are in the exact Trevor Otts order.               -> AF-SP56-UPSELL-SECTION-ORDER
+  * every section's STRIPPED copy clears its SACRED per-section
+    word_min floor (measured, self-report ignored) (FIX-XC-04c). -> AF-SP56-UPSELL-SECTION-BAND
   * at least one UPSELL asset exists (else fail-closed).        -> AF-SP56-UPSELL-EMPTY
 
 stdlib only. Exit 0 = pass, exit 2 = autofail, exit 3 = usage/IO (still fail-closed).
@@ -39,7 +41,25 @@ AF_COUNT = "AF-SP56-UPSELL-SECTION-COUNT"
 AF_MISSING = "AF-SP56-UPSELL-SECTION-MISSING"
 AF_UNKNOWN = "AF-SP56-UPSELL-SECTION-UNKNOWN"
 AF_ORDER = "AF-SP56-UPSELL-SECTION-ORDER"
+AF_BAND = "AF-SP56-UPSELL-SECTION-BAND"
 AF_EMPTY = "AF-SP56-UPSELL-EMPTY"
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _section_copy(sec: Any) -> str:
+    if not isinstance(sec, dict):
+        return ""
+    for k in ("copy", "text", "body", "content"):
+        v = sec.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return ""
+
+
+def _stripped_words(blob: str) -> int:
+    text = _TAG_RE.sub(" ", str(blob or ""))
+    return len([w for w in re.split(r"\s+", text.strip()) if w])
 
 STAGE = "upsell-1"
 REQUIRED_VARIANTS = ("a", "b")
@@ -88,14 +108,22 @@ def _verify_variant(asset: Dict[str, Any], canon: List[Dict[str, Any]], vlabel: 
     if not isinstance(secs, list) or not secs:
         return [(AF_MISSING, f"variant {vlabel}: no sections declared")]
 
+    word_min_by_id = {c["id"]: c.get("word_min") for c in canon}
     resolved: List[str] = []
     for s in secs:
         name = s.get("name") if isinstance(s, dict) else s
         cid = _match_section(name, canon)
         if cid is None:
             fails.append((AF_UNKNOWN, f"variant {vlabel}: section {name!r} matches no canonical upsell section"))
-        else:
-            resolved.append(cid)
+            continue
+        resolved.append(cid)
+        # SACRED per-section word-band floor — MEASURED on the stripped copy (FIX-XC-04c).
+        floor = word_min_by_id.get(cid)
+        if isinstance(floor, int) and floor > 0:
+            wc = _stripped_words(_section_copy(s))
+            if wc < floor:
+                fails.append((AF_BAND, f"variant {vlabel}: section {cid!r} has {wc} stripped words, "
+                                       f"under the {floor}-word floor (under-length is a hard miss)"))
 
     canon_ids = [c["id"] for c in canon]
     if len(secs) != len(canon_ids):
@@ -180,11 +208,21 @@ _CANON_ORDER = ["Hook acknowledging purchase", "First pain point", "Second pain 
                 "Identity challenge close"]
 
 
+# A ~46-word body that clears every upsell-section word_min floor (max floor is 35).
+_FIXTURE_COPY = (
+    "You just made a real decision, and this section leans into that momentum instead of "
+    "letting it fade, naming the exact upgrade in front of you, the pain it removes, and the "
+    "quiet identity shift waiting on the other side of one more small, deliberate yes that "
+    "future you will be grateful you had the courage to say right now today."
+)
+
+
 def _valid_upsell_asset(variant: str) -> Dict[str, Any]:
     return {
         "stage": "upsell-1", "variant": variant, "type": "page",
         "asset_key": f"jane-doe__glow-method__upsell-1__page__v01{variant}",
-        "sections": [{"order": i + 1, "name": nm} for i, nm in enumerate(_CANON_ORDER)],
+        "sections": [{"order": i + 1, "name": nm, "copy": _FIXTURE_COPY}
+                     for i, nm in enumerate(_CANON_ORDER)],
     }
 
 
@@ -224,11 +262,14 @@ def self_test() -> int:
     f = _valid_ledger()
     swap = list(_CANON_ORDER)
     swap[4], swap[5] = swap[5], swap[4]  # hope <-> solution
-    f["assets"][1]["sections"] = [{"order": i + 1, "name": nm} for i, nm in enumerate(swap)]
+    f["assets"][1]["sections"] = [{"order": i + 1, "name": nm, "copy": _FIXTURE_COPY} for i, nm in enumerate(swap)]
     check_fail("hope-solution-swapped", f, AF_ORDER)
 
     f = _valid_ledger(); f["assets"][0]["sections"][6] = {"order": 7, "name": "Bonus Vault"}
     check_fail("unknown-section", f, AF_UNKNOWN)
+
+    f = _valid_ledger(); f["assets"][1]["sections"][0]["copy"] = "Nice upgrade, buy it."
+    check_fail("hook-under-band", f, AF_BAND)
 
     f = {"assets": []}
     check_fail("empty-ledger", f, AF_EMPTY)

@@ -18,13 +18,39 @@ set -uo pipefail
 
 SKILL_NAME="39-real-estate-playbook"
 
-re_events_log_path() {
+# Resolve MASTER_FILES_DIR from the SAME persisted single-source-of-truth that
+# 01-locate-master-files-folder.sh writes — NEVER a caller-env-dependent
+# $HOME/Downloads (or /data) fallback. That fallback was the Skill-23-class
+# split-brain: a test run (or a caller with a different HOME) would write the
+# event log to a DIFFERENT file than the live agent, silently splitting the
+# operator's ground-truth audit log. Resolution order:
+#   1. An explicit MASTER_FILES_DIR env var (must be an existing dir).
+#   2. The persisted selection file written at install (own Skill-39 file first,
+#      then Skill 38's — the shared source of truth), under either OS home root.
+# If none resolves, we FAIL LOUDLY (return 1) rather than guessing a path.
+re_events_master_dir() {
   local mfd="${MASTER_FILES_DIR:-}"
-  if [ -z "$mfd" ]; then
-    case "$(uname -s)" in
-      Darwin) mfd="$HOME/Downloads" ;;
-      *)      mfd="/data" ;;
-    esac
+  if [ -n "$mfd" ] && [ -d "$mfd" ]; then
+    printf '%s' "$mfd"; return 0
+  fi
+  local root cand d
+  for root in "$HOME/.openclaw" "/data/.openclaw"; do
+    for cand in "$root/.skill-39-master-files-dir" "$root/.skill-38-master-files-dir"; do
+      [ -f "$cand" ] || continue
+      d="$(tr -d '[:space:]' < "$cand" 2>/dev/null || true)"
+      if [ -n "$d" ] && [ -d "$d" ]; then
+        printf '%s' "$d"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
+re_events_log_path() {
+  local mfd
+  if ! mfd="$(re_events_master_dir)"; then
+    echo "re_event: MASTER_FILES_DIR unresolved — set MASTER_FILES_DIR or run 01-locate-master-files-folder.sh first (refusing to fall back to Downloads / a caller-split path)." >&2
+    return 1
   fi
   printf '%s/real-estate-events.jsonl' "$mfd"
 }
@@ -48,7 +74,8 @@ re_event() {
   fi
   local ts log line
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  log="$(re_events_log_path)"
+  # Loud fail (never a Downloads fallback) if MASTER_FILES_DIR cannot be resolved.
+  log="$(re_events_log_path)" || return 2
   mkdir -p "$(dirname "$log")" 2>/dev/null || true
   # Merge common fields + payload. Common fields win on key collision so the
   # contract (ts/skill/event) can never be spoofed by a caller payload.

@@ -4,7 +4,7 @@ Each rubric scores the WEIGHTED SUM of independent sub-checks read from raw evid
 
 | Rubric | Score | Pass | Evidence (RAW) | Sub-checks |
 |--------|-------|------|----------------|-----------|
-| R-COPY | 10.00 | PASS | working/copy/focusforge/copy.md | approved=True(3.0/3.0); separate_actor_approval=True(2.0/2.0); persona_grounded=True(2.0/2.0); cta_slots_present=5(1.5/1.5); benefit_framing=True(1.5/1.5) |
+| R-COPY | 10.00 | PASS | working/copy/focusforge/copy.md | approved=True(3.0/3.0); separate_actor_approval=True(2.0/2.0); persona_grounded=hormozi-100m-offers echoed in copy(2.0/2.0); length_vs_funnel_type=1597w vs floor 1500 (long-form sales)(3.0/3.0); cta_slots_present=5(1.5/1.5); benefit_framing=True(1.5/1.5) |
 | R-STRUCTURE | 9.17 | PASS | working/funnels/focusforge/funnel-spec.json | pages_count=3(4.0/4.0); funnel_type_match=long-form sales(3.0/3.0); persona_grounded=True(2.0/2.0); offer_map_coherence=True(1.0/1.0); live_published_status=DRAFT-only (reversible)(1.0/2.0) |
 | R-PAGES | 8.85 | PASS | logs/final-preview-verify.json | pages_http200_frac=3 pages(4.0/4.0); marker_in_blob_frac=per-page(2.0/2.0); real_img_frac=per-page(2.0/2.0); draft_version_frac=per-page(1.0/1.0); public_publish_frac=per-page publish status(1.5/3.0); gate3_verbatim_frac=per-page(1.0/1.0) |
 | R-FORMS | 9.20 | PASS | ecosystem/contact-test.json | optin_form_present=True(2.0/2.0); form_capture_201=201(3.0/3.0); form_to_crm_proven=substituted (public-widget 403); attribution+tags(1.2/2.0); expected_tags_routed=['focusforge-applicant', 'focusforge-optin', 'textable-no'](3.0/3.0) |
