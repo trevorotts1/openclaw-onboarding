@@ -143,6 +143,63 @@ FBAD_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
 FBAD_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (re-dos)
 FBAD_CREDIT_PER_USD = 100                 # conservative USD->credit factor
 
+# Tolerance between a scorecard's SELF-DECLARED average and the average COMPUTED from
+# its own category scores. A declared number can NEVER override the computed one; a
+# disagreement beyond this tolerance is an autofail (a fabricated/careless number).
+QC_DECLARED_AVG_TOLERANCE = 0.05
+
+_HERE = Path(__file__).resolve().parent
+
+
+# ---------------------------------------------------------------------------
+# Registered-role registry (AD-PIPELINE-MANIFEST.json roles[].id) — used by the
+# QC-independence check so a scorecard's maker/grader must be REAL registered role
+# slugs, not free text. Own lightweight loader (no import of ad_director, which would
+# be circular) mirroring ad_recovery's manifest resolution.
+# ---------------------------------------------------------------------------
+def _find_repo_root(start: Path):
+    cur = start
+    for _ in range(12):
+        if (cur / "universal-sops").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def _manifest_candidates():
+    repo = _find_repo_root(_HERE)
+    cands = []
+    if repo:
+        cands.append(repo / "universal-sops" / "fb-ad-craft" / "AD-PIPELINE-MANIFEST.json")
+    cands += [
+        _HERE.parent / "sops" / "AD-PIPELINE-MANIFEST.json",
+        _HERE.parent / "AD-PIPELINE-MANIFEST.json",
+        _HERE / "AD-PIPELINE-MANIFEST.json",
+    ]
+    return cands
+
+
+def registered_role_slugs() -> set:
+    """The set of REGISTERED role slugs (lowercased) from the manifest roles[].id.
+    Returns an EMPTY set when the manifest cannot be resolved — the caller then skips
+    ONLY the registered-slug leg (the ledger tie-back still applies) rather than crash
+    in an environment without the manifest on disk."""
+    slugs = set()
+    for c in _manifest_candidates():
+        try:
+            if c.exists():
+                m = json.loads(c.read_text())
+                for r in (m.get("roles", []) or []):
+                    rid = str((r or {}).get("id", "")).strip().lower()
+                    if rid:
+                        slugs.add(rid)
+                break
+        except Exception:  # noqa: BLE001 — a broken manifest degrades to "no registry"
+            continue
+    return slugs
+
 
 # ---------------------------------------------------------------------------
 # JSON helpers
@@ -287,8 +344,38 @@ def _s1_receipt(run_dir: Path):
     return _read_json(_checkpoints(run_dir) / "s1-receipt.json")
 
 
+def measure_overlays(run_dir: Path):
+    """MEASURE the real deliverable (working/s1-overlays.md): return the list of
+    per-line word counts of the actual overlay lines, or None when the file is
+    absent/unreadable. Only content lines count — a markdown header (``#...``), a
+    blank line, or a horizontal rule is skipped; a leading list ordinal (``12.`` /
+    ``12)``) or bullet (``- `` / ``* ``) is stripped before counting the overlay's
+    own words. This is what lets the count/wordcount gates verify the SOURCE FILE
+    against the maker's self-reported receipt numbers rather than trusting them."""
+    p = _working(run_dir) / "s1-overlays.md"
+    if not p.exists():
+        return None
+    try:
+        text = p.read_text()
+    except OSError:
+        return None
+    counts = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or set(line) <= {"-", "*", "_", "="}:
+            continue  # blank / markdown header / horizontal rule
+        m = re.match(r"^\d+[.)]\s+(.*)$", line)      # numbered list ordinal
+        body = m.group(1) if m else line
+        body = re.sub(r"^[-*]\s+", "", body).strip()  # leading bullet
+        if not body:
+            continue
+        counts.append(len(body.split()))
+    return counts
+
+
 def _chk_overlay_count(run_dir: Path) -> str:
-    """AF-FBAD-OVERLAY-COUNT. overlay_count must be exactly OVERLAY_COUNT_LOCKED."""
+    """AF-FBAD-OVERLAY-COUNT. overlay_count must be exactly OVERLAY_COUNT_LOCKED — and
+    the receipt count is verified against the MEASURED line count of s1-overlays.md."""
     r = _s1_receipt(run_dir)
     if r is None or (isinstance(r, dict) and "__parse_error__" in r):
         return ("AF-FBAD-OVERLAY-COUNT: working/checkpoints/s1-receipt.json is "
@@ -298,11 +385,19 @@ def _chk_overlay_count(run_dir: Path) -> str:
         return ("AF-FBAD-OVERLAY-COUNT: overlay_count is "
                 f"{n!r}, not the locked {OVERLAY_COUNT_LOCKED}. The human picks 10 from "
                 "this fixed set; a short or padded set breaks the pick-10 contract.")
+    measured = measure_overlays(run_dir)
+    if measured is not None and len(measured) != n:
+        return ("AF-FBAD-OVERLAY-COUNT: the receipt attests overlay_count "
+                f"{n} but the MEASURED s1-overlays.md carries {len(measured)} overlay "
+                "line(s). The receipt number must match the real deliverable, never a "
+                "self-reported figure.")
     return ""
 
 
 def _chk_overlay_wordcount(run_dir: Path) -> str:
-    """AF-FBAD-OVERLAY-WORDCOUNT. Every overlay line is OVERLAY_WORD_MIN..MAX words."""
+    """AF-FBAD-OVERLAY-WORDCOUNT. Every overlay line is OVERLAY_WORD_MIN..MAX words —
+    AND the receipt's per-line word_counts are verified against the MEASURED words of
+    s1-overlays.md (a receipt that lies within-range is caught by the measurement)."""
     r = _s1_receipt(run_dir)
     if r is None or (isinstance(r, dict) and "__parse_error__" in r):
         return ("AF-FBAD-OVERLAY-WORDCOUNT: s1-receipt.json absent/invalid — per-line "
@@ -317,6 +412,20 @@ def _chk_overlay_wordcount(run_dir: Path) -> str:
         return ("AF-FBAD-OVERLAY-WORDCOUNT: overlay line(s) "
                 f"{bad[:10]} fall outside {OVERLAY_WORD_MIN}..{OVERLAY_WORD_MAX} words. "
                 "An over-long line does not bake legibly into a 1:1 image.")
+    measured = measure_overlays(run_dir)
+    if measured is not None:
+        if len(measured) != len(wcs):
+            return ("AF-FBAD-OVERLAY-WORDCOUNT: the receipt lists "
+                    f"{len(wcs)} word_counts but s1-overlays.md carries "
+                    f"{len(measured)} overlay line(s) — receipt and deliverable disagree.")
+        mism = [i + 1 for i, (w, mw) in enumerate(zip(wcs, measured)) if w != mw]
+        if mism:
+            first = mism[0] - 1
+            return ("AF-FBAD-OVERLAY-WORDCOUNT: receipt word_counts disagree with the "
+                    f"MEASURED s1-overlays.md at line(s) {mism[:10]} (e.g. line "
+                    f"{mism[0]}: receipt says {wcs[first]}, the file has "
+                    f"{measured[first]} word(s)). MEASURE the artifact — never trust a "
+                    "self-reported count.")
     return ""
 
 
@@ -581,12 +690,23 @@ def _validate_qc_score(run_dir: Path, gate: str, af_code: str) -> str:
         return (f"{af_code}: category(ies) {low} are below the floor "
                 f"{QC_MIN_CATEGORY} — one 10 can't hide a 4. The maker redoes only the "
                 "failing pieces.")
-    avg = sum(scores) / len(scores)
+    # The COMPUTED average (from the maker's own category scores) is the ONLY number
+    # the pass test may use — a self-declared `average` can never override it. If a
+    # declared average is present and disagrees with the computed one beyond a tiny
+    # tolerance, that is itself an autofail (a fabricated or careless top-line number,
+    # e.g. all categories at 7.0 with a declared 9.9).
+    computed = sum(scores) / len(scores)
     declared = sc.get("average")
     if isinstance(declared, (int, float)):
-        avg = float(declared)
-    if avg < QC_MIN_AVERAGE:
-        return (f"{af_code}: average {avg:.2f} is below the {QC_MIN_AVERAGE} pass line.")
+        if abs(float(declared) - computed) > QC_DECLARED_AVG_TOLERANCE:
+            return (f"{af_code}: {QC_SCORECARDS[gate]} self-declares average "
+                    f"{float(declared):.2f} but its own category scores compute to "
+                    f"{computed:.2f} (disagreement > {QC_DECLARED_AVG_TOLERANCE}). A "
+                    "declared number NEVER overrides the measured one — fix the "
+                    "categories or the declared average so they agree.")
+    if computed < QC_MIN_AVERAGE:
+        return (f"{af_code}: computed average {computed:.2f} (from the category scores) "
+                f"is below the {QC_MIN_AVERAGE} pass line.")
     if sc.get("pass") is not True:
         return (f"{af_code}: {QC_SCORECARDS[gate]} does not set pass:true.")
     return ""
@@ -618,17 +738,39 @@ def _chk_package_qc(run_dir: Path) -> str:
     return _validate_qc_score(run_dir, "package", "AF-FBAD-PACKAGE-QC")
 
 
+def _ledger_qc_sessions(run_dir: Path) -> dict:
+    """Map gate -> the run ledger's independently-recorded grading session
+    {grader, session_id} for that gate. The ledger's qc_sessions[] is written by the
+    CONDUCTOR when it dispatches an independent grader — NOT by the maker or grader —
+    so it is the independent record a self-attested scorecard is cross-checked against.
+    Returns {} when the ledger has no qc_sessions."""
+    led = _ledger(run_dir)
+    out = {}
+    if isinstance(led, dict) and "__parse_error__" not in led:
+        for s in (led.get("qc_sessions") or []):
+            if isinstance(s, dict) and s.get("gate"):
+                out[str(s["gate"])] = s
+    return out
+
+
 def _chk_qc_independence(run_dir: Path) -> str:
-    """AF-FBAD-QC-INDEPENDENCE. Every PRESENT scorecard must carry an independence block:
-    independent:true, a grader, a maker, and grader != maker. A self-grade fails."""
-    checked = 0
+    """AF-FBAD-QC-INDEPENDENCE. Every PRESENT scorecard must prove REAL independence,
+    not merely self-assert it:
+      * independent:true, a maker, a grader, and grader != maker;
+      * BOTH maker and grader are REGISTERED role slugs (manifest roles[].id) — free
+        text like 'some reviewer' is rejected;
+      * the scorecard names a grader_session_id, and that session is cross-checked
+        against the run ledger's independently-recorded qc_sessions[] (same gate, same
+        session id, same grader). A grade the ledger never recorded is a self-attested
+        grade and fails CLOSED."""
+    roles = registered_role_slugs()   # empty set => manifest unresolved; slug leg skipped
+    sessions = _ledger_qc_sessions(run_dir)
     for gate, fname in QC_SCORECARDS.items():
         sc = _read_json(_qc_path(run_dir, gate))
         if sc is None:
             continue  # absence is owned by that gate's own _chk_*_qc
         if isinstance(sc, dict) and "__parse_error__" in sc:
             return (f"AF-FBAD-QC-INDEPENDENCE: {fname} is not valid JSON.")
-        checked += 1
         if sc.get("independent") is not True:
             return (f"AF-FBAD-QC-INDEPENDENCE: {fname} does not set independent:true — "
                     "every grade must be written by a different worker than the maker.")
@@ -640,6 +782,35 @@ def _chk_qc_independence(run_dir: Path) -> str:
         if maker == grader:
             return (f"AF-FBAD-QC-INDEPENDENCE: {fname} is self-graded (grader == maker "
                     f"== {maker!r}). The grader must NOT be the maker.")
+        if roles:
+            if maker not in roles:
+                return (f"AF-FBAD-QC-INDEPENDENCE: {fname} maker {maker!r} is not a "
+                        "registered role slug (AD-PIPELINE-MANIFEST roles[].id). A grade "
+                        "must name real registered roles, never free text.")
+            if grader not in roles:
+                return (f"AF-FBAD-QC-INDEPENDENCE: {fname} grader {grader!r} is not a "
+                        "registered role slug (AD-PIPELINE-MANIFEST roles[].id). The "
+                        "grader must be a real registered QC/reviewer role.")
+        session_id = str(sc.get("grader_session_id", "")).strip()
+        if not session_id:
+            return (f"AF-FBAD-QC-INDEPENDENCE: {fname} carries no grader_session_id — the "
+                    "grading agent's session must be recorded so it can be tied back to "
+                    "the run ledger, never a bare unverifiable claim.")
+        entry = sessions.get(gate)
+        if entry is None:
+            return (f"AF-FBAD-QC-INDEPENDENCE: the run ledger records no qc_sessions "
+                    f"entry for gate {gate!r} — a grade the ledger never saw is a "
+                    "self-attested grade. The conductor must record every grading "
+                    "session in ad_run_ledger.json.")
+        if str(entry.get("session_id", "")).strip() != session_id:
+            return (f"AF-FBAD-QC-INDEPENDENCE: {fname} grader_session_id "
+                    f"{session_id!r} does not match the run ledger's recorded grading "
+                    f"session for gate {gate!r} — the scorecard was not written by the "
+                    "session the conductor dispatched.")
+        if str(entry.get("grader", "")).strip().lower() != grader:
+            return (f"AF-FBAD-QC-INDEPENDENCE: {fname} grader {grader!r} does not match "
+                    f"the run ledger's recorded grader for gate {gate!r} "
+                    f"({str(entry.get('grader', ''))!r}).")
     return ""
 
 

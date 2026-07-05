@@ -209,6 +209,42 @@ def check_dedup(db, location_id, platform, content_sha, slot=None, run_id="",
     return blocks, False
 
 
+def build_dedup_snapshot(db, location_id, run_id, lookback_days=DEFAULT_LOOKBACK_DAYS,
+                         live_listing=None, repost_token=None):
+    """FIX-S36-61: BUILD the §4.4 de-dup snapshot from the SQLite ledger itself,
+    rather than only running when a hand-authored dedup.json happens to exist (the
+    old fail-open-by-construction hole). `outgoing` = the posts THIS run recorded
+    (run_id) for the location; `existing` = every OTHER run's post for the location
+    within the lookback window. The caller (P7) passes the live GHL listing in
+    --live mode so a re-imaged box still can't double-post. Returns the snapshot
+    dict {existing, outgoing, lookback_days, live_listing, repost_token} ready for
+    check_dedup_snapshot(); raises on a corrupt/unreadable DB so P7 fails CLOSED
+    ('cannot be built' is never a silent pass)."""
+    con = connect(db)  # raises sqlite3.Error on a corrupt DB -> P7 fail-closed
+    try:
+        cutoff = time.time() - (lookback_days * 86400)
+        outgoing, existing = [], []
+        rows = con.execute(
+            "SELECT platform, content_sha256, scheduled_slot, run_id, created_at FROM posts "
+            "WHERE location_id=? AND created_at>=?", (location_id, cutoff)).fetchall()
+    finally:
+        con.close()
+    for r in rows:
+        rec = {"platform": r["platform"], "content_sha256": r["content_sha256"],
+               "scheduled_slot": r["scheduled_slot"], "run_id": r["run_id"]}
+        if str(r["run_id"]) == str(run_id):
+            outgoing.append(rec)
+        else:
+            rec["age_days"] = max(0.0, (time.time() - r["created_at"]) / 86400.0)
+            existing.append(rec)
+    snap = {"existing": existing, "outgoing": outgoing, "lookback_days": lookback_days}
+    if isinstance(live_listing, list):
+        snap["live_listing"] = live_listing
+    if repost_token is not None:
+        snap["repost_token"] = repost_token
+    return snap
+
+
 def check_dedup_snapshot(existing, outgoing, lookback_days=DEFAULT_LOOKBACK_DAYS,
                          live_listing=None, repost_token=None):
     """Fixture-friendly, DB-free variant of check_dedup over an in-memory ledger
@@ -345,6 +381,28 @@ def self_test():
     good = bool(blk) and cleared is True
     ok = ok and good
     print("  [%s] logged owner re-post token -> CLEARED" % ("PASS" if good else "MISS"))
+
+    # FIX-S36-61: P7 BUILDS the snapshot from the ledger itself (not a maybe-present file).
+    print("== self-test: build_dedup_snapshot (P7 builds it from the ledger) ==")
+    tmp2 = tempfile.mktemp(suffix=".db")
+    init_db(tmp2, "run-cur")
+    record_post(tmp2, "loc9", "facebook", "sha-prior", slot="2026-W28-Sun-10:00", run_id="run-prior")
+    record_post(tmp2, "loc9", "facebook", "sha-cur", slot="2026-W28-Mon-10:00", run_id="run-cur")
+    snap = build_dedup_snapshot(tmp2, "loc9", "run-cur")
+    good = (len(snap["outgoing"]) == 1 and snap["outgoing"][0]["content_sha256"] == "sha-cur"
+            and len(snap["existing"]) == 1 and snap["existing"][0]["run_id"] == "run-prior")
+    ok = ok and good
+    print("  [%s] snapshot built: this-run=outgoing, other-runs=existing" % ("PASS" if good else "MISS"))
+    # a corrupt/unreadable DB must RAISE (P7 fail-closed 'cannot be built', never a silent pass)
+    corrupt = tempfile.mktemp(suffix=".db")
+    open(corrupt, "w").write("this is not a sqlite database file")
+    raised = False
+    try:
+        build_dedup_snapshot(corrupt, "loc9", "run-cur")
+    except Exception:
+        raised = True
+    ok = ok and raised
+    print("  [%s] corrupt DB -> raises (P7 fail-closed)" % ("PASS" if raised else "MISS"))
 
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1

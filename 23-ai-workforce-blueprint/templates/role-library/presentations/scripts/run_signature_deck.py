@@ -112,6 +112,43 @@ try:
 except ImportError:
     _pv = None
 
+# FIX-PRES-07: the GOVERNED set of phases that REQUIRE a substance verifier. When
+# phase_verifiers.py is importable we derive it LIVE from the registry; when the
+# module is MISSING beside the runner (_pv is None) we fall back to this pinned
+# copy (kept in lockstep with phase_verifiers.PHASE_VERIFIERS) so a real run of a
+# governed phase fails CLOSED instead of silently attesting with no substance
+# verification. A degraded pass is allowed ONLY under an explicit test/CI marker.
+_GOVERNED_VERIFIER_PHASES = frozenset({
+    "P-CONVERTER", "P-0.5-RESEARCH", "P0A-INTAKE", "P0B-PRIORITY", "P3-ARC",
+    "P-3.5-RESEARCH-MAP", "P4-COPY", "P1Q-COPY-QC", "PF-DESIGN", "P-TYPO-QC",
+    "P4-PROMPT", "P-PROMPT-QC", "P-STYLE-PREVIEW", "P4-RENDER", "P-IMAGE-QC",
+    "P-SHIFT-QC", "P8-ASSEMBLE", "P9-SPEECH", "P-SPEECH-QC", "P9-DELIVER",
+    "P-SP-INTAKE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
+})
+if _pv is not None:
+    try:
+        _GOVERNED_VERIFIER_PHASES = frozenset(_pv.PHASE_VERIFIERS.keys())
+    except Exception:  # noqa: BLE001 — keep the pinned fallback on any registry read error
+        pass
+
+
+def _degraded_verifiers_allowed(run_dir) -> bool:
+    """FIX-PRES-07: a degraded (skipped) substance-verify is permitted ONLY in an
+    explicit test/CI context. Signals: PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1, a
+    CI / OPENCLAW_TEST env marker, or a `.test-context` marker file the test
+    harness drops in the run dir. A real production run has NONE of these, so a
+    missing phase_verifiers.py fails CLOSED for a governed phase."""
+    if os.environ.get("PRESENTATION_ALLOW_DEGRADED_VERIFIERS") == "1":
+        return True
+    if os.environ.get("CI") or os.environ.get("OPENCLAW_TEST"):
+        return True
+    try:
+        if (Path(run_dir) / "working" / "checkpoints" / ".test-context").exists():
+            return True
+    except Exception:  # noqa: BLE001 — a marker-read hiccup must not open the gate
+        pass
+    return False
+
 # Exit code for a guard hard-block (distinct from AF-PHASE-SKIPPED=2,
 # render-subprocess=3, AF-KIE-BALANCE=4).
 EXIT_GUARD_BLOCK = 5
@@ -1243,6 +1280,30 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 # receipt (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to,
 # so the render-phase activities and this close land on one consistent ledger.
 # ---------------------------------------------------------------------------
+def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
+    """FIX-PRES-08(a): ensure the deck's Command Center card exists at Phase-0,
+    BEFORE any phase is dispatched — so the hours of pre-render phases are
+    board-visible and a pre-render death still lands a card (build_deck previously
+    created the card only at render-begin). Idempotent + FAIL-SOFT: a card already
+    stamped in the manifest (this run, an earlier --phase invocation) is a clean
+    no-op; a disabled/unreachable board is a no-op; NEVER raises (the board is a
+    view, never a gate). Skipped for adhoc runs (not CC-tracked). The later
+    build_deck render-begin ingest is idempotent and reuses this task_id."""
+    if adhoc:
+        return
+    try:
+        import cc_board
+        if cc_board._read_manifest(run_dir).get("cc_task_id"):
+            return  # already ingested earlier this run
+        slug = _deck_slug(run_dir)
+        cc_board.ingest_deck_task(
+            run_dir, slug, title=slug, description=f"Deck build: {slug}")
+    except Exception as exc:  # noqa: BLE001 — board is best-effort, never a gate
+        print(f"[cc_board] Phase-0 pre-flight ingest raised ({exc}) — run continues; "
+              "the card will be (re)ingested idempotently at render-begin.",
+              file=sys.stderr, flush=True)
+
+
 def _board_close_delivery(run_dir) -> None:
     """Fire the TERMINAL Command Center card close for a delivered deck, FAIL-SOFT.
 
@@ -1276,6 +1337,13 @@ def _board_assert_advanced(run_dir) -> None:
     detail is in working/checkpoints/cc-board.json). NEVER blocks and NEVER raises."""
     try:
         import cc_board
+        # FIX-PRES-08(b): before reporting, replay any outstanding failed advance
+        # (e.g. a transport-failed terminal close) so a delivered deck is not left
+        # stranded at in_progress with no retry. FAIL-SOFT, idempotent.
+        try:
+            cc_board.reconcile(run_dir)
+        except Exception:  # noqa: BLE001 — reconcile is best-effort
+            pass
         if not cc_board.assert_min_one_advance(run_dir):
             print("[cc_board] NOTE: no successful board advance recorded for this run "
                   "(board disabled, or every advance failed — see "
@@ -1346,6 +1414,10 @@ def main():
     # Phase-0 pre-flight (platform note + Kie balance). HARD-ABORTS on AF-KIE-BALANCE.
     phase0_preflight(run_dir, slides_path, platform_override=args.platform,
                      adhoc=args.adhoc)
+
+    # FIX-PRES-08(a): open the CC card NOW (Phase-0), so every pre-render phase is
+    # board-visible and a pre-render death still lands a card. Idempotent + fail-soft.
+    _board_ingest_preflight(run_dir, adhoc=args.adhoc)
 
     # FIX 4a: write the step contract + emit the up-front step-list client message.
     # IDEMPOTENT — skips if declared_plan.json already exists on a re-run of any phase.
@@ -1526,8 +1598,25 @@ def main():
             # AF-PHASE-REPORT-DONE, exit 6 (route-back) consistent with the QC loops.
             if _pv is not None:
                 _ok, _reasons = _pv.verify(args.phase, run_dir)
+            elif args.phase in _GOVERNED_VERIFIER_PHASES and not _degraded_verifiers_allowed(run_dir):
+                # FIX-PRES-07: phase_verifiers.py is missing beside the runner on a
+                # REAL run of a governed phase — fail CLOSED. Attesting a governed
+                # phase with no substance verifier is exactly the silent no-op this
+                # gate exists to prevent.
+                _ok = False
+                _reasons = [
+                    f"phase_verifiers.py missing beside the runner — governed phase "
+                    f"{args.phase!r} cannot attest without its substance verifier. "
+                    "Restore phase_verifiers.py (it ships beside run_signature_deck.py). "
+                    "A degraded pass is allowed ONLY in a test/CI context "
+                    "(PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1 / CI / OPENCLAW_TEST / "
+                    "the .test-context run-dir marker).",
+                ]
             else:
-                _ok, _reasons = True, ["phase_verifiers unavailable — pass (degraded)"]
+                _ok, _reasons = True, [
+                    "phase_verifiers unavailable — pass (degraded: non-governed phase "
+                    "or explicit test/CI marker present)"
+                ]
             if not _ok:
                 print("\n" + "!" * 78, file=sys.stderr)
                 print(f"FATAL: substance verifier failed for phase {args.phase!r}:",

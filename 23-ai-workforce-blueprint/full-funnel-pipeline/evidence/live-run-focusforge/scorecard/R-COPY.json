@@ -4,7 +4,7 @@
   "threshold": 8.5,
   "passed": true,
   "evidence_path": "working/copy/focusforge/copy.md",
-  "raw_signal": "approved=True(3.0/3.0); separate_actor_approval=True(2.0/2.0); persona_grounded=True(2.0/2.0); cta_slots_present=5(1.5/1.5); benefit_framing=True(1.5/1.5)",
+  "raw_signal": "approved=True(3.0/3.0); separate_actor_approval=True(2.0/2.0); persona_grounded=hormozi-100m-offers echoed in copy(2.0/2.0); length_vs_funnel_type=1597w vs floor 1500 (long-form sales)(3.0/3.0); cta_slots_present=5(1.5/1.5); benefit_framing=True(1.5/1.5)",
   "subchecks": [
     {
       "name": "approved",
@@ -22,7 +22,13 @@
       "name": "persona_grounded",
       "weight": 2.0,
       "earned": 2.0,
-      "observed": "True"
+      "observed": "hormozi-100m-offers echoed in copy"
+    },
+    {
+      "name": "length_vs_funnel_type",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "1597w vs floor 1500 (long-form sales)"
     },
     {
       "name": "cta_slots_present",

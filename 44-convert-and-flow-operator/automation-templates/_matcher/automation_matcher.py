@@ -661,6 +661,16 @@ def step0_match(task: dict, evidence_root: str, *,
                     encoding="utf-8"), indent=2)
         except Exception:  # noqa: BLE001 — receipt is advisory, never blocks
             pass
+        # PERSONA-SELECTION-LOG producer (FIX-S36-25): FAB-QC D4 is fail-closed on
+        # <evidence_root>/persona-selection-log.md, but nothing in Skill 44 used to write it —
+        # so every standalone templated automation build hard-missed D4. Step 0.4 now emits the
+        # log naming the matched template's copy_persona (loaded from the template file) or, for a
+        # net-new build, a `selected_persona: net-new` marker. Best-effort: never blocks a build.
+        try:
+            _write_persona_selection_log(evidence_root, decision, catalog)
+        except Exception:  # noqa: BLE001 — the log is advisory glue, never breaks a build
+            pass
+
         d = decision["decision"]
         if d == flex.DEC_USE:
             task.setdefault("workflow_plan", decision["workflow_plan"])
@@ -681,6 +691,69 @@ def step0_match(task: dict, evidence_root: str, *,
         return decision
     except Exception as exc:  # noqa: BLE001 — matching must never break a build
         return {"decision": "SKIPPED", "reason": f"matcher error: {type(exc).__name__}: {exc}"}
+
+
+def _write_persona_selection_log(evidence_root: str, decision: dict, catalog: "Catalog") -> str:
+    """Produce ``<evidence_root>/persona-selection-log.md`` for FAB-QC D4 (fail-closed).
+
+    Names the matched template's ``copy_persona`` (primary + supporting) and its
+    ``source_books`` so the D4 grounding check can token-match; for a net-new/CREATE_NEW
+    build it writes a ``selected_persona: net-new`` marker (which D4 accepts on the net-new
+    path). Idempotent (never clobbers an operator/Skill-6-authored log). Advisory glue —
+    the caller wraps it so a failure never breaks a build."""
+    log_path = os.path.join(evidence_root, "persona-selection-log.md")
+    if os.path.exists(log_path):
+        return log_path  # never clobber an existing (possibly richer) log
+
+    tid = decision.get("matched_template")
+    dec = decision.get("decision")
+    tmpl = None
+    if tid and dec != flex.DEC_CREATE_NEW:
+        try:
+            entry = catalog.get(tid, group=decision.get("matched_category"))
+            src = entry.get("sourcePath") if isinstance(entry, dict) else None
+            if src and os.path.isfile(src):
+                tmpl = json.load(open(src, encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            tmpl = None
+
+    lines = ["# Persona Selection Log — Skill 44 (convert-and-flow-operator)",
+             "",
+             f"generated_at: {_ts()}",
+             f"intent_mode: {decision.get('intent_mode')}",
+             f"flex_decision: {dec}",
+             ""]
+
+    if tmpl:
+        cp = tmpl.get("copy_persona", {}) or {}
+        primary = cp.get("primary") or ""
+        supporting = cp.get("supporting") or []
+        books = tmpl.get("source_books", []) or []
+        # `selected_persona:` is the token FAB-QC D4 keys on; name the primary persona on it.
+        lines.append(f"selected_persona: {primary or tid}")
+        lines.append(f"matched_template: {tid}")
+        if primary:
+            lines.append(f"copy_persona.primary: {primary}")
+        for s in supporting:
+            lines.append(f"copy_persona.supporting: {s}")
+        for b in books:
+            lines.append(f"source_book: {b}")
+        if not primary and not books:
+            # Template carries no copy_persona/source_books → D4 has no expected personas;
+            # record the matched template so D4's "no expected" branch resolves cleanly.
+            lines.append("note: matched template declares no copy_persona/source_books "
+                         "(persona grounding N/A for this automation).")
+    else:
+        # Net-new / CREATE_NEW (or template file unreadable): net-new persona grounding.
+        lines.append("selected_persona: net-new")
+        lines.append("note: net-new automation — no library template persona; "
+                     "the build author must ground copy in the client's own voice/persona.")
+
+    lines.append("")
+    os.makedirs(evidence_root, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    return log_path
 
 
 def _ts() -> str:

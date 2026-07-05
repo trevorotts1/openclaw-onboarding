@@ -261,13 +261,21 @@ PY
 fi
 NEW_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/$NEW_TAG/gemini-index.sqlite.gz"
 echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG persona_count=$DIR_PERSONAS chunk_count=$CHUNKS file_count=$FILES"
-python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" "$FILES" <<'PY'
+python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" "$FILES" "$PERSONAS" <<'PY'
 import json, sys, datetime
-(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon, files) = sys.argv[1:12]
+(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon, files, embedded) = sys.argv[1:13]
 m = json.load(open(mp))
 today = datetime.date.today().isoformat()
 m["persona_count"] = int(personas)
 m["canonical_persona_count"] = int(canon)
+# FDN-7 / F1.3 gate 3 — 5th SET-triad member. This FULL build path embedded a
+# real asset, so the count of DISTINCT persona_id actually present in the DB is
+# the ground truth. Persist it so persona_fleet.py triad + the CI guard can
+# catch a later --no-asset staging bump that lifts persona_count above what the
+# served asset actually embeds (counted-but-vector-less). `embedded` is the live
+# SELECT COUNT(DISTINCT persona_id) from the rebuilt DB (step 4); the triad guard
+# at step 4 already proved it equals DIR_PERSONAS here.
+m["embedded_persona_count"] = int(embedded)
 m["chunk_count"] = int(chunks)
 m["file_count"] = int(files)
 m["sha256"] = sha

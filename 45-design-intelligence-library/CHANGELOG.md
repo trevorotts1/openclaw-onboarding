@@ -1,5 +1,27 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [v1.3.0] - 2026-07-05 - fix: coded enforcement gates, QC clobber test, embedding honesty, twin dedup (T-45-design-intelligence)
+
+### Added
+- **`scripts/diu_validator.py`** (Python stdlib, zero third-party deps) — the binding gates were prose-only; this makes three MECHANICAL (mirrors Skill 47's deterministic-gate pattern): [FIX-XC-03h]
+  - `prompt-caps` — enforces SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 char caps (MODEL-SPECS tier table); over-cap = hard exit 3 (`AF-DIU-PROMPT-CAP`).
+  - `route-check` — the SOP-DIU-611 §D.1 routing interlock as code: audience/webinar/funnel/virtual-event decks cannot run on the Rotation Engine (exit 2, `AF-DIU-ROUTING-INTERLOCK`).
+  - `fidelity` — TEST-PROTOCOL §5 receipt (avg ≥4.0, no dim <3, zero hard-rule violations) appended to `working/checkpoints/diu_fidelity_receipts.json`, plus a per-(card,dimension) 3-strike counter → CDO escalation (exit 5, `AF-DIU-3-STRIKE`).
+  - SKILL.md gains a "Binding enforcement — coded gates" section + a `scripts/` inventory entry.
+
+### Changed
+- **QC (`qc-design-intelligence-library.sh`):** added an INDEX clobber-safety test — seeds a sentinel INDEX.md in a temp home, re-runs the documented `cp -n` seed (INSTALL.md Step 4), and asserts the populated copy survives byte-for-byte; corrected the `_system` protocol-file count to `-maxdepth 1` (the nested `_system/templates/NAMED-STYLES.md` seed template is not a protocol file) so the total resolves to the documented **19**; version banner now reads `skill-version.txt`. SKILL.md/CHANGELOG "16 library files" corrected to 19. [FIX-S36-29]
+- **Semantic embedding search marked NOT YET AVAILABLE** (INSTRUCTIONS.md, CORE_UPDATES.md, SKILL.md read-order): the `index-style-cards-embedding.sh` script ships nowhere, so the activation command, `.embedding-index.json` references, and the Registrar embedding-refresh duty are removed; INDEX.md lookup is documented as the available surface until the index ships. [FIX-XC-11c]
+
+### Removed / de-duplicated (in `23-ai-workforce-blueprint/`)
+- **Deleted 7 byte-identical non-`SOP--` role-SOP twins** under `templates/role-library/graphics/sops/` (chief-design-officer, deck-systems-specialist, fidelity-tester, generation-operator, healer-graphics, photo-shoot-director, style-analyst) — the `SOP--` variant is canonical. Re-pointed references in `deck-systems-specialist.md`, `SOP-DIU-502.md`, and this CHANGELOG; surgically re-stamped `_index.json` (dropped the 7 duplicate `sops[]` entries + re-hashed the 3 edited artifacts) and verified with `hash-content-manifest.py --check`. [FIX-S36-30 ii]
+- **Wired the DIU production lifecycle onto the Command Center board** (CDO SOP 9.12, reusing Skill 48's fail-soft `cc_board.py`): Gate 4 lives in the **review** column, and the `review → done` transition is the auditable evidence Gate 4 occurred — closing the "Gate 4 skippable with no evidence" gap. [FIX-S36-30 i]
+
+### Version
+- **Skill 45 independent line:** skill-version.txt 1.2.3 → 1.3.0; SKILL.md frontmatter version 1.2.3 → 1.3.0 (must match the frontmatter-version-guard).
+
+---
+
 ## [v1.2.1] - 2026-06-14 - fix: negative-prompting long-budget cap-lift note
 
 ### Changed
@@ -72,7 +94,7 @@
   - QC script: qc-design-intelligence-library.sh
   - docs/VENDOR-BUILD-BRIEF.md: provenance document (vendor original + superseded header)
 - **Five role-library mirrors** (templates/role-library/graphics/sops/):
-  - style-analyst-sops.md, deck-systems-specialist-sops.md, generation-operator-sops.md, photo-shoot-director-sops.md, fidelity-tester-sops.md
+  - SOP--style-analyst-sops.md, SOP--deck-systems-specialist-sops.md, SOP--generation-operator-sops.md, SOP--photo-shoot-director-sops.md, SOP--fidelity-tester-sops.md (the byte-identical non-prefixed twins were removed; the `SOP--` variant is canonical)
   - Verbatim Section 9 copies; regenerated on role file update per the "mirror rule"
 - **Graphics department 00-START-HERE.md:**
   - All 23 graphics roles listed with slug/role_type

@@ -11,17 +11,26 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["DotCom Secrets (Russell Brunson)"],
+    "books": [
+      "DotCom Secrets (Russell Brunson)"
+    ],
     "sections": [
       "DotCom Secrets Secret #6 — Attractive Character Storylines (the 6 basic storylines + their plot templates)",
       "DotCom Secrets Secret #8 — Daily Seinfeld Sequence (each story ties to an offer; doubles as blog content)"
     ]
   },
+  "source_books": [
+    "DotCom Secrets (Russell Brunson)"
+  ],
   "trigger": {
     "primary": "Recurring editorial planning layer over the daily broadcast engine. Solves 'what do I write each day' by rotating the 6 Attractive Character storylines across the broadcast schedule, each slot tied to a value-ladder offer.",
     "trigger_type_ghl": "Scheduled broadcast slot (one per day) drawing from the rotation; no new contact trigger — runs on the existing seinfeld-broadcast segment."
   },
-  "channels": ["Email broadcast (primary)", "Blog (repurpose)", "Social pre-frame (repurpose the hook)"],
+  "channels": [
+    "Email broadcast (primary)",
+    "Blog (repurpose)",
+    "Social pre-frame (repurpose the hook)"
+  ],
   "sequence": [
     {
       "step": 1,
@@ -69,7 +78,20 @@
   "copyPersona": {
     "primary": "Brunson Attractive Character storylines (DCS Secret #6), each wrapped in the Seinfeld Hook-Story-Offer shell (seinfeld-broadcast-email).",
     "secondary": "Edwards offer-tie-in discipline ('which means...' + a Reason People Buy on every slot).",
-    "scripts": ["6 storyline plot templates", "Hook -> Story -> Offer wrapper"]
+    "scripts": [
+      "6 storyline plot templates",
+      "Hook -> Story -> Offer wrapper"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Brunson Attractive Character storylines (DCS Secret #6), each wrapped in the Seinfeld Hook-Story-Offer shell (seinfeld-broadcast-email).",
+    "supporting": [
+      "Edwards offer-tie-in discipline ('which means...' + a Reason People Buy on every slot)."
+    ],
+    "frameworks": [
+      "6 storyline plot templates",
+      "Hook -> Story -> Offer wrapper"
+    ]
   },
   "ghlBuild": {
     "buildType": "Planning/scheduling layer over the daily broadcast engine (daily-seinfeld-sequence). Not a contact-triggered workflow.",
@@ -81,6 +103,10 @@
     ],
     "notes": "No new workflow trigger beyond Template 1's segment; this template governs WHAT is sent each day and WHERE the CTA points. Pairs with the broadcast Smart List from daily-seinfeld-sequence."
   },
-  "kpis": ["open & click rate by storyline type (find your highest-converting story types)", "offer-tie revenue by slot", "blog/social repurpose traffic"],
+  "kpis": [
+    "open & click rate by storyline type (find your highest-converting story types)",
+    "offer-tie revenue by slot",
+    "blog/social repurpose traffic"
+  ],
   "faithfulness": "All six storylines, their plot templates, the 'talkers vs do-ers' line, and the offer-tie requirement are taken directly from DotCom Secrets Secret #6 and Secret #8. The weekly-slot scheduling and value-ladder CTA routing are the Skill-44 operationalization of those storylines."
 }

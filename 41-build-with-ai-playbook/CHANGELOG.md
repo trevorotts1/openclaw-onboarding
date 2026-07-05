@@ -1,3 +1,32 @@
+## [1.5.5] - 2026-07-05 — FIX-XC-03f + FIX-S36-18: real-output prompt gate, harness board-wiring, bash-3.2 + concurrency fixes
+
+### Why
+Two July-5 merge-train fixes closing gaps where machine gates could not bite on real work:
+- `qc-prompt-completeness.sh` only ever grepped the shipped TEMPLATE, so it could never fail on a
+  thin or fabricated generated prompt. `INSTRUCTIONS.md` also miscredited the non-fabrication floor
+  to this gate instead of `qc-no-fabrication.sh`.
+- The L1-L5 browser harness (the publish/escalate gate) and the `cc_move_task` Command Center helper
+  were prose-only — no build-path script called them — and the runner used a bash-4.3 negative array
+  subscript that errors on stock macOS bash 3.2. `11-run-qc-checklist.sh` wrote a fixed
+  `/tmp/skill41-qc.out` that concurrent runs clobber.
+
+### Fixed
+- **FIX-XC-03f:** `scripts/qc-prompt-completeness.sh` gains a `--prompt <file>` mode that asserts the 8
+  required sections **plus minimum content** (word floor + no unfilled `[ ]` template placeholders) on
+  the REAL generated prompt; default template-mode behavior is unchanged. `INSTRUCTIONS.md` Step 6 wires
+  the `--prompt` gate against the prompt about to be pasted, and line 7 now names `qc-no-fabrication.sh`
+  as the non-fabrication enforcer. Test extended to cover the new mode (thin stub, unfilled placeholder,
+  missing section, absent file all bite).
+- **FIX-S36-18 (i):** `scripts/12-run-browser-harness.sh` now sources `lib-command-center.sh` (the single
+  shared column-list/move lib) and reflects the publish decision onto the board — `review` on PASS,
+  `blocked` on ESCALATED — fail-soft (silent no-op with no `TASK_ID`/Command Center).
+- **FIX-S36-18 (ii):** replaced the bash-4.3 `RESULTS[-1]=` negative subscript with
+  `RESULTS[$((${#RESULTS[@]}-1))]=` so the runner works on stock macOS bash 3.2.
+- **FIX-S36-18 (iii):** `INSTRUCTIONS.md` Step 6 now instructs running `12-run-browser-harness.sh`;
+  a `publish=ESCALATED` result is documented as a BLOCKED build (do not publish; card → `blocked`).
+- **FIX-S36-18 (iv):** `scripts/11-run-qc-checklist.sh` uses `OUT="$(mktemp)"` + an EXIT trap instead of
+  the fixed `/tmp/skill41-qc.out`, so concurrent QC runs no longer clobber each other.
+
 ## [1.5.4] - 2026-07-01 — docs: pipeline diagram Step 5 shows CAF-direct (Option 1, PRIMARY) vs manual paste (Option 2, fallback)
 
 ### Changed

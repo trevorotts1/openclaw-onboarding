@@ -1,7 +1,7 @@
 ---
 name: book-writer
 description: Turns ONE completed book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets — avatar dossier, the blended "The {First} {Last} Tone", locked title/subtitle + approved outline, print-ready manuscript, a 30-Day Challenge, and an AI cover prompt — delivered as labeled files in ~/Downloads. Fully local at runtime — no n8n, no Airtable, no Google/Gmail/Slack/GHL — on the client's OWN model providers, never Anthropic. A Book/Brand version selector runs FIRST: version=book runs here; version=brand hands off to Skill 52 (avatar-alchemist). Modes full (flagship 12-chapter book) and 4x3x3 (offer book: 30 titles / 4 Transformational Outcomes / KP doc / 433_Deck_Data.json handed to Skill 51). Every SACRED count/floor is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed process certificate. Trigger with "write my book", "run book writer", "book version of avatar alchemist", "12-chapter book for <name>", or "4x3x3 book".
-version: 1.0.4
+version: 1.1.0
 ---
 
 # Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (Skill 53)
@@ -28,7 +28,11 @@ the client's own model providers (never Anthropic).**
 - `scripts/` — the twelve fail-closed provers, `verify_tone_core_sync.py`, and the process guard.
 - `run_book_writer.py` — the deterministic assembler/certifier.
 - `book-writer-entry.sh` — the ONE sanctioned front door (deps → bypass-scan → hash-pin → nonce).
-- `roles/` — the 7 dispatchable role SOPs. `examples/golden-marcus-halloway/` — the worked example.
+- `roles/` — the 7 dispatchable role SOPs (AVATAR-ANALYST · TONE-ANALYST · TITLE-STRATEGIST ·
+  BOOK-ARCHITECT · CHAPTER-WRITER · PACKAGER · REVISER), registered with a canonical `content_sha` in
+  `roles/_index.json` (re-stamp with `scripts/hash_role_index.py` after any role edit; `--check` gates it
+  in `verify.sh`). The SOLE dispatcher (foreman) is the assembler `run_book_writer.py` — roles never
+  invoke each other. `examples/golden-marcus-halloway/` — the worked example.
 
 ## Deliverables (labeled, local)
 
@@ -69,7 +73,12 @@ python3 53-book-writer/run_book_writer.py --run-dir <RUN_DIR>  # deterministic a
 2. **Phases P0→P8** — the assembler walks phases IN ORDER with NO skips: intake → avatar → tone →
    titles-gate → outline-gate → chapters (four STRICTLY-SEQUENTIAL batches, continuity proven) →
    package → QC → deliver. Human checkpoints (GATE-1 titles / GATE-2 outline / GATE-3 approval /
-   GATE-4 second revision) are in-chat, receipted, in the exact source order.
+   GATE-4 second revision) are in-chat, receipted, in the exact source order — and the assembler
+   REQUIRES the matching gate receipt (`approved:true` + `approved_by` + timestamp, in
+   `run/checkpoints/gate-receipts.json`) before advancing (GATE-1/2 always; GATE-3/4 when a revision
+   round ran). P8-DELIVER promotes the certified bundle to `delivery/`, copies it to a labeled,
+   timestamped `~/Downloads` folder, and re-verifies every file's sha256 against `MANIFEST.json`; an
+   uncertified bundle is quarantined and never sits in `delivery/`.
 3. **Provers** — the twelve fail-closed provers MEASURE the stripped text and ignore self-reported
    counts; any `AF-BK-*` violation blocks the run.
 4. **Certificate** — a full P0→P8 pass mints `PROCESS-CERTIFICATE.{json,md}` with a deterministic
@@ -96,8 +105,13 @@ python3 53-book-writer/run_book_writer.py --run-dir <RUN_DIR>  # deterministic a
 ## Client-provider rule (binding)
 
 On a client box the skill uses the **client's own configured providers and keys** — never the
-operator's, never Anthropic model ids. `preflight.sh` probes the box and writes `model-map.json`
-(HEAVY-WRITER / MID-WRITER / FORMATTER / RESEARCHER / IMAGE tiers + `provider_caps`); `AF-BK-ANTHROPIC`
+operator's, never Anthropic model ids. `preflight.sh` REALLY probes the box (bounded `ollama list` +
+provider-key NAMES, never values), preserves any operator-filled tiers, and **hard-fails (exit 7) when a
+REQUIRED tier (HEAVY-WRITER / MID-WRITER / FORMATTER) is unresolved or resolves to an `/anthropic|claude/i`
+id** — an unconfigured box never silently ships empty tiers. It writes `model-map.json`
+(HEAVY-WRITER / MID-WRITER / FORMATTER / RESEARCHER / IMAGE tiers + `provider_caps` + a `probe` block) and,
+with `--run-dir`, cross-checks the resolved tier→model map into `RUN-LEDGER.json` (so the no-Anthropic
+gate re-scans the resolved ids). `AF-BK-ANTHROPIC`
 hard-fails any run whose resolved model id matches `/anthropic\|claude/i`. The client's express model
 choice is never substituted. Role files and SOPs name client-provider tiers, never `claude-*` ids.
 
