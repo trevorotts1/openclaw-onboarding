@@ -66,6 +66,12 @@ JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 # Directories to scan (relative to the skill root).
 SCAN_DIRS = ["references", "templates", "scripts"]
 
+# RAW-JSON fixtures scanned as a WHOLE-FILE object-A body (no fenced blocks). The
+# U-15 Convert-and-Flow snapshot ships the inbound Customer-Replied webhook body as a
+# raw .json file (no backtick fences), and it must obey the same FLAT 23-key rule so
+# snapshot drift from the standard fails CI. Add new raw-JSON bodies here.
+RAW_JSON_FILES = ["references/snapshot-inbound-workflow-fixture.json"]
+
 # No files are excluded by name. The v6.0 source playbook is scanned too — its
 # per-channel GHL RAW BODY examples must obey the same 23-key rule, and its
 # object-B server-mapping blocks (camelCase "agentId") are skipped by the
@@ -259,6 +265,28 @@ for sub in SCAN_DIRS:
                 "block": i,
                 "violations": v,
             })
+
+# Raw-JSON fixtures: the WHOLE FILE is one object-A body (no fences). Only files that
+# carry the snake_case "agent_id" discriminator are linted, so a non-body .json is
+# never mis-scanned.
+for rel in RAW_JSON_FILES:
+    p = SKILL_DIR / rel
+    if not p.is_file():
+        continue
+    try:
+        raw = p.read_text(errors="ignore")
+    except Exception:
+        continue
+    if '"agent_id"' not in raw:
+        continue
+    total_files += 1
+    total_blocks += 1
+    v = lint_block(raw)
+    results.append({
+        "file": rel,
+        "block": 0,
+        "violations": v,
+    })
 
 failures = [r for r in results if r["violations"]]
 

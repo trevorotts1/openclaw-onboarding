@@ -725,6 +725,32 @@ else
   report_fail "qc-webhook-chaining.sh not found (looked in scripts/)"
 fi
 
+section "Model fallback chain + model tier (qc-model-fallback.sh)"
+QC_MODELFB="$SCRIPT_DIR/qc-model-fallback.sh"
+[ -f "$QC_MODELFB" ] || QC_MODELFB="$SKILL38_ROOT/scripts/qc-model-fallback.sh"
+if [ -f "$QC_MODELFB" ]; then
+  if bash "$QC_MODELFB" >/dev/null 2>&1; then
+    report_pass "U-8 + U-10 wiring holds (references/model-fallback-chain.md documents skill38.model_chain.primary/.fallbacks + the three model-tier enum values, scripts/32-verify-model-failover-support.sh present, MEMORY Rule 38, the Saturday freshness cron reviews the whole chain, model-failover-events.jsonl seeded, every playbook model-tier is realtime-light/realtime-standard/reasoning-max)"
+  else
+    report_fail "qc-model-fallback.sh found a model-fallback/model-tier violation - run it directly for detail"
+  fi
+else
+  report_fail "qc-model-fallback.sh not found (looked in scripts/)"
+fi
+
+section "Workflow visual, Part 4 truth diagram (qc-workflow-visual.sh)"
+QC_VISUAL="$SCRIPT_DIR/qc-workflow-visual.sh"
+[ -f "$QC_VISUAL" ] || QC_VISUAL="$SKILL38_ROOT/scripts/qc-workflow-visual.sh"
+if [ -f "$QC_VISUAL" ]; then
+  if bash "$QC_VISUAL" >/dev/null 2>&1; then
+    report_pass "U-11 wiring holds (protocols/workflow-visual-protocol.md + scripts/31-generate-workflow-visual.sh + MEMORY Rule 39 + kie-image-events.jsonl seeded; every registered playbook has a current, non-stale truth diagram, a missing hero.png only WARNs)"
+  else
+    report_fail "qc-workflow-visual.sh found a missing/stale truth diagram or missing visual wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-workflow-visual.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

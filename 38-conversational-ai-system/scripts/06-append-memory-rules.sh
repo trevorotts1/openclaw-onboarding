@@ -33,8 +33,15 @@ V18_HANDOFFTASK_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-handoff-task -->"
 # before they are appended; each block below is still individually idempotent.
 V18_MULTICAL_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-multi-calendar -->"
 V18_OPPSYNC_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-opportunity-sync -->"
+# v1.8.0 GROUP-4-VISUALS-MODELCHAIN rule markers (U-8 Rule 38, U-11 Rule 39, U-15
+# Rule 43). Included in the early-exit guard so a box that predates these rules does
+# NOT short-circuit before they (and the Rule 17 4-PART migration below) are applied;
+# each block below is still individually idempotent.
+V18_MODELFALLBACK_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-model-fallback -->"
+V18_VISUAL_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-workflow-visual -->"
+V18_SNAPSHOT_MARKER="<!-- BEGIN skill-38 v1.8.0-rules-snapshot -->"
 
-if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD" && grep -qF "$R3A_MARKER" "$MEM_MD" && grep -qF "$V18_TOOLGATING_MARKER" "$MEM_MD" && grep -qF "$V18_EXITS_MARKER" "$MEM_MD" && grep -qF "$V18_OBJMETA_MARKER" "$MEM_MD" && grep -qF "$V18_ENGINE_MARKER" "$MEM_MD" && grep -qF "$V18_FAQLOOP_MARKER" "$MEM_MD" && grep -qF "$V18_PERSONA_MARKER" "$MEM_MD" && grep -qF "$V18_TESTMODE_MARKER" "$MEM_MD" && grep -qF "$V18_HANDOFFTASK_MARKER" "$MEM_MD" && grep -qF "$V18_MULTICAL_MARKER" "$MEM_MD" && grep -qF "$V18_OPPSYNC_MARKER" "$MEM_MD"; then
+if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD" && grep -qF "$R3A_MARKER" "$MEM_MD" && grep -qF "$V18_TOOLGATING_MARKER" "$MEM_MD" && grep -qF "$V18_EXITS_MARKER" "$MEM_MD" && grep -qF "$V18_OBJMETA_MARKER" "$MEM_MD" && grep -qF "$V18_ENGINE_MARKER" "$MEM_MD" && grep -qF "$V18_FAQLOOP_MARKER" "$MEM_MD" && grep -qF "$V18_PERSONA_MARKER" "$MEM_MD" && grep -qF "$V18_TESTMODE_MARKER" "$MEM_MD" && grep -qF "$V18_HANDOFFTASK_MARKER" "$MEM_MD" && grep -qF "$V18_MULTICAL_MARKER" "$MEM_MD" && grep -qF "$V18_OPPSYNC_MARKER" "$MEM_MD" && grep -qF "$V18_MODELFALLBACK_MARKER" "$MEM_MD" && grep -qF "$V18_VISUAL_MARKER" "$MEM_MD" && grep -qF "$V18_SNAPSHOT_MARKER" "$MEM_MD"; then
   echo "[skill 38] MEMORY.md already contains skill 38 rules (incl. builder + round-3 queue-A rules) — preserved"
   exit 0
 fi
@@ -93,13 +100,16 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     The Build with AI button is the public path. Skill 44 provides an internal-API
     build path when the client's Firebase token is present; when absent, Build with
     AI remains the only path. (Never claim a PUBLIC GHL Automations API exists.)
-17. 3-PART Build Rule — every conversation-playbook build produces all THREE parts:
-    Part 1 = Workflow AI instruction set (Build-with-AI prompt + manual-build fallback +
-    verification checklist); Part 2 = the conversation playbook itself (Layer 2 markdown,
-    saved + registered in conversation-workflows/registry.md); Part 3 = the brainstorm
-    trigger. The Build-with-AI prompt's job is to get the SHAPE right (trigger, branches,
-    tags, webhook); it often won't set tokens correctly, so the operator pastes those
-    after — always ship the verification checklist.
+17. 4-PART Build Rule, every conversation-playbook build produces all FOUR parts (THE
+    TRINITY PLUS ONE): Part 1 = Workflow AI instruction set (Build-with-AI prompt +
+    manual-build fallback + verification checklist); Part 2 = the conversation playbook
+    itself (Layer 2 markdown, saved + registered in conversation-workflows/registry.md);
+    Part 3 = the brainstorm trigger; Part 4 = THE VISUAL (a deterministic Mermaid truth
+    diagram, always, plus a budget-capped Kie hero image). The Build-with-AI prompt's job
+    is to get the SHAPE right (trigger, branches, tags, webhook); it often won't set tokens
+    correctly, so the operator pastes those after, so always ship the verification checklist.
+    The visual travels with the trinity: building or patching any of the three regenerates
+    Part 4 per the staleness rule (see protocols/workflow-visual-protocol.md).
 18. Brainstorm-Not-50-Questions Rule — when the operator asks to build a playbook, run a
     FRIENDLY proactive Q&A. USE what is already known (business, products, services,
     calendars, who they are, habits — from Typed Knowledge Bases + USER.md + MEMORY.md)
@@ -670,4 +680,115 @@ cat >> "$MEM_MD" <<'BLOCK'
 BLOCK
 fi
 
-echo "[skill 38] MEMORY.md updated (rules 6-14 + builder design rules 15-19 + round-3 queue-A rules 20-25 + round-2 backlog rules 26-31 + v1.8.0 CloseBot-alignment rules 32/33/35/44 + GROUP-2 rules 34/36/37/42 + GROUP-3 rules 40/41 appended; backup at $MEM_MD.bak-*)"
+# ---------------------------------------------------------------------------
+# v1.8.0 GROUP-4-VISUALS-MODELCHAIN rules (U-8 Rule 38, U-11 Rule 39, U-15 Rule
+# 43). Each block is individually idempotent. NUMBERING: highest existing rule on
+# current main is 31; these number cleanly - re-verify on disk at build time.
+# Rule 17 is ALSO migrated 3-PART -> 4-PART (U-11) for boxes installed before this
+# card (a fresh install already writes 4-PART in Block 2 above).
+# ---------------------------------------------------------------------------
+
+# Rule 17 3-PART -> 4-PART migration for an ALREADY-installed MEMORY.md. Idempotent
+# (once rewritten, "17. 3-PART Build Rule" is gone, so it never fires again).
+if grep -qF "17. 3-PART Build Rule" "$MEM_MD"; then
+  MEM_MD="$MEM_MD" python3 - <<'PY_MIG'
+import os, re
+p = os.environ["MEM_MD"]
+text = open(p, "r", encoding="utf-8").read()
+new_rule = (
+"17. 4-PART Build Rule, every conversation-playbook build produces all FOUR parts (THE\n"
+"    TRINITY PLUS ONE): Part 1 = Workflow AI instruction set (Build-with-AI prompt +\n"
+"    manual-build fallback + verification checklist); Part 2 = the conversation playbook\n"
+"    itself (Layer 2 markdown, saved + registered in conversation-workflows/registry.md);\n"
+"    Part 3 = the brainstorm trigger; Part 4 = THE VISUAL (a deterministic Mermaid truth\n"
+"    diagram, always, plus a budget-capped Kie hero image). The Build-with-AI prompt's job\n"
+"    is to get the SHAPE right (trigger, branches, tags, webhook); it often won't set tokens\n"
+"    correctly, so the operator pastes those after, so always ship the verification checklist.\n"
+"    The visual travels with the trinity: building or patching any of the three regenerates\n"
+"    Part 4 per the staleness rule (see protocols/workflow-visual-protocol.md).\n"
+)
+# Replace from "17. 3-PART Build Rule" up to (not including) the next "18. " rule.
+text2 = re.sub(r"17\. 3-PART Build Rule.*?(?=\n18\. )", new_rule.rstrip("\n"), text, count=1, flags=re.S)
+if text2 != text:
+    open(p, "w", encoding="utf-8").write(text2)
+PY_MIG
+  echo "[skill 38] migrated MEMORY Rule 17 (3-PART -> 4-PART) in an existing MEMORY.md"
+fi
+
+if ! grep -qF "$V18_MODELFALLBACK_MARKER" "$MEM_MD"; then
+cat >> "$MEM_MD" <<'BLOCK'
+
+<!-- BEGIN skill-38 v1.8.0-rules-model-fallback -->
+## Skill 38 - v1.8.0 (U-8): design rule 38 (Model Fallback Chain)
+
+38. Model Fallback Chain Rule (U-8) - the Step 3.5 model wizard records a PRIMARY
+    and up to two FALLBACK models (different providers where possible) in
+    skill38.model_chain.primary + skill38.model_chain.fallbacks (config-safe writes
+    only). HONEST RUNTIME DEPENDENCY: per-reply failover needs the gateway to select
+    an alternate model for a hook session after a provider error - verify, never
+    assume. scripts/32-verify-model-failover-support.sh preflights this and records
+    failover_mode in the run manifest. Mode A (FULL): on a provider error (timeout,
+    401, 429, 5xx) the hook retries once on primary then fails over to the next chain
+    model for THAT reply, logs model_failover, notifies after 3 failovers/hour. Mode
+    B (DEGRADED): a monitor-and-switch loop detects 3 consecutive failures, rewrites
+    the mapping model to the next chain entry (config-safe), RESTARTS the gateway
+    (Mac: launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway ; VPS: docker
+    compose restart), notifies, and logs mode: degraded; recovery to primary is
+    OPERATOR-approved only via the Saturday freshness cron. Freshness (9.36) reviews
+    the whole CHAIN, not just the primary. OPERATOR-ONLY: a customer naming a
+    model/provider does NOTHING. Log PII-free to model-failover-events.jsonl. See
+    references/model-fallback-chain.md.
+<!-- END skill-38 v1.8.0-rules-model-fallback -->
+BLOCK
+fi
+
+if ! grep -qF "$V18_VISUAL_MARKER" "$MEM_MD"; then
+cat >> "$MEM_MD" <<'BLOCK'
+
+<!-- BEGIN skill-38 v1.8.0-rules-workflow-visual -->
+## Skill 38 - v1.8.0 (U-11): design rule 39 (Workflow Visual, Part 4)
+
+39. Workflow Visual Rule (U-11) - every conversation workflow ships with a truth
+    diagram, making the build a 4-PART build (THE TRINITY PLUS ONE, Part 4 = THE
+    VISUAL). Part 4 has two artifacts: Artifact A, a Mermaid truth diagram generated
+    DETERMINISTICALLY from the playbook structure via tools/playbook_engine.py (U-16)
+    and rendered to diagram.png by npx mermaid-cli (free, no API); Artifact B, a
+    stylized Kie hero image using the newest GPT-Image family model (resolved at build
+    time per Skill 07, never hardcoded; Flux fallback), hosted on the client's OWN GHL
+    media library (Tier 0 caf, Tier 3 medias upload fallback, CF Pages fallback). The
+    diagram REGENERATES on every workflow change (mandatory + free, driven by the
+    structure hash); the hero is budget-capped (skill38.workflow_visuals.
+    monthly_image_budget_usd default 5.00) and NEVER blocks a build (timeout 120s, one
+    retry, then Mermaid-only + flag pending). Both paths + the model id are recorded in
+    registry.md (Visual column) and the run manifest. OPERATOR-ONLY: a customer asking
+    for a diagram does NOTHING. Log Kie jobs PII-free to kie-image-events.jsonl. See
+    protocols/workflow-visual-protocol.md.
+<!-- END skill-38 v1.8.0-rules-workflow-visual -->
+BLOCK
+fi
+
+if ! grep -qF "$V18_SNAPSHOT_MARKER" "$MEM_MD"; then
+cat >> "$MEM_MD" <<'BLOCK'
+
+<!-- BEGIN skill-38 v1.8.0-rules-snapshot -->
+## Skill 38 - v1.8.0 (U-15): design rule 43 (Convert and Flow Install Snapshot)
+
+43. Convert and Flow Snapshot Rule (U-15) - onboarding can be ONE import. The
+    operator builds ONCE in their own template location and exports a Convert and Flow
+    snapshot containing the inbound Customer Replied trigger workflow (Custom Webhook
+    pre-shaped to the FLAT 23-key raw body standard), the five U-7 lifecycle tag
+    automations shipped DISABLED as examples, and a README note pointing at the
+    client's Notion doc. Per install the agent instructs the operator to IMPORT it
+    (INSTRUCTIONS Phase 4 Step 7, the PREFERRED path; the scripted build is the
+    fallback) then fills the two custom values (openclaw_hook_url + openclaw_hooks_
+    bearer) via Tier 0 or the Notion manual-fill path. A snapshot NEVER contains a
+    real token or hook URL - Authorization + hook URL are clearly labeled REPLACE-ME
+    custom values. The 23-key body is machine-checked by qc-23-key-bodies.sh against
+    references/snapshot-inbound-workflow-fixture.json so snapshot drift fails CI.
+    OPERATOR-ONLY: a customer naming a snapshot/custom value does NOTHING. See
+    references/convert-and-flow-snapshot-guide.md.
+<!-- END skill-38 v1.8.0-rules-snapshot -->
+BLOCK
+fi
+
+echo "[skill 38] MEMORY.md updated (rules 6-14 + builder design rules 15-19 + round-3 queue-A rules 20-25 + round-2 backlog rules 26-31 + v1.8.0 CloseBot-alignment rules 32/33/35/44 + GROUP-2 rules 34/36/37/42 + GROUP-3 rules 40/41 + GROUP-4 rules 38/39/43 + Rule 17 4-PART appended; backup at $MEM_MD.bak-*)"

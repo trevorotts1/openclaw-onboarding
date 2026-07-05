@@ -317,6 +317,30 @@ fi
 # scripts/check-ghl-pit-liveness.sh (cron ghl-pit-liveness, registered by 04).
 
 # ----------------------------------------------------------------------------
+# STEP G - Kie.ai hero-visual preflight (U-11) + HERO PATH report
+# ----------------------------------------------------------------------------
+# NON-FATAL / informational. The U-11 workflow visual ships a FREE, deterministic
+# Mermaid truth diagram on every build regardless. The stylized Kie HERO image is an
+# optional extra that needs KIE_API_KEY (Skill 07). This never blocks the install: we
+# only REPORT whether the hero path is ACTIVE or the build is Mermaid-only, so a client
+# is never silently left wondering where the pretty picture went. Appended over the
+# current file so the PR #511 Command Center ACTIVE/INACTIVE lines below stay intact.
+KIE_KEY_NAMES="KIE_API_KEY"
+kie_present=""
+for f in "$HOME/.openclaw/secrets/.env" "$HOME/.openclaw/.env" "$HOME/.openclaw/secrets.env" "$HOME/.openclaw/openclaw.env" "$MFD/.env" "$MFD/secrets.env" "/data/.openclaw/secrets/.env"; do
+  [ -f "$f" ] || continue
+  if _file_has_any "$f" "$KIE_KEY_NAMES"; then kie_present="$f"; break; fi
+done
+if [ -z "$kie_present" ]; then
+  for n in $KIE_KEY_NAMES; do [ -n "${!n:-}" ] && { kie_present="shell environment"; break; }; done
+fi
+if [ -n "$kie_present" ]; then
+  echo "$PASS_PREFIX HERO VISUAL PATH = ACTIVE (KIE_API_KEY found at $kie_present). Builds ship the Mermaid truth diagram PLUS the Kie hero image (budget-capped; U-11)."
+else
+  echo "$PASS_PREFIX HERO VISUAL PATH = Mermaid-only (no KIE_API_KEY; checked the env stores + shell). The FREE truth diagram still ships on every build; the hero image is skipped until Skill 07 + KIE_API_KEY are present. See protocols/workflow-visual-protocol.md."
+fi
+
+# ----------------------------------------------------------------------------
 # DONE
 # ----------------------------------------------------------------------------
 echo

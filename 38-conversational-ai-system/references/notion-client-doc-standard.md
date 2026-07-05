@@ -117,3 +117,11 @@ The install is NOT complete until the doc LINK has been SENT to the client via T
   list (items 1-12) and composes `scripts/qc-reference-sheet.sh` so the build FAILS on any violation.
 - **Delivery:** `scripts/qc-notify-client-doc.sh` enforces the mandatory Telegram delivery.
 - All three run in `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`.
+
+## 5. Per-playbook visual embed (U-11)
+
+When a playbook's registry **Visual** column is populated (Part 4, THE VISUAL, was generated), that
+playbook's per-playbook section in the client doc MUST embed the visual: the **hero image FIRST**, then
+the **truth diagram under a "How it works" heading**, honoring the how-it-works-LAST ordering above. A
+budget-capped or Kie-outage build has only the free Mermaid truth diagram; that diagram is still embedded
+under "How it works". Full design: `protocols/workflow-visual-protocol.md`.
