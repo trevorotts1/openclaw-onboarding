@@ -9,7 +9,7 @@ triggers:
   - "set up inbox manager"
   - "set up my coach"
   - "personal assistant"
-version: 1.0.4
+version: 1.0.5
 ---
 
 # Skill 42: Personal Assistant Library
@@ -113,4 +113,4 @@ Several specialists (09 Emotional Support, 24 Superwoman, 26 Therapeutic Support
     ├── 01-inbox-manager/  ...  29-greatness-agent/
 ```
 
-28 specialists × 6 role files + Specialist 19's 12 role files = 180 role files, plus 162 `PA-NN-NN-slug.md` SOPs, plus 29 `SOP/00-INDEX.md`, plus `_index.md`. (Specialist 19 ships 6 sub-specialist role files **in addition to** its standard 6-file set — its `IDENTITY.md` and `SOUL.md` are present alongside the sub-roles, not replaced by them. This is an intentional structural exception: the Study Partner is a roster of 6 sub-specialists rather than one specialist, so it carries both the standard orientation set and a sub-role file per member. The QC script (`qc-personal-assistant-library.sh`) and `scripts/verify-pa-install.sh` exempt Specialist 19 from the per-file role check for this reason.)
+28 specialists × 6 role files + Specialist 19's 12 role files = 180 role files, plus 162 `PA-NN-NN-slug.md` SOPs, plus 29 `SOP/00-INDEX.md`, plus `_index.md`. (Specialist 19 ships 6 sub-specialist role files **in addition to** its standard 6-file set — its `IDENTITY.md` and `SOUL.md` are present alongside the sub-roles, not replaced by them. This is an intentional structural exception: the Study Partner is a roster of 6 sub-specialists rather than one specialist, so it carries both the standard orientation set and a sub-role file per member. The QC script (`qc-personal-assistant-library.sh`) and `scripts/verify-pa-install.sh` assert all 12 of Specialist 19's role files — the standard 6 plus the 6 sub-role files — rather than exempting it.)
