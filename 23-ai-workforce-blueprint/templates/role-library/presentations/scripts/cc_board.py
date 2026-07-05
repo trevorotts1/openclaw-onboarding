@@ -575,3 +575,80 @@ def stamp_task_id(run_dir, task_id: str) -> bool:
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
+
+
+# ---------------------------------------------------------------------------
+# RECONCILE — replay the last failed board advance (FIX-PRES-08b).
+# ---------------------------------------------------------------------------
+def reconcile(run_dir) -> int:
+    """Replay the LAST outstanding failed board advance from the movement receipt
+    (working/checkpoints/cc-board.json).
+
+    WHY: a transport-failed TERMINAL close (run_signature_deck._board_close_delivery
+    is fail-soft) otherwise leaves a delivered deck's card stuck at in_progress
+    forever, with no retry. This reads cc_task_id from the manifest and the last
+    ok:false STATUS movement that was NOT superseded by a later OK, and re-issues
+    that patch_phase (which, for status='done', re-attaches the process_certificate_sha).
+
+    Returns 0 on success or a clean no-op (nothing to reconcile / board consistent /
+    board disabled), 1 when a replay was attempted but still failed. FAIL-SOFT:
+    never raises — the board is a view, never a gate."""
+    try:
+        tid = _read_manifest(run_dir).get("cc_task_id")
+        if not tid:
+            _log("reconcile: no cc_task_id in manifest — nothing to reconcile.")
+            return 0
+        p = _movements_path(run_dir)
+        if not p.exists():
+            _log("reconcile: no movement receipt — nothing to reconcile.")
+            return 0
+        try:
+            data = json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            _log("reconcile: movement receipt unreadable — nothing to reconcile.")
+            return 0
+        movements = data.get("movements") if isinstance(data, dict) else None
+        if not isinstance(movements, list) or not movements:
+            _log("reconcile: empty movement receipt — nothing to reconcile.")
+            return 0
+        # Walk in order: a later OK status advance supersedes an earlier failure.
+        last_failed = None
+        for m in movements:
+            if not isinstance(m, dict) or m.get("kind") != "status":
+                continue
+            if m.get("ok"):
+                last_failed = None
+            else:
+                last_failed = m
+        if last_failed is None:
+            _log("reconcile: no outstanding failed status advance — board is consistent.")
+            return 0
+        phase_id = last_failed.get("phase_id")
+        status = last_failed.get("target") or last_failed.get("status")
+        if not phase_id or not status:
+            _log("reconcile: last failed movement missing phase_id/status — cannot replay.")
+            return 0
+        _log(f"reconcile: replaying failed advance {phase_id}->{status} (task_id={tid}).")
+        ok = patch_phase(
+            run_dir, str(tid), str(phase_id), str(status),
+            note="reconcile: replay of a transport-failed advance",
+        )
+        return 0 if ok else 1
+    except Exception as exc:  # noqa: BLE001 — reconcile is best-effort, never a gate
+        _log(f"reconcile raised ({exc}) — non-fatal.")
+        return 0
+
+
+if __name__ == "__main__":
+    import argparse
+    _ap = argparse.ArgumentParser(
+        description="Presentations Command Center board helper (fail-soft).")
+    _ap.add_argument(
+        "--reconcile", metavar="RUN_DIR",
+        help="Replay the last failed board advance from RUN_DIR's movement receipt "
+             "(FIX-PRES-08b). Exit 0 = success/clean no-op, 1 = replay still failed.")
+    _args = _ap.parse_args()
+    if _args.reconcile:
+        sys.exit(reconcile(_args.reconcile))
+    _ap.print_help()
+    sys.exit(0)

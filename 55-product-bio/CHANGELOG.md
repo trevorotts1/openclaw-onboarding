@@ -1,6 +1,6 @@
 # Changelog — Product Bio Engine (Skill 55)
 
-## 1.0.5 — client-exact overrides, labeled Downloads bundle, real department (T-55-product-bio)
+## 1.0.6 — 2026-07-05 — client-exact overrides, labeled Downloads bundle, real department (T-55-product-bio)
 - **FIX-XC-12c — client-exact override channel (mirror Skill 57).** The 6,000–7,000
   word band and the per-section enumerated COUNT_BANDS are now DEFAULT floors: a
   client-exact target LOGGED in the locked brief (`word_count_override` /
@@ -32,6 +32,22 @@
   updated the P6 delivery label to the certified-then-bundle flow. `verify.sh`
   redirects the deliverable root into a throwaway dir. `ENGINE-PIN.sha256`
   re-stamped over the edited enforcement set.
+
+## 1.0.5 — 2026-07-05 — shared mc_board board review-skip root fix (FIX-XC-01a)
+
+### Changed
+- **`mc_board.py` (shared helper, byte-identical across 49/50/53/55/56/57):** the producer no longer
+  PATCHes a run's Command Center card straight to `done`. `complete_run` now posts the terminal status
+  `review` ("certified — awaiting QC promotion") with the deliverable link registered on the card;
+  `card_advance(status="done")` is HARD-BLOCKED. `review -> done` is owned exclusively by the
+  independent QC scorer (PASS >= 8.5). Ports the CC `LEGAL_TRANSITIONS` map + BFS legal-path walker +
+  current-status GET from `48-facebook-ad-generator/scripts/cc_board.py`, and honors
+  `CC_STATUS_PATH_TEMPLATE` / `CC_STATUS_METHOD` for route parity. Still fully fail-soft — the board
+  is a VIEW, never a gate.
+
+### Added
+- **`test_cc_contract.py` (byte-identical):** stdlib contract test proving `complete_run` posts
+  `review` and never `done`, the legal-path walk, route-template parity, and disabled-board no-op.
 
 ## 1.0.4 — prior governed build
 - Enforcement core: `PRODUCT-BIO-MANIFEST.json` (P0→P6 phase machine + AF-PB-*

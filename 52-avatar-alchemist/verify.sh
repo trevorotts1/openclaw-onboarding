@@ -93,6 +93,8 @@ run "aa_links_gate.py --self-test"           "$PY" "$S/aa_links_gate.py" --self-
 run "aa_egress_gate.py --self-test"          "$PY" "$S/aa_egress_gate.py" --self-test
 run "aa_qc_cert.py --self-test"              "$PY" "$S/aa_qc_cert.py" --self-test
 run "aa_gate_integrity_check.py --self-test" "$PY" "$S/aa_gate_integrity_check.py" --self-test
+run "aa_token_lockstep.py --self-test"       "$PY" "$S/aa_token_lockstep.py" --self-test
+run "aa_token_lockstep.py (real tree)"       "$PY" "$S/aa_token_lockstep.py"
 run "aa_package.py --self-test"              "$PY" "$S/aa_package.py" --self-test
 run "aa_handoff.py --self-test"              "$PY" "$S/aa_handoff.py" --self-test
 run "aa_gate_integrity_check.py --check"     "$PY" "$S/aa_gate_integrity_check.py" --check
@@ -167,6 +169,23 @@ else
 fi
 
 echo ""
+echo "-- 2f) REPRO+BLOCK: book intake on a box WITH a 53-*book* sibling ROUTES ---"
+# FIX-AVATAR-01: entry.sh used to hardcode a sibling '53-avatar-alchemist-book'
+# that never exists (the real Book skill dir is 53-book-writer), so entry.sh
+# omitted --book-skill-present and a version=book intake DIED exit 2 even on a
+# box where Skill 53 IS installed. entry.sh now globs 53-*book* (case-insensitive,
+# mirroring aa_director._detect_book_skill_present), so the same intake ROUTES.
+INSTALLED="$TMP/installed"; mkdir -p "$INSTALLED/53-book-writer"
+cp -R "$SKILL_DIR" "$INSTALLED/52-avatar-alchemist"
+rm -rf "$INSTALLED/52-avatar-alchemist/examples/golden-lumen-rise/run" \
+       "$INSTALLED/52-avatar-alchemist/examples/golden-lumen-rise/delivery"
+BOOK_PRESENT_RUN="$INSTALLED/52-avatar-alchemist/book-present-run"
+mkdir -p "$BOOK_PRESENT_RUN"
+cp "$GD/broken-variants/book_intake.json" "$BOOK_PRESENT_RUN/intake.json"
+run "entry.sh with a 53-book-writer sibling + version=book intake -> does NOT die (routes)" \
+    bash "$INSTALLED/52-avatar-alchemist/entry.sh" "$BOOK_PRESENT_RUN"
+
+echo ""
 echo "-- 2d) REPRO+BLOCK: a ledger that OMITS a stage's model id fails closed ----"
 OMIT_RUN="$TMP/omit-run"
 cp -R "$GD/run" "$OMIT_RUN"
@@ -214,6 +233,24 @@ else
 fi
 run "aa_build_check.py --run (temp golden run)"        "$PY" "$S/aa_build_check.py" --run "$GRUN"
 run "aa_build_check.py --run (checked-in golden run)"  "$PY" "$S/aa_build_check.py" --run "$GD/run"
+# FIX-AVATAR-04: the DEFAULT-mode (repairs OFF, faithful-to-live) reference run
+# is itself regression-covered (clears content) and visibly graded (semantic < the
+# repairs-ON flagship, still >= the 8.5 delivery floor).
+GDLIVE="$SKILL_DIR/examples/golden-lumen-rise-live"
+run "aa_build_check.py --run (checked-in golden-lumen-rise-LIVE, repairs OFF)" \
+    "$PY" "$S/aa_build_check.py" --run "$GDLIVE/run"
+if "$PY" - "$GDLIVE/run/RUN-LEDGER.json" "$GDLIVE/run/QC-SEMANTIC.json" <<'PYLIVE'
+import json, sys
+led = json.load(open(sys.argv[1]))
+sem = json.load(open(sys.argv[2]))
+assert led["apply_repairs"] is False, f"golden-live must be repairs OFF, got {led['apply_repairs']}"
+assert sem["run_id"] == "golden-lumen-rise-live", sem["run_id"]
+assert 8.5 <= float(sem["semantic_score"]) < 9.0, sem["semantic_score"]
+print(f"golden-live: repairs OFF, semantic={sem['semantic_score']} (>=8.5 floor, < 9.0 flagship) — "
+      f"default output is regression-covered AND visibly graded")
+PYLIVE
+then pass "golden-lumen-rise-LIVE is the repairs-OFF default reference (visibly graded, regression-covered)"
+else fail "golden-lumen-rise-LIVE ledger/semantic assertion"; fi
 run "aa_intake_gate.py (golden BRAND intake)"          "$PY" "$S/aa_intake_gate.py" --intake "$GRUN/intake.json"
 # G-LINKS (fail-soft): the golden stage-02 artifact resolves to degraded:search offline (exit 0)
 if LINKS_OUT="$("$PY" "$S/aa_links_gate.py" --stage-file "$GD/run/artifacts/02-avatar-questions-31-32.md" 2>&1)" \
@@ -304,7 +341,7 @@ expect_fail "version=book PARKS book-skill-not-available (absent)" "AF-AV-BOOK-S
 echo ""
 echo "-- 6) client-path hygiene: no Anthropic model ids, no PII ----------------"
 ANTHRO_PAT='anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku|claude-3|claude-4'
-if grep -REnI "$ANTHRO_PAT" "$GD/run" "$GD/delivery" "$SKILL_DIR/prompts" "$SKILL_DIR"/*.json >/dev/null 2>&1; then
+if grep -REnI "$ANTHRO_PAT" "$GD/run" "$GD/delivery" "$GDLIVE" "$SKILL_DIR/prompts" "$SKILL_DIR"/*.json >/dev/null 2>&1; then
     fail "Anthropic MODEL ID present on the client-run/prompt/manifest surface"
     grep -REnI "$ANTHRO_PAT" "$GD/run" "$GD/delivery" "$SKILL_DIR/prompts" "$SKILL_DIR"/*.json | sed 's/^/         /'
 else

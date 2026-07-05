@@ -1,5 +1,15 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
+## 1.2.5 — 2026-07-05
+- scripts/ad_build_check.py (FIX-XC-03i): the independent-QC gate no longer lets a scorecard's SELF-DECLARED `average` override the value COMPUTED from its own category scores — the pass test always uses the computed average, and a declared-vs-computed disagreement > 0.05 is itself an autofail (a fabricated top-line, e.g. all categories 7.0 with a declared 9.9, is now caught instead of sailing through). The overlay count/wordcount gates now MEASURE the real `s1-overlays.md` deliverable (new `measure_overlays()`) and fail on any receipt-vs-measured mismatch, so a receipt that lies within-range can no longer pass. Unmeasurable judgment fields (on_mission, audience_wording_preserved, styleblock_ok) intentionally remain boolean.
+- scripts/ad_build_check.py (FIX-S36-45 iii): `_chk_qc_independence` hardened — maker and grader must be REGISTERED role slugs (AD-PIPELINE-MANIFEST `roles[].id`, loaded via the new `registered_role_slugs()`), and the scorecard's `grader_session_id` is cross-checked against the run ledger's independently-recorded `qc_sessions[]` (same gate / session id / grader). A free-text reviewer or a grade the ledger never saw now fails closed.
+- scripts/ad_run_ledger.py (FIX-S36-45 ii/iii): added `result_for()` (recover a stored event payload by key), `record_qc_session()` / `qc_sessions()` (the conductor's independent record of each dispatched grading session), and a `qc-session` CLI subcommand.
+- scripts/ad_ghl_push.py (FIX-S36-45 ii): a resume where the receipt lost an already-hosted image now recovers that `delivered[]` entry from the durable ledger before `continue` (seeds `by_idx` from `ledger.result_for`) instead of dropping it — never re-uploading and never breaking the fan-out / GHL-URL gates.
+- scripts/cc_board.py (FIX-S36-45 i): `create_campaign` always creates an `epic` rollup stage card (deduplicated), so the end-of-run `set_stage_status(job_id, "epic", "done")` targets a REAL card instead of a phantom the server never created.
+- scripts/test_cc_board.py: new `test_epic_stage_always_created` case + updated stage-index assertions for the epic-first ordering.
+- scripts/test_ad_preflight.py: `_good` fixture upgraded (registered-role graders, `grader_session_id`, ledger `qc_sessions[]`); new negative fixtures for the declared-average lie, the overlay measured-vs-receipt mismatch, an unregistered grader, and a missing ledger grading session.
+- scripts/test_ad_recovery.py: new proof (E) — an already-hosted image is recovered from the ledger on resume, never re-uploaded.
+
 ## 1.2.4 — 2026-07-01
 - tools/ghl_media.py: unified 11-alias GHL LOCATION-PIT resolver — `_PIT_ENV_NAMES` expanded from 2 to the full 11 canonical aliases (GOHIGHLEVEL_API_KEY, GHL_API_KEY, GHL_PIT, GHL_TOKEN, GHL_PRIVATE_INTEGRATION_TOKEN, PRIVATE_INTEGRATION_TOKEN, GHL_PRIVATE_TOKEN, PIT_TOKEN, GHL_PIT_TOKEN, GOHIGHLEVEL_LOCATION_PIT, GHL_LOCATION_PIT); first non-empty match wins.
 

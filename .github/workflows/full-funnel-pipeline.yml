@@ -16,7 +16,7 @@
 #                            funnel_rollback idempotency + the company_kpis
 #                            schema-drift suite + the committed-live-run residual
 #                            lock + the --allow-documented-residual gate-honesty
-#                            test (45 tests collected; the count is asserted in
+#                            test (47 tests collected; the count is asserted in
 #                            CI so the docs cannot drift).
 #   seed-normalize         — the seed-workspaces.py departments normalizer that
 #                            fixed the --converge Step-4 'str has no .get' crash.
@@ -115,12 +115,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The README + CHANGELOG document "45 tests collected". Assert it here so
+          # The README + CHANGELOG document "47 tests collected". Assert it here so
           # the documented number is the REAL collected number on every PR.
           n=$(python3 -m pytest 23-ai-workforce-blueprint/full-funnel-pipeline/tests/ \
                 --collect-only -q 2>/dev/null | grep -c '::' || true)
           echo "collected ${n} tests"
-          test "${n}" -eq 45 || { echo "::error::expected 45 collected tests, got ${n}"; exit 1; }
+          test "${n}" -eq 47 || { echo "::error::expected 47 collected tests, got ${n}"; exit 1; }
       - name: Run full-funnel pipeline tests
         shell: bash
         run: |

@@ -67,6 +67,7 @@ _GOOD_RENDER = {
     "kie_in_scope": False, "ffprobe_pass": True, "ffprobe_duration": 30.0,
     "ffprobe_codec": "h264", "ffprobe_width": 1280, "ffprobe_height": 720,
     "has_video_stream": True, "provider_used": "ffmpeg",
+    "final_mp4_path": "working/final.mp4",  # FIX-S36-44: the specific finished MP4
     "_pad": "padding to clear the 256-byte deliverable size floor for render_receipt " * 2,
 }
 _GOOD_PAID_RENDER = {
@@ -239,6 +240,73 @@ def _probe_kie_balance() -> bool:
         vbc.VID_KIE_CREDIT_URL = orig
 
 
+# FIX-S36-42 regression: a bare Google/Gemini EMBEDDING key must NOT trip the
+# provider audit or the native-provider gate (fleet boxes carry it legitimately),
+# while a real native GENERATION provider still fails.
+def _probe_google_embedding_allowed() -> list:
+    """Return a list of failure strings (empty == pass)."""
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        # (a) providers_available lists a bare 'google' embedding provider -> PASS.
+        rd = _mk_run(Path(tmp))
+        _good_brief(rd)
+        m = dict(_GOOD_MEASURE)
+        m["providers_available"] = ["kie", "piper", "google"]
+        _write(rd, "working/checkpoints/measure-receipt.json", m)
+        if vbc._chk_provider_audit(rd):
+            fails.append("FIX-S36-42: a bare 'google' embedding provider tripped "
+                         "_chk_provider_audit (should be allowlisted).")
+        # (b) generation_env carries GOOGLE_API_KEY (embeddings) -> PASS.
+        rd2 = _mk_run(Path(tmp))
+        _good_brief(rd2)
+        r = dict(_GOOD_RENDER)
+        r["generation_env"] = {"KIE_API_KEY": "x", "GOOGLE_API_KEY": "embeddings"}
+        _write(rd2, "working/checkpoints/render-receipt.json", r)
+        if vbc._chk_native_provider(rd2):
+            fails.append("FIX-S36-42: a GOOGLE_API_KEY embedding key in generation_env "
+                         "tripped _chk_native_provider (should be allowlisted).")
+        # (c) a real native GENERATION provider (imagen) still fails the audit.
+        rd3 = _mk_run(Path(tmp))
+        _good_brief(rd3)
+        m3 = dict(_GOOD_MEASURE)
+        m3["providers_available"] = ["kie", "imagen"]
+        _write(rd3, "working/checkpoints/measure-receipt.json", m3)
+        if "AF-VID-PROVIDER-AUDIT" not in vbc._chk_provider_audit(rd3):
+            fails.append("FIX-S36-42: a native 'imagen' generation provider did NOT "
+                         "trip _chk_provider_audit (over-scoped allowlist).")
+    return fails
+
+
+# FIX-S36-44 regression: an MP4 that exists only under assets/ (raw stock footage)
+# must NOT satisfy the final_mp4 deliverable, and a non-enum handoff must fail.
+def _probe_final_mp4_and_handoff() -> list:
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        # (a) render receipt points final_mp4_path under assets/ -> DELIVERY-INCOMPLETE.
+        rd = _mk_run(Path(tmp))
+        _good_free(rd)
+        (rd / "working" / "assets").mkdir(parents=True, exist_ok=True)
+        (rd / "working" / "assets" / "stock.mp4").write_bytes(b"\x00" * 200_000)
+        (rd / "working" / "final.mp4").unlink(missing_ok=True)
+        r = dict(_GOOD_RENDER)
+        r["final_mp4_path"] = "working/assets/stock.mp4"
+        _write(rd, "working/checkpoints/render-receipt.json", r)
+        if "AF-VID-DELIVERY-INCOMPLETE" not in vbc.run_postflight_gate(rd):
+            fails.append("FIX-S36-44: an assets/ stock MP4 satisfied the final_mp4 "
+                         "deliverable (raw footage passed).")
+        # (b) a bogus non-enum handoff must fail even with a valid deliverable.
+        rd2 = _mk_run(Path(tmp))
+        _good_free(rd2)
+        done = dict(_GOOD_BRIEF)
+        done.update({"status": "complete", "actual_cost_usd": 0.0,
+                     "handoff": "predelivery notes to somewhere-random"})
+        _write(rd2, "working/job-manifest.json", done)
+        if "AF-VID-DELIVERY-INCOMPLETE" not in vbc.run_postflight_gate(rd2):
+            fails.append("FIX-S36-44: a non-enum handoff ('predelivery...') passed the "
+                         "exact-enum handoff check (substring match leaked).")
+    return fails
+
+
 # Driver-level: AF-VID-PHASE-SKIPPED (enforced_by:driver) — trip via the driver's
 # precondition gate (dispatch V-IMPROVE with no priors attested).
 def _probe_phase_skipped() -> bool:
@@ -307,6 +375,10 @@ def main():
     else:
         failures.append("AF-VID-PHASE-SKIPPED: no-priors fixture did not trip "
                         "check_phase_preconditions.")
+
+    # FIX-S36-42 / FIX-S36-44 regression probes (additive; no new AF codes).
+    failures.extend(_probe_google_embedding_allowed())
+    failures.extend(_probe_final_mp4_and_handoff())
 
     AF_COVERAGE.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE.write_text(json.dumps({"triggered": sorted(triggered)}, indent=2))

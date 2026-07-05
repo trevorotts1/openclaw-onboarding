@@ -10,9 +10,12 @@
 # id that matches /anthropic|claude/i, so an Anthropic id can never reach a
 # client box — and enforces the bounded rewrite budget.
 #
-#   AF-AW-ANTHROPIC       — a model id in RUN-LEDGER.json matches /anthropic|claude/i,
-#                           OR an operator credential name is present in the run env.
-#   AF-AW-REWRITE-BUDGET  — rewrite_count exceeds the max (2) — runaway rework.
+#   AF-AW-ANTHROPIC            — a model id in RUN-LEDGER.json matches /anthropic|claude/i,
+#                                OR an operator credential name is present in the run env.
+#   AF-AW-REWRITE-BUDGET       — rewrite_count exceeds the max (2) — runaway rework.
+#   AF-AW-PROVENANCE-MISSING   — the ledger records NO resolved model id (empty/absent
+#                                stages); model provenance is required (fail-closed, so
+#                                the no-Anthropic gate can never pass vacuously).
 #
 # EXIT: 0 PASS · 2 AUTOFAIL · 3 USAGE/IO.
 # USAGE: aw_build_check.py <RUN-LEDGER.json> [--json] | aw_build_check.py --self-test
@@ -30,6 +33,7 @@ import _aw_common as c  # noqa: E402
 
 AF_ANTHROPIC = "AF-AW-ANTHROPIC"
 AF_REWRITE_BUDGET = "AF-AW-REWRITE-BUDGET"
+AF_PROVENANCE_MISSING = "AF-AW-PROVENANCE-MISSING"
 _FIX = Path(__file__).resolve().parent.parent / "test-fixtures"
 
 REWRITE_MAX = 2
@@ -53,6 +57,15 @@ def evaluate(ledger: dict, env=None) -> c.Result:
     env = os.environ if env is None else env
     r = c.Result("aw_build_check")
     ids = _model_ids(ledger)
+    # Model-sovereignty is FAIL-CLOSED on missing provenance: an empty ledger (no
+    # stages / no resolved model ids) is not "clean" — it is UNPROVEN, so the
+    # no-Anthropic scan would vacuously pass on a run that recorded nothing. A run
+    # that certifies MUST carry the model provenance it was authored on.
+    # (Mirrors Skill-57 AF-SM-PROVENANCE-MISSING and Skill-53's ledger-required fix.)
+    if not ids:
+        r.fail(AF_PROVENANCE_MISSING, "RUN-LEDGER.json records no resolved model id "
+               "(empty/absent stages) — model provenance is REQUIRED; the no-Anthropic "
+               "gate cannot pass vacuously on an unproven run")
     for stage_id, model in ids:
         if _ANTHROPIC_RE.search(model):
             r.fail(AF_ANTHROPIC, "stage %s resolved to an Anthropic model id %r — client "
@@ -93,6 +106,10 @@ def self_test() -> int:
     b = evaluate(c.read_json(_FIX / "attack" / "ledger_rewrite_over_budget.json"))
     checks.append(("over-budget rewrite ledger AUTOFAILs AF-AW-REWRITE-BUDGET",
                    any(code == AF_REWRITE_BUDGET for code, _ in b.violations)))
+
+    p = evaluate(c.read_json(_FIX / "attack" / "ledger_no_provenance.json"))
+    checks.append(("provenance-missing ledger AUTOFAILs AF-AW-PROVENANCE-MISSING",
+                   any(code == AF_PROVENANCE_MISSING for code, _ in p.violations)))
     return c.selftest_report("aw_build_check", checks)
 
 

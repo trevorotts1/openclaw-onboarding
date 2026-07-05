@@ -37,6 +37,8 @@ PINNED_FILES=(
   "scripts/prove_sf_intake.py"
   "scripts/prove_sf_copy.py"
   "scripts/prove_sf_prompt_floor.py"
+  "scripts/prove_sf_graph.py"
+  "scripts/prove_sf_build.py"
   "scripts/prove_sf_no_pitch.py"
   "scripts/prove_sf_cert.py"
   "structure/funnel_structure.json"
@@ -110,6 +112,36 @@ step_nonce() {
   printf '%s' "$nonce"
 }
 
+# FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
+# record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sf_cert
+# --model-receipt. The client's OWN strongest model writes the copy; Anthropic is hard-banned.
+step_model_receipt() {
+  local rd="$1"
+  "$PY" - "$rd" <<'PYEOF'
+import json, os, sys, datetime
+rd = sys.argv[1]
+# Client-chain resolver seam: reuse model_router.select(role="content") semantics against the
+# CLIENT's providers. Operator/orchestrator supplies the resolved id via env (never Anthropic).
+model = os.environ.get("SF_CONTENT_MODEL", "")
+provider = os.environ.get("SF_CONTENT_PROVIDER", "")
+tier = os.environ.get("SF_CONTENT_TIER", "content")
+receipt = {
+    "role": "content",
+    "resolved_from": "client-provider-chain" if model else "unresolved",
+    "model": model,
+    "provider": provider.lower(),
+    "tier": tier,
+    "anthropic_banned": True,
+    "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
+}
+os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
+with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encoding="utf-8") as fh:
+    json.dump(receipt, fh, indent=2)
+PYEOF
+  "$PY" "$SCRIPTS_DIR/prove_sf_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
+    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier / no-Anthropic gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
+}
+
 run_pipeline() {
   local rd="$1"
   [ -n "$rd" ] || die "USAGE" "--run-dir is required"
@@ -119,9 +151,10 @@ run_pipeline() {
   step_version
   step_hashpin
   step_bypass_scan "$rd"
+  step_model_receipt "$rd"
   local nonce; nonce="$(step_nonce "$rd")"
   export SF_RUN_NONCE="$nonce"
-  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/nonce) =="
+  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier/nonce) =="
   "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd" --nonce "$nonce"
 }
 
@@ -131,7 +164,7 @@ self_test() {
   step_version
   if [ -f "$PIN_FILE" ]; then step_hashpin; echo "  [PASS] hash-pin verified"; else echo "  [WARN] no pin file yet (mint with --write-pin)"; fi
   local fails=0
-  for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_no_pitch prove_sf_cert; do
+  for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_graph prove_sf_build prove_sf_no_pitch prove_sf_cert; do
     if "$PY" "$SCRIPTS_DIR/$p.py" --self-test >/tmp/sf_$p.log 2>&1; then
       echo "  [PASS] $p.py --self-test"
     else

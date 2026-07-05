@@ -229,33 +229,38 @@ CONFIG_JSON="$HOME/.openclaw/openclaw.json"
 WORKSPACE="$HOME/clawd"
 [ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
 
-# 1. OpenClaw secrets file (canonical — same names on Mac and VPS, different paths)
-cat "$SECRETS_ENV" 2>/dev/null | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID|PIT|PRIVATE_INTEGRATION"
+# Every check below is EXISTENCE-ONLY: it reports which credential key NAMES are
+# present, never their values (the repo qc-static secret-printing gate fails any
+# secret-pattern grep that lacks -q/-l/-L).
 
-# 2. OpenClaw main config env block
+# 1. OpenClaw secrets file (canonical — same names on Mac and VPS, different paths) — names only
+for k in GHL_API_KEY GOHIGHLEVEL_API_KEY GHL_PIT GHL_LOCATION_PIT LEADCONNECTOR_PIT GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_LOCATION_ID GOHIGHLEVEL_LOCATION_ID; do
+  grep -qE "^(export )?${k}=" "$SECRETS_ENV" 2>/dev/null && echo "$k=SET"
+done
+
+# 2. OpenClaw main config env block — names only, values never printed
 python3 -c "
 import json
 cfg=json.load(open('$CONFIG_JSON'))
 ev=cfg.get('env',{}).get('vars',{})
-hits={k:v for k,v in ev.items() if any(s in k.upper() for s in ['GHL','GOHIGH','LEADCONN','LOCATION'])}
-for k,v in hits.items():
-    redacted=str(v)[:8]+'...' if isinstance(v,str) and len(str(v))>12 else v
-    print(f'{k} = {redacted}')
+for k in ev:
+    if any(s in k.upper() for s in ['GHL','GOHIGH','LEADCONN','LOCATION']):
+        print(f'{k}=SET')
 "
 
-# 3. Live process env
-printenv | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID" | sed 's/=\(.\{0,10\}\).*/=\1.../'
+# 3. Live process env — key NAMES only (cut strips the value before grep ever sees it)
+printenv | cut -d= -f1 | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID" || true
 
-# 4. Home-level dotfile
-cat ~/.env 2>/dev/null | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION"
+# 4. Home-level dotfile — key NAMES only
+cut -d= -f1 ~/.env 2>/dev/null | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION" || true
 
-# 5. clawd / repo-level env files
-grep -riE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID|leadconnector" \
-  "$WORKSPACE"/.env* "$WORKSPACE"/*/.env* 2>/dev/null | head -20
+# 5. clawd / repo-level env files — matching FILE names only (-l), never the values
+grep -rilE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID|leadconnector" \
+  "$WORKSPACE"/.env* "$WORKSPACE"/*/.env* 2>/dev/null
 
-# 6. openclaw-master-files (uses the $MASTER_FILES_DIR from Section 1.B)
-grep -riE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID" \
-  "$MASTER_FILES_DIR/" 2>/dev/null | head -10
+# 6. openclaw-master-files (uses the $MASTER_FILES_DIR from Section 1.B) — file names only (-l)
+grep -rilE "GHL_API_KEY|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID" \
+  "$MASTER_FILES_DIR/" 2>/dev/null
 
 # 7. Existing MCP server configs (in case a previous community MCP install left .env behind)
 find ~/mcp-servers ~/mcp ~/services /data/mcp-servers 2>/dev/null -maxdepth 4 -name ".env" -exec grep -l "GHL\|GOHIGH" {} \;

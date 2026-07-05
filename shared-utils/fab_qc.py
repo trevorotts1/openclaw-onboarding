@@ -60,7 +60,59 @@ _PLACEHOLDER_RE = re.compile("|".join(_PLACEHOLDER_PATTERNS), re.IGNORECASE)
 # Merge-field tokens that are LEGITIMATE in live copy (do NOT count as placeholders).
 _ALLOWED_MERGE = re.compile(r"\{\{\s*(contact|first_?name|last_?name|email|user|company|appointment)", re.I)
 
-_WORD_FLOOR = 4   # a "substantive" required slot carries at least this many words
+# --------------------------------------------------------------------------- #
+# FIX-XC-04a — lengthClass-keyed floors (adjustable constants table).
+# The old flat 4-word floor let a 4-word body slot pass as "substantive". A real
+# body slot must carry substantive copy; only legitimately-short slots (headline,
+# subhead, CTA/button, eyebrow…) are exempt at the low headline floor. Page-level
+# floors are keyed to the MATCHED TEMPLATE's lengthClass. Numbers are PROPOSED
+# defaults (ratify exact values with Trevor) — kept here as one adjustable table.
+# --------------------------------------------------------------------------- #
+_HEADLINE_SLOT_FLOOR = 4          # legitimately-short slots (headline/subhead/CTA/button)
+_BODY_SLOT_FLOOR = 40             # a substantive body/content slot carries >= this many words
+_AUTOMATION_WORD_FLOOR = 4        # automation step copy keeps the light floor (funnel-scope train)
+
+# Slot-name tokens that mark a legitimately-short slot (exempt at the headline floor).
+_SHORT_SLOT_TOKENS = (
+    "headline", "hed", "head", "title", "subhead", "subheadline", "sub_head",
+    "cta", "button", "btn", "eyebrow", "kicker", "label", "badge", "tagline",
+    "form", "confirm", "field", "placeholder_text", "menu", "nav", "footer_link",
+)
+
+# Page-level stripped-word floors keyed by the matched template's lengthClass.
+# short-form >= 350 / medium >= 700 / long-form >= 1,800 (proposed defaults).
+_PAGE_WORD_FLOOR = {
+    "short-form": 350, "short": 350, "short-to-medium-form": 500,
+    "medium-form": 700, "medium": 700, "mid-form": 700,
+    "long-form": 1800, "long": 1800,
+}
+
+# Bounded re-author policy (verifier != author). The scorer FLAGS a below-floor
+# HARD MISS; the orchestrating SOP/role runs the capped re-author loop (see
+# conversion-copywriter.md Gate 1-2 + SOP-FUNNEL-02-COPY.md). Recorded here so the
+# cap has one canonical source.
+MAX_REAUTHOR_ATTEMPTS = 5
+
+
+def _slot_floor(slot_name: str) -> int:
+    """Word floor for a named slot: short slots (headline/CTA/…) are exempt at the
+    low headline floor; everything else is a body slot held to the body floor."""
+    s = str(slot_name or "").lower()
+    return _HEADLINE_SLOT_FLOOR if any(tok in s for tok in _SHORT_SLOT_TOKENS) else _BODY_SLOT_FLOOR
+
+
+def _lengthclass_floor(length_class) -> int:
+    """Resolve a page-level stripped-word floor from a template lengthClass string.
+    Accepts noisy values ('long-form (multi-page …)') by matching the leading token.
+    Returns 0 (no floor / N/A) for variable/historical/unknown classes."""
+    if not length_class:
+        return 0
+    lc = str(length_class).strip().lower()
+    if lc in _PAGE_WORD_FLOOR:
+        return _PAGE_WORD_FLOOR[lc]
+    # take the leading token before a space / paren / pipe ('long-form (…)' -> 'long-form')
+    lead = re.split(r"[\s(|]", lc, 1)[0].strip()
+    return _PAGE_WORD_FLOOR.get(lead, 0)
 
 
 @dataclass
@@ -97,6 +149,64 @@ def _texts_of(artifact: dict) -> list[str]:
             if v:
                 out.append(str(v))
     return [t for t in out if t and t.strip()]
+
+
+def _slot_texts_of(artifact: dict) -> list[tuple[str, str]]:
+    """(slot_name, text) pairs so per-slot floors can be applied (FIX-XC-04a)."""
+    out: list[tuple[str, str]] = []
+    for page in artifact.get("pages", []) or []:
+        copy = page.get("copy", {})
+        if isinstance(copy, dict):
+            for k, v in copy.items():
+                if v is not None:
+                    out.append((str(k), str(v)))
+        elif isinstance(copy, list):
+            for i, v in enumerate(copy):
+                out.append((f"slot{i}", str(v)))
+        elif copy:
+            out.append(("copy", str(copy)))
+    for step in artifact.get("steps", []) or []:
+        for k in ("copy", "body", "subject", "message", "text"):
+            v = step.get(k)
+            if v:
+                out.append((k, str(v)))
+    return [(s, t) for s, t in out if t and t.strip()]
+
+
+def _page_word_count(page: dict) -> int:
+    """Total whitespace-token count across all copy strings on one funnel page."""
+    copy = page.get("copy", {})
+    if isinstance(copy, dict):
+        vals = [str(v) for v in copy.values() if v is not None]
+    elif isinstance(copy, list):
+        vals = [str(v) for v in copy]
+    elif copy:
+        vals = [str(copy)]
+    else:
+        vals = []
+    return sum(len(v.split()) for v in vals)
+
+
+def _page_length_misses(inp: dict, art: dict) -> list[tuple]:
+    """Pages whose total copy is under the matched template's lengthClass floor.
+    Funnel-only; N/A for CREATE_NEW / no template / unknown lengthClass."""
+    if inp.get("kind", "funnel") != "funnel":
+        return []
+    tmpl = inp.get("template") or {}
+    md = inp.get("match_decision", {}) or {}
+    if md.get("flex_decision") == "CREATE_NEW" or not tmpl:
+        return []
+    floor = _lengthclass_floor(tmpl.get("lengthClass") or tmpl.get("length_class"))
+    if not floor:
+        return []
+    misses = []
+    pages = art.get("pages", []) or []
+    total = sum(_page_word_count(p) for p in pages)
+    # Page-level floor is the whole-funnel stripped-word floor keyed to lengthClass.
+    if total < floor:
+        misses.append(("<all-pages>", total, floor,
+                       tmpl.get("lengthClass") or tmpl.get("length_class")))
+    return misses
 
 
 def _has_placeholder(text: str) -> bool:
@@ -152,22 +262,48 @@ def score_d1(inp: dict) -> Dim:
 def score_d2(inp: dict) -> Dim:
     art = inp.get("artifact", {}) or {}
     live = _is_live(inp.get("match_decision", {}), inp.get("verify", {}))
-    texts = _texts_of(art)
+    kind = inp.get("kind", "funnel")
+    slot_items = _slot_texts_of(art)
+    texts = [t for _, t in slot_items]
     if not texts:
         return Dim("D2 Copy substance", W["D2"], 0.0, live,
                    "no copy found in built artifact" + (" — HARD MISS (live)" if live else ""))
     placeholders = [t for t in texts if _has_placeholder(t)]
-    thin = [t for t in texts if len(t.split()) < _WORD_FLOOR]
+    ph_ids = set(map(id, placeholders))
+    # FIX-XC-04a — per-slot floors: body slots >= 40 words; headline/CTA/short slots
+    # exempt at >= 4. Automation steps keep the light floor (funnel-scope train).
+    thin: list[tuple[str, str]] = []
+    for slot, t in slot_items:
+        floor = _AUTOMATION_WORD_FLOOR if kind != "funnel" else _slot_floor(slot)
+        if len(t.split()) < floor:
+            thin.append((slot, t))
+    thin_ids = set(id(t) for _, t in thin)
+    # FIX-XC-04a — page-level lengthClass floor (whole-funnel stripped-word floor).
+    page_misses = _page_length_misses(inp, art)
     n = len(texts)
-    substantive = n - len(set(map(id, placeholders)) | set(map(id, thin)))
+    substantive = n - len(ph_ids | thin_ids)
     frac = max(0.0, substantive / n)
     score = round(10.0 * frac, 2)
-    # A surviving placeholder in a LIVE artifact is a HARD MISS regardless of the mean.
-    hard = bool(placeholders) and live
+    # HARD MISS (live artifact): a surviving placeholder, ANY below-floor slot, or a
+    # page under its lengthClass floor. Below-floor copy cannot be averaged away — it
+    # triggers the bounded re-author loop (verifier != author; <= MAX_REAUTHOR_ATTEMPTS).
+    hard = live and (bool(placeholders) or bool(thin) or bool(page_misses))
+    body_floor = _AUTOMATION_WORD_FLOOR if kind != "funnel" else _BODY_SLOT_FLOOR
     observed = (f"{substantive}/{n} slots substantive; placeholders={len(placeholders)}; "
-                f"thin(<{_WORD_FLOOR}w)={len(thin)}; live={live}")
+                f"thin(body<{body_floor}w)={len(thin)}"
+                + (f"; slots={[s for s, _ in thin][:4]}" if thin else "")
+                + (f"; page_floor_miss={page_misses[0][1]}w<{page_misses[0][2]}"
+                   f"({page_misses[0][3]})" if page_misses else "")
+                + f"; live={live}")
     if hard:
-        observed += " — HARD MISS (surviving placeholder in a live artifact)"
+        reasons = []
+        if placeholders:
+            reasons.append("surviving placeholder")
+        if thin:
+            reasons.append("below-floor slot")
+        if page_misses:
+            reasons.append("page under lengthClass floor")
+        observed += " — HARD MISS (" + "; ".join(reasons) + " in a live artifact)"
     return Dim("D2 Copy substance", W["D2"], score, hard, observed)
 
 

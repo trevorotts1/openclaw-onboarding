@@ -103,12 +103,10 @@ Add this section to MEMORY.md under GRAPHICS DEPARTMENT MEMORY:
 - INDEX integrity audits (no duplicate IDs, all statuses match files)
 - Quarterly avoid-list pruning (remove outdated phrases, union results across patch failures)
 - MODEL-SPECS updates when Kie.ai endpoints change (test new endpoint on 3–5 cards, update limits/tiers/routing)
-- Embedding index refresh (if semantic style search enabled) — keep card text and metadata current
 
-**Optional semantic search index:**
-- If enabled, `$OC_ROOT/master-files/design-library/.embedding-index.json` provides ranked matches for "find a style like this"
-- Powered by `gemini-embedding-2` @3072 dims (multimodal)
-- Refresh command: `bash $OC_ROOT/skills/45-design-intelligence-library/scripts/index-style-cards-embedding.sh`
+**Semantic search index — NOT YET AVAILABLE:**
+- Semantic style search (embedding-indexed "find a style like this") is a planned future capability. The `index-style-cards-embedding.sh` companion script does NOT ship in this skill version, so there is no embedding index to refresh and no Registrar embedding duty.
+- Until it ships, style lookup is the INDEX.md master table (exact ID, friendly Sig # alias, or category scan). Do not reference `.embedding-index.json` or an embedding refresh command — neither exists.
 ```
 
 ---

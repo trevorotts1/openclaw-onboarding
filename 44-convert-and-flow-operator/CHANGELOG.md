@@ -1,5 +1,48 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.5] - 2026-07-05 — fix: close FAB-QC/TRINITY fail-open gaps + persona-log + Firebase/Tier-4 doc truth (merge-train T-44-convert-and-flow)
+
+Skills-analysis campaign fixes. All changes are scoped to this skill directory.
+
+### Fixed
+- **FIX-XC-03g — FAB-QC now fails CLOSED.** `qc-built-workflow.sh` previously printed
+  "(FAB-QC skipped)" with `FAB_RC=0` (ledger PASS, exit 0) whenever the scorer or evidence
+  root was missing, and `FAB_EVIDENCE` defaulted to a dir nothing created — so the claimed
+  ≥8.5 gate was a silent no-op. When `--fab`/`--evidence` is passed and the score is
+  UNAVAILABLE for any reason (scorer absent, evidence_root missing, scorer emits nothing),
+  the run is now `REQUIRES_OPERATOR`: `FAB_RC=1` and a non-zero exit. The canonical
+  `evidence_root` is defined in INSTRUCTIONS Step 0.4 and the SAME root is passed at Step 9.3c.
+- **FIX-S36-25 — persona-selection-log producer + `copy_persona` on 7 templates.** FAB-QC D4
+  is fail-closed on `<evidence_root>/persona-selection-log.md`, a Skill-6 artifact that
+  nothing in Skill 44 produced — so every standalone templated automation build hard-missed
+  D4. `automation_matcher.step0_match` now PRODUCES that log in Step 0.4 (names the matched
+  template's `copy_persona`, or a `selected_persona: net-new` marker for CREATE_NEW). Added
+  snake_case `copy_persona` + `source_books` (mirroring the existing `copyPersona`/`source`)
+  to the 7 engagement-broadcast templates that lacked the key FAB-QC D4 reads.
+- **FIX-S36-26 — corrected workflow read-path docs + explicit Tier-4 QC branch.** `caf
+  workflows list` is Tier-0 (LOCATION PIT); `caf workflows get`/`export` route through the
+  INTERNAL Firebase client and REQUIRE the Firebase refresh token — the docs wrongly called
+  export "Tier 0 / read-only". INSTRUCTIONS.md (routing table, per-op rule, Step 9.3) fixed.
+  Added a fail-closed Tier-4 branch: with no Firebase token, export (and therefore mechanical
+  QC) cannot run — `qc-built-workflow.sh` exits 2 `REQUIRES_OPERATOR` and the build is NOT
+  DONE until the token is restored or an agent-browser read-back confirms it.
+- **FIX-S36-27 — `--conversational` makes WF-19 a real hard gate.** `qc-trinity-registry.sh`
+  was claimed as a hard pre-registration gate but nothing executed it (existence-assert only;
+  WF-19 was REQUIRES_HUMAN_REVIEW). `qc-built-workflow.sh --conversational` now EXECUTES Skill
+  38's `qc-trinity-registry.sh` and FAILs WF-19 mechanically on any non-zero exit (incomplete
+  TRINITY, or no `conversation-workflows/` folder); a missing registry script fails closed.
+  `qc-convert-and-flow.sh` now proves the wiring, not just the script's existence.
+- **FIX-S36-28 (P3 bundle).**
+  (i) Documented fail-soft kanban touchpoints on the deploy rail Skill 50 hands to
+      (`in_progress` at PLAN MODE / Step 0.5, `done` only after all-PASS / Step 9.6) — never
+      a blocker.
+  (ii) `qc-built-workflow.sh` no longer aborts on a whole-export grep for `error|404` (which
+      false-aborted on innocent email copy). It aborts only on a non-zero `caf` exit or a
+      TOP-LEVEL JSON error key.
+  (iii) Deleted the stray nested `tools/engine/tools/engine/...test_safety_gate.py` duplicate
+      (a strict subset of the real test — no unique assertions lost) and reworded the stale
+      "working copies in this scratchpad" note in `automation-templates/_matcher/WIRING.md`.
+
 ## [1.3.4] - 2026-07-01 — fix: unified 11-alias LOCATION-PIT scan closes credential crash-loop
 
 ### Fixed

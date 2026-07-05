@@ -202,7 +202,7 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | `scripts/generate-celebration-video.sh` | KIE.AI Veo 3.1 call |
 | `scripts/create-notion-closeout.sh` | Notion API page-tree creation |
 | `scripts/send-telegram-celebration.sh` | 6-message Telegram delivery |
-| `scripts/send-operator-summary.sh` | Success-path operator Telegram summary with LINKS to every delivered artifact (via OpenClaw gateway; ZHC_OPERATOR_CHAT_ID default 5252140759). Idempotent. |
+| `scripts/send-operator-summary.sh` | Success-path operator Telegram summary with LINKS to every delivered artifact (via OpenClaw gateway; opt-in `env.vars.OPERATOR_ESCALATION_CHAT_ID`, back-compat `ZHC_OPERATOR_CHAT_ID` — NO hardcoded default; skips send when unset). Idempotent. |
 | `scripts/upload-ghl-media.sh` | Conditional GHL media-library upload of the closeout media (Version 2021-07-28, LOCATION PIT only). Skips gracefully if GHL/Convert-and-Flow + a working PIT are absent. |
 | `templates/infographic-1-prompt.md` | Structure infographic prompt template |
 | `templates/infographic-2-prompt.md` | Workflow infographic prompt template |

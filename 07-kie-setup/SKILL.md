@@ -113,12 +113,17 @@ callback Worker. Use it when:
 - You want to minimize Kie API query budget consumption
 - You need crash-safe resume for a large batch job
 
-The callback URL format for createTask requests:
+The callback URL format for createTask requests (hardened -- see Skill 46
+SUBMITTER-SOP.md for the full contract):
 ```
-callBackUrl: "https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<perTaskSecret>"
+callBackUrl: "https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>"
 ```
 
 Where:
 - `c` = client identifier (alphanumeric)
-- `j` = submitId (a local UUID you control -- NOT the Kie taskId)
-- `s` = per-task secret (64 hex chars generated per slide)
+- `j` = submitId (128-bit random hex you control -- NOT the Kie taskId)
+- `s` = callback validator = HMAC-SHA256(clientSlug + ":" + submitId, perClientCallbackKey) -- not secret
+- `h` = per-task-secret HMAC = HMAC-SHA256(perTaskSecret, perClientCallbackKey) -- a hash, not the secret
+
+The raw per-task secret NEVER appears in the URL; it reaches the Worker only in the
+`X-Kie-Preimage` header on `/kv-read`. Never use the old `&s=<perTaskSecret>` form.
