@@ -1,6 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
+version: v14.1.3
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -9,10 +10,10 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 
 ## What you get
 
-- **Free documentary-montage path** — `pipeline_defs/documentary-montage.yaml` clips real footage from Archive.org, NASA, Wikimedia, Library of Congress, NOAA, ESA, JAXA, and Pond5 public-domain. Zero API keys needed. Budget cap ~$1.
+- **Free documentary-montage path** — `pipeline_defs/documentary-montage.yaml` builds a semantic corpus of real-world footage from Pexels, Archive.org (Prelinger et al.), NASA, Wikimedia Commons, and Unsplash, then uses CLIP-based retrieval to fill slot descriptions. Zero API keys needed. Budget cap ~$1.
 - **Kie.AI generative path** — when the client sets `KIE_API_KEY`, the tool registry auto-routes ALL image generation through `kie_image.py` (models `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`) and ALL video generation through `kie_video.py` (primary `gemini-omni-video`, fallback `veo3`/`veo3_fast`). Native paid providers (FAL/Runway/HeyGen/OpenAI/Google) are never installed.
 - **Free render engines preserved** — FFmpeg mux/stitch, Remotion (`remotion-composer/`), HyperFrames (`npx hyperframes`), Piper free TTS. These are never rewired to a paid provider.
-- **13 production pipelines** — `pipeline_defs/*.yaml` drive the AI coding-assistant-as-orchestrator model. Stage skills in `skills/{core,creative,pipelines,meta}/` structure the execution. No code orchestrator binary required.
+- **13 production pipelines** — the pinned OpenMontage tree (`install.sh` pins commit `ce11f6a`, `OPENMONTAGE_PINNED_SHA`) ships exactly 13 `pipeline_defs/*.yaml`: `documentary-montage`, `animated-explainer`, `animation`, `avatar-spokesperson`, `character-animation`, `cinematic`, `clip-factory`, `hybrid`, `localization-dub`, `podcast-repurpose`, `screen-demo`, `talking-head`, and `framework-smoke` (internal smoke-test). They drive the AI coding-assistant-as-orchestrator model. See the pipeline selection guide in `INSTRUCTIONS.md`. No code orchestrator binary required.
 - **Rule-Zero budget discipline** — every client `config.yaml` ships with `budget.mode: cap` + a low `total_usd`. The system announces provider + model + estimated cost BEFORE any paid call and gates approval at `single_action_approval_usd: 0.50`.
 
 ## When to invoke this skill
@@ -57,3 +58,14 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
 - `kie-adapters/` — our two Kie.AI BaseTool adapters (copied into the clone at install)
   - `tools/graphics/kie_image.py` — Kie image generation (gpt-image-2-*)
   - `tools/video/kie_video.py` — Kie video generation (gemini-omni-video / veo3)
+- `scripts/` — the deterministic **attestation spine** (OUR code; gates AROUND OpenMontage, never vendors it). See the binding "Attestation spine" section in `INSTRUCTIONS.md`.
+  - `executive_producer.py` — the gate-and-attest driver (5 DMAIC phases; `AF-VID-PHASE-SKIPPED`)
+  - `video_build_check.py` — receipt validators + the V-CONTROL postflight gate
+  - `video_sync_check.py` — manifest ↔ code ↔ ruleset lockstep
+  - `video_gate_integrity_check.py` — Guard A (declared == enforced == tested)
+  - `test_video_preflight.py` — negative-test suite (every gate proven to fail-closed)
+  - `test_kie_adapter_resultjson_decode.py` — Kie `resultJson` JSON-string decode test
+  - `cc_board.py` — fail-soft Command Center board caller (5 phase cards; legal `review → done`)
+  - `test_cc_board.py` — offline proof of the board caller's contract
+- `test-fixtures/make-video-fixtures.sh` — GOOD/BAD run fixtures for the driver self-test
+- `render-proof/` — recorded ffprobe render proofs (free path + Kie path)

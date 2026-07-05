@@ -1,5 +1,17 @@
 # Skill 47: Movie Producer (Automated Video Production) — CORE_UPDATES
 
+## Attestation spine (binding — read before invoking)
+
+This skill is governed by the deterministic **attestation spine** in `scripts/`
+(`executive_producer.py` + `video_build_check.py` + the lockstep/Guard-A/negative-test
+scripts + the fail-soft `cc_board.py`). Every production run MUST drive the 5 DMAIC
+phases through `executive_producer.py --phase V-*` in order — each phase is attested
+only after its receipt passes validation, and skipping/reordering/forging a phase is a
+HARD ABORT (`AF-VID-PHASE-SKIPPED`). Direct, un-attested OpenMontage invocation is NOT
+a process-compliant client deliverable. The full binding procedure lives in
+`INSTRUCTIONS.md` ("Attestation spine") and the phase driver commands are in
+`INSTALL.md`. This section is a pointer only — do not restate the numbers here.
+
 ## Core files this skill is allowed to update
 
 - `TOOLS.md`
