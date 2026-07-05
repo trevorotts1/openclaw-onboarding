@@ -323,6 +323,10 @@ echo ""
 echo "── Section E: TRINITY and self-test (live-box) ──"
 live_assert "qc-trinity-registry.sh exists and is executable" \
   "[ -x \"$SKILL38_DIR/scripts/qc-trinity-registry.sh\" ] || [ -f \"$SKILL38_DIR/scripts/qc-trinity-registry.sh\" ]"
+# FIX-S36-27: prove qc-built-workflow.sh actually EXECUTES the trinity script under
+# --conversational (not just that the script exists) — the claimed hard gate must be wired.
+live_assert "qc-built-workflow.sh wires --conversational to exec qc-trinity-registry.sh + FAIL WF-19" \
+  "grep -q -- '--conversational' \"$SKILL44_DIR/qc-built-workflow.sh\" && grep -q 'qc-trinity-registry.sh' \"$SKILL44_DIR/qc-built-workflow.sh\" && grep -q 'record_fail \"WF-19\"' \"$SKILL44_DIR/qc-built-workflow.sh\""
 live_assert "24-self-test-hook.sh exists" \
   "[ -f \"$SKILL38_DIR/scripts/24-self-test-hook.sh\" ]"
 live_assert "24-self-test-hook.sh credential read is alias-aware (GOHIGHLEVEL_API_KEY)" \
