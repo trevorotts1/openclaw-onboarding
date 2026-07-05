@@ -83,23 +83,40 @@ added.
 
 ---
 
-## Quick procedure
+## Quick procedure — the ONE command
+
+The Skill-22 book pipeline writes the new persona to the **workspace** only. Do
+**not** hand-edit the six artifacts. One atomic, re-runnable command moves the
+repo blueprint dir + `persona-categories.json` + the INDEX-MANIFEST + the release
+asset together, and **refuses to complete (rolling back) unless the count triad
+and the published asset all agree at the same N**:
 
 ```bash
-# 1-2. Build the blueprint + add the SET key (Skill 22 pipeline does this).
-#      Verify the two counts already match:
-find 22-book-to-persona-coaching-leadership-system/personas -mindepth 1 -maxdepth 1 -type d | wc -l
-python3 -c 'import json;print(len(json.load(open("22-book-to-persona-coaching-leadership-system/persona-categories.json"))["personas"]))'
-
-# 3-4. Rebuild + publish the index INCREMENTALLY (embeds only the new persona):
-shared-utils/prebuilt-index/build-and-publish.sh --persona-id <new-slug>
-#      (or --reindex-all — still incremental via HASH-SKIP. Dry-run first with --dry-run.)
-
-# 5. Prove the triad (the N38 gate) is green before you commit:
-python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only consistency
-
-# 6. qmd refresh + re-wire happen automatically on the client's next update.
+# On the OPERATOR box (workspace + Gemini key + gh auth):
+22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh
+#   --dry-run    prove the count/asset math without spending embed credits
+#   --no-asset   sync repo + manifest COUNTS only (hermetic; used by the tests)
 ```
+
+It sanitizes each blueprint of operator-local paths, validates the tags against
+the controlled vocabulary, delta-embeds via `build-and-publish.sh` (HASH-SKIP —
+never a full furnace), publishes the asset, and verifies sha256 before pointing
+the fleet at it. Then review the diff and commit the three repo paths.
+
+**Prove it's green before you commit** (the same triad CI + pre-commit run):
+
+```bash
+22-book-to-persona-coaching-leadership-system/pipeline/assert-personas-published.sh --repo-only
+python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only consistency
+```
+
+The pre-commit hook and the `update-skills.sh` pre-roll path run this guard
+automatically; qmd refresh + re-wire happen on the client's next update. See
+`22-…/PIPELINE.md` → *Adding books → publishing personas to the fleet* for the
+full runbook. If you must operate the underlying asset step directly (advanced),
+`shared-utils/prebuilt-index/build-and-publish.sh --persona-id <slug>` still
+exists — but `publish-personas-to-fleet.sh` is the mandated wrapper that keeps
+all four artifacts in lockstep.
 
 ---
 
