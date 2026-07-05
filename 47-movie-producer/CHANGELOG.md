@@ -1,6 +1,6 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
-## v14.1.3 — 2026-07-05 (Wave-0 merge-train T-47-movie-producer)
+## v14.1.4 — 2026-07-05 (Wave-0 merge-train T-47-movie-producer)
 
 Seven fixes from the 2026-07-05 master fix-plan (skills-36-to-end weakness sweep).
 All changes are scoped to `47-movie-producer/`.
