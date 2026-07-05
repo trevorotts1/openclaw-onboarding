@@ -3,6 +3,7 @@
 <!-- Section: Step 9.4 — Install Conversation Log Protocol, PLUS preferred_language header field per Step 9.10.B -->
 <!-- ONLY ADDITION to the verbatim source: one `Preferred language:` line inserted into the File Anatomy header block. -->
 <!-- Patch source: skill-38-patch-1 agent — 2026-05-28 -->
+<!-- v1.8.0 (U-4): three machine-readable header lines (active_workflow, active_phase, phase_attempts) added to the File Anatomy header block and the create step, for objective-metadata attempt counting shared with U-1 tool gating. -->
 
 # Conversation Log Protocol
 
@@ -27,6 +28,9 @@ Contact ID: <id>
 First contact: <ISO date>
 Last activity: <ISO date>
 Preferred language: <BCP-47 code, e.g. en, es, fr-CA — populated on first contact per Step 9.10 multi-language detection. The agent reads this on every reply turn so a returning customer keeps getting replies in the language they originally wrote in.>
+active_workflow: <workflow id the contact is currently in, or none. Written by the brain on every append-after step. U-4 objective metadata and U-1 tool gating both resolve the active workflow and phase from these three machine-readable lines, so a single-turn hook session recovers the full objective state from the log header alone, with no other storage.>
+active_phase: <phase number within the active workflow, or none.>
+phase_attempts: <compact map like 1:2, 2:0 counting agent messages sent while pursuing each phase goal. Counts are historical and never reset. When phase_attempts for the active phase reaches that phase's max-attempts (U-4), the brain advances the phase and applies ZHC-objective-max-attempts.>
 
 ## Historical Summary (older than 14 days)
 [Rolled-up summaries of all activity older than 14 days. Never deleted.
@@ -51,8 +55,10 @@ the classification filter in AGENTS.md):
 1. Compute the log file path: `<MASTER_FILES_DIR>/conversational-logs/<contact_id>__<sanitized_name>.md`
 
 2. If the file does not exist, create it with the header section
-   (Contact ID, First contact date, empty Historical Summary, empty
-   Daily Summaries, empty Verbatim section).
+   (Contact ID, First contact date, the objective-metadata lines
+   active_workflow / active_phase / phase_attempts initialized to
+   none / none / empty, empty Historical Summary, empty Daily
+   Summaries, empty Verbatim section).
 
 3. Append TWO entries to the "Verbatim — Last 72 Hours" section:
    - The customer's inbound message (timestamp, channel, "customer →
@@ -61,6 +67,17 @@ the classification filter in AGENTS.md):
      full text)
 
 4. Update the "Last activity" date in the header.
+
+4b. Update the objective-metadata header lines (U-4). Set
+    `active_workflow` and `active_phase` to the workflow and phase the
+    contact is currently in, and increment the counter for the active
+    phase in `phase_attempts` for each agent message sent pursuing that
+    phase's goal. These three lines are the single source of truth that
+    both U-1 tool gating and U-4 objective metadata read, so a
+    single-turn hook session recovers the full objective state from the
+    header alone. Counts are historical and are never reset; when the
+    active phase's count reaches its `max-attempts`, advance the phase
+    and apply `ZHC-objective-max-attempts`.
 
 5. Before drafting the reply, read the ENTIRE log file (Historical
    Summary + Daily Summaries + Verbatim) to inform the response. A

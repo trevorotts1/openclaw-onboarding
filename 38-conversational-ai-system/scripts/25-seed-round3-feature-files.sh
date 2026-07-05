@@ -11,6 +11,8 @@
 #   F47  KnowledgeBases/business/faqs.md            — Q/A pairs the inline-FAQ tool matches
 #   F46  crm-field-mappings.md                      — per-workflow CRM custom-field map (ZHC_ created fields)
 #   F50/F44/F45/F46/F47  *.jsonl + aggression-detection-log.md  — the F52 data-contract log sinks (created empty)
+#   U-1  tool-gate-events.jsonl                    - per-phase tool-gate refusals (PII-free, created empty)
+#   U-2  workflow-exit-events.jsonl                - tag-driven workflow exits (PII-free, created empty)
 #
 # OS-aware (Darwin + Linux). bash -n clean. set -euo pipefail.
 
@@ -126,7 +128,9 @@ for jsonl in \
   outreach-events.jsonl \
   ab-test-events.jsonl \
   voice-call-events.jsonl \
-  webhook-chain-events.jsonl; do
+  webhook-chain-events.jsonl \
+  tool-gate-events.jsonl \
+  workflow-exit-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"

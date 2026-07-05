@@ -179,6 +179,80 @@ assert_verdict     "$E" "FAIL" "orphan-on-disk"
 assert_exit        "$E" "1"    "orphan-on-disk"
 assert_missing_doc "$E" "rogue-slug" "orphan-on-disk"
 
+# ---------------------------------------------------------------------------
+# Fixture (F): U-4 metadata-grammar (CARD-07). The doc column is recorded (so the
+# doc check PASSES) but the playbook carries BAD objective metadata (non-integer
+# max-attempts, out-of-enum model-tier, gate-if-not-met without a closing). The
+# combined gate MUST FAIL (exit 1) on the metadata-grammar defect.
+# ---------------------------------------------------------------------------
+F="$TMP/metadata-bad/conversation-workflows"
+mkdir -p "$F"
+cat > "$F/registry.md" <<'EOF'
+# Conversation Workflows Registry
+
+## Active workflows
+
+| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+|---|---|---|---|---|---|---|---|
+| appointment-booking | Booking | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
+EOF
+cat > "$F/appointment-booking.md" <<'EOF'
+# Conversation Workflow: Bad Metadata
+
+model-tier: hyperspeed-max
+
+## What the agent does
+
+### Phase 1 - Qualify
+tools: reference_documents
+max-attempts: zero
+gate-if-not-met: budget qualified
+Qualify.
+
+## On success
+Win.
+
+## On escalation
+Escalate.
+EOF
+
+assert_exit "$F" "1" "metadata-bad (doc ok, metadata grammar fails)"
+
+# A well-formed metadata playbook (with a recorded doc) PASSES (exit 0).
+Fok="$TMP/metadata-ok/conversation-workflows"
+mkdir -p "$Fok"
+cat > "$Fok/registry.md" <<'EOF'
+# Conversation Workflows Registry
+
+## Active workflows
+
+| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+|---|---|---|---|---|---|---|---|
+| appointment-booking | Booking | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
+EOF
+cat > "$Fok/appointment-booking.md" <<'EOF'
+# Conversation Workflow: Good Metadata
+
+model-tier: realtime-standard
+
+## What the agent does
+
+### Phase 1 - Qualify
+tools: reference_documents
+skip-if-field-filled: contact.email
+max-attempts: 2
+gate-if-not-met: budget qualified, closing: Thank you, it sounds like we are not the right fit right now.
+Qualify.
+
+## On success
+Win.
+
+## On escalation
+Escalate.
+EOF
+
+assert_exit "$Fok" "0" "metadata-ok (doc ok, metadata grammar valid)"
+
 echo ""
 echo "qc-playbook-doc tests: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
