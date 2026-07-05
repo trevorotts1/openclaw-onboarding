@@ -33,6 +33,15 @@ fi
 # shellcheck source=/dev/null
 [[ -f "$LIB" ]] && source "$LIB"
 
+# Command Center reflection helper -- the single shared column-list/move lib. Sourcing
+# it here is what turns lib-command-center.sh from prose into a real build-path caller:
+# the publish decision below moves the operator's Kanban card to `review` (PASS) or
+# `blocked` (ESCALATED). Fail-soft: cc_move_task is a silent no-op when no TASK_ID is
+# set or no Command Center is reachable, so CI/self-tests are unaffected.
+CCLIB="$SCRIPT_DIR/lib-command-center.sh"
+# shellcheck source=/dev/null
+[[ -f "$CCLIB" ]] && source "$CCLIB"
+
 LEVELS=(L1-auth-session L2-build-execution L3-seeded-defect L4-safety L5-forced-failure)
 
 TOTAL=0; PASS=0; FAILED=0; SKIPPED=0; ESCALATED=0; FIXED=0
@@ -55,7 +64,9 @@ for lv in "${LEVELS[@]}"; do
       # A PASS that recorded a FINDING/escalation (e.g. L2 surfacing an upstream build defect)
       # still counts the escalation so the publish decision reflects it.
       if grep -q '"event":"escalation"' "$RUNLOG" 2>/dev/null; then
-        ESCALATED=$((ESCALATED + 1)); RESULTS[-1]="$lv=PASS(+escalation)"
+        # bash 3.2 (stock macOS) has NO negative array subscripts; index the last
+        # element explicitly so `RESULTS[-1]=` does not error out on macOS.
+        ESCALATED=$((ESCALATED + 1)); RESULTS[$((${#RESULTS[@]} - 1))]="$lv=PASS(+escalation)"
       fi
       ;;
     3)
@@ -80,6 +91,19 @@ fi
 
 echo "[skill 41 harness] results: $(IFS=', '; echo "${RESULTS[*]}")"
 echo "[skill 41 harness] total=$TOTAL pass=$PASS fixed=$FIXED escalated=$ESCALATED skipped=$SKIPPED -> publish=$DECISION"
+
+# --- Command Center reflection on the publish decision (best-effort, fail-soft) -----
+# PASS -> card to `review` (the CC QC scorer promotes review->done, never this runner);
+# ESCALATED -> card to `blocked` (a blocked build: do NOT publish, human-last). Silent
+# no-op when TASK_ID is unset or no Command Center is reachable -- never affects the exit
+# code or the emitted event. Uses the shared column list in lib-command-center.sh.
+if declare -f cc_move_task >/dev/null 2>&1; then
+  if [[ "$DECISION" == "PASS" ]]; then
+    cc_move_task "${TASK_ID:-}" review "${AGENT_ID:-}" || true
+  else
+    cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}" || true
+  fi
+fi
 
 # --- emit the f52 qc_result event ---------------------------------------------
 # Schema (references/f52-data-contract.md): event=qc_result with the count fields
