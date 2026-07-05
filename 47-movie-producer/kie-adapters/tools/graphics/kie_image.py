@@ -517,6 +517,15 @@ class KieImage(BaseTool):
 
         start = time.time()
         prompt = inputs.get("prompt", "")
+        # FIX-IMG-09 (i): the adapter accepted `negative_prompt` in its input
+        # schema but silently dropped it — it never reached the createTask body.
+        # gpt-image-2 has no dedicated negative-prompt field, so forward it
+        # in-prompt (the documented way to steer it away from unwanted content):
+        # append a "Do not include:" clause so the exclusion is actually honored
+        # instead of being silently ignored.
+        negative_prompt = str(inputs.get("negative_prompt", "") or "").strip()
+        if negative_prompt:
+            prompt = f"{prompt} Do not include: {negative_prompt}"
         aspect_ratio = inputs.get("aspect_ratio", "16:9")
         resolution = inputs.get("resolution", "2K")
         output_format = inputs.get("output_format", "png")
