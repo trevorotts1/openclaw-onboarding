@@ -158,9 +158,18 @@ def _sha256_bytes(data: bytes) -> str:
 # copy (a stale draft, a truncated splice, a placeholder). The marker proves the
 # build ran; it does NOT prove the APPROVED copy actually rendered. This gate
 # asserts that the approved copy tokens are present in the RENDERED preview DOM
-# (visible text, scripts/styles stripped). It is OPT-IN: it fires ONLY when the
-# page carries ``copy_tokens`` (explicit list) or ``copy_md_path`` (approved
-# copy.md to extract tokens from). Pages without copy assertions are unaffected.
+# (visible text, scripts/styles stripped).
+#
+# FIX-COPY-02: this gate is now OPT-OUT, not opt-in. A page's explicit
+# ``copy_tokens`` (list) or ``copy_md_path`` (approved copy.md / engine
+# copy_ledger.json) still take precedence; but when a page makes NO explicit copy
+# assertion the gate FALLS BACK to the run's conventional APPROVED copy
+# (``routing/copy.md`` / ``copy.md`` / an engine ``copy_ledger.json`` in the run
+# dir). So the flagship engine-routed builds — whose pages never carried
+# ``copy_md_path`` — are now copy-fidelity-gated by DEFAULT. A page may explicitly
+# opt out by setting ``copy_fidelity: False`` (or ``no_copy_fidelity: True``); a
+# run with no approved copy on disk resolves no tokens and the gate is a no-op, so
+# existing marker-only callers are unaffected.
 # The live probe (2026-06-27) confirmed the preview render contains the full
 # visible copy for every section, so this is a safe hard gate when tokens exist.
 
@@ -242,6 +251,56 @@ def extract_copy_tokens(copy_md: str, *, min_chars: int = COPY_TOKEN_MIN_CHARS) 
     return tokens
 
 
+# Ledger keys that carry metadata/counts, never renderable copy — skipped so a
+# numeric band or a section index never becomes a copy-fidelity token.
+_LEDGER_META_KEYS = frozenset({
+    "section", "id", "page", "profile", "name_key", "type", "order",
+    "char_count", "word_count", "chars", "words", "count", "min", "max",
+    "min_chars", "max_chars", "min_words", "max_words", "band", "ts", "at",
+    "kind", "slug", "status", "funnel_type", "funnel_size", "has_cta_button",
+    "personas", "offer_token_ledger",
+})
+
+
+def extract_copy_tokens_from_ledger(
+    copy_ledger: str, *, min_chars: int = COPY_TOKEN_MIN_CHARS
+) -> list[str]:
+    """Extract assertable copy tokens from an engine ``copy_ledger.json`` body — the
+    per-page/per-section copy the Signature-Funnel / Sales-Page engines emit (the
+    ``pages[].sections[].{copy,cta,bullets,steps,parts[].text,name}`` shape). Every
+    renderable string value is markdown-stripped, min-length filtered, deduped, and
+    returned in first-seen order. A non-JSON body or an unexpected shape yields
+    ``[]`` (the fallback then makes no assertion). Numeric/metadata keys are skipped."""
+    try:
+        data = json.loads(copy_ledger)
+    except (ValueError, TypeError):
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    def _harvest(value: object) -> None:
+        if isinstance(value, str):
+            for line in value.splitlines():
+                text = _strip_markdown_inline(line)
+                if len(text) < min_chars:
+                    continue
+                key = _normalize_for_match(text)
+                if key and key not in seen:
+                    seen.add(key)
+                    tokens.append(text)
+        elif isinstance(value, (list, tuple)):
+            for v in value:
+                _harvest(v)
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                if k in _LEDGER_META_KEYS:
+                    continue
+                _harvest(v)
+
+    _harvest(data)
+    return tokens
+
+
 def find_missing_copy_tokens(rendered_text: str, tokens: list[str]) -> list[str]:
     """Return the subset of ``tokens`` NOT present in ``rendered_text`` (both
     normalized: lower-cased, whitespace-collapsed substring match)."""
@@ -254,21 +313,84 @@ def find_missing_copy_tokens(rendered_text: str, tokens: list[str]) -> list[str]
     return missing
 
 
-def _required_copy_tokens(page: dict) -> list[str]:
-    """Resolve the approved copy tokens a page asserts: explicit ``copy_tokens``
-    list takes precedence; otherwise extract from ``copy_md_path`` if present and
-    readable. Returns ``[]`` when the page makes no copy assertion (gate off)."""
+# Conventional APPROVED-copy locations inside a run dir, in priority order. Used
+# for the OPT-OUT copy-fidelity fallback (FIX-COPY-02): when a page carries no
+# explicit copy assertion, the approved copy for the whole run is resolved from
+# these paths so the fidelity gate is ON by default. A ``.json`` candidate is read
+# as an engine copy_ledger; anything else as markdown copy.md.
+_APPROVED_COPY_CANDIDATES = (
+    os.path.join("routing", "copy.md"),
+    "copy.md",
+    os.path.join("copy", "copy.md"),
+    "copy_ledger.json",
+    os.path.join("build", "copy_ledger.json"),
+    os.path.join("routing", "copy_ledger.json"),
+)
+
+
+def _copy_fidelity_opted_out(page: dict) -> bool:
+    """A page may EXPLICITLY opt out of the (now default-on) copy-fidelity gate by
+    setting ``copy_fidelity: False`` or ``no_copy_fidelity: True``. Absent either
+    flag the gate is ON (opt-out, not opt-in)."""
+    if page.get("copy_fidelity") is False:
+        return True
+    if page.get("no_copy_fidelity"):
+        return True
+    return False
+
+
+def _tokens_from_copy_file(path: str) -> list[str]:
+    """Extract copy tokens from an approved-copy file — an engine ``*.json`` copy
+    ledger or a markdown ``copy.md``. Returns ``[]`` on any read error."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            body = f.read()
+    except OSError:
+        return []
+    if path.endswith(".json"):
+        return extract_copy_tokens_from_ledger(body)
+    return extract_copy_tokens(body)
+
+
+def _run_dir_copy_tokens(run_dir: str) -> list[str]:
+    """Resolve the approved copy tokens for a RUN from its conventional approved-copy
+    artifact (``routing/copy.md`` / ``copy.md`` / an engine ``copy_ledger.json``).
+    Returns ``[]`` when none is present/readable — the fallback then makes no
+    assertion (gate stays a no-op, so marker-only runs are unaffected)."""
+    if not run_dir or not isinstance(run_dir, str):
+        return []
+    for rel in _APPROVED_COPY_CANDIDATES:
+        p = os.path.join(run_dir, rel)
+        if not os.path.isfile(p):
+            continue
+        toks = _tokens_from_copy_file(p)
+        if toks:
+            return toks
+    return []
+
+
+def _required_copy_tokens(page: dict, run_dir: str = "") -> list[str]:
+    """Resolve the approved copy tokens a page must render.
+
+    Priority: explicit ``copy_tokens`` (list) > ``copy_md_path``/``copy_md`` file
+    (markdown copy.md OR an engine ``*.json`` copy ledger) > — unless the page
+    EXPLICITLY opts out — the run's conventional approved copy (``routing/copy.md``
+    / ``copy.md`` / an engine ``copy_ledger.json`` under ``run_dir``).
+
+    FIX-COPY-02: that final fallback flips the copy-fidelity gate from OPT-IN (it
+    fired only when a page happened to carry ``copy_tokens``/``copy_md_path``) to
+    OPT-OUT (ON by default for any run that has approved copy on disk). Returns
+    ``[]`` when the page opted out OR no approved copy can be resolved (gate off)."""
     explicit = page.get("copy_tokens")
     if isinstance(explicit, list) and explicit:
         return [str(t) for t in explicit if str(t).strip()]
     path = page.get("copy_md_path") or page.get("copy_md")
     if path and isinstance(path, str) and os.path.isfile(path):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                return extract_copy_tokens(f.read())
-        except OSError:
-            return []
-    return []
+        return _tokens_from_copy_file(path)
+    # OPT-OUT fallback — default the gate ON from the run's approved copy.
+    if _copy_fidelity_opted_out(page):
+        return []
+    return _run_dir_copy_tokens(run_dir)
 
 
 def _resolve_rendered_text(res: dict) -> str:
@@ -295,12 +417,13 @@ def _resolve_rendered_text(res: dict) -> str:
     return ""
 
 
-def _copy_fidelity_errors(page: dict, res: dict) -> list[str]:
+def _copy_fidelity_errors(page: dict, res: dict, run_dir: str = "") -> list[str]:
     """Return render-error strings for any approved copy tokens MISSING from the
-    rendered DOM. Empty list when the page asserts no copy (gate off) or all
-    tokens render. The returned errors fold into ``render_errors`` so a copy
-    miss forces ``PASS=False`` with no override (same as any render error)."""
-    tokens = _required_copy_tokens(page)
+    rendered DOM. Empty list when the page asserts no copy AND the run carries no
+    approved copy (gate off), or all tokens render. The returned errors fold into
+    ``render_errors`` so a copy miss forces ``PASS=False`` with no override (same
+    as any render error). ``run_dir`` enables the OPT-OUT fallback (FIX-COPY-02)."""
+    tokens = _required_copy_tokens(page, run_dir)
     if not tokens:
         return []
     rendered_text = _resolve_rendered_text(res)
@@ -484,11 +607,14 @@ def verify_page(
     ``render_errors != []`` or ``http != 200`` is FORCED ``PASS: False``
     regardless of any other field — there is NO override path.
 
-    COPY-FIDELITY (P1-4): if ``page`` carries ``copy_tokens`` (a list of
-    approved copy phrases) or ``copy_md_path`` (an approved copy.md), every such
+    COPY-FIDELITY (P1-4, FIX-COPY-02 opt-OUT): the approved copy every page must
+    render is resolved from the page's explicit ``copy_tokens``/``copy_md_path``
+    OR — by DEFAULT — the run's conventional approved copy (``routing/copy.md`` /
+    ``copy.md`` / an engine ``copy_ledger.json`` under ``run_dir``). Every resolved
     token MUST appear in the RENDERED preview DOM (visible text, scripts/styles
-    stripped).  Any missing token is folded into ``render_errors`` → ``PASS:
-    False``.  Pages with no copy assertion are unaffected (gate is opt-in).
+    stripped); any missing token folds into ``render_errors`` → ``PASS: False``.
+    A page opts out with ``copy_fidelity: False``; a run with no approved copy on
+    disk resolves no tokens and the gate is a no-op (marker-only runs unaffected).
 
     BACKWARD COMPAT: the record also carries ``http_code`` (alias of ``http``)
     and ``marker_in_preview`` (alias of ``marker_in_rendered_dom``) so existing
@@ -559,8 +685,9 @@ def verify_page(
         res = _call_fetcher(preview_url, marker)
 
         render_errors = list(res.get("render_errors") or [])
-        # P1-4 copy-fidelity: approved copy tokens MUST render (opt-in per page).
-        render_errors += _copy_fidelity_errors(page, res)
+        # P1-4 copy-fidelity: approved copy tokens MUST render (opt-OUT per page —
+        # defaults ON from the run's approved copy unless the page opts out).
+        render_errors += _copy_fidelity_errors(page, res, _run_dir)
         # FIX-XC-03c rendered-<img> gate: every images/manifest.json cdn_url for
         # this page MUST appear in the rendered DOM (opt-in — fires only when a
         # success manifest targets this page). Missing → PASS:False, no override.
@@ -603,8 +730,9 @@ def verify_page(
     )
     render_errors = list(res.get("render_errors") or [])
     # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
-    # (opt-in — fires only when the page carries copy_tokens / copy_md_path).
-    render_errors += _copy_fidelity_errors(page, res)
+    # (opt-OUT — defaults ON from the run's approved copy [routing/copy.md /
+    # copy.md / engine copy_ledger.json] unless the page sets copy_fidelity:False).
+    render_errors += _copy_fidelity_errors(page, res, _run_dir)
     # FIX-XC-03c rendered-<img> gate: manifest cdn_urls for this page MUST appear
     # in the rendered DOM (opt-in — fires only when a success images/manifest.json
     # targets this page). Missing → PASS:False, no override.

@@ -4,6 +4,29 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v17.0.35] - 2026-07-05 - copy-fidelity gate flipped opt-in → opt-out + FAB-QC fires on engine-routed builds (FIX-COPY-02, T-w1-copy-fidelity)
+
+Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**. The two "real" copy gates were no-ops
+exactly where the flagship copy ships. Both are now binding by default.
+
+- **FIX-COPY-02(a) — FAB-QC now fires on engine-routed builds.** `tools/funnel_engine_selector.py`:
+  a `ROUTE_TO_ENGINE` decision now writes `routing/match-decision.json`
+  (`flex_decision:"ROUTE_TO_ENGINE"`, `template_path` → the engine's structure JSON), the receipt the
+  FAB producer keys on. `tools/v2_dispatcher.py` `_emit_fab_artifact` is now engine-aware: on the
+  engine route it echoes the engine `copy_ledger.json` into `build/fab-artifact.json` so the shared
+  `≥ 8.5` FAB-QC copy-substance overlay RUNS (was `ran:False` — a silent skip) on the flagship
+  Signature-Funnel / Sales-Page products. `shared-utils/fab_artifact.py`: new
+  `build_funnel_artifact_from_copy_ledger()` normaliser that echoes the real per-section copy.
+- **FIX-COPY-02(b) — copy-fidelity render gate flipped OPT-IN → OPT-OUT.** `tools/ghl_verify.py`:
+  `_required_copy_tokens` now falls back to the run's conventional APPROVED copy (`routing/copy.md` /
+  `copy.md` / an engine `copy_ledger.json`) when a page carries no explicit `copy_tokens`/
+  `copy_md_path`, so every verified page is copy-fidelity-gated by default. A page opts out with
+  `copy_fidelity:false`; a run with no approved copy on disk resolves no tokens (marker-only callers
+  unaffected). New `extract_copy_tokens_from_ledger()` handles the engine ledger shape.
+  `tools/ghl_builder.py`: `emit_rest_save_plan` gained a `copy_md_path` arg it stamps on the
+  `verify_preview` step + plan (explicit per-page copy provenance).
+- Full `tools/tests/` suite green (961 passed / 15 skipped); `tests/unit/fab-artifact.test.py` green.
+
 ## [v17.0.34] - 2026-07-05 — feat(image rail): DIU style-card block 8 + optional per-entry aspect_ratio (T-w1-06-ghl-rail)
 
 Wave-1 train T-w1-06-ghl-rail — FIX-XC-02c, FIX-XC-05c, FIX-IMG-03. All additive; unset inputs
@@ -37,7 +60,6 @@ reproduce prior behavior byte-for-byte.
   pass the gate; only a real writer+nonce+consistent PASS returns 0). 17 tests, stdlib+pytest, zero network.
 
 ---
-
 ## [v17.0.29] - 2026-07-05 - test(fab-qc): re-author passing-path fixtures for the new lengthClass floors (T-funnel-copy-engine)
 
 - **FIX-XC-04a (consumer)** — `tests/test_v2_dispatcher.py`: the shared `shared-utils/fab_qc.py` D2

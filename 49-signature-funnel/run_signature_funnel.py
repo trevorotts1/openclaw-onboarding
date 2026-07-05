@@ -193,6 +193,116 @@ def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
     if not cov_ok:
         return False, cov_detail
     return True, f"{detail} + image coverage complete ({cov_detail})"
+# ---------------------------------------------------------------------------
+# FAB-artifact producer + P7 FAB-scorecard requirement (FIX-COPY-02)
+# ---------------------------------------------------------------------------
+# The engine authors its copy in copy_ledger.json then delegates GHL delivery to
+# Skill 6. On the engine-routed path Skill 6 produced NO template-match receipt, so
+# the shared FAB-QC copy-substance gate (>=8.5) silently SKIPPED the flagship funnel.
+# Here the engine ITSELF echoes copy_ledger.json into build/fab-artifact.json — the
+# FAB scorecard file the QC seam scores — and P7-BUILD fail-closed REQUIRES that file
+# to exist + carry real copy before it trusts the build receipt's QC>=8.5.
+
+_FAB_ARTIFACT_REL = os.path.join("build", "fab-artifact.json")
+# Copy-ledger keys that carry counts/metadata, never renderable copy.
+_LEDGER_META_KEYS = frozenset({
+    "section", "id", "page", "profile", "type", "order", "char_count",
+    "word_count", "chars", "words", "count", "min", "max", "min_chars",
+    "max_chars", "min_words", "max_words", "band", "ts", "at", "kind", "slug",
+    "status", "funnel_type", "funnel_size", "has_cta_button", "personas",
+    "offer_token_ledger", "product_title",
+})
+
+
+def _harvest_ledger_copy(node: object, bag: Dict[str, str], counter: List[int],
+                         key_hint: str = "") -> None:
+    """Flatten a copy_ledger page subtree into a {slot -> text} bag — every renderable
+    string keyed by its nearest copy field name (self-contained; no external deps)."""
+    if isinstance(node, str):
+        t = node.strip()
+        if t:
+            slot = key_hint or f"copy{counter[0]}"
+            if slot in bag:
+                counter[0] += 1
+                slot = f"{slot}-{counter[0]}"
+            bag[slot] = t
+    elif isinstance(node, (list, tuple)):
+        for v in node:
+            _harvest_ledger_copy(v, bag, counter, key_hint)
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            if k in _LEDGER_META_KEYS:
+                continue
+            _harvest_ledger_copy(v, bag, counter, str(k))
+
+
+def _emit_fab_artifact_from_ledger(run_dir: Path) -> Optional[Path]:
+    """Echo the engine copy_ledger.json into build/fab-artifact.json (the FAB scorecard
+    file). Best-effort: returns the written path, or None when there is no readable copy
+    ledger (P7 then fails closed on the missing FAB file — never a silent skip)."""
+    led = run_dir / "copy_ledger.json"
+    if not led.exists():
+        return None
+    try:
+        cl = json.loads(led.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    pages_in = [p for p in (cl.get("pages") or []) if isinstance(p, dict)]
+    pages: List[Dict] = []
+    for i, pg in enumerate(pages_in):
+        name = (pg.get("profile") or pg.get("page") or pg.get("name")
+                or pg.get("id") or f"page-{i + 1}")
+        bag: Dict[str, str] = {}
+        _harvest_ledger_copy(pg.get("sections") if "sections" in pg else pg, bag, [0])
+        pages.append({"name": str(name), "copy": bag})
+    artifact = {
+        "kind": "funnel",
+        "funnel_template_id": cl.get("funnel_template_id"),
+        "product_title": cl.get("product_title"),
+        "flex_decision": "ROUTE_TO_ENGINE",
+        "pages": pages,
+        "source": "copy_ledger",
+        "generated_by": "run_signature_funnel._emit_fab_artifact_from_ledger",
+    }
+    out = run_dir / _FAB_ARTIFACT_REL
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+    return out
+
+
+def _gate_build(run_dir: Path) -> Tuple[bool, str]:
+    """P7-BUILD (FIX-COPY-02): the QC>=8.5 seam now REQUIRES the FAB scorecard FILE.
+
+    (1) build/fab-artifact.json MUST exist + carry copy-bearing pages — the un-fakeable
+        proof the engine echoed the copy it authored (no artifact == fail-closed, never a
+        silent FAB-QC skip).                                            -> AF-FUN-BUILD-FAB
+    (2) THEN the pinned prove_sf_build.py enforces build_receipt.json QC>=8.5 + a preview
+        URL per page (the existing seam)."""
+    fab = run_dir / _FAB_ARTIFACT_REL
+    if not fab.exists():
+        return False, ("AF-FUN-BUILD-FAB: build/fab-artifact.json (the FAB scorecard) is "
+                       "absent — the >=8.5 copy-substance gate cannot run (fail-closed). "
+                       "The engine must echo copy_ledger.json into the FAB artifact.")
+    try:
+        art = json.loads(fab.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        return False, f"AF-FUN-BUILD-FAB: build/fab-artifact.json is unreadable ({exc})"
+    pages = art.get("pages") if isinstance(art, dict) else None
+    if not isinstance(pages, list) or not pages:
+        return False, "AF-FUN-BUILD-FAB: FAB artifact carries no non-empty 'pages' (nothing to score)"
+    has_copy = any(
+        isinstance(p, dict) and p.get("copy") and any(
+            str(v).strip() for v in (p["copy"].values() if isinstance(p["copy"], dict)
+                                     else [p["copy"]]))
+        for p in pages
+    )
+    if not has_copy:
+        return False, ("AF-FUN-BUILD-FAB: FAB artifact echoes NO copy — an un-echoed build "
+                       "cannot be proven non-thin (fail-closed).")
+    ok, detail = _shell_prover("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json")])
+    if not ok:
+        return False, detail
+    return True, f"FAB scorecard present ({len(pages)} page(s), copy echoed) + {detail}"
 
 
 # Phase spine — ids + order MUST match prove_sf_cert.EXPECTED_PHASES.
@@ -213,7 +323,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P6-COMPOSE", "prove_sf_graph.py",
          lambda: _shell_prover("prove_sf_graph.py", ["--graph", str(run_dir / "funnel_graph.json")])),
         ("P7-BUILD", "prove_sf_build.py",
-         lambda: _shell_prover("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json")])),
+         lambda: _gate_build(run_dir)),
         ("P8-DERIVE", "derived_pages_ledger",
          lambda: _gate_derived_pages(run_dir)),
         ("P9-CERTIFY", "prove_sf_no_pitch.py",
@@ -236,6 +346,10 @@ def _check_front_door(run_dir: Path, nonce: Optional[str], nonce_file: Optional[
 
 def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     phases_attested: List[Dict] = []
+    # FIX-COPY-02: echo the engine copy_ledger into build/fab-artifact.json (the FAB
+    # scorecard the QC>=8.5 seam requires at P7). Best-effort here; P7 fails closed if
+    # the file is still absent, so this can never silently skip the gate.
+    _emit_fab_artifact_from_ledger(run_dir)
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
     for order, (pid, prover, gate) in enumerate(gates):
@@ -455,6 +569,34 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: under-covered media ledger still certified "
                   f"(code={code}, aborted_at={manifest5.get('aborted_at') if isinstance(manifest5, dict) else '?'}).")
+        # (g) FIX-COPY-02 — the happy path emitted the FAB scorecard from the copy ledger.
+        if (rd / "build" / "fab-artifact.json").exists():
+            print("SELF-TEST ok: happy path emitted build/fab-artifact.json (copy ledger echoed).")
+        else:
+            ok = False; print("SELF-TEST FAIL: happy path did not emit the FAB scorecard file.")
+
+        # (h) FIX-COPY-02 — P7 now REQUIRES the FAB scorecard FILE: a valid build receipt
+        # with NO fab-artifact must fail closed at AF-FUN-BUILD-FAB (was a silent skip).
+        rd5 = tmp / "run-nofab"
+        rd5.mkdir()
+        (rd5 / "build").mkdir()
+        (rd5 / "build_receipt.json").write_text(
+            json.dumps(prove_sf_build._valid_receipt(3)), encoding="utf-8")
+        g_ok, g_detail = _gate_build(rd5)
+        if not g_ok and "AF-FUN-BUILD-FAB" in g_detail:
+            print("SELF-TEST ok: P7 fails closed with AF-FUN-BUILD-FAB when the FAB scorecard is absent.")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: P7 accepted a build with no FAB scorecard: {g_ok} {g_detail}")
+
+        # (i) FIX-COPY-02 — a FAB artifact that echoes NO copy is an un-provable (thin) build.
+        (rd5 / "build" / "fab-artifact.json").write_text(
+            json.dumps({"kind": "funnel", "pages": [{"name": "main", "copy": {}}]}),
+            encoding="utf-8")
+        g_ok, g_detail = _gate_build(rd5)
+        if not g_ok and "AF-FUN-BUILD-FAB" in g_detail:
+            print("SELF-TEST ok: P7 fails closed when the FAB scorecard echoes no copy.")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: P7 accepted an empty-copy FAB scorecard: {g_ok} {g_detail}")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

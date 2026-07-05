@@ -265,6 +265,67 @@ def select_engine(request: Any, registry: dict | None = None, *,
     }
 
 
+def _engine_structure_path(engine: dict) -> str | None:
+    """Resolve the engine's STRUCTURE/contract JSON path for the FAB-QC match-decision
+    ``template_path`` (the file whose bands/sections the built copy is scored against).
+    Prefers an explicit registry field; else derives ``structure/funnel_structure.json``
+    under the engine's skill dir when discoverable. Returns None when unresolved (the
+    FAB producer still emits an artifact scored on copy substance)."""
+    if not isinstance(engine, dict):
+        return None
+    for k in ("structure_path", "structure", "template_path", "contract_path"):
+        v = engine.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    # Derive from the engine's canonical entry shell dir. The registry ``entry`` is
+    # repo-root-relative (e.g. ``49-signature-funnel/signature-funnel-entry.sh``), so
+    # resolve candidates against the onboarding repo root (parent of this skill dir)
+    # as well as the entry dir verbatim.
+    entry = engine.get("entry")
+    if isinstance(entry, str) and entry.strip():
+        entry_dir = os.path.dirname(entry)
+        repo_root = os.path.dirname(_SKILL_DIR)
+        bases = [os.path.join(repo_root, entry_dir), entry_dir]
+        for base in bases:
+            for rel in ("structure/funnel_structure.json",
+                        "structure/sales_page_structure.json"):
+                cand = os.path.normpath(os.path.join(base, rel))
+                if os.path.isfile(cand):
+                    return cand
+    return None
+
+
+def _emit_engine_match_decision(routing: str, decision: dict, task: dict) -> None:
+    """Write ``routing/match-decision.json`` for an ENGINE-routed build (FIX-COPY-02).
+
+    Shape parity with the template-first matcher's receipt (funnel_matcher.step0_match)
+    so v2_dispatcher / fab_qc read it identically: ``flex_decision=ROUTE_TO_ENGINE`` +
+    ``template_path`` (the engine structure JSON). Best-effort — a receipt is advisory
+    glue and must NEVER block a build."""
+    try:
+        engine = decision.get("engine") or {}
+        receipt = {
+            "skill": "06-ghl-install-pages",
+            "matched_template_id": decision.get("engine_id"),
+            "matched_template_key": decision.get("engine_id"),
+            "template_path": _engine_structure_path(engine),
+            "flex_decision": DEC_ROUTE,
+            "route": "ROUTE_TO_ENGINE",
+            "engine_id": decision.get("engine_id"),
+            "engine_skill": decision.get("skill"),
+            "engine_entry": decision.get("entry"),
+            "confident_match": True,
+            "funnel_template_id": task.get("funnel_template_id"),
+            "confidence": decision.get("confidence"),
+            "ts": decision.get("ts", _ts()),
+        }
+        with open(os.path.join(routing, "match-decision.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(receipt, f, indent=2)
+    except Exception:  # noqa: BLE001 — receipt is advisory, never blocks a build
+        pass
+
+
 def step0_select_engine(task: dict, evidence_root: str, *,
                         registry_path: str | None = None,
                         threshold: float = DEFAULT_THRESHOLD) -> dict:
@@ -311,6 +372,13 @@ def step0_select_engine(task: dict, evidence_root: str, *,
             task["funnel_engine_skill"] = decision["skill"]
             task["funnel_engine_entry"] = decision["entry"]
             task["funnel_engine_delivery_rail"] = decision.get("delivery_rail")
+            # FIX-COPY-02: an engine-routed build produced NO routing/match-decision.json,
+            # so v2_dispatcher._emit_fab_artifact / _fab_overlay saw no template-aware
+            # evidence and the >=8.5 FAB-QC copy-substance gate silently SKIPPED the
+            # flagship engine products. Emit a match-decision receipt now with
+            # flex_decision=ROUTE_TO_ENGINE + template_path -> the engine's structure
+            # JSON, so the FAB producer fires and the gate binds on engine builds too.
+            _emit_engine_match_decision(routing, decision, task)
         return decision
     except Exception as exc:  # noqa: BLE001 — selection must never block a build
         return {"decision": DEC_NONE, "engine": None,
