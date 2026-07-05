@@ -821,8 +821,15 @@ def build_image_plan() -> dict:
                         "evergreen foreground, epic and decisive tone, the closing metaphor of the sovereign "
                         "choice between another year as the machine and a company that finally runs itself."),
     ]
-    prompts = [{"index": i, "stage": st, "prompt_text": tx} for i, (st, tx) in enumerate(scenes)]
-    return {"funnel_type": "sales_page_assets", "image_prompt_count": len(prompts), "prompts": prompts}
+    # Wrap each authored scene into a >=5,000-char, brand-graded, floor-compliant prompt
+    # (FIX-XC-04e). The brand color "deep evergreen" is named in every prompt so the two-floor
+    # gate (prove_sp_prompt_floor.py) passes, parameterized on the client's primary_brand_color.
+    sys.path.insert(0, str(SCRIPTS))
+    import prove_sp_prompt_floor as _pf  # noqa: E402
+    prompts = [{"index": i, "stage": st, "prompt_text": _pf._rich_prompt(tx)}
+               for i, (st, tx) in enumerate(scenes)]
+    return {"funnel_type": "sales_page_assets", "image_prompt_count": len(prompts),
+            "primary_brand_color": "deep evergreen", "prompts": prompts}
 
 
 def build_copy_ledger() -> dict:
@@ -938,6 +945,32 @@ def write_ledgers():
     (HERE / "copy_ledger.json").write_text(json.dumps(build_copy_ledger(), indent=2), encoding="utf-8")
     (HERE / "media_ledger.json").write_text(json.dumps(build_media_ledger(), indent=2), encoding="utf-8")
     (HERE / "funnel-manifest.json").write_text(json.dumps(build_manifest(), indent=2), encoding="utf-8")
+    write_build_artifacts()
+
+
+# The P5-P9 artifact-backed gates (FIX-XC-03b) need on-disk build artifacts: a non-empty
+# fragment per page step, a Track-1 Docs manifest, a delivery record, and a build receipt.
+BUILD_ARTIFACT_NAMES = ("pages", "drive_docs.json", "delivery.json", "build_receipt.json")
+
+
+def write_build_artifacts():
+    """Materialize the committed build artifacts in the golden dir using the SAME helper the
+    orchestrator self-test uses (single source of truth for the artifact shape)."""
+    sys.path.insert(0, str(SKILL_DIR))
+    sys.path.insert(0, str(SCRIPTS))
+    import run_sales_page_assets as _orch  # noqa: E402
+    _orch._write_build_artifacts(HERE, build_manifest())
+
+
+def copy_build_artifacts(dst: Path):
+    for name in BUILD_ARTIFACT_NAMES:
+        src = HERE / name
+        if not src.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(src, dst / name, dirs_exist_ok=True)
+        else:
+            shutil.copy(src, dst / name)
 
 
 def prove_all():
@@ -945,6 +978,7 @@ def prove_all():
     checks = [
         ("prove_sp_intake.py", [str(HERE / "brief.json")]),
         ("prove_sp_image_plan.py", ["--plan", str(HERE / "image_plan.json")]),
+        ("prove_sp_prompt_floor.py", ["--ledger", str(HERE / "image_plan.json")]),
         ("prove_sp_main_structure.py", ["--ledger", str(HERE / "copy_ledger.json")]),
         ("prove_sp_upsell_structure.py", ["--ledger", str(HERE / "copy_ledger.json")]),
         ("prove_sp_highticket_band.py", ["--ledger", str(HERE / "copy_ledger.json")]),
@@ -970,6 +1004,7 @@ def orchestrate_golden():
         rd.mkdir()
         for f in ("brief.json", "image_plan.json", "copy_ledger.json", "media_ledger.json", "funnel-manifest.json"):
             shutil.copy(HERE / f, rd / f)
+        copy_build_artifacts(rd)   # P5-P9 artifacts (fragments/docs/delivery/build-receipt)
         nf = rd / ".spa_run_nonce"
         nf.write_text(GOLDEN_NONCE, encoding="utf-8")
         os.chmod(nf, 0o600)

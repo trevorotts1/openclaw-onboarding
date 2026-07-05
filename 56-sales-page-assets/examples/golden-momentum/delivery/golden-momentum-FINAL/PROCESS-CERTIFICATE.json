@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "run_id": "marcus-vale__momentum-engine__run-20260702-01",
   "funnel_type": "sales_page_assets",
-  "skill_version": "1.0.0",
-  "issued_at": "2026-07-02T14:06:00Z",
+  "skill_version": "1.1.0",
+  "issued_at": "2026-07-05T15:01:01Z",
   "nonce_fingerprint": "0894b0ef7e30310c",
   "ledger_hashes": {
     "brief.json": "4368001aa242e46d8677893670fe4a259ec851942756eb343ef5378ff3b8b70e",
-    "image_plan.json": "071129039b09bf35540789e1ca1b3ddea68d9b066d637fb15d3023750eea3ff4",
+    "image_plan.json": "4ca73c220427dde5e7a931b8502bba86356385a49f92831adf7eac12aa791884",
     "copy_ledger.json": "e2a3969c08d4d4878c42573daef8a5aa6a916779812ad53195f3eca08007f5bb",
     "media_ledger.json": "fac92f3c563598d0c1868a92f8c8ea7d4e385879401ae362d3b4589f810e430b",
     "funnel-manifest.json": "321302502d1cb261cab2e37ffb16c510ae9b959d8891d297c0f4919145a57e5c"
@@ -22,7 +22,7 @@
     },
     {
       "id": "P1-IMAGE-PLAN",
-      "prover": "prove_sp_image_plan.py",
+      "prover": "prove_sp_image_plan.py + prove_sp_prompt_floor.py",
       "status": "pass",
       "order": 1
     },
@@ -82,5 +82,5 @@
     "two_track": "Track 1 client Docs (editable) + Track 2 build bundle (Skill 6)",
     "bump_seam": "Skill 44 order-bump widget (P4->P5 board handoff)"
   },
-  "signature": "7a258c2243f02b4b6debb5afe73d1d3d46b9c81bbd46e8a0ffab2fc6db91dc80"
+  "signature": "4fb2d84efb96cc234b90a9bb2afc8ec62319885041f31de2bb01b08783b994c8"
 }
