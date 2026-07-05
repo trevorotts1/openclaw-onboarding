@@ -53,17 +53,21 @@ WORKFORCE="$HOME/.openclaw/workspace/zero-human-company/<slug>"   # Mac
 
 cd "$WORKFORCE"
 
-# 3.1 — Map ONCE using the client's OWN local Ollama (free + private).
-#       deepseek-v4-pro:cloud via their Ollama, or whatever the client has configured.
-#       NEVER the operator's keys.
-OLLAMA_BASE_URL="http://localhost:11434" \
-OLLAMA_MODEL="deepseek-v4-pro:cloud" \
+# 3.1 — Map ONCE using the client's OWN GENUINELY-LOCAL Ollama model (free + private).
+#       Use a model that runs ON this box (NO ":cloud" suffix) — e.g. qwen2.5-coder:7b,
+#       or whatever LOCAL model the client has pulled. NEVER the operator's keys.
+#   ⚠️ OLLAMA_BASE_URL MUST end in /v1 — graphify passes it verbatim as the OpenAI-style
+#      base_url; without /v1 the POST /chat/completions 404s and every map fails.
+#   ⚠️ A ":cloud" model (e.g. deepseek-v4-pro:cloud) runs on Ollama Cloud OFF the box and
+#      BILLS the client's Ollama account — NOT free, NOT private. Owner opt-in only (see SKILL.md).
+OLLAMA_BASE_URL="http://localhost:11434/v1" \
+OLLAMA_MODEL="qwen2.5-coder:7b" \
 graphify extract . --backend ollama
 ```
 
 This is the **one-time semantic pass**. It writes `graphify-out/` (`graph.html`, `GRAPH_REPORT.md`, `graph.json`) into the mapped folder.
 
-> The semantic re-map is **owner-triggered only**. Do NOT schedule it or run it on every commit — that would burn the client's model time. To re-map later (after big changes), the owner runs `/graphify .` again (or the `graphify extract . --backend ollama` line above).
+> The semantic re-map is **owner-triggered only**. Do NOT schedule it or run it on every commit — that would burn the client's model time. To re-map later (after big changes), the owner re-runs the **explicit** `OLLAMA_BASE_URL=…/v1 OLLAMA_MODEL=<client-local-model> graphify extract . --backend ollama` line above. **Always pin `--backend ollama`.** A bare `/graphify .` re-map lets graphify's `detect_backend()` auto-pick whatever API key is resident on the box — which can silently route THIS client's corpus to a paid/Anthropic backend. That is a billing leak and a co-mingling/sovereignty **violation** (see CORE_UPDATES.md).
 
 > If the client's Ollama is not running / not configured: **STOP**. Do NOT substitute the operator's keys or another client's model. Surface the gap and wait. (You can still install the FREE AST hook in Step 4 — it needs no model.)
 
@@ -84,12 +88,14 @@ This installs post-commit / post-checkout git hooks that re-run the **AST struct
 
 ## 6. Verify
 
+Pass the mapped folder as the first argument so the verifier can check for the graph and the hook **there** (with no argument, those two checks are skipped entirely):
+
 ```bash
-bash ~/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh
-# VPS: bash /data/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh
+bash ~/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh "$WORKFORCE"
+# VPS: bash /data/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh "$WORKFORCE"
 ```
 
-Checks: graphify CLI present, claw skill registered, `graphify-out/graph.json` exists for the mapped folder, and the hook is installed. Then run the full install QC:
+Hard checks (these FAIL the verifier): the skill files are present and the graphify CLI is installed. **Advisory only — WARN, never fail:** the claw skill registration, `graphify-out/graph.json` existing for the mapped folder, and the hook being installed. The semantic map is owner-triggered and the target may not be a git repo yet, so their absence is often expected. Then run the full install QC:
 
 ```bash
 bash ~/.openclaw/skills/43-graphify-knowledge-graph/qc-graphify-knowledge-graph.sh

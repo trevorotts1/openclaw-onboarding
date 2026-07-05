@@ -9,7 +9,7 @@ triggers:
   - "build a knowledge graph of my company"
   - "knowledge graph"
   - "/graphify"
-version: 1.0.2
+version: 1.0.3
 ---
 
 # Skill 43: Graphify Knowledge Graph
@@ -66,9 +66,10 @@ By default, **the client's OWN workforce/workspace** — the `zero-human-company
 ## The model rule (NON-NEGOTIABLE)
 
 Graphify's semantic pass runs on the **CLIENT'S OWN model**:
-- Preferred: the client's local **Ollama** (`--backend ollama`, `OLLAMA_BASE_URL=http://localhost:11434`), using `deepseek-v4-pro:cloud` (or whatever the client has configured). Free + nothing leaves the box.
+- Preferred: the client's **genuinely-local Ollama** model (`--backend ollama`, `OLLAMA_BASE_URL=http://localhost:11434/v1` — the `/v1` suffix is **required**, or the OpenAI-style `POST /chat/completions` 404s and every map fails), using a model that runs ON the box with **no `:cloud` suffix** (e.g. `qwen2.5-coder:7b`, or whatever LOCAL model the client has pulled). Only a genuinely-local model is **free + nothing leaves the box**.
+- ⚠️ **`:cloud` models are NOT local.** A `:cloud`-suffixed model (e.g. `deepseek-v4-pro:cloud`) runs on **Ollama Cloud servers off the box** and **bills the client's Ollama Cloud account** — it is neither free nor fully private. Use a `:cloud` model ONLY with the owner's **explicit opt-in**, and disclose the billing.
 - Otherwise: whatever model the client already has configured.
-- **NEVER** the operator's Anthropic/OpenAI/etc. keys. The operator does not pay for or route a client's graph build.
+- **NEVER** the operator's Anthropic/OpenAI/etc. keys, and **always pin `--backend ollama`** — a bare re-map lets graphify's `detect_backend()` auto-pick a resident key and can route the client's corpus to a paid/Anthropic backend. The operator does not pay for or route a client's graph build.
 
 ## What This Skill Ships
 
@@ -79,7 +80,7 @@ Graphify's semantic pass runs on the **CLIENT'S OWN model**:
 ├── INSTRUCTIONS.md                   # runtime: answering questions via the graph
 ├── CORE_UPDATES.md                   # AGENTS.md / TOOLS.md / MEMORY.md appends
 ├── CHANGELOG.md
-├── skill-version.txt                 # 1.0.0
+├── skill-version.txt                 # tracks this skill's own version (see CHANGELOG.md)
 ├── qc-graphify-knowledge-graph.sh    # install QC (10-assertion)
 ├── scripts/
 │   └── verify-graphify-install.sh    # lightweight structural/install check
