@@ -4,10 +4,11 @@
 - **Contributor:** Marcus Bell (`unbroken-ground-voices-from-the-second-start-marcus-bell`)
 - **Measured chapter words:** 2118 (stripped; self-report ignored)
 - **Measured tone-doc words:** 3058 (stripped)
+- **Client-exact band override:** none (default SACRED bands)
 - **All phases pass:** True
 - **Runtime:** local-only; client's own NON-Anthropic providers
 - **Certificate SHA:** `6a274963d75c04ae50d6e15c1d4395cab667cca58403c7e01cc7ad0e5dae5f70`
-- **Certified at:** 2026-07-02T18:37:22.074805+00:00
+- **Certified at:** 2026-07-05T15:37:32.879439+00:00
 
 | Phase | Verified |
 |---|---|

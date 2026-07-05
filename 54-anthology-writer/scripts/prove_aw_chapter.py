@@ -41,21 +41,34 @@ AF_VERIFY_BLOCK = "AF-AW-VERIFY-BLOCK"
 AF_PLACEHOLDER = "AF-AW-PLACEHOLDER"
 AF_TITLE_LOCK = "AF-AW-TITLE-LOCK"
 AF_STORIES = "AF-AW-STORIES"
+AF_OVERRIDE_UNLOGGED = "AF-AW-OVERRIDE-UNLOGGED"
 _FIX = Path(__file__).resolve().parent.parent / "test-fixtures"
 
 
-def evaluate(text: str, mode: str = "chapter", title: dict = None, intake: dict = None) -> c.Result:
+def evaluate(text: str, mode: str = "chapter", title: dict = None, intake: dict = None,
+             override: dict = None, brief: dict = None) -> c.Result:
     r = c.Result("prove_aw_chapter")
 
     if mode == "chapter":
+        # DEFAULT band unless a client-exact override wins through the LOGGED,
+        # brief-tied channel (fleet law: exact ask wins; an unlogged override
+        # fails closed rather than silently swap the SACRED floor).
+        cmin, cmax = c.CHAPTER_WORD_MIN, c.CHAPTER_WORD_MAX
+        status, reason, applied = c.resolve_band_override(
+            override, brief, ("chapter_word_min", "chapter_word_max"))
+        if status == "unlogged":
+            r.fail(AF_OVERRIDE_UNLOGGED, reason)
+        elif status == "applied":
+            cmin = applied.get("chapter_word_min", cmin)
+            cmax = applied.get("chapter_word_max", cmax)
+            r.note("%s — chapter band overridden to %d-%d" % (reason, cmin, cmax))
         words = c.word_count(text)
-        if words < c.CHAPTER_WORD_MIN or words > c.CHAPTER_WORD_MAX:
+        if words < cmin or words > cmax:
             r.fail(AF_CHAP_LEN, "measured stripped word count %d outside %d-%d "
                    "(self-reported counts are ignored; padding is inert)"
-                   % (words, c.CHAPTER_WORD_MIN, c.CHAPTER_WORD_MAX))
+                   % (words, cmin, cmax))
         else:
-            r.note("measured stripped word count %d within %d-%d"
-                   % (words, c.CHAPTER_WORD_MIN, c.CHAPTER_WORD_MAX))
+            r.note("measured stripped word count %d within %d-%d" % (words, cmin, cmax))
         if c.VERIFY_BLOCK_MARKER not in text:
             r.fail(AF_VERIFY_BLOCK, "mandatory %r block absent" % c.VERIFY_BLOCK_MARKER)
         else:
@@ -96,10 +109,16 @@ def evaluate(text: str, mode: str = "chapter", title: dict = None, intake: dict 
     return r
 
 
-def prove(path, mode, title_path, intake_path, as_json=False) -> int:
+def prove(path, mode, title_path, intake_path, override_path=None,
+          brief_path=None, as_json=False) -> int:
     title = c.read_json(title_path) if title_path else None
     intake = c.read_json(intake_path) if intake_path else None
-    return evaluate(c.read_text(path), mode=mode, title=title, intake=intake).emit(as_json)
+    override = c.read_json(override_path) if override_path else None
+    # The locked brief the override must cite; defaults to the intake (intake IS
+    # the locked brief) when --brief is not passed explicitly.
+    brief = c.read_json(brief_path) if brief_path else intake
+    return evaluate(c.read_text(path), mode=mode, title=title, intake=intake,
+                    override=override, brief=brief).emit(as_json)
 
 
 def self_test() -> int:
@@ -138,6 +157,24 @@ def self_test() -> int:
     plc = evaluate(c.read_text(_FIX / "attack" / "chapter_placeholder.md"), "chapter", gtitle, gintake)
     checks.append(("placeholder-leak chapter AUTOFAILs AF-AW-PLACEHOLDER",
                    any(code == AF_PLACEHOLDER for code, _ in plc.violations)))
+
+    # client-exact override: a LOGGED, brief-tied override wins over the default
+    # band; an UNLOGGED override (no source/approver/reason/brief_ref, or an
+    # untied brief_ref) fails CLOSED rather than silently swap the SACRED floor.
+    ref = sorted(c.brief_identity(gintake))[0]
+    logged = {"chapter_word_min": 2000, "chapter_word_max": 3600,
+              "source": "client-exact-request", "approved_by": "operator",
+              "reason": "the contributor asked for up to 3,600 words", "brief_ref": ref}
+    checks.append(("logged brief-tied override is honored (default band still passes)",
+                   evaluate(golden, "chapter", gtitle, gintake, override=logged, brief=gintake).passed))
+    unlogged = {"chapter_word_min": 100, "chapter_word_max": 200}
+    un = evaluate(golden, "chapter", gtitle, gintake, override=unlogged, brief=gintake)
+    checks.append(("unlogged override AUTOFAILs AF-AW-OVERRIDE-UNLOGGED (fail-closed)",
+                   any(code == AF_OVERRIDE_UNLOGGED for code, _ in un.violations)))
+    untied = dict(logged, brief_ref="some-other-book")
+    ut = evaluate(golden, "chapter", gtitle, gintake, override=untied, brief=gintake)
+    checks.append(("override not tied to the locked brief AUTOFAILs AF-AW-OVERRIDE-UNLOGGED",
+                   any(code == AF_OVERRIDE_UNLOGGED for code, _ in ut.violations)))
     return c.selftest_report("prove_aw_chapter", checks)
 
 
@@ -147,6 +184,11 @@ def main(argv=None):
     ap.add_argument("--mode", choices=["chapter", "outline"], default="chapter")
     ap.add_argument("--title", help="title.json carrying the locked title/subtitle")
     ap.add_argument("--intake", help="intake.json carrying personal_stories")
+    ap.add_argument("--band-override", dest="band_override",
+                    help="a LOGGED overrides.json declaring a client-exact chapter word "
+                         "band (chapter_word_min/chapter_word_max) tied to the locked brief")
+    ap.add_argument("--brief", help="the locked brief (intake.json) the override must cite; "
+                                    "defaults to --intake")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
@@ -154,7 +196,8 @@ def main(argv=None):
         return self_test()
     if not args.path:
         ap.error("a path is required (or use --self-test)")
-    return prove(args.path, args.mode, args.title, args.intake, as_json=args.json)
+    return prove(args.path, args.mode, args.title, args.intake,
+                 override_path=args.band_override, brief_path=args.brief, as_json=args.json)
 
 
 if __name__ == "__main__":
