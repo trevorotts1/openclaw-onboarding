@@ -1,7 +1,7 @@
 ---
 name: product-bio
 description: The Product Bio Engine — a governed skill that turns a 4-field intake into the master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML. It bakes Trevor Otts's two verbatim system prompts (sha256-pinned), replaces the 25-node n8n / Google Drive / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED count with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. Cross-linked with (never merged into) Skill 52 Avatar Alchemist.
-version: 1.0.4
+version: 1.0.5
 ---
 
 # Product Bio Engine (Skill 55)

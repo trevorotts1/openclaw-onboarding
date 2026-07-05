@@ -81,7 +81,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 9. **Never use `grep -P` on a Mac client box.** BSD grep (macOS default) has no -P flag. Parse JSON/SSE responses with `python3 -c "import json,sys; ..."` or `jq`.
 
-10. **Use `deepseek-v4-flash` (direct) for lookup inference — never a metered `:cloud` model.** Contact lookups are cheap data-retrieval tasks. Metered cloud models burn quota for work a free model handles fine.
+10. **Use the cheapest non-metered model configured on THIS box for lookup inference — never a metered `:cloud` model.** Contact lookups are cheap data-retrieval tasks. Preflight the box's actual providers (inspect the configured model list — e.g. `openclaw config get models` / the client's OpenClaw config) and pick the lowest-cost non-metered model the client genuinely has (a free local Ollama model, or an `openrouter/free`-tier model). Never hardcode a specific model id — the configured providers differ per box, and hardcoding one that isn't provisioned strands the lookup. Metered cloud models burn quota for work a free model handles fine.
 
 11. **🔴 GHL rate limits apply to ALL tiers — they share the same backend bucket.** Switching tiers does NOT bypass the limit.
    - **Burst limit:** 100 requests per 10 seconds per location

@@ -10,17 +10,17 @@
 You are writing Ads for category 3  which is the General Purpose Ads
 
 also here is the other ad that were written so things are in harmony:
-[{{artifact.upstream}}{{artifact.upstream}}]
+[{{artifact.22-ad-set-1}}{{artifact.23-ad-set-2}}]
 
 here is the info needed  for you to write the visual ads
 
 Brand Info
 brand bio:
- [{{artifact.upstream}}] 
+ [{{artifact.16-brand-bio}}] 
 
 Product info
 product bio:
- [{{artifact.upstream}}]
+ [{{artifact.17-product-bio}}]
 
 
 Offer/Product Name (Product or Service or Mission being promoted):
@@ -39,9 +39,9 @@ Additonal Product Info:
 Avatar/ Customer Intellegenge info (this should help you when trying to determine the who)
 :
  [
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
 ] (This represents the type of people that are attempting to attract with our visual ads. This is our target audience:)
 
 

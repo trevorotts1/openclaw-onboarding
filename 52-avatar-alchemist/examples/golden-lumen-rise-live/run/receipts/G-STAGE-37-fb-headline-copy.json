@@ -1,0 +1,7 @@
+{
+  "stage": "37-fb-headline-copy",
+  "sha256": "92f9e986083f13736ec1c0beb4c24f81354ab07873f88b700c089f48e8fde4a4",
+  "attested_by": "foreman",
+  "model": "ollama-cloud/qwen3-235b",
+  "words": 1095
+}

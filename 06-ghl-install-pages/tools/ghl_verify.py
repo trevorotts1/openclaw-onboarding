@@ -314,6 +314,103 @@ def _copy_fidelity_errors(page: dict, res: dict) -> list[str]:
     ]
 
 
+# ── Rendered-DOM image gate (FIX-XC-03c): the "un-fakeable" <img> gate ────────
+#
+# v2-autonomous-build-sop.md documents an un-fakeable gate: after the page is
+# saved and render_check runs, the RENDERED DOM MUST contain the <img src="..">
+# pointing to the GHL/GCS CDN URL from images/manifest.json — the image is
+# confirmed only in the rendered page, never in stored bytes. That gate did not
+# exist in code (zero img/cdn checks). This implements it: load the run's image
+# manifest, filter to THIS page's records (by used_on_page_id), and assert each
+# cdn_url literally appears in the fetched rendered DOM. A missing image folds into
+# render_errors → PASS:False (no override), and is also stamped on the raw record
+# as missing_images so assert_consistent can re-catch a fabricated row.
+
+IMAGE_MANIFEST_REL = os.path.join("images", "manifest.json")
+
+
+def _resolve_rendered_dom(res: dict) -> str:
+    """Return the RAW rendered DOM HTML for a render result (NOT tag-stripped —
+    the <img src=...> attribute must survive). Prefers an inline dom field, else
+    reads the captured ``dom_path`` file. Returns ``""`` when no rendered DOM is
+    available (fail-closed: no proof the image rendered)."""
+    for key in ("rendered_dom", "dom", "dom_content", "html", "rendered_html"):
+        v = res.get(key)
+        if isinstance(v, str) and v:
+            return v
+    dom_path = res.get("dom_path")
+    if dom_path and isinstance(dom_path, str) and os.path.isfile(dom_path):
+        try:
+            with open(dom_path, encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            return ""
+    return ""
+
+
+def _load_image_manifest(run_dir: str) -> list[dict]:
+    """Load ``<run_dir>/images/manifest.json`` and return its SUCCESS records
+    (dicts carrying an https ``cdn_url``). Returns ``[]`` when the manifest is
+    absent, unparseable, or an honest-FAIL record (no cdn_url) — the gate is then
+    off (opt-in: it only fires when real images were promised)."""
+    if not run_dir:
+        return []
+    path = os.path.join(run_dir, IMAGE_MANIFEST_REL)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [
+        r for r in data
+        if isinstance(r, dict)
+        and str(r.get("cdn_url", "")).lower().startswith("https://")
+    ]
+
+
+def _missing_manifest_images(page: dict, res: dict, run_dir: str) -> list[str]:
+    """Return the cdn_urls this page's manifest records promise that are NOT
+    present in the rendered DOM. ``[]`` when the gate is off (no success manifest,
+    or no record targets this page) or every promised image rendered.
+
+    Records are filtered by ``used_on_page_id`` == the page's ``page_id`` so a
+    multi-page run only asserts the images that belong to THIS page."""
+    records = _load_image_manifest(run_dir)
+    if not records:
+        return []
+    page_id = str(page.get("page_id") or "")
+    targeted = [r for r in records if str(r.get("used_on_page_id", "")) == page_id]
+    if not targeted:
+        return []  # none of the manifest images belong to this page → gate off
+    rendered_dom = _resolve_rendered_dom(res)
+    missing: list[str] = []
+    for r in targeted:
+        cdn_url = str(r.get("cdn_url", "")).strip()
+        if cdn_url and cdn_url not in rendered_dom:
+            missing.append(cdn_url)
+    return missing
+
+
+def _image_gate_errors(page: dict, res: dict, run_dir: str) -> tuple[list[str], list[str]]:
+    """Return ``(render_error_strings, missing_cdn_urls)`` for the rendered-<img>
+    gate. Empty when the gate is off or all images rendered."""
+    missing = _missing_manifest_images(page, res, run_dir)
+    if not missing:
+        return [], []
+    sample = "; ".join(missing[:5])
+    return (
+        [
+            f"missing_images: {len(missing)} manifest cdn_url(s) for page "
+            f"{page.get('page_id')!r} not found in the rendered DOM: {sample}"
+        ],
+        missing,
+    )
+
+
 # ── The single real check (one page → one raw record) ────────────────────────
 
 _SENTINEL = object()  # sentinel for unset `live` parameter
@@ -429,6 +526,7 @@ def verify_page(
             "marker_in_rendered_dom": False,
             "marker_in_preview": False,
             "render_errors": ["missing preview_url or marker — cannot verify live (FAIL)"],
+            "missing_images": [],
             "PASS": False,
             "dom_path": "", "png_path": "", "console_path": "",
             "dom_sha256": "", "png_sha256": "", "console_sha256": "",
@@ -463,6 +561,11 @@ def verify_page(
         render_errors = list(res.get("render_errors") or [])
         # P1-4 copy-fidelity: approved copy tokens MUST render (opt-in per page).
         render_errors += _copy_fidelity_errors(page, res)
+        # FIX-XC-03c rendered-<img> gate: every images/manifest.json cdn_url for
+        # this page MUST appear in the rendered DOM (opt-in — fires only when a
+        # success manifest targets this page). Missing → PASS:False, no override.
+        _img_errs, _missing_imgs = _image_gate_errors(page, res, _run_dir)
+        render_errors += _img_errs
         # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless
         # the page carries a published url + a JS signal). Routes the published
         # render through the SAME stub in mock mode.
@@ -481,6 +584,7 @@ def verify_page(
             "marker_in_rendered_dom": mird,
             "marker_in_preview": mird,
             "render_errors": render_errors,
+            "missing_images": _missing_imgs,
             "PASS": pass_val,
             "dom_path": res.get("dom_path", ""),
             "png_path": res.get("png_path", ""),
@@ -501,6 +605,11 @@ def verify_page(
     # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
     # (opt-in — fires only when the page carries copy_tokens / copy_md_path).
     render_errors += _copy_fidelity_errors(page, res)
+    # FIX-XC-03c rendered-<img> gate: manifest cdn_urls for this page MUST appear
+    # in the rendered DOM (opt-in — fires only when a success images/manifest.json
+    # targets this page). Missing → PASS:False, no override.
+    _img_errs, _missing_imgs = _image_gate_errors(page, res, _run_dir)
+    render_errors += _img_errs
     # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless the
     # page carries a published url + a JS signal). Re-runs the SEALED render on
     # the LIVE published url; any console/CSP/pageerror or non-200 there forces
@@ -530,6 +639,10 @@ def verify_page(
                 )
                 _re2 = list(_res2.get("render_errors") or [])
                 _re2 += _copy_fidelity_errors(page, _res2)
+                # Re-fold the rendered-<img> gate against the REPAIRED DOM — a
+                # clean preview repair must never mask a still-missing image.
+                _img_errs2, _missing_imgs2 = _image_gate_errors(page, _res2, _run_dir)
+                _re2 += _img_errs2
                 if not _re2 and _res2.get("ok") and _res2.get("http") == 200:
                     # Repair attempt cleared all PREVIEW errors — promote repair
                     # result, but published-CSP failures (from the live PUBLISHED
@@ -539,6 +652,7 @@ def verify_page(
                     # published failure can't be masked by a clean preview repair.
                     res = _res2
                     render_errors = _re2 + list(_published_errs)
+                    _missing_imgs = _missing_imgs2
             except Exception:  # noqa: BLE001 — repair must never mask primary verdict
                 pass
     http = res.get("http")
@@ -557,6 +671,7 @@ def verify_page(
         "marker_in_rendered_dom": mird,
         "marker_in_preview": mird,
         "render_errors": render_errors,
+        "missing_images": _missing_imgs,
         "PASS": pass_val,
         "dom_path": res.get("dom_path", ""),
         "png_path": res.get("png_path", ""),
@@ -668,6 +783,9 @@ def assert_consistent(
       5. ARTIFACT HASH BINDING (when ``render_manifest`` is supplied): each
          artifact referenced in the manifest is re-read and its sha256 is
          re-checked.  A missing or mismatched artifact raises VerifyContradiction.
+      6. RENDERED-<img> MIRROR (FIX-XC-03c): any raw record with a non-empty
+         ``missing_images`` (a manifest cdn_url absent from the rendered DOM) MUST
+         have ``PASS=False`` — a page whose images did not render cannot pass.
     """
     raw_total = len(raw)
     raw_passed = sum(1 for r in raw if r.get("PASS") is True)
@@ -727,6 +845,21 @@ def assert_consistent(
                 f"PASS=True while render_errors={r_errors!r} and http={r_http!r}. "
                 "A page with render errors or an explicitly non-200 http status "
                 "cannot be PASS.  This indicates a fabricated raw row."
+            )
+
+    # Invariant 6 (FIX-XC-03c mirror): a raw record carrying missing_images (a
+    # manifest cdn_url that did NOT render in the DOM) can never be PASS. This
+    # mirrors the un-fakeable rendered-<img> gate at the summary layer so a
+    # hand-edited row that strips the render_error but leaves missing_images is
+    # still caught.
+    for idx, r in enumerate(raw):
+        r_missing = list(r.get("missing_images") or [])
+        if r.get("PASS") and r_missing:
+            raise VerifyContradiction(
+                f"FABRICATED RAW ROW at index {idx} (step={r.get('step')!r}): "
+                f"PASS=True while missing_images={r_missing!r}. A page whose "
+                "manifest images did not render in the DOM cannot be PASS "
+                "(the un-fakeable rendered-<img> gate)."
             )
 
     # Invariant 5: artifact hash binding.

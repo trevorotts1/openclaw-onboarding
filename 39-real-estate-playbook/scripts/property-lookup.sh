@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# 03-property-lookup.sh — Skill 39 (Real Estate Playbook)
+# property-lookup.sh — Skill 39 (Real Estate Playbook)
+#
+# RUNTIME WORKER (not a numbered install step). Renamed from 03-property-lookup.sh
+# so it no longer collides with the install step 03-init-real-estate-events-log.sh.
 #
 # Runtime property-intelligence worker. Given an address (and optional ZIP), it:
 #   1. Normalizes the address (USPS-style component split — heuristic, no key needed)
@@ -21,20 +24,34 @@
 # query event, which is correct — each lookup IS an event). set -uo pipefail.
 #
 # Usage:
-#   03-property-lookup.sh --address "123 Main St, Springfield, IL 62701"
-#   03-property-lookup.sh --address "..." --want comps,street_view
-#   03-property-lookup.sh --address "..." --json
-#   03-property-lookup.sh --address "..." --no-log   (skip the F52 event append)
+#   property-lookup.sh --address "123 Main St, Springfield, IL 62701"
+#   property-lookup.sh --address "..." --want comps,street_view
+#   property-lookup.sh --address "..." --json
+#   property-lookup.sh --address "..." --no-log   (skip the F52 event append)
 
 set -uo pipefail
 
-OS="$(uname -s)"
-case "$OS" in
-  Darwin) DEFAULT_MFD="$HOME/Downloads" ;;
-  Linux)  DEFAULT_MFD="/data" ;;
-  *) DEFAULT_MFD="$HOME" ;;
-esac
-MFD="${MASTER_FILES_DIR:-$DEFAULT_MFD}"
+# Resolve MASTER_FILES_DIR via the SAME persisted single-source-of-truth resolver
+# lib-re-events.sh uses — NEVER a $HOME/Downloads (or /data) fallback that would
+# split-brain the event log across callers with different HOMEs. Loud-fail when it
+# cannot be resolved (FIX-XC-10 class). Sourcing lib-re-events.sh is safe: its
+# direct-invocation dispatch is guarded by BASH_SOURCE==$0.
+_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=/dev/null
+[ -f "$_SELF_DIR/lib-re-events.sh" ] && . "$_SELF_DIR/lib-re-events.sh"
+
+if command -v re_events_master_dir >/dev/null 2>&1; then
+  if ! MFD="$(re_events_master_dir)"; then
+    echo "ERROR: MASTER_FILES_DIR unresolved — set MASTER_FILES_DIR or run 01-locate-master-files-folder.sh first (refusing to fall back to Downloads)." >&2
+    exit 2
+  fi
+else
+  MFD="${MASTER_FILES_DIR:-}"
+  if [ -z "$MFD" ] || [ ! -d "$MFD" ]; then
+    echo "ERROR: MASTER_FILES_DIR unresolved and lib-re-events.sh resolver unavailable." >&2
+    exit 2
+  fi
+fi
 STATUS="$MFD/.skill-39-provider-status.json"
 EVENTS="$MFD/real-estate-events.jsonl"
 
