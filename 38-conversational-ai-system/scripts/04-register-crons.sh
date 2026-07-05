@@ -29,6 +29,71 @@ command -v openclaw >/dev/null 2>&1 || {
   exit 2
 }
 
+# -----------------------------------------------------------------------------
+# SILENCE DOCTRINE (FIX-XC-08b)
+# -----------------------------------------------------------------------------
+# On CLI 2026.6.8+ `openclaw cron add` FALLBACK-DELIVERS a job's final text to the
+# LAST chat (the client's) on every fire — so an unsilenced maintenance cron spams
+# the client's Telegram on its schedule. These crons are headless housekeeping
+# (log summaries, digests, tune-ups, monthly review); they notify the OPERATOR
+# from INSIDE their own prompt via notification-routing-protocol.md and must never
+# surface in the client conversation. So every cron is registered with:
+#   * --no-deliver        disable the runner's fallback delivery (no client spam)
+#   * --session isolated  run in an isolated operator-side session for agent-message
+#                         crons — never the client-facing main conversation
+# Both flags are FEATURE-DETECTED against `cron add --help` (older CLIs lack them);
+# when a flag is absent we register WITHOUT it (no-flag retry) rather than fail.
+_cron_add_help="$(openclaw cron add --help 2>&1 || true)"
+_cli_has_flag() { printf '%s' "$_cron_add_help" | grep -qE -- "(^|[[:space:]])$1([[:space:]<=]|\$)"; }
+
+# Agent-message crons: silence delivery AND isolate the session off the client chat.
+SILENCE_ARGS=()
+_cli_has_flag '--no-deliver' && SILENCE_ARGS+=(--no-deliver)
+_cli_has_flag '--session'    && SILENCE_ARGS+=(--session isolated)
+# Command crons run a shell payload (not an agent session) — only silence delivery.
+CMD_SILENCE_ARGS=()
+_cli_has_flag '--no-deliver' && CMD_SILENCE_ARGS+=(--no-deliver)
+if [ "${#SILENCE_ARGS[@]}" -eq 0 ]; then
+  echo "WARN: this openclaw CLI exposes neither --no-deliver nor --session — registered crons may fallback-deliver their output to the last (client) chat. Upgrade the CLI to honor the silence doctrine." >&2
+fi
+
+# Register an AGENT-MESSAGE cron, silenced when the CLI supports it, with a
+# no-flag retry if the CLI rejects the silence flags outright. Returns the add rc.
+# NOTE: ${SILENCE_ARGS[@]+"${SILENCE_ARGS[@]}"} is the stock-bash-3.2 safe empty-
+# array expansion (a bare "${arr[@]}" on an empty array aborts under `set -u`).
+_add_agent_cron() {
+  local name="$1" cron_expr="$2" message="$3"
+  if openclaw cron add --name "$name" --cron "$cron_expr" \
+       --agent "$ROUTING_AGENT_ID" --light-context \
+       ${SILENCE_ARGS[@]+"${SILENCE_ARGS[@]}"} --message "$message" >&2; then
+    return 0
+  fi
+  if [ "${#SILENCE_ARGS[@]}" -gt 0 ]; then
+    echo "WARN: '$name' add with silence flags failed — retrying WITHOUT them (cron may fallback-deliver; verify manually)." >&2
+    openclaw cron add --name "$name" --cron "$cron_expr" \
+      --agent "$ROUTING_AGENT_ID" --light-context --message "$message" >&2
+    return $?
+  fi
+  return 1
+}
+
+# Soft-assert (NEVER fatal) that a just-registered cron landed and is not set to
+# fallback-deliver. Pure bash (no python/jq — stock-bash-3.2 safe). We already
+# passed --no-deliver at add time; this cross-checks via `cron list`.
+_assert_cron_silent() {
+  local name="$1" js
+  if ! openclaw cron list 2>/dev/null | grep -q "$name"; then
+    echo "WARN: cron '$name' not visible in 'openclaw cron list' after add — verify manually." >&2
+    return 0
+  fi
+  js="$(openclaw cron list --json 2>/dev/null || true)"
+  if printf '%s' "$js" | grep -qE '"(deliver|announce)"[[:space:]]*:[[:space:]]*true'; then
+    echo "NOTE: cron '$name' registered; the cron store shows a job with delivery enabled — confirm '$name' itself carries no deliver/announce via 'openclaw cron list --json'." >&2
+  else
+    echo "verified: cron '$name' present and no job in the store shows fallback delivery (silence doctrine holds)." >&2
+  fi
+}
+
 # Append a cron job via the gateway cron store. Idempotent by name.
 # Args: <name> <cron-expr> <message>
 register_cron() {
@@ -37,14 +102,9 @@ register_cron() {
     echo "cron $name already registered — skipping" >&2
     return 0
   fi
-  if openclaw cron add \
-      --name "$name" \
-      --cron "$cron_expr" \
-      --agent "$ROUTING_AGENT_ID" \
-      --light-context \
-      --best-effort-deliver \
-      --message "$message" >&2; then
-    echo "registered cron: $name ($cron_expr)" >&2
+  if _add_agent_cron "$name" "$cron_expr" "$message"; then
+    echo "registered cron: $name ($cron_expr) [delivery silenced]" >&2
+    _assert_cron_silent "$name"
   else
     echo "ERROR: 'openclaw cron add $name' failed — register it manually (cron.jobs JSON is invalid on 2026.5.27)" >&2
     return 1
@@ -74,8 +134,14 @@ register_command_cron() {
     return 1
   fi
   if _cli_supports_command; then
-    if openclaw cron add --name "$name" --cron "$cron_expr" --command "bash $script" >&2; then
-      echo "registered command-cron: $name ($cron_expr) -> bash $script" >&2
+    # --no-deliver stops the RUNNER from dumping the script's stdout into a chat;
+    # it does NOT stop the script's own deliberate `openclaw message send` (e.g.
+    # ghl-pit-liveness notifying the client on a 401). No-flag retry if rejected.
+    if openclaw cron add --name "$name" --cron "$cron_expr" \
+         ${CMD_SILENCE_ARGS[@]+"${CMD_SILENCE_ARGS[@]}"} --command "bash $script" >&2 \
+       || openclaw cron add --name "$name" --cron "$cron_expr" --command "bash $script" >&2; then
+      echo "registered command-cron: $name ($cron_expr) -> bash $script [delivery silenced]" >&2
+      _assert_cron_silent "$name"
     else
       echo "ERROR: 'openclaw cron add $name --command' failed — register it manually" >&2
       return 1
@@ -83,10 +149,9 @@ register_command_cron() {
   else
     # 2026.5.x: no --command. Run the SAME script via a silent agent-message job.
     local msg="[SKILL38-CRON $name] Run this exact shell command now and report only on failure: bash $script"
-    if openclaw cron add --name "$name" --cron "$cron_expr" \
-        --agent "$ROUTING_AGENT_ID" --light-context --best-effort-deliver \
-        --message "$msg" >&2; then
-      echo "registered agent-message cron (5.x fallback): $name ($cron_expr) -> bash $script" >&2
+    if _add_agent_cron "$name" "$cron_expr" "$msg"; then
+      echo "registered agent-message cron (5.x fallback): $name ($cron_expr) -> bash $script [delivery silenced]" >&2
+      _assert_cron_silent "$name"
     else
       echo "ERROR: 'openclaw cron add $name' (agent-message fallback) failed — register it manually" >&2
       return 1
@@ -145,4 +210,4 @@ register_command_cron "ghl-pit-liveness" "15 8 * * *" \
   "$SCRIPT_DIR/check-ghl-pit-liveness.sh" || \
   echo "WARN: ghl-pit-liveness cron not registered — register it manually (bash $SCRIPT_DIR/check-ghl-pit-liveness.sh, daily)." >&2
 
-echo "OK: crons registered via 'openclaw cron add' — 5 agent-message crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) + 1 command-cron (ghl-pit-liveness runtime credential watcher)." >&2
+echo "OK: crons registered via 'openclaw cron add' [delivery silenced — --no-deliver + isolated session] — 5 agent-message crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) + 1 command-cron (ghl-pit-liveness runtime credential watcher). Maintenance output never reaches the client chat; operator notifications go through notification-routing-protocol.md." >&2

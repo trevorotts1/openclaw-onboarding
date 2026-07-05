@@ -1,5 +1,20 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.0.6] - 2026-07-05 - Wave-0 hardening: cron payloads, split-brain state, Street View key leak, single core-file writer, GHL wiring
+
+Merge-train `T-39-real-estate`. All changes are scoped to this skill dir (conflict-free). No behavioral change for a correctly-configured box beyond the fixes below; every change is additive or a correctness fix. (Lands as 1.0.6 because the review-skip lib-carrier train independently shipped 1.0.5 to main first; see the 1.0.5 entry below.)
+
+### Fixed
+- **FIX-XC-08c — crons that did nothing / would have spammed the client.** `scripts/07-register-crons.sh` used a non-existent `--schedule` flag (registration failed outright) and passed NO payload (a registered job with nothing to run). It now uses the real `--cron <expr>` flag + a real agent `--message` payload, delivers SILENTLY (`--no-deliver`, feature-detected, falling back to `--best-effort-deliver`, then a no-optional-flag retry) so a maintenance cron never announces to the client's chat, and VERIFIES each job is present via `openclaw cron list` after the add.
+- **FIX-XC-10b — event-log split-brain.** `scripts/lib-re-events.sh` fell back to `$HOME/Downloads` (or `/data`) when `MASTER_FILES_DIR` was unset, so a test run or a caller with a different `HOME` wrote the audit log to a DIFFERENT file than the live agent (Skill-23-class). It now resolves `MASTER_FILES_DIR` from the persisted install selection (`re_events_master_dir`: env → `~/.openclaw/.skill-39-master-files-dir` → `.skill-38-master-files-dir`, either OS root) and FAILS LOUDLY when unresolved — never a Downloads fallback. `scripts/property-lookup.sh` now uses the same resolver.
+- **FIX-S36-09 — Street View API key leaked into the conversation + log.** `scripts/lib-property.sh streetview` embedded the raw `GOOGLE_MAPS_API_KEY` in the emitted `image_url`. It now fetches the image BYTES server-side and emits a LOCAL `image_path` — the key is used only in-process and NEVER appears in the emitted output.
+- **FIX-S36-11(i) — Street View reported `available:true` without probing.** `streetview` now probes the free Street View **metadata** endpoint first and returns an honest gap when the status is not `OK` (no fabricated/blank tile).
+- **FIX-S36-11(ii) — version-stamped core-file markers appended a duplicate block on every bump.** `scripts/08-update-core-files.sh` now uses VERSION-FREE marker ids and a REPLACE-IN-PLACE (marker-refresh) writer that also strips any legacy `<mid> vX.Y.Z` variant — one block after every refresh.
+- **FIX-S36-11(iii) — stale near-duplicate reference.** Removed `references/sales-brain-re-extension.md`, which named a DIFFERENT install target than the canonical `references/sales-brain-real-estate-extension.md`.
+
+### Changed
+- **FIX-S36-10 — folded duplicate installers + renamed the runtime worker.** The duplicate AGENTS.md writer `scripts/04-update-agents-md.sh` (which wrote a SECOND AGENTS block behind a different marker — a double-post) was folded into `08-update-core-files.sh` and removed; `08` is now the SINGLE canonical AGENTS/MEMORY/TOOLS writer. The runtime worker `scripts/03-property-lookup.sh` was renamed to `scripts/property-lookup.sh` so it no longer collides with the install step `03-init-real-estate-events-log.sh`; it is now documented as a runtime worker in SKILL.md + INSTRUCTIONS.md. References updated across protocols/, references/, `wire.sh`, and `templates/ghl-tag-setup-checklist.md`.
+- **FIX-XC-11a — wired the built-but-unreferenced GHL sync layer.** `scripts/lib-ghl-sync.sh` (the only GHL tagging/booking/pipeline/Kanban code) is now surfaced in the SKILL.md files table + MVP-status table, documented with a lifecycle transition table in INSTRUCTIONS.md (mirrors Skill 41), and written INSIDE the marker-fenced AGENTS.md + TOOLS.md blocks by the new marker-refresh writer (the follow-up CORE_UPDATES.md promised).
 ## [1.0.5] - 2026-07-05 - cc_move refuses `done` unconditionally (board review-skip root fix)
 
 Closes the bypass hole where the old self-grade guard in `cc_move` only refused a `done` PATCH when

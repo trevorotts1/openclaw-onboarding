@@ -68,8 +68,10 @@ QC_FLOOR = 8.5
 TESTED_AF_CODES = {
     "AF-AV-PROVENANCE", "AF-AV-DELIVER-INCOMPLETE", "AF-AV-CERT-NO-FRONT-DOOR",
     "AF-AV-CERT-GATE-DRIFT", "AF-AV-CERT-UNSIGNED", "AF-AV-CERT-QC-INVALID",
-    "AF-AV-DELIVERY-MISMATCH",
+    "AF-AV-CERT-SEMANTIC", "AF-AV-DELIVERY-MISMATCH",
 }
+
+SEMANTIC_FLOOR = 8.5
 
 
 def _manifest_path() -> Path:
@@ -187,6 +189,41 @@ def _load_qc_cert(run_dir: Path, run_id: str, key: bytes) -> Tuple[Optional[Dict
     return cert, []
 
 
+def _load_qc_semantic(run_dir: Path, run_id: str, key: bytes) -> Tuple[Optional[Dict[str, Any]], List[Tuple[str, str]]]:
+    """FIX-XC-03d: the SECOND, semantic certificate. Requires QC-SEMANTIC.json
+    (aa_qc_cert.py --semantic), produced by an independent verifier sub-agent
+    (!= any author) on the client's TIER-A model applying the 10-category
+    OpenClaw QC Protocol. Its own HMAC signature must verify against the run
+    key, it must be bound to THIS run_id, the verifier model must be
+    non-Anthropic, and the aggregate semantic score must clear the 8.5 floor."""
+    p = run_dir / "QC-SEMANTIC.json"
+    if not p.is_file():
+        return None, [("AF-AV-CERT-SEMANTIC",
+                        "no QC-SEMANTIC.json — the structural composite is mathematically binary and is "
+                        "NOT a prose-quality bar; delivery requires the independent semantic verifier leg")]
+    try:
+        cert = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return None, [("AF-AV-CERT-SEMANTIC", f"QC-SEMANTIC.json does not parse: {exc}")]
+    if not qc.verify_semantic_signature(cert, key):
+        return None, [("AF-AV-CERT-SEMANTIC",
+                        "QC-SEMANTIC.json signature does NOT verify against the run's foreman key "
+                        "(hand-edited or minted with a different/no key)")]
+    if cert.get("run_id") != run_id:
+        return None, [("AF-AV-CERT-SEMANTIC",
+                        f"QC-SEMANTIC.json run_id {cert.get('run_id')!r} != this run {run_id!r}")]
+    if qc.semantic_verifier_is_anthropic(cert):
+        return cert, [("AF-AV-CERT-SEMANTIC",
+                        f"semantic verifier model {cert.get('verifier_model')!r} is an Anthropic id "
+                        f"(G-NOANTHROPIC — the verifier must run on the client's own TIER-A model)")]
+    score = cert.get("semantic_score")
+    if score is None or float(score) < SEMANTIC_FLOOR:
+        return cert, [("AF-AV-CERT-SEMANTIC",
+                        f"semantic QC score {score} < {SEMANTIC_FLOOR} floor (10-category OpenClaw QC "
+                        f"Protocol, independent verifier != author, BINDING)")]
+    return cert, []
+
+
 def _delivery_manifest(deliver_dir: Path) -> Tuple[Dict[str, str], List[Tuple[str, str]]]:
     """Re-hash every shipped file FRESH from disk (never trust aa_package's own
     claimed MANIFEST.json blindly — cross-check it)."""
@@ -249,16 +286,25 @@ def verify(manifest: Dict[str, Any], *, run_dir: Path, run_id: str,
                             f"content prover (aa_build_check.py), re-run by this gate against the on-disk "
                             f"run, found {len(content_violations)} violation(s): {content_violations[:3]}"))
 
-    # 5) detached, signed QC certificate (never a bare float)
+    # 5) detached, signed QC certificate (never a bare float) — BOTH legs:
+    #    the structural composite (QC-CERTIFICATE.json) AND the independent
+    #    semantic verifier (QC-SEMANTIC.json, FIX-XC-03d). Delivery requires both.
     qc_cert = None
     qc_score = None
+    qc_semantic = None
+    qc_semantic_score = None
     if key is not None:
         qc_cert, qv = _load_qc_cert(run_dir, run_id, key)
         violations += qv
         if qc_cert:
             qc_score = qc_cert.get("qc_score")
+        qc_semantic, sv = _load_qc_semantic(run_dir, run_id, key)
+        violations += sv
+        if qc_semantic:
+            qc_semantic_score = qc_semantic.get("semantic_score")
     else:
         violations.append(("AF-AV-CERT-QC-INVALID", "cannot verify QC-CERTIFICATE.json without a valid key"))
+        violations.append(("AF-AV-CERT-SEMANTIC", "cannot verify QC-SEMANTIC.json without a valid key"))
 
     # 6) delivery-folder binding (if a delivery dir is supplied)
     delivery_files: Dict[str, str] = {}
@@ -280,6 +326,9 @@ def verify(manifest: Dict[str, Any], *, run_dir: Path, run_id: str,
             "content_gate": "PASS",
             "qc_score": qc_score,
             "qc_floor": QC_FLOOR,
+            "qc_semantic_score": qc_semantic_score,
+            "qc_semantic_floor": SEMANTIC_FLOOR,
+            "qc_semantic_signature": qc_semantic.get("signature") if qc_semantic else None,
             "qc_cert_signature": qc_cert.get("signature") if qc_cert else None,
             "provenance_chain_sha256": chain_hash,
             "chain": chain,
@@ -362,6 +411,11 @@ def _write_fixture(tmp: Path, manifest: Dict[str, Any], *, apply_repairs: bool =
     nonce_path.write_text(secrets.token_hex(24), encoding="utf-8")
     qc_cert = qc.build_certificate(manifest, run_dir, "selftest-run", key)
     (run_dir / "QC-CERTIFICATE.json").write_text(json.dumps(qc_cert, indent=2), encoding="utf-8")
+    # the SECOND, semantic certificate (FIX-XC-03d) — deterministic stand-in
+    # verifier judgment (offline fixture only, never a client run).
+    sem = qc.build_semantic_certificate(manifest, run_dir, "selftest-run", key,
+                                        qc.synth_semantic_judgment(manifest, run_dir))
+    (run_dir / "QC-SEMANTIC.json").write_text(json.dumps(sem, indent=2), encoding="utf-8")
     deliver_dir = tmp / "deliver"
     import aa_package as package
     package.assemble(manifest, state["artifacts"], "Test", "Fixture", deliver_dir)
@@ -462,6 +516,33 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
     def missing_nonce(tmp, fx):
         fx["nonce_path"].unlink()
     cases.append(("missing_front_door_nonce", "AF-AV-CERT-NO-FRONT-DOOR", missing_nonce))
+
+    def missing_semantic_cert(tmp, fx):
+        (fx["run_dir"] / "QC-SEMANTIC.json").unlink()
+    cases.append(("qc_semantic_missing", "AF-AV-CERT-SEMANTIC", missing_semantic_cert))
+
+    def hand_edited_semantic(tmp, fx):
+        # (repro) hand-edit the semantic score up without the key -> signature breaks
+        p = fx["run_dir"] / "QC-SEMANTIC.json"
+        c = json.loads(p.read_text())
+        c["semantic_score"] = 9.99
+        p.write_text(json.dumps(c, indent=2), encoding="utf-8")
+    cases.append(("qc_semantic_hand_edited_score", "AF-AV-CERT-SEMANTIC", hand_edited_semantic))
+
+    def low_semantic_score(tmp, fx):
+        # a genuinely low semantic grade (re-signed with the real key) must still
+        # be REFUSED — the leg is a real 8.5 quality bar, not just a signature check.
+        c = qc.build_semantic_certificate(manifest, fx["run_dir"], fx["run_id"], fx["key"],
+                                          qc.synth_semantic_judgment(manifest, fx["run_dir"], base=6.0))
+        (fx["run_dir"] / "QC-SEMANTIC.json").write_text(json.dumps(c, indent=2), encoding="utf-8")
+    cases.append(("qc_semantic_below_floor", "AF-AV-CERT-SEMANTIC", low_semantic_score))
+
+    def anthropic_verifier(tmp, fx):
+        c = qc.build_semantic_certificate(manifest, fx["run_dir"], fx["run_id"], fx["key"],
+                                          qc.synth_semantic_judgment(manifest, fx["run_dir"],
+                                                                     verifier_model="anthropic/claude-3-5-sonnet"))
+        (fx["run_dir"] / "QC-SEMANTIC.json").write_text(json.dumps(c, indent=2), encoding="utf-8")
+    cases.append(("qc_semantic_anthropic_verifier", "AF-AV-CERT-SEMANTIC", anthropic_verifier))
 
     def forged_nonce(tmp, fx):
         # (repro) the exact QC reproduction: hand-write a 16-char nonce file

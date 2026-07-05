@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## v6.14.1 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
+## v6.15.1 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
 
 FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2). A client box that ran this skill on the client's OWN book had its persona DEREGISTERED and its vectors CLOBBERED at every `openclaw update`, via two compounding mechanisms in `shared-utils/provision-persona-index.sh` (the helper that reconciles this skill's `persona-categories.json` + blueprints onto client boxes):
 
@@ -17,6 +17,15 @@ FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2)
 Shared-gate RE-LAND: `.github/workflows/both-paths-delivery-guard.yml` step D12 hard-asserted the retired equality literal `chunk_count != manifest chunk_count`, which the SUPERSET semantics above removed — the stale assertion would have failed the repo-wide both-paths delivery guard. Updated D12 to assert the superset wording (`chunk_count >= manifest`) plus the `_HAS_LOCAL_DELTA` decision marker, so the guard now verifies the F2.1 superset gate rather than the removed equality string.
 
 New regression lock: `tests/unit/provision-preserves-local-personas.test.sh` (16 assertions: union-merge preservation + seed-wins + no-drift md5; superset index → skip/preserve; genuine subset → still re-provisions; export→re-insert round-trip).
+
+## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
+
+A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.
+
+- **`scripts/add-persona-from-source.sh`** (→ v10.14.35): the orchestrator-missing branch now exits **7 (`ORCHESTRATOR_MISSING`)** instead of 0, so the caller can tell "environment broken, retry later" apart from "usable persona built". Retired the dead `pipeline_status` field from the written `source.json` (it was written in two places and read nowhere — a no-op that pretended to carry state). Also hoisted `SCRIPT_DIR_APS` to an unconditional definition up front so the terminal fleet-publish phase can never hit a `set -u` unbound-variable abort on an installed box (pre-fix it was only defined inside the orchestrator-fallback branch).
+- **NEW `pipeline/usable-persona-contract.sh`** (v1.0.0): the ONE shared, fail-closed "is this persona actually usable on this box?" contract — asserts all three legs (blueprint present + non-empty; slug is a key under `.personas` in `persona-categories.json`; ≥1 row in the `gemini-index.sqlite` `embeddings` table whose `file_path` is under `coaching-personas/personas/<slug>/`). Distinct exit codes per missing leg (2/3/4). Prefix-slug-safe (a `foo-bar` index row does not satisfy `foo`). Modelled on Skill 23 SOP-07 `assert_persona_grounded()`.
+- **`scripts/persona-inbox-watcher.sh`** (→ v6.6.1): the success branch now asserts the usable-persona contract BEFORE any `mv` to `processed/`. A zero exit from the converter is necessary but not sufficient; any missing leg routes the source through the existing failure/retry/quarantine path (never `processed/`), so a book can no longer be lost silently.
+- **Test:** `tests/unit/usable-persona-contract.test.sh` — per-leg exit codes + prefix-slug safety, plus an end-to-end watcher harness (sandboxed HOME, stub converter) proving the watcher never moves a source to `processed/` on false-success, on a vector-less (no-index-row) persona, or on an `ORCHESTRATOR_MISSING` (exit 7) result.
 
 ## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
 

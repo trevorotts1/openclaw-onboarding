@@ -69,8 +69,18 @@ log "    foreman signing key minted -> $KEY_FILE (never embedded in the certific
 #     this leg exists so a bad intake is visible at entry.sh time as well). --
 log "5/5 intake gate (if intake.json is already present in RUN_DIR)"
 if [ -f "$RUN_DIR/intake.json" ]; then
+  # Dynamic detection of the separate Book skill (53) — mirrors aa_director.py's
+  # _detect_book_skill_present (regex ^53-.*book.*$, case-insensitive). The old
+  # hardcoded '53-avatar-alchemist-book' never matched the real dir name
+  # (53-book-writer), so a version=book intake died exit 2 instead of routing.
   BOOK_FLAG=""
-  if [ -d "$HERE/../53-avatar-alchemist-book" ]; then BOOK_FLAG="--book-skill-present"; fi
+  for _d in "$HERE"/../53-*/; do
+    [ -d "$_d" ] || continue
+    _base="$(basename "$_d")"
+    case "$(printf '%s' "$_base" | tr '[:upper:]' '[:lower:]')" in
+      53-*book*) BOOK_FLAG="--book-skill-present"; break ;;
+    esac
+  done
   python3 "$HERE/scripts/aa_intake_gate.py" --intake "$RUN_DIR/intake.json" $BOOK_FLAG >/dev/null \
     || die "intake/version gate failed — see: python3 scripts/aa_intake_gate.py --intake '$RUN_DIR/intake.json'"
   log "    intake.json present and clears G0-INTAKE + G0-VERSION"

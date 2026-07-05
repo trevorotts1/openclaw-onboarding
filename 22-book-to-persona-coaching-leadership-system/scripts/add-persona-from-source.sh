@@ -1,5 +1,13 @@
 #!/bin/bash
-# add-persona-from-source.sh — v10.14.34
+# add-persona-from-source.sh — v10.14.35
+#
+# v10.14.35 — F1.1 (skill 22 v6.15.0): orchestrator-missing branch now exits 7
+#   (ORCHESTRATOR_MISSING) instead of 0, so the inbox-watcher can tell
+#   "environment broken" from "usable persona built" and never moves the source
+#   to processed/ on a broken environment. Retired the dead pipeline_status field
+#   from source.json (written twice, read nowhere). Hoisted SCRIPT_DIR_APS to an
+#   unconditional definition so the terminal fleet-publish phase cannot hit a
+#   set -u unbound-variable abort on an installed box.
 #
 # v10.14.34 — G1: Mac platform resolver added (mirrors persona-inbox-watcher.sh:51-57
 #   and pipeline/orchestrator.py:52-60). Previously hardcoded VPS paths
@@ -92,6 +100,14 @@ if [ -z "$SOURCE" ]; then
   exit 1
 fi
 
+# ─── SCRIPT DIR (resolved once) ──────────────────────────────────────────────
+# This script's own directory. Resolved unconditionally up front so the terminal
+# fleet-publish phase (which references "$SCRIPT_DIR_APS/../pipeline/…") never
+# hits a `set -u` unbound-variable abort on installed boxes — pre-fix this was
+# only defined inside the orchestrator-fallback branch, so on a normal install
+# (first orchestrator path present) it was unset when the terminal phase ran.
+SCRIPT_DIR_APS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ─── PLATFORM RESOLVER ───────────────────────────────────────────────────────
 # Mirrors persona-inbox-watcher.sh:51-57 and pipeline/orchestrator.py:52-60
 # VPS (Hostinger Docker):  /data/.openclaw
@@ -163,7 +179,7 @@ else
 fi
 
 blue "═══════════════════════════════════════════════════"
-blue "  Add Persona From Source — v10.14.33"
+blue "  Add Persona From Source — v10.14.35"
 blue "═══════════════════════════════════════════════════"
 echo "Source: $SOURCE"
 echo "Type:   $TYPE"
@@ -503,8 +519,7 @@ cat > "$PERSONA_FOLDER/source.json" <<JSONEOF
   "source_type": "$TYPE",
   "source_path": "$SOURCE",
   "text_file": "$TEXT_FILE",
-  "added": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "pipeline_status": "PENDING"
+  "added": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSONEOF
 
@@ -514,17 +529,25 @@ echo "  Text input:          $TEXT_FILE"
 # ─── INVOKE PIPELINE ─────────────────────────────────────────────────────────
 # Resolve orchestrator path from $OC_ROOT (platform-resolved above)
 ORCHESTRATOR="$OC_ROOT/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
-# Fallback: try relative to this script's own location (works for dev/repo runs)
+# Fallback: try relative to this script's own location (works for dev/repo runs).
+# SCRIPT_DIR_APS is resolved unconditionally near the top of this script.
 if [ ! -f "$ORCHESTRATOR" ]; then
-  SCRIPT_DIR_APS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   ORCHESTRATOR="$(cd "$SCRIPT_DIR_APS/.." && pwd)/pipeline/orchestrator.py"
 fi
 
 if [ ! -f "$ORCHESTRATOR" ]; then
-  yellow "  Skill 22 orchestrator not found at expected path."
-  yellow "  Persona registered but NOT yet run through pipeline. Run manually:"
+  # F1.1: the orchestrator is MISSING — the environment is broken, NOT "the book
+  # was processed". Emit a DISTINCT non-zero code so the caller (watcher) can
+  # tell "environment broken, retry later" apart from "usable persona built".
+  # Exiting 0 here caused the inbox-watcher to log SUCCESS and move the source to
+  # processed/ with NO blueprint / categories key / index row ever created —
+  # silently losing the book with no retry.
+  red   "  Skill 22 orchestrator NOT FOUND at expected path — environment broken."
+  yellow "  source.json was written but the persona was NOT built (no blueprint,"
+  yellow "  no categories entry, no index rows). This is NOT a success."
+  yellow "  Run manually once the orchestrator is present:"
   yellow "    python3 <orchestrator-path> --single-book --slug $SLUG"
-  exit 0
+  exit 7  # ORCHESTRATOR_MISSING
 fi
 
 blue "── Invoking Skill 22 3-phase pipeline ──"

@@ -63,7 +63,8 @@ fi
 
 SKILLS_DIR="$OC_ROOT/skills"
 SKILL37="$SKILLS_DIR/37-zhc-closeout"
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# FIX-XC-10a: honor ZHC_STATE_FILE (Skill-23-class state-path split-brain guard).
+STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
 
 FAILURES=()
 fail() { FAILURES+=("$1"); }

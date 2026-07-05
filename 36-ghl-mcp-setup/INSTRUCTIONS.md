@@ -196,11 +196,9 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
   Missing `text/event-stream` returns HTTP 406 (content-negotiation failure, not auth).
 - ❌ `grep -P` in any shell script on a Mac client box. BSD grep has no -P flag.
   Use `python3 -c "import json,sys; ..."` or `jq` for all JSON/SSE parsing.
-- ❌ Metered `:cloud` model for a contact lookup. Use the cheapest non-metered model
-  configured on THIS box: preflight the client's actual providers (the configured model
-  list) and pick the lowest-cost free/local model they genuinely have — never hardcode a
-  specific model id, since the provisioned providers differ per box. Lookups are cheap
-  data-retrieval — not reasoning tasks that justify metered quota burn.
+- ❌ Metered `:cloud` model for a contact lookup. Use `deepseek-v4-flash` (direct) or
+  any free fallback. Lookups are cheap data-retrieval — not reasoning tasks that justify
+  metered quota burn.
 - ❌ Routing a contact lookup to Tier 4 (browser). The browser tier is for UI-only flows
   and workflow-build backstops when the Firebase token is unavailable. Lookups never go
   to the browser.
@@ -288,22 +286,27 @@ store, or its own UI.
 
 Emit a card / status update at these moments:
 
-- **Install start** — open/append a card: "GHL MCP setup — started (box, platform)".
-- **Install complete** — move that card to **review** (NEVER straight to done) with the QC
-  result (e.g. "certified — awaiting QC promotion; qc-ghl-mcp-setup.sh exit 0; Tier 1 >=36
-  tools, Tier 2 >=500 on-demand"). A producer never self-promotes to done: the independent
-  auto-scorer is the ONLY authority that moves a card review->done.
+- **Install start** — open/append a card: "GHL MCP setup — started (box, platform)". Emitted by
+  `scripts/cc-task.sh start` from INSTALL.md's Autonomous Setup Execution (Pre-Action 0.5).
+- **Install complete** — move that card to `review` with the QC result (e.g. "qc-ghl-mcp-setup.sh
+  exit 0; Tier 1 >=36 tools, Tier 2 >=500 on-demand"). Emitted by `scripts/cc-task.sh review`
+  from the QC PASS branch. The **independent Command Center auto-scorer is the only authority
+  that promotes review → done** — the builder never self-grades.
 - **Tier incident — 429 lockout** — status card: "GHL rate-limit lockout; daily reset ~HH:MM
   ET; all tiers share one bucket — paused" (matches the Rate-Limit Protocol above).
 - **Tier incident — missing credential** — status card: "GHL blocked: missing PIT / Location
   ID (or Firebase token for builds) — owner asked to supply it" (matches the missing-cred
   grace in GHL-LOOKUP-SOP.md RULE 5 + CORE_UPDATES.md).
 
-**How to emit (anti-fabrication — do NOT invent an endpoint):** use the ingestion mechanism
-Skill 32 documents in `32-*/INSTALL.md` (its board ingestion / card API). Read that skill's
-own docs for the exact call on this box; if Skill 32 is not installed, skip the hook (these
-status emits are best-effort operator visibility, never a blocker for the GHL operation
-itself). These cards are OPERATOR-facing only — like the tier header, they are not
+**How to emit (anti-fabrication — do NOT invent an endpoint):** the two lifecycle moments
+(install start / complete) are implemented by the skill's own fail-soft helper
+`scripts/cc-task.sh` (`start` and `review` subcommands), which posts to the Command Center
+task API (`MISSION_CONTROL_URL` /api/tasks, bearer `MC_API_TOKEN`). It is graceful-degrading:
+with no token or an unreachable board it prints ONE operator-only stderr note and exits 0 —
+it never blocks or fails the GHL operation. The two runtime tier-incident cards are
+best-effort operator notes; emit them via the same helper contract (or Skill 32's documented
+board ingestion if you carry richer incident metadata) and skip silently if the board is
+unavailable. These cards are OPERATOR-facing only — like the tier header, they are not
 client-facing (WE MOVE IN SILENCE).
 
 ## When Setup Is Done and Things Just Work
