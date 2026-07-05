@@ -62,8 +62,8 @@ reject() {                 # reject "<label>" "<AF-code>" <cmd...>  — PASS iff
 
 echo "== Skill 49 (Signature Funnel) :: verify.sh =="
 
-# 1) the five fail-closed provers — built-in self-test fixtures.
-for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_no_pitch prove_sf_cert; do
+# 1) the seven fail-closed provers — built-in self-test fixtures.
+for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_graph prove_sf_build prove_sf_no_pitch prove_sf_cert; do
   if [ -f "$SCRIPTS/$p.py" ]; then
     run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
   else
@@ -90,6 +90,8 @@ if [ -d "$GOLDEN" ]; then
   run "golden brief  -> prove_sf_intake"       "$PY" "$SCRIPTS/prove_sf_intake.py" "$GOLDEN/brief.json"
   run "golden copy   -> prove_sf_copy"         "$PY" "$SCRIPTS/prove_sf_copy.py" --ledger "$GOLDEN/copy_ledger.json"
   run "golden prompts-> prove_sf_prompt_floor" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" --ledger "$GOLDEN/prompt_ledger.json"
+  run "golden graph  -> prove_sf_graph"        "$PY" "$SCRIPTS/prove_sf_graph.py" --graph "$GOLDEN/funnel_graph.json"
+  run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$GOLDEN/build_receipt.json"
   run "golden media  -> prove_sf_no_pitch"     "$PY" "$SCRIPTS/prove_sf_no_pitch.py" --ledger "$GOLDEN/media_ledger.json"
 
   CERT="$GOLDEN/delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.json"
@@ -106,6 +108,9 @@ if [ -d "$GOLDEN" ]; then
   RD="$TMP/run-golden"
   mkdir -p "$RD"
   cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" "$RD/"
+  # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
+  cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
+  cp -R "$GOLDEN/pages" "$RD/pages"
   FRESH_NONCE="verify-golden-$$-$RANDOM"
   printf '%s' "$FRESH_NONCE" > "$RD/.sf_run_nonce"; chmod 600 "$RD/.sf_run_nonce"
   if "$PY" "$ORCH" --run-dir "$RD" --nonce "$FRESH_NONCE" >"$TMP/orch.log" 2>&1 && [ -f "$RD/PROCESS-CERTIFICATE.json" ]; then

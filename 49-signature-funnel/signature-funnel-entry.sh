@@ -37,6 +37,8 @@ PINNED_FILES=(
   "scripts/prove_sf_intake.py"
   "scripts/prove_sf_copy.py"
   "scripts/prove_sf_prompt_floor.py"
+  "scripts/prove_sf_graph.py"
+  "scripts/prove_sf_build.py"
   "scripts/prove_sf_no_pitch.py"
   "scripts/prove_sf_cert.py"
   "structure/funnel_structure.json"
@@ -131,7 +133,7 @@ self_test() {
   step_version
   if [ -f "$PIN_FILE" ]; then step_hashpin; echo "  [PASS] hash-pin verified"; else echo "  [WARN] no pin file yet (mint with --write-pin)"; fi
   local fails=0
-  for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_no_pitch prove_sf_cert; do
+  for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_graph prove_sf_build prove_sf_no_pitch prove_sf_cert; do
     if "$PY" "$SCRIPTS_DIR/$p.py" --self-test >/tmp/sf_$p.log 2>&1; then
       echo "  [PASS] $p.py --self-test"
     else
