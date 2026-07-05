@@ -1,6 +1,47 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [v16.2.12] - 2026-07-05 - feat(persona-selector): SOP-aware matching — consume the governing SOP + persona_hints (DEP-1 / F3.4-selector + F4.2)
+
+<!-- DEP-1 is a scoped fix on top of the repo-wide /version (17.0.26); it does NOT roll the LOCKSTEP version markers (version-markers.json — skill-version.txt / SKILL.md / _index.json / root version stay 17.0.26 until the wave-level bump). This CHANGELOG entry continues the skill's independent feature line. -->
+
+The running SOP never informed the persona match, and `sops.persona_hints` had five
+writers and ZERO readers (F4.2 — the "Triad Rule: Task + SOP + Persona" was declared
+but never enforced). `persona-selector-v2.py` now CONSUMES the SOP, making the match a
+function of Task + SOP + Persona. This is the selector-side foundation feeding DEP-2
+(command-center wiring), DEP-4, and DEP-7.
+
+23-ai-workforce-blueprint/scripts/persona-selector-v2.py:
+- New CLI inputs `--sop-slug` / `--sop-name` / `--sop-steps` / `--sop-hints`. All
+  optional — with none supplied the selection is byte-identical to the pre-SOP path
+  (inertness; the existing selector regression suites remain green).
+- COMPOSITE QUERY: `_build_sop_match_text()` folds the SOP name + step names (+ slug
+  tokens) into the task text. That composite `match_text` is the SINGLE string used for
+  `infer_task_category`, Stage-C semantic retrieval, AND the Layer-5 task_fit embed —
+  passing the SAME string to Stage-C and Layer-5 keeps the shared module-level embedding
+  cache at ONE embed per selection (no extra API call for SOP context). A specialty named
+  only in the SOP (not the task text) now drives recall.
+- PERSONA-HINT CONSUMPTION (kills F4.2): `--sop-hints` (canonical persona ids from
+  `sops.persona_hints`) are treated exactly like specialty recall — UNIONed into the
+  scoring pool DEPARTMENT-AGNOSTICALLY and never-to-zero (only ever ADD candidates;
+  non-installed ids are ignored), surfaced at the FRONT of the semantic order so the
+  LLM-finalist cap cannot drop them, and reported on a new additive `funnel.hinted` key
+  (the narrowing funnel counts stay monotonic, like `recalled`).
+- BOUNDED BONUS: `sop_hint_bonus()` mirrors `specialty_domain_bonus` — additive-only,
+  task_fit-coupled, capped at 0.30 (env `SOP_HINT_BONUS`), strictly below the specialty
+  cap (0.40). A relevant hinted persona wins among otherwise-equal candidates; a stale /
+  off-topic hint earns only a small nudge and CANNOT overturn a strong semantic or
+  specialty signal (bound proof in the new test).
+- Category is now SOP-aware (fed by the composite), so stickiness/reporting shift with the
+  SOP; interaction-mode and the mechanical-task gate stay on the literal task. A `sop`
+  diagnostic block is emitted when any --sop-* flag is present (observability).
+
+23-ai-workforce-blueprint/scripts/test-persona-selector-sop-aware.sh (NEW):
+- Hermetic heuristic-path regression guard: inertness (no-SOP == baseline), bound proof
+  (poison hint cannot overturn a named specialist), pool union / never-to-zero + capped
+  bonus, tiebreak win among neutrals, SOP-name fold-drives-recall (with control), and
+  non-installed-hint-ignored. 8/8 pass.
+
 ## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
 
 Client model sovereignty / runtime portability: the speech-build harness POSTed directly to the
