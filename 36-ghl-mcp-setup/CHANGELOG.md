@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.2.8] - 2026-07-05 — fix: secret-printing greps → existence-only (FIX-XC-07); model prescription → cheapest non-metered on-box (FIX-XC-09g)
+## [v1.2.8] - 2026-07-05 — fix: secret-printing greps → existence-only (FIX-XC-07); model prescription → cheapest non-metered on-box (FIX-XC-09g); Command Center card → review, never done (FIX-XC-01b)
 
 ### Security (FIX-XC-07 — no secret VALUES in transcripts/logs)
 - `INSTALL.md` Pre-Action 2 credential hunt: every credential check is now EXISTENCE-ONLY.
@@ -26,6 +26,14 @@ All notable changes to this skill are documented here.
 ### Notes
 - Repo-level: a new deterministic shipped gate `scripts/qc-assert-no-secret-printing-grep.sh`
   (wired into `qc-static.yml`) fails any secret-pattern grep in the 36/38 SOPs that lacks `-q`/`-l`/`-L`.
+
+### Changed (FIX-XC-01b — Command Center card moves to review, never done)
+- `INSTRUCTIONS.md` "Command Center hooks" — the **Install complete** hook now moves the card to
+  **review** (never straight to `done`), with the QC result as the note ("certified — awaiting QC
+  promotion; …"). A producer never self-promotes to `done`: the independent auto-scorer is the ONLY
+  authority that moves a card `review -> done`. Prose carrier for the shared `mc_board` review-skip
+  root fix (FIX-XC-01b); aligns Skill 36 with Skill 6's `cc_board`, Skill 41's `cc_move_task`, and the
+  Skill 32 move-task Done-Gate.
 
 ## [v1.2.7] - 2026-07-01 — docs: GHL PIT alias cross-ref + canonicalize-once guidance
 

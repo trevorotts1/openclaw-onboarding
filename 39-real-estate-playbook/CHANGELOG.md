@@ -1,5 +1,23 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.0.5] - 2026-07-05 - cc_move refuses `done` unconditionally (board review-skip root fix)
+
+Closes the bypass hole where the old self-grade guard in `cc_move` only refused a `done` PATCH when
+the acting `agent_id` was proven to equal the task builder — so a call that OMITTED `agent_id` fell
+through and PATCHed the card straight to `done`, skipping the QC `review` column.
+
+### Changed
+- `scripts/lib-ghl-sync.sh` — `cc_move` now refuses `status=done` **unconditionally** (NO PATCH, honest
+  no-op, `done-refused-producer` sync event). `review -> done` is owned exclusively by the Command
+  Center's independent QC scorer (PASS >= 8.5). Matches Skill 41 `lib-command-center.sh` `cc_move_task`
+  (:62-65) and Skill 6 `cc_board.update_status`. Lib carrier for the shared `mc_board` review-skip root
+  fix (FIX-XC-01b).
+
+### Removed
+- `_cc_task_builder()` — the board-GET helper that only fed the removed self-grade guard; now dead.
+
+---
+
 ## [1.0.3] - 2026-06-30 - Fail-soft GoHighLevel + Command-Center write layer; idempotent root re-wire
 
 Turns the previously prose-only GHL "dependency" into real, deterministic, safe writes, and adds the
