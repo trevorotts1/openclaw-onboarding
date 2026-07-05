@@ -7,8 +7,8 @@
 ## User prompt (token-normalized)
 
 I am providing with the following information which is the answers provided from question 1- 32 here they are:  [
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 ]
 
 
@@ -21,7 +21,7 @@ primary goal =[{{intake.primary_goal}}]
 
 ]
 
-Your job is to help me complete the rest of the Stage Of  Awarness for the Product Aware avatar hers is that info [{{artifact.upstream}}]
+Your job is to help me complete the rest of the Stage Of  Awarness for the Product Aware avatar hers is that info [{{artifact.13-product-aware}}]
 
 I need you to complete Personal Profie Section Here is instruction and a example of what that should look like:
 [

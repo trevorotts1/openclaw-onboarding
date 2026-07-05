@@ -10,22 +10,22 @@ Here is the information that you will need to answer the 9 questions.
 
 Avatar Info:
 [
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
 
 ]
 
 Brand Info:
 [
-{{artifact.upstream}}
+{{artifact.16-brand-bio}}
 ]
 
 
 Product Info:
 [
 
-Product Bio [ {{artifact.upstream}}  ]
+Product Bio [ {{artifact.17-product-bio}}  ]
 
 Procuct Name [ {{intake.offer_name}}]
 

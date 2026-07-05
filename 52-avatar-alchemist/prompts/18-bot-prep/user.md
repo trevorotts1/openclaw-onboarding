@@ -16,8 +16,8 @@ Brand Orgin  [  {{intake.brand_why}} ]
 
 Brand Info [{{intake.brand_info}}   ]
 
-Who this brand is for [ {{artifact.upstream}}
-{{artifact.upstream}} ]
+Who this brand is for [ {{artifact.03-rewrite-avatar}}
+{{artifact.01-avatar-questions-1-30}} ]
 
 
 
@@ -40,17 +40,17 @@ Product info [{{intake.product_info}}]
 ]
 
 
-Tone (this is the specific instruction your are to to tell the bot to write in use it verbatim do not truncate it) [{{artifact.upstream}}]
+Tone (this is the specific instruction your are to to tell the bot to write in use it verbatim do not truncate it) [{{artifact.08-blended-tone}}]
 
 Avatar info you should consider when writing about who we do serve:
  [
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 
 ]
 
 Here is the brand bio so you understand what we do:
-[{{artifact.upstream}}]
+[{{artifact.16-brand-bio}}]
 
 
 

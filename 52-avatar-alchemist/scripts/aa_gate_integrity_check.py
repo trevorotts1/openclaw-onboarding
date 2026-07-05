@@ -42,6 +42,7 @@ PINNED = [
     "scripts/aa_egress_gate.py",
     "scripts/aa_links_gate.py",
     "scripts/aa_director.py",
+    "scripts/aa_token_lockstep.py",
     "entry.sh",
 ]
 

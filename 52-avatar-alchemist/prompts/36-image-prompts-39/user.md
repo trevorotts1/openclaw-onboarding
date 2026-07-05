@@ -8,7 +8,7 @@
 
 Here is the ad copy for each of the ads below
 
-[      {{artifact.upstream}}                    ]
+[      {{artifact.35-top-39}}                    ]
 
 Use these brand colors in your image prompt (ignore if nothing is here): [{{intake.brand_colors}}]
 
@@ -23,10 +23,10 @@ Offer Benefits and additional information
 {{intake.offer_benefit}}                ]
 
 
-Here is the product im promoting: [{{artifact.upstream}}
+Here is the product im promoting: [{{artifact.17-product-bio}}
 ] (the ads are written towards or leads to this)
 
-brand bio [ {{artifact.upstream}}]
+brand bio [ {{artifact.16-brand-bio}}]
 
 We have shared with you a total of 39 different ads, three from each of the main ad area types. That means that we should have a total of 39 Image Prompts. You are forbidden to give me less than 39 Image Prompts. I must have one Image Prompt to match each of the different ads being represented. Remember, each image prompt should feel different and create a different or unique image so that there's variety and creativity. Never use the same artist twice. Never use the same style twice. Never used the same movie producer twice. Never used the same photographer twice. 
 
