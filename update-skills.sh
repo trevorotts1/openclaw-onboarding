@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.24"
+ONBOARDING_VERSION="v17.0.25"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.24 - safe_json_edit
+# v17.0.25 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1188,23 +1188,44 @@ main() {
   if [ -f "$_U6B_MANIFEST" ] && [ -f "$_U6B_HELPER" ]; then
     # shellcheck source=/dev/null
     source "$_U6B_HELPER"
-    # Reconcile categories + 54 blueprints to the workspace FIRST so the index
-    # gate sees 54 persona dirs (furnace-safe), then provision the index.
-    reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
-    provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
-    # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
-    # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
-    # never read a frozen "March" cache. Runs AFTER reconcile + provision so the
-    # canonical dir holds the current blueprints.
-    reconcile_qmd_persona_index "$_U6B_COACHING_DB_DIR"
-    # FIX 4 (cascade): if reconcile_persona_assets detected the SET grew
-    # (_SET_CHANGED=1), re-wire matching + Command Center + the dept persona
-    # reflex (governing-personas.md refresh + stickiness bust). Static/idempotent.
-    if [ "${_SET_CHANGED:-0}" = "1" ]; then
-      echo "  → persona SET changed — re-wiring governing-personas.md + busting stickiness"
-      rewire_on_persona_set_change "$SKILLS_DIR" "$_U6B_WS"
+    # PRE-ROLL PERSONA-SET TRIAD (fail-closed backstop). Before shipping the
+    # pulled persona library to this box, the N38 count triad — blueprint dirs ==
+    # persona-categories.json keys == INDEX-MANIFEST persona_count == canonical —
+    # MUST agree. CI enforces this at the PR boundary; this is the roll-side
+    # backstop so a roll off a non-main / dirty / mid-catch-up checkout REFUSES to
+    # provision a stale/divergent persona set instead of silently shipping the OLD
+    # count. On divergence we SKIP persona provisioning (keep the box's current
+    # set) and surface a loud operator warning, rather than shipping a broken set.
+    _U6B_TRIAD_GUARD="$_U6B_SK22/pipeline/assert-personas-published.sh"
+    _U6B_TRIAD_OK=1
+    if [ -f "$_U6B_TRIAD_GUARD" ]; then
+      if ! bash "$_U6B_TRIAD_GUARD" --repo "$SKILLS_DIR" --repo-only >/dev/null 2>&1; then
+        _U6B_TRIAD_OK=0
+      fi
     fi
-    wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
+    if [ "$_U6B_TRIAD_OK" != "1" ]; then
+      _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-set triad DIVERGENT in the pulled repo (blueprint dirs / categories keys / INDEX-MANIFEST persona_count disagree) — persona provisioning SKIPPED (refused to ship a stale library). Run 22-…/pipeline/publish-personas-to-fleet.sh, merge, and re-roll."
+      echo "  ✗ PRE-ROLL persona-set triad DIVERGENT — REFUSING to provision a stale/divergent persona library on this box."
+      echo "     Fix the repo with 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh and re-roll."
+    else
+      # Reconcile categories + blueprints to the workspace FIRST so the index
+      # gate sees the persona dirs (furnace-safe), then provision the index.
+      reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
+      provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
+      # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
+      # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
+      # never read a frozen "March" cache. Runs AFTER reconcile + provision so the
+      # canonical dir holds the current blueprints.
+      reconcile_qmd_persona_index "$_U6B_COACHING_DB_DIR"
+      # FIX 4 (cascade): if reconcile_persona_assets detected the SET grew
+      # (_SET_CHANGED=1), re-wire matching + Command Center + the dept persona
+      # reflex (governing-personas.md refresh + stickiness bust). Static/idempotent.
+      if [ "${_SET_CHANGED:-0}" = "1" ]; then
+        echo "  → persona SET changed — re-wiring governing-personas.md + busting stickiness"
+        rewire_on_persona_set_change "$SKILLS_DIR" "$_U6B_WS"
+      fi
+      wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
+    fi
   else
     # P11-1: this is the "helper/bundle missing" skip at the CALLER level (the
     # file itself is absent, so provision-persona-index.sh's own

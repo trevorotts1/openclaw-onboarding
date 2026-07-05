@@ -392,3 +392,70 @@ Per-run pidfiles live under `<workspace>/data/coaching-personas/.pipeline-runs/`
 (or `OPENCLAW_RUN_DIR`). Regression lock: `tests/unit/orphan-process-prevention.test.sh`.
 
 With full 21 simultaneous: ~35-45 minutes total.
+
+---
+
+## Adding books → publishing personas to the fleet (the ONE command)
+
+**The pipeline is a WORKSPACE-only writer.** A book build writes the new persona
+(blueprint + `persona-categories.json` entry) ONLY under
+`<workspace>/data/coaching-personas/`. It never touches the repo. Four coupled
+artifacts have to move together before a persona actually ships fleet-wide:
+
+| # | Artifact | Where |
+|---|----------|-------|
+| a | blueprint dir | `22-…/personas/<slug>/persona-blueprint.md` (repo) |
+| b | SET entry | `22-…/persona-categories.json` (repo seed) |
+| c | manifest | `shared-utils/prebuilt-index/INDEX-MANIFEST.json` (`persona_count`, `canonical_persona_count`, `chunk_count`, `sha256`, `release_tag`, `persona_set_md5`) |
+| d | release asset | `gemini-index.sqlite.gz` GitHub Release (the embeddings clients download) |
+
+Historically (a)+(b) were a hand edit and (c)+(d) a *separate* hand run of
+`build-and-publish.sh`, so the workspace/asset advanced while the repo library
+lagged — the N38 count triad went red at CI/roll and a roll could ship the OLD
+count until someone manually caught the repo up. **That divergence is now
+structurally impossible.**
+
+### The ONE command
+
+```bash
+# On the OPERATOR box (has the workspace + a Gemini key + gh auth):
+22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh
+```
+
+From the current **workspace** persona set it does ALL FOUR in one atomic,
+re-runnable pass:
+
+1. copies each workspace `persona-blueprint.md` into the repo blueprint dir,
+   **sanitized** of operator-local absolute paths (only the shippable file);
+2. merges the workspace entries into `persona-categories.json` with
+   **controlled-vocabulary** tag validation (`domain` ⊆ `domainTags`,
+   `perspective` ⊆ `perspectiveTags`, kebab-case `custom`);
+3. delegates to `shared-utils/prebuilt-index/build-and-publish.sh` to
+   incrementally (HASH-SKIP — no furnace) embed the delta, recompute
+   counts/sha256/`persona_set_md5`, bump the manifest, and publish the release
+   asset;
+4. **refuses to complete** (nonzero exit, snapshot **rolled back** — no
+   half-committed state) unless the N38 count triad *and* the published asset's
+   sha256 all agree at the same **N**.
+
+Then review the diff and `git add` the three repo paths + commit. It is
+**idempotent**: re-running with nothing new is a no-op (no re-embed, no re-tag).
+
+Flags: `--no-asset` (hermetic — sync repo + manifest COUNT fields only, skip the
+embed/publish; used by tests and to stage a repo catch-up), `--dry-run` (prove
+the math, no upload), `--workspace DIR` / `--repo ROOT` overrides.
+
+### The guards that make it un-forgettable
+
+- **Terminal pipeline phase** — `add-persona-from-source.sh` writes a
+  `.fleet-publish-pending.json` marker + prints a LOUD banner after every add.
+- **Early divergence guard** — `pipeline/assert-personas-published.sh` compares
+  workspace ↔ repo ↔ manifest and errors with the exact remediation command;
+  `--repo-only` runs the hermetic triad. Wired into the **pre-commit hook**
+  (blocks a commit that bumps one half without the others) and the
+  **`update-skills.sh` pre-roll** path (a roll refuses to provision a
+  stale/divergent library).
+- **CI** — `persona-set-asset-consistency-guard.yml` + `qc-static.yml` enforce
+  the same triad at the PR boundary (unchanged).
+
+Regression lock: `tests/unit/publish-personas-to-fleet.test.sh`.

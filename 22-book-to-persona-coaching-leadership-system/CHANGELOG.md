@@ -4,6 +4,10 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
+
+The book pipeline writes the WORKSPACE only; the repo library (blueprint dirs + `persona-categories.json` seed), the INDEX-MANIFEST, and the release asset used to be caught up by hand, so they lagged and the N38 count triad went red at CI/roll. New `pipeline/publish-personas-to-fleet.sh` moves all four together atomically (sanitized blueprints, controlled-vocab categories, delegated HASH-SKIP asset rebuild) and refuses (rolling back — no half-commit) unless the triad + asset sha256 all agree at N. New `pipeline/assert-personas-published.sh` (standalone + pre-commit + `update-skills.sh` pre-roll) and `pipeline/fleet-publish-status.sh` (terminal-phase pending marker written by `add-persona-from-source.sh`) make a forgotten publish impossible. Hermetic core: `pipeline/persona_fleet.py`. Regression lock: `tests/unit/publish-personas-to-fleet.test.sh`. Runbook: `PIPELINE.md` → "Adding books → publishing personas to the fleet".
+
 ## v6.13.1 - 2026-07-01 - fix(pipeline-hardening): full-rebuild guard + persona-categories schema-lint + appendix status surfacing
 
 Final-review Points 12 and 13 fixes for `pipeline/gemini-indexer.py` and `pipeline/orchestrator.py`

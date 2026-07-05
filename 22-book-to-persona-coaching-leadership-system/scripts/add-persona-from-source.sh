@@ -740,3 +740,21 @@ echo ""
 yellow "  NEXT STEP (optional): review domain[] and perspective[] tags in persona-categories.json"
 yellow "  for $SLUG.  Auto-classification has assigned initial tags from title/author/slug —"
 yellow "  verify they match the content and add any extras from PERSONA-ROUTER.md §Domain Tags."
+
+# ── MANDATED TERMINAL PHASE — fleet-publish status (structural anti-divergence) ─
+# The persona is now live in the WORKSPACE, but the REPO library
+# (22-…/personas/<slug>/ + persona-categories.json), the INDEX-MANIFEST, and the
+# release ASSET are NOT yet caught up. Record a durable pending marker + print a
+# LOUD banner so a persona can NEVER be silently left un-published. The divergence
+# guard (pipeline/assert-personas-published.sh) treats this marker as a hard
+# failure, so a forgotten publish blocks a commit / a roll. Clear it by running
+# the ONE atomic command: pipeline/publish-personas-to-fleet.sh
+_APS_STATUS="$SCRIPT_DIR_APS/../pipeline/fleet-publish-status.sh"
+if [ -f "$_APS_STATUS" ] && [ -n "${SLUG:-}" ]; then
+    bash "$_APS_STATUS" mark-pending "$PERSONA_DIR" "$SLUG" >/dev/null 2>&1 || true
+fi
+echo ""
+yellow "  ⚠️  FLEET NOT YET UPDATED: '$SLUG' is in the WORKSPACE only. The repo"
+yellow "     library + index manifest + release asset are NOT caught up. Run the"
+yellow "     ONE command to publish (and clear this pending marker):"
+yellow "       22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh"

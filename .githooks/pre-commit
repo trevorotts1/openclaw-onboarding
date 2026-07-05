@@ -109,6 +109,29 @@ if [ -f "scripts/guard-agent-browser-managed.sh" ]; then
   fi
 fi
 
+# ── 7. Persona-set count triad (repo library <-> manifest lockstep) ──────────
+# When any persona artifact is staged, the N38 count triad MUST agree in the
+# working tree: blueprint dirs == persona-categories.json keys ==
+# INDEX-MANIFEST persona_count == canonical_persona_count. A commit that bumps
+# one half without the others (the recurring "index advanced, repo library
+# lagged" divergence) is blocked HERE, early — long before CI or a roll. Fix by
+# running the ONE atomic command: pipeline/publish-personas-to-fleet.sh
+PERSONA_GUARD="22-book-to-persona-coaching-leadership-system/pipeline/assert-personas-published.sh"
+if [ -f "$PERSONA_GUARD" ]; then
+  if git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+      | grep -Eq '^(22-book-to-persona-coaching-leadership-system/personas/|22-book-to-persona-coaching-leadership-system/persona-categories\.json|shared-utils/prebuilt-index/INDEX-MANIFEST\.json)'; then
+    if ! bash "$PERSONA_GUARD" --repo-only; then
+      echo ""
+      echo "PRE-COMMIT BLOCKED: persona-set count triad disagrees (blueprint dirs !="
+      echo "persona-categories.json keys != INDEX-MANIFEST persona_count/canonical)."
+      echo "A persona was added to one half without the others. Bring all four into"
+      echo "lockstep in ONE run before committing:"
+      echo "  22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh"
+      exit 1
+    fi
+  fi
+fi
+
 # ── 5. Version consistency ───────────────────────────────────────────────────
 VERSION=$(cat version 2>/dev/null)
 INSTALL_VERSION=$(grep 'ONBOARDING_VERSION=' install.sh 2>/dev/null | head -1 | cut -d'"' -f2)
