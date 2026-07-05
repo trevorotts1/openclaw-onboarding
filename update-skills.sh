@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.30"
+ONBOARDING_VERSION="v17.0.33"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.30 - safe_json_edit
+# v17.0.33 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1158,9 +1158,16 @@ main() {
   # ----------------------------------------------------------
   # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
   # (v14.25.0) — mirrors install.sh Step 6b so update-only boxes receive
-  # the section-tagged 54-persona DB and catalog path vars identically to a
+  # the section-tagged canonical persona DB and catalog path vars identically to a
   # fresh install.  Uses shared-utils/provision-persona-index.sh (copied
   # above by the shared-utils refresh block).
+  #
+  # F2.1: reconcile_persona_assets now UNION-merges persona-categories.json
+  # (client-local personas preserved, not clobbered) and provision_persona_index
+  # treats a client canonical+local-delta index as canonical (superset) instead
+  # of re-downloading over it. A genuine re-download preserves origin:local rows;
+  # any it cannot preserve are queued in .persona-local-reembed-queue, surfaced
+  # to the operator below.
   #
   # COACHING_DB_DIR: OC_WORKSPACE is defined later (line 1677+) so we
   # resolve the coaching DB dir inline using the same platform detection
@@ -1234,6 +1241,17 @@ except Exception:
       # gate sees the persona dirs (furnace-safe), then provision the index.
       reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
       provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
+      # F2.1: if a re-download could not preserve some client-local persona
+      # rows, provision_persona_index leaves a .persona-local-reembed-queue
+      # marker. Surface it in the operator completion report (never client-
+      # visible) so the operator re-embeds those personas with the CLIENT's own
+      # key — their blueprints remain on disk, so this is a delta re-embed.
+      _U6B_REEMBED_QUEUE="$_U6B_COACHING_DB_DIR/.persona-local-reembed-queue"
+      if [ -s "$_U6B_REEMBED_QUEUE" ]; then
+        _U6B_QN="$(grep -c . "$_U6B_REEMBED_QUEUE" 2>/dev/null || echo '?')"
+        _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }${_U6B_QN} client-local persona(s) need a delta re-embed with the client's own key (see $_U6B_REEMBED_QUEUE) — index re-download could not carry their vectors over"
+        echo "  ⚠️  ${_U6B_QN} client-local persona(s) queued for delta re-embed (client's OWN key) — $_U6B_REEMBED_QUEUE"
+      fi
       # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
       # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
       # never read a frozen "March" cache. Runs AFTER reconcile + provision so the

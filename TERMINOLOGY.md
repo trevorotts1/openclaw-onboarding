@@ -89,6 +89,24 @@ grep -rn 'raw_id\[5:\]\|\.removeprefix("dept-")\|re\.sub.*\^dept-' --include="*.
 
 ---
 
+## Persona — three distinct meanings (do NOT conflate)
+
+The word **persona** means three unrelated things across the onboarding system. Conflating them is a real, recurring defect (F4.5). Always resolve which one a passage means before acting.
+
+| # | Concept | Canonical name to use | What it actually is | Where it appears |
+|---|---|---|---|---|
+| 1 | **`dept_label` / `workspace_hint`** | `dept_label` (display) / `workspace_hint` (routing) | A department-head **display name** and a **routing hint** — NOT a coaching persona. Used only to resolve which workspace/department a task belongs to. | The `persona` key in the `/api/tasks/ingest` payload (`SOP-00-Owner-Task-Routing.md`); the `"persona": "dept-<slug>"` / `"qc-specialist-<slug>"` label baked onto `agents` rows by `add-department.sh`; the static kanban ingest labels used by skills 49/53/56/57 (`persona="Book Writer"`, etc.). |
+| 2 | **Coaching / leadership persona** (canonical) | **coaching persona** | One of the 81 personas in the `coaching-personas` library, **matched per task, at runtime** by the 5-layer persona selector. This is the ONLY concept `persona-matching-protocol.md` governs. | `23-ai-workforce-blueprint/persona-matching-protocol.md`; `persona-selector-v2.py`; `templates/persona-library/*.md`; `tasks.persona_id` / `persona_assignment` / `persona_selection_log`. |
+| 3 | **Buyer / customer persona (avatar)** | **avatar** (or "buyer persona") | The customer/audience profile a piece of copy is written FOR — a target-market model, not a voice the agent adopts. | Skill 52 (Avatar Alchemist) customer avatars; "Big Bold Who" copy sections in skills 49/56. |
+
+**The load-bearing rule (concept 1 vs concept 2):** *Coaching personas are NOT assigned to departments.* A department has a `dept_label`; the coaching persona is chosen **per task, at runtime**, and is **never hardcoded** and **never derived from a department**. Any doc that says "this department's persona is X" is describing a `dept_label` (concept 1), not a coaching persona (concept 2).
+
+**The load-bearing rule (concept 2 vs concept 3):** an **avatar** (concept 3) is WHO the work is for; a **coaching persona** (concept 2) is the voice/methodology the doer works IN. Skill 52's customer-avatar model must never be routed through the coaching-persona selector, and vice versa.
+
+The ingest `persona` key (concept 1) is a documented routing hint — renaming it in doctrine text does **not** change the API; the key name stays for back-compat.
+
+---
+
 ## Funnel template library / Automation template library (template-first)
 
 **Funnel template library** — the 38 proven funnel templates shipped by Skill 6 at

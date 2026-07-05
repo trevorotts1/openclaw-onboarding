@@ -48,6 +48,19 @@ fail-loud exit pattern:
   resolved the single-book `main()`-tail conflict by KEEPING BOTH fail-loud gates
   in order — Phase-5 embed (exit 8) then Phase-6 categories (exit 9);
   skill-version `v6.15.2 → v6.16.0`.
+## v6.15.3 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
+
+FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2). A client box that ran this skill on the client's OWN book had its persona DEREGISTERED and its vectors CLOBBERED at every `openclaw update`, via two compounding mechanisms in `shared-utils/provision-persona-index.sh` (the helper that reconciles this skill's `persona-categories.json` + blueprints onto client boxes):
+
+1. `reconcile_persona_assets` blind-copied the shipped seed `persona-categories.json` over the workspace copy whenever the md5 differed, so the client's extra persona keys were overwritten and the selector universe (= categories keys) silently deregistered the client's persona. → Replaced the blind `cp -f` with a UNION MERGE (`_pidx_union_merge_categories`): seed WINS for seed slugs; box-local keys not in the seed are PRESERVED and stamped `origin:"local"`. With no local persona the merge is a byte-identical seed copy, so the canonical `persona_set_md5` is preserved exactly (reconcile idempotency contract unchanged).
+
+2. `provision_persona_index` gate condition (c) required installed `chunk_count == manifest` EXACTLY, so a canonical index carrying the manifest asset PLUS the client's own locally-embedded persona (more chunks/personas) was judged non-canonical and the whole DB was re-downloaded, destroying the client's vectors. → Gate now uses SUPERSET semantics WHEN a client LOCAL DELTA exists (more persona dirs OR more distinct embedded personas than manifest): canonical iff columns ok AND installed chunks ≥ manifest AND embedded-persona coverage ≥ manifest AND persona dirs ≥ manifest. WITHOUT a local delta the historical EXACT semantics are retained so a stale same-set short/over-chunked index still converges (the 6260/7615/9456-row convergence the gate was built for is preserved; `tests/unit/provision-idempotency.test.sh` unchanged and green). On a genuine re-download, origin:local persona rows are EXPORTED from the old DB and RE-INSERTED into the fresh canonical DB (`_pidx_export_local_rows` / `_pidx_reinsert_local_rows`); anything that cannot be carried over is queued in `.persona-local-reembed-queue` (furnace-safe — NO embedding here) for a delta re-embed with the CLIENT's OWN key, never an operator/shared key.
+
+`update-skills.sh` Step U6b surfaces the `.persona-local-reembed-queue` marker in the operator completion report (operator-visible only, never client-visible — silent-updates doctrine).
+
+Shared-gate RE-LAND: `.github/workflows/both-paths-delivery-guard.yml` step D12 hard-asserted the retired equality literal `chunk_count != manifest chunk_count`, which the SUPERSET semantics above removed — the stale assertion would have failed the repo-wide both-paths delivery guard. Updated D12 to assert the superset wording (`chunk_count >= manifest`) plus the `_HAS_LOCAL_DELTA` decision marker, so the guard now verifies the F2.1 superset gate rather than the removed equality string.
+
+New regression lock: `tests/unit/provision-preserves-local-personas.test.sh` (16 assertions: union-merge preservation + seed-wins + no-drift md5; superset index → skip/preserve; genuine subset → still re-provisions; export→re-insert round-trip).
 
 ## v6.15.2 - 2026-07-05 - fix(F1.3/F2.2): close the `--no-asset` counted-but-vector-less window with an `embedded_persona_count` 5th triad member
 

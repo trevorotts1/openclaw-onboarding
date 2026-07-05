@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 1.0.4
+version: 1.0.5
 ---
 
 # Email Engine (Skill 50)
@@ -81,12 +81,18 @@ All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named
 | Formatting | <=4 emojis in the body; never >3 sentences in a paragraph without a break | `AF-EMAIL-FORMAT` |
 | Founder signature | the founder's ACTUAL name in the close, never a placeholder token | `AF-EMAIL-SIGNATURE-PLACEHOLDER` |
 | Disruptive element (HT) | every high-ticket email carries >=1 disruptive element | `AF-EMAIL-DISRUPTIVE-MISSING` |
-| Process integrity | a signed process certificate is required before P4 deploy; phases cannot be skipped | `AF-PROCESS-INTEGRITY` |
-| Intake gate | brief comes from the turn-gated ledger (one block), the skill type matches, and all six brief fields are present | `AF-EMAIL-INTAKE-SPLIT` / `AF-EMAIL-TYPE-MISMATCH` / `AF-EMAIL-BRIEF-INCOMPLETE` |
+| Client-exact override | an override (`word_band_override` / `expected_preview_count` / `subject_mode`) is honored ONLY when echoed in the LOCKED brief; an unlogged override is refused and the SACRED default re-applies | `AF-EMAIL-OVERRIDE-UNLOGGED` |
+| Process integrity | when the deploy artifact (`build-plan.json`) is present the REAL `PROCESS-CERTIFICATE.json` is required (`all_phases_pass` + a `certificate_sha` that recomputes); phases cannot be skipped | `AF-PROCESS-INTEGRITY` |
+| Deploy-plan valid | a present `working/deploy/build-plan.json` validates against `schema/build-plan.schema.json`'s contract | `AF-EMAIL-DEPLOY-PLAN-INVALID` |
+| Intake gate | brief comes from the turn-gated ledger (one block) — verified against an INDEPENDENT `conversation_ledger` export when present (authoritative), else from the self-attested one-block flags — the skill type matches, and all six brief fields are present | `AF-EMAIL-INTAKE-SPLIT` / `AF-EMAIL-TYPE-MISMATCH` / `AF-EMAIL-BRIEF-INCOMPLETE` |
 
 **Client-exact overrides win.** The word band is the DEFAULT floor; when the client states an
-exact per-email length it is honored verbatim and logged (`word_band_override` / `client_exact`),
-never floored, capped, or substituted. (Client-exact is the fleet-wide absolute law.)
+exact per-email length it is honored verbatim, never floored, capped, or substituted. (Client-exact
+is the fleet-wide absolute law.) The override is honored ONLY when it is **logged in the LOCKED
+brief** (`locked_overrides.word_band_override` / `expected_preview_count` / `subject_mode`) — an
+override that appears on the authoring-written `emails.json` but is NOT echoed in the locked brief
+is refused (`AF-EMAIL-OVERRIDE-UNLOGGED`) and the SACRED default re-applies, so an override can never
+silently loosen a gate. The honored override's source is recorded on the process certificate.
 
 ## How it runs — THROUGH one canonical entry
 

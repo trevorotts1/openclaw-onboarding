@@ -45,6 +45,9 @@
     },
     "P5-SCRUB": {
       "passed": true
+    },
+    "P13-DELIVER": {
+      "passed": true
     }
   },
   "models_used": [
@@ -91,9 +94,10 @@
   },
   "overrides_logged_ok": true,
   "client_copy_verbatim_ok": true,
+  "deliverable_dest_root": "~/Downloads/Social-Media-in-a-Box/northwind-bakehouse/2026-W28",
   "signer": "social-media-in-a-box",
   "deploy_mode": "publish-on-cert",
   "failures": [],
   "pass": true,
-  "certificate_sha": "9144ac33c0572f1bdb4c6bdf2bc5e78738f61f9c07055cb732ddafe521f929b5"
+  "certificate_sha": "ccab0216a2b4ec9a71ef8f6920f224747d34c0a8cf424fea8523af81f5dd2a7d"
 }

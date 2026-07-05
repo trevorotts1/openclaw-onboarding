@@ -1,5 +1,18 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.2.1
+
+DEP-9 doctrine (F4.5) — terminology only, no pipeline/behavior change.
+
+- **Avatar ≠ coaching persona.** Added a terminology callout to `SKILL.md` clarifying that the
+  **avatar** this skill builds (subsystem (a) Avatar Intelligence Core) is a **buyer/customer
+  persona** — the target-market profile the copy is written *for* — and is NOT the
+  **coaching/leadership persona** (the 81-persona `coaching-personas` library matched per task at
+  runtime by the persona selector, governed by
+  `23-ai-workforce-blueprint/persona-matching-protocol.md`). The tone-style slots are likewise
+  distinct. Points to `TERMINOLOGY.md` → "Persona — three distinct meanings". Version bumped to
+  keep `SKILL.md` frontmatter and `skill-version.txt` in lockstep.
+
 ## 1.2.0
 
 Wave-0 merge-train **T-52-avatar-alchemist** — semantic QC leg, real dispatch
