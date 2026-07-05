@@ -1,5 +1,18 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.30 — 2026-07-05 — feat(sop): add-sop.sh emits per-step persona SLOTS for multi-craft SOPs (F3.9, DEP-4)
+
+- **`scripts/add-sop.sh` — new `--persona-slots` flag.** A multi-craft SOP (e.g. "build a
+  landing page" = CONTENT + CODE + IMAGE) can now declare a per-step persona-slot contract:
+  a JSON array of `{slot, task_category, domains?, audience_from?, required?}` objects. The
+  value is validated as a non-empty JSON array (each slot needs at least `{slot, task_category}`)
+  and FAILS LOUD on a malformed contract — a bad slot list must never silently drop, or the
+  matcher would fall back to text-inference and hide the multi-persona wiring. On success the
+  slots are emitted into the SOP header (`persona-slots: <compact-json>`, alongside the
+  existing `persona-hints`) and surfaced in the `---SUMMARY---` line. The CC ingest (DEP-5)
+  reads this back and drives `decompose-task.py --slots`, which fills each slot with a DISTINCT
+  best-fit persona (F3.9). No behavior change when `--persona-slots` is omitted.
+
 ## v12.9.29 — 2026-07-05 — F4.5: align CORE_UPDATES persona wording with the matching protocol (doctrine only)
 
 - **F4.5 (DEP-9) — Department-Head Pattern wording corrected.** `CORE_UPDATES.md` previously said

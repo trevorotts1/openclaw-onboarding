@@ -65,6 +65,40 @@ from resolve_db import find_dashboard_db, is_db_found  # type: ignore  # PRD 1.3
 from adaptive_weights import get_weights_for_task, DEFAULT_WEIGHTS  # type: ignore
 from canonical_slug import canonical_dept_slug  # type: ignore  # PRD 1.5: dept identity contract
 
+# ── Mechanical-task gate — SINGLE SOURCE: shared-utils/mechanical-gate.py ─────
+# Both this selector (whole-task gate) and decompose-task.py (per-subtask gate)
+# import the SAME classifier so the "no persona required" shell-command contract
+# can never diverge (F3.7). Loaded BY PATH because the file is hyphenated — the
+# same importlib trick used for infer-task-category.py below. A tiny inline
+# fallback mirrors the BASE rule so a box missing the shared file still gates
+# identically (never-to-zero resilience).
+GOVERNANCE_PERSONA_FALLBACK = "covey-7-habits"  # overridden by shared module when present
+try:
+    import importlib.util as _mg_ilu
+    _mg_path = Path(__file__).parent.parent.parent / "shared-utils" / "mechanical-gate.py"
+    if _mg_path.is_file():
+        _mg_spec = _mg_ilu.spec_from_file_location("mechanical_gate_mod", str(_mg_path))
+        _mg_mod = _mg_ilu.module_from_spec(_mg_spec)
+        _mg_spec.loader.exec_module(_mg_mod)  # type: ignore
+        is_mechanical_task = _mg_mod.is_mechanical
+        GOVERNANCE_PERSONA_FALLBACK = _mg_mod.GOVERNANCE_PERSONA_FALLBACK
+    else:
+        raise ImportError("mechanical-gate.py not found")
+except Exception:
+    def is_mechanical_task(text, *, delivery_verbs=()):  # type: ignore
+        # Inline mirror of shared-utils/mechanical-gate.py BASE rule.
+        if not text:
+            return False
+        t = text.lower()
+        if any(m in t for m in ("check disk", "check memory")):
+            return True
+        if any(re.search(r"\b" + re.escape(m) + r"\b", t)
+               for m in ("restart", "reboot", "ping", "ls", "chmod", "chown")):
+            return True
+        if delivery_verbs and any(m in t for m in delivery_verbs):
+            return True
+        return False
+
 try:
     # The category inferer ships as infer-task-category.py (HYPHENATED) — a name Python
     # cannot import as a module via `import infer_task_category` (underscores). The old
@@ -2431,6 +2465,14 @@ def main():
     parser.add_argument("--max-subtasks", type=int, default=None,
                         help="(--combined) hard cap on sub-tasks (token-furnace "
                              "budget). Defaults to DECOMP_MAX_SUBTASKS.")
+    parser.add_argument("--sop-slots", default=None,
+                        help="(--combined) JSON array of SOP persona_slot objects "
+                             "({slot, task_category, domains, audience_from, "
+                             "required}). When supplied, text decomposition is "
+                             "SKIPPED and the slots are the authoritative sub-task "
+                             "list (F3.9) — one persona per slot, task_category "
+                             "forced. Accepts an inline JSON string or a @path to "
+                             "a JSON file.")
     parser.add_argument("--no-llm", action="store_true",
                         help="(--combined) force deterministic heuristic "
                              "decomposition (no LLM call).")
@@ -2546,6 +2588,22 @@ def main():
         )
         if args.max_subtasks is not None:
             kwargs["max_subtasks"] = args.max_subtasks
+        # F3.9: SOP persona_slots (if provided) drive an authoritative,
+        # slot-per-persona plan instead of text decomposition. Accept inline
+        # JSON or @path. A malformed value FAILS LOUD (a bad slot contract must
+        # not silently fall back to text-inference and hide the wiring bug).
+        _slots_arg = getattr(args, "sop_slots", None)
+        if _slots_arg:
+            try:
+                if _slots_arg.startswith("@"):
+                    _slots_arg = Path(_slots_arg[1:]).read_text(encoding="utf-8")
+                _slots = json.loads(_slots_arg)
+                if not isinstance(_slots, list):
+                    raise ValueError("--sop-slots must be a JSON array of slot objects")
+                kwargs["slots"] = _slots
+            except Exception as e:
+                print(json.dumps({"error": f"invalid --sop-slots: {e}"}, indent=2))
+                return 2
         result = _dt.combined_select(args.task, args.department, **kwargs)
         result.setdefault("db", db_field)
         print(json.dumps(result, indent=2) if args.format == "json"
@@ -2575,21 +2633,20 @@ def main():
     mode = detect_interaction_mode(args.task)
     task_category = infer_task_category(match_text)
 
-    # Mechanical task check
-    # BUG-FIX v11.6.0: use word-boundary regex for single-word shell commands so
-    # substring matches like "emails" (contains "ls "), "shipping" (contains "ping"),
-    # and "controls/tools" (contain "ls ") do NOT false-trigger no_persona_required.
-    # Multi-word phrases ("check disk", "check memory") are specific enough for plain
-    # substring match.  Single-word commands use \b anchors.
-    _t = args.task.lower()
-    _mechanical_hit = any(m in _t for m in ("check disk", "check memory")) or any(
-        re.search(r"\b" + re.escape(m) + r"\b", _t)
-        for m in ("restart", "reboot", "ping", "ls", "chmod", "chown")
-    )
-    if _mechanical_hit:
+    # Mechanical task check — SINGLE SOURCE via shared-utils/mechanical-gate.py
+    # (is_mechanical_task). The word-boundary/multi-word contract lives there now
+    # (BUG-FIX v11.6.0 rationale preserved in that module). Whole-task gate passes
+    # NO delivery_verbs — a whole task that merely mentions "deploy" is not
+    # automatically persona-free; only decompose's per-subtask gate adds those.
+    if is_mechanical_task(args.task):
         out = {
             "persona_id": None,
             "no_persona_required": True,
+            # Q1: keep the truthful no_persona_required flag but ALSO attach a
+            # governance persona id so the dispatch gate has a persona for EVERY
+            # task (never a naked dispatch) without pretending a shell command
+            # needs a craft persona.
+            "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
             "message": "Operational/mechanical task — no persona required.",
             "task_category": task_category,
             "db": db_field,  # PRD 1.3: visible on every response

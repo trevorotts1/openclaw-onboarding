@@ -24,6 +24,15 @@
 #   bash add-sop.sh --dept podcast --role audio-editor --title "Edit a Raw Episode" \
 #       --file /tmp/sop.md --keywords "edit,episode,audio" --persona-hints "collins-good-to-great"
 #
+#   # Multi-craft SOP (F3.9): declare per-step persona SLOTS so the matcher fills
+#   # each slot with a DISTINCT best-fit persona (content vs code vs image). The
+#   # value is a JSON array of slot objects; it is emitted into the SOP header and
+#   # consumed by the CC ingest (which drives decompose-task.py --slots).
+#   bash add-sop.sh --dept web-development --title "Build a Landing Page" --file /tmp/sop.md \
+#       --persona-slots '[{"slot":"content","task_category":"content-write","domains":["copywriting"],"audience_from":"task","required":true},
+#                         {"slot":"code","task_category":"web-development","domains":["software-craft"],"required":true},
+#                         {"slot":"image","task_category":"design","domains":["visual-storytelling"],"required":false}]'
+#
 # Output: human-readable progress, then a single JSON line:
 #   ---SUMMARY---
 #   {"dept":"<slug>","role":"<slug-or-null>","sop_slug":"<slug>","sop_path":"<path>","status":"created"}
@@ -42,6 +51,7 @@ TITLE=""
 SOP_FILE=""
 KEYWORDS=""
 PERSONA_HINTS=""
+PERSONA_SLOTS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -51,8 +61,9 @@ while [[ $# -gt 0 ]]; do
     --file)          SOP_FILE="${2:-}";       shift 2 ;;
     --keywords)      KEYWORDS="${2:-}";       shift 2 ;;
     --persona-hints) PERSONA_HINTS="${2:-}";  shift 2 ;;
+    --persona-slots) PERSONA_SLOTS="${2:-}";  shift 2 ;;
     -h|--help)
-      sed -n '2,40p' "$0"
+      sed -n '2,48p' "$0"
       exit 0
       ;;
     *)
@@ -153,6 +164,29 @@ else
   echo "[add-sop] WARN: sop_boundary_gate.py not found — skipping advanced substance check" >&2
 fi
 
+# ─── Validate persona-slots JSON (F3.9) — fail loud on a malformed contract ────
+# A multi-craft SOP declares per-step persona SLOTS. If the operator passes a
+# --persona-slots value it MUST be a JSON array of objects; a bad contract must
+# not silently drop (the matcher would then fall back to text-inference and the
+# multi-persona wiring bug would hide).
+if [[ -n "$PERSONA_SLOTS" ]]; then
+  if ! echo "$PERSONA_SLOTS" | python3 -c '
+import json, sys
+try:
+    v = json.load(sys.stdin)
+except Exception as e:
+    print(f"[add-sop] FATAL: --persona-slots is not valid JSON: {e}", file=sys.stderr); sys.exit(1)
+if not isinstance(v, list) or not v:
+    print("[add-sop] FATAL: --persona-slots must be a non-empty JSON array of slot objects", file=sys.stderr); sys.exit(1)
+for i, s in enumerate(v):
+    if not isinstance(s, dict) or not s.get("slot") or not s.get("task_category"):
+        print(f"[add-sop] FATAL: slot #{i+1} needs at least {{slot, task_category}}", file=sys.stderr); sys.exit(1)
+' 2>&1; then
+    exit 1
+  fi
+  echo "[add-sop] persona-slots: validated JSON contract"
+fi
+
 # ─── All mutation in Python ───────────────────────────────────────────────────
 export AS_OC_ROOT="$OC_ROOT"
 export AS_DEPT_SLUG="$DEPT_SLUG"
@@ -162,6 +196,7 @@ export AS_SOP_SLUG="$SOP_SLUG"
 export AS_SOP_FILE="$SOP_FILE"
 export AS_KEYWORDS="$KEYWORDS"
 export AS_PERSONA_HINTS="$PERSONA_HINTS"
+export AS_PERSONA_SLOTS="$PERSONA_SLOTS"
 export AS_SCRIPT_DIR="$SCRIPT_DIR"
 
 python3 <<'PYEOF'
@@ -181,6 +216,7 @@ SOP_SLUG     = os.environ["AS_SOP_SLUG"]
 SOP_FILE     = os.environ["AS_SOP_FILE"]
 KEYWORDS     = os.environ.get("AS_KEYWORDS", "")
 PERSONA_HINTS = os.environ.get("AS_PERSONA_HINTS", "")
+PERSONA_SLOTS = os.environ.get("AS_PERSONA_SLOTS", "")
 SCRIPT_DIR   = os.environ["AS_SCRIPT_DIR"]
 
 NOW = datetime.now(timezone.utc).isoformat()
@@ -279,6 +315,18 @@ except OSError as e:
 keywords_list = [kw.strip() for kw in KEYWORDS.split(",") if kw.strip()] if KEYWORDS else []
 persona_hints_list = [ph.strip() for ph in PERSONA_HINTS.split(",") if ph.strip()] if PERSONA_HINTS else []
 
+# F3.9: persona-slots is a multi-craft SOP's per-step persona contract. Emit it
+# as a single-line compact JSON so the CC ingest can parse it back and drive
+# decompose-task.py --slots (one distinct best-fit persona per slot). Already
+# validated as a JSON array in the shell layer; re-load defensively here.
+persona_slots_json = ""
+if PERSONA_SLOTS.strip():
+    try:
+        persona_slots_json = json.dumps(json.loads(PERSONA_SLOTS), separators=(",", ":"))
+    except Exception as e:
+        print(f"  [add-sop] FATAL: --persona-slots not parseable: {e}", file=sys.stderr)
+        sys.exit(1)
+
 header_comment = f"""<!-- sop-meta
 title: {TITLE}
 dept: {DEPT_SLUG}
@@ -286,6 +334,7 @@ role: {ROLE_SLUG or ""}
 slug: {SOP_SLUG}
 keywords: {",".join(keywords_list)}
 persona-hints: {",".join(persona_hints_list)}
+persona-slots: {persona_slots_json}
 added: {NOW}
 -->
 """
@@ -332,6 +381,7 @@ emit_summary({
     "role": ROLE_SLUG or None,
     "sop_slug": SOP_SLUG,
     "sop_path": str(sop_path),
+    "persona_slots": persona_slots_json or None,
     "status": "created",
 })
 PYEOF
