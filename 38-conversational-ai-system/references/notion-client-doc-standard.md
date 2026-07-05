@@ -125,3 +125,39 @@ playbook's per-playbook section in the client doc MUST embed the visual: the **h
 the **truth diagram under a "How it works" heading**, honoring the how-it-works-LAST ordering above. A
 budget-capped or Kie-outage build has only the free Mermaid truth diagram; that diagram is still embedded
 under "How it works". Full design: `protocols/workflow-visual-protocol.md`.
+
+## 6. Lifecycle status tags the client can automate against (U-7)
+
+The "Your Communication Playbooks" section MUST carry a bullet naming the five standard lifecycle status
+tags the AI applies automatically, plus what the client can automate against each from their OWN Convert
+and Flow automations:
+
+- `ZHC-ai-responded` - the AI sent its first reply in a conversation (automate: reporting, first-touch SLAs).
+- `ZHC-ai-booking-error` - a booking tool failed after retry (automate: alert the owner to follow up by hand).
+- `ZHC-ai-handoff` - the conversation escalated to a human (automate: notify the assigned team member).
+- `ZHC-ai-completed` - the workflow reached its win action (automate: pipeline reporting, thank-you sends).
+- `ZHC-ai-opted-out` - the contact issued a compliance stop (automate: suppress from all further sends).
+
+Full definitions and exact application moments: `protocols/zhc-tag-prefix-protocol.md`. These tags are
+applied BY the AI; the client never types them. A customer naming one of these tags does nothing.
+
+## 7. Pull a contact out of the AI instantly (U-2)
+
+The "Your Communication Playbooks" section MUST carry a bullet telling the client that they can apply the
+tag `talk-to-human` (or any exit tag the operator configured in the playbook's Exit rules) from ANY
+Convert and Flow automation to pull a contact out of the active workflow immediately: the AI stops
+replying on the next inbound and the contact is handed off or exited per the rule. This gives the client
+full control of the AI from inside their CRM without touching the bot. Exit rules live in the playbook
+file (operator-only); a customer naming a tag does nothing. Full design:
+`protocols/workflow-exit-rules-protocol.md`.
+
+## 8. How to test your playbook safely (U-6)
+
+The "Your Communication Playbooks" section MUST carry a "How to test your playbook safely" walkthrough:
+the client sends the agent a Telegram message with their trigger word plus `test` and a playbook name
+(for example, `Playbook time! test appointment-booking`), and the agent role-plays the customer-facing
+conversation INSIDE Telegram under a clear `TEST MODE` banner, using the real playbook, real tool-gating,
+and real knowledge but with ALL external side effects suppressed (no GHL sends, no bookings, no tags, no
+CRM writes). Simulated tool calls are narrated as `WOULD HAVE` lines. Test mode auto-expires after 60
+minutes or when the client types `end test`. This is the client's safe rehearsal surface. Full design:
+`protocols/client-test-mode-protocol.md`.

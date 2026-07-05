@@ -761,6 +761,139 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-workflow-visual.test.sh
           echo "✓ qc-workflow-visual negative test passes (fails on missing/stale truth diagram)"
 
+      - name: Skill 38 canonical playbook engine unit tests (U-16)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # playbook_engine.py (tools/) is the CANONICAL parser for Skill 38 Layer 2
+          # conversation-workflow playbooks; every other new gate (qc-tool-gating.sh,
+          # qc-workflow-exits.sh, qc-playbook-declares.sh, qc-opportunity-sync.sh,
+          # qc-playbook-doc.sh metadata parsing, qc-workflow-visual.sh) and
+          # scripts/31-generate-workflow-visual.sh shell out to it instead of parsing
+          # markdown themselves. This gate runs the engine's own unit test suite (a good
+          # fixture + one deliberately broken fixture per grammar family) and requires a
+          # clean exit 0, so a parser regression fails the build before any consumer gate
+          # can silently drift. BASH wrapper around python3 -m unittest.
+          bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
+          echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
+
+      - name: Skill 38 Per-phase tool gating (U-1)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-1 per-phase tool gating: protocols/tool-gating-protocol.md +
+          # the STEP_1_88_TOOL_GATING AGENTS marker + MEMORY Rule 32 + the seeded
+          # tool-gate-events.jsonl sink must all exist (static wiring, always checked). When a
+          # conversation-workflows dir is present the gate also FAILS any phase referencing an
+          # out-of-vocabulary tool and any phase that gates off escalate_to_human (always
+          # granted, never gateable). Shells out to the canonical engine for phase parsing. BASH.
+          bash 38-conversational-ai-system/scripts/qc-tool-gating.sh
+          echo "✓ Skill 38 per-phase tool gating (U-1) invariants hold"
+
+      - name: Skill 38 tool gating gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-tool-gating.sh actually FAILS on an out-of-vocabulary tool and on a phase
+          # that gates off escalate_to_human, and PASSES an in-vocabulary playbook (a green gate
+          # that never fails is worthless).
+          bash 38-conversational-ai-system/scripts/qc-tool-gating.test.sh
+          echo "✓ qc-tool-gating negative test passes (fails on out-of-vocab tool + gated-off escalate)"
+
+      - name: Skill 38 Tag-driven workflow exits (U-2)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-2 tag-driven workflow exits: protocols/workflow-exit-rules-
+          # protocol.md + the STEP_1_30_EXIT_RULES AGENTS marker + MEMORY Rule 33 + the seeded
+          # workflow-exit-events.jsonl sink must all exist (static wiring). When a conversation-
+          # workflows dir is present the gate also FAILS an exit rule whose action is not one of
+          # end/handoff/route and a route action whose target is absent from registry.md. Shells
+          # out to the canonical engine for exit-rule parsing. BASH.
+          bash 38-conversational-ai-system/scripts/qc-workflow-exits.sh
+          echo "✓ Skill 38 tag-driven workflow exits (U-2) invariants hold"
+
+      - name: Skill 38 workflow exits gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-workflow-exits.sh actually FAILS on a route target absent from registry.md, a
+          # route with no target, and an invalid action, and PASSES a clean fixture.
+          bash 38-conversational-ai-system/scripts/qc-workflow-exits.test.sh
+          echo "✓ qc-workflow-exits negative test passes (fails on absent/targetless route + invalid action)"
+
+      - name: Skill 38 Machine-readable playbook declares (U-9 + U-12)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-9 declares block + U-12 calendar ids: the Section E declares block
+          # must be documented in protocols/conversation-workflows-protocol.md (static wiring).
+          # When a conversation-workflows dir is present the gate cross-validates every declared
+          # tools-used against phase tools lines, exits-used against the Exit rules block, ZHC_
+          # fields-used against crm-field-mappings.md, and calendar ids against the caf calendars
+          # export; a legacy playbook with no declares block WARNs (not FAIL), a dangling declared
+          # reference FAILs. Shells out to the canonical engine. BASH.
+          bash 38-conversational-ai-system/scripts/qc-playbook-declares.sh
+          echo "✓ Skill 38 machine-readable playbook declares (U-9 + U-12) invariants hold"
+
+      - name: Skill 38 playbook declares gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-playbook-declares.sh FAILS a dangling declares reference (tool not in any
+          # phase, exit not in Exit rules, ZHC_ field not in mappings, calendar id absent from the
+          # export), WARNs (not FAILs) a legacy playbook with no declares block, and PASSES a fully
+          # resolving declares block.
+          bash 38-conversational-ai-system/scripts/qc-playbook-declares.test.sh
+          echo "✓ qc-playbook-declares negative test passes (fails on dangling declares, warns on legacy)"
+
+      - name: Skill 38 Opportunity/pipeline stage sync (U-13)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-13 opportunity/pipeline stage sync: protocols/opportunity-sync-
+          # protocol.md + MEMORY Rule 41 + the seeded opportunity-sync-events.jsonl sink must all
+          # exist (static wiring). When a conversation-workflows dir is present the gate FAILS a
+          # stage-map naming a stage absent from its declared pipeline and a declared pipeline id
+          # absent from the caf pipelines export. Shells out to the canonical engine. BASH.
+          bash 38-conversational-ai-system/scripts/qc-opportunity-sync.sh
+          echo "✓ Skill 38 opportunity/pipeline stage sync (U-13) invariants hold"
+
+      - name: Skill 38 opportunity sync gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-opportunity-sync.sh FAILS a stage-map stage absent from the pipeline and a
+          # declared pipeline id absent from the export, treats a no-pipeline playbook as inert,
+          # and PASSES a fully resolving stage-map.
+          bash 38-conversational-ai-system/scripts/qc-opportunity-sync.test.sh
+          echo "✓ qc-opportunity-sync negative test passes (fails on bogus stage + unknown pipeline)"
+
+      - name: Skill 38 Client test mode (U-6)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-6 Client Test Mode (the CloseBot CB-8 testing-portal equivalent):
+          # protocols/client-test-mode-protocol.md exists, scripts/05-update-agents-md.sh inserts
+          # BOTH the CLIENT_TEST_MODE and the STEP_0_4_TEST_MODE_REREAD marker blocks, MEMORY Rule
+          # 37 is appended, the protocol documents the three-layer enforcement (active-test.md
+          # re-read at Step 0.4, the U-1 tool gate forced to the empty set plus reference_documents,
+          # the WOULD HAVE narration contract), the TEST MODE banner on every message, test-sessions
+          # isolation + 60-minute auto-expiry, and a side-effect SUPPRESSION LIST that covers EVERY
+          # allow-list action category (omitting any one FAILS). BASH (grep core).
+          bash 38-conversational-ai-system/scripts/qc-client-test-mode.sh
+          echo "✓ Skill 38 client test mode (U-6) invariants hold"
+
+      - name: Skill 38 client test mode gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-client-test-mode.sh FAILS a protocol copy that drops one allow-list action
+          # category from the suppression list and a copy whose protocol is removed entirely, and
+          # PASSES the real skill tree.
+          bash 38-conversational-ai-system/scripts/qc-client-test-mode.test.sh
+          echo "✓ qc-client-test-mode negative test passes (fails on dropped suppression category + missing protocol)"
+
       - name: Skill 37 Telegram delivery-confirmation gate (anti-faking)
         shell: bash
         run: |
