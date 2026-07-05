@@ -128,29 +128,16 @@ This folder holds:
 
 ---
 
-## Optional: semantic style search via Gemini embedding index
+## Semantic style search — NOT YET AVAILABLE
 
-If the box has many style cards (>20), enable semantic search: *"Find me a style like this"* without manually scanning INDEX.
+Embedding-indexed semantic search (*"find me a style like this"* without scanning INDEX.md) is a **planned future capability**. The `index-style-cards-embedding.sh` companion script **does not ship in this skill version** — there is no activation command, no `.embedding-index.json`, and no embedding-refresh duty. Do not attempt to run an embedding index; it is not present.
 
-**Setup (optional, one-time):**
+**What to use instead — INDEX.md lookup (always available):**
+- **Exact ID** — resolve `FB-003` (or any `{CAT}-{NNN}`) directly in the INDEX.md master table.
+- **Friendly alias** — resolve "signature style 1" via the INDEX.md "Resolving a friendly name" rule (Sig # column, category-scoped).
+- **Category scan** — open the relevant category section of INDEX.md and read the summaries; retired cards are marked in the Status column and skipped.
 
-```bash
-OC_ROOT="${OC_ROOT:-$HOME/.openclaw}"
-LIBRARY_HOME="$OC_ROOT/master-files/design-library"
-
-# Activate the embedding index (Skill 45 companion script)
-bash $OC_ROOT/skills/45-design-intelligence-library/scripts/index-style-cards-embedding.sh "$LIBRARY_HOME"
-```
-
-This script:
-1. Reads all style cards in `$LIBRARY_HOME`.
-2. Extracts card text (name, summary, prompt, color palette, etc.).
-3. Queries the box's Gemini embedding model (`gemini-embedding-2` @3072 dims — multimodal).
-4. Writes a queryable index to `$LIBRARY_HOME/.embedding-index.json` (hidden file, never committed).
-
-**Usage:** Style Analyst can now query: *"Find a style with a teal/gold color scheme and dramatic side lighting"* → the index returns ranked matches by semantic similarity.
-
-**Maintenance:** the index is append-only; cards retire gracefully (mark as "retired" in INDEX.md; embedding index skips them on next refresh).
+When the embedding index ships, this section will be replaced with its setup and usage. Until then, INDEX.md is the single lookup surface.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: anthology-writer
 description: The Anthology Writer — a governed skill that turns one contributor intake (anthology title, contributor name, chapter premise, and real personal stories) into a finished, gated anthology chapter (2,000-3,500 words) in that contributor's blended signature voice, plus the supporting blended tone doc, locked title/subtitle, blurb, and outline, delivered as a labeled LOCAL bundle. It bakes the anthology authoring IP as sha256-pinned prompt assets, references the shared tone-writing-core (04..08) in lockstep, replaces the source n8n / Airtable / Google Docs / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED floor with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER through one canonical entry (anthology-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. SEPARATE skill, sibling of Skill 53 Book Writer — they share the ONE tone core, never merged. Client runtime is NEVER Anthropic: every source Anthropic-model / "OpenRouter primary" tier is resolved to the client's strongest NON-Anthropic model. Trigger with "run anthology writer", "start my anthology", "anthology chapter for <contributor>", "add a contributor to book <id>", or "anthology status".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Anthology Writer (Skill 54)
@@ -55,8 +55,16 @@ in any skill script or sub-agent prompt.
   providers/keys. NEVER `claude-*` / `anthropic/*`.
 - `run_anthology.py` — the deterministic state machine over the manifest
   (P0→P7, no phase skips, front-door nonce, signed certificate on a full pass).
-- `anthology-entry.sh` — the ONE sanctioned command (deps / bypass-scan /
-  hash-pin / nonce, fail-closed).
+- `anthology-entry.sh` — the ONE sanctioned command (deps / model-map pre-gate /
+  bypass-scan / hash-pin / nonce, fail-closed).
+- `ENGINE-PIN.sha256` — the pinned content hash of the enforcement set
+  (`run_anthology.py` + the provers + `_aw_common.py` + `verify_tone_core_sync.py`).
+  `anthology-entry.sh` GATE 3 recomputes it and refuses to run on any drift
+  (`AF-AW-HASH-PIN`), so a silently-edited gate can never disarm itself.
+- `roles/anthology-writer.role.md` — the registered role recipe (department
+  **Content / Publishing**, role slug `anthology-chapter-author`) with trigger
+  phrases and duties; this is the skill's role IP referenced by the SKILL, not
+  dead weight.
 - `verify.sh` — the READ-ONLY, idempotent self-verify gate.
 
 ## The SACRED invariants the provers enforce
@@ -76,13 +84,23 @@ in any skill script or sub-agent prompt.
 | Title carried | the locked title + subtitle appear byte-exact in the outline AND chapter | AF-AW-TITLE-LOCK |
 | Stories placed | every non-`N/A` personal-story anchor appears in the outline AND chapter | AF-AW-STORIES |
 | No Anthropic | every model id in `RUN-LEDGER.json` is NON-Anthropic; no operator key in env | AF-AW-ANTHROPIC |
+| Model provenance | `RUN-LEDGER.json` is REQUIRED at P6 and records ≥1 resolved model id (fail-closed) | AF-AW-PROVENANCE-MISSING |
 | Rewrite budget | at most 2 rewrites per contributor | AF-AW-REWRITE-BUDGET |
+| Client-exact override | a band override is honored only through the LOGGED, brief-tied `working/overrides.json`; an unlogged override fails closed | AF-AW-OVERRIDE-UNLOGGED |
+| Delivery integrity | the labeled bundle is assembled + byte-verified from the QC'd working copies; no swap-after-QC | AF-AW-STAGE-SKIPPED / AF-AW-DELIVER-MISMATCH |
 | Process integrity | a signed certificate requires a full P0→P6 pass; no phase skips | AF-AW-PROCESS-INTEGRITY / AF-AW-STAGE-SKIPPED |
 | Entry front-door | no hand-rolled external uploader/notifier in the run dir | AF-AW-ENTRY-BYPASS |
+| Model-map resolved | a resolved run-dir `model-map.json` carries no `<CLIENT_*>` placeholder / Anthropic id | AF-AW-UNRESOLVED-MODELMAP |
 
-**Client-exact overrides win.** The 2,000-3,500 band is the DEFAULT floor; a
-client-stated exact word target is honored verbatim and logged on the
-certificate, never floored, capped, or substituted (fleet-wide absolute law).
+**Client-exact overrides win.** The 2,000-3,500 chapter band and the 3,000-word
+tone floor are DEFAULT floors; a client-stated exact word target is honored
+verbatim, never floored, capped, or substituted (fleet-wide absolute law). It is
+honored ONLY through the audited channel — a `working/overrides.json` that is
+recorded, approved, reasoned, and cites the locked brief (`brief_ref`). The
+provers read it via `--band-override` and an applied override is recorded on the
+`PROCESS-CERTIFICATE` (`client_band_override`) and bound into the certificate
+sha. An override applied WITHOUT that log fails closed (`AF-AW-OVERRIDE-UNLOGGED`)
+— an exact ask is honored, but never as a silent floor-swap.
 
 ## How it runs — THROUGH one canonical entry
 
@@ -90,10 +108,14 @@ certificate, never floored, capped, or substituted (fleet-wide absolute law).
 bash 54-anthology-writer/anthology-entry.sh --run-dir <RUN_DIR> [--upto PHASE] [--plan]
 ```
 
-The entry runs three fail-closed gates (DEPS → BYPASS-SCAN → VERSION/HASH-PIN),
-mints a run-scoped nonce, and dispatches `run_anthology.py`, which walks the
-manifest P0 → P7 with no phase skips, one contributor at a time. The QC phases
-shell out to the provers and refuse to advance on any `AF-AW-*` violation.
+The entry runs its fail-closed gates (DEPS → MODEL-MAP PRE-GATE → BYPASS-SCAN →
+VERSION/HASH-PIN), mints a run-scoped nonce, and dispatches `run_anthology.py`,
+which walks the manifest P0 → P7 with no phase skips, one contributor at a time.
+The MODEL-MAP PRE-GATE runs `preflight.sh --check`: a resolved run-dir
+`model-map.json` that still carries `<CLIENT_*>` placeholders (installer not run)
+or a banned Anthropic id is refused (`AF-AW-UNRESOLVED-MODELMAP`); a missing map
+is a clean pass. The QC phases shell out to the provers and refuse to advance on
+any `AF-AW-*` violation.
 Writing/running a hand-rolled external uploader/notifier (a Google Drive upload,
 a Slack post, a Gmail/SMTP send, an n8n webhook, an Airtable write) is the
 **ungoverned path and is FORBIDDEN** (`AF-AW-ENTRY-BYPASS`) — delivery is a

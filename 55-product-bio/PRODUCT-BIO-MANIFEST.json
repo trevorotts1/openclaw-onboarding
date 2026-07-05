@@ -54,9 +54,9 @@
       "preflight": {
         "required": true,
         "checker": "_chk_bio_qc",
-        "label": "prove_pb_wordcount.py PASS + prove_pb_sections.py PASS over working/product-bio.md. ANY AF-PB-* violation blocks advance; a bounded rework loop (<=3, verifier != author) re-authors then re-proves."
+        "label": "prove_pb_wordcount.py PASS + prove_pb_sections.py PASS over working/product-bio.md (--intake working/intake.json threads the LOGGED client-exact override channel). ANY AF-PB-* violation blocks advance; a bounded rework loop (<=3, verifier != author) re-authors then re-proves. A client-exact word/section target LOGGED in the locked brief (word_count_override / section_count_overrides) wins over the default band and is recorded on the certificate; an override applied but not logged is AF-PB-OVERRIDE-UNLOGGED."
       },
-      "gate_codes": ["AF-PB-WORDCOUNT", "AF-PB-VERIFY-BLOCK", "AF-PB-SECTION", "AF-PB-CLOSES", "AF-PB-COUNTS"]
+      "gate_codes": ["AF-PB-WORDCOUNT", "AF-PB-VERIFY-BLOCK", "AF-PB-SECTION", "AF-PB-CLOSES", "AF-PB-COUNTS", "AF-PB-OVERRIDE-UNLOGGED"]
     },
     {
       "id": "P4-HTML-AUTHOR",
@@ -90,7 +90,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_deliver",
-        "label": "the labeled deliverable bundle is ASSEMBLED from the QC'd working copies and byte-verified: delivery/product-bio-<slug>.md + .html must equal the P3/P5-proven working/product-bio.md + .html (a pre-existing delivery artifact that disagrees is refused — AF-PB-DELIVER-MISMATCH; missing QC'd copies are AF-PB-STAGE-SKIPPED). Local-only (~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/); NO n8n / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P5 pass. No hardcoded delivery channels; any push is per-client config through the client's own gateway, client-silent by default."
+        "label": "the labeled deliverable bundle is ASSEMBLED from the QC'd working copies and byte-verified: delivery/product-bio-<slug>.md + .html must equal the P3/P5-proven working/product-bio.md + .html (a pre-existing delivery artifact that disagrees is refused — AF-PB-DELIVER-MISMATCH; missing QC'd copies are AF-PB-STAGE-SKIPPED). After the full P0->P5 pass issues the signed certificate, the client-facing bundle is written to ~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/ (bio, HTML, DELIVERY-NOTE.md, handoff.json, PROCESS-CERTIFICATE.json/.md) — the Downloads root is overridable via PRODUCT_BIO_DELIVERY_ROOT so a test never touches the real ~/Downloads; NO n8n / Google Drive / Slack / Gmail. The Command Center card carries the deliverable pointer (bundle path + certificate sha). No hardcoded delivery channels; any push is per-client config through the client's own gateway, client-silent by default."
       },
       "gate_codes": ["AF-PB-STAGE-SKIPPED", "AF-PB-DELIVER-MISMATCH", "AF-PB-PROCESS-INTEGRITY"]
     }
@@ -103,6 +103,7 @@
     {"code": "AF-PB-SECTION", "stage": "P3", "level": "bio", "trigger": "any of the 10 mandatory sections absent or out of order (matched on header lines only)", "enforced_by": "prove_pb_sections", "py_symbol": "_check_sections"},
     {"code": "AF-PB-CLOSES", "stage": "P3", "level": "bio", "trigger": "signature-close styles != 24 distinct named styles (PRD O3 enforces the tracker's 24, not the 20 taught)", "enforced_by": "prove_pb_sections", "py_symbol": "_check_closes"},
     {"code": "AF-PB-COUNTS", "stage": "P3", "level": "bio", "trigger": "a per-section floor missed: 10 intros / 15-20 adjectives / 8-10 objections / 10-12 FAQs / 8-10 social-proof / a missing StoryBrand beat", "enforced_by": "prove_pb_sections", "py_symbol": "_check_counts"},
+    {"code": "AF-PB-OVERRIDE-UNLOGGED", "stage": "P3", "level": "bio", "trigger": "a word-band (word_count_override) or per-section count (section_count_overrides) override was APPLIED but is not present-and-equal in the locked brief (--intake); the SACRED default band is not relaxed by an unlogged value. A client-exact target LOGGED in the locked brief wins verbatim and is recorded on the certificate (never floored/capped). The SACRED STRUCTURE — 10 sections, order, 24 named closes, 7 StoryBrand beats — has NO override channel.", "enforced_by": "prove_pb_wordcount / prove_pb_sections", "py_symbol": "resolve_band"},
     {"code": "AF-PB-HTML-ENVELOPE", "stage": "P5", "level": "html", "trigger": "output does not start EXACTLY '<!DOCTYPE html>' or end EXACTLY '</html>' (after the one permitted auto-trim)", "enforced_by": "prove_pb_html", "py_symbol": "_check_envelope"},
     {"code": "AF-PB-HTML-H1", "stage": "P5", "level": "html", "trigger": "the document does not contain exactly one <h1>", "enforced_by": "prove_pb_html", "py_symbol": "_check_h1"},
     {"code": "AF-PB-HTML-CSS", "stage": "P5", "level": "html", "trigger": "any CSS beyond page-break-after (a <style> block, or an inline style with any other property)", "enforced_by": "prove_pb_html", "py_symbol": "_check_css"},

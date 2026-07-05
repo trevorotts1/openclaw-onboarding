@@ -131,4 +131,35 @@
 
 ---
 
-*DIU SOPs owned: [SOP-DIU-612], [SOP-DIU-613], [SOP-DIU-614], [routing-arbiter-9.11]. These are addendum SOPs (9.8, 9.9, 9.10, 9.11) appended to the CDO's existing 9.1-9.7 base SOPs. Total CDO sop_count: 11.*
+### SOP 9.12 -- DIU Production Lifecycle on the Command Center Board (Gate 4 evidence)
+
+**ZHC SOP.** Wires the full DIU production lifecycle onto the Command Center Kanban board so that CDO Gate 4 leaves a board record instead of being a silent, skippable step.
+**Problem this closes:** The DIU production lifecycle previously mapped to no board states, so Gate 4 (producer approval) could be skipped with no evidence a review ever happened. This SOP puts every production run on the board with Gate 4 living in the **review** column.
+**When to run:** On every DIU production run that spends metered generation (single image, deck, or personal photo shoot). Analysis-only requests that produce no image are exempt.
+**Reused caller (do NOT re-implement):** Skill 48's fail-soft board caller `48-facebook-ad-generator/scripts/cc_board.py` (stdlib `urllib`; POST `/api/ad-campaigns` to create, PATCH `/api/ad-campaigns/{job_id}` to move). It is **fail-soft by contract**: a missing `MISSION_CONTROL_URL`, absent token, outage, or HTTP error is caught and logged, and the run CONTINUES. Boarding is a convenience, never a hard gate on generation.
+
+**Lifecycle -> board-column mapping (cc_board status vocabulary: backlog | in_progress | review | blocked | done):**
+
+| DIU lifecycle stage | Owning role | Board move |
+|---|---|---|
+| Intake accepted + routed | CDO (via BB-graphics) | create campaign; stage card `backlog` |
+| Analysis / generation / deck assembly / photo shoot | Style Analyst · Generation Operator · Deck Systems Specialist · Photo Shoot Director | `backlog -> in_progress` |
+| Fidelity test (TEST-PROTOCOL) | Fidelity Tester | stays `in_progress`; a 3-strike escalation (`diu_validator.py fidelity` exit 5) moves the card `-> blocked` with `blocked_reason=decision` + the ask |
+| **CDO Gate 4 (producer approval)** | **Chief Design Officer** | **`in_progress -> review`** -- the card ENTERS the review column when work reaches the producer; **Gate 4 lives here** |
+| Owner-approved delivery | CDO | `review -> done` -- the `review -> done` transition IS the Gate 4 sign-off and is the board evidence the review occurred |
+| Consent / legal / credential / payment hold | Photo Shoot Director / CDO | `* -> blocked` with `blocked_reason in {decision, approval, credential, payment}` + a non-empty `ask` |
+
+**Steps:**
+1. At intake acceptance, create the campaign via `cc_board.py` with one stage card per production phase; the run lands in `backlog`. If the board is unreachable, log the degrade and proceed (fail-soft) -- the deterministic `job_id` is still recorded.
+2. When the assigned specialist begins work, move the phase card `backlog -> in_progress`.
+3. On any consent/legal/credential/payment hold, or a `diu_validator.py fidelity` 3-strike escalation, move `-> blocked` with the required `blocked_reason` + `ask`. Clear it back to `in_progress` when resolved.
+4. When work reaches the producer, move the card `in_progress -> review`. **Gate 4 is this review column** -- no deliverable leaves the DIU without passing through it.
+5. On Gate 4 owner approval, move `review -> done`. This transition is the auditable evidence that Gate 4 occurred; a run that reaches delivery without a `review -> done` record is a Gate-4-skip and must be halted and re-reviewed.
+
+**Outputs:** A board campaign whose card history shows the run passing through `review` (Gate 4) before `done`.
+**Hand to:** Owner (approved deliverable) after `review -> done`.
+**Failure mode:** Board outage is fail-soft (log + continue). A deliverable that reached the owner with no `review` state in its board history means Gate 4 was skipped -- treat as a process violation, recall the deliverable, and run Gate 4.
+
+---
+
+*DIU SOPs owned: [SOP-DIU-612], [SOP-DIU-613], [SOP-DIU-614], [routing-arbiter-9.11], [lifecycle-board-9.12]. These are addendum SOPs (9.8, 9.9, 9.10, 9.11, 9.12) appended to the CDO's existing 9.1-9.7 base SOPs. Total CDO sop_count: 12.*

@@ -22,6 +22,87 @@ _pidx_md5() {
 }
 
 # ---------------------------------------------------------------------------
+# _pidx_union_merge_categories <seed_categories_json> <target_categories_json>
+#
+# F2.1 fix — persona-categories.json UNION MERGE (replaces the old blind
+# `cp -f seed target`).  The old copy DEREGISTERED any persona a client box
+# legitimately added by running Skill-22 on the client's OWN book: the
+# selector's universe is the `personas` keys of persona-categories.json, so
+# overwriting the client's file with the shipped seed silently un-registered
+# every client-local persona at every update.
+#
+# Contract:
+#   • SEED WINS for seed slugs (canonical author/book/domain/perspective/custom
+#     — the seed entry replaces whatever the box had for that same slug).
+#   • BOX-LOCAL keys NOT present in the seed are PRESERVED, and stamped
+#     `"origin":"local"` so downstream tooling (and provision_persona_index's
+#     re-download export path) can distinguish them from seed personas.
+#   • When the target has ZERO local-only keys the merge is a BYTE-IDENTICAL
+#     copy of the seed (shutil.copyfile) so the canonical persona_set_md5 is
+#     preserved exactly — the reconcile idempotency contract is unchanged for
+#     every box that never added a local persona.
+#
+# Pure-Python stdlib, NO embeddings, NO network.  Echoes one status token:
+#   COPIED         — no local keys; byte-identical seed copy
+#   MERGED:<n>     — <n> box-local persona(s) preserved (origin:local)
+#   SKIP:<reason>  — could not read the seed (target left untouched)
+# ---------------------------------------------------------------------------
+_pidx_union_merge_categories() {
+    local _seed="$1" _target="$2"
+    python3 - "$_seed" "$_target" <<'PYEOF' 2>/dev/null || echo "SKIP:python-error"
+import json, sys, shutil, os
+
+seed_path, target_path = sys.argv[1], sys.argv[2]
+
+try:
+    with open(seed_path) as fh:
+        seed = json.load(fh)
+except Exception as e:
+    print("SKIP:seed-unreadable")
+    sys.exit(0)
+
+seed_personas = seed.get("personas", {})
+
+# Collect box-local personas: slugs present in the CURRENT target but absent
+# from the seed. Everything else defers to the seed (seed wins seed slugs).
+local_only = {}
+if os.path.exists(target_path):
+    try:
+        with open(target_path) as fh:
+            cur = json.load(fh)
+        for slug, entry in (cur.get("personas", {}) or {}).items():
+            if slug not in seed_personas:
+                e = dict(entry) if isinstance(entry, dict) else {"value": entry}
+                e.setdefault("origin", "local")
+                local_only[slug] = e
+    except Exception:
+        # Unreadable/legacy-shape target (e.g. the old {"categories": "..."} stub):
+        # nothing to preserve, fall through to the canonical seed copy.
+        local_only = {}
+
+if not local_only:
+    # Byte-identical copy — preserves the canonical persona_set_md5 exactly.
+    os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+    shutil.copyfile(seed_path, target_path)
+    print("COPIED")
+    sys.exit(0)
+
+# Union: start from the full seed doc (seed metadata + seed personas win),
+# then append the preserved box-local personas.
+merged = dict(seed)
+merged_personas = dict(seed_personas)
+merged_personas.update(local_only)   # local-only slugs only; seed slugs already win
+merged["personas"] = merged_personas
+os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+tmp = target_path + ".mergetmp"
+with open(tmp, "w") as fh:
+    json.dump(merged, fh, indent=2)
+os.replace(tmp, target_path)
+print("MERGED:%d" % len(local_only))
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
 # _pidx_skip_warn <reason>
 #
 # P11-1 (FINAL-REVIEW-2026-07-01 Point 11 fix 1). Every "skip because the
@@ -49,6 +130,113 @@ _pidx_skip_warn() {
 }
 
 # ---------------------------------------------------------------------------
+# F2.1 client-local persona PRESERVATION across an index re-download.
+#
+# When provision_persona_index MUST re-download the canonical asset (genuine
+# subset / missing column), a client's own Skill-22 personas (embedded locally
+# with the client's OWN key) would be destroyed by the whole-DB replace. These
+# helpers export those rows from the old DB first and re-insert them into the
+# freshly-downloaded canonical DB, so the client's personas survive.
+#
+# "Local" personas are the ones reconcile_persona_assets stamped origin:local in
+# persona-categories.json (i.e. present on the box but not in the shipped seed).
+# ---------------------------------------------------------------------------
+
+# _pidx_local_slugs <categories_json> — echo newline-separated slugs tagged
+# origin:local. Empty output when the file is absent/unreadable or has none.
+_pidx_local_slugs() {
+    local _cats="$1"
+    [ -f "$_cats" ] || return 0
+    python3 -c '
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for slug,entry in (d.get("personas",{}) or {}).items():
+    if isinstance(entry,dict) and entry.get("origin")=="local":
+        print(slug)
+' "$_cats" 2>/dev/null || true
+}
+
+# _pidx_export_local_rows <old_db> <categories_json> <export_json>
+# Export every embeddings row whose persona slug (dir above file_path) is
+# origin:local into <export_json> (a JSON {columns:[...], rows:[[...]]}). Echoes
+# the exported row count on stdout; empty/0 when nothing to preserve. Non-zero
+# return only on a hard failure the caller should treat as "export impossible".
+_pidx_export_local_rows() {
+    local _olddb="$1" _cats="$2" _out="$3"
+    [ -f "$_olddb" ] || { echo 0; return 0; }
+    [ -f "$_cats" ]  || { echo 0; return 0; }
+    python3 - "$_olddb" "$_cats" "$_out" <<'PYEOF'
+import json,sys,os,sqlite3
+olddb,cats,out=sys.argv[1],sys.argv[2],sys.argv[3]
+try:
+    d=json.load(open(cats))
+except Exception:
+    print(0); sys.exit(0)
+local={s for s,e in (d.get("personas",{}) or {}).items()
+       if isinstance(e,dict) and e.get("origin")=="local"}
+if not local:
+    print(0); sys.exit(0)
+try:
+    c=sqlite3.connect(olddb)
+    cols=[r[1] for r in c.execute("PRAGMA table_info(embeddings)").fetchall()]
+    if "file_path" not in cols:
+        c.close(); print(0); sys.exit(0)
+    rows=[]
+    for row in c.execute("SELECT %s FROM embeddings" % ",".join(f'"{x}"' for x in cols)):
+        fp=row[cols.index("file_path")]
+        if not fp: continue
+        slug=os.path.basename(os.path.dirname(fp))
+        if slug in local:
+            rows.append(list(row))
+    c.close()
+except Exception:
+    # Hard failure: signal export-impossible so the caller queues a re-embed.
+    print("ERR"); sys.exit(2)
+json.dump({"columns":cols,"rows":rows}, open(out,"w"))
+print(len(rows))
+PYEOF
+}
+
+# _pidx_reinsert_local_rows <new_db> <export_json> — INSERT OR IGNORE the
+# exported rows into the freshly-downloaded DB, restricted to columns that
+# exist in the new schema (schema-flexible). Echoes the inserted row count.
+_pidx_reinsert_local_rows() {
+    local _newdb="$1" _in="$2"
+    [ -f "$_newdb" ] || { echo 0; return 0; }
+    [ -f "$_in" ]    || { echo 0; return 0; }
+    python3 - "$_newdb" "$_in" <<'PYEOF'
+import json,sys,sqlite3
+newdb,inp=sys.argv[1],sys.argv[2]
+try:
+    payload=json.load(open(inp))
+except Exception:
+    print(0); sys.exit(0)
+cols=payload.get("columns",[]); rows=payload.get("rows",[])
+if not rows:
+    print(0); sys.exit(0)
+try:
+    c=sqlite3.connect(newdb)
+    newcols=[r[1] for r in c.execute("PRAGMA table_info(embeddings)").fetchall()]
+    keep=[i for i,x in enumerate(cols) if x in newcols]
+    if not keep:
+        c.close(); print(0); sys.exit(0)
+    kc=[cols[i] for i in keep]
+    sql="INSERT OR IGNORE INTO embeddings (%s) VALUES (%s)" % (
+        ",".join(f'"{x}"' for x in kc), ",".join("?" for _ in kc))
+    n=0
+    for r in rows:
+        c.execute(sql,[r[i] for i in keep]); n+=1
+    c.commit(); c.close()
+except Exception:
+    print(0); sys.exit(0)
+print(n)
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
 # provision_persona_index <manifest_path> <coaching_db_dir>
 #
 # CANONICAL IDEMPOTENCY GATE (v14.27.2).
@@ -59,25 +247,40 @@ _pidx_skip_warn() {
 #
 #   (a) index file absent
 #   (b) embeddings table is MISSING a required column (section_number / mode)
-#   (c) chunk_count != manifest chunk_count (4413) — i.e. a NON-canonical
-#       partial index (the 6260 / 7615 / 9456-row locally-re-embedded indexes
-#       that the OLD "has section_number column ⇒ provisioned" gate wrongly
-#       treated as done and SKIPPED, so those boxes never converged)
-#   (d) persona-dir count under <coaching_db_dir>/personas != manifest
-#       persona_count (54)
+#   (c) SUBSET index (F2.1): installed chunk_count < manifest chunk_count, OR
+#       fewer DISTINCT personas embedded than manifest persona_count — i.e. a
+#       NON-canonical partial index (the 6260 / 7615 / 9456-row locally-
+#       re-embedded indexes the OLD "has section_number column ⇒ provisioned"
+#       gate wrongly treated as done, so those boxes never converged).
+#       A SUPERSET index (installed >= manifest on BOTH chunks and personas)
+#       is canonical — it is the manifest asset PLUS the client's own
+#       locally-embedded personas, and MUST NOT be clobbered by a re-download.
+#   (d) persona-dir count under <coaching_db_dir>/personas < manifest
+#       persona_count (a superset of dirs — client added their own — is fine).
 #   (e) the .prebuilt-index-version sentinel != manifest release_tag
 #
-# SKIP (no download, no re-embed) ONLY when the index genuinely IS the
+# SKIP (no download, no re-embed) ONLY when the index genuinely IS AT LEAST the
 # canonical asset.  CONTENT-CANONICAL = index present AND columns ok AND
-# chunk_count == manifest AND persona-dir count == manifest.
+# chunk_count >= manifest AND embedded-persona count >= manifest AND
+# persona-dir count >= manifest (superset semantics — F2.1).
 #
 # LIVE-OPERATOR-INDEX / FURNACE GUARD: a box whose index is content-canonical
 # but whose sentinel is absent/empty/stale (e.g. the live operator index, which
 # was BUILT locally rather than downloaded and so was never stamped) is
 # self-healed — the sentinel is stamped to the manifest tag and the 90MB
-# download is SKIPPED.  Re-downloading only happens when the CONTENT is
-# non-canonical (wrong chunk_count or missing columns), so the operator's
-# canonical 4413-row index is never clobbered or re-fetched on every update.
+# download is SKIPPED.  Re-downloading only happens when the CONTENT is a
+# genuine SUBSET (fewer chunks/personas than manifest, or missing columns), so
+# neither the operator's canonical index NOR a client's canonical+local-delta
+# index is ever clobbered or re-fetched on every update.
+#
+# CLIENT-LOCAL PRESERVATION (F2.1): when a re-download IS required (genuine
+# subset / missing column), rows for box-local personas (those tagged
+# origin:local in persona-categories.json) are EXPORTED from the old DB first
+# and RE-INSERTED into the freshly-downloaded canonical DB, so the client's own
+# Skill-22 personas survive the convergence. If export/re-insert is impossible,
+# a .persona-local-reembed-queue marker is written (furnace-safe, no embedding
+# here) so the caller can surface "re-embed local personas with the client's
+# own key" to the operator.
 #
 # sha256 is a HARD gate: a corrupt asset is NEVER installed; the box
 # keyword-degrades and warns instead.
@@ -97,6 +300,28 @@ provision_persona_index() {
         return 0
     fi
 
+    # ── ASSET-FRESHNESS GATE (FDN-7 / F1.3 gate 2) ───────────────────────────
+    # A manifest carrying asset_rebuild_required:true was count-synced by a
+    # --no-asset staging bump (persona_fleet.py set-manifest-counts): the SET
+    # counts were lifted but the published gemini-index.sqlite.gz still lacks
+    # vectors for the newest persona(s). (Re)provisioning from it would download
+    # / stamp a counted-but-vector-less asset as "canonical", degrading Layer-5
+    # to keyword for those personas. REFUSE and KEEP the box's current index
+    # until a real build-and-publish.sh (or full publish-personas-to-fleet.sh)
+    # rebuilds+publishes the asset and clears the flag. Mirrors the
+    # update-skills.sh U6b pre-roll so a DIRECT caller (install.sh Step 6b) is
+    # protected identically. Fail-open on a read error (never block on a hiccup).
+    local _PIDX_ASSET_REBUILD
+    _PIDX_ASSET_REBUILD="$(python3 -c 'import json,sys
+try:
+    print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")
+except Exception:
+    print("false")' "$MANIFEST_PATH" 2>/dev/null || echo false)"
+    if [ "$_PIDX_ASSET_REBUILD" = "true" ]; then
+        _pidx_skip_warn "INDEX-MANIFEST asset_rebuild_required:true (a --no-asset staging manifest — the published asset lacks vectors for the newest persona(s)); KEEPING the current persona index and skipping provisioning until shared-utils/prebuilt-index/build-and-publish.sh rebuilds+publishes the asset (clears the flag)"
+        return 0
+    fi
+
     # Read manifest fields
     local _PIDX_ASSET_URL _PIDX_SHA _PIDX_CHUNKS _PIDX_TAG _PIDX_COLS _PIDX_PERSONAS
     _PIDX_ASSET_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_url"])' "$MANIFEST_PATH" 2>/dev/null || true)"
@@ -109,9 +334,18 @@ provision_persona_index() {
     mkdir -p "$COACHING_DB_DIR"
 
     # ── Canonical idempotency gate ───────────────────────────────────────────
-    local _COLS_OK=1 _CHUNK_OK=0 _DIR_OK=0 _SENT_OK=0
+    local _COLS_OK=1 _CHUNK_OK=0 _DIR_OK=0 _SENT_OK=0 _COVERAGE_OK=0
     local _INSTALLED_CHUNKS="n/a" _INSTALLED_TAG="" _PERSONA_DIR_COUNT=0
+    local _INDEX_PERSONAS=0
     local _GATE_REASONS=""
+
+    # (d-pre) persona-dir count — computed FIRST because it (with the embedded-
+    # persona count) tells us whether the box carries a legitimate client LOCAL
+    # persona delta, which selects superset-vs-exact gate semantics below.
+    # (checked even when the index file is absent).
+    if [ -d "$PERSONAS_DIR" ]; then
+        _PERSONA_DIR_COUNT="$(find "$PERSONAS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    fi
 
     if [ ! -f "$COACHING_DB" ]; then
         _GATE_REASONS="index-absent"
@@ -135,17 +369,29 @@ except Exception:
             fi
         done
 
-        # (c) chunk_count vs manifest (HARD canonical signal)
+        # Raw chunk count.
         _INSTALLED_CHUNKS="$(python3 -c 'import sqlite3,sys
 try:
     c=sqlite3.connect(sys.argv[1]); print(c.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]); c.close()
 except Exception:
     print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
-        if [ "$_PIDX_CHUNKS" -gt 0 ] 2>/dev/null && [ "$_INSTALLED_CHUNKS" = "$_PIDX_CHUNKS" ]; then
-            _CHUNK_OK=1
-        else
-            _GATE_REASONS="$_GATE_REASONS chunk-count:${_INSTALLED_CHUNKS}!=${_PIDX_CHUNKS}"
-        fi
+
+        # Raw DISTINCT embedded-persona count (persona slug = the dir one level
+        # above each chunk's file_path, per embedding_engine.get_persona_name).
+        # Scoped to PERSONA rows only ('%/personas/%', the same filter
+        # embedding_engine uses to identify persona chunks) so non-persona rows
+        # shipped in the asset (e.g. hormozi_leads_rows) can NEVER inflate the
+        # count and spuriously flip the local-delta decision.
+        _INDEX_PERSONAS="$(python3 -c 'import sqlite3,sys,os
+try:
+    c=sqlite3.connect(sys.argv[1])
+    seen=set()
+    for (fp,) in c.execute("SELECT DISTINCT file_path FROM embeddings WHERE file_path LIKE ?", ("%/personas/%",)):
+        if not fp: continue
+        seen.add(os.path.basename(os.path.dirname(fp)))
+    c.close(); print(len(seen))
+except Exception:
+    print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
 
         # (e) version sentinel
         [ -f "$VERSION_SENTINEL" ] && _INSTALLED_TAG="$(cat "$VERSION_SENTINEL" 2>/dev/null | tr -d '[:space:]')"
@@ -156,32 +402,89 @@ except Exception:
         fi
     fi
 
-    # (d) persona-dir count (checked even when the index file is absent)
-    if [ -d "$PERSONAS_DIR" ]; then
-        _PERSONA_DIR_COUNT="$(find "$PERSONAS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    # ── SUPERSET-vs-EXACT decision (F2.1) ────────────────────────────────────
+    # A client LOCAL DELTA = the box carries MORE personas than the manifest
+    # ships (a client ran Skill-22 on their OWN book): more persona dirs OR more
+    # DISTINCT personas embedded than manifest.persona_count.
+    #   • WITH a local delta → SUPERSET semantics (>=): the box is the canonical
+    #     asset PLUS the client's own personas and must NOT be clobbered.
+    #   • WITHOUT a local delta (same persona set) → historical EXACT semantics:
+    #     a stale over-/under-chunked same-set index still converges to canonical
+    #     (preserves the 6260/7615/9456-row convergence the gate was built for).
+    local _HAS_LOCAL_DELTA=0
+    if [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null; then
+        if [ "$_PERSONA_DIR_COUNT" -gt "$_PIDX_PERSONAS" ] 2>/dev/null || [ "$_INDEX_PERSONAS" -gt "$_PIDX_PERSONAS" ] 2>/dev/null; then
+            _HAS_LOCAL_DELTA=1
+        fi
     fi
-    if [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null && [ "$_PERSONA_DIR_COUNT" = "$_PIDX_PERSONAS" ]; then
-        _DIR_OK=1
+
+    if [ -f "$COACHING_DB" ]; then
+        # (c) chunk_count
+        if [ "$_PIDX_CHUNKS" -gt 0 ] 2>/dev/null; then
+            if [ "$_HAS_LOCAL_DELTA" -eq 1 ]; then
+                if [ "$_INSTALLED_CHUNKS" -ge "$_PIDX_CHUNKS" ] 2>/dev/null; then
+                    _CHUNK_OK=1
+                else
+                    _GATE_REASONS="$_GATE_REASONS chunk-count:${_INSTALLED_CHUNKS}<${_PIDX_CHUNKS}"
+                fi
+            else
+                if [ "$_INSTALLED_CHUNKS" = "$_PIDX_CHUNKS" ]; then
+                    _CHUNK_OK=1
+                else
+                    _GATE_REASONS="$_GATE_REASONS chunk-count:${_INSTALLED_CHUNKS}!=${_PIDX_CHUNKS}"
+                fi
+            fi
+        else
+            _GATE_REASONS="$_GATE_REASONS chunk-count:${_INSTALLED_CHUNKS}!=${_PIDX_CHUNKS}"
+        fi
+
+        # (c2) embedded-persona coverage — "every manifest persona has >=1 row"
+        # is a superset check in BOTH modes (the manifest set must be fully
+        # present; a local delta only ADDS to it).
+        if [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null && [ "$_INDEX_PERSONAS" -ge "$_PIDX_PERSONAS" ] 2>/dev/null; then
+            _COVERAGE_OK=1
+        else
+            _GATE_REASONS="$_GATE_REASONS embedded-personas:${_INDEX_PERSONAS}<${_PIDX_PERSONAS}"
+        fi
+    fi
+
+    # (d) persona-dir count — superset when a local delta exists, exact otherwise.
+    if [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null; then
+        if [ "$_HAS_LOCAL_DELTA" -eq 1 ]; then
+            if [ "$_PERSONA_DIR_COUNT" -ge "$_PIDX_PERSONAS" ] 2>/dev/null; then
+                _DIR_OK=1
+            else
+                _GATE_REASONS="$_GATE_REASONS persona-dir-count:${_PERSONA_DIR_COUNT}<${_PIDX_PERSONAS}"
+            fi
+        else
+            if [ "$_PERSONA_DIR_COUNT" = "$_PIDX_PERSONAS" ]; then
+                _DIR_OK=1
+            else
+                _GATE_REASONS="$_GATE_REASONS persona-dir-count:${_PERSONA_DIR_COUNT}!=${_PIDX_PERSONAS}"
+            fi
+        fi
     else
         _GATE_REASONS="$_GATE_REASONS persona-dir-count:${_PERSONA_DIR_COUNT}!=${_PIDX_PERSONAS}"
     fi
 
-    # CONTENT-CANONICAL = present + columns + chunk_count + persona dirs all match.
+    # CONTENT-CANONICAL = present + columns + chunks + persona coverage + dirs.
     local _CONTENT_CANON=0
-    if [ -f "$COACHING_DB" ] && [ "$_COLS_OK" -eq 1 ] && [ "$_CHUNK_OK" -eq 1 ] && [ "$_DIR_OK" -eq 1 ]; then
+    if [ -f "$COACHING_DB" ] && [ "$_COLS_OK" -eq 1 ] && [ "$_CHUNK_OK" -eq 1 ] && [ "$_COVERAGE_OK" -eq 1 ] && [ "$_DIR_OK" -eq 1 ]; then
         _CONTENT_CANON=1
     fi
 
     local _PIDX_HAVE=0
     if [ "$_CONTENT_CANON" -eq 1 ]; then
         _PIDX_HAVE=1
+        local _DELTA_NOTE=""
+        [ "$_HAS_LOCAL_DELTA" -eq 1 ] && _DELTA_NOTE=" [client local persona delta preserved: ${_INDEX_PERSONAS} embedded / ${_PERSONA_DIR_COUNT} dirs >= manifest ${_PIDX_PERSONAS}]"
         if [ "$_SENT_OK" -ne 1 ]; then
             # Self-heal: content proves canonicity; stamp the sentinel rather than
             # re-download (live-operator-index + furnace guard).
             printf '%s\n' "$_PIDX_TAG" > "$VERSION_SENTINEL" 2>/dev/null || true
-            echo "  ✓ Persona index content-canonical ($_INSTALLED_CHUNKS chunks == manifest $_PIDX_CHUNKS, section_number+mode present, $_PERSONA_DIR_COUNT/$_PIDX_PERSONAS persona dirs) but sentinel was '${_INSTALLED_TAG:-<none>}' — stamped sentinel=$_PIDX_TAG (self-heal) and skipping download"
+            echo "  ✓ Persona index content-canonical ($_INSTALLED_CHUNKS chunks >= manifest $_PIDX_CHUNKS, section_number+mode present, $_PERSONA_DIR_COUNT/$_PIDX_PERSONAS persona dirs)$_DELTA_NOTE but sentinel was '${_INSTALLED_TAG:-<none>}' — stamped sentinel=$_PIDX_TAG (self-heal) and skipping download"
         else
-            echo "  ✓ Persona index already canonical (release=$_PIDX_TAG, $_INSTALLED_CHUNKS chunks == manifest $_PIDX_CHUNKS, section_number+mode present, $_PERSONA_DIR_COUNT/$_PIDX_PERSONAS persona dirs) — skipping download"
+            echo "  ✓ Persona index already canonical (release=$_PIDX_TAG, $_INSTALLED_CHUNKS chunks >= manifest $_PIDX_CHUNKS, section_number+mode present, $_PERSONA_DIR_COUNT/$_PIDX_PERSONAS persona dirs)$_DELTA_NOTE — skipping download"
         fi
         return 0
     fi
@@ -216,10 +519,37 @@ except Exception:
             fi
             if [ "$_PIDX_ACTUAL" = "$_PIDX_SHA" ]; then
                 if gunzip -c "$_PIDX_GZ" > "$COACHING_DB.tmp" 2>/dev/null; then
+                    # ── F2.1: preserve client-local persona rows across the replace ──
+                    # Export origin:local persona rows from the OLD db BEFORE the mv,
+                    # then re-insert them into the freshly-downloaded canonical db so
+                    # the client's own Skill-22 personas survive the convergence.
+                    local _CANON_CAT_PROV="$COACHING_DB_DIR/persona-categories.json"
+                    local _LOCAL_EXPORT="/tmp/persona-local-rows.$$.json"
+                    local _LOCAL_N="0" _REEMBED_QUEUE="$COACHING_DB_DIR/.persona-local-reembed-queue"
+                    if [ -f "$COACHING_DB" ]; then
+                        _LOCAL_N="$(_pidx_export_local_rows "$COACHING_DB" "$_CANON_CAT_PROV" "$_LOCAL_EXPORT")"
+                    fi
                     mv -f "$COACHING_DB.tmp" "$COACHING_DB"
                     # Stamp version sentinel
                     printf '%s\n' "$_PIDX_TAG" > "$VERSION_SENTINEL"
                     echo "  ✓ Persona index installed at $COACHING_DB (sha256 verified, $_PIDX_PERSONA_COUNT personas, release=$_PIDX_TAG)"
+                    if [ "$_LOCAL_N" = "ERR" ]; then
+                        # Export impossible — queue a delta re-embed (furnace-safe: NO
+                        # embedding here) so the operator re-embeds with the CLIENT's key.
+                        _pidx_local_slugs "$_CANON_CAT_PROV" > "$_REEMBED_QUEUE" 2>/dev/null || true
+                        _pidx_skip_warn "client-local persona rows could not be exported before the index re-download — queued for delta re-embed at $_REEMBED_QUEUE (re-embed with the client's OWN key; blueprints remain on disk)"
+                    elif [ "${_LOCAL_N:-0}" != "0" ] 2>/dev/null; then
+                        local _REINS
+                        _REINS="$(_pidx_reinsert_local_rows "$COACHING_DB" "$_LOCAL_EXPORT")"
+                        if [ "${_REINS:-0}" = "$_LOCAL_N" ] 2>/dev/null; then
+                            rm -f "$_REEMBED_QUEUE" 2>/dev/null || true
+                            echo "  ✓ preserved $_REINS client-local persona row(s) across the re-download (origin:local personas stay embedded)"
+                        else
+                            _pidx_local_slugs "$_CANON_CAT_PROV" > "$_REEMBED_QUEUE" 2>/dev/null || true
+                            _pidx_skip_warn "re-inserted $_REINS/$_LOCAL_N client-local persona row(s) after re-download — queued the rest for delta re-embed at $_REEMBED_QUEUE (client's OWN key)"
+                        fi
+                    fi
+                    rm -f "$_LOCAL_EXPORT" 2>/dev/null || true
                 else
                     rm -f "$COACHING_DB.tmp"
                     echo "  warn: Persona index decompress failed — gemini-search keyword-degrades until re-run"
@@ -274,26 +604,48 @@ reconcile_persona_assets() {
     #    The resolver prefers <ws>/data/coaching-personas/ over <ws>/coaching-personas/,
     #    so the data/ write is authoritative; the legacy write only overwrites an
     #    already-present stale file so no fallback can shadow the canonical one.
+    #
+    #    F2.1: UNION MERGE, not blind `cp -f`. Seed wins seed slugs; box-local
+    #    personas (a client who ran Skill-22 on their OWN book) are PRESERVED and
+    #    stamped origin:local so the client's personas stay REGISTERED in the
+    #    selector's universe across every update. When the box has no local
+    #    persona the merge is a byte-identical seed copy (canonical md5 preserved).
     local _CANON_CAT="$_COACHING_DB_DIR/persona-categories.json"
     local _LEGACY_CAT="$_WS/coaching-personas/persona-categories.json"
 
     local _canon_md5=""
     [ -f "$_CANON_CAT" ] && _canon_md5="$(_pidx_md5 "$_CANON_CAT")"
-    if [ "$_canon_md5" != "$_SRC_MD5" ]; then
-        mkdir -p "$(dirname "$_CANON_CAT")"
-        cp -f "$_SRC_CATS" "$_CANON_CAT"
-        echo "  ✓ persona-categories.json reconciled → $_CANON_CAT (md5 $_SRC_MD5)"
-    else
-        echo "  ✓ persona-categories.json already canonical at $_CANON_CAT (md5 $_SRC_MD5)"
-    fi
+    local _canon_status
+    _canon_status="$(_pidx_union_merge_categories "$_SRC_CATS" "$_CANON_CAT")"
+    local _canon_new_md5
+    _canon_new_md5="$(_pidx_md5 "$_CANON_CAT")"
+    case "$_canon_status" in
+        MERGED:*)
+            echo "  ✓ persona-categories.json UNION-merged → $_CANON_CAT (seed wins seed slugs; ${_canon_status#MERGED:} box-local persona(s) PRESERVED origin:local; md5 $_canon_new_md5)"
+            ;;
+        COPIED)
+            if [ "$_canon_md5" = "$_SRC_MD5" ]; then
+                echo "  ✓ persona-categories.json already canonical at $_CANON_CAT (md5 $_SRC_MD5)"
+            else
+                echo "  ✓ persona-categories.json reconciled → $_CANON_CAT (no box-local personas; canonical md5 $_SRC_MD5)"
+            fi
+            ;;
+        *)
+            _pidx_skip_warn "persona-categories.json union-merge could not read the seed ($_canon_status) — canonical categories NOT written (additive)"
+            ;;
+    esac
 
     if [ -f "$_LEGACY_CAT" ]; then
-        local _legacy_md5
-        _legacy_md5="$(_pidx_md5 "$_LEGACY_CAT")"
-        if [ "$_legacy_md5" != "$_SRC_MD5" ]; then
-            cp -f "$_SRC_CATS" "$_LEGACY_CAT"
-            echo "  ✓ persona-categories.json (legacy) reconciled → $_LEGACY_CAT (md5 $_SRC_MD5)"
-        fi
+        local _legacy_status
+        _legacy_status="$(_pidx_union_merge_categories "$_SRC_CATS" "$_LEGACY_CAT")"
+        case "$_legacy_status" in
+            MERGED:*)
+                echo "  ✓ persona-categories.json (legacy) UNION-merged → $_LEGACY_CAT (${_legacy_status#MERGED:} box-local persona(s) preserved)"
+                ;;
+            COPIED)
+                echo "  ✓ persona-categories.json (legacy) reconciled → $_LEGACY_CAT"
+                ;;
+        esac
     fi
 
     # 2) 54 persona-blueprint.md → <coaching_db_dir>/personas/<slug>/.

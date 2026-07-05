@@ -90,6 +90,26 @@ ALWAYS `true`; the matcher NEVER blocks a build. Every output is overridable, mi
 customizable, ignorable. The decision + intent mode + matched template + score are LOGGED to
 `<evidence_root>/routing/automation-decisions.jsonl`.
 
+**CANONICAL evidence_root (set here, reused at Step 9.3c — FIX-XC-03g).** Define ONE
+evidence_root for this build now and pass the SAME path to the QC gate later:
+
+```
+export CAF_EVIDENCE_ROOT="$HOME/.openclaw/tools/convert-and-flow-cli/data/evidence/<build-slug>"
+# (linux boxes: /data/.openclaw/tools/convert-and-flow-cli/data/evidence/<build-slug>)
+mkdir -p "$CAF_EVIDENCE_ROOT"
+python3 - <<'PY'  # step0_match writes routing/ + persona-selection-log.md under it
+from automation_templates._matcher.automation_matcher import step0_match  # (import per your PYTHONPATH)
+# step0_match(task, evidence_root=CAF_EVIDENCE_ROOT)
+PY
+```
+
+`automation_matcher.step0_match` now also PRODUCES `<evidence_root>/persona-selection-log.md`
+(FIX-S36-25): it names the matched template's `copy_persona` (or a `selected_persona: net-new`
+marker for `CREATE_NEW`). This is what closes FAB-QC **D4** — which is fail-closed on that log
+and which nothing used to write, so every standalone templated build hard-missed D4. At Step
+9.3c you MUST pass this SAME `<evidence_root>` via `--evidence`; if the root is missing the
+FAB-QC overlay fails CLOSED (`REQUIRES_OPERATOR`), never a silent skip.
+
 **COMPLETE-FUNNEL handoff (Skill 6 to Skill 44):** when this build was triggered by instantiating
 a **Skill-6 funnel template** (the task carries `funnel_template_id`, or Skill 6 handed over
 `linked_automations`), Step 0.4 also expands the funnel's RECOMMENDED follow-ups from
@@ -114,6 +134,13 @@ on an already-existing workflow.
 the nodes, trigger, and actions deliberately, for THIS client's stated goal. The agent does NOT
 touch `caf workflows build` (or the Tier 4 backstop, or skill 38 structure generation) until
 the plan is presented and the gating questions are answered.**
+
+**Kanban touchpoint — card `in_progress` (FAIL-SOFT, FIX-S36-28).** When this build arrives on
+the deploy rail that Skill 50 hands to, post an `in_progress` card for it via the shared
+mc-route / Command Center helper at the moment PLAN MODE begins, so the work is visible on the
+board. This carding is **fail-soft**: if the board/helper is unavailable it is logged and
+skipped — it NEVER blocks the build. The matching `done` transition is posted only after Step
+9.6 (all WF-1..21 PASS AND rubric ≥ 8.5 AND, when applicable, FAB-QC ≥ 8.5) — never before.
 
 ### Step A — THINK (do not write to GHL)
 
@@ -211,8 +238,8 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "Update the welcome email in the onboarding workflow" | `caf --experimental workflows patch-email --workflow-id <id> --step-id <id> --subject "..." --body-file <path>` (`--workflow-id` and `--step-id` are both required; body is a file, there is no inline `--body`) |
 | "List my active invoices" | `caf payments invoices --status paid` (`payments invoices` IS the list command — no extra `list`; `--status` = draft\|sent\|paid\|void) |
 | "Schedule this social post for tomorrow at 9am" | `caf social create-post --account-id <id> --text "..." --schedule <ISO8601>` |
-| "What workflows do I have?" | `caf workflows list` |
-| "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` (Tier 0 first), then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
+| "What workflows do I have?" | `caf workflows list` (**Tier 0** — LOCATION PIT / public API; no Firebase token needed) |
+| "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` / `caf workflows get <id>` (**NOT Tier 0** — these route through the **internal Firebase client** and REQUIRE the Firebase refresh token; only `workflows list` is PIT). If the Firebase token is absent → Tier-4 agent-browser read-back (export cannot run). Then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
 | "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
 | "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
 
@@ -361,7 +388,16 @@ a conversational node:
 2. Skill 44 AUTO-INVOKES skill 38 for the brain (communications playbook + Build-with-AI prompt)
 3. All three TRINITY legs ship together, or the build is NOT registered
 
-For a purely mechanical workflow (no conversational node): skill 41 builds standalone (12-point checklist).
+**WF-19 is a MECHANICAL HARD GATE for conversational builds (FIX-S36-27).** Run the Step-9 QC
+with `--conversational`: `./qc-built-workflow.sh <workflow-id> --conversational …`. That flag
+EXECUTES Skill 38's `scripts/qc-trinity-registry.sh` (the SAME script the SOPs name as the hard
+pre-registration gate) and FAILs WF-19 mechanically on ANY non-zero exit (TRINITY incomplete, or
+no `conversation-workflows/` folder). It is no longer a "requires human review" note that a
+conversational build can register past with zero TRINITY verification. If the registry script
+cannot be found, WF-19 fails CLOSED (`REQUIRES_OPERATOR`).
+
+For a purely mechanical workflow (no conversational node): skill 41 builds standalone (12-point
+checklist); omit `--conversational` and WF-19 stays N/A (human-review).
 
 **Token-aware build path:**
 - Firebase token present + healthy → `caf workflows build` via internal API
@@ -380,7 +416,13 @@ For a purely mechanical workflow (no conversational node): skill 41 builds stand
    a. Present + healthy → caf workflows build
    b. Absent / expired → Tier 4 backstop (agent-browser) + owner nudge
 2.5 Is this a workflow REVIEW / inspect / audit / "check this workflow"?
-   → Tier 0 FIRST: caf workflows export <id>
+   → `caf workflows list` is Tier 0 (PIT). BUT `caf workflows export <id>` / `get <id>`
+     route through the INTERNAL Firebase client — they REQUIRE the Firebase refresh token
+     and are NOT Tier-0 PIT reads.
+   → Firebase token present + healthy → caf workflows export <id> (then QC on the export).
+   → Firebase token absent / expired → Tier 4 agent-browser read-back (export cannot run);
+     the mechanical Step-9 QC that relies on export CANNOT run, so the build/review is NOT
+     DONE until an agent-browser read-back confirms it (fail-closed — see Step 9.3 Tier-4 branch).
    → Escalate per skill 36 ONLY for pieces export cannot show (e.g. trigger-bucket state).
    → NEVER open-ended-pick the 834-tool Community MCP for a workflow review.
 3. Is this any other op in the CLI surface? → caf <command>
@@ -458,9 +500,19 @@ access.
 ### Step 9.3 — QC runs item-by-item
 
 The QC sub-agent independently inspects the BUILT workflow:
-- Primary: `caf workflows export <id>` (read-only, Tier 0).
+- Primary: `caf workflows export <id>` — read-only, but it routes through the **internal
+  Firebase client** (NOT the Tier-0 PIT; only `caf workflows list` is PIT). It needs the
+  Firebase refresh token.
 - Escalation per skill 36 ONLY for what export cannot show (e.g. trigger-bucket state — the
   exact gap discovered in a client install and is the v12.3.6 deferred follow-up).
+
+**Tier-4 QC branch (no Firebase token — MANDATORY, fail-closed):** On a Tier-4 build (the
+workflow was built via agent-browser because the Firebase token was absent/expired), `caf
+workflows export` **cannot run**, so the mechanical WF-1..21 QC **cannot run**. This is NOT a
+pass. `qc-built-workflow.sh` exits 2 with `REQUIRES_OPERATOR` in that case. The build is **NOT
+DONE** until either (a) the Firebase token is restored and the export-based QC runs clean, or
+(b) an **agent-browser read-back** independently confirms every checklist item against the live
+GHL UI. "No token" never means "skip QC" — it means "not done".
 
 The sub-agent runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which
 machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits the
@@ -493,8 +545,12 @@ template**, the `copy_persona`, the recorded **flex decision**, and the funnel�
 FAB-QC (`shared-utils/fab_qc.py`, the SAME scorer Skill 6 uses) adds the six library-aware
 dimensions defined in `universal-sops/funnel-automation-build-quality-rubric.md`:
 
-1. Run: `./qc-built-workflow.sh <workflow-id> --fab --evidence <evidence_root>` (the overlay runs
-   automatically after WF-1..21 inside that script). Before scoring, the script runs the **FAB-artifact
+1. Run: `./qc-built-workflow.sh <workflow-id> --fab --evidence <evidence_root>` where
+   `<evidence_root>` is the SAME canonical root defined in Step 0.4 (`$CAF_EVIDENCE_ROOT`). The
+   overlay runs automatically after WF-1..21 inside that script and is **FAIL-CLOSED** (FIX-XC-03g):
+   if the score is UNAVAILABLE for any reason (scorer absent, evidence_root missing, or the scorer
+   emits nothing) the script sets the verdict to `REQUIRES_OPERATOR` and exits non-zero — it is NEVER
+   auto-passed as "(FAB-QC skipped)". Before scoring, the script runs the **FAB-artifact
    PRODUCER** (`shared-utils/fab_artifact.py`): it exports the workflow with `caf workflows export` and
    converts that REAL export into `build/fab-artifact.json` — each built step's channel + the **actual
    email/SMS subject+body copy that was pushed** — so the scorer judges the real build, not a hand-authored
@@ -537,6 +593,12 @@ Only after all WF-1..21 PASS AND the final weighted rubric ≥ 8.5: tell the cli
 here is the verified workflow" and HAND THE CLIENT THE FILLED CHECKLIST (every item with its
 PASS + observed value) AND the weighted rubric score (8 dimensions + the final 1–10), so the
 client can independently verify every setting AND see the quality grade.
+
+**Kanban touchpoint — card `done` (FAIL-SOFT, FIX-S36-28).** ONLY now — after every WF-1..21
+PASS, rubric ≥ 8.5, and (when the FAB-QC overlay ran) FAB-QC ≥ 8.5 — move the `in_progress`
+card posted at Step 0.5 to `done` via the shared mc-route / Command Center helper. Never card
+`done` before an all-PASS verdict. Fail-soft: an unavailable board is logged and skipped, never
+a blocker to declaring the (already-verified) build done to the client.
 
 ### Step 9.7 — Logging (build-events ledger)
 

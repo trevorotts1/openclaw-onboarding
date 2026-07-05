@@ -124,7 +124,10 @@ fi
 # 6. File count summary
 echo ""
 echo "[QC] Library file count:"
-system_count=$(find "$LIBRARY_DIR/_system" -name "*.md" | wc -l)
+# Count only the top-level _system protocol files (7). Nested sidecars like
+# _system/templates/NAMED-STYLES.md are client-data SEED TEMPLATES, not protocol
+# files, so -maxdepth 1 keeps the count at the documented 7.
+system_count=$(find "$LIBRARY_DIR/_system" -maxdepth 1 -name "*.md" | wc -l)
 rules_count=$(find "$LIBRARY_DIR" -path "*/_RULES.md" | wc -l)
 toplevel_count=$(find "$LIBRARY_DIR" -maxdepth 1 -name "*.md" | wc -l)
 echo "  System files (_system/*.md): $system_count (expected: 7)"
@@ -138,6 +141,39 @@ if [[ $system_count -ne 7 ]] || [[ $rules_count -ne 9 ]] || [[ $toplevel_count -
   echo "  ✗ File count mismatch"
   exit 1
 fi
+
+# 6b. Clobber-safety: a populated (box-owned) INDEX.md MUST survive a re-install.
+# The two-zone contract (SKILL.md) claims the installer cannot clobber a populated
+# INDEX.md. Prove it: seed a sentinel INDEX.md in a temp home, re-run the documented
+# client-data seed (INSTALL.md Step 4 — `cp -n` semantics), and assert the sentinel
+# survived byte-for-byte.
+echo ""
+echo "[QC] Clobber-safety test (populated INDEX.md survives re-install)..."
+CLOBBER_TMP="$(mktemp -d)"
+trap 'rm -rf "$CLOBBER_TMP"' EXIT
+cat > "$CLOBBER_TMP/INDEX.md" <<'SENTINEL'
+# DESIGN LIBRARY — MASTER INDEX
+<!-- QC-CLOBBER-SENTINEL: box-owned, populated at runtime; MUST survive re-install -->
+
+## SINGLE IMAGE DESIGNS
+| ID | Name | Sig # | Summary | Status | Version | Date | File |
+|---|---|---|---|---|---|---|---|
+| SI-001 | sentinel-card | 1 | do-not-clobber | production | 1.0.0 | 2026-07-05 | single-image-designs/SI-001_sentinel.md |
+SENTINEL
+sentinel_before="$(shasum "$CLOBBER_TMP/INDEX.md" | awk '{print $1}')"
+# Re-run the documented client-data seed exactly as INSTALL.md Step 4 does it.
+# NOTE: BSD `cp -n` exits non-zero when it (correctly) skips an existing target;
+# survival is asserted below via the hash + sentinel marker, not via cp's exit code.
+cp -n "$LIBRARY_DIR/INDEX.md" "$CLOBBER_TMP/INDEX.md" 2>/dev/null || true
+sentinel_after="$(shasum "$CLOBBER_TMP/INDEX.md" | awk '{print $1}')"
+if [[ "$sentinel_before" == "$sentinel_after" ]] && grep -q "QC-CLOBBER-SENTINEL" "$CLOBBER_TMP/INDEX.md"; then
+  echo "  ✓ Populated INDEX.md survived re-seed (cp -n did not clobber the box copy)"
+else
+  echo "  ✗ CLOBBER: the installer overwrote a populated INDEX.md — two-zone contract broken"
+  exit 1
+fi
+rm -rf "$CLOBBER_TMP"
+trap - EXIT
 
 # 7. Verify no spaces in category directory names (kebab-case)
 echo ""
@@ -161,7 +197,8 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "[QC] ✓ All checks passed. Design Intelligence Library (v1.0.0)"
+SKILL_VERSION="$(cat "$SCRIPT_DIR/skill-version.txt" 2>/dev/null | tr -d '[:space:]')"
+echo "[QC] ✓ All checks passed. Design Intelligence Library (v${SKILL_VERSION:-unknown})"
 echo "[QC] 19 library files present + valid structure (7 _system + 9 _RULES + 3 top-level)"
 echo "[QC] Ready for installation on boxes"
 echo "═══════════════════════════════════════════════════════════════"

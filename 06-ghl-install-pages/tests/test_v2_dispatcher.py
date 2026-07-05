@@ -385,7 +385,11 @@ class TestFabQcGate:
             json.dump({"matched_template_id": "squeeze-page", "template_path": "../tmpl.json",
                        "intent_mode": "HANDS_OFF_DO_IT_ALL", "flex_decision": "USE_TEMPLATE",
                        "funnel_template_id": "squeeze-page"}, f)
-        hero = "[HEADLINE]" if placeholder else "Get the free funnel swipe file and grow your list today"
+        hero = ("[HEADLINE]" if placeholder else
+                "Get the free funnel swipe file today and finally grow the email list you have "
+                "put off building for months. Inside you get the exact opt-in page, the seven "
+                "email follow-up sequence, and the pre-launch checklist we use to ship a "
+                "converting funnel in a single focused afternoon with nothing left to guesswork.")
         with open(os.path.join(root, "build", "fab-artifact.json"), "w") as f:
             json.dump({"pages": [{"copy": {"hero": hero}}]}, f)
         with open(os.path.join(root, "persona-selection-log.md"), "w") as f:
@@ -465,7 +469,10 @@ class TestFabArtifactProducer:
 
     def test_producer_emits_artifact_and_gate_fires_on_real_path(self, tmp_path):
         # NOTE: no build/fab-artifact.json is hand-written anywhere in this test.
-        real_copy = {"hero": "Get the free funnel swipe file today and grow your email list fast",
+        real_copy = {"hero": ("Get the free funnel swipe file today and finally grow the email list "
+                              "you have put off building for months. Inside you get the exact opt-in "
+                              "page, the seven email follow-up sequence, and the pre-launch checklist "
+                              "we use to ship a converting funnel in a single focused afternoon."),
                      "cta": "Enter your best email now to receive instant access to the download"}
         res = disp.dispatch_one(
             dict(FAKE_TASK), str(tmp_path),

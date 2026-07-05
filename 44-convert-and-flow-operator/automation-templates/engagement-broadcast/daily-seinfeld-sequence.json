@@ -12,7 +12,11 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)", "The Funnel Hacker's Cookbook"],
+    "books": [
+      "DotCom Secrets (Russell Brunson)",
+      "Copywriting Secrets (Jim Edwards)",
+      "The Funnel Hacker's Cookbook"
+    ],
     "sections": [
       "DotCom Secrets Secret #8 — Daily Seinfeld Sequence",
       "DotCom Secrets Secret #6 — The Attractive Character (identities, flaws, polarity, 6 storylines)",
@@ -20,12 +24,21 @@
       "Copywriting Secrets — Stealth/Columbo close, subject-line families, Ten Reasons People Buy"
     ]
   },
+  "source_books": [
+    "DotCom Secrets (Russell Brunson)",
+    "Copywriting Secrets (Jim Edwards)",
+    "The Funnel Hacker's Cookbook"
+  ],
   "trigger": {
     "primary": "Subscriber has COMPLETED the 5-email Soap Opera Sequence welcome autoresponder (book: 'After someone has completed your SOAP series, they should be moved to a broadcast list'). Implemented as the Soap Opera workflow firing its final step / applying a 'soap-opera-complete' tag, which GRADUATES the contact into the ongoing broadcast segment.",
     "secondary": "Any net-new buyer or already-engaged lead manually added to the 'seinfeld-broadcast' segment.",
     "trigger_type_ghl": "Tag Added: soap-opera-complete  (or Workflow-finished trigger from the Soap Opera workflow)"
   },
-  "channels": ["Email (primary, daily)", "Blog (repurpose the same email body verbatim — book: 'copy and paste their daily Seinfeld email')", "SMS (optional teaser linking to the email/blog)"],
+  "channels": [
+    "Email (primary, daily)",
+    "Blog (repurpose the same email body verbatim — book: 'copy and paste their daily Seinfeld email')",
+    "SMS (optional teaser linking to the email/blog)"
+  ],
   "cadence": "ONE broadcast per day, perpetual. Each send is a one-off tied to what is happening in the Attractive Character's life THAT day — NOT a pre-lined sequence everyone marches through. Ramp confidence monthly -> biweekly -> weekly -> daily (book: 'if I don't email my list every day, I lose money every day').",
   "ratio": "90% entertainment / 10% content (book: after the Soap Opera bond, readers respond to 'nothing', not content-packed emails).",
   "sequence": [
@@ -54,7 +67,22 @@
   "copyPersona": {
     "primary": "Russell Brunson 'Attractive Character' / Seinfeld voice (DotCom Secrets Secrets #6-8). Pick one identity: Leader, Adventurer/Crusader, Reporter/Evangelist, or Reluctant Hero (Brunson's own = Reluctant Hero). 90/10 entertainment-to-content.",
     "secondary": "Jim Edwards (Copywriting Secrets) — supplies the Stealth/Columbo soft close, curiosity subject-line families (True Story / Warning / unexpected-comparison), pronoun audit (you/your not I/me), and the 'which means...' + Ten Reasons People Buy discipline so every tie-in is desire-driven.",
-    "scripts": ["Hook -> Story -> Offer", "6 Attractive Character storylines (Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial)", "Stealth/Columbo close"]
+    "scripts": [
+      "Hook -> Story -> Offer",
+      "6 Attractive Character storylines (Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial)",
+      "Stealth/Columbo close"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Russell Brunson 'Attractive Character' / Seinfeld voice (DotCom Secrets Secrets #6-8). Pick one identity: Leader, Adventurer/Crusader, Reporter/Evangelist, or Reluctant Hero (Brunson's own = Reluctant Hero). 90/10 entertainment-to-content.",
+    "supporting": [
+      "Jim Edwards (Copywriting Secrets) — supplies the Stealth/Columbo soft close, curiosity subject-line families (True Story / Warning / unexpected-comparison), pronoun audit (you/your not I/me), and the 'which means...' + Ten Reasons People Buy discipline so every tie-in is desire-driven."
+    ],
+    "frameworks": [
+      "Hook -> Story -> Offer",
+      "6 Attractive Character storylines (Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial)",
+      "Stealth/Columbo close"
+    ]
   },
   "ghlBuild": {
     "criticalNuance": "FAITHFUL TO THE BOOK: Seinfeld emails are BROADCASTS, NOT autoresponders. 'Seinfeld emails are typically not lined up in a sequence that everyone has to go through.' In GoHighLevel this means daily one-off Email Campaigns sent to a Smart List — NOT a Workflow drip. The ONLY automation Skill 44 builds here is the graduation/segment-membership workflow.",
@@ -73,6 +101,12 @@
     "blogRepurpose": "Optional automation (GHL workflow webhook or Zapier) pushing the same email body to the blog/CMS.",
     "engagementTracking": "GHL auto-logs Email Opened / Link Clicked. Feed last-open into custom field last_email_open for the re-engagement / win-back template."
   },
-  "kpis": ["daily open rate", "click rate", "revenue per send", "unsubscribe rate (acceptable churn signals over-mailing or off-persona)", "list-to-sale attribution by CTA"],
+  "kpis": [
+    "daily open rate",
+    "click rate",
+    "revenue per send",
+    "unsubscribe rate (acceptable churn signals over-mailing or off-persona)",
+    "list-to-sale attribution by CTA"
+  ],
   "faithfulness": "Cadence (daily), 90/10 entertainment ratio, Hook-Story-Offer, broadcast-not-autoresponder, 'move to a broadcast list', blog repurpose, scannable formatting rules, the story-prompt menu, and BOTH example subject lines are taken directly from DotCom Secrets Secret #8. The Attractive Character identities/flaws/polarity/6 storylines are from Secret #6. GoHighLevel mechanics are the standard Skill-44 mapping of those concepts."
 }

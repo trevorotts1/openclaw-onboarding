@@ -12,6 +12,21 @@
 > every character/word count EXACTLY — you are forbidden from exceeding a count. Use the offer title
 > verbatim where required. Return ONLY the JSON object described, no prose around it."*
 
+### PERSONA TASK-MODE SEAM (FIX-XC-02a — prepend AFTER the shared preamble)
+
+The copywriter-persona Step-0 grounding (SOP-FUNNEL-02-COPY §2 Step 0) resolves the matched copy persona
+via `persona-selector-v2.py` and logs it to `persona-selection-log.md`. Its **Section 4 "Agent Governance
+Framework"** is injected here so the writer builds TO the persona's Task Mode, not merely names it:
+
+> `{{PERSONA_TASK_MODE}}` — verbatim Section-4 Execution Standard + Decision Logic + Definition of Done +
+> Failure Patterns from the matched `persona-blueprint.md` (persona id `{{SELECTED_PERSONA_ID}}`).
+> Ground every headline, offer, and CTA in this Task Mode, INSIDE the three-constraint envelope
+> (brand-voice-lock + locked brief + compliance). The persona's NAME alone does not load it.
+
+`{{SELECTED_PERSONA_ID}}` is read from `persona-selection-log.md`; if the log is absent or names no
+registered slug, `prove_sf_intake.py` fails closed (**AF-FUN-INTAKE-PERSONA-LOG**) and generation never
+starts — the seam is never rendered ungrounded.
+
 ---
 
 ## PROMPT 1 — MAIN PAGE (the 12-section Hero)
