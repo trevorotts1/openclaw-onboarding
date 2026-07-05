@@ -25,10 +25,36 @@ import os
 import re
 import sqlite3
 import sys
+from collections import OrderedDict
 from pathlib import Path
 
-_TASK_EMBED_CACHE: dict = {}
+# F2.4: LRU-bounded module-level task-embedding cache. Same task scored against N
+# personas embeds the task ONCE (the whole point of G13 — shared with
+# semantic_persona_ids()). Left unbounded it grew one entry per unique task text
+# for the process lifetime: harmless for the CLI (process-per-selection) but a
+# slow leak if this module is ever imported into a long-lived server. Bound it to
+# _TASK_EMBED_CACHE_MAX most-recently-used entries (default 256, override via
+# SEMANTIC_TASK_FIT_CACHE_MAX). Access goes through _task_cache_get/_task_cache_put
+# so both read sites stay MRU-ordered and eviction is O(1) from the oldest end.
+_TASK_EMBED_CACHE_MAX = max(1, int(os.environ.get("SEMANTIC_TASK_FIT_CACHE_MAX", "256")))
+_TASK_EMBED_CACHE: "OrderedDict[tuple, object]" = OrderedDict()
 _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
+
+
+def _task_cache_get(key):
+    """MRU read: return the cached vector for `key` (or None), marking it recent."""
+    val = _TASK_EMBED_CACHE.get(key)
+    if val is not None:
+        _TASK_EMBED_CACHE.move_to_end(key)
+    return val
+
+
+def _task_cache_put(key, val):
+    """MRU write with LRU eviction: insert/refresh `key`, drop oldest past the cap."""
+    _TASK_EMBED_CACHE[key] = val
+    _TASK_EMBED_CACHE.move_to_end(key)
+    while len(_TASK_EMBED_CACHE) > _TASK_EMBED_CACHE_MAX:
+        _TASK_EMBED_CACHE.popitem(last=False)
 
 # G13: number of persona blueprint chunks to AVERAGE into the persona's
 # representative vector (was LIMIT 1 — whichever chunk sqlite returned first).
@@ -281,11 +307,11 @@ def semantic_task_fit(
         db_path = _gemini_index_path(paths)
         if api_key and db_path.exists():
             cache_key = ("task", task_text)
-            task_vec = _TASK_EMBED_CACHE.get(cache_key)
+            task_vec = _task_cache_get(cache_key)
             if task_vec is None:
                 task_vec = _embed_text(task_text, api_key)
                 if task_vec is not None:
-                    _TASK_EMBED_CACHE[cache_key] = task_vec
+                    _task_cache_put(cache_key, task_vec)
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(persona_id, db_path)
                 if persona_vec is not None:
@@ -343,12 +369,12 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
 
     # Shared task embedding — SAME cache key semantic_task_fit() uses.
     cache_key = ("task", task_text)
-    task_vec = _TASK_EMBED_CACHE.get(cache_key)
+    task_vec = _task_cache_get(cache_key)
     if task_vec is None:
         task_vec = _embed_text(task_text, api_key)
         if task_vec is None:
             return None
-        _TASK_EMBED_CACHE[cache_key] = task_vec
+        _task_cache_put(cache_key, task_vec)
 
     try:
         import numpy as np

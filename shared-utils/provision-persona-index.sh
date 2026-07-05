@@ -59,12 +59,14 @@ _pidx_skip_warn() {
 #
 #   (a) index file absent
 #   (b) embeddings table is MISSING a required column (section_number / mode)
-#   (c) chunk_count != manifest chunk_count (4413) — i.e. a NON-canonical
-#       partial index (the 6260 / 7615 / 9456-row locally-re-embedded indexes
+#   (c) chunk_count != manifest chunk_count (read live from the manifest) —
+#       i.e. a NON-canonical partial index (e.g. locally-re-embedded indexes
 #       that the OLD "has section_number column ⇒ provisioned" gate wrongly
 #       treated as done and SKIPPED, so those boxes never converged)
 #   (d) persona-dir count under <coaching_db_dir>/personas != manifest
-#       persona_count (54)
+#       persona_count (read live from the manifest; F2.5: an absent/zero/
+#       unreadable persona_count is treated as "no trustworthy count" and
+#       triggers skip-with-warn, NEVER a stale positive default)
 #   (e) the .prebuilt-index-version sentinel != manifest release_tag
 #
 # SKIP (no download, no re-embed) ONLY when the index genuinely IS the
@@ -77,7 +79,7 @@ _pidx_skip_warn() {
 # self-healed — the sentinel is stamped to the manifest tag and the 90MB
 # download is SKIPPED.  Re-downloading only happens when the CONTENT is
 # non-canonical (wrong chunk_count or missing columns), so the operator's
-# canonical 4413-row index is never clobbered or re-fetched on every update.
+# canonical index is never clobbered or re-fetched on every update.
 #
 # sha256 is a HARD gate: a corrupt asset is NEVER installed; the box
 # keyword-degrades and warns instead.
@@ -104,7 +106,16 @@ provision_persona_index() {
     _PIDX_CHUNKS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("chunk_count",0) or 0))' "$MANIFEST_PATH" 2>/dev/null || echo 0)"
     _PIDX_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("release_tag",""))' "$MANIFEST_PATH" 2>/dev/null || true)"
     _PIDX_COLS="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(",".join(m.get("schema",{}).get("columns_required",[])))' "$MANIFEST_PATH" 2>/dev/null || echo "section_number,mode")"
-    _PIDX_PERSONAS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("persona_count",54) or 54))' "$MANIFEST_PATH" 2>/dev/null || echo 54)"
+    # F2.5: default persona_count to 0 (NOT a stale positive constant). A partial /
+    # corrupt manifest that cannot yield persona_count must NOT silently gate the
+    # persona-dir check against an obsolete hardcoded number (it was 54, which the
+    # SET long ago outgrew). 0 means "no trustworthy count" → skip-with-warn below,
+    # exactly like a missing asset_url/sha256, rather than proceeding on a lie.
+    _PIDX_PERSONAS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("persona_count",0) or 0))' "$MANIFEST_PATH" 2>/dev/null || echo 0)"
+    if ! [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null; then
+        _pidx_skip_warn "manifest persona_count missing/zero/unreadable ($MANIFEST_PATH) — skipping prebuilt index provisioning (additive; keeping current index)"
+        return 0
+    fi
 
     mkdir -p "$COACHING_DB_DIR"
 
