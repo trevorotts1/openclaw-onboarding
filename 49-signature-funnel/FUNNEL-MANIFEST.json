@@ -142,6 +142,8 @@
     "AF-FUN-PROMPT-NEGATIVE": {"trigger": "no negative block ('Do not ...') in the prompt", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
     "AF-FUN-PROMPT-EMDASH": {"trigger": "an em/en dash present (model-safety rule)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
     "AF-FUN-PROMPT-TYPO": {"trigger": "text-bearing prompt lacks spelling-lock/words, or non-text prompt lacks 'no text'", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
+    "AF-FUN-PROMPT-COVERAGE": {"trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
+    "AF-FUN-IMG-COVERAGE": {"trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
 
     "AF-FUN-HTML-FRAGMENT": {"trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page", "enforced_by": "P5-HTML", "py_symbol": "run_signature_funnel._gate_html_fragments"},
 

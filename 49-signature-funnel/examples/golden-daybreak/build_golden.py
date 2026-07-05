@@ -35,6 +35,8 @@ PY = sys.executable or "python3"
 sys.path.insert(0, str(SCRIPTS))
 import prove_sf_graph  # noqa: E402  (canonical 3/5/7 matrix + graph/derived fixtures)
 from prove_sf_prompt_floor import _GRADE_BLOCK as SIG_GRADE_BLOCK  # noqa: E402  (canonical verbatim grade block)
+from prove_sf_prompt_floor import (  # noqa: E402  (FIX-IMG-07 required image set)
+    ANY_IMAGE, load_structure, required_image_pairs)
 
 GOLDEN_SIZE = 7
 
@@ -1689,23 +1691,47 @@ def _vary(prompt: str, idx: int) -> str:
     return out
 
 
+_PHOTO_MAIN = {
+    1: "PROMPT_MAIN_1", 2: "PROMPT_MAIN_2", 3: "PROMPT_MAIN_3", 4: "PROMPT_MAIN_4",
+    5: "PROMPT_MAIN_5", 6: "PROMPT_MAIN_6", 7: "PROMPT_MAIN_7", 8: "PROMPT_MAIN_8",
+    9: "PROMPT_MAIN_9", 10: "PROMPT_MAIN_10", 12: "PROMPT_MAIN_12",
+}
+
+
+def _slot_body(page: str, sec) -> tuple:
+    """(authored body, text_bearing, words, texture_key) for one required image slot.
+    FIX-IMG-07: the prompt ledger must cover EVERY required (page, section) slot, so the
+    derived-page and thank-you slots reuse the authored main-section bodies through the
+    _vary de-templating layer (distinct per prompt) — never machine filler."""
+    g = globals()
+    if sec == ANY_IMAGE:  # thank-you celebratory hero
+        return (PROMPT_MAIN_1, False, None, "main-1")
+    key = int(sec) if str(sec).isdigit() else 1
+    if page == "main" and key == 11:
+        return (PROMPT_MAIN_11, True, ["DECIDE", "COMMIT", "RISE"], "main-11")
+    if page == "main":
+        return (g[_PHOTO_MAIN[key]], False, None, f"main-{key}")
+    if page == "upsell" and key == 1:
+        return (PROMPT_UPSELL_1, False, None, "upsell-1")
+    if page == "upsell-2" and key == 1:
+        return (PROMPT_UPSELL_2, False, None, "upsell-2")
+    # a derived-page section (1-8): reuse the matching authored main-section body.
+    return (g.get(_PHOTO_MAIN.get(key, "PROMPT_MAIN_1"), PROMPT_MAIN_1), False, None, f"main-{key}")
+
+
 def build_prompt_ledger() -> dict:
-    photo = {
-        1: PROMPT_MAIN_1, 2: PROMPT_MAIN_2, 3: PROMPT_MAIN_3, 4: PROMPT_MAIN_4,
-        5: PROMPT_MAIN_5, 6: PROMPT_MAIN_6, 7: PROMPT_MAIN_7, 8: PROMPT_MAIN_8,
-        9: PROMPT_MAIN_9, 10: PROMPT_MAIN_10, 12: PROMPT_MAIN_12,
-    }
+    # Cover EVERY required (page_type, section) image slot for the 7-step funnel so
+    # the P2 two-floor gate AND the FIX-IMG-07 coverage cross-check both certify a
+    # complete funnel (a partial ledger can never certify a full funnel).
     entries = []
-    for sec in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12):
-        entries.append(({"page_type": "main", "section": sec, "aspect_ratio": "16:9",
-                         "text_bearing": False}, _p(photo[sec], _TEXTURE[f"main-{sec}"])))
-    entries.append(({"page_type": "main", "section": 11, "aspect_ratio": "16:9",
-                     "text_bearing": True, "words": ["DECIDE", "COMMIT", "RISE"]},
-                    _p(PROMPT_MAIN_11, _TEXTURE["main-11"])))
-    entries.append(({"page_type": "upsell", "section": 1, "aspect_ratio": "16:9",
-                     "text_bearing": False}, _p(PROMPT_UPSELL_1, _TEXTURE["upsell-1"])))
-    entries.append(({"page_type": "upsell-2", "section": 1, "aspect_ratio": "16:9",
-                     "text_bearing": False}, _p(PROMPT_UPSELL_2, _TEXTURE["upsell-2"])))
+    for page, sec in required_image_pairs(GOLDEN_SIZE, load_structure()):
+        body, text_bearing, words, texture_key = _slot_body(page, sec)
+        section = "hero" if sec == ANY_IMAGE else sec
+        meta = {"page_type": page, "section": section, "aspect_ratio": "16:9",
+                "text_bearing": text_bearing}
+        if words:
+            meta["words"] = words
+        entries.append((meta, _p(body, _TEXTURE[texture_key])))
     prompts = []
     for idx, (meta, body) in enumerate(entries):
         rec = dict(meta)
@@ -1750,17 +1776,44 @@ def build_media_ledger() -> dict:
                           "tomorrow, so will you."},
              ]},
         ],
-        "images": [
-            {"page_type": "main", "section": 1, "kie_task_id": "kie_db_hero_9f3a1",
-             "media_url": "https://storage.gohighlevel.com/loc/daybreak/hero.png"},
-            {"page_type": "main", "section": 5, "kie_task_id": "kie_db_why_2c7b8",
-             "media_url": "https://msgsndr.com/media/daybreak/why.png"},
-            {"page_type": "main", "section": 11, "kie_task_id": "kie_db_type_5e1d0",
-             "media_url": "https://storage.gohighlevel.com/loc/daybreak/manifesto.png"},
-            {"page_type": "upsell", "section": 1, "kie_task_id": "kie_db_oto1_a41c2",
-             "media_url": "https://storage.leadconnectorhq.com/loc/daybreak/oto1.png"},
-        ],
+        # FIX-IMG-07: the media ledger enumerates the FULL image set — one image for
+        # every required (page_type, section) slot for the 7-step funnel (per
+        # MASTERDOC §4), so the P9 coverage assert certifies a complete funnel. The
+        # four hand-authored hero records keep their descriptive ids; the remainder
+        # are generated with genuine Kie-taskId + GHL-host provenance.
+        "images": _full_image_set(),
     }
+
+
+# Descriptive, hand-authored provenance for the funnel's four hero images; every
+# other required slot is filled programmatically below with valid provenance.
+_AUTHORED_IMAGES = {
+    ("main", "1"): {"kie_task_id": "kie_db_hero_9f3a1",
+                    "media_url": "https://storage.gohighlevel.com/loc/daybreak/hero.png"},
+    ("main", "5"): {"kie_task_id": "kie_db_why_2c7b8",
+                    "media_url": "https://msgsndr.com/media/daybreak/why.png"},
+    ("main", "11"): {"kie_task_id": "kie_db_type_5e1d0",
+                     "media_url": "https://storage.gohighlevel.com/loc/daybreak/manifesto.png"},
+    ("upsell", "1"): {"kie_task_id": "kie_db_oto1_a41c2",
+                      "media_url": "https://storage.leadconnectorhq.com/loc/daybreak/oto1.png"},
+}
+
+
+def _full_image_set() -> list:
+    """One image record per required (page_type, section) slot for the 7-step funnel."""
+    pairs = required_image_pairs(GOLDEN_SIZE, load_structure())
+    images = []
+    for page, sec in pairs:
+        section = "hero" if sec == ANY_IMAGE else sec
+        authored = _AUTHORED_IMAGES.get((page, str(sec)))
+        if authored:
+            rec = {"page_type": page, "section": section, **authored}
+        else:
+            rec = {"page_type": page, "section": section,
+                   "kie_task_id": f"kie_db_{page.replace('-', '')}_{section}",
+                   "media_url": f"https://storage.gohighlevel.com/loc/daybreak/{page}-{section}.png"}
+        images.append(rec)
+    return images
 
 
 # ---------------------------------------------------------------------------
@@ -1968,6 +2021,12 @@ def main() -> int:
         run_dir.mkdir()
         for name in ledgers:
             (run_dir / name).write_text((HERE / name).read_text(encoding="utf-8"), encoding="utf-8")
+        # FIX-XC-02a: P0 is fail-closed on persona grounding — stage the committed
+        # persona-selection-log.md so the orchestrator can mint the golden certificate.
+        persona_log = HERE / "persona-selection-log.md"
+        if persona_log.exists():
+            (run_dir / "persona-selection-log.md").write_text(
+                persona_log.read_text(encoding="utf-8"), encoding="utf-8")
         for rel in build_artifacts:
             dst_p = run_dir / rel
             dst_p.parent.mkdir(parents=True, exist_ok=True)

@@ -48,27 +48,273 @@
   "images": [
     {
       "page_type": "main",
-      "section": 1,
+      "section": "1",
       "kie_task_id": "placeholder",
       "media_url": "https://storage.gohighlevel.com/loc/daybreak/hero.png"
     },
     {
       "page_type": "main",
-      "section": 5,
+      "section": "2",
+      "kie_task_id": "kie_db_main_2",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-2.png"
+    },
+    {
+      "page_type": "main",
+      "section": "3",
+      "kie_task_id": "kie_db_main_3",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-3.png"
+    },
+    {
+      "page_type": "main",
+      "section": "4",
+      "kie_task_id": "kie_db_main_4",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-4.png"
+    },
+    {
+      "page_type": "main",
+      "section": "5",
       "kie_task_id": "kie_db_why_2c7b8",
       "media_url": "https://msgsndr.com/media/daybreak/why.png"
     },
     {
       "page_type": "main",
-      "section": 11,
+      "section": "6",
+      "kie_task_id": "kie_db_main_6",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-6.png"
+    },
+    {
+      "page_type": "main",
+      "section": "7",
+      "kie_task_id": "kie_db_main_7",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-7.png"
+    },
+    {
+      "page_type": "main",
+      "section": "8",
+      "kie_task_id": "kie_db_main_8",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-8.png"
+    },
+    {
+      "page_type": "main",
+      "section": "9",
+      "kie_task_id": "kie_db_main_9",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-9.png"
+    },
+    {
+      "page_type": "main",
+      "section": "10",
+      "kie_task_id": "kie_db_main_10",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-10.png"
+    },
+    {
+      "page_type": "main",
+      "section": "11",
       "kie_task_id": "kie_db_type_5e1d0",
       "media_url": "https://storage.gohighlevel.com/loc/daybreak/manifesto.png"
     },
     {
+      "page_type": "main",
+      "section": "12",
+      "kie_task_id": "kie_db_main_12",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/main-12.png"
+    },
+    {
       "page_type": "upsell",
-      "section": 1,
+      "section": "1",
       "kie_task_id": "kie_db_oto1_a41c2",
       "media_url": "https://storage.leadconnectorhq.com/loc/daybreak/oto1.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "2",
+      "kie_task_id": "kie_db_upsell_2",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "3",
+      "kie_task_id": "kie_db_upsell_3",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-3.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "4",
+      "kie_task_id": "kie_db_upsell_4",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-4.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "5",
+      "kie_task_id": "kie_db_upsell_5",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-5.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "6",
+      "kie_task_id": "kie_db_upsell_6",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-6.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "7",
+      "kie_task_id": "kie_db_upsell_7",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-7.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": "8",
+      "kie_task_id": "kie_db_upsell_8",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-8.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "1",
+      "kie_task_id": "kie_db_downsell_1",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-1.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "2",
+      "kie_task_id": "kie_db_downsell_2",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "3",
+      "kie_task_id": "kie_db_downsell_3",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-3.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "4",
+      "kie_task_id": "kie_db_downsell_4",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-4.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "5",
+      "kie_task_id": "kie_db_downsell_5",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-5.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "6",
+      "kie_task_id": "kie_db_downsell_6",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-6.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "7",
+      "kie_task_id": "kie_db_downsell_7",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-7.png"
+    },
+    {
+      "page_type": "downsell",
+      "section": "8",
+      "kie_task_id": "kie_db_downsell_8",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-8.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "1",
+      "kie_task_id": "kie_db_upsell2_1",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-1.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "2",
+      "kie_task_id": "kie_db_upsell2_2",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-2.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "3",
+      "kie_task_id": "kie_db_upsell2_3",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-3.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "4",
+      "kie_task_id": "kie_db_upsell2_4",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-4.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "5",
+      "kie_task_id": "kie_db_upsell2_5",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-5.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "6",
+      "kie_task_id": "kie_db_upsell2_6",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-6.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "7",
+      "kie_task_id": "kie_db_upsell2_7",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-7.png"
+    },
+    {
+      "page_type": "upsell-2",
+      "section": "8",
+      "kie_task_id": "kie_db_upsell2_8",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/upsell-2-8.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "1",
+      "kie_task_id": "kie_db_downsell2_1",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-1.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "2",
+      "kie_task_id": "kie_db_downsell2_2",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-2.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "3",
+      "kie_task_id": "kie_db_downsell2_3",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-3.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "4",
+      "kie_task_id": "kie_db_downsell2_4",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-4.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "5",
+      "kie_task_id": "kie_db_downsell2_5",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-5.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "6",
+      "kie_task_id": "kie_db_downsell2_6",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-6.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "7",
+      "kie_task_id": "kie_db_downsell2_7",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-7.png"
+    },
+    {
+      "page_type": "downsell-2",
+      "section": "8",
+      "kie_task_id": "kie_db_downsell2_8",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/downsell-2-8.png"
+    },
+    {
+      "page_type": "thank-you",
+      "section": "hero",
+      "kie_task_id": "kie_db_thankyou_hero",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/thank-you-hero.png"
     }
   ]
 }

@@ -93,6 +93,11 @@ if [ -d "$GOLDEN" ]; then
   run "golden graph  -> prove_sf_graph"        "$PY" "$SCRIPTS/prove_sf_graph.py" --graph "$GOLDEN/funnel_graph.json"
   run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$GOLDEN/build_receipt.json"
   run "golden media  -> prove_sf_no_pitch"     "$PY" "$SCRIPTS/prove_sf_no_pitch.py" --ledger "$GOLDEN/media_ledger.json"
+  # FIX-IMG-07 — the golden prompt AND media ledgers cover every required image slot.
+  run "golden prompt coverage (--structure)" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" \
+      --structure --brief "$GOLDEN/brief.json" --ledger "$GOLDEN/prompt_ledger.json"
+  run "golden image coverage (--structure)"  "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" \
+      --structure --brief "$GOLDEN/brief.json" --ledger "$GOLDEN/media_ledger.json"
 
   CERT="$GOLDEN/delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.json"
   if [ -f "$CERT" ]; then
