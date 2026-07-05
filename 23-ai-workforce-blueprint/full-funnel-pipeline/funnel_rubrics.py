@@ -42,11 +42,55 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, asdict, field
 from typing import Optional
 
 THRESHOLD = 8.5
+
+# ── FIX-XC-04h — per-funnel-type copy-depth floors (adjustable constants table) ──
+# The R-COPY length_vs_funnel_type sub-check is load-bearing (weight 3.0): below the
+# floor is a HARD MISS an approved-but-thin copy.md cannot average away. Numbers are
+# the ratified copy-contract minimums (squeeze/opt-in 300 / 2-step-application 400 /
+# webinar-VSL 800 / long-form-sales 1,500). See conversion-copywriter.md §8 + Gate 2.
+FUNNEL_TYPE_WORD_FLOOR = {
+    "opt-in": 300, "opt in": 300, "lead-magnet": 300, "lead magnet": 300,
+    "squeeze": 300, "reverse-squeeze": 300,
+    "2-step": 400, "two-step": 400, "application": 400, "tripwire": 400, "bridge": 400,
+    "webinar": 800, "vsl": 800, "video sales letter": 800,
+    "long-form sales": 1500, "long-form": 1500, "advertorial": 1500, "sales": 1500,
+}
+DEFAULT_FUNNEL_WORD_FLOOR = 300
+
+# FIX-XC-02b — parse the ACTUAL selected persona from the selection-log (both the
+# '- selected_persona: <slug>' harness form and the '"applied_persona": "<slug>"'
+# live-run form), so persona credit is awarded for the matched slug — not a hardcode.
+_PERSONA_KEY_RE = re.compile(
+    r'(?:selected|applied|copy)[_\- ]?persona["\s]*[:=]\s*"?([a-z0-9][a-z0-9\-]{2,})', re.I)
+
+
+def _selected_persona_id(plog: str) -> Optional[str]:
+    if not plog:
+        return None
+    m = _PERSONA_KEY_RE.search(plog)
+    return m.group(1).lower() if m else None
+
+
+def _funnel_type_floor(ftype) -> int:
+    ft = str(ftype or "").strip().lower()
+    if ft in FUNNEL_TYPE_WORD_FLOOR:
+        return FUNNEL_TYPE_WORD_FLOOR[ft]
+    for k in sorted(FUNNEL_TYPE_WORD_FLOOR, key=len, reverse=True):
+        if k in ft:
+            return FUNNEL_TYPE_WORD_FLOOR[k]
+    return DEFAULT_FUNNEL_WORD_FLOOR
+
+
+def _stripped_word_count(text: str) -> int:
+    """Stripped-word count of copy.md: markdown punctuation removed, alnum tokens only."""
+    body = re.sub(r"[#*_>`|]+", " ", text or "")
+    return len([w for w in body.split() if any(ch.isalnum() for ch in w)])
 
 RUBRIC_IDS = [
     "R-COPY", "R-STRUCTURE", "R-PAGES", "R-FORMS", "R-PRODUCT", "R-TAGS",
@@ -219,6 +263,7 @@ def score_all(run_dir: str, *, cc_invariant_ok: bool = True,
     copy_txt = _read_text(os.path.join(copy_dir, "copy.md"))
     email = _read_json(os.path.join(email_dir, "email-sequence.json")) or {}
     plog = _read_text(os.path.join(fr, "persona-selection-log.md"))
+    sel_persona = _selected_persona_id(plog)   # FIX-XC-02b — the matched persona slug
     # build-result lives under working/funnels/<slug>/ (harness layout) or under
     # funnel/ (some live-run layouts). Read whichever exists.
     build = (_read_json(os.path.join(fr, "build-result.json"))
@@ -240,18 +285,30 @@ def score_all(run_dir: str, *, cc_invariant_ok: bool = True,
 
     results: list[RubricResult] = []
 
-    # ── R-COPY — APPROVED(3) + separate-actor(2) + persona(2) + cta(1.5) + benefit(1.5)
+    # ── R-COPY — APPROVED(3) + separate-actor(2) + persona(2) + length(3) + cta(1.5) + benefit(1.5)
     _cl = copy_txt.lower()
     approved = "status: approved" in _cl
     not_self = "self_approved: false" in _cl or "approved_by:" in _cl
-    persona_in_copy = "hormozi-100m-offers" in copy_txt
+    # FIX-XC-02b — de-hardcode persona: award for the ACTUAL selected persona (read from
+    # the persona-selection-log), not a single hardcoded slug that punished every correct
+    # match. Miss only when the log is absent or the matched slug is not echoed in copy.md.
+    persona_grounded = bool(sel_persona) and sel_persona in _cl
     cta = _cl.count("apply for") + _cl.count("### cta") + _cl.count("call to action")
     benefit = any(t in _cl for t in ("benefit-not-feature", "value stack", "value-stack",
                                      "dream outcome", "### stack", "the offer"))
+    # FIX-XC-04h — load-bearing length_vs_funnel_type (weight 3.0 => hard-miss below floor):
+    # an approved-but-thin 150-word copy.md can no longer score 10/10 for a long-form funnel.
+    _ftype = spec.get("funnel_type")
+    _ft_floor = _funnel_type_floor(_ftype)
+    _copy_words = _stripped_word_count(copy_txt)
+    _length_ok = _copy_words >= _ft_floor
     results.append(grade("R-COPY", os.path.join(copy_dir, "copy.md"), [
         ("approved", 3.0, 3.0 if approved else 0.0, approved),
         ("separate_actor_approval", 2.0, 2.0 if not_self else 0.0, not_self),
-        ("persona_grounded", 2.0, 2.0 if persona_in_copy else 0.0, persona_in_copy),
+        ("persona_grounded", 2.0, 2.0 if persona_grounded else 0.0,
+         f"{sel_persona} echoed in copy" if persona_grounded else f"selected={sel_persona!r} (unechoed/absent)"),
+        ("length_vs_funnel_type", 3.0, 3.0 if _length_ok else 0.0,
+         f"{_copy_words}w vs floor {_ft_floor} ({_ftype})"),
         ("cta_slots_present", 1.5, 1.5 if cta >= 1 else 0.0, cta),
         ("benefit_framing", 1.5, 1.5 if benefit else 0.0, benefit)]))
 
@@ -259,7 +316,10 @@ def score_all(run_dir: str, *, cc_invariant_ok: bool = True,
     n_pages = len(spec.get("pages", []))
     ftype_ok = spec.get("funnel_type") in (
         "long-form sales", "sales", "application", "opt-in", "lead-magnet", "webinar")
-    s_persona = spec.get("persona") == "hormozi-100m-offers"
+    # FIX-XC-02b — de-hardcode: the spec persona must equal the SELECTED persona (from log).
+    _spec_persona = spec.get("persona")
+    s_persona = bool(sel_persona) and isinstance(_spec_persona, str) and (
+        _spec_persona.lower() == sel_persona or sel_persona in _spec_persona.lower())
     omap = bool(spec.get("offer_map") or spec.get("email_sequence") or spec.get("based_on_offer"))
     # HONEST RESIDUAL (structure realized live as a PUBLISHED funnel): a funnel
     # spec is fully formed, but the structure is only fully realized when the built

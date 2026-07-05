@@ -13,6 +13,8 @@ This is the operator-facing runtime guide. It assumes Skill 38 is installed and 
 
 ## Property intelligence flow
 
+**Runtime worker:** `scripts/property-lookup.sh --address "<addr>" [--want property_lookup,geocode,street_view,comps]` is the orchestrator the agent runs first. It normalizes the address, reads the provider-status JSON written by `02-configure-providers.sh`, prints each capability as **AVAILABLE** vs an **HONEST GAP**, and appends one F52 `property_lookup` event to `<MASTER_FILES_DIR>/real-estate-events.jsonl` (it resolves `MASTER_FILES_DIR` from the persisted install selection and loud-fails rather than writing to Downloads). It is a RUNTIME worker, not a numbered install step. The `lib-property.sh` subcommands below are the provider-abstraction primitives it (and the agent) call.
+
 ### 1. Address normalization + geocoding
 
 `scripts/lib-property.sh geocode "<raw address>"` normalizes and geocodes:
@@ -29,7 +31,7 @@ Geocoding emits a `geocode` event and (when matched) the county+state, which the
 
 ### 3. Street View image
 
-`scripts/lib-property.sh streetview "<lat>,<lon>"` calls the Google Street View Static API (`GOOGLE_MAPS_API_KEY`). REAL when the key is present; honest gap (`{"available": false}`) otherwise. The image URL/bytes are attached to the lead, never fabricated.
+`scripts/lib-property.sh streetview "<lat>,<lon>" [out_path]` first probes the free Street View **metadata** endpoint and returns an honest gap when the status is not `OK` (no imagery at that point — never a blank/fabricated tile). When imagery exists it fetches the image **bytes server-side** and emits a LOCAL `image_path` (`{"available": true, "image_path": "…", "bytes": N, "content_type": "…"}`). REAL when `GOOGLE_MAPS_API_KEY` is present; honest gap (`{"available": false}`) otherwise. **The API key is used only in the in-process request — it is NEVER placed in the emitted URL/output** (so the key can never leak into the client conversation or the event log). The agent attaches the returned file to the lead; the image is never fabricated.
 
 ## Buyer & seller qualification
 
@@ -64,6 +66,27 @@ Fair-housing guardrails (`references/fair-housing-guardrails.md`) apply: never a
 
 `scripts/05-install-sales-brain-extension.sh` installs `references/sales-brain-real-estate-extension.md` as a NEW file in the client's installed Skill 38 (`38-conversational-ai-system/protocols/sales-best-practices-real-estate-extension.md`) — **additive, never overwriting Skill 38's own `sales-best-practices-protocol.md`.** It then appends ONE pointer line to AGENTS.md behind `<!-- BEGIN/END skill-39 sales-brain-re-extension -->`. The engine loads the extension ONLY in a real-estate context, so a non-RE client is unaffected. The extension adds RE objection patterns, CMA pricing-reveal timing, and SPICED-RE. Re-running the script is idempotent (it diffs the file + checks the marker). Emits a `sales_brain_extension_installed` event.
 
+## GHL sync + Command Center (fail-soft write layer)
+
+`scripts/lib-ghl-sync.sh` turns the frontmatter's GHL "pipeline management" promise into real, deterministic, SAFE writes through the Tier-0 convert-and-flow CLI (`caf`) and the Command Center Kanban API. **Every call is an HONEST no-op when its credential is absent** — it prints one `[skill 39][ghl] honest-gap: …` line, appends a PII-free `ghl_sync` event via `lib-re-events.sh`, and returns 0. It never fabricates success and never prints a secret. GHL writes run through caf's Tier-0 draft-only, safe-by-default layer.
+
+Source it once, then call per real-estate lifecycle transition (mirrors Skill 41's Command-Center helper):
+
+```bash
+# Mac: $HOME/.openclaw ; VPS: /data/.openclaw
+source "$HOME/.openclaw/skills/39-real-estate-playbook/scripts/lib-ghl-sync.sh"
+```
+
+| RE lifecycle transition | Call |
+|---|---|
+| Buyer / seller / investor intent qualified | `ghl_tag "<contact_ref>" ZHC-buyer-lead` (or `ZHC-seller-lead` / `ZHC-investor-lead`) |
+| Qualified lead enters the pipeline | `ghl_opportunity create <pipeline_id> <stage_id> "<name>" <contact_id> [value]` |
+| Lead advances a pipeline stage | `ghl_opportunity move <opportunity_id> <stage_id> [status]` |
+| Showing booked | `ghl_book <calendar_id> <contact_id> <slot_id> <start_iso> <end_iso> [title]` |
+| Command Center card advances | `cc_move <task_id> {backlog\|in_progress\|review\|done} [agent_id]` |
+
+Credentials are operator-supplied via env: `GOHIGHLEVEL_API_KEY` (caf also resolves `CAF_API_KEY` / `GHL_API_KEY`) for GHL writes; `MC_API_TOKEN` + `MISSION_CONTROL_URL` (default `http://localhost:4000`) for Command Center moves. **SELF-GRADE GUARD:** a builder never PATCHes its OWN task to `done` — `review → done` is owned by the independent QC scorer (mirrors Skill 41). Each call appends one `ghl_sync` event (`action`: `tag` / `opportunity` / `book` / `cc_move`; `available`: true/false) to the F52 log.
+
 ## `real-estate-events.jsonl` schema
 
 Append-only JSONL at `<MASTER_FILES_DIR>/real-estate-events.jsonl`. One JSON object per line. Written by `scripts/lib-re-events.sh re_event <type> <json-payload>`. The machine-readable schema is `templates/real-estate-events.schema.json`. Common fields on every event:
@@ -91,6 +114,7 @@ Event types and their type-specific payload fields:
 | `open_house` | `stage` (`registered`/`followup`/`feedback`) |
 | `pre_foreclosure_touch` | `record_type` (`NOD`/`pre_foreclosure`/`tax_delinquency`), `outreach_stage`, `from_skill_40` (bool) |
 | `sales_brain_extension_installed` | `target_skill38_path`, `marker_added` (bool) |
+| `ghl_sync` | `source` (`caf`/`command-center`), `action` (`tag`/`opportunity`/`book`/`cc_move`), `available` (bool), `reason` (on a gap) |
 
 **PII discipline in the log:** the event log records field NAMES and counts, not raw property addresses/owner names/prices. The lead is referenced by an opaque `lead_ref`. This keeps the operator-visible ground-truth log free of client PII while still proving exactly what the RE layer did. (`scripts/qc-no-personal-data.sh` enforces no real identifiers in the source; runtime payloads use the opaque handle by contract.)
 

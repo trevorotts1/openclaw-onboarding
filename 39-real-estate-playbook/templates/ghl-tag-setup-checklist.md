@@ -13,7 +13,7 @@ silently strands contacts.
 After the tags exist, run:
 
 ```bash
-scripts/04-update-agents-md.sh              # wire the RE playbook into AGENTS.md
+scripts/08-update-core-files.sh             # wire the RE playbook into AGENTS.md / MEMORY.md / TOOLS.md
 scripts/05-install-sales-brain-extension.sh # additive Sales-Brain RE overlay
 ```
 

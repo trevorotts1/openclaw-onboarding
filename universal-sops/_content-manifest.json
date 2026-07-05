@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-04T18:31:12Z",
-  "file_count": 75,
+  "generated_at": "2026-07-05T20:08:25Z",
+  "file_count": 83,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -141,8 +141,8 @@
       "bytes": 3690
     },
     "funnel-automation-build-quality-rubric.md": {
-      "sha256": "a7c5c5ea3a97fe8bd473d4794c15776be84d4ed691edff37c2c10568a768ed72",
-      "bytes": 7230
+      "sha256": "eee0b4a26f40304c3f5e2a0ea8201584228c57fa889039226baea18b1174d7d4",
+      "bytes": 7789
     },
     "funnel-craft/FUNNEL-PIPELINE-MANIFEST.json": {
       "sha256": "11b6bf6705e3e88cc2a11936b61a8470eab81a8b8c15751a06e68fb9507b9853",
@@ -161,12 +161,12 @@
       "bytes": 3225
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "542b8789b76f810cbcf17e66f85a34e56a752d746f7126e17a90d5a245d66240",
-      "bytes": 3895
+      "sha256": "c1c53e250ae0f6fb5ec74c986497ad00062dfdf2bb5e17a25c941aefd547246e",
+      "bytes": 5403
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
-      "sha256": "4dfebc788e7cbb1eba0e8cecde06b76e23fc3fea7e9bbf9308f6c2d217a96ad1",
-      "bytes": 2907
+      "sha256": "54b1afde1d66607d7c117ddaebcf0d9bfffe18c612d4732d96bc6c2e6a387539",
+      "bytes": 2916
     },
     "funnel-craft/SOP-FUNNEL-04-BUILD.md": {
       "sha256": "15216ef46a39b8aa49b3de1e7a2e7f99624a6a133680e379a9032441f0afecf3",
@@ -261,8 +261,8 @@
       "bytes": 10327
     },
     "sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md": {
-      "sha256": "4c3ded6e20293b625a2f0de4608a5174e800506309a77c2ef696bbb3e6a8da8f",
-      "bytes": 8507
+      "sha256": "158e2a79a8bc109aff12e0293e4a8bc2e3ffcce0bc19370510d1d96716f542bd",
+      "bytes": 9830
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {
       "sha256": "263dda9cb4e2ace67410e62847bab766a17248248606fef7022e18490ad1fdc7",
@@ -303,6 +303,38 @@
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
       "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",
       "bytes": 18394
+    },
+    "website-craft/MASTER-WEBSITE-QC-AUTOFAIL-RULESET.md": {
+      "sha256": "78cd2377f66433fbe6b77d4e1564d83ab1bc39e07a2dc06e65ca679bba6bb6d2",
+      "bytes": 2189
+    },
+    "website-craft/README.md": {
+      "sha256": "8e595f634975795541328d5ba76f1af5efd1c5d14cd110a87ff799d3dab8ec83",
+      "bytes": 4282
+    },
+    "website-craft/SOP-WEB-01-INTAKE.md": {
+      "sha256": "862e9251f246c916ef194c90c77d12701b6336587a5e488e6866bcc0507655d8",
+      "bytes": 2750
+    },
+    "website-craft/SOP-WEB-02-COPY.md": {
+      "sha256": "a322d536c5009b4f975c0920855ae399776188df40469684aebc3377157c7c91",
+      "bytes": 4811
+    },
+    "website-craft/SOP-WEB-03-PROMPTS-IMAGES.md": {
+      "sha256": "2ef24e8044dc1b13afa5a41db90d4d6c9d42fb6c0748eac60963a646c2b5ba8b",
+      "bytes": 1821
+    },
+    "website-craft/SOP-WEB-04-BUILD.md": {
+      "sha256": "eb69b3e94e34c54d563f65e7567247d7a40a11ae189df4af3d17974b2103348f",
+      "bytes": 1636
+    },
+    "website-craft/SOP-WEB-05-CERTIFY.md": {
+      "sha256": "2e8614c0e089f9c109f1fbda858a265bca353a8011d1e022bc455dafe60c687d",
+      "bytes": 1872
+    },
+    "website-craft/WEBSITE-PIPELINE-MANIFEST.json": {
+      "sha256": "77b4df83299207c2bd9f3fc24f69604aa8be9525c806be3510397ae8507fccd7",
+      "bytes": 2866
     }
   }
 }

@@ -1,0 +1,40 @@
+name: skill-version-newline-guard
+
+# Fails the build if any skill directory's skill-version.txt does not end with a
+# trailing newline. A missing trailing newline is what allowed 56/skill-version.txt
+# to concatenate into the corrupt `1.0.1v17.0.25` token (FIX-IMG-09 iv): a write
+# that appended to a newline-less version file glued two versions together.
+# This closes that class of corruption permanently.
+
+on:
+  push:
+    paths:
+      - '**/skill-version.txt'
+      - scripts/qc-assert-skill-version-newline.sh
+      - .github/workflows/skill-version-newline-guard.yml
+  pull_request:
+    paths:
+      - '**/skill-version.txt'
+      - scripts/qc-assert-skill-version-newline.sh
+      - .github/workflows/skill-version-newline-guard.yml
+
+jobs:
+  skill-version-newline-guard:
+    name: skill-version.txt trailing-newline lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the gate script
+        run: bash -n scripts/qc-assert-skill-version-newline.sh
+
+      - name: Self-test the gate (fails on a no-newline fixture, passes on a clean one)
+        run: |
+          chmod +x scripts/qc-assert-skill-version-newline.sh
+          bash scripts/qc-assert-skill-version-newline.sh --self-test
+
+      - name: Run trailing-newline lint (must pass)
+        run: |
+          chmod +x scripts/qc-assert-skill-version-newline.sh
+          bash scripts/qc-assert-skill-version-newline.sh

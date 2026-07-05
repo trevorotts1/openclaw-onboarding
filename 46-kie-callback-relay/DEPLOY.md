@@ -48,14 +48,30 @@ Edit `wrangler.toml` and replace:
 
 ---
 
-## Step 2: Set the HMAC Secret
+## Step 2: Set the Three Worker Secrets
+
+The Worker requires THREE secrets. All three are set the same way and NEVER go in
+wrangler.toml or the repo. Missing any one breaks the relay: without
+`KIE_CALLBACK_HMAC_KEY` every valid callback is dropped, and without `KVREAD_TOKEN`
+every `/kv-read` returns 500.
 
 ```bash
+# 1. Kie's webhook signing key (from https://kie.ai/settings)
 npx wrangler secret put KIE_WEBHOOK_HMAC_KEY --name kie-callback-relay
+
+# 2. Fleet MASTER callback key -- derives each client's callback validator + secret HMAC.
+#    Generate a fresh 32-byte random value and paste it when prompted:
+#      openssl rand -hex 32
+npx wrangler secret put KIE_CALLBACK_HMAC_KEY --name kie-callback-relay
+
+# 3. Fleet MASTER /kv-read bearer token -- derives each client's per-box read token.
+#      openssl rand -hex 32
+npx wrangler secret put KVREAD_TOKEN --name kie-callback-relay
 ```
 
-Paste the value from https://kie.ai/settings when prompted.
-This secret NEVER goes in wrangler.toml or the repo.
+`KIE_CALLBACK_HMAC_KEY` and `KVREAD_TOKEN` are FLEET MASTER keys. They never leave
+the Worker. Each client box gets only a PER-CLIENT value DERIVED from them
+(see Step 4b), so one compromised box exposes exactly one client -- not the fleet.
 
 ---
 
@@ -81,8 +97,37 @@ curl https://kie-callback.zerohumanworkforce.com/healthz
 
 Expected:
 ```json
-{ "status": "ok", "worker": "kie-callback-relay", "version": "1.0.0", ... }
+{ "status": "ok", "worker": "kie-callback-relay", "version": "1.1.0", ... }
 ```
+
+---
+
+## Step 4b: Provision Per-Client Box Credentials (fix F)
+
+Each client box needs its OWN derived credentials -- never the fleet master keys.
+Derive them once per client from the two master values you set in Step 2:
+
+```bash
+CLIENT_SLUG="operator-demo"                 # this box's c= identifier
+MASTER_CB="<the KIE_CALLBACK_HMAC_KEY master value>"
+MASTER_KVR="<the KVREAD_TOKEN master value>"
+
+PER_CLIENT_CALLBACK_KEY="$(printf '%s' "$CLIENT_SLUG" | openssl dgst -sha256 -hmac "$MASTER_CB" | awk '{print $NF}')"
+PER_CLIENT_KVREAD_TOKEN="$(printf '%s' "$CLIENT_SLUG" | openssl dgst -sha256 -hmac "$MASTER_KVR" | awk '{print $NF}')"
+```
+
+This is exactly `HMAC-SHA256(clientSlug, master)` in hex -- the same derivation the
+Worker performs on every request. Distribute ONLY the two derived values onto the
+box env store (`~/clawd/secrets/.env` or `/docker/<project>/.env`):
+
+```
+KIE_KV_BASE_URL=https://kie-callback.zerohumanworkforce.com
+KIE_CLIENT_SLUG=operator-demo
+KIE_CALLBACK_HMAC_KEY=<PER_CLIENT_CALLBACK_KEY>   # per-client, NOT the master
+KVREAD_TOKEN=<PER_CLIENT_KVREAD_TOKEN>            # per-client, NOT the master
+```
+
+The fleet master keys stay ONLY in the Worker secrets. A box never holds a master.
 
 ---
 
@@ -96,16 +141,27 @@ in Step 2. These must match.
 
 ## Step 6: Smoke Test
 
-Submit one test image using the KieSlideSubmitter with a 1-slide deck:
+First, run the offline security regression suite (no network -- proves the three
+components agree on the hardened contract before you spend a Kie credit):
+
+```bash
+bash 46-kie-callback-relay/qc-kie-callback-relay.sh
+```
+
+Then submit a live test deck. A 6-slide deck triggers callback mode, so you MUST
+pass this box's PER-CLIENT `callbackHmacKey` and `kvReadToken` (derived in Step 4b)
+-- `submitDeck` throws in callback mode without them:
 
 ```javascript
 const { KieSlideSubmitter } = require('./46-kie-callback-relay/kie-slide-submitter');
 
 const submitter = new KieSlideSubmitter({
-  clientSlug:   'operator-test',
-  kieApiKey:    process.env.KIE_API_KEY,
-  kvWorkerUrl:  'https://kie-callback.zerohumanworkforce.com',
-  workspaceDir: '/tmp/kie-test'
+  clientSlug:      'operator-test',
+  kieApiKey:       process.env.KIE_API_KEY,
+  kvWorkerUrl:     'https://kie-callback.zerohumanworkforce.com',
+  workspaceDir:    '/tmp/kie-test',
+  callbackHmacKey: process.env.KIE_CALLBACK_HMAC_KEY, // per-client derived value (Step 4b)
+  kvReadToken:     process.env.KVREAD_TOKEN           // per-client derived value (Step 4b)
 });
 
 // Use a 6-slide deck to trigger callback mode (above the threshold of 5)
@@ -121,6 +177,10 @@ const slides = Array.from({ length: 6 }, (_, i) => ({
 const results = await submitter.submitDeck(slides, { callbackThreshold: 5 });
 console.log(results);
 ```
+
+To smoke-test the small-deck path (no Worker, no secrets), submit a ≤5-slide deck
+with the same call but omit `callbackHmacKey`/`kvReadToken`; it batch-polls Kie
+recordInfo directly (fix 33).
 
 Verify:
 - A callback arrives at the Worker (check Worker logs: `npx wrangler tail --name kie-callback-relay`)

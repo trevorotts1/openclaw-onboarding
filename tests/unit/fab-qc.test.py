@@ -45,9 +45,14 @@ def _faithful_funnel() -> dict:
             "books": ["DotCom Secrets"],
         },
         "artifact": {"pages": [
-            {"page_id": "p1", "copy": {"hero": "Get the free funnel swipe file today and grow your list",
-                                        "form": "Enter your best email to receive instant access right now"}},
-            {"page_id": "p2", "copy": {"cta": "Check your inbox now for the download link we just sent over"}}]},
+            {"page_id": "p1", "copy": {
+                "hero": ("Get our free funnel swipe file today and finally grow the email list "
+                         "you have put off building for months. Inside you get the exact opt-in "
+                         "page, the seven-email follow-up sequence, and the pre-launch checklist "
+                         "we use to ship a converting funnel in a single focused afternoon, with "
+                         "no guesswork and nothing left to chance for a busy founder."),
+                "form": "Enter your best email for instant access"}},
+            {"page_id": "p2", "copy": {"cta": "Check your inbox for the link"}}]},
         "verify": {"overall_pass": True, "pages": [{"status": 200, "marker_present": True},
                                                    {"status": 200, "marker_present": True}]},
         "persona_log": "selected_persona: russell-brunson-the-funnel-hackers-cookbook\nrationale: page flow",
@@ -74,6 +79,38 @@ class TestFabQc(unittest.TestCase):
         r = fab_qc.grade(inp)
         self.assertFalse(r["passed"])
         self.assertIn("D2 Copy substance", r["hard_misses"])
+
+    def test_thin_body_slot_below_floor_is_hard_miss_d2(self):
+        # FIX-XC-04a: a body slot under the 40-word floor (no placeholder) HARD-MISSES D2.
+        inp = _faithful_funnel()
+        inp["artifact"] = {"pages": [
+            {"copy": {"hero": "Grow your list fast with our free funnel swipe file today"}},
+            {"copy": {"cta": "Check your inbox"}}]}
+        r = fab_qc.grade(inp)
+        self.assertFalse(r["passed"])
+        self.assertIn("D2 Copy substance", r["hard_misses"])
+
+    def test_page_lengthclass_floor_below_short_form_is_hard_miss_d2(self):
+        # FIX-XC-04a: total page copy under the template lengthClass floor HARD-MISSES D2.
+        inp = _faithful_funnel()
+        inp["template"]["lengthClass"] = "short-form"   # >= 350 stripped words required
+        r = fab_qc.grade(inp)          # faithful fixture carries only ~60 words total
+        self.assertFalse(r["passed"])
+        self.assertIn("D2 Copy substance", r["hard_misses"])
+
+    def test_headline_and_cta_slots_are_exempt_at_low_floor(self):
+        # FIX-XC-04a: short slots (headline/CTA/form) are legitimately short and pass.
+        inp = _faithful_funnel()
+        inp["template"].pop("lengthClass", None)
+        inp["artifact"] = {"pages": [
+            {"copy": {"headline": "Reclaim Your Focused Mornings Today", "cta": "Apply for the program",
+                      "hero": ("A substantive hero paragraph that clears the forty word body "
+                               "floor with real message-matched copy about the transformation "
+                               "you get, the proof behind it, and exactly what to do next so a "
+                               "reader never has to guess about the offer on this page today.")}},
+            {"copy": {"cta": "Check your inbox for access"}}]}
+        r = fab_qc.grade(inp)
+        self.assertNotIn("D2 Copy substance", r["hard_misses"], r)
 
     def test_force_template_over_explicit_fails_naming_d5(self):
         inp = _faithful_funnel()

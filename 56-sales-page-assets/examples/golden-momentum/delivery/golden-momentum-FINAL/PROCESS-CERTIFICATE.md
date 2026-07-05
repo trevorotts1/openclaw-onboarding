@@ -3,8 +3,8 @@
 - Certificate kind: `sales-page-assets-process-certificate`
 - Run id: `marcus-vale__momentum-engine__run-20260702-01`
 - Funnel type: `sales_page_assets`
-- Issued at: `2026-07-02T14:06:00Z`
-- Skill version: `1.0.0`
+- Issued at: `2026-07-05T17:10:55Z`
+- Skill version: `1.1.0`
 - Example nonce (specimen, not a secret): `golden-momentum-nonce-v1`
 - All phases pass: **True**
 
@@ -13,7 +13,7 @@
 | order | id | prover | status |
 |---|---|---|---|
 | 0 | P0-INTAKE | `prove_sp_intake.py` | pass |
-| 1 | P1-IMAGE-PLAN | `prove_sp_image_plan.py` | pass |
+| 1 | P1-IMAGE-PLAN | `prove_sp_image_plan.py + prove_sp_prompt_floor.py` | pass |
 | 2 | P2-IMAGES | `kie_image.py` | pass |
 | 3 | P3-COPY | `prove_sp_copy_suite` | pass |
 | 4 | P4-MEDIA | `ghl_media.py` | pass |

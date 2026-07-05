@@ -4,6 +4,65 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.15.2 - 2026-07-05 - fix(F1.3/F2.2): close the `--no-asset` counted-but-vector-less window with an `embedded_persona_count` 5th triad member
+
+A `--no-asset` staging bump (`pipeline/persona_fleet.py set-manifest-counts --no-asset`) lifts the four SET counts (blueprint dirs / categories keys / `persona_count` / `canonical_persona_count`) and flips `asset_rebuild_required:true`, but the published `gemini-index.sqlite.gz` still embeds ZERO vectors for the new persona(s). Every existing triad gate compares counts only, so N38 went green (pre-commit, CI, U6b, publish gate all passed) while the served asset was stale — a live, test-exercised path that could land a "counted-but-vector-less" persona on client boxes (Layer-5 retrieval silently degrades to keyword for them). Three cheap gates now close it, no new machinery:
+
+- **`pipeline/persona_fleet.py`** — `triad_counts()` now also reads `INDEX-MANIFEST.embedded_persona_count` (the 5th SET-triad member) + `asset_rebuild_required`. `cmd_triad` keeps the four SET counts as a hard invariant AND checks the embedded count: when `asset_rebuild_required:false` but `embedded_persona_count != persona_count`, the asset lacks vectors for the delta → **exit 5** (`ASSET DISAGREES`). When `asset_rebuild_required:true` (a legitimate mid-flight `--no-asset` bump), the 5th member is **carved out** (exit 0) with an explicit note naming the pending asset rebuild as the real cause. `set-manifest-counts --no-asset` deliberately DOES NOT touch `embedded_persona_count`, so the lag — and therefore the gate — is provable; `build-and-publish.sh` (full build) is the only writer that advances it (from the live `SELECT COUNT(DISTINCT persona_id)`). Legacy manifests without the field stay back-compatible (5th member skipped).
+- **Coordinated non-skill-22 gates (same change, separate files):** `.github/workflows/persona-set-asset-consistency-guard.yml` refuses `asset_rebuild_required:true` on a PROTECTED ref (main / release/* / tag) while ALLOWING it on PR branches so staging stays possible, and enforces the same `embedded_persona_count` 5th member with the `--no-asset` carve-out. `update-skills.sh` Step U6b + `shared-utils/provision-persona-index.sh` now REFUSE to (re)provision a client box from an `asset_rebuild_required:true` manifest (warn + keep the box's current index) so a staged asset can never propagate as canonical. `shared-utils/prebuilt-index/INDEX-MANIFEST.json` carries `embedded_persona_count: 81`.
+- **Test:** `tests/unit/asset-rebuild-required-gate.test.sh` — provisioning refuses a staged manifest (keeps the current index, no clobber), the triad exits 5 on counted-but-vector-less and 0-with-carve-out on a staged bump, `set-manifest-counts --no-asset` leaves `embedded_persona_count` stale, and the manifest a `--no-asset` bump produces is refused end-to-end by provisioning.
+
+_Note: the canonical N38 impl `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` deliberately was NOT edited — skill 23's `skill-version.txt`/`SKILL.md version:` are repo-locked version markers, so touching it forces a repo-wide `/version` bump (out of scope, and a tag-race hazard with concurrent trains). The 5th-member enforcement lives instead in `persona_fleet.py` (the publish + `assert-personas-published.sh` pre-roll gate) and the dedicated CI guard, which are real merge/roll gates on the exact files that move._
+## v6.15.1 - 2026-07-05 - fix(pipeline): Phase-5 embed failure is fatal end-to-end (F1.2 / FDN-5)
+
+Persona-Matching-Overhaul FOUNDATION train FDN-5, fix F1.2 — "registered but not
+embedded ships silently". Before this, `pipeline/orchestrator.py` marked
+`phase5: FAILED` in `pipeline-status.json` but `process_book()` never checked
+Phase 5's outcome, so the orchestrator exited 0; `add-persona-from-source.sh`
+saw `PIPELINE_RC=0` and marked the persona ready-to-publish even though its
+blueprint was **matchable but vector-less** on that box (Layer-5 semantic
+retrieval can never surface it — the exact failure class N38 guards against, but
+on the workspace side where N38 does not run).
+
+- **`pipeline/orchestrator.py`** — Phase-5 `FAILED` now propagates a DISTINCT
+  process exit code (`8` = EMBED_FAILED) end-to-end, in BOTH `--single-book`
+  mode and full-batch mode. The blueprint is deliberately LEFT ON DISK so an
+  idempotent retry re-embeds only: `run_synthesis` gained a `_phase3_already`
+  re-entry that SKIPS the costly LLM synthesis (and an already-COMPLETE Phase 3b)
+  when the blueprint exists and `phase3 == COMPLETE`, running Phase 5/6 only; the
+  single-book early-return is now `phase5`-aware so a retry re-enters to re-embed
+  instead of short-circuiting.
+- **`scripts/add-persona-from-source.sh`** — on `rc 8` it prints a LOUD
+  EMBED_FAILED banner and propagates `exit 8` (so `persona-inbox-watcher.sh`
+  quarantines/retries) WITHOUT marking fleet-publish pending. Added the
+  WORKSPACE triad-equivalent as a terminal gate: blueprint on disk + registered
+  in `persona-categories.json` + ≥1 index row — a second net for the case where
+  the pipeline exits 0 but Phase 5's safety-net indexer silently no-ops. Warn-only
+  under `--skip-index`.
+- **Reconciled to the FDN-4 shared contract (no duplicate helper).** The terminal
+  gate delegates to the ONE shared `pipeline/usable-persona-contract.sh` (landed
+  in v6.15.0 / FDN-4) via a thin shim in the wrapper — it does NOT re-implement
+  the three-leg contract, so the workspace triad-equivalent (F1.2) and the inbox
+  watcher's `processed/` gate (F1.1) share exactly one source of truth.
+- **Tests** — `tests/unit/workspace-usable-persona-triad.test.sh` (5 hermetic
+  cases against the shared contract script, incl. the vector-less / "registered
+  but not embedded" FAIL and no cross-slug credit) and
+  `tests/unit/orchestrator-embed-fail-exit8.test.py` (Phase-5 FAILED → exit 8,
+  DONE → exit 0, blueprint left on disk).
+- **Re-land:** rebased onto `main` (v6.15.0) after the FDN-4 shared-contract
+  merge; resolved the `tests/unit/usable-persona-contract.test.sh` add/add
+  collision by renaming this train's test and dropping the redundant
+  `lib-usable-persona-contract.sh`; skill-version `v6.15.0 → v6.15.1`.
+
+## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
+
+A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.
+
+- **`scripts/add-persona-from-source.sh`** (→ v10.14.35): the orchestrator-missing branch now exits **7 (`ORCHESTRATOR_MISSING`)** instead of 0, so the caller can tell "environment broken, retry later" apart from "usable persona built". Retired the dead `pipeline_status` field from the written `source.json` (it was written in two places and read nowhere — a no-op that pretended to carry state). Also hoisted `SCRIPT_DIR_APS` to an unconditional definition up front so the terminal fleet-publish phase can never hit a `set -u` unbound-variable abort on an installed box (pre-fix it was only defined inside the orchestrator-fallback branch).
+- **NEW `pipeline/usable-persona-contract.sh`** (v1.0.0): the ONE shared, fail-closed "is this persona actually usable on this box?" contract — asserts all three legs (blueprint present + non-empty; slug is a key under `.personas` in `persona-categories.json`; ≥1 row in the `gemini-index.sqlite` `embeddings` table whose `file_path` is under `coaching-personas/personas/<slug>/`). Distinct exit codes per missing leg (2/3/4). Prefix-slug-safe (a `foo-bar` index row does not satisfy `foo`). Modelled on Skill 23 SOP-07 `assert_persona_grounded()`.
+- **`scripts/persona-inbox-watcher.sh`** (→ v6.6.1): the success branch now asserts the usable-persona contract BEFORE any `mv` to `processed/`. A zero exit from the converter is necessary but not sufficient; any missing leg routes the source through the existing failure/retry/quarantine path (never `processed/`), so a book can no longer be lost silently.
+- **Test:** `tests/unit/usable-persona-contract.test.sh` — per-leg exit codes + prefix-slug safety, plus an end-to-end watcher harness (sandboxed HOME, stub converter) proving the watcher never moves a source to `processed/` on false-success, on a vector-less (no-index-row) persona, or on an `ORCHESTRATOR_MISSING` (exit 7) result.
+
 ## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
 
 The book pipeline writes the WORKSPACE only; the repo library (blueprint dirs + `persona-categories.json` seed), the INDEX-MANIFEST, and the release asset used to be caught up by hand, so they lagged and the N38 count triad went red at CI/roll. New `pipeline/publish-personas-to-fleet.sh` moves all four together atomically (sanitized blueprints, controlled-vocab categories, delegated HASH-SKIP asset rebuild) and refuses (rolling back — no half-commit) unless the triad + asset sha256 all agree at N. New `pipeline/assert-personas-published.sh` (standalone + pre-commit + `update-skills.sh` pre-roll) and `pipeline/fleet-publish-status.sh` (terminal-phase pending marker written by `add-persona-from-source.sh`) make a forgotten publish impossible. Hermetic core: `pipeline/persona_fleet.py`. Regression lock: `tests/unit/publish-personas-to-fleet.test.sh`. Runbook: `PIPELINE.md` → "Adding books → publishing personas to the fleet".

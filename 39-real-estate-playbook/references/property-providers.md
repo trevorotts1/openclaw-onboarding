@@ -8,7 +8,7 @@ operator-supplied; the skill ships ZERO keys and ZERO scraped data.
 `scripts/02-configure-providers.sh` scans the operator's standard env locations,
 records which capabilities are AVAILABLE vs an HONEST GAP, and writes
 `<MASTER_FILES_DIR>/.skill-39-provider-status.json`. The runtime
-(`scripts/03-property-lookup.sh`) reads that status and either tells the agent to
+(`scripts/property-lookup.sh`) reads that status and either tells the agent to
 issue the provider request, or returns the honest-gap line.
 
 ## Capabilities and accepted env keys

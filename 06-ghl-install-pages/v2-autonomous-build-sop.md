@@ -45,9 +45,12 @@ task_id = ingest_task(
 # task_id is None if the board is unreachable — build continues either way.
 ```
 
-**department_slug routing** (controlled by `job_type`):
+**department_slug routing** (controlled by `job_type`, or an explicit `department_slug=` override):
 - `'funnel'`, `'sales-funnel'`, `'opt-in'`, `'multistep'` → `department_slug='funnels'`
 - `'website'`, `'landing-page'`, `'single-page'`, `'web-development'` → `department_slug='web-development'`
+- **P2-COPY dependency card** (`department_slug='marketing'`) — opened automatically for a
+  standalone "write it for me" page/website so its copy is authored by the Conversion
+  Copywriter, not improvised inline. See **P2.5** below (FIX-COPY-01).
 
 **What the POST sends** to `POST /api/tasks/ingest`:
 ```json
@@ -298,6 +301,42 @@ APPROVED). The dept agent MUST:
 4. **Proceed to S2 (the canonical build recipe below).** All three pre-flight
    gates (P0, P1, P2) must show `true` in their gate receipts before the first
    GHL autosave call.
+
+---
+
+## P2.5 Standalone page / website copy routing — the P2-COPY mini-epic (FIX-COPY-01)
+
+**The single largest copy-quality lever.** The P0→P2 pre-flight above only runs when
+this SOP is invoked *inside* the full-funnel pipeline (SOP-07). A plain, standalone
+request — **"build me a landing page"**, **"make me a website"**, **"I need a sales
+page"** — does NOT enter that pipeline, so historically its copy was improvised inline
+by the build session model (the ~2/10 copy problem). It must not be.
+
+**Intent-signal amendment to SOP-07 Step 1.** Treat the bare phrases **"landing page"**,
+**"website"**, and **"sales page"** as copy-authoring intents whenever copy must be
+written — i.e. whenever the intake `has_copy` answer is **"write it for me"** and no
+APPROVED `copy.md` already exists. These are copy-bearing requests exactly like a
+funnel; they simply arrive without the full-funnel epic around them.
+
+**What the dispatcher does automatically.** `tools/v2_dispatcher.py::_run_intake`
+(via `_open_copy_dependency`) detects this case and opens a **3-card mini-epic**
+(`p1-spec → p2-copy → p4-build`):
+
+1. Posts a **P2-COPY** card routed to the **`marketing`** department (the Conversion
+   Copywriter, per SOP-07 Step 3) — `cc_board.ingest_task(..., department_slug="marketing")`,
+   fail-soft (board optional).
+2. Flags the build task **`waiting_on_dependency`** and writes
+   `routing/copy-dependency.json`.
+3. **HOLDS the build** — `dispatch_one` returns state `waiting_on_dependency` and the
+   injected builder is NEVER called — until an **APPROVED** `copy.md` exists under the
+   run dir (checked by `_approved_copy_exists`; a `PENDING-QC` / `REVISED-PENDING-QC`
+   header does NOT clear it). A later dispatch, after the Conversion Copywriter's
+   `copy.md` is APPROVED, proceeds to the build normally.
+
+The local `waiting_on_dependency` receipt is the **binding** gate; the board card is
+visibility only. `"I have copy"` (or an already-APPROVED / explicitly-provided `copy.md`)
+is a clean no-op — the build proceeds immediately. Funnels are unaffected: their copy
+runs through P0–P2 above, and `has_copy` is a page-only intake question.
 
 ---
 
