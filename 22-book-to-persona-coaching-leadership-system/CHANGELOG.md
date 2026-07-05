@@ -4,7 +4,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## v6.15.1 - 2026-07-05 - fix(F1.3/F2.2): close the `--no-asset` counted-but-vector-less window with an `embedded_persona_count` 5th triad member
+## v6.15.2 - 2026-07-05 - fix(F1.3/F2.2): close the `--no-asset` counted-but-vector-less window with an `embedded_persona_count` 5th triad member
 
 A `--no-asset` staging bump (`pipeline/persona_fleet.py set-manifest-counts --no-asset`) lifts the four SET counts (blueprint dirs / categories keys / `persona_count` / `canonical_persona_count`) and flips `asset_rebuild_required:true`, but the published `gemini-index.sqlite.gz` still embeds ZERO vectors for the new persona(s). Every existing triad gate compares counts only, so N38 went green (pre-commit, CI, U6b, publish gate all passed) while the served asset was stale — a live, test-exercised path that could land a "counted-but-vector-less" persona on client boxes (Layer-5 retrieval silently degrades to keyword for them). Three cheap gates now close it, no new machinery:
 
@@ -13,6 +13,46 @@ A `--no-asset` staging bump (`pipeline/persona_fleet.py set-manifest-counts --no
 - **Test:** `tests/unit/asset-rebuild-required-gate.test.sh` — provisioning refuses a staged manifest (keeps the current index, no clobber), the triad exits 5 on counted-but-vector-less and 0-with-carve-out on a staged bump, `set-manifest-counts --no-asset` leaves `embedded_persona_count` stale, and the manifest a `--no-asset` bump produces is refused end-to-end by provisioning.
 
 _Note: the canonical N38 impl `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` deliberately was NOT edited — skill 23's `skill-version.txt`/`SKILL.md version:` are repo-locked version markers, so touching it forces a repo-wide `/version` bump (out of scope, and a tag-race hazard with concurrent trains). The 5th-member enforcement lives instead in `persona_fleet.py` (the publish + `assert-personas-published.sh` pre-roll gate) and the dedicated CI guard, which are real merge/roll gates on the exact files that move._
+## v6.15.1 - 2026-07-05 - fix(pipeline): Phase-5 embed failure is fatal end-to-end (F1.2 / FDN-5)
+
+Persona-Matching-Overhaul FOUNDATION train FDN-5, fix F1.2 — "registered but not
+embedded ships silently". Before this, `pipeline/orchestrator.py` marked
+`phase5: FAILED` in `pipeline-status.json` but `process_book()` never checked
+Phase 5's outcome, so the orchestrator exited 0; `add-persona-from-source.sh`
+saw `PIPELINE_RC=0` and marked the persona ready-to-publish even though its
+blueprint was **matchable but vector-less** on that box (Layer-5 semantic
+retrieval can never surface it — the exact failure class N38 guards against, but
+on the workspace side where N38 does not run).
+
+- **`pipeline/orchestrator.py`** — Phase-5 `FAILED` now propagates a DISTINCT
+  process exit code (`8` = EMBED_FAILED) end-to-end, in BOTH `--single-book`
+  mode and full-batch mode. The blueprint is deliberately LEFT ON DISK so an
+  idempotent retry re-embeds only: `run_synthesis` gained a `_phase3_already`
+  re-entry that SKIPS the costly LLM synthesis (and an already-COMPLETE Phase 3b)
+  when the blueprint exists and `phase3 == COMPLETE`, running Phase 5/6 only; the
+  single-book early-return is now `phase5`-aware so a retry re-enters to re-embed
+  instead of short-circuiting.
+- **`scripts/add-persona-from-source.sh`** — on `rc 8` it prints a LOUD
+  EMBED_FAILED banner and propagates `exit 8` (so `persona-inbox-watcher.sh`
+  quarantines/retries) WITHOUT marking fleet-publish pending. Added the
+  WORKSPACE triad-equivalent as a terminal gate: blueprint on disk + registered
+  in `persona-categories.json` + ≥1 index row — a second net for the case where
+  the pipeline exits 0 but Phase 5's safety-net indexer silently no-ops. Warn-only
+  under `--skip-index`.
+- **Reconciled to the FDN-4 shared contract (no duplicate helper).** The terminal
+  gate delegates to the ONE shared `pipeline/usable-persona-contract.sh` (landed
+  in v6.15.0 / FDN-4) via a thin shim in the wrapper — it does NOT re-implement
+  the three-leg contract, so the workspace triad-equivalent (F1.2) and the inbox
+  watcher's `processed/` gate (F1.1) share exactly one source of truth.
+- **Tests** — `tests/unit/workspace-usable-persona-triad.test.sh` (5 hermetic
+  cases against the shared contract script, incl. the vector-less / "registered
+  but not embedded" FAIL and no cross-slug credit) and
+  `tests/unit/orchestrator-embed-fail-exit8.test.py` (Phase-5 FAILED → exit 8,
+  DONE → exit 0, blueprint left on disk).
+- **Re-land:** rebased onto `main` (v6.15.0) after the FDN-4 shared-contract
+  merge; resolved the `tests/unit/usable-persona-contract.test.sh` add/add
+  collision by renaming this train's test and dropping the redundant
+  `lib-usable-persona-contract.sh`; skill-version `v6.15.0 → v6.15.1`.
 
 ## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
 

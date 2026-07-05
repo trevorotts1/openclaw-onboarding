@@ -5,17 +5,30 @@
 # This script verifies a BUILT WORKFLOW artifact against the WF checklist items.
 #
 # Usage:
-#   ./qc-built-workflow.sh <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] [--json]
+#   ./qc-built-workflow.sh <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] \
+#                          [--fab] [--evidence <evidence_root>] [--conversational] [--json]
 #
 #   workflow-id       GHL workflow id (required)
 #   --publish-intent  Client's publish decision: DRAFT (default) or LIVE
 #   --re-entry        Client's re-entry decision: ONCE (default) or ALLOW-MULTIPLE
+#   --fab             Run the FAB-QC library-aware overlay (fail-CLOSED — see below)
+#   --evidence        Canonical evidence_root (from Step 0.4); implies --fab
+#   --conversational  Run Skill 38 qc-trinity-registry.sh as a HARD gate; WF-19 FAILs
+#                     mechanically (not REQUIRES_HUMAN_REVIEW) on non-zero trinity exit
 #   --json            Emit per-item PASS/FAIL as JSON to stdout (for QC sub-agent parsing)
 #
+# NOTE on export routing (Tier awareness): `caf workflows list` reads via the LOCATION
+# PIT (Tier 0, public API). `caf workflows get` / `caf workflows export` route through the
+# INTERNAL Firebase client and REQUIRE the Firebase refresh token — they are NOT Tier-0
+# PIT reads. On a Tier-4 (agent-browser) build with no Firebase token, export cannot run,
+# so this mechanical QC cannot run: that is a fail-CLOSED "no-token = NOT DONE" condition
+# (exit 2, REQUIRES_OPERATOR agent-browser read-back), never a silent pass.
+#
 # Exit codes:
-#   0  = ALL mechanically-checkable items PASS
-#   1  = one or more items FAIL
-#   2  = workflow not found or caf not available (hard prereq failure)
+#   0  = ALL mechanically-checkable items PASS (and, when --fab, FAB-QC scored >= 8.5)
+#   1  = one or more items FAIL (or --fab and FAB-QC below 8.5 / unavailable — fail-closed)
+#   2  = workflow not found, caf not available, or export blocked by a missing Firebase
+#        token on a Tier-4 build (hard prereq failure — REQUIRES_OPERATOR)
 #
 # Mechanically-checkable WF items (asserted here):
 #   WF-3  Trigger present
@@ -41,6 +54,7 @@ RE_ENTRY_DECISION="ONCE"
 JSON_MODE=0
 FAB_MODE=0
 FAB_EVIDENCE=""
+CONVERSATIONAL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -49,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --json)           JSON_MODE=1; shift ;;
     --fab)            FAB_MODE=1; shift ;;        # run the FAB-QC library-aware overlay
     --evidence)       FAB_EVIDENCE="${2:-}"; FAB_MODE=1; shift 2 ;;
+    --conversational) CONVERSATIONAL=1; shift ;;  # WF-19: exec Skill 38 qc-trinity-registry.sh as a HARD gate
     -*)               echo "Unknown option: $1" >&2; exit 2 ;;
     *)                WORKFLOW_ID="$1"; shift ;;
   esac
@@ -86,7 +101,16 @@ trap 'rm -f "$TMP"' EXIT
 
 EXPORT_ERR=""
 if ! EXPORT_ERR=$(caf workflows export --workflow-id "$WORKFLOW_ID" --out "$TMP" 2>&1); then
-  echo "ERROR: caf workflows export --workflow-id $WORKFLOW_ID --out $TMP failed: $EXPORT_ERR" >&2
+  # `caf workflows export` routes through the INTERNAL Firebase client (NOT the Tier-0
+  # PIT). If the failure is a missing/expired Firebase token, this is a Tier-4 build whose
+  # mechanical QC CANNOT run — fail-closed "no-token = NOT DONE" (never a silent pass).
+  if echo "$EXPORT_ERR" | grep -qiE 'firebase|refresh[ _-]?token|id[ _-]?token|internal client|no token|token[^"]*(missing|expired|not found)|tier[ _-]?4'; then
+    echo "REQUIRES_OPERATOR: caf workflows export needs the internal Firebase token, which is absent/expired." >&2
+    echo "TIER-4 BUILD (agent-browser): mechanical Step-9 QC cannot run without export. NOT DONE." >&2
+    echo "Backstop: an agent-browser read-back of the built workflow must confirm the build before done." >&2
+  else
+    echo "ERROR: caf workflows export --workflow-id $WORKFLOW_ID --out $TMP failed: $EXPORT_ERR" >&2
+  fi
   rm -f "$TMP"
   exit 2
 fi
@@ -98,8 +122,28 @@ fi
 
 EXPORT_OUT=$(cat "$TMP")
 
-if echo "$EXPORT_OUT" | grep -qi "not found\|404\|no workflow\|error"; then
-  echo "ERROR: workflow $WORKFLOW_ID not found in GHL" >&2
+# Detect a genuine API failure via a TOP-LEVEL JSON error key ONLY — never a whole-body
+# grep for "error"/"404", which false-aborts on innocent copy (an email body reading
+# "Did our last message error out? Call us at 404-..." is a valid workflow, not a failure).
+EXPORT_TOPLEVEL_ERR=$(printf '%s' "$EXPORT_OUT" | python3 -c "
+import sys, json
+try:
+  o = json.load(sys.stdin)
+except Exception:
+  print(''); sys.exit(0)
+if isinstance(o, dict):
+  for k in ('error','errors','statusCode','message'):
+    v = o.get(k)
+    # A top-level 'message'/'statusCode' only counts as an error alongside a 4xx/5xx code
+    # or an explicit error key; a plain descriptive 'message' on a real export is fine.
+    if k in ('error','errors') and v:
+      print('top-level error key: %s' % k); break
+    if k == 'statusCode' and isinstance(v,(int,str)) and str(v)[:1] in ('4','5'):
+      print('http %s' % v); break
+" 2>/dev/null || echo "")
+
+if [ -n "$EXPORT_TOPLEVEL_ERR" ]; then
+  echo "ERROR: workflow $WORKFLOW_ID export returned a top-level API error ($EXPORT_TOPLEVEL_ERR)" >&2
   exit 2
 fi
 
@@ -349,8 +393,41 @@ record_human "WF-13" "Email From Name/From Email require QC agent review of expo
 record_human "WF-14" "Webhook URL/method/headers require QC agent review of export output"
 record_human "WF-16" "Advanced settings (Stop-on-Response, time window, timezone) require QC agent review"
 record_human "WF-17" "Edge case decisions require QC agent review against plan"
-record_human "WF-19" "TRINITY completeness requires QC agent to check qc-trinity-registry.sh if conversational"
 record_human "WF-20" "Hallucination detection (WF-20) requires QC agent to reconcile all build-agent claims against export"
+
+# ── WF-19: TRINITY completeness — MECHANICAL HARD GATE for conversational builds ──
+# With --conversational, WF-19 is enforced by executing Skill 38's qc-trinity-registry.sh
+# (the SAME script the SOPs claim is a hard pre-registration gate). Any non-zero exit
+# (INCOMPLETE trinity, or NO conversation-workflows folder) is a mechanical WF-19 FAIL —
+# a conversational workflow that registers without all three TRINITY legs is not done.
+# Without --conversational the item stays human-review (TRINITY is N/A for a mechanical
+# automation with no SMS/conversational-AI leg).
+if [ "$CONVERSATIONAL" -eq 1 ]; then
+  _TRINITY=""
+  for _cand in \
+    "$SCRIPT_DIR/../38-conversational-ai-system/scripts/qc-trinity-registry.sh" \
+    "$HOME/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh" \
+    "/data/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh"; do
+    if [ -f "$_cand" ]; then _TRINITY="$_cand"; break; fi
+  done
+  if [ -z "$_TRINITY" ]; then
+    # Claimed hard gate is unavailable → fail CLOSED, never skip a claimed gate.
+    record_fail "WF-19" "trinity_registry_not_found" "qc-trinity-registry.sh present + exit 0" \
+      "REQUIRES_OPERATOR: --conversational build but Skill 38 qc-trinity-registry.sh not found on any known path — cannot verify TRINITY; fail-closed."
+  else
+    TRINITY_OUT=""
+    if TRINITY_OUT=$(bash "$_TRINITY" 2>&1); then
+      record_pass "WF-19" "trinity_complete" "all TRINITY legs present" \
+        "qc-trinity-registry.sh exit 0 — GHL workflow + Layer-2 playbook + Build-with-AI prompt all present."
+    else
+      _trc=$?
+      record_fail "WF-19" "trinity_incomplete_exit_${_trc}" "all TRINITY legs present (exit 0)" \
+        "CRITICAL: qc-trinity-registry.sh exit $_trc — TRINITY incomplete or no conversation-workflows folder. A conversational workflow must NOT register without all three legs. Detail: $(printf '%s' "$TRINITY_OUT" | tr '\n' ' ' | cut -c1-240)"
+    fi
+  fi
+else
+  record_human "WF-19" "TRINITY N/A for this mechanical build. Re-run with --conversational to enforce qc-trinity-registry.sh as a hard gate (any non-zero exit = WF-19 FAIL)."
+fi
 
 # ── WEIGHTED QUALITY RUBRIC (references/workflow-quality-rubric.md) ────────────
 # SUPERSET OVERLAY computed AFTER WF-1..21 (never instead of). Each of the 8
@@ -420,8 +497,15 @@ for d in "D1:$D1" "D2:$D2" "D3:$D3" "D4:$D4" "D5:$D5" "D6:$D6" "D7:$D7" "D8:$D8"
 done
 
 # ── Output ─────────────────────────────────────────────────────────────────────
-MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-21")
-HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
+# WF-19 is a MECHANICAL item on a --conversational build (trinity hard gate) and a
+# human-review item otherwise — place it in the right display bucket accordingly.
+if [ "$CONVERSATIONAL" -eq 1 ]; then
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-19" "WF-21")
+  HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-20")
+else
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-21")
+  HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
+fi
 
 if [ "$JSON_MODE" -eq 1 ]; then
   # Build JSON manually (no python dependency required)
@@ -526,19 +610,38 @@ fi
 
 # ── FAB-QC overlay (library-aware: template fidelity / copy substance / persona / ──
 #    flexibility / funnel<->automation link). SUPERSET on top of WF-1..21 (which is the
-#    D3 mechanical floor). Runs only when --fab/--evidence is passed and an evidence root
-#    with a routing/match-decision.json exists. The shared scorer is the same one Skill 6
-#    uses (shared-utils/fab_qc.py). The combined "done" bar is: WF mechanical PASS AND FAB >= 8.5.
+#    D3 mechanical floor). Runs whenever --fab/--evidence is passed. The shared scorer is
+#    the same one Skill 6 uses (shared-utils/fab_qc.py). The combined "done" bar is:
+#    WF mechanical PASS AND FAB >= 8.5.
+#
+# FAIL-CLOSED CONTRACT (FIX-XC-03g): when FAB_MODE=1 the overlay is a HARD gate. If the
+# score is UNAVAILABLE for ANY reason — scorer absent, evidence_root missing, or the
+# scorer emits nothing — the build is NOT auto-passed. FAB_RC=1, the verdict is
+# REQUIRES_OPERATOR, and the script exits non-zero. A claimed gate is never silently
+# skipped. The canonical evidence_root is created in Step 0.4 (automation_matcher.step0_match
+# writes routing/match-decision.json + persona-selection-log.md there) and the SAME root is
+# passed here at Step 9.3c via --evidence.
 FAB_RC=0
 FAB_SCORE="n/a"
+FAB_STATUS="not_run"
+FAB_FAIL_REASON=""
 if [ "$FAB_MODE" -eq 1 ]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
   FAB_SCORER="$REPO_ROOT/shared-utils/fab_qc.py"
   FAB_PRODUCER="$REPO_ROOT/shared-utils/fab_artifact.py"
+  # Canonical evidence_root default (Step 0.4). A missing root is NOT a pass — it fails closed below.
   if [ -z "$FAB_EVIDENCE" ]; then FAB_EVIDENCE="$CAF_DATA/evidence/$WORKFLOW_ID"; fi
-  if [ -f "$FAB_SCORER" ] && [ -d "$FAB_EVIDENCE" ]; then
-    echo ""
-    echo "═══ FAB-QC overlay (library-aware, >= 8.5) ═══"
+  echo ""
+  echo "═══ FAB-QC overlay (library-aware, >= 8.5 — FAIL-CLOSED) ═══"
+  if [ ! -f "$FAB_SCORER" ]; then
+    FAB_RC=1; FAB_STATUS="requires_operator"
+    FAB_FAIL_REASON="FAB-QC scorer not found ($FAB_SCORER) — cannot prove >= 8.5"
+    echo "  REQUIRES_OPERATOR: $FAB_FAIL_REASON"
+  elif [ ! -d "$FAB_EVIDENCE" ]; then
+    FAB_RC=1; FAB_STATUS="requires_operator"
+    FAB_FAIL_REASON="evidence_root not found ($FAB_EVIDENCE) — Step 0.4 must create it and Step 9.3c must pass the SAME root via --evidence"
+    echo "  REQUIRES_OPERATOR: $FAB_FAIL_REASON"
+  else
     # PRODUCER (D4): convert the REAL exported workflow ($TMP) into build/fab-artifact.json so the
     # scorer below judges the actual built steps + copy, not a hand-authored fixture. Only writes
     # when a routing/match-decision.json receipt exists (a template-aware build) and never clobbers
@@ -553,12 +656,19 @@ if [ "$FAB_MODE" -eq 1 ]; then
       FAB_SCORE="$(printf '%s' "$FAB_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["score"]);' 2>/dev/null || echo n/a)"
       FAB_PASS="$(printf '%s' "$FAB_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("1" if d["passed"] else "0");' 2>/dev/null || echo 0)"
       python3 "$FAB_SCORER" --evidence "$FAB_EVIDENCE" --kind automation 2>/dev/null || true
-      if [ "$FAB_PASS" != "1" ]; then FAB_RC=1; fi
+      if [ "$FAB_PASS" = "1" ]; then
+        FAB_STATUS="pass"
+      else
+        FAB_RC=1; FAB_STATUS="fail"
+        FAB_FAIL_REASON="FAB-QC below 8.5 (score $FAB_SCORE)"
+      fi
     else
-      echo "  (FAB-QC could not score this evidence tree — ensure routing/match-decision.json exists)"
+      # Scorer produced nothing (missing routing/match-decision.json, malformed evidence,
+      # or a scorer error). This is UNAVAILABLE, not a pass → fail CLOSED.
+      FAB_RC=1; FAB_STATUS="requires_operator"
+      FAB_FAIL_REASON="FAB-QC could not score this evidence tree (ensure Step 0.4 wrote routing/match-decision.json + persona-selection-log.md under $FAB_EVIDENCE)"
+      echo "  REQUIRES_OPERATOR: $FAB_FAIL_REASON"
     fi
-  else
-    echo "  (FAB-QC skipped: scorer or evidence root not found — $FAB_EVIDENCE)"
   fi
 fi
 
@@ -567,10 +677,18 @@ mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
-# When the FAB-QC overlay ran, the build is "done" only if it also scored >= 8.5.
-[ "$FAB_RC" -ne 0 ] && { echo "PER-BUILD QC FAILED — FAB-QC below 8.5 (score $FAB_SCORE). Fix the lowest dimension and re-run."; exit 1; }
+# FAB-QC overlay is a HARD, FAIL-CLOSED gate when it ran: the build is "done" only if the
+# score is available AND >= 8.5. An UNAVAILABLE score is REQUIRES_OPERATOR, never a pass.
+if [ "$FAB_RC" -ne 0 ]; then
+  if [ "$FAB_STATUS" = "requires_operator" ]; then
+    echo "PER-BUILD QC FAILED — REQUIRES_OPERATOR: ${FAB_FAIL_REASON}. FAB-QC is a hard gate and cannot be skipped."
+  else
+    echo "PER-BUILD QC FAILED — ${FAB_FAIL_REASON:-FAB-QC below 8.5 (score $FAB_SCORE)}. Fix the lowest dimension and re-run."
+  fi
+  exit 1
+fi
 exit 0

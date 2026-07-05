@@ -2136,26 +2136,40 @@ async def run_synthesis(session: aiohttp.ClientSession, book: dict, status: dict
     analysis_path = PERSONAS_DIR / folder / "analysis-notes.md"
     blueprint_path = PERSONAS_DIR / folder / "persona-blueprint.md"
 
-    log(f"[PHASE 3] Starting synthesis: {book['title']}")
-    mark_phase(status, folder, 3, "IN_PROGRESS")
+    # F1.2 (FDN-5): re-entrancy for an idempotent retry. If the blueprint was
+    # already synthesized on a prior run (phase3 COMPLETE) but a LATER phase
+    # (notably Phase 5 embedding) FAILED, a retry must NOT re-run the costly LLM
+    # synthesis — it must RE-EMBED ONLY. Detect that here and skip straight to
+    # the Phase 3b / Phase 5 / Phase 6 tail with the on-disk blueprint intact.
+    _phase3_already = (
+        status.get(folder, {}).get("phase3") == "COMPLETE"
+        and blueprint_path.exists()
+    )
+    if _phase3_already:
+        log(f"[PHASE 3] Blueprint already COMPLETE for {folder} — skipping "
+            f"synthesis; re-entering to re-embed (Phase 5) only.")
+    else:
+        log(f"[PHASE 3] Starting synthesis: {book['title']}")
+        mark_phase(status, folder, 3, "IN_PROGRESS")
 
     try:
         extraction_text = extraction_path.read_text()
         analysis_text = analysis_path.read_text()
 
-        # Read the SKILL.md spec to include in synthesis prompt
-        # v6.6.0: look in the skill folder, not PROJECT_DIR (which is now BASE)
-        skill_path_candidates = [
-            Path(__file__).parent.parent / "SKILL.md",
-            BASE / "SKILL.md",
-        ]
-        skill_spec = ""
-        for sp in skill_path_candidates:
-            if sp.exists():
-                skill_spec = sp.read_text()
-                break
+        if not _phase3_already:
+            # Read the SKILL.md spec to include in synthesis prompt
+            # v6.6.0: look in the skill folder, not PROJECT_DIR (which is now BASE)
+            skill_path_candidates = [
+                Path(__file__).parent.parent / "SKILL.md",
+                BASE / "SKILL.md",
+            ]
+            skill_spec = ""
+            for sp in skill_path_candidates:
+                if sp.exists():
+                    skill_spec = sp.read_text()
+                    break
 
-        user_prompt = f"""BOOK: {book['title']}
+            user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
 PERSONA FOLDER: {folder}
 
@@ -2186,32 +2200,32 @@ Now write the complete persona blueprint. All 14 sections. Zero placeholders.
 Both Coaching Framework (Section 3) and Agent Governance Framework (Section 4) fully built.
 At the end, rate your output on the 6 dimensions specified in your instructions."""
 
-        # v9.6.2: Phase 3 model resolved per book via heavy-tier selector.
-        # Synthesis input combines all extraction + analysis notes — can be large.
-        phase3_input_size = len(user_prompt)
-        phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
-        log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
+            # v9.6.2: Phase 3 model resolved per book via heavy-tier selector.
+            # Synthesis input combines all extraction + analysis notes — can be large.
+            phase3_input_size = len(user_prompt)
+            phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
+            log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
 
-        _syn_sys = _synthesis_system()
-        full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
-        if phase3_route == "openai-responses":
-            # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
-            result = await call_codex(session, full_input, max_tokens=120000)
-        elif phase3_route == "ollama":
-            # v10.3.0: Ollama Cloud is now a real route — call it directly
-            ollama_model = phase3_model.replace("ollama/", "", 1)
-            try:
-                result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
-            except Exception as e:
-                log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
-                fallback_model = _openrouter_fallback_model(phase3_model)
-                result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
-        else:
-            # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
-            or_model = phase3_model.replace("openrouter/", "", 1)
-            result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
+            _syn_sys = _synthesis_system()
+            full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
+            if phase3_route == "openai-responses":
+                # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
+                result = await call_codex(session, full_input, max_tokens=120000)
+            elif phase3_route == "ollama":
+                # v10.3.0: Ollama Cloud is now a real route — call it directly
+                ollama_model = phase3_model.replace("ollama/", "", 1)
+                try:
+                    result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
+                except Exception as e:
+                    log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
+                    fallback_model = _openrouter_fallback_model(phase3_model)
+                    result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
+            else:
+                # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
+                or_model = phase3_model.replace("openrouter/", "", 1)
+                result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
 
-        header = f"""# PERSONA BLUEPRINT - {book['title']}
+            header = f"""# PERSONA BLUEPRINT - {book['title']}
 **Source Book:** {book['title']} by {book['author']}
 **Version:** 1.0.0
 **Built:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}
@@ -2224,12 +2238,12 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
 ---
 
 """
-        blueprint_path.write_text(header + result)
+            blueprint_path.write_text(header + result)
 
-        log(f"  [PHASE 3 COMPLETE] {book['title']} - {len(result):,} chars saved")
-        mark_phase(status, folder, 3, "COMPLETE")
-        status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
-        save_status(status)
+            log(f"  [PHASE 3 COMPLETE] {book['title']} - {len(result):,} chars saved")
+            mark_phase(status, folder, 3, "COMPLETE")
+            status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
+            save_status(status)
 
         # Phase 3b: emit PLAYBOOK-APPENDIX.md alongside the blueprint. This is the
         # depth-preservation half of the pipeline — it keeps the book's actual
@@ -2240,11 +2254,16 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # loaded above. Runs BEFORE Phase 5 so the appendix is present when the
         # Gemini indexer scans the persona folder. Non-fatal to Phase 3: a missed
         # appendix floor is marked FAILED (fail-loud) but the blueprint still ships.
-        try:
-            await run_playbook_appendix(session, book, status, extraction_text, analysis_text)
-        except Exception as e:
-            log(f"  Warning: Phase 3b (playbook appendix) failed for {folder}: {e}")
-            mark_phase(status, folder, "3b", "FAILED", str(e))
+        _p3b = status.get(folder, {}).get("phase3b")
+        if _phase3_already and _p3b in ("COMPLETE", "COMPLETE_WITH_WARNINGS", "DONE"):
+            log(f"  Phase 3b already {_p3b} for {folder} — skipping appendix "
+                f"regen on re-embed-only re-entry.")
+        else:
+            try:
+                await run_playbook_appendix(session, book, status, extraction_text, analysis_text)
+            except Exception as e:
+                log(f"  Warning: Phase 3b (playbook appendix) failed for {folder}: {e}")
+                mark_phase(status, folder, "3b", "FAILED", str(e))
 
         # Phase 5: Auto re-index persona in Gemini Engine.
         # Pre-v10.14.27 hardcoded the legacy ~/clawd/scripts/gemini-indexer.py
@@ -2584,10 +2603,18 @@ async def main(args=None):
         s = status[book["folder"]]
         log(f"  Status: P1={s['phase1']} P2={s['phase2']} P3={s['phase3']}")
 
-        if s["phase3"] == "COMPLETE":
-            log("  Persona already COMPLETE. Use --force to re-run (not yet implemented).")
+        if s["phase3"] == "COMPLETE" and s.get("phase5") == "DONE":
+            log("  Persona already COMPLETE (blueprint + embed). Use --force to "
+                "re-run (not yet implemented).")
             log("  Blueprint at: " + str(PERSONAS_DIR / book["folder"] / "persona-blueprint.md"))
             return
+        if s["phase3"] == "COMPLETE" and s.get("phase5") != "DONE":
+            # F1.2 (FDN-5): the blueprint was synthesized but Phase 5 embedding
+            # has not succeeded. Do NOT early-return — fall through to
+            # process_book so run_synthesis re-enters in RE-EMBED-ONLY mode
+            # (idempotent: no LLM synthesis, just re-index + re-register).
+            log(f"  Blueprint COMPLETE but Phase-5 embed not DONE "
+                f"(phase5={s.get('phase5', 'PENDING')}) — re-entering to re-embed only.")
 
         connector = aiohttp.TCPConnector(limit=5)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -2610,8 +2637,25 @@ async def main(args=None):
         final = status[book["folder"]]
         log("\n" + "="*60)
         log(f"Single-book pipeline complete: {args.slug}")
-        log(f"  P1={final['phase1']}  P2={final['phase2']}  P3={final['phase3']}")
+        log(f"  P1={final['phase1']}  P2={final['phase2']}  P3={final['phase3']}"
+            f"  P5={final.get('phase5', 'PENDING')}")
         log("="*60)
+
+        # F1.2 (FDN-5): Phase-5 (embedding) failure is FATAL end-to-end. A
+        # persona whose blueprint exists but whose vectors are missing is
+        # "registered but not embedded" — matchable by keyword only, invisible
+        # to Layer-5 semantic retrieval (exactly the failure class N38 guards
+        # against, but on the workspace side where N38 does not run). Propagate a
+        # DISTINCT exit code (8 = EMBED_FAILED) so the caller
+        # (add-persona-from-source.sh -> persona-inbox-watcher.sh) fails LOUD and
+        # quarantines/retries instead of logging a false success. The blueprint
+        # is deliberately LEFT ON DISK so an idempotent retry re-embeds only
+        # (see run_synthesis `_phase3_already` re-entry above).
+        if final.get("phase5") == "FAILED":
+            log(f"[PIPELINE FAILED — EMBED_FAILED (8)] {args.slug}: Phase 5 "
+                f"embedding FAILED — persona is registered but NOT searchable "
+                f"(vector-less). Blueprint left on disk; re-run re-embeds only.")
+            sys.exit(8)
         return
 
     # ── Full-batch mode (default: process all pending books in BOOKS list) ────
@@ -2697,11 +2741,25 @@ async def main(args=None):
 
     complete_count = sum(1 for b in BOOKS if final_status[b["folder"]]["phase3"] == "COMPLETE")
     failed_count = sum(1 for b in BOOKS if "FAILED" in [final_status[b["folder"]][f"phase{p}"] for p in [1,2,3]])
+    # F1.2 (FDN-5): a synthesized-but-un-embedded persona is a silent-failure
+    # class too, so surface Phase-5 failures in the batch report as well.
+    embed_failed = [b["folder"] for b in BOOKS
+                    if final_status[b["folder"]].get("phase5") == "FAILED"]
     log(f"\nCompleted: {complete_count}/{len(BOOKS)}")
     log(f"Failed: {failed_count}")
+    if embed_failed:
+        log(f"EMBED_FAILED (Phase 5, registered but NOT searchable): "
+            f"{len(embed_failed)} -> {', '.join(embed_failed)}")
     log(f"\nPersona blueprints saved to: {PERSONAS_DIR}")
     log(f"Status file: {STATUS_FILE}")
     log(f"Full log: {LOG_FILE}")
+
+    # F1.2 (FDN-5): propagate an embedding failure as a distinct non-zero exit
+    # (8 = EMBED_FAILED) end-to-end, even in full-batch mode, so no wrapper can
+    # log a false success over a vector-less persona. Blueprints stay on disk;
+    # an idempotent re-run re-embeds only.
+    if embed_failed:
+        sys.exit(8)
 
 # ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
