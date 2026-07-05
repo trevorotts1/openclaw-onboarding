@@ -1,5 +1,18 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.1.1 — 2026-07-05 — fix(Copy routing): baked-prompt hygiene + manifest
+
+### FIX-COPY-04(iii) — junk baked prompts archived; runtime iterates a manifest
+- Archived the two legacy non-runtime stubs `prompts/baked/13-test-prompt-airtable-mcp-demo.md` and
+  `prompts/baked/14-empty-record.md` to `prompts/baked/_archive/` (an Airtable MCP test stub and an
+  empty Airtable record — never real generation prompts).
+- Added `prompts/baked/_index.json` — the canonical ordered manifest of the **12 active** runtime
+  prompts. The runtime iterates this manifest instead of globbing the directory, so a stray/junk `.md`
+  is never silently picked up.
+- `prompts/PROMPT-SEAMS.md` updated to reflect the 12-active / 2-archived split.
+
+No generation behavior changed; the 12 active prompts and their provers are unchanged.
+
 ## 1.1.0 — real gates, image-prompt floor, copy/code split, routed department
 Wave-0 merge-train **T-56-salespage** (master fix-plan 2026-07-05). Every change is scoped to
 this skill's own directory (conflict-free merge).
