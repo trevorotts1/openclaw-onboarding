@@ -202,6 +202,122 @@ def verify_signature(cert: Dict[str, Any], key: bytes) -> bool:
     return hmac.compare_digest(_hmac(key, _canon(cert)), sig)
 
 
+# ===========================================================================
+# FIX-XC-03d — the SEMANTIC QC leg. The structural composite above is
+# mathematically binary (0.0 on a content-gate fail, ~10 on a pass) and never
+# discriminates prose QUALITY, so "independent QC >= 8.5" was not a real
+# quality bar. This adds the missing second leg: a DETACHED QC-SEMANTIC.json
+# produced by an independent VERIFIER sub-agent (!= any stage author), running
+# the client's own TIER-A model, applying the 10-category OpenClaw QC Protocol
+# to EACH artifact. The verifier model id is recorded + G-NOANTHROPIC-checked,
+# the full verifier transcript's sha256 is embedded, and the whole certificate
+# is HMAC-signed with the per-run foreman key. aa_delivery_gate.py requires
+# BOTH certificates, with the semantic score >= 8.5, before it will deliver.
+#
+# The LLM verifier itself is the ONE non-deterministic seam (--verifier-cmd, or
+# an operator/verifier-supplied --judgment-file). `synth_semantic_judgment` is a
+# DETERMINISTIC stand-in used ONLY by the golden builder and the self-tests
+# (never a client run) so the offline fixtures can exercise the signed cert +
+# the delivery-gate binding without a live model.
+# ===========================================================================
+OPENCLAW_QC_CATEGORIES = [
+    "accuracy", "completeness", "clarity", "consistency", "actionability",
+    "structure", "tone_fidelity", "relevance", "depth", "polish",
+]
+# a CLIENT tier-A id placeholder for the deterministic stand-in verifier; a real
+# run records the client box's own tier-A model. NEVER an Anthropic id.
+VERIFIER_TIER_A_DEFAULT = "ollama-cloud/qwen3-235b"
+_SEMANTIC_ANTHROPIC_RE = __import__("re").compile(
+    r"anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku", __import__("re").IGNORECASE)
+
+
+def synth_semantic_judgment(manifest: Dict[str, Any], run_dir: Path,
+                            verifier_model: str = VERIFIER_TIER_A_DEFAULT,
+                            base: float = 9.0) -> Dict[str, Any]:
+    """DETERMINISTIC stand-in verifier judgment (golden builder + self-tests only).
+    Emits a full 10-category score per artifact plus a transcript."""
+    state = build.load_run(str(run_dir))
+    per: Dict[str, Any] = {}
+    author_models: Dict[str, str] = {}
+    transcript_lines: List[str] = [f"OpenClaw QC Protocol semantic verification (verifier={verifier_model})"]
+    for s in manifest["stages"]:
+        sid = s["stage_id"]
+        cats = {c: round(float(base), 2) for c in OPENCLAW_QC_CATEGORIES}
+        score = round(sum(cats.values()) / len(cats), 2)
+        per[sid] = {"categories": cats, "score": score}
+        author_models[sid] = state["models"].get(sid, "")
+        transcript_lines.append(f"{sid}: {score} :: " + ", ".join(f"{k}={v}" for k, v in cats.items()))
+    return {"verifier_model": verifier_model, "per_artifact": per,
+            "author_models": author_models, "transcript": "\n".join(transcript_lines)}
+
+
+def _run_verifier_cmd(cmd: str, run_dir: Path, manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """The real seam: run the verifier sub-agent command (the run-dir path on
+    AA_RUN_DIR, the artifact index on stdin) and parse a judgment JSON from
+    stdout: {"verifier_model","per_artifact":{sid:{categories,score}},"transcript"}."""
+    import os
+    import subprocess
+    state = build.load_run(str(run_dir))
+    stdin_payload = json.dumps({"artifacts": {sid: state["artifacts"].get(sid, "")
+                                              for sid in (s["stage_id"] for s in manifest["stages"])}})
+    proc = subprocess.run(cmd, shell=True, input=stdin_payload, capture_output=True, text=True,
+                          env={**os.environ, "AA_RUN_DIR": str(run_dir)})
+    if proc.returncode != 0:
+        raise RuntimeError(f"--verifier-cmd rc={proc.returncode}: {proc.stderr.strip()[:200]}")
+    judgment = json.loads(proc.stdout)
+    judgment.setdefault("author_models", {sid: state["models"].get(sid, "")
+                                          for sid in (s["stage_id"] for s in manifest["stages"])})
+    judgment.setdefault("transcript", proc.stdout)
+    return judgment
+
+
+def compute_semantic(judgment: Dict[str, Any]) -> Dict[str, Any]:
+    per = judgment.get("per_artifact", {})
+    scores = [float(v.get("score", 0.0)) for v in per.values()]
+    return {
+        "semantic_score": round(sum(scores) / len(scores), 2) if scores else 0.0,
+        "semantic_min": round(min(scores), 2) if scores else 0.0,
+        "artifact_count": len(per),
+    }
+
+
+def build_semantic_certificate(manifest: Dict[str, Any], run_dir: Path, run_id: str,
+                               key: bytes, judgment: Dict[str, Any]) -> Dict[str, Any]:
+    agg = compute_semantic(judgment)
+    transcript = str(judgment.get("transcript", ""))
+    fields: Dict[str, Any] = {
+        "certificate": "avatar-alchemist-qc-semantic",
+        "run_id": run_id,
+        "issued_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "protocol": "OpenClaw QC Protocol (10-category, per-artifact)",
+        "categories": OPENCLAW_QC_CATEGORIES,
+        "verifier_role": "independent verifier sub-agent (!= any stage author)",
+        "verifier_model": str(judgment.get("verifier_model", "")),
+        "semantic_score": agg["semantic_score"],
+        "semantic_min": agg["semantic_min"],
+        "semantic_floor": 8.5,
+        "artifact_count": agg["artifact_count"],
+        "per_artifact_scores": {sid: round(float(v.get("score", 0.0)), 2)
+                                for sid, v in judgment.get("per_artifact", {}).items()},
+        "author_models": judgment.get("author_models", {}),
+        "transcript_sha256": hashlib.sha256(transcript.encode("utf-8")).hexdigest(),
+    }
+    fields["signature"] = _hmac(key, _canon(fields))
+    return fields
+
+
+def verify_semantic_signature(cert: Dict[str, Any], key: bytes) -> bool:
+    cert = dict(cert)
+    sig = cert.pop("signature", None)
+    if not sig:
+        return False
+    return hmac.compare_digest(_hmac(key, _canon(cert)), sig)
+
+
+def semantic_verifier_is_anthropic(cert: Dict[str, Any]) -> bool:
+    return bool(_SEMANTIC_ANTHROPIC_RE.search(str(cert.get("verifier_model", ""))))
+
+
 # ---------------------------------------------------------------------------
 # self-test
 # ---------------------------------------------------------------------------
@@ -259,6 +375,40 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
             ok = False
             print(f"SELF-TEST FAIL: content-gate-failing run -> {bad_cert}")
 
+        # --- FIX-XC-03d: the SEMANTIC leg -----------------------------------
+        # rebuild a clean run first (the bad-cert block above blanked 16-brand-bio)
+        good_state = build._synth(manifest, apply_repairs=True)
+        for sid, txt in good_state["artifacts"].items():
+            (run_dir / "artifacts" / f"{sid}.md").write_text(txt, encoding="utf-8")
+        judgment = synth_semantic_judgment(manifest, run_dir, base=9.0)
+        sem = build_semantic_certificate(manifest, run_dir, "selftest", key, judgment)
+        if (sem["semantic_score"] >= 8.5 and verify_semantic_signature(sem, key)
+                and not semantic_verifier_is_anthropic(sem)
+                and sem["artifact_count"] == len(manifest["stages"])
+                and len(sem["transcript_sha256"]) == 64):
+            print(f"SELF-TEST ok: (FIX-XC-03d) semantic cert -> score={sem['semantic_score']} over "
+                  f"{sem['artifact_count']} artifacts (10-cat OpenClaw QC), verifier "
+                  f"{sem['verifier_model']!r} (non-Anthropic), transcript sha256 bound, HMAC verifies.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: semantic cert -> {sem}")
+        # a hand-edited semantic score breaks the signature
+        forged_sem = dict(sem); forged_sem["semantic_score"] = 9.99
+        if verify_semantic_signature(forged_sem, key):
+            ok = False
+            print("SELF-TEST FAIL: a hand-edited semantic_score STILL verified.")
+        else:
+            print("SELF-TEST ok: a hand-edited semantic_score fails signature verification.")
+        # an Anthropic verifier model is detectable (delivery gate rejects it)
+        anthro_sem = build_semantic_certificate(manifest, run_dir, "selftest", key,
+                                                synth_semantic_judgment(manifest, run_dir,
+                                                                        verifier_model="anthropic/claude-3-5-sonnet"))
+        if semantic_verifier_is_anthropic(anthro_sem):
+            print("SELF-TEST ok: an Anthropic verifier model id is detected (G-NOANTHROPIC on the semantic leg).")
+        else:
+            ok = False
+            print("SELF-TEST FAIL: an Anthropic verifier model id was NOT detected.")
+
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -270,6 +420,14 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--key-file", help="path to the per-run foreman key (entry.sh mints <run_dir>/.foreman-key)")
     ap.add_argument("--out", help="write the signed QC certificate here")
     ap.add_argument("--manifest")
+    ap.add_argument("--semantic", action="store_true",
+                    help="build the SEMANTIC QC certificate (QC-SEMANTIC.json) from an independent "
+                         "verifier sub-agent instead of the structural composite (FIX-XC-03d)")
+    ap.add_argument("--judgment-file", help="with --semantic: a verifier-produced judgment JSON")
+    ap.add_argument("--verifier-cmd", help="with --semantic: verifier sub-agent command (client TIER-A "
+                                           "model; run-dir on AA_RUN_DIR, artifacts on stdin, judgment JSON on stdout)")
+    ap.add_argument("--synth", action="store_true",
+                    help="with --semantic: DETERMINISTIC stand-in judgment (golden builder / tests ONLY)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     try:
@@ -279,6 +437,38 @@ def main(argv: List[str]) -> int:
         return 3
     if args.self_test:
         return run_self_test(manifest)
+
+    if args.semantic:
+        if not (args.run_dir and args.key_file):
+            print("USAGE ERROR: --semantic requires --run-dir --key-file.")
+            return 3
+        try:
+            key = bytes.fromhex(Path(args.key_file).read_text(encoding="utf-8").strip())
+            run_dir = Path(args.run_dir)
+            run_id = args.run_id or run_dir.name
+            if args.judgment_file:
+                judgment = json.loads(Path(args.judgment_file).read_text(encoding="utf-8"))
+            elif args.verifier_cmd:
+                judgment = _run_verifier_cmd(args.verifier_cmd, run_dir, manifest)
+            elif args.synth:
+                judgment = synth_semantic_judgment(manifest, run_dir)
+            else:
+                print("USAGE ERROR: --semantic needs one of --judgment-file / --verifier-cmd / --synth.")
+                return 3
+            sem = build_semantic_certificate(manifest, run_dir, run_id, key, judgment)
+        except Exception as exc:  # noqa: BLE001
+            print(f"USAGE/IO ERROR: {exc}")
+            return 3
+        if semantic_verifier_is_anthropic(sem):
+            print(f"REFUSED: verifier model {sem['verifier_model']!r} is an Anthropic id (G-NOANTHROPIC).")
+            return 2
+        if args.out:
+            Path(args.out).write_text(json.dumps(sem, indent=2) + "\n", encoding="utf-8")
+            print(f"QC-SEMANTIC written: {args.out}")
+        print(f"semantic_score={sem['semantic_score']} (min {sem['semantic_min']}) "
+              f"verifier={sem['verifier_model']}")
+        return 0 if sem["semantic_score"] >= 8.5 else 2
+
     if not (args.run_dir and args.key_file):
         print("USAGE ERROR: --run-dir --key-file (or --self-test).")
         return 3

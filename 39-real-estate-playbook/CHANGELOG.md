@@ -1,8 +1,8 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
-## [1.0.5] - 2026-07-05 - Wave-0 hardening: cron payloads, split-brain state, Street View key leak, single core-file writer, GHL wiring
+## [1.0.6] - 2026-07-05 - Wave-0 hardening: cron payloads, split-brain state, Street View key leak, single core-file writer, GHL wiring
 
-Merge-train `T-39-real-estate`. All changes are scoped to this skill dir (conflict-free). No behavioral change for a correctly-configured box beyond the fixes below; every change is additive or a correctness fix.
+Merge-train `T-39-real-estate`. All changes are scoped to this skill dir (conflict-free). No behavioral change for a correctly-configured box beyond the fixes below; every change is additive or a correctness fix. (Lands as 1.0.6 because the review-skip lib-carrier train independently shipped 1.0.5 to main first; see the 1.0.5 entry below.)
 
 ### Fixed
 - **FIX-XC-08c — crons that did nothing / would have spammed the client.** `scripts/07-register-crons.sh` used a non-existent `--schedule` flag (registration failed outright) and passed NO payload (a registered job with nothing to run). It now uses the real `--cron <expr>` flag + a real agent `--message` payload, delivers SILENTLY (`--no-deliver`, feature-detected, falling back to `--best-effort-deliver`, then a no-optional-flag retry) so a maintenance cron never announces to the client's chat, and VERIFIES each job is present via `openclaw cron list` after the add.
@@ -15,6 +15,23 @@ Merge-train `T-39-real-estate`. All changes are scoped to this skill dir (confli
 ### Changed
 - **FIX-S36-10 — folded duplicate installers + renamed the runtime worker.** The duplicate AGENTS.md writer `scripts/04-update-agents-md.sh` (which wrote a SECOND AGENTS block behind a different marker — a double-post) was folded into `08-update-core-files.sh` and removed; `08` is now the SINGLE canonical AGENTS/MEMORY/TOOLS writer. The runtime worker `scripts/03-property-lookup.sh` was renamed to `scripts/property-lookup.sh` so it no longer collides with the install step `03-init-real-estate-events-log.sh`; it is now documented as a runtime worker in SKILL.md + INSTRUCTIONS.md. References updated across protocols/, references/, `wire.sh`, and `templates/ghl-tag-setup-checklist.md`.
 - **FIX-XC-11a — wired the built-but-unreferenced GHL sync layer.** `scripts/lib-ghl-sync.sh` (the only GHL tagging/booking/pipeline/Kanban code) is now surfaced in the SKILL.md files table + MVP-status table, documented with a lifecycle transition table in INSTRUCTIONS.md (mirrors Skill 41), and written INSIDE the marker-fenced AGENTS.md + TOOLS.md blocks by the new marker-refresh writer (the follow-up CORE_UPDATES.md promised).
+## [1.0.5] - 2026-07-05 - cc_move refuses `done` unconditionally (board review-skip root fix)
+
+Closes the bypass hole where the old self-grade guard in `cc_move` only refused a `done` PATCH when
+the acting `agent_id` was proven to equal the task builder — so a call that OMITTED `agent_id` fell
+through and PATCHed the card straight to `done`, skipping the QC `review` column.
+
+### Changed
+- `scripts/lib-ghl-sync.sh` — `cc_move` now refuses `status=done` **unconditionally** (NO PATCH, honest
+  no-op, `done-refused-producer` sync event). `review -> done` is owned exclusively by the Command
+  Center's independent QC scorer (PASS >= 8.5). Matches Skill 41 `lib-command-center.sh` `cc_move_task`
+  (:62-65) and Skill 6 `cc_board.update_status`. Lib carrier for the shared `mc_board` review-skip root
+  fix (FIX-XC-01b).
+
+### Removed
+- `_cc_task_builder()` — the board-GET helper that only fed the removed self-grade guard; now dead.
+
+---
 
 ## [1.0.3] - 2026-06-30 - Fail-soft GoHighLevel + Command-Center write layer; idempotent root re-wire
 

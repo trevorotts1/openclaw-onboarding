@@ -1,0 +1,42 @@
+{
+  "funnel_type": "signature_funnel",
+  "funnel_size": 7,
+  "qc_score": 9.2,
+  "pages": [
+    {
+      "page_type": "main",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/main"
+    },
+    {
+      "page_type": "checkout",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/checkout"
+    },
+    {
+      "page_type": "upsell",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/upsell"
+    },
+    {
+      "page_type": "downsell",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/downsell"
+    },
+    {
+      "page_type": "upsell-2",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/upsell-2"
+    },
+    {
+      "page_type": "downsell-2",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/downsell-2"
+    },
+    {
+      "page_type": "thank-you",
+      "status": "built",
+      "preview_url": "https://app.gohighlevel.com/funnels/preview/daybreak/thank-you"
+    }
+  ]
+}

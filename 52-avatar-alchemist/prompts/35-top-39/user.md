@@ -9,43 +9,43 @@
 Here are the 13 ad sets
 [
 Ad set 1 :
-{{artifact.upstream}}
+{{artifact.22-ad-set-1}}
 
 Ad set 2 :
-{{artifact.upstream}}
+{{artifact.23-ad-set-2}}
 
 Ad set 3:
-{{artifact.upstream}}
+{{artifact.24-ad-set-3}}
 
 Ad set 4:
-{{artifact.upstream}}
+{{artifact.25-ad-set-4}}
 
 Ad set5 :
-{{artifact.upstream}}
+{{artifact.26-ad-set-5}}
 
 Ad set 6:
-{{artifact.upstream}}
+{{artifact.27-ad-set-6}}
 
 Ad set 7:
-{{artifact.upstream}}
+{{artifact.28-ad-set-7}}
 
 Ad set 8:
-{{artifact.upstream}}
+{{artifact.29-ad-set-8}}
 
 Ad set 9:
-{{artifact.upstream}}
+{{artifact.30-ad-set-9}}
 
 Ad set 10:
-{{artifact.upstream}}
+{{artifact.31-ad-set-10}}
 
 Ad set 11:
-{{artifact.upstream}}
+{{artifact.32-ad-set-11}}
 
 Ad set : 12
-{{artifact.upstream}}
+{{artifact.33-ad-set-12}}
 
 Ad set 13:
-{{artifact.upstream}}
+{{artifact.34-ad-set-13}}
 
 ]
 
@@ -53,11 +53,11 @@ here is the info needed to help you understan my brand and my avatar and the pro
 
 Brand Info
 brand bio:
- [{{artifact.upstream}}] 
+ [{{artifact.16-brand-bio}}] 
 
 Product info
 product bio:
- [{{artifact.upstream}}]
+ [{{artifact.17-product-bio}}]
 
 Offer/Product Name (Product or Service or Mission being promoted):
 Offer/ Product name [{{intake.offer_name}}]
@@ -75,9 +75,9 @@ Additonal Product Info:
 Avatar/ Customer Intellegenge info (this should help you when trying to determine who we are marketing too with our visual ad)
 :
  [
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
 ] (This represents the type of people that are attempting to attract with our visual ads. This is our target audience:)
 
 

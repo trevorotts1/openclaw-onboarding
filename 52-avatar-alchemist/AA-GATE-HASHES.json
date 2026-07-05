@@ -1,14 +1,15 @@
 {
   "pinned": {
-    "AA-PIPELINE-MANIFEST.json": "3b7574df9b37fe926162f37117ad0a53bb020efdce7bc20f4004f8f5b9faca75",
+    "AA-PIPELINE-MANIFEST.json": "6f8ed559ef46f639a2363ccf9b7368983d9a2ebe254f8af926ccb937926c89d8",
     "AVATAR-MANIFEST.json": "770f0f8f3e56dcac5617bd0d936380c471c96c5b12cf7caaf3a058f0d4dff681",
     "scripts/aa_intake_gate.py": "f4635d3bad812a586fb61f1fb2717da6928db32f3fe0b9366123b63a6b2e5d7b",
     "scripts/aa_build_check.py": "30df4a92e6cdbee5faf710d0bb15239dedcc055f72d9b2fbea6f014a0bc07e02",
-    "scripts/aa_delivery_gate.py": "ecc72f6152c976309877a558af3fc5539c20ad8e56a25d79692e86f7954ed75e",
-    "scripts/aa_qc_cert.py": "08c7bd089937f4affc0778877b368e0445b7fbfb4ed1ee8762e24238daa1fd92",
+    "scripts/aa_delivery_gate.py": "09395f87e38e8120a92d6fb7fc6b8c5358619116f3eaad76564e57e4c1b9173b",
+    "scripts/aa_qc_cert.py": "11597a78be53a9a15484fe1bec92651641db576e7d77b224adb47d62805b2e9d",
     "scripts/aa_egress_gate.py": "eb3cb92dc9a482a7bc5b81294022188b612e92805f33ea7403e5a8af90d2b480",
     "scripts/aa_links_gate.py": "27cc23e7669cd1ff4aacf7fa1f1bfbad5953a40b428f75f030ce7a675e2265b1",
-    "scripts/aa_director.py": "9d5dcbb060f3488615486faabc241384dd77450f84b86f3b2c39c085ada3b6c4",
-    "entry.sh": "08dc2b405c269756e2a9eea9bcc88b179a0fff43226c34437c6f73b4e3afaf72"
+    "scripts/aa_director.py": "053563012f3951ebc8fa01b6d1b44f015d51603ab12ebc965a250cf8c3e80357",
+    "scripts/aa_token_lockstep.py": "aa0ea9226e3abd47c93efd7976e8dfe5e31769686df9c805b6f4584cdc39e41a",
+    "entry.sh": "6a56b7e8756c1a7e46dc1dad04abe7b524af677580317be750584705cc0e1322"
   }
 }

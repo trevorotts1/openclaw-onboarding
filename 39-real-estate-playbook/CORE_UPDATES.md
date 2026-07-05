@@ -1,4 +1,4 @@
-# Core File Updates — Skill 39 (Real Estate Playbook & Property Intelligence v1.0.5)
+# Core File Updates — Skill 39 (Real Estate Playbook & Property Intelligence v1.0.6)
 
 These lines are written to the workspace's AGENTS.md, MEMORY.md, and TOOLS.md at install time
 by `scripts/08-update-core-files.sh` — the SINGLE canonical writer (and the Sales-Brain pointer by
@@ -57,11 +57,11 @@ BYTES server-side and emits a local `image_path`, never a keyed URL), the event 
 `scripts/lib-ghl-sync.sh` (`ghl_tag` / `ghl_opportunity` / `ghl_book` / `cc_move`) — plus the provider-key
 and credential env vars and their honest-gap behavior. No keys, no client data — UNIVERSAL.
 
-## GHL + Command-Center write layer (v1.0.3) — now fully wired (v1.0.5)
+## GHL + Command-Center write layer (v1.0.3) — now fully wired (v1.0.6)
 
 - `scripts/lib-ghl-sync.sh` — sourced/called fail-soft helper: `ghl_tag` (caf `contacts add-tag`), `ghl_opportunity` (caf `opportunities`), `ghl_book` (caf `calendars book`), and `cc_move` (PATCH the Command Center task). Each is an HONEST no-op when its credential is absent — no fabricated success. Credentials are operator-supplied via env: canonical `GOHIGHLEVEL_API_KEY` (caf also resolves `CAF_API_KEY`/`GHL_API_KEY`) for GHL writes, and `MC_API_TOKEN` + `MISSION_CONTROL_URL` (defaults to `http://localhost:4000`) for Command Center moves. A builder never self-PATCHes its own task to `done`.
 - `wire.sh` (root) — idempotent, fail-soft re-wire of install steps `00`–`08` for the canonical updater (re-applies the blocks above once per version after a wipe-and-replace).
-- The marker-refresh writer promised here is now BUILT (v1.0.5): `08-update-core-files.sh` writes each block replace-in-place behind a version-free marker, so `lib-ghl-sync.sh` is surfaced INSIDE the marker-fenced AGENTS.md + TOOLS.md blocks with no duplicate blocks on already-wired boxes (legacy version-stamped markers are stripped on refresh).
+- The marker-refresh writer promised here is now BUILT (v1.0.6): `08-update-core-files.sh` writes each block replace-in-place behind a version-free marker, so `lib-ghl-sync.sh` is surfaced INSIDE the marker-fenced AGENTS.md + TOOLS.md blocks with no duplicate blocks on already-wired boxes (legacy version-stamped markers are stripped on refresh).
 
 ## What does NOT get touched
 
