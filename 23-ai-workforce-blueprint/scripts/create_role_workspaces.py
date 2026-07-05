@@ -2272,7 +2272,13 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     # deploys role-owned no-AI generators (e.g. presentations/scripts/
     # build_teleprompter.py, build_deck.py) so the role SOPs can run them at
     # the relative path 'presentations/scripts/build_deck.py'.
-    # Only .py, .sh, and .json files are copied; we skip __pycache__ and .pyc.
+    # Only .py, .sh, .json, .sha256, and .pdf files are copied; we skip
+    # __pycache__ and .pyc. FIX-PRES-04: .sha256 (e.g. CANONICAL-RENDERER-PIN.sha256)
+    # and .pdf (e.g. STANDARD-presenter-speech-layout.pdf) MUST reach the
+    # materialized department scripts dir — without them GATE 3's hash-pin silently
+    # disarms on exactly the copies most likely to be tampered with. Both are treated
+    # like .py/.sh (always-overwrite with the canonical library version); only .json
+    # stays additive (may carry client-local overrides).
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
         if not dry_run:
@@ -2283,13 +2289,14 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                 continue
             if src_file.is_dir():
                 continue  # skip nested dirs (e.g. __pycache__)
-            if src_file.suffix not in (".py", ".sh", ".json"):
+            if src_file.suffix not in (".py", ".sh", ".json", ".sha256", ".pdf"):
                 continue
             dest_file = scripts_target / src_file.name
             # .json config files: additive (never clobber client-local overrides).
-            # .py / .sh canonical generators: always overwrite so a stale
-            # build_deck.py (or any other generator) is replaced with the
-            # canonical library version on every scaffold/floor-fill pass.
+            # .py / .sh / .sha256 / .pdf canonical assets: always overwrite so a
+            # stale build_deck.py (or any other generator), a stale hash-pin file,
+            # or a stale layout PDF is replaced with the canonical library version
+            # on every scaffold/floor-fill pass.
             if src_file.suffix == ".json" and dest_file.exists():
                 continue
             if not dry_run:
