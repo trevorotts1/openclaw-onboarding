@@ -751,6 +751,84 @@ else
   report_fail "qc-workflow-visual.sh not found (looked in scripts/)"
 fi
 
+section "Canonical playbook engine unit tests (qc-playbook-engine.sh)"
+QC_ENGINE="$SCRIPT_DIR/qc-playbook-engine.sh"
+[ -f "$QC_ENGINE" ] || QC_ENGINE="$SKILL38_ROOT/scripts/qc-playbook-engine.sh"
+if [ -f "$QC_ENGINE" ]; then
+  if bash "$QC_ENGINE" >/dev/null 2>&1; then
+    report_pass "U-16 holds (tools/playbook_engine.py + tools/tests/test_playbook_engine.py present; python3 -m unittest green; the canonical parser every gate shells out to is sound)"
+  else
+    report_fail "qc-playbook-engine.sh: the playbook_engine.py unit tests failed or the engine/tests are missing - run it directly for detail"
+  fi
+else
+  report_fail "qc-playbook-engine.sh not found (looked in scripts/)"
+fi
+
+section "Per-phase tool gating (qc-tool-gating.sh)"
+QC_TOOLGATE="$SCRIPT_DIR/qc-tool-gating.sh"
+[ -f "$QC_TOOLGATE" ] || QC_TOOLGATE="$SKILL38_ROOT/scripts/qc-tool-gating.sh"
+if [ -f "$QC_TOOLGATE" ]; then
+  if bash "$QC_TOOLGATE" >/dev/null 2>&1; then
+    report_pass "U-1 wiring holds (protocols/tool-gating-protocol.md + STEP_1_88_TOOL_GATING marker + MEMORY Rule 32 + tool-gate-events.jsonl seeded; every checked phase is in-vocabulary and escalate_to_human is never gated off)"
+  else
+    report_fail "qc-tool-gating.sh found a tool-gating violation or missing wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-tool-gating.sh not found (looked in scripts/)"
+fi
+
+section "Tag-driven workflow exits (qc-workflow-exits.sh)"
+QC_EXITS="$SCRIPT_DIR/qc-workflow-exits.sh"
+[ -f "$QC_EXITS" ] || QC_EXITS="$SKILL38_ROOT/scripts/qc-workflow-exits.sh"
+if [ -f "$QC_EXITS" ]; then
+  if bash "$QC_EXITS" >/dev/null 2>&1; then
+    report_pass "U-2 wiring holds (protocols/workflow-exit-rules-protocol.md + STEP_1_30_EXIT_RULES marker + MEMORY Rule 33 + workflow-exit-events.jsonl seeded; every exit rule has a valid action and a resolvable route target)"
+  else
+    report_fail "qc-workflow-exits.sh found an exit-rule violation or missing wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-workflow-exits.sh not found (looked in scripts/)"
+fi
+
+section "Machine-readable playbook declares (qc-playbook-declares.sh)"
+QC_DECLARES="$SCRIPT_DIR/qc-playbook-declares.sh"
+[ -f "$QC_DECLARES" ] || QC_DECLARES="$SKILL38_ROOT/scripts/qc-playbook-declares.sh"
+if [ -f "$QC_DECLARES" ]; then
+  if bash "$QC_DECLARES" >/dev/null 2>&1; then
+    report_pass "U-9 + U-12 wiring holds (Section E declares block documented; every declared tools-used/exits-used/fields-used/calendars reference resolves; legacy playbooks WARN, dangling references FAIL)"
+  else
+    report_fail "qc-playbook-declares.sh found a declares violation or missing wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-playbook-declares.sh not found (looked in scripts/)"
+fi
+
+section "Opportunity/pipeline stage sync (qc-opportunity-sync.sh)"
+QC_OPPSYNC="$SCRIPT_DIR/qc-opportunity-sync.sh"
+[ -f "$QC_OPPSYNC" ] || QC_OPPSYNC="$SKILL38_ROOT/scripts/qc-opportunity-sync.sh"
+if [ -f "$QC_OPPSYNC" ]; then
+  if bash "$QC_OPPSYNC" >/dev/null 2>&1; then
+    report_pass "U-13 wiring holds (protocols/opportunity-sync-protocol.md + MEMORY Rule 41 + opportunity-sync-events.jsonl seeded; every stage-map stage name resolves to its declared pipeline)"
+  else
+    report_fail "qc-opportunity-sync.sh found an opportunity-sync violation or missing wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-opportunity-sync.sh not found (looked in scripts/)"
+fi
+
+section "Client test mode (qc-client-test-mode.sh)"
+QC_TESTMODE="$SCRIPT_DIR/qc-client-test-mode.sh"
+[ -f "$QC_TESTMODE" ] || QC_TESTMODE="$SKILL38_ROOT/scripts/qc-client-test-mode.sh"
+if [ -f "$QC_TESTMODE" ]; then
+  if bash "$QC_TESTMODE" >/dev/null 2>&1; then
+    report_pass "U-6 wiring holds (protocols/client-test-mode-protocol.md + CLIENT_TEST_MODE + STEP_0_4_TEST_MODE_REREAD markers + MEMORY Rule 37 + three-layer enforcement + TEST MODE banner + test-sessions isolation/60-min expiry + the full allow-list suppression list)"
+  else
+    report_fail "qc-client-test-mode.sh found a Client Test Mode violation or missing wiring - run it directly for detail"
+  fi
+else
+  report_fail "qc-client-test-mode.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

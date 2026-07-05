@@ -91,6 +91,7 @@ it is enforced by the `commsAutomationStatus` state field in `build-state-schema
 `[COMMS-AUTOMATION-RESUME]` gate in `scripts/resume-workforce-build.sh` (same shape as the role/SOP
 library gate). See **INSTRUCTIONS.md → "Moment 3.8 - Comms-automation handoff to Skill 38"**. A
 Sales/Support workforce shipped with zero conversational automations is half-delivered.
+Once handed off, the built department operates Skill 38 by the operating manual `universal-sops/SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md`.
 
 ### What Skill 22 Provides
 Skill 22 converts books into persona blueprints. These personas are organized by category:
