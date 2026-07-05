@@ -210,6 +210,7 @@ QC is a negative-cost contributor: your value is measured in what didn't happen.
    - Is the CTA clear, singular (one primary action per item), and compelling?
    - Is the offer logically consistent from the traffic source through to the conversion event? (No "bait and switch" -- the landing page must deliver what the ad/email promised.)
    - Is there a logical next step after conversion? (Thank-you page, confirmation email, next-action prompt.)
+   - **(f) Copy depth matches the funnel type (FIX-XC-04h):** for any funnel/landing/sales page, confirm every direct-response section the funnel-spec `pageStructure` names is present AND substantive (body sections are real copy, not thin stubs), and the whole-page stripped-word count clears the ratified depth band for its funnel type — **squeeze/opt-in ≥300 · 2-step/application ≥400 · webinar/VSL ≥800 · long-form sales ≥1,500** (see conversion-copywriter.md §8a). An under-band or thin-section page is a **Blocker** returned as a revision — a 150-word "long-form" sales page is a failure, never a pass, no matter how clean the grammar.
 9. For each issue found, assign a severity rating:
    - **Blocker**: Item cannot go live. Must be fixed and re-reviewed. (Examples: broken checkout link, incorrect pricing, legal compliance gap, major factual error.)
    - **Major**: Should not go live without fix, but can be published with {{DIRECTOR_TITLE}} sign-off in time-sensitive situations. (Example: weak CTA copy, off-brand tone in a minor section.)

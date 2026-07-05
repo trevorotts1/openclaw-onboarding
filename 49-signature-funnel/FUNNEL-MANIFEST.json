@@ -177,6 +177,10 @@
     "AF-FUN-FRONT-DOOR": {"trigger": "orchestrator called without the run-scoped front-door nonce", "enforced_by": "front-door", "py_symbol": "run_signature_funnel._check_front_door"},
 
     "AF-FUN-CANONICAL-BYPASS": {"trigger": "run working files hand-roll GHL REST / mail sender / raw Kie createTask", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_bypass_scan"},
-    "AF-FUN-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_hashpin"}
+    "AF-FUN-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_hashpin"},
+
+    "AF-FUN-INTAKE-PERSONA-LOG": {"trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
+    "AF-FUN-MODEL-TIER": {"trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"},
+    "AF-FUN-MODEL-NOANTHROPIC": {"trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"}
   }
 }

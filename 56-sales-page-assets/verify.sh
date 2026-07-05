@@ -123,7 +123,8 @@ if [ -d "$GOLDEN" ]; then
   RD="$TMP/run-golden"
   mkdir -p "$RD"
   cp "$GOLDEN/brief.json" "$GOLDEN/image_plan.json" "$GOLDEN/copy_ledger.json" \
-     "$GOLDEN/media_ledger.json" "$GOLDEN/funnel-manifest.json" "$RD/"
+     "$GOLDEN/media_ledger.json" "$GOLDEN/funnel-manifest.json" \
+     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
   # P5-P9 artifact-backed gates (FIX-XC-03b): carry the committed build artifacts into the run dir.
   [ -d "$GOLDEN/pages" ] && cp -R "$GOLDEN/pages" "$RD/pages"
   for a in drive_docs.json delivery.json build_receipt.json; do
@@ -165,7 +166,7 @@ if [ -d "$GOLDEN" ]; then
   TE="$(mktemp -d "${TMPDIR:-/tmp}/spa56_e.XXXXXX")"
   RE="$TE/run"; mkdir -p "$RE"
   cp "$GOLDEN/brief.json" "$GOLDEN/image_plan.json" "$GOLDEN/copy_ledger.json" \
-     "$GOLDEN/funnel-manifest.json" "$RE/"   # deliberately NO media_ledger.json
+     "$GOLDEN/funnel-manifest.json" "$GOLDEN/persona-selection-log.md" "$RE/"   # deliberately NO media_ledger.json (persona-log present so P0 passes, abort must land at P2)
   NE="verify-e-$$-$RANDOM"; printf '%s' "$NE" > "$RE/.spa_run_nonce"; chmod 600 "$RE/.spa_run_nonce"
   "$PY" "$ORCH" --run-dir "$RE" --nonce "$NE" >"$TE/orch.log" 2>&1; erc=$?
   if [ "$erc" -ne 0 ] && [ ! -f "$RE/PROCESS-CERTIFICATE.json" ] && grep -q 'media_ledger.json absent' "$TE/orch.log"; then

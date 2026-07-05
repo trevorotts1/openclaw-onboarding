@@ -302,6 +302,11 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     import prove_sp_highticket_band, prove_sp_bump_band  # noqa: E402
 
     (rd / "brief.json").write_text(json.dumps(prove_sp_intake._valid_runtime()), encoding="utf-8")
+    # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the run dir must
+    # carry a persona-selection-log naming a registered persona slug (SOP-SALESPAGE-01 §3).
+    (rd / "persona-selection-log.md").write_text(
+        "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
+        encoding="utf-8")
     # floor-compliant, slice-complete image plan (clears BOTH P1 provers).
     (rd / "image_plan.json").write_text(json.dumps(prove_sp_prompt_floor._valid_plan(12)), encoding="utf-8")
 
