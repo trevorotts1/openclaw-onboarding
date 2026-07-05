@@ -6,7 +6,7 @@
 
 ## User prompt (token-normalized)
 
-Here is the LANDING page copy that you are creating image prompts for. [{{artifact.upstream}}]
+Here is the LANDING page copy that you are creating image prompts for. [{{artifact.39-hero-page}}]
 
 Use these brand colors in your image prompt (ignore if nothing is here): [{{intake.brand_colors}}]
 
@@ -24,9 +24,9 @@ Offer Benefits and additional information
              ]
 
 
-Here is the product im promoting here is the product bio: [{{artifact.upstream}}] (the ads are written towards or leads to this)
+Here is the product im promoting here is the product bio: [{{artifact.17-product-bio}}] (the ads are written towards or leads to this)
 
-brand bio [ {{artifact.upstream}}]
+brand bio [ {{artifact.16-brand-bio}}]
 
  
 

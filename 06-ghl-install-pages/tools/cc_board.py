@@ -178,6 +178,8 @@ def ingest_task(
     job_type: str = "funnel",
     priority: str = "high",
     idempotency_key: Optional[str] = None,
+    department_slug: Optional[str] = None,
+    source: Optional[str] = None,
     env: Optional[dict] = None,
 ) -> Optional[str]:
     """POST one funnel/website job to /api/tasks/ingest.
@@ -200,6 +202,20 @@ def ingest_task(
         idempotency_key:  Dedupe key; omit to let the caller generate one
                           automatically (uuid4). Supply a deterministic key
                           (e.g. sha256 of the job brief) for retry safety.
+        department_slug:  OPTIONAL explicit department routing override. When
+                          given, it wins over the job_type-derived slug — used by
+                          the FIX-COPY-01 copy-dependency card to route a P2-COPY
+                          job to ``'marketing'`` (the Conversion Copywriter's
+                          department, per SOP-07 Step 3) rather than the builder's
+                          own web-development / funnels column. NOTE: like
+                          ``'funnels'``, a ``'marketing'`` slug that the Command
+                          Center's departments.config.ts has not yet registered
+                          resolves to the CEO catch-all column server-side —
+                          visible, never lost; the LOCAL waiting_on_dependency
+                          receipt is the binding gate, the card is visibility only.
+        source:           OPTIONAL explicit source-tag override (defaults to the
+                          job_type-derived source, or to ``department_slug`` when
+                          only the slug is overridden).
         env:              Override os.environ (for testing).
 
     Returns:
@@ -214,6 +230,12 @@ def ingest_task(
     if not title or not title.strip():
         _log("ingest_task skipped — title is empty.")
         return None
+
+    # Capture explicit routing overrides BEFORE the job_type mapping below
+    # reassigns the local names (the parameters share the names department_slug /
+    # source that the mapping writes to).
+    _department_slug_override = (department_slug or "").strip()
+    _source_override = (source or "").strip()
 
     # Map job_type -> department_slug.
     job_type_norm = (job_type or "funnel").lower().strip()
@@ -237,6 +259,16 @@ def ingest_task(
         # website, landing-page, single-page, web-development, etc.
         department_slug = "web-development"
         source = "web-development"
+
+    # Explicit routing override (FIX-COPY-01): the caller may pin the card to a
+    # specific department (e.g. 'marketing' for a P2-COPY dependency card) and/or
+    # source tag, overriding the job_type-derived values above. Passing only a
+    # department_slug defaults the source tag to that same slug.
+    if _department_slug_override:
+        department_slug = _department_slug_override
+        source = (_source_override or _department_slug_override)
+    elif _source_override:
+        source = _source_override
 
     # Idempotency key — deterministic per job brief so retries don't duplicate.
     key = (idempotency_key or "").strip() or str(uuid.uuid4())
@@ -844,6 +876,28 @@ def _selftest() -> int:
             errors.append(f"job_type {jt!r} → department_slug {slug!r}, expected {expected_slug!r}")
         if src != expected_source:
             errors.append(f"job_type {jt!r} → source {src!r}, expected {expected_source!r}")
+
+    # 7b. department_slug/source OVERRIDE (FIX-COPY-01 P2-COPY marketing routing).
+    #     Mirror the override precedence: an explicit department_slug wins over the
+    #     job_type-derived slug and defaults source to the same slug when unset.
+    for dept_ov, src_ov, exp_slug, exp_src in [
+        ("marketing", None, "marketing", "marketing"),
+        ("marketing", "copy", "marketing", "copy"),
+        (None, "copy", "web-development", "copy"),   # source-only override keeps derived slug
+    ]:
+        # start from the 'website' derivation (else-branch): slug=web-development, source=web-development
+        slug, src = "web-development", "web-development"
+        dep_ov = (dept_ov or "").strip()
+        so_ov = (src_ov or "").strip()
+        if dep_ov:
+            slug = dep_ov
+            src = (so_ov or dep_ov)
+        elif so_ov:
+            src = so_ov
+        if slug != exp_slug:
+            errors.append(f"override(dept={dept_ov!r},src={src_ov!r}) → slug {slug!r}, expected {exp_slug!r}")
+        if src != exp_src:
+            errors.append(f"override(dept={dept_ov!r},src={src_ov!r}) → source {src!r}, expected {exp_src!r}")
 
     if errors:
         for e in errors:

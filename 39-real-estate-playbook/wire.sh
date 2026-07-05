@@ -13,11 +13,12 @@
 # is idempotent and safe to re-run. Operator-verbose, no client-facing chatter.
 # bash (not zsh).
 #
-# Scope note: the runtime worker scripts/03-property-lookup.sh and the duplicate
-# AGENTS writer scripts/04-update-agents-md.sh are NOT install steps and are
-# intentionally excluded (08-update-core-files.sh is the canonical core-file
-# writer per INSTALL.md). MASTER_FILES_DIR propagates between steps via the
-# persisted state file, so it need not be exported here.
+# Scope note: the runtime worker scripts/property-lookup.sh is NOT an install
+# step and is intentionally excluded. 08-update-core-files.sh is the SINGLE
+# canonical AGENTS/MEMORY/TOOLS writer (the former duplicate AGENTS writer
+# 04-update-agents-md.sh was folded into it and removed). MASTER_FILES_DIR
+# propagates between steps via the persisted state file, so it need not be
+# exported here.
 
 set -uo pipefail
 
