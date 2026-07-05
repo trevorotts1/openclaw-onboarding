@@ -28,17 +28,17 @@ Brand Orgin ( your job is to make thisi more compelling) [  {{intake.brand_why}}
 
 Brand Info [{{intake.brand_info}}   ]
 
-Who this brand is for [ {{artifact.upstream}}
-{{artifact.upstream}}  ]
+Who this brand is for [ {{artifact.03-rewrite-avatar}}
+{{artifact.01-avatar-questions-1-30}}  ]
 
-Tone to write in when writing the bio [{{artifact.upstream}}]
+Tone to write in when writing the bio [{{artifact.08-blended-tone}}]
 
 Avatar info you should consider when writing about who we do serve:
  [
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 
 ]
 
 Here is the brand bio so you understand what we do:
-[{{artifact.upstream}}]
+[{{artifact.16-brand-bio}}]
