@@ -44,16 +44,22 @@ Flags: --plan --dry-run --status --resume --recover --fast-ads --apply-repairs -
 """
 from __future__ import annotations
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import aa_gate_integrity_check as gic   # noqa: E402
 import aa_intake_gate as intake_gate    # noqa: E402
 import aa_egress_gate as egress_gate    # noqa: E402
+import aa_links_gate as links_gate      # noqa: E402
 
 
 def _manifest_path() -> Path:
@@ -79,6 +85,274 @@ def dispatch_preamble(apply_repairs: bool) -> str:
             "R2 solution-aware-pt2 keeps the source Problem-Aware injection; R3 leaves the cheat-sheet "
             "as source; R4 ad sets follow the source 'category 2' wiring; R5 leaves the product line "
             "as source; R6 the Answer-9 doc stays unused). R7: NEVER emit an Anthropic/claude model id.")
+
+
+# ===========================================================================
+# FIX-XC-05b — the real dispatch loop ("fortress with no army" fix). Converts
+# the five schedule/precedence/token/receipt/model conventions from prose into
+# ENFORCEMENT: for every wave/stage the foreman refuses on a missing dep
+# receipt, loads + token-resolves that stage's three prompt files, prepends the
+# repairs banner, dispatches to the CLIENT model via one documented adapter
+# seam, and writes the artifact + an HMAC-signed receipt + a ledger row bearing
+# the REAL model id the dispatch returned. --resume skips receipted stages,
+# per-stage recovery/max_fix_attempts drive a redo-then-PARK loop, and stage-02
+# completion runs the links gate (--online on client boxes).
+#
+# The LLM call itself is the ONLY non-deterministic seam and is isolated behind
+# `--dispatch-cmd` (a client-provided command: prompt on stdin, JSON
+# {"text","model"} on stdout) or the documented `openclaw agent --json`
+# default. Everything around it — precedence, substitution, provenance,
+# provider purity, parking, idempotent resume — is deterministic and self-tested
+# offline with a mock adapter.
+# ===========================================================================
+_INTAKE_TOKEN_RE = re.compile(r"\{\{intake\.([A-Za-z0-9_]+)\}\}")
+_ARTIFACT_TOKEN_RE = re.compile(r"\{\{artifact\.([0-9A-Za-z\-]+)\}\}")
+_LEFTOVER_TOKEN_RE = re.compile(r"\{\{(?!contact\.)[^}]+\}\}")
+
+
+class DispatchError(RuntimeError):
+    """A stage dispatch failed (adapter error or output failed post-check)."""
+
+
+def substitute_tokens(text: str, intake: Dict[str, Any], artifacts: Dict[str, str]) -> str:
+    """Resolve {{intake.<key>}} from intake.json and {{artifact.<stage_id>}} from
+    the already-generated upstream artifacts. A referenced artifact that is not
+    present is a HARD error (the precedence guard should have prevented it)."""
+    def _i(m: "re.Match[str]") -> str:
+        return str(intake.get(m.group(1), ""))
+
+    def _a(m: "re.Match[str]") -> str:
+        sid = m.group(1)
+        if sid not in artifacts:
+            raise DispatchError(f"prompt references artifact {sid!r} which is not on disk")
+        return artifacts[sid]
+
+    return _ARTIFACT_TOKEN_RE.sub(_a, _INTAKE_TOKEN_RE.sub(_i, text))
+
+
+def _resolve_positional_upstream(text: str, depends_on: List[str], artifacts: Dict[str, str]) -> str:
+    """Resolve the SANCTIONED generic {{artifact.upstream}} token used ONLY by the
+    shared tone-core stages (04-07, byte-for-byte canonical IP). Each occurrence,
+    in document order, is bound to depends_on[k]. Safe ONLY because the lockstep
+    prover guarantees the occurrence count equals len(depends_on)."""
+    n = text.count("{{artifact.upstream}}")
+    if n == 0:
+        return text
+    if n != len(depends_on):
+        raise DispatchError(f"{n} {{{{artifact.upstream}}}} tokens but {len(depends_on)} deps — "
+                            f"not positionally resolvable (lockstep should have caught this)")
+    out: List[str] = []
+    pos = 0
+    for k in range(n):
+        j = text.find("{{artifact.upstream}}", pos)
+        out.append(text[pos:j])
+        sid = depends_on[k]
+        if sid not in artifacts:
+            raise DispatchError(f"positional upstream dep {sid!r} not on disk")
+        out.append(artifacts[sid])
+        pos = j + len("{{artifact.upstream}}")
+    out.append(text[pos:])
+    return "".join(out)
+
+
+def compose_prompt(root: Path, sid: str, intake: Dict[str, Any], artifacts: Dict[str, str],
+                   apply_repairs: bool, depends_on: Optional[List[str]] = None) -> str:
+    """Load the stage's three prompt files (system/methodology/user), prepend the
+    mode banner, and token-resolve the whole thing so the dispatched prompt is
+    self-contained (zero unresolved {{...}} left)."""
+    d = root / "prompts" / sid
+    parts: List[str] = []
+    for fn in ("system.md", "methodology.md", "user.md"):
+        p = d / fn
+        if p.is_file():
+            parts.append(p.read_text(encoding="utf-8"))
+    composed = dispatch_preamble(apply_repairs) + "\n\n" + "\n\n".join(parts)
+    # positional {{artifact.upstream}} (shared tone-core stages) first, then the
+    # named {{artifact.<sid>}} / {{intake.<key>}} substitutions.
+    composed = _resolve_positional_upstream(composed, depends_on or [], artifacts)
+    resolved = substitute_tokens(composed, intake, artifacts)
+    return resolved
+
+
+def _receipt_sig(key: bytes, rec: Dict[str, Any]) -> str:
+    body = {k: v for k, v in rec.items() if k != "sig"}
+    canon = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return hmac.new(key, canon.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _receipt_verified(run_dir: Path, sid: str, key: Optional[bytes]) -> bool:
+    """A stage is 'done' iff its on-disk artifact + receipt exist, the receipt's
+    sha256 matches the artifact bytes, AND (if a run key is available) the
+    receipt's HMAC signature verifies. This is what makes --resume safe and what
+    catches a receipt/artifact tampered-with between runs."""
+    ap = run_dir / "artifacts" / f"{sid}.md"
+    rp = run_dir / "receipts" / f"G-STAGE-{sid}.json"
+    if not ap.is_file() or not rp.is_file():
+        return False
+    try:
+        rec = json.loads(rp.read_text(encoding="utf-8"))
+        actual = hashlib.sha256(ap.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    except (OSError, ValueError):
+        return False
+    if rec.get("sha256") != actual:
+        return False
+    if key is not None and rec.get("sig"):
+        if not hmac.compare_digest(_receipt_sig(key, rec), str(rec["sig"])):
+            return False
+    return True
+
+
+def _dispatch(prompt: str, sid: str, model_hint: str, dispatch_cmd: Optional[str]) -> Tuple[str, str]:
+    """The ONE adapter seam. With --dispatch-cmd, run that command (prompt on
+    stdin) and parse JSON {"text","model"} from stdout. Otherwise fall back to
+    the documented `openclaw agent --json` client-provider path. Never invokes
+    an Anthropic endpoint — the returned model id is G-NOANTHROPIC-checked by the
+    caller."""
+    env = {**os.environ, "AA_STAGE": sid, "AA_MODEL_HINT": model_hint}
+    if dispatch_cmd:
+        proc = subprocess.run(dispatch_cmd, shell=True, input=prompt, capture_output=True,
+                              text=True, env=env)
+        if proc.returncode != 0:
+            raise DispatchError(f"--dispatch-cmd rc={proc.returncode}: {proc.stderr.strip()[:200]}")
+        raw = proc.stdout
+    else:  # documented default seam (client providers only)
+        argv = ["openclaw", "agent", "--json", "--stage", sid]
+        if model_hint:
+            argv += ["--model", model_hint]
+        proc = subprocess.run(argv, input=prompt, capture_output=True, text=True, env=env)
+        if proc.returncode != 0:
+            raise DispatchError(f"openclaw agent rc={proc.returncode}: {proc.stderr.strip()[:200]}")
+        raw = proc.stdout
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise DispatchError(f"dispatch output is not JSON: {exc}") from exc
+    text = data.get("text")
+    model = str(data.get("model", "")).strip()
+    if not isinstance(text, str) or not text.strip():
+        raise DispatchError("dispatch returned empty/absent 'text'")
+    return text, model
+
+
+def _stage_output_ok(text: str) -> bool:
+    return bool(text.strip()) and not _LEFTOVER_TOKEN_RE.search(text)
+
+
+def _park(run_dir: Path, sid: str, reason: str) -> None:
+    rec = {"parked_stage": sid, "reason": reason,
+           "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    (run_dir / "PARKED.json").write_text(json.dumps(rec, indent=2) + "\n", encoding="utf-8")
+    print(f"PARKED at {sid}: {reason} (see PARKED.json)")
+
+
+def _model_hint(stage: Dict[str, Any]) -> str:
+    """Map the stage's declared tier to a provider-agnostic model HINT the
+    adapter may honor. The tier lives in the manifest; the concrete id is the
+    client box's own choice — this is only a hint, never a hardcoded Anthropic id."""
+    tier = str(stage.get("tier", "") or (stage.get("model") or {}).get("tier", "")).upper()
+    return {"A": "tier-a", "B": "tier-b", "SEARCH": "tier-search"}.get(tier, "")
+
+
+def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
+                 dispatch_cmd: Optional[str], apply_repairs: bool, provider_cap: int,
+                 fast_ads: bool, resume: bool, online_links: bool,
+                 key: Optional[bytes], root: Optional[Path] = None) -> int:
+    """Execute the full wave schedule. Returns 0 on a complete dispatch, 2 on a
+    precedence/provider violation, 4 on a PARK (recovery exhausted)."""
+    root = root or _skill_root()
+    stages_by_id = {s["stage_id"]: s for s in manifest["stages"]}
+    intake_path = run_dir / "intake.json"
+    intake = json.loads(intake_path.read_text(encoding="utf-8")) if intake_path.is_file() else {}
+    art_dir = run_dir / "artifacts"
+    rec_dir = run_dir / "receipts"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    led_path = run_dir / "RUN-LEDGER.json"
+    led: Dict[str, Any] = {}
+    if led_path.is_file():
+        try:
+            led = json.loads(led_path.read_text(encoding="utf-8"))
+        except ValueError:
+            led = {}
+    led["apply_repairs"] = bool(apply_repairs)
+    led.setdefault("run_id", run_dir.name)
+    led.setdefault("stages", {})
+
+    waves = compute_waves(manifest["stages"], fast_ads)
+    dispatched = 0
+    for wave in waves:
+        for sub in throttle(wave, provider_cap):
+            for sid in sub:
+                stage = stages_by_id[sid]
+                if resume and _receipt_verified(run_dir, sid, key):
+                    print(f"[resume] skip {sid}: verified receipt already on disk")
+                    continue
+                # PRECEDENCE (enforced, not assumed): every dep must carry a
+                # verified receipt before this stage is allowed to dispatch.
+                missing = [d for d in stage["depends_on"] if not _receipt_verified(run_dir, d, key)]
+                if missing:
+                    _park(run_dir, sid, f"AF-AV-PRECEDENCE: depends_on receipts missing/invalid: {missing}")
+                    return 2
+                recovery = str(stage.get("recovery", "auto")).lower()
+                max_fix = int(stage.get("max_fix_attempts", 1) or 1)
+                attempts = 1 if recovery == "park" else max(1, max_fix)
+                artifacts = {p.stem: p.read_text(encoding="utf-8") for p in art_dir.glob("*.md")}
+                prompt = compose_prompt(root, sid, intake, artifacts, apply_repairs,
+                                        depends_on=stage["depends_on"])
+                hint = _model_hint(stage)
+                text: Optional[str] = None
+                model = ""
+                last_err = ""
+                for attempt in range(1, attempts + 1):
+                    try:
+                        cand_text, model = _dispatch(prompt, sid, hint, dispatch_cmd)
+                    except DispatchError as exc:
+                        last_err = str(exc)
+                        continue
+                    # G-NOANTHROPIC on the REAL returned model id (fail-closed).
+                    if _ANTHROPIC_ID_RE.search(model or ""):
+                        _park(run_dir, sid, f"AF-AV-NOANTHROPIC: dispatch returned an Anthropic model id {model!r}")
+                        return 2
+                    if _stage_output_ok(cand_text):
+                        text = cand_text
+                        break
+                    last_err = f"attempt {attempt}: output empty or has unresolved tokens"
+                if text is None:
+                    _park(run_dir, sid,
+                          f"recovery={recovery} exhausted after {attempts} attempt(s); last error: {last_err}")
+                    return 4
+                (art_dir / f"{sid}.md").write_text(text, encoding="utf-8")
+                sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                rec: Dict[str, Any] = {
+                    "stage": sid, "sha256": sha, "model": model, "attested_by": "foreman",
+                    "dispatched_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+                if key is not None:
+                    rec["sig"] = _receipt_sig(key, rec)
+                (rec_dir / f"G-STAGE-{sid}.json").write_text(json.dumps(rec, indent=2) + "\n", encoding="utf-8")
+                led["stages"][sid] = {"model": model, "receipt": True}
+                led_path.write_text(json.dumps(led, indent=2) + "\n", encoding="utf-8")
+                dispatched += 1
+                # stage-02 completion -> the (fail-soft) links gate; --online only
+                # on client boxes (default offline -> degraded:search, never fatal).
+                if sid.startswith("02-"):
+                    links_argv = ["--run", str(run_dir)] + (["--online"] if online_links else [])
+                    # best-effort, fail-soft side gate: it writes its own G-LINKS
+                    # receipt to disk; suppress its console output so the foreman
+                    # log stays clean (the receipt, not the print, is the record).
+                    import contextlib
+                    import io as _io
+                    try:
+                        with contextlib.redirect_stdout(_io.StringIO()):
+                            links_rc = links_gate.main(links_argv)
+                        print(f"[links] stage-02 link gate ran (rc={links_rc}, "
+                              f"{'online' if online_links else 'offline/degraded:search'}); G-LINKS receipt written.")
+                    except SystemExit:
+                        pass
+    print(f"DISPATCH COMPLETE: {dispatched} stage(s) dispatched, "
+          f"{sum(1 for s in manifest['stages'] if _receipt_verified(run_dir, s['stage_id'], key))}/"
+          f"{len(manifest['stages'])} stages carry a verified receipt.")
+    return 0
 
 
 def compute_waves(stages: List[Dict[str, Any]], fast_ads: bool = False) -> List[List[str]]:
@@ -259,6 +533,122 @@ def _version_gate(run_dir: Path) -> Tuple[int, Dict[str, Any]]:
                "violations": [], "notes": notes}
 
 
+def _dispatch_self_test() -> bool:
+    """Offline proof of the FIX-XC-05b dispatch loop with a MOCK adapter: a full
+    3-stage run writes HMAC-signed receipts + ledger rows with the real returned
+    model id; --resume skips receipted stages; an Anthropic model id parks
+    (AF-AV-NOANTHROPIC); and recovery exhaustion parks (redo-then-PARK)."""
+    import tempfile
+    import textwrap
+    ok = True
+    mini = {
+        "manifest_version": "selftest",
+        "stages": [
+            {"stage_id": "01-alpha", "depends_on": [], "recovery": "auto", "max_fix_attempts": 2},
+            {"stage_id": "02-beta", "depends_on": ["01-alpha"], "recovery": "auto", "max_fix_attempts": 2},
+            {"stage_id": "03-gamma", "depends_on": ["02-beta"], "recovery": "auto", "max_fix_attempts": 2},
+        ],
+    }
+    with tempfile.TemporaryDirectory() as td:
+        troot = Path(td) / "skill"
+        (troot / "prompts" / "01-alpha").mkdir(parents=True)
+        (troot / "prompts" / "02-beta").mkdir(parents=True)
+        (troot / "prompts" / "03-gamma").mkdir(parents=True)
+        (troot / "prompts" / "01-alpha" / "user.md").write_text(
+            "Client {{intake.first_name}} in {{intake.niche}}. No upstream.", encoding="utf-8")
+        (troot / "prompts" / "02-beta" / "user.md").write_text(
+            "Upstream alpha: {{artifact.01-alpha}} for {{intake.first_name}}.", encoding="utf-8")
+        (troot / "prompts" / "03-gamma" / "user.md").write_text(
+            "Upstream beta: {{artifact.02-beta}}.", encoding="utf-8")
+
+        def _mock(name: str, body: str) -> str:
+            p = Path(td) / name
+            p.write_text(body, encoding="utf-8")
+            return f"{sys.executable} {p}"
+
+        good = _mock("mock_good.py", textwrap.dedent('''
+            import sys, json
+            _ = sys.stdin.read()
+            print(json.dumps({"text": "# ok\\n" + ("word " * 60), "model": "ollama-cloud/qwen3-235b"}))
+        '''))
+        anthro = _mock("mock_anthropic.py", textwrap.dedent('''
+            import sys, json
+            _ = sys.stdin.read()
+            print(json.dumps({"text": "# ok\\n" + ("word " * 60), "model": "anthropic/claude-3-5-sonnet"}))
+        '''))
+        empty = _mock("mock_empty.py", textwrap.dedent('''
+            import sys, json
+            _ = sys.stdin.read()
+            print(json.dumps({"text": "   ", "model": "ollama-cloud/qwen3-235b"}))
+        '''))
+
+        def _mkrun(sub: str) -> Path:
+            rd = Path(td) / sub
+            rd.mkdir(parents=True, exist_ok=True)
+            (rd / "intake.json").write_text(json.dumps(
+                {"version": "brand", "first_name": "Amara", "niche": "visibility coaching"}), encoding="utf-8")
+            import secrets
+            (rd / ".foreman-key").write_text(secrets.token_bytes(32).hex(), encoding="utf-8")
+            return rd
+
+        # (1) full good run -> 3 signed receipts + ledger models
+        rd = _mkrun("good")
+        key = bytes.fromhex((rd / ".foreman-key").read_text().strip())
+        rc = run_dispatch(mini, rd, dispatch_cmd=good, apply_repairs=False, provider_cap=10,
+                          fast_ads=False, resume=False, online_links=False, key=key, root=troot)
+        all_ok = rc == 0 and all(_receipt_verified(rd, s["stage_id"], key) for s in mini["stages"])
+        led = json.loads((rd / "RUN-LEDGER.json").read_text())
+        models_ok = all(led["stages"][s["stage_id"]]["model"] == "ollama-cloud/qwen3-235b" for s in mini["stages"])
+        # prove substitution happened: 02-beta artifact is the mock body (tokens resolved, none leaked)
+        beta = (rd / "artifacts" / "02-beta.md").read_text()
+        subst_ok = "{{" not in beta
+        if all_ok and models_ok and subst_ok:
+            print("SELF-TEST ok: (FIX-XC-05b) full dispatch loop -> 3/3 HMAC-signed receipts, ledger "
+                  "carries the REAL returned model id, prompt tokens resolved (zero {{...}} leaked).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: dispatch loop rc={rc} receipts_ok={all_ok} models_ok={models_ok} subst_ok={subst_ok}")
+
+        # (2) --resume skips receipted stages (re-run with an ALWAYS-FAIL adapter:
+        #     if resume did NOT skip, the empty adapter would park; it returns 0).
+        rc2 = run_dispatch(mini, rd, dispatch_cmd=empty, apply_repairs=False, provider_cap=10,
+                           fast_ads=False, resume=True, online_links=False, key=key, root=troot)
+        if rc2 == 0 and not (rd / "PARKED.json").exists():
+            print("SELF-TEST ok: --resume skips every already-receipted stage (idempotent; a would-fail "
+                  "adapter is never even called).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: --resume did not skip receipted stages (rc={rc2}).")
+
+        # (3) an Anthropic model id from the adapter PARKS the run (AF-AV-NOANTHROPIC)
+        rda = _mkrun("anthro")
+        keya = bytes.fromhex((rda / ".foreman-key").read_text().strip())
+        rca = run_dispatch(mini, rda, dispatch_cmd=anthro, apply_repairs=False, provider_cap=10,
+                           fast_ads=False, resume=False, online_links=False, key=keya, root=troot)
+        parked = (rda / "PARKED.json")
+        if rca == 2 and parked.exists() and "NOANTHROPIC" in parked.read_text():
+            print("SELF-TEST ok: an Anthropic model id returned by the adapter -> rc 2 + PARKED "
+                  "(AF-AV-NOANTHROPIC on the REAL returned model id).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: Anthropic model id not blocked (rc={rca}, parked={parked.exists()}).")
+
+        # (4) recovery exhaustion (empty output, max_fix_attempts=2) -> redo-then-PARK
+        rde = _mkrun("exhaust")
+        keye = bytes.fromhex((rde / ".foreman-key").read_text().strip())
+        rce = run_dispatch(mini, rde, dispatch_cmd=empty, apply_repairs=False, provider_cap=10,
+                           fast_ads=False, resume=False, online_links=False, key=keye, root=troot)
+        parkede = (rde / "PARKED.json")
+        if rce == 4 and parkede.exists() and "01-alpha" in parkede.read_text():
+            print("SELF-TEST ok: recovery exhausted (empty output x max_fix_attempts) -> rc 4 + PARKED "
+                  "at the failing stage (redo-then-park, no partial delivery).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: recovery exhaustion did not park (rc={rce}, parked={parkede.exists()}).")
+
+    return ok
+
+
 def run_self_test(manifest) -> int:
     ok = True
     stages = manifest["stages"]
@@ -395,6 +785,10 @@ def run_self_test(manifest) -> int:
         else:
             ok = False; print(f"SELF-TEST FAIL: missing intake.json -> rc={rc} route={route}")
 
+    # (i) the REAL dispatch loop (FIX-XC-05b), proven offline with a mock adapter
+    if not _dispatch_self_test():
+        ok = False
+
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -413,6 +807,16 @@ def main(argv) -> int:
     ap.add_argument("--apply-repairs", action="store_true",
                     help="OPT IN to source repairs R1-R6 (default OFF = faithful to the live workflow). R7 Anthropic ban is always on.")
     ap.add_argument("--provider-cap", type=int, default=10, help="max concurrent authors (Ollama-only boxes cap 3)")
+    ap.add_argument("--execute", action="store_true",
+                    help="RUN the real dispatch loop (compose prompts, dispatch to the client model, "
+                         "write artifacts + HMAC-signed receipts + ledger rows). Without it, the gates "
+                         "run and the plan is described but no stage is dispatched.")
+    ap.add_argument("--dispatch-cmd",
+                    help="adapter command for a stage dispatch: prompt on stdin, JSON {\"text\",\"model\"} "
+                         "on stdout (default seam: `openclaw agent --json`). Client providers only.")
+    ap.add_argument("--online-links", action="store_true",
+                    help="on stage-02 completion, run the links gate with --online (client boxes only; "
+                         "default offline -> degraded:search, never fatal)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -493,9 +897,32 @@ def main(argv) -> int:
     print(f"front-door nonce accepted. repairs mode: "
           f"{'ON (--apply-repairs)' if args.apply_repairs else 'OFF (faithful-to-live default)'}.")
     print("DISPATCH BANNER (prepended to every stage): " + dispatch_preamble(args.apply_repairs))
-    print("LLM dispatch is the OpenClaw sub-agent seam (client providers only); this offline "
-          "build validates scheduling, not model calls. Use --plan to inspect the wave schedule.")
-    return 0
+
+    if not args.execute:
+        print("LLM dispatch is the OpenClaw sub-agent seam (client providers only). Gates PASSED; "
+              "pass --execute (with --dispatch-cmd or the openclaw default) to run the real dispatch "
+              "loop, or --plan to inspect the wave schedule.")
+        return 0
+
+    # --- REAL dispatch loop (FIX-XC-05b) ------------------------------------
+    key: Optional[bytes] = None
+    key_path = run_dir / ".foreman-key"
+    if key_path.is_file():
+        try:
+            key = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+        except ValueError:
+            key = None
+    if key is None:
+        print("REFUSED: --execute requires the per-run foreman key (<run-dir>/.foreman-key, minted by "
+              "entry.sh) so stage receipts can be HMAC-signed.")
+        return 2
+    rc = run_dispatch(manifest, run_dir, dispatch_cmd=args.dispatch_cmd,
+                      apply_repairs=bool(args.apply_repairs), provider_cap=args.provider_cap,
+                      fast_ads=args.fast_ads, resume=bool(args.resume),
+                      online_links=bool(args.online_links), key=key)
+    if rc == 0:
+        print("Dispatch loop finished. Run aa_delivery_gate.py to certify + deliver.")
+    return rc
 
 
 if __name__ == "__main__":

@@ -26,10 +26,10 @@ Product info [{{intake.product_info}}]
  , </offer_description>
 
 <avatar_description> 
-{{artifact.upstream}}
+{{artifact.03-rewrite-avatar}}
 
-{{artifact.upstream}}
-{{artifact.upstream}}
+{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}
 
 
  </avatar_description>

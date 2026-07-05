@@ -1,0 +1,24 @@
+{
+  "_comment": "Canonical manifest of the Skill 56 baked runtime prompts. The runtime iterates THIS ordered list (never a directory glob), so a stray/junk .md dropped into prompts/baked/ is never silently picked up. FIX-COPY-04(iii): the two legacy stubs (13/14) were archived to prompts/baked/_archive/ and are NOT in this list.",
+  "cluster": "56-sales-page-assets/prompts/baked",
+  "active_count": 12,
+  "archived_count": 2,
+  "prompts": [
+    {"order": 1, "file": "01-starter-page-prompt.md", "stage": "main", "asset": "main page A (8-section + countdown)", "prover": "prove_sp_main_structure.py"},
+    {"order": 2, "file": "02-starter-page-b-prompt.md", "stage": "main", "asset": "main page B (loader/animation variant)", "prover": "prove_sp_main_structure.py"},
+    {"order": 3, "file": "03-bump-sell-prompt.md", "stage": "bump", "asset": "bump copy (40-80 words + checkbox)", "prover": "prove_sp_bump_band.py"},
+    {"order": 4, "file": "04-upsell-1-prompt-page-a.md", "stage": "upsell1", "asset": "upsell A (9-section)", "prover": "prove_sp_upsell_structure.py"},
+    {"order": 5, "file": "05-upsell-1-prompt-page-b.md", "stage": "upsell1", "asset": "upsell B (Emotional Hijacking persona)", "prover": "prove_sp_upsell_structure.py"},
+    {"order": 6, "file": "06-downsell-1-prompt-page-a.md", "stage": "downsell1", "asset": "downsell A (recovery)", "prover": "prove_sp_upsell_structure.py"},
+    {"order": 7, "file": "07-downsell-1-prompt-page-b.md", "stage": "downsell1", "asset": "downsell B", "prover": "prove_sp_upsell_structure.py"},
+    {"order": 8, "file": "08-high-ticket-page-a-prompt.md", "stage": "high-ticket", "asset": "high-ticket A (Sovereign Architect)", "prover": "prove_sp_highticket_band.py"},
+    {"order": 9, "file": "09-high-ticket-page-b-prompt.md", "stage": "high-ticket", "asset": "high-ticket B", "prover": "prove_sp_highticket_band.py"},
+    {"order": 10, "file": "10-high-ticket-page-c-prompt.md", "stage": "high-ticket", "asset": "high-ticket C", "prover": "prove_sp_highticket_band.py"},
+    {"order": 11, "file": "11-hight-ticket-product-overview-prompt.md", "stage": "high-ticket", "asset": "high-ticket product overview", "prover": null},
+    {"order": 12, "file": "12-high-ticket-product-ad-copy-prompt.md", "stage": "high-ticket", "asset": "high-ticket ad copy", "prover": null}
+  ],
+  "archived": [
+    {"file": "_archive/13-test-prompt-airtable-mcp-demo.md", "reason": "legacy Airtable MCP test stub — not a runtime prompt"},
+    {"file": "_archive/14-empty-record.md", "reason": "legacy empty Airtable record — not a runtime prompt"}
+  ]
+}

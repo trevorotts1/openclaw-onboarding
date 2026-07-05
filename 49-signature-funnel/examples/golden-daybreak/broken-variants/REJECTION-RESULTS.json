@@ -24,7 +24,7 @@
     "expected_code": "AF-FUN-PROMPT-FLOOR",
     "code_present": true,
     "why": "prompt is far under the 5,000-char floor -> never sent to Kie",
-    "out_tail": "  VIOLATION [AF-FUN-PROMPT-FLOOR] page 'main' section 1: 43 stripped chars, under the 5000 floor \u2014 a prompt this short cannot carry the signature specificity; NOT sent to Kie\n  VIOLATION [AF-FUN-PROMPT-DENSITY] page 'main' section 1: only 8 distinct words (< 220) \u2014 reads as repetition padding, not a genuinely rich prompt\n  VIOLATION [AF-FUN-PROMPT-GRADE] page 'main' section 1: the SIGNATURE GRADE BLOCK is not embedded (none of ['140 percent', 'signature color', 'melanin-true', 'signature aesthetic', 'signature grade'] present)\n  VIOLATION [AF-FUN-PROMPT-NEGATIVE] page 'main' section 1: no negative block ('Do not ...' imperative) in the prompt"
+    "out_tail": "  VIOLATION [AF-FUN-PROMPT-FLOOR] page 'main' section 1: 43 stripped chars, under the 5000 floor \u2014 a prompt this short cannot carry the signature specificity; NOT sent to Kie\n  VIOLATION [AF-FUN-PROMPT-DENSITY] page 'main' section 1: only 8 distinct words (< 220) \u2014 reads as repetition padding, not a genuinely rich prompt\n  VIOLATION [AF-FUN-PROMPT-GRADE] page 'main' section 1: the SIGNATURE GRADE BLOCK is not embedded (no fingerprint of ['140 percent', 'signature color', 'melanin-true', 'signature aesthetic', 'signature grade'] present)\n  VIOLATION [AF-FUN-PROMPT-NEGATIVE] page 'main' section 1: no negative block ('Do not ...' imperative) in the prompt"
   },
   "D_missing_provenance": {
     "prover": "prove_sf_no_pitch.py",
