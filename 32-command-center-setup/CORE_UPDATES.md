@@ -159,7 +159,9 @@ The Command Center uses a "Department Head" pattern:
 - One persistent agent per department
 - Each bound to a dedicated Telegram topic
 - Workers spun up on-demand for specific tasks
-- Personas assigned from coaching-personas library
+- Coaching personas are matched **per task, at runtime** — NOT assigned to departments at build time
+
+> **Terminology — do not conflate.** A department carries a `dept_label` (its department-head display name, e.g. the `persona` routing hint on ingest and the `dept-<slug>`/`qc-specialist-<slug>` label baked onto its `agents` row). That `dept_label` is **not** a coaching persona. The coaching/leadership persona (from the 81-persona `coaching-personas` library) is selected **per task, at runtime** by the persona selector — never assigned to a department and never hardcoded, per `23-ai-workforce-blueprint/persona-matching-protocol.md`. See `TERMINOLOGY.md` → "Persona — three distinct meanings".
 
 See full documentation: ~/.openclaw/skills/32-command-center-setup/
 ```

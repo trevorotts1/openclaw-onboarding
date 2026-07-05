@@ -1,5 +1,14 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.29 — 2026-07-05 — F4.5: align CORE_UPDATES persona wording with the matching protocol (doctrine only)
+
+- **F4.5 (DEP-9) — Department-Head Pattern wording corrected.** `CORE_UPDATES.md` previously said
+  departments get "Personas assigned from coaching-personas library", conflating a department's
+  `dept_label` (its department-head display name) with a coaching persona. Corrected to state that
+  coaching personas are matched **per task, at runtime** and are NOT assigned to departments, per
+  `23-ai-workforce-blueprint/persona-matching-protocol.md`. Added a terminology callout pointing to
+  `TERMINOLOGY.md` → "Persona — three distinct meanings". No provisioning/behavior change.
+
 ## v12.9.28 — 2026-07-05 — F4.4/F4.7: Kanban Persona-Gate + persona observability probe (DEP-10)
 
 - **F4.4 — `scripts/move-task.py` now enforces a persona precondition on the Kanban

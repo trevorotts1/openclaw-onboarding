@@ -1,6 +1,36 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [v17.0.33] - 2026-07-05 - docs(persona): DEP-9 doctrine — no-naked degraded state (F3.3) + three-way persona terminology (F4.5)
+
+Persona doctrine surgery, no code/API change. Relanded on `main` after Wave-0 (v17.0.32 / DEP-8) via a
+repo-wide `/version` roll to v17.0.33: skill 23's `skill-version.txt` is coupled to the repo-wide
+onboarding `/version` in LOCKSTEP via `bump-version.sh` (it is one of the 11 markers in
+`scripts/version-markers.json`), so clearing the skill-23 content-change gate G3 requires this bump —
+it is a version roll, not a repo release (rides the existing tag per merge-train doctrine). Enforced by
+an extended CI guard.
+
+- **F3.3 — `persona-matching-protocol.md` "What if Skill 22 is not installed?" rewritten.** The old
+  wording ("No persona matching happens. The agent operates without persona guidance. **This is a valid
+  state.**") normalized persona-less operation, contradicting the no-naked-tasks invariant. It is now a
+  **DEGRADED** state (not a valid steady state) with two mandatory obligations: (1) attach the default
+  fallback persona (`blackceo-house-voice`, the `DEFAULT_PERSONA_FALLBACK` constant — excluded from
+  normal persona competition, surfaces only as a fallback; a purely mechanical task keeps its
+  `no_persona_required` flag but still carries `governance_persona_id` = the `GOVERNANCE_PERSONA_FALLBACK`
+  constant `covey-7-habits`), and (2) an operator-visible install nag (never client-facing). Added a
+  top-of-file note declaring this protocol governs the coaching persona (concept 2) ONLY.
+- **F3.3 regression guard.** `.github/workflows/persona-task-mode-wiring-guard.yml` header extended with
+  group **(B2)**, and `tests/unit/persona-task-mode-wiring.test.sh` gains a (B2) assertion: the
+  Skill-22-absent edge case must contain `DEGRADED` + `DEFAULT_PERSONA_FALLBACK` + a default-persona
+  attachment + "install nag", and must NOT contain the old "operates without persona guidance. This is a
+  valid state" wording — so the invariant cannot silently regress.
+- **F4.5 — terminology surgery (doctrine text only, no API break).** `SOP-00-Owner-Task-Routing.md`: the
+  ingest `persona` key is now documented as a `dept_label` / `workspace_hint` (a routing hint, NOT a
+  coaching persona; the coaching persona is matched per task at runtime inside `createTaskCore`). See the
+  repo-root `TERMINOLOGY.md` "Persona — three distinct meanings" section (concept 1 `dept_label`/
+  `workspace_hint` vs concept 2 coaching persona vs concept 3 buyer/customer avatar) and the aligned
+  wording in skill 32 `CORE_UPDATES.md` and skill 52 `SKILL.md`.
+
 ## [v17.0.32] - 2026-07-05 - feat(persona-selector): add `--strict` degradation exit code (F3.2, DEP-8)
 
 Persona-matching-overhaul Phase-2 (DEP-8). Shell consumers (QC gates, fleet
