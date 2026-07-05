@@ -117,8 +117,10 @@ echo ""
 
 # ---- 1. scan the skill tree (exclude .git + this gate file) ----
 TREE_HITS="$(
-  grep -rinE "$BANNED" "$SKILL_DIR" \
+  grep -rIinE "$BANNED" "$SKILL_DIR" \
     --exclude-dir='.git' \
+    --exclude-dir='__pycache__' \
+    --exclude='*.pyc' \
     --exclude="$SELF_NAME" \
     2>/dev/null || true
 )"
@@ -148,7 +150,7 @@ if [ "$SCAN_GEN" = "1" ] && [ -f "$GEN_SCRIPT" ]; then
     CLIENT_TELEGRAM_CHAT_ID="0" \
     SKILL38_TEMPLATES_DIR="$SKILL_DIR/templates" \
     bash "$GEN_SCRIPT" >"$TMP/gen.log" 2>&1 || true
-  GEN_HITS="$(grep -rinE "$BANNED" "$MFD" 2>/dev/null || true)"
+  GEN_HITS="$(grep -rIinE "$BANNED" "$MFD" 2>/dev/null || true)"
   if [ -n "$GEN_HITS" ]; then
     echo ""
     echo "Banned identifiers found in GENERATED client output:"
