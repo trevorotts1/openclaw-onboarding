@@ -4,6 +4,47 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.15.1 - 2026-07-05 - fix(pipeline): Phase-5 embed failure is fatal end-to-end (F1.2 / FDN-5)
+
+Persona-Matching-Overhaul FOUNDATION train FDN-5, fix F1.2 — "registered but not
+embedded ships silently". Before this, `pipeline/orchestrator.py` marked
+`phase5: FAILED` in `pipeline-status.json` but `process_book()` never checked
+Phase 5's outcome, so the orchestrator exited 0; `add-persona-from-source.sh`
+saw `PIPELINE_RC=0` and marked the persona ready-to-publish even though its
+blueprint was **matchable but vector-less** on that box (Layer-5 semantic
+retrieval can never surface it — the exact failure class N38 guards against, but
+on the workspace side where N38 does not run).
+
+- **`pipeline/orchestrator.py`** — Phase-5 `FAILED` now propagates a DISTINCT
+  process exit code (`8` = EMBED_FAILED) end-to-end, in BOTH `--single-book`
+  mode and full-batch mode. The blueprint is deliberately LEFT ON DISK so an
+  idempotent retry re-embeds only: `run_synthesis` gained a `_phase3_already`
+  re-entry that SKIPS the costly LLM synthesis (and an already-COMPLETE Phase 3b)
+  when the blueprint exists and `phase3 == COMPLETE`, running Phase 5/6 only; the
+  single-book early-return is now `phase5`-aware so a retry re-enters to re-embed
+  instead of short-circuiting.
+- **`scripts/add-persona-from-source.sh`** — on `rc 8` it prints a LOUD
+  EMBED_FAILED banner and propagates `exit 8` (so `persona-inbox-watcher.sh`
+  quarantines/retries) WITHOUT marking fleet-publish pending. Added the
+  WORKSPACE triad-equivalent as a terminal gate: blueprint on disk + registered
+  in `persona-categories.json` + ≥1 index row — a second net for the case where
+  the pipeline exits 0 but Phase 5's safety-net indexer silently no-ops. Warn-only
+  under `--skip-index`.
+- **Reconciled to the FDN-4 shared contract (no duplicate helper).** The terminal
+  gate delegates to the ONE shared `pipeline/usable-persona-contract.sh` (landed
+  in v6.15.0 / FDN-4) via a thin shim in the wrapper — it does NOT re-implement
+  the three-leg contract, so the workspace triad-equivalent (F1.2) and the inbox
+  watcher's `processed/` gate (F1.1) share exactly one source of truth.
+- **Tests** — `tests/unit/workspace-usable-persona-triad.test.sh` (5 hermetic
+  cases against the shared contract script, incl. the vector-less / "registered
+  but not embedded" FAIL and no cross-slug credit) and
+  `tests/unit/orchestrator-embed-fail-exit8.test.py` (Phase-5 FAILED → exit 8,
+  DONE → exit 0, blueprint left on disk).
+- **Re-land:** rebased onto `main` (v6.15.0) after the FDN-4 shared-contract
+  merge; resolved the `tests/unit/usable-persona-contract.test.sh` add/add
+  collision by renaming this train's test and dropping the redundant
+  `lib-usable-persona-contract.sh`; skill-version `v6.15.0 → v6.15.1`.
+
 ## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
 
 A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.
