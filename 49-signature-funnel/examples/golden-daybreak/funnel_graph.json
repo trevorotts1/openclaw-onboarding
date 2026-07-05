@@ -1,0 +1,76 @@
+{
+  "funnel_type": "signature_funnel",
+  "funnel_size": 7,
+  "nodes": [
+    {
+      "id": "main",
+      "page_type": "main"
+    },
+    {
+      "id": "checkout",
+      "page_type": "checkout"
+    },
+    {
+      "id": "upsell",
+      "page_type": "upsell"
+    },
+    {
+      "id": "downsell",
+      "page_type": "downsell"
+    },
+    {
+      "id": "upsell-2",
+      "page_type": "upsell-2"
+    },
+    {
+      "id": "downsell-2",
+      "page_type": "downsell-2"
+    },
+    {
+      "id": "thank-you",
+      "page_type": "thank-you"
+    }
+  ],
+  "edges": [
+    {
+      "from": "main",
+      "to": "checkout",
+      "on": "proceed"
+    },
+    {
+      "from": "checkout",
+      "to": "upsell",
+      "on": "proceed"
+    },
+    {
+      "from": "upsell",
+      "to": "upsell-2",
+      "on": "accept"
+    },
+    {
+      "from": "upsell",
+      "to": "downsell",
+      "on": "decline"
+    },
+    {
+      "from": "downsell",
+      "to": "upsell-2",
+      "on": "proceed"
+    },
+    {
+      "from": "upsell-2",
+      "to": "thank-you",
+      "on": "accept"
+    },
+    {
+      "from": "upsell-2",
+      "to": "downsell-2",
+      "on": "decline"
+    },
+    {
+      "from": "downsell-2",
+      "to": "thank-you",
+      "on": "proceed"
+    }
+  ]
+}
