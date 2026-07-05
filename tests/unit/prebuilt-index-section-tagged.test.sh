@@ -17,8 +17,10 @@
 #         * .prebuilt-index-version sentinel compare
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
-#       - persona_count == 81
-#       - chunk_count == 1161 (v2.3.0 15-section format, 81 personas)
+#       - persona_count == 82 (FDN-1 SEED re-baseline: +blackceo-house-voice fallback)
+#       - chunk_count == 1161 (live v2.3.0 asset — 81 personas embedded; the +1
+#         house-voice delta is not yet embedded, so asset_rebuild_required=true +
+#         base_* pin the live published base)
 #       - asset_rebuild_required is false (published) OR base_tag/base_sha256/base_asset_url
 #         are present and valid (pre-release: a newer tag pre-staged over a published base)
 #       - section_tagged is true
@@ -175,9 +177,15 @@ live_tag = base_tag if rebuild_pending and base_tag else m.get("release_tag", ""
 live_sha = base_sha if rebuild_pending and base_sha else m.get("sha256", "")
 live_url = base_url if rebuild_pending and base_url else m.get("asset_url", "")
 
-check("B1: persona_count == 81", m.get("persona_count") == 81,
+# FDN-1: canonical SEED set re-baselined 81 -> 82 (added blackceo-house-voice, the
+# DEFAULT_PERSONA_FALLBACK). The count-triad SEED members (persona_count /
+# canonical_persona_count) advance to 82; the live vector ASSET is still the
+# published v2.3.0 (81 personas / 1161 chunks) until the operator embeds the +1
+# delta, which is why asset_rebuild_required=true + base_* pin the live base below.
+check("B1: persona_count == 82", m.get("persona_count") == 82,
       f"got {m.get('persona_count')}")
-check("B2: chunk_count == 1161", m.get("chunk_count") == 1161,
+check("B2: chunk_count == 1161 (live v2.3.0 asset — house-voice delta not yet embedded)",
+      m.get("chunk_count") == 1161,
       f"got {m.get('chunk_count')}")
 check("B3: asset state valid (published or pre-release with base present)",
       (not rebuild_pending) or (bool(base_tag) and bool(base_sha) and bool(base_url)),
@@ -199,8 +207,8 @@ check("B8: live asset_url ends with a known version path",
 check("B9: live sha256 is a verified hash (not a pending placeholder)",
       live_sha in KNOWN_SHAS.values(),
       f"got {live_sha!r}")
-check("B10: canonical_persona_count == 81",
-      m.get("canonical_persona_count") == 81,
+check("B10: canonical_persona_count == 82",
+      m.get("canonical_persona_count") == 82,
       f"got {m.get('canonical_persona_count')}")
 
 fails = [r for r in results if r[0] == "FAIL"]

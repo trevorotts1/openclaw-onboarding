@@ -4,6 +4,10 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.16.2 - 2026-07-05 - feat(FDN-1 / F3.1): blackceo-house-voice DEFAULT_PERSONA_FALLBACK seed
+
+Seeds the hand-authored `blackceo-house-voice` persona (blueprint dir + `persona-categories.json` key) as the guaranteed no-naked-task default fallback (Q2). It is tagged `fallback: true` in `persona-categories.json`, which EXCLUDES it from the scoring funnel — it carries no perspective/specialty tags and can never out-score a real specialist; only the selector's `_fallback_persona()` path returns it. The SET triad re-baselines 81 → 82 (blueprint dirs == categories keys == persona_count == canonical_persona_count == 82) in-place; `INDEX-MANIFEST.json` flips `asset_rebuild_required: true` because the published vector asset still embeds 81 (house-voice needs a +1 delta embed before the fleet points at it — the fleet stays fully functional until then). Selector wiring (constants + resolution helpers + empty-universe fallback) lands in Skill 23 (`persona-selector-v2.py`).
+
 ## v6.16.1 - 2026-07-05 - fix(DEP-13 P3 hygiene): stale install counts, pending-publish nag, LRU task cache, provisioning default, log-format unification
 
 P3 hygiene bundle from the persona-matching analysis (train DEP-13: F1.5, F1.6, F2.4, F2.5, F4.6). No behavior change to matching quality — these close staleness / unbounded-growth / silent-default footguns.

@@ -157,6 +157,32 @@ except ImportError:
 SCORING_MODE = os.environ.get("SCORING_MODE", "llm" if LLM_AVAILABLE else "heuristic").lower()
 
 
+# ── Guaranteed-fallback persona pins (FDN-1 / F3.1) ───────────────────────────
+# Pinned constants (GEMINI_MODEL-style) that make the selector's core invariant
+# provable rather than hopeful: in SELECT mode the JSON NEVER carries
+# persona_id: null unless no_persona_required is set. These two ids are the LAST
+# resort of two independent resolution orders; a per-client override in
+# company-config.json always resolves IN FRONT of the constant (client
+# sovereignty first — the constant is only the floor).
+#
+#   • DEFAULT_PERSONA_FALLBACK — attached when the persona universe is empty
+#     (fresh box / Skill-22 absent / clobbered categories). It is a deliberately
+#     generic, brand-safe house voice seeded as a PERMANENT fleet persona and
+#     tagged fallback:true in persona-categories.json, which EXCLUDES it from the
+#     normal scoring funnel (list_available_personas drops fallback personas) so
+#     it can never out-score a real specialist. Only _fallback_persona() ever
+#     returns it. Resolution order (Q2): company-config.default_persona_id ->
+#     first real seed-categories key (deterministic) -> this constant.
+#   • GOVERNANCE_PERSONA_FALLBACK — the oversight pointer attached to mechanical
+#     / no_persona_required tasks so EVERY task carries a governance persona for
+#     the dispatch gate, without pretending a chmod needs coaching. Resolution
+#     order (Q1): company-config.governance_persona_id -> this constant. NOTE: the
+#     constant itself is defined at the mechanical-gate single-source block above
+#     (so a per-box shared-utils/mechanical-gate.py override stays authoritative);
+#     it is deliberately NOT reassigned here.
+DEFAULT_PERSONA_FALLBACK = "blackceo-house-voice"
+
+
 # -------- Coaching/Leadership/Hybrid mode detection (copied from v1 for portability) --------
 COACHING_SIGNALS = [
     "i'm stuck", "i don't know", "help me decide", "what should i do",
@@ -1662,12 +1688,22 @@ def list_available_personas(paths: dict) -> list:
             if isinstance(data, dict):
                 # Schema 1.0 (current): personas live under data["personas"].
                 if isinstance(data.get("personas"), dict):
-                    return list(data["personas"].keys())
+                    # FDN-1 / F3.1: a persona tagged fallback:true (the generic
+                    # house-voice default) is a PERMANENT SEED that must NEVER
+                    # compete in the normal funnel — only _fallback_persona()
+                    # may return it. Dropping it at the single source of the
+                    # candidate universe keeps it out of Stage A/B/C (Stage C's
+                    # intersect-with-pool_b then filters it out of semantic hits
+                    # too) and out of the deterministic "first seed key" default.
+                    return [
+                        k for k, v in data["personas"].items()
+                        if not (isinstance(v, dict) and v.get("fallback"))
+                    ]
                 if isinstance(data.get("personas"), list):
                     return [
                         d.get("id") or d.get("name")
                         for d in data["personas"]
-                        if isinstance(d, dict)
+                        if isinstance(d, dict) and not d.get("fallback")
                     ]
                 # Legacy flat-dict schema: filter out known meta-keys.
                 META_KEYS = {"schemaVersion", "schema_version", "created",
@@ -1714,6 +1750,80 @@ def load_company_config(paths: dict) -> dict:
     except Exception as e:
         print(f"[persona-selector] ERROR reading company-config.json: {e}", file=sys.stderr)
         return {}
+
+
+def _resolve_default_persona_id(paths: dict, available: list = None) -> tuple:
+    """Resolve the default fallback persona id + a source tag (FDN-1 / Q2).
+
+    Resolution order, client-sovereignty first:
+      1. company-config.json `default_persona_id` — per-client override.
+      2. first REAL seed-categories persona key (deterministic, sorted) —
+         list_available_personas already drops fallback:true personas, so this
+         never returns the generic house-voice over a real persona.
+      3. DEFAULT_PERSONA_FALLBACK pinned constant.
+    Never returns None. Returns (persona_id, source_tag).
+    """
+    cfg = load_company_config(paths)
+    configured = ""
+    if isinstance(cfg, dict):
+        configured = (cfg.get("default_persona_id") or "").strip()
+    if configured:
+        return configured, "company_config"
+    if available is None:
+        available = list_available_personas(paths)
+    real = sorted(p for p in available if p and p != DEFAULT_PERSONA_FALLBACK)
+    if real:
+        return real[0], "first_seed_category"
+    return DEFAULT_PERSONA_FALLBACK, "default_persona"
+
+
+def _resolve_governance_persona_id(paths: dict) -> tuple:
+    """Resolve the governance/oversight persona id for mechanical (no_persona_
+    required) tasks (FDN-1 / Q1).
+
+    Resolution order, client-sovereignty first:
+      1. company-config.json `governance_persona_id` — per-client override.
+      2. GOVERNANCE_PERSONA_FALLBACK pinned constant ('covey-7-habits').
+    Never returns None. The mechanical task keeps no_persona_required:true AND
+    carries this pointer so the dispatch gate has a persona for every task
+    (oversight pointer, not a full Section-4 persona load).
+    """
+    cfg = load_company_config(paths)
+    configured = ""
+    if isinstance(cfg, dict):
+        configured = (cfg.get("governance_persona_id") or "").strip()
+    if configured:
+        return configured, "company_config"
+    return GOVERNANCE_PERSONA_FALLBACK, "governance_default"
+
+
+def _fallback_persona(paths: dict, department: str, mode: str) -> dict:
+    """Build a guaranteed non-null SELECT-mode result for the empty-universe path
+    (F3.1 A1: fresh box, Skill 22 absent, or categories unreadable/clobbered).
+
+    The invariant this enforces: SELECT mode never emits persona_id:null unless
+    no_persona_required is set. Rather than a naked NO_PERSONAS_AVAILABLE result
+    (exit-0 with persona_id:null, which downstream dispatch then delivers as a
+    naked task), attach the resolved default persona, tag it fallback:
+    "default_persona", and KEEP the warning so the degraded state stays loud and
+    is logged by record_selection.
+    """
+    pid, source = _resolve_default_persona_id(paths)
+    return {
+        "persona_id": pid,
+        "persona_name": pid.replace("-", " ").title(),
+        "persona_version": 1,
+        "score": 0.0,
+        "interaction_mode": mode,
+        "mode": mode,
+        "fallback": "default_persona",
+        "fallback_source": source,
+        "warning": "NO_PERSONAS_AVAILABLE",
+        "message": ("No personas are installed; attached the default fallback "
+                    "persona so no task is dispatched naked. Run Skill 22 on at "
+                    "least one book to activate persona-guided work."),
+        "funnel": {"pool": 0, "category": 0, "semantic": 0},
+    }
 
 
 def _persona_keywords(persona_id: str) -> list:
@@ -2007,14 +2117,12 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     owner_profile = read_owner_profile(paths)
 
     if not all_personas:
-        return {
-            "persona_id": None,
-            "score": 0.0,
-            "warning": "NO_PERSONAS_AVAILABLE",
-            "message": "Run Skill 22 on at least one book to activate persona-guided work.",
-            "mode": mode,
-            "funnel": {"pool": 0, "category": 0, "semantic": 0},
-        }
+        # F3.1 invariant: SELECT mode never emits persona_id:null. The empty
+        # universe (A1) is the ONLY path that reached this branch with a naked
+        # result; attach the guaranteed default fallback persona instead (still
+        # loudly warned, still logged) so downstream dispatch always has a
+        # persona to deliver.
+        return _fallback_persona(paths, department, mode)
 
     # SOP-aware composite query (F3.4). `mt` drives category inference, Stage-C
     # semantic retrieval, and the Layer-5 embed — the SAME string everywhere so
@@ -2639,15 +2747,19 @@ def main():
     # NO delivery_verbs — a whole task that merely mentions "deploy" is not
     # automatically persona-free; only decompose's per-subtask gate adds those.
     if is_mechanical_task(args.task):
+        # F3.1 / Q1: a mechanical task keeps the TRUTHFUL no_persona_required
+        # flag (it feeds reporting and never pretends a chmod needs coaching) but
+        # ALSO carries a governance_persona_id oversight pointer — client-sovereignty
+        # resolved (company-config.governance_persona_id -> pinned constant) — so the
+        # dispatch gate has a persona for EVERY task: never naked, never over-coached.
+        gov_pid, gov_source = _resolve_governance_persona_id(paths)
         out = {
             "persona_id": None,
             "no_persona_required": True,
-            # Q1: keep the truthful no_persona_required flag but ALSO attach a
-            # governance persona id so the dispatch gate has a persona for EVERY
-            # task (never a naked dispatch) without pretending a shell command
-            # needs a craft persona.
-            "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
-            "message": "Operational/mechanical task — no persona required.",
+            "governance_persona_id": gov_pid,
+            "governance_persona_source": gov_source,
+            "message": ("Operational/mechanical task — no persona required "
+                        f"(governance persona '{gov_pid}' attached for oversight)."),
             "task_category": task_category,
             "db": db_field,  # PRD 1.3: visible on every response
         }

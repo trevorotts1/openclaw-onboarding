@@ -1908,7 +1908,20 @@
         "business-operating-system",
         "accountability"
       ]
+    },
+    "blackceo-house-voice": {
+      "author": "BlackCEO",
+      "book": "(hand-authored — no source book)",
+      "display_name": "BlackCEO House Voice",
+      "source_type": "hand-authored",
+      "fallback": true,
+      "added": "2026-07-05T00:00:00Z",
+      "domain": [
+        "communication"
+      ],
+      "perspective": [],
+      "custom": []
     }
   },
-  "lastUpdated": "2026-07-04"
+  "lastUpdated": "2026-07-05"
 }
