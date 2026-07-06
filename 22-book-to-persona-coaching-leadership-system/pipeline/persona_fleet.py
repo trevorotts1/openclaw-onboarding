@@ -58,7 +58,12 @@ from pathlib import Path
 SK22_DIRNAME = "22-book-to-persona-coaching-leadership-system"
 MANIFEST_REL = "shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 BLUEPRINT_NAME = "persona-blueprint.md"
-CANONICAL_ENTRY_FIELDS = ("author", "book", "domain", "perspective", "custom")
+# `fallback` is a LOAD-BEARING seed flag (FDN-1 / F3.1): persona-selector-v2.py
+# list_available_personas() drops fallback:true personas from the candidate
+# universe so blackceo-house-voice stays terminal-only and never competes. It
+# MUST survive the workspace→repo categories sync, so it is a canonical field.
+CANONICAL_ENTRY_FIELDS = ("author", "book", "domain", "perspective", "custom",
+                          "fallback")
 
 # ── Operator-local absolute-path patterns to strip from a shipped blueprint ──
 # These are machine/operator-local roots that must NEVER appear in a tracked,
