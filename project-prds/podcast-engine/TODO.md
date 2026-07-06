@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.26 + W1.27 + W1.28 | Opus (delivery-and-queue) | DONE(self-verified: 45 pytest pass, CLIs smoke-tested) | feat/podcast-delivery-and-queue | self-QC 9.0 | scripts/delivery_report.py (operator-only report, reproduces CHECKLIST Part A honestly, refuses client destinations), credit_queue.py (hold with full payload+partial state, daily age-check, 60-day age-out+payload purge, resume from resume_stage; delegates writes to podcast_state.py, alerts to alert-dedup.py, no cron), personal_spreadsheet.py (create-at-setup idempotent, append-per-episode, custom-field link storage, Interview hard-refusal). Additive only; shared files untouched. Glyph-clean (no em dash/fence), no Anthropic tokens, no client names. |
