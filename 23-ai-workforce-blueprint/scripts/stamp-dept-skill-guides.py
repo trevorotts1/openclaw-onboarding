@@ -107,7 +107,7 @@ def build_block(skills):
         "## Skills This Department Can Operate For You 🛠️",
         "",
         "You never have to know these by name or type a command. Just say what you "
-        "want in plain English — this department reaches for the right pre-built "
+        "want in plain English, and this department reaches for the right pre-built "
         "engine (\"skill\") for you automatically. These are the ones it can run on "
         "your behalf:",
         "",
@@ -118,7 +118,7 @@ def build_block(skills):
         lines.append(f"| {_say_phrases(s)} | {_first_sentence(s['description'])} |")
     lines += [
         "",
-        "You do not have to get the routing right or name the skill — the "
+        "You do not have to get the routing right or name the skill. The "
         "plain-language ask is enough. See `universal-sops/native-skill-invocation.md` "
         "for how your specialists reach for these from your intent.",
         END,

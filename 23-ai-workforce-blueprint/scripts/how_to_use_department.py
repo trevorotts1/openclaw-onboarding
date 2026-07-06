@@ -32,6 +32,7 @@ No model pins, no client names in the template output (tokens only), no
 em dashes in the rendered prose.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -794,7 +795,62 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
     if appendix:
         out = out.rstrip("\n") + "\n\n" + appendix.strip("\n") + "\n"
 
+    # Layer-B (owner-facing) DEPT_SKILLS overlay. For departments that OWN
+    # client-facing skills (per skill-department-map.json), inject the marker-
+    # guarded "Skills This Department Can Operate For You" block so the owner
+    # guide, the committed template, the build-time client copy, and the
+    # MAP-CONSISTENCY gate all speak from the ONE source of truth. The block is
+    # produced by stamp-dept-skill-guides.build_block / stamp_text (the SAME
+    # functions the gate validates with), so the renderer and the stamp gate can
+    # never byte-desync. The block is already ASCII-clean (no em/en dashes) at
+    # source, so it is injected AFTER the _sanitize_block pass verbatim.
+    out = _inject_dept_skills_block(dept_folder, out)
+
     return out
+
+
+# Lazily-loaded stamp module (filename has hyphens, so it cannot be a plain
+# import). Cached after first load; a load failure disables the overlay without
+# ever blocking a render.
+_STAMP_MODULE = None
+_STAMP_LOAD_FAILED = False
+
+
+def _load_stamp_module():
+    global _STAMP_MODULE, _STAMP_LOAD_FAILED
+    if _STAMP_MODULE is not None or _STAMP_LOAD_FAILED:
+        return _STAMP_MODULE
+    path = os.path.join(HERE, "stamp-dept-skill-guides.py")
+    spec = importlib.util.spec_from_file_location("stamp_dept_skill_guides", path)
+    if spec is None or spec.loader is None:
+        _STAMP_LOAD_FAILED = True
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _STAMP_MODULE = mod
+    return mod
+
+
+def _inject_dept_skills_block(dept_folder, out):
+    """Overlay the map-derived owner-facing DEPT_SKILLS block for departments
+    that own client-facing skills. Single source of truth: skill-department-map.json
+    via stamp-dept-skill-guides.py. Degrades gracefully: if the map or the stamp
+    module is unavailable, the guide renders without the block (never blocks the
+    build)."""
+    try:
+        sds = _load_stamp_module()
+        if sds is None:
+            return out
+        m = sds.load_json(sds._MAP_PATH)
+        skills = sds.owning_depts_skills(m).get(dept_folder)
+        if not skills:
+            return out
+        new, _changed = sds.stamp_text(out, sds.build_block(skills))
+        return new
+    except Exception as e:  # noqa: BLE001 - never block a render on the overlay
+        print(f"[how-to-use] DEPT_SKILLS overlay skipped for {dept_folder} ({e})",
+              file=sys.stderr)
+        return out
 
 
 # Reusable funnel + automation template libraries (template-first / reuse-before-reinvent).
