@@ -225,7 +225,8 @@ step "7/7 engine-pin + no-Anthropic + no-n8n-runtime scans"
 # engine hash pin (the same set social-media-entry.sh GATE 3 enforces)
 ENGINE_FILES=(run_social_media.py scripts/preflight_gate.py scripts/prove_bands.py
     scripts/validate_contract.py scripts/scrub_gate.py scripts/build_manifest.py
-    scripts/ledger.py scripts/label_deliverables.py scripts/defer_stub.py)
+    scripts/ledger.py scripts/label_deliverables.py scripts/defer_stub.py
+    scripts/mc_board.py)
 if command -v shasum >/dev/null 2>&1; then H="$(cat "${ENGINE_FILES[@]}" | shasum -a 256 | awk '{print $1}')"
 elif command -v sha256sum >/dev/null 2>&1; then H="$(cat "${ENGINE_FILES[@]}" | sha256sum | awk '{print $1}')"
 else H=""; fi
