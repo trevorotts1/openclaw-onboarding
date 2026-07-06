@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W4.10/W4.11/W4.12 doc-updates-and-reuse-crossrefs | Opus 4.8 | DONE (branch, pre-merge) | feat/podcast-doc-updates-and-reuse-crossrefs | self 9.0 | Skill 23 how-to (engine + 4 presets + dashboard, doctrine kept authoritative); Skill 57 modes.md podcast boundary cross-ref; Skill 35 playbook s15 productionized-Podbean cross-link; Skill 30 fish ref updated to s2.1-pro (header selection, tag inventory, pricing, concurrency incl >=1000=50, s2.1-pro-free prohibition). Dept-Kit client how-to aligned operator-side (Downloads). No shared files touched; _index.json restamp deferred to merge. |
