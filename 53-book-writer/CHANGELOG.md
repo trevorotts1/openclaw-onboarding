@@ -1,5 +1,20 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.1.2 — Wave-2 doc-truth correction (FIX-S36-49 · ruling R5)
+
+- **Doc correction only — no code, no gate change.** Added an explicit **"Authoring layer — SHIPPED
+  vs. PENDING (truthful status)"** section to `SKILL.md` and corrected the `prompts/<stage dirs>` bullet.
+  This closes a no-false-done violation: `SKILL.md` sold "baked versioned prompts" for the whole stage
+  graph, but only the **five shared-tone-core stages (04–08)** actually ship as
+  `{system.md, methodology.md, user.md}` triplets. The **22 non-tone authoring-stage prompt dirs**
+  referenced by `BOOK-WRITER-MANIFEST.json` `stages[]` (avatar 01–03, titles/blurb/outline 10–14,
+  chapter batches 15–18, rewrites 19–20, challenge 21, cover 22–23, 4x3x3 extras 41–45) are **not yet
+  shipped**. Per **ratified ruling R5 (2026-07-05)** the full 12-chapter authoring-triplet build is
+  **DEFERRED to a separate scoped follow-up campaign** — this change only tells the truth about what
+  ships today. Every SACRED invariant and its fail-closed prover is unchanged; no `_index.json`
+  `content_sha` re-stamp is required (`SKILL.md` is not a hashed/indexed file, and the enforcement
+  hash-pin set excludes it).
+
 ## 1.1.1 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — on a fail-closed gate (any P0–P7 phase or P8-DELIVER) the run now
   marks its Command Center card `blocked` (failing phase + AF code as the note)
