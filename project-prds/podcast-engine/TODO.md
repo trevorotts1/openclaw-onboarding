@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.14 Book teaser module | Opus 4.8 (book-teaser slice) | DONE(self-verified) | feat/podcast-book-teaser | 9.0 | modules/book-teaser.md + scripts/render_book_teaser.py (deterministic, 0 model, 0 net, 0 MCP). Interview-only; 3-page cap + 14pt floor verified from the rendered PDF (pymupdf), weasyprint-preferred/Chrome-fallback, Skill 35 retry posture + Skill 53 print-CSS reuse. Self-test PASS (3 pages, 15pt) and all 4 failure modes block (em dash, page cap, sub-14pt CSS, toolchain-absent). No Anthropic ids/providers/hosts/imports/env keys; no literal em dash in source; no triple backtick fences. |
