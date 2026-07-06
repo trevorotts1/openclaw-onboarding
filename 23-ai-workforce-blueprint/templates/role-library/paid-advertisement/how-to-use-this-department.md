@@ -192,6 +192,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 ---
 
+<!-- DEPT_SKILLS_V1 -->
+## Skills This Department Can Operate For You 🛠️
+
+You never have to know these by name or type a command. Just say what you want in plain English, and this department reaches for the right pre-built engine ("skill") for you automatically. These are the ones it can run on your behalf:
+
+| If you say something like… | This department will… |
+|---|---|
+| "make me Facebook ads" · "make me Instagram ads" · "10 ad variations" · "a batch of ad creatives" | Turns a bio + audience profile into a ready-to-run batch of 10 Facebook & Instagram ads (overlays, bodies, headlines) |
+
+You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
+<!-- END DEPT_SKILLS_V1 -->
+
 ## 5. What to Expect Back
 
 When you ask this department for something, here is the normal flow:

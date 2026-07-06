@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-06T11:41:06Z",
-  "file_count": 85,
+  "generated_at": "2026-07-06T12:18:24Z",
+  "file_count": 90,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -21,16 +21,16 @@
       "bytes": 5080
     },
     "avatar-craft/README.md": {
-      "sha256": "b07e3e7b75bcc9a306261bf5c473102a3fc605ae8ff8ed1aeaa492f324c82030",
-      "bytes": 8340
+      "sha256": "64e4ff5333af250a4f99bd7727776171904a81f2a76e40adff218e8501a0c710",
+      "bytes": 9265
     },
     "avatar-craft/SOP-AVATAR-01-BRAND-INTELLIGENCE-PACKAGE.md": {
       "sha256": "eec6156aca0dd93864cbee774aacb6427aee5e817230befa1e18ac951ddcc336",
       "bytes": 11210
     },
     "book-writer-craft/README.md": {
-      "sha256": "6f462c7e9ffcf2decc29e8e3087d2312940a9b964106958971ae2849ddbd6e0a",
-      "bytes": 10022
+      "sha256": "3a690335500ba10cf0fc27ab078ed8fb81eb5164c3f3c788433fc13200d4da42",
+      "bytes": 11032
     },
     "book-writer-craft/SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md": {
       "sha256": "48dfec5841569081ed7e498d888340a6ad4be91b60f66444e407a88d8db26dee",
@@ -49,8 +49,8 @@
       "bytes": 4887
     },
     "email-craft/README.md": {
-      "sha256": "1413473fe0faa5150d81d1ee9c4cd6f18d787f05f16ac9f5882a39ef9dced062",
-      "bytes": 3276
+      "sha256": "bba99b551460c412c0202a8ce8ed5892a614a9b669ce7b0c0beac32e3113db71",
+      "bytes": 4175
     },
     "email-craft/SOP-EMAIL-01-INTAKE.md": {
       "sha256": "77cf82e181803d518055f6a82445146ac6b1c05ad5eead8200c2bf1773b98086",
@@ -79,6 +79,10 @@
     "fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md": {
       "sha256": "ef1664b18995ed318199f02438ed2b575da3984ce57a0a1a9a86d1574e366645",
       "bytes": 17456
+    },
+    "fb-ad-craft/README.md": {
+      "sha256": "1797f343117c9872fa1097a7f481841161ab13901ffe4f61c75f46f1981ba9b0",
+      "bytes": 1338
     },
     "fb-ad-craft/SOP-FBAD-01-INTAKE.md": {
       "sha256": "6bf9d3a040c53fc7158f0c6cee00e22e038e6a43ad483486d92d9cd12c3e2969",
@@ -121,8 +125,8 @@
       "bytes": 5179
     },
     "form-craft/README.md": {
-      "sha256": "9cb4cc37e7ed84caa117f4659b8f78bb4640dc989ff1e7c1e31377bd2db4a203",
-      "bytes": 8025
+      "sha256": "f8bdc36e40140f23e080d544a289f5459d88aaa606cbee9cc42e94ad7f3222d6",
+      "bytes": 8945
     },
     "form-craft/SOP-FORM-01-INTAKE.md": {
       "sha256": "a32d22a91322528970b8f81697a89fe3ca7545c680678a63c2f9cc97ae60af0f",
@@ -157,8 +161,8 @@
       "bytes": 5007
     },
     "funnel-craft/README.md": {
-      "sha256": "ab341f65d070ca2a0b50ef0aa39893ceccb1fbff966db9a61c6c088665a9e3aa",
-      "bytes": 5497
+      "sha256": "675a3311baed21f2f72d9063b64ee08d9b2f1a19831cfa53b2fbda76169ec8ec",
+      "bytes": 6408
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
@@ -208,6 +212,14 @@
       "sha256": "551a50e262ae78e1aa76c54eaa16376dce1519ffa38a3981b12c8a95ffe04f78",
       "bytes": 9866
     },
+    "presentation-design-system/README.md": {
+      "sha256": "329c2aec2e6c1c076f17c535faea4e69c77799ce69c260a3ae0dd6d8e4302525",
+      "bytes": 1390
+    },
+    "presentation-image-library/README.md": {
+      "sha256": "6d78f4d10dc2cd72f7efad22d32dae44a9d0a68fd55a432de71d481789982aa4",
+      "bytes": 1390
+    },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
       "sha256": "65ac80460e59c12142555e99757e105f3caafc1657b5994c580080ca1dcbb997",
       "bytes": 17520
@@ -231,6 +243,10 @@
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
       "sha256": "83a4d228b3e102208ccfbba76183013dfaf933535f4698b851f9156e81e39056",
       "bytes": 115172
+    },
+    "presentation-slide-craft/README.md": {
+      "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
+      "bytes": 1383
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
       "sha256": "dd78c4ac60982523e4f1f219c3219627b2ec38036174fb056e31d79c68f56771",
@@ -257,16 +273,16 @@
       "bytes": 7243
     },
     "product-bio-craft/README.md": {
-      "sha256": "6b566187647c2840ce8660f743aaf2a2e21103e66bb0a88e64a3a44afd716115",
-      "bytes": 6990
+      "sha256": "e9776de5172089bb334c97c62f5fa49ed33956d4449f546227390ef138691943",
+      "bytes": 7897
     },
     "product-bio-craft/SOP-PRODBIO-01-MASTER-BRAIN-BIO.md": {
       "sha256": "ae0049feff8e52d3fb5808f4015781402e5522aa1125d64e56ca2b604428010a",
       "bytes": 6916
     },
     "sales-page-craft/README.md": {
-      "sha256": "0ad009320140273f5218674ef2342e436ddf75a5e6a3178f649621abf6767534",
-      "bytes": 10327
+      "sha256": "9bb219134c63662607bbb1e269fef0a4cab8b48de3e69507401acfe0c3952b8a",
+      "bytes": 11239
     },
     "sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md": {
       "sha256": "819ddada2ba7c906b8fa278fa81f5279ec760ae578368ac4cb43f6ab17b905bf",
@@ -277,8 +293,8 @@
       "bytes": 8941
     },
     "social-media-craft/README.md": {
-      "sha256": "6a990c5d35e6500701294067a007310f73edf8704fa3145c1046b75c1b3a6c33",
-      "bytes": 4883
+      "sha256": "99b162e15e67c709f0e9a624bc6c064ad021b16f40f132d6e41c88b399c78aad",
+      "bytes": 5939
     },
     "social-media-craft/SOCIAL-PIPELINE-MANIFEST.json": {
       "sha256": "6d8dbd74aa5e082780e9d8be90911e386c903566a222097f7b30cfe8d8edce6c",
@@ -307,6 +323,10 @@
     "video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md": {
       "sha256": "51188eb88c4cfe87883dbbe8c05d185912a1f3e9c3580fa19776b5961410b6a7",
       "bytes": 7365
+    },
+    "video-pipeline-craft/README.md": {
+      "sha256": "65cbb629a66ecfc799db87de5abee5ce9edd9aa4bf2bac494d224010163a4d39",
+      "bytes": 2019
     },
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
       "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",

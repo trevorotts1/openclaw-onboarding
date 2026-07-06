@@ -20,6 +20,18 @@ authoritative machine spine lives in the skill:
 - `49-signature-funnel/structure/funnel_structure.json` — the SACRED 12-section contract the copy
   prover loads.
 
+<!-- CRAFT_INTENT_TRIGGERS_V1 -->
+## Intent triggers
+
+This craft cluster (`universal-sops/funnel-craft/`) is the execution playbook for the skill(s) below. A specialist reaches for it when the client's plain-language request matches any of these intents — the client never has to name the skill or type its slash command. Source of truth: `23-ai-workforce-blueprint/skill-department-map.json` (Layer D).
+
+| Skill | Reach for this craft when the client says… |
+|---|---|
+| **49** signature-funnel | "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" · "a full funnel" |
+
+Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+<!-- END CRAFT_INTENT_TRIGGERS_V1 -->
+
 ## The ONE way in
 
 A funnel is built by running, and ONLY by running, the canonical fail-closed entry shell:

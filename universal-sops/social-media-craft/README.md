@@ -15,6 +15,19 @@ This cluster is the `universal-sops` face of the capability. It does NOT re-impl
 - `57-social-media-in-a-box/social-media-entry.sh` — the ONE sanctioned entry (same DEPS / BYPASS-SCAN / HASH-PIN gates, run-scoped nonce, signed certificate).
 - `57-social-media-in-a-box/modes.md` — the sixteen user-facing modes.
 
+<!-- CRAFT_INTENT_TRIGGERS_V1 -->
+## Intent triggers
+
+This craft cluster (`universal-sops/social-media-craft/`) is the execution playbook for the skill(s) below. A specialist reaches for it when the client's plain-language request matches any of these intents — the client never has to name the skill or type its slash command. Source of truth: `23-ai-workforce-blueprint/skill-department-map.json` (Layer D).
+
+| Skill | Reach for this craft when the client says… |
+|---|---|
+| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" · "plan my social calendar" |
+| **57** social-media-in-a-box | "run my social week end-to-end" · "a week of content" · "a full week of posts across all platforms" |
+
+Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+<!-- END CRAFT_INTENT_TRIGGERS_V1 -->
+
 ## Files
 
 | File | What it governs |

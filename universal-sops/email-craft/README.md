@@ -10,6 +10,18 @@ This cluster is the `universal-sops` face of the capability. It does NOT re-impl
 - `50-email-engine/email-library/` — the Email Superlibrary (13 frameworks + 4 buyer-types + 4 objectives + 12 persona styles + 3 named sequences), each a paired `.json` + `.md`.
 - `50-email-engine/tools/email_matcher_cli.py` — the deterministic matcher (`--match "<request>"`).
 
+<!-- CRAFT_INTENT_TRIGGERS_V1 -->
+## Intent triggers
+
+This craft cluster (`universal-sops/email-craft/`) is the execution playbook for the skill(s) below. A specialist reaches for it when the client's plain-language request matches any of these intents — the client never has to name the skill or type its slash command. Source of truth: `23-ai-workforce-blueprint/skill-department-map.json` (Layer D).
+
+| Skill | Reach for this craft when the client says… |
+|---|---|
+| **50** email-engine | "write my email sequence" · "nurture emails" · "a welcome series" · "an email campaign" |
+
+Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+<!-- END CRAFT_INTENT_TRIGGERS_V1 -->
+
 ## Files
 
 | File | What it governs |

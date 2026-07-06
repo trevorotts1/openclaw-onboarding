@@ -1243,8 +1243,14 @@ def evaluate_artifact_coverage(skill_dir):
                             repo.scripts / "check-skill-department-map.py")
         stamp = _load_module("stamp_skills_you_operate",
                              repo.scripts / "stamp-skills-you-operate.py")
+        deptg = _load_module("stamp_dept_skill_guides",
+                             repo.scripts / "stamp-dept-skill-guides.py")
+        craft = _load_module("stamp_craft_intent_triggers",
+                             repo.scripts / "stamp-craft-intent-triggers.py")
         map_path = str(_map_file)
         index_path = str(repo.index_path)
+        library_dir = str(repo.skill_dir / "templates" / "role-library")
+        usops_dir = str(repo.repo_root / "universal-sops")
 
         map_problems = []
         struct_errors, _struct_warns, struct_stats = cksd.run_checks(
@@ -1255,6 +1261,17 @@ def evaluate_artifact_coverage(skill_dir):
         layerb_drift, n_owners = stamp.check_all(
             map_path=map_path, index_path=index_path, skill_dir=str(repo.skill_dir))
         map_problems += [f"[layer-b] {d}" for d in layerb_drift]
+
+        # (d) DEPT-GUIDES — every owning department's owner-facing
+        # how-to-use-this-department.md carries a CURRENT DEPT_SKILLS block matching
+        # the map (owner guide + front-door reflex speak the same plain language).
+        deptg_drift, n_depts = deptg.check_all(map_path=map_path, library_dir=library_dir)
+        map_problems += [f"[dept-guides] {d}" for d in deptg_drift]
+
+        # (e) CRAFT-READMES — every map-referenced craft cluster README carries a
+        # CURRENT Intent-triggers header (self-describing to specialist + generator).
+        craft_drift, n_clusters = craft.check_all(map_path=map_path, usops_dir=usops_dir)
+        map_problems += [f"[craft-readmes] {d}" for d in craft_drift]
 
         # (c) Layer-C reflex coverage: departments owning a client-facing skill
         # must all appear in the reflex catalog. Read the reflex block from
@@ -1304,9 +1321,11 @@ def evaluate_artifact_coverage(skill_dir):
                     + (f" … +{len(map_problems) - 4} more" if len(map_problems) > 4 else ""))
         else:
             add_row("MAP-CONSISTENCY", True,
-                    f"map<->role<->reflex in lockstep: {struct_stats['client_facing']} "
+                    f"map<->role<->guide<->craft<->reflex in lockstep: {struct_stats['client_facing']} "
                     f"client-facing skills resolve to live dept+role; {n_owners} owning "
-                    f"roles carry a current Skills-You-Operate block; reflex routes all "
+                    f"roles carry a current Skills-You-Operate block; {n_depts} dept guides "
+                    f"carry a current DEPT_SKILLS block; {n_clusters} craft READMEs carry a "
+                    f"current Intent-triggers block; reflex routes all "
                     f"{len(owning_depts)} owning departments")
     except _SkipDimension:
         pass  # minimal sandbox — MAP-CONSISTENCY row already added as a clean skip

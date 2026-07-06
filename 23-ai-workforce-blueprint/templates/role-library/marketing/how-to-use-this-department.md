@@ -162,6 +162,25 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 ---
 
+<!-- DEPT_SKILLS_V1 -->
+## Skills This Department Can Operate For You 🛠️
+
+You never have to know these by name or type a command. Just say what you want in plain English, and this department reaches for the right pre-built engine ("skill") for you automatically. These are the ones it can run on your behalf:
+
+| If you say something like… | This department will… |
+|---|---|
+| "make this sound human" · "less AI-sounding" · "rewrite this naturally" · "remove the robotic tone" | Rewrite AI-generated text to sound natural and human; remove robotic phrasing; match the owner's voice |
+| "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" · "a full funnel" | Builds a Signature Funnel |
+| "write my email sequence" · "nurture emails" · "a welcome series" · "an email campaign" | Email Engine + Superlibrary |
+| "build my brand avatar" · "a brand intelligence package" · "who is my customer" · "define my ideal customer" | Turns one brand-intake interview into the full brand-intelligence package (40 generators across 7 subsystems) |
+| "write my book" · "a nonfiction book" · "turn my ideas into a book" | Turns one book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets |
+| "my anthology chapter" · "write my contributor chapter" · "write my chapter for the anthology" | Turns one contributor intake into a finished, gated anthology chapter |
+| "write my product bio" · "a master brain for my product" · "a product sales knowledge base" | Product Bio Engine |
+| "a sales page" · "upsell and downsell copy" · "a high-ticket page" · "write my sales page" | Builds a Direct-Response sales-page asset stack from one survey (the DR sibling of Skill 49) |
+
+You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
+<!-- END DEPT_SKILLS_V1 -->
+
 ## 5. What to Expect Back
 
 When you ask this department for something, here is the normal flow:
