@@ -3,7 +3,7 @@
   "contract": "sacred-funnel-structure-ledger",
   "version": "1.0.0",
   "funnel_type": "signature_funnel",
-  "description": "The SACRED 12-section Trevor Otts Hero funnel contract that prove_sf_copy.py loads and enforces against a funnel COPY ledger (per-page sections emitted by the Signature Funnel copywriter). Every rule here is fail-closed: a violation is sys.exit(2) with the named AF-FUN-* code — a violating page is NOT run, NOT rendered, NOT built. Section names + every char/word band are reproduced VERBATIM from SOURCE-FRAMEWORK.md (the 12-section IP) and IMPROVED-FRAMEWORK-v2.md Part 5 (Thank-You bands). Never floored, reordered, or reinterpreted. The prover measures STRIPPED text and IGNORES any self-reported count field.",
+  "description": "The SACRED 12-section Trevor Otts Hero funnel contract that prove_sf_copy.py loads and enforces against a funnel COPY ledger (per-page sections emitted by the Signature Funnel copywriter). Every rule here is fail-closed: a violation is sys.exit(2) with the named AF-FUN-* code — a violating page is NOT run, NOT rendered, NOT built. Section names + every char/word band are reproduced VERBATIM from SOURCE-FRAMEWORK.md (the 12-section IP) and IMPROVED-FRAMEWORK-v2.md Part 5 (Thank-You bands). Never reordered or reinterpreted. Per the RATIFIED SACRED-IP sign-off (2026-07-05, ruling R1), the ceiling-only word bands on Sections 5/6/8/9/10 carry an explicit word_min:18 floor so under-length copy is as much a hard miss as over-length — write to the TOP of every band. The prover measures STRIPPED text and IGNORES any self-reported count field.",
 
   "sections": {
     "1": {
@@ -43,18 +43,20 @@
     },
     "5": {
       "name": "The Big Bold Why",
+      "word_min": 18,
       "word_max": 30,
       "lead_phrase": "that's the reason why",
       "requires_cta": true,
-      "rule": "<=30 words. Starts 'That's the reason why...'. Ends with a motivational CTA."
+      "rule": "18-30 words. Starts 'That's the reason why...'. Ends with a motivational CTA. Write to the TOP of the band; under-length is as much a failure as over-length."
     },
     "6": {
       "name": "The Big Bold Who",
+      "word_min": 18,
       "word_max": 30,
       "personas_min": 3,
       "personas_max": 6,
       "forbid_cta": true,
-      "rule": "<=30 words. 3-6 personas, each with what they seek. NO CTA button and NO CTA in this section."
+      "rule": "18-30 words. 3-6 personas, each with what they seek. NO CTA button and NO CTA in this section. Write to the TOP of the band; under-length is as much a failure as over-length."
     },
     "7": {
       "name": "The Big Bold What",
@@ -66,21 +68,24 @@
     },
     "8": {
       "name": "The Big Bold Benefit 1",
+      "word_min": 18,
       "word_max": 30,
       "forbid_cta": true,
-      "rule": "<=30 words. Felt benefit (this week). NO CTA button."
+      "rule": "18-30 words. Felt benefit (this week). NO CTA button. Write to the TOP of the band; under-length is as much a failure as over-length."
     },
     "9": {
       "name": "The Big Bold Benefit 2",
+      "word_min": 18,
       "word_max": 30,
       "forbid_cta": true,
-      "rule": "<=30 words. Measured benefit (this quarter). NO CTA button."
+      "rule": "18-30 words. Measured benefit (this quarter). NO CTA button. Write to the TOP of the band; under-length is as much a failure as over-length."
     },
     "10": {
       "name": "The Big Bold Benefit 3",
+      "word_min": 18,
       "word_max": 30,
       "requires_cta_button": true,
-      "rule": "<=30 words. Become benefit (this life). Carries the inspirational CTA button (peak-end)."
+      "rule": "18-30 words. Become benefit (this life). Carries the inspirational CTA button (peak-end). Write to the TOP of the band; under-length is as much a failure as over-length."
     },
     "11": {
       "name": "The Big How To",
@@ -230,15 +235,15 @@
     "AF-FUN-PAIN-QUESTION": "a pain section (2/3/4) is written in question format",
     "AF-FUN-PAIN-2ND-PERSON": "a pain section (2/3/4) is not written in 2nd person (no you/your)",
     "AF-FUN-PAIN-CTA": "a pain section (2/3/4) missing a labeled CTA",
-    "AF-FUN-SEC5-WORDS": "Section 5 exceeds 30 words",
+    "AF-FUN-SEC5-WORDS": "Section 5 outside 18-30 words (under-length is as much a hard miss as over-length)",
     "AF-FUN-SEC5-LEAD": "Section 5 does not start 'That's the reason why...'",
     "AF-FUN-SEC5-CTA": "Section 5 missing its motivational CTA",
-    "AF-FUN-SEC6-WORDS": "Section 6 exceeds 30 words",
+    "AF-FUN-SEC6-WORDS": "Section 6 outside 18-30 words (under-length is as much a hard miss as over-length)",
     "AF-FUN-SEC6-PERSONAS": "Section 6 outside 3-6 personas",
     "AF-FUN-SEC6-NO-CTA": "Section 6 carries a CTA (forbidden)",
     "AF-FUN-SEC7-WORDS": "Section 7 outside 70-120 words",
     "AF-FUN-SEC7-BULLETS": "Section 7 outside 5-10 bullets",
-    "AF-FUN-BENEFIT-WORDS": "a benefit section (8/9/10) exceeds 30 words",
+    "AF-FUN-BENEFIT-WORDS": "a benefit section (8/9/10) outside 18-30 words (under-length is as much a hard miss as over-length)",
     "AF-FUN-BENEFIT-NO-CTA": "a benefit section (8/9) carries a CTA (forbidden)",
     "AF-FUN-SEC10-CTA": "Section 10 missing its inspirational CTA button",
     "AF-FUN-SEC11-WORDS": "Section 11 outside 100-150 words",

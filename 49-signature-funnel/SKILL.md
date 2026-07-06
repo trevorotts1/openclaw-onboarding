@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the 5,000-19,000-char image-prompt two-floor gate, and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Signature Funnel (Skill 49)
@@ -38,11 +38,11 @@ funnel/pages. It never hand-rolls a Kie call or a GHL REST call.
 |---|---|---|---|
 | 1 | The Big Bold Claim | 180–225 chars | product title present; labeled CTA |
 | 2–4 | The Big Bold Pain 1/2/3 | 180–225 chars | 2nd person; NO questions; labeled CTA |
-| 5 | The Big Bold Why | ≤30 words | starts "That's the reason why…"; CTA |
-| 6 | The Big Bold Who | ≤30 words | 3–6 personas; **NO CTA** |
+| 5 | The Big Bold Why | 18–30 words | starts "That's the reason why…"; CTA; write to the top of the band |
+| 6 | The Big Bold Who | 18–30 words | 3–6 personas; **NO CTA**; write to the top of the band |
 | 7 | The Big Bold What | 70–120 words | 5–10 bullets |
-| 8–9 | The Big Bold Benefit 1/2 | ≤30 words | **NO CTA button** |
-| 10 | The Big Bold Benefit 3 | ≤30 words | inspirational CTA button |
+| 8–9 | The Big Bold Benefit 1/2 | 18–30 words | **NO CTA button**; write to the top of the band |
+| 10 | The Big Bold Benefit 3 | 18–30 words | inspirational CTA button; write to the top of the band |
 | 11 | The Big How To | 100–150 words; NO button | 5–10 steps; steps 1–6 89–116 chars; step 7 ≤170; share/email-bonus/founder-text/community steps |
 | 12 | The Big Bold Heartfelt Message | 100–150 words | 6 labeled parts; part 2 starts "I used to be just like you…" |
 
