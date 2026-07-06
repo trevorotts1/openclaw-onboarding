@@ -551,16 +551,7 @@
         "swipe-file",
         "thank-you-page",
         "value-ladder"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "blueprint": "personas/russell-brunson-lead-funnels/persona-blueprint.md",
-      "appendix": "personas/russell-brunson-lead-funnels/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH",
-      "two_sided": true
+      ]
     },
     "russell-brunson-the-funnel-hackers-cookbook": {
       "author": "Russell Brunson",
@@ -611,30 +602,7 @@
         "vsl-funnel",
         "webinar-funnel",
         "website-copy"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "two_sided": true,
-      "blueprint": "personas/russell-brunson-the-funnel-hackers-cookbook/persona-blueprint.md",
-      "summary": "Russell Brunson's funnel-recipe cookbook: the Elements > Pages > Funnels hierarchy (ingredients -> recipes -> meals). Coaches founders to select the right funnel recipe for the situation, build the full page sequence in order, and assemble each page from its required ingredients; governs Web-Development/Marketing/CRM funnel agents to ship the correct funnel TYPE, full page SEQUENCE, complete page INGREDIENTS, and fully-written (anti-thin-copy) Skill 6 funnel + website copy across the 22 funnel recipes and funnel stacking.",
-      "appendix": "personas/russell-brunson-the-funnel-hackers-cookbook/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": {
-        "headline_hook_subject": "RICH-structure / THIN-formula-internals",
-        "funnel_page_recipes": "RICH",
-        "scripts": "THIN",
-        "email_sequences": "THIN",
-        "frameworks": "RICH",
-        "brand_voice": "RICH",
-        "swipe_file": "RICH"
-      }
+      ]
     },
     "russell-brunson-traffic-secrets": {
       "author": "Russell Brunson",
@@ -796,25 +764,11 @@
         "sales-page-copy",
         "sales-script",
         "vsl-script"
-      ],
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "two_sided": true,
-      "source_type": "epub",
-      "added": "2026-06-26",
-      "blueprint": "personas/acuff-miner-new-model-of-selling/persona-blueprint.md",
-      "appendix": "personas/acuff-miner-new-model-of-selling/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH",
-      "_perspective_note": "perspective intentionally empty: no controlled-vocab demographic-experience tag applies to a general B2B/B2C sales methodology. Generational/post-trust angle is captured in custom[] (post-trust-selling), not fabricated into a perspective tag."
+      ]
     },
     "brunson-marketing-secrets-blackbook": {
       "author": "Russell Brunson",
       "book": "Marketing Secrets Blackbook",
-      "persona_name": "The Funnel & Offer Strategist",
       "domain": [
         "marketing",
         "sales",
@@ -843,15 +797,7 @@
         "urgency-scarcity",
         "value-ladder",
         "webinar-selling"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "blueprint": "personas/brunson-marketing-secrets-blackbook/persona-blueprint.md",
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": "personas/brunson-marketing-secrets-blackbook/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH"
+      ]
     },
     "brunson-network-marketing-secrets": {
       "author": "Russell Brunson",
@@ -876,29 +822,7 @@
         "recruiting",
         "sales-funnels",
         "viral-loop"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "blueprint": "personas/brunson-network-marketing-secrets/persona-blueprint.md",
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": "personas/brunson-network-marketing-secrets/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH",
-      "appendix_sections": [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "H"
-      ],
-      "appendix_notes": "RICH on funnel/page recipes, frameworks, and say-this scripts; THIN on email body/subject copy and standalone headline breadth (deferred by the book to Expert Secrets); ABSENT on paid-ad templates."
+      ]
     },
     "edwards-copywriting-secrets": {
       "author": "Jim Edwards",
@@ -922,20 +846,7 @@
         "social-copy",
         "vsl-scripts",
         "website-copy"
-      ],
-      "source_type": "epub",
-      "added": "2026-06-26",
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": "personas/edwards-copywriting-secrets/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH",
-      "_perspective_note": "perspective[] is intentionally empty: Copywriting Secrets is a universal business/marketing book with no demographic/identity lens in the persona-categories perspectiveTags vocabulary (african-american-experience, womens-challenges, mens-challenges, family-relationships, faith-spirituality, love-romantic-relationships). Forcing one would be fabrication; this matches the curated entries for other copy/marketing personas (bly, cialdini, charvet)."
+      ]
     },
     "leland-brand-mapping-strategy": {
       "author": "Karen Tiber Leland",
@@ -968,19 +879,7 @@
         "thought-leadership",
         "unique-branding-proposition",
         "website-copy"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "appendix": "personas/leland-brand-mapping-strategy/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "BUILT",
-      "appendix_richness": "RICH frameworks/voice/swipe; THIN funnels/scripts; ABSENT email-sequences (honest per Coverage Map H)",
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "two_sided": true,
-      "blueprint": "personas/leland-brand-mapping-strategy/persona-blueprint.md"
+      ]
     },
     "miller-building-storybrand": {
       "author": "Donald Miller",
@@ -1000,19 +899,7 @@
         "sb7-framework",
         "storytelling",
         "website-wireframe"
-      ],
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "two_sided": true,
-      "source_type": "epub",
-      "added": "2026-06-26",
-      "blueprint": "personas/miller-building-storybrand/persona-blueprint.md",
-      "appendix": "personas/miller-building-storybrand/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH"
+      ]
     },
     "miller-coach-builder": {
       "author": "Donald Miller",
@@ -1038,19 +925,7 @@
         "sales-funnel",
         "value-over-time-nurture",
         "website-wireframe"
-      ],
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "two_sided": true,
-      "source_type": "epub",
-      "added": "2026-06-26",
-      "blueprint": "personas/miller-coach-builder/persona-blueprint.md",
-      "appendix": "personas/miller-coach-builder/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH"
+      ]
     },
     "rohde-the-sketchnote-workbook": {
       "author": "Mike Rohde",
@@ -1074,43 +949,11 @@
         "visual-explainer-copy",
         "visual-hierarchy",
         "visual-thinking"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-26",
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "two_sided": true,
-      "blueprint": "personas/rohde-the-sketchnote-workbook/persona-blueprint.md",
-      "summary": "Mike Rohde's Notes-Plus visual-thinking method: 'ideas, not art.' Coaches founders to distill and map big ideas visually; governs Graphics/Presentations/Video/Research and the visual-explainer layers of Skill 6 (pages) and Skill 35 (social) to a structure-first, one-big-idea, hierarchy-driven standard.",
-      "appendix": "personas/rohde-the-sketchnote-workbook/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE_WITH_WARNINGS",
-      "appendix_richness": {
-        "rich": [
-          "visual page recipes (B)",
-          "frameworks (E)",
-          "brand voice (F)",
-          "icon swipe lists",
-          "verbatim swipe (G)"
-        ],
-        "absent": [
-          "marketing funnel pages",
-          "sales/objection/close scripts",
-          "multi-email funnels",
-          "offer/guarantee/pricing language",
-          "classic direct-response headline formulas"
-        ]
-      },
-      "needs_tags": false
+      ]
     },
     "pedro-adao-challenge-secrets-masterclass": {
       "author": "Pedro Adao (with Russell Brunson & Richmond Dinh)",
       "book": "Challenge Secrets Masterclass",
-      "persona_name": "The Challenge Architect",
       "domain": [
         "marketing",
         "sales",
@@ -1138,46 +981,7 @@
         "high-ticket-application",
         "organic-traffic",
         "barbell-model"
-      ],
-      "source_type": "video-transcript",
-      "added": "2026-06-26",
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "two_sided": true,
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "blueprint": "personas/pedro-adao-challenge-secrets-masterclass/persona-blueprint.md",
-      "summary": "Pedro Adao's Challenge Secrets: the 5-day challenge funnel as 'the only funnel you need' — one funnel that replaces the whole 4-funnel value ladder (registration > VIP upsell > 5 live days > offer + Stack & Close > core sales > high-ticket application). Coaches founders to launch a challenge on a single micro niche with a scroll-stopping Big Idea and a movement, produce a real result in 5 days, and close with a Foolproof Offer; governs Marketing/Web-Development/Launch-Operations/Social-Media/CRM agents to build challenge funnels (Skill 6 pages + brand copy) and promo (Skill 35) to a Big-Idea/Micro-Niche/Movement, result-arc, buyer-making-VIP, Stack-before-price, truth-based-belief, anti-thin-copy standard. Includes the Tiny Challenge organic playbook.",
-      "appendix": "personas/pedro-adao-challenge-secrets-masterclass/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE",
-      "day4_added": "2026-06-27",
-      "appendix_notes": "Complete 5-day arc (Days 1-5). The Day-4 'How to Plan Your First or Next Challenge' session + the original cart-open Foolproof Offer were added 2026-06-27 from the provided Day-4 recording (appendix sections 16-22; blueprint Section 2 day-by-day arc, Section 11 planning tools, Section 14 source-fidelity note). No longer a source gap.",
-      "appendix_richness": {
-        "rich": [
-          "challenge funnel page map + build order (0)",
-          "registration / VIP / thank-you page recipes + worked examples (3-5)",
-          "daily-training + offer-transition scripts (6)",
-          "Foolproof Offer + Stack & Close + price-anchoring script (7)",
-          "core-offer + high-ticket application page recipes (8)",
-          "email + SMS + Messenger sequences (9)",
-          "Tiny-Challenge organic playbook + scripts + math (10)",
-          "social promo calendar (11)",
-          "business models + challenge KPIs (12-13)",
-          "verbatim Big-Idea / micro-niche / movement swipe (2, 15)",
-          "Day-4 4-step planning sequence + pick-your-date/launch-timing recipe (16-17)",
-          "Day-4 what-to-sell tiered menu + duration + 'one con' follow-up scripts (18)",
-          "Day-4 challenge-name recipe (4 ingredients) + worked swipe (19)",
-          "Day-4 group-vs-tiny decision + Richmond's tiny-challenge foundation (7-benefit objection stack, 10-tiny data engine, 80-student stats) (20)",
-          "Day-4 cart-open: Challenge Secrets Intensive Foolproof Offer worked example (6-week curriculum + 7-bonus stack + price-anchoring ladder) (21)"
-        ],
-        "absent": [
-          "literal email/SMS templates — none exist in the source (Day 4 or Day 5); every script is a verbal DM/feedback/offer/application/start-call line, captured as such"
-        ]
-      },
-      "needs_tags": false
+      ]
     },
     "cancel-conversational-marketing": {
       "author": "David Cancel (with Dave Gerhardt)",
@@ -1198,19 +1002,7 @@
         "real-time-buying-experience",
         "b2b-saas-demand-gen",
         "sales-development"
-      ],
-      "source_type": "epub",
-      "added": "2026-06-28",
-      "blueprint": "personas/cancel-conversational-marketing/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "wickman-rocket-fuel": {
       "author": "Gino Wickman & Mark C. Winters",
@@ -1234,18 +1026,7 @@
         "delegate-and-elevate",
         "second-in-command",
         "organizational-structure"
-      ],
-      "added": "2026-06-28",
-      "blueprint": "personas/wickman-rocket-fuel/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "ries-lean-startup": {
       "author": "Eric Ries",
@@ -1261,18 +1042,7 @@
         "minimum-viable-product",
         "build-measure-learn",
         "product-experimentation"
-      ],
-      "added": "2026-06-28",
-      "blueprint": "personas/ries-lean-startup/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "kaufman-personal-mba": {
       "author": "Josh Kaufman",
@@ -1293,18 +1063,7 @@
         "market-validation",
         "systems-thinking",
         "generalist-business"
-      ],
-      "added": "2026-06-28",
-      "blueprint": "personas/kaufman-personal-mba/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "budelmann-brand-identity-essentials": {
       "author": "Kevin Budelmann, Yang Kim, Curt Wozniak",
@@ -1342,19 +1101,7 @@
         "design-system",
         "prototyping",
         "simplicity"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/budelmann-brand-identity-essentials/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "NONE",
-      "needs_tags": false
+      ]
     },
     "opara-color-works": {
       "author": "Eddie Opara & John Cantwell",
@@ -1396,28 +1143,11 @@
         "branding",
         "visual-design",
         "print-production"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/opara-color-works/persona-blueprint.md",
-      "two_sided": true,
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false,
-      "summary": "Eddie Opara (Pentagram) & John Cantwell's Color Works Six-Lens System: Context to Foundation, 'color is a language to master, never the goal.' Coaches founders out of chromatophobia (fear of color) to reason in and defend color choices; governs Graphics/Brand/Presentations/Web-UI/Video/Research/Print-Production to a context-first, reason-per-color, dominant-before-accent, right-medium-spec standard grounded in Itten/Munsell color science.",
-      "_domain_note": "Source-declared domains (color-theory, graphic-design, branding, visual-design, print-production) are not in the controlled domainTags vocabulary; mapped to visual-communication/visual-storytelling/communication/marketing/strategy-innovation for matcher Stage-B routing (design task-category + graphics/video depts), originals retained as custom[] specialist tags."
+      ]
     },
     "walker-launch": {
       "author": "Jeff Walker",
       "book": "Launch (Updated & Expanded Edition)",
-      "persona_name": "The Product Launch Formula Architect",
       "domain": [
         "marketing",
         "sales",
@@ -1444,26 +1174,10 @@
         "course-launch",
         "circle-of-life",
         "hope-marketing"
-      ],
-      "source_type": "book-pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/walker-launch/persona-blueprint.md",
-      "two_sided": true,
-      "interaction_modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false,
-      "summary": "Jeff Walker's Product Launch Formula: a launch is a sequence, not a send. Coaches creators/experts to replace 'Hope Marketing' with a designed runway — Pre-Prelaunch (shot across the bow + survey), Prelaunch (the Sideways Sales Letter delivered as 3 pieces of value-first content on the Opportunity > Transformation > Ownership arc), Open Cart as a real event with real scarcity, and Post-Launch feeding the next launch (Circle of Life), with the nine Mental Triggers embedded inside stories. Governs Marketing/Launch-Operations/Email-Copy/Content-Video/Web-Dev/Social/Partnership agents. Distinct from funnel-build (Brunson) and offer-design (Hormozi) by owning the sequenced go-to-market event layer."
+      ]
     },
     "miller-marketing-made-simple": {
       "author": "Donald Miller",
-      "coauthor": "Dr. J.J. Peterson",
       "book": "Marketing Made Simple",
       "domain": [
         "marketing",
@@ -1482,25 +1196,11 @@
         "email-marketing",
         "marketing-execution",
         "three-stages-relationship"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/miller-marketing-made-simple/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "appendix_richness": "RICH",
-      "needs_tags": false
+      ]
     },
     "suby-sell-like-crazy": {
       "author": "Sabri Suby",
       "book": "Sell Like Crazy",
-      "persona_name": "The Sell Like Crazy Demand-Generation Strategist",
       "domain": [
         "marketing",
         "sales",
@@ -1524,21 +1224,7 @@
         "email-marketing",
         "unit-economics",
         "direct-response"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/suby-sell-like-crazy/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "erikson-surrounded-by-idiots": {
       "author": "Thomas Erikson",
@@ -1559,18 +1245,7 @@
         "personality-types",
         "red-yellow-green-blue",
         "audience-adaptation"
-      ],
-      "added": "2026-06-28",
-      "blueprint": "personas/erikson-surrounded-by-idiots/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "INLINED",
-      "needs_tags": false
+      ]
     },
     "gitomer-sales-bible": {
       "author": "Jeffrey Gitomer",
@@ -1598,28 +1273,11 @@
         "hot-button-discovery",
         "top-down-selling",
         "closing"
-      ],
-      "source_type": "pdf",
-      "added": "2026-06-28",
-      "blueprint": "personas/gitomer-sales-bible/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
-        "coaching",
-        "leadership",
-        "hybrid"
-      ],
-      "appendix": null,
-      "appendix_status": "NONE",
-      "appendix_richness": "SELF_CONTAINED",
-      "needs_tags": false,
-      "_perspective_note": "perspective intentionally empty: no controlled-vocab demographic-experience tag applies to a general B2B/B2C relationship-selling methodology. The motivational/attitude and field-selling angle is captured in custom[] (sales-mindset, attitude-discipline), not fabricated into a perspective tag.",
-      "_source_note": "Source PDF was a scanned image-only file (Adobe Acrobat Image Conversion, no text layer); ingested via pdftoppm 200dpi render + tesseract OCR across 226 page images before synthesis."
+      ]
     },
     "aliche-get-good-with-money": {
       "author": "Tiffany Aliche",
       "book": "Get Good with Money: Ten Simple Steps to Becoming Financially Whole",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "finance",
         "coaching",
@@ -1653,8 +1311,6 @@
     "carnegie-how-to-win-friends-digital-age": {
       "author": "Dale Carnegie & Associates",
       "book": "How to Win Friends and Influence People in the Digital Age",
-      "source_type": "book",
-      "added": "2026-07-04T18:05:02Z",
       "domain": [
         "communication",
         "leadership",
@@ -1674,8 +1330,6 @@
     "charvet-words-that-change-minds": {
       "author": "Shelle Rose Charvet",
       "book": "Words That Change Minds",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "communication",
         "sales",
@@ -1692,8 +1346,6 @@
     "covey-7-habits": {
       "author": "Stephen R. Covey",
       "book": "The 7 Habits of Highly Effective People",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "leadership",
         "personal-development",
@@ -1712,8 +1364,6 @@
     "duckworth-grit": {
       "author": "Angela Duckworth",
       "book": "Grit: The Power of Passion and Perseverance",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "mindset",
         "personal-development",
@@ -1730,8 +1380,6 @@
     "gallo-talk-like-ted": {
       "author": "Carmine Gallo",
       "book": "Talk Like TED: The 9 Public-Speaking Secrets of the World's Top Minds",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "communication",
         "personal-development",
@@ -1747,8 +1395,6 @@
     "kahneman-thinking-fast-and-slow": {
       "author": "Daniel Kahneman",
       "book": "Thinking, Fast and Slow",
-      "source_type": "book",
-      "added": "2026-07-04T18:05:02Z",
       "domain": [
         "mindset",
         "personal-development",
@@ -1765,8 +1411,6 @@
     "kimbro-the-wealth-choice": {
       "author": "Dennis Kimbro",
       "book": "The Wealth Choice: Success Secrets of Black Millionaires",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "finance",
         "mindset",
@@ -1785,8 +1429,6 @@
     "kimbro-what-makes-great-great": {
       "author": "Dennis Kimbro",
       "book": "What Makes the Great Great: Strategies for Extraordinary Achievement",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "mindset",
         "personal-development",
@@ -1804,8 +1446,6 @@
     "king-read-people-like-a-book": {
       "author": "Patrick King",
       "book": "Read People Like a Book",
-      "source_type": "book",
-      "added": "2026-07-04T18:05:02Z",
       "domain": [
         "communication",
         "coaching",
@@ -1825,8 +1465,6 @@
     "kleon-show-your-work": {
       "author": "Austin Kleon",
       "book": "Show Your Work!: 10 Ways to Share Your Creativity and Get Discovered",
-      "source_type": "book",
-      "added": "2026-07-04T18:05:02Z",
       "domain": [
         "marketing",
         "personal-development",
@@ -1842,8 +1480,6 @@
     "michalowicz-clockwork": {
       "author": "Mike Michalowicz",
       "book": "Clockwork: Design Your Business to Run Itself",
-      "source_type": "book",
-      "added": "2026-07-04T18:05:02Z",
       "domain": [
         "operations",
         "strategy-innovation",
@@ -1876,8 +1512,6 @@
     "tolle-the-power-of-now": {
       "author": "Eckhart Tolle",
       "book": "The Power of Now: A Guide to Spiritual Enlightenment",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "mindset",
         "personal-development",
@@ -1895,8 +1529,6 @@
     "wickman-traction": {
       "author": "Gino Wickman",
       "book": "Traction: Get a Grip on Your Business",
-      "source_type": "book",
-      "added": "2026-07-04T22:20:28Z",
       "domain": [
         "operations",
         "leadership",
@@ -1913,15 +1545,12 @@
     "blackceo-house-voice": {
       "author": "BlackCEO",
       "book": "(hand-authored — no source book)",
-      "display_name": "BlackCEO House Voice",
-      "source_type": "hand-authored",
-      "fallback": true,
-      "added": "2026-07-05T00:00:00Z",
       "domain": [
         "communication"
       ],
       "perspective": [],
-      "custom": []
+      "custom": [],
+      "fallback": true
     },
     "hunt-thomas-pragmatic-programmer": {
       "author": "Andrew Hunt & David Thomas",
@@ -1968,29 +1597,380 @@
         "api-design",
         "software-engineering",
         "sign-your-work"
-      ],
-      "source_type": "book",
-      "added": "2026-07-05",
-      "blueprint": "personas/hunt-thomas-pragmatic-programmer/persona-blueprint.md",
-      "two_sided": true,
-      "modes": [
+      ]
+    },
+    "brian-mark-10-million-instagram-funnel": {
+      "author": "Brian Mark",
+      "book": "The 10 Million Instagram Funnel: The Blueprint for Online Coaches",
+      "domain": [
+        "marketing",
+        "sales",
         "coaching",
-        "leadership",
-        "hybrid"
+        "communication",
+        "strategy-innovation"
       ],
-      "interaction_modes": [
+      "perspective": [],
+      "custom": [
+        "instagram-marketing",
+        "content-creation",
+        "personal-branding",
+        "lead-generation",
+        "high-ticket-sales",
+        "dm-sales-scripts",
+        "viral-reels",
+        "hooks",
+        "know-like-trust",
+        "objection-handling",
+        "sales-call-framework",
+        "online-coaching-business",
+        "social-selling",
+        "call-to-action",
+        "content-schedule",
+        "virtual-assistants",
+        "boosted-posts"
+      ]
+    },
+    "butow-instagram-facebook-all-in-one": {
+      "author": "Eric Butow, Amanda Robinson, et al.",
+      "book": "Instagram & Facebook All-in-One For Dummies",
+      "domain": [
+        "marketing",
+        "communication",
+        "strategy-innovation",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "social-media-marketing",
+        "instagram",
+        "facebook",
+        "threads",
+        "meta-marketing",
+        "meta-ads",
+        "marketing-funnel",
+        "ladder-of-engagement",
+        "value-proposition",
+        "target-audience",
+        "buyer-personas",
+        "brand-voice",
+        "content-strategy",
+        "content-calendar",
+        "hashtag-strategy",
+        "audience-engagement",
+        "reels",
+        "stories",
+        "facebook-page",
+        "meta-shops",
+        "small-business-marketing"
+      ]
+    },
+    "butow-ultimate-guide-social-media-marketing": {
+      "author": "Eric Butow, Stephanie Garcia, Amanda Robinson, Roberto Blake",
+      "book": "Ultimate Guide to Social Media Marketing, Second Edition",
+      "domain": [
+        "marketing",
+        "strategy-innovation",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "social-media-marketing",
+        "content-marketing",
+        "social-media-strategy",
+        "paid-social",
+        "influencer-marketing",
+        "video-marketing",
+        "ai-in-marketing",
+        "social-analytics"
+      ]
+    },
+    "cialdini-pre-suasion": {
+      "author": "Robert B. Cialdini",
+      "book": "Pre-Suasion: A Revolutionary Way to Influence and Persuade",
+      "domain": [
+        "communication",
+        "marketing",
+        "sales",
+        "leadership",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "pre-suasion",
+        "attention-management",
+        "persuasion-psychology",
+        "unity-principle",
+        "framing"
+      ]
+    },
+    "collins-turning-the-flywheel": {
+      "author": "Jim Collins",
+      "book": "Turning the Flywheel",
+      "domain": [
+        "strategy-innovation",
+        "leadership",
+        "operations"
+      ],
+      "perspective": [],
+      "custom": [
+        "flywheel-effect",
+        "strategic-compounding",
+        "momentum-building",
+        "good-to-great",
+        "hedgehog-concept",
+        "durable-strategy"
+      ]
+    },
+    "deziel-content-fuel-framework": {
+      "author": "Melanie Deziel",
+      "book": "The Content Fuel Framework: How to Generate Unlimited Story Ideas",
+      "domain": [
+        "marketing",
+        "copywriting",
+        "communication",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "content-ideation",
+        "content-strategy",
+        "storytelling",
+        "the-10-focuses",
+        "the-10-formats",
+        "content-fuel-matrix",
+        "content-multipliers",
+        "100-idea-challenge",
+        "brainstorming",
+        "editorial-planning"
+      ]
+    },
+    "duhigg-smarter-faster-better": {
+      "author": "Charles Duhigg",
+      "book": "Smarter Faster Better",
+      "domain": [
+        "productivity-systems",
+        "operations",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "decision-making",
+        "goal-setting",
+        "focus-and-productivity"
+      ]
+    },
+    "duhigg-supercommunicators": {
+      "author": "Charles Duhigg",
+      "book": "Supercommunicators",
+      "domain": [
+        "communication",
         "coaching",
-        "leadership",
-        "hybrid"
+        "leadership"
       ],
-      "coaching_mode": "BUILT",
-      "task_mode": "BUILT",
-      "appendix": null,
-      "appendix_status": "NONE",
-      "needs_tags": false,
-      "_craft_slot": "code",
-      "_craft_slot_note": "CODE-craft slot specialist (DEP-6): the first true software-craft persona in the library, added so slot-based work (website/app builds decomposed into a CODE sub-task) resolves to a real engineering specialist instead of a nearest-domain proxy (productivity-systems/strategy-innovation/operations). Carries the new controlled-vocab domain tag 'software-craft'.",
-      "summary": "Andrew Hunt & David Thomas's Pragmatic Programmer canon: software as a craft of continuous, careful change. Governs engineering work (backend, frontend, web, API, architecture, refactoring, debugging, testing) to a DRY, orthogonal, decoupled, ETC (Easier To Change) standard — no broken windows, no programming by coincidence, tracer-bullet delivery over big-bang, design by contract, crash early, pragmatic paranoia, and sign-your-work pride. Coaches developers and technical founders from cargo-cult coding to pragmatic mastery."
+      "perspective": [],
+      "custom": [
+        "deep-listening",
+        "connection-building",
+        "difficult-conversations"
+      ]
+    },
+    "ferri-growth-marketing": {
+      "author": "Paolo Ferri",
+      "book": "Growth Marketing",
+      "domain": [
+        "marketing",
+        "sales",
+        "mindset",
+        "copywriting",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "growth-marketing",
+        "customer-acquisition",
+        "brand-psychology",
+        "small-business-marketing",
+        "upsell-monetization",
+        "facebook-and-google-ads"
+      ]
+    },
+    "flynn-superfans": {
+      "author": "Pat Flynn",
+      "book": "Superfans: The Easy Way to Stand Out, Grow Your Tribe, and Build a Successful Business",
+      "domain": [
+        "marketing",
+        "communication",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "superfans",
+        "community-building",
+        "audience-growth",
+        "word-of-mouth",
+        "customer-loyalty"
+      ]
+    },
+    "kane-one-million-followers": {
+      "author": "Brendan Kane",
+      "book": "One Million Followers: How I Built a Massive Social Following in 30 Days",
+      "domain": [
+        "marketing",
+        "strategy-innovation",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "audience-growth",
+        "social-media-growth",
+        "viral-content",
+        "paid-social-testing",
+        "cost-per-follower",
+        "shareability"
+      ]
+    },
+    "king-the-art-of-witty-banter": {
+      "author": "Patrick King",
+      "book": "The Art of Witty Banter: Be Clever, Quick, & Magnetic",
+      "domain": [
+        "communication",
+        "personal-development",
+        "coaching"
+      ],
+      "perspective": [],
+      "custom": [
+        "witty-banter",
+        "conversation-skills",
+        "social-skills",
+        "humor",
+        "storytelling",
+        "rapport-building",
+        "small-talk",
+        "charisma"
+      ]
+    },
+    "landing-page-conversion-essentials": {
+      "author": "Uncredited CRO Practitioner (Landing Page Agency Founder)",
+      "book": "Landing Page Conversion Essentials",
+      "domain": [
+        "marketing",
+        "copywriting",
+        "sales",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "landing-page",
+        "conversion-rate-optimization",
+        "cro",
+        "above-the-fold",
+        "direct-response",
+        "value-equation",
+        "dream-outcome",
+        "social-proof",
+        "visual-hierarchy",
+        "ab-testing",
+        "problem-agitate-solve",
+        "headline-optimization",
+        "fear-uncertainty-doubt",
+        "hero-section",
+        "wall-of-love",
+        "5-second-rule",
+        "so-that-principle",
+        "scannability",
+        "jacobs-law"
+      ]
+    },
+    "thomas-instagram-performance-marketing": {
+      "author": "Robert Thomas",
+      "book": "Instagram Performance Marketing: The Programmatic Guide to Conversion Marketing",
+      "domain": [
+        "marketing",
+        "sales",
+        "strategy-innovation",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "performance-marketing",
+        "meta-ads",
+        "facebook-ads",
+        "instagram-ads",
+        "paid-social",
+        "conversion-marketing",
+        "cpa-optimization",
+        "cpm-reduction",
+        "geo-targeting",
+        "lookalike-audiences",
+        "google-search-audience-feeds",
+        "custom-audiences",
+        "retargeting",
+        "ad-creative",
+        "ugc-video-ads",
+        "ad-copywriting",
+        "landing-page-optimization",
+        "learning-phase-optimization",
+        "front-loading-ad-spend",
+        "roas",
+        "customer-acquisition",
+        "growth-hacking",
+        "ads-manager"
+      ]
+    },
+    "thorne-youtube-unlocked": {
+      "author": "Elias Thorne",
+      "book": "YouTube Unlocked: The 2026 Algorithm Code That Turns Any Channel Into a Million-View Machine",
+      "domain": [
+        "video",
+        "marketing",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "youtube-algorithm",
+        "youtube-growth",
+        "channel-growth",
+        "watch-time",
+        "audience-retention",
+        "ctr",
+        "thumbnails",
+        "video-hooks",
+        "youtube-shorts",
+        "long-form-video",
+        "youtube-seo",
+        "recommendation-engine",
+        "suggested-videos",
+        "viral-video",
+        "micro-trends",
+        "youtube-monetization",
+        "shopping-and-memberships",
+        "multi-device-tv",
+        "ai-personalization",
+        "anti-slop-quality",
+        "video-strategy",
+        "content-funnel",
+        "90-day-protocol"
+      ]
+    },
+    "video-funnels": {
+      "author": "Unknown (PromoteLabs)",
+      "book": "Video Funnels",
+      "domain": [
+        "video",
+        "marketing",
+        "sales",
+        "visual-storytelling",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "video-funnels",
+        "video-marketing",
+        "buyer-journey",
+        "explainer-videos",
+        "youtube-marketing",
+        "sales-funnel"
+      ]
     }
   },
   "lastUpdated": "2026-07-06"

@@ -4,7 +4,7 @@
 # Acceptance test for prebuilt-index v2.4.x dual-path provisioning.
 #
 # Asserts that BOTH install.sh and update-skills.sh provision the same
-# section-tagged 83-persona DB + GHL funnel catalog, via the shared helper.
+# section-tagged 99-persona DB + GHL funnel catalog, via the shared helper.
 #
 # Three layers (all offline, no live Gemini API):
 #
@@ -17,12 +17,12 @@
 #         * .prebuilt-index-version sentinel compare
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
-#       - persona_count == 83
-#       - chunk_count == 1189 (v2.4.0 15-section format, 83 personas)
+#       - persona_count == 99
+#       - chunk_count == 1411 (v2.4.1 15-section format, 99 personas)
 #       - asset_rebuild_required is false (published) OR base_tag/base_sha256/base_asset_url
 #         are present and valid (pre-release: a newer tag pre-staged over a published base)
 #       - section_tagged is true
-#       - release_tag is one of the KNOWN_TAGS (v2.2.0 / v2.2.1 / v2.3.0 / v2.4.0)
+#       - release_tag is one of the KNOWN_TAGS (v2.2.0 / v2.2.1 / v2.3.0 / v2.4.0 / v2.4.1)
 #       - schema.columns_required contains section_number + mode
 #       - the PUBLISHED asset URL (asset_url when rebuild not required; base_asset_url
 #         when pre-release) ends with /<known-tag>/gemini-index.sqlite.gz
@@ -35,7 +35,7 @@
 #       - at least one row with mode='coaching' and section_number=3
 #       - at least one row with mode='leadership' and section_number=4
 #
-# Layer (D) — FULL ARTIFACT (90MB download, sha256 verify, 83-persona count) —
+# Layer (D) — FULL ARTIFACT (90MB download, sha256 verify, 99-persona count) —
 # is intentionally NOT in this script so it never runs on every PR. It runs only
 # in the `artifact-verify` CI job, which is gated to workflow_dispatch + release.
 #
@@ -149,8 +149,9 @@ KNOWN_SHAS = {
     "prebuilt-index-v2.2.1": "27a8cc0f9991666a43b7dd0806f286248ff03861a5ef899fa14de602a8622280",
     "prebuilt-index-v2.3.0": "6cc5f9a1b649aab64cd7d4dc2fde1d9df72b2ee244607cf1e7567358a5fa3cdf",
     "prebuilt-index-v2.4.0": "25f8933c42e799121ac81e855e9951af3e8131fac3a0f75fdd87e51370ab50c7",
+    "prebuilt-index-v2.4.1": "131fa25cc8318f44a03775cbadd124cca3f15fa2f34bc764241138f376c1a973",
 }
-KNOWN_TAGS = {"prebuilt-index-v2.2.0", "prebuilt-index-v2.2.1", "prebuilt-index-v2.3.0", "prebuilt-index-v2.4.0"}
+KNOWN_TAGS = {"prebuilt-index-v2.2.0", "prebuilt-index-v2.2.1", "prebuilt-index-v2.3.0", "prebuilt-index-v2.4.0", "prebuilt-index-v2.4.1"}
 
 m = json.load(open(sys.argv[1]))
 results = []
@@ -176,9 +177,9 @@ live_tag = base_tag if rebuild_pending and base_tag else m.get("release_tag", ""
 live_sha = base_sha if rebuild_pending and base_sha else m.get("sha256", "")
 live_url = base_url if rebuild_pending and base_url else m.get("asset_url", "")
 
-check("B1: persona_count == 83", m.get("persona_count") == 83,
+check("B1: persona_count == 99", m.get("persona_count") == 99,
       f"got {m.get('persona_count')}")
-check("B2: chunk_count == 1189", m.get("chunk_count") == 1189,
+check("B2: chunk_count == 1411", m.get("chunk_count") == 1411,
       f"got {m.get('chunk_count')}")
 check("B3: asset state valid (published or pre-release with base present)",
       (not rebuild_pending) or (bool(base_tag) and bool(base_sha) and bool(base_url)),
@@ -200,8 +201,8 @@ check("B8: live asset_url ends with a known version path",
 check("B9: live sha256 is a verified hash (not a pending placeholder)",
       live_sha in KNOWN_SHAS.values(),
       f"got {live_sha!r}")
-check("B10: canonical_persona_count == 83",
-      m.get("canonical_persona_count") == 83,
+check("B10: canonical_persona_count == 99",
+      m.get("canonical_persona_count") == 99,
       f"got {m.get('canonical_persona_count')}")
 
 fails = [r for r in results if r[0] == "FAIL"]
