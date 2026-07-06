@@ -37,8 +37,8 @@
 - [ ] W1.21 Config set (furnace config, model routing with deny patterns, smoke-endpoints, cost-model). PENDING
 - [ ] W1.22 Golden fixtures (both modes plus Season-Strategy plus Asset Pack). PENDING
 - [ ] W1.23 Preset layer (4 output types over the pipeline scope map). PENDING
-- [ ] W1.24 Intake questionnaire wiring (NEW PODCAST question order tables). PENDING
-- [ ] W1.25 Canonical payload module. PENDING
+- [x] W1.24 Intake questionnaire wiring (NEW PODCAST question order tables). DONE (branch feat/podcast-intake-questionnaires-and-payload; self-QC 9.3; pending W6 merge)
+- [x] W1.25 Canonical payload module. DONE (branch feat/podcast-intake-questionnaires-and-payload; self-QC 9.3; pending W6 merge)
 - [ ] W1.26 Delivery report generator (operator channel only). PENDING
 - [ ] W1.27 Credit-out queue mechanics (hold, resume, 60-day age-out). PENDING
 - [ ] W1.28 Personal running spreadsheet logic. PENDING
@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.24/W1.25 intake-questionnaires-and-payload | Opus 4.8 exec | DONE (branch) | feat/podcast-intake-questionnaires-and-payload | self-QC 9.3 | Added 58-podcast-production-engine/config/questionnaires/ (counter-intuitive, vulnerable, provocative, passionate, index) and config/payload-schema.json. Four NEW PODCAST question sets bound to the mapper per-style survey order (q-slots, roles, exact Convert and Flow field keys); canonical payload schema carries mode, style, preset, preferred_pronoun, podcast_id. Exact keys incl. double underscore in podcast_survey__additional_info. Hard-rule scans clean: 6/6 valid JSON, zero em/en dashes, zero code fences, zero deny-pattern tokens (claude/anthropic/opus/sonnet/haiku), slice files clean of client-name/operator-path tokens. Only slice files touched; update.sh, _index.json, version untouched (Merge owns those). |
