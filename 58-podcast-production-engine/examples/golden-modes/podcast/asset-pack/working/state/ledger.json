@@ -1,0 +1,37 @@
+{
+  "schema": "podcast-ledger-v1",
+  "writer": "podcast_state.py (sole writer)",
+  "jobKey": "pd-cH3mR9tSASHA0002-c5818065dc1f41fe",
+  "preset": "episode_asset_pack",
+  "operatesOnExistingJobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "transitions": [
+    {
+      "state": "received",
+      "step": 1,
+      "at": "2026-07-06T16:00:00-04:00",
+      "note": "ledger check: existing episode found; audio and permalink present, so the write, render, publish, and enroll steps are skipped idempotently"
+    },
+    {
+      "state": "art",
+      "step": 10,
+      "at": "2026-07-06T16:00:50-04:00",
+      "note": "cover regenerated at print resolution"
+    },
+    {
+      "state": "publishing",
+      "step": 14,
+      "at": "2026-07-06T16:02:10-04:00",
+      "note": "regenerated cover, Episode Package, and teaser PDF re-uploaded to the Convert and Flow media library; HEAD-verified; Podbean untouched"
+    },
+    {
+      "state": "complete",
+      "step": 18,
+      "at": "2026-07-06T16:02:55-04:00"
+    }
+  ],
+  "rewritesScript": false,
+  "rerendersAudio": false,
+  "republishesPodbean": false,
+  "reenrolls": false,
+  "idempotent": true
+}

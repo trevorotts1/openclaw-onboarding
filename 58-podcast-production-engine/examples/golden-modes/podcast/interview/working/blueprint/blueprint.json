@@ -1,0 +1,62 @@
+{
+  "schema": "podcast-blueprint-v1",
+  "internalOnly": true,
+  "title": "The Least Important Farmer on the Block",
+  "titleImmutableAfterThisStep": true,
+  "thesisOneSentence": "The fastest way to grow more food for the neighborhood was to stop trying to grow more of it ourselves and to teach the neighbors instead.",
+  "traceableToQ1": true,
+  "styleSignatureLine": "They said, the fastest way we ever found to grow more food was to stop trying to grow more of it ourselves. (reversal signature for the Counter Intuitive engine)",
+  "forbiddenWordForStyle": "paradox (must never appear in a Counter Intuitive episode; verified absent)",
+  "runtimeChosenMinutes": 8.4,
+  "wordsPerMinute": 140,
+  "wordTarget": 1200,
+  "arcBeats": [
+    {
+      "beat": "host cold-open, the backwards guest",
+      "wordBudget": 80
+    },
+    {
+      "beat": "epic guest introduction",
+      "wordBudget": 160
+    },
+    {
+      "beat": "the backwards claim stated",
+      "wordBudget": 70
+    },
+    {
+      "beat": "the early exhaustion, one roof",
+      "wordBudget": 130
+    },
+    {
+      "beat": "the mistake that became the turn",
+      "wordBudget": 120
+    },
+    {
+      "beat": "the reframe, farm versus teacher",
+      "wordBudget": 140
+    },
+    {
+      "beat": "giving the work away",
+      "wordBudget": 130
+    },
+    {
+      "beat": "the harvest explodes",
+      "wordBudget": 110
+    },
+    {
+      "beat": "the honest cost",
+      "wordBudget": 120
+    },
+    {
+      "beat": "the takeaway past rooftops",
+      "wordBudget": 120
+    },
+    {
+      "beat": "the guest's closing words",
+      "wordBudget": 90
+    }
+  ],
+  "transparencyBeatPlacement": "Woven into the honest-cost beat where the guest names the pride they had to surrender; never the raw consent language.",
+  "openingLine": "Welcome back.",
+  "finalLine": "Go find the roof you have been guarding, and teach someone else how to climb it."
+}

@@ -1,0 +1,59 @@
+{
+  "schema": "podcast-ledger-v1",
+  "writer": "podcast_state.py (sole writer; legal-transition matrix enforced)",
+  "jobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "preset": "interview",
+  "transitions": [
+    {
+      "state": "received",
+      "step": 1,
+      "at": "2026-07-06T11:00:00-04:00"
+    },
+    {
+      "state": "researching",
+      "step": 3,
+      "at": "2026-07-06T11:01:20-04:00"
+    },
+    {
+      "state": "writing",
+      "step": 6,
+      "at": "2026-07-06T11:04:10-04:00"
+    },
+    {
+      "state": "qc",
+      "step": 9,
+      "at": "2026-07-06T11:06:45-04:00",
+      "note": "passed on attempt 1"
+    },
+    {
+      "state": "art",
+      "step": 10,
+      "at": "2026-07-06T11:07:35-04:00"
+    },
+    {
+      "state": "audio",
+      "step": 11,
+      "at": "2026-07-06T11:09:05-04:00"
+    },
+    {
+      "state": "publishing",
+      "step": 14,
+      "at": "2026-07-06T11:11:30-04:00",
+      "note": "teaser PDF, cover, and mp3 stored in the Convert and Flow media library; Podbean episode published"
+    },
+    {
+      "state": "enrolling",
+      "step": 17,
+      "at": "2026-07-06T11:13:10-04:00",
+      "note": "Interview mode: 04-Podcast-is-Completed field-triggered by the URL write, 06-Podcast-Episode-Is-Ready enrolled per discovered trigger; both verified via caf reads; double-enrollment guarded"
+    },
+    {
+      "state": "complete",
+      "step": 18,
+      "at": "2026-07-06T11:13:55-04:00"
+    }
+  ],
+  "teaserProduced": true,
+  "teaserWords": 603,
+  "teaserSha256": "3054aa1edf1657cf9954c086031fce2cfd13ed878b993361429b048b5e316d54"
+}

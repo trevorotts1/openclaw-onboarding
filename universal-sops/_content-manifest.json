@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-06T12:18:24Z",
-  "file_count": 90,
+  "generated_at": "2026-07-06T22:24:39Z",
+  "file_count": 96,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -195,6 +195,30 @@
     "persona-re-evaluation-protocol.md": {
       "sha256": "aa1f411f35f3448989005199b42447b0b720b0217f1f1e1d15961c829e872c92",
       "bytes": 3209
+    },
+    "podcast-craft/SOP-PODCAST-01-ENGINE-RUNBOOK.md": {
+      "sha256": "c1de65a98c7e2ffd0d7ef35f6ecabd9c0b46fec0ad5eade26436135f355cdc83",
+      "bytes": 14883
+    },
+    "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
+      "sha256": "a64e879e00764c20fda4d337a6fb7ef3e37030a6052a5978e60a90d83c490edc",
+      "bytes": 12723
+    },
+    "podcast-craft/SOP-PODCAST-03-REVOCATION-AND-CHURN.md": {
+      "sha256": "7f9d2dd22eb19ac1f2cf318e492bc7756f08e86b7c79dbe3220b343e00d4de40",
+      "bytes": 9806
+    },
+    "podcast-craft/SOP-PODCAST-04-CREDIT-HEALTH-AND-QUEUE.md": {
+      "sha256": "ddeb70fb275c60dc43798c082c93d2b534503d1d16ecc28421eb2833be9b0669",
+      "bytes": 11879
+    },
+    "podcast-craft/SOP-PODCAST-05-EPISODE-QC.md": {
+      "sha256": "5959f4e5711390d6451e66646140054c6647ab98857ae6bad1099db617ffbd67",
+      "bytes": 11292
+    },
+    "podcast-craft/SOP-PODCAST-06-BOOK-TEASER.md": {
+      "sha256": "062a57abb52ede5aae98ff2f14509426997a2688a798ee8aee1fcea9d51f3b1e",
+      "bytes": 12351
     },
     "presentation-design-system/02-SOP-creative-typography-guide.md": {
       "sha256": "d16f6b7ca918e67648dd230416950b1dd27a2a9a93fb1f790829c52245e6a270",

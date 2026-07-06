@@ -1,0 +1,76 @@
+{
+  "$schema_note": "Podcast Production Engine (Skill 58) consolidated FURNACE and cost-guardrail config (furnace-design Section 8). SINGLE SOURCE, per-client overridable: a client override merges over these defaults and is recorded on the process certificate. This file owns the operational guardrail knobs (limits, polling, smoke_test, alerts). Runtime model routing lives in models.json; unit prices in cost-model.json; smoke balance endpoints in smoke-endpoints.json; deterministic QC prover bands in bands.json. Every recurring process in this skill is treated as a furnace until proven bounded: worst-case daily spend per client with all guardrails active is 15.01 dollars, and an idle client costs 1 cent. Zero em dashes; no triple-backtick fences in any produced output.",
+  "version": "1.0.0",
+  "pinned_at": "2026-07-06",
+  "podcast_engine": {
+    "limits": {
+      "per_episode_cost_usd_soft": 2.50,
+      "per_episode_cost_usd_hard": 5.00,
+      "per_client_daily_cost_usd_hard": 15.00,
+      "per_client_daily_episode_cap": 3,
+      "llm_tokens_per_episode_hard": 400000,
+      "llm_max_output_tokens_per_call": 8000,
+      "web_research_calls_per_episode": 12,
+      "web_research_bonus_on_fabrication_fail": 4,
+      "qc_max_attempts": 3,
+      "image_gen_attempts_max": 3,
+      "tts_synth_attempts_max": 2,
+      "queue_max_hold_days": 60
+    },
+    "limits_meaning": {
+      "per_episode_cost_usd_soft": "Warn: log plus one deduped operator notice; the run continues.",
+      "per_episode_cost_usd_hard": "HALT: episode moves to cost_hold with state preserved; founder alerted once via dedup.",
+      "per_client_daily_cost_usd_hard": "New billable calls for this client refuse until the next local day; the in-flight episode finishes its current stage then holds.",
+      "per_client_daily_episode_cap": "Episode 4 and beyond of the day is QUEUED to the next day (never dropped), one digest notice.",
+      "llm_tokens_per_episode_hard": "Total content-model tokens across ALL passes and ALL QC attempts combined.",
+      "llm_max_output_tokens_per_call": "Per-call output cap passed to the provider on every content call.",
+      "web_research_calls_per_episode": "Research-tool wrapper refuses call 13; the writer proceeds with what it has.",
+      "web_research_bonus_on_fabrication_fail": "One supplemental research pass of at most this many calls, unlocked only by a Tier 1 check 12 fabrication failure, once per episode.",
+      "qc_max_attempts": "Three-strike cap: hard stop at 3 failed attempts; founder notified with failing checks and best draft; standards never relaxed.",
+      "image_gen_attempts_max": "Kie.ai cover attempts before the episode holds and alerts (deduped).",
+      "tts_synth_attempts_max": "Fish Audio synthesis attempts per segment.",
+      "queue_max_hold_days": "Credit-out queue maximum hold; auto age-out at this age with a founder notice through dedup."
+    },
+    "polling": {
+      "kie_backoff_schedule": [5, 10, 20, 40, 60],
+      "kie_poll_timeout_seconds": 600,
+      "dashboard_min_refresh_seconds": 60
+    },
+    "polling_meaning": {
+      "kie_backoff_schedule": "Kie.ai async image poll backoff in seconds, then stay at 60. Never poll faster than 5 seconds.",
+      "kie_poll_timeout_seconds": "Total image poll timeout; on timeout counts as one failed image attempt.",
+      "dashboard_min_refresh_seconds": "Client browser auto-refresh floor; the read-only endpoint sets Cache-Control max-age 30; no websockets, no server push, no background workers."
+    },
+    "smoke_test": {
+      "cron_local_time": "06:00",
+      "jitter_minutes": 15,
+      "max_cost_usd": 0.01,
+      "overspend_alert_reason": "smoke_test_overspend",
+      "recurring_jobs_per_client": 1
+    },
+    "smoke_test_meaning": {
+      "cron_local_time": "One daily smoke-test cron per client at 06:00 client timezone.",
+      "jitter_minutes": "Per-client random jitter up to this many minutes to stop a fleet-wide provider stampede.",
+      "max_cost_usd": "The entire daily smoke-test run must cost at most this; balance endpoints only, never a model turn, never an image, never a synthesis, never the pipeline.",
+      "overspend_alert_reason": "If a run exceeds max_cost_usd, alert the OPERATOR (not the client) with this reason; that is the canary that someone wired a render into the health check.",
+      "recurring_jobs_per_client": "Exactly ONE recurring job per client. No heartbeat entry ever, no queue poller, no per-job watchers, no dashboard-driven computation. guard-cron-inventory.py enforces this."
+    },
+    "alerts": {
+      "dedup_window_hours": 6,
+      "max_founder_alerts_per_client_per_day": 4
+    },
+    "alerts_meaning": {
+      "dedup_window_hours": "Repeat alerts with the same client plus service plus failure_class key inside this window are suppressed; the counter and affected-episode list update in place.",
+      "max_founder_alerts_per_client_per_day": "Beyond this, everything collapses into a single end-of-day digest per client. QC three-strike and cost_hold notices always send (decision requests) but still dedup one message per episode per event.",
+      "gateway_only": "Pipeline code never sends Telegram directly; every founder alert routes through alert-dedup.py and always through the OpenClaw gateway, never around it. Zero client-facing messages anywhere in the engine (MOVE IN SILENCE)."
+    }
+  },
+  "$config_set": {
+    "note": "Sibling files of this config-set, all under 58-podcast-production-engine/config/. Each has its own single-source-of-truth scope.",
+    "furnace.json": "This file: operational guardrail knobs (limits, polling, smoke_test, alerts).",
+    "models.json": "Runtime model-routing policy (content, qc_judge, deny_patterns).",
+    "cost-model.json": "Static unit price table; the cost ledger converts metered units to dollars.",
+    "smoke-endpoints.json": "Pinned balance endpoints for the daily smoke test.",
+    "bands.json": "Deterministic QC prover bands and Tier 1 mechanical-check parameters."
+  }
+}

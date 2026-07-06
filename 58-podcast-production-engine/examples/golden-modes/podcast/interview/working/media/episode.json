@@ -1,0 +1,62 @@
+{
+  "kind": "podcast-episode",
+  "preset": "interview",
+  "mode": "interview_style_podcast",
+  "style": "counter_intuitive",
+  "episode": "first-light-least-important-farmer",
+  "title": "The Least Important Farmer on the Block",
+  "guest": "Sasha Okafor",
+  "guestPronoun": "they/them",
+  "scriptFile": "../../delivery/episode-script.txt",
+  "scriptSha256": "528556a8f29bd932d35d3ab9aecf2aa20c6df96664cf3a47caf0a25595132afd",
+  "scriptWords": 1179,
+  "scriptWordsCountedWithTagsStripped": true,
+  "tagCount": 13,
+  "minTagsPerParagraph": 1,
+  "durationSeconds": 505,
+  "durationMinutes": 8.4,
+  "targetBandMinutes": [
+    7,
+    15
+  ],
+  "audio": {
+    "model": "s2.1-pro",
+    "referenceId": "REFERENCED-FROM-ENV",
+    "freeTier": false,
+    "bitrateKbps": 192,
+    "format": "mp3",
+    "conditionOnPreviousChunks": true,
+    "loudnessLufsIntegrated": -15.0,
+    "loudnessDoctrine": "-14 to -16 LUFS (Skill 23 mastering)",
+    "audioUrl": "https://example.test/first-light/podcast/least-important-farmer.mp3",
+    "ffprobeVerified": true
+  },
+  "cover": {
+    "model": "gpt-image-2",
+    "coverUrl": "https://example.test/first-light/podcast/cover.jpg",
+    "width": 1400,
+    "height": 1400,
+    "format": "JPEG",
+    "colorSpace": "RGB",
+    "bytesUnder": 512000,
+    "square": true,
+    "prompt": "A rooftop farm at golden hour over an eastern city skyline anchored by the theme of leverage through teaching, rows of chard and bright peppers, beans climbing string, a person kneeling beside a young beginner, warm and hopeful, no text."
+  },
+  "bookTeaser": {
+    "file": "../../delivery/book-teaser.txt",
+    "sha256": "3054aa1edf1657cf9954c086031fce2cfd13ed878b993361429b048b5e316d54",
+    "words": 603,
+    "writerModel": "glm-5.2",
+    "pageCap": 3,
+    "fontFloorPt": 14,
+    "cliffhangerEnding": true,
+    "pdfSpec": "book-typeset PDF, no font below 14 point",
+    "pdfUrl": "https://example.test/first-light/podcast/teaser-unnecessary.pdf",
+    "book_teaser_field": "written to contact.book_teaser (field present for this client)"
+  },
+  "transport": "podbean",
+  "deferred": false,
+  "podbeanPermalink": "https://firstlight.podbean.com/e/the-least-important-farmer-on-the-block/",
+  "episodeNumber": 12,
+  "titleConvention": "appends Inspired by Sasha Okafor per the Interview convention"
+}

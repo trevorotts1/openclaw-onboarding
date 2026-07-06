@@ -40,6 +40,25 @@ ENV_FILE_PATHS = [
     os.path.expanduser("~/.clawdbot/.env"),
 ]
 
+# Convert and Flow is the client-facing brand name for GoHighLevel (GHL). The
+# Location Private Integration Token (PIT) is ONE credential under many labels,
+# so a client onboarded under the "Convert and Flow" name who stores that SAME
+# PIT as CONVERTFLOW_API_KEY (or a sibling brand alias) must never be falsely
+# reported missing. These branded aliases therefore resolve to the same GHL
+# credential family. Additive only, appended after the canonical GHL aliases so
+# existing GOHIGHLEVEL_* / GHL_* setups keep resolving unchanged (first hit wins).
+# Source: PRD Section 13.5 and design/ghl-design.md Section 2.2 (aliases 12-15).
+# Deliberately EXCLUDED (they are DIFFERENT credentials, never substituted for a
+# Location PIT): the Agency PIT (GOHIGHLEVEL_AGENCY_PIT and friends) and the
+# Skill 44 Firebase refresh token.
+CONVERTFLOW_PIT_ALIASES = [
+    "CONVERTFLOW_API_KEY",
+    "CONVERTANDFLOW_API_KEY",
+    "CONVERT_AND_FLOW_API_KEY",
+    "CONVERTFLOW_PIT",
+    "CONVERTANDFLOW_PIT",
+]
+
 # Common API key name patterns for fuzzy matching
 KEY_PATTERNS = {
     "openai": ["OPENAI_API_KEY", "OPENAI_KEY", "OPEN_AI_KEY"],
@@ -70,8 +89,9 @@ KEY_PATTERNS = {
     "rtrvr": ["RTRVR_API_KEY", "RTRVR_KEY"],
     "kie": ["KIE_API_KEY", "KIE_KEY"],
     "n8n": ["N8N_API_KEY", "N8N_WEBHOOK_KEY"],
-    "ghl": ["GOHIGHLEVEL_API_KEY", "GHL_API_KEY", "GOHIGHLEVEL_KEY"],
-    "convertflow": ["CONVERTFLOW_API_KEY", "CF_API_KEY"],
+    "ghl": ["GOHIGHLEVEL_API_KEY", "GHL_API_KEY", "GOHIGHLEVEL_KEY"] + CONVERTFLOW_PIT_ALIASES,
+    "convertflow": ["CONVERTFLOW_API_KEY", "CF_API_KEY", "CONVERTANDFLOW_API_KEY", "CONVERT_AND_FLOW_API_KEY", "CONVERTFLOW_PIT", "CONVERTANDFLOW_PIT"],
+    "convertandflow": ["CONVERTFLOW_API_KEY", "CONVERTANDFLOW_API_KEY", "CONVERT_AND_FLOW_API_KEY", "CONVERTFLOW_PIT", "CONVERTANDFLOW_PIT", "CF_API_KEY"],
     "zoom": ["ZOOM_API_KEY", "ZOOM_JWT_TOKEN"],
     "nounproject": ["NOUN_PROJECT_API_KEY", "NOUNPROJECT_API_KEY"],
     "agentmail": ["AGENTMAIL_API_KEY", "AGENT_MAIL_KEY"],

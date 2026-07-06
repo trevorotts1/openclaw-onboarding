@@ -1,0 +1,70 @@
+{
+  "_comment": "Podcast Production Engine :: intake mapper alias + enum tables (webhook-design.md Section 4.2). Data-driven so onboarding can extend a client's pipeline aliases without a code change. Fuzzy matching strips every non-alphanumeric character and lowercases both sides, so 'Contact-ID', 'contact id', and 'ContactId' all converge; the tables below are read for their MEANING, never their exact spelling. The GHL survey field keys whose internal labels are Barry/Brene/Dan/Jia Q-numbers are supplied per client at onboarding via survey_answer_keys_by_style (positional, by the chosen style path); those internal labels never appear in any output.",
+  "field_aliases": {
+    "contact_id": ["contact_id", "contactId", "contact.id"],
+    "location_id": ["location_id", "locationId", "location.id"],
+    "podcast_id": ["podcast_id", "podcastId", "podbean_podcast_id", "podbeanPodcastId"],
+    "mode": ["mode", "production_mode", "podcast_mode", "podcast_type", "productionMode"],
+    "style": ["style", "presentation_style", "writing_style", "podcast_survey_writing_style", "select_your_presentation_style_personal_podcast", "presentationStyle"],
+    "preferred_pronoun": ["preferred_pronoun", "my_preferred_pronoun", "pronoun", "pronouns", "preferredPronoun"],
+    "first_name": ["first_name", "firstName", "contact.first_name", "fname"],
+    "last_name": ["last_name", "lastName", "contact.last_name", "lname"],
+    "show_name": ["show_name", "showName", "podcast_name", "show_title", "showTitle"],
+    "host_name": ["host_name", "hostName", "host", "guest_first_name", "guestFirstName", "guest_name"],
+    "additional_info": ["additional_info", "podcast_survey__additional_info", "additional_information", "additionalInfo"],
+    "transparency_answer": ["podcast_interview_smiq", "smiq", "transparency_answer", "podcast_survey_smiq"],
+    "q1_answer": ["q1_answer", "q1", "question_1", "answer_1", "q1answer"],
+    "q2_answer": ["q2_answer", "q2", "question_2", "answer_2", "q2answer"],
+    "q3_answer": ["q3_answer", "q3", "question_3", "answer_3", "q3answer"],
+    "q4_answer": ["q4_answer", "q4", "question_4", "answer_4", "q4answer"],
+    "q5_answer": ["q5_answer", "q5", "question_5", "answer_5", "q5answer"],
+    "q6_answer": ["q6_answer", "q6", "question_6", "answer_6", "q6answer"],
+    "q7_answer": ["q7_answer", "q7", "question_7", "answer_7", "q7answer"],
+    "target_runtime": ["target_runtime", "runtime", "target_length", "episode_length", "targetRuntime"],
+    "tts_model": ["tts_model", "ttsModel", "fish_model", "voice_model_id"],
+    "writing_model": ["writing_model", "writingModel"],
+    "web_research_tool": ["web_research_tool", "research_tool", "webResearchTool"],
+    "publish_timestamp": ["publish_timestamp", "publish_date", "date_for_release", "publishTimestamp", "release_date"],
+    "episode_type": ["episode_type", "preset", "output_type", "episodeType", "outputType"],
+    "explicit": ["explicit", "is_explicit", "explicit_content"],
+    "workflow_trigger": ["workflow_trigger", "workflowTrigger"],
+    "retry": ["retry", "operator_retry"],
+    "_test": ["_test", "test", "is_test", "test_submission"]
+  },
+  "contact_container_only_aliases": {
+    "contact_id": ["id"]
+  },
+  "enum_normalization": {
+    "mode": {
+      "personal_podcast_style": ["personal_podcast_style", "personal podcast style", "personal podcast", "personal", "solo", "solo podcast", "own podcast"],
+      "interview_style_podcast": ["interview_style_podcast", "interview style podcast", "interview style", "interview", "guest", "guest interview"]
+    },
+    "style": {
+      "counter_intuitive": ["counter_intuitive", "counter intuitive", "counterintuitive", "counter-intuitive"],
+      "vulnerable": ["vulnerable", "vulnerability"],
+      "provocative": ["provocative", "provoke"],
+      "passionate": ["passionate", "passion"]
+    },
+    "episode_type": {
+      "interview": ["interview", "interview_style_podcast"],
+      "solo": ["solo", "personal", "personal_podcast_style"],
+      "season_strategy": ["season_strategy", "season strategy", "season-strategy", "season plan"],
+      "episode_asset_pack": ["episode_asset_pack", "episode asset pack", "asset pack", "asset-pack"]
+    },
+    "explicit": {
+      "yes": ["yes", "true", "1", "explicit", "y"],
+      "no": ["no", "false", "0", "clean", "n", ""]
+    }
+  },
+  "boolean_true_tokens": ["true", "1", "yes", "y", "on"],
+  "required_fields_base": ["mode", "style", "contact_id", "location_id", "podcast_id", "first_name"],
+  "required_fields_interview_extra": ["show_name", "host_name"],
+  "required_answer_slots_default": ["q1_answer"],
+  "survey_answer_keys_by_style": {
+    "_comment": "Populated per client at onboarding (W1.24 questionnaire wiring). Maps a style path to the ordered list of GHL survey field keys; the Nth key fills q<N>_answer positionally. Left empty here so this slice invents no Barry/Brene/Dan/Jia label table; the generic q/question/answer aliases above cover the common upstreams.",
+    "counter_intuitive": [],
+    "vulnerable": [],
+    "provocative": [],
+    "passionate": []
+  }
+}

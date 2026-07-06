@@ -1,0 +1,52 @@
+{
+  "schema": "podcast-asset-pack-certificate-v1",
+  "skill": "podcast-production-engine",
+  "skill_number": 58,
+  "gate": "BUILD document and media QC (Gate A posture)",
+  "gate_note": "Episode Asset Pack regenerates assets for an already-delivered episode. It re-runs document and media checks, not the full episode gate, because the script is not rewritten. No new EPISODE certificate is minted; the original episode certificate still governs the script. The build and episode gates are never conflated.",
+  "brand_slug": "first-light-show",
+  "preset": "episode_asset_pack",
+  "operates_on_existing_job_key": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "job_key": "pd-cH3mR9tSASHA0002-c5818065dc1f41fe",
+  "idempotent_against_ledger": true,
+  "regenerated": [
+    "cover (print resolution)",
+    "episode_package",
+    "book_teaser_pdf"
+  ],
+  "skipped_idempotent": [
+    "script_rewrite",
+    "audio_render",
+    "podbean_publish",
+    "enrollment"
+  ],
+  "cover_spec": {
+    "format": "JPEG",
+    "color_space": "RGB",
+    "square": true,
+    "within_1400_to_3000": true
+  },
+  "teaser_spec": {
+    "font_floor_pt": 14,
+    "text_rewritten": false,
+    "retypeset_only": true
+  },
+  "media_upload": {
+    "tier": "3 REST",
+    "head_verified": true
+  },
+  "zero_anthropic": true,
+  "models_used": [
+    "gpt-image-2",
+    "glm-5.2",
+    "gemini-3.1-flash-lite"
+  ],
+  "silence": {
+    "client_facing_messages": 0,
+    "messaging_owner": "Convert and Flow",
+    "delivery_report_channel": "operator-only"
+  },
+  "secrets_printed": 0,
+  "state": "complete",
+  "certificate_sha": "2ce0085a7a5b8eb2eb94acca9d96cae537150e9cf9bfdc22cd8c07541d4f111c"
+}

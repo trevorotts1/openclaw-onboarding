@@ -1,0 +1,57 @@
+{
+  "schema": "podcast-blueprint-v1",
+  "internalOnly": true,
+  "title": "The Winter I Almost Locked the Door",
+  "titleImmutableAfterThisStep": true,
+  "thesisOneSentence": "The work of my hands was never the thing worth saving; the room and the people in it were, and letting one person see me struggling is what brought me back.",
+  "traceableToQ1": true,
+  "styleSignatureLine": "The hiding is not protecting you. The hiding is the whole illness. (definition-drop signature for the Vulnerable engine)",
+  "runtimeChosenMinutes": 9.2,
+  "wordsPerMinute": 140,
+  "wordTarget": 1300,
+  "arcBeats": [
+    {
+      "beat": "cold-open confession",
+      "wordBudget": 90
+    },
+    {
+      "beat": "the appearance versus the reality",
+      "wordBudget": 150
+    },
+    {
+      "beat": "the honest cause, no single villain",
+      "wordBudget": 150
+    },
+    {
+      "beat": "the deepest fear named",
+      "wordBudget": 130
+    },
+    {
+      "beat": "the isolation and its cost",
+      "wordBudget": 120
+    },
+    {
+      "beat": "the turn on the student stool",
+      "wordBudget": 180
+    },
+    {
+      "beat": "the reframe, save versus deserve",
+      "wordBudget": 180
+    },
+    {
+      "beat": "the honest non-rescue",
+      "wordBudget": 120
+    },
+    {
+      "beat": "the invitation to the listener",
+      "wordBudget": 130
+    },
+    {
+      "beat": "the closing image and the brave ask",
+      "wordBudget": 150
+    }
+  ],
+  "transparencyBeatPlacement": "Woven into the cold-open and the deepest-fear beat; never the raw consent language.",
+  "openingLine": "I want to begin today with something I have never said out loud on this show.",
+  "finalLine": "I will be here next week, with the light on, in every way that matters."
+}

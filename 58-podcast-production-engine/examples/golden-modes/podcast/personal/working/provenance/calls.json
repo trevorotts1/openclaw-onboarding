@@ -1,0 +1,37 @@
+[
+  {
+    "step": "research-assistant",
+    "provider": "perplexity",
+    "model": "sonar-reasoning"
+  },
+  {
+    "step": "blueprint",
+    "provider": "ollama-cloud",
+    "model": "kimi-2.6"
+  },
+  {
+    "step": "draft",
+    "provider": "ollama-cloud",
+    "model": "kimi-2.6"
+  },
+  {
+    "step": "improvement-pass",
+    "provider": "ollama-cloud",
+    "model": "kimi-2.6"
+  },
+  {
+    "step": "qc-semantic-judge",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite"
+  },
+  {
+    "step": "cover-art",
+    "provider": "kie",
+    "model": "gpt-image-2"
+  },
+  {
+    "step": "tts",
+    "provider": "fish-audio",
+    "model": "s2.1-pro"
+  }
+]

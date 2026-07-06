@@ -1,0 +1,20 @@
+{
+  "schema": "podcast-canonical-payload-v1",
+  "note": "Episode Asset Pack regenerates or completes the asset set for an EXISTING episode. Idempotent against the ledger. Fictional brand; never a fleet client.",
+  "preset": "episode_asset_pack",
+  "contactId": "cH3mR9tSASHA0002",
+  "locationId": "locGREENHAVEN2",
+  "webhookLocationIdEquals": true,
+  "jobKey": "pd-cH3mR9tSASHA0002-c5818065dc1f41fe",
+  "operatesOnExistingJobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "jobKeyFormula": "pd- plus contactId plus first 16 hex of sha256 of the canonical submission",
+  "canonicalSubmissionSha256": "c5818065dc1f41fe7029e5234369efcbe2611e4f42be33641904b20d09704222",
+  "testFlag": true,
+  "fields": {
+    "podcast_survey_preset": "episode_asset_pack",
+    "existing_job_key": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+    "regenerate": "cover, episode_package, book_teaser",
+    "reason": "Client needs a higher-resolution cover for a print flyer and a re-typeset teaser PDF; audio and Podbean publish must not be touched.",
+    "my_preferred_pronoun": "they/them"
+  }
+}

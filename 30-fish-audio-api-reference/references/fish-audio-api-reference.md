@@ -1,6 +1,23 @@
 # Fish Audio API Reference
 
-> Complete developer reference for the Fish Audio text-to-speech API. Last updated: March 14, 2026
+> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-07-06 (current model refreshed to S2.1 Pro).
+
+---
+
+## Current Model: S2.1 Pro (authoritative)
+
+These facts pin the current production release. They supersede any older `s2-pro` or plain `S2` wording elsewhere in this document; every example below now uses the current id.
+
+- **Model id:** `s2.1-pro`. This is the current release (S2.1 Pro), not plain S2 and not the interim `s2-pro` label. `s1` is the legacy generation and stays parenthesis-tagged.
+- **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: s2.1-pro`), never a request-body field. The public endpoint enum can lag the release blog, so verify the exact `s2.1-pro` header value with one live call before you depend on it.
+- **Voice selection:** by `reference_id`, one private voice model per speaker. For client work this is always the client's own private voice model, managed through the voices and instant-voice-clone APIs.
+- **Tag inventory:** S2.1 Pro reads free-form square-bracket tags. The emotional palette is 24 basic emotions plus 25 advanced emotions plus the tone markers, the audio-effect markers, and the short and long pause markers (all tabulated in the Emotions and Paralanguage section). S1 legacy uses the same names in parentheses.
+- **Pricing:** 15.00 US dollars per 1 million UTF-8 bytes, which works out to roughly 60 cents for a 30-minute episode.
+- **Concurrency (gated by cumulative prepaid spend):** under 100 US dollars gives 5 concurrent requests, 100 US dollars and up gives 15, and 1,000 US dollars and up gives 50.
+- **Output for podcasts:** mp3 at 192 kbps. Set `condition_on_previous_chunks` to true for long episodes so chunked synthesis stays consistent voice to voice.
+- **Free-tier prohibition:** the `s2.1-pro-free` model exists but carries no service level agreement and may train on submitted inputs. It is forbidden for production client content. Always use the paid `s2.1-pro` model with the client's own API key and the client's own `reference_id`.
+
+> Reuse note: the Podcast Production Engine (onboarding v18, department id `podcast`) render module pins exactly these S2.1 Pro facts, parameterizes the client `reference_id`, and structurally refuses `s2.1-pro-free`. This reference is the canonical Fish Audio source for that engine.
 
 ---
 
@@ -43,7 +60,7 @@ Authorization: Bearer YOUR_API_KEY
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/msgpack" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   --data-binary @request.msgpack
 ```
 
@@ -82,7 +99,7 @@ POST /v1/tts
 |--------|----------|-------------|
 | `Authorization` | Yes | `Bearer YOUR_API_KEY` |
 | `Content-Type` | Yes | `application/json` or `application/msgpack` |
-| `model` | Yes | `s1` or `s2-pro` (recommended: `s2-pro`) |
+| `model` | Yes | `s1` or `s2.1-pro` (recommended: `s2.1-pro`) |
 
 ### Request Parameters
 
@@ -121,7 +138,7 @@ POST /v1/tts
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d '{
     "text": "Hello, this is a test of Fish Audio text-to-speech API.",
     "reference_id": "802e3bc2b27e49c2995d23ef70e6ac89",
@@ -180,7 +197,7 @@ with httpx.Client() as client:
         headers={
             "authorization": "Bearer YOUR_API_KEY",
             "content-type": "application/msgpack",
-            "model": "s2-pro"
+            "model": "s2.1-pro"
         }
     )
     
@@ -200,16 +217,18 @@ Returns binary audio data in the specified format.
 
 | Model | Description | Quality | Speed | Use Case |
 |-------|-------------|---------|-------|----------|
-| `s2-pro` | Latest model with best quality | Excellent | Fastest | Production, content creation |
+| `s2.1-pro` | Current release (S2.1 Pro), best quality | Excellent | Fastest | Production, content creation |
 | `s1` | Stable legacy model | Excellent | Fast | Prototyping, general use |
+
+> A separate `s2.1-pro-free` model exists. It carries no service level agreement and may train on inputs, so it is FORBIDDEN for production client content. Use the paid `s2.1-pro` with the client's own key and `reference_id`.
 
 ### Recommended Settings by Use Case
 
 | Use Case | Model | Latency | Bitrate | Normalize | Format |
 |----------|-------|---------|---------|-----------|--------|
-| **Phone calls** | s2-pro | normal | 64 kbps | true | mp3 |
-| **Podcasts / content** | s2-pro | normal | 192 kbps | true | mp3 |
-| **Real-time streaming** | s2-pro | balanced | 32 kbps | false | opus |
+| **Phone calls** | s2.1-pro | normal | 64 kbps | true | mp3 |
+| **Podcasts / content** | s2.1-pro | normal | 192 kbps | true | mp3 |
+| **Real-time streaming** | s2.1-pro | balanced | 32 kbps | false | opus |
 
 ---
 
@@ -685,7 +704,7 @@ curl -X POST "https://api.fish.audio/model" \
 
 | Model | Price |
 |-------|-------|
-| `s2-pro` | $15.00 / million UTF-8 bytes |
+| `s2.1-pro` | $15.00 / million UTF-8 bytes |
 | `s1` | $15.00 / million UTF-8 bytes |
 
 > 1M UTF-8 bytes ≈ 180,000 English words ≈ 12 hours of speech
@@ -706,7 +725,10 @@ curl -X POST "https://api.fish.audio/model" \
 |------|-------------------|---------------------|
 | Starter | < $100 paid | 5 requests |
 | Elevated | >= $100 paid | 15 requests |
+| Scale | >= $1,000 paid | 50 requests |
 | Enterprise | Custom | Custom limits |
+
+> Concurrency is gated by CUMULATIVE prepaid spend, not by a monthly plan. Pricing is 15.00 US dollars per 1 million UTF-8 bytes (about 60 cents per 30-minute episode).
 
 Contact [support@fish.audio](mailto:support@fish.audio) for enterprise pricing.
 
@@ -812,7 +834,7 @@ await writeFile("output.mp3", buffer);
 ```
 Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json (or application/msgpack)
-model: s2-pro
+model: s2.1-pro
 ```
 
 ### Quick TTS Request
@@ -820,7 +842,7 @@ model: s2-pro
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d '{"text":"Hello world","reference_id":"VOICE_ID","format":"mp3"}' \
   --output output.mp3
 ```
@@ -830,7 +852,7 @@ curl -X POST "https://api.fish.audio/v1/tts" \
 - Or use the [Discovery page](https://fish.audio/discovery)
 
 ### Model Selection Flow
-1. Default to `s2-pro` for best quality
+1. Default to `s2.1-pro` for best quality
 2. Use `normalize: true` for numbers/dates
 3. Use `normalize: false` for fine-grained control
 4. Use `latency: balanced` for real-time applications

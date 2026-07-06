@@ -73,6 +73,20 @@ the AF3 `expanduser("~/clawd/...")`-list-item pattern, so it is tracked here.
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`   | `SECRETS_CANDIDATES` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py` | `_secrets_candidates()` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |
 
+#### Skill 58 (podcast-production-engine) credential resolvers (`~/clawd/secrets` secret-store fallback)
+
+These per-episode credential resolvers discover the client's Convert and Flow and
+provider tokens across the fleet's multiple env stores. The `~/clawd/secrets` and
+`~/clawd/secrets/.env` items are legit secret-store fallbacks (searched alongside
+`~/.openclaw` and `/data/.openclaw`, after live process env), NOT company-root
+candidate loops. They match the AF3 `expanduser("~/clawd/...")`-list-item pattern,
+so they are tracked here.
+
+| File | Local loop location | Status |
+|------|---------------------|--------|
+| `58-podcast-production-engine/scripts/caf/field_layer/resolver.py` | `_SWEEP_DIRS` list with `os.path.expanduser("~/clawd/secrets"),` item | TRACKED — remove after fleet migration |
+| `58-podcast-production-engine/scripts/ghl_credential_gate.py` | `ENV_FILE_PATHS` list with `os.path.expanduser("~/clawd/secrets/.env"),` and `SWEEP_DIRS` list with `os.path.expanduser("~/clawd/secrets"),` items | TRACKED — remove after fleet migration |
+
 ### Skill 22 (book-to-persona)
 
 | File | Local loop location | Status |

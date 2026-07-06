@@ -1,0 +1,49 @@
+{
+  "schema": "podcast-episode-rubric-v1",
+  "gate": "EPISODE (Gate B) Tier 2",
+  "rule": "each dimension 8 or higher, no averaging, scored only after Tier 1 fully passes; scored by qc-specialist-podcast, a different persona from the writer",
+  "minRequired": 8,
+  "dimensions": {
+    "1_authorial_voice_fidelity": {
+      "score": 9,
+      "why": "A single intimate, confessional first-person voice held from the cold-open to the final image."
+    },
+    "2_arc_execution": {
+      "score": 9,
+      "why": "Clean descent, a small true turn on the student stool, an honest non-rescue, and an invitation; every beat earns its budget."
+    },
+    "3_persuasion_mechanics": {
+      "score": 8,
+      "why": "The claim is earned through lived detail rather than argument, which is the correct Vulnerable mechanic."
+    },
+    "4_opening_power": {
+      "score": 9,
+      "why": "Opens on a confession the host has never said out loud, an immediate stake."
+    },
+    "5_closing_power": {
+      "score": 9,
+      "why": "The tide-and-thread image resolves the emptiness and hands the listener one brave action."
+    },
+    "6_captivation_throughout": {
+      "score": 8,
+      "why": "Tight length with sustained emotional tension and no padding to hit a word floor."
+    },
+    "7_fidelity_to_the_respondent": {
+      "score": 9,
+      "why": "Uses only the respondent's own supplied stories: the wholesale order, the closed account, the father, and Ruth."
+    },
+    "8_research_integration_quality": {
+      "score": 8,
+      "why": "Source-light by design for rich personal material; expanded answers and power statements integrated honestly with zero fabricated sources."
+    },
+    "9_delivery_craft": {
+      "score": 9,
+      "why": "Fully speakable at pace; natural cadence; nothing a mouth would stumble on."
+    },
+    "10_audio_direction_quality": {
+      "score": 8,
+      "why": "Emotion tags track the emotional arc and concentrate at pivots without crowding."
+    }
+  },
+  "allAtOrAbove8": true
+}

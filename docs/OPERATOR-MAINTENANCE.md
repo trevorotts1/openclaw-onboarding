@@ -204,3 +204,119 @@ Check each client's network type before Wave A to prioritize effort:
 - Wired Ethernet clients: lower urgency (drops rare but hardening is still recommended)
 
 All Mac-tunnel clients get Wave A (keepalive + watchdog) regardless of network type.
+
+---
+
+## Fleet Cloudflare Access Revocation Runbook (client offboarding)
+
+**Applies to:** every managed Mac/VPS client box that fronts a loopback service behind
+BlackCEO Cloudflare Access on the zerohumanworkforce.com zone (the Command Center, the
+podcast dashboard, and any future per-client dashboard). This is the ONE fleet Cloudflare
+revocation runbook. Per-skill revocation procedures are APPENDED here as blades, never split
+into a second, competing runbook.
+
+Purpose: when a client stops working with BlackCEO, cut their access to every BlackCEO-hosted
+surface unilaterally and verifiably, from the Cloudflare edge inward, and do it without ever
+messaging the client. Cutting a client off is a handful of Cloudflare API calls that BlackCEO
+alone controls and the client cannot undo.
+
+Preconditions (every blade):
+
+- `CLOUDFLARE_API_TOKEN` confirmed SET in the operator secret stores. Confirm SET, never print
+  its value. This token is operator-side only and never lives on a client box.
+- Account ID 13f808b72eb78027a8046357c6cf1afa (`CLOUDFLARE_ACCOUNT_ID`, correct).
+- Zone zerohumanworkforce.com = a9ecc0a067f52eaa4c59dc9b11d9dd55. Hardcode it or resolve it
+  live via `GET /zones?name=zerohumanworkforce.com`. ZONE-ID TRAP: the `CLOUDFLARE_ZONE_ID`
+  environment variable points at the WRONG zone. Never trust it; the scripts refuse to run if
+  the resolved zone name is not zerohumanworkforce.com.
+- Config edits on a client box run as the node user, never root (root-owned config freezes the
+  gateway). Gateway restarts follow the fleet MASTER-only kickstart or detached-run doctrine; a
+  revocation that downs a box still running other services is a FAILED revocation.
+
+Silence: revocation emits ZERO client-facing messages. No client Telegram, no Convert and Flow
+message, no email. Operator-verbose only: every step logs to the operator ledger and posts a
+step-by-step operator report. Never source or trigger any client-notifying gate from here (for
+example qc-completeness.sh standalone leaks a client Telegram alert; it is never run in a
+revocation).
+
+Edge-first ordering: kill live sessions before deleting routes so no logged-in session outlives
+its hostname. The pure Cloudflare API steps (the edge blade) fully cut public access even when
+the box is dark; box-side steps are recorded as pending in edge-only emergency mode.
+
+### The three-blade kill switch
+
+Every per-client offboarding pulls three blades, in order. Each blade is idempotent (safe to
+re-run) and independently verifiable.
+
+1. APPLICATION BLADE (the dashboard app layer, on the box). Rotate or delete the per-client
+   dashboard bearer token in all box environment stores, then stop and deregister the dashboard
+   service (PM2 delete on VPS boxes; launchd or cron-watchdog removal on Mac boxes, same SSH
+   discipline). The data layer goes dead even if a port were ever exposed.
+2. EDGE BLADE (Cloudflare only, no box access needed). Revoke live Access sessions, delete the
+   Access app, delete the DNS record, remove the tunnel ingress rule. This alone cuts all public
+   access and is the entire content of edge-only emergency mode.
+3. ENGINE BLADE (the inbound engine, on the box). Remove the skill's hook mapping from the
+   OpenClaw hooks config, rotate or delete the per-client hook secret, stop the skill's daily
+   smoke-test cron, and drain the skill's held queues. The box stops accepting and stops working
+   new jobs for the departed client.
+
+### Podcast Production Engine blades (appended; scripted as revoke-podcast-client.sh)
+
+The Podcast Production Engine ships `revoke-podcast-client.sh <slug>` in the skill's scripts
+directory. It is the automation of the three blades above for the podcast surfaces and it is the
+enforcement point for the SOP Podcast Revocation and Churn. Full endpoint shapes and the design
+rationale live in `project-prds/podcast-engine/design/cloudflare-design.md` Section 3; every
+endpoint is LIVE-VERIFY against current Cloudflare and OpenClaw docs before running. The nine
+steps map onto the three blades:
+
+Edge blade (steps 1 to 4, pure Cloudflare API, no box access):
+
+1. Revoke live dashboard sessions on the Access app for `<slug>-podcast.zerohumanworkforce.com`
+   (`POST /accounts/{account_id}/access/apps/{app_id}/revoke_tokens`) so anyone logged in is
+   bounced instantly.
+2. Delete that Access application (`DELETE /accounts/{account_id}/access/apps/{app_id}`); no new
+   logins possible, allow-list gone.
+3. Delete the dashboard DNS record for `<slug>-podcast.zerohumanworkforce.com` so the hostname
+   stops resolving at the edge.
+4. Remove the tunnel ingress routes for the podcast dashboard, and for the podcast hook path when
+   the hooks hostname is podcast-only. If the hooks hostname is SHARED with other skills, leave
+   the hostname and remove only the podcast hook mapping in the engine blade. Tenancy is recorded
+   in the provision ledger so revocation never guesses.
+
+Engine blade (steps 5, 7, 8, on the box, as the node user):
+
+5. Remove the podcast intake hook mapping from the OpenClaw hooks config and rotate or delete
+   `PODCAST_INTAKE_HOOK_SECRET` in all box environment stores, so even a resurrected route is
+   dead. Apply config per gateway-restart doctrine and prove the gateway is back UP.
+7. Stop the daily credit smoke-test cron for this client (`openclaw cron list`, identify the
+   podcast smoke-test job id, `openclaw cron rm <id>`; also clear any crontab fallback) so the
+   daily paid probes and the founder alerts stop.
+8. Drain the podcast credit-out queue for this client, closing held jobs as client offboarded
+   (not aged out) and reporting the dropped job ids to the operator channel only.
+
+Application blade (step 6, on the box):
+
+6. Rotate or delete `PODCAST_DASHBOARD_TOKEN` from the box environment stores and stop and
+   deregister the dashboard service on 127.0.0.1:4010.
+
+Independent end-to-end verification (step 9, no false done):
+
+- 9a. `curl -sI https://<slug>-podcast.zerohumanworkforce.com` must NOT return 302 to
+  sweet-wave-ca28.cloudflareaccess.com; expect a resolution failure or a Cloudflare 1016 or 530
+  class error.
+- 9b. A dummy POST to the old hook URL must fail (route gone or hook 404; anything but a 2xx).
+- 9c. Cloudflare API reads confirm no Access app for the hostname, no DNS record, no ingress rule.
+- 9d. Box reads confirm no hook mapping, tokens absent from the stores (SET-ness only, never
+  printed), dashboard service not running, cron gone, and the gateway still healthy.
+- 9e. Write the per-item ledger entry (the `/tmp/<sweep>/<slug>.json` pattern) and post the
+  operator report. Only then is the revocation done.
+
+Edge-only emergency mode: when the box is unreachable, run the edge blade (steps 1 to 4) plus
+verifications 9a to 9c; this fully cuts public access from the Cloudflare side alone. Record the
+application and engine blade steps as pending and re-run them idempotently once the box is back.
+
+Churn cleanup rule: a departed client leaves ZERO recurring jobs behind. After the engine blade,
+`guard-cron-inventory.py` must show no podcast smoke-test cron and no heartbeat entry for the box,
+and the credit-out queue must hold no jobs for the slug. Re-provisioning a returning client is the
+mirror path (`provision-podcast-client.sh`), proven on the operator canary box before any client
+box is touched.

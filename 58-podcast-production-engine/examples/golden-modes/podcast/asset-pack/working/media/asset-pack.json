@@ -1,0 +1,46 @@
+{
+  "kind": "podcast-asset-pack",
+  "preset": "episode_asset_pack",
+  "operatesOnExistingJobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "regenerated": {
+    "cover": {
+      "model": "gpt-image-2",
+      "coverUrl": "https://example.test/first-light/podcast/cover-print.jpg",
+      "width": 3000,
+      "height": 3000,
+      "format": "JPEG",
+      "colorSpace": "RGB",
+      "square": true,
+      "note": "higher-resolution variant for a print flyer, within the 1400 to 3000 range",
+      "prompt": "The existing episode cover re-rendered at print resolution: a rooftop farm at golden hour over an eastern city skyline anchored by the theme of leverage through teaching, no text."
+    },
+    "episode_package": {
+      "tooling": "google",
+      "fontFloorPt": 12,
+      "note": "Episode Package document re-rendered rich; content unchanged from the published episode"
+    },
+    "book_teaser": {
+      "writerModel": "glm-5.2",
+      "reused_text_sha256": null,
+      "fontFloorPt": 14,
+      "note": "teaser PDF re-typeset from the frozen teaser text; text not rewritten, only re-rendered"
+    }
+  },
+  "skipped_idempotent": {
+    "script_rewrite": "skipped; the frozen episode script is reused",
+    "audio_render": "skipped; audio already exists in the ledger, ffprobe-verified previously",
+    "podbean_publish": "skipped; ledger already holds a permalink",
+    "enrollment": "skipped; the episode was already enrolled and delivered"
+  },
+  "mediaUpload": {
+    "tier": "3 REST",
+    "headVerified": true,
+    "folders": [
+      "podcast",
+      "podcast images",
+      "podcast episodes"
+    ],
+    "createOnceReuseForever": true
+  },
+  "deferred": false
+}

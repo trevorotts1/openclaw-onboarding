@@ -205,6 +205,27 @@
       "execution_sops": ["social-media-craft"]
     },
     {
+      "skill": "58",
+      "slug": "podcast-production-engine",
+      "name": "podcast-production-engine",
+      "client_facing": true,
+      "description": "Per-client engine that turns one podcast intake survey into one published episode end to end: research, script in the client's Style Engine and Production Mode, Fish Audio s2.1-pro render with the client's own reference_id, Kie.ai cover art, documents, Podbean publish, and Convert and Flow write-back. Owned by the Podcast department. The intake webhook binds sessionKey podcast:intake:<client-slug> to this department's agent so the correct persona picks the job up and it appears on the kanban via the ledger state enum. Full department, persona, and kanban wiring lives in 23-ai-workforce-blueprint/department-wiring/podcast-engine/. Supporting audio roles (podcast-editor, podcast-producer, audio-mastering-specialist) assist at Step 11 and Season-Strategy per that wiring; they are cross-department supporters, not owners, so they are recorded in the wiring spec rather than this owning-roles list.",
+      "departments": ["podcast"],
+      "roles": [
+        { "dept": "podcast", "slug": "director-of-podcast", "primary": true },
+        { "dept": "podcast", "slug": "podcast-host", "primary": false },
+        { "dept": "podcast", "slug": "audio-post-producer", "primary": false },
+        { "dept": "podcast", "slug": "qc-specialist-podcast", "primary": false }
+      ],
+      "intent_triggers": [
+        "produce a podcast episode",
+        "turn this intake into a published episode",
+        "run the podcast production engine",
+        "generate this week's episode"
+      ],
+      "execution_sops": []
+    },
+    {
       "skill": "48",
       "slug": "facebook-ad-generator",
       "name": "facebook-ad-generator",

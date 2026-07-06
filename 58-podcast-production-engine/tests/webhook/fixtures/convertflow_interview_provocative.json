@@ -1,0 +1,27 @@
+{
+  "type": "OutboundWebhook",
+  "workflow_id": "wf_podcast_intake",
+  "contact_id": "GuEsT88provoke01",
+  "locationId": "Loc0Abc123Xyz789",
+  "webhook_event_id": "evt-cf-000042",
+  "timestamp": "2026-07-06T15:30:00.000Z",
+  "customData": {
+    "podcast_mode": "Interview Style Podcast",
+    "podcast_survey_writing_style": "Provocative",
+    "podbean_podcast_id": "pb-44422",
+    "podcast_show_name": "The Unfiltered Founder",
+    "podcast_host_name": "Dana Whitfield",
+    "first_name": "Marcus",
+    "last_name": "Reyes",
+    "my_preferred_pronoun": "he/him",
+    "q1": "Everyone told me to protect the downside first, and that advice nearly bankrupted me.",
+    "q2": "The safe path is a slow way to lose.",
+    "podcast_interview_smiq": "I have never told anyone that I mortgaged the house twice to make payroll.",
+    "podcast_survey__additional_info": "Lean into the tension; the audience can handle it.",
+    "date_for_release": "2026-08-01T14:00:00Z",
+    "tts_model": "s2.1-pro",
+    "episode_type": "full",
+    "explicit": "clean",
+    "target_runtime": "12"
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema_note": "Podcast Production Engine (Skill 58) RUNTIME model-routing policy. SINGLE SOURCE OF TRUTH for which models do content work at runtime. Opus 4.8 and every Anthropic model are BUILD-TIME ONLY and NEVER ship here (PRD Section 3.3; furnace-design Guardrail 5). ALL runtime content work routes in strict priority: Ollama Cloud Kimi 2.6, then Ollama Cloud GLM 5.2 (both thinking high), then the OpenRouter equivalents of the same two models, then Gemini 3.1 Flash Lite as the final fallback (default thinking, because paying for high reasoning on the fallback is its own small furnace). The router refuses any model id matching deny_patterns, including the companion document's 'select a suitable replacement' branch: a substitution that matches the deny list is a HARD ERROR, never a silent fallback, and every substitution is logged in the delivery report. guard-no-anthropic-runtime.py reads this file at the merge gate and asserts: content non-empty, no denied ids present as usage, and thinking:high set ONLY on Kimi 2.6 / GLM 5.2 entries. This file names credential ENV LABELS only and never a secret value.",
+  "version": "1.0.0",
+  "pinned_at": "2026-07-06",
+  "podcast_engine": {
+    "models": {
+      "content": [
+        {
+          "priority": 1,
+          "id": "ollama/kimi-k2.6:cloud",
+          "provider": "ollama-cloud",
+          "model": "kimi-k2.6:cloud",
+          "family": "kimi-2.6",
+          "thinking": "high",
+          "base_url": "https://ollama.com/v1",
+          "api_key_env": "OLLAMA_API_KEY",
+          "api_key_env_aliases": ["OLLAMA_CLOUD_API_KEY"],
+          "max_output_tokens": 8000,
+          "note": "Primary content writer. ollama-cloud needs baseUrl slotting, not apiKey slotting (ollama-cloud-baseurl-trap). :cloud is authoritative. NEVER route content through the local signed-in daemon."
+        },
+        {
+          "priority": 2,
+          "id": "ollama/glm-5.2:cloud",
+          "provider": "ollama-cloud",
+          "model": "glm-5.2:cloud",
+          "family": "glm-5.2",
+          "thinking": "high",
+          "base_url": "https://ollama.com/v1",
+          "api_key_env": "OLLAMA_API_KEY",
+          "api_key_env_aliases": ["OLLAMA_CLOUD_API_KEY"],
+          "max_output_tokens": 8000,
+          "note": "Second content writer when Kimi 2.6 on Ollama Cloud is unavailable."
+        },
+        {
+          "priority": 3,
+          "id": "openrouter/moonshotai/kimi-k2.6",
+          "provider": "openrouter",
+          "model": "moonshotai/kimi-k2.6",
+          "family": "kimi-2.6",
+          "thinking": "default",
+          "base_url": "https://openrouter.ai/api/v1",
+          "api_key_env": "OPENROUTER_API_KEY",
+          "max_output_tokens": 8000,
+          "note": "OpenRouter route to the SAME Kimi 2.6 model when the Ollama Cloud lane is down. Default thinking: high reasoning is reserved for the primary Ollama Cloud lane, and paying for high reasoning on a fallback lane is its own furnace (furnace-design Guardrail 5). live_verify the exact slug at canary."
+        },
+        {
+          "priority": 4,
+          "id": "openrouter/z-ai/glm-5.2",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.2",
+          "family": "glm-5.2",
+          "thinking": "default",
+          "base_url": "https://openrouter.ai/api/v1",
+          "api_key_env": "OPENROUTER_API_KEY",
+          "max_output_tokens": 8000,
+          "note": "OpenRouter route to the SAME GLM 5.2 model. Default thinking: high reasoning stays on the primary Ollama Cloud lane; a fallback lane at high reasoning is its own furnace (furnace-design Guardrail 5). live_verify the exact slug at canary."
+        },
+        {
+          "priority": 5,
+          "id": "gemini-3.1-flash-lite",
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "family": "gemini-flash-lite",
+          "thinking": "default",
+          "base_url": "https://generativelanguage.googleapis.com/v1beta",
+          "api_key_env": "GEMINI_API_KEY",
+          "api_key_env_aliases": ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+          "max_output_tokens": 8000,
+          "note": "FINAL fallback only. Default thinking; high reasoning on the cheap fallback is its own furnace. Also usable via openrouter/google/gemini-3.1-flash-lite when only OpenRouter is funded."
+        }
+      ],
+      "qc_judge": [
+        {
+          "priority": 1,
+          "id": "gemini-3.1-flash-lite",
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "family": "gemini-flash-lite",
+          "thinking": "default",
+          "base_url": "https://generativelanguage.googleapis.com/v1beta",
+          "api_key_env": "GEMINI_API_KEY",
+          "api_key_env_aliases": ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+          "max_output_tokens": 8000,
+          "note": "Cheap judge tier for the three semantic Tier 1 checks (fabrication, mode perspective, pronoun correctness) and the 10-dimension rubric scoring. MUST be distinct from the writer tier (independence rule)."
+        },
+        {
+          "priority": 2,
+          "id": "ollama/glm-5.2:cloud",
+          "provider": "ollama-cloud",
+          "model": "glm-5.2:cloud",
+          "family": "glm-5.2",
+          "thinking": "default",
+          "base_url": "https://ollama.com/v1",
+          "api_key_env": "OLLAMA_API_KEY",
+          "api_key_env_aliases": ["OLLAMA_CLOUD_API_KEY"],
+          "max_output_tokens": 8000,
+          "note": "Judge fallback. Default thinking on the judge tier; rubric scoring never runs on the primary creative model at high thinking."
+        }
+      ],
+      "deny_patterns": [
+        "claude",
+        "anthropic",
+        "us.anthropic",
+        "opus",
+        "sonnet",
+        "haiku"
+      ],
+      "deny_match": {
+        "case_insensitive": true,
+        "on_deny_match": "hard_error",
+        "applies_to": ["content", "qc_judge", "runtime_substitution"],
+        "note": "Any model id, provider slug, package, host, or env key matching a deny pattern is refused as a HARD ERROR at runtime, never accepted as a fallback or substitution."
+      },
+      "$guard_exemption_note": "The strings inside deny_patterns are REFUSAL tokens, NOT model usage. There is ZERO Anthropic model id, provider, key, or host CONFIGURED for use anywhere in this file: no Anthropic base_url, no Anthropic API key env is read, no Anthropic API host is called. These six bare tokens are matched case-insensitively as substrings at runtime, so they also refuse any Anthropic package slug, key-env label, or host that embeds one of them (for example any string containing 'anthropic'). deny_patterns is the denylist SOURCE that guard-no-anthropic-runtime.py itself consumes; the guard treats this array as its own denylist declaration and never as an Anthropic reference (furnace-design Guardrail 5 ships exactly this six-token list in the runtime config)."
+    }
+  }
+}

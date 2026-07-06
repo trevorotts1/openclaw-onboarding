@@ -1,0 +1,23 @@
+{
+  "schema": "podcast-canonical-payload-v1",
+  "note": "Season-Strategy is a planning deliverable, not an episode. Fictional brand; never a fleet client.",
+  "preset": "season_strategy",
+  "contactId": "cS5pW1xMARCUS003",
+  "locationId": "locHARBORLINE03",
+  "webhookLocationIdEquals": true,
+  "jobKey": "pd-cS5pW1xMARCUS003-de08e7648b95156c",
+  "jobKeyFormula": "pd- plus contactId plus first 16 hex of sha256 of the canonical submission",
+  "canonicalSubmissionSha256": "de08e7648b95156c7712fac84a49627aaa7daf393a1eb2fcedaa5317b5667ad3",
+  "testFlag": true,
+  "fields": {
+    "podcast_survey_preset": "season_strategy",
+    "podcast_survey_mode": "season_planning",
+    "podcast_survey_goal": "Plan a first season that turns our roastery regulars into a community and generates warm leads without ever feeling like an advertisement.",
+    "podcast_survey_tone": "warm, grounded, community-first",
+    "my_preferred_pronoun": "he/him",
+    "podcast_survey_stories": "Almost quit before the first wholesale account said yes; a regular suggested the house blend; grew fastest the season we spent least on strangers; removed the loyalty points program and loyalty deepened.",
+    "podcast_survey__additional_info": "Owner wants a mix of solo founder episodes and guest interviews with local makers; SHUA framing for every guest.",
+    "season_length": "8",
+    "cadence": "weekly"
+  }
+}

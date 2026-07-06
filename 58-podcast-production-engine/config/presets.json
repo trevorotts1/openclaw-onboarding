@@ -1,0 +1,177 @@
+{
+  "$schema_note": "Output-type presets for the Podcast Production Engine (Skill 58). A preset is a named bundle of production mode, pipeline scope, and deliverable set, resolved at Step 1 (Ingest) and persisted by podcast_state.py (the sole ledger writer). The preset field lives in the canonical intake payload AND in the ledger. Presets INTERVIEW and SOLO derive their default from the Production Mode; SEASON_STRATEGY and EPISODE_ASSET_PACK are thin variations over the same pipeline and state machine, explicitly requested rather than survey-derived. Writing rules for everything this skill produces: zero em dash characters, no triple backtick or code-fence markers. Runtime content work routes to the client's own models only (Ollama Cloud Kimi 2.6, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite); no build-time or non-client model, provider, package, key, or host is present in this file or any runtime file.",
+  "version": "1.0.0",
+  "canonical_payload_field": "preset",
+  "ledger_field": "preset",
+  "enum": ["interview", "solo", "season_strategy", "episode_asset_pack"],
+  "resolution": {
+    "order": [
+      "If the intake payload carries an explicit preset value in the enum, use it.",
+      "Else derive the default from the resolved Production Mode via mode_default_preset.",
+      "season_strategy and episode_asset_pack have no mode default; they must be explicitly requested (operator-initiated) and their referenced source record, when required, must exist in the ledger."
+    ],
+    "validated_at": "Step 1 Ingest",
+    "written_by": "podcast_state.py (sole writer); the preset is recorded on the ledger record and echoed in the delivery report."
+  },
+  "mode_default_preset": {
+    "interview_style_podcast": "interview",
+    "personal_podcast_style": "solo"
+  },
+  "pipeline_steps_reference": {
+    "0": "smoke_test (once per client, credential gate)",
+    "1": "ingest",
+    "2": "select_engines",
+    "3": "research",
+    "4": "size",
+    "5": "blueprint",
+    "6": "draft",
+    "7": "improvement_pass",
+    "8": "read_aloud_pass",
+    "9": "quality_control_episode_gate",
+    "10": "cover_art",
+    "11": "audio",
+    "12": "documents",
+    "13": "book_teaser",
+    "14": "store_media",
+    "15": "publish_podbean",
+    "16": "link_back",
+    "17": "trigger_and_enroll",
+    "18": "deliver"
+  },
+  "shared_state_note": "All presets reuse the ONE shared ledger state enum (received, researching, writing, qc, art, audio, publishing, enrolling, complete, plus cost_hold, credit_out, failed) owned by podcast_state.py. INTERVIEW and SOLO traverse the full path to complete; SEASON_STRATEGY and EPISODE_ASSET_PACK traverse a subset of it and still end at complete. No preset defines new states.",
+  "qc_gate_note": "The Episode Gate (Gate B: 16 Tier 1 hard-fail checks plus the 10-dimension rubric at 8 or higher, with the 3-strike cap) and the build/merge gate (Gate A: the 10-category fleet rubric at 8.5) are never conflated or substituted. INTERVIEW and SOLO produce an episode and are decided by the Episode Gate. SEASON_STRATEGY produces a document, not an episode, so it is judged by a document-quality review (fabrication check plus rendering and formatting standards); this is neither the Episode Gate nor the build/merge decision gate, and no Tier 1 episode check or episode rubric is applied because no episode exists. EPISODE_ASSET_PACK does not re-write the already-passed script, so it applies only the mechanical asset checks (cover ffmpeg and ffprobe assertions, document rendering and font floors, teaser checks) to the regenerated assets.",
+  "presets": {
+    "interview": {
+      "display_name": "Interview",
+      "mode": "interview_style_podcast",
+      "derives_default_from_mode": true,
+      "description": "Full 18-step run for the SHUA lead-generation path: the host presents an everyday guest's ideas, the guest feels Seen, Heard, Understood, and Acknowledged, and the book teaser is the coup de grace.",
+      "pipeline": {
+        "steps_run": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+        "steps_skipped": []
+      },
+      "flags": {
+        "research_stage": true,
+        "render_audio": true,
+        "publish_podbean": true,
+        "book_teaser": true,
+        "store_media": true,
+        "link_back": true,
+        "workflow_enrollment": true,
+        "running_spreadsheet_update": false,
+        "requires_existing_episode": false,
+        "idempotent_against_ledger": true
+      },
+      "terminal_action": "enroll_workflows",
+      "workflows": ["06-Podcast_Episode_Is_Ready", "04-Podcast is Completed"],
+      "workflow_note": "Enroll only after the episode is published to Podbean and the link-back field writes complete. Workflow names and trigger mechanism are discovered per client at setup via Skill 44, never guessed; 04-Podcast is Completed is field-triggered by contact.podcast_survey_episode_url changing, so verify whether it already fired and guard against double enrollment. Enrollment confirmed with caf verification reads.",
+      "book_teaser_note": "Written at Step 13 on Ollama Cloud Kimi 2.6 or GLM 5.2 (thinking high, then the same routing fallbacks); rendered as a book-typeset PDF; link written to contact.book_teaser when the field exists, else surfaced as a founder reminder and never silently created.",
+      "qc_gate": "episode",
+      "deliverables": ["published_episode", "cover_art", "episode_package", "speech_script", "book_teaser_pdf", "workflow_enrollment"],
+      "mode_module": "modes/interview.md",
+      "source_doctrine": "Companion document Interview Style mode; Skill 23 role-library podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast)."
+    },
+    "solo": {
+      "display_name": "Solo",
+      "mode": "personal_podcast_style",
+      "derives_default_from_mode": true,
+      "description": "Full episode run minus the book teaser and minus workflow enrollment; the client's own weekly episode in their own cloned voice. The running episode spreadsheet is updated instead of any customer messaging.",
+      "pipeline": {
+        "steps_run": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18],
+        "steps_skipped": [13]
+      },
+      "flags": {
+        "research_stage": true,
+        "render_audio": true,
+        "publish_podbean": true,
+        "book_teaser": false,
+        "store_media": true,
+        "link_back": true,
+        "workflow_enrollment": false,
+        "running_spreadsheet_update": true,
+        "requires_existing_episode": false,
+        "idempotent_against_ledger": true
+      },
+      "terminal_action": "update_running_spreadsheet",
+      "hard_refusals": ["workflow_enrollment", "customer_messaging"],
+      "hard_refusal_note": "Personal Podcast Style HARD-REFUSES the two customer-notification workflows (they are the Interview lead-generation path only). At Step 17 the enrollment layer no-ops the workflows and appends the episode row to the running spreadsheet created once at onboarding. Zero SMS and zero email are ever sent on this path; Convert and Flow owns all messaging and there is nothing to send here.",
+      "scheduling_note": "If contact.date_for_release is present and in the future, use it as the Podbean publish timestamp so the episode is scheduled rather than published immediately.",
+      "qc_gate": "episode",
+      "deliverables": ["published_episode", "cover_art", "episode_package", "speech_script", "running_spreadsheet_row"],
+      "mode_module": "modes/personal.md",
+      "source_doctrine": "Companion document Personal Podcast Style mode."
+    },
+    "season_strategy": {
+      "display_name": "Season Strategy",
+      "mode": "any",
+      "derives_default_from_mode": false,
+      "explicitly_requested": true,
+      "description": "A planning deliverable, not an episode: a season arc, an episode slate, and the style and mode per slot, drawing on the Skill 23 director-of-podcast doctrine. No render and no publish; produces an Episode Package-style strategy document only.",
+      "pipeline": {
+        "steps_run": [0, 1, 2, 3, 4, 5, 18],
+        "steps_skipped": [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+        "adapted_steps": {
+          "4": "size becomes slate sizing: how many episodes the season holds.",
+          "5": "blueprint becomes the season arc and episode slate, assigning a style and a mode to each slot.",
+          "strategy_document": "a preset-specific render replaces the standard documents step (12): the Episode Package-style strategy document is produced and linked, with no episode media."
+        }
+      },
+      "flags": {
+        "research_stage": true,
+        "render_audio": false,
+        "publish_podbean": false,
+        "book_teaser": false,
+        "store_media": false,
+        "link_back": false,
+        "workflow_enrollment": false,
+        "running_spreadsheet_update": false,
+        "requires_existing_episode": false,
+        "idempotent_against_ledger": true
+      },
+      "step0_note": "Step 0 for this preset validates only the credentials the preset actually uses (the web research tool and the document tooling); the render, publish, and enrollment credentials are not required because none of those stages run.",
+      "terminal_action": "deliver_strategy_document",
+      "qc_gate": "document-quality",
+      "deliverables": ["season_strategy_document"],
+      "mode_module": "modes/interview.md or modes/personal.md per the style and mode assigned to each slate slot",
+      "source_doctrine": "Skill 23 role-library director-of-podcast season-planning doctrine; podcast-producer supports."
+    },
+    "episode_asset_pack": {
+      "display_name": "Episode Asset Pack",
+      "mode": "inherit_from_source_episode",
+      "derives_default_from_mode": false,
+      "explicitly_requested": true,
+      "description": "Regenerates or completes the asset set (cover, documents, teaser) for an EXISTING episode without re-writing or re-publishing the audio. Idempotent against the ledger. Useful for repairs and for Skill 57 social-packaging handoffs (the sanctioned downstream read).",
+      "pipeline": {
+        "steps_run": [0, 10, 12, 13, 14, 16, 18],
+        "steps_skipped": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 15, 17],
+        "step_conditions": {
+          "10": "regenerate cover art only when requested.",
+          "12": "regenerate or complete the Episode Package and Speech Script documents.",
+          "13": "book teaser only when the source episode is Interview Style and the teaser is requested or missing.",
+          "14": "upload the regenerated assets to the media library.",
+          "16": "write only the regenerated asset links; contact.podcast_survey_episode_url is NOT re-written unless it is missing, to avoid re-triggering field-driven workflows."
+        }
+      },
+      "flags": {
+        "research_stage": false,
+        "render_audio": false,
+        "publish_podbean": false,
+        "book_teaser": "conditional_interview_source",
+        "store_media": true,
+        "link_back": true,
+        "workflow_enrollment": false,
+        "running_spreadsheet_update": false,
+        "requires_existing_episode": true,
+        "idempotent_against_ledger": true
+      },
+      "hard_refusals": ["audio_re_render", "podbean_re_publish", "script_rewrite"],
+      "hard_refusal_note": "Audio is never re-rendered and the episode is never re-published (the idempotent permalink guard skips Step 15 when a permalink already exists in the ledger). The already-passed script is never re-written; the frozen research package from the source record is reused, never re-run.",
+      "source_reference_note": "Requires a valid existing episode record in the ledger; the mode and style are inherited from that record. Missing or ambiguous source record stops the run with an operator surface, never a guess.",
+      "terminal_action": "deliver_assets",
+      "qc_gate": "asset-checks",
+      "deliverables": ["regenerated_cover_art", "episode_package", "speech_script", "book_teaser_pdf_conditional", "updated_asset_links"],
+      "mode_module": "inherited from the source episode record",
+      "source_doctrine": "Companion document asset regeneration and repair posture; Skill 57 social-packaging handoff boundary."
+    }
+  }
+}

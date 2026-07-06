@@ -1,0 +1,30 @@
+{
+  "$schema_note": "Podcast Production Engine (Skill 58) STATIC unit price table (furnace-design Guardrail 3). Call sites meter UNITS (LLM input/output tokens, web-research calls, Kie.ai images, Fish Audio UTF-8 bytes); podcast-cost-ledger.py reads THIS file to convert those units to dollars and enforce the ceilings in furnace.json. Prices drifting NEVER requires a code change: the operator restamps this table. All prices are current-as-of pinned_at best estimates for the shipped routing set and are per-client overridable. LLM token prices are per 1,000,000 tokens. Fish Audio is priced per UTF-8 byte (15 dollars per 1,000,000 bytes, roughly 60 cents per 30-minute episode). Zero em dashes.",
+  "version": "1.0.0",
+  "pinned_at": "2026-07-06",
+  "currency": "USD",
+  "podcast_engine": {
+    "cost_model": {
+      "llm_per_1m_tokens": {
+        "ollama/kimi-k2.6:cloud": {"input": 0.55, "output": 2.30, "note": "Ollama Cloud amortized-nominal for Kimi 2.6; mirrors the OpenRouter list price for ceiling safety."},
+        "ollama/glm-5.2:cloud": {"input": 0.60, "output": 2.00, "note": "Ollama Cloud amortized-nominal for GLM 5.2."},
+        "openrouter/moonshotai/kimi-k2.6": {"input": 0.55, "output": 2.30, "note": "OpenRouter list price for Kimi 2.6; restamp from openrouter.ai/moonshotai/kimi-k2.6."},
+        "openrouter/z-ai/glm-5.2": {"input": 0.60, "output": 2.00, "note": "OpenRouter list price for GLM 5.2; restamp from openrouter.ai/z-ai/glm-5.2."},
+        "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40, "note": "Final fallback and qc_judge tier; cheapest content model."}
+      },
+      "image_per_task": {
+        "kie.ai/gpt-image-2": {"per_1k_square": 0.04, "note": "One 1024 square cover per episode. Kie.ai GPT-image-2; a smoke image runs roughly 0.04 to 0.10 dollars. Restamp from current Kie.ai pricing."}
+      },
+      "tts_fish_audio": {
+        "fish-audio/s2.1-pro": {"per_utf8_byte": 0.000015, "per_1m_utf8_bytes": 15.00, "note": "Model s2.1-pro via header, client reference_id. Roughly 14,000 bytes for a 10-minute episode (about 0.21 dollars); roughly 42,000 bytes for a 30-minute episode (about 0.63 dollars). The free tier s2.1-pro-free is FORBIDDEN for client content and is never priced or used here."}
+      },
+      "web_research_per_call": {
+        "default": {"per_call": 0.005, "note": "Perplexity sonar or the best available web-research tool; metered per call and capped at web_research_calls_per_episode (12) in furnace.json. Restamp per the wired tool."}
+      }
+    },
+    "healthy_episode_reference": {
+      "note": "A healthy 10-minute episode meters well under the 1.50 dollar soft-warn target: roughly 14,000 TTS bytes, one 1K image, one research pass, one write cycle. These ceilings only trip on runaway loops, which is exactly their job.",
+      "worst_case_daily_per_client_usd": 15.01
+    }
+  }
+}
