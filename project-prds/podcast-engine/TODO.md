@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.18 (field-layer portion) | Opus 4.8 exec | IN-PROGRESS (branch pushed) | feat/podcast-convert-and-flow-field-layer | self-QC 9.0 | Convert and Flow field layer at 58-podcast-production-engine/scripts/caf/field_layer/: resolver (ENV-CHECK-BEFORE-FAIL, PIT plus Location, agency-PIT excluded, secrecy), field-map cache with double-underscore assertion and book_teaser presence, batch-then-URL-last writer with byte-for-byte read-back and one-retry, Tier 0 caf plus Tier 3 REST only (no MCP). 35 offline tests pass. Finding: caf contacts update carries no custom-field option, so custom-field writes escalate Tier 0 to Tier 3 per command-unsupported rule. Shared-resolver CONVERTFLOW aliases remain a separate slice; field layer names the set locally meanwhile. |
