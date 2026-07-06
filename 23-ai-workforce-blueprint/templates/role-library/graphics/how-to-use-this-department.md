@@ -222,6 +222,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 ---
 
+<!-- DEPT_SKILLS_V1 -->
+## Skills This Department Can Operate For You 🛠️
+
+You never have to know these by name or type a command. Just say what you want in plain English — this department reaches for the right pre-built engine ("skill") for you automatically. These are the ones it can run on your behalf:
+
+| If you say something like… | This department will… |
+|---|---|
+| "match this brand style" · "on-brand images" · "a style card" · "generate images in my brand look" | Design Intelligence Unit |
+
+You do not have to get the routing right or name the skill — the plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
+<!-- END DEPT_SKILLS_V1 -->
+
 ## 5. What to Expect Back
 
 When you ask this department for something, here is the normal flow:

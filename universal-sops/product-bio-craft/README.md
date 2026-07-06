@@ -22,6 +22,18 @@ authoritative machine spine lives in the skill:
   verbatim IP system prompts, baked byte-identical and sha256-pinned (fidelity is gated, not assumed).
 - `55-product-bio/assets/intake-schema.json` — the locked 4-field intake contract.
 
+<!-- CRAFT_INTENT_TRIGGERS_V1 -->
+## Intent triggers
+
+This craft cluster (`universal-sops/product-bio-craft/`) is the execution playbook for the skill(s) below. A specialist reaches for it when the client's plain-language request matches any of these intents — the client never has to name the skill or type its slash command. Source of truth: `23-ai-workforce-blueprint/skill-department-map.json` (Layer D).
+
+| Skill | Reach for this craft when the client says… |
+|---|---|
+| **55** product-bio | "write my product bio" · "a master brain for my product" · "a product sales knowledge base" |
+
+Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+<!-- END CRAFT_INTENT_TRIGGERS_V1 -->
+
 ## The ONE way in
 
 A Product Bio is built by running, and ONLY by running, the canonical fail-closed entry shell:

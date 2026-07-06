@@ -162,6 +162,23 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 ---
 
+<!-- DEPT_SKILLS_V1 -->
+## Skills This Department Can Operate For You 🛠️
+
+You never have to know these by name or type a command. Just say what you want in plain English — this department reaches for the right pre-built engine ("skill") for you automatically. These are the ones it can run on your behalf:
+
+| If you say something like… | This department will… |
+|---|---|
+| "plan my video" · "storyboard this" · "script for a video" · "break my video into scenes" | Plan video structure against AI model duration limits and generate per-segment prompts (storyboard) |
+| "make a video from this text" · "make a video from this image" · "generate a clip" · "turn this script into a video" | Create videos from text, scripts, images, and clips (text-to-video, image-to-video, assembly, audio mix, export/resize) |
+| "add captions" · "burn subtitles" · "make an SRT" · "caption this video" | Burn professional captions into a video or export an SRT (Whisper + FFmpeg; minimal/full/animated styles) |
+| "cut this video" · "trim this clip" · "resize this clip for social" · "edit this footage" | Local video editing (FFmpeg/yt-dlp/Whisper/PySceneDetect) |
+| "make a cinematic ad" · "make a cinematic reel" · "produce a polished video" · "a high-end branded video" | End-to-end AI video production concept-to-upload (VEO via KIE.ai, ElevenLabs/Suno audio, FFmpeg assembly) |
+| "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" · "make me a whole video end to end" | Autonomous multi-pipeline video production (OpenMontage) |
+
+You do not have to get the routing right or name the skill — the plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
+<!-- END DEPT_SKILLS_V1 -->
+
 ## 5. What to Expect Back
 
 When you ask this department for something, here is the normal flow:
