@@ -34,18 +34,27 @@
 #                                   because nothing rolled the frontmatter field.
 #                                   Now rolled + drift-checked here.
 #
-# VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29):
-#   Skill 38's SKILL.md "What This Skill Ships" hard-codes file counts
-#   (protocols/, scripts/, references/, journey templates). They drift silently
-#   whenever a file is added/removed. On EVERY Skill-38 bump (its own
+# VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29;
+#   extended 2026-07-05 FIX-XC-13c to ALSO cover INSTALL.md):
+#   Skill 38 hard-codes file counts in TWO docs — SKILL.md "What This Skill Ships"
+#   AND INSTALL.md "What this installs" (protocols/, scripts/ range 00-NN,
+#   references/, journey templates, and which Round-2 features are shipped). They
+#   drift silently whenever a file is added/removed. On EVERY Skill-38 bump (its own
 #   38-conversational-ai-system/skill-version.txt — NOT one of the 8 files
-#   above), re-verify and correct those counts. The exact command:
+#   above), re-verify and correct those counts IN BOTH FILES. The exact command:
 #     ( cd 38-conversational-ai-system && \
 #       echo "protocols=$(ls -1 protocols/*.md | wc -l)" && \
 #       echo "scripts=$(ls -1 scripts/*.sh | wc -l)" && \
 #       echo "references=$(ls -1 references/*.md | wc -l)" && \
-#       echo "journeys=$(ls -1d templates/journey-templates/*/ | wc -l)" )
-#   Then make SKILL.md's SELF-COUNTS comment + bullets match. The 23-key linter
+#       echo "journeys=$(ls -1d templates/journey-templates/*/ | wc -l)" && \
+#       echo "highest-numbered-script=$(ls -1 scripts/ | grep -E '^[0-9]' | \
+#         sed -E 's/-.*//' | sort -n | tail -1)" )
+#   Then make BOTH SKILL.md's SELF-COUNTS comment/bullets AND INSTALL.md's
+#   "What this installs" bullets match (protocol count, the `00`-`NN` script range,
+#   reference count, and the shipped-vs-OFF-by-default feature status — INSTALL.md
+#   must NEVER describe a shipped feature as "pending"). The advisory diff below
+#   (skill38_doc_selfcount_advisory) prints WARNs against disk to catch drift in
+#   both files, non-fatally, on every --check and bump. The 23-key linter
 #   qc-23-key-bodies.sh + trinity qc-trinity-registry.sh are part of scripts/.
 #
 # Usage:
@@ -174,6 +183,39 @@ PYEOF
 # Normalize a version: strip leading 'v', collapse to X.Y.Z
 norm() { echo "${1#v}"; }
 
+# ─── SKILL 38 doc self-count advisory (FIX-XC-13c) ───────────────────────────
+# Skill 38 hard-codes file counts in BOTH SKILL.md and INSTALL.md. This diffs the
+# stated counts against what is actually on disk and prints a WARN on drift. It is
+# ADVISORY ONLY — it never mutates a file and never changes the exit code (returns
+# 0 unconditionally), so it can run under `set -e` without aborting a release bump.
+# It exists so a Skill-38 file add/remove that forgot to update INSTALL.md (or
+# SKILL.md) is surfaced at bump time instead of shipping stale docs.
+skill38_doc_selfcount_advisory() {
+  local d="$REPO_ROOT/38-conversational-ai-system"
+  [ -d "$d" ] || return 0
+  local p r hi f
+  p=$(ls -1 "$d"/protocols/*.md 2>/dev/null | wc -l | tr -d ' ')
+  r=$(ls -1 "$d"/references/*.md 2>/dev/null | wc -l | tr -d ' ')
+  hi=$(ls -1 "$d"/scripts/ 2>/dev/null | grep -E '^[0-9]' | sed -E 's/-.*//' | sort -n | tail -1)
+  echo ""
+  echo "Skill 38 doc self-count advisory (disk: protocols=$p references=$r highest-numbered-script=$hi):"
+  for f in SKILL.md INSTALL.md; do
+    [ -f "$d/$f" ] || continue
+    grep -q "$p protocol" "$d/$f" 2>/dev/null \
+      || echo "  WARN: 38-conversational-ai-system/$f does not state '$p protocol…' — protocol count may have drifted"
+    grep -q "$r reference" "$d/$f" 2>/dev/null \
+      || echo "  WARN: 38-conversational-ai-system/$f does not state '$r reference…' — reference count may have drifted"
+  done
+  if [ -f "$d/INSTALL.md" ]; then
+    grep -qE "\`00\`.\`$hi\`" "$d/INSTALL.md" 2>/dev/null \
+      || echo "  WARN: 38-conversational-ai-system/INSTALL.md numbered-script range may not reach \`$hi\` (expected \`00\`-\`$hi\`)"
+    if grep -qiE 'does not implement pending roadmap features' "$d/INSTALL.md" 2>/dev/null; then
+      echo "  WARN: 38-conversational-ai-system/INSTALL.md still calls shipped Round-2 features 'pending' (see SKILL.md 'What This Skill Does NOT Do')"
+    fi
+  fi
+  return 0
+}
+
 print_state() {
   read_current
   echo ""
@@ -189,6 +231,7 @@ print_state() {
   printf "  %-50s %s\n" "DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)" "$V_DIRECT"
   printf "  %-50s %s\n" "cc-compat.json onboardingVersion" "$V_CC_COMPAT"
   printf "  %-50s %s\n" "23-ai-workforce-blueprint/SKILL.md [version:]" "$V_23_SKILL_MD"
+  skill38_doc_selfcount_advisory
 }
 
 check_drift() {
