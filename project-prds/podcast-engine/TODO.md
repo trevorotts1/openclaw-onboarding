@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.19+W1.20 | media-and-enrollment (Opus) | DONE(self-tests+52 pytest green) | feat/podcast-media-and-enrollment | 9.0 (self) | Tier3 media upload (folders lookup-only, HEAD-verify) + Skill44 caf enrollment (discovery/verify/enroll, double-enroll guard, hard Personal refusal, tag-based verify, STOP boundary). REST+caf only, no MCP, no Anthropic, no secrets printed. |
