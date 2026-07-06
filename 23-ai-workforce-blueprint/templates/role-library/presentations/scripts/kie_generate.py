@@ -24,6 +24,19 @@ ENVIRONMENT:
                   ~/.openclaw/workspace/.env, ~/clawd/secrets/.env,
                   ~/.openclaw/secrets/.env — all HOME-relative, no hardcoded path).
 
+ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory pin
+    verbatim (the caller embeds it in `prompt`):
+      "All text rendered in the image MUST be in English, Latin alphabet ONLY. NO
+       Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly,
+       letter-for-letter. No garbled, misspelled, or invented text."
+
+LOCKSTEP NOTE: this helper ships in TWO repo locations —
+    23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py
+    23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py
+Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
+each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
+per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
+
 RATE CAP: 20 requests / 10 seconds per KIE.ai docs. This script submits in waves of 20
           with a 10-second sleep between waves.
 
@@ -126,6 +139,11 @@ def _load_api_key() -> str:
 
 def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None) -> dict:
     """Minimal HTTP helper; returns parsed JSON response. Raises on non-200."""
+    if DEAD_ENDPOINT_FRAGMENT in url:
+        raise RuntimeError(
+            f"REFUSED: attempted to call the dead endpoint {DEAD_ENDPOINT_FRAGMENT}. "
+            "This script only uses /api/v1/jobs/createTask and /api/v1/jobs/recordInfo."
+        )
     data = json.dumps(body).encode() if body is not None else None
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -157,10 +175,15 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     else:
         raise ValueError(f"Slide {slide['slide']}: unknown mode '{mode}'. Use 'i2i' or 't2i'.")
 
+    # FIX-IMG-03: honor an OPTIONAL per-entry aspect_ratio / resolution when the
+    # prompts.json entry carries one, else fall back to the module defaults. This
+    # is purely additive — a slide without these keys renders exactly as before
+    # (16:9 / 2K). It lets the Skill 6 rail respect a section's mandated ratio
+    # (e.g. 49 Section 12 -> 3:4) instead of silently forcing 16:9.
     input_block: dict = {
         "prompt": slide["prompt"],
-        "aspect_ratio": ASPECT_RATIO,
-        "resolution": RESOLUTION,
+        "aspect_ratio": slide.get("aspect_ratio", ASPECT_RATIO),
+        "resolution": slide.get("resolution", RESOLUTION),
     }
 
     if mode == "i2i":

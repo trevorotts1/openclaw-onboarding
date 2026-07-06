@@ -8532,7 +8532,12 @@ def main():
     print(f"slides.json: {slides_path}", flush=True)
     print(f"renders_dir: {renders_dir}", flush=True)
     print(f"out.pptx:    {out_path}", flush=True)
-    print(f"endpoint:    {CREATE_URL}  model={MODEL_T2I}\n", flush=True)
+    # Truth in reporting: name the model this run ACTUALLY uses — image-to-image
+    # when a logo URL is composited via input_urls, else text-to-image. The same
+    # model_used value flows into the process manifest + the final JSON summary,
+    # so the audit trail never claims t2i for an i2i logo-composite run.
+    model_used = MODEL_I2I if logo_url else MODEL_T2I
+    print(f"endpoint:    {CREATE_URL}  model={model_used}\n", flush=True)
 
     rendered = []
     task_ids = []
@@ -8627,7 +8632,7 @@ def main():
     manifest_path = None
     try:
         manifest_path = write_process_manifest(
-            run_dir, rendered, task_ids, MODEL_T2I, out_path, timestamp)
+            run_dir, rendered, task_ids, model_used, out_path, timestamp)
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: render succeeded but process manifest write failed: {exc}",
               file=sys.stderr, flush=True)
@@ -8663,7 +8668,7 @@ def main():
         "outputPath": str(out_path),
         "bundleDir": str(bundle_dir),
         "deliverables_ledger": str(ledger_path),
-        "modelUsed": MODEL_T2I,
+        "modelUsed": model_used,
         "timestamp": timestamp,
         "processManifest": str(manifest_path) if manifest_path else None,
         "failures": [],

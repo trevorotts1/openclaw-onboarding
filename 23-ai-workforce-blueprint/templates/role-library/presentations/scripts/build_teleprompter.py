@@ -61,23 +61,47 @@ instead of a hard FATAL crash.
 
 FEATURES (the teleprompter, all client-side, vanilla JS, zero dependencies)
 - Pre-loaded speech (inline JSON) + a "Load .md" file picker + a "Paste" fallback.
-- DUAL SCROLL MODE with a toggle, persisted to localStorage:
-  * TRADITIONAL (default + always-available fallback): a requestAnimationFrame
-    fixed-speed engine with a SUB-PIXEL accumulator (carries the fractional
-    remainder so it stays smooth even at the slow floor), a dt CLAMP (a stalled /
-    GC / tab-refocus frame can never produce a jump), and a curved 18..240 px/s
-    speed range so the slow end is readably-slow-but-visibly-moving.
-  * SPOKEN (voice-following): the Web Speech API (SpeechRecognition ||
-    webkitSpeechRecognition; continuous + interim results) listens to the mic and
-    a fuzzy token sequence-aligner drives the scroll to keep the spoken word in the
-    reading zone. Restart-on-end (guarded by shouldListen) survives Chrome's ~7s
-    silence cutoff; mic-denied / unsupported auto-falls-back to TRADITIONAL with a
-    one-line notice; hidden entirely where SpeechRecognition is absent (Firefox).
+- THREE SELECTABLE SCROLL MODES (a segmented Manual / Auto / Voice control,
+  persisted to localStorage; legacy saved values "traditional"/"spoken" migrate
+  to "auto"/"voice" so an upgraded file keeps the presenter's old choice):
+  * MANUAL: no engine motion — the presenter drives with the wheel, arrow keys,
+    the slide rail, or a presenter clicker (Space/PageDown = next slide). The
+    always-available floor; every other mode falls back here or to AUTO.
+  * AUTO (the previous "Traditional" fixed-speed mode, unchanged): a
+    requestAnimationFrame fixed-speed engine with a SUB-PIXEL accumulator
+    (carries the fractional remainder so it stays smooth even at the slow
+    floor), a dt CLAMP (a stalled / GC / tab-refocus frame can never produce a
+    jump), and a curved 18..240 px/s speed range so the slow end is
+    readably-slow-but-visibly-moving.
+  * VOICE (voice-tracking; the previous "Spoken" mode, hardened): the Web
+    Speech API (SpeechRecognition || webkitSpeechRecognition; continuous +
+    interim results) listens to the mic and a fuzzy token sequence-aligner
+    drives the scroll to keep the spoken word in the reading zone.
+    - ADJUSTABLE SENSITIVITY (slider, persisted): one control maps to the
+      aligner's fuzz tolerance + lookahead window + backtrack so the presenter
+      can tune between "strict word-for-word" and "loose paraphrase-friendly".
+    - SLIDING-WINDOW ALIGNMENT: the search window slides forward WITH the
+      matches inside one utterance, so a long final result can advance the
+      full distance the presenter actually spoke (not just one fixed window).
+    - MANUAL-NAV RESYNC: jumping via the rail / arrow keys / clicker RE-SEEDS
+      the aligner cursor to the target slide's first token, so voice tracking
+      resumes from where the presenter jumped instead of yanking the view back.
+    - HARDENED RESTART: recognition re-arms via a short deferred restart and
+      recreates the recognizer object if start() throws; a watchdog restarts a
+      silently-dead session; repeated hard failures fall back to AUTO with a
+      notice. Mic-denied / unsupported auto-falls-back with a one-line notice;
+      the Voice option is hidden entirely where SpeechRecognition is absent
+      (e.g. Firefox).
+    - HOLD: in Voice mode the Play control becomes Follow/Hold — Hold freezes
+      the scroll while recognition + highlight continue, Follow eases the view
+      back to the live spoken position.
 - SMART FUZZY HIGHLIGHT: the script is tokenized once (normalized, with {slide,
   block} back-refs); a bounded local sequence-aligner maps speech onto the script
   tolerant of paraphrase, skips, repeats and ad-libs, confidence-gated. Two-tier
   render: already-spoken tokens dim/strike, the current/interim region is accented
-  and drives the scroll anchor.
+  and drives the scroll anchor (the visual tracked-position indicator). The
+  highlight tint derives from the locked brand accent (color-mix with an amber
+  rgba fallback for older engines), never a hardcoded house color.
 - Big adjustable font (default ~48px) with +/- controls.
 - Scroll-speed slider; default seeded from the speech WPM.
 - Play / pause on the scroll (Space, or clicker B key).
@@ -591,17 +615,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hint { color: var(--muted); font-size: 12px; }
   kbd { background: var(--rail-active); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
 
-  /* Objective 2/3 -- mode toggle, status chip, two-tier highlight, guide */
+  /* Mode control, status chip, two-tier highlight, guide */
   #stage.vmirror #scroll { transform: scaleY(-1); }
   #stage.mirror.vmirror #scroll { transform: scaleX(-1) scaleY(-1); }
+  .modes { display: inline-flex; border: 1px solid var(--rail-active);
+    border-radius: 8px; overflow: hidden; }
+  .modes button { border: 0; border-radius: 0; margin: 0; }
+  .modes button + button { border-left: 1px solid var(--rail-active); }
   .slide .tok { transition: color .15s ease, background .15s ease; }
   /* committed (already-spoken): dimmed + struck */
   .slide .tok.spoken { color: var(--muted); text-decoration: line-through;
     text-decoration-thickness: 1px; opacity: .65; }
-  /* current/interim region: accent highlight (drives the scroll anchor) */
+  /* current/interim region: accent highlight (drives the scroll anchor).
+     rgba amber = fallback for engines without color-mix; the color-mix line
+     re-derives the tint from the LOCKED brand accent so it always matches. */
   .slide .tok.cur { color: var(--accent); background: rgba(242,177,52,.14);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-radius: 4px; }
-  html.light .slide .tok.cur { background: rgba(185,129,10,.15); }
+  html.light .slide .tok.cur { background: rgba(185,129,10,.15);
+    background: color-mix(in srgb, var(--accent) 18%, transparent); }
   /* eye-line reading guide: fixed anchor line + dim mask above/below the zone */
   #guide { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 5; }
   #stage.guide #guide { display: block; }
@@ -629,6 +661,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     z-index: 60; display: none; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
   #notice.show { display: block; }
   header button[hidden] { display: none; }
+  header .ctl[hidden] { display: none; }   /* .ctl sets display:flex; [hidden] must still win */
 </style>
 </head>
 <body>
@@ -637,14 +670,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="brand">__BRAND_NAME__<span class="sub" id="decktitle"></span></div>
     <div class="spacer"></div>
     <div class="ctl">
-      <button id="modeBtn" title="Switch between fixed-speed and voice-following">Mode: Traditional</button>
+      <span class="modes" role="group" aria-label="Scroll mode">
+        <button id="modeManualBtn" title="No auto-scroll: wheel, arrows, rail, or clicker (Space = next slide)">Manual</button>
+        <button id="modeAutoBtn" title="Fixed-speed auto-scroll (Space = play/pause)">Auto</button>
+        <button id="modeVoiceBtn" title="Voice-tracking: the prompter listens and follows what you actually say (Space = follow/hold)">Voice</button>
+      </span>
       <span id="micChip"><span class="dot"></span><span class="txt">idle</span></span>
     </div>
     <div class="ctl"><button id="playBtn" title="Space">Play</button></div>
-    <div class="ctl">Speed
+    <div class="ctl" id="speedCtl">Speed
       <button id="spdDown">-</button>
       <input id="speed" type="range" min="0" max="100" value="35">
       <button id="spdUp">+</button>
+    </div>
+    <div class="ctl" id="sensCtl" hidden>Sensitivity
+      <input id="sens" type="range" min="0" max="100" value="50"
+        title="Left = strict word-for-word tracking; right = loose, paraphrase-friendly tracking">
     </div>
     <div class="ctl">Font
       <button id="fontDown">A-</button><button id="fontUp">A+</button>
@@ -701,6 +742,14 @@ Hello and welcome, everybody. [PAUSE] ..."></textarea>
 const DEFAULT_WPM = __WPM__;
 const FONT_KEY = "ptp.font", SPEED_KEY = "ptp.speed", MIRROR_KEY = "ptp.mirror", THEME_KEY = "ptp.theme";
 const MODE_KEY = "ptp.mode", VMIRROR_KEY = "ptp.vmirror", GUIDE_KEY = "ptp.guide";
+const SENS_KEY = "ptp.sens";
+// Mode values: "manual" | "auto" | "voice". Legacy persisted values migrate:
+// "traditional" -> "auto", "spoken" -> "voice" (never lose a presenter's choice).
+function migrateMode(v){
+  if(v==="traditional") return "auto";
+  if(v==="spoken") return "voice";
+  return (v==="manual"||v==="auto"||v==="voice") ? v : null;
+}
 
 // ---- cue / pacing parsing (mirror of the Python parser, for pasted/loaded files)
 const CUE_RE = /\[\s*(?:PAUSE|BREATHE|BREAK|LONG[- ]?BREAK|SHORT\s+PAUSE)\s*\]|\(\s*(?:PAUSE|BREATHE|BREAK|LONG[- ]?BREAK|SHORT\s+PAUSE)\b[^)]*\)/ig;
@@ -818,9 +867,10 @@ let current = 0;            // index of the current slide
 let playing = false;
 let rafId = null, lastTs = 0;
 let slideStart = performance.now();   // when the current slide became current
-// MODE: "traditional" (Objective 1 fixed-speed RAF, default+fallback) | "spoken" (voice-following).
-let MODE = "traditional";
-let voiceTargetTop = 0;    // SPOKEN: scroll target the RAF tween chases (set by the aligner)
+// MODE: "manual" (no engine motion) | "auto" (fixed-speed RAF, default+fallback)
+//       | "voice" (voice-tracking). Legacy "traditional"/"spoken" migrate on boot.
+let MODE = "auto";
+let voiceTargetTop = 0;    // VOICE: scroll target the RAF tween chases (set by the aligner)
 const stage = document.getElementById("stage");
 const scrollEl = document.getElementById("scroll");
 
@@ -843,11 +893,14 @@ function normTok(raw){
 // AND rebuilt at runtime for Load/Paste). Lets render wrap each surface word in a
 // span carrying its global token index so the aligner can highlight it.
 let TOK_INDEX = {};
+let SLIDE_FIRST_TOKEN = [];   // slide idx -> global index of its first token (voice resync)
 function rebuildTokenIndex(){
   TOK_INDEX = {};
+  SLIDE_FIRST_TOKEN = [];
   for(let gi=0; gi<TOKENS.length; gi++){
     const t=TOKENS[gi];
     TOK_INDEX[t.slide+":"+t.block+":"+t.wi]=gi;
+    if(SLIDE_FIRST_TOKEN[t.slide]===undefined) SLIDE_FIRST_TOKEN[t.slide]=gi;
   }
 }
 // Tokenize the loaded slides[] the same way Python does, for runtime Load/Paste.
@@ -922,8 +975,17 @@ function goTo(idx, smooth){
   idx = Math.max(0, Math.min(slides.length-1, idx));
   current = idx;
   const el = document.getElementById("slide-"+idx);
-  if(el) stage.scrollTo({top: el.offsetTop - stage.clientHeight*0.12, behavior: smooth?"smooth":"auto"});
+  const top = el ? el.offsetTop - stage.clientHeight*0.12 : 0;
+  if(el) stage.scrollTo({top: top, behavior: smooth?"smooth":"auto"});
   slideStart = performance.now();
+  // VOICE resync: a manual jump (rail / arrows / clicker) RE-SEEDS the aligner
+  // at the target slide's first token and moves the tween target with the jump,
+  // so voice tracking resumes from HERE instead of dragging the view back.
+  if(MODE==="voice"){
+    const seed = SLIDE_FIRST_TOKEN[idx];
+    if(seed!==undefined){ cursor = seed; interimEnd = seed; renderHighlight(); }
+    voiceTargetTop = Math.max(0, top);
+  }
   updateActive(); updatePos();
 }
 
@@ -986,26 +1048,32 @@ function loop(ts){
   let dt=(ts-lastTs)/1000; lastTs=ts;
   dt = Math.min(dt, DT_MAX);            // clamp: a stalled/GC/refocus frame can never jump
   if(dt < 0) dt = 0;
-  if(MODE==="spoken"){
-    // SPOKEN: tween toward the voice-derived target instead of constant speed.
+  if(MODE==="voice"){
+    // VOICE: tween toward the voice-derived target instead of constant speed.
     tweenTowardVoiceTarget(dt);
-  } else {
-    // TRADITIONAL: accumulate sub-pixel scroll, write only the integer delta,
+  } else if(MODE==="auto"){
+    // AUTO: accumulate sub-pixel scroll, write only the integer delta,
     // carry the remainder — smooth even at the slow floor at any frame rate.
     scrollAccum += speedPxPerSec()*dt;
     const whole = Math.trunc(scrollAccum);
     if(whole !== 0){ stage.scrollTop += whole; scrollAccum -= whole; }
   }
+  // MANUAL: no engine motion (the RAF is not armed in manual mode).
   detectCurrentFromScroll();
   tickCountdown();
   const atEnd = stage.scrollTop >= stage.scrollHeight - stage.clientHeight - 1;
-  if(atEnd && MODE!=="spoken"){ setPlaying(false); }
+  if(atEnd && MODE==="auto"){ setPlaying(false); }
   else rafId=requestAnimationFrame(loop);
 }
 function setPlaying(p){
+  if(MODE==="manual") p=false;          // manual mode has no engine to play
   playing=p; resetScrollClock();
-  document.getElementById("playBtn").textContent = p?"Pause":"Play";
-  document.getElementById("playBtn").classList.toggle("on", p);
+  const btn = document.getElementById("playBtn");
+  // In VOICE mode the control reads Follow/Hold (recognition + highlight keep
+  // running on Hold; only the scroll-following freezes).
+  btn.textContent = MODE==="voice" ? (p?"Hold":"Follow") : (p?"Pause":"Play");
+  btn.classList.toggle("on", p);
+  if(MODE==="voice" && !p) micChip("paused","hold");
   if(p && !rafId) rafId=requestAnimationFrame(loop);
 }
 // SPOKEN smoothing tween: ease the real scrollTop toward the voice-derived
@@ -1029,9 +1097,19 @@ function tweenTowardVoiceTarget(dt){
 // ========================================================================
 let cursor = 0;            // committed position in TOKENS (already-spoken boundary)
 let interimEnd = 0;        // furthest token touched by the live interim region
-const WINDOW = 28;         // tokens of lookahead the aligner searches each step
-const BACKTRACK = 6;       // tokens behind the cursor it may re-anchor to
-const FUZZ = 0.34;         // max normalized edit distance to count two tokens "equal"
+// ADJUSTABLE SENSITIVITY (persisted slider 0..100, default 50): ONE control maps
+// to the three aligner tolerances. Low = strict word-for-word (small window,
+// tight fuzz — resists false jumps); high = loose paraphrase-friendly (wide
+// window, generous fuzz — follows heavy ad-libbing). 50 reproduces the previous
+// fixed tuning (WINDOW 28 / BACKTRACK 6 / FUZZ ~0.34).
+function sensValue(){
+  const el = document.getElementById("sens");
+  const v = el ? +el.value : 50;
+  return Math.max(0, Math.min(100, isNaN(v)?50:v)) / 100;   // 0..1
+}
+function alignWindow(){   return Math.round(16 + sensValue()*32); }  // 16..48, 50 -> 32
+function alignBacktrack(){ return Math.round(4  + sensValue()*8);  } // 4..12, 50 -> 8
+function alignFuzz(){     return 0.20 + sensValue()*0.28; }          // 0.20..0.48, 50 -> 0.34
 
 // Normalized Levenshtein on two short tokens (0 = identical, 1 = totally different).
 function tokDist(a,b){
@@ -1050,7 +1128,10 @@ function tokDist(a,b){
   }
   return prev[n]/Math.max(m,n);
 }
-function tokEq(a,b){ return tokDist(a,b) <= FUZZ; }
+// fuzz is read ONCE per alignSpoken call (not per comparison) — the aligner's
+// inner loop runs heard×window comparisons per recognition event, and a DOM
+// read per comparison would waste ~thousands of getElementById calls an event.
+function tokEq(a,b,fz){ return tokDist(a,b) <= (fz!==undefined ? fz : alignFuzz()); }
 
 // Feed a chunk of recognized words. `commit` = true for final results (advance the
 // committed cursor), false for interim (drives the current/interim highlight only).
@@ -1058,21 +1139,31 @@ function alignSpoken(text, commit){
   if(!TOKENS.length) return;
   const heard = text.split(/\s+/).map(normTok).filter(w=>w && !FILLER.has(w));
   if(!heard.length) return;
-  // Bounded window [cursor-BACKTRACK, cursor+WINDOW]. We greedily walk the heard
-  // stream against the script, allowing skips (paraphrase/jumps) and absorbing
-  // unmatched heard words (ad-libs/insertions). Track the FURTHEST script index
-  // we matched and how many words matched -- that drives forward progress even
-  // when the recent tail is an ad-lib that isn't in the script.
-  const lo = Math.max(0, cursor - BACKTRACK);
-  const hi = Math.min(TOKENS.length, cursor + WINDOW);
-  let si = lo, matched = 0, lastMatch = -1;
+  // ANCHOR-THEN-BAND alignment, starting at [cursor-BACKTRACK]:
+  //  * The FIRST match in an utterance may search the full sensitivity window W
+  //    ahead (re-acquisition: tolerates a skipped phrase/paragraph or a stretch
+  //    of ad-libs since the last event).
+  //  * Once anchored, each subsequent heard word only searches a NARROW forward
+  //    band (BAND tokens). The band slides with the matches, so one long final
+  //    utterance can advance the full distance actually spoken — but a stray
+  //    common-word match can no longer leapfrog half the deck (the greedy
+  //    wide-window cascade measured cursor->deck-end on a 65-word final; the
+  //    narrow band kills that failure mode while a false +BAND overshoot
+  //    self-corrects as later words fail to match on the false path).
+  //  * Unmatched heard words = ad-libs/insertions: absorbed, position held.
+  const W = alignWindow();
+  const BAND = Math.round(3 + sensValue()*7);   // 3..10 tokens, sensitivity-scaled
+  const FZ = alignFuzz();
+  const lo = Math.max(0, cursor - alignBacktrack());
+  let si = lo, matched = 0, lastMatch = -1, anchored = false;
   for(let hk=0; hk<heard.length; hk++){
-    // search forward within the window for this heard word (skip-tolerant)
+    // search forward for this heard word: wide until anchored, narrow after
     let found=-1;
-    for(let p=si; p<hi && p<=si+WINDOW; p++){
-      if(tokEq(heard[hk], TOKENS[p].t)){ found=p; break; }
+    const hi = Math.min(TOKENS.length, si + (anchored ? BAND : W));
+    for(let p=si; p<hi; p++){
+      if(tokEq(heard[hk], TOKENS[p].t, FZ)){ found=p; break; }
     }
-    if(found>=0){ matched++; lastMatch=found; si=found+1; }
+    if(found>=0){ matched++; lastMatch=found; si=found+1; anchored=true; }
     // unmatched heard word = ad-lib/insertion: absorb it, keep si put.
   }
   // Confidence gate: need >=2 matched words (or >=1 when only 1-2 heard) to move,
@@ -1123,11 +1214,16 @@ function anchorToToken(ti){
 function resetAligner(){ cursor=0; interimEnd=0; _tokSpans=null; renderHighlight(); }
 
 // ========================================================================
-// Objective 2 -- Web Speech API recognizer + dual-mode toggle
+// Web Speech API recognizer (VOICE mode) + the three-way mode switch
 // ========================================================================
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const SPEECH_SUPPORTED = !!SR;
 let rec = null, shouldListen = false;
+let recFailures = 0;          // consecutive HARD recognition failures
+let lastRecEvent = 0;         // ts of the last onstart/onresult (watchdog input)
+let restartTimer = null, watchdogTimer = null;
+const REC_MAX_FAILURES = 3;   // hard failures before falling back to AUTO
+const REC_WATCHDOG_MS  = 15000; // no events for this long while listening => restart
 
 function micChip(state, txt){
   const c=document.getElementById("micChip");
@@ -1140,66 +1236,124 @@ function showNotice(msg, ms){
   clearTimeout(n._t); n._t=setTimeout(()=>n.classList.remove("show"), ms||5000);
 }
 
+function makeRecognizer(){
+  const r = new SR();
+  r.lang = (navigator.language && navigator.language.slice(0,2)==="en") ? navigator.language : "en-US";
+  r.continuous = true; r.interimResults = true;
+  r.onstart = ()=>{ lastRecEvent = Date.now(); micChip("listening","listening"); };
+  r.onresult = e=>{
+    lastRecEvent = Date.now(); recFailures = 0;
+    let interim="", final="";
+    for(let i=e.resultIndex; i<e.results.length; i++){
+      const res=e.results[i];
+      if(res.isFinal) final += res[0].transcript+" ";
+      else interim += res[0].transcript+" ";
+    }
+    if(final.trim()){ alignSpoken(final, true); micChip("heard","heard"); }
+    if(interim.trim()){ alignSpoken(interim, false); micChip("listening","listening"); }
+  };
+  r.onerror = e=>{
+    if(e.error==="not-allowed" || e.error==="service-not-allowed"){
+      micChip("err","mic blocked");
+      showNotice("Microphone unavailable. Switched to Auto (fixed-speed) mode. Scroll by hand or press Play.");
+      setMode("auto", true);
+    } else if(e.error==="no-speech" || e.error==="aborted"){
+      // benign; re-arm happens in onend
+    } else {
+      // network / audio-capture / unknown: count it; repeated hard failures
+      // mean the speech service is unusable — fall back rather than spin.
+      recFailures++;
+      micChip("err", e.error||"error");
+      if(recFailures >= REC_MAX_FAILURES){
+        showNotice("Voice tracking keeps failing ("+(e.error||"error")+"). Switched to Auto mode.");
+        setMode("auto", true);
+      }
+    }
+  };
+  r.onend = ()=>{
+    // Chrome fires onend after ~7s silence even with continuous=true. Re-arm on
+    // a short DEFERRED restart (an immediate rec.start() inside onend can throw
+    // InvalidStateError and silently kill listening); recreate the recognizer
+    // object if start() throws anyway.
+    if(shouldListen) scheduleRestart(250);
+    else micChip("paused","paused");
+  };
+  return r;
+}
+function scheduleRestart(ms){
+  clearTimeout(restartTimer);
+  restartTimer = setTimeout(()=>{
+    if(!shouldListen) return;
+    micChip("listening","re-arming");
+    try { rec.start(); }
+    catch(_){
+      try { rec = makeRecognizer(); rec.start(); }
+      catch(err2){
+        recFailures++;
+        if(recFailures >= REC_MAX_FAILURES){
+          showNotice("Voice tracking could not restart. Switched to Auto mode.");
+          setMode("auto", true);
+        } else scheduleRestart(1000);
+      }
+    }
+  }, ms||250);
+}
 function startRecognition(){
   if(!SPEECH_SUPPORTED) return false;
   try {
-    rec = new SR();
-    rec.lang="en-US"; rec.continuous=true; rec.interimResults=true;
-    rec.onstart = ()=> micChip("listening","listening");
-    rec.onresult = e=>{
-      let interim="", final="";
-      for(let i=e.resultIndex; i<e.results.length; i++){
-        const r=e.results[i];
-        if(r.isFinal) final += r[0].transcript+" ";
-        else interim += r[0].transcript+" ";
-      }
-      if(final.trim()){ alignSpoken(final, true); micChip("heard","heard"); }
-      if(interim.trim()){ alignSpoken(interim, false); micChip("listening","listening"); }
-    };
-    rec.onerror = e=>{
-      if(e.error==="not-allowed" || e.error==="service-not-allowed"){
-        micChip("err","mic blocked");
-        showNotice("Microphone unavailable. Switched to Traditional (fixed-speed) mode.");
-        setMode("traditional", true);
-      } else if(e.error==="no-speech" || e.error==="aborted"){
-        // benign; re-arm happens in onend
-      } else {
-        micChip("err", e.error||"error");
-      }
-    };
-    rec.onend = ()=>{
-      // Chrome fires onend after ~7s silence even with continuous=true; re-arm.
-      if(shouldListen){ try{ rec.start(); }catch(_){} }
-      else micChip("paused","paused");
-    };
-    shouldListen = true;
+    rec = makeRecognizer();
+    shouldListen = true; recFailures = 0; lastRecEvent = Date.now();
     rec.start();
+    // Watchdog: a recognition session can die with NO error and NO onend (seen
+    // after long tab-background stretches). If we are supposed to be listening
+    // but have heard no events for REC_WATCHDOG_MS, force a restart.
+    clearInterval(watchdogTimer);
+    watchdogTimer = setInterval(()=>{
+      if(shouldListen && Date.now()-lastRecEvent > REC_WATCHDOG_MS){
+        lastRecEvent = Date.now();
+        try{ rec.stop(); }catch(_){ scheduleRestart(100); }
+      }
+    }, 5000);
     return true;
   } catch(err){
-    showNotice("Voice mode could not start. Using Traditional mode.");
-    setMode("traditional", true);
+    showNotice("Voice mode could not start. Using Auto mode.");
+    setMode("auto", true);
     return false;
   }
 }
 function stopRecognition(){
   shouldListen=false;
+  clearTimeout(restartTimer); clearInterval(watchdogTimer);
   if(rec){ try{ rec.stop(); }catch(_){} rec=null; }
   micChip("paused","off");
 }
 
-// Mode switch. silent=true skips the privacy notice (used on auto-fallback).
+// Three-way mode switch. silent=true skips the privacy notice (auto-fallback).
+function updateModeButtons(){
+  const map = {manual:"modeManualBtn", auto:"modeAutoBtn", voice:"modeVoiceBtn"};
+  Object.keys(map).forEach(m=>{
+    document.getElementById(map[m]).classList.toggle("on", MODE===m);
+  });
+}
 function setMode(mode, silent){
-  if(mode==="spoken" && !SPEECH_SUPPORTED) mode="traditional";
+  mode = migrateMode(mode) || "auto";
+  if(mode==="voice" && !SPEECH_SUPPORTED) mode="auto";
   MODE = mode;
   localStorage.setItem(MODE_KEY, mode);
-  document.getElementById("modeBtn").textContent =
-    "Mode: " + (mode==="spoken" ? "Spoken" : "Traditional");
-  document.getElementById("modeBtn").classList.toggle("on", mode==="spoken");
+  updateModeButtons();
+  // Speed applies to AUTO; Sensitivity applies to VOICE; Play is idle in MANUAL.
+  document.getElementById("speedCtl").hidden = (mode==="voice");
+  document.getElementById("sensCtl").hidden = (mode!=="voice");
+  document.getElementById("playBtn").hidden = (mode==="manual");
   resetScrollClock();
-  if(mode==="spoken"){
-    resetAligner();
+  if(mode==="voice"){
+    // Seed the aligner at the CURRENT slide (voice can start mid-deck), and
+    // start the tween from the current scroll position.
+    const seed = SLIDE_FIRST_TOKEN[current];
+    cursor = (seed!==undefined) ? seed : 0;
+    interimEnd = cursor; _tokSpans = null; renderHighlight();
     voiceTargetTop = stage.scrollTop;
-    if(!silent) showNotice("Voice mode sends audio to your browser's speech service (cloud-based in Chrome/Edge). Choose Traditional for sensitive content.", 7000);
+    if(!silent) showNotice("Voice mode sends audio to your browser's speech service (cloud-based in Chrome/Edge). Choose Manual or Auto for sensitive content.", 7000);
     document.getElementById("micChip").classList.add("show");
     startRecognition();
     setPlaying(true);   // RAF runs as the smoothing tween toward the voice target
@@ -1241,7 +1395,10 @@ function applyTheme(){
 }
 
 // ---- wiring
-document.getElementById("modeBtn").onclick=()=>setMode(MODE==="spoken"?"traditional":"spoken");
+document.getElementById("modeManualBtn").onclick=()=>setMode("manual");
+document.getElementById("modeAutoBtn").onclick=()=>setMode("auto");
+document.getElementById("modeVoiceBtn").onclick=()=>setMode("voice");
+document.getElementById("sens").oninput=e=>{ localStorage.setItem(SENS_KEY, e.target.value); };
 document.getElementById("vmirrorBtn").onclick=()=>{ localStorage.setItem(VMIRROR_KEY, localStorage.getItem(VMIRROR_KEY)==="1"?"0":"1"); applyVmirror(); };
 document.getElementById("guideBtn").onclick=()=>{ localStorage.setItem(GUIDE_KEY, localStorage.getItem(GUIDE_KEY)==="1"?"0":"1"); applyGuide(); };
 document.getElementById("playBtn").onclick=()=>setPlaying(!playing);
@@ -1259,8 +1416,10 @@ stage.addEventListener("scroll", ()=>{ if(!playing){ detectCurrentFromScroll(); 
 
 document.addEventListener("keydown", e=>{
   if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT") return;
-  // Presenter-clicker keys (O4): PageDown/PageUp/period = next/prev; B = pause/blank toggle.
-  if(e.code==="Space"){ e.preventDefault(); setPlaying(!playing); }
+  // Presenter-clicker keys: PageDown/PageUp/period = next/prev; B = pause/blank toggle.
+  // Space is mode-aware: MANUAL = next slide (clicker-style page flip);
+  // AUTO = play/pause; VOICE = follow/hold.
+  if(e.code==="Space"){ e.preventDefault(); if(MODE==="manual") goTo(current+1,true); else setPlaying(!playing); }
   else if(e.code==="ArrowRight"||e.code==="ArrowDown"||e.code==="PageDown"){ e.preventDefault(); goTo(current+1,true); }
   else if(e.code==="ArrowLeft"||e.code==="ArrowUp"||e.code==="PageUp"){ e.preventDefault(); goTo(current-1,true); }
   else if(e.key==="b"||e.key==="B"){ e.preventDefault(); setPlaying(!playing); }   // clicker "blank/pause" key
@@ -1288,9 +1447,9 @@ function ingest(md){
   const parsed=parseMarkdown(md);
   if(parsed.slides.length){
     DATA=parsed; slides=parsed.slides; WPM=parsed.wpm; current=0;
-    TOKENS=buildTokensFromSlides(); rebuildTokenIndex();  // re-tokenize for SPOKEN highlight
+    TOKENS=buildTokensFromSlides(); rebuildTokenIndex();  // re-tokenize for VOICE highlight
     resetAligner();
-    if(MODE==="spoken") setMode("traditional", true);     // restart cleanly in fixed mode on new file
+    if(MODE==="voice") setMode("auto", true);             // restart cleanly in a fixed mode on new file
     render(); goTo(0,false); setPlaying(false);
   }
   else alert("No slides could be parsed. The file may be empty. Accepted formats: '## Slide N -- Headline', '[Slide N] Headline', 'Slide N: Headline', or use '---' separators for a paragraph fallback.");
@@ -1304,20 +1463,22 @@ function ingest(md){
     const v=Math.max(10,Math.min(70, Math.round((WPM-90)/2)+25));
     document.getElementById("speed").value=v;
   }
+  if(localStorage.getItem(SENS_KEY)) document.getElementById("sens").value=localStorage.getItem(SENS_KEY);
   applyMirror(); applyVmirror(); applyGuide(); applyTheme();
   if(!localStorage.getItem(FONT_KEY)) localStorage.setItem(FONT_KEY, 48);
   rebuildTokenIndex();  // map {slide,block,wi}->token index before first render
-  // Hide SPOKEN where unsupported (e.g. Firefox): Traditional-only, no dead state.
+  // Hide VOICE where unsupported (e.g. Firefox): Manual/Auto only, no dead state.
   if(!SPEECH_SUPPORTED){
-    document.getElementById("modeBtn").hidden = true;
+    document.getElementById("modeVoiceBtn").hidden = true;
     document.getElementById("micChip").classList.remove("show");
   }
   if(!slides.length){ render(); loader.style.display="flex"; }
   else { render(); goTo(0,false); }
-  // Restore persisted mode (only if supported); default Traditional.
-  const savedMode = localStorage.getItem(MODE_KEY);
-  if(savedMode==="spoken" && SPEECH_SUPPORTED) setMode("spoken");
-  else setMode("traditional", true);
+  // Restore the persisted mode (legacy "traditional"/"spoken" values migrate);
+  // VOICE only auto-resumes when supported. Default: AUTO.
+  const savedMode = migrateMode(localStorage.getItem(MODE_KEY));
+  if(savedMode==="voice" && SPEECH_SUPPORTED) setMode("voice");
+  else setMode(savedMode || "auto", true);
   setInterval(()=>{ if(!playing) tickCountdown(); }, 250);
 })();
 </script>

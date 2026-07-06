@@ -39,3 +39,34 @@
 ## Refrain & tone policy
 - 2–4 recurring hashtag refrains max; reuse them as callbacks, don't invent new ones every slide.
 - Every phase carries its labeled name + purpose slide (Directive 10) before its content.
+
+## Visual identity & suggested-image seed craft (Directive 4)
+Every slide's `suggested_image` is the AUTHORING SEED the Prompt Author expands into the
+9,000–18,000-char rich prompt — it never replaces that floor, but a strong seed is what makes the
+expansion land. Write every seed with the six anchors: **[archetype A1–A5] + subject & emotion +
+setting/world + light + palette anchor (from the locked STYLE BLOCK) + composition zone for the
+baked copy**. Never put slide copy in the seed (copy is baked at prompt time); describe the PICTURE.
+
+**The Rulebook's visual world — bold editorial authority:**
+- **Controlling visual motif:** the Rules are a SERIES — every Rule-title slide uses the same
+  editorial plate system (type-dominant archetype A4: oversized rule number + designed display
+  type on a consistent grid) so Rules 1..7 read as chapters of one book. State the shared grid in
+  every Rule-title seed; only the number and accent treatment change.
+- **Affirmation + 3-step-plan slides:** warm human counterpoint to the bold plates — close-framed,
+  camera-facing or near-camera subjects, soft directional light; the 3 steps as a clean designed
+  list zone, never a cluttered diagram.
+- **Avatar slides (1–11):** the audience's current state in their own world — real settings,
+  emotionally honest expressions; pain beats in muted palette, the take-back-power refrain beats
+  in rising brand-accent energy.
+- **Story slides (12–24):** the leap narrative — the old profession's world giving way to the
+  new one; the borrowed-authority quote as a designed-typography plate; "I'm Worth the Risk" as a
+  confident, light-forward portrait beat.
+- **Riddle + recap + "Rule #8???" tease:** attention-reset plates — spare, high-contrast,
+  type-dominant; the recap lists all Rules in the series grid; the tease withholds (a deliberate
+  visual gap or veiled element).
+- **Roll-call close:** celebratory crescendo — a sequence of iconic-energy portrait frames landing
+  on "…AND YOU!" as a mirror moment: the subject facing the audience straight-on, brightest light
+  of the deck, offer URL as designed type.
+- **Series discipline:** vary archetypes between adjacent slides (anti-template SOP-04) while
+  holding palette + grid constant; portraits/likeness and the logo ride image-to-image references
+  per SOP-IMG-01 — the seed notes WHERE they sit, never re-describes the mark.
