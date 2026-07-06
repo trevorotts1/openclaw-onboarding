@@ -1,5 +1,38 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.0.9 — 2026-07-05 — image-set coverage cross-check (P2 prompts + P9 images)
+
+Train **T-w1-49-signature-funnel** (Wave-1). Fix ID: FIX-IMG-07.
+
+### Changed
+- **FIX-IMG-07 — no coverage cross-check between copy sections, the prompt ledger, and the
+  media ledger.** A 2-prompt ledger cleared P2 for a 12-section, 5-page funnel, and a 2-image
+  media ledger certified a ~40-image funnel — images for a handful of ~40 slots minted a full
+  certificate. Now closed:
+  - `scripts/prove_sf_prompt_floor.py` — new **`--structure`** mode. It computes the REQUIRED
+    `(page_type, section)` image set for the funnel size from `structure/funnel_structure.json`
+    (`funnel_matrix[size]` + `profiles[page].sections` + the new `image_coverage.page_policies`)
+    per MASTERDOC §4 — one image per numbered copy section, one celebratory hero for Thank-You,
+    none for the Checkout order page — and fails closed listing every missing pair. It auto-detects
+    the ledger kind: a `prompts` array is checked for **AF-FUN-PROMPT-COVERAGE**, an `images`
+    array for **AF-FUN-IMG-COVERAGE**. Size resolves from `--funnel-size` or `--brief`; a ledger
+    with neither array, or an unknown size, is fail-closed. Coverage self-test added for sizes 3/5/7.
+  - `run_signature_funnel.py` — **P9-CERTIFY** now folds the image-coverage assert in beside the
+    no-pitch/provenance gate: the media ledger must carry an image for every required slot for the
+    brief's `funnel_size` or the run aborts with **AF-FUN-IMG-COVERAGE** and no certificate. The
+    orchestrator self-test's valid run now emits the full image set, plus a new regression case:
+    a partial media ledger aborts at P9.
+  - `structure/funnel_structure.json` — added the `image_coverage` policy block (the required-set
+    source) and registered both new AF codes in `autofail_codes`.
+  - `examples/golden-daybreak/build_golden.py` — the committed golden is now a COMPLETE 7-step
+    funnel: the prompt ledger and media ledger each cover all 45 required image slots (main 1-12,
+    upsell/downsell/upsell-2/downsell-2 1-8, thank-you hero). Derived-page and thank-you prompts
+    reuse the authored main-section bodies through the existing `_vary` de-templating layer (never
+    machine filler); the golden certificate was re-minted. Also fixed a latent gap where the golden
+    orchestrator run did not stage `persona-selection-log.md` (P0 fail-closed since 1.0.7).
+  - `verify.sh` — golden reproduce now also asserts prompt + image coverage via `--structure`.
+  - Re-minted `scripts/SF-PROVER-PIN.sha256`; registered the new AF codes in `FUNNEL-MANIFEST.json`.
+
 ## 1.0.8 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — added the fail-soft `block_run()` wrapper to the shared
   `scripts/mc_board.py` (the CANONICAL copy). It moves a run's card to the `blocked`

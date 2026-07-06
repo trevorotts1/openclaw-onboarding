@@ -152,6 +152,49 @@ def _gate_derived_pages(run_dir: Path) -> Tuple[bool, str]:
     return True, f"derived-page ledger lists {expected} (labels U1/D1/U2/D2/TY as required)"
 
 
+def _gate_p2_prompts(run_dir: Path) -> Tuple[bool, str]:
+    """P2-PROMPTS (FIX-IMG-07): the two-floor prompt gate AND the prompt COVERAGE
+    cross-check. The floor gate proves each prompt that IS present is rich enough;
+    the coverage assert proves the ledger carries a prompt for EVERY required
+    (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
+    2-prompt ledger can no longer clear P2 for a full funnel. Both must pass."""
+    ok, detail = _shell_prover("prove_sf_prompt_floor.py",
+                               ["--ledger", str(run_dir / "prompt_ledger.json")])
+    if not ok:
+        return ok, detail
+    size = _brief_size(run_dir)
+    if size is None:
+        return False, ("AF-FUN-PROMPT-COVERAGE: brief funnel_size unresolved — cannot prove the "
+                       "prompt coverage set (fail-closed)")
+    cov_ok, cov_detail = _shell_prover(
+        "prove_sf_prompt_floor.py",
+        ["--structure", "--funnel-size", str(size), "--ledger", str(run_dir / "prompt_ledger.json")])
+    if not cov_ok:
+        return False, cov_detail
+    return True, f"{detail} + prompt coverage complete ({cov_detail})"
+
+
+def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
+    """P9-CERTIFY (FIX-IMG-07): the no-pitch + image-provenance gate AND the image
+    COVERAGE cross-check. prove_sf_no_pitch proves each shipped image is real; the
+    coverage assert proves the media ledger carries an image for EVERY required
+    (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
+    2-image ledger can no longer certify a ~40-image funnel. Both must pass."""
+    ok, detail = _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json")])
+    if not ok:
+        return ok, detail
+    size = _brief_size(run_dir)
+    if size is None:
+        return False, ("AF-FUN-IMG-COVERAGE: brief funnel_size unresolved — cannot prove the image "
+                       "coverage set (fail-closed)")
+    cov_ok, cov_detail = _shell_prover(
+        "prove_sf_prompt_floor.py",
+        ["--structure", "--funnel-size", str(size), "--ledger", str(run_dir / "media_ledger.json")])
+    if not cov_ok:
+        return False, cov_detail
+    return True, f"{detail} + image coverage complete ({cov_detail})"
+
+
 # Phase spine — ids + order MUST match prove_sf_cert.EXPECTED_PHASES.
 def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool, str]]]]:
     return [
@@ -160,7 +203,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P1-COPY", "prove_sf_copy.py",
          lambda: _shell_prover("prove_sf_copy.py", ["--ledger", str(run_dir / "copy_ledger.json")])),
         ("P2-PROMPTS", "prove_sf_prompt_floor.py",
-         lambda: _shell_prover("prove_sf_prompt_floor.py", ["--ledger", str(run_dir / "prompt_ledger.json")])),
+         lambda: _gate_p2_prompts(run_dir)),
         ("P3-IMAGES", "kie_image.py",
          lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 47 kie_image.py (text-to-image + reference_images hook)")),
         ("P4-MEDIA", "ghl_media.py",
@@ -174,7 +217,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P8-DERIVE", "derived_pages_ledger",
          lambda: _gate_derived_pages(run_dir)),
         ("P9-CERTIFY", "prove_sf_no_pitch.py",
-         lambda: _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json")])),
+         lambda: _gate_p9_certify(run_dir)),
     ]
 
 
@@ -257,6 +300,21 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
 # state machine end-to-end, and assert the certificate is minted + validates; then
 # assert the front-door refusal and the no-skip abort.
 # ---------------------------------------------------------------------------
+def _full_coverage_images(size: int) -> List[Dict]:
+    """Full image set covering every required (page_type, section) slot for the size
+    (per prove_sf_prompt_floor.required_image_pairs), each with valid Kie+GHL provenance
+    so the P9 no-pitch AND coverage asserts both pass."""
+    import prove_sf_prompt_floor  # noqa: E402
+    pairs = prove_sf_prompt_floor.required_image_pairs(size, prove_sf_prompt_floor.load_structure())
+    images: List[Dict] = []
+    for page, sec in pairs:
+        section = "hero" if sec == prove_sf_prompt_floor.ANY_IMAGE else sec
+        images.append({"page_type": page, "section": section,
+                       "kie_task_id": f"kie_{page}_{section}",
+                       "media_url": f"https://storage.gohighlevel.com/loc/x/{page}-{section}.png"})
+    return images
+
+
 def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     import prove_sf_intake, prove_sf_copy, prove_sf_prompt_floor, prove_sf_no_pitch  # noqa: E402
     (rd / "brief.json").write_text(json.dumps(prove_sf_intake._valid_runtime(size)), encoding="utf-8")
@@ -266,8 +324,15 @@ def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
         "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
         encoding="utf-8")
     (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger()), encoding="utf-8")
-    (rd / "prompt_ledger.json").write_text(json.dumps(prove_sf_prompt_floor._valid_ledger()), encoding="utf-8")
-    (rd / "media_ledger.json").write_text(json.dumps(prove_sf_no_pitch._valid_ledger()), encoding="utf-8")
+    # FIX-IMG-07: the prompt ledger must cover every required (page_type, section)
+    # slot for this size (each prompt still clears the two-floor gate) or P2 fails-closed.
+    (rd / "prompt_ledger.json").write_text(
+        json.dumps(prove_sf_prompt_floor._floor_passing_full_prompts(size)), encoding="utf-8")
+    # FIX-IMG-07: the media ledger must carry an image for every required
+    # (page_type, section) slot for this size or P9's coverage assert fails-closed.
+    media = prove_sf_no_pitch._valid_ledger()
+    media["images"] = _full_coverage_images(size)
+    (rd / "media_ledger.json").write_text(json.dumps(media), encoding="utf-8")
     # P5-HTML — a non-empty fragment per matrix page; P6 graph; P7 build receipt; P8 derived ledger.
     pages = prove_sf_graph.funnel_pages(size)
     (rd / "pages").mkdir(exist_ok=True)
@@ -357,6 +422,39 @@ def self_test() -> int:
             print("SELF-TEST ok: missing funnel_graph aborts at P6 with NO certificate (was a no-op).")
         else:
             ok = False; print(f"SELF-TEST FAIL: P6 no-op — run with no funnel graph still certified (code={code}).")
+
+        # (g0) FIX-IMG-07 — a partial prompt ledger (2 of N required slots) aborts at
+        # P2 with AF-FUN-PROMPT-COVERAGE and NO certificate (the floor gate still clears).
+        rd0 = tmp / "run-shortprompts"
+        rd0.mkdir()
+        _write_valid_run(rd0, nonce)
+        import prove_sf_prompt_floor as _pf  # noqa: E402
+        (rd0 / "prompt_ledger.json").write_text(json.dumps(_pf._valid_ledger()), encoding="utf-8")
+        code, manifest0 = orchestrate(rd0, nonce)
+        aborted_p2 = isinstance(manifest0, dict) and manifest0.get("aborted_at") == "P2-PROMPTS"
+        if code == EXIT_GATE_FAIL and not (rd0 / "PROCESS-CERTIFICATE.json").exists() and aborted_p2:
+            print("SELF-TEST ok: partial prompt ledger aborts at P2 (AF-FUN-PROMPT-COVERAGE), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: under-covered prompt ledger still advanced "
+                  f"(code={code}, aborted_at={manifest0.get('aborted_at') if isinstance(manifest0, dict) else '?'}).")
+
+        # (g) FIX-IMG-07 — a partial media ledger (2 of N required images) aborts at
+        # P9 with AF-FUN-IMG-COVERAGE and NO certificate.
+        rd5 = tmp / "run-undercovered"
+        rd5.mkdir()
+        _write_valid_run(rd5, nonce)
+        media = json.loads((rd5 / "media_ledger.json").read_text(encoding="utf-8"))
+        media["images"] = media["images"][:2]  # keep provenance valid, drop coverage
+        (rd5 / "media_ledger.json").write_text(json.dumps(media), encoding="utf-8")
+        code, manifest5 = orchestrate(rd5, nonce)
+        aborted_p9 = isinstance(manifest5, dict) and manifest5.get("aborted_at") == "P9-CERTIFY"
+        if code == EXIT_GATE_FAIL and not (rd5 / "PROCESS-CERTIFICATE.json").exists() and aborted_p9:
+            print("SELF-TEST ok: partial image set aborts at P9 (AF-FUN-IMG-COVERAGE), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: under-covered media ledger still certified "
+                  f"(code={code}, aborted_at={manifest5.get('aborted_at') if isinstance(manifest5, dict) else '?'}).")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

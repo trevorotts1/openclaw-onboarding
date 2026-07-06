@@ -206,7 +206,19 @@
     "rule": "Configurable step count chosen at intake (Q10). Every path terminates at Thank-You; after Downsell-2 the funnel never pitches again."
   },
 
+  "image_coverage": {
+    "contract": "sacred-funnel-image-coverage-ledger",
+    "rule": "Per MASTERDOC §4 every numbered copy section on a page carries exactly one signature image; the Thank-You page carries exactly one celebratory hero; the Checkout order page carries none. prove_sf_prompt_floor.py --structure computes the required (page_type, section) image set from funnel_matrix[funnel_size] + profiles[page].sections + these per-page policies, and fails AF-FUN-PROMPT-COVERAGE (prompt ledger) / AF-FUN-IMG-COVERAGE (media ledger) listing every missing pair. A partial ledger can never certify a full funnel.",
+    "per_section_default": true,
+    "page_policies": {
+      "thank-you": {"per_section": false, "min_images": 1, "note": "one celebratory hero / WELCOME gallery-typography treatment; image maximum of one"},
+      "checkout": {"per_section": false, "min_images": 0, "note": "dedicated order page; minimal microcopy; no signature image required"}
+    }
+  },
+
   "autofail_codes": {
+    "AF-FUN-PROMPT-COVERAGE": "the prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial prompt ledger)",
+    "AF-FUN-IMG-COVERAGE": "the media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)",
     "AF-FUN-PROFILE-UNKNOWN": "a page carries a page_type not in the profiles map",
     "AF-FUN-SECTION-MISSING": "a required section for the page profile is absent",
     "AF-FUN-SECTION-EXTRA": "a page carries a section not allowed by its profile",

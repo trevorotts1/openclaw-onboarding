@@ -42,7 +42,7 @@
     "expected_code": "AF-FUN-INTAKE-UNLOCKED",
     "code_present": true,
     "why": "brief is unlocked/unapproved -> generation must not start (P0 abort, no cert)",
-    "out_tail": "== Signature Funnel :: intake gate ==\nsource: broken-variants/E_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-FUN-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start",
+    "out_tail": "source: broken-variants/E_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 2 violation(s):\n  [AF-FUN-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start\n  [AF-FUN-INTAKE-PERSONA-LOG] persona-selection-log absent/empty \u2014 persona never grounded (SOP 9.2 Step 0)",
     "e2e_orchestrator_rc": 2,
     "e2e_no_certificate": true
   }
