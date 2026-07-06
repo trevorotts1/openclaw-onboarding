@@ -12,12 +12,12 @@
 > department?" or "how do I use the Audio Post Producer?", this is the
 > document your agent reads to answer you.
 >
-> The department runs on the **Podcast Production Engine**, which turns one
-> intake survey into one finished, published episode from end to end. You pick
-> one of **four output presets** (Section 8), watch it move on your **dashboard**
-> (Section 10), and the doctrine that keeps quality high (Section 10) never
-> bends. Sections 8 through 10 cover the engine; Sections 1 through 7 cover how
-> to talk to the department day to day.
+> The department runs on the **Podcast Production Engine** (Section 8), which
+> turns one intake survey into one finished, published episode from end to end.
+> You pick one of **four output presets** (Section 9), watch it move on your
+> **dashboard** (Section 10), and the doctrine that keeps quality high (Section
+> 10) never bends. Sections 8 through 10 cover the engine; Sections 1 through 7
+> cover how to talk to the department day to day.
 
 ---
 
