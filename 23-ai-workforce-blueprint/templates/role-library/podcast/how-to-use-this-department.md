@@ -11,6 +11,13 @@
 > This document fixes that. When you ask "how do I use the Podcast
 > department?" or "how do I use the Audio Post Producer?", this is the
 > document your agent reads to answer you.
+>
+> The department runs on the **Podcast Production Engine** (Section 8), which
+> turns one intake survey into one finished, published episode from end to end.
+> You pick one of **four output presets** (Section 9), watch it move on your
+> **dashboard** (Section 10), and the doctrine that keeps quality high (Section
+> 10) never bends. Sections 8 through 10 cover the engine; Sections 1 through 7
+> cover how to talk to the department day to day.
 
 ---
 
@@ -130,6 +137,69 @@ document:
 - "How do I use the Audio Post Producer?"
 - "Who handles something from the podcast team?"
 - "What do I get back if I ask Podcast for something from the podcast team?"
+
+---
+
+## 8. The Podcast Production Engine (the department's execution engine)
+
+Behind the specialists sits the **Podcast Production Engine**. It takes one intake
+survey submission and produces one published podcast episode, end to end,
+automatically, inside your own accounts, at a bounded cost, with independent
+quality control and a live status dashboard. You never hand it half a job: you
+fill in the intake, and it writes, produces, publishes, and files the finished
+episode for you.
+
+The engine serves two lanes with one department:
+
+- **A personal weekly show** in your own cloned voice, produced for you every week.
+- **An interview-style episode** engineered as a lead-generation gift for a guest,
+  built so the guest feels genuinely seen, heard, understood, and acknowledged.
+
+Two things stay true no matter which lane you use. First, the writing and voice
+work run on **your own connected AI providers and your own voice model**, never on
+a third party's account and never commingled with anyone else's. Second, all
+listener and customer messaging is owned by **Convert and Flow**; the engine stops
+at the publish boundary and hands off, so it never sends a message to your
+audience on its own.
+
+---
+
+## 9. The Four Output Presets
+
+You choose one preset at intake. If you do not name one, the department infers it
+from whether the episode is personal or an interview.
+
+| Preset | What it produces |
+| --- | --- |
+| **Interview** | The full run for an interview-style episode: a published episode, cover art, an Episode Package, a clean Speech Script, a short book-teaser bonus, and workflow enrollment in Convert and Flow. This is the lead-generation lane. |
+| **Solo** | Your own weekly episode in your cloned voice: the full run minus the book teaser and workflows, with a running episode spreadsheet updated instead. |
+| **Season-Strategy** | A planning deliverable, not an episode: a season arc, an episode slate, and the style and format for each slot. It plans; it does not record or publish. |
+| **Episode Asset Pack** | Regenerates or completes the asset set (cover, documents, teaser) for an episode that already exists, without rewriting or republishing the audio. This is also the sanctioned handoff for turning a finished episode into social content. |
+
+---
+
+## 10. The Dashboard and the Doctrine That Never Bends
+
+**Your dashboard.** Every episode moves through clear stages (received, researching,
+writing, quality control, audio, publishing, complete). You can watch that
+progress on your own read-only dashboard at any time without asking anyone. If an
+episode is waiting on your approval or on a credential, the dashboard shows that
+plainly rather than stalling in silence.
+
+**The doctrine.** These standards are authoritative and do not bend to hit a deadline:
+
+- **Independent quality control before anything publishes.** A dedicated
+  quality-control specialist, never the same persona that drafted the episode,
+  runs the episode gate: a set of hard-fail checks, then a quality rubric that
+  must clear a high bar on every dimension. Three failed attempts stop the run
+  and raise it to you with the failing checks and the best draft, rather than
+  quietly lowering the standard.
+- **Broadcast loudness.** Every episode is mastered to the department loudness
+  standard (minus 14 to minus 16 LUFS integrated) so it sounds right on every
+  platform.
+- **Measured on authority and revenue, not vanity downloads.** Every episode is
+  judged by whether it builds authority and moves the business, never by download
+  counts alone.
 
 ---
 

@@ -33,6 +33,20 @@ toggle (`podcast`/`newsletter`/`blog`/`engage`) is set — each minting its own 
 | `blog` | P0,P10,P5,P6 | C5: prompt 19 → title ≤80 / meta ≤160 / body 700+ words → GHL blog (LeadConnector `blogs.write`). |
 | `engage` | P0,P12 | C6: read-only 7-day likes/views poll → anomaly report to `notifyChannel`. NO posting → never blocks a publish run. |
 
+### Podcast boundary: Skill 57 vs the Podcast Production Engine
+
+The `podcast` fold above is the SOCIAL PACKAGING lane. It turns the week's theme and 7-part series into one weekly, emotion-tagged episode script plus a 1400x1400 cover plus Podbean transport, as part of the social cadence. It is deliberately lightweight and fails closed to a `PODCAST_DEFERRED` skip when Fish Audio or Podbean is not configured.
+
+The Podcast Production Engine (onboarding v18, department id `podcast`, on the universal floor) is CANONICAL for full published episodes. It owns the four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack), the 18-step per-episode pipeline, the independent episode QC gate (16 Tier 1 hard-fail checks plus a 10-dimension rubric plus a 3-strike cap), the client's own Fish Audio S2.1 Pro voice `reference_id`, the Convert and Flow data plane, and the client dashboard.
+
+Route by intent so the two lanes never diverge:
+
+- Client wants a first-class published episode (interview lead-generation, or a personal weekly show in their own cloned voice): use the Podcast Production Engine.
+- Client wants the weekly social system's Day-7 podcast fold alongside their posts, blog, and newsletter: use this Skill 57 `podcast` mode.
+- Social packaging of an EXISTING engine episode (repurposing an already published episode into social assets): the engine's Episode Asset Pack preset is the sanctioned handoff into Skill 57.
+
+Cross-reference: this boundary is mirrored in the engine runbook and in Skill 35 references/playbook.md section 15 (the productionized Podbean flow) so the render and packaging lanes stay in step.
+
 ## Creative modes (v0.2.0 — the client steers, the engine still certifies; M1–M4)
 
 | Mode | Phases | What the client controls / what stays enforced |

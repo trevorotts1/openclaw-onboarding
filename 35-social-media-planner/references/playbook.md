@@ -964,6 +964,8 @@ Follow these steps in order:
 
 ## 15. Podcast Production with Fish Audio S2 (Day 7 Release)
 
+> Cross-reference: this section is the proven Podbean publish flow (Fish Audio render, cover art, and the Podbean upload through the client's own Convert and Flow content delivery network). The Podcast Production Engine (onboarding v18, department id `podcast`) is the PRODUCTIONIZED version of this flow: its Step 15 (Podbean OAuth client_credentials, uploadAuthorize, episode create, permalink capture, idempotent permalink guard, and future-dated scheduling) is seeded directly from this section, then hardened with per-client isolation, cost ceilings, and an independent episode QC gate. Use THIS section for the Skill 35 weekly social cadence's Day-7 podcast; use the engine when the client wants a first-class published episode (interview lead-generation or a personal weekly show in their cloned voice). The engine is canonical for full published episodes; this playbook remains the weekly social lane. The current Fish Audio production model is `s2.1-pro`, selected via the HTTP `model` header; see Skill 30 (fish-audio-api-reference) for the authoritative facts and the `s2.1-pro-free` prohibition.
+
 ### When to Release
 The podcast episode releases on Day 7 alongside the grand finale social post and the blog post.
 
