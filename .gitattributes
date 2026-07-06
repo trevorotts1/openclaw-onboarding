@@ -1,0 +1,6 @@
+# Podcast engine PRD tracking docs are append-only ledgers; union-merge across the
+# serial merge train so every slice's entry is preserved without hand conflicts.
+project-prds/podcast-engine/SESSION-LOG.md merge=union
+project-prds/podcast-engine/TODO.md merge=union
+project-prds/podcast-engine/CHANGE-LOG.md merge=union
+project-prds/podcast-engine/CHECKLIST.md merge=union
