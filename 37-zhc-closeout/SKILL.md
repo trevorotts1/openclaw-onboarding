@@ -155,7 +155,7 @@ Same reason Skill 23's build-resume layer is a separate component:
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
 | Infographic #1 | Local HTML + Playwright Chromium (no model call) | $0 | 0 retries needed (deterministic) |
-| Infographic #2 | `gemini-3-1-flash-image` (Nano Banana 2; fallback `gpt-image-2-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
+| Infographic #2 | `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image; fallback `gpt-image-2-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
 | Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | ~$0.40 | 3 retries (with model fallback) |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |
@@ -184,7 +184,7 @@ The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its t
 
 Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
 
-The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (`gemini-3-1-flash-image`), which has dramatically better text rendering than the prior `gpt-image-2`.
+The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used), which has dramatically better text rendering than the prior `gpt-image-2`.
 
 ## Files in This Folder
 
@@ -196,10 +196,10 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | `INSTALL.md` | One-time setup (env checks, skill registration) |
 | `CORE_UPDATES.md` | Lines appended to workspace AGENTS.md |
 | `CHANGELOG.md` | Version history |
-| `skill-version.txt` | Currently `1.0.0` |
+| `skill-version.txt` | Machine-readable version pin — the single source of truth for this skill's version (read it at runtime; never hardcode the version elsewhere) |
 | `scripts/run-closeout.sh` | Top-level orchestrator |
 | `scripts/generate-infographics.sh` | KIE.AI calls for both infographics |
-| `scripts/generate-celebration-video.sh` | KIE.AI Veo 3.1 call |
+| `scripts/generate-celebration-video.sh` | KIE.AI celebration video (primary `gemini-omni-video`; fallback `veo3_fast`/`veo3`) |
 | `scripts/create-notion-closeout.sh` | Notion API page-tree creation |
 | `scripts/send-telegram-celebration.sh` | 6-message Telegram delivery |
 | `scripts/send-operator-summary.sh` | Success-path operator Telegram summary with LINKS to every delivered artifact (via OpenClaw gateway; opt-in `env.vars.OPERATOR_ESCALATION_CHAT_ID`, back-compat `ZHC_OPERATOR_CHAT_ID` — NO hardcoded default; skips send when unset). Idempotent. |

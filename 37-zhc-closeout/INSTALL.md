@@ -105,4 +105,7 @@ Both the workforce-build-resume and closeout-resume crons will no-op gracefully 
 
 ## Known Issues
 
-None at first ship of v1.0.0. File any issues at https://github.com/trevorotts1/openclaw-onboarding/issues.
+- **`nano-banana-2` availability is account/region-dependent on KIE.** On accounts/regions where the primary image model is not enabled, KIE returns HTTP 422; `scripts/generate-infographics.sh` detects this and automatically falls back to `gpt-image-2-text-to-image` (the proven safety net). Set `ZHC_IMAGE_MODEL` to override the primary slug. (The marketing-name slug `gemini-3-1-flash-image` is NOT accepted by KIE — use `nano-banana-2`.)
+- **`gemini-omni-video` is not enabled on every KIE account.** When the Gemini Omni Video endpoint is unavailable, `scripts/generate-celebration-video.sh` auto-falls-back to `veo3_fast` on its third attempt. Set `ZHC_CELEBRATION_VIDEO_MODEL=veo3_fast` (or `veo3`) to force the general-purpose Veo path.
+
+File any new issues at https://github.com/trevorotts1/openclaw-onboarding/issues.
