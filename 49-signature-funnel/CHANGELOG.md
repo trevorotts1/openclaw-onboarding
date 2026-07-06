@@ -1,5 +1,23 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.0.10 — 2026-07-05 — P7 QC≥8.5 seam now requires the FAB scorecard FILE (FIX-COPY-02)
+
+Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**.
+
+### Changed
+- **FIX-COPY-02** — `run_signature_funnel.py`: the P7-BUILD "QC ≥ 8.5" seam no longer trusts a
+  self-declared `build_receipt.json` number alone. The engine now ECHOES `copy_ledger.json` into
+  `build/fab-artifact.json` (the FAB scorecard the shared copy-substance gate scores) at run start,
+  and the new fail-closed **`_gate_build`** requires that scorecard FILE to exist and carry real
+  echoed copy (`AF-FUN-BUILD-FAB`) BEFORE the pinned `prove_sf_build.py` enforces `qc_score ≥ 8.5` +
+  a preview URL per page. An engine-routed build that emits no FAB evidence can no longer silently
+  skip the ≥8.5 gate. Self-contained (stdlib; no cross-skill import) so the entry self-test stays
+  hermetic.
+- `FUNNEL-MANIFEST.json`: registered `AF-FUN-BUILD-FAB`; P7-BUILD `py_symbol` → `run_signature_funnel._gate_build`.
+- Re-minted `scripts/SF-PROVER-PIN.sha256` (the orchestrator is in the pinned enforcement core).
+- Extended `run_signature_funnel.py --self-test`: asserts the happy path emits the FAB scorecard, and
+  that P7 fails closed (`AF-FUN-BUILD-FAB`) when the scorecard is absent or echoes no copy.
+
 ## 1.0.9 — 2026-07-05 — image-set coverage cross-check (P2 prompts + P9 images)
 
 Train **T-w1-49-signature-funnel** (Wave-1). Fix ID: FIX-IMG-07.
@@ -40,7 +58,6 @@ Train **T-w1-49-signature-funnel** (Wave-1). Fix ID: FIX-IMG-07.
   AF code as the note, so a gate failure is VISIBLE on the board instead of stranding
   the card at in_progress. Re-dropped byte-identical into 50 / 53 / 55 / 56 / 57 and
   the new 54 copy. The signature-funnel runner itself is unchanged (purely additive).
-
 ## 1.0.7 — 2026-07-05 — persona grounding (P0) + client model-content receipt (P9)
 
 Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.

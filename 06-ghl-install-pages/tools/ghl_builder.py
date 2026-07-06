@@ -1493,6 +1493,7 @@ def emit_rest_save_plan(
     token_js_path: str = "/tmp/ghl-token.js",
     session: str | None = None,
     seo: dict | None = None,
+    copy_md_path: str | None = None,
 ) -> dict:
     """Emit the ordered REST-autosave plan (read→splice→autosave→verify→revert
     baseline), per solution §5.2. The steps the agent runs IN-BROWSER, in order:
@@ -1539,6 +1540,12 @@ def emit_rest_save_plan(
         token_js_path: Where the agent writes the staged-token JS file.
         session: Optional agent-browser session; when given, each in-browser step
             carries an ``argv`` so the agent can shell out directly.
+        copy_md_path: FIX-COPY-02 — the APPROVED copy artifact (a ``copy.md`` or an
+            engine ``copy_ledger.json``) whose text this page must render. When set
+            it is stamped on the ``verify_preview`` step + the plan so the
+            copy-fidelity gate (ghl_verify) asserts the approved copy rendered. When
+            UNSET the gate still defaults ON from the run's approved copy on disk
+            (opt-out) — this arg only pins an explicit, per-page source.
 
     Returns:
         ``{plan, ok, publish, marker, preview_url, location_id, guard, steps,
@@ -1599,6 +1606,11 @@ def emit_rest_save_plan(
         "note": "ghl_builder.verify_url(preview_url, marker): HTTP 200 AND marker "
                 "in body; a passing preview advances the ledger to 'previewed'",
     }
+    # FIX-COPY-02: pin the APPROVED copy source on the verify descriptor so the
+    # copy-fidelity gate asserts the approved copy rendered (not just the marker).
+    if copy_md_path:
+        verify_step["copy_md_path"] = copy_md_path
+        verify_step["expect"]["copy_rendered"] = True
 
     # 6. REVERT baseline (byte-identical restore; live pointer never moves).
     revert_plan = emit_revert_plan(
@@ -1668,6 +1680,8 @@ def emit_rest_save_plan(
     }
     if seo_meta is not None:
         plan["seo"] = seo_meta
+    if copy_md_path:
+        plan["copy_md_path"] = copy_md_path
     # Self-verify the two-saves invariant (CODE save before PAGE save) — the REST
     # path's edit(code-saved) → page_autosave(page-saved) maps the transcript's
     # two ordered saves. Attached for the build loop / QC to assert on.
