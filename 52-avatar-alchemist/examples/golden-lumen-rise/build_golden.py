@@ -771,12 +771,78 @@ _AWARE_PT2 = {
 }
 
 
+_AWARE_PT2_MORE = {
+    "Problem-Aware": (
+        "Her buying triggers at this stage are diagnostic, not transactional. She moves toward "
+        "anything that names her exact week without blaming her: an email that describes the open "
+        "afternoon and the slowed referrals and then says, plainly, that this is a positioning gap "
+        "and not a personal defect. She moves away from urgency, countdown timers, and any promise of "
+        "'explosive' anything, because loud certainty is the tell of the marketing she distrusts. Her "
+        "timeline is slow and self-protective: she will lurk for weeks, read the whole page twice, and "
+        "screenshot a line she wants to believe before she ever raises a hand. The one thing that "
+        "shortens the timeline is recognition from a founder structurally like her \u2014 same revenue, "
+        "same reluctance, a different outcome \u2014 offered without a pitch attached. Nothing she reads "
+        "here needs to sell; it needs to prove the problem is real, common, and fixable, so that when "
+        "the solution appears later she already trusts the person naming it."),
+    "Solution-Aware": (
+        "Her buying triggers sharpen into a comparison checklist, and she is unusually disciplined "
+        "about it. She wants proof from someone like her, a low-stakes first step she can take without "
+        "committing her whole quarter, and a message that names her exact problem before it asks for "
+        "anything. She favors cohort and coaching formats over self-paced courses she knows she will "
+        "not finish, and she quietly researches the founder behind the offer before she trusts the "
+        "offer itself. Her timeline is weeks, not minutes: she compares three options in a browser "
+        "with a dozen tabs open, distrusts the loudest one on principle, and often waits for a second "
+        "signal \u2014 a podcast appearance, a testimonial from a peer, a plain answer to a hard question \u2014 "
+        "before she moves. A prior purchase in the $500 to $3,000 range tells her she can trust her "
+        "own judgment here. She buys when the path is clear, the proof is specific, and the pressure "
+        "is absent; any one of those missing sends her back to the tabs."),
+    "Product-Aware": (
+        "Her buying triggers have narrowed to fit and permission. She is no longer asking whether "
+        "positioning matters or whether a cohort could help; she is asking whether THIS one is built "
+        "for a founder who already has clients, and whether it will make her more herself rather than "
+        "a louder copy of someone else. The triggers that move her now are evidence and a small, "
+        "reversible next step: a client story with real revenue attached, a founder who came through "
+        "the cohort and came out booked, and a free discovery call that costs her nothing but a "
+        "calendar hold. Her timeline has collapsed to days. She is comparing the offer against doing "
+        "nothing and against one more year of near misses, and the deciding factor is not price but "
+        "whether the risk feels small enough to justify the yes. She will book the moment the proof is "
+        "specific enough and the exit stays open \u2014 the certainty she needs is not that it will work, "
+        "but that saying yes will not cost her who she is."),
+}
+
+
+_AWARE_PT2_CHANNELS = {
+    "Problem-Aware": (
+        "She pays attention in quiet, private channels: a saved newsletter she reads on a slow "
+        "afternoon, a founder podcast she plays while doing admin, a marketing blog she trusts because "
+        "it treats her as an operator. She rarely comments and almost never shares \u2014 at this stage she "
+        "is gathering, not declaring \u2014 so the copy that reaches her must do its whole job in the first "
+        "line, before she decides whether to keep reading or quietly close the tab."),
+    "Solution-Aware": (
+        "Her attention has moved to comparison channels: side-by-side browser tabs, a peer mastermind "
+        "thread where she asks what actually worked, and the podcast or webinar of the specific founder "
+        "she is evaluating. She now reads sales pages end to end and listens for the one honest answer "
+        "to a hard question. The channel that converts her is the one where a real person like her "
+        "explains the method plainly, without a countdown timer or a hard close attached."),
+    "Product-Aware": (
+        "Her attention narrows to a single shelf: the Lumen Rise page, Amara's own voice on a podcast "
+        "she already trusted, and any client story with real revenue attached. She is no longer "
+        "browsing; she is verifying. The channel that moves her now is direct and low-stakes \u2014 a plain "
+        "page, a short founder note, a free discovery-call link \u2014 because what she needs is not more "
+        "information but permission to take the small, reversible next step."),
+}
+
+
 def _awareness_pt2(kind: str, salt: int) -> str:
     _ = salt
     prof, shop = _AWARE_PT2[kind]
+    more = _AWARE_PT2_MORE[kind]
+    chan = _AWARE_PT2_CHANNELS[kind]
     return (f"# {kind} \u2014 Personal Profile and Shopping Behavior\n\n"
             f"## Personal Profile\n\n{prof}\n\n"
-            f"## Shopping Behavior\n\n{shop}\n")
+            f"## Shopping Behavior\n\n{shop}\n\n"
+            f"## Buying Triggers and Timeline\n\n{more}\n\n"
+            f"## Where She Pays Attention\n\n{chan}\n")
 
 
 def _tone_style(n: int) -> str:
@@ -916,6 +982,93 @@ def _blended_tone() -> str:
         "image, or only on adjectives? If it leans on adjectives, replace them with the evidence itself. A "
         "line that passes all three is ready to ship; a line that fails even one is not finished, however "
         "good it sounds.")
+    worked_rewrites = (
+        "Six worked rewrites show the voice correcting real copy, because a tone is only as usable as "
+        "the edits it produces. (1) A bio line: before, 'I am a passionate coach who helps women "
+        "entrepreneurs unlock their full potential and scale to six figures.' After: 'I help women "
+        "founders who are already good at the work become the name their industry repeats.' (2) A "
+        "subject line: before, 'Don't miss this!!! Last chance to sign up.' After: 'The seat is small "
+        "on purpose, and it fills from this page.' (3) A call to action: before, 'Book now to "
+        "supercharge your growth!' After: 'If that sounds like your year, hold a time and we will map "
+        "it together.' (4) A testimonial framing: before, 'Amazing results, highly recommend!' After: "
+        "'She came in booked two months out and left with a message she could finally say without "
+        "flinching.' (5) An offer line: before, 'Our proven proprietary framework guarantees "
+        "explosive ROI.' After: 'Twelve weeks, one ownable claim, a pipeline that fills without you "
+        "chasing it.' (6) A reassurance: before, 'Don't worry, you've got this, believe in yourself!' "
+        "After: 'You are not behind. You are unpositioned, and that is a very different, very fixable "
+        "thing.' In every pair the same three moves repeat: cut the hype, restore the reader's "
+        "dignity, and let one true, specific sentence do the work three excited ones could not.")
+    objection_language = (
+        "The voice has a settled way of meeting resistance, because a founder who has been sold to "
+        "before hears defensiveness instantly. When she says the price is a concern, the voice does "
+        "not discount or dodge; it agrees the question is fair, explains that fit comes before figures, "
+        "and returns her to the outcome she said she wanted. When she says she has tried marketing "
+        "before and it did not move revenue, the voice does not argue; it distinguishes visibility "
+        "theater from positioning and names why the last attempt asked her to perform rather than to "
+        "be understood. When she says her niche is crowded, the voice reframes: a crowded room is "
+        "exactly where legibility wins, because the founder who is easiest to understand is the one "
+        "who gets chosen. Each response follows the same shape — acknowledge the truth in the "
+        "objection, reframe the frame it rests on, and hand the decision back with one gentle "
+        "question, then stop. The voice never chases, never stacks pressure, and never treats a 'not "
+        "yet' as a problem to overcome; a respected 'no' is what brings a founder back.")
+    signature_patterns = (
+        "Certain sentence patterns recur so often they become the voice's fingerprint. The corrective "
+        "reframe: 'not X, but Y' ('not louder, but legible'). The dignity restoration: 'This is a "
+        "____ problem, not a ____ problem' ('a positioning problem, not a worth problem'). The earned "
+        "escalation: a short clause repeated and raised ('You did the work. You did the work when no "
+        "one clapped. You did the work, and it is still waiting to be seen'). The concrete anchor: an "
+        "abstract claim landed on a physical image (the open afternoon, the unopened testimonial "
+        "folder, the blinking cursor). The specific promise: a real number in place of a vague "
+        "adjective ('a fully-booked practice in 90 days', never 'massive growth'). Writers new to the "
+        "voice should keep these five patterns on a card and reach for them before inventing a new "
+        "shape; the voice is distinctive precisely because it repeats its best moves on purpose.")
+    funnel_voice = (
+        "The register shifts with the temperature of the relationship, but the constants never move. "
+        "On a cold ad the first line carries the whole burden, so it names the reader's exact "
+        "situation before it asks for anything and never opens with the brand. In a nurture email the "
+        "voice slows down and tells one true story, because trust has already been extended and the "
+        "reader will follow a longer sentence now. On a sales page the voice becomes most specific of "
+        "all — real numbers, a named outcome, one unmistakable next step — because specificity is what "
+        "converts a warm reader who is almost decided. In a booking chat the voice shortens to plain, "
+        "warm, first-name sentences under 550 characters and never performs. On social it leads with "
+        "the recognition line and keeps paragraphs to two sentences. Across every surface the rules "
+        "hold: reader-first, dignity intact, certain without shouting, concrete before sweeping.")
+    coaching_the_voice = (
+        "Because this tone will be written by more than one hand over time, it is documented to be "
+        "teachable, not merely admired. A new writer is onboarded in three passes. First they read "
+        "ten finished assets aloud and mark every place the voice restores dignity, so they hear the "
+        "emotional arc before they try to produce it. Second they take five pieces of hype copy and "
+        "run each through the three tests — the dignity test, the plainness test, the proof test — "
+        "until the rewrites come without effort. Third they draft one asset of each type (ad, email, "
+        "sales section, booking message) and a second reader checks it against the do/don't card, not "
+        "for talent but for adherence. The standard is consistency, not flair: a reader should not be "
+        "able to tell which team member wrote a given line, because the voice is a system the whole "
+        "brand shares, not a personality one person performs.")
+    full_email_example = (
+        "A full nurture email shows the voice sustained past a single line. Subject: 'The most capable "
+        "person in the room, and the one nobody calls first.' Body: 'If that stung a little, keep "
+        "reading — it means we are talking about the same gap, and it is a smaller gap than it feels. "
+        "You have spent years getting genuinely good at this. Somewhere along the way you decided that "
+        "being good would be enough to be found. It should have been. It was not, and not because the "
+        "work is small. No one can choose what they cannot clearly see. That is the whole problem, and "
+        "it is a positioning problem, not a worth problem. Here is what changes it: one ownable claim, "
+        "said the same way everywhere, so the right people understand your value before the first "
+        "call. That is the work we do inside Lumen Rise, and it is the entire reason the founders who "
+        "finish stop being the best-kept secret in their field. If your year has felt like near "
+        "misses, hold a time and we will map the one gap costing you the most bookings. No pitch you "
+        "have to sit through — just a plainer look at why the recognition has lagged the work, and "
+        "what to do about it.' Every rule above is visible in that email: reader-first open, restored "
+        "dignity, one concrete claim, a specific next step, and not a single exclamation point.")
+    north_star = (
+        "If a writer remembers only one thing about this voice, it is this: make the reader feel seen "
+        "before you make her feel anything else, and never once make her feel small. Everything else — "
+        "the em dash, the rule of three, the banned words, the reader-first open — is downstream of "
+        "that single commitment. The Lumen Rise reader is a competent, capable, quietly weary founder "
+        "who has been sold to too many times, and the voice earns her the way a trusted colleague "
+        "does: by being plainspoken, specific, and certain without ever raising its volume. When a "
+        "line is working, she does not think 'good marketing'; she thinks 'someone finally understands "
+        "what this has been like.' That recognition is the whole product. Write toward it every time, "
+        "cut anything that competes with it, and the rest of the rules will mostly keep themselves.")
     body = ("## Writing Instructions\n\n"
             "### Sentence structure\n\n" + ss +
             "\n\n### Vocabulary\n\n" + vocab +
@@ -932,6 +1085,26 @@ def _blended_tone() -> str:
             "\n\n### What this voice never does\n\n" + never +
             "\n\n### Reading the room\n\n" + readroom +
             "\n\n### Three tests before a line ships\n\n" + tests +
+            "\n\n### Six worked rewrites\n\n" + worked_rewrites +
+            "\n\n### The language of objections\n\n" + objection_language +
+            "\n\n### Signature sentence patterns\n\n" + signature_patterns +
+            "\n\n### The voice across the funnel\n\n" + funnel_voice +
+            "\n\n### Coaching the voice into a team\n\n" + coaching_the_voice +
+            "\n\n### A full worked example: one nurture email\n\n" + full_email_example +
+            "\n\n### The founder's origin voice\n\n"
+            "When the founder tells her own story, the voice shifts from second-person present to "
+            "first-person past, but the constants hold. It never performs vulnerability for effect and "
+            "never turns the origin into a highlight reel; it tells the true, specific version and "
+            "trusts it to land. 'I used to be the founder everyone called talented and nobody called "
+            "first. I did excellent work for a decade and watched louder voices book out while my "
+            "calendar held open afternoons. It took me an embarrassingly long time to see that the "
+            "problem was never the quality of the work — it was that my expertise had no language the "
+            "market could hear at a glance. So I stopped waiting to be discovered and built the system "
+            "I wish someone had handed me.' The origin voice earns authority by being honest about the "
+            "gap, not by hiding it, and it always connects the founder's old ceiling to the reader's "
+            "current one — so the story is a mirror, never a monument. Use it sparingly, once per "
+            "asset at most, and always in service of the reader's decision rather than the founder's ego.\n\n"
+            "### The north star\n\n" + north_star +
             "\n\n## Summary\n\n"
             "Warm, precise, unhurried authority: reader-first, dignity-first, certain without "
             "shouting, concrete over abstract, and always moving the reader from feeling seen to "
@@ -970,8 +1143,31 @@ def _facebook_audiences() -> str:
          "- Layer 2 (Behavior): video-viewers (50%+), landing-page visitors, email-list custom audiences.\n"
          "- Layer 3 (Demographic): women, 30\u201355, mirrored from the converting core.\n"
          "- Estimated size: ~1\u20132M \u2014 the highest-intent retargeting pool, run last and warmest."),
+        ("Targeting Group 5 \u2014 The Author and Thought-Leader Adjacent",
+         "- Layer 1 (Interest): TED, TEDx, Seth Godin, Brene Brown, keynote-speaking, published-author "
+         "and personal-brand-book audiences.\n"
+         "- Layer 2 (Behavior): engaged with publishing/speaking tools, long-form-content consumers.\n"
+         "- Layer 3 (Demographic): women, 35\u201355, established professionals.\n"
+         "- Estimated size: ~2\u20134M \u2014 founders who want earned authority, not just leads."),
+        ("Targeting Group 6 \u2014 The Warm-Content Nurture Pool",
+         "- Layer 1 (Interest): engaged with Amara's organic content, saved posts, story-poll "
+         "responders.\n"
+         "- Layer 2 (Behavior): 3-second and 15-second video-viewers, profile-visitors, link-clickers.\n"
+         "- Layer 3 (Demographic): women, 30\u201355, mirrored from the engaged core.\n"
+         "- Estimated size: ~1\u20133M \u2014 already warm, run for the discovery-call CTA, not cold intro."),
     ]
-    return head + "\n\n".join(f"## {t}\n\n{b}" for t, b in groups) + "\n"
+    methodology = (
+        "The seven-tier framework layers interest, behavior, and demographic filters so every audience "
+        "stays inside the one-to-ten-million discipline: broad enough for Meta's algorithm to optimize, "
+        "narrow enough that the founder never pays for reach she cannot convert. Prospecting groups (1, "
+        "2, 3, 5) run first to fill the top of the funnel; the nurture and retargeting pools (4, 6) run "
+        "last and warmest, catching the founders who engaged but did not yet book. Exclusions matter as "
+        "much as inclusions: existing clients and recent bookers are excluded from cold sets so budget "
+        "is never spent re-selling the already-sold. Every layer traces back to the same overlooked-"
+        "authority avatar, so the whole account speaks to one woman, not a demographic average \u2014 "
+        "which is exactly why the cost per booked call stays low as spend scales.")
+    return (head + "\n\n".join(f"## {t}\n\n{b}" for t, b in groups)
+            + "\n\n## How the 7-Tier Framework Is Applied\n\n" + methodology + "\n")
 
 
 def _brand_bio() -> str:
@@ -1004,12 +1200,40 @@ def _brand_bio() -> str:
         "authoritative voice, and she leads with the client's transformation first, because that is the "
         "same instinct that once kept her under-visible. Today she helps women founders become the name "
         "their industry repeats, on the strength of the work they have already done.")
+    values = (
+        "Lumen Rise runs on five convictions. First, competence is not the problem — legibility is; "
+        "the work is already good, and the job is to make it obvious. Second, visibility must feel "
+        "like service, never self-promotion, or the founder will refuse to do it and be right to. "
+        "Third, dignity is non-negotiable: the founder is capable, not broken, and the brand never "
+        "sells from her shame. Fourth, growth should compound quietly — a practice that gets stronger "
+        "every quarter beats a single viral spike that fades. Fifth, recognition should be earned by "
+        "the work itself, not performed; the goal is to be known for what she actually does. These are "
+        "not slogans on a wall — they are the filter every framework, email, and coaching call has to "
+        "pass before it ships.")
+    who = (
+        "Lumen Rise serves the overlooked-authority founder: a woman who runs a real business with "
+        "real clients and results that consistently outrun her visibility. She is credentialed, often "
+        "a decade into the work, and quietly weary of watching louder, less-experienced voices book "
+        "out while her own calendar holds open afternoons. She is not a beginner looking for her first "
+        "client and not a self-marketer looking to get louder; she is an expert who wants to be "
+        "understood at a glance and chosen for the work she already does well. The brand is built for "
+        "her specifically, which is why it never sounds like generic 'entrepreneur' marketing.")
+    movement = (
+        "More than a coaching practice, Lumen Rise is a stance: that the most capable woman in the "
+        "room deserves to also be the most remembered, and that being overlooked is a solvable "
+        "positioning problem rather than a personal failing. The brand exists to retire the best-kept-"
+        "secret trap for a whole cohort of founders — to make legibility the norm instead of the "
+        "exception — so that expertise, not volume, is what earns attention. Every client who becomes "
+        "the name her industry repeats is proof of the thesis and a recruit to the movement.")
     return (f"# Brand Bio Intelligence ({BRAND})\n\n"
             "[BrandNameAndFoundingYear]\n"
             f"{BRAND}, founded 2020 by {FIRST} {LAST}.\n"
             "[/BrandNameAndFoundingYear]\n\n"
             f"[BrandOriginStory]\n{origin}\n[/BrandOriginStory]\n\n"
             f"[CoreMission]\n{mission}\n[/CoreMission]\n\n"
+            f"[BrandValues]\n{values}\n[/BrandValues]\n\n"
+            f"[WhoWeServe]\n{who}\n[/WhoWeServe]\n\n"
+            f"[TheMovement]\n{movement}\n[/TheMovement]\n\n"
             f"[AboutTheFounder]\n{founder}\n[/AboutTheFounder]\n")
 
 
@@ -1027,12 +1251,50 @@ def _product_bio() -> str:
            "business, in real time, until a fully-booked, visible practice in 90 days is the default "
            "outcome rather than the exception. The through-line is legibility: every asset is built so the "
            "right buyer understands her at a glance and arrives already convinced.")
+    who_for = (
+        f"{OFFER} is built for one founder in particular: a woman who already has clients and results "
+        "and is tired of being the best-kept secret in her field. She is a coach, consultant, or "
+        "service-business owner, usually a decade into the work, with a business that runs on "
+        "referrals and word of mouth and a pipeline that swings from feast to famine because nothing "
+        "about her positioning is deliberate. She is not a beginner and she is not a natural marketer "
+        "\u2014 she is an expert who has quietly concluded she is missing some visibility gene. She is "
+        "not, and this offer proves it by giving her a system instead of a personality transplant. It "
+        "is not for someone with no delivered work yet, and it is not for someone shopping for "
+        "done-for-you ads; it is for the capable founder ready to become legible on purpose.")
+    inside = (
+        "Inside the 12 weeks she gets three assets that compound. A positioning system that compresses "
+        "a decade of expertise into one ownable claim a stranger can repeat back correctly. A message "
+        "library \u2014 bio, offer page, outreach, booking script \u2014 she adapts instead of rewriting from "
+        "scratch every week, so consistency stops depending on willpower. And weekly live coaching "
+        "where she applies both inside her real business, in real time, with a second set of eyes "
+        "catching the places she shrinks her own value. The cohort is small on purpose so every "
+        "founder is seen, and the sequence is deliberate: claim first, message second, application "
+        "third, because a template is useless until the positioning underneath it is true.")
+    outcome = (
+        "The outcome the offer is engineered for is a fully-booked, visible practice in 90 days \u2014 not "
+        "as a lucky spike but as the default state of a founder whose value is finally legible. In "
+        "practice that means a message she can say without flinching, a price she stops discounting, "
+        "the right clients arriving already convinced, and her name becoming the one her industry "
+        "repeats first. The change is not that she works harder; it is that the work she already did "
+        "finally gets seen. Every deliverable is measured against that single standard: does it make "
+        "the right buyer understand her at a glance and choose her before the first call.")
+    why_now = (
+        "The cost of waiting is another year of near misses \u2014 open afternoons, referrals that slow, "
+        "louder competitors booking the clients she could serve better. Positioning does not fix "
+        "itself with time; an unpositioned expert stays unpositioned until she makes it deliberate, "
+        "and every quarter she waits compounds the gap between her results and her recognition. The "
+        "offer exists to close that gap on purpose rather than by luck, which is exactly why now, "
+        "with the work already proven, is the moment it pays off most.")
     return (f"# Product Bio Intelligence \u2014 {OFFER}\n\n"
             "[ProductNameAndPromise]\n"
             f"{OFFER}: a fully-booked, visible practice in 90 days.\n"
             "[/ProductNameAndPromise]\n\n"
             f"[WhyItExists]\n{why}\n[/WhyItExists]\n\n"
-            f"[HowItWorks]\n{how}\n[/HowItWorks]\n")
+            f"[WhoItIsFor]\n{who_for}\n[/WhoItIsFor]\n\n"
+            f"[HowItWorks]\n{how}\n[/HowItWorks]\n\n"
+            f"[WhatIsInside]\n{inside}\n[/WhatIsInside]\n\n"
+            f"[TheOutcome]\n{outcome}\n[/TheOutcome]\n\n"
+            f"[WhyNow]\n{why_now}\n[/WhyNow]\n")
 
 
 def _bot_prep() -> str:

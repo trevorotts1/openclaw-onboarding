@@ -24,9 +24,12 @@ bash 52-avatar-alchemist/verify-deps.sh      # proves python3 stdlib only; zero 
 ```
 
 `preflight.sh` writes `model-map.json` (TIER-A deep authoring / TIER-B structured /
-SEARCH for stage `02`) from the box's **own** configured providers (Ollama /
-OpenRouter / etc.), with local Ollama capped at ≤ 3 concurrent. It never uses the
-operator's keys and never writes an Anthropic model id.
+SEARCH for stage `02`) by **resolving each tier from the box's own OpenClaw config**
+(or an explicit, box-derived `AA_TIER_*` override / `AA_PROVIDER_PROBE_CMD` hook) — it
+does **not** bake a guessed default: a tier it cannot resolve **hard-fails** rather than
+invent a model id (FIX-XC-09f). Local Ollama is capped at ≤ 3 concurrent. It never uses
+the operator's keys and never writes an Anthropic model id. `aa_director.py` consumes
+this map (it is not written for preflight alone).
 
 ## Step 1 — Intake (the Book vs Brand selector runs FIRST)
 
@@ -79,11 +82,18 @@ A real dispatch does NOT trust that `entry.sh` ran or that the nonce is genuine 
 RE-VERIFIES deps/bypass-scan/egress-scan/hash-pin in-process, unconditionally, and it
 loads `<RUN_DIR>/intake.json` and refuses in code (exit 4) to dispatch the brand
 pipeline for `version=book`. The foreman schedules the 40 stages in 20 dependency
-waves (peak 5 simultaneous authors), throttled to `min(slots, provider_cap)`,
-dispatching one sub-agent per stage with ONLY its 3 prompt files + resolved dependency
-artifacts. `--resume` re-enters at the exact incomplete stage. Source repairs
-**R1–R6 are OFF by default** (faithful to the live workflow); pass **`--apply-repairs`**
-to opt in (see `REPAIRS.md`). **R7 — the Anthropic ban — is always on and is not a repair.**
+waves (peak 5 simultaneous authors), throttled to `min(slots, provider_cap)`. Without
+`--execute` it runs the gates and describes the wave plan but dispatches nothing; with
+**`--execute`** it runs the real dispatch loop (FIX-XC-05b), composing each stage's prompt
+from ONLY its 3 prompt files + resolved dependency artifacts and dispatching it through the
+documented client-provider adapter seam **`--dispatch-cmd`** (default `openclaw agent --json`;
+client providers only — prompt on stdin, `{"text","model"}` on stdout), then writing the
+artifact + its HMAC-signed receipt. `--resume` re-enters at the exact incomplete stage.
+**Repairs (RATIFIED R3, 2026-07-05): a CLIENT run defaults to source repairs R1–R6 ON**
+(via `intake.apply_repairs`, default `true`) so the delivered package excludes the known
+live-workflow content bugs; pass **`--no-repairs`** (or set `apply_repairs=false`) for a
+faithful-to-live fidelity/regression run (see `REPAIRS.md`). **R7 — the Anthropic ban — is
+always on and is not a repair.**
 
 ## What the 40-stage brand pipeline produces
 

@@ -87,9 +87,10 @@
       "gate": "G-BOTDOC",
       "prover": "aa_build_check.py",
       "af": [
-        "AF-AV-BOTDOC"
+        "AF-AV-BOTDOC",
+        "AF-AV-BOTMSG-CAP"
       ],
-      "desc": "bot docs carry H1 '# ... Section' skeleton + XML-style labels + {{contact.*}} merge tags (the one whitelisted placeholder class)."
+      "desc": "bot docs carry H1 '# ... Section' skeleton + XML-style labels + {{contact.*}} merge tags (the one whitelisted placeholder class); on stages 19/20/21 every quoted, sendable bot message stays within the manifest floors.bot_msg_char_cap (550 stripped chars)."
     },
     {
       "id": "P-AV-HERO",
@@ -168,6 +169,7 @@
     "AF-AV-ADSET-CAT": "REPAIR-GATED (R4, --apply-repairs only): an ad-set artifact does not match its restored R4 category signature ('category 2' drift). Not enforced in the default faithful-to-live run.",
     "AF-AV-LINKS-MISSING": "stage 02 (avatar-questions-31-32) produced no non-empty artifact for the podcast/TED link check (G-LINKS fail-closed). Unverifiable-but-present links degrade to 'degraded:search', they do not fail.",
     "AF-AV-BOTDOC": "a bot doc is missing the H1 section skeleton / XML labels / merge-tag rules",
+    "AF-AV-BOTMSG-CAP": "a bot-instruction stage (19/20/21) carries a quoted, sendable bot message over the manifest floors.bot_msg_char_cap (550 stripped chars) — messages must stay short and mobile-first",
     "AF-AV-HERO-12": "hero page is missing/misnamed/out-of-order/miscounted vs the 12 EXACTLY-NAMED Trevor Otts Hero Page System sections (no any-heading fallback)",
     "AF-AV-HERO-BAND": "a present, correctly-named hero section is outside its char/word band",
     "AF-AV-SECTION-RELEVANCE": "a section body does not answer its own header (generic on-topic prose standing in for a factual/named-list answer) — Avatar Q1-30's 13 questions or a 'Five Core Values'/'Five Personality Traits' list with <5 named items",

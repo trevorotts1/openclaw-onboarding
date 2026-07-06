@@ -57,6 +57,15 @@ def _real_content(v: Any) -> bool:
     return _present(v) and s.lower() not in {"n/a", "na", "none"}
 
 
+def resolve_apply_repairs(intake: Dict[str, Any]) -> bool:
+    """R3 (RATIFIED 2026-07-05): the CLIENT-run repairs default is ON. A run is
+    faithful-to-live (repairs OFF) ONLY when the intake explicitly sets
+    apply_repairs=false. Absent => True (client default). aa_director.py layers
+    an explicit --apply-repairs/--no-repairs override on top of this."""
+    ar = intake.get("apply_repairs")
+    return True if ar is None else bool(ar)
+
+
 def verify(intake: Dict[str, Any], book_skill_present: bool) -> Tuple[List[Tuple[str, str]], List[str]]:
     violations: List[Tuple[str, str]] = []
     notes: List[str] = []
@@ -96,6 +105,21 @@ def verify(intake: Dict[str, Any], book_skill_present: bool) -> Tuple[List[Tuple
         for k in BRAND_REQUIRED:
             if not _present(intake.get(k)):
                 fail("AF-AV-INTAKE-INCOMPLETE", f"version=brand requires brand field '{k}' — missing/empty")
+        # --- R3 (RATIFIED 2026-07-05): client-run repairs default = ON ----
+        # A CLIENT brand run defaults to apply_repairs=true so the delivered
+        # package does NOT ship the live workflow's known content bugs. A
+        # fidelity/regression run opts out with apply_repairs=false (or
+        # aa_director.py --no-repairs). Absent => the client default (ON).
+        ar = intake.get("apply_repairs")
+        if ar is None:
+            notes.append("REPAIRS: apply_repairs absent -> client-run DEFAULT ON "
+                         "(delivered package excludes the known live-workflow content bugs; set "
+                         "apply_repairs=false / aa_director.py --no-repairs for a fidelity/regression run)")
+        elif not isinstance(ar, bool):
+            fail("AF-AV-INTAKE-INCOMPLETE",
+                 f"apply_repairs must be a JSON boolean when present (got {ar!r})")
+        else:
+            notes.append(f"REPAIRS: apply_repairs={str(ar).lower()} (explicit)")
 
     elif version == "book":
         # book delta must be present (N/A allowed)

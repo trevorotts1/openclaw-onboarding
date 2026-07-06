@@ -1,7 +1,7 @@
 {
   "certificate": "avatar-alchemist-qc-cert",
   "run_id": "golden-lumen-rise-live",
-  "issued_utc": "2026-07-05T15:06:49Z",
+  "issued_utc": "2026-07-06T02:31:10Z",
   "qc_score": 10.0,
   "content_gate_pass": true,
   "content_gate_violation_count": 0,
@@ -22,5 +22,5 @@
   ],
   "qc_methodology": "deterministic 10-category structural/provenance composite computed by aa_qc_cert.py (a separate program from the generator and the delivery gate) over the on-disk run; NOT a human or LLM semantic prose-quality grade.",
   "verifier": "aa_qc_cert.py",
-  "signature": "b74467e9baab07b76a85f34c91df752f059f6928759c250243ff8d19d7ea5955"
+  "signature": "c2935bef17223631c60c5739611a8a94a7110373d7422301f70466c754b2992f"
 }

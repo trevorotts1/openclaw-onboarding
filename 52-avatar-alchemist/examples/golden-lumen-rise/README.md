@@ -19,15 +19,19 @@ certificate — plus five deliberately-broken variants that each fail closed.
 
 ## Every subsystem is exercised (representative coverage, all 40 stages present)
 
+Every numeric floor/band below is the one in `AA-PIPELINE-MANIFEST.json` `stages[].floors`
+(aligned to `MASTERDOC.md`, the single numeric source). This table names WHICH invariant each
+subsystem clears, never restated numbers — see the manifest for the exact values.
+
 | Subsystem | Proven by (stage) | Sacred invariant cleared |
 |---|---|---|
-| avatar-core | `01` Q1-30, `02` Q31-32 search, `03` rewrite, `38` questionnaire | `01` ≥ 3000 stripped words |
-| tone (via the shared tone/writing core) | `04`-`07` tone styles → `08` blended tone | `08` ≥ 3000 stripped words (R1 fuses the 4 styles) |
-| awareness | `09`/`11`/`13` pt1 + `10`/`12`/`14` pt2 | each pt1 ≥ 1500 stripped words |
-| bios | `16` brand bio, `17` product bio | labeled `[Section]` format |
-| facebook-ads | `15` targeting, `22`-`34` **13 ad sets**, `35` top-39, `37` headline copy | 13 restored R4 categories; top-39 = 3×13; headline = 12+12+12 |
-| booking-bots | `18` prep, `19` booking (≥5000 words), `20` post, `21` reschedule | H1 `# … Section` + XML labels + `{{contact.*}}` merge tags |
-| landing-hero | `39` hero page, `36` + `40` image prompts | hero = 12 sections; image prompts inside `[5000,19000]` stripped chars, unique artist per prompt |
+| avatar-core | `01` Q1-30, `02` Q31-32 search, `03` rewrite, `38` questionnaire | `01`/`03` stripped-word floors (manifest) + Q1-30 header relevance |
+| tone (via the shared tone/writing core) | `04`-`07` tone styles → `08` blended tone | `08` stripped-word floor (manifest; R1 fuses the 4 styles) |
+| awareness | `09`/`11`/`13` pt1 + `10`/`12`/`14` pt2 | pt1 + pt2 stripped-word floors (manifest) + five-list relevance |
+| bios | `16` brand bio, `17` product bio | stripped-word floors (manifest) + labeled `[Section]` format |
+| facebook-ads | `15` targeting, `22`-`34` **13 ad sets**, `35` top-39, `37` headline copy | `15` floor (manifest); 13 restored R4 categories; top-39 = 3×13; headline = 12+12+12 |
+| booking-bots | `18` prep, `19` booking, `20` post, `21` reschedule | `19` stripped-word floor + per-message stripped-char cap (manifest); H1 `# … Section` + XML labels + `{{contact.*}}` merge tags |
+| landing-hero | `39` hero page, `36` + `40` image prompts | hero = 12 sections; image-prompt char band + unique artist per prompt (manifest) |
 
 ## Files
 
