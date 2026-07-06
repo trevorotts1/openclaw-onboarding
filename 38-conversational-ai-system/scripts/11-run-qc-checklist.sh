@@ -741,5 +741,10 @@ if [ "$FAIL" -eq 0 ]; then
 else
   echo ""
   echo "  RESULT: FAIL — $FAIL item(s) need attention. Do NOT seal the Run Manifest."
+  # Command Center Kanban: mechanical QC FAILED -> move the install task to `blocked`
+  # so the failure is VISIBLE on the board (never left stranded at in_progress, never
+  # wrongly marked done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true` keeps it
+  # from changing this script's exit code. No-ops when CC is absent. (FIX-XC-06)
+  bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $FAIL item(s) failed" || true
   exit 1
 fi

@@ -1,5 +1,10 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.1.3 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — re-dropped the shared `scripts/mc_board.py` byte-identical from the
+  canonical copy (now carrying the fail-soft `block_run()` wrapper). Additive only;
+  the sales-page-assets runner is unchanged.
+
 ## 1.1.2 — 2026-07-05 — persona grounding (P0) + client model-content receipt
 
 Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.

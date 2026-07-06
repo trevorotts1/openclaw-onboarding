@@ -30,6 +30,12 @@ EX="$SKILL_DIR/examples/golden-unbroken-ground"        # shipped worked example
 EBV="$EX/broken-variants"
 PY="${PYTHON:-python3}"
 
+# Redirect the labeled ~/Downloads deliverable into a THROWAWAY root so verify.sh
+# NEVER writes into the operator's real ~/Downloads (state-path discipline — the
+# Skill-23 lesson; mirrors 55-product-bio/verify.sh). The end-to-end pilots below
+# run run_anthology.py through the entry, which assembles the ~/Downloads bundle.
+export ANTHOLOGY_DELIVERY_ROOT="$(mktemp -d)"
+
 fails=0
 run() {
     local label="$1"; shift
@@ -145,9 +151,9 @@ fi
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 echo "  -- golden pilot through anthology-entry.sh --"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}"' EXIT
 mkdir -p "$TMP/working"
-for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$TMP/working/$f"
 done
 if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
@@ -164,7 +170,7 @@ echo "  -- shipped example golden-unbroken-ground through the entry (temp run-di
 if [ -d "$EX" ]; then
     EXTMP="$(mktemp -d)"
     mkdir -p "$EXTMP/working"
-    for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+    for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
         cp "$EX/working/$f" "$EXTMP/working/$f"
     done
     if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$EXTMP" >/dev/null 2>&1 \

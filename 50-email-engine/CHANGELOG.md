@@ -1,5 +1,13 @@
 # Changelog — Skill 50 (email-engine)
 
+## 1.0.6 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — on a fail-closed gate the run now marks its Command Center card
+  `blocked` (failing phase + AF code as the note, via the shared
+  `mc_board.block_run` wrapper) instead of leaving it at in_progress. Also closed the
+  `--upto` truthy hole: the card now completes to `review` whenever the executed
+  phase set INCLUDES P4-DEPLOY (a `--upto P4-DEPLOY` run deployed the sequence yet
+  never moved the card before). Board work stays fail-soft — never affects exit code.
+
 ## 1.0.5 — 2026-07-05
 Wave-0 merge-train **T-50-email-engine** (fixes: FIX-XC-11d, FIX-XC-12a, FIX-S36-46, FIX-S36-47, FIX-S36-48). Scope is limited to `50-email-engine/`.
 

@@ -1,5 +1,27 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.2.0 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-S36-53** — the Anthology Writer shipped ZERO Command Center wiring (no
+  `mc_board.py`, and `main()` never carded a run — every run was board-invisible).
+  Added the shared drop-in `mc_board.py` + a `_mc_board_begin` / `_mc_board_done`
+  seam in `main()` (department **books**, persona **Anthology Writer**): a run now
+  lands ONE mc-route card and advances `in_progress` → `review` (NEVER `done` — the
+  independent QC scorer owns review→done).
+- **FIX-XC-06** — a gate failure used to strand the card at in_progress forever. On
+  any fail-closed block the run now moves the card to `blocked` (via the shared
+  `mc_board.block_run` wrapper) with the failing phase + AF code as the note.
+- **FIX-S36-55** — the SKILL-promised labeled `~/Downloads/Anthology-<slug>-<date>/`
+  bundle is now actually written (chapter, tone doc, outline, title, blurb,
+  `DELIVERY-NOTE.md`, `handoff.json`, `PROCESS-CERTIFICATE`), redirectable via
+  `ANTHOLOGY_DELIVERY_ROOT` so verify/tests never touch the operator's real
+  `~/Downloads`. The back-cover **blurb** (`working/blurb.md`) is now PRODUCED and
+  GATED: `_chk_deliver` requires it and fails closed on a missing / empty /
+  placeholder / stub blurb (`AF-AW-BLURB-MISSING`), and it ships in the labeled
+  bundle. Golden fixtures + the shipped example gain `blurb.md`; the manifest P5/P7
+  + autofail table document the blurb; `ENGINE-PIN.sha256` re-pinned; the
+  `run_anthology.py` self-test + `verify.sh` extended (certificate_sha unchanged —
+  the blurb is not hashed, so the shipped example still reproduces its sha).
+
 ## 1.1.0 — merge-train T-54 (Wave-0 fix batch)
 - **FIX-XC-03j** — ported Skill 55's fixed delivery gate: `_chk_deliver` was an
   evidence-free `return True` no-op (P7 certified with NO deliverable). It now

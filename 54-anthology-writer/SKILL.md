@@ -1,7 +1,7 @@
 ---
 name: anthology-writer
 description: The Anthology Writer — a governed skill that turns one contributor intake (anthology title, contributor name, chapter premise, and real personal stories) into a finished, gated anthology chapter (2,000-3,500 words) in that contributor's blended signature voice, plus the supporting blended tone doc, locked title/subtitle, blurb, and outline, delivered as a labeled LOCAL bundle. It bakes the anthology authoring IP as sha256-pinned prompt assets, references the shared tone-writing-core (04..08) in lockstep, replaces the source n8n / Airtable / Google Docs / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED floor with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER through one canonical entry (anthology-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. SEPARATE skill, sibling of Skill 53 Book Writer — they share the ONE tone core, never merged. Client runtime is NEVER Anthropic: every source Anthropic-model / "OpenRouter primary" tier is resolved to the client's strongest NON-Anthropic model. Trigger with "run anthology writer", "start my anthology", "anthology chapter for <contributor>", "add a contributor to book <id>", or "anthology status".
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Anthology Writer (Skill 54)
@@ -55,6 +55,13 @@ in any skill script or sub-agent prompt.
   providers/keys. NEVER `claude-*` / `anthropic/*`.
 - `run_anthology.py` — the deterministic state machine over the manifest
   (P0→P7, no phase skips, front-door nonce, signed certificate on a full pass).
+- `mc_board.py` — the shared, FAIL-SOFT Command Center board helper (byte-identical
+  across the productized skills). Each run lands ONE mc-route Kanban card (department
+  **books**, persona **Anthology Writer**) and advances it: `in_progress` at start →
+  `review` on a certified deliverable (NEVER `done` — the independent QC scorer owns
+  review→done) → `blocked` on a gate failure (so a failed run is VISIBLE, never
+  stranded at in_progress). A box with no Command Center is a clean no-op; the board
+  is a VIEW, never a gate, and can never change the run's exit code.
 - `anthology-entry.sh` — the ONE sanctioned command (deps / model-map pre-gate /
   bypass-scan / hash-pin / nonce, fail-closed).
 - `ENGINE-PIN.sha256` — the pinned content hash of the enforcement set
@@ -87,6 +94,7 @@ in any skill script or sub-agent prompt.
 | Model provenance | `RUN-LEDGER.json` is REQUIRED at P6 and records ≥1 resolved model id (fail-closed) | AF-AW-PROVENANCE-MISSING |
 | Rewrite budget | at most 2 rewrites per contributor | AF-AW-REWRITE-BUDGET |
 | Client-exact override | a band override is honored only through the LOGGED, brief-tied `working/overrides.json`; an unlogged override fails closed | AF-AW-OVERRIDE-UNLOGGED |
+| Blurb shipped | the promised back-cover blurb (`working/blurb.md`) is present AND finalized prose (non-empty, no unresolved placeholder, not a stub) | AF-AW-BLURB-MISSING |
 | Delivery integrity | the labeled bundle is assembled + byte-verified from the QC'd working copies; no swap-after-QC | AF-AW-STAGE-SKIPPED / AF-AW-DELIVER-MISMATCH |
 | Process integrity | a signed certificate requires a full P0→P6 pass; no phase skips | AF-AW-PROCESS-INTEGRITY / AF-AW-STAGE-SKIPPED |
 | Entry front-door | no hand-rolled external uploader/notifier in the run dir | AF-AW-ENTRY-BYPASS |
@@ -125,9 +133,15 @@ owner approval token in `<run-dir>/working/checkpoints/process_manifest.json`.
 ## Delivery is local-only
 
 The deliverable bundle is `~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/`: the
-chapter markdown, the tone doc, the outline, the blurb, `DELIVERY-NOTE.md`,
-`handoff.json`, and `PROCESS-CERTIFICATE.json`. No n8n / Airtable / Drive / Slack
-/ Gmail. Any push notification is per-client config through the client's own
+chapter markdown, the tone doc, the outline, the title, the blurb,
+`DELIVERY-NOTE.md`, `handoff.json`, and `PROCESS-CERTIFICATE.json`. It is
+assembled by `run_anthology.py` after certification, copying the byte-verified
+run-dir `delivery/` artifacts. The Downloads root is OVERRIDABLE via
+`ANTHOLOGY_DELIVERY_ROOT` (state-path discipline — a test / verify run redirects
+into a throwaway root and NEVER writes the operator's real `~/Downloads`); with
+neither the override nor `$HOME` it fails LOUDLY and leaves the certified run-dir
+deliverable standing rather than guessing a path. No n8n / Airtable / Drive /
+Slack / Gmail. Any push notification is per-client config through the client's own
 OpenClaw gateway (never bypassed), client-silent by default.
 
 ## Client-provider rule (binding) — the NON-Anthropic build-fix

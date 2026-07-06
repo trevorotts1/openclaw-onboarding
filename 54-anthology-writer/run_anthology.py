@@ -48,6 +48,11 @@ PROMPTS = _SKILL_DIR / "assets" / "prompts"
 PHASE_ORDER = ["P0-INTAKE", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
                "P4-TITLE-LOCK", "P5-CHAPTER-AUTHOR", "P6-CHAPTER-QC", "P7-DELIVER"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _portable_run_dir(run_dir: Path) -> str:
     rd = run_dir.resolve()
@@ -242,26 +247,56 @@ def _chk_chapter_qc(run_dir: Path):
                 % (rc_ch, rc_ol, rc_bc))
 
 
+def _blurb_defect(text: str):
+    """Return a human reason string when the blurb is unfit to ship, else None. The
+    blurb is a PROMISED deliverable (SKILL 'Delivery is local-only' names it in the
+    bundle) — enforce it, don't just carry it (FIX-S36-55: it was never produced or
+    gated). A present blurb must be finalized prose: non-empty stripped text, no
+    unresolved placeholder, and more than a stub. MASTERDOC sets NO SACRED blurb word
+    floor, so the >=20-word bar is only an anti-stub sanity minimum (never a
+    floor-swap of a client-exact ask)."""
+    import re
+    stripped = (text or "").strip()
+    if not stripped:
+        return "working/blurb.md is empty (a finished back-cover blurb is required)"
+    if re.search(r"\{\{.*?\}\}|\[\[.*?\]\]|<[A-Z][A-Z0-9_]{2,}>", text):
+        return ("working/blurb.md carries an unresolved placeholder "
+                "({{..}} / [[..]] / <ALLCAPS>) — the blurb is not finalized")
+    words = len(re.findall(r"\S+", stripped))
+    if words < 20:
+        return ("working/blurb.md has only %d word(s) — too thin to be a finished blurb "
+                "(anti-stub minimum 20; MASTERDOC sets no SACRED blurb floor)" % words)
+    return None
+
+
 def _chk_deliver(run_dir: Path):
     """P7 delivery gate — assemble the slug-labeled LOCAL bundle from the QC'd
     working copies and verify it byte-for-byte. Fail-closed: the artifacts that
-    passed P3/P4/P6 (chapter + tone doc + outline + locked title) MUST be present
-    (else AF-AW-STAGE-SKIPPED); a pre-existing delivery artifact that DISAGREES
-    with its QC'd working source is refused (a swap-after-QC / planted deliverable,
-    AF-AW-DELIVER-MISMATCH). The orchestrator is the SOLE writer of the bundle.
-    Was an unconditional `return True` before — an evidence-free no-op that let P7
-    pass (and certify) with no deliverable on disk (ported from Skill 55)."""
+    passed P3/P4/P6 (chapter + tone doc + outline + locked title) AND the promised
+    blurb MUST be present (else AF-AW-STAGE-SKIPPED); a present-but-unfinished blurb
+    fails closed (AF-AW-BLURB-MISSING, FIX-S36-55); a pre-existing delivery artifact
+    that DISAGREES with its QC'd working source is refused (a swap-after-QC / planted
+    deliverable, AF-AW-DELIVER-MISMATCH). The orchestrator is the SOLE writer of the
+    bundle. Was an unconditional `return True` before — an evidence-free no-op that
+    let P7 pass (and certify) with no deliverable on disk (ported from Skill 55)."""
     import hashlib
     work = {
         "chapter.md": run_dir / "working" / "chapter.md",
         "tone-doc.md": run_dir / "working" / "tone-doc.md",
         "outline.md": run_dir / "working" / "outline.md",
         "title.json": run_dir / "working" / "title.json",
+        # FIX-S36-55: the blurb is a promised deliverable — required + gated here.
+        "blurb.md": run_dir / "working" / "blurb.md",
     }
     missing = [name for name, p in work.items() if not p.is_file()]
     if missing:
         return False, ("AF-AW-STAGE-SKIPPED: delivery requires the QC'd working copies; "
                        "missing working/%s" % ", working/".join(missing))
+    # BLURB gate (FIX-S36-55): a present blurb must be finished prose (not empty / a
+    # stub / placeholder-bearing) before it can ship in the labeled bundle.
+    b_defect = _blurb_defect(work["blurb.md"].read_text(encoding="utf-8"))
+    if b_defect:
+        return False, "AF-AW-BLURB-MISSING: %s" % b_defect
     intake = {}
     ipath = run_dir / "working" / "intake.json"
     if ipath.is_file():
@@ -276,6 +311,7 @@ def _chk_deliver(run_dir: Path):
         "tone-doc-%s.md" % slug: work["tone-doc.md"],
         "outline-%s.md" % slug: work["outline.md"],
         "title-%s.json" % slug: work["title.json"],
+        "blurb-%s.md" % slug: work["blurb.md"],
     }
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -292,7 +328,7 @@ def _chk_deliver(run_dir: Path):
     except OSError as exc:
         return False, "AF-AW-STAGE-SKIPPED: could not assemble the delivery bundle: %s" % exc
     return True, ("labeled delivery bundle assembled + byte-verified against the QC'd working "
-                  "copies (chapter/tone-doc/outline/title-%s); no n8n/Airtable/Drive/Slack/Gmail"
+                  "copies (chapter/tone-doc/outline/title/blurb-%s); no n8n/Airtable/Drive/Slack/Gmail"
                   % slug)
 
 
@@ -355,6 +391,8 @@ def run(manifest, run_dir: Path, upto) -> int:
         proc["phases"].append({"id": pid, "passed": phase_ok})
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid,
                   file=sys.stderr)
             return EXIT_GATE
@@ -365,6 +403,11 @@ def run(manifest, run_dir: Path, upto) -> int:
         cert = _write_certificate(run_dir, proc)
         if cert:
             print("CERTIFICATE ISSUED: %s (sha %s)" % (cert["path"], cert["sha"][:12]))
+        # Assemble the labeled ~/Downloads bundle (chapter + tone doc + outline +
+        # title + blurb + DELIVERY-NOTE + handoff + certificate). NON-FATAL: the run
+        # is already certified and the run-dir delivery/ bundle already byte-verified
+        # (FIX-S36-55 — the SKILL-promised ~/Downloads bundle is now actually written).
+        _assemble_downloads_bundle(run_dir, cert, proc)
     print("ALL REQUESTED PHASES PASSED (through %s)." % stop_at)
     return EXIT_PASS
 
@@ -402,6 +445,198 @@ def _slug(intake: dict) -> str:
                          intake.get("first_name", ""), intake.get("last_name", ""))
     slug = re.sub(r"[^a-z0-9]+", "-", base.strip().lower()).strip("-")
     return slug or "anthology"
+
+
+# ---------------------------------------------------------------------------
+# Labeled LOCAL deliverable — the ~/Downloads bundle + DELIVERY-NOTE + handoff
+# (FIX-S36-55). SKILL.md promises `~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/`
+# carrying the chapter, tone doc, outline, title, blurb, DELIVERY-NOTE.md,
+# handoff.json, and the PROCESS-CERTIFICATE — before this fix only the run-dir
+# certificate was written and that promise was unkept. State-path discipline (the
+# Skill-23 lesson): the Downloads root is OVERRIDABLE via ANTHOLOGY_DELIVERY_ROOT
+# so a test / verify run never writes into the operator's REAL ~/Downloads; it
+# fails LOUDLY when neither the override nor $HOME resolves, never guessing a path.
+# Mirrors Skill 55's run_product_bio._assemble_downloads_bundle.
+# ---------------------------------------------------------------------------
+_DELIVERY_ROOT_ENV = "ANTHOLOGY_DELIVERY_ROOT"
+_BUNDLE_RECEIPT = ("working", "checkpoints", "delivery-bundle.json")
+
+
+def _delivery_root(override=None):
+    """Resolve the labeled-deliverable root. Precedence: explicit arg >
+    ${ANTHOLOGY_DELIVERY_ROOT} > $HOME/Downloads. Returns None (the loud caller
+    handles it) when nothing resolves — never a blind guess."""
+    if override:
+        return Path(override)
+    env = os.environ.get(_DELIVERY_ROOT_ENV, "").strip()
+    if env:
+        return Path(env)
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    if home and home != "~":
+        return Path(home) / "Downloads"
+    return None
+
+
+def _bundle_dir(root: Path, slug: str) -> Path:
+    import datetime
+    stamp = datetime.datetime.now().strftime("%m-%d-%Y")
+    return root / ("Anthology-%s-%s" % (slug, stamp))
+
+
+def _delivery_bundle_receipt(run_dir: Path) -> Path:
+    return run_dir.joinpath(*_BUNDLE_RECEIPT)
+
+
+def _assemble_downloads_bundle(run_dir: Path, cert, proc: dict, delivery_root=None):
+    """Copy the byte-verified run-dir delivery/ artifacts into the labeled
+    ~/Downloads bundle and write DELIVERY-NOTE.md + handoff.json alongside the
+    certificate. Returns the receipt dict (also persisted to
+    working/checkpoints/delivery-bundle.json) so the CC card can carry the delivery
+    path + certificate sha. NON-FATAL: the run is already certified and the run-dir
+    deliverable already byte-verified; a Downloads copy failure is logged LOUDLY and
+    recorded (delivered:false) but never regresses the exit code."""
+    import datetime
+    intake = {}
+    ipath = run_dir / "working" / "intake.json"
+    if ipath.is_file():
+        try:
+            intake = json.loads(ipath.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            intake = {}
+    slug = _slug(intake)
+    src_dir = run_dir / "delivery"
+    labeled = {
+        "Chapter-%s.md" % slug: src_dir / ("chapter-%s.md" % slug),
+        "Tone-Doc-%s.md" % slug: src_dir / ("tone-doc-%s.md" % slug),
+        "Outline-%s.md" % slug: src_dir / ("outline-%s.md" % slug),
+        "Title-%s.json" % slug: src_dir / ("title-%s.json" % slug),
+        "Blurb-%s.md" % slug: src_dir / ("blurb-%s.md" % slug),
+    }
+    receipt = {"delivered": False, "slug": slug,
+               "certificate_sha": (cert or {}).get("sha")}
+    root = _delivery_root(delivery_root)
+    if root is None:
+        print("!! [anthology] cannot resolve a delivery root (no %s and no $HOME); the "
+              "run-dir deliverable stands, but NO labeled ~/Downloads bundle was written."
+              % _DELIVERY_ROOT_ENV, file=sys.stderr)
+        _write_bundle_receipt(run_dir, receipt)
+        return receipt
+    bundle = _bundle_dir(root, slug)
+    try:
+        bundle.mkdir(parents=True, exist_ok=True)
+        copied = []
+        for label, src in labeled.items():
+            if not src.is_file():
+                raise OSError("byte-verified source missing: %s" % src)
+            (bundle / label).write_bytes(src.read_bytes())
+            copied.append(label)
+        # PROCESS-CERTIFICATE.json/.md into the bundle (the client-facing proof).
+        for cf in ("PROCESS-CERTIFICATE.json", "PROCESS-CERTIFICATE.md"):
+            cp = src_dir / cf
+            if cp.is_file():
+                (bundle / cf).write_bytes(cp.read_bytes())
+                copied.append(cf)
+        note = _delivery_note(intake, slug, cert, proc, copied)
+        (bundle / "DELIVERY-NOTE.md").write_text(note, encoding="utf-8")
+        copied.append("DELIVERY-NOTE.md")
+        handoff = _handoff(run_dir, intake, slug, cert, bundle, copied)
+        (bundle / "handoff.json").write_text(
+            json.dumps(handoff, indent=2), encoding="utf-8")
+        copied.append("handoff.json")
+        receipt.update({"delivered": True, "bundle_dir": str(bundle), "files": copied})
+        print("LABELED DELIVERABLE: %s (%d files)" % (bundle, len(copied)))
+    except OSError as exc:
+        print("!! [anthology] labeled ~/Downloads bundle assembly FAILED (%s); the certified "
+              "run-dir deliverable in delivery/ still stands." % exc, file=sys.stderr)
+        receipt.update({"delivered": False, "bundle_dir": str(bundle), "error": str(exc)})
+    _write_bundle_receipt(run_dir, receipt)
+    return receipt
+
+
+def _write_bundle_receipt(run_dir: Path, receipt: dict):
+    out = _delivery_bundle_receipt(run_dir)
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _delivery_note(intake: dict, slug: str, cert, proc: dict, files) -> str:
+    import datetime
+    title = intake.get("anthology_title", slug)
+    contributor = ("%s %s" % (intake.get("first_name", ""),
+                              intake.get("last_name", ""))).strip()
+    sha = (cert or {}).get("sha", "")
+    lines = [
+        "# Anthology Writer — DELIVERY NOTE",
+        "",
+        "- **Anthology:** %s (`%s`)" % (title, slug),
+    ]
+    if contributor:
+        lines.append("- **Contributor:** %s" % contributor)
+    lines += [
+        "- **Certificate SHA:** `%s`" % sha,
+        "- **Delivered (local):** %s" % datetime.datetime.now().strftime("%m-%d-%Y"),
+        "- **Runtime:** local-only (no n8n / Airtable / Google Drive / Slack / Gmail).",
+        "",
+        "## What's in this bundle",
+        "",
+        "| File | Purpose |",
+        "|---|---|",
+        "| `Chapter-%s.md` | the finished 2,000-3,500-word chapter (QC'd) |" % slug,
+        "| `Tone-Doc-%s.md` | the blended signature-voice tone doc (QC'd) |" % slug,
+        "| `Outline-%s.md` | the approved chapter outline |" % slug,
+        "| `Title-%s.json` | the locked title + subtitle |" % slug,
+        "| `Blurb-%s.md` | the back-cover blurb |" % slug,
+        "| `PROCESS-CERTIFICATE.json` / `.md` | the signed proof of a full P0->P6 pass |",
+        "| `handoff.json` | machine-readable handoff (paths, measured counts, cert sha) |",
+        "",
+        "Everything is a LOCAL labeled deliverable. Any push to a channel is per-client "
+        "config through the client's own OpenClaw gateway (never bypassed), client-silent "
+        "by default.",
+        "",
+        "_No certificate = not done. This bundle carries one (`%s`)._" % (sha[:12] if sha else "—"),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _handoff(run_dir: Path, intake: dict, slug: str, cert, bundle: Path, files) -> dict:
+    import datetime
+    measured = _measure(run_dir)
+    return {
+        "schema": "anthology-writer-handoff-v1",
+        "skill": "anthology-writer",
+        "skill_number": 54,
+        "anthology_title": intake.get("anthology_title", ""),
+        "slug": slug,
+        "contributor": ("%s %s" % (intake.get("first_name", ""),
+                                   intake.get("last_name", ""))).strip(),
+        "bundle_dir": str(bundle),
+        "files": files,
+        "measured_chapter_words": measured.get("chapter_words"),
+        "measured_tone_words": measured.get("tone_words"),
+        "certificate_sha": (cert or {}).get("sha"),
+        "certificate_path": (cert or {}).get("path"),
+        "runtime": "local-only (no n8n / Airtable / Google Drive / Slack / Gmail)",
+        "delivered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+
+def _deliver_card_note(run_dir) -> str:
+    """The CC card's deliverable POINTER: the labeled-bundle path + certificate sha,
+    read from the delivery-bundle receipt written at assembly time. Falls back to a
+    plain note when the receipt is absent (the board is a view, never a gate)."""
+    try:
+        rec = json.loads(_delivery_bundle_receipt(Path(run_dir)).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "certified + delivered"
+    sha = (rec.get("certificate_sha") or "")[:12]
+    if rec.get("delivered") and rec.get("bundle_dir"):
+        return "certified + delivered — bundle: %s · cert sha %s" % (rec["bundle_dir"], sha)
+    return ("certified (run-dir deliverable); labeled ~/Downloads bundle NOT written · cert sha %s"
+            % sha)
 
 
 def _load_client_override(run_dir: Path, intake: dict):
@@ -543,6 +778,11 @@ def self_test() -> int:
               "chapter_premise": "x"}
     slug = _slug(intake)
 
+    _BLURB = ("An anthology chapter about losing the family auto-repair shop and the "
+              "long work of separating a man's identity from the building he thought he "
+              "was. A blue Igloo cooler, a padlock sent by certified mail, and what was "
+              "rebuilt once there was nothing left to protect.")
+
     def _seed(rd: Path):
         (rd / "working").mkdir()
         (rd / "working" / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
@@ -551,6 +791,7 @@ def self_test() -> int:
         (rd / "working" / "outline.md").write_text("# Outline\n- beat\n", encoding="utf-8")
         (rd / "working" / "title.json").write_text(
             json.dumps({"title": "Unbroken Ground", "subtitle": "Voices"}), encoding="utf-8")
+        (rd / "working" / "blurb.md").write_text("# Blurb\n\n%s\n" % _BLURB, encoding="utf-8")
 
     # missing working QC artifacts -> FAIL (no evidence-free pass).
     with tempfile.TemporaryDirectory() as td:
@@ -560,16 +801,32 @@ def self_test() -> int:
         _ck("_chk_deliver missing artifacts -> FAIL (AF-AW-STAGE-SKIPPED)",
             good is False and "AF-AW-STAGE-SKIPPED" in msg)
 
-    # golden -> assembles + byte-verifies the labeled bundle.
+    # golden -> assembles + byte-verifies the labeled bundle (incl. the blurb).
     with tempfile.TemporaryDirectory() as td:
         rd = Path(td); _seed(rd)
         good, _ = _chk_deliver(rd)
         _ck("_chk_deliver golden -> PASS", good is True)
-        _ck("_chk_deliver assembled the labeled bundle",
+        _ck("_chk_deliver assembled the labeled bundle (incl. blurb)",
             (rd / "delivery" / ("chapter-%s.md" % slug)).is_file()
             and (rd / "delivery" / ("tone-doc-%s.md" % slug)).is_file()
             and (rd / "delivery" / ("outline-%s.md" % slug)).is_file()
-            and (rd / "delivery" / ("title-%s.json" % slug)).is_file())
+            and (rd / "delivery" / ("title-%s.json" % slug)).is_file()
+            and (rd / "delivery" / ("blurb-%s.md" % slug)).is_file())
+
+    # FIX-S36-55: a MISSING blurb blocks P7 (AF-AW-STAGE-SKIPPED); a present-but-stub
+    # blurb blocks it (AF-AW-BLURB-MISSING) — the blurb is now produced AND gated.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); _seed(rd)
+        (rd / "working" / "blurb.md").unlink()
+        good, msg = _chk_deliver(rd)
+        _ck("_chk_deliver missing blurb -> FAIL (AF-AW-STAGE-SKIPPED)",
+            good is False and "AF-AW-STAGE-SKIPPED" in msg and "blurb.md" in msg)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); _seed(rd)
+        (rd / "working" / "blurb.md").write_text("TODO", encoding="utf-8")
+        good, msg = _chk_deliver(rd)
+        _ck("_chk_deliver stub blurb -> FAIL (AF-AW-BLURB-MISSING)",
+            good is False and "AF-AW-BLURB-MISSING" in msg)
 
     # planted mismatch -> AF-AW-DELIVER-MISMATCH (swap-after-QC / stale deliverable).
     with tempfile.TemporaryDirectory() as td:
@@ -580,8 +837,81 @@ def self_test() -> int:
         _ck("_chk_deliver planted-mismatch -> FAIL (AF-AW-DELIVER-MISMATCH)",
             good is False and "AF-AW-DELIVER-MISMATCH" in msg)
 
+    # labeled ~/Downloads bundle (FIX-S36-55): assembled into an OVERRIDE root (never
+    # the real ~/Downloads), carrying DELIVERY-NOTE.md + handoff.json + cert pointer.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td) / "run"; rd.mkdir(parents=True); _seed(rd)
+        _chk_deliver(rd)  # assembles delivery/<...>-<slug> (byte-verified)
+        dl_root = Path(td) / "downloads"
+        cert = {"path": str(rd / "delivery" / "PROCESS-CERTIFICATE.json"), "sha": "a" * 64}
+        rec = _assemble_downloads_bundle(rd, cert, {"phases": []}, delivery_root=dl_root)
+        _ck("Downloads bundle assembled under the OVERRIDE root", rec.get("delivered") is True)
+        bdir = Path(rec.get("bundle_dir", ""))
+        _ck("bundle carries DELIVERY-NOTE.md", (bdir / "DELIVERY-NOTE.md").is_file())
+        _ck("bundle carries handoff.json", (bdir / "handoff.json").is_file())
+        _ck("bundle carries the labeled chapter + blurb",
+            (bdir / ("Chapter-%s.md" % slug)).is_file()
+            and (bdir / ("Blurb-%s.md" % slug)).is_file())
+        try:
+            ho = json.loads((bdir / "handoff.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            ho = {}
+        _ck("handoff.json records the certificate sha", ho.get("certificate_sha") == "a" * 64)
+        _ck("card deliverable note points at the bundle + cert sha",
+            bdir.as_posix() in _deliver_card_note(rd) and "aaaaaaaaaaaa" in _deliver_card_note(rd))
+        real_home = os.environ.get("HOME", "")
+        _ck("never touched a path outside the override root",
+            not bdir.as_posix().startswith(real_home + "/Downloads") if real_home else True)
+
     print("== run_anthology self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return EXIT_PASS if ok else 1
+
+
+# ---------------------------------------------------------------------------
+# Command Center board card (FAIL-SOFT). FIX-S36-53: the Anthology Writer shipped
+# ZERO Command Center wiring — no mc_board.py and main() never carded a run, so
+# every anthology run was board-invisible. This mirrors Skill-55 (product-bio) and
+# Skill-53 (book-writer) via the shared mc_board helper: land ONE mc-route card per
+# run and advance it. A disabled board (no COMMAND_CENTER_URL) is a clean no-op; ANY
+# failure is swallowed — the board is a VIEW, never a gate, and can never affect this
+# orchestrator's exit code.
+# ---------------------------------------------------------------------------
+def _mc_board_begin(run_dir):
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        return mc_board.begin_run(
+            run_dir, slug=run_dir.name,
+            title="Anthology Writer — %s" % run_dir.name,
+            # department "books" (the same fleet department Skill 53 Book Writer
+            # cards to — the anthology is a book deliverable); persona names the role.
+            department="books", persona="Anthology Writer", source="anthology-writer")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
+        return None
+
+
+def _mc_board_done(run_dir, task_id):
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        mc_board.complete_run(run_dir, task_id, note=_deliver_card_note(run_dir))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
+
+
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed anthology run is VISIBLE on
+    the board instead of stranding forever at in_progress. FAIL-SOFT."""
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
 
 
 def main(argv=None):
@@ -610,7 +940,16 @@ def main(argv=None):
               "(the ONE sanctioned entry); do not call this orchestrator directly.",
               file=sys.stderr)
         return EXIT_NONCE
-    return run(manifest, run_dir, args.upto)
+    _mc_task = _mc_board_begin(run_dir)
+    rc = run(manifest, run_dir, args.upto)
+    if rc == EXIT_PASS and not args.upto:
+        _mc_board_done(run_dir, _mc_task)
+    elif rc != EXIT_PASS:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). A partial `--upto` PASS is
+        # neither done nor blocked (it legitimately stays in_progress).
+        _mc_board_blocked(run_dir, _mc_task)
+    return rc
 
 
 if __name__ == "__main__":
