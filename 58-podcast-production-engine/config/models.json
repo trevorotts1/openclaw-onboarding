@@ -37,11 +37,11 @@
           "provider": "openrouter",
           "model": "moonshotai/kimi-k2.6",
           "family": "kimi-2.6",
-          "thinking": "high",
+          "thinking": "default",
           "base_url": "https://openrouter.ai/api/v1",
           "api_key_env": "OPENROUTER_API_KEY",
           "max_output_tokens": 8000,
-          "note": "OpenRouter route to the SAME Kimi 2.6 model when the Ollama Cloud lane is down. live_verify the exact slug at canary."
+          "note": "OpenRouter route to the SAME Kimi 2.6 model when the Ollama Cloud lane is down. Default thinking: high reasoning is reserved for the primary Ollama Cloud lane, and paying for high reasoning on a fallback lane is its own furnace (furnace-design Guardrail 5). live_verify the exact slug at canary."
         },
         {
           "priority": 4,
@@ -49,11 +49,11 @@
           "provider": "openrouter",
           "model": "z-ai/glm-5.2",
           "family": "glm-5.2",
-          "thinking": "high",
+          "thinking": "default",
           "base_url": "https://openrouter.ai/api/v1",
           "api_key_env": "OPENROUTER_API_KEY",
           "max_output_tokens": 8000,
-          "note": "OpenRouter route to the SAME GLM 5.2 model. live_verify the exact slug at canary."
+          "note": "OpenRouter route to the SAME GLM 5.2 model. Default thinking: high reasoning stays on the primary Ollama Cloud lane; a fallback lane at high reasoning is its own furnace (furnace-design Guardrail 5). live_verify the exact slug at canary."
         },
         {
           "priority": 5,
@@ -103,10 +103,7 @@
         "us.anthropic",
         "opus",
         "sonnet",
-        "haiku",
-        "@anthropic-ai",
-        "api.anthropic.com",
-        "anthropic_api_key"
+        "haiku"
       ],
       "deny_match": {
         "case_insensitive": true,
@@ -114,7 +111,7 @@
         "applies_to": ["content", "qc_judge", "runtime_substitution"],
         "note": "Any model id, provider slug, package, host, or env key matching a deny pattern is refused as a HARD ERROR at runtime, never accepted as a fallback or substitution."
       },
-      "$guard_exemption_note": "The strings inside deny_patterns are REFUSAL patterns, NOT model usage. There is ZERO Anthropic model id, provider, key, or host CONFIGURED for use anywhere in this file: no Anthropic base_url, no ANTHROPIC_API_KEY env is read, no api.anthropic.com host is called. deny_patterns is the denylist SOURCE that guard-no-anthropic-runtime.py itself consumes; the guard treats this array as its own denylist declaration and never as an Anthropic reference (furnace-design Guardrail 5 ships exactly this list in the runtime config)."
+      "$guard_exemption_note": "The strings inside deny_patterns are REFUSAL tokens, NOT model usage. There is ZERO Anthropic model id, provider, key, or host CONFIGURED for use anywhere in this file: no Anthropic base_url, no Anthropic API key env is read, no Anthropic API host is called. These six bare tokens are matched case-insensitively as substrings at runtime, so they also refuse any Anthropic package slug, key-env label, or host that embeds one of them (for example any string containing 'anthropic'). deny_patterns is the denylist SOURCE that guard-no-anthropic-runtime.py itself consumes; the guard treats this array as its own denylist declaration and never as an Anthropic reference (furnace-design Guardrail 5 ships exactly this six-token list in the runtime config)."
     }
   }
 }

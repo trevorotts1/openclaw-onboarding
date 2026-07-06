@@ -137,6 +137,16 @@ _DASH_PIPELINE = [
         r"podcast_state|podcast-episode-state|podcast-cost-ledger\.py", re.I)),
     ("process-spawn", re.compile(r"child_process|execSync|spawnSync|\bspawn\(|\bexec\(|subprocess\.", re.I)),
 ]
+# A pipeline SCRIPT NAME only fails the dashboard screen when it is actually
+# INVOKED (spawn / shell exec / module import of a script path). A bare mention
+# of a pipeline module in a comment, doc line, or an error-message string that
+# DOCUMENTS the read-only boundary is not an invocation and is not a violation.
+# Real invocations (SDK imports, generation hosts, and any process spawn) are
+# still caught unconditionally by the screens above and by process-spawn.
+_DASH_INVOKE_CTX = re.compile(
+    r"child_process|execSync|spawnSync|\bspawn\(|\bexec\(|subprocess\.|os\.system|\bpopen\b|"
+    r"(?:require|import)\s*\(?\s*[\"'][^\"']*(?:scripts/|podcast[_-])|"
+    r"\bpython3?\s+\S|\b(?:sh|bash)\s+\S", re.I)
 
 # Deny tokens the routing config must arm and no model id may contain.
 _DENY_TOKENS_REQUIRED = ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"]
@@ -161,8 +171,11 @@ def scan_dashboard(text):
         if rx.search(text):
             hits.append((AF_DASHBOARD, "generation-host:" + name))
     for name, rx in _DASH_PIPELINE:
-        if rx.search(text):
-            hits.append((AF_DASHBOARD, "pipeline-call:" + name))
+        if not rx.search(text):
+            continue
+        if name == "pipeline-script-ref" and not _DASH_INVOKE_CTX.search(text):
+            continue  # documented boundary reference, not an invocation
+        hits.append((AF_DASHBOARD, "pipeline-call:" + name))
     return hits
 
 
@@ -335,6 +348,36 @@ def _provider_tier(model_id):
     return (99, "other")
 
 
+def _entry_provider_tier(entry):
+    """Provider tier for a routing entry. The explicit `provider` field is
+    AUTHORITATIVE (the runtime slug in `model` is the raw provider-side id, e.g.
+    'moonshotai/kimi-k2.6', and legitimately carries no provider prefix). When no
+    provider field is present, fall back to sniffing the fully-qualified id."""
+    if isinstance(entry, dict):
+        prov = entry.get("provider")
+        if isinstance(prov, str) and prov.strip():
+            p = prov.strip().lower()
+            if p in ("ollama-cloud", "ollama_cloud", "ollamacloud"):
+                return (0, "ollama-cloud")
+            if p == "openrouter":
+                return (1, "openrouter")
+            if p in ("gemini", "google", "google-gemini"):
+                return (2, "gemini")
+            # explicit but unrecognized provider: fall through to id sniff
+    return _provider_tier(_model_id(entry))
+
+
+def _identity_blob(entry):
+    """All identity strings on an entry (model + id + name), lowercased, so the
+    deny-token substring test can never be evaded by hiding a denied id in a
+    field the provider tiering does not read."""
+    if isinstance(entry, str):
+        return entry.lower()
+    if isinstance(entry, dict):
+        return " ".join(str(entry.get(k, "")) for k in ("model", "id", "name")).lower()
+    return ""
+
+
 def _entry_thinking(entry):
     if isinstance(entry, dict):
         for k in ("thinking", "reasoning", "reasoning_effort"):
@@ -357,7 +400,7 @@ def assert_routing(models):
     if any(not i for i in ids):
         findings.append((AF_ROUTING, "content-entry-has-no-model-id"))
 
-    tiers = [_provider_tier(i) for i in ids]
+    tiers = [_entry_provider_tier(e) for e in content]
     ranks = [t[0] for t in tiers]
     provs = [t[1] for t in tiers]
 
@@ -366,11 +409,11 @@ def assert_routing(models):
         if prov == "other" and mid:
             findings.append((AF_ROUTING, "content-entry-%d-unknown-provider" % i))
 
-    # Deny-token substring test on every content id.
-    for i, mid in enumerate(ids):
-        low = mid.lower()
+    # Deny-token substring test on every identity field of every content entry.
+    for i, e in enumerate(content):
+        blob = _identity_blob(e)
         for tok in _DENY_TOKENS_MATCH:
-            if tok in low:
+            if tok in blob:
                 findings.append((AF_ROUTING, "content-entry-%d-matches-deny-token:%s" % (i, tok)))
 
     # First is Ollama Cloud, last is Gemini.
@@ -408,8 +451,8 @@ def assert_routing(models):
         else:
             for i, e in enumerate(judge):
                 jid = _model_id(e)
-                jlow = jid.lower()
-                _, jprov = _provider_tier(jid)
+                jlow = _identity_blob(e)
+                _, jprov = _entry_provider_tier(e)
                 if jprov not in ("gemini", "ollama-cloud"):
                     findings.append((AF_ROUTING, "qc_judge-entry-%d-not-cheap-tier" % i))
                 if "kimi" in jlow:
@@ -426,8 +469,8 @@ def assert_routing(models):
             continue
         thinking_seen = True
         if th == "high":
-            _, prov = _provider_tier(_model_id(e))
-            mid = _model_id(e).lower()
+            _, prov = _entry_provider_tier(e)
+            mid = _identity_blob(e)
             if prov != "ollama-cloud" or not ("kimi" in mid or "glm" in mid):
                 findings.append((AF_ROUTING, "high-thinking-on-non-kimi-glm-entry-%d" % i))
     tmap = models.get("thinking") if isinstance(models.get("thinking"), dict) else None
@@ -537,6 +580,10 @@ def self_test():
     check("dash-gen-host", bool(scan_dashboard("fetch('https://openrouter.ai/api/v1/chat')")))
     check("dash-pipeline", bool(scan_dashboard("execSync('python3 podcast-cost-ledger.py record')")))
     check("dash-spawn", bool(scan_dashboard("const cp = require('child_process')")))
+    check("dash-comment-ref-clean", not scan_dashboard(" * writer module scripts/podcast_state.py, the sole writer"))
+    check("dash-errstring-ref-clean", not scan_dashboard("throw new Err('owned by podcast_state.py, not the dashboard')"))
+    check("dash-require-pipeline", bool(scan_dashboard("const s = require('../scripts/podcast_state')")))
+    check("dash-shell-pipeline", bool(scan_dashboard("execSync('python3 podcast-cost-ledger.py record')")))
 
     print("== self-test: JOB 2 routing assertion ==")
     good = {
@@ -547,6 +594,30 @@ def self_test():
         "deny_patterns": ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"],
     }
     check("routing-good-clean", assert_routing(good) == [])
+    check("provider-explicit-openrouter",
+          _entry_provider_tier({"provider": "openrouter", "model": "moonshotai/kimi-k2.6"})[1] == "openrouter")
+    check("provider-explicit-ollama",
+          _entry_provider_tier({"provider": "ollama-cloud", "model": "kimi-k2.6:cloud"})[1] == "ollama-cloud")
+    real = {
+        "content": [
+            {"provider": "ollama-cloud", "id": "ollama/kimi-k2.6:cloud", "model": "kimi-k2.6:cloud", "thinking": "high"},
+            {"provider": "ollama-cloud", "id": "ollama/glm-5.2:cloud", "model": "glm-5.2:cloud", "thinking": "high"},
+            {"provider": "openrouter", "id": "openrouter/moonshotai/kimi-k2.6", "model": "moonshotai/kimi-k2.6", "thinking": "default"},
+            {"provider": "openrouter", "id": "openrouter/z-ai/glm-5.2", "model": "z-ai/glm-5.2", "thinking": "default"},
+            {"provider": "gemini", "id": "gemini-3.1-flash-lite", "model": "gemini-3.1-flash-lite", "thinking": "default"},
+        ],
+        "qc_judge": [
+            {"provider": "gemini", "id": "gemini-3.1-flash-lite", "model": "gemini-3.1-flash-lite"},
+            {"provider": "ollama-cloud", "id": "ollama/glm-5.2:cloud", "model": "glm-5.2:cloud"},
+        ],
+        "deny_patterns": ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"],
+    }
+    check("routing-real-schema-clean", assert_routing(real) == [])
+    real_hi = dict(real)
+    real_hi["content"] = [dict(real["content"][0])] + [dict(e) for e in real["content"][1:]]
+    real_hi["content"][2] = dict(real["content"][2]); real_hi["content"][2]["thinking"] = "high"
+    check("routing-real-openrouter-high-fails",
+          any("high-thinking-on-non-kimi-glm" in cl for _, cl in assert_routing(real_hi)))
 
     def has(findings, needle):
         return any(needle in cl for _, cl in findings)
