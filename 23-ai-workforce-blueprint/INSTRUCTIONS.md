@@ -928,6 +928,25 @@ If client gives short answers, says "I don't know" twice, or pauses:
 - "No problem. Everything we have done so far is saved. When you're ready, say 'Resume my AI workforce setup' and I'll pick up exactly where we left off."
 - DO NOT make them feel bad. Their company. Their pace.
 
+### Interview Start Link - Operator-Triggered (scripts/send-interview-link.sh)
+The clean "when you're ready, start here" trigger. The OPERATOR (never a cron) runs
+`bash scripts/send-interview-link.sh` on the client's box to send the owner ONE
+Telegram message through the OpenClaw gateway carrying:
+- **START** - `{dashboard}/interview` when nothing has been answered yet, or
+- **RESUME** - `{dashboard}/onboarding/resume/{slug}` when an interview is underway
+  (the Command Center resumes at the exact next unanswered question), or
+- a **reply-here invitation** when no `OPENCLAW_DASHBOARD_URL` is configured (the
+  interview is fully conductable in this chat - Options A/B/C still apply).
+
+Guardrails (binding): gateway-only (`openclaw message send`, never direct Bot API);
+owner chat resolved via `shared-utils/resolve-owner-chat.sh` (operator ids rejected
+on every source); a 30-minute re-send guard (`FORCE=1` to bypass deliberately);
+refuses when the interview is already complete; no chat ids hardcoded and the
+resolved id is masked in output. The web counterpart on the Command Center is
+`POST /api/interview/send-link` (bearer `MC_API_TOKEN`) - same message, same rules.
+Sending the link is an INVITATION ONLY: it is never consent, never Option B, and
+unlocks no autonomous action.
+
 ### Telegram Nudge Cadence (multi-day persistence)
 - +24h idle: "You're {progress}% done. Want to keep going? {link}"
 - +3d idle: "Still want to finish your AI workforce setup? You stopped at: {last_question}. {link}"
