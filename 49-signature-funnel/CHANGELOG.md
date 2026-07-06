@@ -1,5 +1,38 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.2.0 — 2026-07-05 — SACRED word-min floors on the ceiling-only sections (FIX-XC-04d / ruling R1)
+
+Train **W2-49-sacred-floors** (Wave-2). Fix ID: **FIX-XC-04d**. RATIFIED ruling **R1** (SACRED-IP
+sign-off GRANTED, 2026-07-05): the ceiling-only bands were floorless, so thin/under-length copy passed.
+
+### Changed
+- **FIX-XC-04d** — `structure/funnel_structure.json`: added `word_min: 18` to Sections **5, 6, 8, 9, 10**
+  (previously `word_max: 30` with no floor). Each section rule now reads "18-30 words. … Write to the
+  TOP of the band; under-length is as much a failure as over-length." The contract note no longer says
+  "Never floored" — the R1 floor is a ratified SACRED-IP change.
+- **`scripts/prove_sf_copy.py`** — the word-band checker (renamed `_check_wordmax` → `_check_wordband`)
+  now enforces BOTH the ceiling AND, when present, the `word_min` floor. Below-floor is a fail-closed
+  HARD MISS under the existing `AF-FUN-SEC5-WORDS` / `AF-FUN-SEC6-WORDS` / `AF-FUN-BENEFIT-WORDS` codes
+  (stripped-word count; a whitespace-padded thin section can never satisfy the band).
+- **`prompts/funnel-copy-prompts.md`** — rebalanced the shared preamble (was "you are forbidden from
+  exceeding a count") to: "**Write to the TOP of every band; under-length is as much a failure as
+  over-length.** A band has a floor and a ceiling…"; the per-section SACRED band lines for 5/6/8/9/10
+  now read **18-30 words (write to the top)**.
+- Doc-truth: `SKILL.md` section table and `FUNNEL-MANIFEST.json` AF-code triggers updated from "≤30
+  words / exceeds 30 words" to the 18-30 band.
+
+### Added
+- Four new negative self-test fixtures in `prove_sf_copy.py` (`sec5_short_words`, `sec6_short_words`,
+  `sec8_short_words`, `sec10_short_words`) proving under-length is caught; the entry self-test is now
+  1 valid-pass + 23 violation-catch.
+
+### Notes
+- The golden `examples/golden-daybreak` main + derived pages already clear the new floor (Sections
+  5/6/8/9/10 authored at 20-27 words), and the in-code golden fixture (`_valid_main_page`) was
+  re-authored to genuinely clear the mins while writing to the top of each band.
+- Re-minted `scripts/SF-PROVER-PIN.sha256` (`structure/funnel_structure.json` + `prove_sf_copy.py` are
+  in the pinned enforcement core).
+
 ## 1.1.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
 
 Train **DEP-7**. Fix IDs: F4.3.

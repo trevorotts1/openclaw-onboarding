@@ -9,8 +9,10 @@
 >
 > Shared preamble (prepend to every copy prompt): *"You are a prolific expert direct-response
 > copywriter embodying the client's stated voice from the locked brief. Write for CONVERSION. Respect
-> every character/word count EXACTLY — you are forbidden from exceeding a count. Use the offer title
-> verbatim where required. Return ONLY the JSON object described, no prose around it."*
+> every character/word band EXACTLY — **Write to the TOP of every band; under-length is as much a
+> failure as over-length.** A band has a floor and a ceiling: you are forbidden from falling below the
+> minimum just as you are forbidden from exceeding the maximum. Use the offer title verbatim where
+> required. Return ONLY the JSON object described, no prose around it."*
 
 ### PERSONA TASK-MODE SEAM (FIX-XC-02a — prepend AFTER the shared preamble)
 
@@ -39,11 +41,11 @@ become), and One CTA Voice (a single first-person possession-verb CTA phrase, la
 SACRED bands (measured on stripped text):
 - Sec 1 (The Big Bold Claim): **180–225 chars**, the product title present, labeled CTA. ONE promise.
 - Sec 2/3/4 (The Big Bold Pain 1/2/3): **180–225 chars** each, 2nd person, NO "?", labeled CTA.
-- Sec 5 (The Big Bold Why): **≤30 words**, starts "That's the reason why…", motivational CTA.
-- Sec 6 (The Big Bold Who): **≤30 words**, **3–6 personas**, **NO CTA**.
+- Sec 5 (The Big Bold Why): **18–30 words** (write to the top), starts "That's the reason why…", motivational CTA.
+- Sec 6 (The Big Bold Who): **18–30 words** (write to the top), **3–6 personas**, **NO CTA**.
 - Sec 7 (The Big Bold What): **70–120 words**, **5–10 bullets**.
-- Sec 8/9 (Benefit 1/2): **≤30 words**, **NO CTA button**.
-- Sec 10 (Benefit 3): **≤30 words**, carries the **inspirational CTA button**.
+- Sec 8/9 (Benefit 1/2): **18–30 words** (write to the top), **NO CTA button**.
+- Sec 10 (Benefit 3): **18–30 words** (write to the top), carries the **inspirational CTA button**.
 - Sec 11 (The Big How To): **100–150 words**, **NO CTA button**, **5–10 steps (ideal 7)**; steps 1–6
   **89–116 chars** each; step 7 **≤170 chars**; MUST include a share, an email-bonus, a founder-text,
   and a community step; the final step is the in-copy CTA.

@@ -122,11 +122,18 @@ def _check_charband(sec, spec, sid, af, fail, label):
         fail(af, f"{label}: {n} stripped chars, outside the sacred band [{lo}, {hi}]")
 
 
-def _check_wordmax(sec, spec, af, fail, label, field="copy"):
+def _check_wordband(sec, spec, af, fail, label, field="copy"):
+    """SACRED word band: enforce BOTH the ceiling (word_max) AND, when present, the
+    floor (word_min, ruling R1). Under-length is as much a hard miss as over-length —
+    a whitespace-padded thin section can never satisfy the band (stripped-word count)."""
+    lo = int(spec.get("word_min", 0))
     hi = int(spec.get("word_max", 10 ** 9))
     n = _wcount(sec.get(field, ""))
     if n > hi:
         fail(af, f"{label}: {n} words, over the sacred maximum of {hi}")
+    elif n < lo:
+        fail(af, f"{label}: {n} words, under the sacred minimum of {lo} "
+                 f"(under-length is as much a hard miss as over-length)")
 
 
 def verify(structure: Dict[str, Any], ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
@@ -236,7 +243,7 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
         return
 
     if num == 5:
-        _check_wordmax(sec, spec, "AF-FUN-SEC5-WORDS", fail, label)
+        _check_wordband(sec, spec, "AF-FUN-SEC5-WORDS", fail, label)
         lead = _norm(spec.get("lead_phrase", ""))
         if lead:
             body = _norm(sec.get("copy", "")).lstrip('"\'' + " ")
@@ -247,7 +254,7 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
         return
 
     if num == 6:
-        _check_wordmax(sec, spec, "AF-FUN-SEC6-WORDS", fail, label)
+        _check_wordband(sec, spec, "AF-FUN-SEC6-WORDS", fail, label)
         personas = sec.get("personas")
         n = len(personas) if isinstance(personas, list) else -1
         lo, hi = int(spec.get("personas_min", 3)), int(spec.get("personas_max", 6))
@@ -273,13 +280,13 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
         return
 
     if num in (8, 9):  # main-page Benefit 1 / Benefit 2
-        _check_wordmax(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
+        _check_wordband(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
         if spec.get("forbid_cta") and (_has_cta(sec) or _has_cta_button(sec)):
             fail("AF-FUN-BENEFIT-NO-CTA", f"{label}: carries a CTA (Benefit 1/2 forbid a CTA)")
         return
 
     if num == 10:
-        _check_wordmax(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
+        _check_wordband(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
         if spec.get("requires_cta_button") and not _has_cta_button(sec):
             fail("AF-FUN-SEC10-CTA", f"{label}: missing its inspirational CTA button")
         return
@@ -489,26 +496,26 @@ def _valid_main_page() -> Dict[str, Any]:
         sections.append({"section": num, "name": name,
                          "copy": _fill("You wake exhausted and your day owns you before your feet hit the floor", 200),
                          "cta": "CTA: Start My Reset"})
-    # Sec 5 — <=30 words, lead, CTA
+    # Sec 5 — 18-30 words, lead, CTA (written to the top of the band)
     sections.append({"section": 5, "name": "The Big Bold Why",
-                     "copy": "That's the reason why you deserve mornings that belong to you and a life that finally moves.",
+                     "copy": "That's the reason why you deserve calm, unhurried mornings that belong to you and a steady life that finally moves forward on your own terms again.",
                      "cta": "CTA: Start My Reset"})
-    # Sec 6 — <=30 words, 4 personas, NO cta
+    # Sec 6 — 18-30 words, 4 personas, NO cta (written to the top of the band)
     sections.append({"section": 6, "name": "The Big Bold Who",
-                     "copy": "Founders who want focus, parents who want calm, creators who want output, leaders who want energy.",
+                     "copy": "Founders who want deep focus, parents who crave a calm morning, creators chasing steady output, and leaders who want dependable energy every single day.",
                      "personas": ["founders", "parents", "creators", "leaders"]})
     # Sec 7 — 70-120 words, 6 bullets
     sections.append({"section": 7, "name": "The Big Bold What",
                      "copy": " ".join(["clarity"] * 55),
                      "bullets": ["you get the full daily reset toolkit and guide"] * 6})
-    # Sec 8 / 9 — <=30 words, NO cta
+    # Sec 8 / 9 — 18-30 words, NO cta (written to the top of the band)
     sections.append({"section": 8, "name": "The Big Bold Benefit 1",
-                     "copy": "You feel the weight lift this week as your first quiet mornings return calm and steady."})
+                     "copy": "You feel the weight lift within the very first week as your quiet, unhurried mornings return calm and steady and unmistakably your own again."})
     sections.append({"section": 9, "name": "The Big Bold Benefit 2",
-                     "copy": "You watch the numbers move this quarter as focus turns into finished work and real results."})
-    # Sec 10 — <=30 words, CTA button
+                     "copy": "You watch the numbers move this quarter as steady, protected focus turns into finished projects, shipped work, and real results you can actually measure."})
+    # Sec 10 — 18-30 words, CTA button (written to the top of the band)
     sections.append({"section": 10, "name": "The Big Bold Benefit 3",
-                     "copy": "You become the person your future was waiting for, unhurried and unstoppable.",
+                     "copy": "You become the grounded, unhurried, unstoppable person your future has been quietly waiting on, arriving one deliberate sunrise at a time from here.",
                      "has_cta_button": True, "cta": "CTA: Start My Reset"})
     # Sec 11 — 100-150 words, 7 steps, no button, required kinds
     steps = [
@@ -547,7 +554,7 @@ def _valid_upsell_page() -> Dict[str, Any]:
                      "copy": "That's the reason why you take the upgrade now while the door is open and the momentum is real.",
                      "cta": "CTA: Yes Upgrade My Order"})
     sections.append({"section": 6, "name": "The Big Bold Who",
-                     "copy": "Doers who want speed, builders who want proximity, leaders who want the shortcut to the result.",
+                     "copy": "Doers who want real speed, builders who want close proximity, and leaders who want the shortcut straight to the result they came for.",
                      "personas": ["doers", "builders", "leaders"]})
     sections.append({"section": 7, "name": "The Big Bold What",
                      "copy": " ".join(["access"] * 55),
@@ -611,6 +618,14 @@ def _violation_cases():
         _sec(d, 0, 2)["copy"] = _fill_noyou("Mornings feel heavy and the day takes over before anyone can catch a breath at all", 200)
     def sec5_lead(d):
         _sec(d, 0, 5)["copy"] = "You deserve mornings that belong to you and a life that finally moves forward."
+    def sec5_short_words(d):  # ruling R1 floor — under-length is a hard miss
+        _sec(d, 0, 5)["copy"] = "That's the reason why you deserve better mornings."
+    def sec6_short_words(d):  # ruling R1 floor
+        _sec(d, 0, 6)["copy"] = "Founders, parents, creators, and leaders."
+    def sec8_short_words(d):  # ruling R1 floor (Benefit 1)
+        _sec(d, 0, 8)["copy"] = "You feel lighter this week."
+    def sec10_short_words(d):  # ruling R1 floor (Benefit 3)
+        _sec(d, 0, 10)["copy"] = "You become unstoppable."
     def sec6_personas(d):
         _sec(d, 0, 6)["personas"] = ["only", "two"]
     def sec6_cta(d):
@@ -648,6 +663,10 @@ def _violation_cases():
         ("pain_question", "AF-FUN-PAIN-QUESTION", lambda: _mut(pain_question)),
         ("pain_2nd_person", "AF-FUN-PAIN-2ND-PERSON", lambda: _mut(pain_2nd)),
         ("sec5_lead", "AF-FUN-SEC5-LEAD", lambda: _mut(sec5_lead)),
+        ("sec5_short_words", "AF-FUN-SEC5-WORDS", lambda: _mut(sec5_short_words)),
+        ("sec6_short_words", "AF-FUN-SEC6-WORDS", lambda: _mut(sec6_short_words)),
+        ("sec8_short_words", "AF-FUN-BENEFIT-WORDS", lambda: _mut(sec8_short_words)),
+        ("sec10_short_words", "AF-FUN-BENEFIT-WORDS", lambda: _mut(sec10_short_words)),
         ("sec6_personas", "AF-FUN-SEC6-PERSONAS", lambda: _mut(sec6_personas)),
         ("sec6_cta", "AF-FUN-SEC6-NO-CTA", lambda: _mut(sec6_cta)),
         ("sec7_bullets", "AF-FUN-SEC7-BULLETS", lambda: _mut(sec7_bullets)),
