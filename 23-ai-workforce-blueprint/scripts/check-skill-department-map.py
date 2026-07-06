@@ -33,12 +33,19 @@ def load_json(p):
         return json.load(f)
 
 
-def main():
+def run_checks(map_path=MAP_PATH, index_path=INDEX_PATH, usops=USOPS):
+    """Structural orphan + consistency check over the skill-department map.
+
+    Returns (errors, warns, stats). errors is a list[str]; a non-empty errors
+    list means the map is inconsistent (the CLI maps this to rc 7, and
+    qc-assert-repo-consistency.py folds it into the MAP-CONSISTENCY dimension).
+    Pure/read-only — no scores grepped, structural facts only.
+    """
     errors = []
     warns = []
 
-    m = load_json(MAP_PATH)
-    idx = load_json(INDEX_PATH)
+    m = load_json(map_path)
+    idx = load_json(index_path)
 
     # Live departments + (dept, role) pairs from the role library index.
     live_depts = set(idx["departments"].keys())
@@ -102,7 +109,7 @@ def main():
                 errors.append(f"[skill {sk}] client-facing but has no intent_triggers")
 
             for sop in s.get("execution_sops", []):
-                p = os.path.join(USOPS, sop)
+                p = os.path.join(usops, sop)
                 if not (os.path.isdir(p) or os.path.isfile(p)):
                     errors.append(f"[skill {sk}] execution_sop '{sop}' not found under universal-sops/")
         else:
@@ -115,9 +122,26 @@ def main():
             if s.get("intent_triggers"):
                 errors.append(f"[skill {sk}] infra skill must not carry intent_triggers")
 
-    print(f"role-library version: {idx.get('version')}  live departments: {len(live_depts)}  live roles: {len(idx['roles'])}")
-    print(f"skills in map: {len(skills)}  client-facing: {cf_count}  infra: {infra_count}")
-    print(f"skill folders on disk: {len(disk_nums)}")
+    stats = {
+        "index_version": idx.get("version"),
+        "live_depts": len(live_depts),
+        "live_roles": len(idx["roles"]),
+        "skills": len(skills),
+        "client_facing": cf_count,
+        "infra": infra_count,
+        "disk_nums": len(disk_nums),
+    }
+    return errors, warns, stats
+
+
+def main():
+    errors, warns, stats = run_checks()
+
+    print(f"role-library version: {stats['index_version']}  live departments: "
+          f"{stats['live_depts']}  live roles: {stats['live_roles']}")
+    print(f"skills in map: {stats['skills']}  client-facing: {stats['client_facing']}  "
+          f"infra: {stats['infra']}")
+    print(f"skill folders on disk: {stats['disk_nums']}")
 
     if warns:
         print("\nWARNINGS (non-blocking):")

@@ -269,6 +269,40 @@ orphan library entry the floor never reaches → `[ORPHAN-FLOOR]` / `[ORPHAN-ROS
 
 ---
 
+## Scenario E — Wiring a SKILL to a department / role (native skill invocation)
+
+Skills are **tools a specialist operates**, not new jobs (default posture: **no new
+role** — assign to the closest existing owning role; see Departments-That-Use-Skills
+PRD §6). To make a skill natively invocable from client intent:
+
+1. **Edit the ONE source of truth** — `23-ai-workforce-blueprint/skill-department-map.json`.
+   Add/adjust the skill's entry: `client_facing`, owning `departments[]`, owning
+   `roles[]` (exactly one `primary: true`), plain-language `intent_triggers[]`, and
+   `execution_sops[]` (the `universal-sops/<cluster>/` playbook, if one exists).
+   Infra/install-time skills carry `client_facing:false` + a `dept_owner` and NO
+   triggers.
+2. **Orphan check** — `python3 scripts/check-skill-department-map.py` must exit 0
+   (every client-facing skill resolves to a live dept + owning role; map↔disk
+   coverage; infra ownership; execution-SOPs resolve).
+3. **Stamp Layer B** — `python3 scripts/stamp-skills-you-operate.py` refreshes the
+   marker-guarded `<!-- SKILLS_YOU_OPERATE_V1 -->` block in every owning role's
+   `how-to.md` §8 from the map. Idempotent; byte-stable.
+4. **Re-stamp content hashes** (MANDATORY — the role files changed) —
+   `python3 scripts/hash-content-manifest.py`. The CONTENT-HASH gate (rc 6)
+   fails otherwise.
+5. **Front-door reflex (Layer C)** — if you added an owning **department** (a dept
+   not already routed), add its row to the `SKILL_INTENT_ROUTING_REFLEX_V1` table in
+   `scripts/apply-fleet-standards.sh` (the MAP-CONSISTENCY dimension requires every
+   department that owns a client-facing skill to appear there).
+6. **Gate green** — `python3 scripts/qc-assert-repo-consistency.py` must exit 0; its
+   **MAP-CONSISTENCY** dimension proves structure + Layer-B blocks + Layer-C
+   coverage are all in lockstep with the map.
+
+Doctrine: `universal-sops/native-skill-invocation.md`. AGENTS.md rule: **N39**
+(`NATIVE_SKILL_INVOCATION_V1`).
+
+---
+
 ## What the gate prints
 
 ```

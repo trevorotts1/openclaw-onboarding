@@ -1477,6 +1477,98 @@ PRES_REFLEX_V2
   fi
 fi
 
+# ─── 4b-SKILL-REFLEX. Inject SKILL_INTENT_ROUTING_REFLEX_V1 (Layer C) ──────────
+# Departments-That-Use-Skills PRD §4 Layer C / §7.2. A compact, NORMAL-strength
+# intent-cluster→department catalog (generated from skill-department-map.json) that
+# teaches the CEO: when an owner message matches an intent phrase, the FIRST action
+# is to route to the OWNING department via the SIGNED mc-route helper + ack — the
+# specialist there reaches for the owning skill (the client never names it). Sits
+# ALONGSIDE the strict PRESENTATION_ROUTING_REFLEX_V2 (which stays REFLEX 0 for its
+# high-stakes intake). Marker-guarded + BYTE-IDEMPOTENT: strip-then-insert right
+# AFTER the presentations reflex END marker (a position-stable top anchor), or at
+# the top when that reflex is absent — decoupled from the EOF appenders so re-runs
+# are byte-for-byte no-ops. Skipped on a PA-only box (no departments to route to).
+# The intent→department table below is kept in lockstep with the map by the
+# MAP-CONSISTENCY dimension of qc-assert-repo-consistency.py (Layer-C coverage:
+# every department that owns a client-facing skill MUST appear here).
+SKILL_REFLEX_V1_MARKER="<!-- SKILL_INTENT_ROUTING_REFLEX_V1 -->"
+
+if [ "$_REFLEX_BOXTYPE" = "PA" ]; then
+  if grep -qF "$SKILL_REFLEX_V1_MARKER" "$AGENTS_FILE_EARLY" 2>/dev/null; then
+    python3 - "$AGENTS_FILE_EARLY" <<'SKILLSTRIP_PY'
+import re, sys
+p = sys.argv[1]
+c = open(p, encoding="utf-8", errors="replace").read()
+c = re.sub(r"\n*<!-- SKILL_INTENT_ROUTING_REFLEX_V1 -->.*?<!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->[ \t]*\n*",
+           "\n", c, flags=re.DOTALL)
+open(p, "w", encoding="utf-8").write(c)
+SKILLSTRIP_PY
+    echo "[apply-fleet-standards] PA-only box — REMOVED SKILL_INTENT_ROUTING_REFLEX_V1 (no departments to route to)"
+  else
+    echo "[apply-fleet-standards] PA-only box — NOT stamping SKILL_INTENT_ROUTING_REFLEX_V1"
+  fi
+else
+  SKILL_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$SKILL_REFLEX_TMPL")
+  cat > "$SKILL_REFLEX_TMPL" <<'SKILL_REFLEX_V1'
+<!-- SKILL_INTENT_ROUTING_REFLEX_V1 -->
+## 🧭 SKILL-INTENT ROUTING — your departments natively operate skills
+
+Your departments and their specialists **natively operate skills** — a client benefits from a skill even when
+they have never heard of it and never name it. When an owner message matches an intent cluster below, your
+FIRST action is to route the task to the OWNING department with the SIGNED helper, then send ONE short
+acknowledgement. Do NOT self-intake, do NOT ask "which skill do you want?", and do NOT start the work
+yourself — the owning department's specialist reaches for the skill (dept-scoped) after routing.
+
+    bash @@MC_ROUTE_PATH@@ <department_slug> "<owner request, <=120 chars>" "<owner message, verbatim>"
+
+| When the owner says (plain-language intent) … | Route to department |
+|---|---|
+| "make me Facebook/Instagram ads", "ad creatives", "10 ad variations" | `paid-advertisement` |
+| "make/produce a video", "plan/storyboard my video", "add captions/subtitles", "cut/trim/edit this clip", "a cinematic reel" | `video` |
+| "run my social", "post my content this week", "a week of content end-to-end" | `social-media` |
+| "build my funnel", "a landing page / opt-in", "build me a form or page in GHL" | `web-development` |
+| "write my email/nurture sequence", "build my brand/avatar", "write my book/anthology", "make this sound human / less AI-sounding" | `marketing` |
+| "match this brand style", "on-brand images", "a style card" | `graphics` |
+| "write my product bio", "a sales page / upsell copy", "a master brain for my product" | `sales` |
+| "build a workflow", "automate this", "an order-bump" | `crm` |
+| "summarize this YouTube", "what does this video say", "pull the transcript" | `research` |
+| "set up a booking bot", "a conversational qualifier / lead responder" | `communications` |
+| "answer my customers automatically", "a live-chat / support bot" | `customer-support` |
+| "a signature talk / keynote deck / 100-slide presentation" — handled by REFLEX 0 above (do not double-route) | `presentations` |
+| "map/graph my workforce", "graph my company" | `openclaw-maintenance` |
+
+Notes:
+- Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.
+- Dept-scoped: the dispatched specialist is handed ONLY its department's skills (the Command Center ContextPack `matched_skills`). Rule-Zero paid-call approval (USD announce + budget cap) still applies.
+- If the owner explicitly names a skill or types its slash command, that still works — this reflex is for plain-language intent the owner did NOT name.
+- Binding (source of truth): `~/.openclaw/skills/23-ai-workforce-blueprint/skill-department-map.json`. Doctrine: `~/.openclaw/skills/universal-sops/native-skill-invocation.md`.
+<!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->
+SKILL_REFLEX_V1
+  SKILL_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$SKILL_REFLEX_RENDERED")
+  RP_MC="$MC_ROUTE_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@MC_ROUTE_PATH@@", os.environ["RP_MC"]))' "$SKILL_REFLEX_TMPL" > "$SKILL_REFLEX_RENDERED"
+  # Byte-idempotent strip-then-insert: place the block right AFTER the presentations
+  # reflex END marker (position-stable top anchor), else at the top of the file.
+  AGENTS_SR="$AGENTS_FILE_EARLY" BLOCK_SR="$SKILL_REFLEX_RENDERED" python3 <<'SKILLINS_PY'
+import os, re
+p = os.environ["AGENTS_SR"]
+block = open(os.environ["BLOCK_SR"], encoding="utf-8").read().rstrip("\n")
+c = open(p, encoding="utf-8", errors="replace").read()
+# strip any prior copy (+ hugging blank lines) so a re-run is byte-stable
+c = re.sub(r"\n*<!-- SKILL_INTENT_ROUTING_REFLEX_V1 -->.*?<!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->[ \t]*\n*",
+           "\n", c, flags=re.DOTALL)
+marker = "<!-- END PRESENTATION_ROUTING_REFLEX_V2 -->"
+i = c.find(marker)
+if i != -1:
+    head = c[:i + len(marker)]
+    tail = c[i + len(marker):].lstrip("\n")
+    new = head + "\n\n" + block + "\n\n" + tail
+else:
+    new = block + "\n\n" + c.lstrip("\n")
+open(p, "w", encoding="utf-8").write(new)
+SKILLINS_PY
+  echo "[apply-fleet-standards] SKILL_INTENT_ROUTING_REFLEX_V1 stamped into $AGENTS_FILE_EARLY"
+fi
+
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
   [ -f "$PRES_REFLEX_HELPER_PATH" ] && chown "$OC_USER:$OC_USER" "$PRES_REFLEX_HELPER_PATH" 2>/dev/null || true

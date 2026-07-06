@@ -94,6 +94,8 @@ Read `universal-sops/00-ROUTING.md` (company root) to map the request to the own
 
 If classification is ambiguous, route to the department whose head is most responsible for the final deliverable.
 
+> **Native skill invocation (Departments-That-Use-Skills).** The single-department table above is the same binding as the `SKILL_INTENT_ROUTING_REFLEX_V1` intent→department catalog injected into this AGENTS.md (generated from `23-ai-workforce-blueprint/skill-department-map.json`). When an owner message names a plain-language outcome a skill delivers ("make me ads", "write my nurture emails", "produce a video", "build my funnel") — even though the owner never names the skill — route to the OWNING department; the specialist there reaches for the skill (dept-scoped) after routing. Do NOT ask the owner "which skill?" and do NOT self-intake. Doctrine: `universal-sops/native-skill-invocation.md`. (Presentation/deck requests are already owned by the strict presentation reflex — REFLEX 0 — which fires first.)
+
 ---
 
 ### Step 3 — POST to the Command Center ingest endpoint

@@ -231,6 +231,8 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N37 | **AF-WORKSPACE-SHELL — "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are TWO SEPARATE states; each is verified separately, and never reported as the other.** Copying the role-library TEMPLATE to disk (`/data/.openclaw/skills/.../role-library/<dept>/` — a SKILLS-tree path) is "TEMPLATE DEPLOYED." It does NOT make a client department. A client department is "WORKSPACE INSTANTIATED" only when its WORKSPACE dir (`workspace/zero-human-company/<company>/departments/<dept>/`) is MATERIALIZED: ≥1 numbered role subdir (`00-*`/`01-*`…) AND director `IDENTITY.md` AND `SOUL.md` AND ≥1 real SOP (`how-to.md` ≥3 KB or a substantive standalone `0[1-9]-*.md` ≥7 KB). A dept dir that is only `DREAMS.md` + `memory/` is a SHELL. NEVER report a client/department "done / installed / updated / airtight" without the workspace gate passing **with raw counts** (a template on disk can NEVER satisfy it; a dept-dir symlinked into the template tree is treated as not-materialized). Extends the `lib-onboarding-state.sh` onboarding-honesty philosophy to the workspace layer (N27). | This file (N37 section) + `FLEET-STANDARDS.md §6` + `scripts/qc-assert-workspace-departments-built.sh` (single source of truth; required set = `department-floor.py` floor) | `scripts/qc-system-integrity.sh` CHECK X.11 (rc=3 hard-fail) + `lib-onboarding-state.sh` `oc_overall_goal_check` criterion (iii) `workspaceMaterialized` (overall "done" blocked while any dept is a shell) + watchdog `oc_overall_goal_check` (kill condition) + CI `.github/workflows/qc-static.yml` (runs `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh` T8/T8b) |
 | N38 | **AF-REPO-CONSISTENCY — a department / role / SOP / persona may NEVER ship inconsistent across the SIX sources of truth.** The Skill 23 blueprint carries six independent lists that must agree: **FLOOR** (`department-naming-map.json` `.mandatory` + the 6 universal-primary verticals — 6 not 7 since naming-map v2.6.1 reclassified `listings` to real-estate-only; floor = 28), **ROSTERS** (`suggested-roles/*.md`), **ROLE LIBRARY** (`templates/role-library/_index.json`), **SOP SOURCE** (role-library copy path / Skill-42 PA library), **PERSONA DOMAINS** (`build-workforce.py` `dept_to_domains` x2 + `create_role_workspaces.py` `DEPT_DOMAIN_HINTS`), and **NO ORPHANS**. Six departments once shipped UNBUILDABLE because nothing cross-checked floor vs rosters; missing persona-domain keys silently routed 11 floor depts to the generic `['leadership']` pool. For EVERY floor dept: its roster must parse, every roster role must resolve a library/SOP template, the dept must dry-run-instantiate cleanly, every role must have a real SOP source, and the dept must have a NON-fallback persona-domain mapping in ALL THREE persona maps. When you ADD or RENAME a department/role/SOP/persona you MUST update floor + roster + library + SOP source + persona maps together (see `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md`). **PERSONA-SET COUNT TRIAD (7th assertion):** beyond persona-DOMAIN mappings, adding a coaching/leadership persona must keep the COUNT triad in lockstep — `blueprint dirs (22-…/personas/*) == persona-categories.json keys == INDEX-MANIFEST.persona_count == INDEX-MANIFEST.canonical_persona_count` — else a persona ships matchable-but-vector-less (in the SET, no embeddings) or the manifest is bumped with no blueprint. The propagation checklist (blueprint + SET + incremental index + manifest + qmd + re-wire) is `23-ai-workforce-blueprint/ADDING-PERSONAS.md`. | This file (N38 section) + `FLEET-STANDARDS.md §7` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` + `23-ai-workforce-blueprint/ADDING-PERSONAS.md` + `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (single source of truth; uses the SAME `parse_roster`/`library_lookup`/`evaluate_floor`/`is_canonical_dept` functions the build uses, plus the `_persona_set_triad_failures` count assertion) | `scripts/qc-system-integrity.sh` CHECK X.12 (rc=5 hard-fail) + build-start preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted repo) + CI `.github/workflows/qc-static.yml` (runs the gate + `23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`) + CI `.github/workflows/persona-set-asset-consistency-guard.yml` (PR-boundary triad guard) |
 
+| N39 | **NATIVE SKILL INVOCATION — skills are native department capabilities, not user-only features.** A specialist reaches for the OWNING skill from a client's plain-language intent; the client never has to name it or type its slash command. The ONE binding is `23-ai-workforce-blueprint/skill-department-map.json` (skill↔dept↔specialist↔intent↔craft-SOP); the doctrine is `universal-sops/native-skill-invocation.md`; the runtime handoff is the Command-Center ContextPack `matched_skills` (Layer A). Skill selection is **dept-scoped** (only the task's department's skills are offered — a marketing task never sees the video pipeline) and **fail-closed on paid calls** (Rule-Zero USD announce + budget cap still apply). Durable knowledge lives in each owning role's `how-to.md` §8 "Skills You Operate" block (Layer B); the front-door reflex `SKILL_INTENT_ROUTING_REFLEX_V1` routes intent→owning department (Layer C, injected by `apply-fleet-standards.sh`, alongside the strict presentation REFLEX 0). Pointer, not paste — full detail lives in the SOP + map, never a playbook dump here. | `<!-- NATIVE_SKILL_INVOCATION_V1 -->` marker (below) + `23-ai-workforce-blueprint/skill-department-map.json` + `universal-sops/native-skill-invocation.md` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` Scenario E | **MAP-CONSISTENCY** dimension of `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (structure + Layer-B blocks + Layer-C reflex coverage) + CONTENT-HASH gate (role skill-blocks re-stamped) + `scripts/check-skill-department-map.py` (standalone orphan check) + CI `.github/workflows/qc-static.yml` |
+
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
 ---
@@ -1002,6 +1004,37 @@ and `scripts/test-watchdog-loop.sh` (T8 full-passes, T8b shell-blocks the overal
 - Draft first, get approval, then send
 - Never post to public channels without explicit permission
 - Private briefings go to direct messages only
+
+---
+
+## 🔴 N39 — Native Skill Invocation (departments operate skills from client intent)
+
+<!-- NATIVE_SKILL_INVOCATION_V1 -->
+**Skills are native department capabilities, not user-only features.** A client benefits
+from a skill even when they have never heard of it and never name it. When an owner
+expresses a plain-language outcome — "make me a video", "write my nurture emails", "turn
+my brand into ads", "give me a keynote" — the owning department's specialist reaches for
+the skill that does exactly that. The client never names the skill; no operator wires it
+per request.
+
+- **One source of truth:** `23-ai-workforce-blueprint/skill-department-map.json` binds every
+  skill → owning department(s) → owning specialist role(s) → plain-language intent triggers →
+  craft-cluster execution SOP. Every consumer feeds off it; never a second list.
+- **Dept-scoped:** a dispatched specialist is offered ONLY its department's skills (a
+  marketing task never sees the video pipeline). Runtime handoff = the Command-Center
+  ContextPack `matched_skills` block (Layer A, `blackceo-command-center`).
+- **Durable:** each owning role's `how-to.md` §8 carries a marker-guarded "Skills You
+  Operate" block (Layer B); the CEO's `SKILL_INTENT_ROUTING_REFLEX_V1` routes intent →
+  owning department (Layer C), alongside the strict presentation REFLEX 0.
+- **Fail-closed on paid calls:** operating a skill that spends money still requires the
+  Rule-Zero USD announce + budget-cap approval. Native invocation never bypasses it.
+- **Pointer, not paste:** the doctrine + detail live in
+  `universal-sops/native-skill-invocation.md` and the map — do not dump a playbook here.
+- **Enforced by:** the MAP-CONSISTENCY dimension of `qc-assert-repo-consistency.py`
+  (structure + Layer-B blocks + Layer-C reflex coverage) + the CONTENT-HASH gate (role
+  skill-blocks re-stamped) + `scripts/check-skill-department-map.py` + CI. Wiring a new
+  skill: `ADDING-DEPARTMENTS-ROLES-SOPS.md` Scenario E.
+<!-- END NATIVE_SKILL_INVOCATION_V1 -->
 
 ---
 

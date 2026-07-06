@@ -185,6 +185,14 @@ Review the master SOP for any updates to the 15-element spec or the image model.
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **45** design-intelligence-library | "match this brand style" · "on-brand images" · "a style card" | `~/.openclaw/skills/45-design-intelligence-library/` | `universal-sops/presentation-image-library/` · `universal-sops/presentation-design-system/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
