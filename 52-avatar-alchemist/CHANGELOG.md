@@ -1,5 +1,40 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.3.0
+
+Wave-1 merge-train **T-w1-52-avatar** — model-map is finally consumed, preflight
+resolves real box providers, and the zero-egress runs gain a mission-control
+carding contract.
+
+- **FIX-XC-09f** — `model-map.json` is now **actually consumed** at dispatch time.
+  `aa_director.py` loads the box's `model-map.json` (search order `$AA_MODEL_MAP`
+  → `<run-dir>/model-map.json` → `<skill-root>/model-map.json`), resolves each
+  stage's declared tier (A/B/SEARCH) to the box's **concrete model id** (passed to
+  the adapter as the model hint), defaults `--provider-cap` from
+  `provider_caps.concurrent` (the fleet Ollama-only ≤3 rule — **never the old
+  hardcoded 10**), and records the resolved tier ids + the cap source into
+  `RUN-LEDGER.json`. A model-map carrying an Anthropic-shaped tier id is refused by
+  the consumer (defense-in-depth, `AF-AV-NOANTHROPIC`). Absent a map, the cap falls
+  back to the conservative fleet default (3) and tiers resolve to the abstract
+  hint (legacy seam intact). Three new offline self-test legs prove all of this.
+- **FIX-XC-09f (preflight)** — `preflight.sh` no longer bakes hardcoded env
+  DEFAULTS. It resolves each tier from THIS box's OpenClaw config (explicit
+  `AA_TIER_A/B` / `AA_SEARCH` box-derived overrides or an `AA_PROVIDER_PROBE_CMD`
+  hook), **hard-fails** when a tier is unresolved (writes no guessed map), validates
+  every resolved id against the box's discoverable OpenClaw config, and keeps the
+  Anthropic ban. `AA-GATE-HASHES.json` re-pinned after the `aa_director.py` change.
+- **FIX-AVATAR-02** — the `scripts/` stay deliberately **zero-egress**, but the
+  driving role + SOP now carry a **3-step mission-control carding contract** so a
+  multi-hour, 40-stage deliverable is neither board-invisible nor able to skip the
+  QC `review` column: (1) intake → `scripts/mc-route.sh marketing "Brand
+  Intelligence — <First> <Last>"`; (2) signed QC certificate issued → advance the
+  card to `review` (never straight to `done`); (3) `aa_delivery_gate.py
+  --verify-cert` PASS → `done`. Card state is always verified by querying the
+  Command Center tasks **rows** via `find_dashboard_db()`, never file mtime (WAL
+  lag). Added to `brand-positioning-specialist.md §8.1` and
+  `universal-sops/avatar-craft/SOP-AVATAR-01 §6`; role-library `_index.json`
+  content-hash re-stamped for the edited role + marketing dept.
+
 ## 1.2.1
 
 DEP-9 doctrine (F4.5) — terminology only, no pipeline/behavior change.
@@ -12,7 +47,6 @@ DEP-9 doctrine (F4.5) — terminology only, no pipeline/behavior change.
   `23-ai-workforce-blueprint/persona-matching-protocol.md`). The tone-style slots are likewise
   distinct. Points to `TERMINOLOGY.md` → "Persona — three distinct meanings". Version bumped to
   keep `SKILL.md` frontmatter and `skill-version.txt` in lockstep.
-
 ## 1.2.0
 
 Wave-0 merge-train **T-52-avatar-alchemist** — semantic QC leg, real dispatch
