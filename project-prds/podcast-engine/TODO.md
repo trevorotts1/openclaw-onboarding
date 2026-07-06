@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W4.7 + W4.8 + W4.9 (SOPs: Credit Health and Queue, Episode QC, Book Teaser) | Opus sops-quality | AUTHORED (awaits Wave 5 canary + Wave 6 merge) | feat/podcast-sops-quality | self-QC 9.2 | Three SOPs added under universal-sops/podcast-craft/ (SOP-PODCAST-04/05/06), each carrying its enforcement pointer (guard-cron-inventory + smoke-test self-metering; qc-tier1-mechanical + qc-attempt-gate; render_book_teaser 14pt floor + episode gate). Grounded in the real sibling scripts. Gate B kept distinct from the 8.5 Gate A. Zero em dashes, zero fences, zero client names in the three files. Shared podcast-craft README and universal-sops _content-manifest.json restamp intentionally NOT touched (Merge/operational-SOP slice owns them). |
