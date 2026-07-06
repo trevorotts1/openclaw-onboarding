@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.15 podbean-publish | Opus 4.8 exec | DONE (self-QC 9.2) | feat/podcast-podbean-publish | 9.2 | scripts/podbean_publish.sh: direct Podbean OAuth client_credentials + uploadAuthorize + PUT + episode create; own client_id/secret/podcast_id; ep number = count+1; title appends Inspired by speaker; publish or future+publish_timestamp on future release; ledger permalink idempotency skip; isolation guard on podcast_id; records via podcast_state.py; secrets never printed (curl config via process-substitution); shellcheck clean; 7 mock e2e tests + leak audit pass. |
