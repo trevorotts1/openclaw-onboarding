@@ -1,0 +1,87 @@
+// =============================================================================
+// PODCAST PRODUCTION ENGINE :: WEBHOOKS PLUGIN ROUTE TEMPLATE (per client)
+// webhook-design.md Section 2. One route per client, exactly one.
+// -----------------------------------------------------------------------------
+// LIVE-VERIFIED against the INSTALLED gateway (OpenClaw 2026.6.11,
+// dist/extensions/webhooks/index.js). The installed schema DIFFERS from the
+// design's illustrative sketch; this template matches the installed contract, not
+// the sketch (schema drift is a known trap and the design says to validate before
+// shipping). Verified facts:
+//
+//   * Config path is  plugins.entries.webhooks.config.routes  (a MAP keyed by
+//     routeId), NOT  plugins.webhooks.routes  (a list with an `id` field).
+//   * Route object (.strict()): { enabled?, path?, sessionKey(req), secret(req),
+//     controllerId?, description? }. `path` defaults to /plugins/webhooks/<routeId>.
+//   * secret is a plain string OR a SecretRef with EXACTLY three keys
+//     { source, provider, id }, source in { env, file, exec }. For source "env"
+//     the runtime resolves process.env[id], so `id` is the ENV VAR NAME (must
+//     match ^[A-Z][A-Z0-9_]{0,127}$) and `provider` is the "default" alias.
+//   * Actions the route drives: create_flow, run_task, get_flow, find_latest_flow,
+//     resolve_flow, get_task_summary, set_waiting, resume_flow, finish_flow,
+//     fail_flow, request_cancel, cancel_flow. create_flow assigns the flowId (no
+//     client-supplied id), so dedup is the intake ledger's exclusive-create claim
+//     and the job_key rides in the flow's stateJson.
+//
+// Placeholders to substitute per client at onboarding (provision script):
+//   <client-slug>  lowercase, dash-separated, stable for the life of the client
+//                  (example: maria-anderson, star-bobatoon).
+//
+// Secret custody (NEVER a plaintext value here): generate at onboarding with
+//   openssl rand -hex 32
+// and place it in the client's env store as PODCAST_INTAKE_HOOK_SECRET (verify
+// SET in the LIVE process environment, not just a file). The plaintext transits
+// no chat, no repo, no log. Verification is "env SET" plus "signed test request
+// returns 200 and unsigned returns 401", never an echo of the value. Config is
+// written as the node runtime user, never root (a root-owned config freezes the
+// gateway).
+//
+// Merge this fragment into the client's openclaw.json under plugins.entries; do
+// not overwrite other plugin entries. Reload per the box's restart doctrine
+// (Mac: kickstart-then-stop; Virtual Private Server: compose recreate, not bare
+// restart, so env changes load), then confirm the gateway is healthy.
+// =============================================================================
+{
+  plugins: {
+    entries: {
+      webhooks: {
+        enabled: true,
+        config: {
+          routes: {
+            // routeId. The slug is embedded even though the box is single-client
+            // so logs are unambiguous and a copied config is detectable by the
+            // post-fan-out config validator (slug vs box identity mismatch).
+            "podcast-intake-<client-slug>": {
+              enabled: true,
+              // Origin path is fixed; the Cloudflare Tunnel forwards the public
+              // hostname to this path unchanged (cloudflare-design.md owns the
+              // public hostname and the POST-only WAF rule).
+              path: "/plugins/webhooks/podcast-intake-<client-slug>",
+              // The session owned by the client's podcast department agent. The
+              // route drives TaskFlows in this session and nothing else consumes
+              // it. The tool-bearing pipeline steps run in this agent's own turn
+              // (sub-agents get no Model Context Protocol).
+              sessionKey: "podcast:intake:<client-slug>",
+              // Per-client, per-route SecretRef, re-resolved on EVERY request so a
+              // rotation needs no gateway restart. source "env" resolves
+              // process.env[id]; provider is the "default" alias.
+              secret: {
+                source: "env",
+                provider: "default",
+                id: "PODCAST_INTAKE_HOOK_SECRET"
+              },
+              // Controller id for the managed flows this route creates. The
+              // controller runbook's FIRST step is the deterministic intake
+              // handler (a single Bash call to scripts/webhook/intake_handler.py),
+              // which maps, tenant-checks, dedup-claims, persists, and then either
+              // advances to Step 1 or closes the flow for a duplicate / needs_input
+              // / test / wrong-tenant delivery. No language model, no Model Context
+              // Protocol in that step.
+              controllerId: "webhooks/podcast-intake-<client-slug>",
+              description: "Podcast Production Engine intake for <client-slug> (deterministic ingest, durable TaskFlow)."
+            }
+          }
+        }
+      }
+    }
+  }
+}

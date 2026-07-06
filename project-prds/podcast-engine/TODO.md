@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.16 webhook-layer (Opus) | in-progress | feat/podcast-webhook-layer | self-verified | Webhook layer built under 58-podcast-production-engine/scripts/webhook/: route-template.json5 (LIVE-VERIFIED vs installed OpenClaw 2026.6.11: config path plugins.entries.webhooks.config.routes, SecretRef {source,provider,id}, create_flow assigns flowId), mapper.py (alias+fuzzy+value-shape+hard tenant check), job_key.py (pd- + contact_id + first16hex sha256), ledger.py (O_CREAT|O_EXCL claim + dedup + quarantine + 90d sweep), flow_client.py (409 read-check-reapply), intake_handler.py (fast-ACK). All 5 module --self-tests green; run-selftests.sh green; guard-clean (no LLM model ids, no em dash, no code fences); PII isolated to .payload.json; silence preserved. |
