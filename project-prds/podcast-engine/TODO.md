@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W4.4 to W4.6 SOPs operational trio (runbook, onboarding, revocation and churn) | Opus 4.8 (sops-operational) | DONE (branch pushed) | feat/podcast-sops-operational | self-QC 9.2 | Authored 3 SOPs under universal-sops/podcast-craft/, each carrying its enforcement pointer (podcast_state.py transition matrix; provision gate + verify-t1-t9.sh + ghl_credential_gate.py; revoke-podcast-client.sh Step 9 + deactivate-client + guard-cron-inventory.py). Pure ASCII, zero em dashes, zero fences, generic slugs only. Cluster README and universal-sops manifest restamp left to the merge/integration owner (avoids clobbering the sibling quality-SOP slice). Enforcement scripts referenced by canonical path land via Wave 2 branches. |
