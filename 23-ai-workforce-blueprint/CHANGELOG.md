@@ -1,6 +1,51 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [v17.0.38] - 2026-07-05 - feat(persona): wire multi-persona decomposition + SOP persona-slots (matcher side — DEP-4, F3.7 + F3.9)
+
+<!-- DEP-4 relands on `main` after DEP-3 (v17.0.37) via a repo-wide `/version` roll to v17.0.38: skill 23's `skill-version.txt` is coupled to the repo-wide onboarding `/version` in LOCKSTEP via `bump-version.sh` (one of the 11 markers in `scripts/version-markers.json`), so clearing the skill-23 content-change gate G3 requires this bump — it is a version roll, NOT a repo release (rides the existing merge-train doctrine; the annotated tag is cut later by the consolidated wave release). -->
+
+Wires the decomposition + SOP-slot matcher path that was BUILT but UNWIRED (F3.7),
+and adds the SOP-declared per-step persona-slot contract (F3.9). Matcher side only;
+the Command-Center wiring (migration, dispatcher, kanban chips) lands in DEP-5, and
+the CODE/IMAGE craft specialists the slots resolve to land in DEP-6.
+
+**`scripts/decompose-task.py`**
+- **Live per-subtask department hints (F3.7).** `_DEPT_HINT_KEYWORDS` targets were
+  remapped off the four DEAD legacy slugs to the live canonical slug whose
+  `DEPT_DOMAIN_TAGS` actually pre-qualify the right pool: `creative→marketing`,
+  `billing→billing-finance`, `hr→account-management`, `operations→logistics-fulfillment`.
+  Every value is ALSO routed through `canonical_dept_slug()` at module load, so a hint
+  can never again be non-canonical/dead. `_infer_dept_hint` is now CALLED in
+  `select_for_subtask` (`dept = hint || caller_dept`) — previously defined and never
+  invoked, so every sub-task scored under the single caller department.
+- **SOP persona-slots are authoritative (F3.9).** `combined_select(..., slots=[…])`
+  SKIPS text decomposition and uses the slots as the sub-task list: one
+  `select_for_subtask` per slot with `task_category` FORCED to the slot's category
+  (pins the craft floor + primary-domain bonus deterministically), the task audience
+  folded into each slot's Layer-5 query (`audience_from: task`), and the slot label
+  carried into the plan / `task_subtask_persona` rows (+ additive `slot` column, with an
+  idempotent `ALTER TABLE` so an older CC-migrated table gains it). `--slots` CLI added.
+- **No-naked guarantees (F3.9 → F3.1).** A `required: true` slot that returns no match is
+  backfilled with `DEFAULT_PERSONA_FALLBACK` (`blackceo-house-voice`, Q2) so a required
+  slot is never empty; a mechanical sub-task keeps `no_persona_required: true` but now
+  carries `governance_persona_id` (`covey-7-habits`, `GOVERNANCE_PERSONA_FALLBACK`, Q1).
+
+**`scripts/persona-selector-v2.py`**
+- **Single-source mechanical gate (F3.7 sub-gap 3).** The inline shell-command gate in
+  `main()` now calls the shared `is_mechanical` classifier (`shared-utils/mechanical-gate.py`),
+  ending the divergence between the selector and the decomposer's copies. The whole-task
+  gate passes NO delivery verbs (a task that merely mentions "deploy" is not persona-free);
+  only decompose's per-subtask gate adds `DELIVERY_VERBS`. Mechanical output now carries
+  `governance_persona_id` (Q1). `--sop-slots` pass-through added to the `--combined` path.
+
+**`scripts/test-decompose-slot-and-hints.py` (new)**
+- Hermetic contract lock (no live persona DB touched): T1 every dept hint is a live
+  canonical `DEPT_DOMAIN_TAGS` key (no dead slug), T2 mechanical gate single-source +
+  delivery-verb scoping, T3 slot-driven multi-persona (forced categories, slot labels,
+  audience in the content query, distinct persona per slot), T4 no-naked fallback
+  (required-slot default + mechanical governance persona). Each with a NO-WEAKENING probe.
+
 ## [v17.0.37] - 2026-07-05 - fix(persona-selector): F3.5 — category-level stickiness task-signal bypass (perspective/specialty deference)
 
 <!-- DEP-3 relands on `main` after DEP-1 (v17.0.36) via a repo-wide `/version` roll to v17.0.37: skill 23's `skill-version.txt` is coupled to the repo-wide onboarding `/version` in LOCKSTEP via `bump-version.sh` (one of the 11 markers in `scripts/version-markers.json`), so clearing the skill-23 content-change gate G3 requires this bump — it is a version roll, NOT a repo release (rides the existing merge-train doctrine; the annotated tag is cut later by the consolidated wave release). -->

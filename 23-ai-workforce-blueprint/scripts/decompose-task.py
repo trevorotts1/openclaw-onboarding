@@ -139,28 +139,65 @@ def _int_env(name: str, default: int) -> int:
 
 DECOMP_MAX_SUBTASKS = _int_env("DECOMP_MAX_SUBTASKS", 6)  # hard cap on parts
 
-# Mechanical-task gate — kept byte-identical to persona-selector-v2.py main()
-# (lines ~1973-1977) so a "send"/"deploy"/"restart" SUB-task is persona-free
-# exactly the way a whole mechanical task is today (W6 edge case:
-# `no_persona_required` runs PER sub-task). Single source: if the selector's
-# rule changes, mirror it here.
-_MECH_MULTIWORD = ("check disk", "check memory")
-_MECH_SINGLEWORD = ("restart", "reboot", "ping", "ls", "chmod", "chown")
-# Decomposition adds the genuinely-mechanical delivery verbs the spec calls out
-# ("sending/sequencing" step). These are dispatch/plumbing, not craft.
-_MECH_DELIVERY = ("send it", "send the", "schedule the send", "deploy", "publish to",
-                  "push to", "upload", "queue the", "sequence the send", "blast")
+# Mechanical-task gate — SINGLE SOURCE: shared-utils/mechanical-gate.py.
+# The selector (whole-task) and this decomposer (per-subtask) import the SAME
+# classifier (F3.7 sub-gap 3) so the "no persona required" shell-command
+# contract can never diverge again. Decomposition additionally treats genuine
+# delivery/plumbing verbs ("send it"/"deploy"/... — the spec's sending/
+# sequencing step) as mechanical via the gate's DELIVERY_VERBS extension. Loaded
+# BY PATH (hyphenated filename); a tiny inline fallback mirrors the BASE rule +
+# DELIVERY_VERBS so a box missing the shared file still gates identically.
+def _load_shared_mechanical_gate():
+    """Load shared-utils/mechanical-gate.py as a module (hyphenated → by path)."""
+    candidates = [
+        _HERE.parent.parent / "shared-utils" / "mechanical-gate.py",
+        _HERE.parent.parent.parent / "shared-utils" / "mechanical-gate.py",
+        Path("/data/.openclaw/skills/shared-utils/mechanical-gate.py"),
+        Path.home() / ".openclaw" / "skills" / "shared-utils" / "mechanical-gate.py",
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                spec = importlib.util.spec_from_file_location("mechanical_gate_mod", str(c))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                return mod
+        except Exception:
+            continue
+    return None
+
+
+_MECH_GATE = _load_shared_mechanical_gate()
+if _MECH_GATE is not None:
+    _is_mechanical_base = _MECH_GATE.is_mechanical
+    DELIVERY_VERBS = _MECH_GATE.DELIVERY_VERBS
+    GOVERNANCE_PERSONA_FALLBACK = _MECH_GATE.GOVERNANCE_PERSONA_FALLBACK
+    DEFAULT_PERSONA_FALLBACK = _MECH_GATE.DEFAULT_PERSONA_FALLBACK
+else:
+    # Inline mirror of shared-utils/mechanical-gate.py (BASE rule + extension).
+    DELIVERY_VERBS = ("send it", "send the", "schedule the send", "deploy",
+                      "publish to", "push to", "upload", "queue the",
+                      "sequence the send", "blast")
+    GOVERNANCE_PERSONA_FALLBACK = "covey-7-habits"
+    DEFAULT_PERSONA_FALLBACK = "blackceo-house-voice"
+
+    def _is_mechanical_base(text, *, delivery_verbs=()):
+        if not text:
+            return False
+        t = text.lower()
+        if any(m in t for m in ("check disk", "check memory")):
+            return True
+        if any(re.search(r"\b" + re.escape(m) + r"\b", t)
+               for m in ("restart", "reboot", "ping", "ls", "chmod", "chown")):
+            return True
+        if delivery_verbs and any(m in t for m in delivery_verbs):
+            return True
+        return False
 
 
 def _is_mechanical(text: str) -> bool:
-    t = text.lower()
-    if any(m in t for m in _MECH_MULTIWORD):
-        return True
-    if any(re.search(r"\b" + re.escape(m) + r"\b", t) for m in _MECH_SINGLEWORD):
-        return True
-    if any(m in t for m in _MECH_DELIVERY):
-        return True
-    return False
+    """Per-subtask mechanical gate: BASE shell-command rule + delivery verbs."""
+    return _is_mechanical_base(text, delivery_verbs=DELIVERY_VERBS)
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -290,25 +327,52 @@ def apply_specialist_surfacing(weights: dict, category: str, subtask_text: str) 
 # (collapses to today's exact single-persona behaviour, no regression).
 # ───────────────────────────────────────────────────────────────────────────
 # Department hint keywords for a sub-task (best-effort; the CEO/router may
-# override). Maps a sub-task's intent to a likely floor department slug.
-_DEPT_HINT_KEYWORDS = [
+# override). Maps a sub-task's intent to a LIVE canonical floor department slug.
+#
+# DEAD-SLUG RECONCILIATION (F3.7 sub-gap 2): the four legacy targets
+# `creative`, `billing`, `hr`, `operations` were NOT live DEPT_DOMAIN_TAGS keys
+# — routing a sub-task to them would have landed on raw_dept_tags=[] (Stage B
+# loses dept pre-qualification). They are remapped to the live canonical slug
+# whose domain tags actually pre-qualify the right persona pool:
+#   creative   → marketing            (copywriting/communication domains — copy work)
+#   billing    → billing-finance      (finance/operations domains; also the canonical
+#                                       alias of "billing", so canonical_dept_slug fixes it)
+#   hr         → account-management    (communication/coaching domains — people work)
+#   operations → logistics-fulfillment (operations/productivity-systems domains — process work)
+# EVERY value is ALSO routed through canonical_dept_slug() at module load
+# (below) so a hint can never again be a non-canonical / dead slug, and
+# scripts/test-decompose-dept-hints.py LOCKS that every hint target is a live
+# canonical DEPT_DOMAIN_TAGS key (mirrors test-dept-domain-mirror.py).
+_DEPT_HINT_KEYWORDS_RAW = [
     (("funnel", "landing page", "sales page", "opt-in", "checkout", "upsell", "lead magnet"), "marketing"),
     (("ad", "paid", "campaign creative", "google ads", "meta ads"), "paid-advertisement"),
     (("sales", "pitch", "proposal", "close the", "objection", "discovery call"), "sales"),
     (("email", "outreach", "newsletter", "follow-up", "follow up", "sequence"), "marketing"),
-    (("copy", "headline", "write the", "messaging", "voice", "story", "blog", "article"), "creative"),
+    (("copy", "headline", "write the", "messaging", "voice", "story", "blog", "article"), "marketing"),
     (("design", "logo", "graphic", "mockup", "layout", "visual", "sketchnote"), "graphics"),
     (("video", "reel", "montage", "footage", "edit the cut"), "video"),
     (("research", "analyze", "investigate", "compile", "study"), "research"),
     (("contract", "nda", "policy", "compliance", "agreement", "terms"), "legal"),
-    (("invoice", "budget", "pricing", "forecast", "cashflow", "p&l"), "billing"),
-    (("hire", "onboard", "recruit", "performance review"), "hr"),
+    (("invoice", "budget", "pricing", "forecast", "cashflow", "p&l"), "billing-finance"),
+    (("hire", "onboard", "recruit", "performance review"), "account-management"),
     (("refund", "ticket", "support", "complaint"), "customer-support"),
-    (("sop", "workflow", "automation", "process", "procedure"), "operations"),
+    (("sop", "workflow", "automation", "process", "procedure"), "logistics-fulfillment"),
+]
+
+# Route every hint target through canonical_dept_slug() at module load so a hint
+# is ALWAYS a canonical slug (belt-and-suspenders on top of the explicit remap).
+_DEPT_HINT_KEYWORDS = [
+    (kws, canonical_dept_slug(dept) or dept) for kws, dept in _DEPT_HINT_KEYWORDS_RAW
 ]
 
 
 def _infer_dept_hint(subtask_text: str, default_dept: str) -> str:
+    """Return the LIVE canonical dept slug this sub-task hints at, else default.
+
+    Values are pre-canonicalised at module load, so the return is always a
+    canonical slug (assuming `default_dept` is already canonical — callers pass
+    canonical_dept_slug(caller_dept)).
+    """
     t = (subtask_text or "").lower()
     for kws, dept in _DEPT_HINT_KEYWORDS:
         if any(k in t for k in kws):
@@ -541,19 +605,43 @@ def decompose_task(task_text: str, max_subtasks: int = DECOMP_MAX_SUBTASKS,
 # by construction.
 # ───────────────────────────────────────────────────────────────────────────
 def select_for_subtask(subtask_text: str, department: str, paths: dict,
-                       db_path, variety: bool = True) -> dict:
-    dept = canonical_dept_slug(department) or department
-    category = infer_task_category(subtask_text)
+                       db_path, variety: bool = True, *,
+                       force_category: "str | None" = None,
+                       dept_hint: bool = True) -> dict:
+    """Pick the best-fit persona for ONE sub-task.
+
+    department: the caller's default dept (canonicalised here). When
+        `dept_hint` is True (default), a per-sub-task department hint refines it
+        (F3.7): dept = _infer_dept_hint(subtask_text) || caller_dept — so e.g. a
+        "build the funnel" step inside a marketing task scores under `marketing`
+        and an "invoice" step under `billing-finance`, each with the right
+        Stage-B domain pre-qualification. Hint values are live canonical slugs.
+    force_category: when an SOP persona_slot supplies it (F3.9), the task
+        category is PINNED to this value instead of inferred from text — this
+        deterministically pins the craft floor + primary-domain bonus for the
+        slot's craft.
+    """
+    caller_dept = canonical_dept_slug(department) or department
+    # F3.7: per-sub-task department hint refines the caller's default dept.
+    dept = _infer_dept_hint(subtask_text, caller_dept) if dept_hint else caller_dept
+    # F3.9: an SOP slot forces the category; otherwise infer it from the text.
+    category = force_category or infer_task_category(subtask_text)
     mode = detect_interaction_mode(subtask_text)
     specialist = specialist_for(subtask_text, category, dept)
 
     # Mechanical sub-task (e.g. the send/deploy step) → no persona required,
-    # PER sub-task (W6 edge case). The copy part still gets a persona.
-    if _is_mechanical(subtask_text):
+    # PER sub-task (W6 edge case). The copy part still gets a persona. A slot
+    # with a forced category is an explicit CRAFT slot and is never gated as
+    # mechanical (a "deploy the funnel" CONTENT slot must still get a persona).
+    if force_category is None and _is_mechanical(subtask_text):
         return {
             "persona_id": None,
             "persona_name": None,
             "no_persona_required": True,
+            # Q1: a mechanical step keeps the truthful no_persona_required flag
+            # but carries a governance persona id so the dispatch gate has a
+            # persona for EVERY part (never a naked sub-task).
+            "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
             "why": "Operational/mechanical step (dispatch/plumbing) — no persona required.",
             "department": dept,
             "specialist": specialist,
@@ -651,6 +739,7 @@ CREATE TABLE IF NOT EXISTS task_subtask_persona (
     score REAL,
     department TEXT,
     task_category TEXT,
+    slot TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -670,6 +759,14 @@ def record_subtask_personas(task_id: str, subtask_personas: list, db_path) -> in
         conn = sqlite3.connect(str(db_path))
         try:
             conn.execute(_SUBTASK_PERSONA_DDL)
+            # F3.9 slot column is additive — a table CREATED by an OLDER CC
+            # migration (or an older run of this script) may lack it. Add it
+            # idempotently so the INSERT below always has a target column; ignore
+            # the "duplicate column" error when it already exists. Never raises.
+            try:
+                conn.execute("ALTER TABLE task_subtask_persona ADD COLUMN slot TEXT")
+            except sqlite3.OperationalError:
+                pass
             # Idempotent per task_id: re-running a decomposition for the same
             # task replaces its prior plan rather than appending duplicates.
             conn.execute("DELETE FROM task_subtask_persona WHERE task_id = ?", (task_id,))
@@ -679,8 +776,8 @@ def record_subtask_personas(task_id: str, subtask_personas: list, db_path) -> in
                 conn.execute(
                     "INSERT INTO task_subtask_persona "
                     "(task_id, seq, subtask_text, persona_id, persona_name, "
-                    " score, department, task_category) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    " score, department, task_category, slot) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         task_id,
                         int(r.get("seq", 0) or 0),
@@ -690,6 +787,7 @@ def record_subtask_personas(task_id: str, subtask_personas: list, db_path) -> in
                         (float(score) if isinstance(score, (int, float)) else None),
                         r.get("department"),
                         r.get("task_category"),
+                        r.get("slot"),
                     ),
                 )
                 written += 1
@@ -704,15 +802,84 @@ def record_subtask_personas(task_id: str, subtask_personas: list, db_path) -> in
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# SOP persona_slot support (F3.9) — a slot is an SOP-declared sub-task contract:
+#   {"slot": "content", "task_category": "content-write",
+#    "domains": ["copywriting"], "audience_from": "task", "required": true}
+# When slots are supplied, they are the AUTHORITATIVE sub-task list (text
+# decomposition is skipped); each slot's task_category is forced so the craft
+# floor + primary-domain bonus are pinned deterministically.
+# ───────────────────────────────────────────────────────────────────────────
+def _slot_subtask_text(slot: dict, task_text: str) -> str:
+    """Compose the sub-task text for a slot = step label + (task audience context).
+
+    `audience_from: "task"` (the default) folds the PARENT task text into the
+    slot's sub-task text so the audience (e.g. "for an audience of Black women")
+    reaches the content slot's Layer-5 semantic query (F3.9 QC requirement). An
+    explicit `subtask`/`text` on the slot overrides the composed label.
+    """
+    label = (slot.get("subtask") or slot.get("text") or slot.get("slot")
+             or slot.get("name") or slot.get("task_category") or "work")
+    label = str(label).strip()
+    parts = [label]
+    if str(slot.get("audience_from", "task")).lower() == "task" and (task_text or "").strip():
+        parts.append(f"— for this task: {task_text.strip()}")
+    return " ".join(p for p in parts if p).strip()
+
+
+def _apply_required_slot_fallback(entry: dict, slot_label: str) -> dict:
+    """Guarantee a REQUIRED slot is never empty (F3.9 → F3.1 fallback).
+
+    When a `required: true` slot's selection returns no persona (empty universe
+    / low pool), attach DEFAULT_PERSONA_FALLBACK so the required slot always
+    carries a persona. A non-required empty slot is left as-is (the plan records
+    the gap truthfully). A client-configured default is resolved UPSTREAM (CC);
+    this constant is the last resort.
+    """
+    entry = dict(entry)
+    entry["persona_id"] = DEFAULT_PERSONA_FALLBACK
+    entry["persona_name"] = (entry.get("persona_name")
+                             or DEFAULT_PERSONA_FALLBACK.replace("-", " ").title())
+    entry["no_persona_required"] = False
+    entry["fallback"] = "default_persona"
+    entry["why"] = (f"{entry['persona_name']}: required SOP slot "
+                    f"'{slot_label or entry.get('task_category')}' had no confident "
+                    f"match — attached default fallback persona (a required slot "
+                    f"may never be empty).")
+    return entry
+
+
+def _work_items_from_slots(slots: list, task_text: str) -> list:
+    """Normalise SOP slots → the internal work-item shape used by combined_select."""
+    items = []
+    for i, slot in enumerate(slots, start=1):
+        if not isinstance(slot, dict):
+            continue
+        items.append({
+            "seq": i,
+            "text": _slot_subtask_text(slot, task_text),
+            "force_category": (slot.get("task_category") or None),
+            "required": bool(slot.get("required", False)),
+            "slot": (slot.get("slot") or slot.get("name") or None),
+        })
+    return items
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Combined entry point — the function W6.1 wires main()'s --decompose flag to.
 # ───────────────────────────────────────────────────────────────────────────
 def combined_select(task_text: str, department: str, *, use_llm: bool = True,
                     record: bool = True, max_subtasks: int = DECOMP_MAX_SUBTASKS,
-                    variety: bool = True) -> dict:
+                    variety: bool = True, slots: "list | None" = None) -> dict:
     """Decompose → per-sub-task best-fit persona → structured plan.
 
     Records which persona guided which sub-task (W5 done-report source) and
     returns both the `plan` (rich) and `subtask_personas` (W6.3 row shape).
+
+    slots (F3.9): when a governing SOP declares persona_slots, pass them here.
+        Text decomposition is SKIPPED and the slots become the authoritative
+        sub-task list — one select_for_subtask per slot, task_category forced to
+        the slot's category (pins craft floor + primary-domain bonus), and
+        `required: true` slots are guaranteed non-empty via the default fallback.
     """
     paths = get_openclaw_paths()
     db_path = find_dashboard_db()
@@ -723,17 +890,35 @@ def combined_select(task_text: str, department: str, *, use_llm: bool = True,
     # otherwise so independent runs never collide and re-fires stay idempotent.
     task_id = os.environ.get("OPENCLAW_TASK_ID") or f"decomp-{os.urandom(6).hex()}"
 
-    subtasks, method = decompose_task(task_text, max_subtasks=max_subtasks, use_llm=use_llm)
-    if not subtasks:
-        subtasks, method = [task_text], "heuristic"
+    # F3.9: SOP slots are authoritative when supplied — skip text decomposition.
+    slot_items = _work_items_from_slots(slots, task_text) if slots else []
+    if slot_items:
+        work_items = slot_items[:max_subtasks]
+        method = "sop-slots"
+    else:
+        subtasks, method = decompose_task(task_text, max_subtasks=max_subtasks, use_llm=use_llm)
+        if not subtasks:
+            subtasks, method = [task_text], "heuristic"
+        work_items = [{"seq": i, "text": st, "force_category": None,
+                       "required": False, "slot": None}
+                      for i, st in enumerate(subtasks, start=1)]
 
     plan = []
     subtask_personas = []        # W6.3 task_subtask_persona row shape
     personas_by_subtask = []     # compact W5 reporting feed
     llm_select_calls = 0
 
-    for seq, st in enumerate(subtasks, start=1):
-        entry = select_for_subtask(st, department, paths, db_path, variety=variety)
+    for item in work_items:
+        seq = item["seq"]
+        st = item["text"]
+        entry = select_for_subtask(st, department, paths, db_path, variety=variety,
+                                   force_category=item["force_category"])
+        # F3.9: a REQUIRED slot with no confident match is backfilled with the
+        # default fallback persona so the slot is never empty.
+        if (item["required"] and not entry.get("persona_id")
+                and not entry.get("no_persona_required")):
+            entry = _apply_required_slot_fallback(entry, item["slot"])
+        entry["slot"] = item["slot"]
         sel = entry.pop("_selection", None)
 
         # Record per-sub-task so the selection log + persona_assignment reflect
@@ -751,6 +936,7 @@ def combined_select(task_text: str, department: str, *, use_llm: bool = True,
         plan.append({
             "seq": seq,
             "subtask": st,
+            "slot": entry.get("slot"),
             "persona": entry["persona_name"],
             "persona_id": entry["persona_id"],
             "why": entry["why"],
@@ -759,12 +945,15 @@ def combined_select(task_text: str, department: str, *, use_llm: bool = True,
             "score": entry["score"],
             "task_category": entry["task_category"],
             "no_persona_required": entry["no_persona_required"],
+            "fallback": entry.get("fallback"),
+            "governance_persona_id": entry.get("governance_persona_id"),
             "specialist_surfacing_applied": entry["specialist_surfacing_applied"],
             "weights_used": entry["weights_used"],
         })
         subtask_personas.append({
             "seq": seq,
             "subtask_text": st,
+            "slot": entry.get("slot"),
             "persona_id": entry["persona_id"],
             "persona_name": entry["persona_name"],
             "score": entry["score"],
@@ -774,6 +963,7 @@ def combined_select(task_text: str, department: str, *, use_llm: bool = True,
         personas_by_subtask.append({
             "seq": seq,
             "subtask": st,
+            "slot": entry.get("slot"),
             "persona": entry["persona_name"],
             "specialist": entry["specialist"],
             "department": entry["department"],
@@ -793,6 +983,7 @@ def combined_select(task_text: str, department: str, *, use_llm: bool = True,
         "task_id": task_id,
         "department": canonical_dept_slug(department) or department,
         "decomposition_method": method,
+        "slot_driven": bool(slot_items),  # F3.9: SOP slots were authoritative
         "subtask_count": len(plan),
         "distinct_persona_count": len(distinct),
         "subtask_persona_rows_written": subtask_persona_rows_written,
@@ -834,7 +1025,8 @@ def _format_human(result: dict) -> str:
     ]
     for p in result["plan"]:
         persona = p["persona"] or ("(no persona — mechanical)" if p["no_persona_required"] else "(none)")
-        lines.append(f"  {p['seq']}. [{p['department']}/{p['specialist']}] {p['subtask']}")
+        slot_tag = f" {{{p['slot']}}}" if p.get("slot") else ""
+        lines.append(f"  {p['seq']}.{slot_tag} [{p['department']}/{p['specialist']}] {p['subtask']}")
         lines.append(f"       → {persona}")
         lines.append(f"         {p['why']}")
     return "\n".join(lines)
@@ -857,7 +1049,22 @@ def main():
                         help="Disable anti-repetition variety in per-subtask selection.")
     parser.add_argument("--max-subtasks", type=int, default=DECOMP_MAX_SUBTASKS,
                         help=f"Hard cap on sub-tasks (token-furnace budget; default {DECOMP_MAX_SUBTASKS}).")
+    parser.add_argument("--slots", default=None,
+                        help="F3.9: JSON array of SOP persona_slot objects "
+                             "({slot, task_category, domains, audience_from, "
+                             "required}). When supplied, decomposition is SKIPPED "
+                             "and slots are the authoritative sub-task list. "
+                             "Accepts an inline JSON string or a @path to a file.")
     args = parser.parse_args()
+
+    slots = None
+    if args.slots:
+        raw = args.slots
+        if raw.startswith("@"):
+            raw = Path(raw[1:]).read_text(encoding="utf-8")
+        slots = json.loads(raw)
+        if not isinstance(slots, list):
+            parser.error("--slots must be a JSON array of slot objects")
 
     result = combined_select(
         args.task,
@@ -866,6 +1073,7 @@ def main():
         record=not args.no_record,
         max_subtasks=args.max_subtasks,
         variety=not args.no_variety,
+        slots=slots,
     )
     if args.format == "human":
         print(_format_human(result))
