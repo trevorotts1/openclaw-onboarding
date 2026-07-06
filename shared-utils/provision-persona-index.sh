@@ -256,7 +256,10 @@ PYEOF
 #       is canonical — it is the manifest asset PLUS the client's own
 #       locally-embedded personas, and MUST NOT be clobbered by a re-download.
 #   (d) persona-dir count under <coaching_db_dir>/personas < manifest
-#       persona_count (a superset of dirs — client added their own — is fine).
+#       persona_count (read live from the manifest; a superset of dirs — client
+#       added their own — is fine. F2.5: an absent/zero/unreadable manifest
+#       persona_count is "no trustworthy count" and triggers skip-with-warn,
+#       NEVER a stale positive default.)
 #   (e) the .prebuilt-index-version sentinel != manifest release_tag
 #
 # SKIP (no download, no re-embed) ONLY when the index genuinely IS AT LEAST the
@@ -329,7 +332,16 @@ except Exception:
     _PIDX_CHUNKS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("chunk_count",0) or 0))' "$MANIFEST_PATH" 2>/dev/null || echo 0)"
     _PIDX_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("release_tag",""))' "$MANIFEST_PATH" 2>/dev/null || true)"
     _PIDX_COLS="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(",".join(m.get("schema",{}).get("columns_required",[])))' "$MANIFEST_PATH" 2>/dev/null || echo "section_number,mode")"
-    _PIDX_PERSONAS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("persona_count",54) or 54))' "$MANIFEST_PATH" 2>/dev/null || echo 54)"
+    # F2.5: default persona_count to 0 (NOT a stale positive constant). A partial /
+    # corrupt manifest that cannot yield persona_count must NOT silently gate the
+    # persona-dir check against an obsolete hardcoded number (it was 54, which the
+    # SET long ago outgrew). 0 means "no trustworthy count" → skip-with-warn below,
+    # exactly like a missing asset_url/sha256, rather than proceeding on a lie.
+    _PIDX_PERSONAS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("persona_count",0) or 0))' "$MANIFEST_PATH" 2>/dev/null || echo 0)"
+    if ! [ "$_PIDX_PERSONAS" -gt 0 ] 2>/dev/null; then
+        _pidx_skip_warn "manifest persona_count missing/zero/unreadable ($MANIFEST_PATH) — skipping prebuilt index provisioning (additive; keeping current index)"
+        return 0
+    fi
 
     mkdir -p "$COACHING_DB_DIR"
 

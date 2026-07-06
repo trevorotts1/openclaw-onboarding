@@ -19,13 +19,17 @@ on:
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json
+      - 22-book-to-persona-coaching-leadership-system/INSTALL.md
       - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - shared-utils/prebuilt-index/assert-install-doc-consistency.py
       - .github/workflows/persona-set-asset-consistency-guard.yml
   pull_request:
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json
+      - 22-book-to-persona-coaching-leadership-system/INSTALL.md
       - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - shared-utils/prebuilt-index/assert-install-doc-consistency.py
       - .github/workflows/persona-set-asset-consistency-guard.yml
   workflow_dispatch:
 
@@ -168,3 +172,7 @@ jobs:
               sys.exit(1)
           print("\nPASS: persona-SET count triad + asset freshness OK (" + str(next(iter(present.values()))) + " personas)")
           PYEOF
+
+      - name: Assert INSTALL.md persona count is not stale (F1.5 docs-consistency)
+        run: |
+          python3 shared-utils/prebuilt-index/assert-install-doc-consistency.py
