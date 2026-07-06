@@ -112,6 +112,29 @@ grep -qF 'qc-reference-sheet.sh' "$DOC"   && pass "doc references qc-reference-s
 grep -qF 'qc-notify-client-doc.sh' "$DOC" && pass "doc references qc-notify-client-doc.sh" || fail "doc must reference qc-notify-client-doc.sh"
 grep -qF 'qc-notion-doc-standard.sh' "$DOC" && pass "doc references its own gate (qc-notion-doc-standard.sh)" || fail "doc must reference qc-notion-doc-standard.sh"
 
+# 3b. v1.8.0 client-doc bullets (U-2 exit tag, U-6 test mode, U-7 lifecycle tags, U-11 visual embed).
+# Each is a MANDATORY bullet/section the standard must carry so the generated client doc
+# instructs the client on the new operator surfaces.
+#   U-11: per-playbook visual embed - hero image first, then the truth diagram under How it works.
+grep -qiE 'hero image FIRST' "$DOC" && grep -qiE 'truth diagram' "$DOC" \
+  && pass "U-11 bullet present: per-playbook visual embed (hero first, truth diagram under How it works)" \
+  || fail "missing the U-11 per-playbook visual-embed bullet (hero image FIRST + truth diagram under How it works)"
+#   U-7: the five standard lifecycle status tags the client automates against.
+U7_OK=1
+for t in ZHC-ai-responded ZHC-ai-booking-error ZHC-ai-handoff ZHC-ai-completed ZHC-ai-opted-out; do
+  grep -qF "$t" "$DOC" || U7_OK=0
+done
+[ "$U7_OK" -eq 1 ] && pass "U-7 bullet present: all five lifecycle status tags named (responded/booking-error/handoff/completed/opted-out)" \
+                   || fail "missing the U-7 lifecycle-status-tags bullet (must name all five: ZHC-ai-responded/-booking-error/-handoff/-completed/-opted-out)"
+#   U-2: the exit-tag bullet (apply talk-to-human from any automation to pull a contact out of the AI).
+grep -qF 'talk-to-human' "$DOC" && grep -qiE 'pull a contact out|out of the (active )?workflow|out of the AI' "$DOC" \
+  && pass "U-2 bullet present: apply the exit tag (talk-to-human) from any automation to pull a contact out of the AI" \
+  || fail "missing the U-2 exit-tag bullet (apply talk-to-human from any Convert and Flow automation to pull a contact out of the AI)"
+#   U-6: the "How to test your playbook safely" walkthrough.
+grep -qiE 'How to test your playbook safely' "$DOC" \
+  && pass "U-6 walkthrough present: How to test your playbook safely" \
+  || fail "missing the U-6 'How to test your playbook safely' walkthrough"
+
 # 4. Compose qc-reference-sheet.sh --require-manual-fill (the generator matches the standard).
 if [ "$DOC_ONLY" -eq 0 ]; then
   QCREF="$SKILL_DIR/scripts/qc-reference-sheet.sh"

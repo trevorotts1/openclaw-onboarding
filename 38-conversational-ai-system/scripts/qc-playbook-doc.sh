@@ -57,6 +57,11 @@
 
 set -uo pipefail
 
+# U-16 canonical engine (used by the U-4 metadata-grammar check below).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENGINE="$SKILL_ROOT/tools/playbook_engine.py"
+
 WF_DIR=""
 JSON_MODE=0
 
@@ -311,3 +316,86 @@ else:
 
 sys.exit(1 if failures else 0)
 PYEOF
+DOC_RC=$?
+
+# ---------------------------------------------------------------------------
+# U-4 metadata-grammar check (CARD-07). Every on-disk playbook's per-phase
+# objective-metadata lines (skip-if-field-filled, max-attempts, gate-if-not-met)
+# and the header model-tier line, WHEN PRESENT, must parse against the documented
+# grammar. This does NOT parse markdown itself: it shells out to the canonical
+# parser tools/playbook_engine.py (U-16) and applies the metadata policy to the
+# engine's structured output. A grammar violation FAILs the gate.
+# ---------------------------------------------------------------------------
+META_RC=0
+if [ -f "$ENGINE" ] && command -v python3 >/dev/null 2>&1; then
+  export WF_DIR ENGINE JSON_MODE
+  python3 - <<'PYEOF2'
+import json
+import os
+import sys
+from pathlib import Path
+
+ENGINE = Path(os.environ["ENGINE"])
+WF_DIR = os.environ.get("WF_DIR", "")
+JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
+
+sys.path.insert(0, str(ENGINE.parent))
+import playbook_engine as engine  # canonical parser (U-16)
+
+RESERVED = ("--build-with-ai-prompt.md", "--workflow-ai-prompt.md",
+            "--verification-checklist.md", "--ghl-side.md")
+
+defects = []
+checked = 0
+wf = Path(WF_DIR) if WF_DIR else None
+if wf and wf.is_dir():
+    for f in sorted(wf.iterdir()):
+        if not f.is_file() or not f.name.endswith(".md"):
+            continue
+        if f.name == "registry.md" or any(f.name.endswith(s) for s in RESERVED):
+            continue
+        checked += 1
+        parsed = engine.parse_playbook(f.read_text(encoding="utf-8", errors="ignore"))
+        mt = parsed["header"]["model_tier"]
+        if mt is not None and mt not in engine.MODEL_TIERS:
+            defects.append("%s header model-tier '%s' is not one of %s"
+                           % (f.name, mt, ", ".join(sorted(engine.MODEL_TIERS))))
+        for ph in parsed["phases"]:
+            label = "%s Phase %s (%s)" % (f.name, ph["number"], ph["name"] or "unnamed")
+            ma = ph.get("max_attempts")
+            if ma is not None and (not ma.isdigit() or int(ma) < 1):
+                defects.append("%s max-attempts '%s' must be a positive integer" % (label, ma))
+            if ph.get("gate_if_not_met") and not ph.get("gate_closing"):
+                defects.append("%s gate-if-not-met requires a 'closing:' message per the grammar" % label)
+            sif = ph.get("skip_if_field_filled")
+            if sif is not None and sif.strip() == "":
+                defects.append("%s skip-if-field-filled must name a field" % label)
+
+if JSON_MODE:
+    # Emit on STDERR so stdout stays a single JSON object for the doc-column gate.
+    print(json.dumps({"gate": "qc-playbook-doc:metadata",
+                      "verdict": "PASS" if not defects else "FAIL",
+                      "playbooks_checked": checked,
+                      "defects": defects}, indent=2), file=sys.stderr)
+else:
+    print("")
+    print("=== qc-playbook-doc: U-4 objective-metadata grammar (via playbook_engine.py) ===")
+    print("playbooks checked: %d" % checked)
+    if defects:
+        for d in defects:
+            print("  [FAIL] %s" % d)
+        print("RESULT: FAIL - %d metadata-grammar defect(s)." % len(defects))
+    else:
+        print("RESULT: PASS - every present metadata line parses against the grammar.")
+
+sys.exit(1 if defects else 0)
+PYEOF2
+  META_RC=$?
+fi
+
+# Combine: the gate FAILs if either the doc-column check or the metadata-grammar
+# check failed. Otherwise preserve the doc-gate's exit code (0 PASS, 2 NO_PLAYBOOKS).
+if [ "$DOC_RC" = "1" ] || [ "$META_RC" = "1" ]; then
+  exit 1
+fi
+exit "$DOC_RC"

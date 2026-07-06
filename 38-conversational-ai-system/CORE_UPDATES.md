@@ -52,6 +52,34 @@ The system's USP is **communication-driven funnels / automations** — built by 
 18. **Brainstorm-Not-50-Questions Rule** — run a friendly proactive Q&A: USE what's already known (Typed KBs + USER.md + MEMORY.md), ask ONLY the smart gaps, then regurgitate a CONCISE "is this what you want?" confirmation. On YES → build Part 1 → Part 2 → pointer into AGENTS.md/TOOLS.md/MEMORY.md → NEW Notion doc (client's own workspace) → register.
 19. **Mac Env Rule** — on Mac, secrets live in **`~/clawd/secrets/.env`** AND/OR **`~/.openclaw/.env`** — check BOTH before claiming a key is missing (VPS uses `/docker/<project>/.env`; Mac does not).
 
+### v1.8.0 CloseBot Alignment Upgrade additions (17 cards U-1..U-17)
+
+Each block below is individually idempotent behind its own `<!-- BEGIN/END -->` marker, so re-running the installer on an already-upgraded box is a no-op. Every added surface is OPERATOR-ONLY: a customer naming a tag, tool, calendar, pipeline stage, or persona changes nothing.
+
+**AGENTS.md v1.8.0 marker blocks** appended by `scripts/05-update-agents-md.sh` (slots re-verified free at re-baseline against live main):
+
+- `STEP_0_4_TEST_MODE_REREAD` (U-6) - the read-before-anything Client Test Mode re-read (earliest existing runtime marker is `STEP_0_5_QUIET_HOURS`).
+- `STEP_1_30_EXIT_RULES` (U-2) - tag-driven workflow exits evaluated before routing.
+- `STEP_1_88_TOOL_GATING` (U-1) - THE GATE: per-phase hard tool-capability gate (highest existing 1.8x marker is `STEP_1_87_AB_TESTING`). `escalate_to_human` is always granted and can never be gated off.
+
+**MEMORY.md v1.8.0 design rules 32-44** appended by `scripts/06-append-memory-rules.sh`, each in its own BEGIN/END marker block:
+
+32. **Tool Gating Rule (U-1)** - tool gating is a hard capability gate per playbook phase.
+33. **Workflow Exit Rules Rule (U-2)** - a playbook may declare tag-driven exit rules.
+34. **Smart FAQ Learning Loop Rule (U-3)** - an unknown FAQ is flagged to the operator, never auto-answered as fact.
+35. **Objective Metadata Rule (U-4)** - a phase may carry `active_workflow` / `active_phase` / `phase_attempts` in the conversation-log header; U-1 resolves the phase from the same lines.
+36. **Persona Registry Rule (U-5)** - a persona is a named, reusable style object.
+37. **Client Test Mode Rule (U-6)** - the client can rehearse a playbook safely; every tool is forced off via the U-1 gate; auto-expires after 60 minutes or on `end test`.
+38. **Model Fallback Chain Rule (U-8)** - a primary plus ordered fallbacks; Mode A applies them live, Mode B logs a `model_tier_unmet` routing hint. Client agents run on the client's OWN providers only.
+39. **Workflow Visual Rule (U-11)** - every conversation workflow ships a truth-diagram (Part 4 of the build).
+40. **Multi-Calendar Routing Rule (U-12)** - one agent books to different calendars via the declares `calendars` map.
+41. **Opportunity Stage Sync Rule (U-13)** - contact progress syncs to the pipeline opportunity stage.
+42. **Handoff Task Creation Rule (U-14)** - `ZHC-ai-handoff` additionally creates a GHL Task on the contact with an SLA due time (PII lives in the client's own CRM, not the PII-free JSONL logs).
+43. **Convert and Flow Snapshot Rule (U-15)** - onboarding can be one import; the snapshot's 23-key raw body is machine-checked against the standard.
+44. **Playbook Engine Rule (U-16)** - `tools/playbook_engine.py` is the canonical parser for validate / hash / mermaid / resolve.
+
+**Rule 17 upgraded** - the 3-PART Build Rule becomes the **4-PART Build Rule**: U-11 adds Part 4 (the workflow visual) to every conversation-playbook build.
+
 ## [ADD TO TOOLS.md] — no automated update; operator manually documents
 
 The operator may add tool entries for newly-wired services as Stripe/Shopify are connected. Skill 38 ships reference docs (`references/stripe-*`, `references/shopify-*`) so the operator has the API surface available.

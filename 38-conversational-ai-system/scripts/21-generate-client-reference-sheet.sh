@@ -268,7 +268,9 @@ write_notion_publish_py
 substitute_template() {
   local tpl="$1"
   if [ ! -f "$tpl" ]; then
-    printf '<!-- template missing: %s -->\n' "$tpl"
+    # Emit only the basename (client-facing output must never leak a server
+    # absolute path, which may contain the operator username / home dir).
+    printf '<!-- template missing: %s -->\n' "$(basename "$tpl")"
     return 0
   fi
   CLIENT_BUSINESS_NAME="$CLIENT_BUSINESS_NAME" \

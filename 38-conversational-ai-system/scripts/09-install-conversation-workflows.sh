@@ -536,4 +536,23 @@ else
   done
 fi
 
+# =============================================================================
+# Part 4, THE VISUAL (U-11): after doc creation, generate the workflow visual for
+# every on-disk playbook and record the Visual column. scripts/31-generate-workflow-
+# visual.sh parses the playbook via the canonical engine, emits diagram.mmd, renders
+# diagram.png via npx mermaid-cli (free), generates the budget-capped Kie hero, and
+# records the Visual column in registry.md + the manifest. Best-effort: the truth
+# diagram must NEVER block the install, so a failure WARNs and never changes exit.
+# =============================================================================
+GEN_VISUAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/31-generate-workflow-visual.sh"
+if [[ -f "$GEN_VISUAL" ]] && [[ -n "${DISK_SLUGS// /}" ]]; then
+  for slug in $DISK_SLUGS; do
+    if bash "$GEN_VISUAL" "$slug" --dir "$WORKFLOWS_DIR" >/dev/null 2>&1; then
+      echo "[09-install-conversation-workflows] generated + recorded the Visual (Part 4) for '$slug'"
+    else
+      echo "[09-install-conversation-workflows] WARNING: could not generate the Visual for '$slug' (mermaid-cli/Kie offline?); the truth diagram never blocks the install. Rerun scripts/31-generate-workflow-visual.sh $slug once online." >&2
+    fi
+  done
+fi
+
 rm -f "$PY_NOTION_DOC" 2>/dev/null || true

@@ -47,6 +47,15 @@ For each provider in use:
 ### 5. Embedding model freshness
 Apply same check to the embeddings provider configured in O.6.
 
+### 6. Model fallback chain (U-8)
+
+Review the ENTIRE model chain, not just the primary: `skill38.model_chain.primary` AND every entry
+in `skill38.model_chain.fallbacks`. A stale or deprecated FALLBACK is surfaced to the operator the
+same way a stale primary is, so the chain that keeps the client online during a provider outage never
+rots unnoticed. When Mode B (degraded) has switched the standing model to a fallback, the Saturday
+report ALSO asks whether to recover back to the primary (recovery is operator-approved only). See
+`references/model-fallback-chain.md`.
+
 ## Update categorization
 
 For each detected update:

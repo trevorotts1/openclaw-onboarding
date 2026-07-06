@@ -50,6 +50,38 @@ Examples (canonical, used across this skill's protocols and references):
 > objects, so they get visually-distinct prefixes (`ZHC-` for tags, `ZHC_` for
 > fields).
 
+## Lifecycle Status Tags (U-7) - the CloseBot-parity trio plus two
+
+Formalizes the CloseBot CB-9 lifecycle-status trio plus two, applied
+AUTOMATICALLY by the agent so the operator can wire their own Convert and Flow
+(GoHighLevel) automations against them (notify the owner on handoff, alert on a
+booking error, and so on). All five carry the `ZHC-` prefix (the agent creates
+them programmatically) and each has an EXACT application moment:
+
+| Tag | Applied the moment | 
+|---|---|
+| `ZHC-ai-responded` | the agent sends its FIRST AI reply in a conversation |
+| `ZHC-ai-booking-error` | ANY booking tool call FAILS after its retry |
+| `ZHC-ai-handoff` | the agent ESCALATES to a human (handoff / NEEDS_HUMAN) |
+| `ZHC-ai-completed` | the workflow reaches its WIN action (the desired outcome) |
+| `ZHC-ai-opted-out` | a COMPLIANCE stop fires (opt-out / STOP keyword) |
+
+These are the tags a client automates against. They are OPERATOR-FACING signals,
+not customer-invocable: a customer TYPING one of these names does nothing; the tag
+is applied only by the agent at the exact moment above.
+
+**Task-creation companion (U-14).** `ZHC-ai-handoff` does more than tag: the
+moment it fires, the agent ALSO creates a GHL Task on the contact (title, handoff
+reason, and the last customer messages, assigned to the configured user with an
+SLA) so the handoff is ACTIONABLE, not just passive. See
+`protocols/notification-routing-protocol.md` (Handoff Task Creation, U-14) for the
+task format, the SLA default, and the assignee configuration. Tagging alone is
+passive; the companion task makes the handoff land in someone's queue.
+
+Cross-referenced from `protocols/notification-routing-protocol.md`
+(`ZHC-ai-handoff` and `ZHC-ai-booking-error` are the tag-visible mirrors of the
+existing operator notifications).
+
 ## Why
 
 1. **Operator clarity.** One glance at Settings → Tags tells the operator which

@@ -77,6 +77,36 @@ else
   fail "protocols/zhc-tag-prefix-protocol.md MISSING"
 fi
 
+# 3b. Lifecycle Status Tags (U-7) - the five standardized lifecycle tags must be
+#     named in the protocol, AND the task-creation companion behavior (U-14) must
+#     be documented in that same lifecycle section.
+if [ -f "$PROTO" ]; then
+  grep -qi 'Lifecycle Status Tags' "$PROTO" \
+    && pass "U-7 Lifecycle Status Tags section present" \
+    || fail "U-7 Lifecycle Status Tags section MISSING from zhc-tag-prefix-protocol.md"
+  LIFECYCLE_TAGS=(
+    "ZHC-ai-responded"
+    "ZHC-ai-booking-error"
+    "ZHC-ai-handoff"
+    "ZHC-ai-completed"
+    "ZHC-ai-opted-out"
+  )
+  for t in "${LIFECYCLE_TAGS[@]}"; do
+    if grep -qF "$t" "$PROTO"; then
+      pass "U-7 lifecycle tag present: $t"
+    else
+      fail "U-7 lifecycle tag MISSING from zhc-tag-prefix-protocol.md: $t"
+    fi
+  done
+  # U-14 companion: the lifecycle section must document that ZHC-ai-handoff also
+  # creates a GHL task (task-creation companion behavior).
+  if grep -qi 'Task-creation companion' "$PROTO" && grep -qi 'creates a GHL Task' "$PROTO"; then
+    pass "U-14 task-creation companion behavior documented in the lifecycle section"
+  else
+    fail "U-14 task-creation companion behavior MISSING (lifecycle section must document the ZHC-ai-handoff GHL task)"
+  fi
+fi
+
 # 4. Every Round-3 Queue-A feature tag named in the new protocols carries ZHC-.
 #    The canonical tag names this wave introduces:
 EXPECTED_TAGS=(
