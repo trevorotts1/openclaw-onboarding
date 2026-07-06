@@ -73,6 +73,14 @@ Review the methodology against any MASTERDOC revision; propose lockstep updates 
 - `working/copy/sp_intake.json` (write) and `working/copy/sp_structure.json` (write) — the artifacts the P-SP-INTAKE / P-SP-STRUCTURE phases produce.
 - The ONE sanctioned build command: `presentation-canonical-entry.sh` -> `run_signature_deck.py` -> `build_deck.py` (never a hand-rolled renderer).
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **51** signature-presentation | "a signature talk" · "a keynote deck" · "a 100-slide presentation" | `~/.openclaw/skills/51-signature-presentation/` | `universal-sops/presentation-slide-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
 
 See `sops/signature-presentation-architect-sops.md` for the full When/Inputs/Steps/Outputs/Hand-to/Failure-mode detail. Summary:

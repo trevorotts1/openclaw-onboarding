@@ -210,6 +210,14 @@ When a persona is present, this file is subordinate to it.
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **38** conversational-ai-system | "set up a booking bot" · "a conversational qualifier" · "an AI that books calls" | `~/.openclaw/skills/38-conversational-ai-system/` | `universal-sops/SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. SOPs (Standard Operating Procedures)
 
 ### SOP-CCO-001: Daily Media Monitoring & Threat Detection

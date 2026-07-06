@@ -172,6 +172,14 @@ This role contributes to the company revenue cascade by: **producing video conte
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **47** movie-producer | "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" | `~/.openclaw/skills/47-movie-producer/` | `universal-sops/video-pipeline-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures
 
 ### SOP 9.1 — Video Creative Brief Intake and Approval

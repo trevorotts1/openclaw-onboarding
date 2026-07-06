@@ -69,6 +69,26 @@ per SOP-00. Do both. Never drop one.
 
 ---
 
+## Also surface skill-backed capabilities (not just the roster)
+
+Departments **natively operate skills** (see `universal-sops/native-skill-invocation.md`).
+When you answer "what can this department do for me?", surface the department's
+**skill-backed capabilities** in plain language, not only the specialist roster —
+because the biggest capabilities (make a video, write a nurture sequence, generate
+ads, build a funnel, produce a keynote) are delivered by a skill the specialist
+operates, and the owner benefits even without naming it.
+
+- The binding of department → skill → plain-language intent is
+  `~/.openclaw/skills/23-ai-workforce-blueprint/skill-department-map.json`; each
+  owning role's `how-to.md` §8 also lists its "Skills You Operate."
+- Frame it as an invitation: "Just tell me what you want in plain language — e.g.
+  'make me a week of social posts' — and the department will reach for the right
+  tool." The owner never has to know the skill's name.
+- Still do NOT invent capabilities. Only surface skills the map/role actually binds
+  to that department.
+
+---
+
 ## Where this is wired
 
 - Master Orchestrator: `master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`

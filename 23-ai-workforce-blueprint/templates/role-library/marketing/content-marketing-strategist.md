@@ -183,6 +183,16 @@ This role contributes to the company revenue cascade by: **building the owned me
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **19** humanizer | "make this sound human" · "less AI-sounding" · "rewrite this naturally" | `~/.openclaw/skills/19-humanizer/` | — |
+| **53** book-writer | "write my book" · "a nonfiction book" · "turn my ideas into a book" | `~/.openclaw/skills/53-book-writer/` | `universal-sops/book-writer-craft/` |
+| **54** anthology-writer | "my anthology chapter" · "write my contributor chapter" · "write my chapter for the anthology" | `~/.openclaw/skills/54-anthology-writer/` | `universal-sops/book-writer-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures
 
 ### SOP 9.1 — Content Brief Creation and Writer Assignment

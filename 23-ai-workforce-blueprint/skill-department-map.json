@@ -1,0 +1,538 @@
+{
+  "$schema_version": "1.0.0",
+  "artifact": "skill-department-map",
+  "purpose": "Single machine-readable source of truth binding each skill to its owning department(s), owning specialist role(s), plain-language client-intent triggers, and craft-cluster execution SOP. Feeds Layer A (CC ContextPack dept-scoped skill match), Layer B (role how-to.md 'Skills You Operate' blocks), and Layer C (SKILL_INTENT_ROUTING_REFLEX_V1). See PRD Departments-That-Use-Skills sections 3, 4, 5, 7.",
+  "authored_by": "wave-0 (Departments-That-Use-Skills PRD)",
+  "authored_at": "2026-07-06",
+  "role_library_version": "17.0.42",
+  "role_library_index": "23-ai-workforce-blueprint/templates/role-library/_index.json",
+  "runtime_defaults": {
+    "confidence_floor": 0.55,
+    "top_n": 3,
+    "dept_scoped": true,
+    "note": "Matching is dept-scoped: only the task department's owned skills are offered. Rule-Zero paid-call announce + budget cap still apply. Keyword fallback when the client has no OPENAI_API_KEY (same path department-router.ts uses)."
+  },
+  "notes": {
+    "client_facing": "true = a client can request this in plain language; it carries intent_triggers and resolves to a live owning department + specialist role. These are the intent-routing catalog.",
+    "infra": "false = install-time / operator / build-time / customer-facing-system skill. Carries a dept_owner for maintenance ownership only; no intent_triggers; excluded from the intent-routing catalog.",
+    "roles": "Every role slug listed here MUST exist in the role-library _index.json (orphan check enforces this). Default posture: assign to an EXISTING role; NO new roles (PRD section 6).",
+    "execution_sops": "Pointer(s) under universal-sops/ (craft cluster dir or loose doc). null = no craft playbook for this skill."
+  },
+  "skills": [
+    {
+      "skill": "16",
+      "slug": "summarize-youtube",
+      "name": "summarize-youtube",
+      "client_facing": true,
+      "description": "Extract YouTube transcripts and produce summaries / key points from a video URL.",
+      "departments": ["research"],
+      "roles": [
+        { "dept": "research", "slug": "competitive-intelligence-specialist", "primary": true },
+        { "dept": "research", "slug": "customer-research-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "summarize this YouTube",
+        "what does this video say",
+        "pull the transcript",
+        "give me the key points of this video"
+      ],
+      "execution_sops": []
+    },
+    {
+      "skill": "19",
+      "slug": "humanizer",
+      "name": "humanizer",
+      "client_facing": true,
+      "description": "Rewrite AI-generated text to sound natural and human; remove robotic phrasing; match the owner's voice.",
+      "departments": ["marketing", "communications"],
+      "roles": [
+        { "dept": "marketing", "slug": "content-marketing-strategist", "primary": true },
+        { "dept": "communications", "slug": "brand-messaging-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "make this sound human",
+        "less AI-sounding",
+        "rewrite this naturally",
+        "remove the robotic tone"
+      ],
+      "execution_sops": []
+    },
+    {
+      "skill": "24",
+      "slug": "storyboard-writer",
+      "name": "storyboard-writer",
+      "client_facing": true,
+      "description": "Plan video structure against AI model duration limits and generate per-segment prompts (storyboard).",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "storyboard-pre-production-specialist", "primary": true }
+      ],
+      "intent_triggers": [
+        "plan my video",
+        "storyboard this",
+        "script for a video",
+        "break my video into scenes"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "25",
+      "slug": "video-creator",
+      "name": "video-creator",
+      "client_facing": true,
+      "description": "Create videos from text, scripts, images, and clips (text-to-video, image-to-video, assembly, audio mix, export/resize).",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "ai-video-generator-specialist", "primary": true }
+      ],
+      "intent_triggers": [
+        "make a video from this text",
+        "make a video from this image",
+        "generate a clip",
+        "turn this script into a video"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "26",
+      "slug": "caption-creator",
+      "name": "caption-creator",
+      "client_facing": true,
+      "description": "Burn professional captions into a video or export an SRT (Whisper + FFmpeg; minimal/full/animated styles).",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "captioning--subtitling-specialist", "primary": true }
+      ],
+      "intent_triggers": [
+        "add captions",
+        "burn subtitles",
+        "make an SRT",
+        "caption this video"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "27",
+      "slug": "video-editor",
+      "name": "video-editor",
+      "client_facing": true,
+      "description": "Local video editing (FFmpeg/yt-dlp/Whisper/PySceneDetect): cut, resize for social, auto-caption, merge B-roll.",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "video-editor", "primary": true }
+      ],
+      "intent_triggers": [
+        "cut this video",
+        "trim this clip",
+        "resize this clip for social",
+        "edit this footage"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "28",
+      "slug": "cinematic-forge",
+      "name": "cinematic-forge",
+      "client_facing": true,
+      "description": "End-to-end AI video production concept-to-upload (VEO via KIE.ai, ElevenLabs/Suno audio, FFmpeg assembly).",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "ai-video-generator-specialist", "primary": true },
+        { "dept": "video", "slug": "automated-video-production-specialist-openmontage", "primary": false }
+      ],
+      "intent_triggers": [
+        "make a cinematic ad",
+        "make a cinematic reel",
+        "produce a polished video",
+        "a high-end branded video"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "47",
+      "slug": "movie-producer",
+      "name": "movie-producer",
+      "client_facing": true,
+      "description": "Autonomous multi-pipeline video production (OpenMontage): documentary montage or Kie.AI generation, full finished video from a brief.",
+      "departments": ["video"],
+      "roles": [
+        { "dept": "video", "slug": "automated-video-production-specialist-openmontage", "primary": true },
+        { "dept": "video", "slug": "head-of-video-production", "primary": false }
+      ],
+      "intent_triggers": [
+        "produce a full finished video from a brief",
+        "make me a documentary",
+        "make me a VSL",
+        "make me a whole video end to end"
+      ],
+      "execution_sops": ["video-pipeline-craft"]
+    },
+    {
+      "skill": "35",
+      "slug": "social-media-planner",
+      "name": "social-media-planner",
+      "client_facing": true,
+      "description": "Multi-agent content publishing engine: research, create, produce, schedule and publish across enabled GHL social channels.",
+      "departments": ["social-media"],
+      "roles": [
+        { "dept": "social-media", "slug": "director-of-social-media", "primary": true },
+        { "dept": "social-media", "slug": "community-manager", "primary": false }
+      ],
+      "intent_triggers": [
+        "post my content this week",
+        "run my social",
+        "schedule posts",
+        "plan my social calendar"
+      ],
+      "execution_sops": ["social-media-craft"],
+      "note": "Superseded/rolled into Skill 57 (social-media-in-a-box) for the productionized weekly engine; both remain client-facing."
+    },
+    {
+      "skill": "57",
+      "slug": "social-media-in-a-box",
+      "name": "social-media-in-a-box",
+      "client_facing": true,
+      "description": "Productionized weekly social engine: takes a weekly theme and runs the full end-to-end social week.",
+      "departments": ["social-media"],
+      "roles": [
+        { "dept": "social-media", "slug": "director-of-social-media", "primary": true }
+      ],
+      "intent_triggers": [
+        "run my social week end-to-end",
+        "a week of content",
+        "a full week of posts across all platforms"
+      ],
+      "execution_sops": ["social-media-craft"]
+    },
+    {
+      "skill": "48",
+      "slug": "facebook-ad-generator",
+      "name": "facebook-ad-generator",
+      "client_facing": true,
+      "description": "Turns a bio + audience profile into a ready-to-run batch of 10 Facebook & Instagram ads (overlays, bodies, headlines).",
+      "departments": ["paid-advertisement"],
+      "roles": [
+        { "dept": "paid-advertisement", "slug": "facebook-instagram-ad-run-producer", "primary": true },
+        { "dept": "paid-advertisement", "slug": "audience-research-specialist", "primary": false },
+        { "dept": "paid-advertisement", "slug": "direct-response-ad-copywriter", "primary": false }
+      ],
+      "intent_triggers": [
+        "make me Facebook ads",
+        "make me Instagram ads",
+        "10 ad variations",
+        "a batch of ad creatives"
+      ],
+      "execution_sops": ["fb-ad-craft"]
+    },
+    {
+      "skill": "49",
+      "slug": "signature-funnel",
+      "name": "signature-funnel",
+      "client_facing": true,
+      "description": "Builds a Signature Funnel: 12-section Hero copy, per-section image prompts, GHL media + funnel build, configurable 3/5/7-step funnel.",
+      "departments": ["web-development", "marketing"],
+      "roles": [
+        { "dept": "web-development", "slug": "signature-funnel-specialist", "primary": true },
+        { "dept": "web-development", "slug": "funnel-builder-specialist", "primary": false },
+        { "dept": "marketing", "slug": "signature-funnel-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "build my funnel",
+        "build me a landing page",
+        "an opt-in and upsell chain",
+        "a full funnel"
+      ],
+      "execution_sops": ["funnel-craft"]
+    },
+    {
+      "skill": "50",
+      "slug": "email-engine",
+      "name": "email-engine",
+      "client_facing": true,
+      "description": "Email Engine + Superlibrary: selects the framework, generates corpus-faithful email copy, QCs it, hands a DRAFT-ONLY deploy plan.",
+      "departments": ["marketing", "crm"],
+      "roles": [
+        { "dept": "marketing", "slug": "email-campaign-strategist", "primary": true },
+        { "dept": "crm", "slug": "sms--whatsapp--dm-sequence-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "write my email sequence",
+        "nurture emails",
+        "a welcome series",
+        "an email campaign"
+      ],
+      "execution_sops": ["email-craft"]
+    },
+    {
+      "skill": "51",
+      "slug": "signature-presentation",
+      "name": "signature-presentation",
+      "client_facing": true,
+      "description": "Builds a Signature Presentation: 4-phase, minimum-100-slide signature-talk methodology as a governed deck type.",
+      "departments": ["presentations"],
+      "roles": [
+        { "dept": "presentations", "slug": "signature-presentation-architect", "primary": true },
+        { "dept": "presentations", "slug": "director-of-presentations", "primary": false },
+        { "dept": "presentations", "slug": "slide-copywriter", "primary": false }
+      ],
+      "intent_triggers": [
+        "a signature talk",
+        "a keynote deck",
+        "a 100-slide presentation",
+        "build my signature presentation"
+      ],
+      "execution_sops": ["presentation-slide-craft"]
+    },
+    {
+      "skill": "45",
+      "slug": "design-intelligence-library",
+      "name": "design-intelligence-library",
+      "client_facing": true,
+      "description": "Design Intelligence Unit: 12-dimension style analysis + style-card library + on-brand image generation.",
+      "departments": ["graphics", "presentations"],
+      "roles": [
+        { "dept": "graphics", "slug": "chief-design-officer", "primary": true },
+        { "dept": "graphics", "slug": "ai-image-generator-specialist", "primary": false },
+        { "dept": "presentations", "slug": "slide-image-creator", "primary": false }
+      ],
+      "intent_triggers": [
+        "match this brand style",
+        "on-brand images",
+        "a style card",
+        "generate images in my brand look"
+      ],
+      "execution_sops": ["presentation-image-library", "presentation-design-system"]
+    },
+    {
+      "skill": "52",
+      "slug": "avatar-alchemist",
+      "name": "avatar-alchemist",
+      "client_facing": true,
+      "description": "Turns one brand-intake interview into the full brand-intelligence package (40 generators across 7 subsystems).",
+      "departments": ["marketing"],
+      "roles": [
+        { "dept": "marketing", "slug": "brand-positioning-specialist", "primary": true }
+      ],
+      "intent_triggers": [
+        "build my brand avatar",
+        "a brand intelligence package",
+        "who is my customer",
+        "define my ideal customer"
+      ],
+      "execution_sops": ["avatar-craft"]
+    },
+    {
+      "skill": "53",
+      "slug": "book-writer",
+      "name": "book-writer",
+      "client_facing": true,
+      "description": "Turns one book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets.",
+      "departments": ["marketing"],
+      "roles": [
+        { "dept": "marketing", "slug": "content-marketing-strategist", "primary": true }
+      ],
+      "intent_triggers": [
+        "write my book",
+        "a nonfiction book",
+        "turn my ideas into a book"
+      ],
+      "execution_sops": ["book-writer-craft"]
+    },
+    {
+      "skill": "54",
+      "slug": "anthology-writer",
+      "name": "anthology-writer",
+      "client_facing": true,
+      "description": "Turns one contributor intake into a finished, gated anthology chapter.",
+      "departments": ["marketing"],
+      "roles": [
+        { "dept": "marketing", "slug": "content-marketing-strategist", "primary": true }
+      ],
+      "intent_triggers": [
+        "my anthology chapter",
+        "write my contributor chapter",
+        "write my chapter for the anthology"
+      ],
+      "execution_sops": ["book-writer-craft"]
+    },
+    {
+      "skill": "55",
+      "slug": "product-bio",
+      "name": "product-bio",
+      "client_facing": true,
+      "description": "Product Bio Engine: turns a 4-field intake into a 6-7k-word, 10-section master-brain product sales knowledge base.",
+      "departments": ["marketing", "sales"],
+      "roles": [
+        { "dept": "marketing", "slug": "conversion-copywriter", "primary": true },
+        { "dept": "sales", "slug": "proposal-and-quote-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "write my product bio",
+        "a master brain for my product",
+        "a product sales knowledge base"
+      ],
+      "execution_sops": ["product-bio-craft"]
+    },
+    {
+      "skill": "56",
+      "slug": "sales-page-assets",
+      "name": "sales-page-assets",
+      "client_facing": true,
+      "description": "Builds a Direct-Response sales-page asset stack from one survey (the DR sibling of Skill 49).",
+      "departments": ["marketing", "web-development"],
+      "roles": [
+        { "dept": "marketing", "slug": "sales-page-assets-specialist", "primary": true },
+        { "dept": "marketing", "slug": "conversion-copywriter", "primary": false },
+        { "dept": "web-development", "slug": "sales-page-assets-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "a sales page",
+        "upsell and downsell copy",
+        "a high-ticket page",
+        "write my sales page"
+      ],
+      "execution_sops": ["sales-page-craft"]
+    },
+    {
+      "skill": "06",
+      "slug": "ghl-install-pages",
+      "name": "ghl-install-pages",
+      "client_facing": true,
+      "description": "Delivery rail that installs/publishes forms and pages into GHL.",
+      "departments": ["web-development"],
+      "roles": [
+        { "dept": "web-development", "slug": "funnel-builder-specialist", "primary": true },
+        { "dept": "web-development", "slug": "landing-page-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "build me a form in GHL",
+        "build me a page in GHL",
+        "publish this page",
+        "install this funnel in GHL"
+      ],
+      "execution_sops": ["form-craft"],
+      "note": "Primarily a delivery rail for funnel/form builds; carries a light client-facing intent for direct GHL form/page requests."
+    },
+    {
+      "skill": "44",
+      "slug": "convert-and-flow-operator",
+      "name": "convert-and-flow-operator",
+      "client_facing": true,
+      "description": "Tier-0 GHL operator (caf/convertandflow/ghl CLI): direct CRM access to build workflows, automations, order-bumps.",
+      "departments": ["crm", "marketing"],
+      "roles": [
+        { "dept": "crm", "slug": "automation-workflow-specialist", "primary": true },
+        { "dept": "crm", "slug": "crm-platform-administrator", "primary": false }
+      ],
+      "intent_triggers": [
+        "build a workflow",
+        "automate this",
+        "an order-bump",
+        "set up a CRM automation"
+      ],
+      "execution_sops": ["funnel-automation-build-quality-rubric.md"]
+    },
+    {
+      "skill": "38",
+      "slug": "conversational-ai-system",
+      "name": "conversational-ai-system",
+      "client_facing": true,
+      "description": "Communication-driven funnel system: builds GHL conversation playbooks (booking, brainstorm Q&A, multi-phase qualification).",
+      "departments": ["sales", "communications", "customer-support"],
+      "roles": [
+        { "dept": "sales", "slug": "appointment-setter", "primary": true },
+        { "dept": "communications", "slug": "chief-communications-officer", "primary": false },
+        { "dept": "customer-support", "slug": "live-chat-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "set up a booking bot",
+        "a conversational qualifier",
+        "an AI that books calls",
+        "a chat flow that qualifies leads"
+      ],
+      "execution_sops": ["SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md"],
+      "note": "Customer-facing brain built during onboarding and invoked by the client's leads; owning roles operate/maintain it."
+    },
+    {
+      "skill": "39",
+      "slug": "real-estate-playbook",
+      "name": "real-estate-playbook",
+      "client_facing": true,
+      "vertical": true,
+      "description": "Real estate automation playbook: property lookup, lead qualification scripts, showing scheduler, lead routing.",
+      "departments": ["sales"],
+      "roles": [
+        { "dept": "sales", "slug": "account-executive-full-cycle", "primary": true },
+        { "dept": "sales", "slug": "appointment-setter", "primary": false }
+      ],
+      "intent_triggers": [
+        "look up a property",
+        "qualify a real estate lead",
+        "schedule a showing"
+      ],
+      "execution_sops": [],
+      "note": "Industry vertical add-on (real estate); only active on RE-vertical builds."
+    },
+    {
+      "skill": "43",
+      "slug": "graphify-knowledge-graph",
+      "name": "graphify-knowledge-graph",
+      "client_facing": true,
+      "description": "Turns the client's own workforce/codebase/docs into a persistent, queryable knowledge graph (how-is-this-wired / what-depends-on-what).",
+      "departments": ["openclaw-maintenance"],
+      "roles": [
+        { "dept": "openclaw-maintenance", "slug": "integration--mcp-specialist", "primary": true },
+        { "dept": "openclaw-maintenance", "slug": "memory-hygiene-specialist", "primary": false }
+      ],
+      "intent_triggers": [
+        "map my workforce",
+        "graph my company",
+        "how is my workforce wired",
+        "what depends on what"
+      ],
+      "execution_sops": [],
+      "note": "Owner utility (surfaced to the operator), owned by OpenClaw Maintenance."
+    },
+    {
+      "skill": "22",
+      "slug": "book-to-persona-coaching-leadership-system",
+      "name": "book-to-persona-coaching-leadership-system",
+      "client_facing": false,
+      "description": "Cross-department governance / build-time: turns a book into coaching+leadership personas. Not a runtime client ask.",
+      "dept_owner": "openclaw-maintenance",
+      "intent_triggers": [],
+      "execution_sops": []
+    },
+    { "skill": "01", "slug": "teach-yourself-protocol", "name": "teach-yourself-protocol", "client_facing": false, "description": "Install-time: agent self-teaching protocol.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "02", "slug": "back-yourself-up-protocol", "name": "back-yourself-up-protocol", "client_facing": false, "description": "Install-time: agent backup protocol.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "03", "slug": "agent-browser", "name": "agent-browser", "client_facing": false, "description": "Install-time: headless browser tooling.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "04", "slug": "superpowers", "name": "superpowers", "client_facing": false, "description": "Install-time: shared capability bundle.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "05", "slug": "ghl-setup", "name": "ghl-setup", "client_facing": false, "description": "Install-time: GHL account setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "07", "slug": "kie-setup", "name": "kie-setup", "client_facing": false, "description": "Install-time: KIE.ai setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "08", "slug": "vercel-setup", "name": "vercel-setup", "client_facing": false, "description": "Install-time: Vercel setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "09", "slug": "context7", "name": "context7", "client_facing": false, "description": "Install-time: Context7 docs integration.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "10", "slug": "github-setup", "name": "github-setup", "client_facing": false, "description": "Install-time: GitHub setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "11", "slug": "superdesign", "name": "superdesign", "client_facing": false, "archived": true, "description": "ARCHIVED.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "12", "slug": "openrouter-setup", "name": "openrouter-setup", "client_facing": false, "description": "Install-time: OpenRouter setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "13", "slug": "google-workspace-setup", "name": "google-workspace-setup", "client_facing": false, "archived": true, "description": "ARCHIVED.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "14", "slug": "google-workspace-integration", "name": "google-workspace-integration", "client_facing": false, "description": "Install-time: Google Workspace integration.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "15", "slug": "blackceo-team-management", "name": "blackceo-team-management", "client_facing": false, "description": "Install-time: team management configuration.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "17", "slug": "self-improving-agent", "name": "self-improving-agent", "client_facing": false, "description": "Install-time: self-improvement loop.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "18", "slug": "proactive-agent", "name": "proactive-agent", "client_facing": false, "description": "Install-time: proactive agent behavior.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "20", "slug": "youtube-watcher", "name": "youtube-watcher", "client_facing": false, "description": "Install-time: YouTube monitoring/watcher.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "21", "slug": "tavily-search", "name": "tavily-search", "client_facing": false, "archived": true, "description": "ARCHIVED.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "23", "slug": "ai-workforce-blueprint", "name": "ai-workforce-blueprint", "client_facing": false, "description": "Build-time: the AI Workforce Blueprint (interview → workforce). Operator/build-time, not a runtime client ask.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "29", "slug": "ghl-convert-and-flow", "name": "ghl-convert-and-flow", "client_facing": false, "description": "Install-time: Convert & Flow / GHL setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "30", "slug": "fish-audio-api-reference", "name": "fish-audio-api-reference", "client_facing": false, "description": "Setup/reference: Fish Audio API (TTS rail used by video/presentations).", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "31", "slug": "upgraded-memory-system", "name": "upgraded-memory-system", "client_facing": false, "description": "Install-time: upgraded memory system.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "32", "slug": "command-center-setup", "name": "command-center-setup", "client_facing": false, "description": "Install-time: Command Center dashboard setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "33", "slug": "department-heads", "name": "department-heads", "client_facing": false, "archived": true, "description": "ARCHIVED.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "34", "slug": "intelligent-staffing", "name": "intelligent-staffing", "client_facing": false, "archived": true, "description": "ARCHIVED.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "36", "slug": "ghl-mcp-setup", "name": "ghl-mcp-setup", "client_facing": false, "description": "Install-time: GHL MCP server setup.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "37", "slug": "zhc-closeout", "name": "zhc-closeout", "client_facing": false, "description": "Operator/build-time: Zero-Human closeout process.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "40", "slug": "zhc-public-records-scraper", "name": "zhc-public-records-scraper", "client_facing": false, "description": "Operator tooling: public-records scraper (closeout support).", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "41", "slug": "build-with-ai-playbook", "name": "build-with-ai-playbook", "client_facing": false, "description": "Build-time doctrine/playbook backing the Convert-and-Flow operator (Skill 44).", "dept_owner": "crm", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "42", "slug": "personal-assistant-library", "name": "personal-assistant-library", "client_facing": false, "description": "Owner utility library for the personal-assistant department (not in the intent-routing catalog).", "dept_owner": "personal-assistant", "intent_triggers": [], "execution_sops": [] },
+    { "skill": "46", "slug": "kie-callback-relay", "name": "kie-callback-relay", "client_facing": false, "description": "Install-time: KIE.ai callback relay infrastructure.", "dept_owner": "openclaw-maintenance", "intent_triggers": [], "execution_sops": [] }
+  ]
+}

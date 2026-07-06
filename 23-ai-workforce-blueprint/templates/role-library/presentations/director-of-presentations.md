@@ -265,6 +265,14 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **51** signature-presentation | "a signature talk" · "a keynote deck" · "a 100-slide presentation" | `~/.openclaw/skills/51-signature-presentation/` | `universal-sops/presentation-slide-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md

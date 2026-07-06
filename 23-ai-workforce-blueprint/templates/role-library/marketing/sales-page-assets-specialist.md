@@ -110,6 +110,14 @@ changes. Never change the rule to make a gate pass.
   shared `universal-sops/funnel-craft/` (SOP-FUNNEL-01..05 + the AF-code ruleset) for the common build/certify steps. Order-bump
   widget: Skill 44. Images: Skill 47 or the client's own image provider.
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
 
 See `universal-sops/sales-page-craft/` (which extends `universal-sops/funnel-craft/`) for the full detail. Summary:

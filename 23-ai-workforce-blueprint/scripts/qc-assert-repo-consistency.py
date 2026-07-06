@@ -69,6 +69,10 @@ from pathlib import Path
 # Resolution helpers — load the REAL build modules so the gate mirrors the build.
 # ─────────────────────────────────────────────────────────────────────────────
 
+class _SkipDimension(Exception):
+    """Raised to cleanly skip an artifact dimension (row already added as a pass)."""
+
+
 def _load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
     if spec is None or spec.loader is None:
@@ -1205,6 +1209,109 @@ def evaluate_artifact_coverage(skill_dir):
                     + (f" … +{len(hash_problems) - 4} more" if len(hash_problems) > 4 else ""))
     except Exception as e:  # noqa: BLE001
         add_row("CONTENT-HASH", False, f"content-hash check raised: {e}")
+
+    # ── DIMENSION: MAP-CONSISTENCY (Departments-That-Use-Skills, Layer D) ──────
+    # The skill↔dept↔role↔intent binding (skill-department-map.json) is the ONE
+    # source of truth that Layer A (CC ContextPack), Layer B (role how-to.md
+    # "Skills You Operate" blocks) and Layer C (the SKILL_INTENT_ROUTING_REFLEX_V1
+    # front-door reflex) all feed off. This dimension proves the three stay in
+    # lockstep with the map (mirrors N38's six-source discipline for skills):
+    #   (a) STRUCTURE — every client-facing skill resolves to a live dept + owning
+    #       role (exactly one primary), map<->disk skill-folder coverage, infra
+    #       ownership, execution_sops resolve  (check-skill-department-map.run_checks).
+    #   (b) LAYER B — every owning role's canonical template carries a CURRENT
+    #       "Skills You Operate" block matching the map (stamp-skills-you-operate.check_all);
+    #       a stale/missing block => drift (forces a re-stamp before ship).
+    #   (c) LAYER C — the SKILL_INTENT_ROUTING_REFLEX_V1 catalog in
+    #       scripts/apply-fleet-standards.sh lists a department for EVERY department
+    #       that owns a client-facing skill (the reflex is generated-from-the-map;
+    #       a dropped department would leave an intent unrouted at the front door).
+    # Any drift => rc 6 (same class as the other artifact dimensions).
+    try:
+        # MAP-CONSISTENCY is only meaningful against a FULL checkout: it needs the
+        # map, the repo-root universal-sops/ tree (execution_sops resolve there), and
+        # the numbered skill folders on disk (map<->disk coverage). The minimal
+        # skill-dir-only sandboxes (test-artifact-versioning.sh, test-repo-consistency.sh)
+        # copy neither — skip cleanly there rather than flag phantom drift.
+        _map_file = repo.skill_dir / "skill-department-map.json"
+        _usops_dir = repo.repo_root / "universal-sops"
+        if not (_map_file.is_file() and _usops_dir.is_dir()):
+            add_row("MAP-CONSISTENCY", True,
+                    "skipped — minimal sandbox (no repo-root universal-sops / map)")
+            raise _SkipDimension()
+        cksd = _load_module("check_skill_department_map",
+                            repo.scripts / "check-skill-department-map.py")
+        stamp = _load_module("stamp_skills_you_operate",
+                             repo.scripts / "stamp-skills-you-operate.py")
+        map_path = str(_map_file)
+        index_path = str(repo.index_path)
+
+        map_problems = []
+        struct_errors, _struct_warns, struct_stats = cksd.run_checks(
+            map_path=map_path, index_path=index_path,
+            usops=str(repo.repo_root / "universal-sops"))
+        map_problems += [f"[structure] {e}" for e in struct_errors]
+
+        layerb_drift, n_owners = stamp.check_all(
+            map_path=map_path, index_path=index_path, skill_dir=str(repo.skill_dir))
+        map_problems += [f"[layer-b] {d}" for d in layerb_drift]
+
+        # (c) Layer-C reflex coverage: departments owning a client-facing skill
+        # must all appear in the reflex catalog. Read the reflex block from
+        # apply-fleet-standards.sh (repo-root scripts/) and extract the department
+        # slugs it routes to.
+        owning_depts = set()
+        _map = json.loads(open(map_path, encoding="utf-8").read())
+        for s in _map["skills"]:
+            if s.get("client_facing"):
+                for r in s.get("roles", []):
+                    owning_depts.add(r["dept"])
+        afs = repo.repo_root / "scripts" / "apply-fleet-standards.sh"
+        # Sandbox skill-dir copies (test-repo-consistency.sh) have no repo-root
+        # scripts/ tree — Layer-C coverage is only meaningful against a full
+        # checkout, so skip it silently there rather than flag a phantom drift.
+        if not (repo.repo_root / "scripts").is_dir():
+            pass
+        elif afs.is_file():
+            afs_txt = afs.read_text(encoding="utf-8", errors="replace")
+            # The marker string appears several times in the script (a shell var, the
+            # strip regexes, the heredoc). Take EVERY HTML-comment-delimited block and
+            # keep the RICHEST one (the rendered table heredoc — the others are the
+            # single-line strip-regex sources with no dept rows).
+            blocks = re.findall(
+                r"<!-- SKILL_INTENT_ROUTING_REFLEX_V1 -->(.*?)<!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->",
+                afs_txt, re.DOTALL)
+            if not blocks:
+                map_problems.append("[layer-c] SKILL_INTENT_ROUTING_REFLEX_V1 block "
+                                    "not found in scripts/apply-fleet-standards.sh")
+            else:
+                # dept slugs are emitted as backticked `<slug>` tokens in the
+                # department column — pick the block with the most of them.
+                best = max(blocks, key=lambda b: len(re.findall(r"`[a-z][a-z0-9-]+`", b)))
+                routed = set(re.findall(r"`([a-z][a-z0-9-]+)`", best))
+                missing = sorted(d for d in owning_depts if d not in routed)
+                if missing:
+                    map_problems.append(
+                        "[layer-c] reflex catalog omits department(s) that own a "
+                        f"client-facing skill: {', '.join(missing)}")
+        else:
+            map_problems.append("[layer-c] scripts/apply-fleet-standards.sh not found")
+
+        if map_problems:
+            add_row("MAP-CONSISTENCY", False,
+                    f"skill-department-map drift ({len(map_problems)}): "
+                    + "; ".join(map_problems[:4])
+                    + (f" … +{len(map_problems) - 4} more" if len(map_problems) > 4 else ""))
+        else:
+            add_row("MAP-CONSISTENCY", True,
+                    f"map<->role<->reflex in lockstep: {struct_stats['client_facing']} "
+                    f"client-facing skills resolve to live dept+role; {n_owners} owning "
+                    f"roles carry a current Skills-You-Operate block; reflex routes all "
+                    f"{len(owning_depts)} owning departments")
+    except _SkipDimension:
+        pass  # minimal sandbox — MAP-CONSISTENCY row already added as a clean skip
+    except Exception as e:  # noqa: BLE001
+        add_row("MAP-CONSISTENCY", False, f"map-consistency check raised: {e}")
 
     rc = 0 if not failures else 6
     summary = {

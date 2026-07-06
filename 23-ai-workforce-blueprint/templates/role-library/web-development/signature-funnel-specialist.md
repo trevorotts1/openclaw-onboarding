@@ -112,6 +112,14 @@ this role) if the SACRED law changes. Never change the law to make a gate pass.
 - **Skill 6 is the ONE GHL delivery rail — it builds FUNNELS, WEBSITES, SURVEYS, and FORMS.** A lead-capture **form** can be embedded inside a Signature Funnel page: Skill 6 `tools/ghl_form_builder.py` (SMART plan + Skill-44 `zhc_` deps → DUMB browser operator) builds the form and returns the embed snippet, spliced VERBATIM (no SRI) into the funnel page via `SKILL44_WIDGET → FORM` and verified with `ghl_verify.render_check`. Single-step capture → form; multi-step / branching → the Skill-6 survey builder.
 - Shared form procedure: `universal-sops/form-craft/` (SOP-FORM-01..05 + the QC-autofail ruleset). Client runtime uses the CLIENT's own providers (never Anthropic); nothing publishes without human approval.
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **49** signature-funnel | "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
 
 See `universal-sops/funnel-craft/` for the full detail. Summary:

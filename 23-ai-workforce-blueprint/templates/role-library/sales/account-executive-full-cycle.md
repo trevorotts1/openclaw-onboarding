@@ -182,6 +182,14 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 - Conversation intelligence must be enabled for all calls. Opting out requires prior approval from {{SALES_DIRECTOR_TITLE}}.
 - Contact data accuracy: verify email, phone, and title in {{SALES_INTELLIGENCE_TOOL}} before each outreach attempt. B2B contact data decays at 22-34% annually.
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **39** real-estate-playbook | "look up a property" · "qualify a real estate lead" · "schedule a showing" | `~/.openclaw/skills/39-real-estate-playbook/` | — |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. SOPs
 
 ### SOP-01: New Opportunity Qualification and Pipeline Entry

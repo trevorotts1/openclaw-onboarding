@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-06T04:25:43Z",
-  "file_count": 84,
+  "generated_at": "2026-07-06T11:41:06Z",
+  "file_count": 85,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -17,8 +17,8 @@
       "bytes": 15007
     },
     "answering-how-to-use-questions.md": {
-      "sha256": "60afcc6ac91981dc0c65f94d00e4a1aee26d69e5d49e3913e4eddb1053c5d9ba",
-      "bytes": 3988
+      "sha256": "2d10c2f68cafefcc0219cd3466bc17c2f4d4098496e17ab47cb46ac24b9bac5d",
+      "bytes": 5080
     },
     "avatar-craft/README.md": {
       "sha256": "b07e3e7b75bcc9a306261bf5c473102a3fc605ae8ff8ed1aeaa492f324c82030",
@@ -183,6 +183,10 @@
     "interdepartmental-communication-guidelines.md": {
       "sha256": "5b6f7ec3d6b00cc4c476729b49223ee49230d9f5f034cf889e0290e1204d6e94",
       "bytes": 3167
+    },
+    "native-skill-invocation.md": {
+      "sha256": "fbd60f33aed71b439fa25a8d8bf3d0bd0e91960f4a672eea4bee5998e172b02c",
+      "bytes": 5990
     },
     "persona-re-evaluation-protocol.md": {
       "sha256": "aa1f411f35f3448989005199b42447b0b720b0217f1f1e1d15961c829e872c92",
