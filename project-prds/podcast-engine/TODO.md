@@ -108,3 +108,4 @@
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
 | 2026-07-06 | W2.6 alert-dedup.py (furnace Guardrail 7) | Opus exec (alert-dedup slice) | DONE, branch pushed | feat/podcast-alert-dedup | self 9.2 | scripts/alert-dedup.py plus stdlib unit tests (17 green); keys client+service+failure_class, 6h dedup window, 4/day storm cap to digest, decision-class always-send with per-episode dedup, recovery, daily flush; sole founder path via openclaw message send gateway, never client; no Anthropic, no em dash, no triple backtick (clean scan) |
+| 2026-07-06 | W1.12 Cover finalize (Step 10) + W1.13 Documents (Step 12) | Opus asset-production | DONE on branch (awaiting serial merge) | feat/podcast-asset-production | self 9.0 | scripts/generate_cover.sh + scripts/render_documents.py + modules/documents.md; ffmpeg finalize and renderer proven locally |
