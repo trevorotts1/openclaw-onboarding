@@ -100,6 +100,35 @@ owning-roles list because the map records owning specialists, and audio roles
 support rather than own. This keeps the orphan check clean (all map roles are
 podcast-department roles) while still recording the full persona picture.
 
+### 4.1 The full access matrix (PRD Section 13)
+
+Access is default-deny. A department gets access only if it executes a pipeline step
+or consumes a published deliverable; everything else is denied because every extra
+consumer is attack surface, token burn, and QC ambiguity. The complete decision lives
+in `wiring.json` under `access_matrix` and is enforced by
+`verify-podcast-engine-wiring.py`:
+
+- Owner (write): the podcast department, embodying director-of-podcast, podcast-host,
+  audio-post-producer, and qc-specialist-podcast.
+- Supporting (write, at an owner's invitation): the audio department, through
+  podcast-editor, podcast-producer, and audio-mastering-specialist.
+- Routing only (no write, no steps): the master agent dispatches an inbound podcast job
+  to the podcast department per the master routing doctrine and never runs a pipeline
+  step. The dispatch rule itself is WAVE-PLAN W4.14; this wiring only declares the
+  access so the decision is single-sourced.
+- Read only, downstream (no write): social-media reads completed episode records and
+  published links to feed Skill 57 social packaging (the Episode Asset Pack preset is
+  the sanctioned handoff); marketing reads published links and the Episode Package for
+  promotion planning. Neither can touch the pipeline or its state.
+- No access (everything else): sales, billing-finance, legal, personal-assistant,
+  customer-support, and every other floor department. Customer messaging belongs to
+  Convert and Flow workflows, so not even the personal-assistant department may message
+  about episodes. Client-side humans interact only through the dashboard and Convert and
+  Flow, never with the engine directly.
+
+The enforcement script fails if any no-access department is also granted access, if a
+non-owner tier claims write access, or if routing-only claims to execute steps.
+
 ## 5. QC independence rule
 
 qc-specialist-podcast is never the persona that drafted the episode. The drafting

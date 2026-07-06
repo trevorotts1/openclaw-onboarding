@@ -22,6 +22,12 @@ Proves, structurally (no scores grepped), that:
   6. The canonical binding in skill-department-map.json (skill 58) lists departments
      ["podcast"], carries exactly one primary role (director-of-podcast), and its owning
      roles are a subset of the wiring's podcast personas.
+  7. The PRD Section 13 access matrix is present and internally consistent: default-deny
+     policy; owner tier is the podcast department with the four owning personas and write
+     access; supporting tier is the audio department with the three supporting personas;
+     routing_only (master-orchestrator) executes no pipeline steps and cannot write;
+     read_only_downstream covers social-media and marketing with no write access; and no
+     explicit no-access department is also a granted department.
 
 Exit codes:
   0 = all wiring assertions pass
@@ -185,6 +191,47 @@ def run():
         if not entry.get("client_facing"):
             errors.append("[map] skill 58 should be client_facing true (department-invocable, like skill 38)")
 
+    # --- 7. Access matrix (PRD Section 13 access decision, machine-enforced) ---
+    am = w.get("access_matrix")
+    if not am:
+        errors.append("[access] access_matrix block is missing (PRD Section 13 access decision)")
+    else:
+        if am.get("policy") != "default-deny":
+            errors.append("[access] access_matrix.policy must be 'default-deny'")
+        owner = am.get("owner", {})
+        supporting = am.get("supporting", {})
+        routing = am.get("routing_only", {})
+        readers = am.get("read_only_downstream", []) or []
+        noacc = am.get("no_access", {})
+        if owner.get("department") != "podcast":
+            errors.append(f"[access] owner department = {owner.get('department')}, expected 'podcast'")
+        if set(owner.get("personas", [])) != EXPECTED_PODCAST_OWNERS:
+            errors.append(f"[access] owner personas = {sorted(owner.get('personas', []))}, expected {sorted(EXPECTED_PODCAST_OWNERS)}")
+        if owner.get("write") is not True:
+            errors.append("[access] owner tier must carry write access")
+        if supporting.get("department") != "audio":
+            errors.append(f"[access] supporting department = {supporting.get('department')}, expected 'audio'")
+        if set(supporting.get("personas", [])) != EXPECTED_AUDIO_SUPPORT:
+            errors.append(f"[access] supporting personas = {sorted(supporting.get('personas', []))}, expected {sorted(EXPECTED_AUDIO_SUPPORT)}")
+        if routing.get("executes_pipeline_steps") is not False:
+            errors.append("[access] routing_only must declare executes_pipeline_steps=false (routing dispatches, never runs steps)")
+        if routing.get("write") is not False:
+            errors.append("[access] routing_only must not carry write access")
+        reader_depts = set()
+        for r in readers:
+            reader_depts.add(r.get("department"))
+            if r.get("write") is not False:
+                errors.append(f"[access] read_only_downstream '{r.get('department')}' must not carry write access")
+        for req in ("social-media", "marketing"):
+            if req not in reader_depts:
+                errors.append(f"[access] read_only_downstream is missing '{req}'")
+        # Disjointness: a no-access example can never also be a granted department.
+        granted = {owner.get("department"), supporting.get("department"), routing.get("department")} | reader_depts
+        granted.discard(None)
+        for ex in noacc.get("explicit_examples", []):
+            if ex in granted:
+                errors.append(f"[access] no_access example '{ex}' is also a granted department (contradiction)")
+
     return errors
 
 
@@ -202,6 +249,7 @@ def main():
     print("  - kanban columns cover the dashboard status enum 1:1 (9 forward + hold + failed + aged_out overlay)")
     print("  - intake sessionKey podcast:intake:<client-slug> bound to the podcast department agent")
     print("  - skill-department-map.json skill 58 binds departments ['podcast'] with one primary (director-of-podcast)")
+    print("  - PRD Section 13 access matrix present and disjoint (default-deny; only owner+supporting write)")
     return 0
 
 

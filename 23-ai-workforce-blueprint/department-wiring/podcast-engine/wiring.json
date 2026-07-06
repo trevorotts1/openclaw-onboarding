@@ -135,6 +135,56 @@
     "source": "PRD Section 13.1 and QC-PROTOCOL-AND-MATRIX.md Gate B independence clause"
   },
 
+  "access_matrix": {
+    "policy": "default-deny",
+    "principle": "Access follows the pipeline chain of custody: a department gets access only if it executes a pipeline step or consumes a published deliverable. Every additional consumer is attack surface, token burn, and QC ambiguity, so anything not named below has NO access.",
+    "source": "PRD Section 13 (departments, roles, and SOP plan: the access decision, reasoned).",
+    "owner": {
+      "department": "podcast",
+      "capacity": "owner",
+      "write": true,
+      "personas": ["director-of-podcast", "podcast-host", "audio-post-producer", "qc-specialist-podcast"],
+      "note": "The podcast department owns the engine end to end. The intake sessionKey binds to this department's agent (see session_binding)."
+    },
+    "supporting": {
+      "department": "audio",
+      "capacity": "supporting",
+      "write": true,
+      "personas": ["podcast-editor", "podcast-producer", "audio-mastering-specialist"],
+      "note": "Same universal floor, supporting capacity, not owners. They assist inside the pipeline (Step 11 repair and mastering, Season-Strategy planning) at the invitation of a podcast owner; they never own a run."
+    },
+    "routing_only": {
+      "department": "master-orchestrator",
+      "capacity": "routing",
+      "write": false,
+      "executes_pipeline_steps": false,
+      "note": "The master agent dispatches an inbound podcast job to the podcast department per the master routing doctrine and never executes a pipeline step. The dispatch-rule implementation is WAVE-PLAN W4.14; this entry is the access declaration only, so the access decision is single-sourced here."
+    },
+    "read_only_downstream": [
+      {
+        "department": "social-media",
+        "capacity": "read-only",
+        "write": false,
+        "reads": ["completed episode records", "published links"],
+        "purpose": "Feed Skill 57 social packaging. The Episode Asset Pack preset is the sanctioned handoff. Zero write access to the pipeline or its state.",
+        "sanctioned_handoff_preset": "episode_asset_pack"
+      },
+      {
+        "department": "marketing",
+        "capacity": "read-only",
+        "write": false,
+        "reads": ["published links", "Episode Package"],
+        "purpose": "Promotion planning only. Nothing else."
+      }
+    ],
+    "no_access": {
+      "explicit_examples": ["sales", "billing-finance", "legal", "personal-assistant", "customer-support"],
+      "rule": "Every floor department not listed as owner, supporting, routing_only, or read_only_downstream has NO access to the engine or its state. Customer messaging belongs to Convert and Flow workflows, so not even the personal-assistant department may message about episodes.",
+      "human_boundary": "Client-side humans interact only through the dashboard and Convert and Flow, never with the engine directly."
+    },
+    "enforced_by": "verify-podcast-engine-wiring.py asserts the four access tiers are present and disjoint (a no-access example can never also be an owner, supporter, router, or reader; only owner and supporting carry write access)."
+  },
+
   "kanban": {
     "board_note": "Board view is display-only. No drag-and-drop, no pipeline mutation from the dashboard (dashboard-design.md Section 7.1 guardrail). Columns are read from the ledger and SQLite status; they never recompute state.",
     "state_enum_source": "dashboard-design.md Section 5.1 podcast_jobs.status CHECK and Section 5.2 status semantics; the same enum is the intake ledger state vocabulary (webhook-design.md Section 3).",
