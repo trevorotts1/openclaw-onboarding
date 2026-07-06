@@ -2074,6 +2074,15 @@ jobs:
               "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
+              # 58-podcast-production-engine credential resolvers: the
+              # ~/clawd/secrets and ~/clawd/secrets/.env items are legit
+              # client-box secret-store fallbacks in the multi-store env-file
+              # and filename-sweep candidate lists (tried alongside ~/.openclaw
+              # and /data/.openclaw), NOT company-root candidate loops. Same
+              # tracked exception as the presentation-render templates above;
+              # remove after fleet migration off the ~/clawd secrets store.
+              "58-podcast-production-engine/scripts/caf/field_layer/resolver.py",
+              "58-podcast-production-engine/scripts/ghl_credential_gate.py",
               # 22-book-to-persona
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               # shared-utils
