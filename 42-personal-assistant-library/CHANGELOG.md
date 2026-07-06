@@ -1,5 +1,26 @@
 # Skill 42 — Personal Assistant Library — Changelog
 
+## 1.0.6 — 2026-07-05
+
+Doc-truth: PA department is ratified mandatory (FIX-XC-13d).
+
+- **"Pending proposal" prose rewritten to the ratified truth.** SKILL.md ("Relationship to
+  Skill 23") and INSTALL.md §5 still described the Personal Assistant department as a
+  "pending proposal" / "optional one-line patch" / "product decision … intentionally NOT
+  part of this skill's first ship." That is stale: Skill 23's `department-naming-map.json`
+  promoted `personal-assistant` to its **mandatory** block in v10.15.42, raising the
+  universal floor to **24** departments. Both sites now state the ratified division of
+  labor: **Skill 23 owns and auto-builds the PA department for every client** (mandatory,
+  standard-unless-declined, floor 24) and **Skill 42 supplies the 29 specialist
+  sub-workspaces** that populate it. Option C (Audit/Resume) remains available for
+  already-materialized boxes.
+- **Backfilled the missing 1.0.3 and 1.0.4 changelog entries** (the version file rolled
+  through both with no changelog record — see the entries below).
+- **SKILL.md ship-tree comment de-drifted.** The `skill-version.txt` line in the "What This
+  Skill Ships" tree hardcoded `# 1.0.0`; replaced the literal with a pointer to
+  `skill-version.txt` so the comment cannot drift from the real version again.
+- No specialist content or SOP logic changed; all `{{TOKEN}}` templates unchanged.
+
 ## 1.0.5 — 2026-07-05
 
 Materialization contract hardening (FIX-XC-11b, FIX-S36-19, FIX-S36-20).
@@ -26,6 +47,24 @@ Materialization contract hardening (FIX-XC-11b, FIX-S36-19, FIX-S36-20).
   copy is absent (repo/pre-deploy QC — sibling-43 pattern), and its lib-shared fallback
   sets `WORKSPACE=$HOME/.openclaw/workspace` (the old `$HOME/clawd` literal was bogus).
 - No specialist content or SOP logic changed; all `{{TOKEN}}` templates unchanged.
+
+## 1.0.4 — 2026-07-03
+
+Frontmatter-version sync (July-3 audit P1-4).
+
+- SKILL.md's frontmatter `version:` field was synced to `skill-version.txt` under the new
+  repo-wide `qc-assert-skill-frontmatter-version.sh` gate (fail-closed: frontmatter version
+  must equal `skill-version.txt`). Patch bump only — no specialist content, SOP, or doc-body
+  change.
+
+## 1.0.3 — 2026-07-02
+
+Skill 50 (Email Engine) wiring into the Inbox Manager specialist.
+
+- Wired the Skill 50 email-craft framework references into Specialist 01 (Inbox Manager):
+  `SOP/PA-01-02-reply-drafting-voice-matching.md`, `SOP/PA-01-06-newsletter-digest.md`, and
+  `how-to.md` now point at the shared `universal-sops/email-craft` authorship + QC path.
+  Wiring/content change only; no specialist logic, roster, or `{{TOKEN}}` template changed.
 
 ## 1.0.2 — 2026-07-01
 

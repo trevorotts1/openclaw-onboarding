@@ -9,7 +9,7 @@ triggers:
   - "set up inbox manager"
   - "set up my coach"
   - "personal assistant"
-version: 1.0.5
+version: 1.0.6
 ---
 
 # Skill 42: Personal Assistant Library
@@ -51,7 +51,7 @@ Each of the 29 specialists is a full sub-workspace spec, not a flat role file. E
 Skill 42 is **additive**, not a replacement. It extends Skill 23 by adding the owner's personal-life department alongside the business departments Skill 23 builds.
 
 - Skill 23's `templates/role-library/` holds one flat `.md` per *business* role. Skill 42's `specialists/` holds 29 full sub-workspace specs for *personal-life* roles. Different taxonomy, different structure.
-- Skill 23's `department-naming-map.json` already carries the note: "Personal Assistant department pending proposal -- when approved it will bring the floor to 24." Adding `personal-assistant` to that map's mandatory block (so Skill 23 auto-builds the PA department for every client) is an **optional one-line patch** to Skill 23 -- a product decision, intentionally NOT bundled into this skill's first ship. Skill 23 can reference this library once it is installed without a naming-map change, using Option C (Audit/Resume).
+- Skill 23's `department-naming-map.json` now carries `personal-assistant` in its **mandatory** block (promoted in Skill 23 v10.15.42, raising the universal floor to 24 departments). Skill 23 therefore **auto-builds the Personal Assistant department for every client** as a standard-unless-declined mandatory department -- it is no longer a pending proposal or an optional patch. The division of labor is fixed: **Skill 23 owns the department** (naming, floor, auto-build, materialization mirror), and **Skill 42 supplies the 29 specialist sub-workspaces** that populate it. On an installed box Skill 23 can also reference this library directly via Option C (Audit/Resume).
 - This skill is a SIBLING of domain-vertical skills 39 (Real Estate Playbook) and 41 (Build With AI Playbook) -- standalone skills that bolt onto Skills 23/38 rather than modifying them.
 
 ## Component Map (the 29 specialists)
@@ -104,7 +104,7 @@ Several specialists (09 Emotional Support, 24 Superwoman, 26 Therapeutic Support
 ├── CORE_UPDATES.md
 ├── EXAMPLES.md
 ├── CHANGELOG.md
-├── skill-version.txt          # 1.0.0
+├── skill-version.txt          # see skill-version.txt for the current version
 ├── qc-personal-assistant-library.sh
 ├── scripts/
 │   └── verify-pa-install.sh

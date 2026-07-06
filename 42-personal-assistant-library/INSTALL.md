@@ -123,9 +123,9 @@ fi
 
 Most PA specialists run as on-demand sub-roles of the main agent. If the owner wants one to run full-time (e.g. an always-on Inbox Manager), add an agent entry to `openclaw.json` following Skill 23's `add_agent_to_config()` pattern -- same shape Skill 23 uses for business departments. See `23-ai-workforce-blueprint/scripts/` for the canonical helper.
 
-## 5. Optional: auto-build for every client (Skill 23 naming-map patch)
+## 5. Auto-build for every client (already mandatory in Skill 23)
 
-To make Skill 23 auto-build the PA department for every new client, add `personal-assistant` to the `mandatory` block of `23-ai-workforce-blueprint/department-naming-map.json` and remove the pending-proposal TODO. This is a **product decision** -- confirm before applying. It is intentionally NOT part of this skill's first ship. Without it, Skill 23 can still reference the PA library via Option C (Audit/Resume) once this skill is installed.
+As of Skill 23 v10.15.42, `personal-assistant` is in the **mandatory** block of `23-ai-workforce-blueprint/department-naming-map.json` (universal floor raised to 24). Skill 23 therefore **auto-builds the Personal Assistant department for every new client** as a standard-unless-declined department -- no manual naming-map patch is required. Skill 42 supplies the 29 specialist sub-workspaces that populate that department. On a box where the department already exists, Skill 23 can also reference this library via Option C (Audit/Resume).
 
 ## 6. Core file updates
 
