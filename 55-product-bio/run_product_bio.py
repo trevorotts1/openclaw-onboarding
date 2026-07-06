@@ -28,6 +28,8 @@ EXIT CODES:
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
 import json
 import os
 import subprocess
@@ -46,6 +48,11 @@ PROMPTS = _SKILL_DIR / "assets" / "prompts"
 
 PHASE_ORDER = ["P0-INTAKE", "P1-FIDELITY", "P2-BIO-AUTHOR", "P3-BIO-QC",
                "P4-HTML-AUTHOR", "P5-HTML-QC", "P6-DELIVER"]
+
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
 
 
 def _portable_run_dir(run_dir: Path) -> str:
@@ -115,8 +122,13 @@ def _chk_bio_qc(run_dir: Path):
     bio = run_dir / "working" / "product-bio.md"
     if not bio.is_file():
         return False, "missing working/product-bio.md for QC"
-    rc_w = _run_prover("prove_pb_wordcount.py", str(bio))
-    rc_s = _run_prover("prove_pb_sections.py", str(bio))
+    # Thread the LOCKED brief through as the logged override channel, so a
+    # client-exact word / per-section target stated in intake.json wins over the
+    # SACRED default band and is honored verbatim (never floored/capped).
+    intake = run_dir / "working" / "intake.json"
+    extra = ["--intake", str(intake)] if intake.is_file() else []
+    rc_w = _run_prover("prove_pb_wordcount.py", str(bio), *extra)
+    rc_s = _run_prover("prove_pb_sections.py", str(bio), *extra)
     ok = (rc_w == 0 and rc_s == 0)
     return ok, ("bio QC PASS" if ok else "bio QC FAILED (wordcount exit %d, sections exit %d)" % (rc_w, rc_s))
 
@@ -245,6 +257,8 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
         proc["phases"].append({"id": pid, "passed": phase_ok})
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid,
                   file=sys.stderr)
             return EXIT_GATE
@@ -255,6 +269,9 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
         cert = _write_certificate(run_dir, proc)
         if cert:
             print("CERTIFICATE ISSUED: %s (sha %s)" % (cert["path"], cert["sha"][:12]))
+        # Assemble the labeled ~/Downloads bundle (bio + HTML + DELIVERY-NOTE +
+        # handoff + certificate). Non-fatal: the run is already certified.
+        _assemble_downloads_bundle(run_dir, cert, proc)
     print("ALL REQUESTED PHASES PASSED (through %s)." % stop_at)
     return EXIT_PASS
 
@@ -283,11 +300,199 @@ def _measure(run_dir: Path):
     return {"word_count": c.word_count(txt), "closes": len(c.closes_found(txt))}
 
 
+def _cert_word_band(intake: dict):
+    """Resolve the word band recorded on the certificate: the client-exact target
+    logged in the locked brief wins over the default 6,000-7,000 floor. Returns
+    (lo, hi, overridden). Certificate-sha is unaffected (it hashes only the slug +
+    measured counts + steps), so recording the band never shifts the sha."""
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        import _pb_common as c  # noqa: E402
+    except Exception:
+        return 6000, 7000, False
+    lo, hi, overridden, _unlogged = c.resolved_word_band(
+        intake if isinstance(intake, dict) else {})
+    return lo, hi, overridden
+
+
 def _slug(intake: dict) -> str:
     import re
     name = str(intake.get("product_name", "product")).strip().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
     return slug or "product"
+
+
+# ---------------------------------------------------------------------------
+# Labeled LOCAL deliverable — the ~/Downloads bundle + DELIVERY-NOTE + handoff.
+# SKILL.md promises `~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/` carrying the
+# bio, HTML, DELIVERY-NOTE.md, handoff.json, and the PROCESS-CERTIFICATE — this
+# is where that promise is kept. State-path discipline (the Skill-23 lesson):
+# the Downloads root is OVERRIDABLE via PRODUCT_BIO_DELIVERY_ROOT so a test / a
+# verify run never writes into the operator's REAL ~/Downloads; it fails LOUDLY
+# when neither the override nor $HOME resolves, never guessing a path.
+# ---------------------------------------------------------------------------
+_DELIVERY_ROOT_ENV = "PRODUCT_BIO_DELIVERY_ROOT"
+_BUNDLE_RECEIPT = ("working", "checkpoints", "delivery-bundle.json")
+
+
+def _delivery_root(override=None):
+    """Resolve the labeled-deliverable root. Precedence: explicit arg >
+    ${PRODUCT_BIO_DELIVERY_ROOT} > $HOME/Downloads. Returns None (loud caller
+    handles it) when nothing resolves — never a blind guess."""
+    if override:
+        return Path(override)
+    env = os.environ.get(_DELIVERY_ROOT_ENV, "").strip()
+    if env:
+        return Path(env)
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    if home and home != "~":
+        return Path(home) / "Downloads"
+    return None
+
+
+def _bundle_dir(root: Path, slug: str) -> Path:
+    stamp = datetime.datetime.now().strftime("%m-%d-%Y")
+    return root / ("Product-Bio-%s-%s" % (slug, stamp))
+
+
+def _delivery_bundle_receipt(run_dir: Path) -> Path:
+    return run_dir.joinpath(*_BUNDLE_RECEIPT)
+
+
+def _assemble_downloads_bundle(run_dir: Path, cert: dict | None, proc: dict,
+                               delivery_root=None):
+    """Copy the byte-verified deliverable into the labeled ~/Downloads bundle and
+    write DELIVERY-NOTE.md + handoff.json alongside the certificate. Returns the
+    receipt dict (also persisted to working/checkpoints/delivery-bundle.json) so
+    the CC card can carry the delivery path + certificate sha. NON-FATAL: the run
+    is already certified and the run-dir deliverable already byte-verified; a
+    Downloads copy failure is logged LOUDLY and recorded (delivered:false) but
+    never regresses the exit code."""
+    intake = {}
+    ipath = run_dir / "working" / "intake.json"
+    if ipath.is_file():
+        try:
+            intake = json.loads(ipath.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            intake = {}
+    slug = _slug(intake)
+    src_dir = run_dir / "delivery"
+    labeled = {
+        "Product-Bio-%s.md" % slug: src_dir / ("product-bio-%s.md" % slug),
+        "Product-Bio-%s.html" % slug: src_dir / ("product-bio-%s.html" % slug),
+    }
+    receipt = {"delivered": False, "slug": slug,
+               "certificate_sha": (cert or {}).get("sha")}
+    root = _delivery_root(delivery_root)
+    if root is None:
+        print("!! [product-bio] cannot resolve a delivery root (no "
+              "%s and no $HOME); the run-dir deliverable stands, but NO labeled "
+              "~/Downloads bundle was written." % _DELIVERY_ROOT_ENV, file=sys.stderr)
+        _write_bundle_receipt(run_dir, receipt)
+        return receipt
+    bundle = _bundle_dir(root, slug)
+    try:
+        bundle.mkdir(parents=True, exist_ok=True)
+        copied = []
+        for label, src in labeled.items():
+            if not src.is_file():
+                raise OSError("byte-verified source missing: %s" % src)
+            data = src.read_bytes()
+            (bundle / label).write_bytes(data)
+            copied.append(label)
+        # PROCESS-CERTIFICATE.json/.md into the bundle (the client-facing proof).
+        for cf in ("PROCESS-CERTIFICATE.json", "PROCESS-CERTIFICATE.md"):
+            cp = src_dir / cf
+            if cp.is_file():
+                (bundle / cf).write_bytes(cp.read_bytes())
+                copied.append(cf)
+        note = _delivery_note(intake, slug, cert, proc, copied)
+        (bundle / "DELIVERY-NOTE.md").write_text(note, encoding="utf-8")
+        copied.append("DELIVERY-NOTE.md")
+        handoff = _handoff(run_dir, intake, slug, cert, bundle, copied)
+        (bundle / "handoff.json").write_text(
+            json.dumps(handoff, indent=2), encoding="utf-8")
+        copied.append("handoff.json")
+        receipt.update({"delivered": True, "bundle_dir": str(bundle),
+                        "files": copied})
+        print("LABELED DELIVERABLE: %s (%d files)" % (bundle, len(copied)))
+    except OSError as exc:
+        print("!! [product-bio] labeled ~/Downloads bundle assembly FAILED "
+              "(%s); the certified run-dir deliverable in delivery/ still stands."
+              % exc, file=sys.stderr)
+        receipt.update({"delivered": False, "bundle_dir": str(bundle),
+                        "error": str(exc)})
+    _write_bundle_receipt(run_dir, receipt)
+    return receipt
+
+
+def _write_bundle_receipt(run_dir: Path, receipt: dict):
+    out = _delivery_bundle_receipt(run_dir)
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _delivery_note(intake: dict, slug: str, cert: dict | None, proc: dict,
+                   files) -> str:
+    name = intake.get("product_name", slug)
+    owner = ("%s %s" % (intake.get("first_name", ""),
+                        intake.get("last_name", ""))).strip()
+    sha = (cert or {}).get("sha", "")
+    lines = [
+        "# Product Bio — DELIVERY NOTE",
+        "",
+        "- **Product:** %s (`%s`)" % (name, slug),
+    ]
+    if owner:
+        lines.append("- **Owner:** %s" % owner)
+    lines += [
+        "- **Certificate SHA:** `%s`" % sha,
+        "- **Delivered (local):** %s" % datetime.datetime.now().strftime("%m-%d-%Y"),
+        "- **Runtime:** local-only (no n8n / Google Drive / Slack / Gmail / Airtable).",
+        "",
+        "## What's in this bundle",
+        "",
+        "| File | Purpose |",
+        "|---|---|",
+        "| `Product-Bio-%s.md` | the 10-section master-brain product bio (QC'd) |" % slug,
+        "| `Product-Bio-%s.html` | the Google-Docs-importable HTML |" % slug,
+        "| `PROCESS-CERTIFICATE.json` / `.md` | the signed proof of a full P0->P5 pass |",
+        "| `handoff.json` | machine-readable handoff (paths, measured counts, cert sha) |",
+        "",
+        "Import the `.html` straight into Google Docs. The bio is the master brain "
+        "for AI chatbots + human sales teams. Any push to a channel is per-client "
+        "config through the client's own OpenClaw gateway (never bypassed), "
+        "client-silent by default.",
+        "",
+        "_No certificate = not done. This bundle carries one (`%s`)._" % (sha[:12] if sha else "—"),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _handoff(run_dir: Path, intake: dict, slug: str, cert: dict | None,
+             bundle: Path, files) -> dict:
+    measured = _measure(run_dir)
+    return {
+        "schema": "product-bio-handoff-v1",
+        "skill": "product-bio",
+        "skill_number": 55,
+        "product_name": intake.get("product_name", ""),
+        "product_slug": slug,
+        "owner": ("%s %s" % (intake.get("first_name", ""),
+                             intake.get("last_name", ""))).strip(),
+        "bundle_dir": str(bundle),
+        "files": files,
+        "measured_word_count": measured.get("word_count"),
+        "measured_signature_closes": measured.get("closes"),
+        "certificate_sha": (cert or {}).get("sha"),
+        "certificate_path": (cert or {}).get("path"),
+        "runtime": "local-only (no n8n / Google Drive / Slack / Gmail / Airtable)",
+        "delivered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
 
 def _write_certificate(run_dir: Path, proc: dict):
@@ -313,12 +518,16 @@ def _write_certificate(run_dir: Path, proc: dict):
               file=sys.stderr)
         return None
     measured = _measure(run_dir)
+    wb_lo, wb_hi, wb_over = _cert_word_band(intake)
     body = {
         "schema": "product-bio-process-certificate-v1",
         "product_name": intake.get("product_name", ""),
         "product_slug": _slug(intake),
         "measured_word_count": measured["word_count"],
         "measured_signature_closes": measured["closes"],
+        "word_band": [wb_lo, wb_hi],
+        "word_band_source": ("client-exact override (logged in the locked brief; "
+                             "never floored/capped)" if wb_over else "default 6,000-7,000 floor"),
         "declared_phases": PHASE_ORDER,
         "verified_phases": len(steps),
         "all_phases_pass": all_pass,
@@ -419,6 +628,38 @@ def self_test() -> int:
         _ck("_chk_deliver planted-mismatch -> FAIL (AF-PB-DELIVER-MISMATCH)",
             good is False and "AF-PB-DELIVER-MISMATCH" in msg)
 
+    # labeled ~/Downloads bundle: assembled into an OVERRIDE root (never the real
+    # ~/Downloads), carrying DELIVERY-NOTE.md + handoff.json + certificate pointer.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td) / "run"; (rd / "working").mkdir(parents=True)
+        (rd / "working" / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+        (rd / "working" / "product-bio.md").write_text("# AtlasFlow\nQC'd bio body\n", encoding="utf-8")
+        (rd / "working" / "product-bio.html").write_text(
+            "<!DOCTYPE html>\n<h1>AtlasFlow</h1>\n</html>", encoding="utf-8")
+        _chk_deliver(rd)  # assembles delivery/product-bio-<slug>.md/.html (byte-verified)
+        dl_root = Path(td) / "downloads"
+        cert = {"path": str(rd / "delivery" / "PROCESS-CERTIFICATE.json"),
+                "sha": "a" * 64}
+        rec = _assemble_downloads_bundle(rd, cert, {"phases": []}, delivery_root=dl_root)
+        _ck("Downloads bundle assembled under the OVERRIDE root", rec.get("delivered") is True)
+        bdir = Path(rec.get("bundle_dir", ""))
+        _ck("bundle carries DELIVERY-NOTE.md", (bdir / "DELIVERY-NOTE.md").is_file())
+        _ck("bundle carries handoff.json", (bdir / "handoff.json").is_file())
+        _ck("bundle carries the labeled bio + html",
+            (bdir / ("Product-Bio-%s.md" % slug)).is_file()
+            and (bdir / ("Product-Bio-%s.html" % slug)).is_file())
+        try:
+            ho = json.loads((bdir / "handoff.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            ho = {}
+        _ck("handoff.json records the certificate sha", ho.get("certificate_sha") == "a" * 64)
+        _ck("card deliverable note points at the bundle + cert sha",
+            bdir.as_posix() in _deliver_card_note(rd) and "aaaaaaaaaaaa" in _deliver_card_note(rd))
+        # nothing must have been written into the operator's REAL ~/Downloads.
+        real_home = os.environ.get("HOME", "")
+        _ck("never touched a path outside the override root",
+            not bdir.as_posix().startswith(real_home + "/Downloads") if real_home else True)
+
     print("== run_product_bio self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return EXIT_PASS if ok else 1
 
@@ -437,7 +678,11 @@ def _mc_board_begin(run_dir):
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title="Product Bio — %s" % run_dir.name,
-            department="product-bio", persona="Product Bio", source="product-bio")
+            # department_slug MUST be a real fleet department (verified against the
+            # role-library / live board): "marketing" owns the brand-positioning /
+            # signature-funnel / sales-page-assets specialists this engine sits with.
+            # "product-bio" was NOT a real department, so cards stranded unrouted.
+            department="marketing", persona="Product Bio Specialist", source="product-bio")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
         return None
@@ -447,9 +692,37 @@ def _mc_board_done(run_dir, task_id):
     try:
         sys.path.insert(0, str(SCRIPTS))
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+        mc_board.complete_run(run_dir, task_id, note=_deliver_card_note(run_dir))
     except Exception as exc:  # noqa: BLE001
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
+
+
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
+def _deliver_card_note(run_dir) -> str:
+    """The card's deliverable POINTER: the labeled-bundle path + certificate sha,
+    read from the delivery-bundle receipt written at assembly time. Falls back to a
+    plain note when the receipt is absent (board is a view, never a gate)."""
+    try:
+        rec = json.loads(_delivery_bundle_receipt(Path(run_dir)).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "certified + delivered"
+    sha = (rec.get("certificate_sha") or "")[:12]
+    if rec.get("delivered") and rec.get("bundle_dir"):
+        return "certified + delivered — bundle: %s · cert sha %s" % (rec["bundle_dir"], sha)
+    return "certified (run-dir deliverable); labeled ~/Downloads bundle NOT written · cert sha %s" % sha
 
 
 def main(argv=None):
@@ -482,6 +755,11 @@ def main(argv=None):
     rc = run(manifest, run_dir, args.upto)
     if rc == EXIT_PASS and not args.upto:
         _mc_board_done(run_dir, _mc_task)
+    elif rc != EXIT_PASS:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). A partial `--upto` PASS is
+        # neither done nor blocked (it legitimately stays in_progress).
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

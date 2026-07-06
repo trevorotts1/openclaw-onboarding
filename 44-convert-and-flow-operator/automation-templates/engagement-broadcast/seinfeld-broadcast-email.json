@@ -11,17 +11,27 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "books": [
+      "DotCom Secrets (Russell Brunson)",
+      "Copywriting Secrets (Jim Edwards)"
+    ],
     "sections": [
       "DotCom Secrets Secret #8 — Daily Seinfeld Sequence (worked examples: '$20 million down the toilet', 'Jiu Jitsu')",
       "Copywriting Secrets — 3 Sales Formulas (PAS / If-you-want-X / Before-After-Bridge), headline families, Ultimate Bullet Formula, Stealth/Columbo close, Ten Reasons People Buy"
     ]
   },
+  "source_books": [
+    "DotCom Secrets (Russell Brunson)",
+    "Copywriting Secrets (Jim Edwards)"
+  ],
   "trigger": {
     "primary": "Authoring unit — invoked whenever any broadcast (the daily Seinfeld engine, the storyline rotation, a 3-closes campaign, or a win-back send) needs ONE email body.",
     "trigger_type_ghl": "Compose Email Campaign for segment 'seinfeld-broadcast'  (or a Send-Email step inside a workflow)"
   },
-  "channels": ["Email", "Blog (verbatim repurpose)"],
+  "channels": [
+    "Email",
+    "Blog (verbatim repurpose)"
+  ],
   "sequence": [
     {
       "step": 1,
@@ -74,15 +84,42 @@
   "copyPersona": {
     "primary": "Brunson Seinfeld Attractive-Character voice (Hook-Story-Offer).",
     "secondary": "Jim Edwards / Copywriting Secrets — subject-line families, Ultimate Bullet Formula ('it ___ so you can ___ which means ___'), Stealth/Columbo close, pronoun audit, every claim provable.",
-    "scripts": ["Hook -> Story -> Offer", "PAS", "If-you-want-X-do-this", "Before/After/Bridge"]
+    "scripts": [
+      "Hook -> Story -> Offer",
+      "PAS",
+      "If-you-want-X-do-this",
+      "Before/After/Bridge"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Brunson Seinfeld Attractive-Character voice (Hook-Story-Offer).",
+    "supporting": [
+      "Jim Edwards / Copywriting Secrets — subject-line families, Ultimate Bullet Formula ('it ___ so you can ___ which means ___'), Stealth/Columbo close, pronoun audit, every claim provable."
+    ],
+    "frameworks": [
+      "Hook -> Story -> Offer",
+      "PAS",
+      "If-you-want-X-do-this",
+      "Before/After/Bridge"
+    ]
   },
   "ghlBuild": {
     "buildType": "Reusable Email Template, not a workflow.",
     "location": "Marketing > Emails > Templates — saved as 'Seinfeld Broadcast Shell'.",
     "structure": "Merge field {{contact.first_name}}; plain-text-feel design (scannable, white space, no heavy template chrome); single CTA button -> offer URL with UTM; P.S. block.",
-    "consumedBy": ["daily-seinfeld-sequence (daily broadcast)", "attractive-character-story-rotation (slotted)", "value-broadcast-3-closes-campaign (workflow Send-Email steps)", "re-engagement-winback-broadcast (workflow Send-Email steps)"],
+    "consumedBy": [
+      "daily-seinfeld-sequence (daily broadcast)",
+      "attractive-character-story-rotation (slotted)",
+      "value-broadcast-3-closes-campaign (workflow Send-Email steps)",
+      "re-engagement-winback-broadcast (workflow Send-Email steps)"
+    ],
     "notes": "Keep design minimal so it renders like a personal email (book aesthetic). One CTA only — never compete CTAs."
   },
-  "kpis": ["open rate by subject family", "click-through on the single CTA", "reply rate (bonding signal)", "revenue per email"],
+  "kpis": [
+    "open rate by subject family",
+    "click-through on the single CTA",
+    "reply rate (bonding signal)",
+    "revenue per email"
+  ],
   "faithfulness": "Hook-Story-Offer, high-drama open, 90/10 ratio, formatting rules, and the example subject lines/P.S. are from DotCom Secrets Secret #8. The 3 email formulas, headline families, Ultimate Bullet Formula, Stealth/Columbo close, and Ten Reasons People Buy are from Copywriting Secrets. GHL template mechanics are the Skill-44 mapping."
 }

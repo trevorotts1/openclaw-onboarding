@@ -6,10 +6,10 @@
   "design_law": "Enforcement, not description. SACRED bands (config/bands.json) are the DEFAULT floor; a logged client-exact override wins and is recorded on the certificate. CLIENT runtime uses the CLIENT's OWN provider chain (OpenRouter model + 2 fallbacks / client Gemini vision QC / client Kie.ai media) and the CLIENT's OWN GHL PIT + social accounts — NEVER Anthropic/claude-* ids, NEVER operator keys. There is NO n8n and NO Airtable at runtime: prompts are baked, state is a local SQLite ledger, deliverables are local + labeled. The publisher physically cannot run without a complete signed manifest that proves ZERO Anthropic per run.",
   "$modes_note": "v0.2.0 (merge plan §3). Engine-driven modes (week/day/carousel/video/podcast-cover/plan/clean) unchanged from v0.1.0. FOLD modes (podcast C3 / newsletter C4 / blog C5 / engage C6) each land as a first-class standalone mode under the SAME entry+nonce+prover spine; when their config toggle is set the weekly cadence runs them as additional certified runs (the config schema $fold_note: 'each is also its own standalone mode'). CREATIVE modes (brief M1 / campaign M2 / client-copy M3 / reactive M4) are client-driven content lanes (P2-BRIEF / P2-INGEST) that keep the identical P3->P8 gate chain. syndicate (C9) is a fail-closed DEFER stub (v0.4.0). Every mode still runs ONLY through social-media-entry.sh (nonce) with no phase skips.",
   "modes": {
-    "week": ["P0-PREFLIGHT", "P1-PLAN", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
-    "day": ["P0-PREFLIGHT", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
-    "carousel": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
-    "video": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "week": ["P0-PREFLIGHT", "P1-PLAN", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "day": ["P0-PREFLIGHT", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH"],
+    "carousel": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH"],
+    "video": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH"],
     "podcast-cover": ["P0-PREFLIGHT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST"],
     "plan": ["P0-PREFLIGHT", "P1-PLAN", "P8-PLANNER-WRITEBACK"],
     "clean": ["P0-PREFLIGHT", "P7-PUBLISH"],
@@ -17,10 +17,10 @@
     "newsletter": ["P0-PREFLIGHT", "P9-NEWSLETTER", "P5-SCRUB", "P6-MANIFEST"],
     "blog": ["P0-PREFLIGHT", "P10-BLOG", "P5-SCRUB", "P6-MANIFEST"],
     "engage": ["P0-PREFLIGHT", "P12-ENGAGE"],
-    "brief": ["P0-PREFLIGHT", "P1-PLAN", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
-    "campaign": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
-    "client-copy": ["P0-PREFLIGHT", "P2-INGEST", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
-    "reactive": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "brief": ["P0-PREFLIGHT", "P1-PLAN", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "campaign": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "client-copy": ["P0-PREFLIGHT", "P2-INGEST", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH"],
+    "reactive": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P13-DELIVER", "P6-MANIFEST", "P7-PUBLISH"],
     "syndicate": ["P0-PREFLIGHT", "P-SYNDICATE-DEFER"]
   },
   "phases": [
@@ -139,7 +139,21 @@
         "checker": "_chk_publish",
         "label": "each sub-mode posts via services.leadconnectorhq.com/social-media-posting/{locationId}/posts with the CLIENT's own PIT and returns the normalized {platform, success, totalPosts, processedAccounts, errors}. done is claimed ONLY from the manifest + a live GHL post-listing verify (independent, not the poster's own return). AF-SM-PUBLISH-RESULT / AF-SM-PUBLISH-UNPROVEN."
       },
-      "gate_codes": ["AF-SM-PUBLISH-RESULT", "AF-SM-PUBLISH-UNPROVEN"]
+      "gate_codes": ["AF-SM-PUBLISH-RESULT", "AF-SM-PUBLISH-UNPROVEN", "AF-SM-PUBLISH-UNVERIFIED", "AF-SM-DOUBLE-POST"]
+    },
+    {
+      "id": "P13-DELIVER",
+      "order": 13,
+      "name": "Deliver (local labeled deliverables — the ONLY label_deliverables.py call site)",
+      "module": "4-publisher",
+      "owning_role": "social-media-manager",
+      "produces_artifact": "delivery/deliverables-manifest.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_deliver",
+        "label": "run_social_media._chk_deliver assembles the labeled-deliverable manifest from this run's PASS artifacts (producer-declared working/delivery/deliverables.json OR the LOCAL media files that exist on disk) + the week plan, then shells scripts/label_deliverables.py --copy FAIL-CLOSED: a declared artifact source missing on disk BLOCKS (nothing phantom/unlabeled ever 'delivers'). Runs AFTER P5-SCRUB (only scrubbed bytes are labeled) and BEFORE P6-MANIFEST so the deterministic LOGICAL dest root (the ~/Downloads convention) is recorded on the signed certificate. Physical copy target is $SMIB_DELIVER_DEST (tests/CI) else the ~/Downloads convention. AF-SM-DELIVER-MISSING."
+      },
+      "gate_codes": ["AF-SM-DELIVER-MISSING"]
     },
     {
       "id": "P8-PLANNER-WRITEBACK",
@@ -283,13 +297,15 @@
     {"code": "AF-SM-CLIENT-NAME", "stage": "P5/build", "level": "bytes", "trigger": "a client-name token from the build-private scrub list is present (list is env-supplied, NEVER shipped)", "enforced_by": "scrub_gate", "py_symbol": "scan_client_names"},
     {"code": "AF-SM-SECRET", "stage": "P5/build", "level": "bytes", "trigger": "a secret pattern is present (sk-or-v1-, pit-, Kie key, bearer/JWT, webhook accessToken)", "enforced_by": "scrub_gate", "py_symbol": "scan_secrets"},
     {"code": "AF-SM-PINDATA", "stage": "P5/build", "level": "bytes", "trigger": "an n8n pinData block is present in a shipped/generated artifact", "enforced_by": "scrub_gate", "py_symbol": "scan_pindata"},
-    {"code": "AF-SM-NOANTHROPIC", "stage": "P5/P6/build", "level": "bytes", "trigger": "an anthropic/claude-* model identifier is present in any client-path file or run manifest (G-NOANTHROPIC)", "enforced_by": "scrub_gate / build_manifest", "py_symbol": "scan_anthropic"},
+    {"code": "AF-SM-NOANTHROPIC", "stage": "P5/P6/build", "level": "bytes", "trigger": "an anthropic/claude-* model identifier is present in any client-path file or run manifest (G-NOANTHROPIC); OR a per-call provenance record declares an EXACT provider field of 'anthropic'/'claude' carrying a non-claude model id (the regex misses a bare {provider:\"anthropic\"}, so the provider field is matched directly)", "enforced_by": "scrub_gate / build_manifest", "py_symbol": "scan_anthropic / check_no_anthropic"},
     {"code": "AF-SM-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "deploy/publish requested without a signed process certificate, or a phase was skipped", "enforced_by": "build_manifest / run_social_media", "py_symbol": "build"},
     {"code": "AF-SM-PROMPT-HASH", "stage": "P6/build", "level": "bytes", "trigger": "a shipped prompt file hash does not match the canonical source/prompts hash", "enforced_by": "build_manifest", "py_symbol": "check_prompt_hashes"},
     {"code": "AF-SM-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "the certificate is requested with no per-call provenance record (working/provenance/calls.json absent/empty); a zero-Anthropic proof cannot be made without it", "enforced_by": "build_manifest", "py_symbol": "check_provenance"},
     {"code": "AF-SM-AGENCY-SHARED-PIT", "stage": "P6", "level": "run", "trigger": "agency mode: two roster entries share a pit or locationId (co-mingled credentials)", "enforced_by": "build_manifest", "py_symbol": "check_agency_isolation"},
     {"code": "AF-SM-PUBLISH-RESULT", "stage": "P7", "level": "run", "trigger": "a sub-mode result does not carry the normalized {platform, success, totalPosts, processedAccounts, errors} contract", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
     {"code": "AF-SM-PUBLISH-UNPROVEN", "stage": "P7", "level": "run", "trigger": "the publisher was invoked without a complete upstream manifest/certificate", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
+    {"code": "AF-SM-PUBLISH-UNVERIFIED", "stage": "P7", "level": "run", "trigger": "'done' cannot be claimed from the poster's OWN publish_results.json: the INDEPENDENT post-publish verify GETs the live GHL post listing with the client's PIT and each recorded GHL post id (working/publish/posted_ids.json) MUST appear in it. On a client box (--live) an unconfirmable listing or a missing/absent id fails CLOSED; offline verifies against staged listing evidence when present, else a labeled dry-run posture (the live verify runs on the client box).", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
+    {"code": "AF-SM-DELIVER-MISSING", "stage": "P13", "level": "run", "trigger": "the delivery phase could not assemble/copy the labeled deliverables: a producer-declared deliverable source is missing on disk, or label_deliverables.py refused (nothing phantom/unlabeled is ever delivered). This is the ONLY call site of the pinned label_deliverables.py.", "enforced_by": "run_social_media / label_deliverables", "py_symbol": "_chk_deliver"},
     {"code": "AF-SM-WRITEBACK-COLUMNS", "stage": "P8", "level": "run", "trigger": "the planner write-back row is not the normalized 20-column shape", "enforced_by": "run_social_media", "py_symbol": "_chk_writeback"},
 
     {"code": "AF-SM-POST-BYPASS", "stage": "entry", "level": "run", "trigger": "a hand-rolled social poster (direct Facebook/Instagram/LinkedIn/TikTok/YouTube/Pinterest API send) exists in the run directory outside the sanctioned GHL-direct handoff", "enforced_by": "social-media-entry.sh", "py_symbol": "BYPASS-SCAN"},

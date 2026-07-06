@@ -41,6 +41,11 @@ CATALOG = _SKILL_DIR / "email-library" / "catalog-index.json"
 # produces_artifact -> the run-dir-relative path the phase drops.
 PHASE_ORDER = ["P1-SELECT", "P2-GENERATE", "P3-QC", "P4-DEPLOY"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _portable_run_dir(run_dir: Path) -> str:
     """A machine-independent label for the run dir recorded in the process
@@ -103,8 +108,58 @@ def _chk_prove_email(run_dir: Path) -> tuple[bool, str]:
     emails = run_dir / "working" / "copy" / "emails.json"
     if not emails.is_file():
         return False, "missing working/copy/emails.json for QC"
-    rc = _run_prover(emails)
+    # The LOCKED brief authorizes any client-exact override the prover honors
+    # (FIX-XC-12a). Capture the prover's JSON so the declared P3-QC artifact
+    # (working/qc/email_qc_report.json) is actually written (FIX-S36-48).
+    brief = run_dir / "working" / "copy" / "brief.json"
+    rc, out = _run_prover_capture(emails, brief=brief if brief.is_file() else None)
+    report = run_dir / "working" / "qc" / "email_qc_report.json"
+    try:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(
+            out if out.strip() else json.dumps(
+                {"gate": "email-engine-floor-prover", "source": str(emails),
+                 "pass": rc == 0, "exit": rc}, indent=2),
+            encoding="utf-8")
+    except OSError:
+        pass
     return (rc == 0), ("prove-email PASS" if rc == 0 else "prove-email FAILED (exit %d) — fail-closed" % rc)
+
+
+def _certificate_sha(seq_id: str, email_count: int, steps) -> str:
+    """The deterministic certificate sha (shared by the writer and the deploy-time
+    verifier so the two can NEVER drift). Computed over the sequence identity, the
+    email count, and the ordered (phase_id, ok) steps — NOT the wall clock."""
+    import hashlib
+    sha_src = json.dumps(
+        {"seq": seq_id, "n": email_count, "steps": [list(s) for s in steps]},
+        sort_keys=True)
+    return hashlib.sha256(sha_src.encode("utf-8")).hexdigest()
+
+
+def _verify_process_certificate(run_dir: Path) -> tuple[bool, str]:
+    """FIX-S36-46: the REAL delivery/PROCESS-CERTIFICATE.json is required — with
+    all_phases_pass:true AND a certificate_sha that RECOMPUTES from the cert body.
+    An inline self-signed dict is never accepted; a forged/tampered sha fails."""
+    cert_path = run_dir / "delivery" / "PROCESS-CERTIFICATE.json"
+    if not cert_path.is_file():
+        return False, ("a deploy artifact (build-plan.json) is present but "
+                       "delivery/PROCESS-CERTIFICATE.json is missing — deploy requires the "
+                       "real certificate issued by a full P1->P4 pass")
+    try:
+        body = json.loads(cert_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, "PROCESS-CERTIFICATE.json unreadable: %s" % exc
+    if not isinstance(body, dict) or body.get("all_phases_pass") is not True:
+        return False, "PROCESS-CERTIFICATE.json all_phases_pass is not true"
+    steps = body.get("steps") or []
+    recomputed = _certificate_sha(
+        body.get("sequence_id", ""), body.get("email_count", 0),
+        [(s.get("phase_id"), bool(s.get("ok"))) for s in steps if isinstance(s, dict)])
+    if body.get("certificate_sha") != recomputed:
+        return False, ("PROCESS-CERTIFICATE.json certificate_sha does not recompute "
+                       "(forge/tamper check failed)")
+    return True, "process certificate valid (all_phases_pass + sha recomputes)"
 
 
 def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
@@ -115,9 +170,90 @@ def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
         rec = json.loads(approval.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return False, "approval.json unreadable: %s" % exc
-    if rec.get("approved") is True and str(rec.get("approved_by", "")).strip():
-        return True, "human approval present (draft-only deploy)"
-    return False, "approval.json present but not approved (approved:true + approved_by required)"
+    if not (rec.get("approved") is True and str(rec.get("approved_by", "")).strip()):
+        return False, "approval.json present but not approved (approved:true + approved_by required)"
+    # FIX-S36-46: the deploy ARTIFACT's PRESENCE (not a self-set deploy_requested
+    # flag) is the trigger for demanding the real, recomputed-sha process
+    # certificate. When the Skill-44 handoff artifact (build-plan.json) exists, a
+    # valid delivery/PROCESS-CERTIFICATE.json is mandatory.
+    build_plan = run_dir / "working" / "deploy" / "build-plan.json"
+    if build_plan.is_file():
+        ok, msg = _verify_process_certificate(run_dir)
+        if not ok:
+            return False, "AF-PROCESS-INTEGRITY: %s" % msg
+        return True, "human approval + valid process certificate present (draft-only deploy)"
+    return True, "human approval present (draft-only deploy)"
+
+
+def _validate_build_plan(plan) -> list[str]:
+    """Stdlib-only structural validation of the Skill-44 DRAFT-ONLY build plan
+    against schema/build-plan.schema.json's contract (no jsonschema dependency)."""
+    if not isinstance(plan, dict):
+        return ["build-plan root is not a JSON object"]
+    errs: list[str] = []
+    folder = plan.get("folder")
+    if not (isinstance(folder, str) and folder.strip()):
+        errs.append("missing/empty required 'folder'")
+    wf_keys = [k for k in plan if k not in ("folder", "_meta")]
+    if not wf_keys:
+        errs.append("no workflow entries")
+    for k in wf_keys:
+        wf = plan[k]
+        if not isinstance(wf, dict):
+            errs.append("workflow %r is not an object" % k)
+            continue
+        if not (isinstance(wf.get("name"), str) and wf["name"].strip()):
+            errs.append("workflow %r missing 'name'" % k)
+        if "status" in wf and wf.get("status") != "draft":
+            errs.append("workflow %r status %r != 'draft' (Skill 50 emits DRAFT-ONLY)" % (k, wf.get("status")))
+        templates = wf.get("templates")
+        if not (isinstance(templates, list) and templates):
+            errs.append("workflow %r 'templates' must be a non-empty array" % k)
+            continue
+        for i, step in enumerate(templates):
+            if not isinstance(step, dict):
+                errs.append("workflow %r step %d is not an object" % (k, i))
+                continue
+            if not (isinstance(step.get("id"), str) and step["id"].strip()):
+                errs.append("workflow %r step %d missing 'id'" % (k, i))
+            stype = step.get("type")
+            if stype not in ("email", "wait"):
+                errs.append("workflow %r step %d type %r not in (email,wait)" % (k, i, stype))
+            if not (isinstance(step.get("name"), str) and step["name"].strip()):
+                errs.append("workflow %r step %d missing 'name'" % (k, i))
+            attrs = step.get("attributes")
+            if stype == "email":
+                if not isinstance(attrs, dict):
+                    errs.append("workflow %r email step %d missing attributes" % (k, i))
+                else:
+                    for f in ("subject", "body", "html"):
+                        if not (isinstance(attrs.get(f), str) and attrs.get(f).strip()):
+                            errs.append("workflow %r email step %d attributes.%s missing/empty" % (k, i, f))
+                    if not isinstance(attrs.get("fromName"), str):
+                        errs.append("workflow %r email step %d attributes.fromName required" % (k, i))
+            elif stype == "wait":
+                if not isinstance(attrs, dict) or not isinstance(attrs.get("startAfter"), dict):
+                    errs.append("workflow %r wait step %d missing attributes.startAfter" % (k, i))
+    return errs
+
+
+def _chk_build_plan(run_dir: Path) -> tuple[bool, str]:
+    """P4 additional preflight (FIX-S36-48): the declared produces_artifact
+    working/deploy/build-plan.json was never checked. It is emitted AFTER this
+    gate on the first governed pass, so absence is a PASS; a PRESENT build plan
+    is validated against the schema contract and fails closed when malformed."""
+    bp = run_dir / "working" / "deploy" / "build-plan.json"
+    if not bp.is_file():
+        return True, "no build-plan.json yet (emitted post-gate; validated when present)"
+    try:
+        plan = json.loads(bp.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, "AF-EMAIL-DEPLOY-PLAN-INVALID: build-plan.json unreadable: %s" % exc
+    errs = _validate_build_plan(plan)
+    if errs:
+        return False, "AF-EMAIL-DEPLOY-PLAN-INVALID: " + "; ".join(errs[:6])
+    n = sum(1 for k in plan if k not in ("folder", "_meta"))
+    return True, "build-plan.json valid vs schema (DRAFT-ONLY; %d workflow(s))" % n
 
 
 def _canonical_ids():
@@ -237,17 +373,38 @@ _CHECKERS = {
     "_chk_emails_authored": _chk_emails_authored,
     "_chk_prove_email": _chk_prove_email,
     "_chk_deploy_approval": _chk_deploy_approval,
+    "_chk_build_plan": _chk_build_plan,
 }
 
 
-def _run_prover(path: Path, kind: str | None = None) -> int:
+def _run_prover(path: Path, kind: str | None = None, brief: Path | None = None) -> int:
     if not PROVER.is_file():
         print("FATAL: prover not found at %s" % PROVER, file=sys.stderr)
         return EXIT_USAGE
     cmd = [sys.executable, str(PROVER), str(path)]
     if kind:
         cmd += ["--kind", kind]
+    if brief is not None:
+        cmd += ["--brief", str(brief)]
     return subprocess.call(cmd)
+
+
+def _run_prover_capture(path: Path, kind: str | None = None,
+                        brief: Path | None = None) -> tuple[int, str]:
+    """Run the prover in --json mode and capture its report (for the declared
+    P3-QC artifact). Falls back to a minimal report on any launch error."""
+    if not PROVER.is_file():
+        return EXIT_USAGE, ""
+    cmd = [sys.executable, str(PROVER), str(path), "--json"]
+    if kind:
+        cmd += ["--kind", kind]
+    if brief is not None:
+        cmd += ["--brief", str(brief)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        return proc.returncode, proc.stdout or ""
+    except OSError:
+        return EXIT_USAGE, ""
 
 
 def _run_checker(name, run_dir: Path) -> tuple[bool, str]:
@@ -304,6 +461,8 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
         proc["phases"].append({"id": pid, "passed": phase_ok})
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid, file=sys.stderr)
             return EXIT_GATE
         if pid == stop_at:
@@ -321,11 +480,45 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
 
 
 def _write_proc(run_dir: Path, proc: dict, failed):
+    """Write the process manifest, PRESERVING the operator's logged
+    owner_skip_approvals (FIX-S36-48). The prior implementation REPLACED the file
+    wholesale on every phase, destroying the ONLY sanctioned skip mechanism (the
+    owner-token records email-engine-entry.sh reads). Read-modify-write here, and
+    mirror the approvals into a separate operator-owned file so they survive any
+    future wholesale write of the manifest."""
     proc["failed_phase"] = failed
     out = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    approvals_file = run_dir / "working" / "checkpoints" / "owner_skip_approvals.json"
+
+    preserved = None
+    # 1) carry forward whatever a prior manifest write recorded.
+    try:
+        if out.is_file():
+            prev = json.loads(out.read_text(encoding="utf-8"))
+            if isinstance(prev, dict) and prev.get("owner_skip_approvals") is not None:
+                preserved = prev["owner_skip_approvals"]
+    except (OSError, ValueError):
+        preserved = None
+    # 2) the separate operator-owned file, when present, is the source of truth.
+    try:
+        if approvals_file.is_file():
+            data = json.loads(approvals_file.read_text(encoding="utf-8"))
+            approvals = data.get("owner_skip_approvals", data) if isinstance(data, dict) else data
+            if approvals:
+                preserved = approvals
+    except (OSError, ValueError):
+        pass
+
+    if preserved is not None:
+        proc["owner_skip_approvals"] = preserved
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(proc, indent=2), encoding="utf-8")
+        # persist the sanctioned approvals to the operator-owned file so a later
+        # wholesale manifest write can always recover them.
+        if preserved is not None and not approvals_file.is_file():
+            approvals_file.write_text(
+                json.dumps({"owner_skip_approvals": preserved}, indent=2), encoding="utf-8")
     except OSError:
         pass
 
@@ -339,7 +532,6 @@ def _write_certificate(run_dir: Path, proc: dict):
     recorded on the certificate — the certificate attests the governed pipeline
     ran in order; it never authorizes a send."""
     import datetime
-    import hashlib
     emails_path = run_dir / "working" / "copy" / "emails.json"
     seq_id, seq_type, email_count, founder = "", "", 0, ""
     try:
@@ -382,10 +574,23 @@ def _write_certificate(run_dir: Path, proc: dict):
         "canonical_persona": persona_block,
         "steps": steps,
     }
-    sha_src = json.dumps({"seq": seq_id, "n": email_count,
-                          "steps": [(s["phase_id"], s["ok"]) for s in steps]},
-                         sort_keys=True)
-    body["certificate_sha"] = hashlib.sha256(sha_src.encode("utf-8")).hexdigest()
+    # FIX-XC-12a: record the SOURCE of any client-exact override on the certificate.
+    # The prover honors an override ONLY when it is echoed in the LOCKED brief; the
+    # certificate records that provenance (source + values) or null when none.
+    overrides: dict = {}
+    try:
+        b = json.loads((run_dir / "working" / "copy" / "brief.json").read_text(encoding="utf-8"))
+        lo = b.get("locked_overrides")
+        if not isinstance(lo, dict) and isinstance(b.get("answers"), dict):
+            lo = b["answers"].get("locked_overrides")
+        if isinstance(lo, dict):
+            overrides = lo
+    except (OSError, ValueError):
+        pass
+    body["overrides"] = {"source": "locked-brief" if overrides else None, "values": overrides}
+    # Shared with the deploy-time verifier (FIX-S36-46) so the two can never drift.
+    body["certificate_sha"] = _certificate_sha(
+        seq_id, email_count, [(s["phase_id"], s["ok"]) for s in steps])
     body["certified_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     out_dir = run_dir / "delivery"
     try:
@@ -498,6 +703,75 @@ def self_test() -> int:
         good, _ = _chk_email_match(rd)
         _ck("_chk_email_match non-canonical sequence -> FAIL", good is False)
 
+    # --- FIX-S36-48: build-plan validation (declared produces_artifact now checked) ---
+    valid_plan = {
+        "folder": "Email Engine",
+        "wf": {"name": "Seq", "status": "draft", "templates": [
+            {"id": "s1", "type": "email", "name": "E1", "attributes": {
+                "subject": "hi", "body": "<p>hi</p>", "html": "<p>hi</p>", "fromName": "Founder"}},
+            {"id": "s2", "type": "wait", "name": "W1", "attributes": {
+                "type": "wait", "startAfter": {"type": "day", "value": 1, "when": "after"}}},
+        ]},
+    }
+    _ck("_validate_build_plan valid -> no errors", _validate_build_plan(valid_plan) == [])
+    bad_plan = {"folder": "", "wf": {"name": "x", "status": "published", "templates": []}}
+    _ck("_validate_build_plan invalid -> errors", bool(_validate_build_plan(bad_plan)))
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "working" / "deploy").mkdir(parents=True)
+        good, _ = _chk_build_plan(rd)
+        _ck("_chk_build_plan absent -> PASS (emitted post-gate)", good is True)
+        (rd / "working" / "deploy" / "build-plan.json").write_text(json.dumps(valid_plan), encoding="utf-8")
+        good, _ = _chk_build_plan(rd)
+        _ck("_chk_build_plan valid -> PASS", good is True)
+        (rd / "working" / "deploy" / "build-plan.json").write_text(json.dumps(bad_plan), encoding="utf-8")
+        good, _ = _chk_build_plan(rd)
+        _ck("_chk_build_plan invalid -> FAIL (fail-closed)", good is False)
+
+    # --- FIX-S36-46: deploy needs the REAL process certificate (recomputed sha) ---
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "working" / "deploy").mkdir(parents=True)
+        (rd / "delivery").mkdir(parents=True)
+        (rd / "working" / "deploy" / "approval.json").write_text(
+            json.dumps({"approved": True, "approved_by": "Founder"}), encoding="utf-8")
+        # approval only, no build-plan artifact -> PASS (nothing to deploy yet).
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval approval-only -> PASS", good is True)
+        # build-plan present but NO certificate -> BLOCK.
+        (rd / "working" / "deploy" / "build-plan.json").write_text(
+            json.dumps(valid_plan), encoding="utf-8")
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval build-plan w/o cert -> FAIL", good is False)
+        # a real, correctly-sha'd certificate -> PASS.
+        steps = [(pid, True) for pid in PHASE_ORDER]
+        cert = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
+                "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
+        cert["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
+        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval real cert -> PASS", good is True)
+        # a forged sha must fail closed.
+        cert["certificate_sha"] = "0" * 64
+        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval forged sha -> FAIL", good is False)
+
+    # --- FIX-S36-48: _write_proc PRESERVES logged owner_skip_approvals ---
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        cp = rd / "working" / "checkpoints"
+        cp.mkdir(parents=True)
+        seed = {"phases": [], "owner_skip_approvals": [
+            {"gate": "EMAIL_DEPS_MISSING", "approved": True, "approved_by": "op", "reason": "ci"}]}
+        (cp / "process_manifest.json").write_text(json.dumps(seed), encoding="utf-8")
+        _write_proc(rd, {"skill": "email-engine", "phases": [{"id": "P1-SELECT", "passed": True}]}, failed=None)
+        after = json.loads((cp / "process_manifest.json").read_text(encoding="utf-8"))
+        _ck("_write_proc preserves owner_skip_approvals",
+            isinstance(after.get("owner_skip_approvals"), list) and after["owner_skip_approvals"])
+        _ck("_write_proc mirrors approvals to operator-owned file",
+            (cp / "owner_skip_approvals.json").is_file())
+
     print("== run_email_engine self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return EXIT_PASS if ok else 1
 
@@ -531,6 +805,20 @@ def _mc_board_done(run_dir, task_id):
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Email Engine orchestrator (Skill 50).")
     ap.add_argument("--run-dir", help="the email run directory (contains working/)")
@@ -561,8 +849,18 @@ def main(argv=None):
 
     _mc_task = _mc_board_begin(run_dir)
     rc = run(manifest, run_dir, args.upto)
-    if rc == EXIT_PASS and not args.upto:
+    # Complete the card whenever the executed phase set INCLUDES P4-DEPLOY (the
+    # certified terminal phase) — i.e. a full run OR an explicit `--upto P4-DEPLOY`.
+    # The prior `not args.upto` guard was a truthy hole: `--upto P4-DEPLOY` deployed
+    # the sequence yet never moved the card off in_progress (FIX-XC-06).
+    stop_at = args.upto or "P4-DEPLOY"
+    if rc == EXIT_PASS and stop_at == "P4-DEPLOY":
         _mc_board_done(run_dir, _mc_task)
+    elif rc != EXIT_PASS:
+        # A gate failure (or usage error) after the card was opened: mark it blocked
+        # so it never strands invisibly at in_progress. A partial `--upto` PASS is
+        # neither done nor blocked (it legitimately stays in_progress).
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

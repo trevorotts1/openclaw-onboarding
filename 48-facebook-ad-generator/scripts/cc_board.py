@@ -203,12 +203,17 @@ def create_campaign(
         payload["estimated_cost_usd"] = estimated_cost_usd
     if show_date:
         payload["show_date"] = show_date
-    if stages:
-        payload["stages"] = [
-            {"slug": s["slug"], **({"title": s["title"]} if s.get("title") else {})}
-            for s in stages
-            if isinstance(s, dict) and s.get("slug")
-        ]
+    # Always create an "epic" rollup stage card FIRST so the end-of-run
+    # set_stage_status(job_id, "epic", "done") (ad_director closes the whole campaign
+    # here) targets a REAL card, never a phantom the server never created.
+    stage_list = list(stages or [])
+    if not any(isinstance(s, dict) and s.get("slug") == "epic" for s in stage_list):
+        stage_list.insert(0, {"slug": "epic", "title": f"{show_name} — campaign"})
+    payload["stages"] = [
+        {"slug": s["slug"], **({"title": s["title"]} if s.get("title") else {})}
+        for s in stage_list
+        if isinstance(s, dict) and s.get("slug")
+    ]
 
     url = f"{cfg['base_url']}/api/ad-campaigns"
     try:

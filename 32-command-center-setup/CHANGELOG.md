@@ -1,5 +1,49 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.29 — 2026-07-05 — F4.5: align CORE_UPDATES persona wording with the matching protocol (doctrine only)
+
+- **F4.5 (DEP-9) — Department-Head Pattern wording corrected.** `CORE_UPDATES.md` previously said
+  departments get "Personas assigned from coaching-personas library", conflating a department's
+  `dept_label` (its department-head display name) with a coaching persona. Corrected to state that
+  coaching personas are matched **per task, at runtime** and are NOT assigned to departments, per
+  `23-ai-workforce-blueprint/persona-matching-protocol.md`. Added a terminology callout pointing to
+  `TERMINOLOGY.md` → "Persona — three distinct meanings". No provisioning/behavior change.
+
+## v12.9.28 — 2026-07-05 — F4.4/F4.7: Kanban Persona-Gate + persona observability probe (DEP-10)
+
+- **F4.4 — `scripts/move-task.py` now enforces a persona precondition on the Kanban
+  lifecycle** (persona-aware boards only; migration 016+ `tasks.persona_id`). The
+  sole sanctioned status mover previously had zero persona awareness — a card could
+  travel backlog→done persona-"naked". New Persona-Gate:
+  - **INTO `in_progress` → warn-and-heal.** If the card has neither an assigned
+    persona nor a recorded `no_persona_required` decision, best-effort invoke the
+    canonical selector (`persona-selector-v2.py`, **bounded `--no-llm --no-record`**)
+    to heal it, then PROCEED regardless. Never parks work (availability > purity).
+  - **INTO `review` → HARD gate.** A card may not enter Review naked: heal once, and
+    if still naked BLOCK (exit 2) — by this stage a missing persona is a bug signal,
+    not a workflow state. Explicit operator override `--allow-no-persona` records the
+    `no_persona_required` decision (audited) for genuinely mechanical work.
+  - Fully schema-tolerant: boards without persona columns (Skill 23 not installed)
+    are unaffected — the gate is a silent no-op. `MOVE_TASK_SELECTOR` env override
+    for CI/probe determinism. All transitions/heals/blocks written to
+    `task_status_audit`.
+- **F4.4/F4.7 — new `shared-utils/fleet-heartbeat-persona-probe.sh`** (operator-side
+  only). Two signals for the fleet heartbeat / operator living-status doc: (1) SQL
+  count of **naked in-flight tasks** per box (in_progress+review with no persona and
+  no `no_persona_required`), and (2) a **synthetic selector `--no-record` dry-run
+  self-test** asserting selection actually runs on THIS box (catches fleet CC version
+  skew). Degrades LOUDLY when Skill 23 is absent. Per the operator-box-separate +
+  silent-updates doctrine the probe performs **no messaging of any kind** — report to
+  stdout + exit code only; never wired to a client channel.
+- **CI — `.github/workflows/persona-task-mode-wiring-guard.yml`** now compiles
+  `move-task.py`, syntax-checks the probe, runs the new `move-task-persona-lifecycle`
+  contract test, and **wires FDN-2's `no-naked-dispatch` contract test as the runtime
+  enforcement gate** (hard once FDN-2 lands the file; visible pending notice until
+  then — dependency-ordered self-activation).
+- Tests: `tests/unit/move-task-persona-lifecycle.test.sh` (18 assertions, hermetic,
+  stubbed selector) covering warn-and-heal, the hard Review gate, the override, the
+  no-op on non-persona boards, and "never park" on In Progress.
+
 ## v12.9.26 — 2026-07-03 — OQ-1: locked interview-mode CC is BY DESIGN (docs + gating comments)
 
 - **OQ-1 (ratified 2026-07-03) — Locked interview-mode Command Center.** The CC now ships

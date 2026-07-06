@@ -122,6 +122,92 @@ VERIFY_BLOCK_MARKER = "COMPLETION VERIFICATION"
 # The four required intake fields the IP actually consumes (PRD §3.3, §2.1).
 INTAKE_REQUIRED = ("product_name", "product_description", "first_name", "last_name")
 
+# ---- client-exact override channel (logged, tied to the locked brief) --------
+# The word band (WORDCOUNT_MIN..MAX) and the per-section enumerated COUNT_BANDS are
+# DEFAULT floors. A client-stated EXACT target is honored VERBATIM — never floored,
+# capped, or substituted (fleet-wide absolute law) — but ONLY when it is LOGGED in
+# the locked brief (working/intake.json). An override that is APPLIED (passed on the
+# command line) but NOT present-and-equal in the locked brief is fail-closed
+# (AF-PB-OVERRIDE-UNLOGGED): a run can never quietly relax a SACRED band from an
+# unlogged scratch value. The SACRED STRUCTURE is NEVER overridable — the 10
+# sections, their order, the 24 named signature closes, and the 7 StoryBrand beats
+# have no override channel; only the numeric quantity bands do. Mirrors Skill 57
+# prove_bands._resolve (the logged-override-wins-and-is-recorded pattern).
+AF_OVERRIDE_UNLOGGED = "AF-PB-OVERRIDE-UNLOGGED"
+
+# Locked-brief keys that carry a logged override.
+WORD_OVERRIDE_KEY = "word_count_override"        # a band for the whole-bio word floor
+SECTION_OVERRIDE_KEY = "section_count_overrides"  # {section_id: band} for COUNT_BANDS
+
+
+def parse_band(spec):
+    """Normalize an override spec into an (lo, hi) int tuple, or None when the spec
+    is absent/malformed. Accepts [lo, hi], {"min": lo, "max": hi}, {"exact": n}, or
+    a bare int n (an exact target). A malformed spec returns None (no override), so
+    a garbage value can never silently widen a band."""
+    if spec is None or isinstance(spec, bool):
+        return None
+    if isinstance(spec, (int, float)):
+        n = int(spec)
+        return (n, n)
+    if isinstance(spec, (list, tuple)) and len(spec) == 2 \
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in spec):
+        return (int(spec[0]), int(spec[1]))
+    if isinstance(spec, dict):
+        ex = spec.get("exact")
+        if isinstance(ex, (int, float)) and not isinstance(ex, bool):
+            n = int(ex)
+            return (n, n)
+        lo, hi = spec.get("min"), spec.get("max")
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) \
+                and not isinstance(lo, bool) and not isinstance(hi, bool):
+            return (int(lo), int(hi))
+    return None
+
+
+def resolve_band(default_lo, default_hi, logged_spec, applied_spec=None):
+    """Return (lo, hi, overridden, unlogged) for a numeric band.
+
+    - no applied + no logged  -> the DEFAULT band (overridden=False).
+    - logged only             -> the logged band (the sanctioned path: reading the
+                                 override straight from the locked brief means it is
+                                 logged and applied by construction).
+    - applied == logged       -> the override band (overridden=True).
+    - applied with no matching logged band -> the DEFAULT band + unlogged=True, so
+                                 the caller raises AF-PB-OVERRIDE-UNLOGGED and still
+                                 measures against the untouched SACRED floor.
+    """
+    logged = parse_band(logged_spec)
+    applied = parse_band(applied_spec)
+    if applied is not None:
+        if logged is None or applied != logged:
+            return default_lo, default_hi, False, True
+        return applied[0], applied[1], True, False
+    if logged is not None:
+        return logged[0], logged[1], True, False
+    return default_lo, default_hi, False, False
+
+
+def load_intake(intake_path):
+    """Read the locked brief (the ONE logged override channel). Returns the intake
+    dict, or {} when the path is absent/unreadable — an absent brief is not itself a
+    failure here (it just means no override is logged, so the default band stands);
+    P0 already gated intake presence fail-closed via prove_pb_intake."""
+    if not intake_path:
+        return {}
+    try:
+        obj = json.loads(Path(intake_path).read_text(encoding="utf-8"))
+        return obj if isinstance(obj, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def resolved_word_band(intake, applied_spec=None):
+    """Convenience: resolve the whole-bio word band from a locked-brief dict."""
+    return resolve_band(WORDCOUNT_MIN, WORDCOUNT_MAX,
+                        intake.get(WORD_OVERRIDE_KEY) if isinstance(intake, dict) else None,
+                        applied_spec)
+
 # ---- regexes ----------------------------------------------------------------
 _HEADER_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*\S)\s*$")          # markdown ATX header
 _BOLD_HEADER_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s*:?\s*$")       # a bold-only line acting as a header

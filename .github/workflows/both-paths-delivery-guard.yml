@@ -193,14 +193,21 @@ jobs:
           fi
           echo "PASS D11: reconcile_persona_assets invoked on both paths"
 
-      - name: D12 — provision idempotency gate is chunk_count + persona-dir aware (static)
+      - name: D12 — provision idempotency gate is chunk_count + persona-dir aware, SUPERSET-safe (static)
         run: |
           # v14.27.2: the gate must NOT skip merely on "has section_number column".
           # It must compare chunk_count against the manifest and the persona-dir
           # count, so a non-canonical 6260/7615/9456-row partial index re-provisions.
+          # F2.1: the chunk gate is now a SUPERSET check (installed >= manifest)
+          # when the box carries a client LOCAL persona delta, so a canonical
+          # index PLUS the client's own locally-embedded personas is NOT clobbered;
+          # a same-set short index still converges (exact semantics). Assert the
+          # superset wording + the local-delta decision marker, not the retired
+          # equality string.
           H="shared-utils/provision-persona-index.sh"
           MISS=""
-          grep -q 'chunk_count != manifest chunk_count' "$H" || MISS="$MISS chunk_count-gate-doc"
+          grep -q 'chunk_count >= manifest' "$H" || MISS="$MISS chunk_count-superset-gate-doc"
+          grep -q '_HAS_LOCAL_DELTA' "$H" || MISS="$MISS local-delta-superset-decision"
           grep -q 'CONTENT_CANON\|CONTENT-CANONICAL' "$H" || MISS="$MISS content-canonical"
           grep -q 'PROVISION_DRY_RUN' "$H" || MISS="$MISS dry-run-hook"
           grep -q '_PERSONA_DIR_COUNT' "$H" || MISS="$MISS persona-dir-gate"
@@ -208,7 +215,7 @@ jobs:
             echo "FAIL D12: provision-persona-index.sh missing:$MISS"
             exit 1
           fi
-          echo "PASS D12: provision gate is chunk_count + persona-dir aware with dry-run hook"
+          echo "PASS D12: provision gate is chunk_count + persona-dir aware, superset-safe (F2.1) with dry-run hook"
 
       - name: D13 — provision idempotency dynamic proof (offline, dry-run)
         run: |

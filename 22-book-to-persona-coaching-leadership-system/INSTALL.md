@@ -206,7 +206,7 @@ GOOGLE_API_KEY=your_key_here
 
 **Graceful degradation if GOOGLE_API_KEY is missing or expired:**
 - The Gemini indexer will not run (embedding search unavailable)
-- The system falls back to `PERSONA-ROUTER.md` keyword matching (still works for all 40 personas)
+- The system falls back to `PERSONA-ROUTER.md` keyword matching (still works for all 82 personas)
 - Do NOT use `sys.exit(1)` in scripts when the key is missing -- log a warning and continue with keyword routing
 
 ### Step 2e - Dependency Check Complete Gate
@@ -393,7 +393,7 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ## Step 5 - Install Gemini Vector Index (coaching-personas) — DOWNLOAD PREBUILT (DEFAULT)
 
-> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding ~7615 chunks (48 personas) and saves your Gemini API credits.
+> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding the full section-tagged index (~1,161 section rows across 82 personas — see `shared-utils/prebuilt-index/INDEX-MANIFEST.json` for exact current counts) and saves your Gemini API credits.
 > Only fall back to local embedding (Step 5-FALLBACK) if the download fails or you are adding new books that are not in the prebuilt set.
 
 ### Step 5-A: Detect install path (Mac vs VPS)
@@ -414,21 +414,25 @@ mkdir -p "$COACHING_DB_DIR"
 # Single source of truth: shared-utils/prebuilt-index/INDEX-MANIFEST.json on the
 # default branch. We read asset_url + sha256 from the manifest so this never
 # drifts when a newer prebuilt index is released. If the manifest can't be
-# fetched (offline box), fall back to the pinned v2.0.0 / 48-persona values.
+# fetched (offline box), fall back to the pinned current-release values below.
 MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 MANIFEST_JSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
 ASSET_URL="$(printf '%s' "$MANIFEST_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
 EXPECTED_SHA256="$(printf '%s' "$MANIFEST_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
+EXPECTED_CHUNKS="$(printf '%s' "$MANIFEST_JSON" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("chunk_count",0) or 0))' 2>/dev/null)"
 if [ -z "$ASSET_URL" ] || [ -z "$EXPECTED_SHA256" ]; then
-  echo "Manifest unavailable — using pinned v2.0.0 / 48-persona values"
-  ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
-  EXPECTED_SHA256="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
+  echo "Manifest unavailable — using pinned current-release values (v2.3.0)"
+  ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.3.0/gemini-index.sqlite.gz"
+  EXPECTED_SHA256="6cc5f9a1b649aab64cd7d4dc2fde1d9df72b2ee244607cf1e7567358a5fa3cdf"
 fi
+# Export the expected section-row count so the Step 5-E verifier can check it
+# without re-fetching the manifest. Blank when the manifest was unreachable.
+export EXPECTED_CHUNKS
 echo "Index asset:     $ASSET_URL"
 echo "Expected sha256: $EXPECTED_SHA256"
 GZ_PATH="/tmp/gemini-index.sqlite.gz"
 
-echo "Downloading prebuilt persona index (~87 MB, 48 personas)..."
+echo "Downloading prebuilt persona index (~90 MB, 82 personas)..."
 curl -L --retry 3 --retry-delay 5 --fail \
   -H "Accept: application/octet-stream" \
   "$ASSET_URL" -o "$GZ_PATH"
@@ -489,14 +493,29 @@ conn = sqlite3.connect(db_path)
 try:
     row = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
     chunk_count = row[0]
-    print(f"Index verified: {chunk_count} chunks in embeddings table")
-    if chunk_count < 7000:
-        print(f"FAIL: expected ~7615 chunks (48-persona v2.0.0 index), got {chunk_count}.")
-        print("      This looks like the OLD 40-persona index — the 8 book-author")
-        print("      personas are MISSING. Delete the DB and re-run the download.")
+    print(f"Index verified: {chunk_count} rows in embeddings table")
+    # The current asset is SECTION-TAGGED (one row per '## Section N', ~14 rows
+    # per persona → ~1,161 rows for 82 personas), NOT the old per-paragraph index
+    # (~7,615 rows). Prefer the manifest's exact chunk_count (exported by Step 5-B);
+    # fall back to a conservative floor that still catches an empty/truncated DB.
+    # The SHA256 hard gate in Step 5-C already guarantees the bytes match the
+    # manifest, so this is a secondary sanity check.
+    try:
+        expected = int(os.environ.get("EXPECTED_CHUNKS") or 0)
+    except ValueError:
+        expected = 0
+    floor = 500  # section-tagged asset is well above this even partially
+    if expected > 0 and chunk_count != expected:
+        print(f"FAIL: expected {expected} rows (from INDEX-MANIFEST.json), got {chunk_count}.")
+        print("      The index does not match the current manifest. Delete the DB")
+        print("      and re-run the download.")
+        sys.exit(1)
+    elif chunk_count < floor:
+        print(f"FAIL: only {chunk_count} rows (< {floor}) — the index looks empty or")
+        print("      truncated. Delete the DB and re-run the download.")
         sys.exit(1)
     else:
-        print("PASS: prebuilt 48-persona index ready for use")
+        print("PASS: prebuilt persona index ready for use")
 except Exception as e:
     print(f"FAIL: could not query embeddings table: {e}")
     sys.exit(1)
@@ -505,7 +524,7 @@ finally:
 EOF
 ```
 
-**Expected output:** `PASS: prebuilt 48-persona index ready for use` with ~7615 chunks.
+**Expected output:** `PASS: prebuilt persona index ready for use` with ~1,161 section rows (82 personas; see INDEX-MANIFEST.json for the exact current count).
 
 ---
 
@@ -515,7 +534,7 @@ Use this path ONLY when:
 - The GitHub Release download above failed and cannot be retried
 - You are adding client-specific books not in the prebuilt set (incremental indexing)
 
-**Note:** This consumes Gemini API credits (one embedding call per chunk). With ~7615 chunks the full rebuild costs ~$0.60–$1.20 at GA pricing.
+**Note:** This consumes Gemini API credits (one embedding call per section row). With ~1,161 section rows the full rebuild costs well under ~$0.60 at GA pricing (the older per-paragraph index was ~7,615 rows / ~$0.60–$1.20).
 
 **Run the indexer after Step 5b-Deploy is complete:**
 ```bash
@@ -872,8 +891,8 @@ MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/
 MJSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
 ASSET_URL="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
 EXPECTED_SHA="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
-[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
-[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
+[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.3.0/gemini-index.sqlite.gz"
+[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="6cc5f9a1b649aab64cd7d4dc2fde1d9df72b2ee244607cf1e7567358a5fa3cdf"
 GZ=/tmp/gemini-index.sqlite.gz
 curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
 ACTUAL=$(shasum -a 256 "$GZ" | awk '{print $1}') && \
@@ -891,8 +910,8 @@ MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/
 MJSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
 ASSET_URL="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
 EXPECTED_SHA="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
-[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
-[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
+[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.3.0/gemini-index.sqlite.gz"
+[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="6cc5f9a1b649aab64cd7d4dc2fde1d9df72b2ee244607cf1e7567358a5fa3cdf"
 GZ=/tmp/gemini-index.sqlite.gz
 curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
 ACTUAL=$(sha256sum "$GZ" | awk '{print $1}') && \
@@ -908,7 +927,7 @@ echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
 ```bash
 python3 ~/.openclaw/scripts/gemini-indexer.py --status
 ```
-Expected: Shows "coaching-personas" collection with 48 personas (7615 chunks).
+Expected: Shows "coaching-personas" collection with 82 personas (~1,161 section rows; see INDEX-MANIFEST.json for exact current counts).
 
 #### Step 5: APPLY CORE_UPDATES.md
 Add entries from CORE_UPDATES.md to:

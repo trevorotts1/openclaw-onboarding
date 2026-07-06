@@ -96,7 +96,11 @@ commands automatically; operators never need to memorize command syntax.
 - **forms** — list, get submissions
 - **social** — list accounts, schedule post, get post status
 - **locations** — get location info, list custom fields, list custom values
-- **workflows** (READ-ONLY on PIT) — list, get, export
+- **workflows** — `list` is READ-ONLY on the LOCATION PIT (Tier 0). BUT `get` and `export`
+  route through the INTERNAL Firebase client and REQUIRE the Firebase refresh token — they are
+  NOT PIT reads (see "Workflow BUILD and EDIT" below; the same token gates read-back). With no
+  Firebase token, `get`/`export` cannot run and workflow QC falls to the Tier-4 agent-browser
+  read-back (fail-closed — "no token" never means "skip QC").
 
 ### Sub-agent contact lookup rule (CRITICAL)
 
@@ -191,8 +195,11 @@ Any workflow that contains a conversational node MUST produce all three legs:
 2. Communications playbook (skill 38 auto-invoked for the brain)
 3. Workflow-AI / Build-with-AI prompt (skill 38 generates)
 
-All three legs ship together or the build is NOT registered. Skill 44's QC calls
-`38/scripts/qc-trinity-registry.sh` as a hard gate before registration.
+All three legs ship together or the build is NOT registered. Skill 44's per-build QC ENFORCES
+this mechanically: run `./qc-built-workflow.sh <workflow-id> --conversational`, which EXECUTES
+`38/scripts/qc-trinity-registry.sh` and FAILs WF-19 on any non-zero exit (incomplete TRINITY or
+missing `conversation-workflows/` folder). Without `--conversational`, WF-19 is N/A (human
+review) — correct for a purely mechanical workflow with no conversational leg.
 
 ---
 

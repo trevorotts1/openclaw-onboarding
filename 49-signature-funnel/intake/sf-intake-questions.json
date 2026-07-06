@@ -52,7 +52,10 @@
      "note": "The TRUTH GATE (AF-FUN-INTAKE-TRUTHGATE). Section 11 always promises share/email-bonus/founder-text/community; each must be confirmed real here."},
     {"id": "q17", "order": 17, "storeOn": "q17_confirmation", "required": true, "kind": "text",
      "prompt": "Playback of the brief (offer, price, length, colors, representation, scarcity claims) for a one-word approval before generation begins.",
-     "note": "On approval the brief is LOCKED (provenance-gated); generation may start. The email offer follows the downsell approval (P10)."}
+     "note": "On approval the brief is LOCKED (provenance-gated); generation may start. The email offer follows the downsell approval (P10)."},
+    {"id": "q18", "order": 18, "storeOn": "q18_style_card_id", "required": false, "kind": "text", "default": "",
+     "prompt": "OPTIONAL: if you have a registered design style card for your funnel look (a Skill 45 'FN-...' id from the design library), give me the id and I'll lock every image to that style. Leave blank to use the Signature look built from your brand colors.",
+     "note": "OPTIONAL (FIX-XC-02c). When set to a registered FN- style_card_id, the image system resolves it via DIU Workflow B and embeds the card's LONG tier as the Brand-Style block (block 8) of every PROMPT 7 image prompt. Blank/absent = current brand-color Signature behavior. NEVER required; prove_sf_intake ignores it when absent."}
   ],
   "runtime_intake_contract": {
     "note": "Shape of brief.json that prove_sf_intake.py validates. Any violation is exit 2, fail-closed.",
@@ -69,6 +72,10 @@
       "always": ["q1_offer", "q2_price_promise", "q3_pains", "q4_people", "q5_goods", "q6_founder_story", "q7_brand_colors", "q8_representation", "q9_voice", "q10_funnel_length", "q11_oto1", "q15_reference_images", "q16_truth_gate", "q17_confirmation"],
       "5-step_and_7-step": ["q12_downsell1", "q13_oto2"],
       "7-step_only": ["q14_downsell2"]
+    },
+    "optional_answer_keys": {
+      "note": "FIX-XC-02c. NEVER required; the intake prover ignores these when absent (unset = current behavior).",
+      "q18_style_card_id": "OPTIONAL registered Skill 45 FN- style card id. When set, the image system resolves it via DIU Workflow B and embeds the card's LONG tier as the Brand-Style block (block 8) of every PROMPT 7 image prompt."
     },
     "autofail_codes": {
       "AF-FUN-INTAKE-TYPE": "funnel_type != signature_funnel",

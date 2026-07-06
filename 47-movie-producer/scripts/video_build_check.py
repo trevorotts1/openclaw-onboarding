@@ -57,11 +57,33 @@ NATIVE_PAID_PROVIDERS = [
 
 # Env-var name fragments that, if present in a recorded generation environment,
 # prove a native paid provider key was available at generation time.
+#
+# FIX-S36-42: the ban is scoped to IMAGERY/VIDEO GENERATION providers. A bare
+# Google/Gemini API key is legitimately present on fleet boxes for EMBEDDINGS
+# (memory / Skill 45 design-intelligence-library) and is NOT proof that a native
+# image/video GENERATION provider is wired — so the Google/Gemini env keys are
+# NOT listed here (they are allowlisted below). A genuine Google-backed
+# GENERATION path is still caught: `provider_used` naming google/imagen (see
+# NATIVE_PAID_PROVIDERS) or a google/imagen entry that is not the bare
+# embedding provider in the tool-registry audit.
 NATIVE_PROVIDER_ENV_KEYS = [
     "FAL_KEY", "FAL_API_KEY", "RUNWAY", "HEYGEN", "OPENAI_API_KEY",
-    "GOOGLE_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY",
     "KLING", "MINIMAX", "XAI_API_KEY", "ELEVENLABS",
 ]
+
+# Providers whose MERE availability in the tool-registry audit is embedding-only
+# and therefore NOT a native-generation violation. These names legitimately show
+# up because a fleet box carries a Google/Gemini key for embeddings; the ban only
+# fires for an actual generation tool (e.g. `imagen`, or a `provider_used` that
+# names google at render time). (FIX-S36-42)
+EMBEDDING_ALLOWLISTED_PROVIDERS = {"google", "gemini"}
+
+# Env-var names that are embedding-only credentials — legitimate to have present
+# on a client box and never proof of a native GENERATION provider. Documented so
+# the allowlist reasoning is explicit. (FIX-S36-42)
+EMBEDDING_ONLY_ENV_KEYS = {
+    "GOOGLE_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY",
+}
 
 # Placeholder / fabricated task-id tokens that are NOT a real Kie task id.
 FABRICATED_TASK_ID_TOKENS = [
@@ -211,12 +233,19 @@ def _chk_provider_audit(run_dir: Path) -> str:
     if "kie" not in avail:
         return ("AF-VID-PROVIDER-AUDIT: kie is not AVAILABLE in the provider audit. "
                 "Verify KIE_API_KEY is set in a client env store before any generation.")
+    # FIX-S36-42: scope the ban to GENERATION providers. A bare google/gemini entry
+    # is embedding-only (a fleet box's Google key) and is allowlisted; a real google
+    # generation tool (e.g. `imagen`, `google-veo`) still matches a native token and
+    # is NOT the bare-allowlisted name, so it stays banned.
     leaked = sorted({p for p in avail
-                     if any(nat in p for nat in NATIVE_PAID_PROVIDERS)})
+                     if any(nat in p for nat in NATIVE_PAID_PROVIDERS)
+                     and p not in EMBEDDING_ALLOWLISTED_PROVIDERS})
     if leaked:
-        return ("AF-VID-PROVIDER-AUDIT: native paid provider(s) reported AVAILABLE: "
-                f"{', '.join(leaked)}. All assets must route through Kie.AI ONLY — an "
-                "unexpected native key could misdirect generation. Remove the key.")
+        return ("AF-VID-PROVIDER-AUDIT: native paid GENERATION provider(s) reported "
+                f"AVAILABLE: {', '.join(leaked)}. All generative assets must route "
+                "through Kie.AI ONLY — an unexpected native generation tool could "
+                "misdirect generation. Remove it. (A bare google/gemini embedding key "
+                "is allowlisted and does NOT trip this gate.)")
     return ""
 
 
@@ -380,10 +409,77 @@ def _glob_min_bytes(run_dir: Path, filename: str, min_bytes: int) -> bool:
     return False
 
 
+def _resolve_run_path(run_dir: Path, path_str: str) -> Path:
+    """Resolve a receipt-declared path against the run dir (absolute paths honored)."""
+    p = Path(path_str)
+    return p if p.is_absolute() else (run_dir / p)
+
+
+def _final_mp4_deliverable_ok(run_dir: Path, min_bytes: int) -> str:
+    """FIX-S36-44. Validate the SPECIFIC final MP4 the render receipt declares —
+    never 'any .mp4 anywhere' (a recursive glob let raw stock footage under assets/
+    satisfy the gate). Rules:
+      * render-receipt.json must declare the finished file via `final_mp4_path`
+        (canonical) or `output_path` (legacy fallback);
+      * that path must NOT live under an `assets/` directory (assets/ is raw
+        source/stock footage, not the deliverable);
+      * the file must exist and be >= min_bytes.
+    Returns "" on pass, else a human-readable reason (no AF prefix — the caller
+    wraps it in AF-VID-DELIVERY-INCOMPLETE)."""
+    rr = _render_receipt(run_dir)
+    if not isinstance(rr, dict) or "__parse_error__" in rr:
+        return ("the render receipt is absent/invalid, so the finished MP4 path "
+                "cannot be resolved (render-receipt.json must declare final_mp4_path)")
+    path_str = str(rr.get("final_mp4_path") or rr.get("output_path") or "").strip()
+    if not path_str:
+        return ("render-receipt.json declares no final_mp4_path — the finished MP4 "
+                "must be named explicitly so raw stock footage cannot be mistaken for "
+                "the deliverable")
+    p = _resolve_run_path(run_dir, path_str)
+    # Exclude anything under an assets/ directory (raw source / stock footage).
+    parts_lower = {seg.lower() for seg in p.parts}
+    if "assets" in parts_lower:
+        return (f"the declared final_mp4_path ({path_str!r}) lives under assets/ — that "
+                "is raw source/stock footage, not the finished deliverable")
+    try:
+        if not (p.is_file() and p.stat().st_size >= min_bytes):
+            size = p.stat().st_size if p.is_file() else "absent"
+            return (f"the declared final_mp4_path ({path_str!r}) is {size} — it must "
+                    f"exist and be >= {min_bytes} bytes")
+    except OSError as exc:
+        return f"the declared final_mp4_path ({path_str!r}) could not be stat-ed ({exc})"
+    return ""
+
+
+def _handoff_declared_ok(declared) -> bool:
+    """FIX-S36-44. Exact-enum handoff match. The declared handoff must contain a
+    whole token that is EXACTLY one of HANDOFF_TARGETS — not a substring (which let
+    'predelivery' satisfy 'delivery' and any free text pass). Hyphens are preserved
+    so role slugs like 'captioning--subtitling-specialist' match as one token."""
+    if isinstance(declared, str):
+        text = declared.lower()
+    elif isinstance(declared, list):
+        text = " ".join(str(x).lower() for x in declared)
+    elif isinstance(declared, dict):
+        text = " ".join(str(x).lower() for x in declared.keys())
+    else:
+        return False
+    if not text.strip():
+        return False
+    # Keep internal hyphens (role slugs like 'captioning--subtitling-specialist')
+    # but strip edge hyphens so an arrow separator ('captions->...') yields the bare
+    # token 'captions', not 'captions-'.
+    tokens = {t.strip("-") for t in re.split(r"[^a-z0-9-]+", text)}
+    tokens.discard("")
+    return any(h.lower() in tokens for h in HANDOFF_TARGETS)
+
+
 def run_postflight_gate(run_dir: Path) -> str:
     """AF-VID-DELIVERY-INCOMPLETE. The V-CONTROL completeness gate. Returns "" only
     when: job-manifest status == 'complete' AND every DELIVERABLES_REQUIRED file is
-    present at/above its min_bytes floor AND a downstream handoff is declared."""
+    present at/above its min_bytes floor (the final MP4 validated against the render
+    receipt's specific declared path, excluding assets/) AND a downstream handoff is
+    declared as an EXACT enum target."""
     jm = _load_job_manifest(run_dir)
     if jm is None or (isinstance(jm, dict) and "__parse_error__" in jm):
         return ("AF-VID-DELIVERY-INCOMPLETE: job-manifest.json is absent/invalid at "
@@ -393,24 +489,24 @@ def run_postflight_gate(run_dir: Path) -> str:
                 f"{jm.get('status')!r}, not 'complete'.")
     missing = []
     for d in DELIVERABLES_REQUIRED:
+        if d["key"] == "final_mp4":
+            # The finished MP4 is validated against the render receipt's declared
+            # path (excluding assets/) — never a blind recursive *.mp4 glob.
+            reason = _final_mp4_deliverable_ok(run_dir, int(d["min_bytes"]))
+            if reason:
+                missing.append(f"{d['key']} ({d['label']}): {reason}")
+            continue
         if not _glob_min_bytes(run_dir, d["filename"], int(d["min_bytes"])):
             missing.append(f"{d['key']} ({d['label']}, >= {d['min_bytes']} bytes)")
     if missing:
         return ("AF-VID-DELIVERY-INCOMPLETE: required deliverable(s) missing or below "
                 f"the size floor: {'; '.join(missing)}.")
     declared = jm.get("handoff") or jm.get("delivered_to") or jm.get("handoffs")
-    declared_ok = False
-    if isinstance(declared, str) and declared.strip():
-        declared_ok = any(h in declared.lower() for h in HANDOFF_TARGETS)
-    elif isinstance(declared, (list, dict)):
-        flat = " ".join(str(x).lower() for x in
-                        (declared if isinstance(declared, list) else declared.keys()))
-        declared_ok = any(h in flat for h in HANDOFF_TARGETS)
-    if not declared_ok:
+    if not _handoff_declared_ok(declared):
         return ("AF-VID-DELIVERY-INCOMPLETE: no downstream handoff declared in "
-                "job-manifest (handoff / delivered_to). Declare one of "
-                "captions(26)/tts(30)/edit(27)/storyboard(24)/delivery(Head of Video "
-                "Production).")
+                "job-manifest as an EXACT target (handoff / delivered_to). Declare one "
+                "of captions(26)/tts(30)/edit(27)/storyboard(24)/delivery(Head of Video "
+                "Production) — a partial/substring value is not accepted.")
     return ""
 
 

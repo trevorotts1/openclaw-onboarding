@@ -119,7 +119,14 @@ def check_provenance(calls):
 
 
 def check_no_anthropic(calls):
-    """Every recorded model/provider call must be non-Anthropic (G-NOANTHROPIC)."""
+    """Every recorded model/provider call must be non-Anthropic (G-NOANTHROPIC).
+
+    Two independent tests: (1) the regex over "<model> <provider>" catches
+    claude-* / anthropic/claude-* / sk-ant- / @anthropic-ai/ / bedrock ids; and
+    (2) an EXACT provider-FIELD test — `{"provider":"anthropic"}` (or "claude")
+    paired with a NON-claude model id (e.g. a bare model name) sails past the
+    regex, so the provider field is matched directly. Either trip is a hard
+    AF-SM-NOANTHROPIC (fail-closed)."""
     fails = []
     models = []
     for c in calls or []:
@@ -131,6 +138,11 @@ def check_no_anthropic(calls):
         blob = "%s %s" % (model, provider)
         if _ANTHROPIC_RE.search(blob):
             fails.append((AF_NOANTHROPIC, "call %r used an Anthropic model/provider" % c.get("step", "?")))
+        elif provider.strip().lower() in ("anthropic", "claude"):
+            # exact provider-field match (the regex misses a bare {provider:"anthropic"}
+            # carrying a non-claude model id) — still a client-path Anthropic call.
+            fails.append((AF_NOANTHROPIC, "call %r declares provider %r (exact provider-field match)"
+                          % (c.get("step", "?"), provider)))
     return fails, models
 
 
@@ -246,6 +258,15 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
 
     creative = _creative_block(run_dir, cfg, logged_overrides, client_copy_shas)
 
+    # FIX-XC-11h: record WHERE the run's labeled local deliverables landed. The
+    # P-DELIVER checker (run_social_media._chk_deliver) shells label_deliverables.py
+    # --copy and writes delivery/deliverables-manifest.json with a deterministic
+    # LOGICAL dest_root (the ~/Downloads convention, never a physical temp path).
+    # Absent (fold/plan/engage modes that ship no local media) -> None. Recorded on
+    # the certificate but NOT bound into certificate_sha (it is provenance, not a gate).
+    deliver_rec = _read_json(run_dir / "delivery" / "deliverables-manifest.json", {}) or {}
+    deliverable_dest_root = deliver_rec.get("dest_root") if isinstance(deliver_rec, dict) else None
+
     manifest = {
         "schema": "social-media-process-certificate-v1",
         "skill": "social-media-in-a-box", "skill_number": 57,
@@ -262,6 +283,7 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
         "creative": creative,
         "overrides_logged_ok": not ov_fails,
         "client_copy_verbatim_ok": not cc_fails,
+        "deliverable_dest_root": deliverable_dest_root,
         "signer": signer,
         "deploy_mode": "publish-on-cert",
         "failures": [{"code": c, "message": m} for c, m in fails],
@@ -356,6 +378,9 @@ def _write_certificate(run_dir, manifest):
                 manifest["creative"].get("persona_source"), manifest["creative"].get("em_dash_policy"),
                 manifest["creative"].get("series_length"), manifest["creative"].get("arc_template")),
             "- **Models used:** %s" % ", ".join(manifest["models_used"] or ["(none recorded)"]),
+        ] + ([
+            "- **Labeled deliverables dest root:** `%s`" % manifest["deliverable_dest_root"],
+        ] if manifest.get("deliverable_dest_root") else []) + [
             "- **Certificate SHA:** `%s`" % manifest["certificate_sha"],
             "",
             "Issued by `build_manifest.py`. The publisher (P7) refuses to run without this "
@@ -486,6 +511,12 @@ def self_test():
     cf("required-gate-absent", g, good_calls, good_cfg, AF_PROCESS)
     bad_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "claude-opus-4-8"}]
     cf("anthropic-call", good_gates, bad_calls, good_cfg, AF_NOANTHROPIC)
+    # FIX-XC-09c: a bare {provider:"anthropic"} carrying a NON-claude model id sails
+    # past the regex; the exact provider-FIELD test must still trip AF-SM-NOANTHROPIC.
+    field_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "some-internal-model"}]
+    cf("anthropic-provider-field", good_gates, field_calls, good_cfg, AF_NOANTHROPIC)
+    field_calls2 = good_calls + [{"step": "rogue", "provider": "Claude", "model": "gpt-x"}]
+    cf("claude-provider-field", good_gates, field_calls2, good_cfg, AF_NOANTHROPIC)
     agency_cfg = {"brandName": "Agency", "mode": "agency",
                   "roster": [{"pit": "pit-a", "locationId": "loc1"}, {"pit": "pit-a", "locationId": "loc2"}]}
     cf("agency-shared-pit", good_gates, good_calls, agency_cfg, AF_AGENCY)

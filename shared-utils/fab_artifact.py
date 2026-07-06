@@ -162,6 +162,76 @@ def build_funnel_artifact(task: dict, build: dict) -> dict:
     }
 
 
+# Copy-ledger keys that carry counts/metadata, never renderable copy.
+_LEDGER_META_KEYS = frozenset({
+    "section", "id", "page", "profile", "type", "order", "char_count",
+    "word_count", "chars", "words", "count", "min", "max", "min_chars",
+    "max_chars", "min_words", "max_words", "band", "ts", "at", "kind", "slug",
+    "status", "funnel_type", "funnel_size", "has_cta_button", "personas",
+    "offer_token_ledger", "product_title",
+})
+
+
+def _harvest_ledger_copy(value) -> dict:
+    """Flatten a copy_ledger page/section subtree into a {slot -> text} bag — every
+    renderable string, keyed by its nearest copy field name."""
+    bag: dict[str, str] = {}
+    counter = {"n": 0}
+
+    def _walk(node, key_hint: str) -> None:
+        if isinstance(node, str):
+            t = node.strip()
+            if t:
+                slot = key_hint or f"copy{counter['n']}"
+                # de-collide repeated slot names by index
+                if slot in bag:
+                    counter["n"] += 1
+                    slot = f"{slot}-{counter['n']}"
+                bag[slot] = t
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                _walk(v, key_hint)
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                if k in _LEDGER_META_KEYS:
+                    continue
+                _walk(v, str(k))
+
+    _walk(value, "")
+    return bag
+
+
+def build_funnel_artifact_from_copy_ledger(copy_ledger: dict,
+                                           match_decision: dict | None = None) -> dict:
+    """Normalise an ENGINE ``copy_ledger.json`` (Signature-Funnel / Sales-Page shape:
+    ``{pages:[{sections:[{copy,cta,bullets,steps,parts[].text,name,...}]}]}``) into the
+    artifact shape ``fab_qc`` reads — ECHOING the real per-section copy the engine
+    authored (FIX-COPY-02). This is what makes the FAB-QC copy-substance gate fire on
+    an engine-routed build that produced no template match receipt.
+
+    A ledger with no copy produces empty-copy pages and FAB-QC D2 fails it — the
+    intended fail-closed behaviour (an un-echoed build cannot be proven non-thin)."""
+    cl = copy_ledger or {}
+    md = match_decision or {}
+    pages_in = [p for p in (cl.get("pages") or []) if isinstance(p, dict)]
+    pages: list[dict] = []
+    for i, pg in enumerate(pages_in):
+        name = (pg.get("profile") or pg.get("page") or pg.get("name")
+                or pg.get("id") or f"page-{i + 1}")
+        copy = _harvest_ledger_copy(pg.get("sections") if "sections" in pg else pg)
+        pages.append({"name": str(name), "copy": copy})
+    return {
+        "kind": "funnel",
+        "funnel_template_id": cl.get("funnel_template_id") or md.get("funnel_template_id"),
+        "matched_template_id": md.get("matched_template_id"),
+        "flex_decision": md.get("flex_decision"),
+        "product_title": cl.get("product_title"),
+        "pages": pages,
+        "source": "copy_ledger",
+        "generated_by": "fab_artifact.build_funnel_artifact_from_copy_ledger",
+    }
+
+
 # --------------------------------------------------------------------------- #
 # automation producer (Skill 44 — from the workflow export)
 # --------------------------------------------------------------------------- #
