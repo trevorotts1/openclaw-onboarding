@@ -1,0 +1,68 @@
+{
+  "schema": "podcast-episode-certificate-v1",
+  "skill": "podcast-production-engine",
+  "skill_number": 58,
+  "gate": "EPISODE (Gate B)",
+  "gate_note": "This certificate is Gate B (episode deliverability): 16 Tier 1 hard-fail checks plus the 10-dimension rubric at 8 or higher plus the honest Part A checklist, with a 3-strike cap. It is NEVER the build/merge gate (Gate A, the 8.5 ten-category rubric). The two gates are never conflated or substituted.",
+  "brand_slug": "first-light-show",
+  "preset": "interview",
+  "mode": "interview_style_podcast",
+  "style": "counter_intuitive",
+  "job_key": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "tier1_all_pass": true,
+  "tier1_checks_total": 16,
+  "rubric_min": 8,
+  "rubric_all_at_or_above_8": true,
+  "rubric_scores": {
+    "1_authorial_voice_fidelity": 8,
+    "2_arc_execution": 9,
+    "3_persuasion_mechanics": 9,
+    "4_opening_power": 8,
+    "5_closing_power": 9,
+    "6_captivation_throughout": 8,
+    "7_fidelity_to_the_respondent": 9,
+    "8_research_integration_quality": 8,
+    "9_delivery_craft": 9,
+    "10_audio_direction_quality": 8
+  },
+  "attempt": 1,
+  "three_strike_cap": 3,
+  "script_words": 1179,
+  "duration_seconds": 505,
+  "duration_minutes": 8.4,
+  "tag_count": 13,
+  "zero_anthropic": true,
+  "models_used": [
+    "kimi-2.6",
+    "glm-5.2",
+    "gemini-3.1-flash-lite",
+    "s2.1-pro",
+    "gpt-image-2",
+    "sonar-reasoning"
+  ],
+  "judge_tier_distinct_from_writer": true,
+  "qc_persona_distinct_from_writer": true,
+  "fish_audio": {
+    "model": "s2.1-pro",
+    "free_tier": false,
+    "reference_id": "REFERENCED-FROM-ENV"
+  },
+  "silence": {
+    "client_facing_messages": 0,
+    "messaging_owner": "Convert and Flow",
+    "delivery_report_channel": "operator-only"
+  },
+  "secrets_printed": 0,
+  "state": "complete",
+  "deliverable": true,
+  "book_teaser": {
+    "produced": true,
+    "writer_model": "glm-5.2",
+    "font_floor_pt": 14,
+    "cliffhanger": true
+  },
+  "epic_guest_introduction": true,
+  "guest_pronoun": "they/them",
+  "enrollment": "04-Podcast-is-Completed field-triggered; 06-Podcast-Episode-Is-Ready enrolled; both verified; double-enrollment guarded",
+  "certificate_sha": "31c092c5c5175aa1ac9466fb10989fdf5a560bc30237a633c1fbe8ba99b85cb8"
+}

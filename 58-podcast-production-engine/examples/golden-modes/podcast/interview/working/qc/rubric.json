@@ -1,0 +1,49 @@
+{
+  "schema": "podcast-episode-rubric-v1",
+  "gate": "EPISODE (Gate B) Tier 2",
+  "rule": "each dimension 8 or higher, no averaging, scored only after Tier 1 fully passes; scored by qc-specialist-podcast, a different persona from the writer",
+  "minRequired": 8,
+  "dimensions": {
+    "1_authorial_voice_fidelity": {
+      "score": 8,
+      "why": "The host voice is consistent and the Counter Intuitive reversal framing is sustained end to end."
+    },
+    "2_arc_execution": {
+      "score": 9,
+      "why": "Setup, the backwards claim, the mistake-turn, the honest cost, and a clean takeaway, each on budget."
+    },
+    "3_persuasion_mechanics": {
+      "score": 9,
+      "why": "The farm-to-teacher reframe is earned by the borrowed-roof example, not asserted."
+    },
+    "4_opening_power": {
+      "score": 8,
+      "why": "A strong hook: a guest so backwards the host wanted to argue and then could not stop thinking about it."
+    },
+    "5_closing_power": {
+      "score": 9,
+      "why": "Closes on the guest's own line and one concrete action; the host steps back on purpose."
+    },
+    "6_captivation_throughout": {
+      "score": 8,
+      "why": "Momentum sustained; the honest complication of surrendered pride keeps it from feeling too clean."
+    },
+    "7_fidelity_to_the_respondent": {
+      "score": 9,
+      "why": "The guest's material is centered and the teaching framing they asked for is honored over their personal harvest."
+    },
+    "8_research_integration_quality": {
+      "score": 8,
+      "why": "No fabricated external data; the guest's lived operational history carries the claim and power statements are drawn in their voice."
+    },
+    "9_delivery_craft": {
+      "score": 9,
+      "why": "Fully speakable; the third-person guest handling with they/them is clean throughout."
+    },
+    "10_audio_direction_quality": {
+      "score": 8,
+      "why": "Emotion tags mark the emotional pivots of the reframe and the honest-cost beat."
+    }
+  },
+  "allAtOrAbove8": true
+}

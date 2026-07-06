@@ -1,0 +1,22 @@
+{
+  "schema": "podcast-research-package-v1",
+  "frozen": true,
+  "note": "Frozen after Step 3. QC retries reuse this package verbatim. Zero external case studies were fabricated; the respondent's own material was rich enough to carry a tight episode, which the no-fabrication rule (Tier 1 check 12) requires over inventing sources.",
+  "webResearchTool": "Perplexity (wired for this client); the tool is named in the delivery report per Part A.",
+  "researchCalls": 2,
+  "researchCallCap": 12,
+  "improvedAnswersSummary": "Each respondent answer was expanded for specificity and cadence without changing intent: the winter, the erosion of accounts, the numb wheel, and the afternoon with Ruth.",
+  "powerStatements": [
+    "The work of your hands is not the thing worth saving; the room is, the people in it are, you are.",
+    "The hiding is not protecting you; the hiding is the whole illness.",
+    "A single thread of feeling, when you have been empty long enough, is how the tide begins to come back in."
+  ],
+  "generatedTakeaways": [
+    "Trying to save the business and remembering why it is worth saving are different tasks, easily reversed.",
+    "A weight shared across a room is a different weight than the same load carried alone.",
+    "Being seen by one steady person is the beginning of the cure."
+  ],
+  "closingCallToAction": "Let one earned person sit on the stool and watch you make one small thing.",
+  "caseStudies": [],
+  "fabricationCheck": "No invented study, statistic, person, company, institution, or biography anywhere in the package."
+}

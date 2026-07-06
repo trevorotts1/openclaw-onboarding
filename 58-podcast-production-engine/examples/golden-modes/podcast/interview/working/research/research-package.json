@@ -1,0 +1,23 @@
+{
+  "schema": "podcast-research-package-v1",
+  "frozen": true,
+  "note": "Frozen after Step 3. Zero external case studies were fabricated; the guest's lived operational history carries the counter-intuitive claim, which is the honest posture Tier 1 check 12 requires.",
+  "webResearchTool": "Perplexity (wired for this client); named in the delivery report per Part A.",
+  "researchCalls": 3,
+  "researchCallCap": 12,
+  "improvedAnswersSummary": "The guest's answers were expanded for specificity and pacing without changing intent: the borrowed roof, the exhaustion ceiling, the teenager's request, and the shift from farming to teaching.",
+  "powerStatements": [
+    "The fastest way we ever found to grow more food was to stop trying to grow more of it ourselves.",
+    "As long as I was the farm, the neighborhood could never be fed.",
+    "The person you teach is the door."
+  ],
+  "generatedTakeaways": [
+    "Treat yourself as the teacher, not the single point every result must flow through.",
+    "The real leverage is the neighbor you finally stop and teach, not the extra row you plant yourself.",
+    "Success measured by a harvest that never carries your name is the harder, higher pride."
+  ],
+  "closingCallToAction": "Find the one thing you are guarding because only you can do it, and give it away to a single person this month.",
+  "caseStudies": [],
+  "fabricationCheck": "No invented study, statistic, person, company, institution, or biography. The guest is fictional for this regression fixture and every claim traces to the guest's own supplied stories.",
+  "epicGuestIntroductionDrafted": true
+}

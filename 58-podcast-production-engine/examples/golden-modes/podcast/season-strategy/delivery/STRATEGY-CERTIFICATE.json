@@ -1,0 +1,40 @@
+{
+  "schema": "podcast-strategy-certificate-v1",
+  "skill": "podcast-production-engine",
+  "skill_number": 58,
+  "gate": "BUILD document QC (Gate A posture)",
+  "gate_note": "Season-Strategy produces a planning document, not an episode, so it is checked by the build gate's document quality control, NOT the episode gate (Gate B). No EPISODE certificate is minted because no episode exists. The two gates are never conflated.",
+  "brand_slug": "harborline-coffee",
+  "preset": "season_strategy",
+  "mode": "season_planning",
+  "job_key": "pd-cS5pW1xMARCUS003-de08e7648b95156c",
+  "deliverable": "season-strategy.md (Episode Package style planning document)",
+  "deliverable_sha256": "a46fb9e924e664151c0d478c09b4588dec703c3dd2cd3a32de783c0f1e8b160d",
+  "document_qc": {
+    "rich_formatting": true,
+    "font_floor_pt": 12,
+    "em_dash_free": true,
+    "no_triple_backticks": true,
+    "episode_slate_complete": true,
+    "style_and_mode_per_slot": true,
+    "kpis_present": true,
+    "doctrine_source": "Skill 23 director-of-podcast"
+  },
+  "render": false,
+  "publish": false,
+  "enroll": false,
+  "zero_anthropic": true,
+  "models_used": [
+    "kimi-2.6",
+    "gemini-3.1-flash-lite",
+    "sonar-reasoning"
+  ],
+  "silence": {
+    "client_facing_messages": 0,
+    "messaging_owner": "Convert and Flow",
+    "delivery_report_channel": "operator-only"
+  },
+  "secrets_printed": 0,
+  "state": "complete",
+  "certificate_sha": "f51b8e71cfc1689b0e8ff4efb410e0ad3709712a9c2e396f7ef823869a5d224a"
+}

@@ -1,0 +1,13 @@
+{
+  "schema": "podcast-research-package-v1",
+  "frozen": true,
+  "note": "The research stage runs for Season-Strategy to sharpen the season thesis and slate. Zero external case studies fabricated; the slate is built from the owner's supplied stories and the director-of-podcast doctrine.",
+  "webResearchTool": "Perplexity (wired for this client); named in the delivery report.",
+  "researchCalls": 4,
+  "researchCallCap": 12,
+  "seasonThesis": "Turn regulars into a community and generate warm leads without any episode feeling like an advertisement.",
+  "arcTemplate": "tv-season",
+  "doctrineSource": "Skill 23 role-library/podcast/director-of-podcast",
+  "caseStudies": [],
+  "fabricationCheck": "No invented study, statistic, person, company, or institution."
+}

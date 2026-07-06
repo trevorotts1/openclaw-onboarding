@@ -1,0 +1,12 @@
+{
+  "schema": "podcast-existing-episode-ref-v1",
+  "note": "The ledger entry the asset pack operates against. Its presence is what makes the regeneration idempotent: audio and the Podbean permalink already exist, so they are skipped.",
+  "existingJobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "title": "The Least Important Farmer on the Block",
+  "state": "complete",
+  "podbeanPermalink": "https://firstlight.podbean.com/e/the-least-important-farmer-on-the-block/",
+  "audioExists": true,
+  "audioUrl": "https://example.test/first-light/podcast/least-important-farmer.mp3",
+  "coverExists": true,
+  "teaserExists": true
+}
