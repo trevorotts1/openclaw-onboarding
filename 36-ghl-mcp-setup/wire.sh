@@ -4,7 +4,25 @@
 # Idempotent. Prints STATUS: lines matching the ghl-mcp-autostart convention.
 set -euo pipefail
 
-SKILL_VERSION="v1.1.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# ---- live skill version: read from the canonical source, never a literal ----
+# (FIX-XC-13a — kills the wire.sh-vs-skill-version.txt drift.) Used only for the
+# human-readable STATUS reporting below.
+SKILL_VERSION="unknown"
+if [ -f "$SCRIPT_DIR/skill-version.txt" ]; then
+  SKILL_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/skill-version.txt" 2>/dev/null || echo unknown)"
+  [ -z "$SKILL_VERSION" ] && SKILL_VERSION="unknown"
+fi
+
+# ---- migration-marker schema tag — FROZEN, do NOT track the live version -----
+# The M1/M2 markers below are one-time idempotency keys already written into
+# AGENTS.md on migrated boxes. They must stay byte-stable across skill-version
+# bumps: retagging them to the live version would make every completed migration
+# look un-applied and re-run on the next wire pass. These migrations shipped in
+# v1.1.0; that tag is intentionally permanent.
+MIGRATION_TAG="v1.1.0"
+
 WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 ISO=$(date -u +%Y%m%dT%H%M%SZ)
 
@@ -13,7 +31,7 @@ AGENTS_MD="$WORKSPACE/AGENTS.md"
 
 # ── Migration M1: SOUL.md relocation ──────────────────────────────────────────
 
-M1_MARKER="convertandflow-migration:soul-relocation:$SKILL_VERSION"
+M1_MARKER="convertandflow-migration:soul-relocation:$MIGRATION_TAG"
 
 if grep -qF "$M1_MARKER" "$AGENTS_MD" 2>/dev/null; then
   echo "STATUS: M1 soul-relocation already applied — skipping"
@@ -48,7 +66,7 @@ fi
 
 # ── Migration M2: Tier 2 de-register ──────────────────────────────────────────
 
-M2_MARKER="convertandflow-migration:tier2-deregister:$SKILL_VERSION"
+M2_MARKER="convertandflow-migration:tier2-deregister:$MIGRATION_TAG"
 
 if grep -qF "$M2_MARKER" "$AGENTS_MD" 2>/dev/null; then
   echo "STATUS: M2 tier2-deregister already applied — skipping"

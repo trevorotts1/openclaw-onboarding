@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
-#  Skill 36 — GHL MCP Setup — Install QC Script (v1.0.0)
+#  Skill 36 — GHL MCP Setup — Install QC Script
+#  (version reported at runtime from skill-version.txt — no hardcoded literal; FIX-XC-13a)
 #  Standalone bespoke validator for the 6-tier GHL access chain (Tier 0 = Convert and Flow CLI, skill 44).
 #  Exits 0 if all assertions pass. Non-zero = blocker.
 #
@@ -20,6 +21,14 @@ set -u
 PASS=0; FAIL=0; WARN=0
 
 SKILL_DIR="$(dirname "$0")"
+
+# Live skill version — read from the canonical source, never a literal (FIX-XC-13a).
+SKILL_VERSION="unknown"
+if [ -f "$SKILL_DIR/skill-version.txt" ]; then
+  SKILL_VERSION="$(tr -d '[:space:]' < "$SKILL_DIR/skill-version.txt" 2>/dev/null || echo unknown)"
+  [ -z "$SKILL_VERSION" ] && SKILL_VERSION="unknown"
+fi
+
 LIB="$SKILL_DIR/../lib-shared.sh"
 [ -f "$LIB" ] || LIB="$HOME/.openclaw/skills/lib-shared.sh"
 [ -f "$LIB" ] && source "$LIB"
@@ -68,7 +77,7 @@ RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GH
 
 echo ""
 echo "═══════════════════════════════════════════════"
-echo "  Skill 36 — GHL MCP Setup — Final QC (v1.0.0)"
+echo "  Skill 36 — GHL MCP Setup — Final QC (${SKILL_VERSION})"
 echo "═══════════════════════════════════════════════"
 echo "  Platform: ${OPENCLAW_PLATFORM:-unknown}"
 echo "  Date:     $(date)"

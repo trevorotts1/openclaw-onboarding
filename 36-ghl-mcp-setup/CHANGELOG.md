@@ -4,6 +4,22 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.11] - 2026-07-05 — Version drift: wire.sh / qc script read the live version from skill-version.txt (FIX-XC-13a)
+
+### Fixed (FIX-XC-13a — doc/code version drift)
+- `wire.sh` reported a stale hardcoded `SKILL_VERSION="v1.1.0"` in its final `STATUS:` line while the
+  skill had moved on to v1.2.10. It now reads the live version from the sibling `skill-version.txt`
+  at runtime (mirroring `25-video-creator/wire.sh`) so the reported version can never drift again.
+- The two `wire.sh` migration markers (`M1` soul-relocation, `M2` tier2-deregister) are now keyed to a
+  dedicated **frozen** `MIGRATION_TAG="v1.1.0"` constant — decoupled from the live version. These
+  markers are one-time idempotency keys already written into `AGENTS.md` on migrated boxes; tying them
+  to the live version would have made every completed migration look un-applied and re-run on each
+  bump. Idempotency across version bumps is now explicit and preserved.
+- `qc-ghl-mcp-setup.sh` no longer hardcodes `v1.0.0` in its header comment and result banner — it reads
+  the live version from `skill-version.txt` and prints it in the `Final QC (<version>)` banner.
+
+---
+
 ## [v1.2.10] - 2026-07-05 — Command Center emit helper (fail-soft) + Tier-0 presence-check path fix
 
 ### Added (FIX-S36-01)
