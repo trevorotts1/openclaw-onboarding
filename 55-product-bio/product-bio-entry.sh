@@ -222,6 +222,7 @@ ENFORCE_FILES=(
     "$SCRIPTS/prove_pb_sections.py"
     "$SCRIPTS/prove_pb_html.py"
     "$SELF_DIR/PRODUCT-BIO-MANIFEST.json"
+    "$SCRIPTS/mc_board.py"
 )
 version_hash_pin() {
     local computed=""

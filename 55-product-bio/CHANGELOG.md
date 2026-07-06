@@ -1,5 +1,13 @@
 # Changelog — Product Bio Engine (Skill 55)
 
+## 1.0.8 — mc_board pinned into the enforcement set (train W2-55-57-mcboard-pin, Wave-2)
+- **FIX-S36-58** — `scripts/mc_board.py` — the only token-bearing outbound-HTTP
+  script in the skill — is now included in GATE 3's `ENFORCE_FILES` content-hash
+  set (appended after `PRODUCT-BIO-MANIFEST.json`), so a tampered board client can
+  no longer pass the `AF-PB-HASH-PIN` gate. `ENGINE-PIN.sha256` regenerated over
+  the expanded set in the same commit. No behavior change to the board client or
+  any phase; purely widens the tamper-evidence surface.
+
 ## 1.0.7 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — on a fail-closed gate the run now marks its Command Center card
   `blocked` (failing phase + AF code as the note, via the shared

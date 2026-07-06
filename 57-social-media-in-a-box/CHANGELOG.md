@@ -1,5 +1,18 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## 0.2.7 — mc_board pinned into the engine-hash set (train W2-55-57-mcboard-pin, Wave-2)
+
+Train **W2-55-57-mcboard-pin**. Fix IDs: FIX-S36-58.
+
+### Changed
+- **FIX-S36-58** — `scripts/mc_board.py` — the only token-bearing outbound-HTTP
+  script — is now included in GATE 3's `PIN_INPUTS` (in `social-media-entry.sh`)
+  and the mirrored `ENGINE_FILES` set in `verify.sh` (appended after
+  `defer_stub.py`), so a tampered board client can no longer pass the
+  `AF-SM-ENGINE-HASH-PIN` gate. `ENGINE-PIN.sha256` regenerated over the expanded
+  set in the same commit. No runtime-behavior change; widens the tamper-evidence
+  surface only.
+
 ## 0.2.6 — 2026-07-05 — F4.3 C10 persona INPUT adapter SHIPPED (train DEP-7)
 
 Train **DEP-7**. Fix IDs: F4.3.

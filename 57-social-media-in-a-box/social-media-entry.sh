@@ -207,7 +207,8 @@ PIN_INPUTS=("$RUNNER"
     "$SELF_DIR/scripts/preflight_gate.py" "$SELF_DIR/scripts/prove_bands.py"
     "$SELF_DIR/scripts/validate_contract.py" "$SELF_DIR/scripts/scrub_gate.py"
     "$SELF_DIR/scripts/build_manifest.py" "$SELF_DIR/scripts/ledger.py"
-    "$SELF_DIR/scripts/label_deliverables.py" "$SELF_DIR/scripts/defer_stub.py")
+    "$SELF_DIR/scripts/label_deliverables.py" "$SELF_DIR/scripts/defer_stub.py"
+    "$SELF_DIR/scripts/mc_board.py")
 version_hash_pin() {
     local computed=""
     if command -v sha256sum >/dev/null 2>&1; then
