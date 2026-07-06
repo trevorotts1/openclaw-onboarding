@@ -24,7 +24,7 @@
 //
 // Placeholders to substitute per client at onboarding (provision script):
 //   <client-slug>  lowercase, dash-separated, stable for the life of the client
-//                  (example: maria-anderson, star-bobatoon).
+//                  (example: client-one, acme-media).
 //
 // Secret custody (NEVER a plaintext value here): generate at onboarding with
 //   openssl rand -hex 32

@@ -129,6 +129,12 @@ class FlowClient:
 
     def run_task(self, flow_id, task, runtime="subagent", child_session_key=None,
                  label=None, notify_policy=None):
+        """Dispatch a delegable sub-step. HARD BOUNDARY: runtime="subagent" spawns a
+        sub-agent with NO Model Context Protocol access, so it is used ONLY for
+        pure-content work that touches text and files (research synthesis, drafting,
+        improvement passes, Quality Control reads). Tool-bearing steps (Convert and
+        Flow REST, Podbean, custom-field writes, Skill 44 enrollment) NEVER go here;
+        they run in the podcast agent's own turn via the flow's controller runbook."""
         return self.call("run_task", flowId=flow_id, runtime=runtime, task=task,
                          childSessionKey=child_session_key, label=label,
                          notifyPolicy=notify_policy)
@@ -225,6 +231,7 @@ class _FakeGateway:
     def __init__(self):
         self.flows = {}
         self.counter = 0
+        self.task_runtimes = []  # runtime of every run_task dispatched (isolation audit)
         self._concurrent = []  # one-shot mutations run just before a revision compare
 
     def schedule_concurrent(self, fn):
@@ -242,6 +249,7 @@ class _FakeGateway:
         if a == "run_task":
             if action["flowId"] not in self.flows:
                 return 404, {"ok": False, "code": "not_found", "result": {}}
+            self.task_runtimes.append(action.get("runtime"))
             return 200, {"ok": True, "result": {"taskId": "task_1"}}
         if a == "get_flow":
             f = self.flows.get(action["flowId"])

@@ -33,8 +33,14 @@
 #   python3 mapper.py map --payload FILE [--expected-location-env NAME] [--json]
 #   python3 mapper.py --self-test
 #
-# The tenant location value is NEVER printed. It is read from the environment and
-# only compared; verification is match / mismatch, never an echo of the value.
+# PII / secret hygiene: the CLI never prints a VALUE. The client's configured
+# Location ID is read from the environment and only compared (match / mismatch,
+# never an echo). The MAPPED payload is equally sensitive (it carries the mapped
+# location_id and free-text answer PII), so the CLI verdict reports field NAMES,
+# status, counts, and warnings ONLY, with all canonical values and the verbatim
+# unknown extras redacted, mirroring the intake handler's _safe_verdict. The
+# programmatic map_payload() API still returns the full canonical dict for the
+# in-process handler; only stdout is redacted.
 # =============================================================================
 """Deterministic meaning-based intake mapper for the Podcast Production Engine."""
 
@@ -394,6 +400,23 @@ def _load_body(path):
         return json.load(fh)
 
 
+def safe_map_verdict(result):
+    """Redacted verdict for the CLI: field NAMES, status, counts, and warnings only.
+    The canonical VALUES (mapped location_id and free-text answer PII) and the
+    verbatim unknown extras are never emitted, matching intake_handler._safe_verdict.
+    Provenance and unknown-extra keys are source KEY PATHS (structure, not content),
+    which are safe to show for debugging."""
+    return {
+        "status": result.get("status"),
+        "mapped_fields": sorted(result.get("canonical", {}).keys()),
+        "missing": result.get("missing", []),
+        "warnings": result.get("warnings", []),
+        "provenance": {k: result["provenance"][k]
+                       for k in sorted(result.get("provenance", {}))},
+        "unknown_extra_keys": sorted(result.get("unknown_extras", {}).keys()),
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Podcast Engine intake mapper.")
     ap.add_argument("cmd", nargs="?", choices=("map",))
@@ -421,10 +444,10 @@ def main(argv=None):
         return EXIT_USAGE
 
     result = map_payload(body, tables, expected_location_id=expected)
-    # Never emit the raw body (may carry PII); the CLI reports the safe verdict.
-    safe = {k: v for k, v in result.items() if k != "raw"}
+    # Never emit the raw body OR any canonical value (both may carry PII: mapped
+    # location_id, free-text answers). The CLI reports the redacted safe verdict.
     if args.json:
-        print(json.dumps(safe, indent=2, sort_keys=True))
+        print(json.dumps(safe_map_verdict(result), indent=2, sort_keys=True))
     else:
         print("status: %s" % result["status"])
         print("mapped fields: %s" % ", ".join(sorted(result["canonical"].keys())))
@@ -541,6 +564,19 @@ def self_test():
     tflag = dict(mk["data"]); tflag["_test"] = "true"
     r8 = map_payload({"data": tflag}, tables, expected_location_id=loc)
     check("_test coerced to bool true", r8["canonical"].get("_test") is True)
+
+    # CLI safe verdict redacts every PII VALUE (location_id, answer text, unknown
+    # extras) while still reporting field NAMES for debugging.
+    leaky = map_payload(ghl, tables, expected_location_id=loc)
+    safe = safe_map_verdict(leaky)
+    blob = json.dumps(safe)
+    check("safe verdict keeps field names", "location_id" in safe["mapped_fields"]
+          and "transparency_answer" in safe["mapped_fields"])
+    check("safe verdict hides location_id value", loc not in blob)
+    check("safe verdict hides answer PII", "optimizes for silence" not in blob
+          and "disclose the AI assist" not in blob)
+    check("safe verdict hides unknown-extra values", "evt-transient-123" not in blob)
+    check("safe verdict exposes no canonical values key", "canonical" not in safe and "raw" not in safe)
 
     print("== mapper self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1

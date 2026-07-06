@@ -13,7 +13,9 @@
 # - canonical_submission is built AFTER meaning-mapping, from CANONICAL FIELDS ONLY
 #   (HASH_FIELDS below), so the same submission arriving via Make.com and via a
 #   Convert and Flow (GoHighLevel) webhook (different field spellings, same
-#   meaning) hashes identically.
+#   meaning) hashes identically. Every contact-authored survey answer participates,
+#   including the transparency answer (podcast_interview_smiq), so two submissions
+#   that differ only in that answer are correctly treated as two distinct episodes.
 # - Volatile transport fields (delivery timestamps, event ids, execution ids,
 #   signatures, retry counters, _test flags, routing hints like writing_model /
 #   web_research_tool / workflow_trigger) are EXCLUDED so they cannot defeat dedup.
@@ -49,18 +51,27 @@ EXIT_USAGE = 3
 JOB_KEY_PREFIX = "pd-"
 HASH_HEX_LEN = 16
 
-# Exactly the Section 3.1 canonical fields (order irrelevant: we sort by key).
+# The Section 3.1 canonical fields (order irrelevant: we sort by key).
+# transparency_answer is included: the mapper maps podcast_interview_smiq/smiq to a
+# DISTINCT transparency_answer canonical field (not a q-slot in this slice, because
+# the per-style positional q-slot table is deferred to onboarding W1.24). It is a
+# real, contact-authored survey answer, so two submissions differing ONLY in the
+# transparency answer are genuinely different and MUST produce different job keys;
+# excluding it would let the second submission be deduped as a false duplicate and
+# no episode would be created. This closes that dedup hole and reconciles Section
+# 3.1's field list with Section 4.2's intent that the transparency answer be a
+# hashed style-path answer.
 HASH_FIELDS = (
     "mode", "style", "show_name", "host_name", "first_name", "last_name",
     "preferred_pronoun", "q1_answer", "q2_answer", "q3_answer", "q4_answer",
-    "q5_answer", "q6_answer", "q7_answer", "additional_info", "target_runtime",
-    "tts_model", "podcast_id", "location_id", "contact_id", "publish_timestamp",
-    "episode_type", "explicit",
+    "q5_answer", "q6_answer", "q7_answer", "transparency_answer", "additional_info",
+    "target_runtime", "tts_model", "podcast_id", "location_id", "contact_id",
+    "publish_timestamp", "episode_type", "explicit",
 )
 
 ENUM_HASH_FIELDS = ("mode", "style", "episode_type", "explicit")
 ANSWER_HASH_FIELDS = ("q1_answer", "q2_answer", "q3_answer", "q4_answer", "q5_answer",
-                      "q6_answer", "q7_answer", "additional_info")
+                      "q6_answer", "q7_answer", "transparency_answer", "additional_info")
 
 
 def _normalize_value(field, value):
@@ -188,6 +199,22 @@ def self_test():
     changed["q1_answer"] = "Everyone optimizes for speed; I optimize for depth."
     k2, _ = compute_job_key(changed)
     check("one-answer change diverges", k2 != k1)
+
+    # Two submissions differing ONLY in the transparency (SMIQ) answer are distinct
+    # episodes, not a false duplicate (the dedup hole this field closes).
+    trans_a = dict(base)
+    trans_a["transparency_answer"] = "I disclose the AI assist up front."
+    trans_b = dict(base)
+    trans_b["transparency_answer"] = "I keep the production process private."
+    kta, _ = compute_job_key(trans_a)
+    ktb, _ = compute_job_key(trans_b)
+    check("transparency answer is hashed (differs -> new job)", kta != ktb)
+    check("transparency answer changes the base key", kta != k1)
+    # ... and an identical transparency answer still collides (whitespace-normalized)
+    trans_a2 = dict(base)
+    trans_a2["transparency_answer"] = "I disclose   the AI assist up front. "
+    kta2, _ = compute_job_key(trans_a2)
+    check("identical transparency answer collides", kta == kta2)
 
     # A changed style diverges (enum is hashed)
     styled = dict(base)
