@@ -1,5 +1,13 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.0.8 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — added the fail-soft `block_run()` wrapper to the shared
+  `scripts/mc_board.py` (the CANONICAL copy). It moves a run's card to the `blocked`
+  status (reachable from any state in one hop, NEVER `done`) with the failing phase +
+  AF code as the note, so a gate failure is VISIBLE on the board instead of stranding
+  the card at in_progress. Re-dropped byte-identical into 50 / 53 / 55 / 56 / 57 and
+  the new 54 copy. The signature-funnel runner itself is unchanged (purely additive).
+
 ## 1.0.7 — 2026-07-05 — persona grounding (P0) + client model-content receipt (P9)
 
 Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.

@@ -1,5 +1,11 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## 0.2.5 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — on a fail-closed gate (across all modes) the run now marks its
+  Command Center card `blocked` (failing phase + AF code as the note, via the shared
+  `mc_board.block_run` wrapper) instead of leaving it at in_progress. `mc_board.py`
+  re-dropped byte-identical from the canonical copy. Board work stays fail-soft.
+
 ## 0.2.4 — 2026-07-05 — Wave-0 hardening (T-57-social-media)
 
 Enforcement gaps found in the skills-analysis sweep, fixed at the root. No new

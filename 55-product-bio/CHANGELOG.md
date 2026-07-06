@@ -1,5 +1,11 @@
 # Changelog — Product Bio Engine (Skill 55)
 
+## 1.0.7 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — on a fail-closed gate the run now marks its Command Center card
+  `blocked` (failing phase + AF code as the note, via the shared
+  `mc_board.block_run` wrapper) instead of leaving it at in_progress. `mc_board.py`
+  re-dropped byte-identical from the canonical copy. Board work stays fail-soft.
+
 ## 1.0.6 — 2026-07-05 — client-exact overrides, labeled Downloads bundle, real department (T-55-product-bio)
 - **FIX-XC-12c — client-exact override channel (mirror Skill 57).** The 6,000–7,000
   word band and the per-section enumerated COUNT_BANDS are now DEFAULT floors: a

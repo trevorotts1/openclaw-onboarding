@@ -42,6 +42,11 @@ PLANNER_COLUMNS = ["Week Of", "Theme", "Research", "Core Content", "Images", "Vi
                    "Facebook", "Instagram", "LinkedIn", "YouTube", "TikTok", "Pinterest",
                    "Carousels", "Blog", "Podcast", "Email", "QC", "Scheduled", "Overall", "Notes"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _load_manifest():
     try:
@@ -618,6 +623,8 @@ def run(manifest, mode, run_dir: Path):
             _write_gates(run_dir, gates)
         if not ok:
             _write_gates(run_dir, gates)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid, file=sys.stderr)
             return EXIT_GATE
     _write_gates(run_dir, gates)
@@ -738,6 +745,20 @@ def _mc_board_done(run_dir, task_id):
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Social Media in a Box orchestrator (Skill 57).")
     ap.add_argument("--mode", choices=MODES)
@@ -773,6 +794,10 @@ def main(argv=None):
     rc = run(manifest, args.mode, run_dir)
     if rc == EXIT_PASS:
         _mc_board_done(run_dir, _mc_task)
+    else:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). FAIL-SOFT.
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

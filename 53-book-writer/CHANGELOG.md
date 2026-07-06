@@ -1,5 +1,12 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.1.1 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — on a fail-closed gate (any P0–P7 phase or P8-DELIVER) the run now
+  marks its Command Center card `blocked` (failing phase + AF code as the note)
+  instead of stranding it at in_progress. Added the fail-soft `block_run()` wrapper to
+  `scripts/mc_board.py`, preserving this skill's parameterized `run/checkpoints`
+  receipt_subdir. Board work stays fail-soft — never affects the assembler's exit code.
+
 ## 1.1.0 — Wave-0 hardening (merge-train T-53-book-writer)
 
 - **FIX-XC-09a — no-Anthropic gate fail-closed at P7.** `check_qc` no longer passes on an absent

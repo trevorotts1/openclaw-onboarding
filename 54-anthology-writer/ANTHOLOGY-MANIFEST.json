@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "skill": "anthology-writer",
   "skill_number": 54,
-  "skill_version": "1.1.0",
+  "skill_version": "1.2.0",
   "shared_tone_core": "shared-utils/tone-writing-core",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0->P7) with NO phase skips, one contributor at a time. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
   "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier — NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
@@ -64,9 +64,9 @@
     {
       "id": "P5-CHAPTER-AUTHOR",
       "order": 5,
-      "name": "Outline + chapter authoring (aw-08 outline, aw-09 chapter, HEAVY-WRITER)",
-      "produces_artifact": "working/chapter.md (+ working/outline.md)",
-      "preflight": {"required": true, "checker": "_chk_chapter_authored", "label": "working/outline.md AND working/chapter.md present (the one 2,000-3,500-word chapter for this contributor, authored on the client's HEAVY-WRITER tier)."},
+      "name": "Outline + chapter authoring (aw-08 outline, aw-09 chapter, HEAVY-WRITER; aw-07 blurb, MID-WRITER)",
+      "produces_artifact": "working/chapter.md (+ working/outline.md + working/blurb.md)",
+      "preflight": {"required": true, "checker": "_chk_chapter_authored", "label": "working/outline.md AND working/chapter.md present (the one 2,000-3,500-word chapter for this contributor, authored on the client's HEAVY-WRITER tier). The aw-07 back-cover blurb (working/blurb.md, MID-WRITER) is authored in this window and is gated at P7-DELIVER (AF-AW-BLURB-MISSING)."},
       "gate_codes": []
     },
     {
@@ -82,8 +82,8 @@
       "order": 7,
       "name": "Deliver (labeled local bundle + certificate on a full pass)",
       "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
-      "preflight": {"required": true, "checker": "_chk_deliver", "label": "the labeled deliverable bundle is assembled locally from the QC'd working copies (chapter/tone-doc/outline/title) and byte-verified; a QC'd source that is MISSING fails closed (AF-AW-STAGE-SKIPPED) and a pre-existing delivery file that DISAGREES with its QC'd source is refused (AF-AW-DELIVER-MISMATCH). NO n8n / Airtable / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P6 pass. Any push is per-client config through the client's own gateway, client-silent by default."},
-      "gate_codes": ["AF-AW-STAGE-SKIPPED", "AF-AW-PROCESS-INTEGRITY", "AF-AW-DELIVER-MISMATCH"]
+      "preflight": {"required": true, "checker": "_chk_deliver", "label": "the labeled deliverable bundle is assembled locally from the QC'd working copies (chapter/tone-doc/outline/title/blurb) and byte-verified; a QC'd source that is MISSING fails closed (AF-AW-STAGE-SKIPPED) and a pre-existing delivery file that DISAGREES with its QC'd source is refused (AF-AW-DELIVER-MISMATCH). The promised back-cover blurb (working/blurb.md) is REQUIRED and must be finalized prose (non-empty, no unresolved placeholder, not a stub) or the phase fails closed (AF-AW-BLURB-MISSING). After certification the same artifacts are copied into the labeled ~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/ bundle (chapter, tone doc, outline, title, blurb, DELIVERY-NOTE.md, handoff.json, PROCESS-CERTIFICATE). NO n8n / Airtable / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P6 pass. Any push is per-client config through the client's own gateway, client-silent by default."},
+      "gate_codes": ["AF-AW-STAGE-SKIPPED", "AF-AW-PROCESS-INTEGRITY", "AF-AW-DELIVER-MISMATCH", "AF-AW-BLURB-MISSING"]
     }
   ],
   "autofails": [
@@ -104,6 +104,7 @@
     {"code": "AF-AW-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "working/RUN-LEDGER.json is absent at P6, or it records NO resolved model id (empty/absent stages) — model provenance is required (fail-closed) so the no-Anthropic gate can never pass vacuously on an unproven run", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
     {"code": "AF-AW-OVERRIDE-UNLOGGED", "stage": "P3/P6", "level": "override", "trigger": "a client-exact band override (working/overrides.json) was applied but is not provably logged and tied to the locked brief (missing source/approved_by/reason, or a brief_ref that does not match the intake) — an unlogged override is a silent floor-swap and fails closed", "enforced_by": "prove_aw_tone / prove_aw_chapter", "py_symbol": "evaluate"},
     {"code": "AF-AW-DELIVER-MISMATCH", "stage": "P7", "level": "delivery", "trigger": "a pre-existing delivery/ artifact disagrees byte-for-byte with its QC'd working source (a swap-after-QC / planted deliverable), or a labeled copy did not round-trip byte-identical", "enforced_by": "run_anthology", "py_symbol": "_chk_deliver"},
+    {"code": "AF-AW-BLURB-MISSING", "stage": "P7", "level": "delivery", "trigger": "the promised back-cover blurb (working/blurb.md) is absent (AF-AW-STAGE-SKIPPED at the missing-artifact check) or present-but-unfinished — empty, an unresolved placeholder, or a stub under the anti-stub minimum — so it cannot ship in the labeled bundle", "enforced_by": "run_anthology", "py_symbol": "_chk_deliver"},
     {"code": "AF-AW-UNRESOLVED-MODELMAP", "stage": "entry", "level": "run-dir", "trigger": "a resolved run-dir model-map.json still carries <CLIENT_*> placeholders — the fleet installer has not resolved this box's providers (preflight.sh --check pre-gate)", "enforced_by": "preflight / anthology-entry", "py_symbol": "check"},
     {"code": "AF-AW-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_anthology", "py_symbol": "run"},
     {"code": "AF-AW-PROCESS-INTEGRITY", "stage": "P7", "level": "run", "trigger": "a certificate was requested without a full P0->P6 pass", "enforced_by": "run_anthology", "py_symbol": "_write_certificate"},

@@ -41,6 +41,11 @@ CATALOG = _SKILL_DIR / "email-library" / "catalog-index.json"
 # produces_artifact -> the run-dir-relative path the phase drops.
 PHASE_ORDER = ["P1-SELECT", "P2-GENERATE", "P3-QC", "P4-DEPLOY"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _portable_run_dir(run_dir: Path) -> str:
     """A machine-independent label for the run dir recorded in the process
@@ -456,6 +461,8 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
         proc["phases"].append({"id": pid, "passed": phase_ok})
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid, file=sys.stderr)
             return EXIT_GATE
         if pid == stop_at:
@@ -780,6 +787,20 @@ def _mc_board_done(run_dir, task_id):
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Email Engine orchestrator (Skill 50).")
     ap.add_argument("--run-dir", help="the email run directory (contains working/)")
@@ -810,8 +831,18 @@ def main(argv=None):
 
     _mc_task = _mc_board_begin(run_dir)
     rc = run(manifest, run_dir, args.upto)
-    if rc == EXIT_PASS and not args.upto:
+    # Complete the card whenever the executed phase set INCLUDES P4-DEPLOY (the
+    # certified terminal phase) — i.e. a full run OR an explicit `--upto P4-DEPLOY`.
+    # The prior `not args.upto` guard was a truthy hole: `--upto P4-DEPLOY` deployed
+    # the sequence yet never moved the card off in_progress (FIX-XC-06).
+    stop_at = args.upto or "P4-DEPLOY"
+    if rc == EXIT_PASS and stop_at == "P4-DEPLOY":
         _mc_board_done(run_dir, _mc_task)
+    elif rc != EXIT_PASS:
+        # A gate failure (or usage error) after the card was opened: mark it blocked
+        # so it never strands invisibly at in_progress. A partial `--upto` PASS is
+        # neither done nor blocked (it legitimately stays in_progress).
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

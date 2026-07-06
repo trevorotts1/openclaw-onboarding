@@ -49,6 +49,11 @@ PROMPTS = _SKILL_DIR / "assets" / "prompts"
 PHASE_ORDER = ["P0-INTAKE", "P1-FIDELITY", "P2-BIO-AUTHOR", "P3-BIO-QC",
                "P4-HTML-AUTHOR", "P5-HTML-QC", "P6-DELIVER"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _portable_run_dir(run_dir: Path) -> str:
     """A machine-independent label for the run dir recorded in the certificate.
@@ -252,6 +257,8 @@ def run(manifest, run_dir: Path, upto: str | None) -> int:
         proc["phases"].append({"id": pid, "passed": phase_ok})
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid,
                   file=sys.stderr)
             return EXIT_GATE
@@ -690,6 +697,20 @@ def _mc_board_done(run_dir, task_id):
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"))
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def _deliver_card_note(run_dir) -> str:
     """The card's deliverable POINTER: the labeled-bundle path + certificate sha,
     read from the delivery-bundle receipt written at assembly time. Falls back to a
@@ -734,6 +755,11 @@ def main(argv=None):
     rc = run(manifest, run_dir, args.upto)
     if rc == EXIT_PASS and not args.upto:
         _mc_board_done(run_dir, _mc_task)
+    elif rc != EXIT_PASS:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). A partial `--upto` PASS is
+        # neither done nor blocked (it legitimately stays in_progress).
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

@@ -65,6 +65,11 @@ import prove_bw_433 as p_433            # noqa: E402
 PHASE_ORDER = ["P0-INTAKE", "P1-AVATAR", "P2-TONE", "P3-TITLES-GATE", "P4-OUTLINE-GATE",
                "P5-CHAPTERS", "P6-PACKAGE", "P7-QC", "P8-DELIVER"]
 
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
+
 
 def _load_manifest():
     try:
@@ -650,6 +655,8 @@ def run(bk: Book) -> int:
         print("=== PHASE %s === [%s] %s" % (pid, "OK" if ok else "FAIL", msg))
         steps.append({"phase_id": pid, "disposition": "verified", "ok": bool(ok)})
         if not ok:
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; author the artifact and re-run."
                   % pid, file=sys.stderr)
             _quarantine(bk, staging)
@@ -662,6 +669,8 @@ def run(bk: Book) -> int:
     print("=== PHASE P8-DELIVER === [%s] %s" % ("OK" if ok else "FAIL", msg))
     steps.append({"phase_id": "P8-DELIVER", "disposition": "verified", "ok": bool(ok)})
     if not ok:
+        _LAST_BLOCK.clear()
+        _LAST_BLOCK.update({"phase_id": "P8-DELIVER", "note": msg})
         print("BLOCKED at P8-DELIVER (fail-closed).", file=sys.stderr)
         _quarantine(bk, staging)
         shutil.rmtree(delivery, ignore_errors=True)  # never leave an unverified delivery/
@@ -713,6 +722,20 @@ def _mc_board_done(run_dir, task_id):
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"),
+                           receipt_subdir=RECEIPT_SUBDIR)
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Book Writer assembler/certifier (Skill 53).")
     ap.add_argument("--run-dir", help="the book run dir (contains run/ authored artifacts)")
@@ -736,6 +759,10 @@ def main(argv=None):
     rc = run(Book(run_dir))
     if rc == EXIT_PASS:
         _mc_board_done(run_dir, _mc_task)
+    else:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). FAIL-SOFT.
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 
