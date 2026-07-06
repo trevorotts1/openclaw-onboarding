@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.6/W1.7/W1.23 modes-and-presets | Opus 4.8 exec | DONE (branch) | feat/podcast-modes-and-presets | self-QC 9.2 | Added 58-podcast-production-engine/modes/personal.md, modes/interview.md, config/presets.json. Perspective, cold-open/show-frame, transparency-beat handling per PRD Section 5 and CHECKLIST Part A; four output-type presets with mode-derived defaults, pipeline scope, terminal actions (interview enrolls, personal hard-refuses workflows and updates the spreadsheet). Hard-rule scans clean: valid JSON, zero em/en dashes, zero triple backticks, zero Anthropic tokens, no client-facing GHL name. Only slice files touched; shared files (update.sh, _index.json, version) untouched. |
