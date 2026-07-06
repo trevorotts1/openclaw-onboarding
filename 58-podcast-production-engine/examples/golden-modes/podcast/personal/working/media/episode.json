@@ -1,0 +1,45 @@
+{
+  "kind": "podcast-episode",
+  "preset": "solo",
+  "mode": "personal_podcast_style",
+  "style": "vulnerable",
+  "episode": "kiln-and-clover-the-winter",
+  "title": "The Winter I Almost Locked the Door",
+  "scriptFile": "../../delivery/episode-script.txt",
+  "scriptSha256": "86c4f69eef37afd4a82932555d8bce9d9d6cc2ba521dad0b7b317efed0f5831b",
+  "scriptWords": 1284,
+  "scriptWordsCountedWithTagsStripped": true,
+  "tagCount": 14,
+  "minTagsPerParagraph": 1,
+  "durationSeconds": 550,
+  "durationMinutes": 9.2,
+  "targetBandMinutes": [
+    7,
+    15
+  ],
+  "audio": {
+    "model": "s2.1-pro",
+    "referenceId": "REFERENCED-FROM-ENV",
+    "freeTier": false,
+    "bitrateKbps": 192,
+    "format": "mp3",
+    "conditionOnPreviousChunks": true,
+    "loudnessLufsIntegrated": -15.0,
+    "loudnessDoctrine": "-14 to -16 LUFS (Skill 23 mastering)",
+    "audioUrl": "https://example.test/kiln-and-clover/podcast/the-winter-i-almost-locked-the-door.mp3",
+    "ffprobeVerified": true
+  },
+  "cover": {
+    "model": "gpt-image-2",
+    "coverUrl": "https://example.test/kiln-and-clover/podcast/cover.jpg",
+    "width": 1400,
+    "height": 1400,
+    "format": "JPEG",
+    "colorSpace": "RGB",
+    "bytesUnder": 512000,
+    "square": true,
+    "prompt": "A warm, dim pottery studio at night anchored by the theme of a single kept light, one lamp over a wheel, two hands shaping a bowl, steam on a cold window, quiet and intimate, no text."
+  },
+  "transport": "podbean",
+  "deferred": false
+}

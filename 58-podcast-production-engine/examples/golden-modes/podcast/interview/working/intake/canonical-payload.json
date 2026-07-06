@@ -1,0 +1,29 @@
+{
+  "schema": "podcast-canonical-payload-v1",
+  "note": "Field keys illustrate the custom field map; authoritative map lives in the CONVERTFLOW shared resolver and ghl-design.md. Fictional guest and brand; never a fleet client.",
+  "preset": "interview",
+  "contactId": "cH3mR9tSASHA0002",
+  "locationId": "locGREENHAVEN2",
+  "webhookLocationIdEquals": true,
+  "jobKey": "pd-cH3mR9tSASHA0002-d801ca33e3ad0a79",
+  "jobKeyFormula": "pd- plus contactId plus first 16 hex of sha256 of the canonical submission",
+  "canonicalSubmissionSha256": "d801ca33e3ad0a79d6473d7084704617177573b0f77f37b0d6d34d0061086fa6",
+  "testFlag": true,
+  "fields": {
+    "podcast_survey_style": "counter_intuitive",
+    "podcast_survey_mode": "interview_style_podcast",
+    "podcast_show_name": "First Light",
+    "podcast_host_name": "the host",
+    "podcast_guest_first_name": "Sasha",
+    "podcast_guest_full_name": "Sasha Okafor",
+    "podcast_survey_q1": "The fastest way to grow more food for the neighborhood was to stop trying to grow more of it ourselves and to teach the neighbors instead.",
+    "podcast_survey_tone": "curious, warm, quietly astonished",
+    "podcast_interview_smiq": "Yes, the guest consented to have their story produced as a full episode and a book teaser.",
+    "my_preferred_pronoun": "they/them",
+    "podcast_survey_stories": "Greenhaven started on one borrowed hardware-store roof crammed with beds; a neighbor's teenager two buildings over asked to be taught; that untaught roof soon produced nearly as much as ours; the co-op shifted its hours and money into teaching, free starter crates, and an open Sunday workshop.",
+    "podcast_survey__additional_info": "The guest is uncomfortable being called a hero and wants the teaching framing centered, not their personal harvest.",
+    "date_for_release": "",
+    "book_teaser_field_present": "true",
+    "podcast_visual_description": "A rooftop farm at golden hour over an eastern city skyline, rows of chard and bright peppers, beans climbing string, a person kneeling beside a young beginner."
+  }
+}

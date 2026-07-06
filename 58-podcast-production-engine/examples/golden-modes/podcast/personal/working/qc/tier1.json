@@ -1,0 +1,90 @@
+{
+  "schema": "podcast-episode-tier1-v1",
+  "gate": "EPISODE (Gate B) Tier 1",
+  "instrument": "qc-tier1-mechanical.py for deterministic checks; cheap judge tier for checks 12, 13, 14 (never the writer model)",
+  "allPass": true,
+  "checks": {
+    "1_em_dash_zero": {
+      "pass": true,
+      "kind": "deterministic"
+    },
+    "2_no_triple_backticks": {
+      "pass": true,
+      "kind": "deterministic"
+    },
+    "3_no_markdown_in_script": {
+      "pass": true,
+      "kind": "deterministic"
+    },
+    "4_no_labels_or_stage_directions": {
+      "pass": true,
+      "kind": "deterministic"
+    },
+    "5_title_placement": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "the word Title never precedes the title; title lives in metadata and is not announced with a label in the script"
+    },
+    "6_speakable_characters_only": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "zero numerals; all numbers, symbols, and units written as spoken"
+    },
+    "7_tag_syntax_integrity": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "square-bracket S2.1 Pro syntax, balanced, no orphaned or malformed brackets",
+      "tagCount": 14
+    },
+    "8_tag_count_exclusion": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "word and character counts recomputed with tags stripped"
+    },
+    "9_word_count_honesty": {
+      "pass": true,
+      "kind": "deterministic",
+      "scriptWords": 1284,
+      "durationSeconds": 550,
+      "wpm": 140
+    },
+    "10_forbidden_names": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "none of the four style reference speakers, their books, or talks appear; no real person named"
+    },
+    "11_forbidden_word_by_style": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "not applicable to this style; no style-forbidden word triggered"
+    },
+    "12_no_fabrication": {
+      "pass": true,
+      "kind": "semantic-judge",
+      "judge": "gemini-3.1-flash-lite",
+      "note": "no invented study, statistic, institution, or biography; all content traces to supplied stories"
+    },
+    "13_mode_perspective": {
+      "pass": true,
+      "kind": "semantic-judge",
+      "judge": "gemini-3.1-flash-lite",
+      "note": "first person throughout"
+    },
+    "14_pronoun_correctness": {
+      "pass": true,
+      "kind": "semantic-judge",
+      "judge": "gemini-3.1-flash-lite",
+      "note": "every reference matches she/her"
+    },
+    "15_pure_deliverable": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "delivery/episode-script.txt contains the episode and nothing else"
+    },
+    "16_no_intake_contamination": {
+      "pass": true,
+      "kind": "deterministic",
+      "note": "no contact details, consent language, or the cover visual description appear in the script"
+    }
+  }
+}

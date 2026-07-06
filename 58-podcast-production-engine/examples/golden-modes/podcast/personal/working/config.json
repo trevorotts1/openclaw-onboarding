@@ -1,0 +1,86 @@
+{
+  "clientName": "Kiln and Clover Ceramics",
+  "slug": "kiln-and-clover",
+  "pit": "REFERENCED-FROM-ENV",
+  "locationId": "locKILNCLOVER01",
+  "preset": "solo",
+  "mode": "personal_podcast_style",
+  "style": "vulnerable",
+  "documentTooling": "google",
+  "notifyChannel": "operator-only",
+  "timezone": "America/New_York",
+  "status": "Paid",
+  "routing": {
+    "writer_primary": {
+      "provider": "ollama-cloud",
+      "model": "kimi-2.6",
+      "thinking": "high",
+      "baseUrl": "REFERENCED-FROM-ENV"
+    },
+    "writer_fallbacks": [
+      {
+        "provider": "ollama-cloud",
+        "model": "glm-5.2",
+        "thinking": "high",
+        "baseUrl": "REFERENCED-FROM-ENV"
+      },
+      {
+        "provider": "openrouter",
+        "model": "REFERENCED-FROM-ROUTING-CONFIG",
+        "equivalent_of": "kimi-2.6",
+        "apiKey": "REFERENCED-FROM-ENV"
+      },
+      {
+        "provider": "openrouter",
+        "model": "REFERENCED-FROM-ROUTING-CONFIG",
+        "equivalent_of": "glm-5.2",
+        "apiKey": "REFERENCED-FROM-ENV"
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.1-flash-lite",
+        "apiKey": "REFERENCED-FROM-ENV"
+      }
+    ],
+    "judge_tier": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "fallback": {
+        "provider": "ollama-cloud",
+        "model": "glm-5.2"
+      }
+    },
+    "deny_pattern_source": "config/models.json runtime deny list (furnace-design Guardrail 5); this fixture ships no Anthropic model in any tier",
+    "note": "Authoritative model ids and OpenRouter equivalents resolve from config/models.json (W1.21) and are live-verified at the W0 canary. Build-time authoring is a separate boundary and ships nothing into runtime."
+  },
+  "silence": {
+    "clientFacingMessages": 0,
+    "messagingOwner": "Convert and Flow",
+    "engineStopsAtBoundary": true
+  },
+  "probes": {
+    "ollamaCloudKeyValid": true,
+    "openrouterBalanceOk": true,
+    "kieCredits": 640,
+    "fishWalletOk": true,
+    "podbeanTokenValid": true
+  },
+  "fishAudio": {
+    "apiKey": "REFERENCED-FROM-ENV",
+    "referenceId": "REFERENCED-FROM-ENV",
+    "model": "s2.1-pro",
+    "freeTier": false,
+    "bitrateKbps": 192,
+    "conditionOnPreviousChunks": true
+  },
+  "kie": {
+    "apiKey": "REFERENCED-FROM-ENV",
+    "model": "gpt-image-2"
+  },
+  "podbean": {
+    "clientId": "REFERENCED-FROM-ENV",
+    "clientSecret": "REFERENCED-FROM-ENV",
+    "podcastId": "REFERENCED-FROM-ENV",
+    "api": "https://api.podbean.com/v1"
+  }
+}

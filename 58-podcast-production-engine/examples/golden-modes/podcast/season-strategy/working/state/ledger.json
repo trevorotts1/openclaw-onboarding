@@ -1,0 +1,33 @@
+{
+  "schema": "podcast-ledger-v1",
+  "writer": "podcast_state.py (sole writer)",
+  "jobKey": "pd-cS5pW1xMARCUS003-de08e7648b95156c",
+  "preset": "season_strategy",
+  "transitions": [
+    {
+      "state": "received",
+      "step": 1,
+      "at": "2026-07-06T14:00:00-04:00"
+    },
+    {
+      "state": "researching",
+      "step": 3,
+      "at": "2026-07-06T14:01:30-04:00"
+    },
+    {
+      "state": "planning",
+      "step": "5-variant",
+      "at": "2026-07-06T14:03:20-04:00",
+      "note": "Season-Strategy variant state: strategy document produced; Steps 6 through 17 skipped by preset"
+    },
+    {
+      "state": "complete",
+      "step": 18,
+      "at": "2026-07-06T14:04:40-04:00"
+    }
+  ],
+  "render": false,
+  "publish": false,
+  "enroll": false,
+  "skippedSteps": "6 through 17"
+}

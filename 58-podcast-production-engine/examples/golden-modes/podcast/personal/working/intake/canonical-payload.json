@@ -1,0 +1,24 @@
+{
+  "schema": "podcast-canonical-payload-v1",
+  "note": "Field keys illustrate the custom field map; the authoritative field-key to field-id map lives in the CONVERTFLOW shared resolver and ghl-design.md. Never a fleet client; fictional brand for regression only.",
+  "preset": "solo",
+  "contactId": "cN7kQ2vDELIA0001",
+  "locationId": "locKILNCLOVER01",
+  "webhookLocationIdEquals": true,
+  "jobKey": "pd-cN7kQ2vDELIA0001-bb4183ef34a9e589",
+  "jobKeyFormula": "pd- plus contactId plus first 16 hex of sha256 of the canonical submission",
+  "canonicalSubmissionSha256": "bb4183ef34a9e5896459964d01d1da477e40d9d5fa9a1709f248aab6621faadd",
+  "testFlag": true,
+  "fields": {
+    "podcast_survey_style": "vulnerable",
+    "podcast_survey_mode": "personal_podcast_style",
+    "podcast_survey_q1": "The work of my hands was never the thing worth saving; the room and the people in it were, and letting one person see me struggling is what brought me back.",
+    "podcast_survey_tone": "intimate, honest, quietly hopeful",
+    "podcast_interview_smiq": "Yes, I am comfortable sharing that I nearly closed the studio during a hard winter.",
+    "my_preferred_pronoun": "she/her",
+    "podcast_survey_stories": "A big wholesale order fell through in autumn; a long-standing account closed; my father got sick two states away; I stopped feeling anything at the wheel; a longtime customer named Ruth asked to sit on the student stool and watch me throw one bowl.",
+    "podcast_survey__additional_info": "I want it to feel like a fireside confession, not a tidy business lesson.",
+    "date_for_release": "",
+    "podcast_visual_description": "A warm, dim pottery studio at night, a single lamp over a wheel, two hands shaping a bowl, steam on a cold front window."
+  }
+}

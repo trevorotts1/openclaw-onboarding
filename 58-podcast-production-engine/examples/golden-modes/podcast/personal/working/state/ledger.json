@@ -1,0 +1,57 @@
+{
+  "schema": "podcast-ledger-v1",
+  "writer": "podcast_state.py (sole writer; legal-transition matrix enforced)",
+  "jobKey": "pd-cN7kQ2vDELIA0001-bb4183ef34a9e589",
+  "preset": "solo",
+  "transitions": [
+    {
+      "state": "received",
+      "step": 1,
+      "at": "2026-07-06T09:00:00-04:00"
+    },
+    {
+      "state": "researching",
+      "step": 3,
+      "at": "2026-07-06T09:01:10-04:00"
+    },
+    {
+      "state": "writing",
+      "step": 6,
+      "at": "2026-07-06T09:03:40-04:00"
+    },
+    {
+      "state": "qc",
+      "step": 9,
+      "at": "2026-07-06T09:06:05-04:00",
+      "note": "passed on attempt 1"
+    },
+    {
+      "state": "art",
+      "step": 10,
+      "at": "2026-07-06T09:06:55-04:00"
+    },
+    {
+      "state": "audio",
+      "step": 11,
+      "at": "2026-07-06T09:08:20-04:00"
+    },
+    {
+      "state": "publishing",
+      "step": 14,
+      "at": "2026-07-06T09:10:30-04:00"
+    },
+    {
+      "state": "enrolling",
+      "step": 17,
+      "at": "2026-07-06T09:11:40-04:00",
+      "note": "Personal mode: running spreadsheet row appended; no workflows, no messages"
+    },
+    {
+      "state": "complete",
+      "step": 18,
+      "at": "2026-07-06T09:12:15-04:00"
+    }
+  ],
+  "teaserSkipped": true,
+  "workflowsSkipped": true
+}

@@ -35,7 +35,7 @@
 - [ ] W1.19 Media upload layer (Tier 3 multipart; folders; HEAD verify). PENDING
 - [ ] W1.20 Enrollment layer (Skill 44 discovery; verify-then-enroll; Personal refusal; spreadsheet). PENDING
 - [ ] W1.21 Config set (furnace config, model routing with deny patterns, smoke-endpoints, cost-model). PENDING
-- [ ] W1.22 Golden fixtures (both modes plus Season-Strategy plus Asset Pack). PENDING
+- [x] W1.22 Golden fixtures (both modes plus Season-Strategy plus Asset Pack). DONE on branch feat/podcast-golden-fixtures; 46 files at 58-podcast-production-engine/examples/golden-modes/podcast/; both episodes pass 16 Tier 1 checks and 10-dim rubric floor of 8; self-verifier verify-fixtures.py green; zero em dashes, zero fences, zero Anthropic model refs.
 - [ ] W1.23 Preset layer (4 output types over the pipeline scope map). PENDING
 - [ ] W1.24 Intake questionnaire wiring (NEW PODCAST question order tables). PENDING
 - [ ] W1.25 Canonical payload module. PENDING
@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.22 Golden fixtures | Opus 4.8 exec | DONE | feat/podcast-golden-fixtures | Gate A self-scored 9.0 (build) | 46 files under 58-podcast-production-engine/examples/golden-modes/podcast/. Four presets: personal (solo, vulnerable, 1284 words, 550s), interview (counter_intuitive, guest they/them, 1179 words, 505s, plus 603-word teaser), season-strategy (8-episode slate, doc QC only), episode-asset-pack (idempotent regen). Both episodes pass all 16 Tier 1 checks and the 10-dim rubric floor of 8 (EPISODE gate). Shipped self-verifier verify-fixtures.py green. Zero em dashes, zero fences, zero Anthropic model refs; Fish s2.1-pro non-free; secrets referenced from env only. Additive only; did not touch update.sh, _index.json, or the version file. |

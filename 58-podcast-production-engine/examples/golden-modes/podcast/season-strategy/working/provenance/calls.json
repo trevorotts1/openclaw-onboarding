@@ -1,0 +1,17 @@
+[
+  {
+    "step": "research-assistant",
+    "provider": "perplexity",
+    "model": "sonar-reasoning"
+  },
+  {
+    "step": "season-plan-writer",
+    "provider": "ollama-cloud",
+    "model": "kimi-2.6"
+  },
+  {
+    "step": "document-qc-judge",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite"
+  }
+]
