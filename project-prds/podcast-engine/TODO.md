@@ -45,8 +45,8 @@
 
 ## WAVE 2: GUARDRAIL SUITE (12 Opus 4.8 agents, parallel)
 - [ ] W2.1 podcast_state.py (sole writer, transition matrix, redaction). PENDING
-- [ ] W2.2 podcast-cost-ledger.py (ceilings, caps, budgets). PENDING
-- [ ] W2.3 podcast-smoke-test.py (at or under 1 cent; queue age check). PENDING
+- [x] W2.2 podcast-cost-ledger.py (ceilings, caps, budgets). DONE(self-test 11/11; branch feat/podcast-cost-and-metering)
+- [x] W2.3 podcast-smoke-test.py (at or under 1 cent; queue age check). DONE(self-test 9/9; branch feat/podcast-cost-and-metering)
 - [ ] W2.4 qc-tier1-mechanical.py (deterministic Tier 1). PENDING
 - [ ] W2.5 qc-attempt-gate.py (3-strike, targeted retries, frozen research). PENDING
 - [ ] W2.6 alert-dedup.py (windows, storm cap, gateway-only path). PENDING
@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W2.2 + W2.3 | Opus exec (cost-and-metering slice) | DONE | feat/podcast-cost-and-metering | self-QC 9.0 | podcast-cost-ledger.py (Guardrails 3+4: precheck/record/summary/grant-research-bonus, per-episode and daily ceilings, 3-episode daily cap, 400k token budget, 8k output cap, 12-call research cap plus 4-call fabrication bonus, typed CostCeilingExceeded exit codes) and podcast-smoke-test.py (Guardrails 1+6: pinned balance-endpoint probes only, never a model turn, self-metered overspend canary, queue age-out at 60 days plus drain trigger, alert-dedup spool handoff). Self-tests 11/11 and 9/9. No banned model ids, no em dash, no fences, no secrets printed, no client names. |
