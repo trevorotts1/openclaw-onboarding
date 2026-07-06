@@ -1,3 +1,21 @@
+## [v17.0.40]  -  2026-07-06  -  chore(release): Skill 38 v1.8.0 CloseBot-alignment release tag (PR #551, cards U-1..U-17)
+
+Consolidated ANNOTATED release tag for **Skill 38 (conversation playbook) v1.8.0 — the CloseBot-alignment upgrade**. This is the single skill-behavior change merged to `main` since the v17.0.39 Wave-2 consolidation (PR #551, merged as `5f882b15`), which rolled its own code + `38-conversational-ai-system/skill-version.txt` → `1.8.0` but was merged WITHOUT an individual release tag. This version stamps that train as ONE annotated release so the fix-ledger, CHANGELOG, and git tags agree end-to-end. This release itself touches ONLY the 11 version markers (via `scripts/bump-version.sh`) + this CHANGELOG entry + the README NOTE — there is NO new skill-behavior change beyond what already shipped in PR #551. No client names.
+
+Covered (Skill 38 v1.8.0, PR #551 — cards U-1..U-17, GROUP-0 setup through GROUP-6 integration/release):
+
+- **U-1..U-7 — Foundations & conversation-flow alignment** (GROUP-1/GROUP-2 waves): CloseBot-pattern conversation-flow and behavior alignment for the playbook.
+- **U-8/U-10/U-15 — Model-chain wiring & visuals** (CARD-12/CARD-13/CARD-11): model-chain wiring plus the model-chain/visual card set.
+- **U-9/U-12/U-13 — Declarations / CRM** (CARD-08/CARD-09/CARD-10): CRM declaration cards.
+- **U-11 — Visuals** (CARD-03).
+- **U-14/U-16 — Integration.**
+- **U-17 — Wiring docs** (CARD-17).
+- **QC gate robustness hardened** and **no server absolute-path leakage in client output** (final QC 9, ≥ 8.5 binding threshold).
+
+Deferred (still pending — NOT in this tag): the **Persona-Matching-Overhaul foundation/department work** — FDN-1 (guaranteed no-naked-task fallback invariant + `blackceo-house-voice` DEFAULT_PERSONA_FALLBACK seed, PR #532) and DEP-6 (CODE + IMAGE craft-slot library coverage / `hunt-thomas` code-specialist persona, PR #539) — remains on OPEN, not-yet-green PRs and is NOT on `main`; the persona-SET count triad stands at 81 (target 82 unmet) until those land under the Persona-Matching-Overhaul campaign's own consolidation. The two P3 doc-hygiene items **FIX-XC-13e** (Skill 43 CHANGELOG 1.0.1/1.0.2 backfill) and **FIX-XC-13f** (Skill 45 version literals → read `skill-version.txt`) also remain deferred (carried forward from v17.0.39), so Skills-Analysis Wave 2 stands at 11/13.
+
+Repo version rolled to v17.0.40 (11 markers in lockstep via `scripts/bump-version.sh`). Annotated tag `v17.0.40` created and pushed BEFORE this release PR (G1 race guard). No client names.
+
 ## [v17.0.39]  -  2026-07-05  -  chore(release): consolidated Skills-Analysis Wave-2 merge-train tag — 11 already-merged ruling-gated / second-order / doc-truth fixes across 9 PRs (#555–#563; trains W2-53-authoring-pending / W2-55-57-mcboard-pin / W2-doc-36 / W2-doc-37 / W2-doc-38 / W2-doc-42 / W2-49-sacred-floors / W2-52-avatar / W2-gate-integrity-harness)
 
 Consolidated ANNOTATED release tag for the **Skills-Analysis Master Fix-Plan — Wave 2** (the ruling-gated, second-order, and doc-truth fixes). Every fix rolled up here was independently QC'd (LLM review ≥ 8.5, no greps), freshly verified, and was ALREADY MERGED to `main` across nine Wave-2 merge-train PRs (#555–#563) that each rolled their own code + skill-scoped version but were merged WITHOUT an individual release tag (per-train tag deferred to this consolidation). This version stamps those nine trains as ONE annotated release so the fix-ledger, CHANGELOG, and git tags agree end-to-end through Wave 2. It succeeds the Wave-1 consolidation tag v17.0.35 and the marker-only intermediate bumps 17.0.36 → 17.0.38 — which also carried separate **Persona-Matching-Overhaul DEP** work (PRs #534/#537/#543, DEP-1/DEP-3/DEP-4) that is tracked under that campaign's own consolidation and is NOT itemized here. This release itself touches ONLY the 11 version markers (via `scripts/bump-version.sh`) + this CHANGELOG entry + the README NOTE — there is NO new skill-behavior change beyond what already shipped in the referenced PRs. No client names.
