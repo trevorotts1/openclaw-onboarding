@@ -1,5 +1,30 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.2.0 — 2026-07-05 — P4-MEDIA image-provenance + per-stage coverage gate (FIX-IMG-02)
+
+Train **T-w1-56-salespage** (Wave-1). Fix ID: **FIX-IMG-02**.
+
+- **FIX-IMG-02** — The media ledger content was never validated: P2/P4 were existence-only and
+  `prove_sp_bundle.py` has zero image checks, so a blank / off-host / placeholder image passed every
+  gate — even though the SOP claimed a GHL-host provenance gate. New prover
+  `scripts/prove_sp_media.py` (clones PART B of Skill 49's `prove_sf_no_pitch.py`: `_BAD_TASK_IDS` +
+  `GHL_HOST_FINGERPRINTS`, fail-closed on zero images) validates `media_ledger.json`:
+  - **AF-SP56-MEDIA-PROVENANCE** — every media record must carry a real image-provider `task_id`
+    (no native/placeholder value);
+  - **AF-SP56-MEDIA-HOST** — every media URL must resolve to a GHL media host;
+  - **AF-SP56-MEDIA-COVERAGE** — every `image_plan.json` stage must have >= 1 media record
+    (per-stage coverage; a stage's images can no longer silently fail to certify);
+  - fail-closed (**AF-SP56-MEDIA-EMPTY** / **AF-SP56-MEDIA-PLAN-EMPTY**) on zero images / zero plan stages.
+- Wired `prove_sp_media.py` as the real **P4-MEDIA** gate in `run_sales_page_assets.py` (`_media_gate`,
+  replacing the existence-only delegation seam) and updated the orchestrator self-test to write a
+  stage-covering media ledger.
+- Added the five `AF-SP56-MEDIA-*` codes + the `_chk_sp_media` wrapper to `SALESPAGE-MANIFEST.json`;
+  pinned the new prover in `scripts/SPA-PROVER-PIN.sha256` (added to `sales-page-assets-entry.sh`
+  `PINNED_FILES` + the `--self-test` prover loop); updated `prove_sp_cert.EXPECTED_PHASES`' P4 label.
+- Corrected the false "media provenance gate exists" claim (the P4-MEDIA row) in
+  `universal-sops/sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md` and re-stamped
+  `universal-sops/_content-manifest.json`.
+
 ## 1.1.3 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — re-dropped the shared `scripts/mc_board.py` byte-identical from the
   canonical copy (now carrying the fail-soft `block_run()` wrapper). Additive only;

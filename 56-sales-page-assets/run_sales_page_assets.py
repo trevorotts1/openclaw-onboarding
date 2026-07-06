@@ -99,6 +99,16 @@ def _image_plan_suite(run_dir: Path) -> Tuple[bool, str]:
     return all_ok, " | ".join(details)
 
 
+def _media_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P4-MEDIA — artifact-backed provenance + coverage (FIX-IMG-02). The media ledger content
+    is validated, not merely present: prove_sp_media.py fails closed unless every media record
+    carries a real image-provider taskId + a GHL media host, and every image_plan.json stage is
+    covered by >= 1 media record. A blank/off-host/placeholder image can no longer certify."""
+    return _shell_prover("prove_sp_media.py",
+                         ["--media", str(run_dir / "media_ledger.json"),
+                          "--plan", str(run_dir / "image_plan.json")])
+
+
 def _load_run_json(run_dir: Path, name: str) -> Tuple[Optional[Dict], str]:
     p = run_dir / name
     if not p.is_file():
@@ -209,8 +219,8 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
                                   "Skill 47 kie_image.py OR the client's own image provider")),
         ("P3-COPY", "prove_sp_copy_suite",
          lambda: _copy_suite(run_dir)),
-        ("P4-MEDIA", "ghl_media.py",
-         lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 6 ghl_media.py (media folder + upload)")),
+        ("P4-MEDIA", "ghl_media.py + prove_sp_media.py",
+         lambda: _media_gate(run_dir)),
         ("P5-FRAGMENTS", "fragment_strip",
          lambda: _fragments_gate(run_dir)),
         ("P6-DOCS", "drive_docs",
@@ -318,9 +328,19 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     copy_assets += prove_sp_bump_band._valid_ledger()["assets"]
     (rd / "copy_ledger.json").write_text(json.dumps({"assets": copy_assets}), encoding="utf-8")
 
-    (rd / "media_ledger.json").write_text(json.dumps({"images": [
-        {"asset_key": "jane-doe__glow-method__main__img-01__v01", "task_id": "t1",
-         "ghl_media_url": "https://msgsndr-media/x.png"}]}), encoding="utf-8")
+    # media ledger MUST cover every image_plan stage (FIX-IMG-02 P4-MEDIA provenance+coverage):
+    # one GHL-host, real-taskId record per distinct plan stage.
+    plan = json.loads((rd / "image_plan.json").read_text(encoding="utf-8"))
+    plan_stages = []
+    for pr in plan.get("prompts", []):
+        st = str(pr.get("stage", "")).strip().lower()
+        if st and st not in plan_stages:
+            plan_stages.append(st)
+    media_images = [
+        {"asset_key": f"jane-doe__glow-method__{st}__img-{i:02d}__v01", "stage": st,
+         "task_id": f"kie-{i:02d}", "ghl_media_url": f"https://storage.msgsndr.com/x/{st}-{i:02d}.png"}
+        for i, st in enumerate(plan_stages, start=1)]
+    (rd / "media_ledger.json").write_text(json.dumps({"images": media_images}), encoding="utf-8")
     manifest = prove_sp_bundle._valid_manifest()
     (rd / "funnel-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 

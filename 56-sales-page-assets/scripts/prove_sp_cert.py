@@ -41,7 +41,7 @@ EXPECTED_PHASES = (
     ("P1-IMAGE-PLAN", "prove_sp_image_plan.py"),
     ("P2-IMAGES",     "kie_image.py"),          # Skill 47 / client image provider
     ("P3-COPY",       "prove_sp_copy_suite"),   # main-8 + upsell-9 + high-ticket band + bump band
-    ("P4-MEDIA",      "ghl_media.py"),          # Skill 6 delegation
+    ("P4-MEDIA",      "ghl_media.py + prove_sp_media.py"),  # Skill 6 delegation + FIX-IMG-02 provenance/coverage gate
     ("P5-FRAGMENTS",  "fragment_strip"),        # deterministic sanitize/fragment-ize (P5, NOT an LLM pass)
     ("P6-DOCS",       "drive_docs"),            # Track 1 (client-editable Google Docs)
     ("P7-BUNDLE",     "prove_sp_bundle.py"),    # Track 2 (build bundle + funnel-manifest)

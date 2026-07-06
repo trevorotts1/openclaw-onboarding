@@ -74,7 +74,7 @@ registered slug (mirrors FAB-QC D4) — no grounding, no generation.
 | P3-COPY | `AF-SP56-UPSELL-SECTION-*` | the 9-section Trevor Otts upsell present + IN the exact order, both A/B variants. |
 | P3-COPY | `AF-SP56-HIGHTICKET-FLOOR` / `-CEILING` | high-ticket measured stripped word count within 6,500–7,100. |
 | P3-COPY | `AF-SP56-BUMP-FLOOR` / `-CEILING` / `-NO-CHECKBOX` | bump 40–80 body words ending with the `[X] Yes, add this to my order` checkbox close. |
-| P4-MEDIA | `AF-SP56-BUNDLE-*` (host) | images on the GHL media host (delegated to Skill 6 `ghl_media.py`; ImgBB removed from the client path). |
+| P4-MEDIA | `AF-SP56-MEDIA-PROVENANCE` / `AF-SP56-MEDIA-HOST` / `AF-SP56-MEDIA-COVERAGE` | `prove_sp_media.py` (FIX-IMG-02) validates `media_ledger.json` CONTENT — every media record carries a real image-provider taskId (no native/placeholder, clone of the delivery-gate `_BAD_TASK_IDS`) AND resolves to the GHL media host, AND every `image_plan.json` stage has >= 1 media record (per-stage coverage); fail-closed on zero images. Media delegated to Skill 6 `ghl_media.py`; ImgBB removed from the client path. |
 | P7-BUNDLE | `AF-SP56-BUNDLE-LABEL-GRAMMAR` | every asset key / run_id parses the grammar and carries NO model name (rule R1). |
 | P7-BUNDLE | `AF-SP56-BUNDLE-ZHC` / `-FRAGMENT` / `-METHOD` / `-COPYTOKENS` / `-SEO` / `-THANKYOU` | ZHC UPPERCASE container prefix; per-page fragment + method + copy-tokens; SEO block complete; thank-you step present. |
 | P7-BUNDLE | `AF-SP56-BUNDLE-BUMP-ROUTE` | the bump routes to the Skill 44 seam as COPY (route `SKILL44_WIDGET`), never hand-wired. |
