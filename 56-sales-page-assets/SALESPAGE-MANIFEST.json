@@ -37,7 +37,7 @@
     {"id": "P2-IMAGES", "order": 2, "name": "Image generation (DELEGATED to Skill 47 / client image provider)",
      "produces_artifact": "media_ledger.json (image records)",
      "delegate": "47-kie-image :: kie_image.py OR the client's OWN image provider key (operator OpenAI Assistant NOT shipped)",
-     "gate": "artifact presence; GHL-host provenance enforced at P4"},
+     "gate": "artifact presence (media_ledger.json); taskId + GHL-host provenance and per-stage coverage enforced at P4 (prove_sp_media.py)"},
     {"id": "P3-COPY", "order": 3, "name": "The 7 copy assets (main a/b, upsell a/b, downsell, high-ticket, bump)",
      "produces_artifact": "copy_ledger.json",
      "chk_wrapper": "_chk_sp_copy_suite",
@@ -46,8 +46,10 @@
      "defers_unless": "funnel_type == sales_page_assets"},
     {"id": "P4-MEDIA", "order": 4, "name": "GHL media folder + upload (DELEGATED to Skill 6; ImgBB OUT)",
      "produces_artifact": "media_ledger.json (GHL media CDN URLs)",
+     "chk_wrapper": "_chk_sp_media",
      "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
-     "gate": "GHL-host assertion at build (assert_images_are_ghl_media, ghl_rest_canvas.py:603)"},
+     "gate": "prove_sp_media.py (FIX-IMG-02): every media record carries a real image-provider taskId (no native/placeholder) + a GHL media host, AND every image_plan stage has >=1 media record (per-stage coverage); fail-closed on zero images. Build-time GHL-host assertion still runs (assert_images_are_ghl_media, ghl_rest_canvas.py:603).",
+     "py_symbol": "run_sales_page_assets._media_gate"},
     {"id": "P5-FRAGMENTS", "order": 5, "name": "Deterministic sanitize + fragment-ize (NOT an LLM pass)",
      "produces_artifact": "pages/*.fragment.html (naked fragments, image URLs rewritten to GHL CDN)",
      "gate": "ARTIFACT-BACKED (FIX-XC-03b): every non-bump funnel-manifest step has a non-empty fragment file on disk (AF-SP56-FRAGMENT-MISSING)",
@@ -85,6 +87,7 @@
     "_chk_sp_intake": {"phase": "P0-INTAKE", "shells": "prove_sp_intake.py"},
     "_chk_sp_image_plan": {"phase": "P1-IMAGE-PLAN", "shells": "prove_sp_image_plan.py + prove_sp_prompt_floor.py"},
     "_chk_sp_copy_suite": {"phase": "P3-COPY", "shells": "prove_sp_main_structure.py + prove_sp_upsell_structure.py + prove_sp_highticket_band.py + prove_sp_bump_band.py"},
+    "_chk_sp_media": {"phase": "P4-MEDIA", "shells": "prove_sp_media.py"},
     "_chk_sp_bundle": {"phase": "P7-BUNDLE", "shells": "prove_sp_bundle.py"}
   },
 
@@ -146,6 +149,12 @@
     "AF-SP56-BUMP-FLOOR": {"trigger": "bump body word count < 40", "enforced_by": "P3-COPY", "py_symbol": "prove_sp_bump_band.evaluate"},
     "AF-SP56-BUMP-CEILING": {"trigger": "bump body word count > 80", "enforced_by": "P3-COPY", "py_symbol": "prove_sp_bump_band.evaluate"},
 
+    "AF-SP56-MEDIA-PROVENANCE": {"trigger": "a media record has a missing/placeholder/native image-provider taskId (not proven provider-rendered); FIX-IMG-02 clone of delivery_gate _BAD_TASK_IDS", "enforced_by": "P4-MEDIA", "py_symbol": "prove_sp_media.evaluate"},
+    "AF-SP56-MEDIA-HOST": {"trigger": "a media record's URL does not resolve to a GHL media host (off-host / placeholder / non-http); FIX-IMG-02", "enforced_by": "P4-MEDIA", "py_symbol": "prove_sp_media.evaluate"},
+    "AF-SP56-MEDIA-COVERAGE": {"trigger": "an image_plan.json stage has zero media records (per-stage coverage; a stage's images never certify); FIX-IMG-02", "enforced_by": "P4-MEDIA", "py_symbol": "prove_sp_media.evaluate"},
+    "AF-SP56-MEDIA-EMPTY": {"trigger": "the media ledger carries zero image records (cannot prove provenance; fail-closed)", "enforced_by": "P4-MEDIA", "py_symbol": "prove_sp_media.evaluate"},
+    "AF-SP56-MEDIA-PLAN-EMPTY": {"trigger": "image_plan.json declares no stages (cannot compute the coverage set; fail-closed)", "enforced_by": "P4-MEDIA", "py_symbol": "prove_sp_media.evaluate"},
+
     "AF-SP56-BUNDLE-EMPTY": {"trigger": "manifest has no steps (fail-closed)", "enforced_by": "P7-BUNDLE", "py_symbol": "prove_sp_bundle.evaluate"},
     "AF-SP56-BUNDLE-LOCATION": {"trigger": "no sub-account / location id (Skill 6 sub-account gate)", "enforced_by": "P7-BUNDLE", "py_symbol": "prove_sp_bundle.evaluate"},
     "AF-SP56-BUNDLE-ZHC": {"trigger": "funnel/step name lacks the ZHC UPPERCASE prefix (R4)", "enforced_by": "P7-BUNDLE", "py_symbol": "prove_sp_bundle.evaluate"},
@@ -171,6 +180,10 @@
     "AF-SP56-FRONT-DOOR": {"trigger": "orchestrator called without the run-scoped front-door nonce", "enforced_by": "front-door", "py_symbol": "run_sales_page_assets._check_front_door"},
 
     "AF-SP56-CANONICAL-BYPASS": {"trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / mail sender / Anthropic call", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_bypass_scan"},
-    "AF-SP56-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SPA-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_hashpin"}
+    "AF-SP56-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SPA-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_hashpin"},
+
+    "AF-SP56-INTAKE-PERSONA-LOG": {"trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sp_intake.evaluate"},
+    "AF-SP56-MODEL-TIER": {"trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sp_cert.evaluate_model_receipt"},
+    "AF-SP56-MODEL-NOANTHROPIC": {"trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sp_cert.evaluate_model_receipt"}
   }
 }

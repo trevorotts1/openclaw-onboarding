@@ -65,6 +65,17 @@ def _ref_text(ref) -> str:
     return str(ref or "")
 
 
+def resolve_email_style(style_id: str, crosswalk: dict | None = None) -> str | None:
+    """Resolve a Skill-50 email tone-STYLE id (e.g. ``persona-style-td-jakes``) to a
+    canonical persona id via the ``email_persona_styles`` crosswalk, so an email
+    selection can join the persona adherence/learning loop (F4.3). Returns None for
+    a style that has no canonical counterpart (intentionally unmapped) — the caller
+    keeps its own style-tier behavior in that case."""
+    if crosswalk is None:
+        crosswalk = load_crosswalk()
+    return (crosswalk.get("email_persona_styles") or {}).get(str(style_id or "").strip()) or None
+
+
 def resolve(ref, canonical: set[str], crosswalk: dict) -> tuple[str | None, str]:
     """Resolve one persona ref to a canonical persona id. Returns (canonical_id|None, how)."""
     text = _ref_text(ref).strip()
@@ -154,8 +165,12 @@ def scan(funnel_root: str = DEFAULT_FUNNEL_ROOT, auto_root: str = DEFAULT_AUTO_R
         _do(path, _persona_refs_auto(doc), "automation")
 
     # Also validate every crosswalk TARGET resolves to a real canonical persona.
+    # This covers slug_map + patterns AND the email_persona_styles crosswalk (F4.3),
+    # so `--validate` is the single gate for every mapped target.
     bad_targets = sorted({t for t in crosswalk.get("slug_map", {}).values() if t not in canonical}
-                         | {t for _, t in crosswalk.get("patterns", []) if t not in canonical})
+                         | {t for _, t in crosswalk.get("patterns", []) if t not in canonical}
+                         | {t for t in (crosswalk.get("email_persona_styles") or {}).values()
+                            if t not in canonical})
     return {"counts": counts, "rows": rows, "bad_targets": bad_targets, "canonical": sorted(canonical)}
 
 

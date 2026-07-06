@@ -99,6 +99,16 @@ def _image_plan_suite(run_dir: Path) -> Tuple[bool, str]:
     return all_ok, " | ".join(details)
 
 
+def _media_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P4-MEDIA — artifact-backed provenance + coverage (FIX-IMG-02). The media ledger content
+    is validated, not merely present: prove_sp_media.py fails closed unless every media record
+    carries a real image-provider taskId + a GHL media host, and every image_plan.json stage is
+    covered by >= 1 media record. A blank/off-host/placeholder image can no longer certify."""
+    return _shell_prover("prove_sp_media.py",
+                         ["--media", str(run_dir / "media_ledger.json"),
+                          "--plan", str(run_dir / "image_plan.json")])
+
+
 def _load_run_json(run_dir: Path, name: str) -> Tuple[Optional[Dict], str]:
     p = run_dir / name
     if not p.is_file():
@@ -209,8 +219,8 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
                                   "Skill 47 kie_image.py OR the client's own image provider")),
         ("P3-COPY", "prove_sp_copy_suite",
          lambda: _copy_suite(run_dir)),
-        ("P4-MEDIA", "ghl_media.py",
-         lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 6 ghl_media.py (media folder + upload)")),
+        ("P4-MEDIA", "ghl_media.py + prove_sp_media.py",
+         lambda: _media_gate(run_dir)),
         ("P5-FRAGMENTS", "fragment_strip",
          lambda: _fragments_gate(run_dir)),
         ("P6-DOCS", "drive_docs",
@@ -237,10 +247,26 @@ def _check_front_door(run_dir: Path, nonce: Optional[str], nonce_file: Optional[
     return True, supplied.strip()
 
 
+def _resolve_persona(run_dir: Path) -> None:
+    """F4.3 — resolve the sales page's canonical governing persona at the brief
+    stage (best-effort; never blocks the run). Writes persona-selection.json for the
+    copy prompts and the certificate. A bare box / unreachable selector is a clean skip."""
+    try:
+        sys.path.insert(0, str(_SCRIPTS))
+        import persona_brief
+        sel = persona_brief.resolve(run_dir)
+        if sel:
+            print(f"  [persona] {sel.get('persona_id')} ({sel.get('persona_name')}) "
+                  f"via {sel.get('source')}")
+    except Exception as exc:  # noqa: BLE001 — persona resolution must never break a run
+        print(f"  [persona] best-effort skip ({exc})")
+
+
 def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     phases_attested: List[Dict] = []
     gates = _phase_gates(run_dir)
     print(f"== Sales Page Assets orchestrator :: run {run_dir} ==")
+    _resolve_persona(run_dir)
     for order, (pid, prover, gate) in enumerate(gates):
         _mc_board_phase(run_dir, pid)  # per-phase board heartbeat (fail-soft, never a gate)
         ok, detail = gate()
@@ -279,6 +305,15 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
                      "two_track": "Track 1 client Docs (editable) + Track 2 build bundle (Skill 6)",
                      "bump_seam": "Skill 44 order-bump widget (P4->P5 board handoff)"},
     }
+    # F4.3 — name the canonical governing persona on the signed certificate when one
+    # was resolved at the brief stage (added BEFORE signing; verify() tolerates extra keys).
+    try:
+        import persona_brief
+        _pcb = persona_brief.cert_block(run_dir)
+        if _pcb:
+            cert["persona"] = _pcb
+    except Exception:  # noqa: BLE001 — never block certification on persona surfacing
+        pass
     cert["signature"] = prove_sp_cert.sign(prove_sp_cert.canonical_payload(cert), nonce)
     (run_dir / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert, indent=2), encoding="utf-8")
 
@@ -302,6 +337,11 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     import prove_sp_highticket_band, prove_sp_bump_band  # noqa: E402
 
     (rd / "brief.json").write_text(json.dumps(prove_sp_intake._valid_runtime()), encoding="utf-8")
+    # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the run dir must
+    # carry a persona-selection-log naming a registered persona slug (SOP-SALESPAGE-01 §3).
+    (rd / "persona-selection-log.md").write_text(
+        "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
+        encoding="utf-8")
     # floor-compliant, slice-complete image plan (clears BOTH P1 provers).
     (rd / "image_plan.json").write_text(json.dumps(prove_sp_prompt_floor._valid_plan(12)), encoding="utf-8")
 
@@ -313,9 +353,19 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     copy_assets += prove_sp_bump_band._valid_ledger()["assets"]
     (rd / "copy_ledger.json").write_text(json.dumps({"assets": copy_assets}), encoding="utf-8")
 
-    (rd / "media_ledger.json").write_text(json.dumps({"images": [
-        {"asset_key": "jane-doe__glow-method__main__img-01__v01", "task_id": "t1",
-         "ghl_media_url": "https://msgsndr-media/x.png"}]}), encoding="utf-8")
+    # media ledger MUST cover every image_plan stage (FIX-IMG-02 P4-MEDIA provenance+coverage):
+    # one GHL-host, real-taskId record per distinct plan stage.
+    plan = json.loads((rd / "image_plan.json").read_text(encoding="utf-8"))
+    plan_stages = []
+    for pr in plan.get("prompts", []):
+        st = str(pr.get("stage", "")).strip().lower()
+        if st and st not in plan_stages:
+            plan_stages.append(st)
+    media_images = [
+        {"asset_key": f"jane-doe__glow-method__{st}__img-{i:02d}__v01", "stage": st,
+         "task_id": f"kie-{i:02d}", "ghl_media_url": f"https://storage.msgsndr.com/x/{st}-{i:02d}.png"}
+        for i, st in enumerate(plan_stages, start=1)]
+    (rd / "media_ledger.json").write_text(json.dumps({"images": media_images}), encoding="utf-8")
     manifest = prove_sp_bundle._valid_manifest()
     (rd / "funnel-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 

@@ -30,6 +30,12 @@ EX="$SKILL_DIR/examples/golden-unbroken-ground"        # shipped worked example
 EBV="$EX/broken-variants"
 PY="${PYTHON:-python3}"
 
+# Redirect the labeled ~/Downloads deliverable into a THROWAWAY root so verify.sh
+# NEVER writes into the operator's real ~/Downloads (state-path discipline — the
+# Skill-23 lesson; mirrors 55-product-bio/verify.sh). The end-to-end pilots below
+# run run_anthology.py through the entry, which assembles the ~/Downloads bundle.
+export ANTHOLOGY_DELIVERY_ROOT="$(mktemp -d)"
+
 fails=0
 run() {
     local label="$1"; shift
@@ -61,7 +67,8 @@ expect_reject() {
 
 echo "== Skill 54 (Anthology Writer) :: verify.sh =="
 
-# 1) the provers --self-test.
+# 1) the provers --self-test (+ the orchestrator's built-in gate self-test:
+#    P7 delivery gate + fail-closed unmapped-checker).
 for p in prove_aw_intake prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_build_check; do
     if [ -f "$SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
@@ -69,6 +76,7 @@ for p in prove_aw_intake prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_bui
         printf '  [FAIL] %s.py missing at %s\n' "$p" "$SCRIPTS"; fails=$((fails + 1))
     fi
 done
+run "run_anthology.py --self-test" "$PY" "$SKILL_DIR/run_anthology.py" --self-test
 
 # 2) golden reproduce — each prover PASSes the golden bundle.
 run "golden intake PASS"    "$PY" "$SCRIPTS/prove_aw_intake.py"   "$GOLD/intake.json"
@@ -93,6 +101,7 @@ expect_reject "chapter-story-dropped" prove_aw_chapter.py  "AF-AW-STORIES"      
 expect_reject "chapter-placeholder"   prove_aw_chapter.py  "AF-AW-PLACEHOLDER"      "$ATK/chapter_placeholder.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
 expect_reject "ledger-anthropic"      aw_build_check.py    "AF-AW-ANTHROPIC"        "$ATK/ledger_anthropic.json"
 expect_reject "ledger-rewrite-budget" aw_build_check.py    "AF-AW-REWRITE-BUDGET"   "$ATK/ledger_rewrite_over_budget.json"
+expect_reject "ledger-no-provenance"  aw_build_check.py    "AF-AW-PROVENANCE-MISSING" "$ATK/ledger_no_provenance.json"
 
 # 4) prompt-fidelity pins + tone-core sync (named for clarity; covered above).
 run "prompt-fidelity pins match" "$PY" "$SCRIPTS/prove_aw_fidelity.py"
@@ -142,9 +151,9 @@ fi
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 echo "  -- golden pilot through anthology-entry.sh --"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}"' EXIT
 mkdir -p "$TMP/working"
-for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$TMP/working/$f"
 done
 if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
@@ -161,7 +170,7 @@ echo "  -- shipped example golden-unbroken-ground through the entry (temp run-di
 if [ -d "$EX" ]; then
     EXTMP="$(mktemp -d)"
     mkdir -p "$EXTMP/working"
-    for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+    for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
         cp "$EX/working/$f" "$EXTMP/working/$f"
     done
     if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$EXTMP" >/dev/null 2>&1 \
@@ -214,6 +223,59 @@ else
     fails=$((fails + 1))
 fi
 rm -rf "$DTMP"
+
+# 10) ENGINE-PIN — the shipped ENGINE-PIN.sha256 must equal the computed hash of
+#     the enforcement set, AND a tampered enforcement file must trip GATE 3
+#     (AF-AW-HASH-PIN, exit 7) through the entry — proving the pin actually bites.
+echo "  -- ENGINE-PIN hash pin (AF-AW-HASH-PIN) --"
+ENFORCE_FILES=(
+    "$SKILL_DIR/run_anthology.py"
+    "$SCRIPTS/_aw_common.py"
+    "$SCRIPTS/prove_aw_intake.py"
+    "$SCRIPTS/prove_aw_fidelity.py"
+    "$SCRIPTS/prove_aw_tone.py"
+    "$SCRIPTS/prove_aw_chapter.py"
+    "$SCRIPTS/aw_build_check.py"
+    "$SCRIPTS/verify_tone_core_sync.py"
+)
+_sha_concat() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        cat "$@" | sha256sum | awk '{print $1}'
+    else
+        cat "$@" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+PIN_FILE="$SKILL_DIR/ENGINE-PIN.sha256"
+if [ -f "$PIN_FILE" ]; then
+    COMPUTED="$(_sha_concat "${ENFORCE_FILES[@]}")"
+    EXPECTED="$(tr -d ' \t\n' < "$PIN_FILE")"
+    if [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$COMPUTED" ]; then
+        printf '  [PASS] ENGINE-PIN.sha256 matches the computed enforcement hash (%s…)\n' "${COMPUTED:0:12}"
+    else
+        printf '  [FAIL] ENGINE-PIN.sha256 drift (pinned=%s computed=%s)\n' "${EXPECTED:0:12}" "${COMPUTED:0:12}"
+        fails=$((fails + 1))
+    fi
+
+    # negative: a tampered enforcement file must make the entry fail GATE 3 (exit 7).
+    PTMP="$(mktemp -d)"
+    cp -R "$SKILL_DIR/." "$PTMP/skill/"
+    printf '\n# tamper — verify.sh negative test\n' >> "$PTMP/skill/run_anthology.py"
+    PRD="$(mktemp -d)"; mkdir -p "$PRD/working"
+    for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+        cp "$GOLD/$f" "$PRD/working/$f"
+    done
+    bash "$PTMP/skill/anthology-entry.sh" --run-dir "$PRD" >/dev/null 2>&1; tamper_rc=$?
+    if [ "$tamper_rc" -eq 7 ]; then
+        printf '  [PASS] tampered enforcement file trips AF-AW-HASH-PIN at the entry (exit 7)\n'
+    else
+        printf '  [FAIL] tampered enforcement file did NOT trip the hash pin (rc=%s, expected 7)\n' "$tamper_rc"
+        fails=$((fails + 1))
+    fi
+    rm -rf "$PTMP" "$PRD"
+else
+    printf '  [FAIL] ENGINE-PIN.sha256 not shipped — GATE 3 hash pin can never fail (S36-54)\n'
+    fails=$((fails + 1))
+fi
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then

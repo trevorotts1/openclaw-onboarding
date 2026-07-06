@@ -1,7 +1,7 @@
 ---
 name: design-intelligence-library
 description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
-version: 1.2.3
+version: 1.3.0
 ---
 
 # Skill 45: Design Intelligence Library
@@ -10,7 +10,7 @@ version: 1.2.3
 
 1. **SKILL.md** (this file) — what the DIU is, the protocol layers, the role model, prerequisite
 2. **INSTALL.md** — seeding procedure, two-zone update contract (repo-owned _system/rules vs box-owned INDEX/cards)
-3. **INSTRUCTIONS.md** — runtime guide, optional semantic style search via Gemini embedding index
+3. **INSTRUCTIONS.md** — runtime guide (semantic embedding search is NOT YET AVAILABLE; INDEX.md is the lookup surface)
 4. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
 5. **library/README.md** — quick-start for the AI agent (analyze / generate / deck / photo shoot / model update)
 6. **library/_system/MASTER-SOP.md** — the 12-dimension style analysis brain
@@ -118,8 +118,10 @@ This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Hand
 ├── CORE_UPDATES.md                                ← appends to AGENTS.md / TOOLS.md / MEMORY.md
 ├── CHANGELOG.md                                   ← version history
 ├── PREREQS.json                                   ← declares Skill 07 (KIE_API_KEY) dependency
-├── qc-design-intelligence-library.sh              ← QC: verify 16 library files, INDEX integrity, no client data committed
-├── skill-version.txt                              ← "1.0.0" (skill-independent versioning)
+├── qc-design-intelligence-library.sh              ← QC: verify 19 library files, INDEX integrity, INDEX clobber-safety, no client data committed
+├── skill-version.txt                              ← skill-independent version (see CHANGELOG.md for the current value)
+├── scripts/
+│   └── diu_validator.py                           ← deterministic gates (prompt-length caps, routing interlock, fidelity + 3-strike) — stdlib only
 ├── docs/
 │   └── VENDOR-BUILD-BRIEF.md                      ← vendor document (provenance stamp, superseded)
 └── library/                                       (system library — copy to $OC_ROOT/master-files/design-library/)
@@ -168,6 +170,20 @@ INSTALL.md manages the idempotent seeding. On update (e.g., `update-skills.sh` r
 
 ---
 
+## Binding enforcement — coded gates (`scripts/diu_validator.py`)
+
+The four gates above are no longer prose-only. `scripts/diu_validator.py` (Python stdlib, zero third-party deps) makes three of them MECHANICAL — a violation is a hard non-zero exit an agent cannot narrate past (mirrors Skill 47's deterministic-gate pattern):
+
+| Gate | Command | Enforces | Fail exit |
+|---|---|---|---|
+| **Prompt-length caps** | `diu_validator.py prompt-caps --tier {SHORT\|MEDIUM\|LONG} --prompt-file P` | SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 chars (MODEL-SPECS tier table). Over-cap ⇒ fall back a tier, never silently truncate. | 3 (`AF-DIU-PROMPT-CAP`) |
+| **DIU routing interlock** | `diu_validator.py route-check --deck-kind K` | SOP-DIU-611 §D.1 coded hard stop: audience/webinar/funnel/virtual-event decks CANNOT run on the Rotation Engine — route to Presentations. | 2 (`AF-DIU-ROUTING-INTERLOCK`) |
+| **Fidelity receipt + 3-strike** | `diu_validator.py fidelity --run-dir R --card-id ID --scores-file S` | TEST-PROTOCOL §5: avg ≥4.0 AND no dim <3 AND zero hard-rule violations; appends a receipt; 3 consecutive fails on one dimension ⇒ escalate to CDO. | 3 (fail) / 5 (`AF-DIU-3-STRIKE` escalate) |
+
+Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never deleted — the card's institutional memory). The Generation Operator runs `prompt-caps` before every dispatch; the Deck Systems Specialist runs `route-check` at SOP-DIU-611 step A before any manifest work; the Fidelity Tester runs `fidelity` on every graded PNG. The consent-gate-first rule (PHOTO-SHOOT-SOP §1) remains a human/legal gate, not a code path.
+
+---
+
 ## The model rule: Kie.ai endpoint routing
 
 MODEL-SPECS.md (repo-owned, vendor-asserted) specifies API limits, character tiers (SHORT/MEDIUM/LONG), and per-category routing rules:
@@ -184,7 +200,7 @@ Library _RULES.md per category list preferred models and fallback chains. Genera
 
 ## Skill versioning: independent line
 
-Skill 45 versions independently of the repo. This skill's `skill-version.txt` = `1.0.0`. The repo version (e.g., v12.2.0) rolls all 45 skills in parallel; individual skills track their own major.minor.patch for feature parity and vendor library updates.
+Skill 45 versions independently of the repo — see `skill-version.txt` and the CHANGELOG for the current value (the SKILL.md frontmatter `version` must match `skill-version.txt`, enforced by the frontmatter-version guard). The repo version rolls all skills in parallel; individual skills track their own major.minor.patch for feature parity and vendor library updates.
 
 ---
 

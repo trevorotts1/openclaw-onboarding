@@ -415,6 +415,8 @@ def build_prompts_json(
             "used_on_page_id": "PAGEID...",   # optional provenance (carried through)
             "alt": "...",                     # optional <img> alt text
             "text_bearing": False,            # optional; True => copy renders IN the image
+            "aspect_ratio": "3:4",            # optional (FIX-IMG-03); default 16:9 in generator
+            "resolution": "2K",               # optional (FIX-IMG-03); default 2K in generator
             "locator": {"section_idx": 0, "element_idx": 2}  # optional splice target
         }
 
@@ -509,6 +511,17 @@ def build_prompts_json(
 
         # Generator-shaped entry (exactly what kie_generate.py consumes).
         gen_entry: dict[str, Any] = {"slide": slide_id, "prompt": prompt, "mode": mode}
+        # FIX-IMG-03: carry an OPTIONAL per-entry aspect_ratio / resolution straight
+        # through into prompts.json so kie_generate.py's slide.get("aspect_ratio",
+        # ASPECT_RATIO) can honor a section's mandated ratio (e.g. a 3:4 portrait)
+        # instead of the hardcoded 16:9. Purely additive: a spec that omits these
+        # keys produces a byte-identical entry to before. Values are normalized to
+        # trimmed strings; blank/None is dropped so the generator default applies.
+        for _rk in ("aspect_ratio", "resolution"):
+            if _rk in spec and spec[_rk] is not None:
+                _rv = str(spec[_rk]).strip()
+                if _rv:
+                    gen_entry[_rk] = _rv
         if mode == "i2i":
             input_urls = spec.get("input_urls") or []
             if not isinstance(input_urls, list) or not input_urls:

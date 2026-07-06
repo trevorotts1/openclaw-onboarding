@@ -149,6 +149,10 @@ jumps past it; **every path terminates at Thank-You** — nobody ends a purchase
   sections photographic; no-text sections state "no text anywhere" explicitly.
 - **Provenance:** a real Kie taskId is required for every generated image (no native/placeholder), and
   every `<img>` must resolve to the GHL media host.
+- **Optional `style_card_id` (FIX-XC-02c)** — when the intake supplies a registered Skill 45 `FN-` style
+  card (Q18), DIU Workflow B resolves it and its **LONG tier** is embedded VERBATIM as the Brand-Style
+  portion of **block 8** in every prompt (block 4's Signature Grade Block is unchanged). Unset = the
+  default block 8 / brand-color Signature look — purely additive.
 - **`reference_images` hook** — one optional slot, `mode: none | signature_set | client_uploads |
   signature_set+client_uploads`, **default `none`** (launch state = pure text-to-image; look carried
   entirely by the Signature Grade Block). When populated, resolved URLs pass to the adapter's

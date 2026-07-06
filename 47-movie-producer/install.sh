@@ -18,6 +18,16 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
 SKILL_NAME="movie-producer"
 
+# FIX-S36-43: PIN the OpenMontage clone to a verified upstream commit so the docs
+# (the pipeline table in INSTRUCTIONS.md) can never drift under an unpinned HEAD.
+# This SHA is the tree whose pipeline_defs/*.yaml the docs are generated from
+# (13 pipelines: animated-explainer, animation, avatar-spokesperson,
+# character-animation, cinematic, clip-factory, documentary-montage,
+# framework-smoke, hybrid, localization-dub, podcast-repurpose, screen-demo,
+# talking-head). Override with OPENCLAW_OPENMONTAGE_SHA only when you have
+# re-verified the pipeline table against the new tree.
+OPENMONTAGE_PINNED_SHA="${OPENCLAW_OPENMONTAGE_SHA:-ce11f6a24f5c92e97d1461ffe1cd7a238dda1417}"
+
 red()    { printf "\033[31mFAIL\033[0m %s\n" "$1"; }
 green()  { printf "\033[32mPASS\033[0m %s\n" "$1"; }
 yellow() { printf "\033[33mWARN\033[0m %s\n" "$1"; }
@@ -59,6 +69,22 @@ if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
   exit 1
 fi
 green "OpenMontage cloned — remote verified: $ACTUAL_REMOTE"
+
+# FIX-S36-43: check out the PINNED SHA so the pipeline docs cannot drift under HEAD.
+git -C "$OPENMONTAGE_DIR" fetch --quiet origin "$OPENMONTAGE_PINNED_SHA" 2>/dev/null || \
+  git -C "$OPENMONTAGE_DIR" fetch --quiet origin || true
+git -C "$OPENMONTAGE_DIR" checkout --quiet "$OPENMONTAGE_PINNED_SHA" || {
+  red "Could not check out the pinned OpenMontage commit ($OPENMONTAGE_PINNED_SHA)."
+  info "The upstream tree may have rewritten history. Re-verify the pipeline table in"
+  info "INSTRUCTIONS.md against the new tree, then set OPENCLAW_OPENMONTAGE_SHA."
+  exit 1
+}
+ACTUAL_SHA="$(git -C "$OPENMONTAGE_DIR" rev-parse HEAD)"
+if [ "$ACTUAL_SHA" != "$OPENMONTAGE_PINNED_SHA" ]; then
+  red "Pinned-SHA checkout mismatch: expected '$OPENMONTAGE_PINNED_SHA', got '$ACTUAL_SHA'"
+  exit 1
+fi
+green "OpenMontage pinned — HEAD verified: $ACTUAL_SHA"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -118,27 +144,62 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 6 — Set a low budget cap in config.yaml
+# Step 6 — WRITE the Rule-Zero budget cap into config.yaml (idempotent, via PyYAML)
 # ---------------------------------------------------------------------------
-echo "--- Step 6: Budget cap configuration ---"
+# FIX-S36-39: the QC gate HARD-fails when budget.mode != cap, so the installer must
+# actually WRITE the required config (not just print an advisory). This idempotently
+# loads any existing config.yaml, sets the budget cap (total_usd <= 5) + approvals +
+# guided checkpoints, and writes it back — preserving every other key. QC stays pure
+# verification.
+echo "--- Step 6: Write Rule-Zero budget cap into config.yaml ---"
 CONFIG_FILE="$OPENMONTAGE_DIR/config.yaml"
-if [ -f "$CONFIG_FILE" ]; then
-  # Check whether budget.mode is already cap
-  if grep -q "mode: cap" "$CONFIG_FILE" 2>/dev/null; then
-    green "config.yaml already has budget.mode: cap"
-  else
-    yellow "config.yaml found but budget.mode is not 'cap'. Manually set:"
-    info "  budget:"
-    info "    mode: cap"
-    info "    total_usd: 5.00"
-    info "    single_action_approval_usd: 0.50"
-    info "    require_approval_for_new_paid_tool: true"
-    info "  checkpoint:"
-    info "    policy: guided"
-  fi
-else
-  yellow "config.yaml not found — make setup may not have generated it. Check the OpenMontage clone."
-fi
+CONFIG_FILE="$CONFIG_FILE" python3 - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
+import os, sys
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("PyYAML is required to write config.yaml (installed by make setup). "
+                     "Run `pip install pyyaml` and re-run install.sh.\n")
+    sys.exit(1)
+
+path = os.environ["CONFIG_FILE"]
+cfg = {}
+if os.path.exists(path):
+    with open(path) as fh:
+        loaded = yaml.safe_load(fh)
+    if isinstance(loaded, dict):
+        cfg = loaded
+    elif loaded is not None:
+        sys.stderr.write("Existing config.yaml is not a YAML mapping; refusing to clobber "
+                         "it. Inspect the OpenMontage clone.\n")
+        sys.exit(1)
+
+budget = cfg.get("budget")
+budget = budget if isinstance(budget, dict) else {}
+# Never RAISE an already-lower client cap; enforce the cap mode + a <= $5 ceiling.
+existing_total = budget.get("total_usd")
+if not isinstance(existing_total, (int, float)) or existing_total > 5:
+    budget["total_usd"] = 5.00
+budget["mode"] = "cap"
+budget.setdefault("single_action_approval_usd", 0.50)
+budget["require_approval_for_new_paid_tool"] = True
+cfg["budget"] = budget
+
+checkpoint = cfg.get("checkpoint")
+checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
+checkpoint["policy"] = "guided"
+cfg["checkpoint"] = checkpoint
+
+# Belt-and-suspenders Kie routing (leaves any existing value alone if already set).
+cfg.setdefault("preferred_provider", "kie")
+
+with open(path, "w") as fh:
+    yaml.safe_dump(cfg, fh, default_flow_style=False, sort_keys=False)
+print(f"     config.yaml written: budget.mode=cap total_usd={cfg['budget']['total_usd']} "
+      f"single_action_approval_usd={cfg['budget']['single_action_approval_usd']} "
+      "checkpoint.policy=guided")
+PYEOF
+green "config.yaml budget cap enforced (mode: cap, total_usd <= 5.00, guided checkpoints)"
 echo ""
 
 # ---------------------------------------------------------------------------

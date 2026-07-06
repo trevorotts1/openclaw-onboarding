@@ -12,18 +12,29 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "books": [
+      "DotCom Secrets (Russell Brunson)",
+      "Copywriting Secrets (Jim Edwards)"
+    ],
     "sections": [
       "DotCom Secrets Secret #6 — Us vs Them & Secret Telling storylines, power of polarity",
       "DotCom Secrets Secret #8 — daily emailing keeps the relationship alive ('if I don't email my list every day, I lose money')",
       "Copywriting Secrets — Takeaway/FOMO close, '9 of 10 buy out of dissatisfaction with current circumstances'"
     ]
   },
+  "source_books": [
+    "DotCom Secrets (Russell Brunson)",
+    "Copywriting Secrets (Jim Edwards)"
+  ],
   "trigger": {
     "primary": "A subscriber on the broadcast segment goes COLD — no email open or click in 30 days (then escalates at 60). Protects sender reputation and revives lapsed buyers.",
     "trigger_type_ghl": "Workflow on email-engagement: when last_email_open is older than 30 days -> Add Tag 'cold-30d' (implemented via a recurring/scheduled workflow checking the last_email_open custom field, or GHL email-event filters)."
   },
-  "channels": ["Email (primary)", "SMS (one nudge on the final takeaway)", "Suppression (final state)"],
+  "channels": [
+    "Email (primary)",
+    "SMS (one nudge on the final takeaway)",
+    "Suppression (final state)"
+  ],
   "sequence": [
     {
       "step": 1,
@@ -56,7 +67,22 @@
   "copyPersona": {
     "primary": "Brunson polarity / Us vs Them ('talkers vs do-ers') + Secret Telling storylines (DCS Secret #6).",
     "secondary": "Edwards Takeaway/FOMO close + 'people buy out of dissatisfaction' — frame the win-back as relief from their unchanged situation.",
-    "scripts": ["Us vs Them", "Secret Telling", "Takeaway selling"]
+    "scripts": [
+      "Us vs Them",
+      "Secret Telling",
+      "Takeaway selling"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Brunson polarity / Us vs Them ('talkers vs do-ers') + Secret Telling storylines (DCS Secret #6).",
+    "supporting": [
+      "Edwards Takeaway/FOMO close + 'people buy out of dissatisfaction' — frame the win-back as relief from their unchanged situation."
+    ],
+    "frameworks": [
+      "Us vs Them",
+      "Secret Telling",
+      "Takeaway selling"
+    ]
   },
   "ghlBuild": {
     "buildType": "A real GoHighLevel WORKFLOW (sequenced win-back drip with a goal exit and a sunset suppression).",
@@ -75,6 +101,11 @@
     "goalEvent": "Trigger-link / Goal on 'Email Opened' or 'Link Clicked' re-routes to the re-engaged branch and removes the cold tag at any step.",
     "notes": "Removing 'seinfeld-broadcast' from non-responders protects daily-send deliverability. Set action order + parentKey before first save (Skill 44)."
   },
-  "kpis": ["reactivation rate (% cold contacts re-engaged)", "deliverability lift after sunset (bounce/spam rate drop)", "win-back revenue", "list-health: active vs sunset ratio"],
+  "kpis": [
+    "reactivation rate (% cold contacts re-engaged)",
+    "deliverability lift after sunset (bounce/spam rate drop)",
+    "win-back revenue",
+    "list-health: active vs sunset ratio"
+  ],
   "faithfulness": "Copy ANGLES (Us vs Them 'talkers vs do-ers', Secret Telling, takeaway selling, 'buy out of dissatisfaction') are taken from DotCom Secrets Secret #6 and Copywriting Secrets. The TRIGGER (no-open-30d) and the sunset suppression are standard email-deliverability practice DERIVED from the books' 'email daily or lose money' + polarity/takeaway principles — flagged as derived, NOT a verbatim Brunson sequence."
 }

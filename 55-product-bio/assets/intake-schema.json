@@ -38,6 +38,25 @@
     "phone": {
       "type": "string",
       "description": "Optional; captured for handoff parity only (dormant in the LLM path)."
+    },
+    "word_count_override": {
+      "description": "Optional LOGGED client-exact override channel (tied to this locked brief). A client's exact word target wins VERBATIM over the SACRED 6,000-7,000 default band and is recorded on the certificate — never floored, capped, or substituted. prove_pb_wordcount.py honors it via --intake; an override applied but not logged here is AF-PB-OVERRIDE-UNLOGGED (fail-closed).",
+      "oneOf": [
+        {"type": "integer", "description": "an exact target word count"},
+        {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2, "description": "[min, max]"},
+        {"type": "object", "properties": {"min": {"type": "integer"}, "max": {"type": "integer"}, "exact": {"type": "integer"}}}
+      ]
+    },
+    "section_count_overrides": {
+      "type": "object",
+      "description": "Optional LOGGED per-section enumerated-count overrides {section_id: band}, honored only for the quantity bands (product_name/power_adjectives/objections/faqs/social_proof). The SACRED STRUCTURE (10 sections, order, 24 named closes, 7 StoryBrand beats) has NO override channel. Same logged-or-fail-closed rule as word_count_override.",
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "integer"},
+          {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+          {"type": "object", "properties": {"min": {"type": "integer"}, "max": {"type": "integer"}, "exact": {"type": "integer"}}}
+        ]
+      }
     }
   }
 }

@@ -118,15 +118,38 @@ _FORM_JOB_TYPES: frozenset = frozenset({"form"})
 def _emit_fab_artifact(evidence_root: str, task: dict, build: dict) -> dict:
     """Producer: emit build/fab-artifact.json from the REAL build so the FAB-QC gate FIRES.
 
-    Only runs on a TEMPLATE-AWARE build — i.e. when STEP 0 wrote routing/match-decision.json.
+    Runs on a TEMPLATE-AWARE build (STEP 0 wrote routing/match-decision.json). Two paths:
+      * ROUTE_TO_ENGINE (FIX-COPY-02): the flagship engine (Skill 49/56) authored the copy
+        in ``copy_ledger.json`` and delegated GHL delivery back here. Echo that copy ledger
+        into the artifact so the >=8.5 copy-substance gate binds on the engine product too.
+      * template-first match: normalise the injected-builder ``build`` result as before.
     Does NOT clobber an artifact a builder/upstream step already emitted. Best-effort: a
     failure here never blocks the build (the overlay simply stays a no-op as before)."""
     if _fabart is None:
         return {"emitted": False, "reason": "fab_artifact unavailable"}
-    md = os.path.join(evidence_root, "routing", "match-decision.json")
-    if not os.path.isfile(md):
+    md_path = os.path.join(evidence_root, "routing", "match-decision.json")
+    if not os.path.isfile(md_path):
         return {"emitted": False, "reason": "no match-decision receipt (build is not template-aware)"}
     try:
+        md = {}
+        try:
+            with open(md_path, encoding="utf-8") as f:
+                md = json.load(f) or {}
+        except Exception:  # noqa: BLE001 — a malformed receipt just falls through
+            md = {}
+        route = str(md.get("flex_decision") or md.get("route") or "")
+        # ENGINE path: echo the engine copy_ledger.json (the copy the engine authored).
+        if route == "ROUTE_TO_ENGINE" and hasattr(_fabart, "build_funnel_artifact_from_copy_ledger"):
+            for rel in ("copy_ledger.json",
+                        os.path.join("build", "copy_ledger.json"),
+                        os.path.join("routing", "copy_ledger.json")):
+                cl_path = os.path.join(evidence_root, rel)
+                if os.path.isfile(cl_path):
+                    with open(cl_path, encoding="utf-8") as f:
+                        copy_ledger = json.load(f)
+                    artifact = _fabart.build_funnel_artifact_from_copy_ledger(copy_ledger, md)
+                    return _fabart.emit(evidence_root, artifact)
+            # engine-routed but no ledger on disk yet — fall through to the build normaliser
         artifact = _fabart.build_funnel_artifact(task, build)
         return _fabart.emit(evidence_root, artifact)
     except Exception as exc:  # noqa: BLE001

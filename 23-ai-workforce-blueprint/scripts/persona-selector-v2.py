@@ -2254,6 +2254,69 @@ def _assert_persona_categories_canonical(paths: dict) -> None:
         )
 
 
+# ─── F3.2: --strict degradation signalling (exit code contract) ──────────────
+# Shell consumers (QC gates, fleet heartbeat probes) need to distinguish a
+# genuine task-matched persona from a DEGRADED outcome without parsing JSON.
+# The Command Center spawns this selector and reads JSON only, so the DEFAULT
+# (non-strict) behaviour MUST stay exit 0 for every successful/mechanical
+# result — back-compat is load-bearing. `--strict` opts a caller into a
+# non-zero signal (STRICT_DEGRADED_EXIT) purely for monitoring.
+STRICT_DEGRADED_EXIT = 3
+
+
+def _selection_is_degraded(result) -> bool:
+    """True iff a SELECT-mode result signals persona degradation that a
+    ``--strict`` consumer should treat as a non-zero (alertable) outcome.
+
+    Degradation signals (any one):
+      • ``warning == "NO_PERSONAS_AVAILABLE"`` — empty persona universe (A1;
+        fresh box, or categories clobbered per F2.1).
+      • a fallback tier was used — F3.1 tags the last-resort default persona
+        with a top-level ``fallback`` value and/or ``persona_mode == "fallback"``.
+        (The nested LLM-scoring provider fallback in ``layers._llm_meta`` is a
+        DIFFERENT concept — a healthy match may score via OpenRouter/Gemini —
+        and is deliberately NOT consulted here.)
+
+    NOT degraded (stay exit 0 by design):
+      • ``no_persona_required`` mechanical tasks — a truthful contract, not a
+        failure.
+      • ``LOW_CONFIDENCE_SELECTION`` — a real, if weak, task match.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("warning") == "NO_PERSONAS_AVAILABLE":
+        return True
+    if result.get("fallback"):
+        return True
+    if result.get("persona_mode") == "fallback":
+        return True
+    return False
+
+
+def _combined_is_degraded(result) -> bool:
+    """True iff a COMBINED (``--combined``) result contains a NAKED sub-task —
+    a real (non-mechanical) sub-task that resolved to no persona — or the
+    top-level result itself carries a select-mode degradation signal.
+    A per-sub-task ``no_persona_required`` part is NOT naked (mechanical steps
+    legitimately need no persona)."""
+    if not isinstance(result, dict):
+        return False
+    if _selection_is_degraded(result):
+        return True
+    for part in result.get("plan") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("persona_id") is None and not part.get("no_persona_required"):
+            return True
+    return False
+
+
+def _strict_exit(strict: bool, degraded: bool) -> int:
+    """Map a degradation verdict to a process exit code under the --strict
+    contract. Non-strict callers ALWAYS get 0 (back-compat)."""
+    return STRICT_DEGRADED_EXIT if (strict and degraded) else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
     parser.add_argument("--mode", default="select",
@@ -2292,6 +2355,17 @@ def main():
                              "sops.persona_hints. UNIONed into the candidate pool "
                              "(never-to-zero, department-agnostic) and given a bounded "
                              "additive bonus. Non-installed ids are ignored.")
+    # ── F3.2: strict degradation exit code ───────────────────────────────────
+    parser.add_argument("--strict", action="store_true",
+                        help="Select mode only: exit "
+                             f"{STRICT_DEGRADED_EXIT} (instead of 0) when the "
+                             "selection is DEGRADED — NO_PERSONAS_AVAILABLE or a "
+                             "fallback persona was used (and, under --combined, "
+                             "any non-mechanical sub-task got no persona). The "
+                             "JSON on stdout is UNCHANGED; only the exit code "
+                             "differs. Default (non-strict) always exits 0 for a "
+                             "successful/mechanical result (Command Center "
+                             "back-compat). For QC gates & fleet heartbeat probes.")
     # ── W6 combined / per-subtask personas (spec §6, item 8) ─────────────────
     # When --combined is set, the task is DECOMPOSED into ordered sub-tasks and
     # EACH sub-task gets its OWN best-fit persona, with the specialist-surfacing
@@ -2427,7 +2501,7 @@ def main():
         result.setdefault("db", db_field)
         print(json.dumps(result, indent=2) if args.format == "json"
               else _dt._format_human(result))
-        return 0
+        return _strict_exit(args.strict, _combined_is_degraded(result))
 
     # SOP-aware composite query (F3.4 / F4.2). Fold the governing SOP name/steps/
     # slug into the task text and parse the persona_hints list. When no --sop-*
@@ -2535,6 +2609,12 @@ def main():
             # documented contract exactly like the sticky path.
             "funnel": leader.get("funnel", {"pool": 0, "category": 0, "semantic": 0}),
         }
+        # F3.2: the hybrid dict is assembled by hand from the LEADER's result,
+        # which drops the leader's degradation `warning` (e.g. NO_PERSONAS_AVAILABLE
+        # on an empty box). Forward it so `--strict` sees the same signal the
+        # non-hybrid path already carries.
+        if leader.get("warning") and "warning" not in out:
+            out["warning"] = leader["warning"]
     else:
         out = select_persona(args.task, args.department, mode, weights, paths, db_path,
                              variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
@@ -2551,7 +2631,7 @@ def main():
     if not args.no_record:
         record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")
-    return 0
+    return _strict_exit(args.strict, _selection_is_degraded(out))
 
 
 if __name__ == "__main__":

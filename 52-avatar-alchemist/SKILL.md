@@ -1,7 +1,7 @@
 ---
 name: avatar-alchemist
 description: Turns one completed brand-intake interview into the full brand-intelligence package — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, Facebook Ads with 13 ad sets, Booking Bots, Landing/Hero) → 16 named deliverables (37 documents), delivered as labeled markdown in ~/Downloads. Fully local: no n8n, no Airtable, no Google Drive, no Slack/Gmail — the client's own model providers only, never Anthropic. A Book/Brand version selector runs FIRST: version=brand runs this 40-stage pipeline; version=book routes to the separate Avatar Alchemist Book skill (53) or parks fail-closed "book-skill-not-available". Every process rule is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed provenance certificate. Trigger with "run avatar alchemist", "brand intelligence package", "build my avatar documents", or "avatar alchemist for <brand>".
-version: 1.2.0
+version: 1.4.0
 ---
 
 # Avatar Alchemist — Brand Intelligence Engine (Skill 52)
@@ -49,6 +49,18 @@ on the **client's own providers** (the disconnected `o3` orphan is dropped).
 The tone subsystem is the canonical **shared tone/writing core** at
 `shared-utils/tone-writing-core/` — the same module skills 53 (Book) and 54 (Anthology)
 reference. This skill bakes a lockstep copy and proves it with `verify_tone_core_sync.py`.
+
+> **Terminology — an "avatar" here is a buyer/customer persona, NOT a coaching persona.**
+> The word *persona* means three unrelated things across the system, and this skill deals with
+> two of them. (1) The **avatar** this skill builds (subsystem (a) Avatar Intelligence Core) is a
+> **buyer/customer persona** — the target-market profile the copy is written *for*. It is NOT the
+> **coaching/leadership persona** (concept 2 — the 81-persona `coaching-personas` library matched
+> per task at runtime by the persona selector, governed by
+> `23-ai-workforce-blueprint/persona-matching-protocol.md`). (2) The tone-style slots
+> (`tone_style_1..4`, subsystem (d)) are named voice references, also distinct from the canonical
+> coaching-persona library. Never route this skill's customer avatar through the coaching-persona
+> selector, and never treat a matched coaching persona as a customer avatar. See `TERMINOLOGY.md`
+> → "Persona — three distinct meanings".
 
 ## How it runs — one governed path, never a second build path
 

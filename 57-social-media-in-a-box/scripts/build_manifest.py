@@ -119,7 +119,14 @@ def check_provenance(calls):
 
 
 def check_no_anthropic(calls):
-    """Every recorded model/provider call must be non-Anthropic (G-NOANTHROPIC)."""
+    """Every recorded model/provider call must be non-Anthropic (G-NOANTHROPIC).
+
+    Two independent tests: (1) the regex over "<model> <provider>" catches
+    claude-* / anthropic/claude-* / sk-ant- / @anthropic-ai/ / bedrock ids; and
+    (2) an EXACT provider-FIELD test — `{"provider":"anthropic"}` (or "claude")
+    paired with a NON-claude model id (e.g. a bare model name) sails past the
+    regex, so the provider field is matched directly. Either trip is a hard
+    AF-SM-NOANTHROPIC (fail-closed)."""
     fails = []
     models = []
     for c in calls or []:
@@ -131,6 +138,11 @@ def check_no_anthropic(calls):
         blob = "%s %s" % (model, provider)
         if _ANTHROPIC_RE.search(blob):
             fails.append((AF_NOANTHROPIC, "call %r used an Anthropic model/provider" % c.get("step", "?")))
+        elif provider.strip().lower() in ("anthropic", "claude"):
+            # exact provider-field match (the regex misses a bare {provider:"anthropic"}
+            # carrying a non-claude model id) — still a client-path Anthropic call.
+            fails.append((AF_NOANTHROPIC, "call %r declares provider %r (exact provider-field match)"
+                          % (c.get("step", "?"), provider)))
     return fails, models
 
 
@@ -246,6 +258,15 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
 
     creative = _creative_block(run_dir, cfg, logged_overrides, client_copy_shas)
 
+    # FIX-XC-11h: record WHERE the run's labeled local deliverables landed. The
+    # P-DELIVER checker (run_social_media._chk_deliver) shells label_deliverables.py
+    # --copy and writes delivery/deliverables-manifest.json with a deterministic
+    # LOGICAL dest_root (the ~/Downloads convention, never a physical temp path).
+    # Absent (fold/plan/engage modes that ship no local media) -> None. Recorded on
+    # the certificate but NOT bound into certificate_sha (it is provenance, not a gate).
+    deliver_rec = _read_json(run_dir / "delivery" / "deliverables-manifest.json", {}) or {}
+    deliverable_dest_root = deliver_rec.get("dest_root") if isinstance(deliver_rec, dict) else None
+
     manifest = {
         "schema": "social-media-process-certificate-v1",
         "skill": "social-media-in-a-box", "skill_number": 57,
@@ -262,6 +283,7 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
         "creative": creative,
         "overrides_logged_ok": not ov_fails,
         "client_copy_verbatim_ok": not cc_fails,
+        "deliverable_dest_root": deliverable_dest_root,
         "signer": signer,
         "deploy_mode": "publish-on-cert",
         "failures": [{"code": c, "message": m} for c, m in fails],
@@ -280,6 +302,26 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
     return manifest, fails
 
 
+def _canonical_persona(run_dir):
+    """The C10 adapter's resolved canonical persona for the certificate, or None
+    for the baseline (config) path. Compact shape — id, name, source, mode — read
+    from working/copy/persona-selection.json (written by persona_adapter.py)."""
+    sel = _read_json(Path(run_dir) / "working" / "copy" / "persona-selection.json")
+    if not isinstance(sel, dict) or sel.get("error"):
+        return None
+    pid = sel.get("persona_id")
+    gov = sel.get("governance_persona_id")
+    if not pid and not gov:
+        return None
+    return {
+        "persona_id": pid,
+        "persona_name": sel.get("persona_name"),
+        "persona_source": sel.get("source"),
+        "no_persona_required": bool(sel.get("no_persona_required")),
+        "governance_persona_id": gov,
+    }
+
+
 def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
     """The signed certificate's `creative` block (§6 step 6). Proves the client got
     EXACTLY what they asked for: mode, brief sha, theme source, per-band logged
@@ -290,7 +332,7 @@ def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
     brief_sha = None
     if isinstance(brief, (dict, list)):
         brief_sha = hashlib.sha256(json.dumps(brief, sort_keys=True).encode("utf-8")).hexdigest()
-    return {
+    block = {
         "mode": cre.get("mode"),
         "theme_source": cre.get("theme_source"),
         "brief_sha": brief_sha,
@@ -302,6 +344,14 @@ def _creative_block(run_dir, cfg, logged_overrides, client_copy_shas):
         "arc_template": cfg.get("arcTemplate", "tv-season"),
         "style_pick": cfg.get("stylePick"),
     }
+    # F4.3 — surface the C10-adapter's resolved canonical persona on the certificate
+    # WHEN one was resolved (personaSource:adapter/client-choice). The baseline
+    # personaSource:config path writes no persona-selection.json, so this key is
+    # ABSENT there and a default week's creative block stays byte-for-byte identical.
+    cp = _canonical_persona(run_dir)
+    if cp:
+        block["canonical_persona"] = cp
+    return block
 
 
 def _write_certificate(run_dir, manifest):
@@ -328,6 +378,9 @@ def _write_certificate(run_dir, manifest):
                 manifest["creative"].get("persona_source"), manifest["creative"].get("em_dash_policy"),
                 manifest["creative"].get("series_length"), manifest["creative"].get("arc_template")),
             "- **Models used:** %s" % ", ".join(manifest["models_used"] or ["(none recorded)"]),
+        ] + ([
+            "- **Labeled deliverables dest root:** `%s`" % manifest["deliverable_dest_root"],
+        ] if manifest.get("deliverable_dest_root") else []) + [
             "- **Certificate SHA:** `%s`" % manifest["certificate_sha"],
             "",
             "Issued by `build_manifest.py`. The publisher (P7) refuses to run without this "
@@ -458,6 +511,12 @@ def self_test():
     cf("required-gate-absent", g, good_calls, good_cfg, AF_PROCESS)
     bad_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "claude-opus-4-8"}]
     cf("anthropic-call", good_gates, bad_calls, good_cfg, AF_NOANTHROPIC)
+    # FIX-XC-09c: a bare {provider:"anthropic"} carrying a NON-claude model id sails
+    # past the regex; the exact provider-FIELD test must still trip AF-SM-NOANTHROPIC.
+    field_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "some-internal-model"}]
+    cf("anthropic-provider-field", good_gates, field_calls, good_cfg, AF_NOANTHROPIC)
+    field_calls2 = good_calls + [{"step": "rogue", "provider": "Claude", "model": "gpt-x"}]
+    cf("claude-provider-field", good_gates, field_calls2, good_cfg, AF_NOANTHROPIC)
     agency_cfg = {"brandName": "Agency", "mode": "agency",
                   "roster": [{"pit": "pit-a", "locationId": "loc1"}, {"pit": "pit-a", "locationId": "loc2"}]}
     cf("agency-shared-pit", good_gates, good_calls, agency_cfg, AF_AGENCY)

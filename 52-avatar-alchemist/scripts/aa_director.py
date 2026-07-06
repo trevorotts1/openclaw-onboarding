@@ -245,20 +245,90 @@ def _park(run_dir: Path, sid: str, reason: str) -> None:
     print(f"PARKED at {sid}: {reason} (see PARKED.json)")
 
 
-def _model_hint(stage: Dict[str, Any]) -> str:
-    """Map the stage's declared tier to a provider-agnostic model HINT the
-    adapter may honor. The tier lives in the manifest; the concrete id is the
-    client box's own choice — this is only a hint, never a hardcoded Anthropic id."""
+# FIX-XC-09f — model-map is CONSUMED here (it used to be written by preflight.sh
+# and read by nothing). At dispatch time the foreman loads the box's own
+# model-map.json (the CLIENT's configured provider tiers, minted by preflight.sh
+# from the box's real OpenClaw config — NEVER Anthropic), resolves each stage's
+# declared tier (A/B/SEARCH) to the box's concrete model id, defaults the
+# provider cap from provider_caps.concurrent (the fleet <=3-Ollama provisioning
+# rule, not the old hardcoded 10), and records the resolved tier ids in
+# RUN-LEDGER.json so provenance shows the ACTUAL model each stage was routed to.
+DEFAULT_PROVIDER_CAP = 3  # fleet Ollama-only provisioning rule when no model-map resolves a cap (never 10)
+_ABSTRACT_TIER_HINT = {"A": "tier-a", "B": "tier-b", "SEARCH": "tier-search"}
+
+
+def load_model_map(run_dir: Optional[Path], root: Path) -> Optional[Dict[str, Any]]:
+    """Locate + load the box's model-map.json (written by preflight.sh from the
+    CLIENT's own configured providers). Search order: $AA_MODEL_MAP, then
+    <run-dir>/model-map.json, then <skill-root>/model-map.json. Returns the parsed
+    map (with a `_source` key added) or None when the box has no map yet (the
+    foreman then falls back to abstract tier hints + the conservative default cap).
+    Defense-in-depth: a map carrying an Anthropic-shaped tier id is REFUSED here
+    (raises) — preflight already bans it, but the consumer never trusts that."""
+    candidates: List[Path] = []
+    env_path = os.environ.get("AA_MODEL_MAP")
+    if env_path:
+        candidates.append(Path(env_path))
+    if run_dir is not None:
+        candidates.append(run_dir / "model-map.json")
+    candidates.append(root / "model-map.json")
+    for p in candidates:
+        if not p.is_file():
+            continue
+        try:
+            mm = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for tier, tid in (mm.get("tiers") or {}).items():
+            if _ANTHROPIC_ID_RE.search(str(tid)):
+                raise ValueError(
+                    f"AF-AV-NOANTHROPIC: model-map tier {tier}={tid!r} matches the Anthropic ban "
+                    f"(client-path rule) — refusing to consume {p}")
+        mm["_source"] = str(p)
+        return mm
+    return None
+
+
+def _provider_cap_from_map(mm: Optional[Dict[str, Any]]) -> int:
+    """Default the provider cap from the model-map's provider_caps.concurrent
+    (the box's own Ollama-only <=3 rule). Absent a map, fall back to the
+    conservative fleet default — NEVER the old hardcoded 10."""
+    if mm:
+        try:
+            c = int((mm.get("provider_caps") or {}).get("concurrent"))
+            if c > 0:
+                return c
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_PROVIDER_CAP
+
+
+def _resolve_tier_id(stage: Dict[str, Any], model_map: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+    """Resolve the stage's declared tier (A/B/SEARCH) to (tier_letter, model_id).
+    With a model-map present the tier resolves to the box's OWN concrete id (the
+    client's configured provider, never a hardcoded Anthropic id); absent a map the
+    id is the abstract 'tier-a' hint the adapter may honor (unchanged legacy seam)."""
     tier = str(stage.get("tier", "") or (stage.get("model") or {}).get("tier", "")).upper()
-    return {"A": "tier-a", "B": "tier-b", "SEARCH": "tier-search"}.get(tier, "")
+    abstract = _ABSTRACT_TIER_HINT.get(tier, "")
+    if model_map:
+        tiers = model_map.get("tiers") or {}
+        resolved = str(tiers.get(tier, "") or "").strip()
+        if resolved:
+            return tier, resolved
+    return tier, abstract
 
 
 def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
                  dispatch_cmd: Optional[str], apply_repairs: bool, provider_cap: int,
                  fast_ads: bool, resume: bool, online_links: bool,
-                 key: Optional[bytes], root: Optional[Path] = None) -> int:
+                 key: Optional[bytes], root: Optional[Path] = None,
+                 model_map: Optional[Dict[str, Any]] = None) -> int:
     """Execute the full wave schedule. Returns 0 on a complete dispatch, 2 on a
-    precedence/provider violation, 4 on a PARK (recovery exhausted)."""
+    precedence/provider violation, 4 on a PARK (recovery exhausted).
+
+    FIX-XC-09f: when `model_map` is provided each stage's declared tier resolves
+    to the box's concrete model id (passed to the adapter as the model hint) and
+    the resolved tier ids + the provider cap source are recorded in RUN-LEDGER.json."""
     root = root or _skill_root()
     stages_by_id = {s["stage_id"]: s for s in manifest["stages"]}
     intake_path = run_dir / "intake.json"
@@ -277,6 +347,15 @@ def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
     led["apply_repairs"] = bool(apply_repairs)
     led.setdefault("run_id", run_dir.name)
     led.setdefault("stages", {})
+    # FIX-XC-09f: pin the resolved model-map + provider cap into the ledger so the
+    # run's provenance shows the ACTUAL provider tiers dispatch routed to (or that
+    # the box had no map and the conservative fallback cap was used).
+    led["model_map"] = {
+        "source": (model_map or {}).get("_source"),
+        "tiers": (model_map or {}).get("tiers") or {},
+        "provider_cap": int(provider_cap),
+        "provider_cap_source": "model-map.provider_caps.concurrent" if model_map else "fleet-default",
+    }
 
     waves = compute_waves(manifest["stages"], fast_ads)
     dispatched = 0
@@ -299,7 +378,10 @@ def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
                 artifacts = {p.stem: p.read_text(encoding="utf-8") for p in art_dir.glob("*.md")}
                 prompt = compose_prompt(root, sid, intake, artifacts, apply_repairs,
                                         depends_on=stage["depends_on"])
-                hint = _model_hint(stage)
+                # FIX-XC-09f: resolve this stage's declared tier to the box's OWN
+                # concrete model id (from model-map.json) and pass THAT to the
+                # adapter; absent a map, the abstract 'tier-a' hint is used.
+                tier_letter, hint = _resolve_tier_id(stage, model_map)
                 text: Optional[str] = None
                 model = ""
                 last_err = ""
@@ -330,7 +412,14 @@ def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
                 if key is not None:
                     rec["sig"] = _receipt_sig(key, rec)
                 (rec_dir / f"G-STAGE-{sid}.json").write_text(json.dumps(rec, indent=2) + "\n", encoding="utf-8")
-                led["stages"][sid] = {"model": model, "receipt": True}
+                # FIX-XC-09f: record BOTH the resolved tier id the stage was routed
+                # to (from model-map) AND the real model id the adapter returned.
+                led["stages"][sid] = {
+                    "tier": tier_letter,
+                    "resolved_tier_id": hint,
+                    "model": model,
+                    "receipt": True,
+                }
                 led_path.write_text(json.dumps(led, indent=2) + "\n", encoding="utf-8")
                 dispatched += 1
                 # stage-02 completion -> the (fail-soft) links gate; --online only
@@ -646,6 +735,71 @@ def _dispatch_self_test() -> bool:
             ok = False
             print(f"SELF-TEST FAIL: recovery exhaustion did not park (rc={rce}, parked={parkede.exists()}).")
 
+        # (5) FIX-XC-09f: the model-map is CONSUMED at dispatch. A run with a
+        #     model-map resolves each stage's tier (A/B) to the box's concrete id,
+        #     defaults the provider cap from provider_caps.concurrent, and records
+        #     BOTH the resolved tier ids and the cap source in RUN-LEDGER.json.
+        mm = {
+            "tiers": {"A": "ollama-cloud/qwen3-235b", "B": "openrouter/deepseek-chat",
+                      "SEARCH": "box-web-search"},
+            "provider_caps": {"concurrent": 3},
+        }
+        mini2 = {"manifest_version": "selftest-xc09f", "stages": [
+            {"stage_id": "01-alpha", "depends_on": [], "tier": "A", "recovery": "auto", "max_fix_attempts": 2},
+            {"stage_id": "02-beta", "depends_on": ["01-alpha"], "tier": "B", "recovery": "auto", "max_fix_attempts": 2},
+        ]}
+        rdm = _mkrun("modelmap")
+        keym = bytes.fromhex((rdm / ".foreman-key").read_text().strip())
+        capm = _provider_cap_from_map(mm)
+        rcm = run_dispatch(mini2, rdm, dispatch_cmd=good, apply_repairs=False, provider_cap=capm,
+                           fast_ads=False, resume=False, online_links=False, key=keym, root=troot,
+                           model_map=mm)
+        ledm = json.loads((rdm / "RUN-LEDGER.json").read_text())
+        cap_ok = capm == 3 and ledm.get("model_map", {}).get("provider_cap") == 3
+        src_ok = ledm.get("model_map", {}).get("provider_cap_source") == "model-map.provider_caps.concurrent"
+        tiers_ok = (ledm["stages"]["01-alpha"].get("resolved_tier_id") == "ollama-cloud/qwen3-235b"
+                    and ledm["stages"]["01-alpha"].get("tier") == "A"
+                    and ledm["stages"]["02-beta"].get("resolved_tier_id") == "openrouter/deepseek-chat"
+                    and ledm["stages"]["02-beta"].get("tier") == "B")
+        if rcm == 0 and cap_ok and src_ok and tiers_ok:
+            print("SELF-TEST ok: (FIX-XC-09f) model-map CONSUMED — provider cap defaulted from "
+                  "provider_caps.concurrent (=3, not 10), each stage tier resolved to the box's "
+                  "concrete id, resolved tier ids recorded in RUN-LEDGER.json.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: model-map not consumed as expected (rc={rcm}, cap_ok={cap_ok}, "
+                  f"src_ok={src_ok}, tiers_ok={tiers_ok}).")
+
+        # (6) FIX-XC-09f: absent a model-map the cap falls back to the conservative
+        #     fleet default (3), NEVER the old hardcoded 10, and tiers resolve to the
+        #     abstract hint (unchanged legacy seam).
+        _t, abstract = _resolve_tier_id({"tier": "A"}, None)
+        if _provider_cap_from_map(None) == DEFAULT_PROVIDER_CAP == 3 and abstract == "tier-a":
+            print("SELF-TEST ok: (FIX-XC-09f) no model-map -> cap falls back to the fleet default "
+                  f"({DEFAULT_PROVIDER_CAP}), tier resolves to the abstract hint (legacy seam intact).")
+        else:
+            ok = False
+            print("SELF-TEST FAIL: model-map-absent fallback wrong "
+                  f"(cap={_provider_cap_from_map(None)}, abstract={abstract!r}).")
+
+        # (7) FIX-XC-09f: a model-map carrying an Anthropic-shaped tier id is REFUSED
+        #     by the consumer (defense-in-depth on the client-path ban), read from disk.
+        rda2 = _mkrun("mm-anthropic")
+        (rda2 / "model-map.json").write_text(json.dumps(
+            {"tiers": {"A": "anthropic/claude-3-5-sonnet"}, "provider_caps": {"concurrent": 3}}),
+            encoding="utf-8")
+        refused = False
+        try:
+            load_model_map(rda2, troot)
+        except ValueError as exc:
+            refused = "NOANTHROPIC" in str(exc)
+        if refused:
+            print("SELF-TEST ok: (FIX-XC-09f) a model-map with an Anthropic-shaped tier id is REFUSED "
+                  "by load_model_map (AF-AV-NOANTHROPIC, client-path ban).")
+        else:
+            ok = False
+            print("SELF-TEST FAIL: an Anthropic-tainted model-map was not refused by the consumer.")
+
     return ok
 
 
@@ -806,7 +960,9 @@ def main(argv) -> int:
     ap.add_argument("--fast-ads", action="store_true", help="collapse the ad-set harmony chain (fidelity trade-off, OFF by default)")
     ap.add_argument("--apply-repairs", action="store_true",
                     help="OPT IN to source repairs R1-R6 (default OFF = faithful to the live workflow). R7 Anthropic ban is always on.")
-    ap.add_argument("--provider-cap", type=int, default=10, help="max concurrent authors (Ollama-only boxes cap 3)")
+    ap.add_argument("--provider-cap", type=int, default=None,
+                    help="max concurrent authors; DEFAULT resolves from model-map.json "
+                         "provider_caps.concurrent (fleet Ollama-only boxes cap 3), never a hardcoded 10")
     ap.add_argument("--execute", action="store_true",
                     help="RUN the real dispatch loop (compose prompts, dispatch to the client model, "
                          "write artifacts + HMAC-signed receipts + ledger rows). Without it, the gates "
@@ -828,8 +984,19 @@ def main(argv) -> int:
 
     if args.self_test:
         return run_self_test(manifest)
+
+    # FIX-XC-09f: load the box's model-map (consumed HERE, not by preflight alone)
+    # and resolve the effective provider cap from provider_caps.concurrent when the
+    # operator did not pass --provider-cap (fleet Ollama-only <=3 rule, never 10).
+    try:
+        model_map = load_model_map(Path(args.run_dir) if args.run_dir else None, _skill_root())
+    except ValueError as exc:
+        print(f"REFUSED: {exc}")
+        return 2
+    effective_cap = args.provider_cap if args.provider_cap is not None else _provider_cap_from_map(model_map)
+
     if args.plan or args.dry_run:
-        return _print_plan(manifest, args.fast_ads, args.provider_cap, args.apply_repairs)
+        return _print_plan(manifest, args.fast_ads, effective_cap, args.apply_repairs)
     if args.status:
         led = Path(args.run_dir or ".") / "RUN-LEDGER.json"
         if not led.is_file():
@@ -916,10 +1083,14 @@ def main(argv) -> int:
         print("REFUSED: --execute requires the per-run foreman key (<run-dir>/.foreman-key, minted by "
               "entry.sh) so stage receipts can be HMAC-signed.")
         return 2
+    src = "model-map.provider_caps.concurrent" if (args.provider_cap is None and model_map) else \
+          ("--provider-cap flag" if args.provider_cap is not None else "fleet default (no model-map)")
+    print(f"provider-cap = {effective_cap} (source: {src}); "
+          f"model-map: {model_map.get('_source') if model_map else 'none — abstract tier hints'}.")
     rc = run_dispatch(manifest, run_dir, dispatch_cmd=args.dispatch_cmd,
-                      apply_repairs=bool(args.apply_repairs), provider_cap=args.provider_cap,
+                      apply_repairs=bool(args.apply_repairs), provider_cap=effective_cap,
                       fast_ads=args.fast_ads, resume=bool(args.resume),
-                      online_links=bool(args.online_links), key=key)
+                      online_links=bool(args.online_links), key=key, model_map=model_map)
     if rc == 0:
         print("Dispatch loop finished. Run aa_delivery_gate.py to certify + deliver.")
     return rc

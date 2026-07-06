@@ -237,6 +237,196 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
     return violations, notes
 
 
+# ===========================================================================
+# FIX-IMG-07 — COVERAGE (the --structure mode).
+# ---------------------------------------------------------------------------
+# The two-floor gate above proves each prompt that IS present is rich enough. It
+# says nothing about whether the ledger is COMPLETE: a 2-prompt ledger for a
+# 12-section, 5-page funnel cleared P2, and a 2-image media ledger certified a
+# ~40-image funnel. This mode cross-checks the prompt ledger AND the media ledger
+# against the REQUIRED (page_type, section) image set derived deterministically
+# from structure/funnel_structure.json (profiles + funnel_matrix) + the brief's
+# funnel_size, per MASTERDOC §4 (every numbered copy section carries one signature
+# image; the Thank-You page carries one celebratory hero; the Checkout order page
+# carries none). Missing pairs fail closed:
+#   * a prompt ledger missing a required slot  -> AF-FUN-PROMPT-COVERAGE
+#   * a media ledger missing a required slot    -> AF-FUN-IMG-COVERAGE
+# ===========================================================================
+
+# A page-level requirement (">= 1 image on this page, no per-section split") is
+# carried as this sentinel section key so thank-you/one-hero pages are honored.
+ANY_IMAGE = "*"
+
+
+class StructureError(Exception):
+    """Raised when the funnel structure / size cannot resolve -> fail-closed (exit 3)."""
+
+
+def _default_structure_path() -> Path:
+    """structure/funnel_structure.json beside the skill (mirror of prove_sf_graph)."""
+    return Path(__file__).resolve().parent.parent / "structure" / "funnel_structure.json"
+
+
+def load_structure(structure_path: Optional[Path] = None) -> Dict[str, Any]:
+    path = structure_path or _default_structure_path()
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StructureError(f"cannot load funnel structure {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise StructureError(f"funnel structure {path} is not a JSON object")
+    return data
+
+
+def _norm_section(sec: Any) -> str:
+    return str(sec).strip()
+
+
+def required_image_pairs(size: Any,
+                         structure: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """The ordered required (page_type, section_key) image set for a funnel size.
+
+    section_key is str(section) for a numbered copy section, or ANY_IMAGE ('*')
+    for a page that requires >= 1 image with no per-section split (Thank-You). A
+    page whose policy declares zero images (Checkout order page) contributes none.
+    Source of truth: funnel_matrix[size] (which pages) + profiles[page].sections
+    (which sections) + the image_coverage.page_policies overrides — all in
+    structure/funnel_structure.json, per MASTERDOC §4."""
+    matrix = structure.get("funnel_matrix")
+    if not isinstance(matrix, dict) or not matrix:
+        raise StructureError("funnel_structure.json carries no funnel_matrix")
+    key = str(size)
+    pages = matrix.get(key)
+    if not isinstance(pages, list) or not pages:
+        raise StructureError(
+            f"funnel_size {size!r} is not a matrix key (known sizes: "
+            f"{sorted(k for k in matrix if k.isdigit())})")
+    profiles = structure.get("profiles") if isinstance(structure.get("profiles"), dict) else {}
+    coverage = structure.get("image_coverage") if isinstance(structure.get("image_coverage"), dict) else {}
+    page_policies = coverage.get("page_policies") if isinstance(coverage.get("page_policies"), dict) else {}
+
+    pairs: List[Tuple[str, str]] = []
+    for raw_page in pages:
+        page = str(raw_page).strip()
+        if not page:
+            continue
+        profile = profiles.get(page) if isinstance(profiles.get(page), dict) else {}
+        policy = page_policies.get(page) if isinstance(page_policies.get(page), dict) else None
+        # 1) explicit per-page policy wins (unless it re-opts into per_section).
+        if policy is not None and not policy.get("per_section", False):
+            try:
+                min_images = int(policy.get("min_images", 0))
+            except (TypeError, ValueError):
+                min_images = 0
+            if min_images >= 1:
+                pairs.append((page, ANY_IMAGE))
+            continue  # min_images == 0 -> no image required (e.g. checkout)
+        # 2) a page with numbered copy sections -> one image per section.
+        sections = profile.get("sections")
+        if isinstance(sections, list) and sections:
+            for sec in sections:
+                pairs.append((page, _norm_section(sec)))
+            continue
+        # 3) a section-less page: thank-you (one hero) needs >= 1; a microcopy-only
+        #    order page needs none; anything else defensively needs >= 1.
+        if profile.get("thank_you"):
+            pairs.append((page, ANY_IMAGE))
+        elif profile.get("microcopy_only"):
+            continue
+        else:
+            pairs.append((page, ANY_IMAGE))
+    return pairs
+
+
+def _index_records(records: List[Any]) -> Tuple[set, set]:
+    """(present (page_type, section) pairs, present page_types) for a record list."""
+    pairs: set = set()
+    pages: set = set()
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        page = str(rec.get("page_type", "")).strip()
+        if not page:
+            continue
+        pages.add(page)
+        sec = rec.get("section")
+        if sec is not None and str(sec).strip():
+            pairs.add((page, _norm_section(sec)))
+    return pairs, pages
+
+
+def coverage_violations(required: List[Tuple[str, str]],
+                        records: List[Any],
+                        af_code: str,
+                        kind: str) -> List[Tuple[str, str]]:
+    """List the required image slots that `records` does NOT cover. A concrete
+    (page, section) requirement is met by a matching record; an ANY_IMAGE
+    requirement is met by ANY record on that page."""
+    present_pairs, present_pages = _index_records(records)
+    missing: List[str] = []
+    for page, sec in required:
+        if sec == ANY_IMAGE:
+            if page not in present_pages:
+                missing.append(f"{page}:<any-image>")
+        elif (page, sec) not in present_pairs:
+            missing.append(f"{page}:{sec}")
+    if missing:
+        return [(af_code,
+                 f"the {kind} ledger is missing {len(missing)} of {len(required)} required image "
+                 f"slot(s) per MASTERDOC §4 (a partial ledger can never certify a full funnel) — "
+                 f"missing: {', '.join(missing)}")]
+    return []
+
+
+def verify_structure(size: Any,
+                     ledger: Dict[str, Any],
+                     structure: Optional[Dict[str, Any]] = None
+                     ) -> Tuple[List[Tuple[str, str]], List[str]]:
+    """Coverage cross-check for one ledger. Auto-detects kind by content:
+    a `prompts` array is checked for AF-FUN-PROMPT-COVERAGE; an `images` array for
+    AF-FUN-IMG-COVERAGE; a ledger carrying both is checked for both. A ledger with
+    neither array is a fail-closed usage error (raised by the caller)."""
+    structure = structure if structure is not None else load_structure()
+    required = required_image_pairs(size, structure)
+    violations: List[Tuple[str, str]] = []
+    notes: List[str] = []
+    prompts = ledger.get("prompts")
+    images = ledger.get("images")
+    checked_any = False
+    if isinstance(prompts, list):
+        checked_any = True
+        violations.extend(coverage_violations(required, prompts, "AF-FUN-PROMPT-COVERAGE", "prompt"))
+        notes.append(f"prompt coverage: {len(prompts)} prompt(s) vs {len(required)} required slot(s)")
+    if isinstance(images, list):
+        checked_any = True
+        violations.extend(coverage_violations(required, images, "AF-FUN-IMG-COVERAGE", "media"))
+        notes.append(f"image coverage: {len(images)} image(s) vs {len(required)} required slot(s)")
+    if not checked_any:
+        raise StructureError(
+            "ledger carries neither a 'prompts' nor an 'images' array — nothing to "
+            "coverage-check (fail-closed; a vacuous PASS is never allowed)")
+    return violations, notes
+
+
+def _resolve_size(explicit: Optional[str], brief_path: Optional[str]) -> int:
+    """Resolve the funnel size from --funnel-size or the brief's funnel_size."""
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except (TypeError, ValueError):
+            raise StructureError(f"--funnel-size {explicit!r} is not an integer")
+    if brief_path:
+        try:
+            brief = json.loads(Path(brief_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StructureError(f"cannot read --brief {brief_path}: {exc}")
+        size = brief.get("funnel_size") if isinstance(brief, dict) else None
+        if not isinstance(size, int):
+            raise StructureError(f"brief {brief_path} has no integer funnel_size (got {size!r})")
+        return size
+    raise StructureError("no funnel size — pass --funnel-size N or --brief brief.json")
+
+
 # ---------------------------------------------------------------------------
 # IO
 # ---------------------------------------------------------------------------
@@ -384,6 +574,106 @@ def _violation_cases():
     ]
 
 
+# --- FIX-IMG-07 coverage fixtures -------------------------------------------
+def _full_coverage_prompts(size: int) -> Dict[str, Any]:
+    """A prompt ledger whose (page_type, section) set exactly covers the required
+    image set for `size` (prompt bodies are irrelevant to the coverage gate)."""
+    required = required_image_pairs(size, load_structure())
+    prompts = []
+    for page, sec in required:
+        section = 1 if sec == ANY_IMAGE else sec
+        prompts.append({"page_type": page, "section": section, "prompt": "covered"})
+    return {"funnel_type": "signature_funnel", "prompts": prompts}
+
+
+def _floor_passing_full_prompts(size: int) -> Dict[str, Any]:
+    """A prompt ledger that covers the required set for `size` AND whose every prompt
+    clears the two-floor gate — used by the orchestrator self-test so a valid run
+    passes BOTH the P2 floor gate and the P2 coverage cross-check."""
+    required = required_image_pairs(size, load_structure())
+    prompts = []
+    for page, sec in required:
+        if page == "main" and str(sec) == "11":
+            prompts.append({"page_type": page, "section": 11, "text_bearing": True,
+                            "words": ["DECIDE", "COMMIT", "RISE"],
+                            "prompt": _valid_typography_prompt()})
+        else:
+            section = "hero" if sec == ANY_IMAGE else sec
+            prompts.append({"page_type": page, "section": section, "text_bearing": False,
+                            "prompt": _valid_photo_prompt()})
+    return {"funnel_type": "signature_funnel", "prompts": prompts}
+
+
+def _full_coverage_images(size: int) -> Dict[str, Any]:
+    """A media ledger whose image records exactly cover the required set for `size`."""
+    required = required_image_pairs(size, load_structure())
+    images = []
+    for page, sec in required:
+        section = "hero" if sec == ANY_IMAGE else sec
+        images.append({"page_type": page, "section": section,
+                       "kie_task_id": f"kie_{page}_{section}",
+                       "media_url": f"https://storage.gohighlevel.com/loc/x/{page}-{section}.png"})
+    return {"funnel_type": "signature_funnel", "images": images}
+
+
+def run_coverage_self_test() -> bool:
+    ok = True
+    structure = load_structure()
+    for size in (3, 5, 7):
+        required = required_image_pairs(size, structure)
+        # (a) a full-coverage prompt ledger clears AF-FUN-PROMPT-COVERAGE.
+        v, _ = verify_structure(size, _full_coverage_prompts(size), structure)
+        if v:
+            ok = False
+            print(f"COVERAGE SELF-TEST FAIL: full prompt coverage (size {size}) flagged: {v}")
+        else:
+            print(f"COVERAGE SELF-TEST ok: full prompt coverage (size {size}) PASSES ({len(required)} slots).")
+        # (b) a full-coverage media ledger clears AF-FUN-IMG-COVERAGE.
+        v, _ = verify_structure(size, _full_coverage_images(size), structure)
+        if v:
+            ok = False
+            print(f"COVERAGE SELF-TEST FAIL: full image coverage (size {size}) flagged: {v}")
+        else:
+            print(f"COVERAGE SELF-TEST ok: full image coverage (size {size}) PASSES ({len(required)} slots).")
+        # (c) a 2-prompt ledger for a full funnel is caught (AF-FUN-PROMPT-COVERAGE).
+        skimpy_p = {"prompts": [{"page_type": "main", "section": 1, "prompt": "x"},
+                                {"page_type": "main", "section": 2, "prompt": "y"}]}
+        v, _ = verify_structure(size, skimpy_p, structure)
+        codes = {c for c, _ in v}
+        if "AF-FUN-PROMPT-COVERAGE" in codes:
+            print(f"COVERAGE SELF-TEST ok: 2-prompt ledger (size {size}) -> AF-FUN-PROMPT-COVERAGE.")
+        else:
+            ok = False
+            print(f"COVERAGE SELF-TEST FAIL: 2-prompt ledger (size {size}) not caught: {sorted(codes)}")
+        # (d) a 2-image media ledger for a full funnel is caught (AF-FUN-IMG-COVERAGE).
+        skimpy_i = {"images": [{"page_type": "main", "section": 1, "kie_task_id": "k",
+                                "media_url": "https://msgsndr.com/a.png"},
+                               {"page_type": "main", "section": 5, "kie_task_id": "k2",
+                                "media_url": "https://msgsndr.com/b.png"}]}
+        v, _ = verify_structure(size, skimpy_i, structure)
+        codes = {c for c, _ in v}
+        if "AF-FUN-IMG-COVERAGE" in codes:
+            print(f"COVERAGE SELF-TEST ok: 2-image ledger (size {size}) -> AF-FUN-IMG-COVERAGE.")
+        else:
+            ok = False
+            print(f"COVERAGE SELF-TEST FAIL: 2-image ledger (size {size}) not caught: {sorted(codes)}")
+    # (e) an unknown funnel size is fail-closed (StructureError).
+    try:
+        required_image_pairs(4, structure)
+        ok = False
+        print("COVERAGE SELF-TEST FAIL: funnel_size 4 did not raise StructureError.")
+    except StructureError:
+        print("COVERAGE SELF-TEST ok: unknown funnel_size 4 -> fail-closed (StructureError).")
+    # (f) a ledger with neither prompts nor images is fail-closed.
+    try:
+        verify_structure(3, {"funnel_type": "signature_funnel"}, structure)
+        ok = False
+        print("COVERAGE SELF-TEST FAIL: empty ledger did not raise StructureError.")
+    except StructureError:
+        print("COVERAGE SELF-TEST ok: ledger with no prompts/images -> fail-closed (StructureError).")
+    return ok
+
+
 def run_self_test() -> int:
     ok = True
     v, _ = verify(_valid_ledger())
@@ -407,6 +697,9 @@ def run_self_test() -> int:
             caught += 1
             print(f"SELF-TEST ok: '{name}' -> nonzero, carries {expected}.")
     print(f"SELF-TEST FIXTURES: {1 if not v else 0} valid-pass, {caught}/{len(cases)} violation-catch")
+    # FIX-IMG-07 — the --structure coverage cross-check (prompt + image ledgers).
+    if not run_coverage_self_test():
+        ok = False
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -423,6 +716,16 @@ def main(argv: List[str]) -> int:
                     help="optional positional ledger path (equivalent to --ledger)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID fixture (must PASS) + each VIOLATION fixture (must FAIL)")
+    # FIX-IMG-07: --structure runs the COVERAGE cross-check instead of the two-floor
+    # gate — the ledger's (page_type, section) set must cover the required image set
+    # derived from funnel_structure.json + funnel_size (per MASTERDOC §4).
+    ap.add_argument("--structure", action="store_true",
+                    help="coverage mode: prove the ledger covers the required (page_type, section) "
+                         "image set for the funnel size (AF-FUN-PROMPT-COVERAGE / AF-FUN-IMG-COVERAGE)")
+    ap.add_argument("--funnel-size", help="funnel size 3/5/7 (coverage mode; or use --brief)")
+    ap.add_argument("--brief", help="brief.json to read funnel_size from (coverage mode)")
+    ap.add_argument("--structure-source",
+                    help="path to funnel_structure.json (default: the skill's structure/funnel_structure.json)")
     args = ap.parse_args(argv)
 
     if args.self_test:
@@ -435,11 +738,30 @@ def main(argv: List[str]) -> int:
     try:
         ledger = _load_json(ledger_path)
     except Exception as exc:  # noqa: BLE001
-        print(f"USAGE/IO ERROR: cannot load prompt ledger {ledger_path!r}: {exc}")
+        print(f"USAGE/IO ERROR: cannot load ledger {ledger_path!r}: {exc}")
         return EXIT_FAILCLOSED
     if not isinstance(ledger, dict):
-        print("USAGE/IO ERROR: prompt ledger must be a JSON object.")
+        print("USAGE/IO ERROR: ledger must be a JSON object.")
         return EXIT_FAILCLOSED
+
+    if args.structure:
+        try:
+            structure = load_structure(Path(args.structure_source) if args.structure_source else None)
+            size = _resolve_size(args.funnel_size, args.brief)
+            violations, notes = verify_structure(size, ledger, structure)
+        except StructureError as exc:
+            print(f"FAIL-CLOSED: {exc}")
+            return EXIT_FAILCLOSED
+        for note in notes:
+            print(f"NOTE: {note}")
+        if not violations:
+            print(f"PASS: the ledger covers every required (page_type, section) image slot "
+                  f"for the {size}-step funnel.")
+            return EXIT_OK
+        print(f"FAIL: {len(violations)} coverage violation(s) — a partial ledger can never certify a full funnel.")
+        for code, msg in violations:
+            print(f"  VIOLATION [{code}] {msg}")
+        return EXIT_VIOLATION
 
     violations, notes = verify(ledger)
     _report(violations, notes)

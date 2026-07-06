@@ -1,6 +1,16 @@
 {
   "_doc": "Crosswalk that resolves every funnel-template + automation-template persona reference to a REAL canonical Skill-22 persona-categories.json id, so 'copy from the personas' always pulls a real persona-blueprint. Resolution order (most specific first): (1) the ref IS a canonical id; (2) exact slug_map hit; (3) ordered title/concept/author pattern scan. Validate with shared-utils/persona_crosswalk.py --validate. EVERY target below MUST exist in 22-book-to-persona-coaching-leadership-system/persona-categories.json (the validator enforces it).",
   "canonical_source": "22-book-to-persona-coaching-leadership-system/persona-categories.json",
+  "_email_doc": "email_persona_styles crosswalks Skill-50's 12 self-contained email tone-STYLE ids to REAL canonical persona ids, so an email selection joins the persona adherence/learning loop (F4.3). Only styles with a genuine canonical counterpart are mapped — a style with no library persona (e.g. Tony Robbins != the library's Mel Robbins; Iyanla/Les Brown/Lisa Nichols/Gladwell/Brené have no library persona) is intentionally OMITTED and keeps its own style-tier behavior. Every mapped target MUST exist in persona-categories.json (persona_crosswalk.py --validate enforces it alongside slug_map/patterns).",
+  "email_persona_styles": {
+    "persona-style-td-jakes": "jakes-instinct",
+    "persona-style-simon-sinek": "sinek-start-with-why",
+    "persona-style-michelle-obama": "obama-becoming",
+    "persona-style-david-goggins": "goggins-cant-hurt-me",
+    "persona-style-dan-pink": "pink-to-sell-is-human",
+    "persona-style-brene-brown-daring-greatly": "brown-atlas-of-heart",
+    "persona-style-brene-brown-gifts-of-imperfection": "brown-atlas-of-heart"
+  },
   "slug_map": {
     "funnel-architect": "brunson-marketing-secrets-blackbook",
     "expert-guide": "brunson-marketing-secrets-blackbook",

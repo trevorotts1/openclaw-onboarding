@@ -126,6 +126,41 @@ def test_tn2_surviving_pending_qc_fails_r_copy(happy_run):
     assert res["R-COPY"] is False
 
 
+def test_fixxc04h_below_floor_long_form_copy_hard_misses_r_copy(happy_run):
+    """FIX-XC-04h: an APPROVED but below-floor copy.md (thin for a long-form funnel) must
+    HARD-MISS R-COPY on the load-bearing length_vs_funnel_type sub-check — it can no longer
+    score 10/10 the way a 150-word copy.md used to."""
+    run_dir, _ = happy_run
+    p = os.path.join(run_dir, "working", "copy", "scent-bar-workshop", "copy.md")
+    open(p, "w").write(
+        "# thin\nstatus: APPROVED\napproved_by: QC\nself_approved: false\n"
+        "copy_persona: hormozi-100m-offers\n\n### cta\nApply for a seat\n"
+        "## The Offer\nA short value stack that is nowhere near the long-form floor.\n")
+    r = {x.id: x for x in rubrics.score_all(run_dir)}["R-COPY"]
+    assert r.passed is False
+    assert "length_vs_funnel_type" in r.raw_signal and "0.0/3.0" in r.raw_signal
+
+
+def test_fixxc02b_non_hormozi_selected_persona_is_credited(happy_run):
+    """FIX-XC-02b: the persona sub-checks read the ACTUAL selected persona from the log —
+    a correctly-matched NON-hormozi persona must be credited, not punished."""
+    run_dir, _ = happy_run
+    fr = os.path.join(run_dir, "working", "funnels", "scent-bar-workshop")
+    # Re-ground on a different (still registered-shape) persona slug.
+    open(os.path.join(fr, "persona-selection-log.md"), "w").write(
+        "# persona-selection-log\nselector_ran: true\n- selected_persona: robert-bly-copywriters-handbook\n")
+    spec_path = os.path.join(fr, "funnel-spec.json")
+    spec = json.load(open(spec_path)); spec["persona"] = "robert-bly-copywriters-handbook"
+    json.dump(spec, open(spec_path, "w"))
+    cp = os.path.join(run_dir, "working", "copy", "scent-bar-workshop", "copy.md")
+    txt = open(cp).read().replace("hormozi-100m-offers", "robert-bly-copywriters-handbook")
+    open(cp, "w").write(txt)
+    res = {x.id: x for x in rubrics.score_all(run_dir)}
+    assert "robert-bly-copywriters-handbook echoed" in res["R-COPY"].raw_signal
+    # persona sub-checks credited (no hardcoded-hormozi punishment)
+    assert "persona_grounded=robert-bly-copywriters-handbook echoed in copy(2.0/2.0)" in res["R-COPY"].raw_signal
+
+
 def test_tn3_deleted_persona_log_fails_r_persona_grounding(happy_run):
     run_dir, _ = happy_run
     os.remove(os.path.join(run_dir, "working", "funnels", "scent-bar-workshop", "persona-selection-log.md"))

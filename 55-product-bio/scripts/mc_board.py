@@ -79,6 +79,16 @@ PUBLIC API
             description="", env=None)                             -> task_id str | None  (never raises)
   complete_run(run_dir, task_id=None, *, phase_id="deliver", note="",
                status="review", deliverable_url="", env=None)    -> bool                (never raises)
+  block_run(run_dir, task_id=None, *, phase_id="", note="", env=None)
+                                                                  -> bool                (never raises)
+
+THE BLOCKED STATE (FIX-XC-06)
+  Before this helper, a gate failure left a card stranded at `in_progress` forever
+  — an invisible failure. `block_run` moves the card to the fail-soft `blocked`
+  status (reachable from ANY state in one hop) with the failing phase + AF code as
+  the note, so a failed run is VISIBLE on the board. `blocked` is never `done`: a
+  fixed re-run may re-open it (blocked -> in_progress) and the independent QC
+  scorer still owns the ONLY path to `done` (review -> done).
 """
 
 from __future__ import annotations
@@ -493,4 +503,31 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
                             env=env)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")
+        return False
+
+
+def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
+              note: str = "", env: Optional[dict] = None) -> bool:
+    """Move the run's card to the fail-soft dead-end `blocked` status when a gate
+    FAILS, so a blocked run is VISIBLE on the board instead of stranding forever at
+    `in_progress` (FIX-XC-06: gate failures used to leave invisible, permanently-
+    in_progress cards). The failing phase + AF code (passed as `note`) are recorded
+    on the card.
+
+    `blocked` is reachable from ANY status in one hop (see _legal_path) and is NEVER
+    `done`: a producer may re-open it (blocked -> in_progress) on a fixed re-run, and
+    the independent QC scorer still owns the ONLY path to `done` (review -> done).
+    Recovers the task_id from the receipt when not supplied. Never raises — the board
+    is a view, never a gate, so a board outage can never change the run's exit code."""
+    try:
+        detail = (note or "").strip()
+        if phase_id:
+            prefix = "BLOCKED at %s (gate failed)" % phase_id
+            detail = ("%s — %s" % (prefix, detail)) if detail else prefix
+        elif not detail:
+            detail = "run BLOCKED (a gate failed)"
+        return card_advance(run_dir, task_id, phase_id=phase_id or "blocked",
+                            status="blocked", note=detail, env=env)
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False

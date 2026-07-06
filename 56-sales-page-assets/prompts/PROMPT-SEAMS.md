@@ -10,6 +10,22 @@ were **archived** to `prompts/baked/_archive/` — they were never real generati
 MCP test stub and an empty record). The runtime iterates **`prompts/baked/_index.json`** (the canonical
 ordered manifest), never a directory glob, so a stray/junk `.md` is never silently picked up.
 
+## 0. Persona Task-Mode seam (FIX-XC-02a — grounding, prepended to every copy prompt)
+
+The copywriter-persona Step-0 grounding (SOP-SALESPAGE-01 §3 Step 0) resolves the matched copy persona
+via `persona-selector-v2.py --department marketing` and logs it to `persona-selection-log.md` in the run
+dir. Its **Section 4 "Agent Governance Framework"** is injected into the baked copy prompts through this
+seam so the writer builds TO the persona's Task Mode, not merely names it:
+
+| Seam | Resolves to | Notes |
+|---|---|---|
+| `{{SELECTED_PERSONA_ID}}` | the `selected_persona:` slug from `persona-selection-log.md` | a registered Skill-22 persona slug; fail-closed if absent (`AF-SP56-INTAKE-PERSONA-LOG`). |
+| `{{PERSONA_TASK_MODE}}` | verbatim Section-4 Execution Standard + Decision Logic + Definition of Done + Failure Patterns from the matched `persona-blueprint.md` | ground every asset's headline/offer/CTA in this Task Mode, INSIDE the brand-voice-lock + locked brief + compliance envelope. The persona NAME alone does not load it. |
+
+> `prove_sp_intake.py` fails closed (**AF-SP56-INTAKE-PERSONA-LOG**) when the persona-selection-log is
+> absent or names no registered slug — so the seam is never rendered ungrounded and generation never
+> starts without a grounded copy persona (mirrors FAB-QC D4).
+
 ## 1. The three legacy secrets — NEUTRALIZED to env placeholders (`secrets_scrubbed = 3`)
 
 The legacy n8n engine hardcoded three inline plaintext secrets in node parameters. Their **literal
@@ -41,6 +57,19 @@ Legacy provider framing was rewritten to be provider-agnostic (zero Anthropic id
 
 A/B variants are produced by **two client models OR two persona prompts on one client model** — never an
 Anthropic/Gemini split as in the legacy engine.
+
+## 2b. Optional image Brand-Style block from a design style card (FIX-XC-02c)
+
+The image-prompt template carries an OPTIONAL Brand-Style seam. When the intake supplies
+`${INTAKE.style_card_id}` (a registered Skill 45 `FN-...` card), DIU Workflow B resolves the card and its
+**LONG tier** is embedded VERBATIM as the **Brand-Style block (block 8)** of every image prompt, ahead of
+the always-on negative directives — the same block-8 contract the Skill 6 rail
+(`ghl_image_stage._derive_copy_specs`) and Skill 49 (PROMPT 7) use, so a page and its sales-page assets
+can share ONE registered style. **Unset `style_card_id` = current behavior** (brand-color default; block 8
+is the default Brand-Style + Negative paragraph). Purely additive — the intake field is `required:false`
+and the image floor prover (`prove_sp_prompt_floor.py`) is unaffected when it is absent. The per-image
+`aspect_ratio` remains an API parameter carried on the prompt entry (FIX-IMG-03), never baked into prompt
+text.
 
 ## 3. Prior-client content — GENERALIZED
 
