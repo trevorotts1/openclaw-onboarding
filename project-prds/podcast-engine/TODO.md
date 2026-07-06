@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.1 Skill runbook (SKILL.md) | Opus exec (skill-runbook slice) | DONE | feat/podcast-skill-runbook | self 9.2 | Authored 58-podcast-production-engine/SKILL.md: canonical 18-step pipeline (PRD S5) with podcast_state.py status per step, four output-type presets (S8), silence doctrine and responsibility boundary (S3.8), state vocabulary and transition matrix and writer subcommands, two-gate QC separation, role bindings, runtime model cascade (never Anthropic), Tier 0 caf plus Tier 3 REST data plane, Fish s2.1-pro facts, reuse map (Skills 57/35/30/23), writing rules. Scanned clean: 0 em/en dashes, 0 triple-backtick fences, 0 Anthropic model tokens. Only SKILL.md added; did NOT touch _index.json, update.sh, or version file (merge owns those). |
