@@ -89,6 +89,15 @@ FOUNDER_TARGET_ENV = (
     "FOUNDER_TELEGRAM_CHAT_ID",
 )
 
+# The SENDING channel account is pinned to the operator bot so that on a client
+# box the founder alert never rides (or leaks through) the client's own default
+# channel account. This mirrors the canonical operator-routed pattern
+# (force-update.sh notify_operator: message send --channel telegram --account
+# operator ...). Overridable for boxes that name the operator account
+# differently, but it defaults to the fleet-standard "operator".
+DEFAULT_FOUNDER_ALERT_ACCOUNT = "operator"
+FOUNDER_ACCOUNT_ENV = "PODCAST_FOUNDER_ALERT_ACCOUNT"
+
 
 # ---------------------------------------------------------------------------
 # time helpers
@@ -288,42 +297,55 @@ def _mask_target(target: str | None) -> str:
     return "***" + s[-4:]
 
 
+def _founder_account() -> str:
+    """The operator/founder channel account id the gateway sends AS. Env override,
+    else the fleet-standard default. Pinned so a client box never routes founder
+    alerts through the client's own default channel account."""
+    v = os.environ.get(FOUNDER_ACCOUNT_ENV)
+    return v if v else DEFAULT_FOUNDER_ALERT_ACCOUNT
+
+
+def _build_send_argv(openclaw: str, target: str, text: str, account: str) -> list:
+    """Build the exact `openclaw message send` argv for one founder alert.
+
+    Uses -m/--message, the real (and required) body flag on the installed
+    gateway; there is NO --file or --text option (the gateway rejects them with
+    rc=1 and sends nothing). The alert body is operator text, never a secret, so
+    it rides the argv directly rather than a nonexistent flag. --account pins the
+    operator bot so founder delivery on a client box never depends on the
+    client's own channel account. Kept pure so the contract test can assert the
+    argv is a valid invocation (and drive `--dry-run` against the real CLI)
+    without ever sending anything."""
+    return [
+        openclaw, "message", "send",
+        "--channel", "telegram",
+        "--account", str(account),
+        "--target", str(target),
+        "--message", text,
+    ]
+
+
 def _gateway_send(target: str, text: str) -> tuple[bool, str]:
-    """Send THROUGH the OpenClaw gateway CLI. Returns (ok, detail). The message
-    body goes via a 0600 temp file, never on the command line, so it is not
-    exposed in the process table. Never contacts the Telegram bot HTTP API
-    directly; the gateway CLI is the one and only egress."""
+    """Send THROUGH the OpenClaw gateway CLI (the one and only egress). Never
+    contacts the Telegram bot HTTP API directly. Returns (ok, detail)."""
     openclaw = os.environ.get("OPENCLAW_BIN") or _which("openclaw")
     if not openclaw:
         return False, "openclaw binary not found on PATH (set OPENCLAW_BIN)"
-    fd, tmp = tempfile.mkstemp(prefix=".alertmsg.", suffix=".txt")
+    cmd = _build_send_argv(openclaw, target, text, _founder_account())
     try:
-        os.chmod(tmp, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        cmd = [
-            openclaw, "message", "send",
-            "--channel", "telegram",
-            "--target", str(target),
-            "--file", tmp,
-        ]
-        try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=45, check=False
-            )
-        except FileNotFoundError:
-            return False, "openclaw binary not executable"
-        except subprocess.TimeoutExpired:
-            return False, "gateway send timed out"
-        if proc.returncode == 0:
-            return True, "sent via gateway"
-        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-        return False, "gateway rc=%d %s" % (
-            proc.returncode, detail[-1] if detail else ""
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=45, check=False
         )
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+    except FileNotFoundError:
+        return False, "openclaw binary not executable"
+    except subprocess.TimeoutExpired:
+        return False, "gateway send timed out"
+    if proc.returncode == 0:
+        return True, "sent via gateway"
+    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    return False, "gateway rc=%d %s" % (
+        proc.returncode, detail[-1] if detail else ""
+    )
 
 
 def _which(name: str) -> str | None:
@@ -554,7 +576,9 @@ def _raise_decision(state, state_dir, args, daily, target):
     if sent and send_ok:
         rec["sent_once"] = True
         rec["last_sent"] = _iso(_now())
-        daily["sent_count"] += 1
+        # Decision-class always-sends and is exempt from the storm cap, so it must
+        # NOT consume the per-client status budget; otherwise a burst of decisions
+        # would push legitimate status first-occurrences into the digest early.
     _save_state(state_dir, state)
     _emit(_decision(
         "sent" if sent else ("would_send" if args.dry_run else "send_skipped"),
@@ -621,7 +645,8 @@ def cmd_recover(args) -> int:
                 if not args.dry_run:
                     for k in matched:
                         state["keys"].pop(k, None)
-                    daily["sent_count"] += 1
+                    # Recovery is not a status-failure storm; it does not consume
+                    # the per-client status budget (only status sends do).
             _save_state(state_dir, state)
             _emit(_decision(
                 "recovered" if (sent and send_ok) else (
@@ -660,7 +685,8 @@ def cmd_flush_digest(args) -> int:
             sent, send_ok, detail, exit_hint = _perform_send(target, text, args.dry_run)
             if sent and send_ok and not args.dry_run:
                 state["digest_queue"][args.client] = []
-                daily["sent_count"] += 1
+                # The digest IS the storm-cap collapse target; sending it does not
+                # itself consume the per-client status budget.
             _save_state(state_dir, state)
             _emit(_decision(
                 "flushed" if (sent and send_ok) else (

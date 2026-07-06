@@ -14,6 +14,8 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -235,6 +237,86 @@ class AlertDedupTest(unittest.TestCase):
         # The only egress is the gateway CLI.
         self.assertIn("message", src)
         self.assertIn("--channel", src)
+
+
+class GatewayContractTest(unittest.TestCase):
+    """Contract tests for the REAL `openclaw message send` invocation.
+
+    The dedup-logic tests above monkeypatch the egress, so they never touched the
+    CLI contract; that is exactly why a fatal broken-flag defect once shipped
+    green. These tests assert the argv this script hands the gateway is a VALID
+    invocation of the installed tool: the body rides -m/--message (there is no
+    --file/--text option), the operator account is pinned, and no unknown flag
+    sneaks in. When the gateway is installed they also drive it under --dry-run
+    (which prints the payload and never delivers) to prove the contract against
+    the actual binary, plus a negative control proving the old --file argv is
+    rejected."""
+
+    # Long flags the installed `openclaw message send` accepts (2026.6.x).
+    KNOWN_LONG_FLAGS = {
+        "--channel", "--account", "--target", "--message", "--media",
+        "--dry-run", "--silent", "--json", "--reply-to", "--thread-id",
+        "--delivery", "--presentation", "--pin", "--force-document",
+        "--gif-playback", "--verbose", "--session-key",
+    }
+
+    @staticmethod
+    def _openclaw_bin():
+        return os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw")
+
+    def test_argv_uses_message_flag_and_pins_operator_account(self):
+        argv = AD._build_send_argv("openclaw", "123456", "alert body", "operator")
+        # Body rides -m/--message; the nonexistent --file/--text flags are gone.
+        self.assertIn("--message", argv)
+        self.assertEqual(argv[argv.index("--message") + 1], "alert body")
+        self.assertNotIn("--file", argv)
+        self.assertNotIn("--text", argv)
+        # Gateway Telegram path + operator-pinned routing.
+        self.assertEqual(argv[argv.index("--channel") + 1], "telegram")
+        self.assertEqual(argv[argv.index("--account") + 1], "operator")
+        self.assertIn("--target", argv)
+        # No unknown long flag may sneak in (this is the check that catches
+        # --file / --text). Negative Telegram chat ids start with a single dash,
+        # so only "--"-prefixed tokens are treated as flags here.
+        for tok in argv[3:]:
+            if tok.startswith("--"):
+                self.assertIn(tok, self.KNOWN_LONG_FLAGS,
+                              "unknown flag %r in built argv" % tok)
+
+    def test_account_defaults_operator_and_env_overrides(self):
+        os.environ.pop("PODCAST_FOUNDER_ALERT_ACCOUNT", None)
+        self.assertEqual(AD._founder_account(), AD.DEFAULT_FOUNDER_ALERT_ACCOUNT)
+        self.assertEqual(AD._founder_account(), "operator")
+        os.environ["PODCAST_FOUNDER_ALERT_ACCOUNT"] = "opsbot"
+        try:
+            self.assertEqual(AD._founder_account(), "opsbot")
+        finally:
+            os.environ.pop("PODCAST_FOUNDER_ALERT_ACCOUNT", None)
+
+    def test_real_gateway_accepts_built_argv_under_dry_run(self):
+        ocw = self._openclaw_bin()
+        if not ocw:
+            self.skipTest("openclaw CLI not installed")
+        argv = AD._build_send_argv(ocw, "123456", "contract smoke", "operator")
+        argv.append("--dry-run")  # prints payload, never delivers
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=90)
+        self.assertEqual(
+            proc.returncode, 0,
+            "installed gateway rejected the built argv: %s"
+            % (proc.stderr or proc.stdout or "")[-400:],
+        )
+
+    def test_real_gateway_rejects_file_flag_under_dry_run(self):
+        # Negative control: proves this smoke test WOULD have caught the shipped
+        # defect (the old argv used --file, which the gateway does not recognize
+        # and which sent nothing).
+        ocw = self._openclaw_bin()
+        if not ocw:
+            self.skipTest("openclaw CLI not installed")
+        bad = [ocw, "message", "send", "--channel", "telegram",
+               "--target", "123456", "--file", "/dev/null", "--dry-run"]
+        proc = subprocess.run(bad, capture_output=True, text=True, timeout=90)
+        self.assertNotEqual(proc.returncode, 0)
 
 
 if __name__ == "__main__":
