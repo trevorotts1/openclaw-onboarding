@@ -5628,7 +5628,7 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
         "bugs": ["productivity-systems", "strategy-innovation", "operations"],
         "healer": ["coaching", "personal-development", "mindset"],
         "personal-assistant": ["operations", "leadership", "productivity-systems"],
-        "engineering": ["productivity-systems", "strategy-innovation", "operations"],
+        "engineering": ["software-craft", "productivity-systems", "strategy-innovation", "operations"],
         "listings": ["marketing", "sales", "copywriting"],
         "logistics-fulfillment": ["operations", "productivity-systems"],
         "podcast": ["copywriting", "communication", "marketing"],
@@ -6289,7 +6289,7 @@ def generate_persona_matrix(departments, persona_categories, company_name):
         "bugs": ["productivity-systems", "strategy-innovation", "operations"],
         "healer": ["coaching", "personal-development", "mindset"],
         "personal-assistant": ["operations", "leadership", "productivity-systems"],
-        "engineering": ["productivity-systems", "strategy-innovation", "operations"],
+        "engineering": ["software-craft", "productivity-systems", "strategy-innovation", "operations"],
         "listings": ["marketing", "sales", "copywriting"],
         "logistics-fulfillment": ["operations", "productivity-systems"],
         "podcast": ["copywriting", "communication", "marketing"],
@@ -6574,24 +6574,6 @@ def add_agent_to_config(config, dept_id, dept_info):
         "web_fetch",
         "web_search",
     ]
-    # FIX-PRES-09(iii): the presentations dept is generation-CLASS (it needs the
-    # explicit allow so exec/read/write/edit/web survive a parent deny on `main`),
-    # but granting it image_generate/video_generate/music_generate CONTRADICTS its
-    # own doctrine: ALL presentation imagery is baked through the governed,
-    # fail-loud kie.ai gpt-image-2 pipeline (build_deck.py), NEVER the free-form
-    # image_generate built-in (which the canonical_render_guard would treat as a
-    # hand-rolled bypass). So presentations gets ONLY the non-generation protective
-    # set — tts + the exec/file/web tools its deterministic renderer, Fish-Audio
-    # render, PDF export, and teleprompter build actually use.
-    PRESENTATION_TOOLS_ALLOW = [
-        "tts",
-        "exec",
-        "read",
-        "write",
-        "edit",
-        "web_fetch",
-        "web_search",
-    ]
 
     # ── CEO / MASTER-ORCHESTRATOR TOOL-GATE (GOAL-5, Item 1) ──────────────────
     # The CEO is a pure ROUTER. skills:[] alone does NOT gate the OpenClaw
@@ -6718,12 +6700,7 @@ def add_agent_to_config(config, dept_id, dept_info):
         # inheritance. The dept agent runs under its own tool policy but a
         # parent deny on main (e.g. image_generate denied) would otherwise
         # shadow these tools when the dept agent is invoked as a sub-agent.
-        # FIX-PRES-09(iii): presentations gets a per-dept allow list WITHOUT the
-        # three generate tools (its imagery goes through the governed kie pipeline,
-        # never image_generate); graphics/video/audio keep the full generation set.
-        _tools_allow = (PRESENTATION_TOOLS_ALLOW if dept_id == "presentations"
-                        else GENERATION_TOOLS_ALLOW)
-        agent_entry["tools"] = {"allow": _tools_allow}
+        agent_entry["tools"] = {"allow": GENERATION_TOOLS_ALLOW}
 
     # FIX A.3 (model-tiering): force a HIGH reasoning budget for the deck producer
     # AND its independent QC grader. thinkingDefault is the schema-valid per-agent

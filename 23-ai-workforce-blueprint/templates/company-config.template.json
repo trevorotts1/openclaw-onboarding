@@ -4,6 +4,8 @@
   "slug": "blackceo",
   "industry": "personal-development",
   "mission": "Help Black creators and entrepreneurs build durable wealth-generating businesses without burning out, by replacing busywork with an AI-run zero-human company.",
+  "default_persona_id": "blackceo-house-voice",
+  "governance_persona_id": "covey-7-habits",
   "owner_values": [
     "ownership",
     "directness",
@@ -72,5 +74,6 @@
     "accent":  "#3b82f6",
     "text":    "#f8fafc"
   },
-  "_comment": "This is the schema v2.0 template. Real company-config.json is written by build-workforce.py to ~/clawd/zero-human-company/<slug>/company-config.json. The persona scoring engine reads mission, owner_values, company_kpis, and dept_kpis from this file. Empty arrays cause Layer 1-4 to fall back to a 0.6 neutral score (and log a warning). After Wave 3, Layers 1-4 will be evaluated by DeepSeek V4 Pro via Ollama Cloud (fallback: Gemini 3.1 Flash Lite via OpenRouter)."
+  "_comment": "This is the schema v2.0 template. Real company-config.json is written by build-workforce.py to ~/clawd/zero-human-company/<slug>/company-config.json. The persona scoring engine reads mission, owner_values, company_kpis, and dept_kpis from this file. Empty arrays cause Layer 1-4 to fall back to a 0.6 neutral score (and log a warning). After Wave 3, Layers 1-4 will be evaluated by DeepSeek V4 Pro via Ollama Cloud (fallback: Gemini 3.1 Flash Lite via OpenRouter).",
+  "_comment_personas": "FDN-1 (F3.1): default_persona_id is the PER-CLIENT override for the guaranteed no-naked-task fallback — persona-selector-v2.py._fallback_persona() resolves company-config.default_persona_id BEFORE the pinned DEFAULT_PERSONA_FALLBACK ('blackceo-house-voice') constant, so a client may pin their own default. governance_persona_id is the per-client override for the oversight pointer attached to mechanical / no_persona_required tasks (resolved before the pinned GOVERNANCE_PERSONA_FALLBACK 'covey-7-habits'). Both must be canonical persona ids present in persona-categories.json. Leave a value as-is to keep the shipped default; both fields are optional — omitting a field falls through to the pinned constant."
 }

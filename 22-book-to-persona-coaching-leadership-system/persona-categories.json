@@ -18,7 +18,8 @@
     "editing",
     "montage",
     "visual-storytelling",
-    "visual-communication"
+    "visual-communication",
+    "software-craft"
   ],
   "perspectiveTags": [
     "african-american-experience",
@@ -1908,7 +1909,89 @@
         "business-operating-system",
         "accountability"
       ]
+    },
+    "blackceo-house-voice": {
+      "author": "BlackCEO",
+      "book": "(hand-authored — no source book)",
+      "display_name": "BlackCEO House Voice",
+      "source_type": "hand-authored",
+      "fallback": true,
+      "added": "2026-07-05T00:00:00Z",
+      "domain": [
+        "communication"
+      ],
+      "perspective": [],
+      "custom": []
+    },
+    "hunt-thomas-pragmatic-programmer": {
+      "author": "Andrew Hunt & David Thomas",
+      "book": "The Pragmatic Programmer: Your Journey to Mastery (20th Anniversary Edition)",
+      "domain": [
+        "software-craft",
+        "productivity-systems",
+        "strategy-innovation",
+        "operations"
+      ],
+      "perspective": [],
+      "custom": [
+        "dry-principle",
+        "orthogonality",
+        "decoupling",
+        "tracer-bullets",
+        "prototyping",
+        "reversibility",
+        "etc-easier-to-change",
+        "software-entropy",
+        "broken-windows",
+        "good-enough-software",
+        "design-by-contract",
+        "assertive-programming",
+        "crash-early",
+        "pragmatic-paranoia",
+        "refactoring",
+        "test-to-break",
+        "rubber-duck-debugging",
+        "programming-by-coincidence",
+        "law-of-demeter",
+        "plain-text-power",
+        "version-control",
+        "shell-and-editor-fluency",
+        "knowledge-portfolio",
+        "requirements-digging",
+        "estimating",
+        "code-review",
+        "technical-debt",
+        "architecture",
+        "backend",
+        "frontend",
+        "web-development",
+        "api-design",
+        "software-engineering",
+        "sign-your-work"
+      ],
+      "source_type": "book",
+      "added": "2026-07-05",
+      "blueprint": "personas/hunt-thomas-pragmatic-programmer/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "appendix": null,
+      "appendix_status": "NONE",
+      "needs_tags": false,
+      "_craft_slot": "code",
+      "_craft_slot_note": "CODE-craft slot specialist (DEP-6): the first true software-craft persona in the library, added so slot-based work (website/app builds decomposed into a CODE sub-task) resolves to a real engineering specialist instead of a nearest-domain proxy (productivity-systems/strategy-innovation/operations). Carries the new controlled-vocab domain tag 'software-craft'.",
+      "summary": "Andrew Hunt & David Thomas's Pragmatic Programmer canon: software as a craft of continuous, careful change. Governs engineering work (backend, frontend, web, API, architecture, refactoring, debugging, testing) to a DRY, orthogonal, decoupled, ETC (Easier To Change) standard — no broken windows, no programming by coincidence, tracer-bullet delivery over big-bang, design by contract, crash early, pragmatic paranoia, and sign-your-work pride. Coaches developers and technical founders from cargo-cult coding to pragmatic mastery."
     }
   },
-  "lastUpdated": "2026-07-04"
+  "lastUpdated": "2026-07-06"
 }
