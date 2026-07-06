@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W2.4 + W2.5 episode-qc-gates | Opus 4.8 exec | DONE (branch) | feat/podcast-episode-qc-gates | self-QC 9.2 | Added 58-podcast-production-engine/scripts/qc-tier1-mechanical.py (Gate B Tier 1 deterministic checks 1-11,15,16 at zero model cost; 12-14 DEFERRED to cheap judge tier) and qc-attempt-gate.py (attempt counter, targeted-retry + frozen-research enforcement, 3-strike stop with best draft). Both stdlib-only, fail-closed, config-overridable; self-tests 27/27 and 14/14 green; no em dash, no fence, no Anthropic deny-token in source. Episode gate only, never the 8.5 build gate. |
