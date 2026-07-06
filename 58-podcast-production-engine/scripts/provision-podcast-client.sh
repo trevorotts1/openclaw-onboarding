@@ -11,7 +11,7 @@
 #      already routes to 18789 on this tunnel, in which case it is REUSED.
 #   3. Creates proxied CNAME record(s) -> <tunnel-id>.cfargotunnel.com.
 #   4. Creates the dashboard Access app "Podcast Dashboard - <slug>", allow-by-email:
-#      the client's email(s) plus trevelynotts@gmail.com plus trevor@blackceo.com.
+#      the client's email(s) plus <operator-email-alt> plus <operator-email>.
 #   5. Adds a zone WAF custom rule (POST-to-/hooks only) ONLY when it creates a new,
 #      podcast-sole hooks hostname. The shared zone ruleset is MERGED, never clobbered.
 #   6. Runs the pass gate: 302-to-Access on the dashboard, a signed hook test POST,
@@ -39,11 +39,22 @@ set -uo pipefail
 # cross-check for the name resolution, never a substitute for it).
 # --------------------------------------------------------------------------- #
 API="https://api.cloudflare.com/client/v4"
-ACCOUNT_ID_DEFAULT="13f808b72eb78027a8046357c6cf1afa"
-ZONE_NAME="zerohumanworkforce.com"
-ZONE_ID_KNOWN="a9ecc0a067f52eaa4c59dc9b11d9dd55"
-ACCESS_TEAM_HOST="sweet-wave-ca28.cloudflareaccess.com"
-OPERATOR_EMAILS=("trevelynotts@gmail.com" "trevor@blackceo.com")
+# Account/zone/team-host are operator-account-specific: they are supplied by the
+# environment on the operator box and are NEVER hardcoded in this fleet-wide
+# template. The account id is a fallback only; the zone is always resolved by
+# NAME below (never by the trapped CLOUDFLARE_ZONE_ID) with the zone id used only
+# as a known-good cross-check.
+ACCOUNT_ID_DEFAULT="${CLOUDFLARE_ACCOUNT_ID:-YOUR_CF_ACCOUNT_ID}"
+ZONE_NAME="${PODCAST_CF_ZONE_NAME:-zerohumanworkforce.com}"
+ZONE_ID_KNOWN="${PODCAST_CF_ZONE_ID:-YOUR_CF_ZONE_ID}"
+ACCESS_TEAM_HOST="${PODCAST_CF_ACCESS_TEAM_HOST:-your-team.cloudflareaccess.com}"
+# Operator emails that are always granted dashboard Access, in addition to the
+# client emails. Supply a comma-separated list via PODCAST_OPERATOR_EMAILS on the
+# operator box; the template ships with none so no personal email is committed.
+OPERATOR_EMAILS=()
+if [ -n "${PODCAST_OPERATOR_EMAILS:-}" ]; then
+  IFS=',' read -ra OPERATOR_EMAILS <<< "$PODCAST_OPERATOR_EMAILS"
+fi
 DASH_PORT="4010"
 GATEWAY_PORT="18789"
 SESSION_DURATION="24h"

@@ -2,7 +2,7 @@
 ## Podcast Production Engine — Cost Guardrail Specification v1.0
 ### Status: DESIGN — implementable directly by /goal build agents
 
-Source docs: `/Users/blackceomacmini/Downloads/PODCAST_EPISODE_GENERATION_SYSTEM.md` (behavior spec) and `/Users/blackceomacmini/Downloads/CLAUDE_CODE_BUILD_BRIEF.md` (build brief). This document closes the cost gaps those docs leave open and turns operator furnace doctrine into enforceable code.
+Source docs: `<OPERATOR_HOME>/Downloads/PODCAST_EPISODE_GENERATION_SYSTEM.md` (behavior spec) and `<OPERATOR_HOME>/Downloads/CLAUDE_CODE_BUILD_BRIEF.md` (build brief). This document closes the cost gaps those docs leave open and turns operator furnace doctrine into enforceable code.
 
 ---
 

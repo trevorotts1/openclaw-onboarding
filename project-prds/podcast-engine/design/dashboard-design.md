@@ -12,7 +12,7 @@ grounded in one of three sources, cited inline:
 - BRIEF: `CLAUDE_CODE_BUILD_BRIEF.md` v1.0 (build orchestration, Cloudflare hosting decision,
   preserve-these-rules list).
 - CC: the live BlackCEO Command Center checkout at
-  `/Users/blackceomacmini/canary/command-center` (v4.53.2), which supplies the design system
+  `<OPERATOR_HOME>/canary/command-center` (v4.53.2), which supplies the design system
   the dashboard must visually match.
 
 Writing rules honored in this spec and binding on the build: never use the em dash

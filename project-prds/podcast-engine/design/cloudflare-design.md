@@ -39,11 +39,11 @@ cloudflare-zone-ids, mac-client-gateway-launchd-ssh, openclaw-ghl-hook-mechanics
 ### Recommendation: BlackCEO-hosted Cloudflare. Firm.
 
 The dashboard and the inbound webhook both ride BlackCEO's existing Cloudflare account
-(account ID 13f808b72eb78027a8046357c6cf1afa) on the zerohumanworkforce.com zone
-(zone ID a9ecc0a067f52eaa4c59dc9b11d9dd55). This is not a new pattern; it is the pattern
+(account ID <CF_ACCOUNT_ID>) on the zerohumanworkforce.com zone
+(zone ID <CF_ZONE_ID>). This is not a new pattern; it is the pattern
 the entire fleet already runs. Ten clients already have Command Centers at
 `<slug>.zerohumanworkforce.com` behind BlackCEO Cloudflare Access on team domain
-sweet-wave-ca28.cloudflareaccess.com, each fronting a dedicated per-client tunnel.
+<cf-access-team-host>, each fronting a dedicated per-client tunnel.
 The podcast engine simply adds hostnames to the machinery that already exists.
 
 ### Why BlackCEO-hosted wins
@@ -134,8 +134,8 @@ serves ALL inbound skills; per-skill separation happens at the hook path + token
 
 ### 2.2 Zone and account constants (provisioner must hardcode or look up by name)
 
-- Account ID: 13f808b72eb78027a8046357c6cf1afa (CLOUDFLARE_ACCOUNT_ID, correct).
-- Zone zerohumanworkforce.com: a9ecc0a067f52eaa4c59dc9b11d9dd55.
+- Account ID: <CF_ACCOUNT_ID> (CLOUDFLARE_ACCOUNT_ID, correct).
+- Zone zerohumanworkforce.com: <CF_ZONE_ID>.
 - TRAP (earned in production): the CLOUDFLARE_ZONE_ID environment variable on the operator
   box points at businessaftersixty.com, NOT zerohumanworkforce.com. Using it silently
   creates malformed records that never resolve. Either hardcode the zone ID above or resolve
@@ -187,7 +187,7 @@ Design goal: the client should never manage a password, install anything, or thi
 
 1. Provision (silent): the provisioner creates the hostname, Access app, and ingress; the
    Access app allow-list contains exactly: the client's own email address(es) from their
-   onboarding record, trevelynotts@gmail.com, and trevor@blackceo.com. Nothing else. One
+   onboarding record, <operator-email-alt>, and <operator-email>. Nothing else. One
    app per client; never a wildcard app across clients.
 2. Deliver the link ONCE, through the client's normal deliverable surfaces, both of which
    already exist and neither of which is operational spam:
@@ -203,7 +203,7 @@ Design goal: the client should never manage a password, install anything, or thi
    no account creation, no per-client secret to lose. Session persists per Access session
    policy, so day-to-day it is click-and-see.
    (Operator note: blackceo.com is on Cloudflare's one-time-PIN suppression list; Trevor
-   signs in with Google single sign-on as trevor@blackceo.com, or with trevelynotts@gmail.com
+   signs in with Google single sign-on as <operator-email>, or with <operator-email-alt>
    for PIN. Client domains are unaffected.)
 4. Defense in depth on the data: the dashboard service binds loopback only and additionally
    requires a per-client bearer token (PODCAST_DASHBOARD_TOKEN, generated at provision,
@@ -214,7 +214,7 @@ Design goal: the client should never manage a password, install anything, or thi
 
 Success signal for a healthy deployed dashboard (same as the Command Center pattern):
 `curl -I https://<slug>-podcast.zerohumanworkforce.com` returns HTTP 302 to
-sweet-wave-ca28.cloudflareaccess.com. That exact signal is the provision gate's pass check
+<cf-access-team-host>. That exact signal is the provision gate's pass check
 AND the revocation gate's fail check (after revocation it must NOT return that 302).
 
 ---
@@ -227,7 +227,7 @@ sends anything client-facing. Order matters: kill live sessions before deleting 
 there is no window where a logged-in session outlives its hostname.
 
 Preconditions: CLOUDFLARE_API_TOKEN confirmed SET (never printed); account ID
-13f808b72eb78027a8046357c6cf1afa; zone ID a9ecc0a067f52eaa4c59dc9b11d9dd55 (hardcoded or
+<CF_ACCOUNT_ID>; zone ID <CF_ZONE_ID> (hardcoded or
 resolved by name; never the CLOUDFLARE_ZONE_ID environment variable).
 
 LIVE-VERIFY: every endpoint below against current Cloudflare API docs before scripting;
@@ -298,7 +298,7 @@ Step 8 - Drain the credit-out queue for this client.
 
 Step 9 - Independent end-to-end verification (no false done).
   a. `curl -sI https://<slug>-podcast.zerohumanworkforce.com` must NOT return 302 to
-     sweet-wave-ca28.cloudflareaccess.com; expected: resolution failure or Cloudflare
+     <cf-access-team-host>; expected: resolution failure or Cloudflare
      1016/530 class error.
   b. POST a dummy payload to the old hook URL: expected failure (route gone or hook 404;
      anything but a 2xx).
@@ -347,9 +347,9 @@ and record the box-side steps as pending.
 1. Discover the client's existing tunnel id + config mode via the Cloudflare API.
 2. Add ingress rules (dashboard :4010; hooks :18789 if not already present).
 3. Create DNS CNAME(s) -> <tunnel-id>.cfargotunnel.com, proxied, in zone
-   a9ecc0a067f52eaa4c59dc9b11d9dd55.
+   <CF_ZONE_ID>.
 4. Create the Access app for the dashboard hostname, allow-list = client email(s) +
-   trevelynotts@gmail.com + trevor@blackceo.com.
+   <operator-email-alt> + <operator-email>.
 5. On-box: generate PODCAST_INTAKE_HOOK_TOKEN + PODCAST_DASHBOARD_TOKEN into the environment
    stores (confirm SET); add the OpenClaw hook mapping (flat body, deliver:false, per current
    OpenClaw docs); deploy the dashboard service on 127.0.0.1:4010 with a watchdog appropriate

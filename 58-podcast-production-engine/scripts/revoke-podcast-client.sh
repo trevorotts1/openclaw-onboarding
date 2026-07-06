@@ -26,10 +26,13 @@
 set -uo pipefail
 
 API="https://api.cloudflare.com/client/v4"
-ACCOUNT_ID_DEFAULT="13f808b72eb78027a8046357c6cf1afa"
-ZONE_NAME="zerohumanworkforce.com"
-ZONE_ID_KNOWN="a9ecc0a067f52eaa4c59dc9b11d9dd55"
-ACCESS_TEAM_HOST="sweet-wave-ca28.cloudflareaccess.com"
+# Operator-account-specific values come from the environment on the operator box
+# and are never hardcoded in this fleet-wide template. The zone is resolved by
+# NAME below; the zone id is only a known-good cross-check.
+ACCOUNT_ID_DEFAULT="${CLOUDFLARE_ACCOUNT_ID:-YOUR_CF_ACCOUNT_ID}"
+ZONE_NAME="${PODCAST_CF_ZONE_NAME:-zerohumanworkforce.com}"
+ZONE_ID_KNOWN="${PODCAST_CF_ZONE_ID:-YOUR_CF_ZONE_ID}"
+ACCESS_TEAM_HOST="${PODCAST_CF_ACCESS_TEAM_HOST:-your-team.cloudflareaccess.com}"
 GATEWAY_PORT="18789"
 
 unset CLOUDFLARE_ZONE_ID 2>/dev/null || true

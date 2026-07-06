@@ -8,7 +8,7 @@ GLOBAL RULES (binding on every wave):
 3. Every agent appends progress to TODO.md and SESSION-LOG.md (persist to disk so any session resumes cold). Every agent reports unprompted. A sub-agent's claim of done is a hypothesis until independently verified by the wave's verification step.
 4. Gate A (8.5 build rubric) self-administered per unit before its pull request is marked merge-ready. Below 8.5: fix and re-run, autonomously.
 5. Silence: zero client-facing messages from any wave. Never print secret values. Config writes as the node user. Client-facing name is Convert and Flow.
-6. CANARY DOCTRINE: everything is proven on the operator box (/Users/blackceomacmini) first. NO client box is touched. Fleet rollout is HELD at repo-only until the operator gives the OK.
+6. CANARY DOCTRINE: everything is proven on the operator box (<OPERATOR_HOME>) first. NO client box is touched. Fleet rollout is HELD at repo-only until the operator gives the OK.
 
 ---
 
