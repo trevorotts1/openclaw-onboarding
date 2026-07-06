@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | shared-resolver-aliases: add CONVERTFLOW alias family to the shared credential resolver (Skills 29/36/44) | Opus 4.8 exec | DONE | feat/podcast-shared-resolver-aliases | self-QC 9.2 | Additive-only edit to shared-utils/api_key_utils.py (canonical shared resolver per LEGACY-RETIREMENT.md). CONVERTFLOW_PIT_ALIASES appended after canonical GHL aliases (first-hit-wins order preserved); convertflow/convertandflow brand entries completed; Agency PIT and Firebase token deliberately excluded. Verified: AST parse, no-anthropic grep, 12 isolated behavior tests all PASS. _index.json content_sha restamp intentionally deferred to Wave 6 merge. |
