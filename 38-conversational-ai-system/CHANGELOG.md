@@ -1,3 +1,12 @@
+## 1.7.14 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — `scripts/cc-task.sh` gained a `fail` subcommand that moves the
+  install task to `blocked` (never `done`), with an optional reason as the card
+  note; it is invoked from the FAIL branch of `scripts/11-run-qc-checklist.sh` so a
+  failed mechanical QC is VISIBLE on the board instead of leaving the card stranded
+  at in_progress. `cmd_start` now does GET-before-PATCH so a re-run never regresses a
+  card the independent QC scorer already advanced to `review`/`done` back to
+  in_progress. Both paths stay fail-soft (always exit 0, never message a client).
+
 ## [1.7.13] - 2026-07-05 — fix: cron silence-doctrine (--no-deliver + isolated session), Command Center env docs + ACTIVE/INACTIVE, safe operator-exclusion in client-doc discovery
 
 ### Fixed (FIX-XC-08b — cron delivery silencing / silence doctrine)

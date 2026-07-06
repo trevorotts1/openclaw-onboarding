@@ -803,6 +803,68 @@ def task_signal_bypasses_stickiness(task_text: str, paths: dict) -> bool:
         return False
 
 
+# ── SOP persona-hint recall + bonus (F3.4 / F4.2) ─────────────────────────────
+# The governing SOP's `sops.persona_hints` list (canonical persona ids such as
+# `voss-never-split-difference`) was WRITTEN by five writers and READ by ZERO
+# consumers (F4.2 — the "Triad Rule: Task + SOP + Persona" was never enforced).
+# The selector now CONSUMES it, treating each hinted persona EXACTLY like a
+# specialty-recall specialist:
+#   • UNION the hinted personas into the scoring pool (department-agnostic,
+#     never-to-zero — only ever ADDS candidates; a hint can never remove one),
+#     surfaced at the FRONT of the semantic order so the LLM-finalist cap cannot
+#     drop the very persona the SOP asked for; and
+#   • grant a BOUNDED, additive, task_fit-coupled `sop_hint_bonus` (mirrors
+#     `specialty_domain_bonus`, cap ~0.30) so a RELEVANT hinted specialist wins,
+#     while a STALE / irrelevant hint (low task_fit) earns only a small nudge and
+#     CANNOT force a bad match over a strong semantic / specialty signal.
+
+
+def _sop_hint_bonus_max() -> float:
+    """Hard cap / scale of the SOP persona-hint bonus (env-tunable). Mirrors
+    _specialty_bonus_max(); default 0.30 keeps it strictly below the specialty-tag
+    cap (0.40) so an explicitly-named specialty always outranks a mere SOP hint."""
+    try:
+        v = float(os.environ.get("SOP_HINT_BONUS", "0.30"))
+    except (TypeError, ValueError):
+        v = 0.30
+    return max(0.0, min(v, 0.6))
+
+
+def sop_hint_bonus(task_fit) -> float:
+    """Additive-only, never-to-zero bonus for a persona the governing SOP hinted.
+    Returns CAP * (0.5 + 0.5*task_fit): a hint is a strong but bounded, relevance-
+    coupled signal — an on-topic hinted persona (high task_fit) approaches the cap,
+    a stale hint (low task_fit) earns roughly half. Guaranteed >= 0.0 and <= CAP.
+    Mirrors specialty_domain_bonus()'s task_fit coupling with a fixed ramp of 1.0
+    (a persona is either hinted or not — there is no hit-count to graduate)."""
+    cap = _sop_hint_bonus_max()
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * (0.5 + 0.5 * tf), cap), 4)
+
+
+def _build_sop_match_text(task: str, sop_name=None, sop_steps=None,
+                          sop_slug=None) -> str:
+    """Fold the governing SOP's name + step names (+ slug tokens) into the task
+    text to form ONE composite query. This composite is the string used for
+    infer_task_category, Stage-C semantic retrieval, and the Layer-5 task_fit
+    embed — passing the SAME string to Stage-C and Layer-5 means the shared
+    module-level embedding cache produces exactly ONE embed for the whole
+    selection (no extra API call for the SOP context).
+
+    Never-to-zero: with no SOP context supplied the result is byte-identical to
+    `task`, so the default (no --sop-*) path is provably unchanged."""
+    parts = [task or ""]
+    if sop_name:
+        parts.append(str(sop_name))
+    if sop_steps:
+        parts.extend(str(s) for s in sop_steps if s)
+    if sop_slug:
+        # slug tokens ("build-a-website" -> "build a website") add mild signal.
+        parts.append(str(sop_slug).replace("-", " "))
+    text = " ".join(p.strip() for p in parts if p and p.strip())
+    return text or (task or "")
+
+
 # Gemini-search script candidate locations (checked in order). The canonical INSTALLED
 # wrappers (~/.openclaw/scripts and /data/.openclaw/scripts on VPS) are FIRST, matching
 # the resolver order documented in orchestrator.py / the repo-hygiene path sweep; the
@@ -1002,7 +1064,7 @@ def _semantic_candidate_retrieval(task_text: str, paths: dict, top_k: int = 10) 
 
 
 def build_candidate_pool(task_text: str, department: str, all_personas: list,
-                          paths: dict) -> tuple:
+                          paths: dict, sop_hints: list = None) -> tuple:
     """
     Run the three-stage pre-scoring funnel and return
     (candidate_list, funnel_dict, semantic_order).
@@ -1081,17 +1143,32 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
     semantic_count = len(pool_c)  # pre-recall — preserves pool >= category >= semantic
     specialists = find_specialists_by_custom_tags(task_text, all_personas, categories_data)
     recalled = sorted(s for s in specialists if s not in set(pool_c))
-    candidates = list(pool_c) + recalled
+
+    # SOP PERSONA-HINT UNION (F3.4 / F4.2) — department-agnostic, never-to-zero.
+    # UNION in any INSTALLED persona named by the governing SOP's persona_hints
+    # that neither the funnel nor specialty-recall already surfaced. Only ever
+    # ADDS candidates (a hint can never remove one); non-installed / unknown ids
+    # are dropped (never reference a persona that isn't on this box). Reported on
+    # a SEPARATE "hinted" key so the narrowing funnel counts stay monotonic
+    # (pool >= category >= semantic), exactly like "recalled".
+    avail_set = set(all_personas)
+    already = set(pool_c) | set(recalled)
+    hinted = sorted(h for h in (sop_hints or []) if h in avail_set and h not in already)
+    candidates = list(pool_c) + recalled + hinted
 
     # G13: survivors ranked by semantic relevance (best first). Used by
     # select_persona to keep the top-N finalists when capping LLM fan-out.
     # Empty when there was no semantic signal (caller degrades gracefully).
-    # Recalled specialists are surfaced at the FRONT of the semantic order so the
-    # LLM-finalist cap (when bounded) cannot drop the very specialist we recalled.
+    # Recalled specialists AND SOP-hinted personas are surfaced at the FRONT of
+    # the semantic order so the LLM-finalist cap (when bounded) cannot drop the
+    # very persona we recalled or the SOP asked for.
     cand_set = set(candidates)
     recalled_set = set(recalled)
-    semantic_order = (list(recalled)
-                      + [p for p in (semantic_ids or []) if p in cand_set and p not in recalled_set])
+    hinted_set = set(hinted)
+    front = list(recalled) + list(hinted)
+    front_set = recalled_set | hinted_set
+    semantic_order = (front
+                      + [p for p in (semantic_ids or []) if p in cand_set and p not in front_set])
 
     # Emit canonical 3 keys (PRD 1.2 §3 output contract) + additive diagnostics
     funnel = {
@@ -1099,6 +1176,7 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         "category": len(pool_b),
         "semantic": semantic_count,
         "recalled": len(recalled),
+        "hinted": len(hinted),
         "pool_source": pool_note,
         "semantic_engine": semantic_note,
     }
@@ -1854,8 +1932,19 @@ def score_persona(persona_id: str, task_text: str, owner_profile: str,
 
 
 def select_persona(task: str, department: str, mode: str, weights: dict,
-                   paths: dict, db_path: Path, variety: bool = True) -> dict:
+                   paths: dict, db_path: Path, variety: bool = True,
+                   match_text: str = None, sop_hints: list = None) -> dict:
     """Run the pre-scoring funnel then score survivors and return one.
+
+    SOP-AWARE MATCHING (F3.4 / F4.2):
+      match_text — the task+SOP composite query (task text folded with the
+        governing SOP name + step names, see _build_sop_match_text). When given,
+        it is the string used for infer_task_category, Stage-C semantic retrieval,
+        and the Layer-5 task_fit embed — passing the SAME string to Stage-C and
+        Layer-5 keeps the shared cache to ONE embed per selection. Defaults to
+        `task` (byte-identical no-SOP behavior).
+      sop_hints — canonical persona ids from sops.persona_hints. UNIONed into the
+        pool (never-to-zero) and granted a bounded, task_fit-coupled sop_hint_bonus.
 
     PRE-SCORING FUNNEL (PRD item 1.1 — ported from v1, native in v2):
       Stage A: governing-personas.md pool (or all personas if absent).
@@ -1893,8 +1982,15 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
             "funnel": {"pool": 0, "category": 0, "semantic": 0},
         }
 
-    # Stages A-C: build candidate pool via funnel
-    personas, funnel, semantic_order = build_candidate_pool(task, department, all_personas, paths)
+    # SOP-aware composite query (F3.4). `mt` drives category inference, Stage-C
+    # semantic retrieval, and the Layer-5 embed — the SAME string everywhere so
+    # the shared embedding cache pays for exactly ONE embed. Defaults to `task`.
+    mt = match_text if (match_text is not None and str(match_text).strip()) else task
+    hinted_ids = [h for h in (sop_hints or []) if h]
+
+    # Stages A-C: build candidate pool via funnel (SOP hints UNIONed in)
+    personas, funnel, semantic_order = build_candidate_pool(mt, department, all_personas,
+                                                            paths, sop_hints=hinted_ids)
 
     # ─── G13: bound LLM fan-out BEFORE Stage-D scoring (token-furnace guard) ──
     # Enforced here at the scoring gate (a rule not enforced does not exist):
@@ -1930,19 +2026,20 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
             funnel["llm_gate"] = "ok"
     funnel["scoring_mode_effective"] = effective_scoring_mode
 
-    # Stage D: 5-layer scoring on funnel survivors only
-    scored = [score_persona(p, task, owner_profile, department, weights, paths,
+    # Stage D: 5-layer scoring on funnel survivors only. Layer-5 embeds `mt` —
+    # the SAME string Stage-C embedded — so the shared cache stays at one embed.
+    scored = [score_persona(p, mt, owner_profile, department, weights, paths,
                             db_path, scoring_mode=effective_scoring_mode)
               for p in personas]
 
-    task_category = infer_task_category(task)
+    task_category = infer_task_category(mt)
 
     # ── Perspective bonus (additive-only, never-to-zero) ──────────────────────
     # Nudge a persona UP when the task EXPLICITLY invokes the lived-experience lens
     # its source genuinely carries. Empty/absent perspective[] -> 0.0 bonus, so this
     # can never eliminate, penalize, or zero-score any persona. Generic tasks invoke
     # no lens -> task_perspectives is empty -> the whole block is skipped (no-op).
-    task_perspectives = infer_task_perspectives(task)
+    task_perspectives = infer_task_perspectives(mt)
     if task_perspectives:
         pc_file = paths.get("persona_categories")
         personas_meta: dict = {}
@@ -2019,7 +2116,7 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     if personas_meta_sp:
         for s in scored:
             pinfo = personas_meta_sp.get(s["persona_id"], {})
-            hits = specialty_tag_hits(task, pinfo.get("custom") or [])
+            hits = specialty_tag_hits(mt, pinfo.get("custom") or [])
             if hits:
                 sbonus = specialty_domain_bonus(len(hits), s["layers"]["task_fit"])
                 if sbonus > 0.0:
@@ -2027,6 +2124,22 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                     s["specialty_tags_matched"] = sorted(hits)
                     s["base_score"] = round(s["base_score"] + sbonus, 4)
                     s["score"] = round(s["score"] + sbonus, 4)
+
+    # ── SOP persona-hint bonus (F3.4 / F4.2) — additive-only, never-to-zero ────
+    # Reward a persona the governing SOP explicitly hinted (sops.persona_hints).
+    # BOUNDED (cap 0.30 < specialty cap 0.40) and task_fit-coupled: a relevant
+    # hinted persona is nudged toward winning, while a stale / off-topic hint
+    # earns only a small bump and cannot overturn a strong semantic or specialty
+    # signal. Empty hint set -> inert (no persona touched). Never reduces a score.
+    hinted_set = set(hinted_ids)
+    if hinted_set:
+        for s in scored:
+            if s["persona_id"] in hinted_set:
+                hbonus = sop_hint_bonus(s["layers"]["task_fit"])
+                if hbonus > 0.0:
+                    s["sop_hint_bonus"] = round(hbonus, 4)
+                    s["base_score"] = round(s["base_score"] + hbonus, 4)
+                    s["score"] = round(s["score"] + hbonus, 4)
 
     if variety:
         # P9-2: scope the look-back SPAN to this department's own recent task
@@ -2190,6 +2303,69 @@ def _assert_persona_categories_canonical(paths: dict) -> None:
         )
 
 
+# ─── F3.2: --strict degradation signalling (exit code contract) ──────────────
+# Shell consumers (QC gates, fleet heartbeat probes) need to distinguish a
+# genuine task-matched persona from a DEGRADED outcome without parsing JSON.
+# The Command Center spawns this selector and reads JSON only, so the DEFAULT
+# (non-strict) behaviour MUST stay exit 0 for every successful/mechanical
+# result — back-compat is load-bearing. `--strict` opts a caller into a
+# non-zero signal (STRICT_DEGRADED_EXIT) purely for monitoring.
+STRICT_DEGRADED_EXIT = 3
+
+
+def _selection_is_degraded(result) -> bool:
+    """True iff a SELECT-mode result signals persona degradation that a
+    ``--strict`` consumer should treat as a non-zero (alertable) outcome.
+
+    Degradation signals (any one):
+      • ``warning == "NO_PERSONAS_AVAILABLE"`` — empty persona universe (A1;
+        fresh box, or categories clobbered per F2.1).
+      • a fallback tier was used — F3.1 tags the last-resort default persona
+        with a top-level ``fallback`` value and/or ``persona_mode == "fallback"``.
+        (The nested LLM-scoring provider fallback in ``layers._llm_meta`` is a
+        DIFFERENT concept — a healthy match may score via OpenRouter/Gemini —
+        and is deliberately NOT consulted here.)
+
+    NOT degraded (stay exit 0 by design):
+      • ``no_persona_required`` mechanical tasks — a truthful contract, not a
+        failure.
+      • ``LOW_CONFIDENCE_SELECTION`` — a real, if weak, task match.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("warning") == "NO_PERSONAS_AVAILABLE":
+        return True
+    if result.get("fallback"):
+        return True
+    if result.get("persona_mode") == "fallback":
+        return True
+    return False
+
+
+def _combined_is_degraded(result) -> bool:
+    """True iff a COMBINED (``--combined``) result contains a NAKED sub-task —
+    a real (non-mechanical) sub-task that resolved to no persona — or the
+    top-level result itself carries a select-mode degradation signal.
+    A per-sub-task ``no_persona_required`` part is NOT naked (mechanical steps
+    legitimately need no persona)."""
+    if not isinstance(result, dict):
+        return False
+    if _selection_is_degraded(result):
+        return True
+    for part in result.get("plan") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("persona_id") is None and not part.get("no_persona_required"):
+            return True
+    return False
+
+
+def _strict_exit(strict: bool, degraded: bool) -> int:
+    """Map a degradation verdict to a process exit code under the --strict
+    contract. Non-strict callers ALWAYS get 0 (back-compat)."""
+    return STRICT_DEGRADED_EXIT if (strict and degraded) else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
     parser.add_argument("--mode", default="select",
@@ -2208,6 +2384,37 @@ def main():
                         help="Disable v10.14.28 anti-repetition variety logic "
                              "(recency penalty + top-N weighted sampling). "
                              "Use for deterministic debugging / regression tests.")
+    # ── SOP-aware matching (F3.4 / F4.2) ─────────────────────────────────────
+    # The governing SOP informs the match. --sop-name/--sop-steps/--sop-slug are
+    # FOLDED into the task text to form one composite query (category inference +
+    # a SINGLE shared Stage-C/Layer-5 embed); --sop-hints (sops.persona_hints,
+    # comma-separated canonical persona ids) are UNIONed into the pool and granted
+    # a bounded, task_fit-coupled bonus. All optional — omitting them is a no-op.
+    parser.add_argument("--sop-slug", default=None,
+                        help="(SOP-aware) governing SOP slug (e.g. build-a-website); "
+                             "its tokens are folded into the match query.")
+    parser.add_argument("--sop-name", default=None,
+                        help="(SOP-aware) governing SOP human name; folded into the "
+                             "match query used for category + semantic matching.")
+    parser.add_argument("--sop-steps", default=None,
+                        help="(SOP-aware) comma-separated SOP step names; folded into "
+                             "the match query (task+SOP composite, one shared embed).")
+    parser.add_argument("--sop-hints", default=None,
+                        help="(SOP-aware) comma-separated canonical persona ids from "
+                             "sops.persona_hints. UNIONed into the candidate pool "
+                             "(never-to-zero, department-agnostic) and given a bounded "
+                             "additive bonus. Non-installed ids are ignored.")
+    # ── F3.2: strict degradation exit code ───────────────────────────────────
+    parser.add_argument("--strict", action="store_true",
+                        help="Select mode only: exit "
+                             f"{STRICT_DEGRADED_EXIT} (instead of 0) when the "
+                             "selection is DEGRADED — NO_PERSONAS_AVAILABLE or a "
+                             "fallback persona was used (and, under --combined, "
+                             "any non-mechanical sub-task got no persona). The "
+                             "JSON on stdout is UNCHANGED; only the exit code "
+                             "differs. Default (non-strict) always exits 0 for a "
+                             "successful/mechanical result (Command Center "
+                             "back-compat). For QC gates & fleet heartbeat probes.")
     # ── W6 combined / per-subtask personas (spec §6, item 8) ─────────────────
     # When --combined is set, the task is DECOMPOSED into ordered sub-tasks and
     # EACH sub-task gets its OWN best-fit persona, with the specialist-surfacing
@@ -2343,11 +2550,30 @@ def main():
         result.setdefault("db", db_field)
         print(json.dumps(result, indent=2) if args.format == "json"
               else _dt._format_human(result))
-        return 0
+        return _strict_exit(args.strict, _combined_is_degraded(result))
 
-    # Mode detection
+    # SOP-aware composite query (F3.4 / F4.2). Fold the governing SOP name/steps/
+    # slug into the task text and parse the persona_hints list. When no --sop-*
+    # flags are supplied `match_text` == args.task and `sop_hints` == [] — the
+    # whole selection is byte-identical to the pre-SOP behavior (inertness).
+    def _split_csv(v):
+        return [x.strip() for x in str(v).split(",") if x and x.strip()] if v else []
+    sop_steps = _split_csv(args.sop_steps)
+    sop_hints = _split_csv(args.sop_hints)
+    match_text = _build_sop_match_text(args.task, args.sop_name, sop_steps, args.sop_slug)
+    sop_active = bool(args.sop_slug or args.sop_name or sop_steps or sop_hints)
+    sop_diag = {
+        "slug": args.sop_slug,
+        "name": args.sop_name,
+        "steps": sop_steps,
+        "hints": sop_hints,
+    }
+
+    # Mode detection (on the literal task — SOP context must not flip
+    # coaching<->leadership). Category IS SOP-aware (spec: fold SOP into
+    # infer_task_category) so a SOP shifts stickiness/reporting appropriately.
     mode = detect_interaction_mode(args.task)
-    task_category = infer_task_category(args.task)
+    task_category = infer_task_category(match_text)
 
     # Mechanical task check
     # BUG-FIX v11.6.0: use word-boundary regex for single-word shell commands so
@@ -2418,9 +2644,11 @@ def main():
     variety_enabled = not args.no_variety
 
     if mode == "hybrid":
-        leader = select_persona(args.task, args.department, "leadership", weights, paths, db_path, variety=variety_enabled)
+        leader = select_persona(args.task, args.department, "leadership", weights, paths, db_path,
+                                variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
         coach = select_persona(args.task, args.department, "coaching",
-                                get_weights_for_task(args.task, "coaching"), paths, db_path, variety=variety_enabled)
+                                get_weights_for_task(args.task, "coaching"), paths, db_path,
+                                variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
         out = {
             "mode": "hybrid",
             "task_category": task_category,
@@ -2441,8 +2669,15 @@ def main():
             # documented contract exactly like the sticky path.
             "funnel": leader.get("funnel", {"pool": 0, "category": 0, "semantic": 0}),
         }
+        # F3.2: the hybrid dict is assembled by hand from the LEADER's result,
+        # which drops the leader's degradation `warning` (e.g. NO_PERSONAS_AVAILABLE
+        # on an empty box). Forward it so `--strict` sees the same signal the
+        # non-hybrid path already carries.
+        if leader.get("warning") and "warning" not in out:
+            out["warning"] = leader["warning"]
     else:
-        out = select_persona(args.task, args.department, mode, weights, paths, db_path, variety=variety_enabled)
+        out = select_persona(args.task, args.department, mode, weights, paths, db_path,
+                             variety=variety_enabled, match_text=match_text, sop_hints=sop_hints)
 
     # PRD 1.3: inject db path so every selection response shows whether the DB was found.
     out["db"] = db_field
@@ -2452,10 +2687,16 @@ def main():
     if sticky_bypassed:
         out["sticky_bypassed"] = sticky_bypassed
 
+    # F3.4 / F4.2: surface the consumed SOP context (observability). funnel.hinted
+    # (present in the non-sticky/non-hybrid funnel) reports how many hinted personas
+    # were actually UNIONed into the pool on this box.
+    if sop_active:
+        out["sop"] = sop_diag
+
     if not args.no_record:
         record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")
-    return 0
+    return _strict_exit(args.strict, _selection_is_degraded(out))
 
 
 if __name__ == "__main__":

@@ -79,6 +79,16 @@ PUBLIC API
             description="", env=None)                             -> task_id str | None  (never raises)
   complete_run(run_dir, task_id=None, *, phase_id="deliver", note="",
                status="review", deliverable_url="", env=None)    -> bool                (never raises)
+  block_run(run_dir, task_id=None, *, phase_id="", note="", env=None)
+                                                                  -> bool                (never raises)
+
+THE BLOCKED STATE (FIX-XC-06)
+  Before this helper, a gate failure left a card stranded at `in_progress` forever
+  — an invisible failure. `block_run` moves the card to the fail-soft `blocked`
+  status (reachable from ANY state in one hop) with the failing phase + AF code as
+  the note, so a failed run is VISIBLE on the board. `blocked` is never `done`: a
+  fixed re-run may re-open it (blocked -> in_progress) and the independent QC
+  scorer still owns the ONLY path to `done` (review -> done).
 """
 
 from __future__ import annotations
@@ -223,15 +233,23 @@ def _legal_path(src: str, dst: str) -> Optional[List[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Receipt — atomic read / merge under <run_dir>/working/checkpoints/mc-board.json.
-# Only written when the board is ENABLED (a disabled run touches nothing).
+# Receipt — atomic read / merge under <run_dir>/<receipt_subdir>/mc-board.json.
+# The subdir is PARAMETERIZED (default working/checkpoints, the shared productized
+# layout) so a skill whose documented run layout differs can pin its own — Skill 53
+# passes ("run", "checkpoints") to keep the board receipt inside the SAME
+# run/checkpoints/ dir that holds its front-door nonce. Only written when the board
+# is ENABLED (a disabled run touches nothing).
 # ---------------------------------------------------------------------------
-def _receipt_path(run_dir) -> Path:
-    return Path(run_dir) / "working" / "checkpoints" / "mc-board.json"
+_DEFAULT_RECEIPT_SUBDIR = ("working", "checkpoints")
 
 
-def _read_receipt(run_dir) -> dict:
-    p = _receipt_path(run_dir)
+def _receipt_path(run_dir, receipt_subdir=None) -> Path:
+    parts = receipt_subdir or _DEFAULT_RECEIPT_SUBDIR
+    return Path(run_dir).joinpath(*parts) / "mc-board.json"
+
+
+def _read_receipt(run_dir, receipt_subdir=None) -> dict:
+    p = _receipt_path(run_dir, receipt_subdir)
     if not p.exists():
         return {}
     try:
@@ -241,12 +259,12 @@ def _read_receipt(run_dir) -> dict:
         return {}
 
 
-def _merge_receipt(run_dir, updates: dict) -> bool:
+def _merge_receipt(run_dir, updates: dict, receipt_subdir=None) -> bool:
     """Merge `updates` into the receipt atomically. Never raises."""
-    p = _receipt_path(run_dir)
+    p = _receipt_path(run_dir, receipt_subdir)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        receipt = _read_receipt(run_dir)
+        receipt = _read_receipt(run_dir, receipt_subdir)
         receipt.update(updates)
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2))
@@ -271,6 +289,7 @@ def card_open(
     description: str = "",
     priority: str = "medium",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open (or idempotently re-fetch) this run's board card. Returns the task_id
     string on success, else None. FAIL-SOFT — a None return never blocks the run.
@@ -286,12 +305,12 @@ def card_open(
         return None
 
     # Idempotent: reuse a task_id already recorded for this run dir.
-    existing = _read_receipt(run_dir).get("mc_task_id")
+    existing = _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if existing:
         return str(existing)
 
     # Mark the attempt (receipt-backed) BEFORE the network call.
-    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug})
+    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug}, receipt_subdir)
 
     source_ref = slug or source or "run"
     idem_input = f"{source_ref}{title}".encode("utf-8")
@@ -321,7 +340,7 @@ def card_open(
         task_id = str(body["task_id"])
         deduped = body.get("deduped", False)
         _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}")
-        _merge_receipt(run_dir, {"mc_task_id": task_id})
+        _merge_receipt(run_dir, {"mc_task_id": task_id}, receipt_subdir)
         return task_id
 
     _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
@@ -385,6 +404,7 @@ def card_advance(
     note: str = "",
     deliverable_url: str = "",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> bool:
     """Advance this run's card to (phase_id, status), walking the shortest LEGAL
     path from its current status. FAIL-SOFT: returns False (never raises) on any
@@ -409,7 +429,7 @@ def card_advance(
              "(PASS >= 8.5). Post 'review' and let the QC sweep promote the card.")
         return False
 
-    tid = task_id or _read_receipt(run_dir).get("mc_task_id")
+    tid = task_id or _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if not tid:
         _log(f"advance {phase_id}->{target} skipped — no task_id (card never opened).")
         return False
@@ -455,6 +475,7 @@ def begin_run(
     source: str = "",
     description: str = "",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open the run's card and move it to in_progress. Returns the task_id or None.
     Never raises — the board is a view, never a gate."""
@@ -462,10 +483,11 @@ def begin_run(
         tid = card_open(
             run_dir, slug=slug, title=title, department=department,
             persona=persona, source=source, description=description, env=env,
+            receipt_subdir=receipt_subdir,
         )
         if tid:
             card_advance(run_dir, tid, phase_id="run", status="in_progress",
-                         note="run started", env=env)
+                         note="run started", env=env, receipt_subdir=receipt_subdir)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
@@ -474,7 +496,7 @@ def begin_run(
 
 def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "deliver",
                  note: str = "", status: str = "review", deliverable_url: str = "",
-                 env: Optional[dict] = None) -> bool:
+                 env: Optional[dict] = None, receipt_subdir=None) -> bool:
     """Move the run's card to its TERMINAL producer status — `review` by default,
     NEVER `done`. review->done is owned exclusively by the independent QC scorer
     (PASS >= 8.5); a producer that posted `done` here would skip the QC column,
@@ -490,7 +512,36 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
         default_note = "certified — awaiting QC promotion"
         return card_advance(run_dir, task_id, phase_id=phase_id, status=target,
                             note=note or default_note, deliverable_url=deliverable_url,
-                            env=env)
+                            env=env, receipt_subdir=receipt_subdir)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")
+        return False
+
+
+def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
+              note: str = "", env: Optional[dict] = None, receipt_subdir=None) -> bool:
+    """Move the run's card to the fail-soft dead-end `blocked` status when a gate
+    FAILS, so a blocked run is VISIBLE on the board instead of stranding forever at
+    `in_progress` (FIX-XC-06: gate failures used to leave invisible, permanently-
+    in_progress cards). The failing phase + AF code (passed as `note`) are recorded
+    on the card.
+
+    `blocked` is reachable from ANY status in one hop (see _legal_path) and is NEVER
+    `done`: a producer may re-open it (blocked -> in_progress) on a fixed re-run, and
+    the independent QC scorer still owns the ONLY path to `done` (review -> done).
+    Recovers the task_id from the receipt (in receipt_subdir) when not supplied. Never
+    raises — the board is a view, never a gate, so an outage can never change the exit
+    code."""
+    try:
+        detail = (note or "").strip()
+        if phase_id:
+            prefix = "BLOCKED at %s (gate failed)" % phase_id
+            detail = ("%s — %s" % (prefix, detail)) if detail else prefix
+        elif not detail:
+            detail = "run BLOCKED (a gate failed)"
+        return card_advance(run_dir, task_id, phase_id=phase_id or "blocked",
+                            status="blocked", note=detail, env=env,
+                            receipt_subdir=receipt_subdir)
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False

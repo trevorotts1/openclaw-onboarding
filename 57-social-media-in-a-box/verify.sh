@@ -39,6 +39,10 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/smib-verify.XXXXXX")"
 cleanup() { rm -rf "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM HUP
 
+# FIX-XC-11h: the P-DELIVER phase copies labeled deliverables. Point it at the temp
+# work dir so verify.sh NEVER writes test brand folders into the real ~/Downloads.
+export SMIB_DELIVER_DEST="$WORK/deliverables"
+
 GOLD_SRC="examples/golden-week"
 
 # assert a prover REJECTS: exit code == $2 and (if $3 given) $3 is among the --json codes

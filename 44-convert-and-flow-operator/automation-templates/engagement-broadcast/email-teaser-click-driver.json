@@ -13,7 +13,9 @@
   ],
   "category": "engagement-broadcast",
   "source": {
-    "books": ["Copywriting Secrets (Jim Edwards)"],
+    "books": [
+      "Copywriting Secrets (Jim Edwards)"
+    ],
     "sections": [
       "Copywriting Secrets Secret #18 — How To Write Killer Email Teasers—FAST",
       "Copywriting Secrets Secret #6 — The #1 Single Most Important Piece of Sales Copy (subject line = headline)",
@@ -21,13 +23,19 @@
       "Copywriting Secrets Secret #13 — It's All About Them—Never About You (write to one person)"
     ]
   },
+  "source_books": [
+    "Copywriting Secrets (Jim Edwards)"
+  ],
   "trigger": {
     "primary": "Any broadcast send to the engaged list where the goal is to drive a CLICK to a page — sales letter, video, blog post, review, webinar registration, or content — and let the PAGE sell, not the email.",
     "secondary": "Affiliate or JV send — same template works when enticing a partner to email their list on your behalf.",
     "trigger_type_ghl": "Email Campaign (Broadcast) to seinfeld-broadcast Smart List, OR a workflow Send-Email step pointing to an offer/content page.",
     "important_distinction": "BOOK: 'Ninety-nine times out of a hundred, the sole purpose of that email teaser is to get the reader to click a link in the email itself and go to a web page.' This is NOT a story email; it is a SHORT CLICK-DRIVER. The page (sales letter, VSL, blog) does the selling — the email's only job is the click."
   },
-  "channels": ["Email (primary)", "SMS teaser (same short formula applies)"],
+  "channels": [
+    "Email (primary)",
+    "SMS teaser (same short formula applies)"
+  ],
   "sequence": [
     {
       "step": 1,
@@ -98,7 +106,26 @@
   "copyPersona": {
     "primary": "Jim Edwards (Copywriting Secrets) — short, punchy, friend-to-friend, curiosity-first, ONE click action. Secret #18 is the definitive source.",
     "secondary": "Edwards secondary supports: subject line = headline (Secret #6), Ultimate Bullet Formula curiosity-first version (Secret #9), write to one person not a crowd (Secret #13).",
-    "scripts": ["Subject line question or teaser", "Pattern interrupt statement", "2-4 curiosity bullets", "Single CTA + link", "'I'll see you over there' close"]
+    "scripts": [
+      "Subject line question or teaser",
+      "Pattern interrupt statement",
+      "2-4 curiosity bullets",
+      "Single CTA + link",
+      "'I'll see you over there' close"
+    ]
+  },
+  "copy_persona": {
+    "primary": "Jim Edwards (Copywriting Secrets) — short, punchy, friend-to-friend, curiosity-first, ONE click action. Secret #18 is the definitive source.",
+    "supporting": [
+      "Edwards secondary supports: subject line = headline (Secret #6), Ultimate Bullet Formula curiosity-first version (Secret #9), write to one person not a crowd (Secret #13)."
+    ],
+    "frameworks": [
+      "Subject line question or teaser",
+      "Pattern interrupt statement",
+      "2-4 curiosity bullets",
+      "Single CTA + link",
+      "'I'll see you over there' close"
+    ]
   },
   "ghlBuild": {
     "buildType": "Email Campaign (Broadcast) OR a Send-Email action step inside a workflow — NOT a standalone autoresponder.",
@@ -113,6 +140,11 @@
     "mode3_just_do_it": "Build from the template: fill subject, salutation, 1-2 sentence interrupt, 2-3 bullets, CTA link, personal close. Done in 5 minutes.",
     "always_overridable": "Subject line angle, bullet count, length, and closing phrase are all preferences — the user can adjust any element without breaking the concept."
   },
-  "kpis": ["click-through rate (primary success metric)", "page conversion rate post-click", "unsubscribe rate (signals mismatch between teaser promise and page reality)", "for JV sends: click-per-list-member comparison"],
+  "kpis": [
+    "click-through rate (primary success metric)",
+    "page conversion rate post-click",
+    "unsubscribe rate (signals mismatch between teaser promise and page reality)",
+    "for JV sends: click-per-list-member comparison"
+  ],
   "faithfulness": "The 6-part anatomy (subject / salutation / shocking statement / 2-4 bullets / CTA / personal close), both worked examples, the 'friends don't send friends ten-page sales letters' rule, the 99-out-of-100-purpose, and the shorter-is-better discipline are taken directly from Copywriting Secrets Secret #18. The distinction from the Seinfeld story email is derived from combining DotCom Secrets Secret #8 and Copywriting Secrets Secret #18 — flagged as derived, not a single verbatim passage."
 }

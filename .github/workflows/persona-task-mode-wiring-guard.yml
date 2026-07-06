@@ -5,7 +5,9 @@ name: persona-task-mode-wiring-guard
 #   (A) skill-22's CORE_UPDATES.md no longer lands the Persona Reflex BODY through
 #       the real merger (a marker without an execution-path body),
 #   (B) persona-matching-protocol.md drops the mandatory "Load and Apply the Task
-#       Mode" step,
+#       Mode" step, OR (B2) its "Skill 22 not installed" edge case regresses from a
+#       DEGRADED state (mandatory DEFAULT_PERSONA_FALLBACK attachment + install nag)
+#       back to normalizing persona-less operation as a "valid state",
 #   (C) funnel_rubrics R-PERSONA-GROUNDING stops grading governance-application,
 #   (D) the embedding engine loses mode-aware (leadership) retrieval,
 #   (E) a role-library §2 ships without the concrete Task-Mode load step.
@@ -26,6 +28,11 @@ on:
       - tests/unit/section-tagger-indexer-agreement.test.sh
       - "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py"
       - "23-ai-workforce-blueprint/scripts/section-tag-migration.py"
+      # F4.4 lifecycle + F4.7 observability + FDN-2 no-naked contract
+      - "32-command-center-setup/scripts/move-task.py"
+      - shared-utils/fleet-heartbeat-persona-probe.sh
+      - tests/unit/move-task-persona-lifecycle.test.sh
+      - tests/unit/no-naked-dispatch.test.sh
       - .github/workflows/persona-task-mode-wiring-guard.yml
   pull_request:
     paths:
@@ -39,6 +46,11 @@ on:
       - tests/unit/section-tagger-indexer-agreement.test.sh
       - "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py"
       - "23-ai-workforce-blueprint/scripts/section-tag-migration.py"
+      # F4.4 lifecycle + F4.7 observability + FDN-2 no-naked contract
+      - "32-command-center-setup/scripts/move-task.py"
+      - shared-utils/fleet-heartbeat-persona-probe.sh
+      - tests/unit/move-task-persona-lifecycle.test.sh
+      - tests/unit/no-naked-dispatch.test.sh
       - .github/workflows/persona-task-mode-wiring-guard.yml
 
 jobs:
@@ -65,3 +77,29 @@ jobs:
         run: |
           chmod +x tests/unit/section-tagger-indexer-agreement.test.sh
           bash tests/unit/section-tagger-indexer-agreement.test.sh
+
+      # ── F4.4: Kanban Persona-Gate compiles + syntax-checks ──────────────────
+      - name: move-task.py compiles + probe syntax-checks
+        run: |
+          python3 -m py_compile 32-command-center-setup/scripts/move-task.py
+          bash -n shared-utils/fleet-heartbeat-persona-probe.sh
+
+      # ── F4.4: lifecycle gate contract (warn-and-heal / hard review gate) ────
+      - name: move-task persona lifecycle gate
+        run: |
+          chmod +x tests/unit/move-task-persona-lifecycle.test.sh
+          bash tests/unit/move-task-persona-lifecycle.test.sh
+
+      # ── FDN-2 no-naked-dispatch contract test, wired here as the runtime
+      #    enforcement gate (F4.4). Runs as a HARD gate once FDN-2 lands the
+      #    test file; until then it emits a visible pending notice so the wiring
+      #    is present and self-activates on FDN-2 merge (dependency-ordered). ──
+      - name: no-naked-dispatch contract (FDN-2)
+        run: |
+          if [ -f tests/unit/no-naked-dispatch.test.sh ]; then
+            echo "FDN-2 contract test present — enforcing."
+            chmod +x tests/unit/no-naked-dispatch.test.sh
+            bash tests/unit/no-naked-dispatch.test.sh
+          else
+            echo "::warning::FDN-2 no-naked-dispatch contract test (tests/unit/no-naked-dispatch.test.sh) not present yet — this gate self-activates when FDN-2 merges."
+          fi

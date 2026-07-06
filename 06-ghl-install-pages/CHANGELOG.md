@@ -4,6 +4,73 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v17.0.35] - 2026-07-05 - copy-fidelity gate flipped opt-in → opt-out + FAB-QC fires on engine-routed builds (FIX-COPY-02, T-w1-copy-fidelity)
+
+Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**. The two "real" copy gates were no-ops
+exactly where the flagship copy ships. Both are now binding by default.
+
+- **FIX-COPY-02(a) — FAB-QC now fires on engine-routed builds.** `tools/funnel_engine_selector.py`:
+  a `ROUTE_TO_ENGINE` decision now writes `routing/match-decision.json`
+  (`flex_decision:"ROUTE_TO_ENGINE"`, `template_path` → the engine's structure JSON), the receipt the
+  FAB producer keys on. `tools/v2_dispatcher.py` `_emit_fab_artifact` is now engine-aware: on the
+  engine route it echoes the engine `copy_ledger.json` into `build/fab-artifact.json` so the shared
+  `≥ 8.5` FAB-QC copy-substance overlay RUNS (was `ran:False` — a silent skip) on the flagship
+  Signature-Funnel / Sales-Page products. `shared-utils/fab_artifact.py`: new
+  `build_funnel_artifact_from_copy_ledger()` normaliser that echoes the real per-section copy.
+- **FIX-COPY-02(b) — copy-fidelity render gate flipped OPT-IN → OPT-OUT.** `tools/ghl_verify.py`:
+  `_required_copy_tokens` now falls back to the run's conventional APPROVED copy (`routing/copy.md` /
+  `copy.md` / an engine `copy_ledger.json`) when a page carries no explicit `copy_tokens`/
+  `copy_md_path`, so every verified page is copy-fidelity-gated by default. A page opts out with
+  `copy_fidelity:false`; a run with no approved copy on disk resolves no tokens (marker-only callers
+  unaffected). New `extract_copy_tokens_from_ledger()` handles the engine ledger shape.
+  `tools/ghl_builder.py`: `emit_rest_save_plan` gained a `copy_md_path` arg it stamps on the
+  `verify_preview` step + plan (explicit per-page copy provenance).
+- Full `tools/tests/` suite green (961 passed / 15 skipped); `tests/unit/fab-artifact.test.py` green.
+
+## [v17.0.34] - 2026-07-05 — feat(image rail): DIU style-card block 8 + optional per-entry aspect_ratio (T-w1-06-ghl-rail)
+
+Wave-1 train T-w1-06-ghl-rail — FIX-XC-02c, FIX-XC-05c, FIX-IMG-03. All additive; unset inputs
+reproduce prior behavior byte-for-byte.
+
+### FIX-XC-02c — optional DIU style card governs the page's imagery (Brand-Style block 8)
+- `tools/ghl_image_stage.py`: a `page_spec` may now carry an OPTIONAL `style_card_id` (a registered
+  Skill 45 `FN-…` card). New `_resolve_style_card_block()` resolves it via DIU Workflow B — INDEX.md
+  lookup → card file → `### LONG` tier — and embeds that text VERBATIM as the Brand-Style portion of
+  **block 8** in every derived section prompt (and appends it to explicit pre-authored prompts). The
+  block-4 Signature Grade Block is unchanged. Resolution is FAIL-LOUD: a set-but-unresolvable id
+  (no library / not registered / missing card / no LONG tier) raises `ImagePipelineError` rather than
+  silently shipping off-brand art. Library located via `DIU_LIBRARY_DIR` override or sibling/`~/.openclaw`
+  candidates. Unset `style_card_id` ⇒ exact prior behavior.
+- Cross-skill (additive data/doc): Skill 45 `library/INDEX.md` gains the `FN-` funnel/landing/website
+  category + prefix and a new `library/funnel-page-designs/_RULES.md`; Skill 49 intake gains optional
+  Q18 `q18_style_card_id` + PROMPT 7 / MASTERDOC §4 block-8 notes; Skill 56 intake schema gains optional
+  `style_card_id` + a PROMPT-SEAMS image Brand-Style seam.
+
+### FIX-IMG-03 — per-entry aspect_ratio / resolution (no more silently-forced 16:9)
+- `tools/ghl_media.py::build_prompts_json`: carries an OPTIONAL per-spec `aspect_ratio` / `resolution`
+  straight through into `prompts.json`. `presentation-render/kie_generate.py` (the REUSED generator) now
+  reads `slide.get("aspect_ratio", ASPECT_RATIO)` / `slide.get("resolution", RESOLUTION)` — a section's
+  mandated ratio (e.g. 49 Section 12 → 3:4) is honored; entries without the keys render exactly as before.
+
+### FIX-XC-05c — Skill-6 rail contract parity test
+- New `tests/test_cc_rail_contract.py`: mirrors `test_cc_contract.py` for the rail's `cc_board.py`
+  (producer terminates at `review`, `done` hard-blocked on both `move_task`/`update_status`, enum parity,
+  deterministic ingest routing, disabled-board no-op) **plus** the front-door/nonce entry discipline of
+  `ghl_gate.py` (a hand-written / wrong-writer / nonce-less / MOCK / missing-evidence verdict can never
+  pass the gate; only a real writer+nonce+consistent PASS returns 0). 17 tests, stdlib+pytest, zero network.
+
+---
+## [v17.0.29] - 2026-07-05 - test(fab-qc): re-author passing-path fixtures for the new lengthClass floors (T-funnel-copy-engine)
+
+- **FIX-XC-04a (consumer)** — `tests/test_v2_dispatcher.py`: the shared `shared-utils/fab_qc.py` D2
+  gate now enforces lengthClass-keyed floors (body slots ≥40 words; page-level lengthClass floors).
+  Re-authored the two passing-path golden hero copies (`_write_fab_evidence` non-placeholder hero and
+  `TestFabArtifactProducer` real_copy) to genuinely clear the 40-word body floor, so the gate tests
+  assert the new behavior instead of the old flat 4-word floor. No shipped-behavior change in this
+  wrapper; test-fixture depth only.
+
+---
+
 ## Version tracking
 
 As of v17.0.4, `SKILL.md` `metadata.version` is rolled automatically by `bump-version.sh` in lockstep with the repository `/version`. The nested skill version now tracks the repo version by design (not a separate content version). The gate deliberately skips validation on this nested `metadata.version` since `bump-version.sh` step-12 keeps it current.

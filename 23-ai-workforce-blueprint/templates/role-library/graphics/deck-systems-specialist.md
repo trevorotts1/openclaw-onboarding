@@ -467,7 +467,7 @@ For this role, the authoritative sources are:
 
 **Tier 2 — Operational and process references:**
 
-- **ZHC Boundary Contract — SOP-DIU-611** (mirrored in `sops/deck-systems-specialist-sops.md`). Governs the Graphics–Presentations seam. Consult on every ambiguous deck routing decision and before every quarterly joint boundary review.
+- **ZHC Boundary Contract — SOP-DIU-611** (mirrored in `sops/SOP--deck-systems-specialist-sops.md`). Governs the Graphics–Presentations seam. Consult on every ambiguous deck routing decision and before every quarterly joint boundary review.
 - **Universal SOPs — cross-dept-request-template.md** (`universal-sops/cross-dept-request-template.md`). Consult when a cross-department deck imagery request must be formalized (e.g., Presentations requesting DIU background imagery via SOP-DIU-612).
 - **Presentations Dept — CLIENT-WEBINAR-DECK-SOP.md** (`universal-sops/CLIENT-WEBINAR-DECK-SOP.md`). Read to understand the Presentations pipeline's scope and the five contracted archetypes. A Deck Systems Specialist who has not read this document cannot correctly apply the boundary decision table.
 
@@ -572,4 +572,4 @@ The Deck Systems Specialist is registered as an **agent** (not a workspace) unde
 
 ---
 
-*End of how-to.md. All 19 sections present and filled. DIU-specific SOPs [SOP-DIU-201], [SOP-DIU-202], and [SOP-DIU-611] are registered as the authoritative entries for these IDs in this file. Mirror copies exist in `sops/deck-systems-specialist-sops.md` per the no-duplication guarantee.*
+*End of how-to.md. All 19 sections present and filled. DIU-specific SOPs [SOP-DIU-201], [SOP-DIU-202], and [SOP-DIU-611] are registered as the authoritative entries for these IDs in this file. Mirror copies exist in `sops/SOP--deck-systems-specialist-sops.md` per the no-duplication guarantee.*

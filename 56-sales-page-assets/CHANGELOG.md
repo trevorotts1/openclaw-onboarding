@@ -1,5 +1,69 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.3.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **Brief-stage canonical persona resolution** (`scripts/persona_brief.py`): resolves the
+  sales-page's governing persona through the ONE shared entry point
+  `shared-utils/persona_for_job.py` (canonical 5-layer selector) at the brief stage. The resolved
+  persona id + Section-4 governance excerpt are written to `persona-selection.json` for the copy
+  prompts, and the signed **PROCESS-CERTIFICATE** now names the canonical persona
+  (`cert["persona"]`, added before signing). The A/B baked variant personas become the variant axis
+  ON TOP of the matched persona, not instead of it.
+- A brief-declared client persona choice is **FINAL** (client sovereignty).
+
+### Notes
+- Fail-soft: an unreachable selector / bare box is a clean skip and never blocks a run.
+
+## 1.2.0 — 2026-07-05 — P4-MEDIA image-provenance + per-stage coverage gate (FIX-IMG-02)
+
+Train **T-w1-56-salespage** (Wave-1). Fix ID: **FIX-IMG-02**.
+
+- **FIX-IMG-02** — The media ledger content was never validated: P2/P4 were existence-only and
+  `prove_sp_bundle.py` has zero image checks, so a blank / off-host / placeholder image passed every
+  gate — even though the SOP claimed a GHL-host provenance gate. New prover
+  `scripts/prove_sp_media.py` (clones PART B of Skill 49's `prove_sf_no_pitch.py`: `_BAD_TASK_IDS` +
+  `GHL_HOST_FINGERPRINTS`, fail-closed on zero images) validates `media_ledger.json`:
+  - **AF-SP56-MEDIA-PROVENANCE** — every media record must carry a real image-provider `task_id`
+    (no native/placeholder value);
+  - **AF-SP56-MEDIA-HOST** — every media URL must resolve to a GHL media host;
+  - **AF-SP56-MEDIA-COVERAGE** — every `image_plan.json` stage must have >= 1 media record
+    (per-stage coverage; a stage's images can no longer silently fail to certify);
+  - fail-closed (**AF-SP56-MEDIA-EMPTY** / **AF-SP56-MEDIA-PLAN-EMPTY**) on zero images / zero plan stages.
+- Wired `prove_sp_media.py` as the real **P4-MEDIA** gate in `run_sales_page_assets.py` (`_media_gate`,
+  replacing the existence-only delegation seam) and updated the orchestrator self-test to write a
+  stage-covering media ledger.
+- Added the five `AF-SP56-MEDIA-*` codes + the `_chk_sp_media` wrapper to `SALESPAGE-MANIFEST.json`;
+  pinned the new prover in `scripts/SPA-PROVER-PIN.sha256` (added to `sales-page-assets-entry.sh`
+  `PINNED_FILES` + the `--self-test` prover loop); updated `prove_sp_cert.EXPECTED_PHASES`' P4 label.
+- Corrected the false "media provenance gate exists" claim (the P4-MEDIA row) in
+  `universal-sops/sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md` and re-stamped
+  `universal-sops/_content-manifest.json`.
+
+## 1.1.3 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — re-dropped the shared `scripts/mc_board.py` byte-identical from the
+  canonical copy (now carrying the fail-soft `block_run()` wrapper). Additive only;
+  the sales-page-assets runner is unchanged.
+
+## 1.1.2 — 2026-07-05 — persona grounding (P0) + client model-content receipt
+
+Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.
+
+- **FIX-XC-02a** — `scripts/prove_sp_intake.py`: new fail-closed **AF-SP56-INTAKE-PERSONA-LOG** gate.
+  A runtime brief may not unlock generation without a `persona-selection-log.md` (resolved from
+  `--persona-log`, the brief's `persona_selection_log` ref, or a sibling file) that names a REGISTERED
+  persona slug (mirrors FAB-QC D4). Wired the golden (`examples/golden-momentum/persona-selection-log.md`
+  + `build_golden.py`), the orchestrator self-run, and `verify.sh` reproduce. Copy-persona Step-0 +
+  Section-4 Task-Mode seam documented in `prompts/PROMPT-SEAMS.md` and
+  `universal-sops/sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md`.
+- **FIX-XC-09e** — `sales-page-assets-entry.sh` resolves the CLIENT's own execution-tier authoring model
+  (role=content), writes `routing/model-content-receipt.json`, and gates it via
+  `scripts/prove_sp_cert.py --model-receipt` (new **AF-SP56-MODEL-TIER** / **AF-SP56-MODEL-NOANTHROPIC**;
+  execution/content tier required, Anthropic hard-banned by provider field).
+- Re-minted `scripts/SPA-PROVER-PIN.sha256`; added the new AF codes to `SALESPAGE-MANIFEST.json`.
+
 ## 1.1.1 — 2026-07-05 — fix(Copy routing): baked-prompt hygiene + manifest
 
 ### FIX-COPY-04(iii) — junk baked prompts archived; runtime iterates a manifest

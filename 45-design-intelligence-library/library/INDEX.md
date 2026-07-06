@@ -27,7 +27,7 @@
 - **Date** — last updated
 - **File Path** — relative path from `design-library/`
 
-**ID prefixes:** SI (single image) · FB (Facebook ad) · BC (book cover) · MAG (magazine cover) · SM (social media) · BN (banner) · AD (advertisement) · PPT (PowerPoint deck; families = PPT-NNN-A, -B, ...) · PS (personal photo shoot — shoot cards; client identity profiles are NOT registered here, they live in their client folders)
+**ID prefixes:** SI (single image) · FB (Facebook ad) · BC (book cover) · MAG (magazine cover) · SM (social media) · BN (banner) · AD (advertisement) · **FN (funnel / landing page / website page)** · PPT (PowerPoint deck; families = PPT-NNN-A, -B, ...) · PS (personal photo shoot — shoot cards; client identity profiles are NOT registered here, they live in their client folders)
 
 **Retiring a style:** never delete the row. Set Status to `retired` and add "(retired: reason)" to the summary. History matters.
 
@@ -67,6 +67,12 @@
 | Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
 |---|---|---|---|---|---|---|---|
 | - | - | *(empty - awaiting first analysis)* | | | | | |
+
+## FUNNEL / LANDING / WEBSITE PAGE DESIGNS (FN-)
+*Style cards for sales-funnel, landing-page, and website-page imagery. Consumed by the Skill 6 GHL delivery rail and the Skill 49 / 56 engines via an optional `style_card_id` on the page/intake spec: when set, DIU Workflow B resolves the card and its LONG tier is embedded as the Brand-Style block (block 8) of every image prompt. File Path is relative from the library root; the card's LONG tier feeds GPT-Image 2 / Nano Banana 2 (per MODEL-SPECS routing).*
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first funnel/landing/website style card)* | | | | | |
 
 ## POWERPOINT DESIGNS (PPT-)
 | Sig # | ID | Style Name | Families | One-Line Summary | Status | Ver | Date | File Path |

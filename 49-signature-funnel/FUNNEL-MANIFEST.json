@@ -51,8 +51,9 @@
      "produces_artifact": "build_receipt.json (GHL funnel + preview URLs)",
      "delegate": "06-ghl-install-pages :: ghl_rest_canvas.py / ghl_builder.py",
      "chk_wrapper": "_chk_sf_build",
-     "gate": "prove_sf_build.py (funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed)",
-     "py_symbol": "prove_sf_build.verify"},
+     "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed)",
+     "produces_fab_scorecard": "build/fab-artifact.json (copy_ledger echoed; the >=8.5 copy-substance gate scores this)",
+     "py_symbol": "run_signature_funnel._gate_build"},
     {"id": "P8-DERIVE", "order": 8, "name": "Derived pages loop (U1/D1/U2/D2/TY)",
      "produces_artifact": "derived_pages.json (U1/D1/U2/D2/TY ledger)",
      "gate": "run_signature_funnel._gate_derived_pages (derived set == matrix; U1/D1/U2/D2/TY labels; fail-closed)",
@@ -142,6 +143,8 @@
     "AF-FUN-PROMPT-NEGATIVE": {"trigger": "no negative block ('Do not ...') in the prompt", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
     "AF-FUN-PROMPT-EMDASH": {"trigger": "an em/en dash present (model-safety rule)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
     "AF-FUN-PROMPT-TYPO": {"trigger": "text-bearing prompt lacks spelling-lock/words, or non-text prompt lacks 'no text'", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
+    "AF-FUN-PROMPT-COVERAGE": {"trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
+    "AF-FUN-IMG-COVERAGE": {"trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
 
     "AF-FUN-HTML-FRAGMENT": {"trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page", "enforced_by": "P5-HTML", "py_symbol": "run_signature_funnel._gate_html_fragments"},
 
@@ -153,6 +156,7 @@
     "AF-FUN-GRAPH-BRANCH": {"trigger": "an upsell node is missing its accept or decline (one-click) edge", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
     "AF-FUN-GRAPH-REACH": {"trigger": "a node is unreachable from main, or cannot reach thank-you", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
 
+    "AF-FUN-BUILD-FAB": {"trigger": "the FAB scorecard build/fab-artifact.json is absent/unreadable or echoes no copy — the >=8.5 copy-substance gate cannot run (fail-closed; FIX-COPY-02)", "enforced_by": "P7-BUILD", "py_symbol": "run_signature_funnel._gate_build"},
     "AF-FUN-BUILD-MALFORMED": {"trigger": "build_receipt.json absent/unreadable or carries no pages (fail-closed)", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
     "AF-FUN-BUILD-QC": {"trigger": "build receipt qc_score missing/non-numeric or below the 8.5 floor", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
     "AF-FUN-BUILD-PREVIEW": {"trigger": "a built page has no non-empty http(s) preview_url", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
@@ -177,6 +181,10 @@
     "AF-FUN-FRONT-DOOR": {"trigger": "orchestrator called without the run-scoped front-door nonce", "enforced_by": "front-door", "py_symbol": "run_signature_funnel._check_front_door"},
 
     "AF-FUN-CANONICAL-BYPASS": {"trigger": "run working files hand-roll GHL REST / mail sender / raw Kie createTask", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_bypass_scan"},
-    "AF-FUN-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_hashpin"}
+    "AF-FUN-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_hashpin"},
+
+    "AF-FUN-INTAKE-PERSONA-LOG": {"trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
+    "AF-FUN-MODEL-TIER": {"trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"},
+    "AF-FUN-MODEL-NOANTHROPIC": {"trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"}
   }
 }

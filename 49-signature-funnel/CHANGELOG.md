@@ -1,5 +1,98 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.1.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **Brief-stage canonical persona resolution** (`scripts/persona_brief.py`): the funnel now
+  resolves its governing persona through the ONE shared entry point
+  `shared-utils/persona_for_job.py` (canonical 5-layer selector) at the brief stage, instead of a
+  static kanban label. The resolved persona id + Section-4 governance excerpt are written to
+  `persona-selection.json` for the copy prompts, and the signed **PROCESS-CERTIFICATE** now names
+  the canonical persona (`cert["persona"]`, added before signing so it is covered by the HMAC).
+- A brief-declared client persona choice (`client_persona_id`/`personaId`) is **FINAL** — the
+  selector is never consulted for it (client sovereignty).
+
+### Notes
+- Fail-soft: an unreachable selector / bare box is a clean skip and never blocks a funnel run
+  (the shared helper is never-naked on its own via its fail-closed fallback).
+
+## 1.0.10 — 2026-07-05 — P7 QC≥8.5 seam now requires the FAB scorecard FILE (FIX-COPY-02)
+
+Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**.
+
+### Changed
+- **FIX-COPY-02** — `run_signature_funnel.py`: the P7-BUILD "QC ≥ 8.5" seam no longer trusts a
+  self-declared `build_receipt.json` number alone. The engine now ECHOES `copy_ledger.json` into
+  `build/fab-artifact.json` (the FAB scorecard the shared copy-substance gate scores) at run start,
+  and the new fail-closed **`_gate_build`** requires that scorecard FILE to exist and carry real
+  echoed copy (`AF-FUN-BUILD-FAB`) BEFORE the pinned `prove_sf_build.py` enforces `qc_score ≥ 8.5` +
+  a preview URL per page. An engine-routed build that emits no FAB evidence can no longer silently
+  skip the ≥8.5 gate. Self-contained (stdlib; no cross-skill import) so the entry self-test stays
+  hermetic.
+- `FUNNEL-MANIFEST.json`: registered `AF-FUN-BUILD-FAB`; P7-BUILD `py_symbol` → `run_signature_funnel._gate_build`.
+- Re-minted `scripts/SF-PROVER-PIN.sha256` (the orchestrator is in the pinned enforcement core).
+- Extended `run_signature_funnel.py --self-test`: asserts the happy path emits the FAB scorecard, and
+  that P7 fails closed (`AF-FUN-BUILD-FAB`) when the scorecard is absent or echoes no copy.
+
+## 1.0.9 — 2026-07-05 — image-set coverage cross-check (P2 prompts + P9 images)
+
+Train **T-w1-49-signature-funnel** (Wave-1). Fix ID: FIX-IMG-07.
+
+### Changed
+- **FIX-IMG-07 — no coverage cross-check between copy sections, the prompt ledger, and the
+  media ledger.** A 2-prompt ledger cleared P2 for a 12-section, 5-page funnel, and a 2-image
+  media ledger certified a ~40-image funnel — images for a handful of ~40 slots minted a full
+  certificate. Now closed:
+  - `scripts/prove_sf_prompt_floor.py` — new **`--structure`** mode. It computes the REQUIRED
+    `(page_type, section)` image set for the funnel size from `structure/funnel_structure.json`
+    (`funnel_matrix[size]` + `profiles[page].sections` + the new `image_coverage.page_policies`)
+    per MASTERDOC §4 — one image per numbered copy section, one celebratory hero for Thank-You,
+    none for the Checkout order page — and fails closed listing every missing pair. It auto-detects
+    the ledger kind: a `prompts` array is checked for **AF-FUN-PROMPT-COVERAGE**, an `images`
+    array for **AF-FUN-IMG-COVERAGE**. Size resolves from `--funnel-size` or `--brief`; a ledger
+    with neither array, or an unknown size, is fail-closed. Coverage self-test added for sizes 3/5/7.
+  - `run_signature_funnel.py` — **P9-CERTIFY** now folds the image-coverage assert in beside the
+    no-pitch/provenance gate: the media ledger must carry an image for every required slot for the
+    brief's `funnel_size` or the run aborts with **AF-FUN-IMG-COVERAGE** and no certificate. The
+    orchestrator self-test's valid run now emits the full image set, plus a new regression case:
+    a partial media ledger aborts at P9.
+  - `structure/funnel_structure.json` — added the `image_coverage` policy block (the required-set
+    source) and registered both new AF codes in `autofail_codes`.
+  - `examples/golden-daybreak/build_golden.py` — the committed golden is now a COMPLETE 7-step
+    funnel: the prompt ledger and media ledger each cover all 45 required image slots (main 1-12,
+    upsell/downsell/upsell-2/downsell-2 1-8, thank-you hero). Derived-page and thank-you prompts
+    reuse the authored main-section bodies through the existing `_vary` de-templating layer (never
+    machine filler); the golden certificate was re-minted. Also fixed a latent gap where the golden
+    orchestrator run did not stage `persona-selection-log.md` (P0 fail-closed since 1.0.7).
+  - `verify.sh` — golden reproduce now also asserts prompt + image coverage via `--structure`.
+  - Re-minted `scripts/SF-PROVER-PIN.sha256`; registered the new AF codes in `FUNNEL-MANIFEST.json`.
+
+## 1.0.8 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — added the fail-soft `block_run()` wrapper to the shared
+  `scripts/mc_board.py` (the CANONICAL copy). It moves a run's card to the `blocked`
+  status (reachable from any state in one hop, NEVER `done`) with the failing phase +
+  AF code as the note, so a gate failure is VISIBLE on the board instead of stranding
+  the card at in_progress. Re-dropped byte-identical into 50 / 53 / 55 / 56 / 57 and
+  the new 54 copy. The signature-funnel runner itself is unchanged (purely additive).
+## 1.0.7 — 2026-07-05 — persona grounding (P0) + client model-content receipt (P9)
+
+Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.
+
+### Changed
+- **FIX-XC-02a** — `scripts/prove_sf_intake.py`: new fail-closed **AF-FUN-INTAKE-PERSONA-LOG** gate.
+  A runtime brief may not unlock generation without a `persona-selection-log.md` (resolved from
+  `--persona-log`, the brief's `persona_selection_log` ref, or a sibling file) that names a REGISTERED
+  persona slug (mirrors FAB-QC D4). Wired the golden (`examples/golden-daybreak/persona-selection-log.md`),
+  the orchestrator self-run, and `verify.sh` reproduce. Copy-persona Step-0 + Section-4 Task-Mode seam
+  documented in `prompts/funnel-copy-prompts.md` and `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`.
+- **FIX-XC-09e** — `signature-funnel-entry.sh` resolves the CLIENT's own execution-tier authoring model
+  (role=content), writes `routing/model-content-receipt.json`, and gates it via
+  `scripts/prove_sf_cert.py --model-receipt` (new **AF-FUN-MODEL-TIER** / **AF-FUN-MODEL-NOANTHROPIC**;
+  execution/content tier required, Anthropic hard-banned by provider field).
+- Re-minted `scripts/SF-PROVER-PIN.sha256`; added the new AF codes to `FUNNEL-MANIFEST.json`.
+
 ## 1.0.6 — 2026-07-05 — artifact-backed phase gates + verbatim grade-block containment
 
 Train **T-49-signature-funnel** (Wave-0). Fix IDs: FIX-XC-03a, FIX-IMG-05, FIX-IMG-06.

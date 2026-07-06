@@ -32,6 +32,25 @@ a self-reported count is never trusted.
 
 ## 2. GENERATION CRAFT (governs the writer; the bands are the machine bar)
 
+### Step 0 — Copywriter-persona grounding (MANDATORY, fail-closed — FIX-XC-02a)
+
+Before writing a single section, ground the copy in the matched copywriter persona. This is a hard,
+fail-closed gate — generation MUST NOT unlock without it.
+
+1. **Select** the copy persona for this task against the CLIENT's providers:
+   `python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py --task "<page-type> <funnel-type> <ICP>" --department marketing`
+   (ranked selection — do NOT default by habit; the approved copy-persona pool is the registered
+   Skill-22 slugs, e.g. `hormozi-100m-offers`, `bly-copywriters-handbook`, `wiebe-copy-hackers`,
+   `edwards-copywriting-secrets`, `miller-building-storybrand`, `cialdini-influence`).
+2. **Log** the result to `persona-selection-log.md` in the run dir — the entry MUST name a
+   `selected_persona: <registered-slug>` and `selector_ran: true`.
+3. **Load and apply** the matched persona-blueprint's **Section 4 "Agent Governance Framework"**
+   (Execution Standard / Decision Logic / Definition of Done / Failure Patterns) via the copy seam in
+   `49-signature-funnel/prompts/funnel-copy-prompts.md` (`{{PERSONA_TASK_MODE}}` / `{{SELECTED_PERSONA_ID}}`)
+   — the persona's NAME alone does not load it; the copy is written TO that governance.
+4. **Enforcement:** `prove_sf_intake.py` fails closed with **AF-FUN-INTAKE-PERSONA-LOG** when the
+   persona-selection-log is absent or names no registered slug (mirrors FAB-QC D4). No log → no generation.
+
 - **Harmony Chain** — the 12 sections are ONE escalating argument; carry a word/image/idea from
   section N−1 into N; never reset the topic.
 - **One CTA Voice** — ONE first-person possession/transformation CTA phrase per page (`Start My ___`,

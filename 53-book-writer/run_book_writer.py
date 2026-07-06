@@ -34,6 +34,8 @@ import datetime
 import hashlib
 import json
 import os
+import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -57,10 +59,16 @@ import prove_bw_continuity as p_cont    # noqa: E402
 import prove_bw_challenge as p_chal     # noqa: E402
 import prove_bw_placeholder as p_ph     # noqa: E402
 import prove_bw_noanthropic as p_anth   # noqa: E402
+import prove_bw_anon as p_anon          # noqa: E402
 import prove_bw_433 as p_433            # noqa: E402
 
 PHASE_ORDER = ["P0-INTAKE", "P1-AVATAR", "P2-TONE", "P3-TITLES-GATE", "P4-OUTLINE-GATE",
                "P5-CHAPTERS", "P6-PACKAGE", "P7-QC", "P8-DELIVER"]
+
+# The failing (phase_id, note) captured at a gate failure so the fail-soft board
+# seam (_mc_board_blocked, FIX-XC-06) can move the card to `blocked` with the AF
+# code as the note. Mutated in place (no `global`) — read only by the board seam.
+_LAST_BLOCK: dict = {}
 
 
 def _load_manifest():
@@ -80,6 +88,61 @@ def _nonce_ok(run_dir: Path) -> bool:
         return nf.read_text(encoding="utf-8").strip() == want.strip()
     except OSError:
         return False
+
+
+# The run-scoped checkpoint dir (same dir that holds the front-door nonce). Gate
+# receipts + the mc-board receipt live here (NOT working/checkpoints).
+RECEIPT_SUBDIR = ("run", "checkpoints")
+
+
+def load_gate_receipts(run_dir: Path) -> dict:
+    """Return {gate_id: record} for every WELL-FORMED human-gate approval receipt
+    (approved:true + a non-empty approved_by + a timestamp), mirroring Skill 48's
+    owner-approval shape. A file-presence-only 'approval' authored by the pipeline is
+    NOT sufficient — the gate reads the actual approved/approved_by/timestamp fields,
+    so an approval can never be back-filled or self-attested away. Receipts live at
+    <run_dir>/run/checkpoints/gate-receipts.json (a single object with receipts[]) or
+    one JSON object per file under <run_dir>/run/checkpoints/gates/*.json."""
+    approvals: dict = {}
+    cdir = run_dir.joinpath(*RECEIPT_SUBDIR)
+    candidates = []
+    single = cdir / "gate-receipts.json"
+    if single.is_file():
+        candidates.append(single)
+    gdir = cdir / "gates"
+    if gdir.is_dir():
+        candidates.extend(sorted(gdir.glob("*.json")))
+    for path in candidates:
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(obj, dict) and "receipts" in obj:
+            records = obj.get("receipts") or []
+        elif isinstance(obj, list):
+            records = obj
+        else:
+            records = [obj]
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            gid = rec.get("gate_id") or rec.get("phase_id")
+            ts = rec.get("approved_at") or rec.get("timestamp")
+            if (gid and rec.get("approved") is True
+                    and str(rec.get("approved_by", "")).strip()
+                    and str(ts or "").strip()):
+                approvals[gid] = rec
+    return approvals
+
+
+def _gate_ok(approvals: dict, gate_id: str) -> bool:
+    return gate_id in approvals
+
+
+def _ledger_model_id_count(ledger) -> int:
+    """Number of recorded model ids anywhere in the ledger (uses the same walker the
+    no-Anthropic gate uses)."""
+    return sum(1 for _jp, _mid in p_anth._iter_model_ids(ledger))
 
 
 # ---- authored-zone accessors ------------------------------------------------
@@ -161,20 +224,30 @@ def check_tone(bk: Book):
     return ok, "tone %s" % msg, {"tone_word_count": c.word_count(p.read_text(encoding="utf-8"))}
 
 
-def check_titles(bk: Book):
+def check_titles(bk: Book, approvals: dict):
     title, subtitle = bk.title_subtitle()
     if not title or not subtitle:
         return False, "missing/incomplete run/artifacts/APPROVED-TITLE.txt", {}
-    return True, "title locked: %r / %r" % (title, subtitle), {"title": title, "subtitle": subtitle}
+    if not _gate_ok(approvals, "GATE-1-title"):
+        return False, ("GATE-1-title approval receipt missing/malformed "
+                       "(need approved:true + approved_by + timestamp in "
+                       "run/checkpoints/gate-receipts.json — a locked title cannot be self-attested)"), {}
+    return True, "title locked + GATE-1 approved: %r / %r" % (title, subtitle), \
+        {"title": title, "subtitle": subtitle}
 
 
-def check_outline(bk: Book):
+def check_outline(bk: Book, approvals: dict):
     outline = bk.artifacts / "13-outline.md"
     stories = bk.rd / "stories.json"
     if not outline.is_file():
         return False, "missing run/artifacts/13-outline.md (TODO: Wave-2 authors the outline)", {}
     if not stories.is_file():
         return False, "missing run/stories.json", {}
+    if not _gate_ok(approvals, "GATE-2-outline"):
+        return False, ("GATE-2-outline approval receipt missing/malformed "
+                       "(need approved:true + approved_by + timestamp in "
+                       "run/checkpoints/gate-receipts.json — chapters cannot start before "
+                       "the client approves the outline)"), {}
     title, subtitle = bk.title_subtitle()
     manuscript = bk.manuscript_text(title, subtitle)
     res = p_story.evaluate(json.loads(stories.read_text(encoding="utf-8")),
@@ -210,7 +283,24 @@ def check_chapters(bk: Book):
     return ok, msg, {"chapter_count": len(chap_texts), "chapter_word_counts": wc}
 
 
-def check_package(bk: Book, delivery_dir: Path):
+def _anon_tokens():
+    """Client-name denylist for the runtime anonymization lint. Supplied at
+    delivery time by NAME only via env (never checked into the fleet repo); an
+    empty list is a clean no-op (nothing to lint)."""
+    tokens = []
+    inline = os.environ.get("BW_ANON_TOKENS", "")
+    if inline.strip():
+        tokens += inline.split(",")
+    tf = os.environ.get("BW_ANON_TOKENS_FILE", "")
+    if tf and Path(tf).is_file():
+        try:
+            tokens += Path(tf).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            pass
+    return tokens
+
+
+def check_package(bk: Book, staging_dir: Path, approvals: dict):
     # challenge exactly 30
     ch = bk.artifacts / "21-30day-challenge.md"
     if not ch.is_file():
@@ -228,24 +318,60 @@ def check_package(bk: Book, delivery_dir: Path):
         targets["chapter/%s" % p.name] = p.read_text(encoding="utf-8")
     targets["manuscript"] = bk.manuscript_text(title, subtitle)
     res_tl = p_title.evaluate(title, subtitle, targets)
-    # placeholder scan over the assembled delivery dir (if assembled)
-    res_ph = p_ph.evaluate({str(p.relative_to(delivery_dir)): p.read_text(encoding="utf-8", errors="replace")
-                            for p in delivery_dir.rglob("*")
-                            if p.is_file() and p.suffix.lower() in {".md", ".txt", ".json", ".html"}}) \
-        if delivery_dir.is_dir() else c.Result("noop")
-    ok = res_ch.passed and res_tl.passed and res_ph.passed
-    msg = "challenge %s | title-lock %s | placeholder %s" % (
-        _phase_result(res_ch)[1], _phase_result(res_tl)[1], _phase_result(res_ph)[1])
+    # placeholder scan over the assembled staging bundle (if assembled)
+    staged_texts = {str(p.relative_to(staging_dir)): p.read_text(encoding="utf-8", errors="replace")
+                    for p in staging_dir.rglob("*")
+                    if p.is_file() and p.suffix.lower() in {".md", ".txt", ".json", ".html"}} \
+        if staging_dir.is_dir() else {}
+    res_ph = p_ph.evaluate(staged_texts) if staged_texts else c.Result("noop")
+    # anonymization lint over the SAME assembled bundle (prove_bw_anon now runs in the
+    # runtime pipeline — no-op with no configured tokens, fail-closed when a configured
+    # client-name token leaks into a deliverable).
+    res_anon = p_anon.evaluate(staged_texts, _anon_tokens()) if staged_texts else c.Result("noop-anon")
+    # GATE-3 / GATE-4 revision-round approvals (conditional): only required when the
+    # corresponding rewrite round actually ran (its receipt exists). Mirrors the
+    # source's two email-gated revision loops; up to TWO rounds, receipted.
+    gate_msgs = []
+    gates_ok = True
+    if any(bk.receipts.glob("G-STAGE-19*.json")):
+        if _gate_ok(approvals, "GATE-3-approval"):
+            gate_msgs.append("GATE-3 approved")
+        else:
+            gates_ok = False
+            gate_msgs.append("GATE-3-approval receipt missing/malformed (revision round 1 ran)")
+    if any(bk.receipts.glob("G-STAGE-20*.json")):
+        if _gate_ok(approvals, "GATE-4-approval-r2"):
+            gate_msgs.append("GATE-4 approved")
+        else:
+            gates_ok = False
+            gate_msgs.append("GATE-4-approval-r2 receipt missing/malformed (revision round 2 ran)")
+    ok = res_ch.passed and res_tl.passed and res_ph.passed and res_anon.passed and gates_ok
+    msg = "challenge %s | title-lock %s | placeholder %s | anon %s | revision-gates %s" % (
+        _phase_result(res_ch)[1], _phase_result(res_tl)[1], _phase_result(res_ph)[1],
+        _phase_result(res_anon)[1], ("; ".join(gate_msgs) if gate_msgs else "none required"))
     return ok, msg, {"challenge_sections": c.count_day_sections(ch.read_text(encoding="utf-8")),
                      "title_lock_ok": res_tl.passed}
 
 
 def check_qc(bk: Book):
     ledger = bk.rd / "RUN-LEDGER.json"
-    res_anth = p_anth.evaluate(json.loads(ledger.read_text(encoding="utf-8")), env={}) \
-        if ledger.is_file() else c.Result("noop-ledger")
+    # FAIL-CLOSED: a missing RUN-LEDGER (or one that records ZERO model ids) means
+    # the no-Anthropic / client-provider provenance was never established — the QC
+    # gate cannot pass on an absent ledger. And the credential scan runs against the
+    # LIVE process env by NAME only (masked), never a disabled env={}.
     if not ledger.is_file():
-        res_anth.note("no RUN-LEDGER.json yet (TODO: Agent D assembles the ledger)")
+        return False, ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
+                       "provenance (client's OWN providers, never Anthropic) is unproven "
+                       "(fail-closed; the ledger must record each stage's resolved model id)"), {}
+    try:
+        ledger_obj = json.loads(ledger.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        return False, "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc, {}
+    if _ledger_model_id_count(ledger_obj) == 0:
+        return False, ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
+                       "client-provider provenance is empty (fail-closed; a real run records "
+                       "each stage's resolved model id)"), {}
+    res_anth = p_anth.evaluate(ledger_obj, env=dict(os.environ))
     ok = res_anth.passed
     msg = "no-anthropic %s" % _phase_result(res_anth)[1]
     if bk.mode() == "4x3x3":
@@ -265,10 +391,19 @@ def check_qc(bk: Book):
 
 
 # ---- delivery assembly ------------------------------------------------------
-def assemble_delivery(bk: Book) -> Path:
+def bundle_name(bk: Book) -> str:
+    first, last = bk.author()
+    return "%s_%s-Book" % (first, last)
+
+
+def assemble_delivery(bk: Book, out: Path) -> Path:
+    """Assemble the labeled bundle into `out` (a STAGING dir during the run; it is
+    promoted to delivery/ only after a full P0->P7 pass — an uncertified book never
+    sits in delivery/). Re-assembling is idempotent: the dir is cleared first."""
     first, last = bk.author()
     title, subtitle = bk.title_subtitle()
-    out = bk.run_dir / "delivery" / ("%s_%s-Book" % (first, last))
+    if out.exists():
+        shutil.rmtree(out, ignore_errors=True)
     (out / "chapters").mkdir(parents=True, exist_ok=True)
 
     def copy(src_rel, dst_name):
@@ -345,6 +480,7 @@ def write_certificate(bk: Book, delivery: Path, steps, measured):
         "verified_phases": len(steps),
         "all_phases_pass": all_pass,
         "runtime": "local-only (no n8n / Airtable / Google / Gmail / Slack / GHL)",
+        "local_downloads_bundle": measured.get("downloads_bundle"),
         "steps": steps,
     }
     wc = measured.get("chapter_word_counts") or {}
@@ -387,6 +523,99 @@ def write_certificate(bk: Book, delivery: Path, steps, measured):
     return {"path": str(delivery / "PROCESS-CERTIFICATE.json"), "sha": body["certificate_sha"]}
 
 
+# ---- P8 deliver: promote staging -> delivery, copy to ~/Downloads, verify sha --
+def _downloads_root() -> Path:
+    """The labeled-deliverable root. Honors ${BOOK_WRITER_DELIVERY_ROOT} (so a test
+    / CI run never litters the operator's real ~/Downloads) and falls back to
+    ~/Downloads. Never n8n/Drive/etc. — a LOCAL labeled folder only."""
+    override = os.environ.get("BOOK_WRITER_DELIVERY_ROOT", "").strip()
+    return Path(override).expanduser() if override else (Path.home() / "Downloads")
+
+
+def verify_bundle_against_manifest(bundle: Path):
+    """Assert every file listed in the bundle's MANIFEST.json exists with a matching
+    sha256. Returns (ok, problems). The MANIFEST is the source of truth for the
+    labeled deliverable; a copy that drops or corrupts a file fails P8 fail-closed."""
+    mf = bundle / "MANIFEST.json"
+    if not mf.is_file():
+        return False, ["MANIFEST.json missing from the bundle"]
+    try:
+        manifest = json.loads(mf.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        return False, ["MANIFEST.json is not valid JSON (%s)" % exc]
+    files = manifest.get("files") or []
+    if not files:
+        return False, ["MANIFEST.json lists ZERO files"]
+    problems = []
+    for entry in files:
+        rel = entry.get("file")
+        want = entry.get("sha256")
+        if not rel or not want:
+            problems.append("malformed MANIFEST entry: %r" % entry)
+            continue
+        fp = bundle / rel
+        if not fp.is_file():
+            problems.append("MANIFEST lists %s but it is absent from the bundle" % rel)
+            continue
+        got = hashlib.sha256(fp.read_bytes()).hexdigest()
+        if got != want:
+            problems.append("sha256 mismatch for %s (manifest %s… != file %s…)"
+                            % (rel, want[:12], got[:12]))
+    return (not problems), problems
+
+
+def check_deliver(bk: Book, staging: Path, delivery: Path):
+    """P8-DELIVER (real checker, not a no-op): promote the certified staging bundle to
+    delivery/, copy it to a deterministic timestamped ~/Downloads labeled folder, and
+    verify the copied file list + sha256 against MANIFEST.json. Fail-closed on any
+    missing/mismatched file. Returns (ok, msg, {'downloads_bundle': path})."""
+    if not (staging / "MANIFEST.json").is_file():
+        return False, "staging bundle has no MANIFEST.json (assembly incomplete)", {}
+    # promote staging -> delivery/ (certified location; overwrite any prior)
+    if delivery.exists():
+        shutil.rmtree(delivery, ignore_errors=True)
+    delivery.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(staging, delivery)
+    # verify the promoted bundle against its own MANIFEST
+    ok_del, prob_del = verify_bundle_against_manifest(delivery)
+    if not ok_del:
+        return False, "delivery bundle failed MANIFEST verification: %s" % "; ".join(prob_del), {}
+    # copy to a labeled, timestamped ~/Downloads bundle (LOCAL only)
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dl_dir = _downloads_root() / bundle_name(bk) / ("Book_Writer_%s" % stamp)
+    try:
+        if dl_dir.exists():
+            shutil.rmtree(dl_dir, ignore_errors=True)
+        dl_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(delivery, dl_dir)
+    except OSError as exc:
+        return False, "could not copy labeled bundle to ~/Downloads (%s)" % exc, {}
+    # verify the ~/Downloads copy against MANIFEST (file list + sha256)
+    ok_dl, prob_dl = verify_bundle_against_manifest(dl_dir)
+    if not ok_dl:
+        return False, "~/Downloads bundle failed MANIFEST verification: %s" % "; ".join(prob_dl), {}
+    n = len(json.loads((dl_dir / "MANIFEST.json").read_text(encoding="utf-8")).get("files", []))
+    return True, "labeled bundle delivered to %s (%d files sha256-verified vs MANIFEST)" % (dl_dir, n), \
+        {"downloads_bundle": str(dl_dir)}
+
+
+def _quarantine(bk: Book, staging: Path):
+    """Move the UNCERTIFIED staging bundle out of the way so it can never masquerade
+    as a delivered book. delivery/ is never created on a gate failure."""
+    if not staging.exists():
+        return
+    qroot = bk.run_dir / "quarantine"
+    qroot.mkdir(parents=True, exist_ok=True)
+    dest = qroot / bundle_name(bk)
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    try:
+        shutil.move(str(staging), str(dest))
+        print("QUARANTINED uncertified bundle -> %s" % dest, file=sys.stderr)
+    except OSError:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 # ---- run / plan -------------------------------------------------------------
 def plan(manifest) -> int:
     print("== Book Writer — canonical phase plan ==")
@@ -400,33 +629,66 @@ def plan(manifest) -> int:
 
 
 def run(bk: Book) -> int:
-    delivery = assemble_delivery(bk)
+    # Assemble into a STAGING dir (never delivery/): an uncertified book must never
+    # sit in delivery/. Promotion to delivery/ + the ~/Downloads copy happen only in
+    # P8-DELIVER, after P0->P7 all pass.
+    staging = bk.run_dir / "staging" / bundle_name(bk)
+    delivery = bk.run_dir / "delivery" / bundle_name(bk)
+    assemble_delivery(bk, staging)
+    approvals = load_gate_receipts(bk.run_dir)
     measured = {}
     steps = []
-    checkers = {
+    # P0->P7 verify over the STAGING bundle (P8 handled specially below).
+    pre_deliver_checkers = {
         "P0-INTAKE": lambda: check_intake(bk),
         "P1-AVATAR": lambda: check_avatar(bk),
         "P2-TONE": lambda: check_tone(bk),
-        "P3-TITLES-GATE": lambda: check_titles(bk),
-        "P4-OUTLINE-GATE": lambda: check_outline(bk),
+        "P3-TITLES-GATE": lambda: check_titles(bk, approvals),
+        "P4-OUTLINE-GATE": lambda: check_outline(bk, approvals),
         "P5-CHAPTERS": lambda: check_chapters(bk),
-        "P6-PACKAGE": lambda: check_package(bk, delivery),
+        "P6-PACKAGE": lambda: check_package(bk, staging, approvals),
         "P7-QC": lambda: check_qc(bk),
-        "P8-DELIVER": lambda: (True, "local delivery bundle assembled", {}),
     }
-    for pid in PHASE_ORDER:
-        ok, msg, extra = checkers[pid]()
+    for pid in PHASE_ORDER[:-1]:  # P0..P7
+        ok, msg, extra = pre_deliver_checkers[pid]()
         measured.update(extra)
         print("=== PHASE %s === [%s] %s" % (pid, "OK" if ok else "FAIL", msg))
         steps.append({"phase_id": pid, "disposition": "verified", "ok": bool(ok)})
         if not ok:
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; author the artifact and re-run."
                   % pid, file=sys.stderr)
+            _quarantine(bk, staging)
             return EXIT_GATE
-    write_index_and_manifest(bk, delivery, measured)
+    # Finalize the labeled bundle inside staging (INDEX + MANIFEST), THEN P8-DELIVER
+    # promotes it and proves the ~/Downloads copy byte-for-byte against MANIFEST.
+    write_index_and_manifest(bk, staging, measured)
+    ok, msg, extra = check_deliver(bk, staging, delivery)
+    measured.update(extra)
+    print("=== PHASE P8-DELIVER === [%s] %s" % ("OK" if ok else "FAIL", msg))
+    steps.append({"phase_id": "P8-DELIVER", "disposition": "verified", "ok": bool(ok)})
+    if not ok:
+        _LAST_BLOCK.clear()
+        _LAST_BLOCK.update({"phase_id": "P8-DELIVER", "note": msg})
+        print("BLOCKED at P8-DELIVER (fail-closed).", file=sys.stderr)
+        _quarantine(bk, staging)
+        shutil.rmtree(delivery, ignore_errors=True)  # never leave an unverified delivery/
+        return EXIT_GATE
     cert = write_certificate(bk, delivery, steps, measured)
     if cert:
         print("CERTIFICATE ISSUED: %s (sha %s)" % (cert["path"], cert["sha"][:12]))
+        # mirror the signed certificate into the labeled ~/Downloads bundle
+        dl = measured.get("downloads_bundle")
+        if dl:
+            for cf in ("PROCESS-CERTIFICATE.json", "PROCESS-CERTIFICATE.md"):
+                src = delivery / cf
+                if src.is_file():
+                    try:
+                        shutil.copy2(src, Path(dl) / cf)
+                    except OSError:
+                        pass
+    shutil.rmtree(staging.parent, ignore_errors=True)  # staging is transient
     print("ALL PHASES PASSED (P0->P8).")
     return EXIT_PASS
 
@@ -444,7 +706,8 @@ def _mc_board_begin(run_dir):
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title="Book Writer — %s" % run_dir.name,
-            department="books", persona="Book Writer", source="book-writer")
+            department="books", persona="Book Writer", source="book-writer",
+            receipt_subdir=RECEIPT_SUBDIR)
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
         return None
@@ -453,9 +716,24 @@ def _mc_board_begin(run_dir):
 def _mc_board_done(run_dir, task_id):
     try:
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+        mc_board.complete_run(run_dir, task_id, note="certified + delivered",
+                              receipt_subdir=RECEIPT_SUBDIR)
     except Exception as exc:  # noqa: BLE001
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
+
+
+def _mc_board_blocked(run_dir, task_id):
+    """FIX-XC-06: on a gate failure, move the card to `blocked` (never `done`) with
+    the failing phase + AF code as the note, so a failed run is VISIBLE on the board
+    instead of stranding forever at in_progress. FAIL-SOFT — never affects exit code."""
+    try:
+        import mc_board
+        info = _LAST_BLOCK or {}
+        mc_board.block_run(run_dir, task_id, phase_id=info.get("phase_id", ""),
+                           note=info.get("note", "a fail-closed gate blocked the run"),
+                           receipt_subdir=RECEIPT_SUBDIR)
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
 
 
 def main(argv=None):
@@ -481,6 +759,10 @@ def main(argv=None):
     rc = run(Book(run_dir))
     if rc == EXIT_PASS:
         _mc_board_done(run_dir, _mc_task)
+    else:
+        # A gate failure after the card was opened: mark it blocked so it never
+        # strands invisibly at in_progress (FIX-XC-06). FAIL-SOFT.
+        _mc_board_blocked(run_dir, _mc_task)
     return rc
 
 

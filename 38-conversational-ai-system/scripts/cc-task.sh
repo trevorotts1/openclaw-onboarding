@@ -12,6 +12,11 @@
 #           review -> the done column — the builder NEVER self-grades (the CC API
 #           rejects a builder self-advance with 403). So this only ever sets
 #           `review`; it never sets the done status.
+#   fail    Move the persisted task to `blocked` (QC failed / a gate blocked the
+#           install), with an optional reason as $2. A blocked card is NEVER
+#           auto-promoted to done — it makes the failure VISIBLE on the board
+#           instead of stranding the card at in_progress forever (FIX-XC-06). A
+#           fixed re-run re-opens it (start -> in_progress).
 #
 # CONFIG (all optional except MC_API_TOKEN for a live post):
 #   MISSION_CONTROL_URL   base URL (default http://localhost:4000)
@@ -34,6 +39,7 @@
 set -uo pipefail
 
 CMD="${1:-}"
+REASON="${2:-}"   # optional free-text reason for the `fail` subcommand
 
 BASE_URL="${MISSION_CONTROL_URL:-http://localhost:4000}"
 BASE_URL="${BASE_URL%/}"
@@ -52,7 +58,7 @@ note() { echo "[skill38][cc-task] $*" >&2; }
 # Graceful no-op: exactly one stderr note, then succeed (never fail the caller).
 soft_out() { note "$*"; exit 0; }
 
-[ -n "$CMD" ] || soft_out "usage: cc-task.sh {start|review} — no subcommand; no-op."
+[ -n "$CMD" ] || soft_out "usage: cc-task.sh {start|review|fail [reason]} — no subcommand; no-op."
 [ -n "$TOKEN" ] || soft_out "MC_API_TOKEN not set — Command Center reporting skipped (install continues normally)."
 command -v curl >/dev/null 2>&1 || soft_out "curl not found — Command Center reporting skipped."
 
@@ -84,7 +90,7 @@ _json_create() {
   printf '{"title":"Skill 38 — Conversational AI System install","description":"%s","priority":"medium","department":"Communications"%s}' "$desc" "$extra"
 }
 
-# Build a status-transition JSON body. $1 = target column (in_progress | review).
+# Build a status-transition JSON body. $1 = target column (in_progress | review | blocked).
 _json_status() {
   if [ -n "$UPDATER_ID" ]; then
     printf '{"status":"%s","updated_by_agent_id":"%s"}' "$1" "$UPDATER_ID"
@@ -93,9 +99,24 @@ _json_status() {
   fi
 }
 
+# Build a status-transition body carrying a note. $1 = status, $2 = note text.
+# Minimal JSON-escaping of the note (backslash + double-quote) so a reason with
+# quotes cannot break the body (curl-only; no jq).
+_json_status_note() {
+  local status="$1" note_txt="$2" extra=""
+  [ -n "$UPDATER_ID" ] && extra=",\"updated_by_agent_id\":\"${UPDATER_ID}\""
+  note_txt="${note_txt//\\/\\\\}"; note_txt="${note_txt//\"/\\\"}"
+  printf '{"status":"%s","note":"%s"%s}' "$status" "$note_txt" "$extra"
+}
+
 # Extract the first "id":"<value>" from a JSON blob (curl-only; no jq).
 _extract_id() {
   printf '%s' "$1" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/'
+}
+
+# Extract the first "status":"<value>" from a JSON blob (curl-only; no jq).
+_extract_status() {
+  printf '%s' "$1" | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/'
 }
 
 cmd_start() {
@@ -118,6 +139,18 @@ cmd_start() {
     note "reusing persisted install task ${task_id}."
   fi
 
+  # GET-before-PATCH: never REGRESS a card the independent QC scorer already advanced.
+  # A re-run of the install must not drag a `review`/`done` card back to in_progress
+  # (or re-open it); only fresh/blocked/backlog cards move to in_progress here.
+  _api GET "/api/tasks/${task_id}" ""
+  local cur_status=""
+  cur_status="$(_extract_status "$RESP_BODY")"
+  case "$cur_status" in
+    review|done)
+      note "task ${task_id} already at '${cur_status}' — not regressing to in_progress (GET-before-PATCH guard). Install continues."
+      exit 0 ;;
+  esac
+
   _api PATCH "/api/tasks/${task_id}" "$(_json_status in_progress)"
   case "$HTTP_CODE" in
     2??) note "task ${task_id} -> in_progress." ;;
@@ -139,8 +172,25 @@ cmd_review() {
   exit 0
 }
 
+# Move the persisted task to `blocked` (QC failed / a gate blocked the install) so
+# the failure is VISIBLE on the board and the card is NEVER stranded at in_progress
+# or (wrongly) marked done. FIX-XC-06. FAIL-SOFT: always exits 0.
+cmd_fail() {
+  local task_id="" reason="${REASON:-mechanical QC failed}"
+  [ -f "$ID_FILE" ] && task_id="$(head -1 "$ID_FILE" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$task_id" ] || soft_out "no persisted CC task id (${ID_FILE}) — nothing to mark blocked. Skipped."
+
+  _api PATCH "/api/tasks/${task_id}" "$(_json_status_note blocked "$reason")"
+  case "$HTTP_CODE" in
+    2??) note "task ${task_id} -> blocked (${reason}). A blocked card is never auto-promoted to done; fix and re-run 'start' to re-open it." ;;
+    *)   note "PATCH blocked -> HTTP ${HTTP_CODE}; Command Center reporting skipped (QC result unchanged)." ;;
+  esac
+  exit 0
+}
+
 case "$CMD" in
   start)  cmd_start ;;
   review) cmd_review ;;
-  *)      soft_out "unknown subcommand '${CMD}' (expected start|review); no-op." ;;
+  fail)   cmd_fail ;;
+  *)      soft_out "unknown subcommand '${CMD}' (expected start|review|fail); no-op." ;;
 esac

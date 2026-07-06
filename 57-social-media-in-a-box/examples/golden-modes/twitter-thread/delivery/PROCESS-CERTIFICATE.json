@@ -42,6 +42,9 @@
     },
     "P5-SCRUB": {
       "passed": true
+    },
+    "P13-DELIVER": {
+      "passed": true
     }
   },
   "models_used": [
@@ -65,9 +68,10 @@
   },
   "overrides_logged_ok": true,
   "client_copy_verbatim_ok": true,
+  "deliverable_dest_root": "~/Downloads/Social-Media-in-a-Box/northwind-bakehouse/twitter-thread",
   "signer": "social-media-in-a-box",
   "deploy_mode": "publish-on-cert",
   "failures": [],
   "pass": true,
-  "certificate_sha": "cd2314f9e282487af729a6f77c518f74d6e568769bc154849269c1ebf9b6ab54"
+  "certificate_sha": "177c6d0cf5e7c9cd46163c74b2085fabf80e0df61b582454646ac97ad21dea36"
 }

@@ -7,11 +7,11 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 - **Certificate kind:** `signature-funnel-process-certificate`
 - **Run id:** `run-golden-daybreak`
 - **Funnel type / size:** `signature_funnel` / **7-step**
-- **Skill version:** `1.0.5`
-- **Issued at:** `2026-07-05T15:03:11Z`
+- **Skill version:** `1.0.8`
+- **Issued at:** `2026-07-05T23:55:18Z`
 - **All phases pass:** **True**
 - **Nonce fingerprint:** `19dd9294004d6460` (specimen nonce `golden-daybreak-nonce-v1`)
-- **HMAC signature:** `f728de0482cfbc46b35e75c66c1036b1535e8b2eb58b88dd630d619231734cad`
+- **HMAC signature:** `67a5738a2a624457f9dd16d052acbaf1dbed85ee84e9d4a912584977b73e1213`
 - **Delivery:** preview-only; publishing requires explicit human approval (PRD §7 gate 7).
 
 ## Phase spine (attested in order)

@@ -4,6 +4,140 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.16.1 - 2026-07-05 - fix(DEP-13 P3 hygiene): stale install counts, pending-publish nag, LRU task cache, provisioning default, log-format unification
+
+P3 hygiene bundle from the persona-matching analysis (train DEP-13: F1.5, F1.6, F2.4, F2.5, F4.6). No behavior change to matching quality — these close staleness / unbounded-growth / silent-default footguns.
+
+- **F1.5 — stale install docs + manifest note (`INSTALL.md`, `shared-utils/prebuilt-index/INDEX-MANIFEST.json`):** `INSTALL.md` Step 5 hardcoded "48 personas / ~7,615 chunks" and a `< 7000`-row verifier — both stale AND inverted for the current SECTION-TAGGED asset (~1,161 rows for the current SET; the real index would have FALSE-FAILED the doc's own verify). Corrected the persona count to 82 and the row references to the section-tagged count; the Step 5-E verifier now checks against the manifest's `chunk_count` (exported by Step 5-B) with a conservative floor, instead of the obsolete paragraph-index threshold. Refreshed the pinned offline-fallback asset/sha to the current release. Dropped the stale `ROHDE NOTE (open)` from the manifest `notes` (the selector's `_CATEGORY_DOMAINS['design']` already includes `visual-storytelling`, so the "gap" it described is fixed — the note was causing re-litigation of a closed defect).
+  - **NEW `shared-utils/prebuilt-index/assert-install-doc-consistency.py`** + wired into `persona-set-asset-consistency-guard.yml`: fails CI when `INSTALL.md`'s persona-count prose drifts from `INDEX-MANIFEST.json` `persona_count` (a one-step re-baseline seam is a NOTICE, larger drift FAILS; no hardcoded count in prose also passes). Test: `tests/unit/install-doc-consistency.test.sh`.
+- **F1.6 — pending-publish nag (`scripts/persona-inbox-watcher.sh` → v6.7.0):** a `.fleet-publish-pending.json` marker (workspace personas added but not yet published to the fleet) blocked nothing until the next commit/roll, so a set could sit unpublished for days. The watcher now emits an OPERATOR-ONLY nag once per `PERSONA_PENDING_NAG_HOURS` window (default 24h) when the marker is older than that. Client-silent by construction: routed only through the existing opt-in, co-mingling-guarded operator-chat resolver (`_operator_notify`; log-only when no operator chat is configured), and the marker only exists on the operator's fleet-publish box. Throttled so it never fires every 10-minute cron tick.
+- **F2.4 — LRU-bounded task-embedding cache (`shared-utils/semantic_task_fit.py`):** the module-level `_TASK_EMBED_CACHE` grew one entry per unique task text for the process lifetime (harmless for the CLI, a latent leak if imported into a long-lived server). Now an `OrderedDict` bounded to `_TASK_EMBED_CACHE_MAX` MRU entries (default 256, override `SEMANTIC_TASK_FIT_CACHE_MAX`); reads go through `_task_cache_get`/`_task_cache_put` so the "embed the task once, share across N personas" contract is preserved and eviction is O(1) from the oldest end. Test: `tests/unit/semantic-task-fit-lru.test.py`.
+- **F2.5 — no stale positive provisioning default (`shared-utils/provision-persona-index.sh`):** `persona_count` defaulted to `54` when the manifest read failed, silently gating the persona-dir check against an obsolete constant. Now defaults to `0` and treats `0`/absent/unreadable as "no trustworthy count" → `_pidx_skip_warn` skip-with-warn (additive; keeps the current index), never a positive lie. Refreshed the stale `(54)` / `(4413)` gate comments to say "read live from the manifest".
+- **F4.6 — selection-log format:** verified consistent — the canonical selector's `write_selection_log_md` (Markdown TABLE) is the single writer/format of `persona-selection-log.md`. The competing bracketed "self-selection" prose is removed by the dispatch-injection train (F4.1/FDN-3) that deletes agent self-selection; no separate change is made here to avoid re-touching the version-lockstep Skill-23 protocol doc.
+- **Re-land onto main @ v17.0.33 (skill-22 v6.16.0 held by DEP-12/F1.4):** merged latest `main`; re-headed this entry `v6.16.0 → v6.16.1` and bumped `skill-version.txt` above main (main already occupies v6.16.0). Resolved the `shared-utils/provision-persona-index.sh` conflict by KEEPING main's F2.1 SUBSET/SUPERSET + client-local-preservation gate documentation and folding in F2.5's absent/zero/unreadable `persona_count` → skip-with-warn clause (comment-only; the F2.5 executable default `0` + `_pidx_skip_warn` auto-merged unchanged). Manifest `persona_count` is still `81` (FDN-7's 81→82 re-baseline not yet landed), so the new INSTALL.md doc-consistency step reports a one-step ±1 NOTICE and passes; it becomes an exact match once FDN-7/DEP-6 ship the 82nd persona.
+
+## v6.16.0 - 2026-07-05 - fix(F1.4): Phase-6 categories write is FAIL-LOUD + AUTO-REPAIR — a lint failure can no longer strand an unselectable persona
+
+A blueprint that finished the pipeline could be left with NO key under
+`persona-categories.json.personas` — invisible to `persona-selector-v2.py`'s
+`list_available_personas()` universe (which reads exactly that dict's keys), an
+unselectable orphan. Root cause: `pipeline/orchestrator.py` Phase 6 wrapped
+`_append_persona_to_categories` in a `try/except` that caught EVERY exception
+(including the P13-2 schema-lint `PersonaCategoriesSchemaError`) and logged a
+WARNING — the run still exited 0 (a silent success, the categories-side mirror
+of F1.2's "registered but not embedded"). Fixes, mirroring F1.2 / FDN-5's
+fail-loud exit pattern:
+
+- **NEW `_phase6_register_categories()`** replaces the swallow-and-warn call
+  site. It gives the contract TWO independent guarantees:
+  1. **Never-to-zero on registration itself (AUTO-REPAIR):** when the normal
+     auto-classified append fails, the persona is re-registered with a
+     SAFE-DEFAULT tag set (`domain: ["leadership"]`, a controlled-vocab member
+     so it passes both the schema-lint gate and `persona_fleet.py sync-categories`
+     validation) plus an additive `needs_retag: true` marker — rather than
+     skipping the entry. The persona ALWAYS gets a categories key and stays
+     selectable.
+  2. **Fail-loud:** a Phase-6 write that needed the repair (or failed even that)
+     is recorded in a module-level accumulator; `main()` then exits the distinct
+     `PHASE6_CATEGORIES_EXIT_CODE = 9` (never 0), so the caller
+     (`add-persona-from-source.sh` / the inbox watcher) can tell "operator must
+     re-tag" apart from a clean build and route to retry/quarantine.
+- **`_append_persona_to_categories(..., domain_override=, needs_retag=)`**:
+  additive params power the auto-repair path (bypass the auto-classifier, write
+  the safe-default entry, stamp the marker). Existing callers are unchanged.
+- **`persona-categories.json` → schema 1.2**: registers the optional additive
+  `needs_retag` marker (documented in `persona-categories.README.md`). It is a
+  workspace-only field — `sync-categories` ships only the canonical seed fields,
+  so it never leaks into the shipped seed.
+- **Test:** `tests/unit/phase6-categories-fail-loud.test.sh` — 21 assertions
+  driving the happy path, the lint-failure auto-repair (safe default + marker),
+  the SystemExit(9) fail-loud gate (and its no-op on a clean run), the hard-fail
+  (both writes raise) path, never-to-zero selector-universe visibility, and
+  multi-book accumulator aggregation. Hermetic (no network / no Gemini key;
+  sandboxed log/status/categories paths — never touches the real workspace).
+- **Re-land:** merged latest `main` into the branch (skill-22 v6.15.2 / repo
+  v17.0.29) after the F1.2/FDN-5 (v6.15.1) and F1.3/F2.2 (v6.15.2) merges;
+  resolved the single-book `main()`-tail conflict by KEEPING BOTH fail-loud gates
+  in order — Phase-5 embed (exit 8) then Phase-6 categories (exit 9);
+  skill-version `v6.15.2 → v6.16.0`.
+- **Re-land onto v17.0.33 (post Wave-0):** merged latest `main`; resolved the two
+  skill-22-local conflicts (`skill-version.txt` → `v6.16.0`, CHANGELOG head).
+  Re-pinned `shared-utils/prebuilt-index/INDEX-MANIFEST.json`
+  `persona_set_md5` `e57f4150…` → `925207fd…` so the D13 provision-idempotency
+  5d/5e assertion (which hashes the schema-1.2 `persona-categories.json` against
+  the manifest pin) goes green — metadata-only, persona MEMBERSHIP unchanged at
+  81 (`persona_count`/`canonical`/`embedded` and `asset_rebuild_required:false`
+  untouched → protected-ref asset-consistency guard stays green). Also fixed a
+  full-batch `main()`-tail regression introduced by the earlier tail merge: the
+  F1.2/FDN-5 `if embed_failed: sys.exit(8)` gate had been relocated into the dead
+  tail of `_exit_if_categories_failed()` (after its unconditional `sys.exit(9)`),
+  so full-batch mode had silently lost its exit-8 embed fail-loud gate. Restored
+  it INSIDE `main()` before the Phase-6 categories gate, matching the single-book
+  ordering (embed 8 → categories 9).
+## v6.15.3 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
+
+FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2). A client box that ran this skill on the client's OWN book had its persona DEREGISTERED and its vectors CLOBBERED at every `openclaw update`, via two compounding mechanisms in `shared-utils/provision-persona-index.sh` (the helper that reconciles this skill's `persona-categories.json` + blueprints onto client boxes):
+
+1. `reconcile_persona_assets` blind-copied the shipped seed `persona-categories.json` over the workspace copy whenever the md5 differed, so the client's extra persona keys were overwritten and the selector universe (= categories keys) silently deregistered the client's persona. → Replaced the blind `cp -f` with a UNION MERGE (`_pidx_union_merge_categories`): seed WINS for seed slugs; box-local keys not in the seed are PRESERVED and stamped `origin:"local"`. With no local persona the merge is a byte-identical seed copy, so the canonical `persona_set_md5` is preserved exactly (reconcile idempotency contract unchanged).
+
+2. `provision_persona_index` gate condition (c) required installed `chunk_count == manifest` EXACTLY, so a canonical index carrying the manifest asset PLUS the client's own locally-embedded persona (more chunks/personas) was judged non-canonical and the whole DB was re-downloaded, destroying the client's vectors. → Gate now uses SUPERSET semantics WHEN a client LOCAL DELTA exists (more persona dirs OR more distinct embedded personas than manifest): canonical iff columns ok AND installed chunks ≥ manifest AND embedded-persona coverage ≥ manifest AND persona dirs ≥ manifest. WITHOUT a local delta the historical EXACT semantics are retained so a stale same-set short/over-chunked index still converges (the 6260/7615/9456-row convergence the gate was built for is preserved; `tests/unit/provision-idempotency.test.sh` unchanged and green). On a genuine re-download, origin:local persona rows are EXPORTED from the old DB and RE-INSERTED into the fresh canonical DB (`_pidx_export_local_rows` / `_pidx_reinsert_local_rows`); anything that cannot be carried over is queued in `.persona-local-reembed-queue` (furnace-safe — NO embedding here) for a delta re-embed with the CLIENT's OWN key, never an operator/shared key.
+
+`update-skills.sh` Step U6b surfaces the `.persona-local-reembed-queue` marker in the operator completion report (operator-visible only, never client-visible — silent-updates doctrine).
+
+Shared-gate RE-LAND: `.github/workflows/both-paths-delivery-guard.yml` step D12 hard-asserted the retired equality literal `chunk_count != manifest chunk_count`, which the SUPERSET semantics above removed — the stale assertion would have failed the repo-wide both-paths delivery guard. Updated D12 to assert the superset wording (`chunk_count >= manifest`) plus the `_HAS_LOCAL_DELTA` decision marker, so the guard now verifies the F2.1 superset gate rather than the removed equality string.
+
+New regression lock: `tests/unit/provision-preserves-local-personas.test.sh` (16 assertions: union-merge preservation + seed-wins + no-drift md5; superset index → skip/preserve; genuine subset → still re-provisions; export→re-insert round-trip).
+
+## v6.15.2 - 2026-07-05 - fix(F1.3/F2.2): close the `--no-asset` counted-but-vector-less window with an `embedded_persona_count` 5th triad member
+
+A `--no-asset` staging bump (`pipeline/persona_fleet.py set-manifest-counts --no-asset`) lifts the four SET counts (blueprint dirs / categories keys / `persona_count` / `canonical_persona_count`) and flips `asset_rebuild_required:true`, but the published `gemini-index.sqlite.gz` still embeds ZERO vectors for the new persona(s). Every existing triad gate compares counts only, so N38 went green (pre-commit, CI, U6b, publish gate all passed) while the served asset was stale — a live, test-exercised path that could land a "counted-but-vector-less" persona on client boxes (Layer-5 retrieval silently degrades to keyword for them). Three cheap gates now close it, no new machinery:
+
+- **`pipeline/persona_fleet.py`** — `triad_counts()` now also reads `INDEX-MANIFEST.embedded_persona_count` (the 5th SET-triad member) + `asset_rebuild_required`. `cmd_triad` keeps the four SET counts as a hard invariant AND checks the embedded count: when `asset_rebuild_required:false` but `embedded_persona_count != persona_count`, the asset lacks vectors for the delta → **exit 5** (`ASSET DISAGREES`). When `asset_rebuild_required:true` (a legitimate mid-flight `--no-asset` bump), the 5th member is **carved out** (exit 0) with an explicit note naming the pending asset rebuild as the real cause. `set-manifest-counts --no-asset` deliberately DOES NOT touch `embedded_persona_count`, so the lag — and therefore the gate — is provable; `build-and-publish.sh` (full build) is the only writer that advances it (from the live `SELECT COUNT(DISTINCT persona_id)`). Legacy manifests without the field stay back-compatible (5th member skipped).
+- **Coordinated non-skill-22 gates (same change, separate files):** `.github/workflows/persona-set-asset-consistency-guard.yml` refuses `asset_rebuild_required:true` on a PROTECTED ref (main / release/* / tag) while ALLOWING it on PR branches so staging stays possible, and enforces the same `embedded_persona_count` 5th member with the `--no-asset` carve-out. `update-skills.sh` Step U6b + `shared-utils/provision-persona-index.sh` now REFUSE to (re)provision a client box from an `asset_rebuild_required:true` manifest (warn + keep the box's current index) so a staged asset can never propagate as canonical. `shared-utils/prebuilt-index/INDEX-MANIFEST.json` carries `embedded_persona_count: 81`.
+- **Test:** `tests/unit/asset-rebuild-required-gate.test.sh` — provisioning refuses a staged manifest (keeps the current index, no clobber), the triad exits 5 on counted-but-vector-less and 0-with-carve-out on a staged bump, `set-manifest-counts --no-asset` leaves `embedded_persona_count` stale, and the manifest a `--no-asset` bump produces is refused end-to-end by provisioning.
+
+_Note: the canonical N38 impl `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` deliberately was NOT edited — skill 23's `skill-version.txt`/`SKILL.md version:` are repo-locked version markers, so touching it forces a repo-wide `/version` bump (out of scope, and a tag-race hazard with concurrent trains). The 5th-member enforcement lives instead in `persona_fleet.py` (the publish + `assert-personas-published.sh` pre-roll gate) and the dedicated CI guard, which are real merge/roll gates on the exact files that move._
+## v6.15.1 - 2026-07-05 - fix(pipeline): Phase-5 embed failure is fatal end-to-end (F1.2 / FDN-5)
+
+Persona-Matching-Overhaul FOUNDATION train FDN-5, fix F1.2 — "registered but not
+embedded ships silently". Before this, `pipeline/orchestrator.py` marked
+`phase5: FAILED` in `pipeline-status.json` but `process_book()` never checked
+Phase 5's outcome, so the orchestrator exited 0; `add-persona-from-source.sh`
+saw `PIPELINE_RC=0` and marked the persona ready-to-publish even though its
+blueprint was **matchable but vector-less** on that box (Layer-5 semantic
+retrieval can never surface it — the exact failure class N38 guards against, but
+on the workspace side where N38 does not run).
+
+- **`pipeline/orchestrator.py`** — Phase-5 `FAILED` now propagates a DISTINCT
+  process exit code (`8` = EMBED_FAILED) end-to-end, in BOTH `--single-book`
+  mode and full-batch mode. The blueprint is deliberately LEFT ON DISK so an
+  idempotent retry re-embeds only: `run_synthesis` gained a `_phase3_already`
+  re-entry that SKIPS the costly LLM synthesis (and an already-COMPLETE Phase 3b)
+  when the blueprint exists and `phase3 == COMPLETE`, running Phase 5/6 only; the
+  single-book early-return is now `phase5`-aware so a retry re-enters to re-embed
+  instead of short-circuiting.
+- **`scripts/add-persona-from-source.sh`** — on `rc 8` it prints a LOUD
+  EMBED_FAILED banner and propagates `exit 8` (so `persona-inbox-watcher.sh`
+  quarantines/retries) WITHOUT marking fleet-publish pending. Added the
+  WORKSPACE triad-equivalent as a terminal gate: blueprint on disk + registered
+  in `persona-categories.json` + ≥1 index row — a second net for the case where
+  the pipeline exits 0 but Phase 5's safety-net indexer silently no-ops. Warn-only
+  under `--skip-index`.
+- **Reconciled to the FDN-4 shared contract (no duplicate helper).** The terminal
+  gate delegates to the ONE shared `pipeline/usable-persona-contract.sh` (landed
+  in v6.15.0 / FDN-4) via a thin shim in the wrapper — it does NOT re-implement
+  the three-leg contract, so the workspace triad-equivalent (F1.2) and the inbox
+  watcher's `processed/` gate (F1.1) share exactly one source of truth.
+- **Tests** — `tests/unit/workspace-usable-persona-triad.test.sh` (5 hermetic
+  cases against the shared contract script, incl. the vector-less / "registered
+  but not embedded" FAIL and no cross-slug credit) and
+  `tests/unit/orchestrator-embed-fail-exit8.test.py` (Phase-5 FAILED → exit 8,
+  DONE → exit 0, blueprint left on disk).
+- **Re-land:** rebased onto `main` (v6.15.0) after the FDN-4 shared-contract
+  merge; resolved the `tests/unit/usable-persona-contract.test.sh` add/add
+  collision by renaming this train's test and dropping the redundant
+  `lib-usable-persona-contract.sh`; skill-version `v6.15.0 → v6.15.1`.
+
 ## v6.15.0 - 2026-07-05 - fix(F1.1): inbox-watcher false-success — shared usable-persona contract gates the `processed/` move
 
 A book could be consumed and moved to `inbox/processed/` with a SUCCESS log line while NO persona was ever built — silently losing the source with no retry. Root cause: `scripts/add-persona-from-source.sh` exited **0** on the "orchestrator missing" branch (environment broken, treated as success), and `scripts/persona-inbox-watcher.sh` treated any exit-0 as SUCCESS and moved the source to `processed/` — no blueprint, no `persona-categories.json` key, no index row, so the N38 triad could never see it and there was no source left to retry.

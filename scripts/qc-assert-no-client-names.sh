@@ -75,6 +75,14 @@ set -uo pipefail
 #     of these appear in tracked content they are a template leak → hard fail.
 ALWAYS_ON_TOKENS=(
   "/Users/blackceomacmini"
+  # FIX-PRES-05: also ban the DASH-SEPARATED session-path form of the operator
+  # home (the `-Users-<operator>/…` scratchpad spelling that evaded the slash-only
+  # token in test_cc_contract.py). The BARE username is intentionally NOT an
+  # always-on token: it is the very literal each skill's own leak-detection scans
+  # for (test_funnel_matcher.py / check-funnel-automation-library-drift.py /
+  # qc-no-personal-data.sh), so scanning for it here would false-positive on those
+  # legitimate detection patterns.
+  "-Users-blackceomacmini"
   "ExampleClientAlpha"
   "ExampleClientBeta"
   "PlaceholderCo"

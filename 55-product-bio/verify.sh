@@ -31,6 +31,11 @@ GSVC="$GOLD/service"                             # extra golden: a SERVICE-type 
 GPHY="$GOLD/physical"                            # extra golden: a PHYSICAL-PRODUCT bio
 PY="${PYTHON:-python3}"
 
+# Redirect the labeled ~/Downloads deliverable into a THROWAWAY root so verify.sh
+# NEVER writes into the operator's real ~/Downloads (state-path discipline — the
+# Skill-23 lesson). Cleaned up on exit alongside the other temp dirs.
+export PRODUCT_BIO_DELIVERY_ROOT="$(mktemp -d)"
+
 fails=0
 run() {
     local label="$1"; shift
@@ -177,7 +182,7 @@ fi
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 echo "  -- golden pilot through product-bio-entry.sh --"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" "${PRODUCT_BIO_DELIVERY_ROOT:-}"' EXIT
 mkdir -p "$TMP/working"
 cp "$GOLD/intake.json"      "$TMP/working/intake.json"
 cp "$GOLD/product-bio.md"   "$TMP/working/product-bio.md"
@@ -187,6 +192,16 @@ if bash "$SKILL_DIR/product-bio-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
     printf '  [PASS] golden pilot issues a process certificate\n'
 else
     printf '  [FAIL] golden pilot did not issue a certificate\n'; fails=$((fails + 1))
+fi
+
+# 6a) the labeled ~/Downloads bundle (redirected to the throwaway root) carries the
+#     DELIVERY-NOTE + handoff + certificate (FIX-S36-57), and never touches real ~/Downloads.
+BUNDLE="$(find "$PRODUCT_BIO_DELIVERY_ROOT" -maxdepth 1 -type d -name 'Product-Bio-*' 2>/dev/null | head -1)"
+if [ -n "$BUNDLE" ] && [ -f "$BUNDLE/DELIVERY-NOTE.md" ] && [ -f "$BUNDLE/handoff.json" ] \
+   && [ -f "$BUNDLE/PROCESS-CERTIFICATE.json" ]; then
+    printf '  [PASS] labeled deliverable bundle carries DELIVERY-NOTE + handoff + certificate\n'
+else
+    printf '  [FAIL] labeled deliverable bundle incomplete under the override root\n'; fails=$((fails + 1))
 fi
 
 # 6b) extra golden bundle pilots — the SERVICE + PHYSICAL-PRODUCT goldens each

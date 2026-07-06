@@ -1,5 +1,12 @@
 #!/bin/bash
-# persona-inbox-watcher.sh — v6.6.1
+# persona-inbox-watcher.sh — v6.7.0
+#
+# v6.7.0 — F1.6 (skill 22 v6.16.0): after the scan loop, an OPERATOR-ONLY,
+#   client-silent nag fires (once per PERSONA_PENDING_NAG_HOURS window, default
+#   24h) when a `.fleet-publish-pending.json` marker is older than that window —
+#   so a workspace set added but not yet published to the fleet is surfaced
+#   proactively instead of only at the next commit/roll. Routed through
+#   _operator_notify (opt-in operator chat; log-only otherwise); never client-facing.
 #
 # v6.6.1 — F1.1 (skill 22 v6.15.0): the success branch now asserts the shared
 #   usable-persona contract (pipeline/usable-persona-contract.sh: blueprint +
@@ -86,6 +93,25 @@ resolve_operator_chat_id() {
     [ -z "$v" ] && [ -n "${OPERATOR_HELP_CHAT_ID:-}" ] && v="$OPERATOR_HELP_CHAT_ID"
     [ -z "$v" ] && [ -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ] && v="$OPERATOR_TELEGRAM_CHAT_ID"
     printf '%s' "$v"
+}
+
+# Best-effort OPERATOR-ONLY notification (send-or-log). CLIENT-SILENT by
+# construction: it routes ONLY through resolve_operator_chat_id (opt-in, no
+# hardcoded chat — same co-mingling guard the quarantine escalation uses); when
+# no operator chat is configured it LOGS ONLY (the watcher log is operator-facing,
+# never client-facing). Non-fatal — never affects the exit code.
+_operator_notify() {
+    local _msg="$1" _chat
+    _chat="$(resolve_operator_chat_id)"
+    if [ -n "$_chat" ] && command -v openclaw >/dev/null 2>&1; then
+        if openclaw message send --channel telegram -t "$_chat" -m "$_msg" >/dev/null 2>&1; then
+            echo "$(TS) [persona-inbox-watcher] Operator notice sent ($_chat)."
+        else
+            echo "$(TS) [persona-inbox-watcher] WARN: operator notice send failed (non-fatal): $_msg"
+        fi
+    else
+        echo "$(TS) [persona-inbox-watcher] Operator notice (log-only, no operator chat configured): $_msg"
+    fi
 }
 
 # ─── PATH RESOLUTION ─────────────────────────────────────────────────────────
@@ -350,4 +376,49 @@ if [ "$processed_count" -gt 0 ]; then
     echo "$(TS) [persona-inbox-watcher] Done. Processed $processed_count new persona(s) this run."
 else
     echo "$(TS) [persona-inbox-watcher] No new files to process in $INBOX_DIR."
+fi
+
+# ─── PENDING FLEET-PUBLISH NAG (F1.6 — operator-box-only, client-silent) ──────
+# A `<coaching-dir>/.fleet-publish-pending.json` marker means personas were added
+# to the WORKSPACE but NOT yet published to the fleet. That marker blocks nothing
+# until the next commit / roll, so a set can sit unpublished for days (the
+# 65-vs-81 syndrome). This emits an OPERATOR-visible nag once per
+# PERSONA_PENDING_NAG_HOURS window (default 24h) while the marker is older than
+# that threshold, so an unpublished set is surfaced proactively instead of only
+# at the next commit/roll.
+#
+# Client-silence / operator-box-only, by construction:
+#   • The marker is only ever created by the operator's fleet-publish workflow
+#     (add-persona-from-source.sh → fleet-publish-status.sh mark-pending). Client
+#     boxes never run publish-personas-to-fleet.sh, so the marker is absent there
+#     and this block is a no-op.
+#   • The nag routes ONLY through _operator_notify → resolve_operator_chat_id
+#     (opt-in, co-mingling-guarded — never a hardcoded/client chat); with no
+#     operator chat configured it LOGS ONLY. It never touches a client channel.
+# Throttled via a .locks-adjacent marker so it fires at most once per window
+# (never every 10-minute cron tick).
+PENDING_MARKER="$PERSONA_BASE/.fleet-publish-pending.json"
+PENDING_NAG_HOURS="${PERSONA_PENDING_NAG_HOURS:-24}"
+PENDING_NAG_THROTTLE="$INBOX_DIR/.pending-publish-nag-last"
+if [ -f "$PENDING_MARKER" ]; then
+    _nag_mmin=$(( PENDING_NAG_HOURS * 60 ))
+    # Marker older than the threshold? (find prints the path only when its mtime
+    # is more than _nag_mmin minutes in the past.)
+    if [ -n "$(find "$PENDING_MARKER" -mmin "+$_nag_mmin" -print 2>/dev/null)" ]; then
+        _should_nag=true
+        # Throttle: skip if we already nagged within the current window (throttle
+        # marker exists AND is NOT older than the window).
+        if [ -f "$PENDING_NAG_THROTTLE" ] && \
+           [ -z "$(find "$PENDING_NAG_THROTTLE" -mmin "+$_nag_mmin" -print 2>/dev/null)" ]; then
+            _should_nag=false
+        fi
+        if [ "$_should_nag" = "true" ]; then
+            _pending_slugs="$(python3 -c 'import json,sys; print(", ".join(json.load(open(sys.argv[1])).get("pending", [])) or "(unknown)")' "$PENDING_MARKER" 2>/dev/null || echo '(unknown)')"
+            _pending_age_h="$(python3 -c 'import os,sys,time; print(int((time.time()-os.path.getmtime(sys.argv[1]))//3600))' "$PENDING_MARKER" 2>/dev/null || echo '?')"
+            _operator_notify "Book-to-Persona: workspace personas have been PENDING fleet-publish for ~${_pending_age_h}h (>${PENDING_NAG_HOURS}h): ${_pending_slugs}. Run 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh to bring the repo library + index manifest + release asset into lockstep, then commit."
+            : > "$PENDING_NAG_THROTTLE" 2>/dev/null || true
+        else
+            echo "$(TS) [persona-inbox-watcher] Pending fleet-publish marker present but already nagged within the last ${PENDING_NAG_HOURS}h — throttled."
+        fi
+    fi
 fi
