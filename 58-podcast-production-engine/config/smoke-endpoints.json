@@ -1,0 +1,102 @@
+{
+  "$schema_note": "Podcast Production Engine (Skill 58) PINNED balance endpoints for the daily smoke test (furnace-design Guardrail 1). The runtime NEVER guesses an endpoint: podcast-smoke-test.py reads THIS file. Per-service check order is cheapest-method-first and a model turn is the last resort. The entire daily run must cost at most smoke_budget.max_cost_usd. Method 1 is a free or near-zero balance query; Method 2 is a near-zero fallback (a status-only reachability HEAD, or for Ollama Cloud a single capped turn) used only when no balance endpoint exists. If even Method 2 would exceed the run budget, mark the provider UNKNOWN and skip; do not spend to find out. Every endpoint here is a LIVE-VERIFY item: the canary confirms each path against live provider docs (verified where noted below as of pinned_at). This file names credential ENV LABELS only, never a secret value.",
+  "version": "1.0.0",
+  "pinned_at": "2026-07-06",
+  "podcast_engine": {
+    "smoke_budget": {
+      "max_cost_usd": 0.01,
+      "overspend_alert_reason": "smoke_test_overspend"
+    },
+    "smoke_endpoints": {
+      "ollama_cloud": {
+        "verified": "2026-07-06 (no balance endpoint confirmed via open upstream issues ollama/ollama#15132, #15663, #16448)",
+        "live_verify": true,
+        "method_1_balance": {
+          "available": false,
+          "url": null,
+          "reason": "Ollama Cloud exposes NO programmatic account usage or credit endpoint as of pinned_at; usage is visible only at ollama.com/settings or via email warnings. Method 2 applies."
+        },
+        "method_2_capped_turn": {
+          "url": "https://ollama.com/v1/chat/completions",
+          "http_method": "POST",
+          "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "OLLAMA_API_KEY", "key_env_aliases": ["OLLAMA_CLOUD_API_KEY"]},
+          "body": {"model": "<cheapest funded content model, e.g. glm-5.2:cloud>", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1, "num_predict": 1, "stream": false},
+          "timeout_seconds": 15,
+          "expected_max_cost_usd": 0.0002
+        },
+        "forbidden": "Never use the local signed-in daemon for the smoke test: no ollama run, no 127.0.0.1:11434, no https://ollama.com/api/tags (public, returns 200, proves nothing). A :cloud daemon turn silently bills Ollama Cloud. The capped turn MUST hit the HTTPS cloud endpoint with a hard output cap only."
+      },
+      "openrouter": {
+        "verified": "2026-07-06 (GET /api/v1/key confirmed against openrouter.ai docs)",
+        "live_verify": true,
+        "method_1_balance": {
+          "available": true,
+          "url": "https://openrouter.ai/api/v1/key",
+          "http_method": "GET",
+          "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "OPENROUTER_API_KEY"},
+          "response_fields": ["limit", "limit_remaining", "usage", "usage_daily", "is_free_tier", "label", "limit_reset"],
+          "cost_usd": 0.0,
+          "note": "Returns key limit and usage and costs nothing. No completion call is ever made for the smoke test."
+        },
+        "alt_balance": {
+          "url": "https://openrouter.ai/api/v1/credits",
+          "http_method": "GET",
+          "response_fields": ["total_credits", "total_usage"],
+          "note": "Alternate credit-balance endpoint used by the fleet Skill 57 preflight gate; kept as a documented alternate."
+        }
+      },
+      "kie_ai": {
+        "verified": "2026-07-06 (in-production fleet path from Skill 57 preflight_gate.py and Skill 07 kie-setup)",
+        "live_verify": true,
+        "method_1_balance": {
+          "available": true,
+          "url": "https://api.kie.ai/api/v1/chat/credit",
+          "http_method": "GET",
+          "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "KIE_API_KEY"},
+          "response_fields": ["credits", "data", "balance", "credit"],
+          "cost_usd": 0.0,
+          "note": "Remaining-credit lookup; never runs an image generation task."
+        },
+        "method_2_reachability": {
+          "url": "https://api.kie.ai",
+          "http_method": "HEAD",
+          "expects": "any HTTP status code (reachability only)",
+          "cost_usd": 0.0
+        }
+      },
+      "fish_audio": {
+        "verified": "2026-07-06 (in-production fleet path from Skill 30 qc-fish-audio-api-reference.sh)",
+        "live_verify": true,
+        "method_1_balance": {
+          "available": true,
+          "url": "https://api.fish.audio/wallet/self/api-credit",
+          "http_method": "GET",
+          "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "FISH_AUDIO_API_KEY"},
+          "response_match": ["credit", "balance", "user", "wallet"],
+          "cost_usd": 0.0,
+          "note": "Wallet/credit balance; never runs a text-to-speech synthesis. The free tier is never used for anything client-related."
+        },
+        "method_2_reachability": {
+          "url": "https://api.fish.audio/v1/me",
+          "http_method": "GET",
+          "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "FISH_AUDIO_API_KEY"},
+          "expects": "authenticated account echo (identity, no synthesis)",
+          "cost_usd": 0.0
+        }
+      },
+      "perplexity": {
+        "verified": "2026-07-06 (optional; only when the client has Perplexity wired)",
+        "live_verify": true,
+        "optional": true,
+        "method_1_reachability": {
+          "url": "https://api.perplexity.ai",
+          "http_method": "HEAD",
+          "expects": "any HTTP status code (reachability only)",
+          "cost_usd": 0.0,
+          "note": "If Perplexity is not wired, the provider is skipped entirely (not marked FAIL). Any actual search call is FORBIDDEN in the smoke test."
+        }
+      }
+    },
+    "unknown_provider_policy": "If a provider exposes no balance endpoint and even the near-zero Method 2 would exceed the run budget, mark that provider status UNKNOWN and skip. Do not spend to find out."
+  }
+}

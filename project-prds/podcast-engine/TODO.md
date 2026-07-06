@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.21 Config set | Opus 4.8 exec | DONE (branch) | feat/podcast-config-set | 9.3 self | 58-podcast-production-engine/config/{furnace,models,smoke-endpoints,cost-model,bands}.json. Routing Kimi 2.6 to GLM 5.2 to OpenRouter eq to Gemini 3.1 Flash Lite; deny_patterns; zero Anthropic usage. Ceilings 2.50/5.00/15.00, 3 ep/day, 400k tok/ep, 8k out/call. Endpoints pinned (OpenRouter GET /api/v1/key verified; Ollama Cloud no-balance so capped-turn; Kie /chat/credit; Fish wallet/self/api-credit). bands.json seeded from Skill 57. 41/41 self-QC pass. |
