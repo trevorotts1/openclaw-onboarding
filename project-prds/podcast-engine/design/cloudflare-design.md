@@ -81,10 +81,10 @@ served by a loopback service on that box. Nothing client-identifying is stored i
 Cloudflare account except the hostname, the tunnel route, and the Access allow-list emails.
 Per-client isolation holds: there is no shared origin, no shared database, no shared token.
 
-Known exception to keep in mind: Aurelia Gardner (TRACK B) has her own operator-managed
-Cloudflare account. Even she is primarily routed via the standard rescue tunnel pattern.
-The podcast engine uses the standard BlackCEO-hosted pattern for her too unless Trevor
-explicitly directs otherwise. Do not generalize her exception.
+Known exception to keep in mind: one TRACK B client runs their own operator-managed
+Cloudflare account. Even that client is primarily routed via the standard rescue tunnel
+pattern. The podcast engine uses the standard BlackCEO-hosted pattern for that client too
+unless Trevor explicitly directs otherwise. Do not generalize this exception.
 
 ---
 
