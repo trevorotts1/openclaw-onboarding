@@ -4,6 +4,64 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.16.0 - 2026-07-05 - fix(F1.4): Phase-6 categories write is FAIL-LOUD + AUTO-REPAIR — a lint failure can no longer strand an unselectable persona
+
+A blueprint that finished the pipeline could be left with NO key under
+`persona-categories.json.personas` — invisible to `persona-selector-v2.py`'s
+`list_available_personas()` universe (which reads exactly that dict's keys), an
+unselectable orphan. Root cause: `pipeline/orchestrator.py` Phase 6 wrapped
+`_append_persona_to_categories` in a `try/except` that caught EVERY exception
+(including the P13-2 schema-lint `PersonaCategoriesSchemaError`) and logged a
+WARNING — the run still exited 0 (a silent success, the categories-side mirror
+of F1.2's "registered but not embedded"). Fixes, mirroring F1.2 / FDN-5's
+fail-loud exit pattern:
+
+- **NEW `_phase6_register_categories()`** replaces the swallow-and-warn call
+  site. It gives the contract TWO independent guarantees:
+  1. **Never-to-zero on registration itself (AUTO-REPAIR):** when the normal
+     auto-classified append fails, the persona is re-registered with a
+     SAFE-DEFAULT tag set (`domain: ["leadership"]`, a controlled-vocab member
+     so it passes both the schema-lint gate and `persona_fleet.py sync-categories`
+     validation) plus an additive `needs_retag: true` marker — rather than
+     skipping the entry. The persona ALWAYS gets a categories key and stays
+     selectable.
+  2. **Fail-loud:** a Phase-6 write that needed the repair (or failed even that)
+     is recorded in a module-level accumulator; `main()` then exits the distinct
+     `PHASE6_CATEGORIES_EXIT_CODE = 9` (never 0), so the caller
+     (`add-persona-from-source.sh` / the inbox watcher) can tell "operator must
+     re-tag" apart from a clean build and route to retry/quarantine.
+- **`_append_persona_to_categories(..., domain_override=, needs_retag=)`**:
+  additive params power the auto-repair path (bypass the auto-classifier, write
+  the safe-default entry, stamp the marker). Existing callers are unchanged.
+- **`persona-categories.json` → schema 1.2**: registers the optional additive
+  `needs_retag` marker (documented in `persona-categories.README.md`). It is a
+  workspace-only field — `sync-categories` ships only the canonical seed fields,
+  so it never leaks into the shipped seed.
+- **Test:** `tests/unit/phase6-categories-fail-loud.test.sh` — 21 assertions
+  driving the happy path, the lint-failure auto-repair (safe default + marker),
+  the SystemExit(9) fail-loud gate (and its no-op on a clean run), the hard-fail
+  (both writes raise) path, never-to-zero selector-universe visibility, and
+  multi-book accumulator aggregation. Hermetic (no network / no Gemini key;
+  sandboxed log/status/categories paths — never touches the real workspace).
+- **Re-land:** merged latest `main` into the branch (skill-22 v6.15.2 / repo
+  v17.0.29) after the F1.2/FDN-5 (v6.15.1) and F1.3/F2.2 (v6.15.2) merges;
+  resolved the single-book `main()`-tail conflict by KEEPING BOTH fail-loud gates
+  in order — Phase-5 embed (exit 8) then Phase-6 categories (exit 9);
+  skill-version `v6.15.2 → v6.16.0`.
+- **Re-land onto v17.0.33 (post Wave-0):** merged latest `main`; resolved the two
+  skill-22-local conflicts (`skill-version.txt` → `v6.16.0`, CHANGELOG head).
+  Re-pinned `shared-utils/prebuilt-index/INDEX-MANIFEST.json`
+  `persona_set_md5` `e57f4150…` → `925207fd…` so the D13 provision-idempotency
+  5d/5e assertion (which hashes the schema-1.2 `persona-categories.json` against
+  the manifest pin) goes green — metadata-only, persona MEMBERSHIP unchanged at
+  81 (`persona_count`/`canonical`/`embedded` and `asset_rebuild_required:false`
+  untouched → protected-ref asset-consistency guard stays green). Also fixed a
+  full-batch `main()`-tail regression introduced by the earlier tail merge: the
+  F1.2/FDN-5 `if embed_failed: sys.exit(8)` gate had been relocated into the dead
+  tail of `_exit_if_categories_failed()` (after its unconditional `sys.exit(9)`),
+  so full-batch mode had silently lost its exit-8 embed fail-loud gate. Restored
+  it INSIDE `main()` before the Phase-6 categories gate, matching the single-book
+  ordering (embed 8 → categories 9).
 ## v6.15.3 - 2026-07-05 - fix(persona-provisioning/F2.1): client-box updates no longer destroy client-locally-added personas
 
 FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2). A client box that ran this skill on the client's OWN book had its persona DEREGISTERED and its vectors CLOBBERED at every `openclaw update`, via two compounding mechanisms in `shared-utils/provision-persona-index.sh` (the helper that reconciles this skill's `persona-categories.json` + blueprints onto client boxes):
