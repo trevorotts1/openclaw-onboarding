@@ -1,5 +1,5 @@
 # SOP-00 — Owner Task Routing
-**Version:** 1.4.0 | 2026-06-22
+**Version:** 1.5.0 | 2026-07-06
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -78,6 +78,7 @@ Read `universal-sops/00-ROUTING.md` (company root) to map the request to the own
 |--------------------------|---------------------|
 | Images, graphics, design, visual assets | `graphics` |
 | Videos, reels, editing, captions | `video` |
+| Full podcast EPISODE PRODUCTION: an intake survey turned into a written, produced, and published episode (interview-style or personal); "produce/publish my podcast episode", "run the podcast engine" | `podcast` |
 | Audio, TTS, voiceover, podcasting | `audio` |
 | Slide decks, pitch decks, keynotes, speeches, webinar decks, "turn this into a presentation" | `presentations` |
 | Written content, copy, emails, blogs | `communications` or `marketing` |
@@ -95,6 +96,38 @@ Read `universal-sops/00-ROUTING.md` (company root) to map the request to the own
 If classification is ambiguous, route to the department whose head is most responsible for the final deliverable.
 
 > **Native skill invocation (Departments-That-Use-Skills).** The single-department table above is the same binding as the `SKILL_INTENT_ROUTING_REFLEX_V1` intent→department catalog injected into this AGENTS.md (generated from `23-ai-workforce-blueprint/skill-department-map.json`). When an owner message names a plain-language outcome a skill delivers ("make me ads", "write my nurture emails", "produce a video", "build my funnel") — even though the owner never names the skill — route to the OWNING department; the specialist there reaches for the skill (dept-scoped) after routing. Do NOT ask the owner "which skill?" and do NOT self-intake. Doctrine: `universal-sops/native-skill-invocation.md`. (Presentation/deck requests are already owned by the strict presentation reflex — REFLEX 0 — which fires first.)
+
+#### Inbound podcast job dispatch: Podcast Production Engine (routing only)
+
+The `podcast` department (`department_slug: "podcast"`) is a universal-floor department
+(content-creator pack) that OWNS the Podcast Production Engine and runs its full pipeline end to
+end in its own persistent department agent session. The Master Orchestrator ROUTES podcast jobs to
+that department and NEVER executes any pipeline step: it never renders audio, never generates cover
+art, never writes to Convert and Flow or Podbean, never writes episode state, never runs the intake
+mapper. This is R1, R2, R3, R7, and R11 applied to podcast production; the engine is content-heavy,
+paid, tool-bearing work that belongs to the department agent, not to the router.
+
+Two inbound paths, both terminating at the podcast department agent and never inside the
+orchestrator's turn:
+
+1. Intake-survey webhook (the primary, self-dispatching trigger). The intake form POST arrives over
+   the client's Cloudflare tunnel to the loopback gateway, where an OpenClaw Webhooks plugin route
+   hands it to a deterministic handler (no model, no MCP) that opens a durable TaskFlow on
+   sessionKey `podcast:intake:<slug>`, owned by the podcast department agent. This path is
+   machine-to-machine and self-routing; the Master Orchestrator does NOT intercept, re-classify, or
+   re-route it. It is documented here so the orchestrator leaves it alone.
+2. Owner message about episode production (for example "produce my next podcast episode", "publish
+   the interview episode", "run the podcast engine"). Classify as `podcast` and dispatch via the
+   board (`POST /api/tasks/ingest` with `department_slug: "podcast"`), exactly like any other
+   department task. Do NOT route full episode production to `audio`: the `audio` department owns
+   voiceover, TTS, and sound tasks, while `podcast` owns the end-to-end published-episode engine.
+
+Silence and isolation carry through routing: the orchestrator emits zero client-facing messages
+about podcast jobs (Convert and Flow owns all customer messaging), and no MCP is injected into the
+podcast pipeline; its Convert and Flow data plane (Skill 44 caf plus Skill 29 REST) runs inside the
+podcast agent's own turn, not the orchestrator's. Doctrine and pipeline detail:
+`project-prds/podcast-engine/PRD.md` Section 13.3 (routing-only) and Section 5 (the 18-step
+pipeline); webhook session binding: `project-prds/podcast-engine/design/webhook-design.md`.
 
 ---
 
@@ -244,6 +277,7 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in th
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.5.0 | 2026-07-06 | Added the Podcast Production Engine dispatch rule: full podcast episode production routes to the `podcast` universal-floor department (`department_slug: "podcast"`), placed above and distinct from generic audio/voiceover which stays with `audio`. Documents the two inbound paths (the self-dispatching intake webhook on sessionKey `podcast:intake:<slug>`, and owner-message board dispatch) and reaffirms routing-only (R1/R2/R3/R7/R11): the orchestrator never runs a pipeline step, never renders audio or cover art, never writes to Convert and Flow or Podbean, never writes episode state. Silence and no-MCP-in-pipeline carry through. Part of Podcast Production Engine v18 wiring (W4.14). |
 | 1.4.0 | 2026-06-22 | Added Step-2 full-funnel/website-factory branch: when intent is detected, hand to SOP-07 (Full-Funnel Build Orchestration) instead of single-routing. Documents parent idempotency_key with child key derivation as sha256(parent_key+':'+stage_slug). Sibling SOP-07 added to master-orchestrator-dept/. |
 | 1.3.0 | 2026-06-21 | Added R11: route production work to the PERSISTENT per-department agent (`agent:<dept>` via the task board) — NEVER to an ephemeral turn-scoped inline child that dies when a new owner message starts a new turn. Documents the repo-side vs platform-side split for spawn persistence and cross-links `platform/SPEC-persistent-department-spawn.md`. Part of the v13.2.2 routing-gate hardening. |
 | 1.2.0 | 2026-06-15 | Added R10: Blocked column authority -- the orchestrator is the sole writer of status=blocked and only after the four-way classifier in SOP-01 passes. Workers hand back via the structured handback endpoint. Cross-links SOP-01-Blocked-vs-Return.md and N36. |
