@@ -47,6 +47,9 @@
 - [ ] W2.1 podcast_state.py (sole writer, transition matrix, redaction). PENDING
 - [x] W2.2 podcast-cost-ledger.py (ceilings, caps, budgets). DONE(self-test 11/11; branch feat/podcast-cost-and-metering)
 - [x] W2.3 podcast-smoke-test.py (at or under 1 cent; queue age check). DONE(self-test 9/9; branch feat/podcast-cost-and-metering)
+- [x] W2.1 podcast_state.py (sole writer, transition matrix, redaction). DONE on branch feat/podcast-state-writer: 58-podcast-production-engine/scripts/podcast_state.py; all 5 tables + WAL + FK, Section 5.2 matrix, all subcommands (create/advance/output/hold/resume/fail/sweep-aged-out/scrub-pii/token/deactivate-client + init/get), redaction filter, idempotent create, three-strike QC cap, 60-day sweep, hash-only tokens, ledger lockstep bridge, fail-closed on active=0; 32-assertion harness green; no provider ids / em dashes / triple fences.
+- [ ] W2.2 podcast-cost-ledger.py (ceilings, caps, budgets). PENDING
+- [ ] W2.3 podcast-smoke-test.py (at or under 1 cent; queue age check). PENDING
 - [ ] W2.4 qc-tier1-mechanical.py (deterministic Tier 1). PENDING
 - [ ] W2.5 qc-attempt-gate.py (3-strike, targeted retries, frozen research). PENDING
 - [ ] W2.6 alert-dedup.py (windows, storm cap, gateway-only path). PENDING
