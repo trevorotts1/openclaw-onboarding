@@ -1536,6 +1536,7 @@ yourself — the owning department's specialist reaches for the skill (dept-scop
 | "answer my customers automatically", "a live-chat / support bot" | `customer-support` |
 | "a signature talk / keynote deck / 100-slide presentation" — handled by REFLEX 0 above (do not double-route) | `presentations` |
 | "map/graph my workforce", "graph my company" | `openclaw-maintenance` |
+| "produce a podcast episode", "turn this intake into a published episode", "run the podcast production engine", "generate this week's episode" | `podcast` |
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.

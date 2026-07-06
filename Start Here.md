@@ -39,9 +39,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 52 active skills"
+- "Install the 53 active skills"
 
-**Your task:** Install all 52 active skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 53 active skills using the 5-Wave Parallel Orchestration below.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
@@ -81,7 +81,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 52 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 53 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -214,7 +214,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 52 active skills: final complete index
+- After all 53 active skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -471,14 +471,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 52 active skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 53 active skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 52 active skills are installed or attempted.
+DO NOT REMOVE this block until all 53 active skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 52 active skills are installed (or attempted), the agent MUST:
+When all 53 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the sane default (6h, main-only):
 ```json
@@ -526,17 +526,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 52 active skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 53 active skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 52 active skills are installed:
-1. Count and verify: all 52 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
+When all 53 active skills are installed:
+1. Count and verify: all 53 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 52 active skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 53 active skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -570,7 +570,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 52 active skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 53 active skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -792,7 +792,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
-| **Final** | After ALL 52 active skills complete | Complete system index |
+| **Final** | After ALL 53 active skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -2062,7 +2062,7 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 52 active skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 53 active skills installed."
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
@@ -2079,7 +2079,7 @@ label: "wave4-agent-f"
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install 52 active skills one at a time:
+If `sessions_spawn` doesn't work, install 53 active skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 35:
@@ -2111,7 +2111,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 52 active skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 53 active skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -2469,13 +2469,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 52 active skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 53 active skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 52 active skills are installed, run this as the final step.
+After all 53 active skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2518,7 +2518,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 52 active skills are installed, run the final Gemini Engine indexing:
+After all 53 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2543,7 +2543,7 @@ python3 ~/.openclaw/scripts/gemini-indexer.py --status
   messaging channel (detected in prerequisites).
 - Format the 52-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 52 active skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 53 active skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
 1. Everything that was install 52 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
