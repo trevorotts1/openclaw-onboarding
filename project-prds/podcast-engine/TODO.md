@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W1.12 Cover finalize (Step 10) + W1.13 Documents (Step 12) | Opus asset-production | DONE on branch (awaiting serial merge) | feat/podcast-asset-production | self 9.0 | scripts/generate_cover.sh + scripts/render_documents.py + modules/documents.md; ffmpeg finalize and renderer proven locally |
