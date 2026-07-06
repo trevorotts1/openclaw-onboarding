@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # QC Script for Skill 45 — Design Intelligence Library
-# Verifies: 19 library files present (7 _system + 9 _RULES + 3 top-level), INDEX.md parses, no client data committed to repo
+# Verifies: 20 library files present (7 _system + 10 _RULES + 3 top-level), INDEX.md parses, no client data committed to repo
 # Top-level repo-owned library files: README.md, INDEX.md (empty seed), DEPARTMENT-BUILD-BRIEF.md (org-builder brief).
 # Client data = {ID}_{name}.md style cards and personal-photo-shoot/{client}/ identity folders ONLY.
 # Category _RULES.md are repo-owned system files and are NEVER client data.
@@ -36,7 +36,7 @@ for file in "${_system_files[@]}"; do
   fi
 done
 
-# 2. Verify category _RULES.md files exist (9 files)
+# 2. Verify category _RULES.md files exist (10 files)
 echo ""
 echo "[QC] Checking category _RULES.md files..."
 categories=(
@@ -44,6 +44,7 @@ categories=(
   "banner-designs"
   "book-cover-designs"
   "facebook-ad-designs"
+  "funnel-page-designs"
   "magazine-cover-designs"
   "personal-photo-shoot"
   "powerpoint-designs"
@@ -131,13 +132,13 @@ system_count=$(find "$LIBRARY_DIR/_system" -maxdepth 1 -name "*.md" | wc -l)
 rules_count=$(find "$LIBRARY_DIR" -path "*/_RULES.md" | wc -l)
 toplevel_count=$(find "$LIBRARY_DIR" -maxdepth 1 -name "*.md" | wc -l)
 echo "  System files (_system/*.md): $system_count (expected: 7)"
-echo "  Category _RULES.md: $rules_count (expected: 9)"
+echo "  Category _RULES.md: $rules_count (expected: 10)"
 echo "  Top-level files (README, INDEX, DEPARTMENT-BUILD-BRIEF): $toplevel_count (expected: 3)"
 
 expected_total=$((system_count + rules_count + toplevel_count))
-echo "  Total library files: $expected_total (expected: 19)"
+echo "  Total library files: $expected_total (expected: 20)"
 
-if [[ $system_count -ne 7 ]] || [[ $rules_count -ne 9 ]] || [[ $toplevel_count -ne 3 ]]; then
+if [[ $system_count -ne 7 ]] || [[ $rules_count -ne 10 ]] || [[ $toplevel_count -ne 3 ]]; then
   echo "  ✗ File count mismatch"
   exit 1
 fi
@@ -199,7 +200,7 @@ echo ""
 echo "═══════════════════════════════════════════════════════════════"
 SKILL_VERSION="$(cat "$SCRIPT_DIR/skill-version.txt" 2>/dev/null | tr -d '[:space:]')"
 echo "[QC] ✓ All checks passed. Design Intelligence Library (v${SKILL_VERSION:-unknown})"
-echo "[QC] 19 library files present + valid structure (7 _system + 9 _RULES + 3 top-level)"
+echo "[QC] 20 library files present + valid structure (7 _system + 10 _RULES + 3 top-level)"
 echo "[QC] Ready for installation on boxes"
 echo "═══════════════════════════════════════════════════════════════"
 

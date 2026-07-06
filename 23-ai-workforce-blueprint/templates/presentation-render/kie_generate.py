@@ -154,10 +154,15 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     else:
         raise ValueError(f"Slide {slide['slide']}: unknown mode '{mode}'. Use 'i2i' or 't2i'.")
 
+    # FIX-IMG-03: honor an OPTIONAL per-entry aspect_ratio / resolution when the
+    # prompts.json entry carries one, else fall back to the module defaults. This
+    # is purely additive — a slide without these keys renders exactly as before
+    # (16:9 / 2K). It lets the Skill 6 rail respect a section's mandated ratio
+    # (e.g. 49 Section 12 -> 3:4) instead of silently forcing 16:9.
     input_block: dict = {
         "prompt": slide["prompt"],
-        "aspect_ratio": ASPECT_RATIO,
-        "resolution": RESOLUTION,
+        "aspect_ratio": slide.get("aspect_ratio", ASPECT_RATIO),
+        "resolution": slide.get("resolution", RESOLUTION),
     }
 
     if mode == "i2i":

@@ -19,7 +19,8 @@
     {"key": "high_ticket_desc",     "legacy_key": "highTicketProductDescription",          "type": "string", "required": true,  "asks": "High-ticket offer description ($1k-$25k+ positioning)."},
     {"key": "first_name",           "legacy_key": "first_name",                            "type": "string", "required": true,  "asks": "Contact first name."},
     {"key": "last_name",            "legacy_key": "last_name",                             "type": "string", "required": true,  "asks": "Contact last name."},
-    {"key": "email",                "legacy_key": "email",                                 "type": "string", "required": true,  "asks": "Contact email (delivery)."}
+    {"key": "email",                "legacy_key": "email",                                 "type": "string", "required": true,  "asks": "Contact email (delivery)."},
+    {"key": "style_card_id",        "legacy_key": null,                                    "type": "string", "required": false, "default": "", "asks": "OPTIONAL (FIX-XC-02c): a registered Skill 45 'FN-...' design style card id. When set, DIU Workflow B resolves it and the card's LONG tier is embedded as the Brand-Style block (block 8) of every image prompt. Blank/absent = brand-color default (unchanged)."}
   ],
 
   "derived_runtime": {
