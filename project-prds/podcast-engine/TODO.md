@@ -50,7 +50,7 @@
 - [ ] W2.4 qc-tier1-mechanical.py (deterministic Tier 1). PENDING
 - [ ] W2.5 qc-attempt-gate.py (3-strike, targeted retries, frozen research). PENDING
 - [ ] W2.6 alert-dedup.py (windows, storm cap, gateway-only path). PENDING
-- [ ] W2.7 ghl_credential_gate.py (resolver, pairing, fingerprint, fields, rate floor). PENDING
+- [x] W2.7 ghl_credential_gate.py (resolver, pairing, fingerprint, fields, rate floor). DONE(feat/podcast-credential-gate; offline battery 9/9; live pairing proven at W5 canary)
 - [ ] W2.8 guard-no-anthropic-runtime.py (shipped-file scan plus routing assertions). PENDING
 - [ ] W2.9 guard-cron-inventory.py (one cron, no heartbeat, churn sweep). PENDING
 - [ ] W2.10 provision-podcast-client.sh (with pass gate). PENDING
@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W2.7 ghl_credential_gate.py | Opus exec (credential-gate) | DONE(offline battery 9/9; live pairing at W5) | feat/podcast-credential-gate | self-QC 9.0 | 16-alias Location-PIT resolver (live env first, all stores), pit- shape (length only), pairing proof, sha256[:12] fingerprint + registry commingling, required fields incl double-underscore, rate floor; exit 0/2/3/4/5; secrecy wrapper; stdlib-only; shared files untouched |
