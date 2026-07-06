@@ -58,7 +58,7 @@
 - [ ] W2.12 T1 to T9 verification script (executable, observed). PENDING
 
 ## WAVE 3: DASHBOARD (1 FABLE sub-agent; starts after W2.1)
-- [ ] W3.1 Fable dashboard build per design/dashboard-design.md, all fourteen acceptance criteria; command center repo serial train. PENDING
+- [x] W3.1 Fable dashboard build per design/dashboard-design.md, all fourteen acceptance criteria; command center repo serial train. DONE(built additively at 58-podcast-production-engine/command-center/ on branch feat/podcast-client-dashboard; verified on the operator box: tsc clean, next build green with all six /podcast routes, 7/7 serializer unit tests, 13/13 headless browser smoke checks including 375/768/1280 no-horizontal-scroll, 6/6 revocation and kill-switch drills against a podcast_state.py-seeded database; self-QC 8.7)
 
 ## WAVE 4: WIRING, ROLES, SOPS, DOCS (14 Opus 4.8 agents, parallel)
 - [ ] W4.1 Department wiring into the EXISTING podcast department (no duplicate; floor passes). PENDING
