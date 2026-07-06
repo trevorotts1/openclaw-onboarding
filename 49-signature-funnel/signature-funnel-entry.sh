@@ -41,6 +41,7 @@ PINNED_FILES=(
   "scripts/prove_sf_build.py"
   "scripts/prove_sf_no_pitch.py"
   "scripts/prove_sf_cert.py"
+  "scripts/gate_integrity_check.py"
   "structure/funnel_structure.json"
   "run_signature_funnel.py"
 )
@@ -175,6 +176,14 @@ self_test() {
     echo "  [PASS] run_signature_funnel.py --self-test"
   else
     echo "  [FAIL] run_signature_funnel.py --self-test"; sed 's/^/         /' /tmp/sf_orch.log; fails=$((fails+1))
+  fi
+  # FIX-XC-05a — gate-integrity harness: (re)emit the negative-test coverage, then
+  # prove DECLARED == ENFORCED == TESTED for every python-enforced autofail.
+  if "$PY" "$SCRIPTS_DIR/test_sf_gate_coverage.py" >/tmp/sf_cov.log 2>&1 \
+     && "$PY" "$SCRIPTS_DIR/gate_integrity_check.py" >/tmp/sf_gic.log 2>&1; then
+    echo "  [PASS] gate_integrity_check.py (declared==enforced==tested)"
+  else
+    echo "  [FAIL] gate_integrity_check.py"; sed 's/^/         /' /tmp/sf_cov.log /tmp/sf_gic.log; fails=$((fails+1))
   fi
   [ "$fails" -eq 0 ] || die "SELF-TEST" "$fails check(s) failed"
   echo "RESULT: PASS — entry self-test green."

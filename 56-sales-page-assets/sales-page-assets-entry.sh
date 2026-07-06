@@ -46,6 +46,7 @@ PINNED_FILES=(
   "scripts/prove_sp_media.py"
   "scripts/prove_sp_bundle.py"
   "scripts/prove_sp_cert.py"
+  "scripts/gate_integrity_check.py"
   "structure/sales_page_structure.json"
   "structure/labeling-grammar.json"
   "run_sales_page_assets.py"
@@ -177,6 +178,14 @@ self_test() {
     echo "  [PASS] run_sales_page_assets.py --self-test"
   else
     echo "  [FAIL] run_sales_page_assets.py --self-test"; sed 's/^/         /' /tmp/spa_orch.log; fails=$((fails+1))
+  fi
+  # FIX-XC-05a — gate-integrity harness: (re)emit the negative-test coverage, then
+  # prove DECLARED == ENFORCED == TESTED for every python-enforced autofail.
+  if "$PY" "$SCRIPTS_DIR/test_sp_gate_coverage.py" >/tmp/spa_cov.log 2>&1 \
+     && "$PY" "$SCRIPTS_DIR/gate_integrity_check.py" >/tmp/spa_gic.log 2>&1; then
+    echo "  [PASS] gate_integrity_check.py (declared==enforced==tested)"
+  else
+    echo "  [FAIL] gate_integrity_check.py"; sed 's/^/         /' /tmp/spa_cov.log /tmp/spa_gic.log; fails=$((fails+1))
   fi
   [ "$fails" -eq 0 ] || die "SELF-TEST" "$fails check(s) failed"
   echo "RESULT: PASS — entry self-test green."
