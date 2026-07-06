@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W2.6 alert-dedup.py (furnace Guardrail 7) | Opus exec (alert-dedup slice) | DONE, branch pushed | feat/podcast-alert-dedup | self 9.2 | scripts/alert-dedup.py plus stdlib unit tests (17 green); keys client+service+failure_class, 6h dedup window, 4/day storm cap to digest, decision-class always-send with per-episode dedup, recovery, daily flush; sole founder path via openclaw message send gateway, never client; no Anthropic, no em dash, no triple backtick (clean scan) |
