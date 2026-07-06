@@ -754,6 +754,55 @@ def find_specialists_by_custom_tags(task_text: str, all_personas, categories_dat
     return found
 
 
+def task_signal_bypasses_stickiness(task_text: str, paths: dict) -> bool:
+    """F3.5 — CHEAP task-signal gate on category-level stickiness.
+
+    Category stickiness serves ONE cached persona for the whole
+    (department, task_category) key with last_score >= 0.5, short-circuiting the
+    funnel, the Layer-5 semantic stage, and the perspective/specialty recall
+    bonuses (check_sticky_assignment + the main() short-circuit). With only ~17
+    coarse categories, two very different tasks collapse to the same key — e.g.
+    "write a sales email to Black women founders" and "write a cold email to
+    plumbing wholesalers" both infer (marketing, email-outreach) — so the second
+    task's cached pick is served for the first, and a lived-experience or named
+    specialist never gets a chance while the row is trusted (anti-staleness only
+    fires after ANTI_STALENESS_THRESHOLD identical picks).
+
+    This runs the two CHEAPEST task-signal detectors already in this module —
+    both pure Python, NO embedding, NO subprocess, NO network — and returns True
+    if EITHER fires (the task explicitly invokes a perspective LENS or names a
+    distinctive SPECIALTY the library carries):
+
+      1. infer_task_perspectives(): pure-regex scan over PERSPECTIVE_KEYWORDS.
+      2. find_specialists_by_custom_tags(): substring probe of the task text
+         against personas' distinctive custom[] specialty tags (NO embedding).
+
+    A generic task fires NEITHER → returns False → the sticky fast path is left
+    exactly as-is (added cost: one keyword scan; the persona-categories.json read
+    is skipped entirely unless the perspective probe already came up empty).
+    Best-effort and fail-open: any load/parse error yields False so a signal
+    check can never break or slow the trusted fast path more than it already is.
+    """
+    try:
+        # Cheapest probe first — pure regex, no file I/O. Short-circuits the
+        # (still cheap) categories.json read for the common perspective case.
+        if infer_task_perspectives(task_text):
+            return True
+        pc_file = paths.get("persona_categories")
+        if not pc_file or not Path(pc_file).exists():
+            return False
+        try:
+            categories_data = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        all_personas = list_available_personas(paths)
+        if not all_personas:
+            return False
+        return bool(find_specialists_by_custom_tags(task_text, all_personas, categories_data))
+    except Exception:
+        return False
+
+
 # ── SOP persona-hint recall + bonus (F3.4 / F4.2) ─────────────────────────────
 # The governing SOP's `sops.persona_hints` list (canonical persona ids such as
 # `voss-never-split-difference`) was WRITTEN by five writers and READ by ZERO
@@ -2550,8 +2599,19 @@ def main():
 
     # Stickiness check (unless skipped)
     sticky = None
+    sticky_bypassed = None
     if not args.skip_stickiness:
         sticky = check_sticky_assignment(args.department, task_category, db_path)
+        # F3.5 — task-signal bypass: before serving a coarse (department,
+        # task_category) sticky row, run two CHEAP detectors (perspective regex +
+        # custom-tag specialty probe, NO embedding). If the task EXPLICITLY invokes
+        # a lens or a named specialty, the cached category-level pick is too coarse —
+        # skip stickiness for THIS task and fall through to a fresh full-funnel
+        # selection so perspective/specialty routing gets its chance. Generic tasks
+        # fire neither detector → the trusted fast path is unchanged.
+        if sticky and task_signal_bypasses_stickiness(args.task, paths):
+            sticky = None
+            sticky_bypassed = "task-signal"
 
     if sticky:
         out = {
@@ -2621,6 +2681,11 @@ def main():
 
     # PRD 1.3: inject db path so every selection response shows whether the DB was found.
     out["db"] = db_field
+
+    # F3.5: mark WHY this fresh selection ran despite a trusted sticky row existing,
+    # so the CC / logs can see task-signal deference happened (audit + not-a-bug).
+    if sticky_bypassed:
+        out["sticky_bypassed"] = sticky_bypassed
 
     # F3.4 / F4.2: surface the consumed SOP context (observability). funnel.hinted
     # (present in the non-sticky/non-hybrid funnel) reports how many hinted personas
