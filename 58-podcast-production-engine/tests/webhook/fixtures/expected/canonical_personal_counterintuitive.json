@@ -1,0 +1,21 @@
+{
+  "mode": "personal_podcast_style",
+  "style": "counter_intuitive",
+  "first_name": "Maria",
+  "last_name": "Anderson",
+  "preferred_pronoun": "she/her",
+  "q1_answer": "The harder I pushed for control, the less I actually had.",
+  "q2_answer": "I measured success by exhaustion and called it discipline.",
+  "q3_answer": "Letting go of the plan was the moment the business finally grew.",
+  "q4_answer": "Trust compounds faster than effort ever will.",
+  "q5_answer": "I almost did not admit that I nearly shut the whole thing down last winter.",
+  "additional_info": "Please keep the tone warm and direct.",
+  "target_runtime": "10",
+  "tts_model": "s2.1-pro",
+  "podcast_id": "pb-98765",
+  "location_id": "Loc0Abc123Xyz789",
+  "contact_id": "C0nTacT12345aBcDe",
+  "publish_timestamp": "2026-07-20T09:00:00Z",
+  "episode_type": "full",
+  "explicit": "clean"
+}

@@ -1,0 +1,27 @@
+{
+  "executionId": "make-exec-77123",
+  "scenarioTimestamp": "2026-07-06T12:00:05.412Z",
+  "retryCount": 0,
+  "data": {
+    "contactId": "C0nTacT12345aBcDe",
+    "locationId": "Loc0Abc123Xyz789",
+    "podcastId": "pb-98765",
+    "productionMode": "personal",
+    "presentationStyle": "counterintuitive",
+    "firstName": "Maria",
+    "lastName": "Anderson",
+    "pronoun": "she/her",
+    "web_research_tool": "Perplexity",
+    "question_1": "The harder I pushed for control, the less I actually had.",
+    "question_2": "I measured success by exhaustion and called it discipline.",
+    "question_3": "Letting go of the plan was the moment the business finally grew.",
+    "question_4": "Trust compounds faster than effort ever will.",
+    "smiq": "I almost did not admit that I nearly shut the whole thing down last winter.",
+    "additional_information": "Please keep the tone warm and direct.",
+    "publish_date": "2026-07-20T09:00:00Z",
+    "tts_model": "S2.1-Pro",
+    "episode_type": "Full",
+    "explicit": "Clean",
+    "target_runtime": "10"
+  }
+}
