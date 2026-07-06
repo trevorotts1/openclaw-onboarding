@@ -1,0 +1,131 @@
+{
+  "$schema_note": "Counter Intuitive intake question set for the Podcast Production Engine (Skill 58), wave W1.24. It binds the source NEW PODCAST intake wording to the deterministic intake mapper's per-style question order: each question carries its survey position, its canonical q-slot (q1_answer through q7_answer, per input_payload_reference), its semantic role, and the exact Convert and Flow custom field key it reads from. The mapper is authoritative on POSITION (survey order); the ghl_internal_label values are advisory alias hints only. Writing rules for everything this skill produces: zero em dash characters, no triple backtick or code-fence markers. This is a static intake-wiring config; no model, provider, key, or host is invoked here. Runtime content work elsewhere in the skill routes to the client's own models only (Ollama Cloud Kimi 2.6, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite); no build-time or non-client model, provider, package, key, or host is present in this file or any runtime file.",
+  "version": "1.0.0",
+  "style": "counter_intuitive",
+  "display_name": "Counter Intuitive",
+  "presentation_promise": "Introduce a different way of thinking about something.",
+  "style_engine_module": "style-engines/counter-intuitive.md",
+  "source_questionnaire": "NEW PODCAST/COUNTER INTUITIVE.txt",
+  "reference_model_internal_note": "The style engine is modeled on a master communicator for internal calibration only. That reference name, book, and talk title are FORBIDDEN in any episode output. The intake wiring never needs the reference name; it is deliberately omitted from this file.",
+  "style_selection": {
+    "primary_field": "contact.podcast_survey_writing_style",
+    "personal_variant_field": "contact.select_your_presentation_style_personal_podcast",
+    "personal_variant_value": "Counterintuitive",
+    "accepted_labels": [
+      "Counter Intuitive",
+      "Counterintuitive",
+      "counter_intuitive",
+      "Counter Intuitive (Introduce a different way of thinking about something.)"
+    ],
+    "normalization": "Strip every non-alphanumeric character, lowercase, then compare; any dash, space, or case form of the label resolves to style id counter_intuitive."
+  },
+  "path_shape": {
+    "total_survey_positions": 6,
+    "content_q_slots": ["q1_answer", "q2_answer", "q3_answer", "q4_answer", "q5_answer"],
+    "thesis_slots": ["q1_answer"],
+    "tone_slot": "q2_answer",
+    "visual_slot": "q3_answer",
+    "transparency_slot": "q4_answer",
+    "additional_info_slot": "q5_answer",
+    "required_slots": ["q1_answer", "q2_answer", "q3_answer", "q4_answer"],
+    "optional_slots": ["q5_answer"],
+    "per_style_content_fields": ["Barry Q1", "Barry Q6"]
+  },
+  "questions": [
+    {
+      "survey_position": 1,
+      "canonical_slot": "q1_answer",
+      "role": "thesis",
+      "required": true,
+      "max_words": 2000,
+      "never_spoken": false,
+      "intake_custom_field": "Podcast Survey per-style question field (see ghl_internal_label)",
+      "ghl_internal_label": "Barry Q1",
+      "ghl_internal_label_note": "Opaque internal Convert and Flow survey field label; used only as a mapper alias hint and FORBIDDEN in any episode output.",
+      "feeds": "style_engine_thesis_and_argument",
+      "question_text": "What surprising insight or unexpected perspective will you share in your talk that might challenge how people typically think about this topic?",
+      "guidance": [
+        "Be as detailed as you can while answering the question.",
+        "The majority of the podcast episode will be based on this answer.",
+        "Include any details, quotes, affirmations, or stories you want to share in the podcast.",
+        "Up to 2,000 words."
+      ],
+      "example": "I want to explore how having too many choices can lead to decision paralysis and lower satisfaction, even though we typically think that more options are always better."
+    },
+    {
+      "survey_position": 2,
+      "canonical_slot": "q2_answer",
+      "role": "tone",
+      "required": true,
+      "never_spoken": false,
+      "intake_custom_field": "Podcast Survey per-style question field (see ghl_internal_label)",
+      "ghl_internal_label": "Barry Q6",
+      "ghl_internal_label_note": "Opaque internal Convert and Flow survey field label; used only as a mapper alias hint and FORBIDDEN in any episode output.",
+      "feeds": "tagging_palette_and_tone_enforcement",
+      "question_text": "How would you describe your speaking tone?",
+      "guidance": [],
+      "example": "My tone of voice is similar to that of Lisa Nichols with a blend of Beyonce. I am edgy and passionate at the same time."
+    },
+    {
+      "survey_position": 3,
+      "canonical_slot": "q3_answer",
+      "role": "visual_description",
+      "required": true,
+      "never_spoken": true,
+      "intake_custom_field": "Podcast Survey quick visual description field",
+      "feeds": "image_generation_pipeline_only_never_spoken",
+      "question_text": "Visually describe the type of image you want on your podcast.",
+      "guidance": [
+        "We will create a graphic image that goes along with the podcast episode based on your answer."
+      ],
+      "example": "Inspired African American Female entrepreneur with sleek shoulder-length hair, in a vivid orange suit, passionately motivating the audience to seize launch day offers."
+    },
+    {
+      "survey_position": 4,
+      "canonical_slot": "q4_answer",
+      "role": "transparency",
+      "required": true,
+      "never_spoken": false,
+      "intake_custom_field": "contact.podcast_interview_smiq",
+      "feeds": "mandatory_vulnerability_beat",
+      "question_text": "VERY IMPORTANT Being Totally Transparent: What is the number 1 thing that you are struggling with related to [topic]?",
+      "guidance": [
+        "This is designed to humanize you and make you more relatable, so we need real vulnerability here.",
+        "This way the audience knows that there are things that you are working on as well.",
+        "WE WANT THE WORLD TO KNOW YOU ARE NOT PERFECT AND THAT YOU ARE WORKING ON YOURSELF ALSO."
+      ],
+      "smiq_note": "SMIQ means Single Most Important Question. The blank in the question is customized per person; the answer always lands in contact.podcast_interview_smiq. This is the mandatory vulnerability beat in every episode."
+    },
+    {
+      "survey_position": 5,
+      "canonical_slot": "q5_answer",
+      "role": "additional_info",
+      "required": false,
+      "never_spoken": false,
+      "intake_custom_field": "contact.podcast_survey__additional_info",
+      "intake_custom_field_note": "Note the DOUBLE underscore between survey and additional. The mapper must assert this exact key and never fall back to a single-underscore variant.",
+      "feeds": "context_only_considered_when_writing_ignored_when_empty",
+      "question_text": "Share any additional information and details that will be beneficial for us to know.",
+      "guidance": [
+        "Not required."
+      ]
+    },
+    {
+      "survey_position": 6,
+      "canonical_slot": null,
+      "role": "contact_and_consent",
+      "required": true,
+      "never_spoken": true,
+      "carries_identity_fields": ["first_name", "last_name", "email", "phone"],
+      "sms_consent": true,
+      "feeds": "contact_record_identity_not_a_content_slot",
+      "question_text": "Contact details + consent to receive SMS notifications, alerts and occasional marketing communication from BlackCEO LLC.",
+      "guidance": [
+        "Message frequency varies. Message and data rates may apply.",
+        "Text HELP to (301) 579-0472 for assistance.",
+        "Reply STOP to unsubscribe at any time."
+      ],
+      "note": "This block collects the contact identity and SMS consent. It is not a content q-slot and never appears in the episode. Preferred pronoun is a standing Additional Info field (contact.my_preferred_pronoun), not collected in this block; see the questionnaires index standing_fields."
+    }
+  ]
+}
