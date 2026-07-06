@@ -8,10 +8,14 @@ artifacts + ledger.
 Gates (all offline Python; a single violation is fail-closed sys.exit(2)):
   G-STAGE       generation-completeness: every brand stage produced a non-empty
                 artifact WITH a foreman receipt.                 -> AF-AV-STAGE-MISSING
-  G-FLOOR       stripped-word floors (per-stage minimums in the manifest, e.g.
-                >=1300 avatar-q, >=850 blended-tone, >=550 each awareness,
-                >=1600 booking bot). Padding cannot fake it (measured on
+  G-FLOOR       stripped-word floors: the per-stage minimums are read verbatim
+                from AA-PIPELINE-MANIFEST.json `stages[].floors.word_floor`
+                (aligned to MASTERDOC, the single numeric source — no numbers are
+                restated here). Padding cannot fake it (measured on
                 whitespace/markdown-stripped text).              -> AF-AV-FLOOR
+  G-BOTMSG-CAP  on the bot-instruction stages (manifest `floors.bot_msg_char_cap`,
+                stages 19/20/21) every individual quoted, sendable bot message is
+                within the stripped-char cap.                     -> AF-AV-BOTMSG-CAP
   G-COUNT       exactly 39 image prompts / top-39 (3x13); headline doc 12+12+12;
                 each ad set >=10 ads.        -> AF-AV-COUNT-39 / -COUNT-HEADLINE / -ADCOUNT
   G-IMG-BAND    image-prompt artifacts inside the STRIPPED-char band [5000,19000];
@@ -402,9 +406,9 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
                      f"stage '{sid}': repeated artist/style token(s) {sorted(dups)} "
                      f"(each image prompt must name a UNIQUE artist/photographer/producer)")
 
-        # G-BOTDOC
+        # G-BOTDOC (+ G-BOTMSG-CAP on stages carrying floors.bot_msg_char_cap)
         if floors.get("botdoc"):
-            for code, msg in _botdoc_defects(txt):
+            for code, msg in _botdoc_defects(txt, msg_cap=floors.get("bot_msg_char_cap")):
                 fail(code, f"stage '{sid}': {msg}")
 
         # G-HERO-12 (12 EXACTLY-NAMED, IN-ORDER sections + per-section char/word band —
@@ -482,7 +486,19 @@ def _dup_artists(text: str) -> set:
     return {k for k, v in seen.items() if v > 1}
 
 
-def _botdoc_defects(text: str) -> List[Tuple[str, str]]:
+def _bot_messages(text: str) -> List[str]:
+    """Every quoted, sendable bot MESSAGE in a bot-instruction doc. A message is
+    a straight-double-quoted, SINGLE-LINE span of >=40 chars: the literal text a
+    contact receives, written on one line as the bot's example line (this is the
+    house convention — mobile-first, one message per line). The single-line rule
+    is load-bearing: prose in these docs uses straight quotes for short phrases,
+    and a multi-line match would straddle two unrelated prose quotes across a
+    paragraph and false-positive; a real sendable message is never a multi-
+    paragraph block. This is what the MASTERDOC '<550 chars' rule governs."""
+    return [m.group(1) for m in re.finditer(r'"([^"\n]{40,})"', str(text))]
+
+
+def _botdoc_defects(text: str, msg_cap: int | None = None) -> List[Tuple[str, str]]:
     d = []
     if not re.search(r"(?mi)^#\s+.*section\b", str(text)):
         d.append(("AF-AV-BOTDOC", "missing an H1 '# ... Section' header"))
@@ -490,6 +506,16 @@ def _botdoc_defects(text: str) -> List[Tuple[str, str]]:
         d.append(("AF-AV-BOTDOC", "missing XML-style labels (e.g. <intro_message>...</intro_message>)"))
     if not re.search(r"\{\{contact\.\w+\}\}", str(text)):
         d.append(("AF-AV-BOTDOC", "missing a {{contact.*}} merge tag (the one whitelisted placeholder class)"))
+    # G-BOTMSG-CAP: each individual sendable bot message <= the stripped-char cap
+    # (manifest floors.bot_msg_char_cap, stages 19/20/21). Measured on STRIPPED
+    # text so markdown/whitespace padding cannot fake a compliant length.
+    if msg_cap:
+        for msg in _bot_messages(text):
+            n = _chars(msg)
+            if n > int(msg_cap):
+                d.append(("AF-AV-BOTMSG-CAP",
+                          f"a bot message is {n} stripped chars > the {msg_cap}-char cap "
+                          f"(messages must stay short and mobile-first): {_strip(msg)[:60]!r}..."))
     return d
 
 
@@ -690,6 +716,18 @@ def _violation_cases(manifest):
             "in the style of Artist2:", "in the style of Artist1:")
     def botdoc(st):
         st["artifacts"]["19-booking-bot"] = st["artifacts"]["19-booking-bot"].replace("{{contact.first_name}}", "there")
+    def botmsg_over_cap(st):
+        # inject a single sendable bot message that blows past the 550-char cap —
+        # exactly what the MASTERDOC "messages <550 chars" rule forbids on 19/20/21.
+        over = "Hello there, I really do want to help you book some time with the founder, and I " \
+               "am going to explain absolutely everything you could possibly need to know in one " \
+               "very long single message instead of keeping it short and mobile-first the way the " \
+               "house voice clearly demands, which is precisely the failure mode this hard cap " \
+               "exists to catch, because a dense wall of unbroken text exactly like this one reads " \
+               "as pressure, breaks awkwardly on a small phone screen, exhausts a busy and already " \
+               "skeptical founder, and completely buries the single simple question I actually " \
+               "needed to ask you before the two of us could ever move forward together today."
+        st["artifacts"]["19-booking-bot"] += f'\n\n# Overlong Message Section\n<bad_message>\n"{over}"\n</bad_message>\n'
     def hero(st):
         lines = st["artifacts"]["39-hero-page"].splitlines()
         st["artifacts"]["39-hero-page"] = "\n".join(l for l in lines if not l.startswith("## Section 1"))[:200] + "\n" + _lorem(50)
@@ -734,6 +772,7 @@ def _violation_cases(manifest):
         ("image_band_too_small", "AF-AV-IMG-BAND", img_band),
         ("duplicate_artist", "AF-AV-UNIQUE-ARTIST", dup_artist),
         ("botdoc_missing_mergetag", "AF-AV-BOTDOC", botdoc),
+        ("bot_message_over_char_cap", "AF-AV-BOTMSG-CAP", botmsg_over_cap),
         ("hero_missing_sections", "AF-AV-HERO-12", hero),
         ("hero_wrong_section_name", "AF-AV-HERO-12", hero_wrong_name),
         ("hero_section_out_of_band", "AF-AV-HERO-BAND", hero_band),

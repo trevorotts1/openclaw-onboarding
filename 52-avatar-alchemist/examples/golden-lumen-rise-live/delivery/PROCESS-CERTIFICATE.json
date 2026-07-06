@@ -1,0 +1,183 @@
+{
+  "certificate": "avatar-alchemist-brand-run",
+  "skill": "52-avatar-alchemist",
+  "run_id": "golden-lumen-rise-live",
+  "manifest_version": "1.0.0",
+  "manifest_sha256": "54eaeeaa28cc4580018dee4f000996b3bcae75fb363592a4e1bec4be99bcd369",
+  "stages_attested": 40,
+  "content_gate": "PASS",
+  "qc_score": 10.0,
+  "qc_floor": 8.5,
+  "qc_semantic_score": 8.7,
+  "qc_semantic_floor": 8.5,
+  "qc_semantic_signature": "8ce1475a14d1bc3f7d4952ef72b8a76ed432025011e41f39732d20f55e25db4a",
+  "qc_cert_signature": "c2935bef17223631c60c5739611a8a94a7110373d7422301f70466c754b2992f",
+  "provenance_chain_sha256": "aa4641fd7dffd48f882f53476048dee904c9a60a2105bc6d617ef76d7c3cada3",
+  "chain": [
+    {
+      "stage": "01-avatar-questions-1-30",
+      "sha256": "262a35beae7cdc54ed8b6bea82ef6cec222e2b749e292cfd480e5f7cbca36f7e"
+    },
+    {
+      "stage": "02-avatar-questions-31-32",
+      "sha256": "9492d40df7c19a9309c7754f3468bcc8eb14d2e68b3a02550d4818c6e5d6fcf1"
+    },
+    {
+      "stage": "03-rewrite-avatar",
+      "sha256": "507c3697e31ef589eb4980a509d272874891dfcbbe7da5a2286dcad94db7addf"
+    },
+    {
+      "stage": "04-tone-style-1",
+      "sha256": "bd72c5112ded88490dd14941e296b92af96d69f7ace5628c8039fd03682ddb8a"
+    },
+    {
+      "stage": "05-tone-style-2",
+      "sha256": "f9bdb9c6ca6d5fa9fa1f0367ac5ef6469380e79936d8543b51680a18b845e659"
+    },
+    {
+      "stage": "06-tone-style-3",
+      "sha256": "a984bf45c6677e4224d61eacecce90d5e8ec3e0a8953f03fa084901b4cd242c6"
+    },
+    {
+      "stage": "07-tone-style-4",
+      "sha256": "85f7ba0ac29d124b18cd0bc5f905637a357fe348b5f8afdf87de1b0f2998593c"
+    },
+    {
+      "stage": "08-blended-tone",
+      "sha256": "f28b2a1b25e342057b09b7a5569ad3b6fa0aab65fd869db2e7b9a182270fed97"
+    },
+    {
+      "stage": "09-problem-aware",
+      "sha256": "bdd42f63e715c1e96398facfe6d45e26717dfe790f0af5e1196743016018d18f"
+    },
+    {
+      "stage": "10-problem-aware-pt2",
+      "sha256": "af74dcafacc17de0896eba73e0be5bb79253354572c78af293a89995ae92de6c"
+    },
+    {
+      "stage": "11-solution-aware",
+      "sha256": "a5e1e15502a68787373c971276a00d9a86d1e8d88418d3539398c49564c21a60"
+    },
+    {
+      "stage": "12-solution-aware-pt2",
+      "sha256": "91d667370f4683615013180d39438b66d5d36622c20b84a37411b1c151c77cb5"
+    },
+    {
+      "stage": "13-product-aware",
+      "sha256": "88d7dea70196dea4810a2f8ae01efe606b50a243a14f0f836bb15ff8fdcb915d"
+    },
+    {
+      "stage": "14-product-aware-pt2",
+      "sha256": "60fca52cb33d36d9791fd8b60ebe22755e0411f3e756c9763ce1faf46f424ca2"
+    },
+    {
+      "stage": "15-facebook-audiences",
+      "sha256": "cdfbe8d763dbdfda34a604a3dd68055b90ee09e17ad1760dcf8df0851439816c"
+    },
+    {
+      "stage": "16-brand-bio",
+      "sha256": "7a597f651eabafd46f78c67a0a903c46ca44d06587d0be93a5e797e27bcdcecc"
+    },
+    {
+      "stage": "17-product-bio",
+      "sha256": "396bf0825bc6dafa404e4db621c5ee9f3e065bc1ebf75f70fb47b8992e0ba2f5"
+    },
+    {
+      "stage": "18-bot-prep",
+      "sha256": "1f693a5cba4de0c961a7186b09dc62c01feaf9c4266ec8168cba98301475f752"
+    },
+    {
+      "stage": "19-booking-bot",
+      "sha256": "0cb3a2715b05a3f67dfaeb78a67aa010268b2410d2c0e6bba1d40ab1b7e672fe"
+    },
+    {
+      "stage": "20-post-booking-bot",
+      "sha256": "d2bcb0e16eed941eaebd2186ac89590e1d338de935327810e360ef305262a6b8"
+    },
+    {
+      "stage": "21-rescheduling-bot",
+      "sha256": "a4705e74af5ca5f5d83dc6c3f90a962c49777a2d351c94eb597d784a1b896596"
+    },
+    {
+      "stage": "22-ad-set-1",
+      "sha256": "08b7b9370fc2f16138aa752c476e3adf63cf5f80be65d2456a388a929655b1c6"
+    },
+    {
+      "stage": "23-ad-set-2",
+      "sha256": "21f918dab5bcfe88055a9148d0e91c9fd4092322a231d0335fdca512915bacdf"
+    },
+    {
+      "stage": "24-ad-set-3",
+      "sha256": "b3d5e74383b1bf6f7880c3124795cc4be990946077135458187894835628221a"
+    },
+    {
+      "stage": "25-ad-set-4",
+      "sha256": "0c334d444e1785c4704d4c0ab8ed42924e0f91094a7e158ebf139df20ed7c3a6"
+    },
+    {
+      "stage": "26-ad-set-5",
+      "sha256": "3cca4b192e231083553d0686eee8b8ecb73a41fc572ad6d9413ebba048d57d25"
+    },
+    {
+      "stage": "27-ad-set-6",
+      "sha256": "ae5c355d2459512d361a32482612cd61190552d9733073ec2f28c127c437ad2c"
+    },
+    {
+      "stage": "28-ad-set-7",
+      "sha256": "a53755950310df8677cb397787e9f7d22f20d09940f9283f35c1a8be1651b0c8"
+    },
+    {
+      "stage": "29-ad-set-8",
+      "sha256": "a93a2df5245c39ab87649d85af76e0a6fbe9ee7b631c248f4ad49daece172a5b"
+    },
+    {
+      "stage": "30-ad-set-9",
+      "sha256": "4987e3784186719fe3a809ec5e84f6ede989126b940e9ef64458a31ecb0b1b6b"
+    },
+    {
+      "stage": "31-ad-set-10",
+      "sha256": "870317d6102b845350b06043e75e7cf9359d5de455ff6b6626f7ef339899e57d"
+    },
+    {
+      "stage": "32-ad-set-11",
+      "sha256": "663fdc3e6972cf4920240b7711cb4d19e85e5ab96fd53b00d1061e4b05481455"
+    },
+    {
+      "stage": "33-ad-set-12",
+      "sha256": "293eded14b388aaf32b2907964993ac8267713549d75b9fc462892a244cc975d"
+    },
+    {
+      "stage": "34-ad-set-13",
+      "sha256": "e159cff25df9dc1f6b60ec0461ca5e16c807e572f9344853f57fe9809823f571"
+    },
+    {
+      "stage": "35-top-39",
+      "sha256": "c9239e666f585f52e2f3aeabb6168650afe48a61c537432cda9d763bae483442"
+    },
+    {
+      "stage": "36-image-prompts-39",
+      "sha256": "0b4170893ad5e122c2d0a72b7fe33e1a486769f6f1749751462646916a28c9d5"
+    },
+    {
+      "stage": "37-fb-headline-copy",
+      "sha256": "92f9e986083f13736ec1c0beb4c24f81354ab07873f88b700c089f48e8fde4a4"
+    },
+    {
+      "stage": "38-landing-questionnaire",
+      "sha256": "dd1213e7b715deb05129bf9119b4e01341649b9b494dba4f28d49e60741619f7"
+    },
+    {
+      "stage": "39-hero-page",
+      "sha256": "109de524e61c2ea03f81c5dcda9862cc89dfc460ab4db3e3375a20278c079b56"
+    },
+    {
+      "stage": "40-landing-image-prompts",
+      "sha256": "6bfa0c1f8d6645719ee145376af8b9d480cd9b0cd661276efe3f8b6de19c4619"
+    }
+  ],
+  "front_door_nonce_sha256": "c9f22dac4119a3dbca6a43056dfb94b8f2a210b7653f7c87f432f82017be6f87",
+  "delivery_manifest_sha256": "be1049c79813b5c63f42813df4c45ae130c875102421d7a4bc674af234250c37",
+  "delivery_file_count": 36,
+  "issued_utc": "2026-07-06T02:31:10Z",
+  "signature": "41942d3ec6d21f6ed0487de2bec3a0dc5d6c7f8f353a598190ca5df4f220c908"
+}

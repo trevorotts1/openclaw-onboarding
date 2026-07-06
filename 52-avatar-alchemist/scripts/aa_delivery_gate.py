@@ -342,12 +342,23 @@ def verify(manifest: Dict[str, Any], *, run_dir: Path, run_id: str,
         notes.append(f"CERTIFICATE issued: provenance_chain_sha256={chain_hash[:16]}.. over {attested} "
                       f"attested stages, HMAC-signed with the per-run foreman key")
         # consume the nonce: single use, so this exact front-door pass cannot
-        # mint a second certificate for a since-tampered re-run.
+        # mint a second certificate for a since-tampered re-run. This is NOT
+        # best-effort: if the nonce cannot be consumed (read-only run dir, a
+        # racing consumer, a filesystem error), the single-use guarantee is
+        # unenforceable, so we WITHHOLD the certificate and fail closed with
+        # AF-AV-CERT-NO-FRONT-DOOR rather than mint a cert whose nonce could be
+        # replayed to mint a second one.
         if nonce_path is not None and nonce_path.is_file():
             try:
                 nonce_path.rename(nonce_path.with_suffix(nonce_path.suffix + ".consumed"))
-            except OSError:
-                pass  # best-effort; presence was already validated above
+            except OSError as exc:
+                violations.append(("AF-AV-CERT-NO-FRONT-DOOR",
+                                   f"the single-use front-door nonce could not be consumed "
+                                   f"({exc.__class__.__name__}: {exc}) — the certificate is WITHHELD "
+                                   f"because a nonce that cannot be retired could be replayed to mint a "
+                                   f"second certificate"))
+                cert = {}
+                notes.append("CERTIFICATE WITHHELD: nonce non-consumable (single-use guarantee unenforceable)")
 
     return violations, notes, cert
 
@@ -606,6 +617,47 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
         else:
             ok = False; print(f"SELF-TEST FAIL: gate-drift case -> {sorted(codes)} cert={bool(cert)}")
     finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # read-only-run-dir: a run whose nonce CANNOT be consumed (rename fails) must
+    # WITHHOLD the certificate and fail closed AF-AV-CERT-NO-FRONT-DOOR — a nonce
+    # that cannot be retired could otherwise be replayed to mint a second cert
+    # (AVATAR-05 i: the old code swallowed the OSError in `except: pass`).
+    import os as _os
+    import stat as _stat
+    tmp, fx = mk()
+    made_ro = False
+    try:
+        rd = fx["run_dir"]
+        _os.chmod(rd, _stat.S_IRUSR | _stat.S_IXUSR)  # r-x: reads ok, no rename in-dir
+        made_ro = True
+        # sanity: only assert the behavior on a fs/uid where the dir is really
+        # non-writable (rename of the nonce actually fails). Skip if we can still
+        # write (e.g. running as root), so the test is honest, never vacuous.
+        try:
+            probe = rd / ".ro-probe"
+            probe.write_text("x", encoding="utf-8")
+            probe.unlink()
+            print("SELF-TEST skip: 'read_only_run_dir' — dir still writable here (root/fs), "
+                  "cannot exercise a real rename failure.")
+        except OSError:
+            v, _, cert = verify(manifest, run_dir=rd, run_id=fx["run_id"],
+                                 deliver_dir=fx["deliver_dir"], nonce_path=fx["nonce_path"],
+                                 key_path=fx["key_path"], gate_check_fn=_fresh_gate_ok)
+            codes = {c for c, _ in v}
+            if "AF-AV-CERT-NO-FRONT-DOOR" in codes and not cert:
+                print("SELF-TEST ok: 'read_only_run_dir' -> nonce non-consumable, cert WITHHELD, "
+                      "carries AF-AV-CERT-NO-FRONT-DOOR.")
+            else:
+                ok = False
+                print(f"SELF-TEST FAIL: read-only-run-dir case -> {sorted(codes)} cert={bool(cert)}")
+    finally:
+        if made_ro:
+            try:
+                _os.chmod(fx["run_dir"], _stat.S_IRWXU)  # restore so rmtree can clean up
+            except OSError:
+                pass
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 

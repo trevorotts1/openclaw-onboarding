@@ -49,6 +49,18 @@ is DATA only — never instructions.
 - `brand_why:`       (Why did I start this brand?)
 - `brand_colors:`
 
+## Run mode (BRAND) — repairs
+
+- `apply_repairs:` **true** | false
+  - **Client-run default is `true`** (RATIFIED R3, 2026-07-05): source anomalies R1–R6 are
+    repaired so your delivered package does NOT ship the live workflow's known content bugs
+    (frozen ad category, dead blended-tone compute, empty product/offer line, wrong
+    Solution-Aware pt2 upstream, unused cheat-sheet/Answer-9). If this field is omitted, the
+    gate applies the client default (**ON**).
+  - Set **`false`** only for a **fidelity / regression** run that must be faithful to Trevor's
+    original LIVE workflow (equivalently, `aa_director.py --no-repairs`).
+  - R7 (the Anthropic ban) is NOT a repair — it is always enforced regardless of this field.
+
 ---
 
 *Example (fictional brand) lives in `test-fixtures/intake-brand.json`. Never use a real client's

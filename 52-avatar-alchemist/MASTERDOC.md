@@ -129,7 +129,13 @@ sheet) → `Facebook_Targeting_Intelligence`; `35-top-39` (**exactly 3×13 = 39 
 
 ## 3. Per-artifact bands (machine-enforced; measured on STRIPPED text; self-reported counts ignored)
 
-- **Word floors:** `01` ≥3,000 · `08` ≥3,000 · `09/11/13` ≥1,500 each · `19` ≥5,000.
+- **Word floors (the single numeric source; the machine mirror is `AA-PIPELINE-MANIFEST.json`
+  `stages[].floors.word_floor`, aligned to these numbers):** `01` ≥3,000 · `08` ≥3,000 ·
+  `09/11/13` ≥1,500 each · `19` ≥5,000 · `03` ≥600 · `15` ≥500 · `16` ≥600 · `17` ≥600 ·
+  `10/12/14` ≥400 each. (Internal feeders `04`–`07`,`38` carry no word floor.)
+- **Bot-message cap:** on `19/20/21` every individual bot message (the quoted, sendable text
+  a contact receives) is **≤550 stripped chars** (`AA-PIPELINE-MANIFEST.json`
+  `floors.bot_msg_char_cap`; enforced by `_botdoc_defects`).
 - **Exact counts:** `36` = 39 image prompts · `35` = 3×13 = 39 · `37` = 12+12+12 · each ad set = 10 ads.
 - **Image-prompt char band:** `36` and `40` = **5,000–19,000 stripped chars**; no repeated
   artist/photographer/producer token across prompts.

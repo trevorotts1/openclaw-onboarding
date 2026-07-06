@@ -1,5 +1,47 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.5.0 — 2026-07-05 — Wave-2 floor alignment + repairs default flip (train W2-52-avatar)
+
+Train **W2-52-avatar**. Fix IDs: **FIX-XC-04g** (R2), **FIX-AVATAR-04** (R3), **FIX-AVATAR-05**.
+Ratified rulings R2/R3 (Trevor, 2026-07-05; SACRED-IP sign-off granted for R2).
+
+### Changed — the avatar floor schism is closed (FIX-XC-04g / R2)
+- **MASTERDOC.md is the single numeric source** for the per-stage floors; `AA-PIPELINE-MANIFEST.json`
+  `stages[].floors` is the machine mirror aligned to it. `aa_build_check.py`'s docstring no longer
+  restates a third, conflicting floor set — it points at the manifest with no numbers.
+- **Word floors raised to the SACRED bands:** `01` ≥3,000 · `08` ≥3,000 · `09/11/13` ≥1,500 ·
+  `19` ≥5,000 (were 1,800 / 1,500 / 900 / 2,600).
+- **Floors added for every previously-floorless non-`_internal` stage:** `03` ≥600 · `15` ≥500 ·
+  `16` ≥600 · `17` ≥600 · `10/12/14` ≥400.
+- **New `≤550 stripped-char bot-message cap` (`AF-AV-BOTMSG-CAP`)** on stages `19/20/21`
+  (manifest `floors.bot_msg_char_cap`): every quoted, single-line sendable bot message must stay
+  within the cap. Enforced in `aa_build_check._botdoc_defects` (reused by `aa_qc_cert.py`), declared
+  in `AVATAR-MANIFEST.json`, and covered by a new rejecting fixture in the build-check self-test.
+- **Both goldens re-authored** to genuinely clear the aligned spec (real, non-repeating authored
+  copy, not padding): `examples/golden-lumen-rise/` (repairs ON) and `-live/` (repairs OFF).
+- **`AA-GATE-HASHES.json` re-pinned** over the changed manifests/provers/entry.sh.
+
+### Changed — client-run repairs default flipped ON (FIX-AVATAR-04 / R3, RATIFIED)
+- A **CLIENT brand run now defaults to source repairs R1–R6 ON** so a delivered package does NOT
+  ship the live workflow's known content bugs. Driven by `intake/INTAKE-TEMPLATE.md` `apply_repairs`
+  (default `true`) + `aa_intake_gate.py` (`resolve_apply_repairs`, absent ⇒ ON) + `aa_director.py`
+  (honors `intake.apply_repairs`; new **`--no-repairs`** forces OFF for fidelity/regression runs).
+  `--no-repairs` and `intake.apply_repairs=false` are the two opt-outs; the golden-live is still
+  built `--no-repairs`. **R7 (Anthropic ban) is unconditional, never a repair.**
+
+### Fixed — P3 bundle (FIX-AVATAR-05)
+- **Nonce consumption is no longer best-effort** (`aa_delivery_gate.py`): if the single-use
+  front-door nonce cannot be consumed (read-only run dir / racing consumer / FS error), the
+  certificate is **WITHHELD** with `AF-AV-CERT-NO-FRONT-DOOR` instead of the OSError being swallowed
+  — a nonce that cannot be retired could otherwise be replayed to mint a second cert. New
+  read-only-run-dir self-test proves the withhold.
+- **`entry.sh` Anthropic scan tightened** (`:29–31`): dropped the `grep -v '/anthropic|claude/i'`
+  doc-literal exclusion (which could hide a real baked id sharing a line with the doc string) and
+  scoped the positive pattern to real usable ids (the `qc-avatar-alchemist.sh` pattern). Re-pinned.
+- **`HOW-TO-USE.md` truth pass:** the preflight-probe and foreman-dispatch descriptions now match the
+  landed behavior (FIX-XC-09f resolve-or-hard-fail; FIX-XC-05b `--execute` + `--dispatch-cmd` seam)
+  and the repairs-default statement reflects the R3 flip.
+
 ## 1.4.0 — 2026-07-05 — F4.3 deterministic N/A tone-slot auto-pick (train DEP-7)
 
 Train **DEP-7**. Fix IDs: F4.3.

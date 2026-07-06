@@ -26,8 +26,15 @@ log "    python3 present; provers stdlib-only"
 
 # --- 2) bypass-scan: no Anthropic model ids, no ungoverned egress -------------
 log "2/5 bypass-scan"
-if grep -REn 'anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku' \
-     "$HERE/prompts" "$HERE"/*.json 2>/dev/null | grep -v '/anthropic|claude/i' >/dev/null; then
+# The positive pattern is scoped to REAL, usable Anthropic model ids
+# (`anthropic/<model>`, `claude-sonnet-N`, `claude-opus`, `claude-haiku`,
+# `claude-N`) — the tightened pattern shared with qc-avatar-alchemist.sh. It
+# deliberately does NOT match the documentation literal `/anthropic|claude/i`
+# (the regex the provers apply), so the old `grep -v '/anthropic|claude/i'`
+# doc-literal exclusion is dropped: excluding whole lines by that literal could
+# have hidden a real baked id sitting on the same line as the doc string.
+if grep -REn 'anthropic/[a-z]|claude-sonnet-[0-9]|claude-opus|claude-haiku|claude-[0-9]' \
+     "$HERE/prompts" "$HERE"/*.json >/dev/null 2>&1; then
   die "an Anthropic/claude model id is baked into a prompt or manifest (client-path ban, G-NOANTHROPIC)"
 fi
 python3 "$HERE/scripts/aa_egress_gate.py" --scripts-dir "$HERE/scripts" >/dev/null \

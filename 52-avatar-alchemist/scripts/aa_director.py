@@ -587,6 +587,27 @@ def _detect_book_skill_present(root: Path) -> bool:
     return False
 
 
+def _resolve_repairs(args, run_dir: "Optional[Path]" = None) -> bool:
+    """Effective repairs mode (R3, RATIFIED 2026-07-05). Precedence:
+      1. --no-repairs      -> False (fidelity/regression, faithful-to-live)
+      2. --apply-repairs   -> True  (explicit override)
+      3. intake.apply_repairs when a run-dir intake.json is present
+      4. CLIENT default    -> True  (repairs ON so clients do not ship live bugs)
+    """
+    if getattr(args, "no_repairs", False):
+        return False
+    if getattr(args, "apply_repairs", False):
+        return True
+    if run_dir is not None:
+        ip = run_dir / "intake.json"
+        if ip.is_file():
+            try:
+                return intake_gate.resolve_apply_repairs(json.loads(ip.read_text(encoding="utf-8")))
+            except Exception:  # noqa: BLE001
+                return True
+    return True
+
+
 def _version_gate(run_dir: Path) -> Tuple[int, Dict[str, Any]]:
     """Load <run_dir>/intake.json and enforce G0-INTAKE + G0-VERSION in code.
     Returns (exit_code_if_should_stop_or_0_if_brand_clear, route_record).
@@ -849,16 +870,32 @@ def run_self_test(manifest) -> int:
     else:
         print("SELF-TEST ok: front-door nonce required (missing/short nonce refused).")
 
-    # (f) repairs are OFF by default; the dispatch banner differs by mode and R7 is
-    #     stated unconditionally; the schedule is identical in both modes (topology
-    #     preserved — repairs change prompt CONTENT + the R4 gate, never the DAG).
+    # (f) the dispatch banner differs by mode and R7 is stated unconditionally;
+    #     the schedule is identical in both modes (topology preserved — repairs
+    #     change prompt CONTENT + the R4 gate, never the DAG). R3 (RATIFIED
+    #     2026-07-05): the CLIENT-run default is repairs ON; the two opt-outs are
+    #     --no-repairs and intake.apply_repairs=false. _resolve_repairs encodes
+    #     that precedence and is proven here.
     off, on = dispatch_preamble(False), dispatch_preamble(True)
+    class _A:  # minimal args stand-in
+        apply_repairs = False
+        no_repairs = False
+    a_default, a_apply, a_no = _A(), _A(), _A()
+    a_apply.apply_repairs = True
+    a_no.no_repairs = True
+    resolver_ok = (
+        _resolve_repairs(a_default, None) is True           # client default ON
+        and _resolve_repairs(a_no, None) is False           # --no-repairs OFF
+        and _resolve_repairs(a_apply, None) is True         # --apply-repairs ON
+    )
     if ("repairs OFF" in off and "repairs ON" in on and off != on
             and "Anthropic" in off and "Anthropic" in on
-            and compute_waves(stages, False) == compute_waves(stages, False)):
-        print("SELF-TEST ok: repairs default OFF; dispatch banner mode-specific; R7 unconditional.")
+            and compute_waves(stages, False) == compute_waves(stages, False)
+            and resolver_ok):
+        print("SELF-TEST ok: CLIENT-run repairs default ON (R3); --no-repairs / intake.apply_repairs=false "
+              "opt out; dispatch banner mode-specific; R7 unconditional.")
     else:
-        ok = False; print("SELF-TEST FAIL: repairs banner/default gating wrong.")
+        ok = False; print(f"SELF-TEST FAIL: repairs banner/default resolution wrong (resolver_ok={resolver_ok}).")
 
     # (g) REPRO + BLOCK: a hand-forged nonce (the exact QC reproduction) no
     #     longer buys a dispatch, because the front door is RE-VERIFIED
@@ -959,7 +996,13 @@ def main(argv) -> int:
     ap.add_argument("--recover", action="store_true")
     ap.add_argument("--fast-ads", action="store_true", help="collapse the ad-set harmony chain (fidelity trade-off, OFF by default)")
     ap.add_argument("--apply-repairs", action="store_true",
-                    help="OPT IN to source repairs R1-R6 (default OFF = faithful to the live workflow). R7 Anthropic ban is always on.")
+                    help="force source repairs R1-R6 ON. NOTE (R3, 2026-07-05): CLIENT runs already "
+                         "DEFAULT to repairs ON (via intake.apply_repairs, default true) so a delivered "
+                         "package excludes the known live-workflow content bugs; this flag is an explicit override.")
+    ap.add_argument("--no-repairs", action="store_true",
+                    help="FIDELITY/regression run: force source repairs R1-R6 OFF (faithful to Trevor's "
+                         "original LIVE workflow). The two opt-outs from the client default are this flag "
+                         "and intake.apply_repairs=false. R7 (the Anthropic ban) is always on regardless.")
     ap.add_argument("--provider-cap", type=int, default=None,
                     help="max concurrent authors; DEFAULT resolves from model-map.json "
                          "provider_caps.concurrent (fleet Ollama-only boxes cap 3), never a hardcoded 10")
@@ -996,7 +1039,8 @@ def main(argv) -> int:
     effective_cap = args.provider_cap if args.provider_cap is not None else _provider_cap_from_map(model_map)
 
     if args.plan or args.dry_run:
-        return _print_plan(manifest, args.fast_ads, effective_cap, args.apply_repairs)
+        plan_repairs = _resolve_repairs(args, Path(args.run_dir) if args.run_dir else None)
+        return _print_plan(manifest, args.fast_ads, effective_cap, plan_repairs)
     if args.status:
         led = Path(args.run_dir or ".") / "RUN-LEDGER.json"
         if not led.is_file():
@@ -1058,12 +1102,19 @@ def main(argv) -> int:
             led = json.loads(led_path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             led = {}
-    led["apply_repairs"] = bool(args.apply_repairs)
+    effective_repairs = _resolve_repairs(args, run_dir)
+    led["apply_repairs"] = bool(effective_repairs)
     led.setdefault("stages", led.get("stages", {}))
     led_path.write_text(json.dumps(led, indent=2) + "\n", encoding="utf-8")
-    print(f"front-door nonce accepted. repairs mode: "
-          f"{'ON (--apply-repairs)' if args.apply_repairs else 'OFF (faithful-to-live default)'}.")
-    print("DISPATCH BANNER (prepended to every stage): " + dispatch_preamble(args.apply_repairs))
+    if getattr(args, "no_repairs", False):
+        _mode = "OFF (--no-repairs, faithful-to-live fidelity/regression run)"
+    elif args.apply_repairs:
+        _mode = "ON (--apply-repairs, explicit)"
+    else:
+        _mode = "ON (CLIENT-run default, R3) — excludes the known live-workflow content bugs" \
+                if effective_repairs else "OFF (intake.apply_repairs=false)"
+    print(f"front-door nonce accepted. repairs mode: {_mode}.")
+    print("DISPATCH BANNER (prepended to every stage): " + dispatch_preamble(effective_repairs))
 
     if not args.execute:
         print("LLM dispatch is the OpenClaw sub-agent seam (client providers only). Gates PASSED; "
@@ -1088,7 +1139,7 @@ def main(argv) -> int:
     print(f"provider-cap = {effective_cap} (source: {src}); "
           f"model-map: {model_map.get('_source') if model_map else 'none — abstract tier hints'}.")
     rc = run_dispatch(manifest, run_dir, dispatch_cmd=args.dispatch_cmd,
-                      apply_repairs=bool(args.apply_repairs), provider_cap=effective_cap,
+                      apply_repairs=bool(effective_repairs), provider_cap=effective_cap,
                       fast_ads=args.fast_ads, resume=bool(args.resume),
                       online_links=bool(args.online_links), key=key, model_map=model_map)
     if rc == 0:

@@ -1,7 +1,7 @@
 {
   "certificate": "avatar-alchemist-qc-semantic",
   "run_id": "golden-lumen-rise",
-  "issued_utc": "2026-07-05T15:06:49Z",
+  "issued_utc": "2026-07-06T02:31:10Z",
   "protocol": "OpenClaw QC Protocol (10-category, per-artifact)",
   "categories": [
     "accuracy",
@@ -106,5 +106,5 @@
     "40-landing-image-prompts": "openrouter/deepseek-chat-v3-0324"
   },
   "transcript_sha256": "19a24e0adc14bbf61b35e74d6ef55f0919a9a32b24b1bc6fea37b2edc14771e6",
-  "signature": "63210427b6762f97a4dbb59a6527f906a3e60a807ff3ca766721bc56e9c500c1"
+  "signature": "b77606e158bb90f579c09b6d6b0856c156976f8a3a37b7f0c3feab3c45d823b3"
 }

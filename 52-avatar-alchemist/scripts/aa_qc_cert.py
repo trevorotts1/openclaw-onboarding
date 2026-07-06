@@ -130,7 +130,8 @@ def score_categories(manifest: Dict[str, Any], run_dir: Path) -> Tuple[Dict[str,
     bd_checks = []
     for sid, s in stages.items():
         if s.get("floors", {}).get("botdoc"):
-            bd_checks.append(10.0 if not build._botdoc_defects(artifacts.get(sid, "")) else 0.0)
+            _cap = s.get("floors", {}).get("bot_msg_char_cap")
+            bd_checks.append(10.0 if not build._botdoc_defects(artifacts.get(sid, ""), msg_cap=_cap) else 0.0)
     cats["botdoc_structure"] = sum(bd_checks) / len(bd_checks) if bd_checks else 10.0
 
     # 7. hero-page structure (12 named sections, in-band)

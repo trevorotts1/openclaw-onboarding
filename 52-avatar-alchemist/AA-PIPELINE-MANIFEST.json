@@ -5,10 +5,10 @@
   "skill": "52-avatar-alchemist",
   "description": "Digest-verified DAG of the 40 Avatar-Alchemist generators across 7 subsystems. Single source of truth for aa_director.py (waves, throttle, park/resume) and aa_build_check.py (floors/counts/bands). depends_on is the authoritative dependency wiring (NOT the legacy Make.com module numbering). CLIENT runtime resolves TIER-A/B/SEARCH to the client's OWN providers; ZERO Anthropic ids (G-NOANTHROPIC / AF-AV-NOANTHROPIC).",
   "repairs": {
-    "default_state": "off",
+    "default_state": "on",
     "opt_in_flag": "--apply-repairs",
     "intake_field": "apply_repairs",
-    "note": "Source anomalies R1-R6 are OFF BY DEFAULT so a run is FAITHFUL to Trevor's original LIVE workflow output. They are applied ONLY when the run is started with aa_director.py --apply-repairs (or intake.apply_repairs=true), which the foreman records in RUN-LEDGER.json and which gates the repair-specific content invariants (e.g. G-ADSET-CAT). depends_on encodes the repaired scheduling wiring; in the default (live) run the extra upstream artifacts are still computed but the dispatched prompt context follows the live behavior below (dead compute, faithful to source). R7 (the Anthropic ban) is NOT a fidelity repair: it is ALWAYS enforced on every client box (G-NOANTHROPIC) and is NEVER reverted, regardless of --apply-repairs.",
+    "note": "RATIFIED (R3, 2026-07-05): source anomalies R1-R6 are ON BY DEFAULT for CLIENT runs so a delivered brand package does NOT ship the live workflow's known content bugs (frozen ad category, dead blended-tone compute, empty product/offer line, wrong Solution-Aware pt2 upstream, unused cheat-sheet/Answer-9). The intake (intake/INTAKE-TEMPLATE.md apply_repairs, default true) and aa_intake_gate.py carry the client default; aa_director.py records the effective mode in RUN-LEDGER.json and gates the repair-specific content invariants (e.g. G-ADSET-CAT). Pass aa_director.py --no-repairs (or intake.apply_repairs=false) for a FIDELITY / regression run that is faithful to Trevor's original LIVE workflow output (this is how the golden-lumen-rise-live reference is built). depends_on encodes the repaired scheduling wiring; in a faithful-to-live run the extra upstream artifacts are still computed but the dispatched prompt context follows the live behavior below (dead compute, faithful to source). R7 (the Anthropic ban) is NOT a fidelity repair: it is ALWAYS enforced on every client box (G-NOANTHROPIC) and is NEVER reverted, regardless of the repairs mode.",
     "items": {
       "R1": {
         "stage": "08-blended-tone",
@@ -46,7 +46,9 @@
         "always_on": true,
         "rule": "source hardcoded an Anthropic model chain via OpenRouter; re-pointed to the client TIER-A model. The Anthropic chain is removed on every client box and NEVER reverted (client-path rule). G-NOANTHROPIC hard-fails any /anthropic|claude/i id."
       }
-    }
+    },
+    "client_default": "on",
+    "fidelity_override_flag": "--no-repairs"
   },
   "subsystems": [
     "avatar-core",
@@ -307,7 +309,7 @@
       "wave": 1,
       "depends_on": [],
       "floors": {
-        "word_floor": 1800,
+        "word_floor": 3000,
         "avatar_relevance": true
       },
       "deliverable": "Avatar_Intelligence",
@@ -352,7 +354,9 @@
         "01-avatar-questions-1-30",
         "02-avatar-questions-31-32"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 600
+      },
       "deliverable": "Avatar_Intelligence",
       "gate": "G-STAGE-03-rewrite-avatar",
       "recovery": "auto",
@@ -440,7 +444,7 @@
         "07-tone-style-4"
       ],
       "floors": {
-        "word_floor": 1500
+        "word_floor": 3000
       },
       "deliverable": "Tone_Doc",
       "gate": "G-STAGE-08-blended-tone",
@@ -460,7 +464,7 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 900,
+        "word_floor": 1500,
         "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
@@ -480,7 +484,9 @@
         "02-avatar-questions-31-32",
         "09-problem-aware"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 400
+      },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-10-problem-aware-pt2",
       "recovery": "auto",
@@ -499,7 +505,7 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 900,
+        "word_floor": 1500,
         "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
@@ -519,7 +525,9 @@
         "02-avatar-questions-31-32",
         "11-solution-aware"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 400
+      },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-12-solution-aware-pt2",
       "recovery": "auto",
@@ -538,7 +546,7 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 900,
+        "word_floor": 1500,
         "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
@@ -558,7 +566,9 @@
         "02-avatar-questions-31-32",
         "13-product-aware"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 400
+      },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-14-product-aware-pt2",
       "recovery": "auto",
@@ -576,7 +586,9 @@
         "01-avatar-questions-1-30",
         "02-avatar-questions-31-32"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 500
+      },
       "deliverable": "Facebook_Targeting_Intelligence",
       "gate": "G-STAGE-15-facebook-audiences",
       "recovery": "auto",
@@ -595,7 +607,9 @@
         "02-avatar-questions-31-32",
         "08-blended-tone"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 600
+      },
       "deliverable": "Brand_Bio_Intelligence",
       "gate": "G-STAGE-16-brand-bio",
       "recovery": "auto",
@@ -615,7 +629,9 @@
         "08-blended-tone",
         "16-brand-bio"
       ],
-      "floors": {},
+      "floors": {
+        "word_floor": 600
+      },
       "deliverable": "Product_Bio_Intelligence",
       "gate": "G-STAGE-17-product-bio",
       "recovery": "auto",
@@ -659,8 +675,9 @@
         "16-brand-bio"
       ],
       "floors": {
-        "word_floor": 2600,
-        "botdoc": true
+        "word_floor": 5000,
+        "botdoc": true,
+        "bot_msg_char_cap": 550
       },
       "deliverable": "AI_Booking_Bot_Intelligence",
       "gate": "G-STAGE-19-booking-bot",
@@ -684,7 +701,8 @@
         "16-brand-bio"
       ],
       "floors": {
-        "botdoc": true
+        "botdoc": true,
+        "bot_msg_char_cap": 550
       },
       "deliverable": "AI_Post_Booking_Bot_Intelligence",
       "gate": "G-STAGE-20-post-booking-bot",
@@ -708,7 +726,8 @@
         "16-brand-bio"
       ],
       "floors": {
-        "botdoc": true
+        "botdoc": true,
+        "bot_msg_char_cap": 550
       },
       "deliverable": "Rescheduling_Booking_Bot_Intelligence",
       "gate": "G-STAGE-21-rescheduling-bot",
