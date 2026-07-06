@@ -1,0 +1,173 @@
+{
+  "$schema_version": "1.0.0",
+  "artifact": "podcast-engine-department-persona-kanban-wiring",
+  "purpose": "Machine-readable department, persona, and kanban wiring for the Podcast Production Engine (skill 58). This is the sibling wiring document that webhook-design.md Section 7 defers to. It binds the intake sessionKey to the EXISTING podcast department agent, binds the Skill 23 podcast and audio personas to pipeline steps with the QC independence rule, and maps the ledger and SQLite state enum to kanban columns. Read-only inputs (department-naming-map.json, role-library _index.json, dashboard-design.md status enum) are never mutated here.",
+  "authored_by": "wave-4 department-persona-kanban-wiring slice",
+  "authored_at": "2026-07-06",
+  "prd_sections": ["3.5", "3.6", "13"],
+
+  "skill": {
+    "number": "58",
+    "slug": "podcast-production-engine",
+    "canonical_binding": "23-ai-workforce-blueprint/skill-department-map.json (skill 58 entry)",
+    "note": "The skill directory (58-podcast-production-engine/) is authored by the core-skill-authoring slice (WAVE-PLAN W1.1). This wiring references the skill by number and slug only; it does not create the skill body. The check-skill-department-map.py map-to-disk coverage check goes green once that folder and this map entry co-land in the serial merge train (skill directory at train step 2, this wiring at step 3)."
+  },
+
+  "department": {
+    "id": "podcast",
+    "name": "Podcast",
+    "pack": "content-creator",
+    "universal_primary": true,
+    "on_universal_floor": true,
+    "role_home": "23-ai-workforce-blueprint/templates/role-library/podcast/",
+    "naming_map_source": "23-ai-workforce-blueprint/department-naming-map.json",
+    "no_duplicate_department": true,
+    "no_duplicate_reason": "The podcast department already exists on the 28-department universal floor (content-creator pack, universal_primary=true). Per PRD Section 3.5 creating a second podcast department is a build failure. This wiring attaches the engine to the existing department only.",
+    "floor_invariant": {
+      "expected_floor_count": 28,
+      "composition": "22 mandatory + 6 universal-primary-vertical",
+      "podcast_is_universal_primary": true,
+      "floor_count_change": 0,
+      "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; podcast appears in universal_primary_vertical and expected_floor_count stays 28. department-naming-map.json is not modified by this slice."
+    }
+  },
+
+  "session_binding": {
+    "session_key_template": "podcast:intake:<client-slug>",
+    "owned_by": "the client's podcast department agent (the director-of-podcast persona is the department head this agent embodies)",
+    "route_id_template": "podcast-intake-<client-slug>",
+    "flow_identity": "each accepted submission becomes one TaskFlow whose flow key IS the job_key (pd-<contact_id>-<first16hex sha256 canonical submission>)",
+    "isolation": "This sessionKey is never shared with any other skill's inbound traffic. allowedAgentIds is the podcast agent only; allowedSessionKeyPrefixes is the podcast session namespace only.",
+    "source": "webhook-design.md Sections 6.1 and 7 (bound sessionKey, department and persona routing)"
+  },
+
+  "personas": [
+    {
+      "slug": "director-of-podcast",
+      "dept": "podcast",
+      "capacity": "owner",
+      "is_owner": true,
+      "is_drafting": false,
+      "is_qc": false,
+      "owns_steps": ["0", "1", "2", "12-16 (orchestration)", "17", "18"],
+      "owns_statuses": ["received", "researching", "publishing", "enrolling", "complete", "failed", "queued_credit_out"],
+      "responsibilities": "Owns the run end to end, the kanban card, output-type preset selection, and the 3-strike escalation to the founder. Embodied by the sessionKey agent."
+    },
+    {
+      "slug": "podcast-host",
+      "dept": "podcast",
+      "capacity": "drafting",
+      "is_owner": false,
+      "is_drafting": true,
+      "is_qc": false,
+      "owns_steps": ["5", "6", "7", "8"],
+      "owns_statuses": ["writing"],
+      "responsibilities": "Voice-and-framing persona. Personal mode tone fidelity and Interview mode show framing across blueprint, draft, improvement, and read-aloud. This is the DRAFTING persona for the QC independence rule."
+    },
+    {
+      "slug": "audio-post-producer",
+      "dept": "podcast",
+      "capacity": "production",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": false,
+      "owns_steps": ["10", "11", "14 (media QC)"],
+      "owns_statuses": ["generating_art", "producing_audio", "publishing"],
+      "responsibilities": "Art finalization, Fish Audio render, seamless stitch, LUFS mastering to minus 14 to minus 16 integrated, plus media QC on upload. Media QC here is production QC and is NOT the episode QC gate."
+    },
+    {
+      "slug": "qc-specialist-podcast",
+      "dept": "podcast",
+      "capacity": "qc",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": true,
+      "owns_steps": ["9"],
+      "owns_statuses": ["in_qc"],
+      "responsibilities": "Owns Step 9, the EPISODE QC gate (16 Tier 1 hard-fail checks, then the 10-dimension rubric at 8 or higher, then the per-episode checklist, with the 3-strike cap). Bound by the independence rule below."
+    },
+    {
+      "slug": "podcast-editor",
+      "dept": "audio",
+      "capacity": "support",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": false,
+      "supports": "audio-post-producer",
+      "owns_steps": ["11 (repair passes)"],
+      "owns_statuses": ["producing_audio"],
+      "responsibilities": "Cross-department supporter. Assists audio-post-producer at Step 11 on repair passes. Same universal floor, supporting capacity, not an owner."
+    },
+    {
+      "slug": "audio-mastering-specialist",
+      "dept": "audio",
+      "capacity": "support",
+      "alias": "mastering",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": false,
+      "supports": "audio-post-producer",
+      "owns_steps": ["11 (mastering)"],
+      "owns_statuses": ["producing_audio"],
+      "responsibilities": "Cross-department supporter (the mastering role named in PRD Section 3.6). Assists audio-post-producer at Step 11 with loudness mastering. Supporting capacity, not an owner."
+    },
+    {
+      "slug": "podcast-producer",
+      "dept": "audio",
+      "capacity": "support",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": false,
+      "supports": "director-of-podcast",
+      "owns_steps": ["Season-Strategy planning"],
+      "owns_statuses": ["researching", "writing"],
+      "responsibilities": "Cross-department supporter. Assists director-of-podcast on the Season-Strategy output-type preset (planning deliverable; runs research and document QC, skips Steps 6 to 17). Supporting capacity, not an owner."
+    }
+  ],
+
+  "qc_independence_rule": {
+    "statement": "qc-specialist-podcast is NEVER the persona that drafted the episode.",
+    "drafting_personas": ["podcast-host"],
+    "qc_persona": "qc-specialist-podcast",
+    "disjoint_required": true,
+    "model_independence": "The judge model tier that scores QC is distinct from the writer model tier. The writer never grades its own work as the deciding vote.",
+    "enforced_by": "verify-podcast-engine-wiring.py (asserts drafting_personas and qc_persona are disjoint) and, at runtime, qc-attempt-gate.py plus the two-tier episode gate.",
+    "source": "PRD Section 13.1 and QC-PROTOCOL-AND-MATRIX.md Gate B independence clause"
+  },
+
+  "kanban": {
+    "board_note": "Board view is display-only. No drag-and-drop, no pipeline mutation from the dashboard (dashboard-design.md Section 7.1 guardrail). Columns are read from the ledger and SQLite status; they never recompute state.",
+    "state_enum_source": "dashboard-design.md Section 5.1 podcast_jobs.status CHECK and Section 5.2 status semantics; the same enum is the intake ledger state vocabulary (webhook-design.md Section 3).",
+    "progress_meter": "9 forward segments, received through complete, current segment pulses.",
+    "columns": [
+      { "id": "received",        "order": 1, "status": "received",         "client_label": "Received",          "pill": "blue-50 / blue-600",              "steps": ["0", "1"],        "owning_persona": "director-of-podcast" },
+      { "id": "researching",     "order": 2, "status": "researching",      "client_label": "Researching",       "pill": "indigo-50 / indigo-600",          "steps": ["3"],             "owning_persona": "director-of-podcast" },
+      { "id": "writing",         "order": 3, "status": "writing",          "client_label": "Writing",           "pill": "emerald-50 / emerald-600",        "steps": ["2", "4", "5", "6", "7", "8"], "owning_persona": "podcast-host" },
+      { "id": "in_qc",           "order": 4, "status": "in_qc",            "client_label": "Quality review",    "pill": "amber-50 / amber-600",            "steps": ["9"],             "owning_persona": "qc-specialist-podcast" },
+      { "id": "generating_art",  "order": 5, "status": "generating_art",   "client_label": "Creating artwork",  "pill": "violet-50 / violet-600",          "steps": ["10"],            "owning_persona": "audio-post-producer" },
+      { "id": "producing_audio", "order": 6, "status": "producing_audio",  "client_label": "Producing audio",   "pill": "cyan-50 / cyan-600",              "steps": ["11"],            "owning_persona": "audio-post-producer" },
+      { "id": "publishing",      "order": 7, "status": "publishing",       "client_label": "Publishing",        "pill": "brand-50 / brand-700",            "steps": ["12", "13", "14", "15", "16"], "owning_persona": "audio-post-producer" },
+      { "id": "enrolling",       "order": 8, "status": "enrolling",        "client_label": "Finalizing",        "pill": "teal-50 / teal-600",              "steps": ["17"],            "owning_persona": "director-of-podcast" },
+      { "id": "complete",        "order": 9, "status": "complete",         "client_label": "Live",              "pill": "emerald-50 / emerald-700",        "steps": ["18"],            "owning_persona": "director-of-podcast" }
+    ],
+    "off_board_columns": [
+      { "id": "queued_credit_out", "status": "queued_credit_out", "client_label": "On hold",         "pill": "orange-50 / orange-600", "owning_persona": "director-of-podcast", "note": "A paid service reported insufficient credits mid-run. queue_state=held. Resumes at resume_stage on credit restore." },
+      { "id": "failed",            "status": "failed",            "client_label": "Needs attention", "pill": "red-50 / red-600",       "owning_persona": "director-of-podcast", "note": "Three-strike QC stop or unrecoverable failure after retries. Founder already alerted through alert-dedup.py. Terminal unless the operator re-dispatches through the engine." }
+    ],
+    "overlays": [
+      { "id": "aged_out", "queue_state": "aged_out", "renders_on_column": "failed", "client_label": "Expired", "pill": "gray-100 / gray-600 with red ring", "note": "The 60-day credit-out cap dropped the job. Shown as a badge on the Needs attention column, not a separate primary column." }
+    ]
+  },
+
+  "state_transitions": {
+    "note": "The kanban never defines transitions; it renders the status written by podcast_state.py. The legal-transition matrix is authoritative in dashboard-design.md Section 5.2 and enforced by the single writer podcast_state.py.",
+    "forward_path": "received -> researching -> writing -> in_qc -> generating_art -> producing_audio -> publishing -> enrolling -> complete",
+    "qc_loop": "in_qc -> writing (revision) up to 3 attempts, then in_qc -> failed",
+    "hold": "any non-terminal status -> queued_credit_out ; queued_credit_out -> resume_stage on restore",
+    "age_out": "queued_credit_out -> failed with queue_state=aged_out at the 60-day cap",
+    "failure": "any status -> failed on unrecoverable error after the engine's own retries"
+  },
+
+  "proof_plan_pointer": "card-lifecycle-proof-plan.md",
+  "canary_owner": "WAVE-PLAN W5.4 exercises this wiring end to end on the operator box: a _test-gated golden-fixture job appears on the kanban and moves through the full status vocabulary; W4.1/W4.2/W4.3 build-gate proof is department-floor.py pass plus a persona binding proof plus an observed card move."
+}
