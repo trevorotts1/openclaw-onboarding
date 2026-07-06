@@ -552,10 +552,41 @@ MODES = ["week", "day", "carousel", "video", "podcast-cover", "plan", "clean",
          "brief", "campaign", "client-copy", "reactive", "syndicate"]
 
 # DEFER map (fail-closed, clear 'deferred to vX.Y.Z' message; baseline config never blocked).
+# F4.3: persona-adapter (C10) is now IMPLEMENTED (scripts/persona_adapter.py) and no
+# longer deferred — personaSource:adapter/client-choice run the adapter, not a defer stub.
 _DEFERRED = {
     "narrated-video": "0.3.0", "syndicate": "0.4.0",
-    "persona-adapter": "0.5.0", "memory-adapter": "0.5.0",
+    "memory-adapter": "0.5.0",
 }
+
+
+def _run_persona_adapter(run_dir: Path) -> bool:
+    """F4.3 C10 persona INPUT adapter. Runs BEFORE the phases so downstream
+    generation and the certificate can consume the resolved persona.
+      personaSource:config        -> baseline no-op (nothing changes).
+      personaSource:adapter       -> canonical 5-layer selection (LOGGED).
+      personaSource:client-choice -> the client's named persona, FINAL/never judged.
+    Returns True to BLOCK the run (an explicitly-requested adapter/client-choice
+    that could not resolve — never a silent no-op); False to proceed."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import persona_adapter
+        rc = persona_adapter.run(run_dir)
+    except Exception as exc:  # noqa: BLE001 — adapter must not crash the run for baseline users
+        cfg = _json(run_dir, "working/copy/config.json", {}) if run_dir else {}
+        cfg = cfg if isinstance(cfg, dict) else {}
+        if str(cfg.get("personaSource", "config")).strip().lower() in ("adapter", "client-choice"):
+            print("BLOCKED: personaSource=%r requested but the persona adapter errored (%s). "
+                  "Fix and re-run (fail-closed; baseline personaSource:config is never affected)."
+                  % (cfg.get("personaSource"), exc), file=sys.stderr)
+            return True
+        print("[persona-adapter] best-effort skip (%s)" % exc, file=sys.stderr)
+        return False
+    if rc == persona_adapter.EXIT_UNRESOLVED:
+        print("BLOCKED: an explicit persona source was requested but no persona could be "
+              "resolved (see message above). Fail-closed; fix config and re-run.", file=sys.stderr)
+        return True
+    return False
 
 
 def _defer_check(mode, args, run_dir):
@@ -569,8 +600,8 @@ def _defer_check(mode, args, run_dir):
     cfg = cfg if isinstance(cfg, dict) else {}
     if getattr(args, "narrated", False) or cfg.get("narratedVideo") is True:
         hits.append(("narrated-video", "C8 narrated Reels (55-60s multi-clip + Fish-Audio voiceover)"))
-    if str(cfg.get("personaSource", "config")) == "adapter":
-        hits.append(("persona-adapter", "C10 Skill-22 persona input adapter (use personaSource:config baseline)"))
+    # F4.3: persona-adapter (C10) is IMPLEMENTED — personaSource:adapter no longer
+    # defers here; it is handled by _run_persona_adapter() before the phases.
     if cfg.get("memoryFeed") is True:
         hits.append(("memory-adapter", "C11 Skill-31 memory-core 'Dreaming' performance feed"))
     for cap, what in hits:
@@ -789,6 +820,10 @@ def main(argv=None):
               "(the ONE sanctioned entry); do not call this orchestrator directly.", file=sys.stderr)
         return EXIT_NONCE
     if _defer_check(args.mode, args, run_dir):
+        return EXIT_GATE
+    # F4.3 — C10 persona INPUT adapter (before phases; fail-closed only when an
+    # explicit persona source was requested and could not resolve).
+    if _run_persona_adapter(run_dir):
         return EXIT_GATE
     _mc_task = _mc_board_begin(run_dir, args.mode)
     rc = run(manifest, args.mode, run_dir)

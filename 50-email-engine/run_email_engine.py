@@ -547,6 +547,23 @@ def _write_certificate(run_dir: Path, proc: dict):
     steps = [{"phase_id": ph["id"], "name": names.get(ph["id"], ph["id"]),
               "disposition": "verified", "ok": bool(ph.get("passed"))}
              for ph in proc.get("phases", [])]
+    # F4.3 — crosswalk the resolved email tone-STYLE to a canonical persona id so
+    # the certificate names the library persona and the selection can join the
+    # persona adherence/learning loop. Best-effort: an unmapped style (no library
+    # counterpart) or a bare box simply omits the block. Not in certificate_sha
+    # (the sha is computed over the explicit sha_src below), so this is additive
+    # and cannot change certificate determinism.
+    persona_block = None
+    try:
+        _match = json.loads((run_dir / "working" / "routing" / "email-match.json")
+                            .read_text(encoding="utf-8"))
+        _style = (_match.get("resolved") or {}).get("persona_style_id")
+        if _style:
+            sys.path.insert(0, str(_SKILL_DIR / "tools"))
+            import persona_canonical  # type: ignore
+            persona_block = persona_canonical.persona_block(_style)
+    except Exception:
+        persona_block = None
     body = {
         "schema": "email-process-certificate-v1",
         "sequence_id": seq_id, "sequence_type": seq_type,
@@ -554,6 +571,7 @@ def _write_certificate(run_dir: Path, proc: dict):
         "declared_phases": PHASE_ORDER, "verified_phases": len(steps),
         "all_phases_pass": all(s["ok"] for s in steps) and len(steps) == len(PHASE_ORDER),
         "deploy_mode": "draft-only",
+        "canonical_persona": persona_block,
         "steps": steps,
     }
     # FIX-XC-12a: record the SOURCE of any client-exact override on the certificate.

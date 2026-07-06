@@ -1,5 +1,23 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.1.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **Brief-stage canonical persona resolution** (`scripts/persona_brief.py`): the funnel now
+  resolves its governing persona through the ONE shared entry point
+  `shared-utils/persona_for_job.py` (canonical 5-layer selector) at the brief stage, instead of a
+  static kanban label. The resolved persona id + Section-4 governance excerpt are written to
+  `persona-selection.json` for the copy prompts, and the signed **PROCESS-CERTIFICATE** now names
+  the canonical persona (`cert["persona"]`, added before signing so it is covered by the HMAC).
+- A brief-declared client persona choice (`client_persona_id`/`personaId`) is **FINAL** — the
+  selector is never consulted for it (client sovereignty).
+
+### Notes
+- Fail-soft: an unreachable selector / bare box is a clean skip and never blocks a funnel run
+  (the shared helper is never-naked on its own via its fail-closed fallback).
+
 ## 1.0.10 — 2026-07-05 — P7 QC≥8.5 seam now requires the FAB scorecard FILE (FIX-COPY-02)
 
 Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**.

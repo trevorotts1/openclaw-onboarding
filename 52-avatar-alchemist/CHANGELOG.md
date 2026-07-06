@@ -1,5 +1,24 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.4.0 — 2026-07-05 — F4.3 deterministic N/A tone-slot auto-pick (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Changed
+- The shared **tone-writing-core** N/A tone-slot auto-pick is now **deterministic**: the shared
+  `shared-utils/tone-writing-core/tone_persona_autopick.py` routes each **N/A** tone slot through
+  the ONE shared entry point `shared-utils/persona_for_job.py` (canonical 5-layer selector), so the
+  pick is avatar/task-aware, deterministic, and **LOGGED** — replacing the ad-hoc prompt-level
+  "choose a well-known person" guess. The persona's Section-4 governance excerpt seeds the tone
+  analysis.
+
+### Invariants preserved
+- **CLIENT-NAMED tone slots are NEVER touched** (client sovereignty) — the selector is consulted
+  for N/A slots only.
+- The **4-slot blend** at stage 08 is unchanged; slots are resolved independently.
+- The lockstep-synced tone prompt `.md` assets are unchanged (no sync drift); the resolver is an
+  additive helper. Skill 53's fictional palette is an explicit fallback tier.
+
 ## 1.3.0
 
 Wave-1 merge-train **T-w1-52-avatar** — model-map is finally consumed, preflight

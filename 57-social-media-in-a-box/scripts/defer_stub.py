@@ -11,8 +11,10 @@
 #
 #   narrated-video   -> v0.3.0  (C8: 55-60s multi-clip Reel + Fish-Audio voiceover)
 #   syndicate        -> v0.4.0  (C9: WordPress / Medium / Substack / YouTube-direct)
-#   persona-adapter  -> v0.5.0  (C10: Skill-22 persona INPUT adapter; use config baseline)
 #   memory-adapter   -> v0.5.0  (C11: Skill-31 memory-core 'Dreaming' performance feed)
+#
+# SHIPPED (no longer deferred): persona-adapter (C10) — now scripts/persona_adapter.py
+# routes personaSource:adapter/client-choice through shared-utils/persona_for_job.py (F4.3).
 #
 # EXIT: 0 --self-test PASS / 2 deferred (fail-closed) / 3 usage.
 # USAGE:
@@ -38,9 +40,6 @@ DEFERRED = {
     "syndicate": ("0.4.0",
         "non-GHL add-on channels (WordPress / Medium / Substack / YouTube-direct)",
         "GHL-direct posting for every connected platform works today"),
-    "persona-adapter": ("0.5.0",
-        "the Skill-22 persona INPUT adapter (5-layer alignment -> brandInfo/tone/avatar)",
-        "the config-carried persona baseline (personaSource:config) works today"),
     "memory-adapter": ("0.5.0",
         "the Skill-31 memory-core 'Dreaming' performance-insight feed",
         "the theme-of-week log half is already folded (P1 themeOfWeek in the state spine)"),

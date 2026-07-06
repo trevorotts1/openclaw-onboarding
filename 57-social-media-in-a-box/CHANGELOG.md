@@ -1,5 +1,26 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## 0.2.6 — 2026-07-05 — F4.3 C10 persona INPUT adapter SHIPPED (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **C10 persona INPUT adapter IMPLEMENTED** (`scripts/persona_adapter.py`) — previously a
+  fail-closed stub deferred to v0.5.0. `personaSource:adapter` now routes the week's brand/theme
+  context through the ONE shared entry point `shared-utils/persona_for_job.py` (canonical 5-layer
+  selection, LOGGED); `personaSource:client-choice` returns the client's expressly-named persona
+  **verbatim, FINAL, never judged** (client sovereignty); `personaSource:config` is the unchanged
+  baseline. The resolved persona is written to `working/copy/persona-selection.json` and surfaced
+  on the certificate's creative block (`canonical_persona`) — ABSENT on the config path so a
+  default week stays byte-for-byte identical.
+
+### Changed
+- `persona-adapter` removed from the DEFER map (`defer_stub.py`, `run_social_media._DEFERRED`,
+  `SOCIAL-MANIFEST.json` AF-SM-DEFERRED text, `client-config.schema.json` personaSource doc). An
+  explicitly-requested `adapter`/`client-choice` that cannot resolve fails CLOSED (never a silent
+  no-op); baseline `config` is never blocked. Remaining deferrals (narrated-video C8, syndicate C9,
+  memory-adapter C11) are unchanged.
+
 ## 0.2.5 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — on a fail-closed gate (across all modes) the run now marks its
   Command Center card `blocked` (failing phase + AF code as the note, via the shared

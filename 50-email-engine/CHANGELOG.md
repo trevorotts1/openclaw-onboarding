@@ -1,5 +1,24 @@
 # Changelog — Skill 50 (email-engine)
 
+## 1.1.0 — 2026-07-05 — F4.3 email-style ↔ canonical persona crosswalk (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **`tools/persona_canonical.py`** — crosswalks the resolved email tone-STYLE id to a REAL
+  canonical persona id via `shared-utils/persona-crosswalk.json` `email_persona_styles` (the same
+  crosswalk mechanism skills 06/44 use), so an email selection joins the persona
+  adherence/learning loop. The email matcher keeps its role as the style-tier chooser.
+- The **PROCESS-CERTIFICATE** now carries a `canonical_persona` block (id + name + Section-4
+  excerpt) when the resolved style maps to a library persona. Not part of `certificate_sha`
+  (computed over the explicit sha source), so determinism is unchanged.
+
+### Notes
+- Only styles with a genuine canonical counterpart are mapped (7 of 12). A style with no library
+  persona (e.g. Tony Robbins ≠ the library's Mel Robbins; Iyanla / Les Brown / Lisa Nichols /
+  Gladwell / Brené have no library persona) is intentionally unmapped and keeps its style-tier
+  behavior — never a fabricated mapping.
+
 ## 1.0.6 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — on a fail-closed gate the run now marks its Command Center card
   `blocked` (failing phase + AF code as the note, via the shared

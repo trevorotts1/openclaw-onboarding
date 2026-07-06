@@ -327,6 +327,6 @@
     {"code": "AF-SM-PODCAST-COVER", "stage": "P11", "level": "asset", "trigger": "podcast cover not 1400x1400 JPEG", "enforced_by": "prove_bands", "py_symbol": "evaluate_podcast"},
     {"code": "AF-SM-STORIES-CAPTION", "stage": "P3", "level": "asset", "trigger": "FB/IG Stories caption over 250 chars (C7 content-completeness fold; client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_reformat"},
 
-    {"code": "AF-SM-DEFERRED", "stage": "defer", "level": "run", "trigger": "a capability deferred to a named later version was requested (syndicate C9 v0.4.0 / narrated-video C8 v0.3.0 / persona-adapter C10 v0.5.0 / memory-adapter C11 v0.5.0). The stub fails CLOSED with a clear 'deferred to vX.Y.Z' message; baseline config-carried behavior is never blocked meanwhile.", "enforced_by": "defer_stub / run_social_media", "py_symbol": "_chk_deferred"}
+    {"code": "AF-SM-DEFERRED", "stage": "defer", "level": "run", "trigger": "a capability deferred to a named later version was requested (syndicate C9 v0.4.0 / narrated-video C8 v0.3.0 / memory-adapter C11 v0.5.0). The stub fails CLOSED with a clear 'deferred to vX.Y.Z' message; baseline config-carried behavior is never blocked meanwhile. NOTE: persona-adapter (C10) is SHIPPED (F4.3) via scripts/persona_adapter.py and is no longer deferred.", "enforced_by": "defer_stub / run_social_media", "py_symbol": "_chk_deferred"}
   ]
 }

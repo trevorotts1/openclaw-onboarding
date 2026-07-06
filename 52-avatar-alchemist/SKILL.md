@@ -1,7 +1,7 @@
 ---
 name: avatar-alchemist
 description: Turns one completed brand-intake interview into the full brand-intelligence package — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, Facebook Ads with 13 ad sets, Booking Bots, Landing/Hero) → 16 named deliverables (37 documents), delivered as labeled markdown in ~/Downloads. Fully local: no n8n, no Airtable, no Google Drive, no Slack/Gmail — the client's own model providers only, never Anthropic. A Book/Brand version selector runs FIRST: version=brand runs this 40-stage pipeline; version=book routes to the separate Avatar Alchemist Book skill (53) or parks fail-closed "book-skill-not-available". Every process rule is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed provenance certificate. Trigger with "run avatar alchemist", "brand intelligence package", "build my avatar documents", or "avatar alchemist for <brand>".
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Avatar Alchemist — Brand Intelligence Engine (Skill 52)

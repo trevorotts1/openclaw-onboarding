@@ -46,6 +46,24 @@ Each style stage: grade-level analysis first ("communicates at the 10th-grade / 
 `[TONE]` explanation + mimic-without-plagiarizing instructions + one example paragraph; on `N/A`
 the stage MUST auto-pick a real, well-known person in harmony with the avatar's 32 answers.
 
+### N/A auto-pick is deterministic (F4.3)
+
+The N/A auto-pick is no longer a bare prompt-level guess. `tone_persona_autopick.py` routes each
+**N/A** slot through the ONE shared entry point `shared-utils/persona_for_job.py` (the canonical
+5-layer selector), so the pick is avatar/task-aware, **deterministic**, and **LOGGED** to the
+persona learning loop — and its blueprint Section-4 governance excerpt seeds the tone analysis.
+
+- **CLIENT-NAMED slots are NEVER touched** — the selector is consulted for N/A slots only
+  (client sovereignty is absolute).
+- **The 4-slot blend is unchanged** — each N/A slot is resolved independently; stage `08` blends the
+  four analyses exactly as before.
+- **Skill 53's fictional palette** is an explicit *fallback tier* (only when a fictional voice is
+  wanted), not the default for N/A.
+
+The tone prompt `.md` assets are intentionally **unchanged** here (they stay lockstep with the baked
+consumer copies); the deterministic resolver is an additive helper the consumers call to fill an N/A
+slot before the stage runs. See `tone-core-manifest.json → na_autopick_resolver`.
+
 ## How a consumer references it
 
 1. Manifest key: `"shared_tone_core": "shared-utils/tone-writing-core"` (see 52's
