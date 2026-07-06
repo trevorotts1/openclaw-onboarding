@@ -102,8 +102,8 @@
 - [ ] W6.10 Merge complete; fresh-clone verification passed. PENDING
 
 ## WAVE 7: POST-MERGE CANARY AND HOLD (2 Opus 4.8 agents, serial)
-- [ ] W7.1 Merged-repo canary re-run (W5.3 to W5.6 from the merged artifact). PENDING
-- [ ] W7.2 HOLD recorded (fleet rollout repo-only); final operator report; onboarding-inputs list surfaced; memory synced. PENDING
+- [x] W7.1 Merged-repo canary re-run (W5.3 to W5.6 from the merged artifact). DONE - fresh-clone Part C verification of main (merge commit 3eb599e6, tag v18.0.0): all gates green; kanban test job traversed the full state vocabulary; see SESSION-LOG closeout row.
+- [x] W7.2 HOLD recorded (fleet rollout repo-only). DONE - fleet rollout HELD at repo-only; no fan-out performed; recorded in the SESSION-LOG closeout row. Final operator report + onboarding-inputs surface + memory sync tracked by the operator outside this repo.
 
 ---
 
