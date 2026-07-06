@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.16.2 - 2026-07-06 - feat(FDN-1 + DEP-6): blackceo-house-voice fallback seed + hunt-thomas CODE-craft specialist + software-craft domainTag (81->83, prebuilt-index v2.4.0)
+
+Lands the two remaining persona-library additions against the published **prebuilt-index-v2.4.0** asset (83 personas). Supersedes ONB PRs #532/#539.
+
+- **`personas/blackceo-house-voice/persona-blueprint.md` + `persona-categories.json`:** hand-authored brand-neutral fallback persona (`fallback:true`, domains `["communication"]`, no perspective/specialty tags) — the permanent `DEFAULT_PERSONA_FALLBACK` seed so no task is ever naked. Excluded from the normal scoring funnel.
+- **`personas/hunt-thomas-pragmatic-programmer/persona-blueprint.md` + `persona-categories.json`:** first true software-craft specialist (The Pragmatic Programmer), domain `["software-craft", …]`, `_craft_slot:"code"`.
+- **New controlled-vocab `domainTags` entry `software-craft`** so hunt-thomas's craft domain is in-vocab (mirrored in the selector's four craft tables — see the 23-ai-workforce-blueprint change).
+- **`INDEX-MANIFEST.json`:** `persona_count`/`canonical_persona_count`/`embedded_persona_count` = 83, `release_tag` `prebuilt-index-v2.4.0`, `asset_rebuild_required:false`, `persona_set_md5` re-stamped to the shipped 83-key categories (metadata-only re-pin, persona membership unchanged — NOT an asset rebuild). `INSTALL.md` counts re-baselined to 83 / ~1,189 rows.
+- Count triad agrees at 83 (blueprint dirs == categories keys == manifest persona_count == canonical_persona_count == embedded_persona_count). No client names.
+
 ## v6.16.1 - 2026-07-05 - fix(DEP-13 P3 hygiene): stale install counts, pending-publish nag, LRU task cache, provisioning default, log-format unification
 
 P3 hygiene bundle from the persona-matching analysis (train DEP-13: F1.5, F1.6, F2.4, F2.5, F4.6). No behavior change to matching quality — these close staleness / unbounded-growth / silent-default footguns.
