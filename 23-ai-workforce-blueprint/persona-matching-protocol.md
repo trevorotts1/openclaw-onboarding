@@ -12,6 +12,8 @@
 
 A persona is chosen fresh for every task based on three alignment layers. The same role in the same department may use different personas depending on what they are trying to accomplish.
 
+> **Which "persona" this document governs.** The word *persona* means three unrelated things across the system. This protocol governs **concept 2 only — the coaching/leadership persona** (the 81-persona `coaching-personas` library matched per task at runtime). It does NOT govern the **`dept_label` / `workspace_hint`** (the department-head display name and the `persona` key in the `/api/tasks/ingest` payload — a routing hint, never a coaching persona) or the **buyer/customer persona (avatar)** used in copy work (Skill 52 avatars, "Big Bold Who" sections). See `TERMINOLOGY.md` → "Persona — three distinct meanings" for the full three-way distinction.
+
 ---
 
 ## The 5 Alignment Layers
@@ -213,7 +215,12 @@ That is valid but rare. If it happens, it means that persona is genuinely the be
 Pick the one with the strongest Layer 5 (task fit) score. The task must get done well. The other layers are important but should not block execution.
 
 **What if Skill 22 is not installed?**
-No persona matching happens. The agent operates without persona guidance. This is a valid state. When Skill 22 is installed later, persona matching activates automatically.
+This is a **DEGRADED** state, **not a valid steady state**. Persona matching cannot run because the coaching-personas library is absent — but an agent MUST NOT execute a professional task with no persona at all. Two things are mandatory while in this state:
+
+1. **Mandatory default-persona attachment (never naked):** attach the default fallback persona — the `blackceo-house-voice` persona, defined as the `DEFAULT_PERSONA_FALLBACK` constant: a general-purpose house voice that is **excluded from normal persona competition** and surfaces **only** as a fallback. Every task still carries an assigned persona; there is no such thing as a persona-less professional task. A purely mechanical task (e.g. `restart`, `ping`, `chmod`) keeps its `no_persona_required` flag but still carries a `governance_persona_id` — the `GOVERNANCE_PERSONA_FALLBACK` constant, `covey-7-habits` — so every downstream gate always has a persona to point at.
+2. **Install nag:** surface an operator-visible nag that Skill 22 is not installed and persona matching is degraded, so the library gets installed. Operator-visible only — never client-facing, per the silent-updates doctrine.
+
+When Skill 22 is installed later, full 5-layer persona matching activates automatically and the fallback stops being used. **The absence of the library is a bug signal to remediate, not a licence to run naked.**
 
 ---
 

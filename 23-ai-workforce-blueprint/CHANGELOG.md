@@ -1,6 +1,105 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [v17.0.33] - 2026-07-05 - docs(persona): DEP-9 doctrine — no-naked degraded state (F3.3) + three-way persona terminology (F4.5)
+
+Persona doctrine surgery, no code/API change. Relanded on `main` after Wave-0 (v17.0.32 / DEP-8) via a
+repo-wide `/version` roll to v17.0.33: skill 23's `skill-version.txt` is coupled to the repo-wide
+onboarding `/version` in LOCKSTEP via `bump-version.sh` (it is one of the 11 markers in
+`scripts/version-markers.json`), so clearing the skill-23 content-change gate G3 requires this bump —
+it is a version roll, not a repo release (rides the existing tag per merge-train doctrine). Enforced by
+an extended CI guard.
+
+- **F3.3 — `persona-matching-protocol.md` "What if Skill 22 is not installed?" rewritten.** The old
+  wording ("No persona matching happens. The agent operates without persona guidance. **This is a valid
+  state.**") normalized persona-less operation, contradicting the no-naked-tasks invariant. It is now a
+  **DEGRADED** state (not a valid steady state) with two mandatory obligations: (1) attach the default
+  fallback persona (`blackceo-house-voice`, the `DEFAULT_PERSONA_FALLBACK` constant — excluded from
+  normal persona competition, surfaces only as a fallback; a purely mechanical task keeps its
+  `no_persona_required` flag but still carries `governance_persona_id` = the `GOVERNANCE_PERSONA_FALLBACK`
+  constant `covey-7-habits`), and (2) an operator-visible install nag (never client-facing). Added a
+  top-of-file note declaring this protocol governs the coaching persona (concept 2) ONLY.
+- **F3.3 regression guard.** `.github/workflows/persona-task-mode-wiring-guard.yml` header extended with
+  group **(B2)**, and `tests/unit/persona-task-mode-wiring.test.sh` gains a (B2) assertion: the
+  Skill-22-absent edge case must contain `DEGRADED` + `DEFAULT_PERSONA_FALLBACK` + a default-persona
+  attachment + "install nag", and must NOT contain the old "operates without persona guidance. This is a
+  valid state" wording — so the invariant cannot silently regress.
+- **F4.5 — terminology surgery (doctrine text only, no API break).** `SOP-00-Owner-Task-Routing.md`: the
+  ingest `persona` key is now documented as a `dept_label` / `workspace_hint` (a routing hint, NOT a
+  coaching persona; the coaching persona is matched per task at runtime inside `createTaskCore`). See the
+  repo-root `TERMINOLOGY.md` "Persona — three distinct meanings" section (concept 1 `dept_label`/
+  `workspace_hint` vs concept 2 coaching persona vs concept 3 buyer/customer avatar) and the aligned
+  wording in skill 32 `CORE_UPDATES.md` and skill 52 `SKILL.md`.
+
+## [v17.0.32] - 2026-07-05 - feat(persona-selector): add `--strict` degradation exit code (F3.2, DEP-8)
+
+Persona-matching-overhaul Phase-2 (DEP-8). Shell consumers (QC gates, fleet
+heartbeat probes) previously could not tell a genuine task-matched persona from a
+degraded selection without parsing the JSON — `main()` returned exit 0 for
+NO_PERSONAS_AVAILABLE, LOW_CONFIDENCE, and mechanical `no_persona_required` alike.
+
+scripts/persona-selector-v2.py:
+- New `--strict` flag (select mode). DEFAULT (non-strict) behaviour is UNCHANGED —
+  always exit 0 for any successful / mechanical / low-confidence result — so the
+  Command Center's spawn contract (spawn → read JSON only) is never broken. Under
+  `--strict`, the process exits 3 (STRICT_DEGRADED_EXIT) when the selection is
+  DEGRADED: `warning == NO_PERSONAS_AVAILABLE`, or a fallback tier was used
+  (top-level `fallback` set and/or `persona_mode == "fallback"`, forward-compatible
+  with the F3.1 fallback guarantee). Under `--combined`, a naked non-mechanical
+  sub-task (persona_id null, not `no_persona_required`) also trips exit 3.
+- Explicitly NOT degraded (stay exit 0): mechanical `no_persona_required` tasks
+  (a truthful contract, not a failure) and `LOW_CONFIDENCE_SELECTION` (a real, if
+  weak, match). The nested LLM-scoring provider fallback in `layers._llm_meta`
+  (Ollama→OpenRouter→Gemini) is a different concept and is deliberately not
+  consulted — a healthy match may score via OpenRouter.
+- stdout JSON is byte-for-byte identical between strict and non-strict; only the
+  exit code differs, so a `--strict` caller still parses the same payload.
+- Helpers `_selection_is_degraded` / `_combined_is_degraded` / `_strict_exit` are
+  the single source of the degradation verdict.
+
+scripts/test-persona-selector-strict.sh (new, hermetic; sandboxed empty HOME,
+public-author persona set, heuristic path):
+- Proves the 1↔0 / --strict↔3 matrix end-to-end (empty universe, mechanical task,
+  healthy match) and asserts the stdout payload is identical strict vs non-strict.
+
+## [v17.0.27] - 2026-07-05 - fix(Presentation department — the gold-standard template): T-presentation-dept hardening pass (FIX-PRES-01..09)
+
+Nine hardening fixes to the presentation department (the gold-standard enforcement template) from the skills-analysis master fix-plan. No behavior change on a healthy governed run; every change closes a silent-bypass / stale-state / board-invisibility seam.
+
+- **FIX-PRES-01 (P1)** — `QC_SKIP_PRESENTATION_DEPS=1` no longer silently bypasses the GATE-1 runtime-deps hard gate on a live run. `presentation-canonical-entry.sh` deps_check removes the bare env short-circuit: a LIVE run may skip ONLY via a logged `owner_skip_approval` token; the env var is honored ONLY with a `.test-context` run-dir marker, and every honored bypass (env-test OR owner-token) appends a `dep_gate_bypassed` audit record to `working/checkpoints/process_manifest.json`. Mirrored in `qc-completeness.sh` (a honored bypass logs a loud `DEP_GATE_BYPASSED` line + JSON artifact, never silent).
+- **FIX-PRES-02 (P2)** — `update-skills.sh` now runs an idempotent, fail-soft "presentation deps converge" step (mirrors install.sh Step 6.5: Mac brew poppler + NONINTERACTIVE LibreOffice cask + pip --user reportlab/python-pptx; VPS reassert script) with a hard end-of-update warning when any of the four deps is still missing — a Mac box predating install.sh Step 6.5 no longer refuses every deck build at GATE 1 forever.
+- **FIX-PRES-03 (P2)** — new GATE 1b in `presentation-canonical-entry.sh` asserts the Skill-48 `ghl_media` module is importable (else resolved-path existence) BEFORE any paid Kie render, exit 8 `PRESENTATION_GHL_MODULE_MISSING`, owner-token skippable — a deck no longer renders on paid credits then dies at delivery.
+- **FIX-PRES-04 (P2)** — `create_role_workspaces.py` scripts-copy filter now includes `.sha256` and `.pdf` (always-overwrite like `.py`/`.sh`) so `CANONICAL-RENDERER-PIN.sha256` and `STANDARD-presenter-speech-layout.pdf` reach the materialized department; GATE 3's hash-pin no longer silently disarms.
+- **FIX-PRES-05 (P2)** — `test_cc_contract.py` replaces the hardcoded operator-machine session path with env-driven `CC_VALIDATION_TS_PATH` (unset → skip); `qc-assert-no-client-names.sh` gains the dash-separated session-path spelling of the operator home as a banned token (the form that evaded the slash-only ban) so the class cannot ship again. (The bare username is deliberately not an always-on token — it is the literal each skill's own leak-detection already scans for.)
+- **FIX-PRES-06 (P2)** — `cc-compat.json` Skill-51 note rewritten to current scope (methodology layer that DOES card via `cc_board.py` and depends on the CC presentations done-gate — task-PATCH `{phase_id,status,process_certificate_sha}`); records the done-gate was introduced in CC v4.56.0 and is guaranteed at the pinned minVersion v4.59.1.
+- **FIX-PRES-07 (P3)** — `run_signature_deck.py` fails CLOSED when `phase_verifiers.py` is missing beside the runner AND the phase is in the governed verifier set; a degraded pass is allowed ONLY under an explicit test/CI marker (`PRESENTATION_ALLOW_DEGRADED_VERIFIERS=1` / `CI` / `OPENCLAW_TEST` / `.test-context`).
+- **FIX-PRES-08 (P3)** — CC card is opened at the runner's Phase-0 pre-flight (`_board_ingest_preflight`, idempotent; build_deck render-begin reuses the stamped `cc_task_id`) so pre-render phases are board-visible and a pre-render death still lands a card; new `cc_board.py --reconcile <run_dir>` (and in-process `reconcile()` from the end-of-run visibility check) replays a transport-failed advance so a delivered deck is never stranded at `in_progress`.
+- **FIX-PRES-09 (P3 bundle)** — (i) `build_deck._sp_prover` gains `skills/51-signature-presentation/scripts` + `/data`/`~` `.openclaw/skills` candidate roots so a materialized dept tree can find Skill 51; (ii) legacy renderer pair already retired on main (no-op, verified); (iii) presentations dept agent gets a per-dept tools allow-list (`tts,exec,read,write,edit,web_fetch,web_search`) WITHOUT `image_generate`/`video_generate`/`music_generate` — its imagery goes through the governed kie pipeline, not the free-form built-in; (iv) reassert-presentation-deps cron dropped from a `*/15` furnace to a daily `0 4 * * *` backstop, with event-shaped self-heal on the GATE-1 deps-missing path; (v) stale comments corrected to the 9,000-char floor / manifest v23 (`qc_generator_guard.py`, `phase_verifiers.py`) and the retired 5,000-char floor added to `retired-doctrine-patterns.json` (Guard B).
+## [v17.0.29] - 2026-07-05 - fix(funnel copy scoring + persona wiring): T-funnel-copy-engine (Wave-0 merge-train)
+
+Funnel copy quality + persona grounding hardened in the full-funnel pipeline and marketing role library.
+
+- **FIX-XC-02b** — `full-funnel-pipeline/funnel_rubrics.py`: de-hardcoded the `hormozi-100m-offers`
+  persona award in R-COPY (persona_grounded) and R-STRUCTURE. Both now read the ACTUAL
+  `selected_persona` from `persona-selection-log.md` (both `- selected_persona:` and
+  `"applied_persona":` forms) and credit the matched slug — a correct non-hormozi match is no longer
+  punished; miss only when the log is absent or the slug is unechoed.
+- **FIX-XC-04a** — `shared-utils/fab_qc.py` D2 now enforces lengthClass-keyed copy floors (body slots
+  ≥40 words; page-level lengthClass floors), a HARD MISS below floor with a bounded re-author, so a
+  thin fab-artifact can no longer clear the FAB-QC gate. Consumer test fixtures re-authored
+  (`06-ghl-install-pages/tests/test_v2_dispatcher.py`, `tests/unit/fab-qc.test.py`).
+- **FIX-XC-04h** — `funnel_rubrics.py` R-COPY gains a load-bearing `length_vs_funnel_type` sub-check
+  (weight 3.0, hard-miss below floor) keyed to the per-funnel-type depth table (squeeze/opt-in 300 /
+  2-step-application 400 / webinar-VSL 800 / long-form-sales 1,500) — an approved 150-word copy.md can
+  no longer score 10/10. `conversion-copywriter.md` Gate 1/Gate 2 + `qc-specialist--marketing.md`
+  SOP 9.1 gain the depth criterion (f): under-band or thin-section copy is returned as a revision.
+- **FIX-XC-04b** — `conversion-copywriter.md` §8 copy.md contract expanded to the full direct-response
+  section inventory keyed to funnel-spec `pageStructure`, with a §8a per-funnel-type depth-band table
+  and SOP 9.2 steps 10a/10b (section-by-section authoring + one expansion pass before PENDING-QC).
+- **FIX-XC-02a** — copywriter-persona Step-0 grounding wired: goldens/harness now carry a real
+  `persona-selection-log.md`; re-authored the scent-bar and FocusForge copy goldens to genuinely clear
+  the long-form depth floor (teach-the-right-behavior).
+
 ## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
 
 Client model sovereignty / runtime portability: the speech-build harness POSTed directly to the

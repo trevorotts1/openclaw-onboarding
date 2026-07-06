@@ -738,6 +738,51 @@ class PersonaCategoriesSchemaError(ValueError):
     or well-formed extension). The message always names the offending key."""
 
 
+# ─── F1.4 (DEP-12): Phase-6 categories-write FAIL-LOUD + auto-repair contract ──
+# BEFORE this fix, process_book's Phase-6 wrapper caught EVERY exception from
+# _append_persona_to_categories and logged a WARNING — the run still "succeeded"
+# (exit 0). A blueprint that failed the schema-lint gate (or any categories
+# write) was left on disk with NO key under personas-categories.json.personas,
+# and since persona-selector-v2.py:list_available_personas() reads exactly that
+# dict's KEYS as the persona universe, the persona was INVISIBLE to the selector
+# on that box — an unselectable orphan, the mirror of F1.2's "registered but not
+# embedded" silent-success (mirrors FDN-5's fail-loud exit pattern).
+#
+# The contract now has TWO independent guarantees:
+#   (1) NEVER-TO-ZERO on registration itself — the persona is ALWAYS given a
+#       categories key. When the normal (auto-classified) append fails, an
+#       AUTO-REPAIR path re-registers the entry with a SAFE-DEFAULT tag set
+#       (domain=PHASE6_SAFE_DEFAULT_DOMAIN, empty perspective) plus a
+#       needs_retag:true marker, rather than skipping the entry. domain[] is a
+#       controlled-vocab tag ('leadership' — every book in this skill is a
+#       coaching/leadership work), so the safe-default entry passes both the
+#       schema-lint gate and persona_fleet.py sync-categories validation, i.e. it
+#       is publishable and immediately routable.
+#   (2) FAIL-LOUD — a Phase-6 categories write that needed the auto-repair path
+#       (or failed even that) is recorded so main() exits with a DISTINCT
+#       non-zero code (PHASE6_CATEGORIES_EXIT_CODE=9), never a silent success.
+#       The caller (add-persona-from-source.sh / the inbox watcher) can then tell
+#       "needs operator re-tag" apart from a clean build and route to retry /
+#       quarantine instead of moving the source to processed/.
+PHASE6_CATEGORIES_EXIT_CODE = 9  # distinct from F1.2's EMBED_FAILED (8)
+
+# never-to-zero applied to registration itself: the safe-default domain used by
+# the auto-repair path so a persona is ALWAYS registered (never invisible to the
+# selector universe). 'leadership' is a controlled-vocab domainTags member.
+PHASE6_SAFE_DEFAULT_DOMAIN = ["leadership"]
+
+# Folders whose Phase-6 categories write took the fail-loud/auto-repair path this
+# run. Checked at the end of main() to emit PHASE6_CATEGORIES_EXIT_CODE. Module
+# level (not per-book) so the async batch gather aggregates across books.
+_CATEGORIES_WRITE_FAILURES: list = []
+
+
+def pipeline_had_categories_failures() -> bool:
+    """True iff any Phase-6 categories write needed auto-repair / failed this run
+    (F1.4). Consulted by main() to decide the fail-loud non-zero exit."""
+    return bool(_CATEGORIES_WRITE_FAILURES)
+
+
 def _lint_tag_list(entry_key: str, tags, vocab: list) -> list:
     """Validate `tags` (a persona entry's domain[] or perspective[] list)
     against `vocab` (the top-level domainTags[]/perspectiveTags[] controlled
@@ -805,7 +850,9 @@ def _lint_persona_categories_write(data: dict, folder: str) -> None:
 
 
 def _append_persona_to_categories(book: dict, folder: str,
-                                  appendix_status: str = None) -> None:
+                                  appendix_status: str = None,
+                                  domain_override: list = None,
+                                  needs_retag: bool = False) -> None:
     """Append a new persona entry to persona-categories.json (idempotent).
 
     PRD 2.7: always writes to the canonical path returned by _persona_categories_path()
@@ -832,6 +879,14 @@ def _append_persona_to_categories(book: dict, folder: str,
     entry is run through the schema-lint gate (_lint_persona_categories_write)
     — a malformed append (wrong type, empty, not kebab-case) HARD FAILS,
     raising PersonaCategoriesSchemaError, and the file is never written.
+
+    F1.4 (DEP-12): the AUTO-REPAIR path passes `domain_override` (e.g.
+    PHASE6_SAFE_DEFAULT_DOMAIN) to BYPASS the auto-classifier and register the
+    persona with a known-good controlled-vocab domain, and `needs_retag=True` to
+    stamp an additive `needs_retag` marker on the entry so operator tooling can
+    later re-classify it. This is never-to-zero applied to registration itself —
+    a persona always gets a categories key (visible to the selector universe)
+    even when auto-classification / the normal write path fails.
     """
     import shutil
     cat_path = _persona_categories_path()
@@ -865,15 +920,22 @@ def _append_persona_to_categories(book: dict, folder: str,
     if folder in data["personas"]:
         return  # Already present — idempotent no-op.
 
-    # G6 FIX: auto-classify domain[]/perspective[] against the controlled vocab
-    # so the persona is immediately routable. domain[] is guaranteed non-empty —
-    # an empty domain is precisely what made prior auto-added personas invisible
-    # to the dept-scope filter. autoTagged flags it for optional operator refining.
-    domain_tags, perspective_tags = _auto_classify_persona_tags(
-        folder, book,
-        data.get("domainTags", []),
-        data.get("perspectiveTags", []),
-    )
+    if domain_override is not None:
+        # F1.4 AUTO-REPAIR: skip the auto-classifier and register with a
+        # known-good controlled-vocab domain. Guaranteed non-empty (the caller
+        # passes PHASE6_SAFE_DEFAULT_DOMAIN); perspective is left empty (the
+        # safe default makes no perspective claim).
+        domain_tags, perspective_tags = list(domain_override), []
+    else:
+        # G6 FIX: auto-classify domain[]/perspective[] against the controlled vocab
+        # so the persona is immediately routable. domain[] is guaranteed non-empty —
+        # an empty domain is precisely what made prior auto-added personas invisible
+        # to the dept-scope filter. autoTagged flags it for optional operator refining.
+        domain_tags, perspective_tags = _auto_classify_persona_tags(
+            folder, book,
+            data.get("domainTags", []),
+            data.get("perspectiveTags", []),
+        )
 
     # P13-1: resolve the appendix-completeness field. Prefer the caller's
     # pipeline-status.json phase3b state (authoritative — the on-disk file's
@@ -898,6 +960,13 @@ def _append_persona_to_categories(book: dict, folder: str,
         "appendixStatus": resolved_appendix_status,  # P13-1: COMPLETE / COMPLETE_WITH_WARNINGS / FAILED / MISSING
         "added": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if needs_retag:
+        # F1.4 additive marker: this entry got the SAFE-DEFAULT domain because
+        # auto-classification / the normal write failed. It is registered (never
+        # invisible) but its tags are a placeholder — operator/tooling must
+        # re-classify. A workspace-only field (persona_fleet.py sync-categories
+        # ships only the canonical seed fields, so it never leaks to the repo seed).
+        data["personas"][folder]["needs_retag"] = True
 
     # P13-2: hard-fail schema-lint gate — raises PersonaCategoriesSchemaError
     # (naming the offending key) BEFORE any write if domain[]/perspective[]
@@ -906,9 +975,63 @@ def _append_persona_to_categories(book: dict, folder: str,
 
     with open(cat_path, "w") as f:
         json.dump(data, f, indent=2)
+    _kind = "safe-default (needs_retag)" if needs_retag else "auto-tagged"
     print(f"[orchestrator] Appended {folder} to {cat_path} "
-          f"(auto-tagged domain={domain_tags} perspective={perspective_tags}; "
+          f"({_kind} domain={domain_tags} perspective={perspective_tags}; "
           f"appendixStatus={resolved_appendix_status}; operator may refine).")
+
+
+def _phase6_register_categories(book: dict, folder: str,
+                                appendix_status: str = None) -> str:
+    """F1.4 (DEP-12) Phase-6 categories registration with FAIL-LOUD + AUTO-REPAIR.
+
+    Attempts the normal (auto-classified) persona-categories.json append. On ANY
+    failure it does NOT swallow the error into a warning (the pre-fix silent
+    success that stranded a blueprint with no categories key — invisible to
+    persona-selector-v2.py's list_available_personas() universe). Instead:
+
+      1. AUTO-REPAIR (never-to-zero on registration): re-register the entry with
+         the SAFE-DEFAULT tag set (PHASE6_SAFE_DEFAULT_DOMAIN) + needs_retag:true
+         so the persona ALWAYS gets a categories key and stays selectable.
+      2. FAIL-LOUD: record the folder in _CATEGORIES_WRITE_FAILURES so main()
+         exits PHASE6_CATEGORIES_EXIT_CODE (never a silent success), whether or
+         not the auto-repair itself succeeded.
+
+    Idempotent: _append_persona_to_categories no-ops when the slug is already a
+    key, so a repaired-then-rerun build is safe. Returns one of:
+      "ok"       — normal auto-classified registration succeeded.
+      "repaired" — normal path failed; safe-default entry written (needs_retag).
+      "failed"   — normal path AND the safe-default auto-repair both failed;
+                   the persona has no categories key on this box.
+    """
+    try:
+        _append_persona_to_categories(book, folder, appendix_status=appendix_status)
+        return "ok"
+    except Exception as e:
+        log(f"  [PHASE 6 FAILED] persona-categories.json write for {folder}: {e}")
+        outcome = "failed"
+        try:
+            # never-to-zero: register with safe defaults rather than skip the
+            # entry, so the persona is never invisible to the selector universe.
+            _append_persona_to_categories(
+                book, folder,
+                appendix_status=appendix_status,
+                domain_override=list(PHASE6_SAFE_DEFAULT_DOMAIN),
+                needs_retag=True,
+            )
+            log(f"  [PHASE 6 AUTO-REPAIR] {folder} registered with safe-default "
+                f"domain={PHASE6_SAFE_DEFAULT_DOMAIN} + needs_retag:true "
+                f"(persona is selectable; operator must re-tag).")
+            outcome = "repaired"
+        except Exception as e2:
+            log(f"  [PHASE 6 AUTO-REPAIR FAILED] {folder}: {e2} — persona has NO "
+                f"categories key on this box; failing loud "
+                f"(exit {PHASE6_CATEGORIES_EXIT_CODE}).")
+        # FAIL-LOUD regardless of auto-repair outcome — a Phase-6 categories
+        # write that needed repair is never reported as a clean success.
+        if folder not in _CATEGORIES_WRITE_FAILURES:
+            _CATEGORIES_WRITE_FAILURES.append(folder)
+        return outcome
 
 
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
@@ -2136,26 +2259,40 @@ async def run_synthesis(session: aiohttp.ClientSession, book: dict, status: dict
     analysis_path = PERSONAS_DIR / folder / "analysis-notes.md"
     blueprint_path = PERSONAS_DIR / folder / "persona-blueprint.md"
 
-    log(f"[PHASE 3] Starting synthesis: {book['title']}")
-    mark_phase(status, folder, 3, "IN_PROGRESS")
+    # F1.2 (FDN-5): re-entrancy for an idempotent retry. If the blueprint was
+    # already synthesized on a prior run (phase3 COMPLETE) but a LATER phase
+    # (notably Phase 5 embedding) FAILED, a retry must NOT re-run the costly LLM
+    # synthesis — it must RE-EMBED ONLY. Detect that here and skip straight to
+    # the Phase 3b / Phase 5 / Phase 6 tail with the on-disk blueprint intact.
+    _phase3_already = (
+        status.get(folder, {}).get("phase3") == "COMPLETE"
+        and blueprint_path.exists()
+    )
+    if _phase3_already:
+        log(f"[PHASE 3] Blueprint already COMPLETE for {folder} — skipping "
+            f"synthesis; re-entering to re-embed (Phase 5) only.")
+    else:
+        log(f"[PHASE 3] Starting synthesis: {book['title']}")
+        mark_phase(status, folder, 3, "IN_PROGRESS")
 
     try:
         extraction_text = extraction_path.read_text()
         analysis_text = analysis_path.read_text()
 
-        # Read the SKILL.md spec to include in synthesis prompt
-        # v6.6.0: look in the skill folder, not PROJECT_DIR (which is now BASE)
-        skill_path_candidates = [
-            Path(__file__).parent.parent / "SKILL.md",
-            BASE / "SKILL.md",
-        ]
-        skill_spec = ""
-        for sp in skill_path_candidates:
-            if sp.exists():
-                skill_spec = sp.read_text()
-                break
+        if not _phase3_already:
+            # Read the SKILL.md spec to include in synthesis prompt
+            # v6.6.0: look in the skill folder, not PROJECT_DIR (which is now BASE)
+            skill_path_candidates = [
+                Path(__file__).parent.parent / "SKILL.md",
+                BASE / "SKILL.md",
+            ]
+            skill_spec = ""
+            for sp in skill_path_candidates:
+                if sp.exists():
+                    skill_spec = sp.read_text()
+                    break
 
-        user_prompt = f"""BOOK: {book['title']}
+            user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
 PERSONA FOLDER: {folder}
 
@@ -2186,32 +2323,32 @@ Now write the complete persona blueprint. All 14 sections. Zero placeholders.
 Both Coaching Framework (Section 3) and Agent Governance Framework (Section 4) fully built.
 At the end, rate your output on the 6 dimensions specified in your instructions."""
 
-        # v9.6.2: Phase 3 model resolved per book via heavy-tier selector.
-        # Synthesis input combines all extraction + analysis notes — can be large.
-        phase3_input_size = len(user_prompt)
-        phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
-        log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
+            # v9.6.2: Phase 3 model resolved per book via heavy-tier selector.
+            # Synthesis input combines all extraction + analysis notes — can be large.
+            phase3_input_size = len(user_prompt)
+            phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
+            log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
 
-        _syn_sys = _synthesis_system()
-        full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
-        if phase3_route == "openai-responses":
-            # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
-            result = await call_codex(session, full_input, max_tokens=120000)
-        elif phase3_route == "ollama":
-            # v10.3.0: Ollama Cloud is now a real route — call it directly
-            ollama_model = phase3_model.replace("ollama/", "", 1)
-            try:
-                result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
-            except Exception as e:
-                log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
-                fallback_model = _openrouter_fallback_model(phase3_model)
-                result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
-        else:
-            # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
-            or_model = phase3_model.replace("openrouter/", "", 1)
-            result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
+            _syn_sys = _synthesis_system()
+            full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
+            if phase3_route == "openai-responses":
+                # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
+                result = await call_codex(session, full_input, max_tokens=120000)
+            elif phase3_route == "ollama":
+                # v10.3.0: Ollama Cloud is now a real route — call it directly
+                ollama_model = phase3_model.replace("ollama/", "", 1)
+                try:
+                    result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
+                except Exception as e:
+                    log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
+                    fallback_model = _openrouter_fallback_model(phase3_model)
+                    result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
+            else:
+                # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
+                or_model = phase3_model.replace("openrouter/", "", 1)
+                result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
 
-        header = f"""# PERSONA BLUEPRINT - {book['title']}
+            header = f"""# PERSONA BLUEPRINT - {book['title']}
 **Source Book:** {book['title']} by {book['author']}
 **Version:** 1.0.0
 **Built:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}
@@ -2224,12 +2361,12 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
 ---
 
 """
-        blueprint_path.write_text(header + result)
+            blueprint_path.write_text(header + result)
 
-        log(f"  [PHASE 3 COMPLETE] {book['title']} - {len(result):,} chars saved")
-        mark_phase(status, folder, 3, "COMPLETE")
-        status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
-        save_status(status)
+            log(f"  [PHASE 3 COMPLETE] {book['title']} - {len(result):,} chars saved")
+            mark_phase(status, folder, 3, "COMPLETE")
+            status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
+            save_status(status)
 
         # Phase 3b: emit PLAYBOOK-APPENDIX.md alongside the blueprint. This is the
         # depth-preservation half of the pipeline — it keeps the book's actual
@@ -2240,11 +2377,16 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # loaded above. Runs BEFORE Phase 5 so the appendix is present when the
         # Gemini indexer scans the persona folder. Non-fatal to Phase 3: a missed
         # appendix floor is marked FAILED (fail-loud) but the blueprint still ships.
-        try:
-            await run_playbook_appendix(session, book, status, extraction_text, analysis_text)
-        except Exception as e:
-            log(f"  Warning: Phase 3b (playbook appendix) failed for {folder}: {e}")
-            mark_phase(status, folder, "3b", "FAILED", str(e))
+        _p3b = status.get(folder, {}).get("phase3b")
+        if _phase3_already and _p3b in ("COMPLETE", "COMPLETE_WITH_WARNINGS", "DONE"):
+            log(f"  Phase 3b already {_p3b} for {folder} — skipping appendix "
+                f"regen on re-embed-only re-entry.")
+        else:
+            try:
+                await run_playbook_appendix(session, book, status, extraction_text, analysis_text)
+            except Exception as e:
+                log(f"  Warning: Phase 3b (playbook appendix) failed for {folder}: {e}")
+                mark_phase(status, folder, "3b", "FAILED", str(e))
 
         # Phase 5: Auto re-index persona in Gemini Engine.
         # Pre-v10.14.27 hardcoded the legacy ~/clawd/scripts/gemini-indexer.py
@@ -2322,14 +2464,23 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # Pre-v10.14.27 only the add-persona-from-source.sh wrapper did
         # this — direct orchestrator calls (e.g. orchestrator.py --single-book)
         # left the persona invisible to the v2 selector.
-        try:
-            # P13-1: pass the Phase 3b appendix verdict (COMPLETE /
-            # COMPLETE_WITH_WARNINGS / FAILED) already recorded in `status` a
-            # few lines above (run_playbook_appendix -> mark_phase(..., "3b", ...)).
-            _append_persona_to_categories(book, folder,
-                                          appendix_status=status.get(folder, {}).get("phase3b"))
-        except Exception as e:
-            log(f"  Warning: failed to append {folder} to persona-categories.json: {e}")
+        # F1.4 (DEP-12): FAIL-LOUD + AUTO-REPAIR. The pre-fix code caught every
+        # exception here and logged a WARNING — a categories-write failure was a
+        # silent success that stranded the blueprint with no categories key
+        # (invisible to the selector universe). _phase6_register_categories now
+        # (a) auto-repairs with a safe-default entry so the persona is ALWAYS
+        # registered (never-to-zero), and (b) records the failure so main() exits
+        # PHASE6_CATEGORIES_EXIT_CODE instead of reporting a clean build.
+        # P13-1: pass the Phase 3b appendix verdict (COMPLETE /
+        # COMPLETE_WITH_WARNINGS / FAILED) already recorded in `status` above.
+        _phase6_outcome = _phase6_register_categories(
+            book, folder,
+            appendix_status=status.get(folder, {}).get("phase3b"))
+        if _phase6_outcome != "ok":
+            mark_phase(status, folder, 6, "FAILED" if _phase6_outcome == "failed"
+                       else "REPAIRED",
+                       f"categories write {_phase6_outcome} "
+                       f"(needs_retag; fail-loud exit {PHASE6_CATEGORIES_EXIT_CODE})")
 
         # Phase 6b: v6.6.0 — auto-regenerate governing-personas.md for every
         # department so the command-center dashboard picks up the new persona
@@ -2584,10 +2735,18 @@ async def main(args=None):
         s = status[book["folder"]]
         log(f"  Status: P1={s['phase1']} P2={s['phase2']} P3={s['phase3']}")
 
-        if s["phase3"] == "COMPLETE":
-            log("  Persona already COMPLETE. Use --force to re-run (not yet implemented).")
+        if s["phase3"] == "COMPLETE" and s.get("phase5") == "DONE":
+            log("  Persona already COMPLETE (blueprint + embed). Use --force to "
+                "re-run (not yet implemented).")
             log("  Blueprint at: " + str(PERSONAS_DIR / book["folder"] / "persona-blueprint.md"))
             return
+        if s["phase3"] == "COMPLETE" and s.get("phase5") != "DONE":
+            # F1.2 (FDN-5): the blueprint was synthesized but Phase 5 embedding
+            # has not succeeded. Do NOT early-return — fall through to
+            # process_book so run_synthesis re-enters in RE-EMBED-ONLY mode
+            # (idempotent: no LLM synthesis, just re-index + re-register).
+            log(f"  Blueprint COMPLETE but Phase-5 embed not DONE "
+                f"(phase5={s.get('phase5', 'PENDING')}) — re-entering to re-embed only.")
 
         connector = aiohttp.TCPConnector(limit=5)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -2610,8 +2769,29 @@ async def main(args=None):
         final = status[book["folder"]]
         log("\n" + "="*60)
         log(f"Single-book pipeline complete: {args.slug}")
-        log(f"  P1={final['phase1']}  P2={final['phase2']}  P3={final['phase3']}")
+        log(f"  P1={final['phase1']}  P2={final['phase2']}  P3={final['phase3']}"
+            f"  P5={final.get('phase5', 'PENDING')}")
         log("="*60)
+
+        # F1.2 (FDN-5): Phase-5 (embedding) failure is FATAL end-to-end. A
+        # persona whose blueprint exists but whose vectors are missing is
+        # "registered but not embedded" — matchable by keyword only, invisible
+        # to Layer-5 semantic retrieval (exactly the failure class N38 guards
+        # against, but on the workspace side where N38 does not run). Propagate a
+        # DISTINCT exit code (8 = EMBED_FAILED) so the caller
+        # (add-persona-from-source.sh -> persona-inbox-watcher.sh) fails LOUD and
+        # quarantines/retries instead of logging a false success. The blueprint
+        # is deliberately LEFT ON DISK so an idempotent retry re-embeds only
+        # (see run_synthesis `_phase3_already` re-entry above).
+        if final.get("phase5") == "FAILED":
+            log(f"[PIPELINE FAILED — EMBED_FAILED (8)] {args.slug}: Phase 5 "
+                f"embedding FAILED — persona is registered but NOT searchable "
+                f"(vector-less). Blueprint left on disk; re-run re-embeds only.")
+            sys.exit(8)
+        # F1.4 (DEP-12): Phase-6 categories fail-loud gate (exit 9). Runs after
+        # the Phase-5 embed gate so a persona that is both un-embedded AND needs
+        # re-tag still surfaces the earlier (embed) failure first.
+        _exit_if_categories_failed()
         return
 
     # ── Full-batch mode (default: process all pending books in BOOKS list) ────
@@ -2697,11 +2877,48 @@ async def main(args=None):
 
     complete_count = sum(1 for b in BOOKS if final_status[b["folder"]]["phase3"] == "COMPLETE")
     failed_count = sum(1 for b in BOOKS if "FAILED" in [final_status[b["folder"]][f"phase{p}"] for p in [1,2,3]])
+    # F1.2 (FDN-5): a synthesized-but-un-embedded persona is a silent-failure
+    # class too, so surface Phase-5 failures in the batch report as well.
+    embed_failed = [b["folder"] for b in BOOKS
+                    if final_status[b["folder"]].get("phase5") == "FAILED"]
     log(f"\nCompleted: {complete_count}/{len(BOOKS)}")
     log(f"Failed: {failed_count}")
+    if embed_failed:
+        log(f"EMBED_FAILED (Phase 5, registered but NOT searchable): "
+            f"{len(embed_failed)} -> {', '.join(embed_failed)}")
     log(f"\nPersona blueprints saved to: {PERSONAS_DIR}")
     log(f"Status file: {STATUS_FILE}")
     log(f"Full log: {LOG_FILE}")
+    # F1.2 (FDN-5): propagate an embedding failure as a distinct non-zero exit
+    # (8 = EMBED_FAILED) end-to-end, even in full-batch mode, so no wrapper can
+    # log a false success over a vector-less persona. Blueprints stay on disk;
+    # an idempotent re-run re-embeds only. Runs BEFORE the Phase-6 categories
+    # gate so an embed failure surfaces first (mirrors the single-book tail).
+    if embed_failed:
+        sys.exit(8)
+    # F1.4 (DEP-12): Phase-6 categories fail-loud gate (exit 9), after the embed gate.
+    _exit_if_categories_failed()
+
+
+def _exit_if_categories_failed() -> None:
+    """F1.4 (DEP-12) fail-loud gate. If any Phase-6 persona-categories.json write
+    needed the auto-repair path (or failed even that) this run, exit with the
+    distinct PHASE6_CATEGORIES_EXIT_CODE so the caller never treats a
+    needs_retag build as a clean success (mirrors F1.2 / FDN-5). The affected
+    personas are still REGISTERED (never-to-zero) — the non-zero exit signals
+    "operator must re-tag", not "persona lost"."""
+    if not pipeline_had_categories_failures():
+        return
+    log("\n" + "="*60)
+    log(f"[PHASE 6 FAIL-LOUD] {len(_CATEGORIES_WRITE_FAILURES)} persona(s) needed "
+        f"a Phase-6 categories auto-repair (safe-default domain + needs_retag) "
+        f"this run: {_CATEGORIES_WRITE_FAILURES}")
+    log(f"  These personas ARE registered and selectable, but their tags are "
+        f"placeholders — re-classify them, then re-run.")
+    log(f"  Exiting {PHASE6_CATEGORIES_EXIT_CODE} (not a silent success).")
+    log("="*60)
+    sys.exit(PHASE6_CATEGORIES_EXIT_CODE)
+
 
 # ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":

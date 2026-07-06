@@ -70,8 +70,17 @@ def _nonce_ok(run_dir: Path) -> bool:
 
 
 def _run_script(script, args):
+    """Run a prover and return its exit code. FIX-S36-62: the child's stdout+stderr
+    are captured and, on FAILURE, re-printed to this process's stderr so the exact
+    AF-SM-* code(s) reach the operator (the old DEVNULL redirects swallowed them,
+    leaving only a bare 'FAILED (exit 2)'). Success stays quiet to keep the phase
+    log readable."""
     cmd = [sys.executable, str(SCRIPTS / script)] + [str(a) for a in args]
-    return subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          universal_newlines=True)
+    if proc.returncode != 0 and proc.stdout:
+        sys.stderr.write("--- %s output (exit %d) ---\n%s\n" % (script, proc.returncode, proc.stdout.rstrip()))
+    return proc.returncode
 
 
 def _json(run_dir, rel, default=None):
@@ -82,12 +91,44 @@ def _json(run_dir, rel, default=None):
 
 
 # ---- per-phase checkers -----------------------------------------------------
+def _offline_token_ok(run_dir):
+    """A LOGGED owner token that authorizes an OFFLINE preflight (dry-run posture)
+    on a box that would otherwise probe live. Fail-closed shape: a dict with
+    owner_approved/approved true + a non-empty reason. Absent/malformed -> no token."""
+    tok = _json(run_dir, "working/copy/preflight-offline-token.json")
+    if not isinstance(tok, dict):
+        return False
+    return (tok.get("owner_approved") is True or tok.get("approved") is True) \
+        and bool(str(tok.get("reason", "")).strip())
+
+
 def _chk_preflight(run_dir):
+    """P0 readiness gate. FIX-S36-59:
+      * ALWAYS pass --report so the Owner Q&A source-of-truth (credits/balance/token
+        + the C2 connected-accounts reconcile) is written to disk, never memorized.
+      * --live is the DEFAULT on a real client box. Offline (dry-run) is permitted
+        only when the config carries a `probes` object (the authored offline probe
+        data) OR a LOGGED owner offline token is staged OR SMIB_PREFLIGHT_OFFLINE is
+        set. A box with neither probes nor a token has NO offline evidence, so the
+        gate MUST confirm the real endpoints (fail-closed) rather than pass blind."""
     cfg = run_dir / "working" / "copy" / "config.json"
     if not cfg.is_file():
         return False, "missing working/copy/config.json"
-    rc = _run_script("preflight_gate.py", [cfg])
-    return rc == 0, ("preflight PASS" if rc == 0 else "preflight_gate.py FAILED (exit %d)" % rc)
+    cfg_obj = _json(run_dir, "working/copy/config.json", {}) or {}
+    has_probes = isinstance(cfg_obj.get("probes"), dict) and bool(cfg_obj.get("probes"))
+    token_ok = _offline_token_ok(run_dir)
+    env_offline = bool(os.environ.get("SMIB_PREFLIGHT_OFFLINE"))
+    live = not (has_probes or token_ok or env_offline)
+    report = run_dir / "working" / "preflight" / "preflight_report.json"
+    args = [cfg, "--report", report]
+    if live:
+        args.append("--live")
+    rc = _run_script("preflight_gate.py", args)
+    mode = "LIVE probe (client box)" if live else (
+        "offline (probes)" if has_probes else
+        "offline (logged owner token)" if token_ok else "offline (SMIB_PREFLIGHT_OFFLINE)")
+    return rc == 0, ("preflight PASS [%s], report -> working/preflight/preflight_report.json" % mode
+                     if rc == 0 else "preflight_gate.py FAILED (exit %d) [%s]" % (rc, mode))
 
 
 def _chk_plan(run_dir):
@@ -153,6 +194,49 @@ def _chk_manifest(run_dir):
     return True, "certificate issued"
 
 
+def _live_mode(run_dir):
+    """True on a real client box (no offline evidence), False in a dry-run/offline
+    posture. Shared by preflight (P0) and publish (P7) so a run is live-or-offline
+    coherently. Offline evidence = config `probes` OR a logged owner offline token
+    OR SMIB_PREFLIGHT_OFFLINE."""
+    cfg_obj = _json(run_dir, "working/copy/config.json", {}) or {}
+    has_probes = isinstance(cfg_obj.get("probes"), dict) and bool(cfg_obj.get("probes"))
+    return not (has_probes or _offline_token_ok(run_dir) or os.environ.get("SMIB_PREFLIGHT_OFFLINE"))
+
+
+def _live_ghl_post_listing(cfg):
+    """FIX-S36-60: GET the live GHL social post listing for the location with the
+    CLIENT's own PIT (never printed). Returns a list of GHL post-id strings present
+    in the account, or None when the listing is unconfirmable (fail-closed upstream)."""
+    import urllib.request
+    pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
+    loc = str(cfg.get("locationId", ""))
+    if not pit or not loc:
+        return None
+    url = "https://services.leadconnectorhq.com/social-media-posting/%s/posts" % loc
+    try:
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer %s" % pit,
+                                                   "Version": "2021-07-28"})
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec - client's own endpoint
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    posts = data.get("posts") or data.get("results") or data.get("data")
+    if isinstance(posts, dict):
+        posts = posts.get("posts") or posts.get("results")
+    if not isinstance(posts, list):
+        return None
+    ids = []
+    for p in posts:
+        if isinstance(p, dict):
+            pid = p.get("id") or p.get("_id") or p.get("postId")
+            if pid is not None:
+                ids.append(str(pid))
+    return ids
+
+
 def _chk_publish(run_dir):
     if not (run_dir / "delivery" / "PROCESS-CERTIFICATE.json").is_file():
         return False, "publisher blocked: no signed certificate (AF-SM-PUBLISH-UNPROVEN)"
@@ -164,9 +248,40 @@ def _chk_publish(run_dir):
                          _dump_tmp(run_dir, "publish_%d" % i, r)])
         if rc != 0:
             return False, "publish result %d not the normalized contract" % i
-    # §4.4 NO-DOUBLE-POST — creative modes RAISE double-post risk; run the named
-    # fail-closed de-dup gate when the run supplies a de-dup snapshot. Absent (a
-    # default engine run with no creative interjection) -> nothing to de-dup.
+
+    cfg = _json(run_dir, "working/copy/config.json", {}) or {}
+    live = _live_mode(run_dir)
+
+    # -- §4.4 NO-DOUBLE-POST (FIX-S36-61) -------------------------------------
+    # P7 BUILDS the de-dup snapshot from the local SQLite ledger itself (this run's
+    # recorded posts vs every other run's, within the lookback) + the live GHL
+    # listing in --live mode, rather than only running IF a hand-authored
+    # working/creative/dedup.json happens to exist (the old fail-open-by-construction
+    # hole). A corrupt/unreadable ledger DB fails CLOSED ('cannot be built').
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import ledger  # noqa: E402
+    except Exception as exc:  # noqa: BLE001
+        return False, "de-dup BLOCK: cannot import the ledger to build the snapshot (%s)" % exc
+    db = run_dir / "working" / "media" / "ledger.db"
+    location_id = str(cfg.get("locationId", ""))
+    ml = _json(run_dir, "working/media/media_ledger.json", {}) or {}
+    run_id = str(ml.get("run") or run_dir.name)
+    if db.is_file():
+        try:
+            live_listing = _json(run_dir, "working/publish/live_listing.json") if not live else None
+            snap = ledger.build_dedup_snapshot(db, location_id, run_id, live_listing=live_listing)
+        except Exception as exc:  # noqa: BLE001 — corrupt/unreadable ledger -> fail-closed
+            return False, ("de-dup BLOCK (AF-SM-DOUBLE-POST): the ledger snapshot could not be built "
+                           "(fail-closed): %s" % exc)
+        blocks, cleared = ledger.check_dedup_snapshot(
+            snap.get("existing"), snap.get("outgoing"),
+            lookback_days=snap.get("lookback_days", ledger.DEFAULT_LOOKBACK_DAYS),
+            live_listing=snap.get("live_listing"), repost_token=snap.get("repost_token"))
+        if blocks and not cleared:
+            return False, ("de-dup BLOCK (AF-SM-DOUBLE-POST): %d collision(s) built from the ledger. "
+                           "Clear with `clean`/reschedule or a logged owner re-post token." % len(blocks))
+    # A creative-interjection dedup snapshot (staged file) is ALSO honored (back-compat).
     dedup = run_dir / "working" / "creative" / "dedup.json"
     if dedup.is_file():
         rc = _run_script("ledger.py", ["dedup-snapshot", "--input", dedup])
@@ -174,7 +289,41 @@ def _chk_publish(run_dir):
             return False, "de-dup BLOCK (AF-SM-DOUBLE-POST): a duplicate content-fingerprint or " \
                           "occupied slot was detected. Clear with `clean`/reschedule or a logged " \
                           "owner re-post token."
-    return True, "publish results normalized (%d)" % len(results)
+
+    # -- POST-PUBLISH LIVE VERIFY (FIX-S36-60) --------------------------------
+    # `done` is claimed ONLY from an INDEPENDENT live GHL post-listing verify, not
+    # from the poster's OWN publish_results.json (the exact evidence the SKILL calls
+    # insufficient). The poster records the GHL post ids it created in
+    # working/publish/posted_ids.json; each MUST appear in the live listing.
+    posted_ids = _json(run_dir, "working/publish/posted_ids.json")
+    posted_ids = [str(x) for x in posted_ids] if isinstance(posted_ids, list) else []
+    if live:
+        listing = _live_ghl_post_listing(cfg)
+        if listing is None:
+            return False, ("AF-SM-PUBLISH-UNVERIFIED: the live GHL post listing was unconfirmable "
+                           "(fail-closed); cannot claim done without an independent verify")
+        if not posted_ids:
+            return False, ("AF-SM-PUBLISH-UNVERIFIED: no working/publish/posted_ids.json to verify "
+                           "against the live GHL listing (the poster must record the ids it created)")
+        present = set(listing)
+        missing = [pid for pid in posted_ids if pid not in present]
+        if missing:
+            return False, ("AF-SM-PUBLISH-UNVERIFIED: %d posted id(s) absent from the live GHL "
+                           "listing (%s)" % (len(missing), ", ".join(missing[:5])))
+        return True, ("publish results normalized (%d) + %d post id(s) verified present in the live "
+                      "GHL listing" % (len(results), len(posted_ids)))
+    # Offline/dry-run posture: verify against staged evidence when present, else a
+    # labeled dry-run pass (mirrors the P0 connected-accounts offline posture).
+    evidence = _json(run_dir, "working/publish/published_listing.json")
+    if isinstance(evidence, list) and posted_ids:
+        present = {str(x) for x in evidence}
+        missing = [pid for pid in posted_ids if pid not in present]
+        if missing:
+            return False, ("AF-SM-PUBLISH-UNVERIFIED: %d posted id(s) absent from the staged listing "
+                           "evidence (%s)" % (len(missing), ", ".join(missing[:5])))
+        return True, "publish results normalized (%d) + posted ids verified vs staged listing" % len(results)
+    return True, ("publish results normalized (%d); offline dry-run posture — live GHL post-listing "
+                  "verify runs on the client box" % len(results))
 
 
 def _chk_client_copy(run_dir):
@@ -255,6 +404,112 @@ def _chk_writeback(run_dir):
     return True, "20-column row appended"
 
 
+def _deliver_slug(text):
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+
+
+def _deliver_week(run_dir):
+    """Deterministic ISO week token (YYYY-Www) for the labeled-deliverable folder.
+    Derived from plan.json weekOf (a date) when present, else the media-ledger run
+    suffix, else 'unknown-week'. Never a wall-clock read (keeps the golden stable)."""
+    import datetime
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    wk = str(plan.get("weekOf", "")).strip()
+    if wk:
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                d = datetime.datetime.strptime(wk, fmt).date()
+                iso = d.isocalendar()
+                return "%04d-W%02d" % (iso[0], iso[1])
+            except ValueError:
+                pass
+        return _deliver_slug(wk) or "unknown-week"
+    ml = _json(run_dir, "working/media/media_ledger.json", {}) or {}
+    run = str(ml.get("run", ""))
+    if "_" in run:
+        return run.rsplit("_", 1)[-1]
+    return "unknown-week"
+
+
+def _chk_deliver(run_dir):
+    """FIX-XC-11h — the DELIVERY phase (P-DELIVER): assemble the labeled-deliverable
+    manifest from this run's PASS artifacts and shell label_deliverables.py --copy
+    FAIL-CLOSED (a declared artifact source that is missing on disk BLOCKS — nothing
+    unlabeled or phantom ever 'delivers'). The deterministic LOGICAL dest root (the
+    ~/Downloads convention, never a physical temp path) is recorded to
+    delivery/deliverables-manifest.json so build_manifest binds it onto the
+    certificate. Physical copy target is $SMIB_DELIVER_DEST (tests/CI) else the
+    ~/Downloads convention. This is the ONLY call site of label_deliverables.py —
+    it was pinned + self-tested + advertised with ZERO callers before this fix."""
+    cfg = _json(run_dir, "working/copy/config.json", {}) or {}
+    brand = str(cfg.get("brandName", "") or "brand")
+    brand_slug = _deliver_slug(brand) or "brand"
+    week = _deliver_week(run_dir)
+
+    artifacts = []
+    # (a) producer-declared deliverables win (authoritative; missing src => fail-closed).
+    declared = _json(run_dir, "working/delivery/deliverables.json")
+    if isinstance(declared, list):
+        for a in declared:
+            if isinstance(a, dict) and a.get("src"):
+                artifacts.append(a)
+    else:
+        # (b) derive from LOCAL media files that actually exist on disk.
+        media = run_dir / "working" / "media"
+        exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".pdf"}
+        if media.is_dir():
+            for f in sorted(media.rglob("*")):
+                if f.is_file() and f.suffix.lower() in exts:
+                    artifacts.append({"platform": "asset", "artifact": f.stem,
+                                      "aspect": "1x1", "ext": f.suffix.lstrip("."), "src": str(f)})
+
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    theme = str(plan.get("themeOfWeek", "")).strip()
+    week_plan_md = "# %s — Week %s\n\n%s\n" % (brand, week, theme or "(weekly social plan)")
+
+    label_manifest = {"brand": brand, "week": week, "artifacts": artifacts,
+                      "week_plan_md": week_plan_md}
+    lm_path = run_dir / "working" / "delivery" / "label-manifest.json"
+    try:
+        lm_path.parent.mkdir(parents=True, exist_ok=True)
+        lm_path.write_text(json.dumps(label_manifest, indent=2), encoding="utf-8")
+    except OSError as exc:
+        return False, "AF-SM-DELIVER-MISSING: could not stage the label manifest: %s" % exc
+
+    default_dest = "~/Downloads/Social-Media-in-a-Box"
+    physical_dest = os.environ.get("SMIB_DELIVER_DEST", default_dest)
+    rc = _run_script("label_deliverables.py",
+                     ["--manifest", lm_path, "--dest", physical_dest, "--copy"])
+    if rc != 0:
+        return False, ("AF-SM-DELIVER-MISSING: label_deliverables.py refused (exit %d) — a declared "
+                       "deliverable source is missing on disk (nothing phantom is labeled)" % rc)
+
+    # Deterministic LOGICAL dest root recorded on the certificate (the ~/Downloads
+    # convention; independent of any $SMIB_DELIVER_DEST test override).
+    dest_root = "%s/%s/%s" % (default_dest, brand_slug, week)
+    labels = []
+    for a in artifacts:
+        try:
+            sys.path.insert(0, str(SCRIPTS))
+            import label_deliverables as _ld  # noqa: E402
+            labels.append(_ld.label_name(brand, week, a.get("day"), a.get("platform", ""),
+                                         a.get("artifact", ""), a.get("aspect", "1x1"), a.get("ext", "png")))
+        except Exception:  # noqa: BLE001
+            pass
+    rec = {"dest_root": dest_root, "brand_slug": brand_slug, "week": week,
+           "count": len(artifacts), "labels": labels,
+           "week_plan": "SMIB_%s_%s_week-plan.md" % (brand_slug, week)}
+    try:
+        (run_dir / "delivery").mkdir(parents=True, exist_ok=True)
+        (run_dir / "delivery" / "deliverables-manifest.json").write_text(
+            json.dumps(rec, indent=2), encoding="utf-8")
+    except OSError as exc:
+        return False, "AF-SM-DELIVER-MISSING: could not record the deliverables manifest: %s" % exc
+    return True, ("labeled deliverables written (%d artifact(s) + week-plan) -> %s"
+                  % (len(artifacts), dest_root))
+
+
 def _dump_tmp(run_dir, name, obj):
     d = run_dir / "working" / "checkpoints" / "_tmp"
     d.mkdir(parents=True, exist_ok=True)
@@ -270,8 +525,21 @@ _CHECKERS = {
     "_chk_manifest": _chk_manifest, "_chk_publish": _chk_publish, "_chk_writeback": _chk_writeback,
     "_chk_client_copy": _chk_client_copy, "_chk_newsletter": _chk_newsletter,
     "_chk_blog": _chk_blog, "_chk_podcast": _chk_podcast, "_chk_engage": _chk_engage,
-    "_chk_deferred": _chk_deferred,
+    "_chk_deferred": _chk_deferred, "_chk_deliver": _chk_deliver,
 }
+
+
+def _run_checker(name, run_dir):
+    """FIX-XC-03k: resolve and run a phase checker. An UNMAPPED checker is a DISABLED
+    gate — it fails CLOSED (was a silent soft-pass at the call site, so a manifest/
+    checker-name drift could quietly no-op a required phase). Enforcement, not
+    description: a required gate can never be a silent pass. Mirrors 55's
+    run_product_bio._run_checker."""
+    fn = _CHECKERS.get(name)
+    if fn is None:
+        return False, ("checker %s is not mapped — fail-closed (a required gate cannot be a "
+                       "silent no-op)" % name)
+    return fn(run_dir)
 
 # v0.2.0 modes: engine-driven (v0.1.0) + fold (C3-C7) + creative (M1-M4) + syndicate defer (C9).
 MODES = ["week", "day", "carousel", "video", "podcast-cover", "plan", "clean",
@@ -342,11 +610,7 @@ def run(manifest, mode, run_dir: Path):
             return EXIT_USAGE
         checker = (ph.get("preflight") or {}).get("checker")
         print("=== PHASE %s — %s ===" % (pid, ph.get("name", "")))
-        fn = _CHECKERS.get(checker)
-        if fn is None:
-            ok, msg = True, "checker %s not mapped (soft-pass)" % checker
-        else:
-            ok, msg = fn(run_dir)
+        ok, msg = _run_checker(checker, run_dir)
         print("   [%s] %s: %s" % ("OK" if ok else "FAIL", checker, msg))
         gates[pid] = {"passed": bool(ok)}
         # Persist gates BEFORE the manifest phase so build_manifest can read P0..P5.
@@ -366,6 +630,82 @@ def run(manifest, mode, run_dir: Path):
         except (ValueError, KeyError):
             pass
     return EXIT_PASS
+
+
+def self_test():
+    """Built-in gate self-test (FIX-XC-03k / FIX-XC-11h). Proves: (1) an unmapped
+    checker fails CLOSED (was a silent soft-pass); (2) EVERY checker named in
+    SOCIAL-MANIFEST.json is mapped in _CHECKERS (a manifest/checker-name drift can
+    no longer disable a gate); (3) the P-DELIVER checker labels real artifacts and
+    fail-closes on a missing declared source. No nonce/run/provider needed."""
+    import tempfile
+    ok = True
+
+    def _ck(label, cond):
+        nonlocal ok
+        cond = bool(cond)
+        ok = ok and cond
+        print("  [%s] %s" % ("PASS" if cond else "MISS", label))
+
+    good, _ = _run_checker("_chk_does_not_exist", _SKILL_DIR)
+    _ck("unmapped checker -> fail-closed (not soft-pass)", good is False)
+
+    manifest = _load_manifest()
+    declared = sorted({(ph.get("preflight") or {}).get("checker")
+                       for ph in manifest.get("phases", [])
+                       if (ph.get("preflight") or {}).get("checker")})
+    unmapped = [c for c in declared if c not in _CHECKERS]
+    _ck("every manifest checker is mapped (no gate drift): %s" % (unmapped or "all mapped"),
+        not unmapped)
+
+    # P-DELIVER golden: a local media file is labeled + copied; dest root recorded.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td) / "run"
+        (rd / "working" / "media").mkdir(parents=True)
+        (rd / "working" / "copy").mkdir(parents=True)
+        (rd / "working" / "plan").mkdir(parents=True)
+        (rd / "working" / "copy" / "config.json").write_text(
+            json.dumps({"brandName": "Brand One"}), encoding="utf-8")
+        (rd / "working" / "plan" / "plan.json").write_text(
+            json.dumps({"weekOf": "2026-07-06", "themeOfWeek": "t"}), encoding="utf-8")
+        (rd / "working" / "media" / "slide.png").write_bytes(b"\x89PNG stub")
+        old = os.environ.get("SMIB_DELIVER_DEST")
+        os.environ["SMIB_DELIVER_DEST"] = str(Path(td) / "dl")
+        try:
+            good, _ = _chk_deliver(rd)
+        finally:
+            if old is None:
+                os.environ.pop("SMIB_DELIVER_DEST", None)
+            else:
+                os.environ["SMIB_DELIVER_DEST"] = old
+        rec = _json(rd, "delivery/deliverables-manifest.json", {})
+        _ck("_chk_deliver golden -> PASS + records dest_root",
+            good is True and isinstance(rec, dict) and str(rec.get("dest_root", "")).startswith("~/"))
+
+    # P-DELIVER fail-closed: a declared deliverable whose source is missing BLOCKS.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td) / "run"
+        (rd / "working" / "copy").mkdir(parents=True)
+        (rd / "working" / "delivery").mkdir(parents=True)
+        (rd / "working" / "copy" / "config.json").write_text(
+            json.dumps({"brandName": "Brand One"}), encoding="utf-8")
+        (rd / "working" / "delivery" / "deliverables.json").write_text(
+            json.dumps([{"platform": "tiktok", "artifact": "video", "aspect": "9:16",
+                         "ext": "mp4", "src": str(Path(td) / "no-such-file.mp4")}]), encoding="utf-8")
+        old = os.environ.get("SMIB_DELIVER_DEST")
+        os.environ["SMIB_DELIVER_DEST"] = str(Path(td) / "dl")
+        try:
+            good, msg = _chk_deliver(rd)
+        finally:
+            if old is None:
+                os.environ.pop("SMIB_DELIVER_DEST", None)
+            else:
+                os.environ["SMIB_DELIVER_DEST"] = old
+        _ck("_chk_deliver missing declared source -> FAIL (AF-SM-DELIVER-MISSING)",
+            good is False and "AF-SM-DELIVER-MISSING" in msg)
+
+    print("== run_social_media self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    return EXIT_PASS if ok else 1
 
 
 # ---------------------------------------------------------------------------
@@ -400,12 +740,19 @@ def _mc_board_done(run_dir, task_id):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Social Media in a Box orchestrator (Skill 57).")
-    ap.add_argument("--mode", required=True, choices=MODES)
+    ap.add_argument("--mode", choices=MODES)
     ap.add_argument("--run-dir", help="the run directory (contains working/)")
     ap.add_argument("--plan", action="store_true", help="print the mode's phase plan and exit")
     ap.add_argument("--narrated", action="store_true",
                     help="request the narrated video lane (C8) — DEFERRED to v0.3.0 (fails closed)")
+    ap.add_argument("--self-test", dest="self_test", action="store_true",
+                    help="run built-in gate self-tests (unmapped-checker + manifest-mapping + P-DELIVER) and exit")
     args = ap.parse_args(argv)
+
+    if args.self_test:
+        return self_test()
+    if not args.mode:
+        ap.error("--mode is required (or use --self-test)")
 
     manifest = _load_manifest()
     if args.plan:

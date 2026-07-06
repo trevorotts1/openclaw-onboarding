@@ -952,6 +952,14 @@ def write_ledgers():
     (HERE / "copy_ledger.json").write_text(json.dumps(build_copy_ledger(), indent=2), encoding="utf-8")
     (HERE / "media_ledger.json").write_text(json.dumps(build_media_ledger(), indent=2), encoding="utf-8")
     (HERE / "funnel-manifest.json").write_text(json.dumps(build_manifest(), indent=2), encoding="utf-8")
+    # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the golden must
+    # carry a persona-selection-log naming a registered persona slug (SOP-SALESPAGE-01 §3).
+    (HERE / "persona-selection-log.md").write_text(
+        "# persona-selection-log.md — Momentum Sales Page Assets (P0 grounding)\n\n"
+        "selector_ran: true\n- selected_persona: hormozi-100m-offers\n"
+        "- rationale: value-stack sales page + upsell/downsell/bump grounded on hormozi-100m-offers.\n"
+        "- staleness_checked: true\n- staleness_flagged: false\n",
+        encoding="utf-8")
     write_build_artifacts()
 
 
@@ -1009,7 +1017,8 @@ def orchestrate_golden():
     try:
         rd = tmp / RUN_ID
         rd.mkdir()
-        for f in ("brief.json", "image_plan.json", "copy_ledger.json", "media_ledger.json", "funnel-manifest.json"):
+        for f in ("brief.json", "image_plan.json", "copy_ledger.json", "media_ledger.json",
+                  "funnel-manifest.json", "persona-selection-log.md"):  # FIX-XC-02a persona grounding
             shutil.copy(HERE / f, rd / f)
         copy_build_artifacts(rd)   # P5-P9 artifacts (fragments/docs/delivery/build-receipt)
         nf = rd / ".spa_run_nonce"

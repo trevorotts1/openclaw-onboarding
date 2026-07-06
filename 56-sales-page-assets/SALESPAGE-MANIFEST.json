@@ -171,6 +171,10 @@
     "AF-SP56-FRONT-DOOR": {"trigger": "orchestrator called without the run-scoped front-door nonce", "enforced_by": "front-door", "py_symbol": "run_sales_page_assets._check_front_door"},
 
     "AF-SP56-CANONICAL-BYPASS": {"trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / mail sender / Anthropic call", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_bypass_scan"},
-    "AF-SP56-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SPA-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_hashpin"}
+    "AF-SP56-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SPA-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "sales-page-assets-entry.sh:step_hashpin"},
+
+    "AF-SP56-INTAKE-PERSONA-LOG": {"trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sp_intake.evaluate"},
+    "AF-SP56-MODEL-TIER": {"trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sp_cert.evaluate_model_receipt"},
+    "AF-SP56-MODEL-NOANTHROPIC": {"trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sp_cert.evaluate_model_receipt"}
   }
 }

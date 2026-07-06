@@ -229,6 +229,55 @@ def _proof_paid_tmp_refused(manifest, tmp, oc_root) -> list:
     return f
 
 
+def _proof_ghl_resume_recovers(tmp) -> list:
+    """(E) FIX-S36-45(ii): on a resume where the receipt LOST an already-hosted image
+    entry, ad_ghl_push recovers it from the durable ledger — never re-uploading (no
+    re-charge) and never dropping it from delivered[]."""
+    f = []
+    import ad_ghl_push          # noqa: PLC0415
+    import ad_run_ledger as led  # noqa: PLC0415
+    import ghl_media            # noqa: PLC0415
+
+    rd = Path(tempfile.mkdtemp(dir=tmp))
+    (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    led.init(rd, "fbad-ghl-001", 5.0)
+    # image 0 was hosted on a prior run; the ledger stored its delivered entry.
+    stored = {"idx": 0, "image_url": "https://storage.googleapis.com/msgsndr/loc/ad0.png",
+              "http_status": 200, "file_id": "f0", "folder_id": "fold0"}
+    led.record(rd, "upload", "upload:ad0.png", 0.0, stored)
+    # ...but the receipt's delivered[] is now empty (the campaign is already filed —
+    # campaign_id stamped — yet the hosted-image list was lost / regenerated).
+    (rd / "working" / "checkpoints" / "s7-deliver-receipt.json").write_text(
+        json.dumps({"campaign_id": "fbad-ghl-001", "delivered": []}))
+
+    calls = {"upload": 0}
+
+    def _no_upload(*_a, **_k):
+        calls["upload"] += 1
+        return {"url": "https://SHOULD-NOT-BE-CALLED", "http": 200, "fileId": "x"}
+
+    orig = (ghl_media.resolve_location_pit, ghl_media.resolve_location_id,
+            ghl_media.create_media_folder, ghl_media.upload_media)
+    ghl_media.resolve_location_pit = lambda *a, **k: "pit"
+    ghl_media.resolve_location_id = lambda *a, **k: "loc"
+    ghl_media.create_media_folder = lambda *a, **k: {"folderId": "fold0"}
+    ghl_media.upload_media = _no_upload
+    try:
+        receipt = ad_ghl_push.push(rd, [str(rd / "ad0.png")])
+    finally:
+        (ghl_media.resolve_location_pit, ghl_media.resolve_location_id,
+         ghl_media.create_media_folder, ghl_media.upload_media) = orig
+
+    if calls["upload"] != 0:
+        f.append(f"(E) an already-hosted image was RE-UPLOADED ({calls['upload']} call(s)) "
+                 "— a resume must recover from the ledger, never re-pay.")
+    delivered = receipt.get("delivered", [])
+    if not any(d.get("image_url") == stored["image_url"] for d in delivered):
+        f.append("(E) the already-hosted image was DROPPED from delivered[] — the entry "
+                 "must be recovered from the ledger, not lost when the receipt was.")
+    return f
+
+
 def main():
     manifest = ad.load_manifest()
     failures = []
@@ -258,6 +307,7 @@ def main():
         failures += _proof_park_and_resume(manifest, tmp, oc_root)
         failures += _proof_dangerous_stops(manifest, tmp, oc_root)
         failures += _proof_paid_tmp_refused(manifest, tmp, oc_root)
+        failures += _proof_ghl_resume_recovers(tmp)
 
     RECOVERY_COVERAGE.parent.mkdir(parents=True, exist_ok=True)
     RECOVERY_COVERAGE.write_text(json.dumps(coverage, indent=2))

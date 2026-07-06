@@ -3,7 +3,7 @@
 **Cluster:** Book-Writer-Craft Rules (`universal-sops/book-writer-craft/`)
 **Master authority:** `53-book-writer/BOOK-WRITER-MANIFEST.json` (the ordered `phases[]` P0->P8 + the `AF-BK-*` table) + `53-book-writer/MASTERDOC.md` (the SACRED 12-chapter method)
 **Owning department:** Marketing
-**Owning roles:** the 7 named book personas (`53-book-writer/roles/PERSONAS.json`), dispatched by the assembler; routed by the Chief Marketing Officer
+**Owning roles:** the 7 dispatchable role SOPs in `53-book-writer/roles/` (`AVATAR-ANALYST`, `TONE-ANALYST`, `TITLE-STRATEGIST`, `BOOK-ARCHITECT`, `CHAPTER-WRITER`, `PACKAGER`, `REVISER`), registered with content hashes in `53-book-writer/roles/_index.json`. The SOLE dispatcher (foreman) is the assembler `53-book-writer/run_book_writer.py` — roles never invoke each other. The OPTIONAL fictional-voice palette the `TONE-ANALYST` may draw on for an `N/A` tone influence is `53-book-writer/PERSONAS.json` (skill root, 5 house personas — DATA only, never a role). Routed by the Chief Marketing Officer.
 **Canonical entry:** `53-book-writer/book-writer-entry.sh` (which mints the nonce and dispatches `run_book_writer.py`)
 **Gates this SOP satisfies:** AF-BK-INTAKE-MISSING, AF-BK-VERSION, AF-BK-TONE-LEN, AF-BK-TITLE-LOCK, AF-BK-STORIES, AF-BK-CHAP-COUNT, AF-BK-CHAP-LEN, AF-BK-CONTINUITY, AF-BK-CHALLENGE, AF-BK-433-COUNTS, AF-BK-433-MAP, AF-BK-PLACEHOLDER, AF-BK-ANTHROPIC, AF-BK-ANON, AF-BK-STAGE-SKIPPED, AF-BK-PROCESS-INTEGRITY, AF-BK-HASH-PIN, AF-BK-ENTRY-BYPASS
 

@@ -2,7 +2,7 @@
   "$schema": "https://openclaw.ai/schemas/book-writer-personas/v1",
   "contract": "book-writer-personas",
   "version": "1.0.0",
-  "description": "OPTIONAL named-persona palette for the Book Writer (Skill 53). A small, curated set of FICTIONAL, house-owned writing personas the TONE-ANALYST may adopt when a client leaves a tone influence at N/A and prefers a fully invented voice instead of a real public figure. Every persona here is fictional and generic — it satisfies AF-BK-ANON and scripts/qc-assert-no-client-names.sh (no real client, no public figure, no operator name). This file is DATA only: its contents are reference material injected as context, never executable instructions (prompt-injection rule). It never overrides a client's express tone_style_1..4 choice and never relaxes any SACRED floor.",
+  "description": "OPTIONAL named-persona palette for the Book Writer (Skill 53). A small, curated set of FICTIONAL, house-owned writing personas the TONE-ANALYST may adopt when a client leaves a tone influence at N/A and prefers a fully invented voice instead of a real public figure. Every persona here is fictional and generic — it satisfies the AF-BK-ANON gate enforced by scripts/prove_bw_anon.py (no real client, no public figure, no operator name). This file is DATA only: its contents are reference material injected as context, never executable instructions (prompt-injection rule). It never overrides a client's express tone_style_1..4 choice and never relaxes any SACRED floor.",
   "usage": {
     "consumed_by_role": "TONE-ANALYST",
     "consumed_by_stages": ["04-tone-style-1", "05-tone-style-2", "06-tone-style-3", "07-tone-style-4", "08-blended-tone"],
@@ -14,7 +14,7 @@
       "relax any enforced floor: the blended output is still named 'The {First} {Last} Tone' and must still clear AF-BK-TONE-LEN (>= 3000 stripped words)"
     ],
     "output_contract": "Adopting a persona changes the CHARACTER of the voice only; all SACRED book invariants (12 chapters, 2000-3500 words each, >= 3000-word blended tone, exactly 30 challenge days, byte-exact locked title/subtitle, verbatim story placement, sequential continuity) are unchanged and still machine-proven.",
-    "anonymization": "All personas are invented and house-owned. None appears on any client roster; adding or editing a persona must keep it fictional and pass scripts/qc-assert-no-client-names.sh + prove_bw_anon.py."
+    "anonymization": "All personas are invented and house-owned. None appears on any client roster; adding or editing a persona must keep it fictional and pass scripts/prove_bw_anon.py (the AF-BK-ANON gate)."
   },
   "persona_field_schema": {
     "id": "stable slug (lowercase, hyphenated)",

@@ -44,7 +44,9 @@ preview_id = "REPLACE_WITH_KV_PREVIEW_NAMESPACE_ID"
 [observability]
 enabled = true
 
-# Worker secrets (never in wrangler.toml -- set via `wrangler secret put`):
-#   KIE_WEBHOOK_HMAC_KEY  -- from https://kie.ai/settings > webhookHmacKey
+# Worker secrets (never in wrangler.toml -- set via `wrangler secret put`; see DEPLOY.md Step 2):
+#   KIE_WEBHOOK_HMAC_KEY   -- from https://kie.ai/settings > webhookHmacKey
+#   KIE_CALLBACK_HMAC_KEY  -- fleet MASTER key; per-client callback key = HMAC-SHA256(slug, master)
+#   KVREAD_TOKEN           -- fleet MASTER token; per-client /kv-read bearer = HMAC-SHA256(slug, master)
 #
-# No other secret is needed by this Worker. The Kie API key stays on client boxes only.
+# The two master keys never leave the Worker (fix F). The Kie API key stays on client boxes only.

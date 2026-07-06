@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v17.0.26"
+ONBOARDING_VERSION="v17.0.33"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3349,8 +3349,10 @@ fi
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
 #          (only the /data bind-mount persists). We therefore RE-ASSERT all four
-#          deps on a frequent interval via the OpenClaw scheduler
-#          (`openclaw cron create`, */15), which is the same durable recurring-task
+#          deps EVENT-shaped on the GATE-1 deps-missing path
+#          (presentation-canonical-entry.sh) plus a DAILY backstop via the OpenClaw
+#          scheduler (`openclaw cron create`, "0 4 * * *"; FIX-PRES-09(iv) retired
+#          the old */15 furnace), which is the same durable recurring-task
 #          mechanism every other VPS cron in this installer uses — its definition
 #          lives in the gateway config on /data and the gateway (PID 1) re-loads it
 #          on each container start, then fires it on the schedule. There is NO cron
@@ -3458,9 +3460,12 @@ REASSERT_EOF
     # uses. Its state lives in the gateway config on the /data bind-mount, so the
     # cron definition survives force-recreate, and the gateway re-loads it on each
     # start. The job messages the agent to run the idempotent reassert script on a
-    # */15 interval, re-installing the (ephemeral, image-layer) deps within ~15
-    # minutes of any force-recreate. (The OpenClaw scheduler is time-based, not a
-    # vixie-cron daemon, so there is no @reboot trigger to hook.)
+    # DAILY backstop schedule (FIX-PRES-09(iv): was a */15 furnace of ~96 near-no-op
+    # turns/day). The primary self-heal is now EVENT-shaped — the GATE-1 deps-missing
+    # path in presentation-canonical-entry.sh runs the same reassert on demand — so
+    # the daily cron only covers a box that force-recreates without building that
+    # day. (The OpenClaw scheduler is time-based, not a vixie-cron daemon, so there
+    # is no @reboot trigger to hook.)
     install_presentation_deps_cron() {
         if ! command -v openclaw >/dev/null 2>&1; then
             warn "openclaw CLI not on PATH — skipping presentation-deps re-assert cron. Re-run update-skills.sh later."
@@ -3485,16 +3490,19 @@ REASSERT_EOF
         local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
         local OUT="" RC=0
         # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
-        # daemon, so there is no @reboot hook to fire on container start. Instead
-        # we run on a frequent interval ("*/15 * * * *" — the same cadence the
-        # workforce-build-resume cron uses). The reassert script is idempotent and
-        # a near-no-op when the deps are present, so after a force-recreate the
-        # deps are re-installed within ~15 minutes. The cron definition itself
-        # lives in the gateway config on /data and so survives force-recreate.
+        # daemon, so there is no @reboot hook to fire on container start.
+        # FIX-PRES-09(iv): the old "*/15 * * * *" cadence was a furnace — ~96
+        # agent turns/day firing a near-no-op reassert. The real self-heal is now
+        # EVENT-shaped: presentation-canonical-entry.sh runs this same idempotent
+        # reassert on the GATE-1 deps-missing path (i.e. the moment a build would
+        # otherwise fail), so deps are restored on demand. This cron is only a
+        # DAILY backstop ("0 4 * * *") for a box that force-recreates but does not
+        # build that day. The cron definition lives in the gateway config on /data
+        # and so survives force-recreate.
         local BASE=(
             --name "reassert-presentation-deps"
             --agent "$CHANNEL_AGENT"
-            --cron "*/15 * * * *"
+            --cron "0 4 * * *"
             --tz "America/New_York"
             --session-target main
             --light-context
@@ -3508,7 +3516,7 @@ REASSERT_EOF
         local BASE_NO_LC=(
             --name "reassert-presentation-deps"
             --agent "$CHANNEL_AGENT"
-            --cron "*/15 * * * *"
+            --cron "0 4 * * *"
             --tz "America/New_York"
             --session-target main
         )
@@ -3519,13 +3527,13 @@ REASSERT_EOF
             return 0
         fi
         # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-        if _cron_create_positional "reassert-presentation-deps" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$REASSERT_PROMPT" "lc"; then
+        if _cron_create_positional "reassert-presentation-deps" "$CHANNEL_AGENT" "0 4 * * *" "America/New_York" "$REASSERT_PROMPT" "lc"; then
             success "Presentation-deps re-assert cron installed (positional 2026.6.8 form)"
             return 0
         fi
         warn "Presentation-deps re-assert cron creation failed. Manual install (SILENT — no client auto-announce):"
         warn "  openclaw cron create --name reassert-presentation-deps \\"
-        warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
+        warn "    --agent $CHANNEL_AGENT --cron '0 4 * * *' --tz America/New_York \\"
         warn "    --session-target main --light-context \\"
         warn "    --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
         return 0

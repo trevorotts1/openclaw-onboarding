@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-05T17:30:18Z",
+  "generated_at": "2026-07-05T20:36:10Z",
   "file_count": 83,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -29,8 +29,8 @@
       "bytes": 10022
     },
     "book-writer-craft/SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md": {
-      "sha256": "86fa54a25fa8806f71f63780cf85f01201dfe78449c5d307e1e50ca9c271864f",
-      "bytes": 11496
+      "sha256": "48dfec5841569081ed7e498d888340a6ad4be91b60f66444e407a88d8db26dee",
+      "bytes": 11951
     },
     "cross-dept-request-template.md": {
       "sha256": "90b4692a5f9381bb1e99e51f6b485bc90c4dcb556d401d8d2953992a44538b5e",
@@ -141,8 +141,8 @@
       "bytes": 3690
     },
     "funnel-automation-build-quality-rubric.md": {
-      "sha256": "a7c5c5ea3a97fe8bd473d4794c15776be84d4ed691edff37c2c10568a768ed72",
-      "bytes": 7230
+      "sha256": "eee0b4a26f40304c3f5e2a0ea8201584228c57fa889039226baea18b1174d7d4",
+      "bytes": 7789
     },
     "funnel-craft/FUNNEL-PIPELINE-MANIFEST.json": {
       "sha256": "11b6bf6705e3e88cc2a11936b61a8470eab81a8b8c15751a06e68fb9507b9853",
@@ -161,8 +161,8 @@
       "bytes": 3225
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "542b8789b76f810cbcf17e66f85a34e56a752d746f7126e17a90d5a245d66240",
-      "bytes": 3895
+      "sha256": "c1c53e250ae0f6fb5ec74c986497ad00062dfdf2bb5e17a25c941aefd547246e",
+      "bytes": 5403
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
       "sha256": "54b1afde1d66607d7c117ddaebcf0d9bfffe18c612d4732d96bc6c2e6a387539",
@@ -261,8 +261,8 @@
       "bytes": 10327
     },
     "sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md": {
-      "sha256": "4c3ded6e20293b625a2f0de4608a5174e800506309a77c2ef696bbb3e6a8da8f",
-      "bytes": 8507
+      "sha256": "158e2a79a8bc109aff12e0293e4a8bc2e3ffcce0bc19370510d1d96716f542bd",
+      "bytes": 9830
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {
       "sha256": "263dda9cb4e2ace67410e62847bab766a17248248606fef7022e18490ad1fdc7",
