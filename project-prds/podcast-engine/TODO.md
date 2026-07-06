@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W2.8 + W2.9 | runtime-guards (Opus 4.8) | DONE(self-test + py_compile + integration on branch) | feat/podcast-runtime-guards | 9.0 self | Authored scripts/guard-no-anthropic-runtime.py (file scan concrete Anthropic id shapes, dashboard stricter screen, routing tier assertion Ollama Cloud->OpenRouter->Gemini, deny_patterns armed, thinking-high only on Kimi/GLM, allowlist refuses runtime paths) and scripts/guard-cron-inventory.py (per-client exactly-one, no-heartbeat, no-poller, once-daily cadence bound, announce-mode check, churn sweep orphan proof; inventory + static + live modes). Both --self-test green; values never printed. Additive only; shared files untouched. |
