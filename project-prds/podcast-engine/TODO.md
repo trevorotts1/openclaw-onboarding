@@ -73,8 +73,8 @@
 - [ ] W4.10 Doc updates: Skill 23 how-to plus Dept-Kit client how-to. PENDING
 - [ ] W4.11 Doc updates: Skill 57 boundary plus Skill 35 playbook cross-links. PENDING
 - [ ] W4.12 Doc update: Skill 30 Fish reference to S2.1 Pro facts. PENDING
-- [ ] W4.13 Fleet Cloudflare revocation runbook: podcast blades appended. PENDING
-- [ ] W4.14 Master agent routing rule for inbound podcast jobs. PENDING
+- [x] W4.13 Fleet Cloudflare revocation runbook: podcast blades appended. DONE(branch feat/podcast-fleet-cf-revocation-and-routing; awaiting W6 merge verify)
+- [x] W4.14 Master agent routing rule for inbound podcast jobs. DONE(branch feat/podcast-fleet-cf-revocation-and-routing; awaiting W6 merge verify)
 
 ## WAVE 5: CANARY ON THE OPERATOR BOX (8 Opus 4.8 agents, serial drills)
 - [ ] W5.1 Branch build installed on operator box. PENDING
@@ -107,3 +107,4 @@
 ## AGENT PROGRESS LOG (append below this line; never edit rows above, only flip their status)
 | Timestamp | Task | Agent | Status | Branch/PR | Gate score | Notes |
 |---|---|---|---|---|---|---|
+| 2026-07-06 | W4.13 + W4.14 | Opus 4.8 (fleet-cf-revocation-and-routing) | DONE(branch-pushed; awaiting W6) | feat/podcast-fleet-cf-revocation-and-routing | self-QC 9.0 | Appended the fleet Cloudflare Access revocation runbook (three-blade kill switch application/edge/engine + podcast 9-step blades, revoke-podcast-client.sh, edge-only mode, churn cleanup) to docs/OPERATOR-MAINTENANCE.md; added the inbound-podcast-job dispatch rule (routing-only, department_slug podcast) to master-orchestrator-dept/SOP-00 (v1.5.0). Additive only; no em dashes added; no client names; no merge-owned files (update.sh, _index.json content_sha, version) touched. |
