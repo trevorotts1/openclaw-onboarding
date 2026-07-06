@@ -32,3 +32,27 @@
 ## Refrain & tone policy
 - Devices are bespoke, but discipline still applies: a small set of recurring refrains, reused as callbacks; no new refrain every slide.
 - Every phase carries its labeled name + purpose slide (Directive 10) before its content.
+
+## Visual identity & suggested-image seed craft (Directive 4)
+Every slide's `suggested_image` is the AUTHORING SEED the Prompt Author expands into the
+9,000–18,000-char rich prompt — it never replaces that floor, but a strong seed is what makes the
+expansion land. Write every seed with the six anchors: **[archetype A1–A5] + subject & emotion +
+setting/world + light + palette anchor (from the locked STYLE BLOCK) + composition zone for the
+baked copy**. Never put slide copy in the seed (copy is baked at prompt time); describe the PICTURE.
+
+**The Original's visual world — designed fresh, then LOCKED:**
+- **Derive the motif, don't default:** in the Hook Lab / SOP-IMG-03 conversation, pull ONE
+  controlling visual motif out of the client's own methodology, world, or metaphor language
+  (the visual equivalent of Rules/Secrets/Quests). Write it down as a one-line **visual-motif
+  contract** (element + palette behavior + where it recurs) BEFORE any seeds are authored, and
+  fold it into the STYLE BLOCK so every seed and prompt inherits it.
+- **Then apply the same series discipline as the named frames:** the motif planted in Phase 1,
+  threaded through every teaching step, paid off at the manifesto-grade close; a consistent
+  plate system for step-title slides (type-dominant archetype A4) so the steps read as one
+  designed system; affirmation/action beats as warm human counterpoint; pain beats low-light and
+  confined, aspiration beats open and rising.
+- **The close:** whatever fresh device closes the deck, its final slide is the deck's most
+  cinematic frame — full-bleed, motif payoff, display type designed, conviction light.
+- **Series discipline:** vary archetypes between adjacent slides (anti-template SOP-04) while
+  holding palette + motif constant; portraits/likeness and the logo ride image-to-image references
+  per SOP-IMG-01 — the seed notes WHERE they sit, never re-describes the mark.

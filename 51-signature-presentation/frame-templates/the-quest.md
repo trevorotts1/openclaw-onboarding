@@ -35,3 +35,32 @@
 ## Refrain & tone policy
 - One recurring motif hashtag is the spine; layer secondary refrains around it. Callbacks over new inventions.
 - Every phase carries its labeled name + purpose slide (Directive 10) before its content.
+
+## Visual identity & suggested-image seed craft (Directive 4)
+Every slide's `suggested_image` is the AUTHORING SEED the Prompt Author expands into the
+9,000–18,000-char rich prompt — it never replaces that floor, but a strong seed is what makes the
+expansion land. Write every seed with the six anchors: **[archetype A1–A5] + subject & emotion +
+setting/world + light + palette anchor (from the locked STYLE BLOCK) + composition zone for the
+baked copy**. Never put slide copy in the seed (copy is baked at prompt time); describe the PICTURE.
+
+**The Quest's visual world — a journey told in light:**
+- **Controlling visual motif:** the deck rides ONE journey image system — path, horizon, terrain,
+  a guiding light — echoing the recurring motif hashtag. Give the motif a small visual signature
+  (e.g. a horizon line at the same height, a recurring point of light) that recurs like the chorus:
+  plant it in Phase 1, thread it through every Quest, pay it off at the manifesto close.
+- **Per-Quest temperature shift:** each Quest gets its own light/temperature within the brand
+  palette (e.g. cool dawn → clear daylight → warm golden hour) so the Blueprint reads as a
+  progressing journey, not a flat list. State the shift in each Quest's seeds.
+- **Avatar slides (1–11):** the audience's world, their POV — real, lived-in settings; emotional
+  close-ups; the "stuck" beats visually confined/low-light, the aspirational beats open/rising light.
+- **Story slides (12–24):** the presenter's journey scenes; vulnerability beats intimate and
+  close-framed; the "why" beat is the phase's widest, most cinematic frame.
+- **Device slides (riddle / definition-pair / literary passage) + affirmations:** type-dominant
+  designed-typography plates (archetype A4) — these are the deck's percussion; keep them visually
+  spare so the teaching photography around them breathes.
+- **Manifesto close (Directive 13's exemplar):** the single most cinematic slide in the deck —
+  full-bleed, motif payoff, the fill-in-the-blank line as designed display type with a literal
+  blank. Author this seed with the most care of any slide.
+- **Series discipline:** vary archetypes between adjacent slides (anti-template SOP-04) while
+  holding palette + motif constant; portraits/likeness and the logo ride image-to-image references
+  per SOP-IMG-01 — the seed notes WHERE they sit, never re-describes the mark.

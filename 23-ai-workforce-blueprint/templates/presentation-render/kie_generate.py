@@ -25,11 +25,16 @@ USAGE:
 
 ENVIRONMENT:
     KIE_API_KEY — the CLIENT's own KIE.ai key (never the operator's, never shared).
-    Read from env, else from one of the client's standard env stores:
-        ~/.openclaw/workspace/.env
-        ~/clawd/secrets/.env
-        ~/.openclaw/secrets/.env
-    (paths expanded against the current user's HOME).
+    Read from env, else from the client's standard secrets stores ($OPENCLAW_SECRETS
+    override if set, then ~/.openclaw/workspace/.env, ~/clawd/secrets/.env,
+    ~/.openclaw/secrets/.env — all HOME-relative, no hardcoded path; HIGH-3).
+
+LOCKSTEP NOTE: this helper ships in TWO repo locations —
+    23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py
+    23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py
+Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
+each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
+per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
 
 ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory pin
     verbatim (the caller embeds it in `prompt`):
@@ -81,12 +86,27 @@ INITIAL_POLL_WAIT_S = 300   # 5 minutes after final submit
 POLL_INTERVAL_S     = 60
 MAX_POLL_PASSES     = 100
 
-# Client's own env stores (HOME-relative — works on any client box).
-SECRETS_CANDIDATES = [
-    os.path.expanduser("~/.openclaw/workspace/.env"),
-    os.path.expanduser("~/clawd/secrets/.env"),
-    os.path.expanduser("~/.openclaw/secrets/.env"),
-]
+# ---------------------------------------------------------------------------
+# Secrets-file resolution (HIGH-3 fix)
+# ---------------------------------------------------------------------------
+# This is a FLEET template that ships to every client box, so it must NEVER embed
+# an operator's literal absolute home path (such a path points at one specific
+# machine and would never exist on a client box). The secrets file is resolved at
+# RUNTIME:
+#   1. $OPENCLAW_SECRETS (explicit override — wins if set), then
+#   2. the client's standard env stores, HOME-relative via os.path.expanduser so the
+#      same template works for whatever user/box it runs on (no literal home path).
+def _secrets_candidates() -> list:
+    candidates = []
+    override = os.environ.get("OPENCLAW_SECRETS", "").strip()
+    if override:
+        candidates.append(os.path.expanduser(override))
+    candidates += [
+        os.path.expanduser("~/.openclaw/workspace/.env"),
+        os.path.expanduser("~/clawd/secrets/.env"),
+        os.path.expanduser("~/.openclaw/secrets/.env"),
+    ]
+    return candidates
 
 # ---------------------------------------------------------------------------
 # Guardrail: REFUSE to run if caller somehow wired the dead endpoint
@@ -96,11 +116,14 @@ DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
 
 def _load_api_key() -> str:
-    """Read KIE_API_KEY from environment, falling back to the client's env stores."""
+    """Read KIE_API_KEY from environment, falling back to the client's standard
+    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3)."""
     key = os.environ.get("KIE_API_KEY", "").strip()
     if key:
         return key.strip("'\"")
-    for path in SECRETS_CANDIDATES:
+    candidates = _secrets_candidates()
+    # Try each candidate secrets file in priority order.
+    for path in candidates:
         env_path = Path(path)
         if not env_path.exists():
             continue
@@ -110,9 +133,11 @@ def _load_api_key() -> str:
                 value = line[len("KIE_API_KEY="):].strip().strip("'\"")
                 if value:
                     return value
-    print("FATAL: KIE_API_KEY not found in environment or any of:", file=sys.stderr)
-    for path in SECRETS_CANDIDATES:
+    print("FATAL: KIE_API_KEY not found in environment or in any of:", file=sys.stderr)
+    for path in candidates:
         print("   ", path, file=sys.stderr)
+    print("   (set KIE_API_KEY in env, or point $OPENCLAW_SECRETS at the client's .env)",
+          file=sys.stderr)
     sys.exit(2)
 
 
