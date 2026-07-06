@@ -1,3 +1,36 @@
+## 1.7.15 — Wave-2 train W2-doc-38 (FIX-XC-13c — INSTALL.md doc/count drift)
+
+### Fixed (FIX-XC-13c — INSTALL.md regenerated from SELF-COUNTS)
+- `INSTALL.md`: reconciled the stale hard-coded counts in "What this installs" against
+  disk and against SKILL.md's authoritative SELF-COUNTS (which were already current):
+  protocols **32 → 45**; reference documents **15 → 22**; numbered install-script range
+  **`00`–`29` → `00`–`30`** (adds `30-voice-phone-setup-wizard.sh`). Added the six shipped
+  Round-2 feature QC gates (`qc-multi-tenant` / `qc-segmentation` / `qc-proactive-outreach`
+  / `qc-ab-testing` / `qc-voice-phone` / `qc-webhook-chaining`, each + its `.test.sh`) and
+  `qc-f45-f47-substance.sh` to the linter list, and `GHL_AI_LAYERS.md` to the references
+  summary.
+- `INSTALL.md`: corrected the FALSE "Does NOT implement pending roadmap features
+  (F14…F21)" line — all six Round-2 backlog features SHIPPED in v1.5.7–v1.5.12 (matching
+  SKILL.md "All six Round-2 backlog features have shipped"). The line now states they ship
+  OFF-by-default (operator opt-in per feature; live voice telephony needs operator Twilio/
+  STT/TTS creds via `30-voice-phone-setup-wizard.sh`). Added a positive "6 Round-2 backlog
+  features (all SHIPPED, OFF by default)" bullet to "What this installs", and a truthful
+  continuation note to the install-order code block (which had implied scripts stop at `08`).
+- `scripts/bump-version.sh` (repo-root — the single version-bump tool): extended the
+  "SKILL 38 SELF-COUNT RE-VERIFICATION" checklist to ALSO cover INSTALL.md, and added a
+  non-fatal `skill38_doc_selfcount_advisory` that diffs the protocol/reference counts and the
+  `00`-`NN` script range in BOTH SKILL.md and INSTALL.md against disk (plus a stale-"pending"
+  guard on INSTALL.md), printing WARNs on every `--check`/bump. Advisory only — never mutates
+  a file and never changes the exit code, so it is safe under `set -e` in the release path.
+
+### Notes
+- Scope: `38-conversational-ai-system/INSTALL.md` + `38-conversational-ai-system/CHANGELOG.md`
+  + `skill-version.txt`, and the repo-root `scripts/bump-version.sh` (the skill's own bump
+  tool — it lives at repo root, not under the skill dir, so no per-skill guard applies to it).
+  This is the skill's own patch bump (1.7.14 → 1.7.15), NOT a repo-wide release. No client
+  names, no secrets. SKILL.md carries no top-level frontmatter `version:`, so the
+  frontmatter-version guard skips this skill by design (skill-version.txt is the single source).
+
 ## 1.7.14 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-XC-06** — `scripts/cc-task.sh` gained a `fail` subcommand that moves the
   install task to `blocked` (never `done`), with an optional reason as the card
