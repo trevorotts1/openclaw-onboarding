@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-06T22:24:39Z",
-  "file_count": 96,
+  "generated_at": "2026-07-07T19:43:42Z",
+  "file_count": 101,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -19,6 +19,26 @@
     "answering-how-to-use-questions.md": {
       "sha256": "2d10c2f68cafefcc0219cd3466bc17c2f4d4098496e17ab47cb46ac24b9bac5d",
       "bytes": 5080
+    },
+    "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
+      "sha256": "8e298abd3a4552e56d7571a0f760d9b99803cc4e8424de034a7a494111f4059a",
+      "bytes": 12247
+    },
+    "anthology-craft/SOP-ANTHOLOGY-02-CLIENT-ONBOARDING.md": {
+      "sha256": "3f0217aea3e6e71bdb2494bea1a7dac4ba340d3b01defa1f9324edd97c530c8d",
+      "bytes": 8689
+    },
+    "anthology-craft/SOP-ANTHOLOGY-03-APPROVALS-AND-GATES.md": {
+      "sha256": "5f1016e6c18230611660004b72fd87caa2583f8f3cc4498689879acf6916369d",
+      "bytes": 8924
+    },
+    "anthology-craft/SOP-ANTHOLOGY-04-ASSEMBLY.md": {
+      "sha256": "1553216031883594c4fe5a0f76eaaa4b7691bb69ab3597226d480f32fb96656d",
+      "bytes": 7695
+    },
+    "anthology-craft/SOP-ANTHOLOGY-05-CREDIT-HEALTH-AND-QUEUE.md": {
+      "sha256": "76246b01b7147edbd5402120849cad797efd0b0b378dd80d65885802b8d39f71",
+      "bytes": 8857
     },
     "avatar-craft/README.md": {
       "sha256": "64e4ff5333af250a4f99bd7727776171904a81f2a76e40adff218e8501a0c710",
