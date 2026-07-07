@@ -182,9 +182,9 @@ if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
 import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
 self_dir = os.path.realpath(os.environ["SELF_DIR"])
-CANON = {"run_anthology.py", "prove_aw_intake.py", "prove_aw_fidelity.py",
-         "prove_aw_tone.py", "prove_aw_chapter.py", "aw_build_check.py",
-         "verify_tone_core_sync.py", "_aw_common.py"}
+CANON = {"run_anthology.py", "prove_aw_intake.py", "prove_aw_avatar.py",
+         "prove_aw_fidelity.py", "prove_aw_tone.py", "prove_aw_chapter.py",
+         "aw_build_check.py", "verify_tone_core_sync.py", "_aw_common.py"}
 re_drive = re.compile(r"googleapis\.com/drive|drive\.files\(|/files/[^ ]*/copy", re.I)
 re_slack = re.compile(r"slack\.com/api|chat\.postMessage|hooks\.slack\.com", re.I)
 re_gmail = re.compile(r"\bsmtplib\b|gmail\.com/|/messages/send|smtp\.gmail", re.I)
@@ -242,6 +242,7 @@ ENFORCE_FILES=(
     "$RUNNER"
     "$SCRIPTS/_aw_common.py"
     "$SCRIPTS/prove_aw_intake.py"
+    "$SCRIPTS/prove_aw_avatar.py"
     "$SCRIPTS/prove_aw_fidelity.py"
     "$SCRIPTS/prove_aw_tone.py"
     "$SCRIPTS/prove_aw_chapter.py"

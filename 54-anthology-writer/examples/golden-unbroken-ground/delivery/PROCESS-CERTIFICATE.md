@@ -7,12 +7,13 @@
 - **Client-exact band override:** none (default SACRED bands)
 - **All phases pass:** True
 - **Runtime:** local-only; client's own NON-Anthropic providers
-- **Certificate SHA:** `6a274963d75c04ae50d6e15c1d4395cab667cca58403c7e01cc7ad0e5dae5f70`
-- **Certified at:** 2026-07-05T15:37:32.879439+00:00
+- **Certificate SHA:** `4af3912c9852389ba0384351e304be520933d859206e44eaccc50e91f7a6b406`
+- **Certified at:** 2026-07-07T08:59:06.150154+00:00
 
 | Phase | Verified |
 |---|---|
 | P0-INTAKE | yes |
+| P0A-AVATAR | yes |
 | P1-FIDELITY | yes |
 | P2-TONE-AUTHOR | yes |
 | P3-TONE-QC | yes |

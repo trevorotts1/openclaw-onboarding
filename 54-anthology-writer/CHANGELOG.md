@@ -1,5 +1,74 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.0 — Wave-1 extension W1.3 (prompt completion, SPEC 3.2 item 2)
+- **Two NEW baked authoring assets pinned into the SINGLE source of truth.**
+  `assets/prompts/11-cover-image-prompt.md` (aw-11, cover-image prompt) and
+  `assets/prompts/12-primary-goal-extraction.md` (aw-12, primary-goal extraction)
+  are added to `ANTHOLOGY-MANIFEST.json -> source_prompt_pins`
+  (`0525c7f9…` and `ca09a4b8…`), clearing the two `AF-AW-PROMPT-DRIFT`
+  "unexpected prompt file present (unpinned IP)" autofails so
+  `prove_aw_fidelity.py` is GREEN again. The pins live in ONE place (the manifest);
+  the earlier parallel `assets/prompts/source_prompt_pins.json` (a second pins
+  source that also embedded legacy n8n slot expressions) is **removed** — the
+  per-component / composite SOURCE provenance stays operator-side in
+  `.build-state/W0.2.json` (never committed).
+- **08 & 10 byte-proved; NO re-pin.** `08-create-outline.md` (`5a944eaf…`) and
+  `10-chapter-rewrite.md` (`56c4bf76…`) were re-hashed against their recorded pins
+  at W1.3 — both MATCH the source-of-record, so the pins are unchanged (the pin
+  inventory ends COMPLETE either way). Zero `[UNCHANGED]` placeholders remain in
+  any baked body (a pin carrying one is a hard failure).
+- **Wired into the phase machine (not inert).** `skill_version` `1.3.0 → 1.4.0`;
+  the `tiers` block now names aw-11 under **MID-WRITER** and adds a **LIGHT** tier
+  for aw-12; aw-12 is registered as the LIGHT-tier FINAL step of `P0A-AVATAR`
+  (`phases[P0A-AVATAR].authoring_sequence`, binding `{{niche_primary_goal}}`
+  confirmed, producing the carried value the downstream stages consume); aw-11 is
+  registered in a new top-level `cover_prompt` block (MID-WRITER author / IMAGE
+  render, 2:3 portrait 1024×1536 override, consumed by the engine's
+  `stage_s7_cover.py` per SPEC S7). `model-map.template.json` reconciled: aw-11
+  stays MID-WRITER, aw-12 moves to the new **LIGHT** tier, and the IMAGE-tier note
+  that mislabelled the cover prompt as "aw-12" now correctly reads "aw-11".
+- **No enforcement-script change.** `run_anthology.py`, the provers, and
+  `_aw_common.py` are untouched, so `PHASE_ORDER` (9 phases), `ENGINE-PIN.sha256`,
+  and the shipped example's `certificate_sha` are all unchanged — this extension is
+  manifest/config/data-only. `prove_aw_avatar` + `verify_tone_core_sync` stay green
+  (aw-12 is Skill 54's OWN baked IP and is deliberately NOT in
+  `avatar_handoff.stages`).
+
+## 1.3.0 — Wave-1 extension W1.2 (avatar handoff, SPEC 3.2 item 1)
+- **W1.2 — pre-P1 avatar handoff, now LIVE (not inert).** Added the P0A-AVATAR
+  phase to `run_anthology.py` `PHASE_ORDER` (immediately after P0-INTAKE, before
+  P1-FIDELITY), a mapped `_chk_avatar` checker in `_CHECKERS`, and the fail-closed
+  prover `scripts/prove_aw_avatar.py`. The handoff DELEGATES to Skill 52
+  avatar-alchemist prompts `aa-01..aa-03` BY PATH (referenced at
+  `../52-avatar-alchemist/prompts`, sha256-pinned in
+  `ANTHOLOGY-MANIFEST.json -> avatar_handoff`); **no Skill 52 file is copied** and
+  the tone core + the 5 baked authoring prompts are untouched (so
+  `prove_aw_fidelity` + `verify_tone_core_sync` stay green). The prover decides the
+  three manifest AF codes:
+  - `AF-AW-AVATAR-MISSING` — `working/avatar.md` absent/empty/whitespace.
+  - `AF-AW-AVATAR-HANDOFF-DRIFT` — a referenced Skill 52 prompt is missing at its
+    pinned path or its sha256 ≠ the manifest pin (Skill 52 absent / tampered /
+    version-drifted → fail closed, never a silent stale-IP fallback).
+  - `AF-AW-AVATAR-COPIED` — a Skill 52 avatar prompt was copied into the tree.
+- **Atomic enforcement set (the manifest `$schema_note` law: gate + AF code +
+  checker + golden/attack fixture all land together).** Added golden fixture
+  `test-fixtures/golden/avatar.md`, attack fixtures `avatar_empty.md`,
+  `drifted-skill52/` and `copied-skill52-tree/`, plus `verify.sh` rows
+  (self-test + golden PASS + three rejects) and a `run_anthology.py --self-test`
+  block that proves the P0A wiring is live (in `PHASE_ORDER`, mapped, fail-closes
+  on a missing dossier). `prove_aw_avatar.py` joins the pinned enforcement set in
+  `anthology-entry.sh` GATE 3 + `verify.sh`; `ENGINE-PIN.sha256` re-pinned.
+- **Descriptive accuracy (`Enforcement, not description`).** The manifest no
+  longer claims `working/avatar.md` is "consumed by P1-FIDELITY" (its `_chk_fidelity`
+  checker never reads it). The enforced contract is stated truthfully: P0A produces
+  the dossier and REQUIRES it fail-closed before P1-FIDELITY; the downstream
+  tone/chapter authoring templates consume it (carried_values).
+- **Version-of-record reconciled.** `skill-version.txt` bumped 1.2.0 → 1.3.0 to
+  match `ANTHOLOGY-MANIFEST.json` `skill_version`.
+- The shipped example `golden-unbroken-ground` gains `working/avatar.md`; its
+  `PROCESS-CERTIFICATE` + `process_manifest.json` are regenerated for the 9-phase
+  chain (the certificate_sha changes because the phase steps changed).
+
 ## 1.2.0 — merge-train T-w1-board-and-54 (Wave-1)
 - **FIX-S36-53** — the Anthology Writer shipped ZERO Command Center wiring (no
   `mc_board.py`, and `main()` never carded a run — every run was board-invisible).

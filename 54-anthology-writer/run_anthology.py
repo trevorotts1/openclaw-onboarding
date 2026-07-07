@@ -45,7 +45,7 @@ MANIFEST = _SKILL_DIR / "ANTHOLOGY-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
 PROMPTS = _SKILL_DIR / "assets" / "prompts"
 
-PHASE_ORDER = ["P0-INTAKE", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
+PHASE_ORDER = ["P0-INTAKE", "P0A-AVATAR", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
                "P4-TITLE-LOCK", "P5-CHAPTER-AUTHOR", "P6-CHAPTER-QC", "P7-DELIVER"]
 
 # The failing (phase_id, note) captured at a gate failure so the fail-soft board
@@ -138,6 +138,30 @@ def _chk_intake(run_dir: Path):
         return False, "missing working/intake.json"
     rc = _run_prover("prove_aw_intake.py", str(f))
     return (rc == 0), ("intake PASS" if rc == 0 else "intake FAILED (exit %d)" % rc)
+
+
+def _chk_avatar(run_dir: Path):
+    """P0A-AVATAR (pre-P1) — the Skill 52 avatar handoff gate. Fail-closed: the
+    delegation to Skill 52 avatar-alchemist prompts 01..03 (referenced BY PATH,
+    never copied) must have produced working/avatar.md, AND every referenced Skill
+    52 prompt must resolve at its pinned path with a matching sha256, AND no Skill
+    52 avatar prompt may be copied into this skill's tree. prove_aw_avatar.py
+    decides the three AF-AW-AVATAR-* codes (a required, non-inert gate)."""
+    f = run_dir / "working" / "avatar.md"
+    if not f.is_file():
+        return False, ("missing working/avatar.md (AF-AW-AVATAR-MISSING) — the Skill 52 avatar "
+                       "handoff produced no dossier for the downstream authoring stages")
+    try:
+        empty = not f.read_text(encoding="utf-8").strip()
+    except OSError:
+        empty = True
+    if empty:
+        return False, ("working/avatar.md is empty/whitespace-only (AF-AW-AVATAR-MISSING) — the "
+                       "Skill 52 avatar handoff produced no usable dossier")
+    rc = _run_prover("prove_aw_avatar.py", str(f), "--manifest", str(MANIFEST))
+    return (rc == 0), ("avatar handoff PASS (Skill 52 delegation intact, no copied IP)"
+                       if rc == 0 else
+                       "avatar handoff FAILED (exit %d) — see AF-AW-AVATAR-*" % rc)
 
 
 def _chk_fidelity(run_dir: Path):
@@ -334,6 +358,7 @@ def _chk_deliver(run_dir: Path):
 
 _CHECKERS = {
     "_chk_intake": _chk_intake,
+    "_chk_avatar": _chk_avatar,
     "_chk_fidelity": _chk_fidelity,
     "_chk_tone_authored": _chk_tone_authored,
     "_chk_tone_qc": _chk_tone_qc,
@@ -773,6 +798,20 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         good, _ = _run_checker("_chk_does_not_exist", Path(td))
         _ck("unmapped checker -> fail-closed (not soft-pass)", good is False)
+
+    # P0A-AVATAR wiring must be LIVE, not an inert manifest-only gate (SPEC 3.2/1):
+    # the phase sits in PHASE_ORDER right after P0-INTAKE and before P1-FIDELITY, it
+    # maps a real checker, and that checker fail-closes on a missing avatar dossier.
+    _ck("P0A-AVATAR wired into PHASE_ORDER (after P0-INTAKE, before P1-FIDELITY)",
+        "P0A-AVATAR" in PHASE_ORDER
+        and PHASE_ORDER.index("P0A-AVATAR") == PHASE_ORDER.index("P0-INTAKE") + 1
+        and PHASE_ORDER.index("P0A-AVATAR") < PHASE_ORDER.index("P1-FIDELITY"))
+    _ck("_chk_avatar mapped in _CHECKERS", "_chk_avatar" in _CHECKERS)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); (rd / "working").mkdir()
+        good, msg = _run_checker("_chk_avatar", rd)
+        _ck("_chk_avatar fail-closes on a missing avatar dossier (AF-AW-AVATAR-MISSING)",
+            good is False and "AF-AW-AVATAR-MISSING" in msg)
 
     intake = {"anthology_title": "Unbroken Ground", "first_name": "Marcus", "last_name": "Bell",
               "chapter_premise": "x"}

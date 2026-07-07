@@ -11,11 +11,18 @@
       "notes": "Must sustain a 2,000-3,500-word single chapter with tone fidelity. Example client configs: their OpenRouter primary long-form model, or an ollama-cloud large model (ollama-cloud REQUIRES maxTokens 65536 + baseUrl). NEVER claude-*/anthropic/*."
     },
     "MID-WRITER": {
-      "role": "titles / blurb / outline / avatar / cover-prompt (aw-01..08, aw-11, aw-12)",
+      "role": "titles / blurb / outline / avatar / cover-prompt (aw-01..08, aw-11)",
       "provider": "<CLIENT_PROVIDER_ID>",
       "model": "<CLIENT_MID_MODEL>",
       "maxTokens": 16384,
-      "notes": "A capable mid tier of the SAME client chain. NEVER claude-*/anthropic/*."
+      "notes": "A capable mid tier of the SAME client chain — authors the aw-11 cover-image PROMPT (the render is the IMAGE tier). NEVER claude-*/anthropic/*."
+    },
+    "LIGHT": {
+      "role": "primary-goal extraction / labelling (aw-12) — split the P0A avatar value into Avatar / Niche / Primary Goal",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_LIGHT_MODEL>",
+      "maxTokens": 4096,
+      "notes": "A small, fast tier of the SAME client chain for deterministic extraction/labelling (SPEC S1: aw-12 is LIGHT, not authoring). If the client configures no separate light model, the installer resolves this to the MID-WRITER model. NEVER claude-*/anthropic/*."
     },
     "RESEARCHER": {
       "role": "optional web research for premise grounding",
@@ -24,7 +31,7 @@
       "notes": "The client's own configured web-search tool. If absent, the run records a degraded:search receipt and continues (no external fabrication)."
     },
     "IMAGE": {
-      "role": "optional cover-image generation from the aw-12 cover prompt",
+      "role": "optional cover-image generation from the aw-11 cover prompt (2:3 portrait, 1024x1536)",
       "provider": "<CLIENT_IMAGE_PROVIDER>",
       "model": "<CLIENT_IMAGE_MODEL>",
       "notes": "The client's own image provider/key. If absent, the run records a degraded:image receipt and ships the cover PROMPT doc only."

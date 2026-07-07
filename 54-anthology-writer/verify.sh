@@ -69,7 +69,7 @@ echo "== Skill 54 (Anthology Writer) :: verify.sh =="
 
 # 1) the provers --self-test (+ the orchestrator's built-in gate self-test:
 #    P7 delivery gate + fail-closed unmapped-checker).
-for p in prove_aw_intake prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_build_check; do
+for p in prove_aw_intake prove_aw_avatar prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_build_check; do
     if [ -f "$SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
     else
@@ -80,6 +80,7 @@ run "run_anthology.py --self-test" "$PY" "$SKILL_DIR/run_anthology.py" --self-te
 
 # 2) golden reproduce — each prover PASSes the golden bundle.
 run "golden intake PASS"    "$PY" "$SCRIPTS/prove_aw_intake.py"   "$GOLD/intake.json"
+run "golden avatar PASS"    "$PY" "$SCRIPTS/prove_aw_avatar.py"   "$GOLD/avatar.md"
 run "golden fidelity PASS"  "$PY" "$SCRIPTS/prove_aw_fidelity.py"
 run "golden tone-core sync" "$PY" "$SCRIPTS/verify_tone_core_sync.py"
 run "golden tone PASS"      "$PY" "$SCRIPTS/prove_aw_tone.py"      "$GOLD/tone-doc.md"
@@ -90,6 +91,9 @@ run "golden build-check PASS" "$PY" "$SCRIPTS/aw_build_check.py"   "$GOLD/RUN-LE
 # 3) broken-variants reject — each attack fixture trips its distinct AF (fail-closed proof).
 expect_reject "intake-missing"        prove_aw_intake.py   "AF-AW-INTAKE-MISSING"    "$ATK/intake_missing.json"
 expect_reject "intake-credential"     prove_aw_intake.py   "AF-AW-INTAKE-CREDENTIAL" "$ATK/intake_credential.json"
+expect_reject "avatar-missing"        prove_aw_avatar.py   "AF-AW-AVATAR-MISSING"        "$ATK/avatar_empty.md"
+expect_reject "avatar-handoff-drift"  prove_aw_avatar.py   "AF-AW-AVATAR-HANDOFF-DRIFT"  "$GOLD/avatar.md" --skill52-dir "$ATK/drifted-skill52"
+expect_reject "avatar-copied"         prove_aw_avatar.py   "AF-AW-AVATAR-COPIED"         "$GOLD/avatar.md" --scan-root "$ATK/copied-skill52-tree"
 expect_reject "prompt-drift"          prove_aw_fidelity.py "AF-AW-PROMPT-DRIFT"      --prompts-dir "$ATK/drifted-prompts"
 expect_reject "tone-3-influences"     prove_aw_tone.py     "AF-AW-TONE-4"            "$ATK/tone_three_influences.md"
 expect_reject "tone-short"            prove_aw_tone.py     "AF-AW-TONE-FLOOR"        "$ATK/tone_short.md"
@@ -153,7 +157,7 @@ echo "  -- golden pilot through anthology-entry.sh --"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}"' EXIT
 mkdir -p "$TMP/working"
-for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
+for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$TMP/working/$f"
 done
 if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
@@ -170,7 +174,7 @@ echo "  -- shipped example golden-unbroken-ground through the entry (temp run-di
 if [ -d "$EX" ]; then
     EXTMP="$(mktemp -d)"
     mkdir -p "$EXTMP/working"
-    for f in intake.json tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
+    for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
         cp "$EX/working/$f" "$EXTMP/working/$f"
     done
     if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$EXTMP" >/dev/null 2>&1 \
@@ -211,7 +215,7 @@ fi
 echo "  -- seeded-defect E2E (short chapter -> no certificate) --"
 DTMP="$(mktemp -d)"
 mkdir -p "$DTMP/working"
-for f in intake.json tone-doc.md title.json outline.md RUN-LEDGER.json; do
+for f in intake.json avatar.md tone-doc.md title.json outline.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$DTMP/working/$f"
 done
 cp "$ATK/chapter_short.md" "$DTMP/working/chapter.md"
@@ -232,6 +236,7 @@ ENFORCE_FILES=(
     "$SKILL_DIR/run_anthology.py"
     "$SCRIPTS/_aw_common.py"
     "$SCRIPTS/prove_aw_intake.py"
+    "$SCRIPTS/prove_aw_avatar.py"
     "$SCRIPTS/prove_aw_fidelity.py"
     "$SCRIPTS/prove_aw_tone.py"
     "$SCRIPTS/prove_aw_chapter.py"

@@ -8,6 +8,7 @@
   "client_band_override": null,
   "declared_phases": [
     "P0-INTAKE",
+    "P0A-AVATAR",
     "P1-FIDELITY",
     "P2-TONE-AUTHOR",
     "P3-TONE-QC",
@@ -16,12 +17,17 @@
     "P6-CHAPTER-QC",
     "P7-DELIVER"
   ],
-  "verified_phases": 8,
+  "verified_phases": 9,
   "all_phases_pass": true,
   "runtime": "local-only (no n8n / Airtable / Google Drive / Slack / Gmail); client's own NON-Anthropic providers",
   "steps": [
     {
       "phase_id": "P0-INTAKE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P0A-AVATAR",
       "disposition": "verified",
       "ok": true
     },
@@ -61,6 +67,6 @@
       "ok": true
     }
   ],
-  "certificate_sha": "6a274963d75c04ae50d6e15c1d4395cab667cca58403c7e01cc7ad0e5dae5f70",
-  "certified_at": "2026-07-05T15:37:32.879439+00:00"
+  "certificate_sha": "4af3912c9852389ba0384351e304be520933d859206e44eaccc50e91f7a6b406",
+  "certified_at": "2026-07-07T08:59:06.150154+00:00"
 }

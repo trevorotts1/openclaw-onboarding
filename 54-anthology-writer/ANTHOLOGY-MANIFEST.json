@@ -2,9 +2,9 @@
   "manifest_version": 1,
   "skill": "anthology-writer",
   "skill_number": 54,
-  "skill_version": "1.2.0",
+  "skill_version": "1.4.0",
   "shared_tone_core": "shared-utils/tone-writing-core",
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0->P7) with NO phase skips, one contributor at a time. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0 -> P0A-AVATAR -> P1..P7) with NO phase skips, one contributor at a time. P0A-AVATAR is the pre-P1 avatar handoff (W1.2 extension): it DELEGATES to Skill 52 avatar-alchemist prompts 01-03 BY PATH (see avatar_handoff below; NO file copied, tone core untouched; the avatar handoff itself adds NO source_prompt_pins entry — the aw-11/aw-12 baked-IP pins are added by the separate W1.3 prompt-completion extension) and produces working/avatar.md, which run_anthology.py's _chk_avatar gate REQUIRES fail-closed via scripts/prove_aw_avatar.py (AF-AW-AVATAR-*) BEFORE P1-FIDELITY runs; the dossier is consumed by the downstream tone/chapter authoring templates (carried_values), not read by the P1-FIDELITY checker itself. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
   "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier — NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
   "shared_tone_core_contract": "This skill bakes a lockstep copy of shared-utils/tone-writing-core/prompts/04..08 into prompts/ and proves it with scripts/verify_tone_core_sync.py at build/CI time. 54 is a SEPARATE skill sharing the ONE tone core (Trevor's standing decision), sibling of 53-book-writer.",
   "source_prompt_pins": {
@@ -12,13 +12,98 @@
     "assets/prompts/07-book-blurb.md": "9179eb1866d2e565e5052ed225dd6dd42d28f40481ddd1a5b715770dd9df411f",
     "assets/prompts/08-create-outline.md": "5a944eafea3c9d0dca504f05077ccfe9c1cc1664a8af226ffbb351a077c2335d",
     "assets/prompts/09-write-chapter.md": "340fd1be45a529529142f80123c8d18201bdff9b04ff80671d9efa6096af6cc7",
-    "assets/prompts/10-chapter-rewrite.md": "56c4bf76d09a7169775f1123e043df7b5b420ccddc78c164adfc2eba11983a89"
+    "assets/prompts/10-chapter-rewrite.md": "56c4bf76d09a7169775f1123e043df7b5b420ccddc78c164adfc2eba11983a89",
+    "assets/prompts/11-cover-image-prompt.md": "0525c7f97b111ebbf9ea015c3a67ff4e752efa7d9e5e8d74ada04e41cd824bb4",
+    "assets/prompts/12-primary-goal-extraction.md": "ca09a4b82d63349586389cdb093c922489e70e88d3ea45bd3f7dc4a76cf811f3"
+  },
+  "source_prompt_pins_provenance": {
+    "$note": "RUNTIME pin granularity reconciliation (W1.3). source_prompt_pins maps each baked SINGLE-FILE authoring asset (assets/prompts/NN-*.md) to the sha256 of its BYTES — the ONE granularity prove_aw_fidelity.py enforces at merge and runtime (SPEC 3.2 item 2). The pins live in ONE place: THIS manifest's source_prompt_pins (SINGLE SOURCE OF TRUTH); no second/parallel pins file ships in the repo. The n8n SOURCE prompts were multi-component (system/assistant/user); their per-component raw+pinned sha256 and the composite_pin are SOURCE provenance that lives OPERATOR-SIDE ONLY in .build-state/W0.2.json (never committed — the exports carry live keys) — this manifest deliberately ships neither that per-component/composite ledger nor any legacy n8n slot expression.",
+    "byte_proof_08_10": "aw-08 and aw-10 were byte-proved at W1.3 against their recorded pins (08 sha256 5a944eaf…, 10 sha256 56c4bf76…): BOTH MATCH the source-of-record — NO re-pin (the pin inventory ends COMPLETE either way, the actual law). Zero [UNCHANGED] placeholders remain in any baked body; a pin carrying an unrestored placeholder is a hard failure.",
+    "new_pins_W1_3": {
+      "aw-11": "assets/prompts/11-cover-image-prompt.md — cover-image PROMPT generator, MID-WRITER author / IMAGE render; see the cover_prompt block",
+      "aw-12": "assets/prompts/12-primary-goal-extraction.md — LIGHT-tier primary-goal extraction wired as the final step of P0A-AVATAR (authoring_sequence); binds {{niche_primary_goal}}"
+    }
+  },
+  "avatar_handoff": {
+    "$note": "W1.2 Skill 54 extension. The pre-P1 phase P0A-AVATAR formally DELEGATES to Skill 52 avatar-alchemist. The three avatar-front prompts (aa-01..aa-03) are REUSED BY PATH and NEVER copied: the handoff reads Skill 52's own pinned assets at the paths below and produces working/avatar.md, which the P0A-AVATAR gate (prove_aw_avatar) REQUIRES fail-closed before P1-FIDELITY and which the downstream tone/chapter authoring templates consume (carried_values). This is the reference-only twin of Skill 53's baked P1-AVATAR (Skill 53 bakes copies into its own prompts/; Skill 54 references Skill 52 in place — PRD Section 7 Reuse map item 3 and SPEC 3.2 item 1). These pins are NOT in source_prompt_pins (that block is for Skill 54's OWN baked authoring IP, checked by prove_aw_fidelity against assets/prompts/); mixing them there would break prove_aw_fidelity. Delegation integrity is enforced by prove_aw_avatar.py (AF-AW-AVATAR-*): the referenced files must resolve at their pinned Skill 52 paths with sha256 == the pins below, or the gate fails closed rather than authoring from stale/tampered/absent IP.",
+    "source_skill": "52-avatar-alchemist",
+    "source_skill_version_pinned": "1.5.0",
+    "reference_mode": "by-path — NO file copied; NOT baked into source_prompt_pins",
+    "pin_provenance": "sha256 byte-verified against 52-avatar-alchemist/prompts on origin/main (W0.8 reuse-asset inventory) and re-confirmed against the build checkout; re-checked at runtime by prove_aw_avatar.py",
+    "base_path_repo_relative": "52-avatar-alchemist/prompts",
+    "sibling_relpath_from_skill_dir": "../52-avatar-alchemist/prompts",
+    "consumed_by_phase": "P0A-AVATAR",
+    "produces_artifact": "working/avatar.md",
+    "carried_values": ["niche_primary_goal", "questions_1_30", "questions_31_32"],
+    "no_copy_law": "No file under 52-avatar-alchemist/prompts/{01,02,03}-* may be copied into 54-anthology-writer/ (prompts/, assets/prompts/, or anywhere in the skill tree). The avatar IP stays single-sourced in Skill 52. AF-AW-AVATAR-COPIED enforces.",
+    "tone_core_untouched": "This extension adds NO tone stage and touches NO tone asset; prompts/04..08 and the 5 baked authoring prompts (assets/prompts/06-10) are unchanged, so prove_aw_fidelity and verify_tone_core_sync stay green.",
+    "stages": [
+      {
+        "pin_id": "aa-01",
+        "stage_id": "01-avatar-questions-1-30",
+        "tier": "MID-WRITER",
+        "depends_on": [],
+        "prompt_dir": "52-avatar-alchemist/prompts/01-avatar-questions-1-30",
+        "files": {
+          "system.md": "2c5da386335e1c4629100260eefd6d66a2a095b17548d6a5ccd2759f50ecdeaa",
+          "user.md": "1cfc3de958c55e44c30a42c20ad27a1a92aad0abc4fa9ed4bf2b2f0940b188e8",
+          "methodology.md": "78529bfd19c8dd95bcceb960947f415b75da7953cb8e591ce16b18135a5b33b1"
+        }
+      },
+      {
+        "pin_id": "aa-02",
+        "stage_id": "02-avatar-questions-31-32",
+        "tier": "MID-WRITER",
+        "depends_on": ["01-avatar-questions-1-30"],
+        "research_pass": true,
+        "research_note": "Questions 31-32 expect web-search findings injected as CONTEXT by the caller's Layer 2 tool step (engine search_detect.py; prefer Perplexity, degrade-plus-flag). The pinned prompt text is NEVER edited at runtime; the search is a tool step, not a model or prompt swap (SPEC S1). Absent a search tool the phase degrades with a receipt, it does not fail.",
+        "prompt_dir": "52-avatar-alchemist/prompts/02-avatar-questions-31-32",
+        "files": {
+          "system.md": "33ec7fb8aafd061c60a5ebd9cff969585bb0aa71c4c91f2852a942529e01add4",
+          "user.md": "c8a9c174f7068122ad056138036bf5820d9a3a9c8398a3ab6babd300978da26f",
+          "methodology.md": "3a4adc7421af87e185d3abd2f9d8014a3ad3ff5ed2615ac40eaef40952335f01"
+        }
+      },
+      {
+        "pin_id": "aa-03",
+        "stage_id": "03-rewrite-avatar",
+        "tier": "MID-WRITER",
+        "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"],
+        "prompt_dir": "52-avatar-alchemist/prompts/03-rewrite-avatar",
+        "files": {
+          "system.md": "a4d449cb3342cd65a304d6a557263328d0b7e626c58a4e9c56fd6bd14157fb40",
+          "user.md": "a82e10aeffdf49d8b534118d952acea0f3f527ef7e18a803faf236d6d945fa2f",
+          "methodology.md": "01fba49bf3a9c1dcbaf3c4d6be8da257497581513f98aa6d2768767c2de9eb62"
+        }
+      }
+    ],
+    "not_this_unit": "The W1.2 avatar-handoff unit added ONLY the reference-by-path delegation to aa-01..aa-03. Primary-goal extraction (aw-12) is the SEPARATE W1.3 prompt-completion extension and is NOW WIRED as the LIGHT-tier final step of P0A-AVATAR (see phase P0A-AVATAR.authoring_sequence and the aw-12 source_prompt_pins entry, checked at P1-FIDELITY); the optional intake fields ideal_avatar / niche / primary_goal remain the SEPARATE W1.4 (intake fields) extension."
+  },
+  "cover_prompt": {
+    "$note": "W1.3 prompt-completion. aw-11 (assets/prompts/11-cover-image-prompt.md) is Skill 54's OWN baked cover-image PROMPT-authoring IP, sha256-pinned in source_prompt_pins and fidelity-checked at P1-FIDELITY. It is AUTHORED on the client's MID-WRITER tier from the LOCKED title/subtitle (aw-06, carried byte-exact), the author name (intake), and the blurb (aw-07), and emits a single JSON cover-prompt object. The RENDER is engine-orchestrated downstream (SPEC S7): the engine's stage_s7_cover.py (W1.14) passes the emitted prompt to the CLIENT's own Kie.ai GPT-image-2 TEXT-TO-IMAGE PORTRAIT endpoint at 2:3 / 1024x1536 via Skills 07 (setup) and 46 (callback relay). Skill 54's own P0-P7 walk does NOT gate the cover (parallel to how aw-10 rewrite is a baked/pinned asset used in the P6 rework loop, not a standalone walked phase); the cover is an engine-side, IMAGE-tier-OPTIONAL stage that degrades to a cover PROMPT doc (degraded:image receipt) when the client configures no image provider.",
+    "pin_id": "aw-11",
+    "baked_asset": "assets/prompts/11-cover-image-prompt.md",
+    "prompt_tier": "MID-WRITER",
+    "render_tier": "IMAGE",
+    "inputs": ["artifact.title (locked title+subtitle, byte-exact from aw-06)", "intake.first_name", "intake.last_name", "artifact.blurb (aw-07)"],
+    "produces": "a single JSON cover-prompt object {prompt, aspect_ratio:'2:3', output_format:'png'}",
+    "render_override": {
+      "aspect_ratio": "2:3",
+      "dimensions": "1024x1536",
+      "orientation": "portrait",
+      "model_family": "Kie GPT-image-2 text-to-image (portrait endpoint)",
+      "forbids": "the 16:9 presentation/deck recipe (Skill 46 default overridden per W0.6)",
+      "source_ref": "W0.6.json a_kie_portrait_text_to_image"
+    },
+    "consumed_by": "engine stage_s7_cover.py (W1.14) via Skills 07/46",
+    "new_in": "W1.3"
   },
   "tiers": {
     "HEAVY-WRITER": "aw-09 chapter + aw-10 rewrite (client's strongest NON-Anthropic long-form model)",
-    "MID-WRITER": "aw-01..08 tone/title/blurb/outline (client's mid NON-Anthropic model)",
+    "MID-WRITER": "aw-01..08 tone/title/blurb/outline + aw-11 cover-image prompt (client's mid NON-Anthropic model)",
+    "LIGHT": "aw-12 primary-goal extraction — split/label the P0A avatar value into Avatar/Niche/Primary Goal (client's light/fast NON-Anthropic model; extraction, not authoring)",
     "RESEARCHER": "optional client web-search tool (degraded:search receipt if absent)",
-    "IMAGE": "optional client image provider (degraded:image receipt if absent)"
+    "IMAGE": "optional client image provider — renders the aw-11 cover prompt at 2:3 portrait 1024x1536 (degraded:image receipt if absent)"
   },
   "phases": [
     {
@@ -28,6 +113,25 @@
       "produces_artifact": "working/intake.json",
       "preflight": {"required": true, "checker": "_chk_intake", "label": "working/intake.json present and prove_aw_intake.py PASS — anthology_title / first_name / last_name / chapter_premise all present and non-whitespace; no credential-shaped intake key."},
       "gate_codes": ["AF-AW-INTAKE-MISSING", "AF-AW-INTAKE-CREDENTIAL"]
+    },
+    {
+      "id": "P0A-AVATAR",
+      "order": 0.5,
+      "name": "Avatar handoff (pre-P1; DELEGATES to Skill 52 avatar-alchemist prompts 01-03 BY PATH, no file copied) + LIGHT-tier primary-goal extraction (aw-12)",
+      "produces_artifact": "working/avatar.md",
+      "delegates_to": "52-avatar-alchemist",
+      "authoring_sequence": {
+        "$note": "The P0A avatar-handoff authoring order (run UPSTREAM on the CLIENT's own NON-Anthropic chain before the P0A gate; the pinned prompt text is NEVER edited at runtime). aa-01..aa-03 are the reference-by-path Skill 52 prompts (see avatar_handoff.stages; delegation integrity enforced by prove_aw_avatar.py). aw-12 is Skill 54's OWN baked LIGHT-tier primary-goal extraction step (assets/prompts/12-primary-goal-extraction.md, sha256-pinned in source_prompt_pins, fidelity-checked at P1-FIDELITY): it runs LAST — after aa-03 fuses avatar+niche+goal into one blob — and splits/labels that blob into the carried value niche_primary_goal that every downstream authoring stage (tone/title/outline/chapter/cover) consumes. This is the W1.3 prompt-completion wiring; the P0A gate (prove_aw_avatar) is unchanged (aw-12 is NOT a Skill 52 reference and is deliberately absent from avatar_handoff.stages).",
+        "steps": [
+          {"pin_id": "aa-01", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)"},
+          {"pin_id": "aa-02", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)", "research_pass": true},
+          {"pin_id": "aa-03", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)"},
+          {"pin_id": "aw-12", "tier": "LIGHT", "source": "assets/prompts/12-primary-goal-extraction.md (Skill 54 baked IP, pinned)", "binding": "{{niche_primary_goal}}", "binding_confirmed": true, "produces_carried_value": "niche_primary_goal", "new_in": "W1.3"}
+        ]
+      },
+      "reuse_note": "REFERENCE-ONLY handoff (W1.2 ext): the three Skill 52 avatar prompts (aa-01..aa-03) are read at their pinned Skill 52 paths declared in avatar_handoff — NOT copied, NOT baked into source_prompt_pins. Produces the avatar dossier working/avatar.md, REQUIRED fail-closed by this phase's own gate (prove_aw_avatar) before P1-FIDELITY and consumed by the downstream author/rewrite user templates (carried values niche_primary_goal / questions_1_30 / questions_31_32). Tone core and the 5 baked authoring prompts are untouched, so prove_aw_fidelity + verify_tone_core_sync stay green. Inserts BETWEEN P0-INTAKE and P1-FIDELITY; run_anthology.py must carry P0A-AVATAR in PHASE_ORDER (after P0-INTAKE) and map _chk_avatar in _CHECKERS (see cross_file_needs).",
+      "preflight": {"required": true, "checker": "_chk_avatar", "label": "prove_aw_avatar.py PASS — working/avatar.md present and non-whitespace (the avatar dossier the Skill 52 handoff produced, consumed downstream by the tone/chapter authoring templates) AND every referenced Skill 52 prompt (aa-01/aa-02/aa-03 x system|user|methodology) resolves at its pinned 52-avatar-alchemist path with sha256 == the avatar_handoff pin (delegation integrity; Skill 52 missing/tampered/version-drifted fails closed, never authors from stale IP) AND no Skill 52 avatar prompt was copied into Skill 54's own tree (no-copy law)."},
+      "gate_codes": ["AF-AW-AVATAR-MISSING", "AF-AW-AVATAR-HANDOFF-DRIFT", "AF-AW-AVATAR-COPIED"]
     },
     {
       "id": "P1-FIDELITY",
@@ -89,6 +193,9 @@
   "autofails": [
     {"code": "AF-AW-INTAKE-MISSING", "stage": "P0", "level": "intake", "trigger": "any of the 4 required fields (anthology_title / first_name / last_name / chapter_premise) missing, empty, or whitespace", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
     {"code": "AF-AW-INTAKE-CREDENTIAL", "stage": "P0", "level": "intake", "trigger": "an intake key looks like a secret (api_key, token, openrouter, anthropic, password, ...) — provider keys never ride intake", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
+    {"code": "AF-AW-AVATAR-MISSING", "stage": "P0A", "level": "avatar", "trigger": "working/avatar.md is absent, empty, or whitespace-only at the pre-P1 avatar phase — the Skill 52 handoff produced no avatar dossier for the downstream authoring templates to consume", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
+    {"code": "AF-AW-AVATAR-HANDOFF-DRIFT", "stage": "P0A", "level": "avatar", "trigger": "a referenced Skill 52 avatar prompt (aa-01/aa-02/aa-03 x system|user|methodology) is missing at its pinned 52-avatar-alchemist path OR its sha256 != the avatar_handoff pin — Skill 52 not installed, tampered, or version-drifted; the reference-by-path delegation must resolve to the exact pinned IP or fail closed (no silent stale-IP fallback)", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
+    {"code": "AF-AW-AVATAR-COPIED", "stage": "P0A", "level": "avatar", "trigger": "a Skill 52 avatar prompt (01/02/03-*) was COPIED into Skill 54's own tree (prompts/, assets/prompts/, or elsewhere) instead of referenced by path — violates the handoff no-copy law (PRD Section 7 Reuse map item 3; avatar IP stays single-sourced in Skill 52)", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
     {"code": "AF-AW-PROMPT-DRIFT", "stage": "P1", "level": "assets", "trigger": "sha256 of a baked authoring prompt != its manifest pin, an asset is missing, or an unpinned prompt file appeared", "enforced_by": "prove_aw_fidelity", "py_symbol": "evaluate"},
     {"code": "AF-AW-TONE-DRIFT", "stage": "P1", "level": "assets", "trigger": "a baked tone stage (prompts/04..08) drifts from shared-utils/tone-writing-core", "enforced_by": "verify_tone_core_sync", "py_symbol": "main"},
     {"code": "AF-AW-TONE-4", "stage": "P3", "level": "tone", "trigger": "the blended tone doc does not reference exactly 4 distinct tone-style influence analyses (indices 1..4)", "enforced_by": "prove_aw_tone", "py_symbol": "evaluate"},
