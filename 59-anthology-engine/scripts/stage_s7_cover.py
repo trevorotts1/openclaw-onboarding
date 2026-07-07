@@ -20,6 +20,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +46,81 @@ WIRING = [
     ("scripts/anthology_state.py", "record-artifact (cover) with both link fields and advance to s8_deliver"),
     ("scripts/mc_board.py", "mirror the participant card to in_progress at the s8_deliver cursor (SPEC 11.2 stage_cursor projection, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
+
+
+KEY_DELIM = "::"
+COVER_PIN = REPO_ROOT / "54-anthology-writer" / "assets" / "prompts" / "11-cover-image-prompt.md"
+
+
+def _run_dir_for(key, run_dir=None):
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180, input_text=None):
+    try:
+        proc = subprocess.run(argv, input=input_text, capture_output=True,
+                              text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180, input_text=None):
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout, input_text=input_text)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed
+
+
+def _spawn_next(py, next_script, key, run_dir):
+    """Fire-and-forget the next stage, fully detached (mirrors intake_router.py's
+    own spawn_stage_detached; never blocks this stage's own exit). S7 has no gate
+    (SPEC S7 advances straight to s8_deliver), so the full completion sweep at
+    S8 fires automatically once the cover lands."""
+    target = SCRIPTS / next_script
+    if not target.exists():
+        sys.stderr.write("[stage_%s] next stage %s not present yet; the ledger cursor "
+                         "holds it safely until it lands.\n" % (STAGE, next_script))
+        return False
+    argv = [py, str(target), "--participant-key", key, "--run-dir", str(run_dir)]
+    logpath = Path(run_dir) / "stage-spawn.log"
+    try:
+        logf = open(logpath, "ab")
+    except OSError:
+        logf = subprocess.DEVNULL
+    try:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
+                         start_new_session=True, close_fds=True, cwd=str(SKILL_DIR))
+        return True
+    except Exception as exc:  # noqa: BLE001 - a spawn failure must not fail this stage
+        sys.stderr.write("[stage_%s] next-stage spawn failed (non-fatal; the ledger "
+                         "cursor holds it): %s\n" % (STAGE, exc))
+        return False
+    finally:
+        if logf not in (subprocess.DEVNULL,):
+            try:
+                logf.close()
+            except OSError:
+                pass
 
 
 def _resolve(rel):
@@ -82,19 +159,128 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    S7 has no gate at all (SPEC S7: it advances straight to s8_deliver), so
+    every declared collaborator runs synchronously in this one call.
+    classify_child_rc's numeric contract is unchanged; every step short-circuits
+    on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+    if not key or KEY_DELIM not in key:
+        sys.stderr.write("[stage_%s] --%s must be a contact_id%santhology_id composite "
+                         "key.\n" % (STAGE, KEY_ARG, KEY_DELIM))
+        return EX_HELD
+    pkey = key
+    py = sys.executable or "python3"
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # 1. anthology_state.py -- load the participant row (locked title/subtitle,
+    #    author name, blurb, drive_folder_id).
+    rel, _ = WIRING[0]
+    rc, participant = _step(0, rel, [py, str(_resolve(rel)), "--json",
+                                    "get-participant", "--participant-key", pkey])
+    if rc != EX_OK:
+        return rc
+    participant = participant or {}
+
+    # 2. 54-anthology-writer/anthology-entry.sh -- the cover-prompt generator
+    #    (aw-11) is Skill 54's OWN baked, non-phase asset (ANTHOLOGY-MANIFEST.json
+    #    cover_prompt block: "Skill 54's own P0-P7 walk does NOT gate the cover");
+    #    anthology-entry.sh exposes no dedicated cover subcommand (--run-dir /
+    #    --plan / --upto only), so this step proves the Layer 1 gates are healthy
+    #    (--plan, side-effect-free) and the MID-WRITER prompt call itself goes
+    #    through this engine's own sole model-call site, model_router.py, over
+    #    the baked aw-11 pin text -- the SAME collaborator WIRING declares, just
+    #    routed the way SPEC 8 requires every model call to route.
+    rel, _ = WIRING[1]
+    rc, _ = _step(1, rel, ["bash", str(_resolve(rel)), "--plan"])
+    if rc != EX_OK:
+        return rc
+    pin_text = COVER_PIN.read_text(encoding="utf-8") if COVER_PIN.is_file() else ""
+    prompt_user = ("%s\n\nTITLE: %s\nSUBTITLE: %s\nAUTHOR: %s\nBLURB: %s"
+                   % (pin_text, participant.get("title_locked") or "",
+                      participant.get("subtitle_locked") or "",
+                      ("%s %s" % (participant.get("first_name") or "",
+                                  participant.get("last_name") or "")).strip(),
+                      participant.get("chapter_about") or ""))
+    router_rel = "scripts/model_router.py"
+    router_payload = json.dumps({"tier": "MID-WRITER",
+                                 "messages": [{"role": "user", "content": prompt_user}],
+                                 "context": {"participant_key": pkey, "deliverable_key": "cover"}})
+    rrc, rparsed, rerr = _run([py, str(_resolve(router_rel)), "route"], input_text=router_payload)
+    router_class = classify_child_rc(rrc)
+    if router_class != EX_OK:
+        sys.stderr.write("[stage_%s] model_router.py route exited %d -> classified %d%s\n"
+                         % (STAGE, rrc, router_class, (" :: %s" % rerr[-300:]) if rerr else ""))
+        return router_class
+    cover_prompt_text = (rparsed or {}).get("text") or ""
+    cover_prompt_path = Path(rundir) / "working" / "cover-prompt.json"
+    cover_prompt_path.write_text(json.dumps({"prompt": cover_prompt_text}, ensure_ascii=False),
+                                 encoding="utf-8")
+
+    # 3. cover_render.py -- Kie.ai GPT-image-2 PORTRAIT 1024x1536, bounded re-poll
+    #    then hold + alert.
+    rel, _ = WIRING[2]
+    cover_png = Path(rundir) / "working" / "cover.png"
+    cover_result = Path(rundir) / "working" / "cover-result.json"
+    rc, rendered = _step(2, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
+                                 "--prompt-file", str(cover_prompt_path),
+                                 "--out", str(cover_png), "--result-out", str(cover_result)])
+    if rc != EX_OK:
+        return rc
+    rendered = rendered or {}
+
+    # 4. drive_adapter.py -- land the cover PNG in the participant Drive folder.
+    rel, _ = WIRING[3]
+    folder_id = participant.get("drive_folder_id")
+    if not folder_id:
+        sys.stderr.write("[stage_%s] no drive_folder_id on the participant row; held.\n" % STAGE)
+        return EX_HELD
+    contact_id = pkey.split(KEY_DELIM, 1)[0]
+    rc, uploaded = _step(3, rel, [py, str(_resolve(rel)), "upload",
+                                 "--name", "%s-cover.png" % contact_id,
+                                 "--parent-folder-id", folder_id,
+                                 "--file", str(cover_png), "--mime", "image/png",
+                                 "--share-view"])
+    if rc != EX_OK:
+        return rc
+    uploaded = uploaded or {}
+    cover_link = (uploaded.get("webViewLink") or uploaded.get("link")
+                 or uploaded.get("url") or uploaded.get("id") or "")
+
+    # 5. anthology_state.py -- record-artifact(cover) with both link fields
+    #    (per field-map.json cover_field_semantics: doc_url the Convert and Flow
+    #    media-storage image link -- written later by caf_delivery at S8 --
+    #    pdf_url the Drive link recorded here); advance to s8_deliver.
+    rel, _ = WIRING[4]
+    art_argv = [py, str(_resolve(rel)), "--json", "record-artifact",
+               "--participant-key", pkey, "--type", "cover"]
+    if cover_link:
+        art_argv += ["--pdf-url", cover_link]
+    rc, _ = _step(4, rel, art_argv)
+    if rc != EX_OK:
+        return rc
+    rc, _ = _step(4, rel, [py, str(_resolve(rel)), "--json", "advance-stage",
+                          "--participant-key", pkey, "--to", "s8_deliver"])
+    if rc != EX_OK:
+        return rc
+
+    # 6. mc_board.py -- mirror the participant card to in_progress at s8_deliver
+    #    (W4.3); FAIL-SOFT.
+    rel, _ = WIRING[5]
+    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc
+
+    # Housekeeping (SPEC 2.2 execution model): S7 has no gate, so hand off the
+    # completion sweep to S8 the same way S0 hands off to S1.
+    _spawn_next(py, "stage_s8_deliver.py", pkey, rundir)
+    return EX_OK
 
 
 def self_test():
@@ -126,7 +312,7 @@ def main(argv=None):
             return plan()
         if not args.key:
             ap.error("--%s is required to dispatch stage %s" % (KEY_ARG, STAGE))
-        return _invoke_wiring(args.key)
+        return _invoke_wiring(args.key, args.run_dir)
     except SystemExit:
         raise
     except Exception as exc:

@@ -21,6 +21,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +48,61 @@ WIRING = [
     ("scripts/nudge_send.py", "send the completion notice through the sanctioned template only"),
     ("scripts/mc_board.py", "at participant completion, the signed process certificate is recorded and the board card moves to review (never done; the QC scorer owns review to done)"),
 ]
+
+
+KEY_DELIM = "::"
+
+# ledger ARTIFACT_TYPES -> the Layer 1 working/*.md checkpoint that carries its
+# content (54-anthology-writer/run_anthology.py). cover/anthology_manuscript have
+# no single working file here: cover is image-only (delivered via Drive at S7),
+# manuscript is S9's own compiled full text, passed via --doc-file/--pdf-file.
+DELIVERABLE_WORKING_FILE = {
+    "avatar": "avatar.md", "tone": "tone-doc.md", "titles": "title.json",
+    "blurb": "blurb.md", "outline": "outline.md", "chapter": "chapter.md",
+    "rewrite": "chapter.md",
+}
+
+
+def _run_dir_for(key, run_dir=None):
+    """Resolve (and create) the run directory. S8 is always CALLED with an
+    explicit --run-dir by its caller (S1-S7, S9 all thread their OWN run dir
+    through so working/*.md stays the one shared per-participant directory); the
+    stage-local default below only applies to a fully standalone invocation."""
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180):
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180):
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed
 
 
 def _resolve(rel):
@@ -84,19 +141,170 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    `deliverable` is the ledger ARTIFACT_TYPES value the caller just authored
+    (S1-S7, S9 each pass their own --deliverable); this thin runner does not
+    guess it. classify_child_rc's numeric contract is unchanged; every step
+    short-circuits on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
-        return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+        return EX_HELD, None
+    if not key or KEY_DELIM not in key:
+        sys.stderr.write("[stage_%s] --%s must be a contact_id%santhology_id composite "
+                         "key.\n" % (STAGE, KEY_ARG, KEY_DELIM))
+        return EX_HELD, None
+    if not deliverable:
+        sys.stderr.write("[stage_%s] --deliverable is required (the ledger artifact_type "
+                         "just authored by the calling stage).\n" % STAGE)
+        return EX_HELD, None
+    pkey = key
+    contact_id, anthology_id = pkey.split(KEY_DELIM, 1)
+    py = sys.executable or "python3"
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # deliverable_for_artifact_type() (drift #2's fix) is exercised BEFORE any
+    # call into caf_delivery.py, per SESSION-LOG.md: import in-process (no
+    # subprocess side effects; mirrors the sibling cross-check convention in
+    # intake_router.py/mc_board.py).
+    sys.path.insert(0, str(SCRIPTS))
+    import caf_delivery as _caf  # noqa: E402
+    fm = _caf.FieldMap.load()
+    try:
+        caf_deliverable = fm.deliverable_for_artifact_type(deliverable)
+    except _caf.DeliveryError as exc:
+        sys.stderr.write("[stage_%s] %s\n" % (STAGE, exc))
+        return EX_PROVER, None
+
+    working_name = DELIVERABLE_WORKING_FILE.get(deliverable)
+    content_file = (Path(rundir) / "working" / working_name) if working_name else None
+
+    # 1. drive_adapter.py -- create the Google Doc inside the participant Drive
+    #    folder tree.
+    rel, _ = WIRING[0]
+    _, participant, _ = _run([py, str(_resolve("scripts/anthology_state.py")), "--json",
+                             "get-participant", "--participant-key", pkey])
+    folder_id = (participant or {}).get("drive_folder_id")
+    doc_url = None
+    if folder_id and content_file and content_file.is_file():
+        argv = [py, str(_resolve(rel)), "create-doc", "--name", "%s-%s" % (contact_id, deliverable),
+                "--parent-folder-id", folder_id, "--text-file", str(content_file), "--share-view"]
+        rc, created = _step(0, rel, argv)
+        if rc != EX_OK:
+            return rc, None
+        created = created or {}
+        doc_url = created.get("webViewLink") or created.get("link") or created.get("id")
+    else:
+        sys.stderr.write("[stage_%s] 1/%d %s: skipped (no drive_folder_id yet, or no "
+                         "working/%s content to package)\n" % (STAGE, len(WIRING), rel, working_name))
+
+    # 2. pdf_render.py -- render the designed PDF from the house template.
+    rel, _ = WIRING[1]
+    pdf_path = Path(rundir) / "working" / ("%s.pdf" % deliverable)
+    if content_file and content_file.is_file() and deliverable in (
+            "avatar", "tone", "titles", "blurb", "outline", "chapter", "rewrite", "anthology_manuscript"):
+        pdf_type = "chapter" if deliverable in ("rewrite",) else (
+            "manuscript" if deliverable == "anthology_manuscript" else deliverable)
+        rc, _ = _step(1, rel, [py, str(_resolve(rel)), "--type", pdf_type, "--in", str(content_file),
+                              "--out", str(pdf_path), "--json"])
+        if rc != EX_OK:
+            return rc, None
+    else:
+        sys.stderr.write("[stage_%s] 2/%d %s: skipped (no source content to render)\n"
+                         % (STAGE, len(WIRING), rel))
+        pdf_path = None
+
+    # 3. guard-font-floor.py -- parse the RENDERED PDF; fail below 14 point.
+    rel, _ = WIRING[2]
+    if pdf_path and pdf_path.is_file():
+        rc, _ = _step(2, rel, [py, str(_resolve(rel)), str(pdf_path), "--json"])
+        if rc != EX_OK:
+            return rc, None
+    else:
+        sys.stderr.write("[stage_%s] 3/%d %s: skipped (no rendered PDF)\n"
+                         % (STAGE, len(WIRING), rel))
+
+    # 4. caf_delivery.py -- CAF media upload; exact-key field writes by
+    #    contact_id from config/field-map.json; byte-for-byte read-back; control
+    #    fields. Registry stage-map/pipeline (read-only; fail-soft if unbound
+    #    on this box yet -- delivery still lands, only the pipeline-stage move
+    #    is skipped, matching cmd_deliver's own conditional).
+    rel, _ = WIRING[3]
+    _, binding, _ = _run([py, str(_resolve("scripts/anthology_registry.py")),
+                         "resolve", "--anthology-id", anthology_id, "--json"])
+    binding = binding or {}
+    argv = [py, str(_resolve(rel)), "deliver", "--contact-id", contact_id,
+           "--anthology-id", anthology_id, "--participant-key", pkey,
+           "--deliverable", caf_deliverable]
+    if doc_url:
+        argv += ["--doc-url", doc_url]
+    if pdf_path and pdf_path.is_file():
+        argv += ["--pdf-file", str(pdf_path)]
+    if binding.get("pipeline_id") and binding.get("caf_stage_map"):
+        # The registry's caf_stage_map keys by ENGINE STAGE (s0..s9), not by
+        # deliverable name, and this thin runner is not told which engine
+        # stage_cursor it is being called from (S1-S7/S9 each dispatch their
+        # OWN piece and only ever pass a --deliverable, never a --gate). A
+        # per-gate opportunity move therefore only fires when the caller
+        # supplies --gate explicitly (below); left unset otherwise is a
+        # documented, honest gap: delivery + field writes still complete, byte-
+        # for-byte read-back still runs, only the pipeline-stage move is
+        # skipped for this call (stage_s9_assembly.py IS told its own gate and
+        # passes one through).
+        argv += ["--pipeline-id", binding["pipeline_id"],
+                "--stage-map", json.dumps(binding["caf_stage_map"], ensure_ascii=False)]
+        if gate_hint:
+            argv += ["--gate", gate_hint]
+    if final:
+        argv += ["--final"]
+    rc, delivered = _step(3, rel, argv)
+    if rc != EX_OK:
+        return rc, None
+    delivered = delivered or {}
+
+    # 5. anthology_state.py -- record the delivery outcome onto the ledger's own
+    #    artifact row (the per-gate CAF pipeline-stage move itself is fired
+    #    inside caf_delivery.py's own deliver call above, from the SAME registry
+    #    stage map read in step 4; this is the ledger-side mirror of that CAF-side
+    #    write, never hardcoded, always sourced from what was actually written).
+    #    caf_delivery.py's own stdout carries only the persisted report PATH, not
+    #    the field-write detail inline, so the ledger row records the Drive
+    #    doc_url this dispatcher already holds; the CAF-hosted link and the
+    #    per-field read-back proof live in that report file (referenced below)
+    #    and in the CAF contact's own custom fields, the PRD Section 6 source
+    #    of truth.
+    rel, _ = WIRING[4]
+    art_argv = [py, str(_resolve(rel)), "--json", "record-artifact",
+               "--participant-key", pkey, "--type", deliverable]
+    if doc_url:
+        art_argv += ["--doc-url", doc_url]
+    rc, _ = _step(4, rel, art_argv)
+    if rc != EX_OK:
+        return rc, None
+
+    # 6. nudge_send.py -- the completion notice through the sanctioned template
+    #    only.
+    rel, _ = WIRING[5]
+    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "send", "--template", "completion",
+                          "--subject-key", pkey, "--deliverable-label", deliverable,
+                          "--json"])
+    if rc not in (EX_OK, EX_HELD):
+        return rc, None
+
+    # 7. mc_board.py -- at participant completion the signed process certificate
+    #    is recorded and the card moves to review (never done).
+    rel, _ = WIRING[6]
+    rc, _ = _step(6, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc, None
+
+    result = {"delivered": True, "type": deliverable, "doc_url": doc_url,
+             "pdf_url": None, "report": delivered.get("report"),
+             "certificate": delivered.get("certificate")}
+    return EX_OK, result
 
 
 def self_test():
@@ -118,6 +326,16 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="thin dispatcher for stage %s (%s)" % (STAGE, STAGE_NAME))
     ap.add_argument("--%s" % KEY_ARG, dest="key", help="the %s to dispatch" % KEY_ARG)
     ap.add_argument("--run-dir", help="optional per-participant-per-stage run directory")
+    ap.add_argument("--deliverable", help="the ledger artifact_type just authored "
+                    "(avatar, tone, titles, blurb, outline, chapter, rewrite, cover, "
+                    "anthology_manuscript); required to dispatch (S1-S7/S9 each pass "
+                    "their own piece, never guessed here)")
+    ap.add_argument("--gate", help="optional engine gate id for the per-gate CAF "
+                    "pipeline-stage move (from the registry caf_stage_map)")
+    ap.add_argument("--final", action="store_true",
+                    help="emit the signed process certificate (full participant completion)")
+    ap.add_argument("--json", action="store_true",
+                    help="print the delivery result (doc_url, pdf_url, report ref) as JSON")
     ap.add_argument("--plan", action="store_true", help="print the wiring contract and exit")
     ap.add_argument("--self-test", action="store_true", help="verify the runner contract and exit")
     args = ap.parse_args(argv)
@@ -128,7 +346,10 @@ def main(argv=None):
             return plan()
         if not args.key:
             ap.error("--%s is required to dispatch stage %s" % (KEY_ARG, STAGE))
-        return _invoke_wiring(args.key)
+        rc, result = _invoke_wiring(args.key, args.run_dir, args.deliverable, args.final, args.gate)
+        if args.json and result is not None:
+            print(json.dumps(result, ensure_ascii=False))
+        return rc
     except SystemExit:
         raise
     except Exception as exc:
