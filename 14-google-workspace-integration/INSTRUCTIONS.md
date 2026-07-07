@@ -4,6 +4,41 @@ This document covers how to use the Google Workspace CLI (gws) day to day after 
 
 ---
 
+## ⚠️ CREDENTIAL SAFETY — read before running any `gws` command
+
+`gws` stores its OAuth in an encrypted file (`~/.config/gws/credentials.enc`) that
+it unlocks with a keyring key. By default `gws` uses the **OS keychain** to hold
+that key. In a **headless / non-interactive** shell (no desktop session — which is
+exactly how an AI agent, a cron, or a script runs), the OS keychain **cannot be
+unlocked**, and `gws`'s own failure mode then **rewrites the credential file to
+`credential_source:"none"` — wiping every account's login.**
+
+The onboarding install already protects you against this on every box:
+
+- **It exports `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file`** in your `~/.zshenv`
+  (and `~/.bashrc` / `~/.profile`), so every shell `gws` runs in uses the on-disk
+  file key deterministically instead of the OS keychain. This is what makes a
+  headless `gws` call safe. If you ever run `gws` from a brand-new shell that has
+  not sourced your shell env, export it first:
+  ```bash
+  export GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file
+  ```
+- **For scripts, crons, or multi-account use, prefer the `gws-as` wrapper** (installed
+  on your PATH). It forces the file backend for you and selects the account:
+  ```bash
+  gws-as default drive files list                 # the default account
+  gws-as sales gmail messages list                # the "sales" account (~/.config/gws-acct-sales)
+  ```
+- **Never** run `gws auth logout` / `remove` / `revoke` to "fix" a headless auth
+  error — that deletes credentials. If auth looks broken headless, it is almost
+  always the keyring backend, not the credentials. A wipe (if one ever happens) is
+  recoverable from the off-box snapshot the install writes under
+  `~/.openclaw/secrets/backups/<box>-gws/`.
+
+Everything below assumes the file keyring backend is in effect (it is, after install).
+
+---
+
 ## Common Commands
 
 These are the commands you will use most often. Just ask your AI agent in plain English, or run these commands directly.
