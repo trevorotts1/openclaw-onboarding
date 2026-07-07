@@ -1,5 +1,5 @@
 # SOP-00 — Owner Task Routing
-**Version:** 1.5.0 | 2026-07-06
+**Version:** 1.6.0 | 2026-07-07
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -80,6 +80,7 @@ Read `universal-sops/00-ROUTING.md` (company root) to map the request to the own
 | Videos, reels, editing, captions | `video` |
 | Full podcast EPISODE PRODUCTION: an intake survey turned into a written, produced, and published episode (interview-style or personal); "produce/publish my podcast episode", "run the podcast engine" | `podcast` |
 | Audio, TTS, voiceover, podcasting | `audio` |
+| Anthology chapter production: a participant's Convert and Flow intake into a curated, multi-contributor anthology; gate approvals; the readiness-to-assemble decision ("produce my anthology chapter", "who's ready to assemble", "check on [participant]'s chapter") | `anthology` |
 | Slide decks, pitch decks, keynotes, speeches, webinar decks, "turn this into a presentation" | `presentations` |
 | Written content, copy, emails, blogs | `communications` or `marketing` |
 | Social media posts/scheduling | `social-media` |
@@ -128,6 +129,56 @@ podcast pipeline; its Convert and Flow data plane (Skill 44 caf plus Skill 29 RE
 podcast agent's own turn, not the orchestrator's. Doctrine and pipeline detail:
 `project-prds/podcast-engine/PRD.md` Section 13.3 (routing-only) and Section 5 (the 18-step
 pipeline); webhook session binding: `project-prds/podcast-engine/design/webhook-design.md`.
+
+---
+
+#### Inbound anthology event dispatch: Anthology Engine, Skill 59 (routing only)
+
+The `anthology` department (`department_slug: "anthology"`) is the SEEDED Anthology department
+(Skill 32's `add-department.sh`, equivalently `POST /api/departments` with `create:true`, run
+during client provisioning) that OWNS the Anthology Engine, Skill 59 (working id
+`anthology-engine`, role `anthology-producer-orchestrator`), and runs its full S0-to-S9 pipeline
+end to end in its own persistent department agent session. THREE classes of inbound anthology
+event exist, and ALL THREE dispatch to `anthology-producer-orchestrator` ONLY -- the Master
+Orchestrator NEVER intercepts them, NEVER re-classifies them, and NEVER falls back to R8's
+`general-task` catch-all for any of them, regardless of how ambiguous the triggering payload looks:
+
+1. Intake webhook (S0, the primary self-dispatching trigger). A participant's Convert and Flow
+   form submission arrives over the client's Cloudflare tunnel to the loopback gateway, where an
+   OpenClaw Webhooks plugin route hands it to `intake_router.py` (a deterministic handler, no
+   model, no MCP) that keys the submission by `contact_id` and `anthology_id` and opens or
+   advances the durable Participant record owned by the Anthology department agent. This path is
+   machine-to-machine and self-routing; the Master Orchestrator does NOT intercept, re-classify,
+   or re-route it. It is documented here so the orchestrator leaves it alone.
+2. Gate events (S1 through S8, every per-stage producer or participant approval). A gate action
+   (Approve as-is, or Request rewrite with notes) arrives via the Anthology board card (producer
+   door) or the participant token page (participant door) and is handled entirely by
+   `gate_engine.py` inside the department agent's own turn; a gate event never surfaces to the
+   Master Orchestrator as an owner message requiring classification.
+3. The assembly trigger (S9, the producer's explicit "I'm ready to assemble"). This is a status
+   transition on the dedicated Assembly card, resolved by `stage_s9_assembly.py` inside the
+   department agent's session. It is production work (order curation, the editor's introduction,
+   manuscript compilation), so R1 through R3 forbid the orchestrator from ever running it directly,
+   and R7 forbids running it as a spawned child of the orchestrator's own turn.
+
+If an owner message ABOUT anthology work reaches the orchestrator in plain language (for example
+"produce my next anthology chapter", "who is ready to assemble", "check on [participant]'s
+chapter"), classify it as `anthology` and dispatch via the board (`POST /api/tasks/ingest` with
+`department_slug: "anthology"`), exactly like any other department task -- still never executed
+directly and never routed to `general-task`. R8's general-task fallback exists for requests that do
+not map clearly to any installed department; anthology requests always map clearly, because the
+Anthology department is seeded BEFORE any client traffic can reach it (Skill 32,
+`provision-anthology-client.sh`), so the ambiguity that would justify falling back to R8 never
+arises here. This carve-out exists precisely because of the Skill 53 book-writer hard lesson: its
+books department was never seeded, so its cards fell to the CEO catch-all; the Anthology Engine
+must never repeat that defect, and this rule is the master-routing-side guarantee that it does not.
+
+Silence and isolation carry through routing: the orchestrator emits zero client-facing messages
+about anthology events (Convert and Flow owns all participant and producer messaging), and no MCP
+is injected into the anthology pipeline; its Convert and Flow data plane (`mc_board.py` plus
+`caf_delivery.py`) runs inside the department agent's own turn, not the orchestrator's. Doctrine and
+pipeline detail: `project-prds/anthology-engine/PRD.md` Section 3 (grounding decisions) and Section
+4 (the four layers); board wiring: `59-anthology-engine/scripts/mc_board.py`.
 
 ---
 
@@ -277,6 +328,7 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in th
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.6.0 | 2026-07-07 | Added the Anthology Engine dispatch rule (Skill 59, role `anthology-producer-orchestrator`): a single-department table row (`anthology`) plus a dedicated routing-only subsection documenting the three inbound anthology event classes (the self-dispatching intake webhook, per-stage gate events, and the producer's S9 assembly trigger) that dispatch to `anthology-producer-orchestrator` ONLY and NEVER to R8's `general-task` catch-all, closing the same class of gap the Skill 53 never-seeded-books-department hard lesson exposed. Routing-only (R1/R2/R3/R7): the orchestrator never runs a pipeline step, never intercepts the webhook, and never executes a gate or assembly event itself. Part of Anthology Engine wiring (W4.11). |
 | 1.5.0 | 2026-07-06 | Added the Podcast Production Engine dispatch rule: full podcast episode production routes to the `podcast` universal-floor department (`department_slug: "podcast"`), placed above and distinct from generic audio/voiceover which stays with `audio`. Documents the two inbound paths (the self-dispatching intake webhook on sessionKey `podcast:intake:<slug>`, and owner-message board dispatch) and reaffirms routing-only (R1/R2/R3/R7/R11): the orchestrator never runs a pipeline step, never renders audio or cover art, never writes to Convert and Flow or Podbean, never writes episode state. Silence and no-MCP-in-pipeline carry through. Part of Podcast Production Engine v18 wiring (W4.14). |
 | 1.4.0 | 2026-06-22 | Added Step-2 full-funnel/website-factory branch: when intent is detected, hand to SOP-07 (Full-Funnel Build Orchestration) instead of single-routing. Documents parent idempotency_key with child key derivation as sha256(parent_key+':'+stage_slug). Sibling SOP-07 added to master-orchestrator-dept/. |
 | 1.3.0 | 2026-06-21 | Added R11: route production work to the PERSISTENT per-department agent (`agent:<dept>` via the task board) — NEVER to an ephemeral turn-scoped inline child that dies when a new owner message starts a new turn. Documents the repo-side vs platform-side split for spawn persistence and cross-links `platform/SPEC-persistent-department-spawn.md`. Part of the v13.2.2 routing-gate hardening. |
