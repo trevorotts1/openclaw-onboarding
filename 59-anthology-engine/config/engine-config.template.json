@@ -1,0 +1,91 @@
+{
+  "$schema_note": "Per-box engine configuration TEMPLATE. install.sh / provision-anthology-client.sh resolve every <CLIENT_*> and <LABEL:*> slot per box as the node user. Credentials appear by LABEL only, never by value. The client-facing platform name is Convert and Flow in every surface. Nothing Anthropic ships in this file.",
+  "contract": "anthology-engine-config",
+  "schema_version": 1,
+  "engine": {
+    "skill_dir": "59-anthology-engine",
+    "ledger_schema_version": 1,
+    "state_dir": "<CLIENT_ENGINE_STATE_DIR>",
+    "field_map_ref": "config/field-map.json",
+    "model_map_ref": "config/model-map.template.json (resolved to model-map.json per box by preflight.sh)"
+  },
+  "intake": {
+    "route_path": "/hooks/anthology-intake",
+    "route_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET",
+    "acknowledge_budget_seconds": 2,
+    "tenant_check": "payload location must equal the anthology registry Convert and Flow Location binding; a mismatch lands in Exceptions (tenant_mismatch), never a guess",
+    "keying": "contact_id plus anthology_id composite; never email; unroutable submissions land in the exceptions queue with the raw payload and a typed reason"
+  },
+  "delivery": {
+    "drive_root_folder": "1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw",
+    "drive_root_note": "The operator's EXISTING anyone-can-read delivery root (PRD 3.7). drive-tree-provision.py verifies reachability at preflight and NEVER creates a new root. Tree below it: Producer, then Anthology, then Participant. Per-document sharing is anyone-with-link VIEW only.",
+    "google_impersonate_user_label": "GOOGLE_IMPERSONATE_USER",
+    "google_scope": "https://www.googleapis.com/auth/drive",
+    "pdf_font_floor_pt": 14,
+    "pdf_house_style_dir": "config/pdf-house-style"
+  },
+  "registry_defaults": {
+    "auto_provision_pipeline": true,
+    "pipeline_binding_note": "Onboarding AUTO-PROVISIONS the standard Anthology pipeline in the CLIENT's own Convert and Flow account through the CLIENT's OWN private integration token; binding to a pre-existing pipeline is an explicit override, never the default.",
+    "caf_pit_label": "CONVERT_AND_FLOW_PIT",
+    "caf_location_label": "CONVERT_AND_FLOW_LOCATION_ID",
+    "caf_stage_map": "per-anthology; drives the per-gate Convert and Flow pipeline-stage update; NEVER hardcoded",
+    "min_chapters": 2
+  },
+  "nudge_policy": {
+    "sanctioned_templates_only": true,
+    "templates_dir": "config/nudge-templates",
+    "templates": ["gate-open.md", "completion.md", "stuck-renudge.md"],
+    "auto_renudge_days": 7,
+    "auto_renudge_deduped": true,
+    "all_other_repeats": "manual via the board re-send button, rate-limited",
+    "recipient_rule": "ALWAYS resolved from the ledger row for the given contact_id (participant gates) or the producer record (producer gates); NO literal recipient exists anywhere in the engine",
+    "silence_doctrine": "The engine sends NOTHING else to any client, ever. Operator surfaces are verbose; client surfaces are silent."
+  },
+  "hold_queue_policy": {
+    "credit_out": "durable HOLD with full state; ONE deduped founder Telegram alert through the OpenClaw gateway; the daily tick retries the chain and resumes from the exact cursor",
+    "callback_lost": "bounded re-poll, then hold plus alert",
+    "gate_wait": "NO timeout exists; the ledger holds the cursor for weeks or months at zero cost; 7-day stuck highlighting plus ONE deduped auto re-nudge",
+    "strike_out": "3 internal QC attempts per deliverable, then HOLD plus a single deduped founder alert carrying the failing checks and the best draft; standards never relaxed"
+  },
+  "gates": {
+    "gate_token_secret_label": "ANTHOLOGY_GATE_TOKEN_SECRET",
+    "participant_token_scope": "single-gate-scoped, HMAC over participant_key + gate id + expiry; expires on gate closure; foreign, expired, and replayed tokens are refused",
+    "both_door_rule": "the emailed nudge deep link (participant) and the board card view (producer) hit the SAME endpoint and the SAME anthology_state.py subcommand; logic lives in ONE place",
+    "chapter_gate_actions": ["approve_as_is", "request_rewrite_with_notes"],
+    "rewrite_budget": 2
+  },
+  "board": {
+    "ingest_endpoint": "POST /api/tasks/ingest",
+    "auth": "HMAC (x-webhook-signature over WEBHOOK_SECRET) plus Bearer (MC_API_TOKEN); Skill 32's existing pair, reused never duplicated",
+    "fail_soft": "board unreachability NEVER blocks the pipeline; the ledger remains the truth and the card reconciles on the daily tick",
+    "status_mapping": "card status mirrors Participants.stage_cursor; producer-facing deliverables land the card in the review column (the chapter-approval queue); ONLY the independent QC scorer at or above 8.5 promotes review to done; the engine never self-promotes",
+    "department_seed": "the Anthology department is seeded via Skill 32 add-department.sh (POST /api/departments create:true) during provisioning, idempotent and verified by reading the department back"
+  },
+  "cron": {
+    "daily_tick_only": true,
+    "daily_tick": "one cron entry: smoke test (balance endpoints only, at or under one cent), hold-queue aging, mirror reconcile, stuck-gate re-nudge policy",
+    "no_heartbeat": "NO heartbeat cron ever; guard-cron-inventory.py proves exactly the one daily tick and that churn leaves zero recurring jobs"
+  },
+  "credential_labels": {
+    "note": "Resolved SET or NOT SET only, never by value, across all three client env stores (live process env first). See PRD Section 14.",
+    "required": [
+      "ANTHOLOGY_INTAKE_HOOK_SECRET",
+      "ANTHOLOGY_GATE_TOKEN_SECRET",
+      "CONVERT_AND_FLOW_PIT",
+      "CONVERT_AND_FLOW_LOCATION_ID",
+      "GOOGLE_IMPERSONATE_USER"
+    ],
+    "provider_chain": [
+      "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>",
+      "<CLIENT_OPENROUTER_KEY_LABEL>",
+      "<CLIENT_GEMINI_KEY_LABEL>",
+      "<CLIENT_MINIMAX_KEY_LABEL>",
+      "<CLIENT_KIE_KEY_LABEL>"
+    ],
+    "optional": [
+      "<CLIENT_DEEPSEEK_OR_KIMI_KEY_LABEL>",
+      "<CLIENT_PERPLEXITY_OR_SEARCH_KEY_LABEL>"
+    ]
+  }
+}

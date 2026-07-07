@@ -1,0 +1,33 @@
+<!--
+  Deliverable template: MANUSCRIPT (S9 assembly).
+  Unit W1.12. Renders the full anthology as ONE continuous 14pt-floor PDF through the
+  harvested house.css. Each part (front matter, editor's introduction, ordered chapters,
+  contributor bios, back matter) begins on a fresh page (section[data-part] page break).
+  The ordered_chapters_html slot is the compilation of the FROZEN approved chapter
+  artifacts (byte-identical per chapter, SPEC S9 / Gate B assembly scope); pdf_render.py
+  inserts each part's pre-rendered HTML without transformation.
+  Slots: anthology_name, producer_display_name, front_matter_html,
+         editor_introduction_html, ordered_chapters_html, contributor_bios_html,
+         back_matter_html.
+  No em dash characters in produced prose.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="house.css">
+  <title>{{anthology_name}}</title>
+</head>
+<body>
+  <header>
+    <div class="deliverable-kicker">An Anthology</div>
+    <div class="deliverable-title">{{anthology_name}}</div>
+    <div class="deliverable-subtitle">Edited by {{producer_display_name}}</div>
+  </header>
+  <section data-part="front-matter">{{front_matter_html}}</section>
+  <section data-part="editor-introduction">{{editor_introduction_html}}</section>
+  <section data-part="chapters">{{ordered_chapters_html}}</section>
+  <section data-part="contributor-bios">{{contributor_bios_html}}</section>
+  <section data-part="back-matter">{{back_matter_html}}</section>
+</body>
+</html>

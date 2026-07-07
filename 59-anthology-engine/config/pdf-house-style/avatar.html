@@ -1,0 +1,27 @@
+<!--
+  Deliverable template: AVATAR PROFILE.
+  Unit W1.12. Seeded from the harvested Book-to-HTML formatter structure (SPEC 6.4):
+  centered title block, Arial headings, Georgia body, 14pt floor. pdf_render.py fills
+  the {{slots}} deterministically and inlines house.css before rendering.
+  Slots: deliverable_title, author_name, content_html (semantic HTML from markdown).
+  No em dash characters in produced prose.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="house.css">
+  <title>{{deliverable_title}}</title>
+</head>
+<body>
+  <header>
+    <div class="deliverable-kicker">Ideal Reader Avatar</div>
+    <div class="deliverable-title">{{deliverable_title}}</div>
+    <div class="deliverable-subtitle">{{author_name}}</div>
+  </header>
+  <hr>
+  <main data-deliverable="avatar">
+    {{content_html}}
+  </main>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "$schema_note": "The engine tier map (SPEC Section 8), resolved PER BOX at install by preflight.sh against the CLIENT's OWN configured providers and keys. Every credential is resolved by LABEL from the client env stores (live process env checked first); NO key value ever lives here. Prompts never name a model; TIERS are the only vocabulary above model_router.py. This TEMPLATE carries <CLIENT_*> placeholders; the installer writes a resolved model-map.json and preflight.sh --check fail-closes on any residual <CLIENT_*> placeholder or any Anthropic-family identifier (AF-AE-UNRESOLVED-MODELMAP / AF-AE-ANTHROPIC).",
+  "contract": "anthology-engine-model-map",
+  "schema_version": 1,
+  "sovereignty": "The chain is the CLIENT's own accounts under the CLIENT's own labels. Operator keys never land on a client box. The engine never substitutes a client's expressed model choice. Provider-state alarms NOTIFY, they never modify.",
+  "deny_policy": {
+    "rule": "Anthropic-family model identifiers are DENIED at resolution time and again at call time by model_router.py deny patterns, and statically over every shipped file by guard-no-anthropic-runtime.py. A resolved tier whose provider or model matches an Anthropic-family shape fails closed (AF-AE-ANTHROPIC).",
+    "enforced_by": ["preflight.sh --check", "model_router.py", "guard-no-anthropic-runtime.py"]
+  },
+  "tiers": {
+    "HEAVY-WRITER": {
+      "work": "S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter",
+      "parameters": {"thinking": "high", "temperature": 0.3},
+      "chain": [
+        {"order": 1, "provider": "ollama-cloud", "model": "<CLIENT_HEAVY_PRIMARY_MODEL>", "credential_label": "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>", "slotting": "baseUrl", "maxTokens": 65536, "note": "provider id ollama-cloud REQUIRES baseUrl slotting, NOT apiKey slotting"},
+        {"order": 2, "provider": "openrouter", "model": "<CLIENT_HEAVY_FALLBACK1_MODEL>", "credential_label": "<CLIENT_OPENROUTER_KEY_LABEL>", "slotting": "apiKey"},
+        {"order": 3, "provider": "gemini", "model": "<CLIENT_HEAVY_FALLBACK2_MODEL>", "credential_label": "<CLIENT_GEMINI_KEY_LABEL>", "slotting": "apiKey", "note": "one Gemini key resolves under any of its three alias names"},
+        {"order": 4, "provider": "HOLD", "model": "durable HOLD + ONE deduped founder Telegram alert through the OpenClaw gateway, never bypassed (hold_queue.py + alert-dedup.py)"}
+      ]
+    },
+    "LIGHT": {
+      "work": "extraction (aw-12 primary-goal), classification, routing-adjacent text chores",
+      "parameters": {},
+      "chain": [
+        {"order": 1, "provider": "ollama-cloud", "model": "<CLIENT_LIGHT_PRIMARY_MODEL>", "credential_label": "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>", "slotting": "baseUrl"},
+        {"order": 2, "provider": "openrouter", "model": "<CLIENT_LIGHT_FALLBACK1_MODEL>", "credential_label": "<CLIENT_OPENROUTER_KEY_LABEL>", "slotting": "apiKey"},
+        {"order": 3, "provider": "gemini", "model": "<CLIENT_HEAVY_FALLBACK2_MODEL>", "credential_label": "<CLIENT_GEMINI_KEY_LABEL>", "slotting": "apiKey"}
+      ]
+    },
+    "JUDGE": {
+      "work": "Gate B semantic checks and the Tier 2 ten-dimension rubric",
+      "parameters": {"temperature": 0},
+      "independence_law": "The JUDGE resolution is ALWAYS different from the tier that drafted the piece under review (judge_harness.py enforces AF-AE-JUDGE-INDEPENDENCE); the judge never runs the persona or tier that drafted.",
+      "chain": [
+        {"order": 1, "provider": "minimax", "model": "<CLIENT_JUDGE_PRIMARY_MODEL>", "credential_label": "<CLIENT_MINIMAX_KEY_LABEL>", "slotting": "apiKey"},
+        {"order": 2, "provider": "gemini", "model": "<CLIENT_HEAVY_FALLBACK2_MODEL>", "credential_label": "<CLIENT_GEMINI_KEY_LABEL>", "slotting": "apiKey"}
+      ]
+    },
+    "LONGCTX": {
+      "work": "S9 whole-manuscript compile (optional, about 1M context)",
+      "optional": true,
+      "parameters": {"thinking": "high"},
+      "absent_behavior": "When the client configured NO long-context key, S9 chunks on HEAVY-WRITER instead.",
+      "chain": [
+        {"order": 1, "provider": "deepseek", "model": "<CLIENT_LONGCTX_MODEL>", "credential_label": "<CLIENT_DEEPSEEK_OR_KIMI_KEY_LABEL>", "slotting": "apiKey"}
+      ]
+    },
+    "IMAGE": {
+      "work": "S7 cover",
+      "parameters": {"aspect": "portrait", "dimensions": "1024x1536"},
+      "chain": [
+        {"order": 1, "provider": "kie", "model": "<CLIENT_IMAGE_MODEL>", "credential_label": "<CLIENT_KIE_KEY_LABEL>", "endpoint": "text-to-image PORTRAIT endpoint verified at Wave 0 (NEVER the 16:9 presentation image-to-image recipe)", "via": "Skills 07 and 46 callback relay"}
+    ]
+    }
+  },
+  "no_formatter_tier": true,
+  "formatter_note": "The five legacy LLM HTML-formatter calls are RETIRED. All document formatting is deterministic Python (pdf_render.py + config/pdf-house-style); there is NO formatter model tier."
+}

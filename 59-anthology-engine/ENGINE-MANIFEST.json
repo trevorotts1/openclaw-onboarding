@@ -1,0 +1,159 @@
+{
+  "manifest_version": 1,
+  "skill": "anthology-engine",
+  "skill_number": 59,
+  "skill_version": "0.1.0",
+  "schema_version": "1",
+  "ledger_schema_version": 1,
+  "authoring_core": "54-anthology-writer",
+  "shared_tone_core": "shared-utils/tone-writing-core",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory (SPEC 3.4, 32 rows) with purpose and exit-code contract. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6.",
+  "doctrine": "Move in silence (operator-verbose, client-silent; only the three sanctioned nudge templates ever reach a client). Nothing Anthropic ships in any runtime file (guard-no-anthropic-runtime.py + model_router.py deny patterns). Every credential is referenced by label and location only, never by value. The client-facing platform name is Convert and Flow. Config writes run as the node user, never root. Keying is contact_id, never email. Enforcement, not description: every SACRED floor is a fail-closed prover, never advice.",
+
+  "layers": {
+    "L2_orchestration": "The ONLY layer that touches the ledger, the model router, and the gates. intake_router.py -> anthology_state.py -> the stage runners.",
+    "L1_authoring_core": "Skill 54, invoked as a LOCAL subprocess through 54-anthology-writer/anthology-entry.sh with a working dir per participant per stage; its certification model (hash gate, nonce, fail-closed provers) is preserved untouched.",
+    "L3_delivery_adapters": "Stateless functions with explicit inputs; every external write is followed by a read-back in the same job (drive_adapter.py, pdf_render.py, caf_delivery.py, cover_render.py).",
+    "L4_surfaces": "The client's OWN Command Center: the seeded Anthology department board (cards via mc_board.py -> POST /api/tasks/ingest, HMAC + Bearer, fail-soft; review column = approval queue; QC scorer >= 8.5 promotes review to done), the home-screen tiles, and the participant token page. The board holds NO base credential; its only write path is shelling anthology_state.py."
+  },
+
+  "tiers": {
+    "HEAVY-WRITER": "S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter (client's strongest NON-Anthropic long-form chain; thinking high, temperature 0.3)",
+    "LIGHT": "aw-12 extraction, classification, routing-adjacent chores (Minimax V3 chain)",
+    "JUDGE": "Gate B semantic checks and the Tier 2 rubric; ALWAYS a different resolution than the drafting tier (temperature 0)",
+    "LONGCTX": "optional S9 whole-manuscript compile (about 1M context) ONLY when the client configured a key; else S9 chunks on HEAVY-WRITER",
+    "IMAGE": "S7 cover: the client's own Kie.ai GPT-image-2 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint (never the 16:9 recipe), through Skills 07 and 46"
+  },
+
+  "stages": [
+    {"id": "S0", "name": "INTAKE AND ROUTING", "runner": "scripts/stage_s0_intake.py", "tier": "none (deterministic)", "produces_artifact": "participant ledger row (composite key contact_id::anthology_id), Drive path, board card", "gate": "none", "provers": ["intake_router validation"], "persona": "none (anthology-producer-orchestrator)"},
+    {"id": "S1", "name": "AVATAR", "runner": "scripts/stage_s1_avatar.py", "tier": "HEAVY-WRITER + LIGHT (aw-12)", "produces_artifact": "working/avatar.md; Avatar Doc plus PDF", "gate": "s1_producer (board review column)", "provers": ["guard-prompt-pins.py", "qc-tier1-anthology.py"], "persona": "the Avatar Profiler (Skill 52 aa-01..03)"},
+    {"id": "S2", "name": "TONE", "runner": "scripts/stage_s2_tone.py", "tier": "HEAVY-WRITER", "produces_artifact": "working/tone-doc.md; Tone Doc plus PDF", "gate": "s2_producer", "provers": ["verify_tone_core_sync.py", "prove_aw_tone.py", "qc-tier1-anthology.py"], "persona": "the Tone Analysts and Blender (tone core 04..08)"},
+    {"id": "S3", "name": "TITLE", "runner": "scripts/stage_s3_title.py", "tier": "HEAVY-WRITER", "produces_artifact": "working/titles.md; Titles Doc plus PDF; TITLE LOCK", "gate": "s3_selection (participant token page)", "provers": ["AF-AW-TITLE-LOCK carry"], "persona": "the Senior Title Strategist (aw-06)"},
+    {"id": "S4", "name": "BLURB AND OUTLINE", "runner": "scripts/stage_s4_outline.py", "tier": "HEAVY-WRITER", "produces_artifact": "working/blurb.md, working/outline.md; both Docs plus PDFs", "gate": "s4_producer then s4_participant (token page)", "provers": ["story-placement prover", "title-lock carry", "qc-tier1-anthology.py"], "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"},
+    {"id": "S5", "name": "CHAPTER", "runner": "scripts/stage_s5_chapter.py", "tier": "HEAVY-WRITER", "produces_artifact": "working/chapter.md; Chapter Doc plus PDF", "gate": "s5_participant (Approve as-is OR Request rewrite with notes)", "provers": ["prove_aw_chapter.py", "qc-tier1-anthology.py (full)", "judge_harness.py (Tier 2)", "qc-strike-gate.py"], "persona": "the Anthology Chapter Author (aw-09)"},
+    {"id": "S6", "name": "CHAPTER REWRITE", "runner": "scripts/stage_s6_rewrite.py", "tier": "HEAVY-WRITER", "produces_artifact": "new chapter VERSION; re-enters the S5 gate", "gate": "re-enters s5_participant", "provers": ["prove_aw_chapter.py", "judge_harness.py", "qc-strike-gate.py (rewrite budget 2)"], "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"},
+    {"id": "S7", "name": "COVER IMAGE", "runner": "scripts/stage_s7_cover.py", "tier": "HEAVY-WRITER (prompt) + IMAGE (render)", "produces_artifact": "cover PNG in the participant Drive folder; both link fields", "gate": "none", "provers": ["cover_render callback verify"], "persona": "the Senior Book-Cover Design Specialist (aw-11)"},
+    {"id": "S8", "name": "PACKAGE AND DELIVER", "runner": "scripts/stage_s8_deliver.py", "tier": "none (deterministic)", "produces_artifact": "every deliverable as Google Doc + 14pt-floor PDF; Convert and Flow media + exact-key field writes; control fields; signed certificate", "gate": "card to review (QC scorer owns review to done)", "provers": ["guard-font-floor.py", "caf_delivery read-back"], "persona": "none (anthology-producer-orchestrator)"},
+    {"id": "S9", "name": "ANTHOLOGY ASSEMBLY", "runner": "scripts/stage_s9_assembly.py", "tier": "LONGCTX or HEAVY-WRITER", "produces_artifact": "full manuscript Doc plus PDF; manuscript fields", "gate": "s9_ready (arm and fire, all PRD 3.11 guards) then s9_producer (sign-off)", "provers": ["qc-tier1-anthology.py --mode assembly", "frozen-chapter sha256 byte-identity"], "persona": "the Anthology Editor voice (ae-01..04), subordinate to producer inputs"}
+  ],
+
+  "gate_table": {
+    "s1_producer": "board review column; nudge deep-link in; Approve or Hold",
+    "s2_producer": "board review column",
+    "s3_selection": "participant token page; title and subtitle pick; TITLE LOCK one-way",
+    "s4_producer": "board review column",
+    "s4_participant": "participant token page; outline approval; no re-upload path exists",
+    "s5_participant": "participant token page; exactly two actions; notes feed chapter_updates verbatim",
+    "s9_ready": "the producer ready-to-assemble trigger (Assembly card or readiness nudge, both doors one endpoint); guards: own-producer, every participant approved or excluded, >= min_chapters frozen approved chapters, typed --confirm-name, one-way",
+    "s9_producer": "final manuscript sign-off on the Assembly card; closes the anthology"
+  },
+
+  "engine_owned_prompt_pins": {
+    "$note": "The engine OWNS only the S9 assembly and routing prompts. Authored by W1.18; sha256 pins STAMPED by the Wave-1 integrator (each recomputed from the on-disk asset and matched byte-for-byte). Every authoring prompt (aa-01..03, tone 04..08, aw-06..12) lives in Skill 54 / Skill 52 / the tone core and is proven by guard-prompt-pins.py.",
+    "assets/prompts/ae-01-order-curation.md": "2e12ad8db5bb8563c8fed38442c9fb823140796a707eaccef97d71db4ca1e25b",
+    "assets/prompts/ae-02-editor-introduction.md": "78b65803311f6548a3845d1db4fc63249fa5cc229a55c00ebb9e65c4ec8bfdc6",
+    "assets/prompts/ae-03-contributor-bio.md": "5c0600d75d2db74d25f0f401757fa471adc7d17fdd4b630032411f664b99a6e5",
+    "assets/prompts/ae-04-front-back-matter.md": "46a77c5c86cb5f3a9dedc159e82253dc0171bd576919bd6391af306ff8130b0d"
+  },
+
+  "field_map_ref": "config/field-map.json",
+  "model_map_ref": "config/model-map.template.json",
+  "config_refs": ["config/engine-config.template.json", "config/route-template.json", "config/nudge-templates/", "config/pdf-house-style/"],
+
+  "exit_code_house_convention": {
+    "0": "success (including an idempotent no-op)",
+    "1": "unexpected error",
+    "2": "validation or guard refusal",
+    "3": "dependency unavailable or held",
+    "4": "enforced violation detected",
+    "5": "data or read-back mismatch"
+  },
+
+  "script_inventory": [
+    {"n": 1, "script": "anthology_state.py", "authored_by": "W1.7", "purpose": "Sole ledger writer: schema bootstrap, transitions, approvals (incl. the s9_ready trigger), readiness report, holds, exceptions, mirror reconcile, export bundle", "exit_codes": "0 verified success; 2 illegal transition; 3 unknown key; 4 base unreachable (mirror-queued); 5 validation or confirm-name mismatch"},
+    {"n": 2, "script": "intake_router.py", "authored_by": "W1.5", "purpose": "S0 deterministic intake: secret check, hidden-field validation, tenant check, dedup no-op, exception capture, under-2-second acknowledge, detached stage spawn", "exit_codes": "0 routed or no-op; 2 route-secret refusal; 3 captured to Exceptions (typed reason); 4 ledger unreachable"},
+    {"n": 3, "script": "anthology_registry.py", "authored_by": "W1.8", "purpose": "Per-anthology bindings: auto-provisioned pipeline and stage map, form ids, Drive folder", "exit_codes": "0; 2 unknown anthology or binding; 5 validation"},
+    {"n": 4, "script": "model_router.py", "authored_by": "W1.9", "purpose": "The Section 8 tier chain, one call site, metering hooks, typed error classes, Anthropic-family deny patterns", "exit_codes": "0 completion; 2 deny-pattern refusal; 3 chain exhausted, job held; 4 budget ceiling block"},
+    {"n": 5, "script": "search_detect.py", "authored_by": "W1.10", "purpose": "Web-search detection ladder (prefer Perplexity; degrade plus flag), cached per box", "exit_codes": "0 tool detected and cached; 3 no tool (degrade-plus-flag path)"},
+    {"n": 6, "script": "stage_s0_intake.py, stage_s1_avatar.py, stage_s2_tone.py, stage_s3_title.py, stage_s4_outline.py, stage_s5_chapter.py, stage_s6_rewrite.py, stage_s7_cover.py, stage_s8_deliver.py, stage_s9_assembly.py (ten runners)", "authored_by": "W1.1 (dispatchers); module logic wired from W1.5..W1.18", "purpose": "One idempotent thin runner per stage: compose pins, call Layer 1 or the router, run provers, record artifacts, open the gate", "exit_codes": "0 stage complete and persisted; 2 prover failure (counts a QC attempt); 3 held (credits or callback, or a collaborator not yet wired); 5 unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)", "note": "SPEC 3.4 row 6 names nine runners stage_s1..s9; this build also ships stage_s0_intake.py (a thin wrapper over intake_router.py) so S0 has a stage-inventory entry and an exceptions-replay dispatch. SPEC 3.1 names the S4 runner stage_s4_blurb_outline.py; this build ships it as stage_s4_outline.py per the W1.1 file-ownership list. The S9 assembly logic ships as the sibling helper scripts/stage_s9_assembly_logic.py (authored_by W1.18), imported by the stage_s9_assembly.py dispatcher rather than dispatched directly; it is inventoried here under this row so inventory-equals-shipped-set holds without adding a 33rd normative row. The dispatcher _invoke_wiring() bodies are wired to concrete collaborator argv once every sibling collaborator lands (mc_board.py and the W2.x guards/provisioning are still pending); until then each dispatcher holds safely (exit 3)."},
+    {"n": 7, "script": "gate_engine.py", "authored_by": "W1.15", "purpose": "Gate state machine, both-door single endpoint, scoped-token mint and verify, s9_ready arming", "exit_codes": "0 action recorded; 2 invalid or expired token; 3 gate not open"},
+    {"n": 8, "script": "nudge_send.py", "authored_by": "W1.15", "purpose": "The three sanctioned templates only; ledger-resolved recipients; 7-day stuck re-nudge", "exit_codes": "0 sent; 2 template or recipient refusal; 3 delivery path unavailable"},
+    {"n": 9, "script": "drive_adapter.py", "authored_by": "W1.11", "purpose": "Direct Drive and Docs API calls with the existing service account; Doc create, view-only share, export bundle", "exit_codes": "0; 3 API unreachable; 5 read-back mismatch"},
+    {"n": 10, "script": "drive-tree-provision.py", "authored_by": "W1.11", "purpose": "Idempotent Producer/Anthology/Participant tree under the EXISTING configured root; never creates a new root", "exit_codes": "0 tree verified or created; 2 configured root unreachable; 3 API unreachable"},
+    {"n": 11, "script": "pdf_render.py", "authored_by": "W1.12", "purpose": "Deterministic WeasyPrint-class HTML-to-PDF from the house templates, all font tokens at or above 14 point", "exit_codes": "0 rendered; 1 render error; 2 template token below floor"},
+    {"n": 12, "script": "caf_delivery.py", "authored_by": "W1.13", "purpose": "Convert and Flow media upload, exact-key field writes by contact_id, byte-for-byte read-back, control fields, per-gate pipeline-stage update", "exit_codes": "0 delivered and verified; 1 unexpected error; 2 tenant mismatch or validation refusal (operator surface); 3 API unreachable or PIT scope-denied (held); 5 read-back mismatch (AF-AE-READBACK-MISMATCH)"},
+    {"n": 13, "script": "cover_render.py", "authored_by": "W1.14", "purpose": "Kie.ai GPT-image-2 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive", "exit_codes": "0 PNG landed; 3 callback lost after re-poll (held)"},
+    {"n": 14, "script": "qc-tier1-anthology.py", "authored_by": "W1.17", "purpose": "Gate B Tier 1 deterministic checks, per-piece and assembly modes", "exit_codes": "0 all pass; 2 bad invocation; 4 one or more failures (list emitted)"},
+    {"n": 15, "script": "qc-strike-gate.py", "authored_by": "W1.16", "purpose": "Both counters: participant rewrite budget 2 with gate re-entry, internal QC attempts 3, hold-and-alert", "exit_codes": "0 within budgets; 4 budget or attempt exhaustion (hold path)"},
+    {"n": 16, "script": "judge_harness.py", "authored_by": "W1.17", "purpose": "Tier 1 semantic checks 13 to 15 plus the Tier 2 ten-dimension rubric on the JUDGE tier", "exit_codes": "0 pass; 2 judge tier equals writer tier (independence violation); 4 any dimension below 8"},
+    {"n": 17, "script": "anthology-cost-ledger.py", "authored_by": "W1.21", "purpose": "Metering choke point, per-deliverable token budgets shared across QC attempts", "exit_codes": "0 metered within budget; 4 ceiling exceeded (blocks the call)"},
+    {"n": 18, "script": "anthology-smoke-test.py", "authored_by": "W1.22", "purpose": "Daily funded-reachability probe, balance endpoints ONLY, total spend at or under one cent; ages the hold queue", "exit_codes": "0 all reachable and funded; 4 provider unreachable or unfunded (alert path)"},
+    {"n": 19, "script": "hold_queue.py", "authored_by": "W1.20", "purpose": "Durable credit-out and callback holds, daily age tick, resume from exact cursor", "exit_codes": "0; 3 still held"},
+    {"n": 20, "script": "exceptions.py", "authored_by": "W1.19", "purpose": "Capture, list, resolve-and-replay through S0", "exit_codes": "0; 3 unknown exception id"},
+    {"n": 21, "script": "alert-dedup.py", "authored_by": "W2.4", "purpose": "Single deduped founder alert path, OpenClaw gateway Telegram only", "exit_codes": "0 sent or correctly suppressed; 3 gateway unreachable"},
+    {"n": 22, "script": "guard-prompt-pins.py", "authored_by": "W2.1", "purpose": "Every baked prompt matches its sha256 pin, zero truncation, zero runtime prompt-base references", "exit_codes": "0 clean; 4 violation"},
+    {"n": 23, "script": "guard-no-anthropic-runtime.py", "authored_by": "W2.2", "purpose": "Zero Anthropic-family identifiers across the full engine file set including every Command Center edit", "exit_codes": "0 clean; 4 violation"},
+    {"n": 24, "script": "guard-font-floor.py", "authored_by": "W1.12", "purpose": "Parses the RENDERED PDF; any glyph below 14 point fails", "exit_codes": "0 clean; 4 violation"},
+    {"n": 25, "script": "guard-cron-inventory.py", "authored_by": "W2.5", "purpose": "Exactly the one daily tick; no heartbeat entry ever; churn leaves zero recurring jobs", "exit_codes": "0 clean; 4 violation"},
+    {"n": 26, "script": "caf_credential_gate.py", "authored_by": "W2.3", "purpose": "Label resolution across all three env stores (live process env first), pairing proof, anti-commingling fingerprint; reports SET or NOT SET only", "exit_codes": "0 all labels resolve and fingerprint clean; 2 missing label; 4 commingling detected"},
+    {"n": 27, "script": "anthology-engine-entry.sh", "authored_by": "W1.1", "purpose": "The ONE sanctioned entry: deps check, model-map pre-gate, bypass scan, manifest hash pin, nonce, fail-closed; then dispatches a stage runner", "exit_codes": "0 run authorized and completed (stage exit returned); 2 usage; 5 bypass; 6 deps; 7 hash-pin; 8 model-map pre-gate"},
+    {"n": 28, "script": "install.sh / preflight.sh", "authored_by": "W1.1", "purpose": "Per-box resolution: model map, credential labels, webhook route, cron tick, Drive root reachability", "exit_codes": "0 box ready; 2 missing prerequisite (named)"},
+    {"n": 29, "script": "verify.sh / verify-deps.sh", "authored_by": "W1.1", "purpose": "READ-ONLY idempotent self-verify", "exit_codes": "0 verified; 4 drift found"},
+    {"n": 30, "script": "provision-anthology-client.sh", "authored_by": "W2.6", "purpose": "Full Section 13.1 provisioning including the auto-provisioned standard pipeline; config writes as the node user", "exit_codes": "0 pass gate; nonzero stops SETUP with an operator surface"},
+    {"n": 31, "script": "revoke-anthology-client.sh", "authored_by": "W2.7", "purpose": "Participant gate-token invalidation, Anthology board archival, Drive share revocation, webhook route disable, data export, verification probe", "exit_codes": "0 revoked and verified; 4 a probe still answers"},
+    {"n": 32, "script": "verify-webhook-t1-t9.sh", "authored_by": "W1.6", "purpose": "The nine intake proofs of Section 13.2, executed and observed", "exit_codes": "0 all nine observed; 4 failing test id emitted"}
+  ],
+
+  "autofails": [
+    {"code": "AF-AE-SLOT-UNRESOLVED", "stage": "any authoring stage", "level": "compose", "trigger": "a legacy Make.com/n8n prompt variable slot did not resolve to a canonical field name (SPEC 6.2); the composer refuses any unresolved slot (fail-closed)", "enforced_by": "stage_sN runner + the prompt composer", "py_symbol": "compose"},
+    {"code": "AF-AE-ANTHROPIC", "stage": "any", "level": "run", "trigger": "a resolved model id or any shipped file carries an Anthropic-family identifier shape", "enforced_by": "model_router.py + guard-no-anthropic-runtime.py + preflight.sh --check", "py_symbol": "deny"},
+    {"code": "AF-AE-PROMPT-PIN", "stage": "any authoring stage", "level": "assets", "trigger": "a baked prompt sha256 != its pin, a truncation boundary, or a surviving [UNCHANGED] placeholder", "enforced_by": "guard-prompt-pins.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-FONT-FLOOR", "stage": "S8/S9", "level": "delivery", "trigger": "a RENDERED PDF carries a glyph below 14 point", "enforced_by": "guard-font-floor.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-TENANT-MISMATCH", "stage": "S0 / delivery", "level": "tenant", "trigger": "the payload location does not equal the anthology registry Convert and Flow Location binding", "enforced_by": "intake_router.py / caf_delivery.py", "py_symbol": "tenant_check"},
+    {"code": "AF-AE-UNROUTABLE", "stage": "S0", "level": "intake", "trigger": "missing or invalid hidden ids (contact_id / anthology_id / stage); captured to Exceptions, never dropped or guessed", "enforced_by": "intake_router.py", "py_symbol": "route"},
+    {"code": "AF-AE-STAGE-MISMATCH", "stage": "S0", "level": "intake", "trigger": "a stage form arrives for a participant whose cursor does not match; captured to Exceptions (stage_mismatch)", "enforced_by": "intake_router.py", "py_symbol": "route"},
+    {"code": "AF-AE-ILLEGAL-TRANSITION", "stage": "any", "level": "ledger", "trigger": "a transition not permitted by the legal-transition matrix (SPEC 7.3); exits nonzero and changes nothing", "enforced_by": "anthology_state.py", "py_symbol": "advance_stage"},
+    {"code": "AF-AE-READBACK-MISMATCH", "stage": "S8", "level": "delivery", "trigger": "a Convert and Flow field write or a Drive write does not read back byte-for-byte in the same job", "enforced_by": "caf_delivery.py / drive_adapter.py", "py_symbol": "write_and_verify"},
+    {"code": "AF-AE-TITLE-LOCK", "stage": "S3..S9", "level": "content", "trigger": "the locked title or subtitle is not carried byte-exact through outline, chapter, every rewrite, and the cover prompt", "enforced_by": "prove_aw_chapter.py (Skill 54) + qc-tier1-anthology.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-CHAP-BAND", "stage": "S5/S6", "level": "content", "trigger": "the chapter measured stripped words fall outside 2,000 to 3,500 (self-report ignored)", "enforced_by": "prove_aw_chapter.py (Skill 54)", "py_symbol": "evaluate"},
+    {"code": "AF-AE-REWRITE-BUDGET", "stage": "S6", "level": "run", "trigger": "a rewrite beyond budget 2; a silent third rewrite is an illegal transition", "enforced_by": "qc-strike-gate.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-QC-STRIKEOUT", "stage": "any QC'd deliverable", "level": "run", "trigger": "three internal QC attempts exhausted; HOLD plus one deduped founder alert carrying the failing checks and best draft; standards never relaxed", "enforced_by": "qc-strike-gate.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-JUDGE-INDEPENDENCE", "stage": "Gate B", "level": "qc", "trigger": "the JUDGE tier or persona equals the tier or persona that drafted the piece", "enforced_by": "judge_harness.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-CREDIT-HOLD", "stage": "any billable call", "level": "run", "trigger": "provider insufficient-credits or chain exhaustion; durable HOLD plus ONE deduped founder Telegram alert through the gateway; resume from the exact cursor", "enforced_by": "model_router.py + hold_queue.py + alert-dedup.py", "py_symbol": "hold"},
+    {"code": "AF-AE-S9-GUARD", "stage": "S9", "level": "assembly", "trigger": "a ready-to-assemble guard failed: non-producer auth, an unapproved and non-excluded participant, below-minimum frozen approved chapters, or a --confirm-name mismatch", "enforced_by": "anthology_state.py", "py_symbol": "record_approval"},
+    {"code": "AF-AE-S9-FROZEN", "stage": "S9", "level": "assembly", "trigger": "a manuscript chapter is not byte-identical (sha256) to its frozen approved artifact", "enforced_by": "anthology_state.py / stage_s9_assembly.py", "py_symbol": "compile"},
+    {"code": "AF-AE-FIELD-MISSING", "stage": "provisioning", "level": "setup", "trigger": "a required PRD Section 6 custom field is absent at provisioning; STOP setup with an operator surface, never a silent runtime create", "enforced_by": "provision-anthology-client.sh / caf_delivery.py", "py_symbol": "verify_fields"},
+    {"code": "AF-AE-PIT-SCOPE", "stage": "provisioning", "level": "setup", "trigger": "the Convert and Flow private integration token lacks pipeline/opportunities WRITE scope (probed by create-feasibility, not mere presence); STOP setup with an operator surface, never a silent fallback", "enforced_by": "provision-anthology-client.sh", "py_symbol": "probe_write_scope"},
+    {"code": "AF-AE-EXPORT-LEAK", "stage": "merge gate", "level": "repo", "trigger": "any of the nine JSON exports content or a key shape appears in the repo", "enforced_by": "merge-gate export scan (W0.3 / W2.8)", "py_symbol": "scan"},
+    {"code": "AF-AE-CRON-DRIFT", "stage": "cron", "level": "run", "trigger": "more than the one daily tick, or any heartbeat entry; churn leaving a recurring job", "enforced_by": "guard-cron-inventory.py", "py_symbol": "evaluate"},
+    {"code": "AF-AE-COMMINGLE", "stage": "credential", "level": "isolation", "trigger": "an operator, shared, or other-client credential fingerprint is detected in place of the named client's own", "enforced_by": "caf_credential_gate.py", "py_symbol": "fingerprint"},
+    {"code": "AF-AE-TOKEN-REFUSED", "stage": "gates", "level": "auth", "trigger": "a foreign, expired, or replayed participant token", "enforced_by": "gate_engine.py", "py_symbol": "verify_token"},
+    {"code": "AF-AE-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled ungoverned external sender (n8n webhook, Airtable call, literal Authorization key header) is present in a run directory", "enforced_by": "anthology-engine-entry.sh", "py_symbol": "bypass_scan"},
+    {"code": "AF-AE-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)", "enforced_by": "anthology-engine-entry.sh", "py_symbol": "version_hash_pin"},
+    {"code": "AF-AE-UNRESOLVED-MODELMAP", "stage": "entry", "level": "run-dir", "trigger": "a resolved run-dir model-map.json still carries a <CLIENT_*> placeholder (the fleet installer has not resolved this box)", "enforced_by": "preflight.sh --check / anthology-engine-entry.sh", "py_symbol": "check"},
+    {"code": "AE_DEPS_MISSING", "stage": "entry", "level": "deps", "trigger": "python3 is absent", "enforced_by": "anthology-engine-entry.sh", "py_symbol": "deps_check"}
+  ],
+
+  "personas": {
+    "$note": "Mirror of PRD Section 13, stamped into the fleet persona-matching config at W4.2 so the client's workforce self-invokes the right operator per stage. Personas live inside the pinned prompts, never in runtime config.",
+    "S0": {"role": "anthology-producer-orchestrator", "persona": "none (deterministic code)"},
+    "S1": {"role": "anthology-chapter-author", "persona": "the Avatar Profiler (Skill 52, aa-01..03)"},
+    "S2": {"role": "anthology-chapter-author", "persona": "the Tone Analysts and Blender (tone core 04..08)"},
+    "S3": {"role": "anthology-chapter-author", "persona": "the Senior Title Strategist (aw-06)"},
+    "S4": {"role": "anthology-chapter-author", "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"},
+    "S5": {"role": "anthology-chapter-author", "persona": "the Anthology Chapter Author (aw-09)"},
+    "S6": {"role": "anthology-chapter-author", "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"},
+    "S7": {"role": "anthology-producer-orchestrator", "persona": "the Senior Book-Cover Design Specialist (aw-11)"},
+    "S8": {"role": "anthology-producer-orchestrator", "persona": "none (deterministic rendering and delivery)"},
+    "gates_nudges_readiness": {"role": "anthology-approvals-steward", "persona": "none (gate logic; sanctioned templates only)"},
+    "S9": {"role": "anthology-producer-orchestrator", "persona": "the Anthology Editor voice (ae-01..04), subordinate to producer inputs"},
+    "content_qc": {"role": "anthology-approvals-steward", "persona": "the independent Editorial Judge on the JUDGE tier"}
+  },
+
+  "sibling_boundaries": {
+    "skill_53_book_writer": "NOT deprecated, NOT touched: the single-author twelve-chapter product. Executing the stale 'deprecate BookWriter' directive is a scored build failure.",
+    "skill_54_anthology_writer": "PROMOTED to the authoring core and extended by exactly three bounded extensions (avatar handoff, pinned-prompt completion, intake fields). Building a duplicate anthology skill is a build failure.",
+    "tone_core": "shared-utils/tone-writing-core reused byte-identical; forking it is a build failure (verify_tone_core_sync.py green)."
+  }
+}

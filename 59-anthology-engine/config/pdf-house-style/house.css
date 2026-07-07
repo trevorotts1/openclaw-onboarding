@@ -1,0 +1,209 @@
+/*
+ * Anthology Engine house PDF style.
+ * Unit W1.12 (PDF renderer + font-floor guard). Seeded by W1.1 scaffold, finalized here.
+ *
+ * PROVENANCE (SPEC 6.4; WAVE-PLAN W1.12): every rule below is HARVESTED from the
+ * Book-to-HTML formatter's typography and structure conventions (the [UNCHANGED]-
+ * restored formatter body pinned as component "fmt" in .build-state/W0.2.json,
+ * sha256:84d3d2a1cc410d18d7fef3bc6bb32227d8b59966d0d3057a572e36886360f870). The
+ * formatter itself is HARVEST-ONLY and is NEVER shipped as a runtime prompt (SPEC 6.1);
+ * its five legacy LLM HTML-formatter calls are RETIRED. All formatting is now
+ * DETERMINISTIC: pdf_render.py transforms the deliverable's markdown to semantic HTML,
+ * fills the per-type template, inlines THIS stylesheet, and renders with WeasyPrint.
+ *
+ * THE ONE DELIBERATE DEVIATION FROM THE HARVEST: the formatter set body copy at 12pt.
+ * MASTERDOC floor law #7 and SPEC 10.2 forbid any rendered glyph below 14 point, so
+ * BODY IS RAISED FROM 12pt TO 14pt (the floor) and every other size is carried at or
+ * above the floor. guard-font-floor.py parses the RENDERED PDF and fails on any glyph
+ * below 14 point (AF-AE-FONT-FLOOR); this stylesheet is authored so that gate never
+ * has cause to fire. NOTHING here may set a font-size below --font-floor.
+ *
+ * No em dash characters anywhere in produced prose (Gate B Tier 1 check 5).
+ * Google-Docs-safe semantic HTML only: p, h1-h6, ul, ol, li, blockquote, strong, em,
+ * hr, div. No flexbox/grid, no position:absolute/fixed, no web fonts, no JS.
+ */
+
+:root {
+  /* ---- Font-size tokens (HARVESTED hierarchy; floor is 14pt; none may go below). ---- */
+  --font-floor:      14pt;   /* the hard floor: smallest permitted glyph */
+  --font-body:       14pt;   /* body copy -- RAISED from the formatter's 12pt to the floor */
+  --font-caption:    14pt;   /* captions / notes / bios never drop below the floor */
+  --font-oneliner:   14pt;   /* memorable one-liners (harvested: 14pt) */
+  --font-h3:         16pt;   /* harvested H3 */
+  --font-subtitle:   18pt;   /* harvested author / subtitle line */
+  --font-scenebreak: 18pt;   /* harvested scene-break asterisks */
+  --font-h2:         20pt;   /* harvested H2 */
+  --font-h1:         28pt;   /* harvested chapter title (H1) */
+  --font-title:      36pt;   /* harvested book / deliverable title */
+
+  /* ---- Leading and rhythm (HARVESTED: 1.6 body, 1.8 lists/one-liners). ---- */
+  --leading-body:    1.6;
+  --leading-loose:   1.8;
+  --leading-head:    1.25;
+  --para-space:      0.75em; /* between-element breathing room */
+  --indent:          0.5in;  /* harvested first-line indent for continuation paragraphs */
+  --page-margin:     0.9in;
+
+  /* ---- Google-Docs-safe families (HARVESTED: Georgia body, Arial headers). ---- */
+  --family-body:     Georgia, "Times New Roman", serif;
+  --family-head:     Arial, Helvetica, sans-serif;
+
+  --ink:             #1a1a1a;
+  --ink-soft:        #444444;
+  --ink-muted:       #666666;
+  --rule:            #cccccc;
+}
+
+@page {
+  margin: var(--page-margin);
+}
+
+html, body {
+  color: var(--ink);
+  font-family: var(--family-body);
+  font-size: var(--font-body);       /* == floor; never smaller */
+  line-height: var(--leading-body);
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Headings: harvested hierarchy, Arial, generous margins. ---- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--family-head);
+  line-height: var(--leading-head);
+  color: var(--ink);
+}
+h1 {
+  font-size: var(--font-h1);
+  text-align: center;
+  margin: 2.2em 0 1.1em 0;
+  page-break-before: always;         /* harvested: clean chapter division on print */
+}
+h1:first-of-type { page-break-before: avoid; }  /* the opening title needs no leading break */
+h2 {
+  font-size: var(--font-h2);
+  font-style: italic;
+  color: var(--ink-soft);
+  margin: 1.5em 0 0.75em 0;
+}
+h3 {
+  font-size: var(--font-h3);
+  color: var(--ink-soft);
+  margin: 1.2em 0 0.6em 0;
+}
+/* h4-h6 inherit at or above the floor (never styled below --font-body). */
+h4, h5, h6 { font-size: var(--font-body); margin: 1.1em 0 0.5em 0; }
+
+/* ---- Body copy: harvested indent + justification; first paragraph flush. ---- */
+p {
+  font-size: var(--font-body);
+  text-indent: var(--indent);
+  text-align: justify;
+  margin: 0 0 var(--para-space) 0;
+}
+p.first,                              /* first paragraph after a heading: no indent */
+h1 + p, h2 + p, h3 + p,
+h4 + p, h5 + p, h6 + p,
+header + main > p:first-child,
+.scene-break + p {
+  text-indent: 0;
+}
+
+/* ---- Lists: harvested breathing room (1.8 leading, spaced items). ---- */
+ul, ol {
+  margin: var(--para-space) 0;
+  padding-left: 40px;
+}
+li {
+  font-size: var(--font-body);
+  line-height: var(--leading-loose);
+  margin-bottom: 15px;
+}
+
+/* ---- Quotes: harvested left-rule italic block. ---- */
+blockquote {
+  font-size: var(--font-body);
+  font-style: italic;
+  color: var(--ink-soft);
+  margin: 1.6em 3em;
+  padding-left: 20px;
+  border-left: 3px solid var(--rule);
+}
+
+/* ---- Memorable one-liner: harvested centered bold italic callout. ---- */
+.one-liner {
+  font-size: var(--font-oneliner);
+  font-weight: bold;
+  font-style: italic;
+  text-align: center;
+  line-height: var(--leading-loose);
+  text-indent: 0;
+  margin: 2em 40px;
+}
+
+/* ---- Scene break: harvested centered asterisks with ample space. ---- */
+.scene-break {
+  font-size: var(--font-scenebreak);
+  text-align: center;
+  text-indent: 0;
+  margin: 2.2em 0;
+  color: var(--ink-muted);
+}
+
+/* ---- Emphasis: preserved from source (harvested emphasis_preservation). ---- */
+strong { font-weight: bold; }
+em { font-style: italic; }
+
+/* ---- Deliverable title block (per-template head; harvested book-title/author). ---- */
+header { margin-bottom: 1em; }
+.deliverable-title {
+  font-family: var(--family-head);
+  font-size: var(--font-title);
+  font-weight: bold;
+  line-height: var(--leading-head);
+  text-align: center;
+  margin: 0 0 10px 0;
+}
+.deliverable-subtitle {
+  font-family: var(--family-head);
+  font-size: var(--font-subtitle);
+  font-style: italic;
+  color: var(--ink-muted);
+  text-align: center;
+  margin: 0 0 1.4em 0;
+}
+.deliverable-kicker {                 /* small over-title label, still at the floor */
+  font-family: var(--family-head);
+  font-size: var(--font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-align: center;
+  margin: 0 0 0.4em 0;
+}
+
+/* ---- Notes / captions / contributor bios: explicitly pinned to the floor. ---- */
+.note, .caption, figcaption, .bio, td, th {
+  font-size: var(--font-body);
+  line-height: var(--leading-body);
+}
+.bio { margin-bottom: 1em; }
+.bio .bio-name { font-family: var(--family-head); font-weight: bold; }
+
+/* ---- Manuscript assembly parts (S9): each starts on a fresh page. ---- */
+section[data-part] { page-break-before: always; }
+section[data-part="front-matter"] { page-break-before: avoid; }
+
+hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 1.6em 0;
+}
+
+/*
+ * FLOOR INVARIANT: every font-size token declared above is at or above 14pt.
+ * pdf_render.py re-verifies this over the ASSEMBLED template before render
+ * (exit 2 on any token below the floor); guard-font-floor.py re-verifies it over
+ * the RENDERED PDF (exit 4 on any glyph below the floor). Two independent gates,
+ * template-side and output-side. Do not introduce any size below --font-floor.
+ */

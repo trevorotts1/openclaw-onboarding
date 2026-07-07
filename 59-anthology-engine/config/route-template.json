@@ -1,0 +1,65 @@
+{
+  "$schema_note": "PROVISIONING TEMPLATE for the Anthology Engine inbound intake route. provision-anthology-client.sh (W2.6) applies this into the client box's OpenClaw gateway config (top-level `hooks` object in ~/.openclaw/openclaw.json) AS THE NODE USER, resolving every <CLIENT_*> slot per box. Credentials appear by LABEL only, never by value. The client-facing platform name is Convert and Flow. Nothing Anthropic ships in this file. Verified against the installed gateway (W0.4.json: OpenClaw 2026.6.11) live probe.",
+  "contract": "anthology-engine-route-template",
+  "schema_version": 1,
+
+  "surface": "gateway-core-hooks",
+  "surface_note": "Uses the built-in Gateway HTTP hooks surface (top-level `hooks:` config with a MAPPED hook), NOT the @openclaw/webhooks TaskFlow plugin. Rationale (W0.4.json): the intake payload is an ARBITRARY Convert and Flow form submission with hidden fields; the mapped-hook transform is the natural fit. The webhooks plugin forces a TaskFlow action contract ({action: create_flow, ...}) that a raw form submission is NOT, so it is REJECTED for intake.",
+
+  "per_client_secret_model": {
+    "decision": "SURFACE A (gateway-core mapped hook) with a BOX-SCOPED `hooks.token` bound by SecretRef to the label ANTHOLOGY_INTAKE_HOOK_SECRET. The box-wide token IS the per-client secret because each client runs their OWN single-owner OpenClaw box (PRD Section 15: the Command Center is per-client, single-owner, white-label, on the client's own box). Per-box == per-client isolation, at zero intake friction.",
+    "why_not_per_route_secret": "The gateway hooks surface on 2026.6.11 has NO per-mapping `secret` field (W0.4.json: normalizeHookMapping has no per-route secret); all /hooks routes share the ONE `hooks.token`. The only surface with a true per-route SecretRef is the webhooks plugin, which would force the TaskFlow action contract and break arbitrary intake. So per-route transport isolation is NOT available without breaking intake; per-box isolation is used instead.",
+    "token_binding": {"source": "env", "provider": "default", "id": "ANTHOLOGY_INTAKE_HOOK_SECRET"},
+    "token_binding_note": "SecretRef by LABEL; the value is NEVER inlined into config. `openclaw config get hooks` self-redacts the token ('__OPENCLAW_REDACTED__'), confirmed W0.4.json. The label resolves from the client env store or a 0600 secrets file (PRD Section 14).",
+    "defense_in_depth": "Because Surface A shares ONE box-wide token across ALL /hooks routes (the W0.4.json caveat: a box that ALSO runs other /hooks integrations shares the transport token), the anthology intake is isolated by TWO further mechanisms that do not depend on a per-route transport secret: (1) `match.source == 'anthology-intake'` so only Convert and Flow submissions carrying that source reach this transform; (2) intake_router.py performs its OWN independent route-secret check (SPEC 3.4 row 2 'secret check'; T2) against ANTHOLOGY_INTAKE_HOOK_SECRET, so intake auth does not rely on the gateway token ALONE and stays verifiable offline. On a dedicated client box this defense-in-depth is belt-and-suspenders; on a shared box it keeps anthology intake isolated."
+  },
+
+  "hooks": {
+    "enabled": true,
+    "path": "/hooks",
+    "path_note": "Dedicated subpath; '/' is rejected by the gateway. Public reachability rides the named Cloudflare Tunnel -> loopback :18789/hooks/anthology-intake (NEVER Tailscale, per operator doctrine).",
+    "token": {"source": "env", "provider": "default", "id": "ANTHOLOGY_INTAKE_HOOK_SECRET"},
+    "allowRequestSessionKey": false,
+    "allowedAgentIds": ["<CLIENT_ANTHOLOGY_AGENT_ID>"],
+    "allowedAgentIds_note": "Limits which agent a hook can target; resolved per box by the fleet installer to the client's anthology orchestrator agent id.",
+    "mappings": [
+      {
+        "id": "anthology-intake",
+        "name": "Anthology intake (Convert and Flow form submission -> deterministic S0 router)",
+        "match": {
+          "path": "anthology-intake",
+          "source": "anthology-intake"
+        },
+        "match_note": "path is the subpath after /hooks/. source matches payload.source so only tagged Convert and Flow submissions fire this mapping (isolation on a shared /hooks box).",
+        "action": "agent",
+        "action_note": "OPEN MECHANISM (see cross_file_needs): the DETERMINISTIC transform module below converts the form payload and invokes intake_router.py with NO model call; the mapping action is a minimal/no-op acknowledge. W0.4.json observed only 'agent'|'wake' actions on 2026.6.11; W1.5/W2.6 must confirm the exact deterministic-dispatch wiring (transform-invokes-router vs a wake event consumed by a deterministic handler). Kept as the schema default 'agent' with deliver:false and allowUnsafeExternalContent:false so no model turn interprets untrusted form content as instructions.",
+        "wakeMode": "now",
+        "agentId": "<CLIENT_ANTHOLOGY_AGENT_ID>",
+        "sessionKey": "<CLIENT_ANTHOLOGY_SESSION_KEY>",
+        "deliver": false,
+        "deliver_note": "Client-silent by doctrine: the hook never emits a client-facing message; only the three sanctioned nudge templates ever reach a client.",
+        "allowUnsafeExternalContent": false,
+        "allowUnsafeExternalContent_note": "Convert and Flow form data is UNTRUSTED external content; keep the gateway safety boundaries ON. Intake is deterministic (intake_router.py, no model call), so the payload is data, never instructions.",
+        "timeoutSeconds": 20,
+        "timeoutSeconds_note": "Transport ceiling; intake_router.py itself acknowledges in under 2 seconds (SPEC 13.2 T4) and spawns the stage job detached.",
+        "transform": {
+          "module": "anthology-intake.py",
+          "export": "transform"
+        },
+        "transform_note": "Deterministic transform module; lives under <configDir>/hooks/transforms/ (installed by provision-anthology-client.sh). Converts the Convert and Flow form payload into the intake_router.py dispatch. NO model call. Owns no secret; intake_router.py resolves ANTHOLOGY_INTAKE_HOOK_SECRET by label."
+      }
+    ]
+  },
+
+  "route_path": "/hooks/anthology-intake",
+  "route_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET",
+  "route_secret_label_note": "MUST equal engine-config.template.json intake.route_secret_label; verify.sh / tests/test_webhook.py assert the two agree.",
+  "public_reachability": "named Cloudflare Tunnel -> loopback 127.0.0.1:18789/hooks/anthology-intake (NEVER Tailscale)",
+  "verifier": "scripts/verify-webhook-t1-t9.sh",
+  "verifier_note": "The nine intake proofs of SPEC 13.2 (T1..T9). Executed and OBSERVED on the canary at W5.3 AFTER provisioning; pre-provisioning it self-validates structure and reports the live battery as not-yet-executable.",
+
+  "provisioning_rule": "provision-anthology-client.sh step 7 generates the route and its secret (stored under label ANTHOLOGY_INTAKE_HOOK_SECRET), writes this `hooks` block as the node user, installs the transform module under <configDir>/hooks/transforms/, refreshes the gateway (openclaw gateway restart or /new), then runs verify-webhook-t1-t9.sh. revoke-anthology-client.sh disables the mapping and probes the disabled route.",
+  "no_secret_value_inlined": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true
+}

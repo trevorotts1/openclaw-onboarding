@@ -1,0 +1,100 @@
+{
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Convert and Flow contact-level custom field keys (PRD Section 6). This is the ONLY place field keys are spelled. caf_delivery.py writes by EXACT key from this file, keyed by contact_id, and reads every write back byte-for-byte; provisioning (anthology_registry.py provision-fields, orchestrated by provision-anthology-client.sh) creates-or-verifies exactly these keys and STOPS setup with an operator surface on any missing field or fieldKey mismatch, never a silent runtime create. History lives in the ledger and Drive; the contact fields carry the ACTIVE anthology's links only (disambiguated by anthology_active_id). Keying law: every write is keyed by contact_id, never email.",
+  "contract": "anthology-engine-field-map",
+  "schema_version": 1,
+  "keying": {
+    "law": "contact_id",
+    "never": "email",
+    "active_anthology_disambiguator": "contact.anthology_active_id"
+  },
+  "deliverable_fields": {
+    "avatar":     {"doc_url": "contact.anthology_avatar_doc_url",     "pdf_url": "contact.anthology_avatar_pdf_url"},
+    "tone":       {"doc_url": "contact.anthology_tone_doc_url",       "pdf_url": "contact.anthology_tone_pdf_url"},
+    "titles":     {"doc_url": "contact.anthology_titles_doc_url",     "pdf_url": "contact.anthology_titles_pdf_url"},
+    "blurb":      {"doc_url": "contact.anthology_blurb_doc_url",      "pdf_url": "contact.anthology_blurb_pdf_url"},
+    "outline":    {"doc_url": "contact.anthology_outline_doc_url",    "pdf_url": "contact.anthology_outline_pdf_url"},
+    "chapter":    {"doc_url": "contact.anthology_chapter_doc_url",    "pdf_url": "contact.anthology_chapter_pdf_url"},
+    "cover":      {"doc_url": "contact.anthology_cover_image_url",    "pdf_url": "contact.anthology_cover_drive_url"},
+    "manuscript": {"doc_url": "contact.anthology_manuscript_doc_url", "pdf_url": "contact.anthology_manuscript_pdf_url"}
+  },
+  "cover_field_semantics": "For the cover deliverable the pair is not a Doc/PDF pair: doc_url carries the Convert and Flow media-storage image link (contact.anthology_cover_image_url) and pdf_url carries the Drive link (contact.anthology_cover_drive_url), per PRD Section 6.",
+  "control_fields": {
+    "active_id":     "contact.anthology_active_id",
+    "stage":         "contact.anthology_stage",
+    "rewrite_count": "contact.anthology_rewrite_count"
+  },
+  "provisioning_rule": "All eight deliverable Doc/PDF field pairs (16 keys) plus the three control fields (19 keys total) are created-or-verified per client at setup by exact key. A missing field STOPS setup with an operator surface; runtime NEVER silently creates a field.",
+  "readback_rule": "Every write is read back byte-for-byte in the same job; a mismatch is AF-AE-READBACK-MISMATCH (caf_delivery.py exit 5).",
+
+  "field_key_derivation_law": {
+    "$note": "Verified live at Wave 0 (W0.5.json surface 1). The Convert and Flow (LeadConnector v2) create-custom-field endpoint DERIVES the fieldKey; it does NOT accept an arbitrary fieldKey on create. Derivation: fieldKey = 'contact.' + <name>, where <name> is supplied already snake-cased. To land the EXACT PRD Section 6 key, provisioning creates each field with name = the intended key WITHOUT the leading 'contact.' prefix, then reads the server-returned fieldKey back and asserts it byte-equals the intended key. A mismatch STOPS setup (never a silent create).",
+    "create_endpoint": "POST /locations/{locationId}/customFields",
+    "create_body": {"name": "<intended_key without the 'contact.' prefix>", "dataType": "<data_type>", "model": "contact"},
+    "expected_server_fieldKey": "contact.<name>",
+    "exact_match_verify": "server fieldKey MUST byte-equal the intended key; else AF-AE-FIELD-KEY-MISMATCH (anthology_registry.py provision-fields exit 5, operator STOP surface)",
+    "write_shape_downstream": "the runtime write (caf_delivery.py) uses PUT /contacts/{contactId} with customFields:[{id:<field_id>,value:<string>}] — so the resolved field_id (not just the key) is required and is recorded below"
+  },
+
+  "provisioning": {
+    "$note": "The machine inventory the provisioner iterates. Every element carries the immutable CONTRACT (intended_key, create_name, data_type, deliverable, slot) plus RESOLVED slots that are NULL in this committed template and are filled per box, in place, by anthology_registry.py provision-fields as the node user. The committed template MUST ship with every resolved slot null: no client-specific field id, no location value, no timestamp is ever committed. On a client box the installed copy of this file carries the resolved values; the repo copy stays a pure template.",
+    "data_type_choice": "TEXT for all nineteen keys. TEXT was byte-for-byte verified at Wave 0 (80 chars incl. unicode, spaces, pipe, ampersand, percent-encoding; sha256 sent == sha256 read-back). LARGE_TEXT is the sanctioned fallback ONLY if a provider link ever exceeds the TEXT ceiling; changing a live field's dataType is a provisioning decision, never a silent runtime act.",
+    "total_keys": 19,
+    "fields": [
+      {"intended_key": "contact.anthology_avatar_doc_url",     "create_name": "anthology_avatar_doc_url",     "data_type": "TEXT", "deliverable": "avatar",     "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_avatar_pdf_url",     "create_name": "anthology_avatar_pdf_url",     "data_type": "TEXT", "deliverable": "avatar",     "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_tone_doc_url",       "create_name": "anthology_tone_doc_url",       "data_type": "TEXT", "deliverable": "tone",       "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_tone_pdf_url",       "create_name": "anthology_tone_pdf_url",       "data_type": "TEXT", "deliverable": "tone",       "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_titles_doc_url",     "create_name": "anthology_titles_doc_url",     "data_type": "TEXT", "deliverable": "titles",     "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_titles_pdf_url",     "create_name": "anthology_titles_pdf_url",     "data_type": "TEXT", "deliverable": "titles",     "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_blurb_doc_url",      "create_name": "anthology_blurb_doc_url",      "data_type": "TEXT", "deliverable": "blurb",      "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_blurb_pdf_url",      "create_name": "anthology_blurb_pdf_url",      "data_type": "TEXT", "deliverable": "blurb",      "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_outline_doc_url",    "create_name": "anthology_outline_doc_url",    "data_type": "TEXT", "deliverable": "outline",    "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_outline_pdf_url",    "create_name": "anthology_outline_pdf_url",    "data_type": "TEXT", "deliverable": "outline",    "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_chapter_doc_url",    "create_name": "anthology_chapter_doc_url",    "data_type": "TEXT", "deliverable": "chapter",    "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_chapter_pdf_url",    "create_name": "anthology_chapter_pdf_url",    "data_type": "TEXT", "deliverable": "chapter",    "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_image_url",    "create_name": "anthology_cover_image_url",    "data_type": "TEXT", "deliverable": "cover",      "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_drive_url",    "create_name": "anthology_cover_drive_url",    "data_type": "TEXT", "deliverable": "cover",      "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_manuscript_doc_url", "create_name": "anthology_manuscript_doc_url", "data_type": "TEXT", "deliverable": "manuscript", "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_manuscript_pdf_url", "create_name": "anthology_manuscript_pdf_url", "data_type": "TEXT", "deliverable": "manuscript", "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_active_id",          "create_name": "anthology_active_id",          "data_type": "TEXT", "deliverable": "control",    "slot": "active_id",     "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_stage",              "create_name": "anthology_stage",              "data_type": "TEXT", "deliverable": "control",    "slot": "stage",         "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_rewrite_count",      "create_name": "anthology_rewrite_count",      "data_type": "TEXT", "deliverable": "control",    "slot": "rewrite_count", "field_key": null, "field_id": null, "verified_at": null, "location_masked": null}
+    ],
+    "resolution_rule": "provision-fields is create-or-verify and idempotent: it lists the location's existing contact custom fields, records the field_id + server fieldKey for any of the nineteen already present (a no-op that still verifies exact-match), creates any that are absent, and asserts every server fieldKey byte-equals its intended_key. All nineteen resolved -> exit 0 and this file's resolved slots are stamped in place. Any exact-match failure -> exit 5 and setup STOPS with an operator surface (AF-AE-FIELD-KEY-MISMATCH); any field the client insists must pre-exist but is absent and cannot be created -> AF-AE-FIELD-MISSING. Runtime (caf_delivery.py) NEVER creates a field: it reads a fully-resolved map or refuses."
+  },
+
+  "pipeline": {
+    "$note": "The STANDARD Anthology pipeline auto-provisioned in the client's OWN Convert and Flow account with the client's OWN private-integration token (PRD Gap 9; SPEC M8; W0.5 surface 5). Creating a pipeline REQUIRES a PIT carrying pipeline/opportunities WRITE scope; anthology_registry.py probes create-feasibility and STOPS with an operator surface (AF-AE-PIT-SCOPE) when the scope is absent, never a silent fallback. Binding to a pre-existing pipeline is an explicit onboarding override, never the default. The per-anthology caf_stage_map (engine stage -> resolved pipeline stage id) drives the per-gate pipeline-stage update and is NEVER hardcoded; it is resolved from this pipeline at bind time and stored in the per-box registry, not in this committed template.",
+    "standard_pipeline_name": "Anthology Engine",
+    "standard_stages": [
+      {"position": 0, "name": "Intake"},
+      {"position": 1, "name": "Avatar"},
+      {"position": 2, "name": "Tone"},
+      {"position": 3, "name": "Title"},
+      {"position": 4, "name": "Outline"},
+      {"position": 5, "name": "Chapter"},
+      {"position": 6, "name": "Cover"},
+      {"position": 7, "name": "Delivered"},
+      {"position": 8, "name": "Assembled"}
+    ],
+    "engine_stage_to_pipeline_stage": {
+      "s0": "Intake",
+      "s1": "Avatar",
+      "s2": "Tone",
+      "s3": "Title",
+      "s4": "Outline",
+      "s5": "Chapter",
+      "s6": "Chapter",
+      "s7": "Cover",
+      "s8": "Delivered",
+      "s9": "Assembled"
+    },
+    "resolved": {
+      "$note": "NULL in this committed template. Filled per box, in place, by anthology_registry.py provision-pipeline as the node user; never committed.",
+      "pipeline_id": null,
+      "stage_ids": null,
+      "provisioned_at": null,
+      "location_masked": null
+    }
+  }
+}

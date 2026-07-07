@@ -1,0 +1,26 @@
+<!--
+  Deliverable template: BOOK BLURB.
+  Unit W1.12. Seeded from the harvested Book-to-HTML formatter structure (SPEC 6.4).
+  pdf_render.py fills the {{slots}} and inlines house.css (14pt floor) before render.
+  Slots: deliverable_title, author_name, content_html.
+  No em dash characters in produced prose.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="house.css">
+  <title>{{deliverable_title}}</title>
+</head>
+<body>
+  <header>
+    <div class="deliverable-kicker">Back-Cover Blurb</div>
+    <div class="deliverable-title">{{deliverable_title}}</div>
+    <div class="deliverable-subtitle">{{author_name}}</div>
+  </header>
+  <hr>
+  <main data-deliverable="blurb">
+    {{content_html}}
+  </main>
+</body>
+</html>

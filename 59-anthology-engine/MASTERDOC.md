@@ -1,0 +1,86 @@
+# Anthology Engine -- MASTERDOC (the SACRED floors, rule to code)
+
+The single human-readable index tying every SACRED rule (mirrored from PRD Section
+3) to the fail-closed gate that enforces it. Enforcement, not description: if a
+rule is here, a prover or guard measures it; a model's self-report is never
+trusted. Where this doc and the PRD could ever be read to disagree, the PRD
+governs and this doc gets fixed.
+
+## The unit of work
+
+ONE participant, ONE chapter. An anthology is many participants; the engine
+authors and certifies each chapter independently through Skill 54, so participants
+run in parallel and one blocked chapter never strands the others. The producer is
+the OpenClaw box owner; there is NO producer role in any Command Center code.
+
+## The SACRED floors (never floored, reordered, renamed, or reinterpreted)
+
+1. ONE CHAPTER PER PARTICIPANT, never twelve. The twelve-chapter full-book prompts
+   are Skill 53 territory and permanently out of anthology scope.
+2. CHAPTER BAND: 2,000 to 3,500 MEASURED stripped words. The self-report is
+   ignored; padding is inert. The Write Chapter word-count contradiction is
+   NORMALIZED to this band everywhere. Enforced by `prove_aw_chapter.py` (Skill 54).
+3. TONE FLOOR: the blended tone doc is EXACTLY four influence analyses and at least
+   3,000 MEASURED stripped words. Enforced by `prove_aw_tone.py` and the shared
+   tone core, reused BYTE-IDENTICAL (`verify_tone_core_sync.py`); forking it is a
+   build failure.
+4. TITLE LOCK: the participant's chosen title and subtitle become byte-exact
+   invariants carried into the outline, the chapter, every rewrite, and the cover
+   prompt; the lock is one-way. Enforced by `prove_aw_chapter.py` (AF-AW-TITLE-LOCK).
+5. STORY PLACEMENT: every non-N/A personal-story anchor is provably placed in the
+   outline AND the chapter. Enforced by the story-placement prover.
+6. REWRITE BUDGET: at most two rewrites per participant, each re-entering the S5
+   gate; a silent third rewrite is an illegal transition. Enforced by
+   `qc-strike-gate.py`. Three internal QC attempts per deliverable, then HOLD plus
+   one deduped founder alert; standards never relaxed.
+7. FONT FLOOR: every deliverable ships as BOTH a Google Doc and a designed PDF with
+   NO rendered glyph below 14 point. Enforced by `guard-font-floor.py` over the
+   RENDERED file, never the template.
+8. KEYING: everything keys off contact_id, never email. One human in two
+   anthologies is two participant rows sharing one contact_id, separated by
+   anthology_id. Unroutable submissions land in the exceptions queue with the raw
+   payload and a typed reason, never dropped or guessed.
+9. NON-ANTHROPIC CLIENT SOVEREIGNTY: every resolved model id is the client's OWN
+   strongest NON-Anthropic model, from the client's own keys, never the operator's.
+   No Anthropic-family id, no operator key, no key taken through intake. Enforced by
+   `model_router.py` deny patterns and `guard-no-anthropic-runtime.py`.
+10. DELIVERY REUSE: Google delivery uses the operator's EXISTING service account and
+    the EXISTING anyone-can-read shared root (folder id in
+    `config/engine-config.template.json`); NOTHING new is provisioned in Google, and
+    `drive-tree-provision.py` never creates a new root. Per-document sharing is
+    anyone-with-link VIEW only.
+11. AUTO-PROVISIONED PIPELINE: onboarding auto-provisions the standard Anthology
+    pipeline in the CLIENT's OWN Convert and Flow account through the CLIENT's OWN
+    private integration token; binding a pre-existing pipeline is an explicit
+    override, never the default. The per-gate pipeline-stage update fires at EVERY
+    gate from the registry stage map, never hardcoded.
+12. THE PRODUCER TRIGGER: S9 assembly fires ONLY on the producer's explicit
+    ready-to-assemble trigger, from the Assembly card or the readiness nudge (both
+    doors, one endpoint). Guards, enforced by the writer's legal-transition matrix
+    and never by UI alone: own-producer auth; every participant approved or
+    explicitly excluded; at least the configured minimum of frozen approved chapters
+    (floor 2); typed anthology-name confirmation; one-way. The final sign-off closes
+    the anthology.
+13. IDEMPOTENT, RESUMABLE STATE: every stage is one idempotent job against the
+    durable ledger; a crash, a credit outage, or a six-month pause costs nothing;
+    insufficient credits HOLD durably with ONE deduped founder alert; duplicate
+    webhook deliveries acknowledge without a second run. `anthology_state.py` is the
+    SOLE ledger writer and enforces the legal-transition matrix.
+14. MOVE IN SILENCE: operator-verbose, client-silent; the only client-facing copy is
+    the three sanctioned nudge templates, with zero em dash characters and zero code
+    fences; the recipient is always the ledger-resolved address.
+
+## Client-exact overrides win
+
+Any client-stated exact word target is honored verbatim, never floored, capped, or
+substituted (fleet-wide absolute law), and ONLY through the audited override
+channel Skill 54 already enforces (`working/overrides.json`, brief-tied and logged);
+an unlogged override fails closed.
+
+## The layer law
+
+Layer 2 (orchestration) is the ONLY layer that writes the ledger, routes models, or
+opens gates. Layer 1 (Skill 54) is a local subprocess with no external I/O beyond
+its model calls. Layer 3 adapters read back every external write in the same job.
+Layer 4 (the Command Center board and token page) holds no base credential and
+writes state ONLY by shelling `anthology_state.py`.

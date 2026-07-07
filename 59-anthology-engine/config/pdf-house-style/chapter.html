@@ -1,0 +1,31 @@
+<!--
+  Deliverable template: CHAPTER.
+  Unit W1.12. This is the PRIMARY harvest target: the [UNCHANGED]-restored Book-to-HTML
+  formatter body (fmt pin in .build-state/W0.2.json) distilled to deterministic CSS and
+  markup in house.css (SPEC 6.4). The locked title and subtitle are carried BYTE-EXACT
+  from the ledger (Gate B Tier 1 title-lock check) into the head block; pdf_render.py
+  fills them without transformation. Chapter body is the writer's markdown transformed to
+  semantic HTML (h2/h3 sections, spaced lists, blockquotes, .one-liner callouts,
+  .scene-break asterisks) -- every glyph at or above the 14pt floor.
+  Slots: title_locked, subtitle_locked, author_name, content_html.
+  No em dash characters in produced prose.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="house.css">
+  <title>{{title_locked}}</title>
+</head>
+<body>
+  <header>
+    <div class="deliverable-title">{{title_locked}}</div>
+    <div class="deliverable-subtitle">{{subtitle_locked}}</div>
+    <div class="deliverable-kicker">{{author_name}}</div>
+  </header>
+  <hr>
+  <main data-deliverable="chapter">
+    {{content_html}}
+  </main>
+</body>
+</html>
