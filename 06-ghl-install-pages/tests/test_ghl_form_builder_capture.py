@@ -606,6 +606,7 @@ class TestWalkF2Gates:
                 "/v2/location/L/form-builder-v2/walkPolledId567xyz")
 
         monkeypatch.setattr(fb, "_click", lambda session, target, timeout=15: _cp(0))
+        monkeypatch.setattr(fb, "_click_button", lambda session, name, timeout=15: _cp(0))
         monkeypatch.setattr(fb, "_wait_text", lambda session, text, timeout=20: _cp(0))
         monkeypatch.setattr(fb, "_eval", _fake_eval)
         monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_TIMEOUT_S", 5.0)  # ample, poll is fast
@@ -621,6 +622,7 @@ class TestWalkF2Gates:
         the poll budget + Save-wait rc + live page-state (path/iframe srcs) so
         the next operator sees WHERE the browser actually was."""
         monkeypatch.setattr(fb, "_click", lambda session, target, timeout=15: _cp(0))
+        monkeypatch.setattr(fb, "_click_button", lambda session, name, timeout=15: _cp(0))
         monkeypatch.setattr(fb, "_wait_text", lambda session, text, timeout=20: _cp(1))
         self._wire_eval_diag_only(monkeypatch)
 
@@ -632,6 +634,137 @@ class TestWalkF2Gates:
         assert "polling" in exc.value.reason
         assert "rc=1" in exc.value.reason, "Save-wait rc recorded as evidence"
         assert _DIAG_FIXTURE["path"] in exc.value.reason, "page-state evidence attached"
+
+
+# ---------------------------------------------------------------------------
+# F2 modal-CONFIRM disambiguation (live 2026-07-07, the defect UNDER the
+# v18.1.1–v18.1.3 fixes). With the 'Create new form' modal open, THREE
+# on-screen elements contain the text 'Create' simultaneously:
+#   (1) the page header's '+ Create form' button BEHIND the modal overlay,
+#   (2) the modal title text 'Create new form',
+#   (3) the blue confirm button labeled exactly 'Create'.
+# The old `_click(session, "Create")` (`find text Create click`, substring +
+# first-DOM-order match) returned rc=0 having hit element (1), so the SPA
+# never navigated into /form-builder-v2/<id> and the id-capture poll timed
+# out. The walk now confirms via `_click_button` (`find role button click
+# --name Create --exact`) — role=button excludes (2), --exact excludes (1)
+# ('Create form' != 'Create' byte-for-byte) — exactly ONE candidate.
+#
+# The fixture below MODELS that collision at the _ab seam with the same
+# resolution semantics proven on the live locator engine (hermetic Playwright
+# probe, 2026-07-07: get_by_text('Create') → 3 matches, first = the header
+# button; get_by_role('button', name='Create', exact=True) → exactly 1, the
+# confirm; NON-exact name → 2, still ambiguous). A loose text click 'lands'
+# (rc=0) but on the WRONG element, so the page state does NOT change; only
+# the role+exact click navigates the SPA into the builder route.
+# ---------------------------------------------------------------------------
+_COLLISION_FORM_ID = "collisionProof12345"
+
+
+class _CreateCollisionPage:
+    """The 3-element 'Create' collision, modeled at the ``_ab`` seam."""
+
+    _LOOSE = ("find", "text", "Create", "click")
+    _EXACT = ("find", "role", "button", "click", "--name", "Create", "--exact")
+
+    def __init__(self):
+        self.route = "/v2/location/L/form-builder/main"   # forms LIST (modal open)
+        self.iframes: list = ["about:blank"]
+        self.wrong_element_hits = 0     # rc=0 clicks that landed on the header button
+        self.confirm_hits = 0
+
+    def ab(self, session, *args, timeout=30, stdin=None):
+        a = tuple(str(x) for x in args)
+        if a == self._LOOSE:
+            # Substring match: FIRST DOM-order 'Create' = the header
+            # '+ Create form' button behind the overlay. The click 'succeeds'
+            # (rc=0, exactly as observed live) but the SPA does NOT navigate.
+            self.wrong_element_hits += 1
+            return _cp(0)
+        if a == self._EXACT:
+            # role=button + exact name: ONE candidate — the modal confirm.
+            # The SPA transitions to the builder route and mounts the iframe.
+            self.confirm_hits += 1
+            self.route = f"/v2/location/L/form-builder-v2/{_COLLISION_FORM_ID}"
+            self.iframes = [
+                f"https://x.leadconnectorhq.com/form-builder-v2/{_COLLISION_FORM_ID}"]
+            return _cp(0)
+        if a and a[0] == "wait":
+            return _cp(0)
+        if a and a[0] == "eval":
+            js = stdin or ""
+            if js == fb._ENTRY_DIAG_JS:
+                payload = json.dumps({"path": self.route, "iframes": self.iframes})
+            else:
+                payload = _simulate_capture_js(self.iframes, self.route)
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(payload), stderr="")
+        return _cp(0)
+
+
+class TestWalkF2ConfirmDisambiguation:
+    @pytest.fixture(autouse=True)
+    def _mute_screenshots(self, monkeypatch):
+        monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+
+    @pytest.fixture()
+    def collision(self, monkeypatch):
+        page = _CreateCollisionPage()
+        monkeypatch.setattr(fb, "_ab", page.ab)
+        return page
+
+    def test_confirm_resolves_amid_three_create_elements(self, collision):
+        """THE regression: with all three 'Create'-text elements coexisting,
+        the walk's confirm step must enter the builder and capture the id —
+        which is only possible if the click resolved to the MODAL CONFIRM
+        (the collision page only navigates on the role+exact form)."""
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create"}]}
+        steps_done: list = []
+        out = fb._walk_click_list("sess-f2x", click_list, _minimal_plan(),
+                                  "/tmp/ev", [0], [], steps_done)
+        assert out["form_id"] == _COLLISION_FORM_ID, \
+            "the confirm click must navigate the SPA into /form-builder-v2/<id>"
+        assert collision.confirm_hits == 1, "exactly one role+exact confirm click"
+        assert collision.wrong_element_hits == 0, (
+            "the ambiguous `find text Create click` must NEVER be emitted at "
+            "the confirm step — it resolves first-DOM-order to the header "
+            "'+ Create form' button behind the overlay (live 2026-07-07)")
+        assert steps_done and steps_done[0].startswith("F2:click:Create")
+
+    def test_loose_text_click_is_proven_wrong_on_this_collision(self, collision):
+        """FIXTURE HONESTY (locks the old behavior OUT): the pre-fix emission
+        `find text Create click` 'succeeds' (rc=0, exactly as observed live)
+        yet the SPA stays on the forms list, so the id capture polls to its
+        deadline and returns '' — the precise live failure signature this fix
+        removes. If someone reverts the confirm step to _click, the test
+        above fails with form_id == ''."""
+        cp = fb._click("sess-f2x", "Create")
+        assert cp.returncode == 0, "the live bug: rc=0 on the WRONG element"
+        assert collision.wrong_element_hits == 1
+        assert "form-builder-v2" not in collision.route, "SPA must NOT have navigated"
+        assert fb._capture_form_id("sess-f2x") == "", \
+            "id capture must time out cleanly — no builder route was entered"
+
+    def test_confirm_click_miss_stops_honestly_at_f2_confirm(self, monkeypatch, collision):
+        """With the modal PROVEN open, an exact-name miss (rc!=0) is
+        structural — the walk must STOP at F2.confirm with page-state
+        evidence, never blunder into the id-capture poll for a navigation
+        that can never happen."""
+        monkeypatch.setattr(fb, "_click_button",
+                            lambda session, name, timeout=15: _cp(1))
+        capture_calls: list = []
+        real_capture = fb._capture_form_id
+        monkeypatch.setattr(fb, "_capture_form_id",
+                            lambda *a, **k: (capture_calls.append(1),
+                                             real_capture(*a, **k))[1])
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create"}]}
+        with pytest.raises(fb.StopAndReport) as exc:
+            fb._walk_click_list("sess-f2miss", click_list, _minimal_plan(),
+                                "/tmp/ev", [0], [], [])
+        assert exc.value.step == "F2.confirm"
+        assert "EXACTLY 'Create'" in exc.value.reason
+        assert "/form-builder/main" in exc.value.reason, "page-state evidence attached"
+        assert capture_calls == [], "must not blunder into the capture poll"
 
 
 if __name__ == "__main__":  # pragma: no cover

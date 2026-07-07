@@ -151,6 +151,32 @@ class TestFormBuilderTextVerbShapes:
             assert verb != "click", (
                 f"the F2 root-cause regression: bare `click` re-emitted: {argv!r}")
 
+    def test_click_button_builds_find_role_button_name_exact(self, recorder):
+        """The F2 modal-CONFIRM primitive (live 2026-07-07): THREE on-screen
+        elements contain 'Create' at confirm time (header '+ Create form'
+        button behind the overlay, modal title 'Create new form', blue
+        confirm button), so the confirm MUST be role=button + EXACT
+        accessible name — `find text Create click` resolves first-DOM-order
+        to the WRONG element (rc=0, no navigation)."""
+        with bm.browser_session(_SESSION):
+            cp = fb._click_button(_SESSION, "Create")
+        assert cp.returncode == 0
+        argv = recorder.argvs[-1]
+        _assert_managed_prefix(argv)
+        assert _tail(argv, 7) == ["find", "role", "button", "click",
+                                  "--name", "Create", "--exact"], (
+            "the modal confirm MUST be `find role button click --name <n> "
+            "--exact`; without role the modal TITLE matches, without --exact "
+            f"the substring pulls in the header button: {argv!r}")
+        assert "--exact" in argv, "--exact is REQUIRED (non-exact --name is a substring match)"
+
+    def test_click_button_multiword_name_is_one_argv_token(self, recorder):
+        with bm.browser_session(_SESSION):
+            fb._click_button(_SESSION, "Create folder")
+        argv = recorder.argvs[-1]
+        assert "Create folder" in argv, "must survive quoting as ONE token"
+        assert "folder" not in argv, f"name shattered into tokens: {argv!r}"
+
     def test_fill_binds_by_label_first(self, recorder):
         with bm.browser_session(_SESSION):
             cp = fb._fill(_SESSION, "Query Key", "podcast_rating")
@@ -287,6 +313,18 @@ class TestNoBareTextVerbInSource:
         assert re.search(glue + r'\(session,\s*"fill",', src) is None, (
             f"{tool}: a bare `fill <label> <value>` emission is back (selector "
             "semantics — must use `find label|placeholder <x> fill <v>`)")
+
+    def test_no_ambiguous_create_confirm_click_in_form_builder_source(self):
+        """The F2 modal-confirm regression lock (live 2026-07-07): a bare
+        substring click on 'Create' can never come back — at confirm time the
+        header '+ Create form' button, the modal title 'Create new form', and
+        the confirm button ALL contain that text, and first-DOM-order picks
+        the wrong one (rc=0, SPA never navigates)."""
+        src = (_TOOLS_DIR / "ghl_form_builder.py").read_text(encoding="utf-8")
+        assert re.search(r'_click\(session,\s*"Create"\)', src) is None, (
+            "ghl_form_builder.py: the ambiguous `_click(session, \"Create\")` "
+            "substring emission is back — the modal confirm MUST go through "
+            "_click_button (role=button + --exact accessible name)")
 
     def test_glue_layers_shell_quote_every_arg(self):
         for tool in ("ghl_form_builder.py", "ghl_survey_builder.py"):

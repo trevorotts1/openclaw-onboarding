@@ -815,8 +815,44 @@ def _eval(session: str, js: str, timeout: int = 20) -> str:
 # happened; the modal/timing hypotheses gated a click that never landed.
 def _click(session: str, target: str, timeout: int = 15) -> subprocess.CompletedProcess:
     """Click by VISIBLE TEXT via `find text <target> click` (substring match).
-    A bare `click <target>` positional is a SELECTOR, not a text match."""
+    A bare `click <target>` positional is a SELECTOR, not a text match.
+
+    ⚠️ SUBSTRING + first-DOM-order-match: when the target text is a SUBSTRING
+    of OTHER on-screen text this can resolve rc=0 against the WRONG element
+    (live 2026-07-07, F2 modal confirm — see ``_click_button``). Only use this
+    for text that is unambiguous on the live surface at click time."""
     return _ab(session, "find", "text", target, "click", timeout=timeout)
+
+
+def _click_button(session: str, name: str, timeout: int = 15) -> subprocess.CompletedProcess:
+    """Click the BUTTON whose ACCESSIBLE NAME is EXACTLY ``name`` via
+    `find role button click --name <name> --exact` — the disambiguating form
+    for chrome buttons whose label is a SUBSTRING of other on-screen text.
+
+    THE PROVEN COLLISION (live 2026-07-07, F2 create-modal confirm): with the
+    'Create new form' modal open, THREE elements carry the text 'Create'
+    simultaneously — (1) the page header's '+ Create form' button sitting
+    BEHIND the modal overlay, (2) the modal title text 'Create new form',
+    (3) the blue confirm button labeled exactly 'Create'. The substring form
+    `find text Create click` returned rc=0 having resolved the FIRST DOM-order
+    match — the header button — so the SPA never navigated into
+    /form-builder-v2/<id> and the id-capture poll timed out (hermetic
+    collision probe on the same locator engine: get_by_text('Create') → 3
+    matches, first = the header button; role=button + name='Create' +
+    exact=True → exactly ONE match, the confirm, and clicking it fired the
+    confirm handler).
+
+    WHY THIS FORM IS UNAMBIGUOUS: role=button excludes the modal TITLE (a
+    heading/static-text node, not a button); --exact compares the accessible
+    name byte-for-byte, so 'Create form' and 'Create new form' both fail the
+    equality test. NON-exact --name is still a substring match and would pull
+    the header button back in (probe: 2 matches without --exact) — --exact is
+    REQUIRED, not decoration. This is SELECTORS-LIVE-form.md §4's LOCKED
+    anchor for the confirm, `getByRole('button', { name: 'Create' })` (conf
+    9.5), expressed through the CLI (flags per `agent-browser find --help`,
+    0.27.0 — the gates.json pin)."""
+    return _ab(session, "find", "role", "button", "click",
+               "--name", name, "--exact", timeout=timeout)
 
 
 def _fill(session: str, label: str, value: str, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -1436,7 +1472,29 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
             elif action == "confirm":
                 steps_done.append(tag)                      # Scratch is the default radio
             elif action == "click" and tgt == "Create":
-                _click(session, "Create")
+                # Modal-CONFIRM click — MUST be role=button + EXACT accessible
+                # name, never a 'Create' substring click (live 2026-07-07, the
+                # defect UNDER the v18.1.1–v18.1.3 fixes, all of which remain
+                # in place): at this instant THREE on-screen elements contain
+                # 'Create' — the header '+ Create form' button behind the
+                # overlay, the modal title 'Create new form', and the blue
+                # confirm button. The old `find text Create click` emission
+                # (the _click substring helper) resolved rc=0 against the
+                # FIRST DOM-order match (the header button), the SPA never
+                # left /form-builder/main, and the id-capture poll below
+                # timed out honestly. See _click_button's probe evidence.
+                confirm = _click_button(session, "Create")
+                if confirm.returncode != 0:
+                    # With the modal PROVEN open (gated on 'Start from Scratch'
+                    # above) an exact-name miss is structural, not timing —
+                    # STOP here honestly instead of polling the id capture for
+                    # a navigation that can never happen.
+                    raise StopAndReport(
+                        "F2.confirm",
+                        "the Create-new-form modal is open but no button with "
+                        "accessible name EXACTLY 'Create' was found/clickable "
+                        f"(rc={confirm.returncode}) — the confirm click did NOT "
+                        f"land ({_capture_entry_diag(session)})")
                 entered = _wait_text(session, "Save", timeout=30)
                 # _capture_form_id POLLS (deadline-bounded) — the builder iframe mounts
                 # asynchronously after the SPA route flips, so a single-shot read here

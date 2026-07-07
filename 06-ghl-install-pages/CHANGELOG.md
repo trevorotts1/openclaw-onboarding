@@ -4,6 +4,75 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.4] - 2026-07-07 - F2 MODAL-CONFIRM DISAMBIGUATION: the 'Create' confirm click now targets role=button + EXACT accessible name — a substring click resolves to the WRONG element when three 'Create'-text elements coexist
+
+The next defect in the F2 chain, live-evidenced the same day and UNDER the
+v18.1.1–v18.1.3 fixes (all of which remain correct and in place — the
+create-modal now provably OPENS; this fix is about confirming it). With the
+'Create new form' modal open, THREE separate on-screen elements contain the
+text 'Create' simultaneously:
+
+1. the page header's '+ Create form' button, sitting BEHIND the modal overlay;
+2. the modal's own title text, 'Create new form';
+3. the blue confirmation button labeled exactly 'Create'.
+
+The confirm step emitted `find text Create click` — a SUBSTRING match that
+resolves to the FIRST DOM-order hit, which is NOT the confirm button. Live
+evidence: the click returned rc=0 (it landed — on the wrong element), the SPA
+never navigated off `/form-builder/main`, no `form-builder-v2` iframe ever
+mounted, and the v18.1.1 id-capture poll correctly timed out and STOPPED
+honestly instead of faking success.
+
+Proven hermetically on the same locator engine agent-browser 0.27.0 wraps
+(collision-fixture probe, no live-account contact):
+
+- text substring `Create` → **3 matches**; first DOM-order = the header
+  '+ Create form' button (the wrong element);
+- role=button + name `Create` + exact → **exactly 1 match** — the modal
+  confirm; clicking it fired the confirm handler;
+- role=button + name `Create` WITHOUT exact → still **2 matches** (substring
+  pulls the header button back in) — `--exact` is REQUIRED, not decoration.
+
+Changes:
+
+- `tools/ghl_form_builder.py` — new `_click_button(session, name)` primitive
+  emitting `find role button click --name <name> --exact` (flags per
+  `agent-browser find --help`, 0.27.0 — the `gates.json` pin). This is
+  SELECTORS-LIVE-form.md §4's LOCKED anchor for the modal confirm,
+  `getByRole('button', { name: 'Create' })` (confidence 9.5), expressed
+  through the CLI. Role=button excludes the modal title (not a button);
+  `--exact` excludes the header button ('Create form' ≠ 'Create'
+  byte-for-byte) — exactly one candidate can match.
+- The F2 confirm step now uses `_click_button` and CHECKS its rc: with the
+  modal proven open (still gated on 'Start from Scratch'), an exact-name miss
+  is structural, so the walk STOPs at a new honest gate `F2.confirm` with
+  live page-state evidence — instead of polling the id capture for a
+  navigation that can never happen.
+- `_click`'s docstring now carries the substring/first-DOM-order ambiguity
+  warning so future call sites don't reintroduce the pattern on collision-
+  prone chrome text.
+- Tests (`tests/test_ghl_form_builder_capture.py` — new
+  `TestWalkF2ConfirmDisambiguation`; `tests/test_ghl_text_verb_cli_shapes.py`
+  — CLI-shape + source-lock additions): a collision fixture models all three
+  'Create'-text elements at the `_ab` seam with the probe-proven resolution
+  semantics (a loose text click "succeeds" rc=0 but does NOT navigate; only
+  the role+exact click enters the builder route). The walk-level regression
+  proves the confirm step captures the form id amid the collision and NEVER
+  emits the ambiguous `find text Create click`; an rc≠0 confirm STOPs at
+  `F2.confirm` without touching the capture poll; and a source-level lock
+  keeps the ambiguous substring-Create emission from ever coming back. All
+  key new tests FAIL on the pre-fix code (mutation-checked against 78ca1ae0).
+- KNOWN LATENT TWIN (out of scope here, documented for the next operator):
+  `tools/ghl_survey_builder.py` P1 Step 6 clicks 'Create' via the same
+  substring helper inside the Create-folder dialog (page shows a
+  'Create folder' button at the same time). Same collision class; fix the
+  same way when that walk is next touched.
+
+Version bump v18.1.3 -> v18.1.4 (skill-version.txt + SKILL.md frontmatter +
+CHANGELOG in lockstep).
+
+---
+
 ## [v18.1.3] - 2026-07-07 - TEXT-VERB ROOT-CAUSE FIX: bare `click`/`fill`/`wait` positionals are CSS SELECTORS, not text matches — every text interaction now uses the CLI's real text verbs
 
 The deeper bug UNDER the v18.1.1/v18.1.2 fixes (both of which remain correct
