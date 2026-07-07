@@ -759,8 +759,17 @@ def _ensure_agent_browser_path(env: dict) -> dict:
 def _ab(session: str, *args: str, timeout: int = 30, stdin: Optional[str] = None
         ) -> subprocess.CompletedProcess:
     """Run ONE agent-browser command, headless-forced via ghl_builder.browser_cmd.
-    Returns CompletedProcess; never raises (callers inspect returncode/stdout)."""
-    cmd_str = ghl_builder.browser_cmd("--session", session, *args)  # type: ignore[union-attr]
+    Returns CompletedProcess; never raises (callers inspect returncode/stdout).
+
+    Every arg is shell-quoted BEFORE the browser_cmd join: browser_cmd assembles
+    a single command STRING with a plain ' '.join and this glue re-splits it with
+    shlex.split, so an unquoted multi-word arg ('Create form', 'Search by Name',
+    a screenshot path with spaces) would silently shatter into separate CLI
+    tokens and change the command's meaning (proven live 2026-07-07 — part of
+    the v18.1.3 text-verb fix). shlex.quote(arg) survives the round-trip as
+    exactly ONE argv token; bare flags like '-i' / '--text' are unchanged."""
+    cmd_str = ghl_builder.browser_cmd(  # type: ignore[union-attr]
+        "--session", session, *(shlex.quote(str(a)) for a in args))
     _log(f"[ab] {cmd_str}")
     env = _ensure_agent_browser_path(dict(os.environ))
     try:
@@ -789,16 +798,44 @@ def _eval(session: str, js: str, timeout: int = 20) -> str:
     return _ab_val(_ab(session, "eval", "--stdin", timeout=timeout, stdin=js))
 
 
+# ── TEXT-targeting verbs (v18.1.3 root-cause fix) ────────────────────────────
+# agent-browser 0.27.0 treats a BARE positional on `click` / `fill` / `wait` as
+# a CSS selector / XPath / @ref — NEVER a text match (per `agent-browser
+# click|fill|wait --help`). So `click "Create form"` and `wait -- "Start from
+# Scratch"` could not succeed even with that exact text visibly on the page
+# (hermetic data:-URL probe 2026-07-07: bare form → rc=1 'Element not found' /
+# wait timeout; `find text "Create form" click` and `wait --text "Start from
+# Scratch"` → rc=0). Every text-based interaction below therefore uses the
+# CLI's REAL text verbs:
+#   wait  --text <text>                  (substring match)
+#   find  text <text> click              (visible-text click)
+#   find  label|placeholder <x> fill <v> (label-identified fill)
+#   keyboard type <text>                 (type into the FOCUSED element)
+# This was the actual F2 'Create form' live failure — the click silently never
+# happened; the modal/timing hypotheses gated a click that never landed.
 def _click(session: str, target: str, timeout: int = 15) -> subprocess.CompletedProcess:
-    return _ab(session, "click", target, timeout=timeout)
+    """Click by VISIBLE TEXT via `find text <target> click` (substring match).
+    A bare `click <target>` positional is a SELECTOR, not a text match."""
+    return _ab(session, "find", "text", target, "click", timeout=timeout)
 
 
 def _fill(session: str, label: str, value: str, timeout: int = 15) -> subprocess.CompletedProcess:
-    return _ab(session, "fill", label, value, timeout=timeout)
+    """Fill the input identified by its VISIBLE LABEL text (aria-label /
+    associated <label>), falling back to PLACEHOLDER text (GHL search boxes
+    like 'Search by Name' are placeholder-identified). A bare `fill <label>`
+    positional is a SELECTOR, so the old form could never bind by label.
+    Returns the last attempt's CompletedProcess (rc==0 iff a fill landed)."""
+    cp = _ab(session, "find", "label", label, "fill", value, timeout=timeout)
+    if cp.returncode != 0:
+        cp = _ab(session, "find", "placeholder", label, "fill", value, timeout=timeout)
+    return cp
 
 
 def _wait_text(session: str, text: str, timeout: int = 20) -> subprocess.CompletedProcess:
-    return _ab(session, "wait", "--", text, timeout=timeout)
+    """Wait for TEXT to appear via `wait --text <text>` (substring match).
+    The previous `wait -- <text>` form parsed <text> as a CSS selector and
+    timed out (rc=1) even with the text visibly present."""
+    return _ab(session, "wait", "--text", text, timeout=timeout)
 
 
 def _snapshot(session: str, timeout: int = 20) -> str:
@@ -1150,15 +1187,34 @@ def _capture_form_link(session: str) -> str:
     return _eval(session, js, timeout=12) or ""
 
 
+def _xpath_text(text: str) -> str:
+    """An XPath selector matching an element whose own text node equals ``text``
+    — the text-target form for verbs `find` has no action for (e.g. dblclick):
+    agent-browser selectors are CSS / XPath / @ref only, and CSS cannot match
+    text. Quote-safe via XPath concat() when ``text`` carries both quote kinds."""
+    if '"' not in text:
+        lit = f'"{text}"'
+    elif "'" not in text:
+        lit = f"'{text}'"
+    else:
+        lit = "concat(" + ",'\"',".join(f'"{p}"' for p in text.split('"')) + ")"
+    return f"//*[normalize-space(text())={lit}]"
+
+
 def _try_rename(session: str, form_name: str) -> bool:
     """Best-effort rename of the in-iframe inline title (a [runtime-capture] surface).
     ONE snapshot-bound attempt; on miss returns False (caller records a warning —
-    rename is cosmetic, never a hard stop, never brute-forced)."""
+    rename is cosmetic, never a hard stop, never brute-forced).
+
+    v18.1.3 text-verb fix: `dblclick` has no text mode (a bare positional is a
+    selector — 'Form 1' parsed as CSS and always missed), so the title is bound
+    via an XPath text-node match; the typing goes through `keyboard type`
+    (types into the FOCUSED inline editor — `type` requires a selector)."""
     snap = _snapshot(session)
     if ("Form " not in snap) and ("Untitled" not in snap):
         return False
-    _ab(session, "dblclick", "Form 1", timeout=10)
-    _ab(session, "type", form_name, timeout=10)
+    _ab(session, "dblclick", _xpath_text("Form 1"), timeout=10)
+    _ab(session, "keyboard", "type", form_name, timeout=10)
     _ab(session, "press", "Enter", timeout=8)
     return form_name[:14] in _snapshot(session)
 
@@ -1857,9 +1913,24 @@ def _selftest() -> int:
             if fakedrag.calls and fakedrag.calls[0][3] != GHL_FORM_IFRAME_SELECTOR:
                 errors.append("placement: frame-scoped drag used the wrong iframe selector")
             # standard field must bind Query Key (custom must NOT — locked key)
-            fills = [c for c in fake.calls if c and c[0] == "fill"]
-            if not any(len(c) >= 2 and c[1] == "Query Key" for c in fills):
+            # v18.1.3: fills go through `find label <x> fill <v>` (a bare `fill
+            # <label>` positional is a CSS selector, not a label bind).
+            fills = [c for c in fake.calls
+                     if c and c[0] == "find" and len(c) >= 5 and c[3] == "fill"]
+            if not any(c[2] == "Query Key" for c in fills):
                 errors.append("placement: standard field did not bind Query Key")
+            # REGRESSION LOCK (v18.1.3): no BARE text-verb may ever be emitted —
+            # `click <text>` / `fill <text> <v>` / `wait -- <text>` all parse the
+            # text as a CSS selector and can never match by visible text.
+            for c in fake.calls:
+                if not c:
+                    continue
+                if c[0] in ("click", "fill"):
+                    errors.append(f"placement: BARE `{c[0]}` emitted (selector "
+                                  f"semantics — must use `find`): {c!r}")
+                if c[0] == "wait" and len(c) >= 2 and c[1] == "--":
+                    errors.append(f"placement: `wait -- <text>` emitted (selector "
+                                  f"semantics — must use `wait --text`): {c!r}")
 
         # (b) GENUINE MISS — the tile is absent from the snapshot → StopAndReport at
         #     the LOCATE stage, BEFORE any drag is attempted (never a fake success).

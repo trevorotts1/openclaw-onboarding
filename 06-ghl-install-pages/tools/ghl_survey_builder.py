@@ -406,8 +406,16 @@ def _run_cmd(
     *args: str,
     timeout: int = 30,
 ) -> subprocess.CompletedProcess:
-    """Execute one agent-browser command. Returns CompletedProcess; never raises."""
-    cmd_str = ghl_builder.browser_cmd("--session", session, *args)
+    """Execute one agent-browser command. Returns CompletedProcess; never raises.
+
+    Every arg is shell-quoted BEFORE the browser_cmd join (v18.1.3): browser_cmd
+    assembles one command STRING with a plain ' '.join and this glue re-splits it
+    with shlex.split, so an unquoted multi-word arg ('Create folder', a JS eval
+    payload, a screenshot path with spaces) would silently shatter into separate
+    CLI tokens. shlex.quote(arg) survives the round-trip as exactly ONE argv
+    token; bare flags like '-i' / '--text' are unchanged."""
+    cmd_str = ghl_builder.browser_cmd(
+        "--session", session, *(shlex.quote(str(a)) for a in args))
     _log(f"[ab] {cmd_str}")
     try:
         return subprocess.run(
@@ -434,29 +442,60 @@ def _open(session: str, url: str, timeout: int = 45) -> None:
     _run_cmd(session, "open", url, timeout=timeout)
 
 
+# ── TEXT-targeting verbs (v18.1.3 root-cause fix, mirrors ghl_form_builder) ──
+# agent-browser 0.27.0 treats a BARE positional on `click` / `fill` / `wait` /
+# `dblclick` / `type` as a CSS selector / XPath / @ref — NEVER a text match
+# (per each verb's --help). The old forms (`wait -- <text>`, `click <text>`,
+# `fill <label> <value>`) therefore parsed the text as a SELECTOR and could not
+# succeed even with the text visibly on the page (hermetic data:-URL probe
+# 2026-07-07: bare forms → rc=1; `wait --text` / `find text <x> click` → rc=0).
 def _wait(session: str, text: str, timeout: int = 25) -> None:
-    """Wait until visible text appears (no fixed sleep)."""
-    _run_cmd(session, "wait", "--", text, timeout=timeout)
+    """Wait until visible text appears (no fixed sleep) — `wait --text <text>`
+    (substring match). A bare `wait <arg>` positional is a selector or ms."""
+    _run_cmd(session, "wait", "--text", text, timeout=timeout)
 
 
 def _click(session: str, target: str, timeout: int = 15) -> None:
-    """Click a visible text/role target."""
-    _run_cmd(session, "click", target, timeout=timeout)
+    """Click by VISIBLE TEXT via `find text <target> click` (substring match).
+    A bare `click <target>` positional is a SELECTOR, not a text match."""
+    _run_cmd(session, "find", "text", target, "click", timeout=timeout)
+
+
+def _xpath_text(text: str) -> str:
+    """An XPath selector matching an element whose own text node equals ``text``
+    — the text-target form for verbs `find` has no action for (e.g. dblclick).
+    Quote-safe via XPath concat() when ``text`` carries both quote kinds."""
+    if '"' not in text:
+        lit = f'"{text}"'
+    elif "'" not in text:
+        lit = f"'{text}'"
+    else:
+        lit = "concat(" + ",'\"',".join(f'"{p}"' for p in text.split('"')) + ")"
+    return f"//*[normalize-space(text())={lit}]"
 
 
 def _dblclick(session: str, target: str) -> None:
-    """Double-click (e.g. to enter inline edit mode)."""
-    _run_cmd(session, "dblclick", target, timeout=15)
+    """Double-click the element carrying ``target`` as visible text (e.g. to
+    enter inline edit mode). `dblclick` has no text mode and `find` has no
+    dblclick action, so the text is bound via an XPath text-node match."""
+    _run_cmd(session, "dblclick", _xpath_text(target), timeout=15)
 
 
 def _fill(session: str, label: str, value: str) -> None:
-    """Fill an input field identified by label text."""
-    _run_cmd(session, "fill", label, value, timeout=15)
+    """Fill the input identified by its VISIBLE LABEL text (aria-label /
+    associated <label>), falling back to PLACEHOLDER text (GHL search boxes
+    like 'Search by Name' are placeholder-identified). A bare `fill <label>`
+    positional is a SELECTOR, so the old form could never bind by label."""
+    cp = _run_cmd(session, "find", "label", label, "fill", value, timeout=15)
+    if cp.returncode != 0:
+        _run_cmd(session, "find", "placeholder", label, "fill", value, timeout=15)
 
 
 def _type(session: str, text: str) -> None:
-    """Type text into the focused element."""
-    _run_cmd(session, "type", text, timeout=15)
+    """Type text into the FOCUSED element — `keyboard type <text>` (real
+    keystrokes, no selector). The old bare `type <text>` form parsed the text
+    as the SELECTOR of a `type <sel> <text>` call missing its text."""
+    _run_cmd(session, "keyboard", "type", text, timeout=15)
 
 
 def _eval(session: str, js: str, timeout: int = 15) -> str:
@@ -810,7 +849,7 @@ def _p1_create_folder(
     # Step 6: type folder name + click Create in dialog
     _fill(session, "Folder name", folder_name)
     # Dialog Create button (scoped; distinct from any page-level Create)
-    _run_cmd(session, "click", "Create")
+    _click(session, "Create")
     _wait(session, folder_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p1-06-folder-created"))
@@ -1005,11 +1044,11 @@ def _p2_welcome_slide(
 
     # Step 12: optional styling (inter, Paragraph, 16px, Center, Text color)
     # Emit clicks — actual toolbar controls depend on snapshot refs
-    _run_cmd(session, "click", "inter", timeout=10)
-    _run_cmd(session, "click", "Paragraph", timeout=10)
+    _click(session, "inter", timeout=10)
+    _click(session, "Paragraph", timeout=10)
 
     # Step 13: rename slide via gear → Slide Name = 'Welcome Slide'
-    _run_cmd(session, "click", "gear", timeout=10)
+    _click(session, "gear", timeout=10)
     _fill(session, "Slide Name", "Welcome Slide")
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-d-slide-renamed"))
@@ -1088,7 +1127,7 @@ def _p2_rename_question_slides(
         short_name = f["slide_name"]
         _log(f"  Slide {slide_n} → {short_name!r}")
         _click(session, f"Slide {slide_n}")
-        _run_cmd(session, "click", "gear", timeout=10)
+        _click(session, "gear", timeout=10)
         _fill(session, "Slide Name", short_name)
         shot_n[0] += 1
         _screenshot(session, _shot_path(evidence_root, shot_n[0],

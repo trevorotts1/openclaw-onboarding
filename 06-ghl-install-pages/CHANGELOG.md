@@ -4,6 +4,66 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.3] - 2026-07-07 - TEXT-VERB ROOT-CAUSE FIX: bare `click`/`fill`/`wait` positionals are CSS SELECTORS, not text matches — every text interaction now uses the CLI's real text verbs
+
+The deeper bug UNDER the v18.1.1/v18.1.2 fixes (both of which remain correct
+and in place): per agent-browser 0.27.0's own `--help` for each verb, a BARE
+positional on `click` / `fill` / `wait` / `dblclick` / `type` is a CSS
+selector / XPath / `@ref` — NEVER a text match. Proven hermetically on a
+`data:` URL with no live-account contact:
+
+- `wait -- "Start from Scratch"` with that exact text visibly present →
+  rc=1 timeout; `wait --text "Start from Scratch"` → rc=0.
+- `click "Create form"` on a button with that exact label → rc=1
+  "Element not found"; `find text "Create form" click` → rc=0.
+
+So every live run failed at the SAME step (F2, "Create form") because the
+click NEVER actually happened — the walk only reached F1 because F1 navigates
+via a router-push `eval`, not a text click. Every text-based `_click` /
+`_fill` / `_wait_text` / `_type` / `_dblclick` call in the WHOLE walk (forms
+AND surveys) was affected.
+
+Changes (fix lives in the SHARED HELPERS so every caller is corrected at once
+and future call sites can't reintroduce the bug):
+
+- `tools/ghl_form_builder.py` — `_wait_text` now emits `wait --text <text>`
+  (substring match); `_click` emits `find text <target> click`; `_fill` emits
+  `find label <x> fill <v>` with a `find placeholder <x> fill <v>` fallback
+  (GHL search boxes like "Search by Name" are placeholder-identified), rc
+  semantics preserved (rc==0 iff a fill landed). `_try_rename` binds the
+  inline title via an XPath text-node match (new quote-safe `_xpath_text`;
+  `dblclick` has no text mode and `find` has no dblclick action) and types
+  through `keyboard type <text>` (types into the FOCUSED element — bare
+  `type <text>` parsed the text as a selector).
+- `tools/ghl_survey_builder.py` — same fix for its own `_wait` / `_click` /
+  `_fill` / `_type` / `_dblclick` helpers, and the five raw
+  `_run_cmd(session, "click", ...)` call sites (dialog Create, inter,
+  Paragraph, 2x gear) now route through the fixed `_click`.
+- SECOND compounding defect fixed in both glue layers (`_ab` / `_run_cmd`):
+  `ghl_builder.browser_cmd` joins args into ONE string with a plain
+  `' '.join` and the glue re-splits it with `shlex.split`, so an unquoted
+  multi-word arg ("Create form", "Search by Name", a JS eval payload, a
+  screenshot path with spaces) silently SHATTERED into separate CLI tokens.
+  Every arg is now `shlex.quote`d before the join and survives the round-trip
+  as exactly ONE argv token; bare flags (`-i`, `--text`) are unchanged.
+- `tools/ghl_iframe_drag.py` audited: NOT affected (pure Playwright over CDP;
+  zero agent-browser CLI subprocess calls).
+- Retry/poll logic from v18.1.1/v18.1.2 (`_wait_text_polling`,
+  `_capture_form_id` poll-with-deadline, the rc-checked F2 modal gate) is
+  UNCHANGED — those fixes gated a click that never landed; now it lands.
+- `--selftest` placement checks updated to the corrected `find label ... fill`
+  shape + a new regression lock: any BARE `click`/`fill`/`wait --` emission
+  in the placement path is a selftest FAILURE.
+- NEW `tests/test_ghl_text_verb_cli_shapes.py` (20 tests): verifies the ACTUAL
+  argv built by each helper (real `browser_cmd` join inside the hermetic
+  emitter-only `browser_session()` bracket, `subprocess.run` seam recorded) —
+  wait/click/fill/type/dblclick shapes, one-token quoting of multi-word text,
+  label→placeholder fill fallback + honest double-miss rc, XPath text-literal
+  quote-safety, and source-level locks against the bare forms returning.
+
+Suite: 1029 passed (was 1009), 15 skipped. Both module selftests PASS.
+Version bump v18.1.2 -> v18.1.3 (triple-equality drift gate OK).
+
 ## [v18.1.2] - 2026-07-07 - F2 create-modal wait FIX: poll-with-deadline (the v18.1.1 gate worked; the wait under it didn't get its budget)
 
 Fixes the F2 create-modal wait itself. A second live run (2026-07-07, same
