@@ -87,21 +87,97 @@ log() {
   printf '%s [closeout-watchdog] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "${LOG_FILE}"
 }
 
+# ── JSON helpers (python3-backed) ─────────────────────────────────────────────
+# Read/write build-state with python3 (guaranteed present in the OpenClaw
+# container) instead of jq. jq is NOT shipped in the container image and vanished
+# on a container recreate, which used to make this watchdog hard-abort ("jq not
+# found - aborting") every cycle — silently killing the operator escalation lane.
+# Parsing with python3 means a missing system binary can never break this lane.
+# (fix/jq-hard-dep — remove hard jq dependency from the nudge + watchdog crons.)
 state_get() {
-  jq -r "$1 // empty" "${STATE_FILE}" 2>/dev/null
+  # $1 = simple dotted JSON path, e.g. .interviewProgress.lastQuestionAt or
+  # .stuckEscalations.STUCK_MID_INTERVIEW.notifiedAt. Prints the value
+  # ("true"/"false" for booleans, compact JSON for objects/arrays) or nothing
+  # when the path is missing/null — mirrors jq '<path> // empty'.
+  _OC_JSON_PATH="$1" python3 - "${STATE_FILE}" <<'PY' 2>/dev/null
+import json, os, sys
+path = os.environ.get('_OC_JSON_PATH', '').lstrip('.')
+try:
+    cur = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for key in [p for p in path.split('.') if p != '']:
+    if isinstance(cur, dict) and key in cur:
+        cur = cur[key]
+    else:
+        sys.exit(0)
+# Mirror jq's `<path> // empty`: null AND boolean false both yield empty output.
+if cur is None or cur is False:
+    sys.exit(0)
+if cur is True:
+    sys.stdout.write('true')
+elif isinstance(cur, (dict, list)):
+    sys.stdout.write(json.dumps(cur))
+else:
+    sys.stdout.write(str(cur))
+PY
 }
 
-state_set() {
-  local expr="$1"
-  local tmp
-  tmp=$(mktemp)
-  if jq "$expr" "${STATE_FILE}" > "$tmp" 2>/dev/null; then
-    mv "$tmp" "${STATE_FILE}"
-  else
-    rm -f "$tmp"
-    log "state_set failed for: $expr"
-    return 1
-  fi
+# Set a single top-level build-state key to JSON null (replaces jq
+# '.<key> = null'). $1 = bare key name (no leading dot). Best-effort.
+state_set_null() {
+  _OC_JSON_KEY="$1" python3 - "${STATE_FILE}" <<'PY' 2>/dev/null || return 1
+import json, os, sys
+f = sys.argv[1]; key = os.environ.get('_OC_JSON_KEY', '')
+try:
+    d = json.load(open(f))
+except Exception:
+    sys.exit(1)
+d[key] = None
+tmp = f + '.tmp'
+with open(tmp, 'w') as fh:
+    json.dump(d, fh, indent=2)
+os.replace(tmp, f)
+PY
+}
+
+# Append a closeoutBlockers[] entry (drop already-cleared entries, keep the last
+# 20) AND stamp the stuckEscalations.<class> throttle flag in ONE atomic write.
+# Replaces the two jq state_set programs + the `jq -n` BLOCKER_ENTRY construct.
+#   $1 = stuck class  $2 = reason  $3 = ISO timestamp
+state_append_blocker_and_throttle() {
+  _OC_BLK_CLASS="$1" _OC_BLK_REASON="$2" _OC_BLK_TS="$3" \
+  python3 - "${STATE_FILE}" <<'PY' 2>/dev/null || return 1
+import json, os, sys
+f = sys.argv[1]
+cls = os.environ['_OC_BLK_CLASS']; reason = os.environ['_OC_BLK_REASON']; ts = os.environ['_OC_BLK_TS']
+try:
+    d = json.load(open(f))
+except Exception:
+    sys.exit(1)
+# closeoutBlockers: keep only not-yet-cleared entries, append the new one, cap at 20.
+blk = d.get('closeoutBlockers')
+blk = [x for x in blk if isinstance(x, dict) and x.get('cleared') is False] if isinstance(blk, list) else []
+blk.append({"class": cls, "reason": reason, "since": ts, "escalatedAt": ts, "cleared": False})
+if len(blk) > 20:
+    blk = blk[-20:]
+d['closeoutBlockers'] = blk
+# stuckEscalations.<class>: throttle flag (notifiedAt + class).
+se = d.get('stuckEscalations')
+if not isinstance(se, dict):
+    se = {}
+node = se.get(cls)
+if not isinstance(node, dict):
+    node = {}
+node['notifiedAt'] = ts
+node['class'] = cls
+se[cls] = node
+d['stuckEscalations'] = se
+tmp = f + '.tmp'
+with open(tmp, 'w') as fh:
+    json.dump(d, fh, indent=2)
+os.replace(tmp, f)
+PY
 }
 
 now_iso() {
@@ -162,7 +238,7 @@ self_remove_cron_watchdog() {
         || log "WARN: openclaw cron rm ${uuid} rc!=0 (non-fatal; cron may already be removed or will self-expire)"
     fi
     # Clear UUID from build-state so ensure-pipeline-crons does not re-attempt rm
-    state_set ".closeoutWatchdogCronUuid = null" 2>/dev/null || true
+    state_set_null "closeoutWatchdogCronUuid" 2>/dev/null || true
   else
     log "self-remove: no watchdog UUID in state or cron list (already removed or never registered)"
   fi
@@ -187,7 +263,10 @@ if [[ ! -f "${STATE_FILE}" ]]; then
   exit 0
 fi
 
-command -v jq >/dev/null 2>&1 || { log "jq not found - aborting"; exit 1; }
+# python3 is the JSON parser now (guaranteed present in the container). If it is
+# somehow absent, degrade to a graceful no-op (exit 0) rather than a hard abort —
+# a missing binary must never mark this maintenance cron as failed.
+command -v python3 >/dev/null 2>&1 || { log "python3 not found - skipping (cannot parse state)"; exit 0; }
 
 # ── Read state (all token-free) ───────────────────────────────────────────────
 interview_complete=$(state_get '.interviewComplete')
@@ -203,9 +282,24 @@ agent_name=$(state_get '.agentName')
 # PRD-3.3 R3.4: signals for the fast "content complete but flag missing" class and
 # for tightening STUCK_PRE_CLOSEOUT. dept_total/dept_pending let us detect a build
 # that was never kicked off (no departments[] entries at all).
-phases_complete_count=$(jq -r '(.interviewProgress.phasesComplete // []) | length' "${STATE_FILE}" 2>/dev/null || echo 0)
-dept_total=$(jq -r '(.departments // []) | length' "${STATE_FILE}" 2>/dev/null || echo 0)
-dept_pending=$(jq -r '[(.departments // [])[] | select(.status == "pending" or .status == "failed")] | length' "${STATE_FILE}" 2>/dev/null || echo 0)
+# phasesComplete length, departments length, and pending/failed departments count
+# in ONE python pass (replaces three jq length/filter reads).
+_dept_counts=$(python3 - "${STATE_FILE}" <<'PY' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = {}
+phases = (d.get('interviewProgress') or {}).get('phasesComplete') or []
+depts = d.get('departments') or []
+if not isinstance(phases, list): phases = []
+if not isinstance(depts, list): depts = []
+pending = [x for x in depts if isinstance(x, dict) and x.get('status') in ('pending', 'failed')]
+print(len(phases), len(depts), len(pending))
+PY
+)
+read -r phases_complete_count dept_total dept_pending <<< "${_dept_counts:-0 0 0}"
+: "${phases_complete_count:=0}" "${dept_total:=0}" "${dept_pending:=0}"
 
 [[ -z "$company_name" || "$company_name" == "null" ]] && company_name="(unknown)"
 [[ -z "$agent_name" || "$agent_name" == "null" ]] && agent_name="(unknown)"
@@ -343,8 +437,7 @@ fi
 
 # ── No stuck condition ────────────────────────────────────────────────────────
 if [[ -z "$STUCK_CLASS" ]]; then
-  # Clear any stale blockers that have resolved
-  # (idempotent - jq on non-existent key is a no-op)
+  # Nothing wedged: no blocker is written and no throttle flag is stamped.
   log "no stuck condition detected for ${company_name}/${agent_name} - all clear"
   exit 0
 fi
@@ -370,28 +463,12 @@ if [[ "$should_escalate" -eq 0 ]]; then
   exit 0
 fi
 
-# ── Write closeoutBlockers[] entry ───────────────────────────────────────────
+# ── Write closeoutBlockers[] entry + stuckEscalations throttle flag ───────────
+# One atomic python write: append the new blocker (drop already-cleared entries,
+# keep the last 20) and stamp the stuckEscalations.<class> throttle flag.
 TS_NOW=$(now_iso)
-BLOCKER_ENTRY=$(jq -n \
-  --arg class "$STUCK_CLASS" \
-  --arg reason "$STUCK_REASON" \
-  --arg since "$TS_NOW" \
-  --arg escalated "$TS_NOW" \
-  '{"class":$class,"reason":$reason,"since":$since,"escalatedAt":$escalated,"cleared":false}')
-
-# Append the new blocker (keep last 20 entries, drop cleared ones beyond 10)
-state_set "
-  .closeoutBlockers = (
-    (.closeoutBlockers // [])
-    | map(select(.cleared == false))
-    | . + [${BLOCKER_ENTRY}]
-    | if length > 20 then .[-20:] else . end
-  )
-" || log "WARN: could not append closeoutBlockers entry (non-fatal)"
-
-# ── Update stuckEscalations throttle flag ─────────────────────────────────────
-state_set ".stuckEscalations.${STUCK_CLASS}.notifiedAt = \"${TS_NOW}\" | .stuckEscalations.${STUCK_CLASS}.class = \"${STUCK_CLASS}\"" \
-  || log "WARN: could not write stuckEscalations.${STUCK_CLASS} (non-fatal)"
+state_append_blocker_and_throttle "$STUCK_CLASS" "$STUCK_REASON" "$TS_NOW" \
+  || log "WARN: could not append closeoutBlockers / stuckEscalations entry (non-fatal)"
 
 # ── Telegram operator escalation ──────────────────────────────────────────────
 ESCALATE_MSG="🚨 ZHC STUCK [${STUCK_CLASS}] ${company_name}/${agent_name}: ${STUCK_REASON}. Idle: ${STUCK_IDLE_LABEL}. State: ${STATE_FILE}"
@@ -411,14 +488,10 @@ fi
 
 # ── Rescue Rangers n8n webhook ────────────────────────────────────────────────
 if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
-  RR_PAYLOAD=$(jq -n \
-    --arg action "escalate" \
-    --arg client "${company_name}" \
-    --arg agent "${agent_name}" \
-    --arg class "${STUCK_CLASS}" \
-    --arg message "${STUCK_REASON}" \
-    --arg idle "${STUCK_IDLE_LABEL}" \
-    '{action:$action,client:$client,agent:$agent,class:$class,message:$message,idle:$idle}')
+  RR_PAYLOAD=$(_OC_RR_CLIENT="${company_name}" _OC_RR_AGENT="${agent_name}" \
+    _OC_RR_CLASS="${STUCK_CLASS}" _OC_RR_MSG="${STUCK_REASON}" _OC_RR_IDLE="${STUCK_IDLE_LABEL}" \
+    python3 -c 'import json, os
+print(json.dumps({"action": "escalate", "client": os.environ["_OC_RR_CLIENT"], "agent": os.environ["_OC_RR_AGENT"], "class": os.environ["_OC_RR_CLASS"], "message": os.environ["_OC_RR_MSG"], "idle": os.environ["_OC_RR_IDLE"]}))' 2>/dev/null)
   log "posting to Rescue Rangers webhook"
   curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
     -H "Content-Type: application/json" \

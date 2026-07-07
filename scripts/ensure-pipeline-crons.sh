@@ -237,6 +237,41 @@ _cli_supports_command() {
   [[ "$_CLI_CMD_SUPPORT" == "1" ]]
 }
 
+# ── Runtime-compatible SILENT main-session cron registration. ──────────────────
+# (fix/cron-flag-skew.) The silent main-session agent-cron shape changed across
+# OpenClaw CLI builds: 2026.6.8/5.x use `--session-target main --message`, but
+# 2026.6.11+ REMOVED `--session-target` and require `--session main --system-event`
+# for main-session jobs (a `--message` main job is rejected: "Main jobs require
+# --system-event"). The old workforce-build-resume registration only ever emitted
+# `--session-target main --message`, so a rolled box on 2026.6.11 silently
+# installed NO resume cron. This helper probes `openclaw cron add --help`, emits
+# the form the runtime accepts, falls through the other known-good forms, and
+# degrades to a SILENT isolated agent-message job (--no-deliver). Every path is
+# silent (no --channel/--to/--announce); a rejected form creates nothing.
+#   $1 name  $2 agent  $3 cron-expr  $4 tz  $5 prompt ; $6.. = extra flags
+_oc_cron_silent_main() {
+  local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5"; shift 5
+  local _extra=( "$@" ); local _n=${#_extra[@]}
+  local _base=( --name "$_name" --agent "$_agent" --cron "$_expr" --tz "$_tz" )
+  local _help _modern=0
+  _help="$(openclaw cron add --help 2>&1 || true)"
+  printf '%s' "$_help" | grep -qE '^[[:space:]]*--session[[:space:]<]' && _modern=1
+  local _order _k
+  if [[ "$_modern" == "1" ]]; then _order="modern old"; else _order="old modern"; fi
+  for _k in $_order; do
+    if [[ "$_k" == "modern" ]]; then
+      [[ "$_n" -gt 0 ]] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+      openclaw cron create "${_base[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+    else
+      [[ "$_n" -gt 0 ]] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+      openclaw cron create "${_base[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+    fi
+  done
+  openclaw cron create "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --tz "$_tz" --session main >/dev/null 2>&1 && return 0
+  openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
+  return 1
+}
+
 # Register ONE command-style pipeline cron in a CLI-portable way.
 #   $1 name        cron name (idempotency key)
 #   $2 schedule    cron expression (5-field), passed via --cron
@@ -468,14 +503,11 @@ _ensure_workforce_build_resume() {
 
   local prompt
   prompt="$(cat "$prompt_file")"
-  local base=(--name "workforce-build-resume" --agent main --cron "*/15 * * * *" --tz "America/New_York" --session-target main --light-context)
-  if openclaw cron create "${base[@]}" --message "$prompt" >/dev/null 2>&1; then
+  # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe the CLI
+  # and emit `--session main --system-event` (2026.6.11+) or
+  # `--session-target main --message` (older CLIs). */15 cadence, --light-context.
+  if _oc_cron_silent_main "workforce-build-resume" "main" "*/15 * * * *" "America/New_York" "$prompt" --light-context; then
     _log "DONE workforce-build-resume cron registered (*/15, SILENT main-session — no client auto-announce)"
-    return 0
-  fi
-  # no-light-context fallback (older CLI may not advertise the flag)
-  if openclaw cron create --name "workforce-build-resume" --agent main --cron "*/15 * * * *" --tz "America/New_York" --session-target main --message "$prompt" >/dev/null 2>&1; then
-    _log "DONE workforce-build-resume cron registered (silent main-session, no-light-context fallback)"
     return 0
   fi
   _log "FAIL workforce-build-resume cron creation failed (openclaw cron create rc!=0)"

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v18.0.1"
+ONBOARDING_VERSION="v18.0.2"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -137,6 +137,38 @@ if [ -f "$_lib_resume_cron_self" ]; then
 fi
 # No-op fallback so Step 13b never aborts if the lib is missing (older bundle).
 command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
+
+# ── Runtime-compatible SILENT main-session cron helper (fix/cron-flag-skew). ───
+# Guaranteed here at top-level (before any cron-installing function runs). The
+# resume-cron lib sourced just above also defines this — guarded so its copy
+# wins. Registers a SILENT main-session cron with the flags the INSTALLED runtime
+# accepts: 2026.6.11+ REMOVED `--session-target` and requires `--session main
+# --system-event` for main-session jobs; older CLIs use `--session-target main
+# --message`. Probes `openclaw cron add --help`, falls through every known-good
+# form, and degrades to a SILENT isolated agent-message job — never hard-fails.
+#   $1 name  $2 agent  $3 cron-expr  $4 tz  $5 prompt ; $6.. = extra flags
+command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
+    local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5"; shift 5
+    local _extra=( "$@" ); local _n=${#_extra[@]}
+    local _base=( --name "$_name" --agent "$_agent" --cron "$_expr" --tz "$_tz" )
+    local _help _modern=0
+    _help="$(openclaw cron add --help 2>&1 || true)"
+    printf '%s' "$_help" | grep -qE '^[[:space:]]*--session[[:space:]<]' && _modern=1
+    local _order _k
+    if [ "$_modern" = "1" ]; then _order="modern old"; else _order="old modern"; fi
+    for _k in $_order; do
+        if [ "$_k" = "modern" ]; then
+            [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+            openclaw cron create "${_base[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+        else
+            [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+            openclaw cron create "${_base[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+        fi
+    done
+    openclaw cron create "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --tz "$_tz" --session main >/dev/null 2>&1 && return 0
+    openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
+    return 1
+}
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -3488,7 +3520,6 @@ REASSERT_EOF
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
         local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
-        local OUT="" RC=0
         # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
         # daemon, so there is no @reboot hook to fire on container start.
         # FIX-PRES-09(iv): the old "*/15 * * * *" cadence was a furnace — ~96
@@ -3499,43 +3530,17 @@ REASSERT_EOF
         # DAILY backstop ("0 4 * * *") for a box that force-recreates but does not
         # build that day. The cron definition lives in the gateway config on /data
         # and so survives force-recreate.
-        local BASE=(
-            --name "reassert-presentation-deps"
-            --agent "$CHANNEL_AGENT"
-            --cron "0 4 * * *"
-            --tz "America/New_York"
-            --session-target main
-            --light-context
-        )
-        OUT=$(openclaw cron create "${BASE[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
-        echo "$OUT" >> "$LOG_FILE"
-        if [ "$RC" -eq 0 ]; then
+        # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe
+        # the CLI and emit `--session main --system-event` (2026.6.11+) or
+        # `--session-target main --message` (older CLIs). Never hard-fails.
+        if _oc_cron_silent_main "reassert-presentation-deps" "$CHANNEL_AGENT" "0 4 * * *" "America/New_York" "$REASSERT_PROMPT" --light-context; then
             success "Presentation-deps re-assert cron installed (SILENT main-session, no client auto-announce — survives force-recreate)"
             return 0
         fi
-        local BASE_NO_LC=(
-            --name "reassert-presentation-deps"
-            --agent "$CHANNEL_AGENT"
-            --cron "0 4 * * *"
-            --tz "America/New_York"
-            --session-target main
-        )
-        OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
-        echo "$OUT" >> "$LOG_FILE"
-        if [ "$RC" -eq 0 ]; then
-            success "Presentation-deps re-assert cron installed (silent main-session, no-light-context fallback)"
-            return 0
-        fi
-        # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-        if _cron_create_positional "reassert-presentation-deps" "$CHANNEL_AGENT" "0 4 * * *" "America/New_York" "$REASSERT_PROMPT" "lc"; then
-            success "Presentation-deps re-assert cron installed (positional 2026.6.8 form)"
-            return 0
-        fi
         warn "Presentation-deps re-assert cron creation failed. Manual install (SILENT — no client auto-announce):"
-        warn "  openclaw cron create --name reassert-presentation-deps \\"
-        warn "    --agent $CHANNEL_AGENT --cron '0 4 * * *' --tz America/New_York \\"
-        warn "    --session-target main --light-context \\"
-        warn "    --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
+        warn "  openclaw cron create --name reassert-presentation-deps --agent $CHANNEL_AGENT \\"
+        warn "    --cron '0 4 * * *' --tz America/New_York \\"
+        warn "    --session main --system-event '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'   # older CLIs: --session-target main --message"
         return 0
     }
     install_presentation_deps_cron
@@ -5471,76 +5476,25 @@ print(f'{account}|{agent_id}')
     # the cron's auto-delivery sink.
     local CRON_AGENT="${DEFAULT_AGENT:-main}"
 
-    try_cron_create() {
-        local label="$1"; shift
-        local out="" rc=0
-        out=$(openclaw cron create "$@" --message "$PROMPT_CONTENT" 2>&1) || rc=$?
-        echo "$out" >> "$LOG_FILE"
-        if [ "$rc" -eq 0 ]; then
-            success "Sunday update-check cron installed ($label) — Sundays 3am ET, SILENT main-session (no client auto-announce)"
-            return 0
-        else
-            warn "[$label] FAILED:"
-            # Print actual error to terminal (truncated to 300 chars)
-            echo "    $(echo "$out" | head -20 | sed 's/^/    /')"
-            return 1
-        fi
-    }
-
-    # ATTEMPT 1: SILENT main-session agent-message cron (preferred, 2026.6.x+).
-    local BASE=(
-        --name "weekly-onboarding-update"
-        --agent "$CRON_AGENT"
-        --cron "0 3 * * 0"
-        --tz "America/New_York"
-        --session-target main
-        --light-context
-    )
-    if try_cron_create "silent-main+light-context" "${BASE[@]}"; then
-        return 0
-    fi
-
-    # ATTEMPT 2: SILENT main-session without --light-context (older CLI may not
-    # advertise the flag). Still NO --channel/--to/--announce.
-    local BASE_NO_LC=(
-        --name "weekly-onboarding-update"
-        --agent "$CRON_AGENT"
-        --cron "0 3 * * 0"
-        --tz "America/New_York"
-        --session-target main
-    )
-    if try_cron_create "silent-main" "${BASE_NO_LC[@]}"; then
-        return 0
-    fi
-
-    # ATTEMPT 3: SILENT minimal — just name/agent/cron/tz (oldest CLI shape).
-    # NO --channel/--to/--announce: output stays in the agent's own context.
-    local BASE_MIN=(
-        --name "weekly-onboarding-update"
-        --agent "$CRON_AGENT"
-        --cron "0 3 * * 0"
-        --tz "America/New_York"
-    )
-    if try_cron_create "silent-minimal" "${BASE_MIN[@]}"; then
-        return 0
-    fi
-
-    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-    if _cron_create_positional "weekly-onboarding-update" "$CRON_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" "lc"; then
-        success "Sunday update-check cron installed (positional 2026.6.8 form) — Sundays 3am ET, SILENT main-session"
+    # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The old
+    # ladder only emitted `--session-target main` forms, ALL of which the 2026.6.11
+    # runtime rejects ("does not recognize option --session-target" / "Main jobs
+    # require --system-event") — so a fresh install on 6.11 registered NO weekly
+    # cron. _oc_cron_silent_main probes `openclaw cron add --help` and emits the
+    # accepted form (`--session main --system-event` on 6.11+), degrading gracefully.
+    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" --light-context; then
+        success "Sunday update-check cron installed — Sundays 3am ET, SILENT main-session (no client auto-announce)"
         return 0
     fi
 
     # All silent attempts failed — leave a recovery hint (still SILENT: no
     # --channel/--to/--announce in the manual command either).
-    warn "All cron creation attempts failed. Manual install command (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name weekly-onboarding-update \\"
-    warn "    --agent $CRON_AGENT --cron '0 3 * * 0' --tz America/New_York \\"
-    warn "    --session-target main --light-context \\"
-    warn "    --message \"\$(cat $PROMPT_FILE)\""
+    warn "Cron creation failed. Manual install command (SILENT — no client auto-announce):"
+    warn "  openclaw cron create --name weekly-onboarding-update --agent $CRON_AGENT \\"
+    warn "    --cron '0 3 * * 0' --tz America/New_York \\"
+    warn "    --session main --system-event \"\$(cat $PROMPT_FILE)\"   # older CLIs: --session-target main --message"
     warn ""
-    warn "If that fails too, send Trevor the EXACT error message printed above —"
-    warn "the cron command line that's failing is now visible in this output."
+    warn "If that fails too, send Trevor the EXACT error message (see $LOG_FILE)."
     return 0
 }
 
@@ -5609,47 +5563,18 @@ install_workforce_resume_cron() {
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
 
-    local OUT="" RC=0
-    local BASE=(
-        --name "workforce-build-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/15 * * * *"
-        --tz "America/New_York"
-        --session-target main
-        --light-context
-    )
-    OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
+    # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe the
+    # CLI and emit `--session main --system-event` (2026.6.11+) or
+    # `--session-target main --message` (older CLIs). */15, --light-context.
+    if _oc_cron_silent_main "workforce-build-resume" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$PROMPT_CONTENT" --light-context; then
         success "Workforce-build resume cron installed — every 15 min, SILENT main-session (no client auto-announce); fires only when build state is dirty"
         return 0
     fi
 
-    local BASE_NO_LC=(
-        --name "workforce-build-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/15 * * * *"
-        --tz "America/New_York"
-        --session-target main
-    )
-    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
-        success "Workforce-build resume cron installed (silent main-session, no-light-context fallback)"
-        return 0
-    fi
-
-    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-    if _cron_create_positional "workforce-build-resume" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$PROMPT_CONTENT" "lc"; then
-        success "Workforce-build resume cron installed (positional 2026.6.8 form)"
-        return 0
-    fi
-
     warn "Workforce-build resume cron creation failed. Manual install (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name workforce-build-resume \\"
-    warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
-    warn "    --session-target main --light-context \\"
-    warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
+    warn "  openclaw cron create --name workforce-build-resume --agent $CHANNEL_AGENT \\"
+    warn "    --cron '*/15 * * * *' --tz America/New_York \\"
+    warn "    --session main --system-event \"\$(cat $RESUME_PROMPT_FILE)\"   # older CLIs: --session-target main --message"
     return 0
 }
 
@@ -5720,20 +5645,14 @@ install_watchdog_loop_cron() {
 
     local WATCHDOG_PROMPT="[ONBOARDING-WATCHDOG] Run the onboarding watchdog: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh || bash /data/.openclaw/scripts/watchdog-onboarding-loop.sh 2>/dev/null || true. This is a cheap state-file check — it self-removes when the overall goal is verified."
 
-    local OUT="" RC=0
-    local BASE=(
-        --name "watchdog-onboarding-loop"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/20 * * * *"
-        --tz "America/New_York"
-        --session-target main
-        --light-context
-    )
-    OUT=$(openclaw cron create "${BASE[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
+    # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe the
+    # CLI and emit `--session main --system-event` (2026.6.11+) or
+    # `--session-target main --message` (older CLIs). */20, --light-context.
+    if _oc_cron_silent_main "watchdog-onboarding-loop" "$CHANNEL_AGENT" "*/20 * * * *" "America/New_York" "$WATCHDOG_PROMPT" --light-context; then
+        # The helper swallows create output, so look the UUID up by name from the
+        # cron list — the loop-registry uses it to self-remove on overall-goal pass.
         local CRON_UUID
-        CRON_UUID=$(printf '%s' "$OUT" | grep -oE '[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F]{12}' | head -1 || true)
+        CRON_UUID=$(openclaw cron list 2>/dev/null | awk '/watchdog-onboarding-loop/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' | head -1 || true)
         if [ -n "$CRON_UUID" ] && [ -f "$ONBOARDING_DIR/scripts/loop-registry.sh" ]; then
             # shellcheck disable=SC1090
             LOOP_REGISTRY_FILE="${OC_CONFIG}/workspace/.loop-registry.json" \
@@ -5745,31 +5664,10 @@ install_watchdog_loop_cron() {
         return 0
     fi
 
-    local BASE_NO_LC=(
-        --name "watchdog-onboarding-loop"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/20 * * * *"
-        --tz "America/New_York"
-        --session-target main
-    )
-    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
-        success "watchdog-onboarding-loop cron installed (silent main-session, no-light-context fallback)"
-        return 0
-    fi
-
-    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-    if _cron_create_positional "watchdog-onboarding-loop" "$CHANNEL_AGENT" "*/20 * * * *" "America/New_York" "$WATCHDOG_PROMPT" "lc"; then
-        success "watchdog-onboarding-loop cron installed (positional 2026.6.8 form)"
-        return 0
-    fi
-
     warn "watchdog-onboarding-loop cron creation failed. Manual install (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name watchdog-onboarding-loop \\"
-    warn "    --agent $CHANNEL_AGENT --cron '*/20 * * * *' --tz America/New_York \\"
-    warn "    --session-target main --light-context \\"
-    warn "    --message '[ONBOARDING-WATCHDOG] bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh'"
+    warn "  openclaw cron create --name watchdog-onboarding-loop --agent $CHANNEL_AGENT \\"
+    warn "    --cron '*/20 * * * *' --tz America/New_York \\"
+    warn "    --session main --system-event '[ONBOARDING-WATCHDOG] bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh'   # older CLIs: --session-target main --message"
     return 0
 }
 
