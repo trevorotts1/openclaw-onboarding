@@ -42,7 +42,8 @@ WIRING = [
     ("scripts/qc-tier1-anthology.py", "tone floor of 3,000 measured stripped words plus the Tier 1 subset"),
     ("scripts/stage_s8_deliver.py", "deliver the Tone Doc plus PDF"),
     ("scripts/anthology_state.py", "record-artifact (tone) and advance to s2_gate"),
-    ("scripts/gate_engine.py", "open the s2_producer gate; ONE nudge to the ledger-resolved recipient; board card to review"),
+    ("scripts/gate_engine.py", "open the s2_producer gate; ONE nudge to the ledger-resolved recipient"),
+    ("scripts/mc_board.py", "mirror the participant card to review at the s2_gate cursor (SPEC 11.2 stage_cursor projection, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

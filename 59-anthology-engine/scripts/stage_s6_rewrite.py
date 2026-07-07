@@ -43,6 +43,7 @@ WIRING = [
     ("scripts/qc-tier1-anthology.py", "the same chapter Tier 1 provers over the rewritten draft"),
     ("scripts/judge_harness.py", "the Tier 2 rubric on the JUDGE tier"),
     ("scripts/anthology_state.py", "record the new chapter VERSION and RE-ENTER the s5_gate"),
+    ("scripts/mc_board.py", "mirror the participant card to review as the rewrite RE-ENTERS the s5_gate cursor (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

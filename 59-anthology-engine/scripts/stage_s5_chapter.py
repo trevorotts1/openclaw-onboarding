@@ -45,6 +45,7 @@ WIRING = [
     ("scripts/stage_s8_deliver.py", "deliver the Chapter Doc plus PDF; the card lands in review"),
     ("scripts/gate_engine.py", "open the s5_participant gate: exactly two actions on the token page"),
     ("scripts/anthology_state.py", "freeze the chapter on approve, or route to s6_rewrite on request_rewrite with the notes appended to chapter_updates"),
+    ("scripts/mc_board.py", "mirror the participant card to in_progress as the decision advances the cursor to s7_cover (approve) or s6_rewrite (request_rewrite) -- both land in_progress (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

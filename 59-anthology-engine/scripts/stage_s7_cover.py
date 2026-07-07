@@ -42,6 +42,7 @@ WIRING = [
     ("scripts/cover_render.py", "Kie.ai GPT-image-2 PORTRAIT 1024x1536 via Skills 07/46 callback, bounded re-poll then hold plus alert"),
     ("scripts/drive_adapter.py", "land the cover PNG in the participant Drive folder"),
     ("scripts/anthology_state.py", "record-artifact (cover) with both link fields and advance to s8_deliver"),
+    ("scripts/mc_board.py", "mirror the participant card to in_progress at the s8_deliver cursor (SPEC 11.2 stage_cursor projection, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

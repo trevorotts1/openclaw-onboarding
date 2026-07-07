@@ -43,6 +43,7 @@ WIRING = [
     ("scripts/stage_s8_deliver.py", "deliver the Blurb and Outline Docs plus PDFs"),
     ("scripts/gate_engine.py", "open the s4_producer gate, then on approve the s4_participant outline-approval gate on the token page"),
     ("scripts/anthology_state.py", "record both approvals and advance to s5_chapter"),
+    ("scripts/mc_board.py", "mirror the participant card to review across both s4_gate_producer and s4_gate_participant, then to in_progress once both approvals advance the cursor to s5_chapter (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

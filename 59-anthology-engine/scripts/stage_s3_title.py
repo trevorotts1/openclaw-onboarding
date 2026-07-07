@@ -42,6 +42,7 @@ WIRING = [
     ("scripts/stage_s8_deliver.py", "deliver the Titles Doc plus PDF"),
     ("scripts/gate_engine.py", "open the s3_selection gate on the participant token page (title and subtitle pick), same endpoint behind both doors"),
     ("scripts/anthology_state.py", "record the selection and stamp the TITLE LOCK (one-way); advance to s4_blurb_outline"),
+    ("scripts/mc_board.py", "mirror the participant card to in_progress at the s4_blurb_outline cursor once the selection advances the cursor past the s3_gate review window (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

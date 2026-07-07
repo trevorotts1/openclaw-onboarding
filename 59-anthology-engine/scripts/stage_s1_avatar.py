@@ -44,7 +44,8 @@ WIRING = [
     ("scripts/qc-tier1-anthology.py", "Gate B Tier 1 checks 4 to 12"),
     ("scripts/stage_s8_deliver.py", "deliver the Avatar Doc plus PDF at S8 standards"),
     ("scripts/anthology_state.py", "record-artifact (avatar) and advance the cursor to s1_gate"),
-    ("scripts/gate_engine.py", "open the s1_producer gate; nudge_send.py fires ONE gate-open nudge; the board card lands in review"),
+    ("scripts/gate_engine.py", "open the s1_producer gate; nudge_send.py fires ONE gate-open nudge"),
+    ("scripts/mc_board.py", "mirror the participant card to review at the s1_gate cursor (SPEC 11.2 stage_cursor projection, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
 
 

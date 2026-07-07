@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """mc_board.py -- the FAIL-SOFT Command Center board client for the Anthology
-Engine (SPEC 11.2; ENGINE-MANIFEST script_inventory; unit W3.1).
+Engine (SPEC 11.2; ENGINE-MANIFEST script_inventory; unit W3.1; extended W4.3
+with a both-directions live coverage self-test and S1-S7 mirror wiring).
 
 WHAT THIS IS (and is NOT):
   * It is the ONE place a participant's board card is created and mirrored. Every
@@ -703,17 +704,35 @@ def self_test():
     # -- STATUS MAPS never contain 'done' (the engine never self-promotes) ----
     assert DONE_STATUS not in STATUS_BY_CURSOR.values(), "a cursor maps to 'done'"
     assert DONE_STATUS not in STATUS_BY_ASSEMBLY_STATE.values(), "an assembly state maps to 'done'"
-    # every cursor in the ledger vocabulary is mapped (parity with anthology_state).
-    ledger_cursors = {
-        "s0_intake", "s1_avatar", "s1_gate", "s2_tone", "s2_gate", "s3_title",
-        "s3_gate", "s4_blurb_outline", "s4_gate_producer", "s4_gate_participant",
-        "s5_chapter", "s5_gate", "s6_rewrite", "s7_cover", "s8_deliver",
-        "s9_wait_assembly", "approved", "delivered", "held", "exception"}
-    assert set(STATUS_BY_CURSOR) == ledger_cursors, set(STATUS_BY_CURSOR) ^ ledger_cursors
-    # every assembly_state target this client mirrors is a real ledger state.
-    ledger_states = {"not_ready", "armed", "ready_confirmed", "proposed", "adjusted",
-                     "compiled", "signed_off"}
-    assert set(STATUS_BY_ASSEMBLY_STATE) == ledger_states
+
+    # -- BOTH-DIRECTIONS static coverage vs the REAL ledger vocabulary (W4.3) ----
+    # Import the sole writer's live constants directly (mirrors the sibling
+    # cross-check convention in intake_router.py) rather than asserting against a
+    # hand-copied literal: a hardcoded set can silently drift from
+    # anthology_state.STAGE_CURSORS / ASSEMBLY_STATE the moment SPEC 7.1/7.3 gains
+    # or drops a value there, and this self-test would keep passing against the
+    # STALE copy. Importing means that drift is CAUGHT here, every run. Hard
+    # assertion (no try/except swallow) in EACH direction: every real cursor /
+    # assembly_state this client is expected to project must be mapped, and this
+    # client must never claim a target for a cursor / assembly_state that does not
+    # exist in the ledger vocabulary.
+    sys.path.insert(0, str(SCRIPTS))
+    import anthology_state as _as
+    mapped_cursors, real_cursors = set(STATUS_BY_CURSOR), set(_as.STAGE_CURSORS)
+    assert real_cursors <= mapped_cursors, (
+        "STATUS_BY_CURSOR is missing ledger cursor(s): %s"
+        % sorted(real_cursors - mapped_cursors))
+    assert mapped_cursors <= real_cursors, (
+        "STATUS_BY_CURSOR maps unknown cursor(s) anthology_state does not carry: %s"
+        % sorted(mapped_cursors - real_cursors))
+    mapped_states = set(STATUS_BY_ASSEMBLY_STATE)
+    real_states = set(_as.ASSEMBLY_STATE)
+    assert real_states <= mapped_states, (
+        "STATUS_BY_ASSEMBLY_STATE is missing ledger assembly_state(s): %s"
+        % sorted(real_states - mapped_states))
+    assert mapped_states <= real_states, (
+        "STATUS_BY_ASSEMBLY_STATE maps unknown assembly_state(s) anthology_state "
+        "does not carry: %s" % sorted(mapped_states - real_states))
     # the chapter-approval queue: the chapter gate + delivered park in 'review'.
     assert STATUS_BY_CURSOR["s5_gate"] == "review"
     assert STATUS_BY_CURSOR["approved"] == "review"
