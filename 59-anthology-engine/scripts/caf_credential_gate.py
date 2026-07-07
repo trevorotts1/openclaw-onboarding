@@ -51,7 +51,14 @@ provision-anthology-client.sh):
      Bearer $PIT, Bearer <PIT>) and the deny-pattern regex DEFINITIONS themselves are
      ALLOWED: the token charset filter plus a regex/format context guard mean only an
      actual leaked literal trips it. The finding reports file and line and a reason
-     class, never the token.
+     class, never the token. The scanned set also excludes this repo's own four
+     merge-gate secret-pattern scanners BY BASENAME (_SELF_TEST_FIXTURE_BASENAMES,
+     the same scan-no-secrets.sh / scan-no-json-exports.sh /
+     scan-no-client-identifiers.sh / scan-skill53-untouched.sh set those four already
+     exclude each other by): each embeds a deliberately real-shaped self-test fixture
+     to prove ITS OWN detector works, which is not runtime exposure of this gate's
+     concern. This is basename-scoped only -- a real leak under any other filename in
+     the scanned set still trips it (see the self-test's adversarial case).
 
 EXIT CODES (SPEC 3.4 row 26; the manifest house convention for the edge cases):
   0  all required labels resolve, pairing proven, fingerprint clean, no inline exposure
@@ -232,6 +239,34 @@ def _is_placeholder_token(token):
 _SCAN_SKIP_DIRS = {"fixtures", "tests", "assets", "__pycache__", ".git", "node_modules"}
 _SCAN_EXTS = {".py", ".sh", ".json", ".js", ".ts", ".env", ".cfg", ".ini", ".yaml",
               ".yml", ".toml", ".md", ".txt", ".template"}
+
+# AF-AE-CREDGATE-SELFHIT fix (branch anthology-engine-build): basenames of this repo's
+# OWN four merge-gate secret-pattern scanners, held BYTE-IDENTICAL to each scanner's own
+# SELF_NAMES list (scan-no-secrets.sh / scan-no-json-exports.sh /
+# scan-no-client-identifiers.sh / scan-skill53-untouched.sh already exclude THEMSELVES
+# from each other by this exact basename set -- see is_self() in scan-no-secrets.sh).
+# Each of the four deliberately embeds a real-shaped fixture literal in its own
+# self-test to PROVE its detector catches a genuine-looking leak (e.g.
+# scan-no-secrets.sh's `fake_sk`, built at its line 319 specifically to evade that
+# script's own low-entropy synthetic-key filter) -- a proof-of-detection fixture, never
+# a live credential. This gate's inline-exposure scanner is a SEPARATE detector (Part C
+# item 16's literal-Authorization-header/inline-key ban, not the four merge-gate
+# secret-pattern scans) with no visibility into scan-no-secrets.sh's own allowlist, and
+# its DEFAULT scan target (SKILL_DIR / "scripts") walks the whole scripts/ dir including
+# these four scanners' own source. Confirmed live: a real, correctly-paired,
+# non-commingled client credential pair on this box still tripped exit 4 purely because
+# scan-no-secrets.sh:319's self-test fixture looked like a leak to THIS scanner. Fix:
+# adopt the SAME basename exclusion the four scanners already apply to each other, for
+# the same reason, rather than invent a second convention. This is basename-scoped
+# ONLY (mirrors guard-no-anthropic-runtime.py's CHANGELOG.md _NON_RUNTIME_BASENAMES
+# exemption) -- it does not exempt a directory or these files' surrounding tree, and a
+# real leak planted under any OTHER filename in scripts/ is unaffected.
+_SELF_TEST_FIXTURE_BASENAMES = {
+    "scan-no-secrets.sh",
+    "scan-no-json-exports.sh",
+    "scan-no-client-identifiers.sh",
+    "scan-skill53-untouched.sh",
+}
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 
@@ -519,11 +554,17 @@ def scan_line(line):
 def scan_inline_credentials(paths, skip_dirs=None):
     """Walk each path (file or directory) and return findings for the legacy exposure
     class. A finding is {"file","line","reason"} -- never the offending token. Directory
-    walks skip synthetic-fixture and cache trees and non-text files."""
+    walks skip synthetic-fixture and cache trees and non-text files. A file whose
+    basename is one of this repo's own four merge-gate secret-pattern scanners
+    (_SELF_TEST_FIXTURE_BASENAMES) is exempt regardless of how it was reached (explicit
+    path or directory walk) -- its content is that scanner's own self-test fixture, not
+    this gate's runtime-exposure concern; see _SELF_TEST_FIXTURE_BASENAMES."""
     skip_dirs = skip_dirs if skip_dirs is not None else _SCAN_SKIP_DIRS
     findings = []
 
     def scan_file(fp):
+        if fp.name in _SELF_TEST_FIXTURE_BASENAMES:
+            return
         try:
             text = fp.read_text(encoding="utf-8", errors="replace")
         except (OSError, IOError):
@@ -801,7 +842,45 @@ def self_test():
         assert findings == [], "false positive on template/regex/placeholder/fixture: %s" % findings
         print("  [9] INLINE discrimination (template/regex/placeholder/assert-fixture clean): OK")
 
-    # 10. Sibling lockstep: if caf_delivery imports, its alias tuples must match ours.
+    # 10. Regression: AF-AE-CREDGATE-SELFHIT (branch anthology-engine-build). A prior
+    #     live run with real, correctly-paired, non-commingled client credentials still
+    #     hit exit 4 -- purely because scan-no-secrets.sh:319's OWN self-test fixture (a
+    #     synthetic, deliberately real-shaped key literal that fixture uses to prove ITS
+    #     detector works) walked into this gate's default scripts/ scan. Reproduce that
+    #     exact shape under one of the four exempt merge-gate-scanner basenames and
+    #     confirm it is now clean, WHILE an adversarial planted secret under a
+    #     DIFFERENT, non-exempt filename with the identical content is still caught (the
+    #     exemption is basename-scoped, not a blanket allow).
+    with tempfile.TemporaryDirectory() as td:
+        # A non-sequential, non-placeholder-shaped fixture token, same construction as
+        # scan-no-secrets.sh's own `fake_sk` (built to evade low-entropy/placeholder
+        # filters and read as a genuine leak to any detector that doesn't know it).
+        # Assembled from fragments at runtime -- NEVER as one contiguous literal -- so
+        # this shipped file's OWN source stays clean under this same gate's self-scan
+        # (the identical discipline test #8 already uses with "Z" * 40, and the one
+        # model_router.py / guard-no-anthropic-runtime.py use for their banned tokens).
+        fixture_token = "sk-" + "9k3Rp7Xm2Qw8Lz4Vt6Bn1Cy5Hd0Js3Gf" + "QeWr"
+        for exempt_name in sorted(_SELF_TEST_FIXTURE_BASENAMES):
+            f = Path(td) / exempt_name
+            f.write_text('    local fake_sk="%s"\n' % fixture_token)
+        exempt_findings = scan_inline_credentials(
+            [Path(td) / n for n in _SELF_TEST_FIXTURE_BASENAMES])
+        assert exempt_findings == [], \
+            "AF-AE-CREDGATE-SELFHIT regressed: a known scanner's own self-test " \
+            "fixture wrongly flagged: %s" % exempt_findings
+        print("  [10a] self-test-fixture basename exemption (4 known scanners): OK "
+              "(0 findings for identical content the gate used to flag)")
+
+        adversarial = Path(td) / "legacy_cover_node.py"
+        adversarial.write_text('PIT = "%s"\n' % fixture_token)
+        adv_findings = scan_inline_credentials([adversarial])
+        assert len(adv_findings) == 1 \
+            and adv_findings[0]["reason"] == "inline_provider_key_literal", adv_findings
+        assert fixture_token not in json.dumps(adv_findings), "token leaked into finding"
+        print("  [10b] adversarial check: identical fixture-shaped literal under a "
+              "NON-exempt filename is still caught -- exemption is not a blanket allow: OK")
+
+    # 11. Sibling lockstep: if caf_delivery imports, its alias tuples must match ours.
     try:
         import importlib.util
         cd = SKILL_DIR / "scripts" / "caf_delivery.py"
@@ -813,18 +892,34 @@ def self_test():
             assert tuple(mod.LOCATION_LABELS) == LOCATION_LABELS, "LOCATION_LABELS drift"
             assert tuple(mod.ALLOWED_LOCATION_LABELS) == ALLOWED_LOCATION_LABELS, \
                 "ALLOWED_LOCATION_LABELS drift"
-            print("  [10] sibling lockstep with caf_delivery alias tuples: OK")
+            print("  [11] sibling lockstep with caf_delivery alias tuples: OK")
         else:
-            print("  [10] sibling lockstep: caf_delivery.py absent, skipped")
+            print("  [11] sibling lockstep: caf_delivery.py absent, skipped")
     except Exception as exc:  # noqa: BLE001  -- lockstep is advisory, never fatal here
-        print("  [10] sibling lockstep: caf_delivery not importable (%s), skipped" % exc)
+        print("  [11] sibling lockstep: caf_delivery not importable (%s), skipped" % exc)
 
-    # 11. Idempotent no-op: a clean box run twice yields the same clean exit.
+    # 12. Idempotent no-op: a clean box run twice yields the same clean exit.
     env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
     c1, _ = gate(environ=env, store_paths=[], do_scan=False)
     c2, _ = gate(environ=env, store_paths=[], do_scan=False)
     assert c1 == c2 == EX_OK, "not idempotent"
-    print("  [11] idempotent clean re-run -> exit 0 both times: OK")
+    print("  [12] idempotent clean re-run -> exit 0 both times: OK")
+
+    # 13. Real-integration regression proof: the ACTUAL scan-no-secrets.sh shipped in
+    #     this skill's scripts/ dir (not a synthetic mirror) must no longer trip the
+    #     DEFAULT scan target used by provision-anthology-client.sh STEP 1. This is the
+    #     literal file:line from the confirmed live false positive.
+    real_scanner = SKILL_DIR / "scripts" / "scan-no-secrets.sh"
+    if real_scanner.exists():
+        real_findings = scan_inline_credentials([SKILL_DIR / "scripts"])
+        hit_on_real_scanner = [f for f in real_findings if f["file"] == str(real_scanner)]
+        assert not hit_on_real_scanner, \
+            "AF-AE-CREDGATE-SELFHIT LIVE REGRESSION: the shipped scan-no-secrets.sh " \
+            "still trips the default scripts/ scan: %s" % hit_on_real_scanner
+        print("  [13] real scan-no-secrets.sh (shipped, not synthetic) clean under the "
+              "default scripts/ scan target: OK")
+    else:
+        print("  [13] real-file regression check: scan-no-secrets.sh absent, skipped")
 
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
