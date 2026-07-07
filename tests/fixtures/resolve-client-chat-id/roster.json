@@ -1,0 +1,49 @@
+{
+  "_comment": "SYNTHETIC fixture for tests/unit/resolve-client-chat-id.test.sh. Mirrors the fleet-roster.json shape (top-level 'boxes' dict keyed by box-slug). Contains ONLY the sanctioned placeholder chat id 1234567890 and obviously-synthetic client names. NO real client name or chat id ever appears here.",
+  "boxes": {
+    "wibble-widgets": {
+      "client": "Wibble Widgets",
+      "agent": "wibble",
+      "platform": "mac",
+      "ssh_target": "synthetic-not-a-real-host",
+      "bot": "@wibble_widgets_bot",
+      "chatId": "1234567890",
+      "scope": "full",
+      "in_refresh_manifest": true,
+      "note": "synthetic fixture entry — valid numeric chat id"
+    },
+    "wibble-industries": {
+      "client": "Wibble Industries",
+      "agent": "wibbleind",
+      "platform": "vps",
+      "ssh_target": "synthetic-not-a-real-host",
+      "bot": "@wibble_industries_bot",
+      "chatId": "1234567890",
+      "scope": "full",
+      "in_refresh_manifest": true,
+      "note": "synthetic fixture entry — shares the 'wibble' substring to exercise ambiguity"
+    },
+    "foobar-unconfirmed": {
+      "client": "Foobar Unconfirmed Co",
+      "agent": "foobar",
+      "platform": "mac",
+      "ssh_target": "synthetic-not-a-real-host",
+      "bot": "@foobar_bot",
+      "chatId": "unconfirmed",
+      "scope": "full",
+      "in_refresh_manifest": false,
+      "note": "synthetic fixture entry — chatId sentinel, must be treated as not-found"
+    },
+    "zorp-sprocket": {
+      "client": "Zorp Sprocket Collective",
+      "agent": "zorp",
+      "platform": "vps",
+      "ssh_target": "synthetic-not-a-real-host",
+      "bot": "@zorp_bot",
+      "chatId": "1234567890",
+      "scope": "full",
+      "in_refresh_manifest": true,
+      "note": "synthetic fixture entry — resolvable by its box-slug key"
+    }
+  }
+}
