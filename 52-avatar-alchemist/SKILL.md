@@ -134,6 +134,16 @@ is never substituted. This skill is provider-neutral by construction.
 Post-certification, `scripts/aa_handoff.py` auto-emits this routing as `HANDOFF.json` +
 `HANDOFF.md` in the delivery folder (fail-closed; never re-signs the certificate).
 
+**Skill 59 (Anthology Engine) avatar-handoff routing.** Per anthology contributor, Skill 59's
+S1 stage (`stage_s1_avatar.py`) reaches this skill's `01`/`02`/`03` avatar prompts (Avatar
+Questions 1-30, Questions 31-32, Rewrite Avatar) through Skill 54's `P0A-AVATAR` phase, which
+DELEGATES to them BY PATH (`54-anthology-writer/ANTHOLOGY-MANIFEST.json` → `avatar_handoff`,
+sha256-pinned) — **no file is copied out of this skill's tree**; the reference-only IP stays
+single-sourced here, and a missing/tampered/version-drifted prompt fails Skill 54's handoff
+closed rather than authoring from stale IP. This is a per-contributor subset of this skill's
+own generator set (three of the 40 stages), not the full brand-intelligence package, and it
+never runs the version=book route.
+
 ## Relationship to Product Bio (Skill 55) — cross-linked, NEVER merged
 
 This skill (52, Avatar Alchemist) carries its OWN "Product Bio" prompt — a strategic product-messaging

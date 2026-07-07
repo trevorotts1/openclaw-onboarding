@@ -167,6 +167,46 @@ each; the book is one author, many chapters. A change to the shared tone core
 flags **both** siblings for review. Routing: a multi-contributor anthology →
 **Skill 54**; a single-author book → **Skill 53**.
 
+## Relationship to the Anthology Engine (Skill 59) — the orchestrator that calls this skill
+
+**Skill 59 (Anthology Engine)** is the per-client orchestrator: it owns ALL
+external input/output, the durable multi-participant ledger, model routing, and
+the Drive/PDF/Convert-and-Flow delivery adapters. It **CALLS Skill 54 as its
+Layer-1 authoring core** and never re-implements a Skill 54 phase. Each Skill 59
+stage runner (`59-anthology-engine/scripts/stage_s1_avatar.py` through
+`stage_s6_rewrite.py`) builds a run dir per participant per stage and invokes the
+ONE sanctioned entry, exactly as a standalone caller would:
+
+```
+bash 54-anthology-writer/anthology-entry.sh --run-dir <RUN_DIR>
+```
+
+Skill 54 walks P0 → P7 fail-closed the same way whether it runs standalone or
+under Skill 59; the engine never bypasses this entry, never disarms a gate, and
+never reads or writes inside Skill 54's own run dir except through the entry's
+declared artifacts. The **three Skill 54 extensions Skill 59 depends on already
+landed** ahead of the orchestrator (see `CHANGELOG.md` for the full detail):
+
+- **W1.2** — the `P0A-AVATAR` pre-P1 avatar handoff: DELEGATES BY PATH to Skill
+  52's own pinned `aa-01..aa-03` prompts (no file copied), producing
+  `working/avatar.md`, gated fail-closed by `prove_aw_avatar.py`
+  (`AF-AW-AVATAR-MISSING` / `AF-AW-AVATAR-HANDOFF-DRIFT` / `AF-AW-AVATAR-COPIED`)
+  before `P1-FIDELITY`. This is what Skill 59's S1 stage documents as "the Skill
+  52 handoff".
+- **W1.3** — the newly pinned prompts (`assets/prompts/11-cover-image-prompt.md`
+  aw-11, `assets/prompts/12-primary-goal-extraction.md` aw-12) wired into the
+  phase machine: aw-12 runs as the LIGHT-tier final step of `P0A-AVATAR`; aw-11
+  is the cover-image prompt Skill 59's `stage_s7_cover.py` consumes.
+- **W1.4** — the intake schema fields `ideal_avatar`, `niche`, `primary_goal`
+  added to `intake/aw-intake-schema.json`; `prove_aw_intake.py` still refuses any
+  credential-shaped key alongside them (`AF-AW-INTAKE-CREDENTIAL`).
+
+All three extensions preserve every pre-existing `AF-AW-*` prover and leave
+`ENGINE-PIN.sha256`'s enforcement set intact: Skill 54's certification model
+(hash gate, nonce, fail-closed provers, signed certificate on a full pass) is
+identical whether the run was dispatched by a human operator or by Skill 59's
+Layer 2 orchestration.
+
 ## Verify
 
 `bash 54-anthology-writer/verify.sh` is the self-verify gate: it runs each
