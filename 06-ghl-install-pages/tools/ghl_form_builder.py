@@ -1007,8 +1007,18 @@ _FORM_ID_CAPTURE_JS = (
 # not a form id. Conservative bound: 15-30 chars, [A-Za-z0-9] only (fullmatch).
 _FORM_ID_SHAPE_RE = re.compile(r"[A-Za-z0-9]{15,30}")
 
+# POLL WINDOW for the id capture. After the create-modal `Create` click the SPA
+# transitions to `/form-builder-v2/<id>` and MOUNTS the builder iframe
+# asynchronously — on a slow, form-heavy account the iframe element/src can lag
+# the "Save" chrome by several seconds (live 2026-07-07: a single-shot read here
+# raced that mount and returned '' → false F2.create STOP). Poll-with-deadline,
+# never a fixed sleep — same pattern as ghl_iframe_drag._verify_placed.
+_FORM_ID_CAPTURE_TIMEOUT_S = 15.0
+_FORM_ID_CAPTURE_POLL_S = 0.5
 
-def _capture_form_id(session: str) -> str:
+
+def _capture_form_id(session: str, timeout_s: Optional[float] = None,
+                     poll_s: Optional[float] = None) -> str:
     """Capture the built form's id from the builder IFRAME's `.src` attribute.
 
     Reads the form id out of the cross-origin `/form-builder-v2/<formId>` iframe src
@@ -1017,17 +1027,56 @@ def _capture_form_id(session: str) -> str:
     read that always returned '' (the top frame carries no form id), which left the
     id uncaptured so downstream delete/verify could not target the form.
 
-    HARDENING: the raw `_eval` result is re-validated SERVER-SIDE against the GHL
+    POLLING (the live 2026-07-07 fix): the old single-shot read raced the SPA's
+    builder-route transition — the "Save" wait can resolve (or silently time out)
+    BEFORE the iframe exists / its src carries `/form-builder-v2/<id>`, so one eval
+    returned '' forever. Now the capture re-evaluates on a deadline
+    (``_FORM_ID_CAPTURE_TIMEOUT_S``, checking every ``_FORM_ID_CAPTURE_POLL_S``),
+    returning the id as soon as one attempt clears the shape gate and returning ''
+    cleanly at the deadline (bounded — never hangs). Always makes at least ONE
+    attempt, even with a zero/negative budget.
+
+    HARDENING: each raw `_eval` result is re-validated SERVER-SIDE against the GHL
     form-id shape (``[A-Za-z0-9]{15,30}``) before being returned. A value that does
-    not match that shape is rejected (returns '') — never trust raw eval output as an
-    id, so a malformed / oversized / punctuation-bearing capture can't poison the
-    downstream delete/verify targeting."""
-    got = _eval(session, _FORM_ID_CAPTURE_JS, timeout=12)
-    form_id = (got or "").strip()
-    # Re-validate the captured id's SHAPE before trusting it downstream.
-    if not _FORM_ID_SHAPE_RE.fullmatch(form_id):
+    not match that shape is rejected — never trust raw eval output as an id, so a
+    malformed / oversized / punctuation-bearing capture can't poison the downstream
+    delete/verify targeting."""
+    budget = _FORM_ID_CAPTURE_TIMEOUT_S if timeout_s is None else timeout_s
+    pause = _FORM_ID_CAPTURE_POLL_S if poll_s is None else poll_s
+    deadline = time.monotonic() + max(0.0, budget)
+    while True:
+        got = _eval(session, _FORM_ID_CAPTURE_JS, timeout=12)
+        form_id = (got or "").strip()
+        # Re-validate the captured id's SHAPE before trusting it downstream.
+        if _FORM_ID_SHAPE_RE.fullmatch(form_id):
+            return form_id
+        if time.monotonic() >= deadline:
+            return ""
+        time.sleep(max(0.0, pause))
+
+
+# On a capture miss we STOP — but the report must carry EVIDENCE of where the
+# browser actually was (live 2026-07-07: the old bare message hid that the walk
+# had never left the forms LIST — the create modal never opened — so the failure
+# read as an iframe-src bug two steps downstream). Top-frame path + iframe srcs
+# (truncated) are exactly the two surfaces the capture JS reads.
+_ENTRY_DIAG_JS = (
+    "(() => {"
+    "  const ifr = Array.from(document.querySelectorAll('iframe'))"
+    "    .map(f => (f.src || f.getAttribute('src') || '').slice(0, 120));"
+    "  return JSON.stringify({path: (location.pathname || '').slice(0, 160),"
+    "                         iframes: ifr.slice(0, 6)});"
+    "})()"
+)
+
+
+def _capture_entry_diag(session: str) -> str:
+    """Best-effort one-shot page-state evidence for a capture-miss StopAndReport:
+    top-frame path + up-to-6 truncated iframe srcs. Never raises; '' on failure."""
+    try:
+        return (_eval(session, _ENTRY_DIAG_JS, timeout=10) or "").strip()[:600]
+    except Exception:  # noqa: BLE001
         return ""
-    return form_id
 
 
 _EMBED_CAPTURE_JS = (
@@ -1259,20 +1308,42 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
         # F2 — create the form
         if phase == "F2":
             if action == "click" and tgt.lower().startswith("create form"):
+                # The modal-open wait rc is CHECKED (one retry): live 2026-07-07 the
+                # modal never opened on a slow, form-heavy account, the ignored rc let
+                # the walk blunder into Create/capture blind, and the miss surfaced two
+                # steps later as a misleading F2.create "iframe src" failure (evidence:
+                # f2-create-modal shot byte-identical to the forms-list shot).
                 _click(session, "Create form")
-                _wait_text(session, "Start from Scratch", timeout=20)
+                modal = _wait_text(session, "Start from Scratch", timeout=20)
+                if modal.returncode != 0:
+                    _log("F2: create-modal wait missed — retrying the 'Create form' click once")
+                    _click(session, "Create form")
+                    modal = _wait_text(session, "Start from Scratch", timeout=20)
+                if modal.returncode != 0:
+                    raise StopAndReport(
+                        "F2.modal",
+                        "clicked 'Create form' (twice) but the Create-new-form modal never "
+                        "showed 'Start from Scratch' — STOP here honestly instead of "
+                        f"blundering into the Create/capture steps blind ({_capture_entry_diag(session)})")
                 _screenshot(session, _shot(evidence_root, shot_n, "f2-create-modal"))
                 steps_done.append(tag)
             elif action == "confirm":
                 steps_done.append(tag)                      # Scratch is the default radio
             elif action == "click" and tgt == "Create":
                 _click(session, "Create")
-                _wait_text(session, "Save", timeout=30)
+                entered = _wait_text(session, "Save", timeout=30)
+                # _capture_form_id POLLS (deadline-bounded) — the builder iframe mounts
+                # asynchronously after the SPA route flips, so a single-shot read here
+                # raced it (live 2026-07-07). The Save-wait rc is evidence, not a gate:
+                # the capture poll is the authoritative entered-the-builder check.
                 form_id = _capture_form_id(session)
                 if not form_id:
-                    raise StopAndReport("F2.create",
-                                        "entered the builder but could not read the form id from the "
-                                        "/form-builder-v2/<id> route")
+                    raise StopAndReport(
+                        "F2.create",
+                        "entered the builder but could not read the form id from the "
+                        "/form-builder-v2/<id> route after polling "
+                        f"{_FORM_ID_CAPTURE_TIMEOUT_S:.0f}s (Save-wait rc={entered.returncode}; "
+                        f"page-state {_capture_entry_diag(session)})")
                 _screenshot(session, _shot(evidence_root, shot_n, "f2-builder"))
                 steps_done.append(tag)
             elif action == "click" and tgt.lower() == "use a template":

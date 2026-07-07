@@ -4,6 +4,47 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.1] - 2026-07-07 - form-id capture FIX: poll-with-deadline + honest F2 modal/create gates (pre-existing bug blocking live verification of the iframe-drag fix)
+
+Fixes the PRE-EXISTING `_capture_form_id` failure (untouched by the v18.1.0
+iframe-drag commit) that stopped a live form build at `STOP@F2.create` BEFORE the
+drag step the v18.1.0 fix targets could ever run. Live evidence (2026-07-07, a
+slow, form-heavy client account on a fleet VPS box):
+
+- The run's `f2-create-modal` screenshot was **byte-identical** (same md5) to the
+  `f1-forms-list` screenshot — the Create-new-form modal NEVER opened — yet the
+  walk blundered on because the `_click`/`_wait_text` return codes at F2 were
+  ignored, and the miss finally surfaced two steps later as a misleading
+  `F2.create` "could not read the form id" report.
+- Even on the happy path, `_capture_form_id` was a **single-shot** eval: the SPA
+  flips to `/form-builder-v2/<id>` and mounts the builder iframe ASYNCHRONOUSLY
+  after the modal `Create` click, so one read raced the mount and returned ''.
+
+Changes (`tools/ghl_form_builder.py`):
+
+- **`_capture_form_id` now POLLS on a monotonic deadline** (default 15s budget,
+  0.5s pause — module constants `_FORM_ID_CAPTURE_TIMEOUT_S` /
+  `_FORM_ID_CAPTURE_POLL_S`; same poll pattern as `ghl_iframe_drag._verify_placed`,
+  never a fixed sleep). Returns the id as soon as ONE attempt clears the
+  server-side shape gate (`[A-Za-z0-9]{15,30}` fullmatch, unchanged, enforced per
+  attempt); returns '' CLEANLY at the deadline (bounded — never hangs); always
+  makes at least one attempt.
+- **F2 modal gate**: the `Start from Scratch` wait rc is now CHECKED; one retry
+  click, then an HONEST `StopAndReport("F2.modal", ...)` instead of blundering
+  into Create/capture blind.
+- **Evidence-bearing STOPs**: both F2 STOP reports now attach live page-state
+  (`_capture_entry_diag`: top-frame path + up-to-6 truncated iframe srcs — the two
+  surfaces the capture JS reads) plus the Save-wait rc and the poll budget, so the
+  next operator sees WHERE the browser actually was.
+
+Tests (`tests/test_ghl_form_builder_capture.py`, +10): poll rides through
+late-mounting iframe srcs; deadline return is clean and bounded (never hangs);
+zero-budget keeps single-shot semantics; shape gate enforced per attempt;
+None-sentinel defaults read the module constants at call time; shipped window
+locked at 15s/0.5s; walk-level F2 gates (modal fail-fast after one retry, retry
+success proceeds, walk uses the polling capture, capture-miss STOP carries the
+page-state evidence). Suite: 1001 passed, 15 skipped.
+
 ## [v18.1.0] - 2026-07-07 - cross-origin iframe drag FIX: shared frame-scoped coordinate-drag primitive (forms + surveys)
 
 Fix branch **fix/skill6-ghl-form-iframe-drag**. Fixes the real bug where field

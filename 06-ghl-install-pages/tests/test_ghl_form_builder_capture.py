@@ -28,9 +28,12 @@ under the same ``ghl-auth-fallback-guard`` / pytest CI.
 from __future__ import annotations
 
 import builtins
+import json
 import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -46,6 +49,18 @@ import ghl_form_builder as fb  # noqa: E402
 
 # The path where the `agent-browser` CLI lives; the fix guarantees it is on PATH.
 _BINDIR = os.path.expanduser("~/.npm-global/bin")
+
+
+# ── fast poll window for EVERY test in this file ──────────────────────────────
+# _capture_form_id now POLLS on a deadline (live 2026-07-07 fix: the single-shot
+# read raced the SPA's builder-iframe mount). The production window is 15s; in
+# tests it is shrunk so the pre-existing failure-path cases (which now poll to
+# the deadline before returning '') stay hermetic-fast. Success-path cases are
+# unaffected (they return on the FIRST attempt).
+@pytest.fixture(autouse=True)
+def _fast_capture_poll(monkeypatch):
+    monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_POLL_S", 0.005)
 
 
 # ── faithful Python re-implementation of _FORM_ID_CAPTURE_JS ──────────────────
@@ -255,6 +270,227 @@ class TestEnsureAgentBrowserPath:
         assert opened == [], f"_ensure_agent_browser_path opened files: {opened!r}"
         # and, explicitly, nothing resembling a secrets/.env store.
         assert not any(("secrets" in p or p.endswith(".env")) for p in opened)
+
+
+# ---------------------------------------------------------------------------
+# _capture_form_id POLLING (live 2026-07-07 fix) — the builder iframe mounts
+# ASYNCHRONOUSLY after the create-modal Create click flips the SPA route, so a
+# single-shot read raced it and returned '' forever (STOP@F2.create on slow,
+# form-heavy client accounts even though the form WAS created). The capture polls
+# on a monotonic deadline: succeeds as soon as one attempt clears the shape
+# gate, returns '' CLEANLY at the deadline (bounded — never hangs), and always
+# makes at least one attempt.
+# ---------------------------------------------------------------------------
+class TestCaptureFormIdPolling:
+    def test_captures_id_when_iframe_src_populates_late(self, monkeypatch):
+        """THE regression: the first attempts see the pre-builder DOM (no
+        /form-builder-v2 iframe yet — exactly what the live 2026-07-07 failure
+        evaluated), then the iframe mounts with the id-bearing src. The poll
+        must ride through the misses and capture the id."""
+        state = {"n": 0}
+
+        def _fake_eval(session, js, timeout=20):
+            assert js == fb._FORM_ID_CAPTURE_JS, "capture used the wrong JS payload"
+            state["n"] += 1
+            if state["n"] <= 3:   # iframe not mounted yet: forms list, no builder src
+                return _simulate_capture_js(
+                    ["about:blank"], "/v2/location/L/form-builder/main")
+            return _simulate_capture_js(
+                ["https://leadgen-apps-form-survey-builder.leadconnectorhq.com/"
+                 "form-builder-v2/lateMountId1234abc?x=1"],
+                "/v2/location/L/form-builder-v2/lateMountId1234abc")
+
+        monkeypatch.setattr(fb, "_eval", _fake_eval)
+        got = fb._capture_form_id("sess-poll", timeout_s=5.0, poll_s=0.005)
+        assert got == "lateMountId1234abc"
+        assert state["n"] >= 4, "must have POLLED past the empty attempts"
+
+    def test_returns_empty_cleanly_at_deadline_never_hangs(self, monkeypatch):
+        """If the src NEVER populates the capture must return '' at the deadline
+        — bounded wall-clock, multiple attempts (a poll, not a single shot),
+        and no exception/hang."""
+        calls = []
+        monkeypatch.setattr(
+            fb, "_eval",
+            lambda session, js, timeout=20: (calls.append(js), "")[1])
+        started = time.monotonic()
+        got = fb._capture_form_id("sess-nohang", timeout_s=0.25, poll_s=0.01)
+        elapsed = time.monotonic() - started
+        assert got == ""
+        assert elapsed < 2.0, f"deadline not honored (took {elapsed:.2f}s)"
+        assert len(calls) > 1, "must poll (re-evaluate), not read once"
+
+    def test_zero_budget_still_makes_exactly_one_attempt(self, monkeypatch):
+        """timeout_s=0 keeps the pre-fix single-shot semantics: one attempt,
+        success passes through, miss returns '' immediately."""
+        calls = []
+
+        def _hit(session, js, timeout=20):
+            calls.append(js)
+            return "cuPqQhLbk0GKeguEbGYW"
+
+        monkeypatch.setattr(fb, "_eval", _hit)
+        assert fb._capture_form_id("s", timeout_s=0.0) == "cuPqQhLbk0GKeguEbGYW"
+        assert len(calls) == 1
+
+        calls.clear()
+        monkeypatch.setattr(fb, "_eval", lambda session, js, timeout=20:
+                            (calls.append(js), "")[1])
+        assert fb._capture_form_id("s", timeout_s=0.0) == ""
+        assert len(calls) == 1
+
+    def test_shape_gate_enforced_on_every_attempt(self, monkeypatch):
+        """A bad-shaped value arriving DURING the poll must never be returned —
+        the shape gate applies per attempt, so a junk read polls on and the
+        capture ends '' at the deadline."""
+        monkeypatch.setattr(fb, "_eval",
+                            lambda session, js, timeout=20: "/v2/location/L/x")
+        assert fb._capture_form_id("sess-junk", timeout_s=0.1, poll_s=0.01) == ""
+
+    def test_default_window_reads_module_constants_at_call_time(self, monkeypatch):
+        """The None-sentinel defaults must read the MODULE constants at call
+        time (the testability/ops seam) — with the budget pinned to 0 a
+        default-args call makes exactly one attempt."""
+        monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_TIMEOUT_S", 0.0)
+        calls = []
+        monkeypatch.setattr(fb, "_eval", lambda session, js, timeout=20:
+                            (calls.append(js), "")[1])
+        assert fb._capture_form_id("sess-const") == ""
+        assert len(calls) == 1
+
+    def test_production_poll_window_is_sane(self):
+        """Lock the shipped window: a 10-15s budget (task-rubric bound) and a
+        sub-second pause — wide enough for a slow SPA mount, bounded enough to
+        never stall the walk."""
+        # the autouse fixture monkeypatches the module attrs, so lock the
+        # PRISTINE shipped values against the source text instead
+        src = Path(fb.__file__).read_text(encoding="utf-8")
+        assert "_FORM_ID_CAPTURE_TIMEOUT_S = 15.0" in src
+        assert "_FORM_ID_CAPTURE_POLL_S = 0.5" in src
+
+
+# ---------------------------------------------------------------------------
+# F2 walk gates (live 2026-07-07) — the create-modal wait rc was IGNORED, so on
+# a slow, form-heavy account where the modal never opened the walk blundered
+# into Create/capture blind and the miss surfaced two steps later as a
+# misleading F2.create "iframe src" failure (evidence: the f2-create-modal
+# screenshot was byte-identical to the forms-list screenshot). The walk now
+# (a) fail-fasts honestly at F2.modal after ONE retry, and (b) attaches live
+# page-state evidence (top path + iframe srcs) to both F2 STOP reports.
+# ---------------------------------------------------------------------------
+def _cp(rc: int) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=rc, stdout="", stderr="")
+
+
+def _minimal_plan() -> dict:
+    return {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": [], "fields": []}
+
+
+_DIAG_FIXTURE = {"path": "/v2/location/L/form-builder/main", "iframes": ["about:blank"]}
+
+
+class TestWalkF2Gates:
+    @pytest.fixture(autouse=True)
+    def _mute_screenshots(self, monkeypatch):
+        monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+
+    def _wire_eval_diag_only(self, monkeypatch):
+        """_eval answers the diag JS with a fixture page-state; the capture JS
+        (if ever reached) sees a pre-builder DOM and misses."""
+        def _fake_eval(session, js, timeout=20):
+            if js == fb._ENTRY_DIAG_JS:
+                return json.dumps(_DIAG_FIXTURE)
+            if js == fb._FORM_ID_CAPTURE_JS:
+                return _simulate_capture_js(["about:blank"],
+                                            "/v2/location/L/form-builder/main")
+            return ""
+        monkeypatch.setattr(fb, "_eval", _fake_eval)
+
+    def test_modal_never_opens_stops_at_f2_modal_after_one_retry(self, monkeypatch):
+        """Modal wait misses twice -> StopAndReport at F2.modal (NOT a
+        misleading downstream F2.create), with exactly one click retry and the
+        page-state evidence in the reason. The capture step is never reached."""
+        clicks, captured = [], []
+        monkeypatch.setattr(fb, "_click",
+                            lambda session, target, timeout=15: (clicks.append(target), _cp(0))[1])
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: _cp(1))
+        monkeypatch.setattr(fb, "_capture_form_id",
+                            lambda session, *a, **k: (captured.append(1), "")[1])
+        self._wire_eval_diag_only(monkeypatch)
+
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create form"}]}
+        with pytest.raises(fb.StopAndReport) as exc:
+            fb._walk_click_list("sess-f2", click_list, _minimal_plan(),
+                                "/tmp/ev", [0], [], [])
+        assert exc.value.step == "F2.modal"
+        assert clicks == ["Create form", "Create form"], "exactly ONE retry click"
+        assert _DIAG_FIXTURE["path"] in exc.value.reason, "page-state evidence attached"
+        assert captured == [], "must not blunder into the capture step"
+
+    def test_modal_opening_on_retry_proceeds(self, monkeypatch):
+        """First modal wait misses, the retry sees 'Start from Scratch' -> the
+        step completes normally (recorded in steps_done, no STOP)."""
+        waits = {"n": 0}
+
+        def _fake_wait(session, text, timeout=20):
+            waits["n"] += 1
+            return _cp(1 if waits["n"] == 1 else 0)
+
+        monkeypatch.setattr(fb, "_click", lambda session, target, timeout=15: _cp(0))
+        monkeypatch.setattr(fb, "_wait_text", _fake_wait)
+
+        steps_done: list = []
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create form"}]}
+        out = fb._walk_click_list("sess-f2r", click_list, _minimal_plan(),
+                                  "/tmp/ev", [0], [], steps_done)
+        assert steps_done and steps_done[0].startswith("F2:click:Create form")
+        assert out["form_id"] == ""          # id capture happens on the Create step
+
+    def test_create_step_uses_polling_capture_and_returns_id(self, monkeypatch):
+        """The Create step must ride the POLL: the first capture attempts see a
+        pre-builder DOM, a later attempt sees the mounted iframe src, and the
+        walk comes back with the id (no STOP)."""
+        state = {"n": 0}
+
+        def _fake_eval(session, js, timeout=20):
+            assert js == fb._FORM_ID_CAPTURE_JS
+            state["n"] += 1
+            if state["n"] <= 2:
+                return _simulate_capture_js(["about:blank"],
+                                            "/v2/location/L/form-builder/main")
+            return _simulate_capture_js(
+                ["https://x.leadconnectorhq.com/form-builder-v2/walkPolledId567xyz"],
+                "/v2/location/L/form-builder-v2/walkPolledId567xyz")
+
+        monkeypatch.setattr(fb, "_click", lambda session, target, timeout=15: _cp(0))
+        monkeypatch.setattr(fb, "_wait_text", lambda session, text, timeout=20: _cp(0))
+        monkeypatch.setattr(fb, "_eval", _fake_eval)
+        monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_TIMEOUT_S", 5.0)  # ample, poll is fast
+
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create"}]}
+        out = fb._walk_click_list("sess-f2c", click_list, _minimal_plan(),
+                                  "/tmp/ev", [0], [], [])
+        assert out["form_id"] == "walkPolledId567xyz"
+        assert state["n"] >= 3, "the walk must use the polling capture"
+
+    def test_create_step_capture_miss_stops_with_evidence(self, monkeypatch):
+        """When the id never appears the STOP stays at F2.create but now carries
+        the poll budget + Save-wait rc + live page-state (path/iframe srcs) so
+        the next operator sees WHERE the browser actually was."""
+        monkeypatch.setattr(fb, "_click", lambda session, target, timeout=15: _cp(0))
+        monkeypatch.setattr(fb, "_wait_text", lambda session, text, timeout=20: _cp(1))
+        self._wire_eval_diag_only(monkeypatch)
+
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create"}]}
+        with pytest.raises(fb.StopAndReport) as exc:
+            fb._walk_click_list("sess-f2m", click_list, _minimal_plan(),
+                                "/tmp/ev", [0], [], [])
+        assert exc.value.step == "F2.create"
+        assert "polling" in exc.value.reason
+        assert "rc=1" in exc.value.reason, "Save-wait rc recorded as evidence"
+        assert _DIAG_FIXTURE["path"] in exc.value.reason, "page-state evidence attached"
 
 
 if __name__ == "__main__":  # pragma: no cover
