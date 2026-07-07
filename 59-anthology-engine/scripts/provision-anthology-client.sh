@@ -18,13 +18,16 @@
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
-#   3  AUTO-PROVISION the standard Anthology pipeline in the CLIENT's OWN
-#      Convert and Flow account through the CLIENT's OWN private integration
-#      token: REQUIRE a write-scoped token, PROBE create-feasibility first
-#      (probe-scope), and STOP with an operator surface (AF-AE-PIT-SCOPE) if the
-#      pipeline/opportunities WRITE scope is absent — never a silent fallback;
-#      then provision the standard pipeline and bind it into the registry.
-#      Pre-existing-pipeline binding is an explicit override, never the default.
+#   3  BIND the standard Anthology pipeline in the CLIENT's OWN Convert and Flow
+#      account through the CLIENT's OWN private integration token. GoHighLevel /
+#      Convert and Flow has NO public API to CREATE a pipeline (pipelines are
+#      UI-only), so this is FIND-AND-BIND: probe-scope first verifies the token
+#      can READ pipelines (STOP AF-AE-PIT-SCOPE if it cannot), then
+#      provision-pipeline finds the standard pipeline BY NAME and binds it into
+#      the registry. If the standard pipeline is absent it STOPs with an operator
+#      surface (AF-AE-PIPELINE-UI-CREATE) to create it once in the UI, or to bind
+#      a pre-existing pipeline via `--pipeline-id`; never a silent fallback and
+#      never a call to a nonexistent create endpoint.
 #   4  register the universal + per-stage forms with their hidden-field and
 #      re-stamp contract (contact_id, anthology_id, stage; keying by contact_id,
 #      never email); concrete Convert and Flow form ids are bound per anthology.
@@ -374,18 +377,20 @@ step2_fields() {
 }
 
 step3_pipeline() {
-    note "STEP 3/10 — AUTO-PROVISION the standard Anthology pipeline (client's OWN PIT; probe write scope first)"
-    # 3a REQUIRE a write-scoped PIT: PROBE create-feasibility; STOP if absent.
+    note "STEP 3/10 — BIND the standard Anthology pipeline (client's OWN PIT; pipelines are UI-only, no auto-create)"
+    # 3a PRE-FLIGHT: verify the token can READ pipelines; STOP (AF-AE-PIT-SCOPE) if not.
     local n; n="$(run_collab py "$SCRIPTS/anthology_registry.py" probe-scope $(dry_flag) \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
     if [ "$MODE" = "dryrun" ]; then
-        # provision-pipeline's create attempt IS its probe (it is not a no-op
-        # under --dry-run), so a dry-run stops at the feasibility probe above.
-        note "  (dry-run) would provision + bind the standard Anthology pipeline into the registry"
+        # A live bind needs the UI-created pipeline present; a dry-run stops after
+        # the read pre-flight above and reports intent only.
+        note "  (dry-run) would find the standard Anthology pipeline BY NAME and bind it into the registry"
         echo "$EX_OK"; return
     fi
-    # 3b provision + bind the standard pipeline into the registry.
+    # 3b find the standard pipeline BY NAME and bind it into the registry. Absent
+    # pipeline -> STOP (AF-AE-PIPELINE-UI-CREATE): create once in the UI, or bind
+    # a pre-existing pipeline with `bind --pipeline-id`. Never an auto-create.
     n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-pipeline \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     echo "$n"
@@ -683,7 +688,7 @@ PY
 STEP_LABELS=(
     "1/10 — credential gate"
     "2/10 — custom fields"
-    "3/10 — pipeline auto-provision"
+    "3/10 — pipeline bind (UI-only)"
     "3.5 — department seeding"
     "4/10 — form contract"
     "5/10 — Drive producer root"
@@ -696,7 +701,7 @@ STEP_LABELS=(
 STEP_AF=(
     "AF (credential): missing label -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
     "AF-AE-FIELD-MISSING (exit 2) / AF-AE-FIELD-KEY-MISMATCH (exit 5)"
-    "AF-AE-PIT-SCOPE (write scope absent -> exit 2); API unreachable -> HELD 3"
+    "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only -> exit 2); API unreachable or edge-block -> HELD 3"
     "department seed / read-back (Command Center unavailable -> HELD 3; read-back mismatch -> 5)"
     "form-contract write error -> exit 1"
     "Drive root unreachable -> exit 2; API unreachable -> HELD 3"
@@ -709,7 +714,7 @@ STEP_AF=(
 STEP_REMEDIATION=(
     "Set the client's OWN PRD Section 14 labels in the env store; if commingling: replace any operator/shared/other-client credential with the named client's own"
     "Grant the client PIT custom-field WRITE scope; a field that must pre-exist but is absent and cannot be created STOPS setup; a fieldKey mismatch STOPS setup"
-    "Grant the client's OWN location-scoped token pipelines/opportunities WRITE scope, or bind a pre-existing pipeline as an explicit override; never a silent fallback"
+    "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; create the standard pipeline once in the Convert and Flow UI (pipelines are UI-only, there is no API create endpoint) or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
     "Install Skill 32 command-center-setup so the Anthology department can be seeded and read back"
     "Free space / permissions for the state dir; re-run"
     "Confirm the EXISTING shared Drive root is reachable via the operator service account (GOOGLE_IMPERSONATE_USER); never provision a new root"
@@ -780,7 +785,7 @@ print_plan() {
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
   1/10  credential gate            caf_credential_gate.py (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint)
   2/10  custom fields              anthology_registry.py provision-fields (19 keys; missing -> STOP; key mismatch -> exit 5)
-  3/10  pipeline auto-provision    anthology_registry.py probe-scope (REQUIRE write scope; AF-AE-PIT-SCOPE) then provision-pipeline
+  3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   4/10  form contract              forms-manifest.json (hidden fields contact_id/anthology_id/stage; re-stamp; per-anthology bind)
   5/10  Drive producer root        drive-tree-provision.py verify-root (+ provision --producer); never a new root

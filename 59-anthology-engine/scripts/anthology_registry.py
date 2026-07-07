@@ -6,13 +6,18 @@
 # anthology or binding; 5 validation" — refined below with the house 1/3 codes.
 # -----------------------------------------------------------------------------
 # WHAT THIS OWNS
-#   1. AUTO-PROVISION the STANDARD Anthology pipeline in the CLIENT's OWN Convert
-#      and Flow account with the CLIENT's OWN private-integration token. Per
-#      W0.5, creating a pipeline REQUIRES a token carrying pipeline/opportunities
-#      WRITE scope; this module PROBES create-feasibility and STOPS with an
-#      operator surface (AF-AE-PIT-SCOPE) when the scope is absent — NEVER a
-#      silent fallback. Binding to a pre-existing pipeline is an explicit
-#      onboarding override, never the default.
+#   1. BIND the STANDARD Anthology pipeline in the CLIENT's OWN Convert and Flow
+#      account using the CLIENT's OWN private-integration token. GoHighLevel /
+#      Convert and Flow exposes NO public v2 API to CREATE a pipeline -- pipelines
+#      are UI-only (confirmed against the official v2 API spec and the Skill 29
+#      413-endpoint reference). So this module is FIND-AND-BIND, never auto-create:
+#      it READS the location's pipelines, finds the standard one BY NAME, and
+#      persists its id + stage ids. If the standard pipeline is ABSENT it STOPS
+#      with an operator surface (AF-AE-PIPELINE-UI-CREATE) instructing a one-time
+#      creation in the Convert and Flow UI (or an explicit pre-existing bind via
+#      `bind --pipeline-id`) -- NEVER a silent fallback and NEVER a call to a
+#      nonexistent create endpoint. A token that cannot even READ pipelines STOPS
+#      with AF-AE-PIT-SCOPE.
 #   2. CREATE-OR-VERIFY each PRD Section 6 contact custom field, then persist the
 #      SERVER-RETURNED fieldKey (and the field id the runtime write needs) into
 #      config/field-map.json with an EXACT-MATCH verify. A fieldKey that does not
@@ -29,15 +34,18 @@
 #   0  verified success (INCLUDING an idempotent create-or-verify no-op / dry run)
 #   1  unexpected error
 #   2  STOP-setup guard refusal — PIT/Location label NOT SET, resolved value is
-#      not a pit- token, pipeline/opportunities WRITE scope ABSENT (probed), or
-#      an unknown anthology/binding. Emits a LOUD operator surface; never silent.
+#      not a pit- token, the token cannot READ pipelines, the standard pipeline is
+#      absent (UI-only; there is no API create endpoint), or an unknown
+#      anthology/binding. Emits a LOUD operator surface; never silent.
 #   3  Convert and Flow API unreachable / dependency held (retryable; the daily
 #      tick or a re-run resumes; nothing half-written is relied upon)
 #   5  validation or EXACT-MATCH mismatch — a server fieldKey != its intended PRD
 #      key, a --confirm-name mismatch, or a malformed bind (NOTHING is stamped)
 #
-# The two setup STOP families map for provision-anthology-client.sh (W2.6):
-#   exit 2  ->  AF-AE-PIT-SCOPE (write scope absent) / label-not-set STOP
+# The setup STOP families map for provision-anthology-client.sh (W2.6):
+#   exit 2  ->  AF-AE-PIT-SCOPE (token cannot read pipelines) /
+#              AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only) /
+#              label-not-set STOP
 #   exit 5  ->  AF-AE-FIELD-KEY-MISMATCH / AF-AE-FIELD-MISSING
 # py_symbols the manifest binds live here: probe_write_scope, verify_fields.
 #
@@ -63,6 +71,15 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+# W0.6 (cover_render.py): services.leadconnectorhq.com is Cloudflare-fronted and
+# 403s urllib's default "Python-urllib/x.y" User-Agent at the WAF edge (CF error
+# 1010) BEFORE the request ever reaches Convert and Flow -- so a browser User-Agent
+# is REQUIRED on every request here too. Reuse the SINGLE constant of record rather
+# than re-typing the string (the sibling-import convention already used for the
+# delivery_report import in caf_delivery.py).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cover_render import MOZILLA_UA  # noqa: E402  (sibling import after path bootstrap)
 
 # ---- exit codes -------------------------------------------------------------
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = 0, 1, 2, 3, 5
@@ -142,7 +159,9 @@ def resolve_location(override: str = ""):
 # (401/403), validation (400/422), and unreachable (everything else / transport).
 # ---------------------------------------------------------------------------
 class ScopeDenied(Exception):
-    """The token is not authorized for this scope (write feasibility absent)."""
+    """A GENUINE Convert and Flow scope denial: the response BODY matched the W0.5
+    signature "The token is not authorized for this scope." (never a bare HTTP
+    401/403 status -- a Cloudflare/WAF edge block also carries a 403)."""
 
 
 class CafValidation(Exception):
@@ -151,6 +170,50 @@ class CafValidation(Exception):
 
 class CafUnreachable(Exception):
     """Transport failure or a server error; the op is retryable / held."""
+
+
+class UpstreamBlockedError(CafUnreachable):
+    """A 401/403 whose body did NOT match a genuine scope-denial signature -- e.g.
+    a Cloudflare/WAF edge block (CF error 1010) that 403s the request AT THE EDGE,
+    before it ever reaches Convert and Flow's scope check. Kept DISTINCT from
+    ScopeDenied (and, as a CafUnreachable subclass, treated as retryable/HELD by
+    every caller) so an edge block is NEVER misdiagnosed as a missing token scope
+    -- the exact Wave 5 false positive this guards against. The token scope is
+    UNDETERMINED here, not proven absent."""
+
+
+# The one fixed substring that identifies a GENUINE Convert and Flow (LeadConnector
+# v2) scope denial, verified live: a JSON body {"message": "The token is not
+# authorized for this scope."} on an auth-scoped endpoint. A Cloudflare edge block
+# carries no such JSON (it is an HTML challenge page / CF 1010), so it fails this
+# test and is classified as an upstream block instead.
+_SCOPE_DENIAL_SIGNATURE = "not authorized for this scope"
+
+
+def _auth_denial_kind(raw) -> str:
+    """Classify a 401/403 response BODY as "scope" (a genuine Convert and Flow
+    scope denial) or "blocked" (a Cloudflare/WAF edge block or any other non-scope
+    401/403). Inspects the body, never the bare status. The raw bytes are never
+    surfaced; only the fixed signature substring is matched."""
+    try:
+        text = (raw or b"").decode("utf-8", "replace")
+    except Exception:
+        return "blocked"
+    stripped = text.lstrip()
+    # An HTML / non-JSON body (a Cloudflare challenge page, a WAF interstitial, an
+    # empty body) is never a Convert and Flow JSON scope denial.
+    if not stripped or stripped[0] == "<":
+        return "blocked"
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return "blocked"
+    if isinstance(obj, dict):
+        for k in ("message", "error", "msg"):
+            v = obj.get(k)
+            if isinstance(v, str) and _SCOPE_DENIAL_SIGNATURE in v.lower():
+                return "scope"
+    return "blocked"
 
 
 class CafClient:
@@ -168,6 +231,10 @@ class CafClient:
             "Authorization": "Bearer %s" % self._token,
             "Version": CAF_VERSION_HEADER,
             "Accept": "application/json",
+            # W0.6: the Cloudflare edge fronting services.leadconnectorhq.com 403s
+            # urllib's default UA (CF 1010) before the request reaches Convert and
+            # Flow. A browser UA is REQUIRED for the request to be scope-checked.
+            "User-Agent": MOZILLA_UA,
         }
         data = None
         if body is not None:
@@ -181,29 +248,39 @@ class CafClient:
         except urllib.error.HTTPError as exc:
             code = exc.code
             if code in (401, 403):
-                # NEVER surface the body: a scope error may echo the token.
-                raise ScopeDenied("token not authorized for this scope (HTTP %s)" % code)
+                # A bare 401/403 is NOT proof of a scope problem: the Cloudflare
+                # edge fronting services.leadconnectorhq.com returns 403 (CF 1010)
+                # for a blocked request BEFORE it ever reaches the scope check.
+                # Inspect the BODY and only call it a scope denial when it matches
+                # the genuine W0.5 signature; otherwise it is an upstream/edge block.
+                body = b""
+                try:
+                    body = exc.read()
+                except Exception:
+                    body = b""
+                if _auth_denial_kind(body) == "scope":
+                    # NEVER surface the body verbatim (it could echo a credential);
+                    # we matched only the fixed signature substring.
+                    raise ScopeDenied("token not authorized for this scope (HTTP %s)" % code)
+                raise UpstreamBlockedError(
+                    "HTTP %s did NOT match a Convert and Flow scope-denial signature "
+                    "-- likely a Cloudflare/WAF edge block (verify the browser "
+                    "User-Agent), NOT a token-scope problem" % code)
             if code in (400, 409, 422):
                 raise CafValidation("Convert and Flow rejected the request (HTTP %s)" % code)
             raise CafUnreachable("Convert and Flow HTTP %s on %s" % (code, method))
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             raise CafUnreachable("Convert and Flow transport error: %s" % type(exc).__name__)
 
-    # ---- pipelines --------------------------------------------------------
+    # ---- pipelines (READ-ONLY) -------------------------------------------
+    # GoHighLevel / Convert and Flow exposes NO public v2 API to CREATE or DELETE
+    # a pipeline -- pipelines are UI-only. The engine binds an EXISTING pipeline by
+    # name (provision_pipeline) and probes READ access (probe_write_scope); it
+    # never calls a nonexistent create/delete endpoint. Listing is the only
+    # pipeline surface the v2 API provides.
     def list_pipelines(self, location_id: str):
         out = self._request("GET", "/opportunities/pipelines", query={"locationId": location_id})
         return out.get("pipelines") or []
-
-    def create_pipeline(self, location_id: str, name: str, stages):
-        body = {"locationId": location_id, "name": name,
-                "stages": [{"name": s["name"], "position": s["position"]} for s in stages]}
-        out = self._request("POST", "/opportunities/pipelines", body=body)
-        return out.get("pipeline") or out
-
-    def delete_pipeline(self, location_id: str, pipeline_id: str) -> bool:
-        self._request("DELETE", "/opportunities/pipelines/%s" % urllib.parse.quote(pipeline_id, safe=""),
-                      query={"locationId": location_id})
-        return True
 
     # ---- custom fields ----------------------------------------------------
     def list_custom_fields(self, location_id: str):
@@ -418,7 +495,8 @@ def verify_fields_resolved(field_map_path: Path, *, out=None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# PROVISIONING: the standard pipeline (probe -> create-or-verify -> persist).
+# PROVISIONING: the standard pipeline (read-probe -> find-by-name -> bind/persist).
+# Pipelines are UI-only in GoHighLevel/Convert and Flow; there is no create call.
 # ---------------------------------------------------------------------------
 def _find_pipeline(pipelines, name: str):
     for p in pipelines:
@@ -436,65 +514,60 @@ def _stage_id_map(pipeline: dict) -> dict:
 
 
 def probe_write_scope(client, location_id: str, *, dry_run: bool = False, out=None, jsonout=None):
-    """py_symbol: probe_write_scope. NON-ADVANCING create-feasibility probe:
-    create a throwaway pipeline and immediately delete it. Proves the token
-    carries pipeline/opportunities WRITE scope WITHOUT leaving the standard
-    pipeline half-made. exit 0 scope present; exit 2 scope ABSENT (STOP surface);
-    exit 3 unreachable (undetermined)."""
+    """py_symbol: probe_write_scope. Pipeline PRE-FLIGHT (read-based).
+
+    GoHighLevel / Convert and Flow exposes NO public v2 API to CREATE a pipeline
+    (pipelines are UI-only), so this is deliberately NOT a create-feasibility probe.
+    It verifies the client's OWN token can READ pipelines on the location -- which
+    proves (a) the opportunities scope is granted and (b) the request reaches
+    Convert and Flow past the Cloudflare edge (a WAF block surfaces as
+    UpstreamBlockedError -> HELD, never a scope STOP). exit 0 readable; exit 2 the
+    token cannot read pipelines (genuine scope STOP, AF-AE-PIT-SCOPE); exit 3
+    unreachable or an upstream/edge block (undetermined; retryable)."""
     out = out or sys.stderr
     masked = _mask_location(location_id)
     if dry_run:
-        out.write("[probe-scope] DRY RUN (marker %s): would create + delete a throwaway pipeline.\n" % masked)
+        out.write("[probe-scope] DRY RUN (marker %s): would READ the location pipelines "
+                  "(read-only; no write, no create -- pipelines are UI-only).\n" % masked)
         return EX_OK
-    probe_name = "AE Scope Probe %s" % datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    probe_stages = [{"name": "Probe", "position": 0}]
     try:
-        created = client.create_pipeline(location_id, probe_name, probe_stages)
+        pipelines = client.list_pipelines(location_id)
     except ScopeDenied:
-        _stop(out, "The Convert and Flow token lacks pipeline/opportunities WRITE scope (AF-AE-PIT-SCOPE).",
+        _stop(out, "The Convert and Flow token cannot READ pipelines/opportunities on this location (AF-AE-PIT-SCOPE).",
               ["Location marker: %s" % masked,
-               "Auto-provisioning the standard Anthology pipeline is NOT possible with this token.",
-               "Grant the client's OWN location-scoped token the pipelines/opportunities WRITE scope,",
-               "or bind a pre-existing pipeline as an explicit override. Setup STOPPED; never silent."])
+               "Grant the client's OWN location-scoped token the opportunities scope and re-run.",
+               "Setup STOPPED; never a silent fallback."])
         if jsonout is not None:
             json.dump({"ok": False, "scope": "absent", "reason": "pit_scope"}, jsonout)
             jsonout.write("\n")
         return EX_STOP
-    except CafUnreachable as exc:
-        out.write("[probe-scope] HELD: %s (marker %s). Scope undetermined; retryable.\n" % (exc, masked))
+    except UpstreamBlockedError as exc:
+        out.write("[probe-scope] HELD: %s (marker %s). NOT a token-scope problem; retryable.\n" % (exc, masked))
         return EX_HELD
-    except CafValidation as exc:
-        # A validation error still proves the WRITE scope was accepted (we got
-        # past auth). Treat as scope-present but note it.
-        out.write("[probe-scope] scope present (write accepted); probe body rejected: %s (marker %s).\n"
-                  % (exc, masked))
-        return EX_OK
+    except CafUnreachable as exc:
+        out.write("[probe-scope] HELD: %s (marker %s). Read scope undetermined; retryable.\n" % (exc, masked))
+        return EX_HELD
 
-    pid = created.get("id")
-    residue = None
-    if pid:
-        try:
-            client.delete_pipeline(location_id, pid)
-        except Exception:
-            residue = pid
-    if residue:
-        out.write("[probe-scope] scope PRESENT (marker %s) but the throwaway probe pipeline could NOT be "
-                  "deleted (id ...%s). Operator: remove it manually.\n" % (masked, residue[-6:]))
-    else:
-        out.write("[probe-scope] scope PRESENT: pipeline WRITE feasible (marker %s). Probe cleaned up.\n" % masked)
+    out.write("[probe-scope] OK: the token can READ %d pipeline(s) on this location (marker %s). "
+              "Pipeline creation is a one-time Convert and Flow UI step; provision-pipeline binds it by name.\n"
+              % (len(pipelines), masked))
     if jsonout is not None:
-        json.dump({"ok": True, "scope": "present", "residue_pipeline_id_tail": (residue[-6:] if residue else None)},
-                  jsonout)
+        json.dump({"ok": True, "scope": "present", "pipelines_readable": len(pipelines)}, jsonout)
         jsonout.write("\n")
     return EX_OK
 
 
 def provision_pipeline(client, field_map_path: Path, location_id: str, *,
                        dry_run: bool = False, out=None, jsonout=None):
-    """Idempotent create-or-verify of the standard Anthology pipeline. The create
-    attempt IS the write-scope probe: a scope denial STOPS setup (AF-AE-PIT-SCOPE,
-    exit 2), never a silent fallback. Persists pipeline_id + stage ids into
-    field-map.json pipeline.resolved."""
+    """FIND-AND-BIND the standard Anthology pipeline into field-map.json.
+
+    GoHighLevel / Convert and Flow has NO public v2 API to CREATE a pipeline
+    (pipelines are UI-only), so this is NEVER an auto-create: it READS the
+    location's pipelines, finds the standard one BY NAME, and persists its id +
+    stage ids (idempotent). If the standard pipeline is ABSENT it STOPS with an
+    operator instruction to create it ONCE in the Convert and Flow UI (or to bind
+    a pre-existing pipeline via `bind --pipeline-id`) -- it never calls a
+    nonexistent create endpoint."""
     out = out or sys.stderr
     fm = load_field_map(field_map_path)
     pconf = fm.get("pipeline")
@@ -502,15 +575,18 @@ def provision_pipeline(client, field_map_path: Path, location_id: str, *,
         _stop(out, "field-map.json has no pipeline config block", [str(field_map_path)])
         return EX_MISMATCH
     name = pconf["standard_pipeline_name"]
-    stages = pconf["standard_stages"]
     masked = _mask_location(location_id)
 
     try:
         pipelines = client.list_pipelines(location_id)
     except ScopeDenied:
-        _stop(out, "The Convert and Flow token cannot READ pipelines on this location.",
-              ["Location marker: %s" % masked, "Grant opportunities READ (and WRITE) scope and re-run."])
+        _stop(out, "The Convert and Flow token cannot READ pipelines on this location (AF-AE-PIT-SCOPE).",
+              ["Location marker: %s" % masked,
+               "Grant the client's OWN location-scoped token the opportunities scope and re-run."])
         return EX_STOP
+    except UpstreamBlockedError as exc:
+        out.write("[provision-pipeline] HELD: %s (marker %s). NOT a token-scope problem; retryable.\n" % (exc, masked))
+        return EX_HELD
     except CafUnreachable as exc:
         out.write("[provision-pipeline] HELD: %s (marker %s). Retryable.\n" % (exc, masked))
         return EX_HELD
@@ -520,49 +596,35 @@ def provision_pipeline(client, field_map_path: Path, location_id: str, *,
         sid = _stage_id_map(found)
         _stamp_pipeline(pconf, found.get("id"), sid, masked)
         save_field_map(field_map_path, fm)
-        out.write("[provision-pipeline] OK (marker %s): standard pipeline already present (idempotent no-op); "
-                  "%d stage ids recorded.\n" % (masked, len(sid)))
+        out.write("[provision-pipeline] OK (marker %s): bound the standard pipeline %r "
+                  "(%d stage ids recorded; idempotent).\n" % (masked, name, len(sid)))
         if jsonout is not None:
-            json.dump({"ok": True, "action": "verified_existing", "stages": len(sid)}, jsonout)
+            json.dump({"ok": True, "action": "bound_existing", "stages": len(sid)}, jsonout)
             jsonout.write("\n")
         return EX_OK
 
+    # NOT present. Pipelines are UI-only; there is NO create endpoint to fall back
+    # on. STOP with a clear, actionable operator surface (never a nonexistent POST).
     if dry_run:
-        out.write("[provision-pipeline] DRY RUN (marker %s): would create pipeline %r with %d stages. "
-                  "No write performed.\n" % (masked, name, len(stages)))
+        out.write("[provision-pipeline] DRY RUN (marker %s): the standard pipeline %r is NOT present. "
+                  "It must be created ONCE in the Convert and Flow UI (there is no API create endpoint), "
+                  "then re-run to bind it by name. No write performed.\n" % (masked, name))
         if jsonout is not None:
-            json.dump({"ok": True, "dry_run": True, "would_create": name, "stages": len(stages)}, jsonout)
+            json.dump({"ok": True, "dry_run": True, "standard_pipeline_present": False, "needs_ui_create": name},
+                      jsonout)
             jsonout.write("\n")
         return EX_OK
-
-    try:
-        created = client.create_pipeline(location_id, name, stages)
-    except ScopeDenied:
-        _stop(out, "The Convert and Flow token lacks pipeline/opportunities WRITE scope (AF-AE-PIT-SCOPE).",
-              ["Location marker: %s" % masked,
-               "The standard Anthology pipeline could NOT be auto-provisioned.",
-               "Grant the client's OWN location-scoped token pipelines/opportunities WRITE scope,",
-               "or bind a pre-existing pipeline as an explicit override. Setup STOPPED; never silent."])
-        if jsonout is not None:
-            json.dump({"ok": False, "reason": "pit_scope"}, jsonout)
-            jsonout.write("\n")
-        return EX_STOP
-    except CafValidation as exc:
-        out.write("[provision-pipeline] validation error (marker %s): %s\n" % (masked, exc))
-        return EX_MISMATCH
-    except CafUnreachable as exc:
-        out.write("[provision-pipeline] HELD: %s (marker %s). Retryable.\n" % (exc, masked))
-        return EX_HELD
-
-    sid = _stage_id_map(created)
-    _stamp_pipeline(pconf, created.get("id"), sid, masked)
-    save_field_map(field_map_path, fm)
-    out.write("[provision-pipeline] OK (marker %s): created %r with %d stages.\n"
-              % (masked, name, len(sid)))
+    _stop(out, "The standard Anthology pipeline %r is NOT present on this location, and Convert and Flow "
+               "(GoHighLevel) exposes NO API to create one -- pipelines are UI-only (AF-AE-PIPELINE-UI-CREATE)." % name,
+          ["Location marker: %s" % masked,
+           "Create a pipeline named EXACTLY %r once in the Convert and Flow UI (with the standard stages)," % name,
+           "then re-run provision-pipeline: it binds the pipeline by name and records the stage ids.",
+           "Or bind a pre-existing pipeline explicitly: bind --anthology-id <id> --pipeline-id <existing-id>.",
+           "Setup STOPPED; the engine never calls a nonexistent create endpoint."])
     if jsonout is not None:
-        json.dump({"ok": True, "action": "created", "stages": len(sid)}, jsonout)
+        json.dump({"ok": False, "reason": "pipeline_ui_create_required", "pipeline_name": name}, jsonout)
         jsonout.write("\n")
-    return EX_OK
+    return EX_STOP
 
 
 def _stamp_pipeline(pconf: dict, pipeline_id, stage_ids: dict, masked: str) -> None:
@@ -737,11 +799,13 @@ def _live_client(location_override: str = "", out=None):
 # network, no secrets, no live location touched.
 # ---------------------------------------------------------------------------
 class _FakeCaf:
-    """In-memory Convert and Flow for the self-test."""
+    """In-memory Convert and Flow for the self-test. Mirrors the REAL CafClient
+    surface: list/create custom fields and (READ-ONLY) list pipelines. There is no
+    create_pipeline/delete_pipeline -- pipelines are UI-only in the real API."""
 
-    def __init__(self, *, pipeline_write=True, field_write=True, key_mangler=None,
+    def __init__(self, *, pipeline_read=True, field_write=True, key_mangler=None,
                  existing_fields=None, existing_pipelines=None):
-        self.pipeline_write = pipeline_write
+        self.pipeline_read = pipeline_read
         self.field_write = field_write
         self.key_mangler = key_mangler
         self.fields = {}   # fieldKey -> {id, name, dataType}
@@ -766,22 +830,21 @@ class _FakeCaf:
         return {"fieldKey": fk, "id": fid, "name": name, "dataType": data_type}
 
     def list_pipelines(self, location_id):
+        if not self.pipeline_read:
+            raise ScopeDenied("no pipeline read")
         return [json.loads(json.dumps(p)) for p in self.pipelines]
 
-    def create_pipeline(self, location_id, name, stages):
-        if not self.pipeline_write:
-            raise ScopeDenied("no pipeline write")
-        self._n += 1
-        pid = "pl_fake_%d" % self._n
-        st = [{"name": s["name"], "position": s["position"], "id": "st_%d_%d" % (self._n, s["position"])}
-              for s in stages]
-        p = {"id": pid, "name": name, "stages": st}
-        self.pipelines.append(p)
-        return p
 
-    def delete_pipeline(self, location_id, pipeline_id):
-        self.pipelines = [p for p in self.pipelines if p.get("id") != pipeline_id]
-        return True
+def _standard_pipeline_fixture() -> dict:
+    """Build an EXISTING standard pipeline exactly as one created once in the
+    Convert and Flow UI would read back: name == the field-map standard name, one
+    stage per standard stage, each carrying an id. provision_pipeline finds it by
+    name and binds it."""
+    fm = load_field_map(FIELD_MAP_PATH)
+    pc = fm["pipeline"]
+    stages = [{"name": s["name"], "position": s["position"], "id": "st_seed_%d" % s["position"]}
+              for s in pc["standard_stages"]]
+    return {"id": "pl_seed_std", "name": pc["standard_pipeline_name"], "stages": stages}
 
 
 def _tmp_field_map() -> Path:
@@ -850,26 +913,120 @@ def self_test() -> int:
     assert rc == EX_OK
     assert all(i["field_key"] is None for i in load_field_map(p4)["provisioning"]["fields"]), "dry run wrote data"
 
-    # -- pipeline: scope absent -> exit 2 STOP -----------------------------
+    # -- pipeline (BUG 2): READ scope absent -> exit 2 STOP -----------------
     p5 = _tmp_field_map()
-    rc = provision_pipeline(_FakeCaf(pipeline_write=False), p5, "loc_test_QcDX", out=dev)
-    assert rc == EX_STOP, "no pipeline-write scope should STOP exit 2, got %s" % rc
+    rc = provision_pipeline(_FakeCaf(pipeline_read=False), p5, "loc_test_QcDX", out=dev)
+    assert rc == EX_STOP, "no pipeline-read scope should STOP exit 2, got %s" % rc
 
-    # -- pipeline: create -> persist -> idempotent verify ------------------
+    # -- pipeline (BUG 2): standard pipeline ABSENT -> UI-create STOP -------
+    # There is NO API create endpoint; an empty account must STOP with the
+    # UI-create instruction, NEVER attempt a (nonexistent) auto-create.
+    p5b = _tmp_field_map()
+    rc = provision_pipeline(_FakeCaf(), p5b, "loc_test_QcDX", out=dev)
+    assert rc == EX_STOP, "absent standard pipeline should STOP (UI-create), got %s" % rc
+    assert (load_field_map(p5b)["pipeline"].get("resolved") or {}).get("pipeline_id") is None, \
+        "nothing may be stamped on the UI-create STOP"
+
+    # -- pipeline (BUG 2): BIND a pre-existing standard pipeline -> persist -
+    existing_std = _standard_pipeline_fixture()
     p6 = _tmp_field_map()
-    caf6 = _FakeCaf()
+    caf6 = _FakeCaf(existing_pipelines=[existing_std])
     rc = provision_pipeline(caf6, p6, "loc_test_QcDX", out=dev)
-    assert rc == EX_OK, "pipeline create rc=%s" % rc
+    assert rc == EX_OK, "bind existing pipeline rc=%s" % rc
     fm6 = load_field_map(p6)
     resolved = fm6["pipeline"]["resolved"]
     assert resolved["pipeline_id"] and len(resolved["stage_ids"]) == 9, "pipeline resolved incompletely"
-    # idempotent: same standard pipeline now present -> verified_existing, OK
+    # idempotent: same standard pipeline still present -> re-bind, OK
     rc = provision_pipeline(caf6, p6, "loc_test_QcDX", out=dev)
     assert rc == EX_OK, "idempotent pipeline rc=%s" % rc
+    # dry-run against an empty account: reports the UI-create need, stamps nothing
+    p6d = _tmp_field_map()
+    assert provision_pipeline(_FakeCaf(), p6d, "loc_test_QcDX", dry_run=True, out=dev) == EX_OK
+    assert (load_field_map(p6d)["pipeline"].get("resolved") or {}).get("pipeline_id") is None
 
-    # -- probe-scope: present (create+delete) and absent -------------------
-    assert probe_write_scope(_FakeCaf(), "loc_test_QcDX", out=dev) == EX_OK
-    assert probe_write_scope(_FakeCaf(pipeline_write=False), "loc_test_QcDX", out=dev) == EX_STOP
+    # -- probe-scope (BUG 2): read feasible (OK) and unreadable (STOP) ------
+    assert probe_write_scope(_FakeCaf(existing_pipelines=[existing_std]), "loc_test_QcDX", out=dev) == EX_OK
+    assert probe_write_scope(_FakeCaf(pipeline_read=False), "loc_test_QcDX", out=dev) == EX_STOP
+
+    # -- BUG 1: browser User-Agent + scope-vs-Cloudflare discrimination -----
+    # The REAL CafClient._request is exercised end to end by patching urlopen so a
+    # crafted upstream response drives the exact production code path. A default
+    # urllib UA would 403 at the Cloudflare edge; a genuine scope body must raise
+    # ScopeDenied; a Cloudflare/WAF block must NOT be mislabeled as a scope denial.
+    _orig_urlopen = urllib.request.urlopen
+    captured_ua = {}
+
+    class _FakeResp:
+        def __init__(self, body=b"{}"):
+            self._body = body
+        def read(self):
+            return self._body
+        def getcode(self):
+            return 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def _http_error(status, body, headers):
+        return urllib.error.HTTPError("https://services.leadconnectorhq.com/x",
+                                      status, "err", headers, io.BytesIO(body))
+
+    try:
+        # (a) the browser User-Agent actually rides on every request
+        def _ok_open(req, timeout=None):
+            captured_ua["ua"] = {k.lower(): v for k, v in req.header_items()}.get("user-agent")
+            return _FakeResp(b'{"pipelines": []}')
+        urllib.request.urlopen = _ok_open
+        CafClient("tok_probe").list_pipelines("loc_test_QcDX")
+        assert captured_ua.get("ua") == MOZILLA_UA, \
+            "browser User-Agent not sent on the request: %r" % captured_ua.get("ua")
+
+        # (b) a GENUINE scope denial (W0.5 JSON signature) -> ScopeDenied
+        def _scope_open(req, timeout=None):
+            raise _http_error(401, b'{"message": "The token is not authorized for this scope."}',
+                              {"Content-Type": "application/json"})
+        urllib.request.urlopen = _scope_open
+        try:
+            CafClient("tok_probe").list_pipelines("loc_test_QcDX")
+            assert False, "a genuine scope denial must raise ScopeDenied"
+        except ScopeDenied:
+            pass
+
+        # (c) a Cloudflare/WAF edge block (CF 1010 HTML) -> NOT ScopeDenied
+        def _cf_open(req, timeout=None):
+            raise _http_error(403,
+                              b"<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>"
+                              b"<body>error code: 1010 Ray ID: deadbeef</body></html>",
+                              {"Server": "cloudflare", "Content-Type": "text/html"})
+        urllib.request.urlopen = _cf_open
+        try:
+            CafClient("tok_probe").list_pipelines("loc_test_QcDX")
+            assert False, "a Cloudflare block must raise, but NOT ScopeDenied"
+        except ScopeDenied:
+            assert False, "Cloudflare WAF block MISLABELED as ScopeDenied (the Wave 5 false positive)"
+        except UpstreamBlockedError:
+            pass  # correctly distinguished from a scope problem
+
+        # (d) a non-JSON / non-Cloudflare 403 is ALSO not a scope denial
+        def _plain_open(req, timeout=None):
+            raise _http_error(403, b"Forbidden", {"Content-Type": "text/plain"})
+        urllib.request.urlopen = _plain_open
+        try:
+            CafClient("tok_probe").list_pipelines("loc_test_QcDX")
+            assert False, "a plain 403 must raise"
+        except ScopeDenied:
+            assert False, "a non-scope 403 must not be labeled ScopeDenied"
+        except UpstreamBlockedError:
+            pass
+    finally:
+        urllib.request.urlopen = _orig_urlopen
+
+    # unit-level: the body classifier itself agrees
+    assert _auth_denial_kind(b'{"message": "The token is not authorized for this scope."}') == "scope"
+    assert _auth_denial_kind(b"<!DOCTYPE html> ... cloudflare 1010") == "blocked"
+    assert _auth_denial_kind(b'{"message": "Rate limit exceeded"}') == "blocked"
+    assert _auth_denial_kind(b"") == "blocked"
 
     # -- binding round-trip on p6 (pipeline resolved) ----------------------
     regdir = Path(tempfile.mkdtemp(prefix="ae-reg-bind-"))
@@ -890,7 +1047,9 @@ def self_test() -> int:
 
     print("anthology_registry self-test: OK "
           "(derivation, 19-field inventory, create/verify/persist, exact-match STOP, "
-          "scope STOP, dry-run, pipeline create+idempotent, probe-scope, binding round-trip)")
+          "scope STOP, dry-run, pipeline find-and-bind + UI-create STOP + idempotent, "
+          "probe-scope read feasibility, browser-UA + scope-vs-Cloudflare discrimination, "
+          "binding round-trip)")
     return EX_OK
 
 
@@ -909,8 +1068,8 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit a machine-readable summary on stdout")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, help_ in [
-        ("probe-scope", "prove pipeline/opportunities WRITE feasibility (throwaway create+delete)"),
-        ("provision-pipeline", "create-or-verify the standard Anthology pipeline"),
+        ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no create)"),
+        ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it (UI-only; no auto-create)"),
         ("provision-fields", "create-or-verify the 19 PRD Section 6 fields; persist server fieldKey + id"),
         ("provision-all", "provision-pipeline then provision-fields (stops on first STOP)"),
         ("verify-fields", "READ-ONLY: assert field-map.json is fully resolved and exact-match"),

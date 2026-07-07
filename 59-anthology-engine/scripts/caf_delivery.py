@@ -89,6 +89,11 @@ from delivery_report import (  # noqa: E402  (sibling import after path bootstra
     persist_certificate,
     AnthropicIdentifierError,
 )
+# W0.6 (cover_render.py): services.leadconnectorhq.com is Cloudflare-fronted and
+# 403s urllib's default "Python-urllib/x.y" User-Agent at the WAF edge (CF error
+# 1010) before the request reaches Convert and Flow. Reuse the SINGLE browser-UA
+# constant of record rather than re-typing the string.
+from cover_render import MOZILLA_UA  # noqa: E402  (sibling import after the path bootstrap above)
 
 # ---------------------------------------------------------------------------
 # Exit codes (SPEC 3.4 row 12).
@@ -163,6 +168,47 @@ def _unreachable(msg, detail=None):
 
 def _mismatch(msg, detail=None):
     return DeliveryError(EX_MISMATCH, msg, detail)
+
+
+class UpstreamBlockedError(DeliveryError):
+    """A 401/403 whose body did NOT match Convert and Flow's real scope-denial
+    signature -- e.g. a Cloudflare/WAF edge block (CF error 1010) that 403s the
+    request AT THE EDGE, before it reaches Convert and Flow's scope check. Kept
+    DISTINCT from a genuine scope denial so an edge block is NEVER misdiagnosed as
+    a missing token scope (the exact Wave 5 false positive). Carries EX_UNREACHABLE
+    (held/retryable): the token scope is UNDETERMINED, not proven absent."""
+    def __init__(self, message, detail=None):
+        super().__init__(EX_UNREACHABLE, message, detail)
+
+
+# The fixed substring identifying a GENUINE Convert and Flow (LeadConnector v2)
+# scope denial, verified live: a JSON body {"message": "The token is not authorized
+# for this scope."}. A Cloudflare edge block carries no such JSON (an HTML CF-1010
+# page), so it fails this test and is classified as an upstream block instead.
+_SCOPE_DENIAL_SIGNATURE = "not authorized for this scope"
+
+
+def _is_scope_denial(raw):
+    """True iff a 401/403 response BODY carries the genuine Convert and Flow
+    scope-denial signature. Inspects the body, never the bare status. The raw
+    bytes are never surfaced; only the fixed signature substring is matched."""
+    try:
+        text = (raw or b"").decode("utf-8", "replace")
+    except Exception:
+        return False
+    stripped = text.lstrip()
+    if not stripped or stripped[0] == "<":      # HTML / empty: never a JSON scope denial
+        return False
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return False
+    if isinstance(obj, dict):
+        for k in ("message", "error", "msg"):
+            v = obj.get(k)
+            if isinstance(v, str) and _SCOPE_DENIAL_SIGNATURE in v.lower():
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +403,10 @@ class CafClient:
             "Authorization": "Bearer %s" % self._pit,
             "Version": CAF_VERSION_HEADER,
             "Accept": accept,
+            # W0.6: the Cloudflare edge fronting services.leadconnectorhq.com 403s
+            # urllib's default UA (CF 1010) before the request reaches Convert and
+            # Flow. A browser UA is REQUIRED for the request to be scope-checked.
+            "User-Agent": MOZILLA_UA,
         }
         if content_type:
             h["Content-Type"] = content_type
@@ -392,12 +442,22 @@ class CafClient:
             return
         msg = self._short_message(status, raw)
         if status in (401, 403):
-            # 401 "The token is not authorized for this scope." is the W0.5 opportunities
-            # write finding: surface it as HELD with a clear operator STOP, never silent.
-            raise _unreachable("%s: scope/authorization denied (HTTP %s: %s). The client "
-                               "private integration token likely lacks the required write "
-                               "scope; provisioning must mint a scoped token and re-verify."
-                               % (context, status, msg))
+            # A bare 401/403 is NOT proof of a scope problem: the Cloudflare edge
+            # fronting services.leadconnectorhq.com returns 403 (CF 1010) for a
+            # blocked request BEFORE it reaches the scope check. Inspect the BODY:
+            # only the genuine W0.5 signature is a scope denial; anything else
+            # (an HTML challenge page, a WAF block, any other 401/403) is an
+            # upstream/edge block and must NOT be blamed on the token scope.
+            if _is_scope_denial(raw):
+                # W0.5 opportunities-write finding: genuine scope denial. HELD with a
+                # clear operator STOP, never silent. The raw body is never surfaced.
+                raise _unreachable("%s: Convert and Flow scope/authorization denied (HTTP %s). The "
+                                   "client private integration token lacks the required write scope; "
+                                   "provisioning must grant the scope and re-verify." % (context, status))
+            raise UpstreamBlockedError(
+                "%s: HTTP %s did NOT match a Convert and Flow scope-denial signature -- likely a "
+                "Cloudflare/WAF edge block (verify the browser User-Agent), NOT a token-scope "
+                "problem. Held; retryable." % (context, status))
         if status in (404, 422, 400):
             raise _tenant("%s: rejected (HTTP %s: %s)" % (context, status, msg))
         raise _unreachable("%s: Convert and Flow HTTP %s (%s)" % (context, status, msg))
@@ -459,7 +519,8 @@ class CafClient:
         """Best-effort hosted-link reachability probe (range GET). Never fatal on its
         own — list-verify is the authoritative landing proof."""
         try:
-            status, _ = self._opener("GET", url, {"Range": "bytes=0-0"}, None)
+            # A browser UA here too: hosted media CDNs are also Cloudflare-fronted.
+            status, _ = self._opener("GET", url, {"Range": "bytes=0-0", "User-Agent": MOZILLA_UA}, None)
         except DeliveryError:
             return False
         return 200 <= status < 400
@@ -1058,6 +1119,7 @@ class _StubCaf:
     def open(self, method, url, headers, data):
         assert headers.get("Version") == CAF_VERSION_HEADER, "Version header required"
         assert headers.get("Authorization", "").startswith("Bearer "), "Bearer required"
+        assert headers.get("User-Agent") == MOZILLA_UA, "browser User-Agent required on every request (W0.6)"
         path = url[len(CAF_API_BASE):] if url.startswith(CAF_API_BASE) else url
         body = json.loads(data.decode("utf-8")) if (data and headers.get("Content-Type") == "application/json") else None
 
@@ -1121,6 +1183,50 @@ def self_test():
 
     # exit-code map
     check("exit-code map", (EX_OK, EX_ERR, EX_TENANT, EX_UNREACHABLE, EX_MISMATCH) == (0, 1, 2, 3, 5))
+
+    # -- BUG 1: browser User-Agent rides on every request (W0.6 Cloudflare edge) --
+    _ua_client = CafClient("pit-test", "locA")
+    check("browser User-Agent on every request (W0.6)",
+          _ua_client._headers().get("User-Agent") == MOZILLA_UA
+          and _ua_client._headers(content_type="application/json").get("User-Agent") == MOZILLA_UA)
+
+    # -- BUG 1: 401/403 scope-vs-Cloudflare discrimination in _classify ----------
+    # (a) a GENUINE scope denial (W0.5 JSON signature) is HELD as a scope surface
+    _scope_body = json.dumps({"message": "The token is not authorized for this scope."}).encode()
+    try:
+        _ua_client._classify(401, _scope_body, "opp-write")
+        check("genuine scope denial raises", False)
+    except UpstreamBlockedError:
+        check("genuine scope denial is NOT mislabeled as an edge block", False)
+    except DeliveryError as e:
+        check("genuine scope denial -> HELD scope surface (exit 3)",
+              e.code == EX_UNREACHABLE and "scope" in e.message.lower()
+              and "cloudflare" not in e.message.lower())
+    # (b) a Cloudflare/WAF edge block (CF 1010 HTML) is NOT a scope diagnosis
+    _cf_body = (b"<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>"
+                b"<body>error code: 1010 Ray ID: deadbeef</body></html>")
+    try:
+        _ua_client._classify(403, _cf_body, "opp-write")
+        check("cloudflare edge block raises", False)
+    except UpstreamBlockedError as e:
+        check("cloudflare/WAF block -> UpstreamBlockedError, NOT a scope diagnosis",
+              e.code == EX_UNREACHABLE and "lacks the required write scope" not in e.message.lower())
+    except DeliveryError:
+        check("cloudflare block must be an UpstreamBlockedError", False)
+    # (c) any other non-scope 403 (non-JSON body) is ALSO not a scope denial
+    try:
+        _ua_client._classify(403, b"Forbidden", "opp-write")
+        check("plain 403 raises", False)
+    except UpstreamBlockedError:
+        check("non-scope 403 -> UpstreamBlockedError (not scope)", True)
+    except DeliveryError:
+        check("non-scope 403 must be an UpstreamBlockedError", False)
+    # (d) the body classifier itself agrees
+    check("_is_scope_denial: genuine signature -> True", _is_scope_denial(_scope_body) is True)
+    check("_is_scope_denial: cloudflare HTML -> False", _is_scope_denial(_cf_body) is False)
+    check("_is_scope_denial: unrelated JSON -> False",
+          _is_scope_denial(b'{"message": "Rate limit exceeded"}') is False)
+    check("_is_scope_denial: empty body -> False", _is_scope_denial(b"") is False)
 
     # byte-for-byte comparison: W0.5 stressor (unicode + trailing spaces + %20)
     tricky = "Chäptér ✓ | A&B  %20 "
