@@ -21,6 +21,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved slot
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,6 +45,83 @@ WIRING = [
     ("scripts/drive-tree-provision.py", "idempotent Producer/Anthology/Participant tree under the EXISTING shared root, on first sight only"),
     ("scripts/mc_board.py", "ingest ONE participant card to POST /api/tasks/ingest (HMAC + Bearer, fail-soft: a dark board never blocks the pipeline)"),
 ]
+
+
+KEY_DELIM = "::"
+
+
+def _run_dir_for(key, run_dir=None):
+    """Resolve (and create) this run's per-participant-per-stage working directory
+    -- the SAME directory 54-anthology-writer/anthology-entry.sh --run-dir targets,
+    so its working/*.md checkpoints are exactly what a later stage reads back."""
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180):
+    """Invoke one WIRING collaborator; return (rc, parsed_json_or_None, stderr_tail)."""
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180):
+    """Run WIRING[i]'s collaborator; classify via the FIXED contract; log. The
+    caller short-circuits on anything but EX_OK (rc==0)."""
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed
+
+
+def _spawn_next(py, next_script, key, run_dir):
+    """Fire-and-forget the next stage, fully detached (mirrors intake_router.py's
+    own spawn_stage_detached; never blocks this stage's own exit)."""
+    target = SCRIPTS / next_script
+    if not target.exists():
+        sys.stderr.write("[stage_%s] next stage %s not present yet; the ledger cursor "
+                         "holds it safely until it lands.\n" % (STAGE, next_script))
+        return False
+    argv = [py, str(target), "--participant-key", key, "--run-dir", str(run_dir)]
+    logpath = Path(run_dir) / "stage-spawn.log"
+    try:
+        logf = open(logpath, "ab")
+    except OSError:
+        logf = subprocess.DEVNULL
+    try:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
+                         start_new_session=True, close_fds=True, cwd=str(SKILL_DIR))
+        return True
+    except Exception as exc:  # noqa: BLE001 - a spawn failure must not fail this stage
+        sys.stderr.write("[stage_%s] next-stage spawn failed (non-fatal; the ledger "
+                         "cursor holds it): %s\n" % (STAGE, exc))
+        return False
+    finally:
+        if logf not in (subprocess.DEVNULL,):
+            try:
+                logf.close()
+            except OSError:
+                pass
 
 
 def _resolve(rel):
@@ -81,19 +160,98 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    `key` is either a --participant-key (exceptions-replay) or a --payload file
+    (the normal S0 path). classify_child_rc's numeric contract is unchanged; every
+    step short-circuits the stage on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+
+    py = sys.executable or "python3"
+    payload_file = key if (key and Path(key).is_file()) else None
+    replay_key = None if payload_file else key
+
+    # 1. intake_router.py -- the deterministic S0 route (route-secret, hidden-field
+    #    validation, tenant check, dedup no-op, exceptions capture, the sole-writer
+    #    upsert-participant, acknowledge). --no-spawn: THIS dispatcher (not
+    #    intake_router) drives the rest of the WIRING chain below. intake_router.py
+    #    has no bare-participant-key CLI surface (--replay re-submits the SAME
+    #    --payload to reset its dedup claim); an exceptions-queue/manual replay by
+    #    --participant-key alone means the participant already routed and this
+    #    step has nothing to re-route -- it is a documented no-op in that path.
+    rel, _ = WIRING[0]
+    pkey = replay_key
+    if payload_file:
+        argv = [py, str(_resolve(rel)), "--no-spawn", "--json", "--payload", payload_file]
+        rc, parsed = _step(0, rel, argv)
+        if rc != EX_OK:
+            return rc
+        pkey = (parsed or {}).get("participant_key") or pkey
+    else:
+        sys.stderr.write("[stage_%s] 1/%d %s: skipped (no --payload; replaying an "
+                         "already-routed --participant-key)\n" % (STAGE, len(WIRING), rel))
+    if not pkey or KEY_DELIM not in pkey:
+        sys.stderr.write("[stage_%s] no resolvable participant_key; held.\n" % STAGE)
+        return EX_HELD
+    contact_id, anthology_id = pkey.split(KEY_DELIM, 1)
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # 2. anthology_state.py -- confirm the cursor. intake_router already performed
+    #    the substantive upsert in step 1; this is an idempotent no-op confirm
+    #    read via the sole writer's own upsert-participant contract.
+    rel, _ = WIRING[1]
+    argv = [py, str(_resolve(rel)), "--json", "upsert-participant",
+            "--contact-id", contact_id, "--anthology-id", anthology_id]
+    rc, _ = _step(1, rel, argv)
+    if rc != EX_OK:
+        return rc
+
+    # helper read (not a separate WIRING slot): resolve the anthology's producer_id
+    # so the Drive tree below carries a real level-1 folder identity.
+    producer_id = anthology_id
+    _, anth_parsed, _ = _run([py, str(_resolve(WIRING[1][0])), "--json",
+                             "get-anthology", "--anthology-id", anthology_id])
+    if anth_parsed and anth_parsed.get("producer_id"):
+        producer_id = anth_parsed["producer_id"]
+
+    # 3. drive-tree-provision.py -- idempotent Producer/Anthology/Participant tree,
+    #    on first sight only (get-or-create is a no-op on a re-run).
+    rel, _ = WIRING[2]
+    argv = [py, str(_resolve(rel)), "provision", "--producer", producer_id,
+            "--anthology", anthology_id, "--participant", contact_id, "--json"]
+    rc, _ = _step(2, rel, argv)
+    if rc != EX_OK:
+        return rc
+
+    # 4. mc_board.py -- ingest ONE participant card (idempotent create/resolve;
+    #    fail-soft: a dark board never blocks the pipeline).
+    rel, _ = WIRING[3]
+    argv = [py, str(_resolve(rel)), "ensure", "--subject-key", pkey, "--json"]
+    rc, _ = _step(3, rel, argv)
+    if rc != EX_OK:
+        return rc
+
+    # Housekeeping (SPEC 2.2 execution model: advance exactly one stage, persist,
+    # stop): S0 is complete, so advance into S1 and hand off. The intake_router.py
+    # module docstring names this exact hand-off ("the S0 stage runner ... runs
+    # drive-tree-provision.py + mc_board.py and advances into S1").
+    rel_state, _ = WIRING[1]
+    argv = [py, str(_resolve(rel_state)), "--json", "advance-stage",
+            "--participant-key", pkey, "--to", "s1_avatar"]
+    rc_adv, _, err_adv = _run(argv)
+    adv_class = classify_child_rc(rc_adv)
+    if adv_class != EX_OK:
+        sys.stderr.write("[stage_%s] advance-stage to s1_avatar failed (rc=%d): %s\n"
+                         % (STAGE, rc_adv, err_adv[-300:] if err_adv else ""))
+        return adv_class
+
+    _spawn_next(py, "stage_s1_avatar.py", pkey, rundir)
+    return EX_OK
 
 
 def self_test():
@@ -126,7 +284,7 @@ def main(argv=None):
             return plan()
         if not args.key and not args.payload:
             ap.error("stage %s needs --%s (replay) or --payload (normal intake)" % (STAGE, KEY_ARG))
-        return _invoke_wiring(args.key or args.payload)
+        return _invoke_wiring(args.key or args.payload, args.run_dir)
     except SystemExit:
         raise
     except Exception as exc:
