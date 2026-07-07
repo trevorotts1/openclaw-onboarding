@@ -40,11 +40,13 @@ EX_OK, EX_ERR, EX_PROVER, EX_HELD, EX_SLOT = 0, 1, 2, 3, 5
 # Ordered collaborators: (path relative to skill or repo root, role). Per SPEC S9.
 WIRING = [
     ("scripts/anthology_state.py", "assembly-readiness-report (the blocking list) then arm; the s9_ready trigger with every guard revalidated by the writer and --confirm-name (mismatch exits 5)"),
+    ("scripts/mc_board.py", "mirror the dedicated Assembly card to the armed/ready state (the ready-to-assemble trigger surfaces as the card's review transition, SPEC 11.2); FAIL-SOFT, never blocks assembly"),
     ("scripts/model_router.py", "order curation (ae-01), editor introduction in the producer voice from producer inputs only (ae-02), front and back matter (ae-04), contributor bios from ledger identities (ae-03); LONGCTX tier when configured, else chunked on HEAVY-WRITER"),
     ("scripts/anthology_state.py", "assembly-set-order; compile from FROZEN approved chapter artifacts, sha256 byte identical per chapter"),
     ("scripts/qc-tier1-anthology.py", "assembly-scope Gate B (every chapter present exactly once, order matches curation, one continuous 14-point-floor PDF)"),
     ("scripts/stage_s8_deliver.py", "deliver the full manuscript Doc plus PDF and push the manuscript fields"),
     ("scripts/anthology_state.py", "record the s9_producer sign-off that closes the anthology; read the manuscript fields back"),
+    ("scripts/mc_board.py", "mirror the Assembly card sign-off (assembly_state signed_off) onto the board; the engine never sets 'done' (the QC scorer owns review->done at >=8.5); FAIL-SOFT"),
 ]
 
 
