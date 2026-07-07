@@ -69,6 +69,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
+# Sibling helper (W1.24): the operator delivery report + signed process
+# certificate are authored in delivery_report.py and imported here at S8 rather
+# than duplicated inline (this removes the former inline duplication and its
+# non-idempotent divergence). Ensure this script's own directory is importable
+# whether caf_delivery.py is run directly (python3 scripts/caf_delivery.py ...)
+# or imported by a stage runner from another working directory.
+# ---------------------------------------------------------------------------
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from delivery_report import (  # noqa: E402  (sibling import after path bootstrap)
+    PART_A_S8,
+    CERT_SECRET_LABELS,
+    build_delivery_report,
+    render_report_text,
+    build_process_certificate,
+    verify_certificate,
+    resolve_cert_secret,
+    persist_report,
+    persist_certificate,
+    AnthropicIdentifierError,
+)
+
+# ---------------------------------------------------------------------------
 # Exit codes (SPEC 3.4 row 12).
 # ---------------------------------------------------------------------------
 EX_OK = 0
@@ -103,12 +125,8 @@ ALLOWED_LOCATION_LABELS = (
     "CAF_ALLOWED_LOCATION_IDS",
     "GOHIGHLEVEL_ALLOWED_LOCATION_IDS",
 )
-# Optional signing secret for the process certificate. Absent -> fail-soft UNSIGNED
-# (delivery is NEVER blocked on the certificate; SPEC S8 keeps delivery flowing).
-CERT_SECRET_LABELS = (
-    "ANTHOLOGY_PROCESS_CERT_SECRET",
-    "ANTHOLOGY_CERT_SECRET",
-)
+# NOTE (W1.24): CERT_SECRET_LABELS is now imported from delivery_report.py (the
+# sibling helper that owns the certificate) so the label set has a single source.
 
 # ---------------------------------------------------------------------------
 # Guards. A written value must never be Anthropic-shaped (mirrors
@@ -574,8 +592,7 @@ def assert_tenant(operating_location, registry_binding, environ=None):
                       "allowed-location set (anti-commingling; delivery refused)")
 
 
-def resolve_cert_secret(environ=None):
-    return _env_first(CERT_SECRET_LABELS, environ)
+# NOTE (W1.24): resolve_cert_secret() is imported from delivery_report.py.
 
 
 # ---------------------------------------------------------------------------
@@ -705,198 +722,16 @@ def update_pipeline_stage(client, contact_id, pipeline_id, stage_id, opportunity
 
 
 # ---------------------------------------------------------------------------
-# Operator-channel delivery report (reproduces CHECKLIST Part A, S8) + write.
+# Operator delivery report + signed process certificate (CHECKLIST Part A, S8;
+# Skill 54 P7): PART_A_S8, build_delivery_report, render_report_text,
+# build_process_certificate, verify_certificate, resolve_cert_secret,
+# persist_report, persist_certificate are imported at the top of this module
+# from the sibling helper delivery_report.py (W1.24). The former inline copies
+# were removed to end the duplication; delivery_report.py's certificate
+# content_sha256 is idempotent over the process-identity core (Skill 54 P7),
+# its builders run a fail-closed Anthropic deny gate, and the report text is the
+# same operator digest. caf_delivery.py calls them unchanged at S8 (cmd_deliver).
 # ---------------------------------------------------------------------------
-PART_A_S8 = [
-    "Every deliverable exists as BOTH a Google Doc and a designed PDF; no rendered "
-    "font below 14 point (guard-font-floor.py over the rendered file).",
-    "Every file uploaded to Convert and Flow media storage; every hosted link pushed "
-    "to its exact Section 6 custom field, keyed by contact_id; every write read back "
-    "byte-for-byte.",
-    "contact.anthology_active_id, contact.anthology_stage, and "
-    "contact.anthology_rewrite_count current; the per-gate pipeline-stage update "
-    "fired at every gate from the registry stage map.",
-    "Signed process certificate recorded; the board card moved per the board "
-    "contract (review; promoted to done ONLY by the independent QC scorer); "
-    "completion notices via the sanctioned nudge templates only.",
-]
-
-
-def build_delivery_report(participant_key, contact_id, anthology_id, operating_location,
-                          deliverables, control_results, stage_update, certificate_ref=None):
-    """Operator-verbose, NEVER client-facing. Reproduces the Part A S8 runtime items
-    with an evidence-backed pass verdict for each."""
-    fields_all_matched = all(
-        r["match"] for d in deliverables for r in d.get("field_results", [])
-    ) and all(r["match"] for r in (control_results or []))
-    media_all_verified = all(
-        (part.get("list_verified") is True)
-        for d in deliverables for part in (d.get("doc"), d.get("pdf")) if part
-    )
-    both_forms = all(d.get("doc") and d.get("pdf") for d in deliverables) if deliverables else True
-    stage_fired = bool(stage_update and stage_update.get("stage_id"))
-
-    part_a = [
-        {"item": PART_A_S8[0], "pass": both_forms,
-         "note": "Doc+PDF presence asserted by the caller (drive_adapter/pdf_render); "
-                 "font floor proven by guard-font-floor.py upstream."},
-        {"item": PART_A_S8[1], "pass": bool(media_all_verified and fields_all_matched)},
-        {"item": PART_A_S8[2], "pass": bool(control_results) and stage_fired},
-        {"item": PART_A_S8[3], "pass": certificate_ref is not None,
-         "note": "certificate recorded here; board card move + completion nudge are "
-                 "mc_board.py / nudge_send.py (fail-soft, out of this adapter)."},
-    ]
-    return {
-        "report_type": "anthology_delivery_report",
-        "schema_version": 1,
-        "surface": "operator-channel ONLY (operator-verbose, never client-facing; "
-                   "no secret value appears in this report)",
-        "produced_utc": now_utc(),
-        "participant_key": participant_key,
-        "contact_id": contact_id,
-        "anthology_id": anthology_id,
-        "operating_location": operating_location,
-        "deliverables": deliverables,
-        "control_fields": control_results,
-        "pipeline_stage_update": stage_update,
-        "readback_all_verified": bool(fields_all_matched),
-        "media_all_verified": bool(media_all_verified),
-        "part_a_s8_checklist": part_a,
-        "certificate_ref": certificate_ref,
-    }
-
-
-def render_report_text(report):
-    """A compact human-readable operator digest (stderr / .txt companion)."""
-    lines = []
-    lines.append("ANTHOLOGY DELIVERY REPORT (operator channel; never client-facing)")
-    lines.append("  produced: %s" % report["produced_utc"])
-    lines.append("  participant: %s  contact_id: %s  anthology_id: %s"
-                 % (report["participant_key"], report["contact_id"], report["anthology_id"]))
-    lines.append("  read-back byte-for-byte: %s" % ("VERIFIED" if report["readback_all_verified"] else "MISMATCH"))
-    lines.append("  media landing (list-verify): %s" % ("VERIFIED" if report["media_all_verified"] else "UNVERIFIED"))
-    for d in report.get("deliverables", []):
-        lines.append("  - %s:" % d.get("type"))
-        for part_name in ("doc", "pdf"):
-            part = d.get(part_name)
-            if part:
-                lines.append("      %s -> %s (list_verified=%s reachable=%s)"
-                             % (part_name, part.get("url"), part.get("list_verified"),
-                                part.get("reachable")))
-        for r in d.get("field_results", []):
-            lines.append("      field %s (id=%s) match=%s len=%s"
-                         % (r.get("key"), r.get("id"), r.get("match"), r.get("readback_len")))
-    su = report.get("pipeline_stage_update")
-    if su:
-        lines.append("  pipeline-stage update: gate stage_id=%s action=%s opp=%s"
-                     % (su.get("stage_id"), su.get("action"), su.get("opportunity_id")))
-    lines.append("  Part A (S8) attestation:")
-    for row in report["part_a_s8_checklist"]:
-        lines.append("    [%s] %s" % ("x" if row["pass"] else " ", row["item"]))
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Signed process certificate (Skill 54 P7 pattern): content sha256 over the
-# canonical body, optional HMAC signature under the cert-secret label, optional run
-# nonce. Fail-soft UNSIGNED when no secret is set (delivery is never blocked).
-# ---------------------------------------------------------------------------
-def build_process_certificate(participant_key, contact_id, anthology_id, stage_cursor,
-                              deliverables, control_results, stage_update,
-                              run_nonce=None, environ=None):
-    body = {
-        "certificate_type": "anthology_process_certificate",
-        "schema_version": 1,
-        "pattern": "Skill 54 P7 signed process certificate",
-        "produced_utc": now_utc(),
-        "engine_skill_dir": "59-anthology-engine",
-        "participant_key": participant_key,
-        "contact_id": contact_id,
-        "anthology_id": anthology_id,
-        "stage_cursor": stage_cursor,
-        "deliverables_delivered": [
-            {
-                "type": d.get("type"),
-                "doc_url": (d.get("doc") or {}).get("url"),
-                "pdf_url": (d.get("pdf") or {}).get("url"),
-                "field_keys": [r["key"] for r in d.get("field_results", [])],
-                "readback_verified": all(r["match"] for r in d.get("field_results", [])),
-            }
-            for d in (deliverables or [])
-        ],
-        "control_fields": [
-            {"key": r["key"], "readback_verified": r["match"]} for r in (control_results or [])
-        ],
-        "pipeline_stage_update": stage_update,
-        "attestation": "Every deliverable above was written to its exact PRD Section 6 "
-                       "key by contact_id and read back byte-for-byte; no Anthropic "
-                       "identifier and no secret value appears in this certificate.",
-        "run_nonce": run_nonce,
-    }
-    content_sha = sha256_hex(canonical_json(body))
-    body["content_sha256"] = content_sha
-    label, secret = resolve_cert_secret(environ)
-    if secret:
-        signature = hmac.new(secret.encode("utf-8"), content_sha.encode("utf-8"),
-                             hashlib.sha256).hexdigest()
-        body["signature"] = {"algo": "HMAC-SHA256(content_sha256)", "label": label,
-                             "present": True, "value": signature}
-        body["signed"] = True
-    else:
-        body["signature"] = {"algo": "HMAC-SHA256(content_sha256)", "present": False}
-        body["signed"] = False
-        body["signing_note"] = ("UNSIGNED (fail-soft): no cert secret resolved by label "
-                                "(%s). The content_sha256 still binds the certificate; "
-                                "delivery is never blocked on signing." % ", ".join(CERT_SECRET_LABELS))
-    return body
-
-
-def verify_certificate(cert, environ=None):
-    """Re-derive content_sha256 and (if signed) the HMAC. Returns (ok, reason)."""
-    body = {k: v for k, v in cert.items()
-            if k not in ("content_sha256", "signature", "signed", "signing_note")}
-    expect = sha256_hex(canonical_json(body))
-    if cert.get("content_sha256") != expect:
-        return False, "content_sha256 mismatch (certificate body was altered)"
-    sig = cert.get("signature") or {}
-    if not sig.get("present"):
-        return True, "unsigned (content hash intact)"
-    _, secret = resolve_cert_secret(environ)
-    if not secret:
-        return True, "signed certificate; no secret available to re-verify HMAC (hash intact)"
-    want = hmac.new(secret.encode("utf-8"), expect.encode("utf-8"), hashlib.sha256).hexdigest()
-    if want != sig.get("value"):
-        return False, "HMAC signature mismatch"
-    return True, "signature verified"
-
-
-# ---------------------------------------------------------------------------
-# Report / certificate persistence (operator report dir).
-# ---------------------------------------------------------------------------
-def _write_json(path, obj):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
-    return path
-
-
-def persist_report(report, rdir):
-    d = report_dir(rdir)
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    key = re.sub(r"[^A-Za-z0-9_.-]", "_", report.get("participant_key") or "unknown")
-    base = d / ("delivery-report_%s_%s" % (key, stamp))
-    _write_json(Path(str(base) + ".json"), report)
-    Path(str(base) + ".txt").write_text(render_report_text(report), encoding="utf-8")
-    return str(base) + ".json"
-
-
-def persist_certificate(cert, rdir):
-    d = report_dir(rdir)
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    key = re.sub(r"[^A-Za-z0-9_.-]", "_", cert.get("participant_key") or "unknown")
-    path = d / ("process-certificate_%s_%s.json" % (key, stamp))
-    return str(_write_json(path, cert))
 
 
 # ===========================================================================
@@ -1526,6 +1361,15 @@ def main(argv=None):
             sys.stderr.write("[caf_delivery] detail: %s\n"
                              % json.dumps(exc.detail, ensure_ascii=False))
         return exc.code
+    except AnthropicIdentifierError as exc:
+        # A caller-supplied deliverable value carried an Anthropic-family model-id
+        # shape; the sibling deny gate refused it. Surface it as a guard refusal
+        # (caf exit 2) instead of a generic unexpected error. The short value repr is
+        # operator-only (a url/key is safe to echo; a secret never reaches here).
+        sys.stderr.write("[caf_delivery] REFUSED: Anthropic-family identifier shape in "
+                         "%s (no Anthropic identifier ships in any delivered value)\n"
+                         % exc.where)
+        return EX_TENANT
     except BrokenPipeError:
         return EX_OK
     except Exception as exc:  # noqa: BLE001 -- house convention: unexpected -> exit 1
