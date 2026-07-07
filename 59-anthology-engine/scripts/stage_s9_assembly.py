@@ -22,6 +22,7 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import datetime
 import hashlib
 import json
 import subprocess
@@ -146,16 +147,24 @@ def plan():
 
 def _invoke_wiring(key, run_dir=None):
     """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
-    S9 is bracketed by TWO producer decisions (module docstring); this one call
-    always runs the READ-ONLY readiness report (step 1's first half), then:
-      - no producer_id/confirm_name in <run_dir>/request.json -> report only,
-        return EX_OK (an informational check, never a failure of this stage).
-      - confirm_name present and readiness.ready -> arm (s9_ready), mirror,
-        curate order, compile, assembly-scope QC, deliver the manuscript
-        (steps 1-6), then STOP awaiting the producer's separate sign-off.
-      - signoff_confirm_name ALSO present (a later, separate dispatch once the
-        manuscript is compiled) -> the closing s9_producer sign-off + mirror
-        (steps 7-8).
+    ENGINE-MANIFEST.json row 6 (drift #3): "the S9 assembly logic ships as the
+    sibling helper scripts/stage_s9_assembly_logic.py ... imported by the
+    stage_s9_assembly.py dispatcher rather than dispatched directly." So this
+    thin runner does NOT reimplement the order-curation/compile/sha-verify
+    machinery: it imports that module in-process (S9Assembly) and drives its
+    high-level methods, which themselves shell anthology_state.py,
+    qc-tier1-anthology.py, and model_router.py (WIRING[0]/[2]/[3]/[4], resolved
+    via the sibling rather than a direct subprocess here -- the same "declared
+    collaborator, fulfilled by an internal call" pattern already established for
+    gate_engine.py wrapping nudge_send.py). This dispatcher directly drives only
+    what S9Assembly does NOT own: mc_board.py (WIRING[1]/[7]) and
+    stage_s8_deliver.py (WIRING[5]).
+
+    S9 is bracketed by TWO producer decisions (module docstring); an optional
+    <run_dir>/request.json supplies the context each decision needs (producer_id
+    always; confirm_name to arm; producer_inputs/producer_display_name for the
+    editor's voice, never fabricated; signoff_confirm_name to close). Without
+    arm context this call only reports readiness (EX_OK, informational).
     classify_child_rc's numeric contract is unchanged; every step short-circuits
     on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
@@ -164,6 +173,11 @@ def _invoke_wiring(key, run_dir=None):
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
+    logic_path = SCRIPTS / "stage_s9_assembly_logic.py"
+    if not logic_path.exists():
+        sys.stderr.write("[stage_%s] PENDING-WIRING: sibling module logic not yet present: "
+                         "%s\n" % (STAGE, logic_path))
+        return EX_HELD
     if not key:
         sys.stderr.write("[stage_%s] --%s is required.\n" % (STAGE, KEY_ARG))
         return EX_HELD
@@ -171,16 +185,41 @@ def _invoke_wiring(key, run_dir=None):
     py = sys.executable or "python3"
     rundir = _run_dir_for(anthology_id, run_dir)
     request = _load_request(rundir)
-    state_writer = "scripts/anthology_state.py"
 
-    # 1 (first half). anthology_state.py -- READ-ONLY assembly-readiness-report
-    #    (the blocking list).
-    rel, _ = WIRING[0]
-    rc, readiness = _step(0, rel, [py, str(_resolve(rel)), "--json",
-                                  "assembly-readiness-report", "--anthology-id", anthology_id])
-    if rc != EX_OK:
-        return rc
-    readiness = readiness or {}
+    sys.path.insert(0, str(SCRIPTS))
+    import stage_s9_assembly_logic as logic  # noqa: E402
+    import anthology_state as ledger  # noqa: E402
+
+    # stage_s9_assembly_logic._run_writer always passes an explicit --state-dir
+    # (or --db); it has no "omit and let the child inherit its own default"
+    # path the way a bare subprocess call does elsewhere in this dispatcher, so
+    # this MUST be resolved the same way anthology_state.py resolves it itself
+    # (else "--state-dir None" would silently point at the wrong store).
+    resolved_state_dir = str(ledger.default_state_dir())
+
+    def _chapter_source(participant_key):
+        """Read a frozen chapter's body from its OWN S5 authoring run dir (the
+        same run_dir convention stage_s5_chapter.py/stage_s6_rewrite.py use:
+        state/runs/s5/<safe_key>/working/chapter.md). A live deployment may
+        instead read the Drive-hosted doc via drive_adapter.py; this local read
+        is the honest, real implementation available without a network call."""
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in participant_key)
+        p = SKILL_DIR / "state" / "runs" / "s5" / safe / "working" / "chapter.md"
+        if not p.is_file():
+            return b"", None
+        data = p.read_bytes()
+        return data, hashlib.sha256(data).hexdigest()
+
+    eng = logic.S9Assembly(anthology_id, state_dir=resolved_state_dir, run_dir=str(rundir),
+                          chapter_source=_chapter_source)
+
+    # 1 (first half). anthology_state.py -- READ-ONLY assembly-readiness-report,
+    #    via S9Assembly.readiness_report() (shells the sole writer itself).
+    try:
+        readiness = eng.readiness_report()
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] 1/%d %s: %s\n" % (STAGE, len(WIRING), WIRING[0][0], exc))
+        return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
 
     producer_id = request.get("producer_id")
     confirm_name = request.get("confirm_name")
@@ -190,16 +229,17 @@ def _invoke_wiring(key, run_dir=None):
                          % (STAGE, readiness.get("ready")))
         return EX_OK
 
-    # 1 (second half). the s9_ready ARM trigger: every guard revalidated by the
-    #    writer; --confirm-name mismatch exits 5 (AF-AE-SLOT-UNRESOLVED-shaped
-    #    validation, per classify_child_rc's fixed 5 -> EX_SLOT mapping).
-    rc, _ = _step(0, rel, [py, str(_resolve(rel)), "--json", "record-approval",
-                          "--gate", "s9_ready", "--subject-key", anthology_id,
-                          "--anthology-id", anthology_id, "--actor", "producer",
-                          "--decision", "ready_to_assemble", "--door", "dashboard",
-                          "--producer-id", producer_id, "--confirm-name", confirm_name])
-    if rc != EX_OK:
-        return rc
+    # 1 (second half). the s9_ready ARM trigger (S9Assembly.fire_ready): every
+    #    guard revalidated by the writer; --confirm-name mismatch exits 5.
+    try:
+        rc, _fire_report, _outcome = eng.fire_ready(
+            producer_id, confirm_name, door=request.get("door", "dashboard"))
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] 1/%d %s: %s\n" % (STAGE, len(WIRING), WIRING[0][0], exc))
+        return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        return classified
 
     # 2. mc_board.py -- mirror the Assembly card to armed/ready (FAIL-SOFT).
     rel, _ = WIRING[1]
@@ -207,79 +247,106 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
-    # helper read (not a separate WIRING slot): the frozen, approved chapters to
-    # curate an order over (assembly-set-order needs a participant_key list).
-    _, bundle, _ = _run([py, str(_resolve(state_writer)), "--json",
+    # helper read (not a separate WIRING slot): the frozen, approved chapters
+    # and contributor identities this dispatcher must pass to S9Assembly
+    # (curate_order/bios/editor_intro/front_back_matter/compile_manuscript all
+    # need the ledger's own facts, never invented here).
+    _, bundle, _ = _run([py, str(_resolve("scripts/anthology_state.py")), "--json",
                         "export-bundle", "--anthology-id", anthology_id])
     bundle = bundle or {}
     frozen = [a for a in bundle.get("artifacts", [])
              if a.get("type") == "chapter" and a.get("frozen")]
     frozen.sort(key=lambda a: a.get("participant_key", ""))
-    order = [a["participant_key"] for a in frozen]
-    sha_by_key = {a["participant_key"]: a.get("sha256") for a in frozen if a.get("sha256")}
+    chapters = [{"participant_key": a["participant_key"], "sha256": a.get("sha256")}
+               for a in frozen]
+    members_by_key = {m["participant_key"]: m for m in bundle.get("participants", [])}
+    contributors = [{"participant_key": pk,
+                     "first_name": members_by_key.get(pk, {}).get("first_name"),
+                     "last_name": members_by_key.get(pk, {}).get("last_name")}
+                    for pk in (a["participant_key"] for a in frozen)]
+    producer = bundle.get("producer") or {}
+    frozen_shas = {a["participant_key"]: a.get("sha256") for a in frozen if a.get("sha256")}
 
     # 3. model_router.py -- order curation (ae-01), editor introduction (ae-02),
-    #    front/back matter (ae-04), contributor bios (ae-03); LONGCTX when
-    #    configured, else chunked HEAVY-WRITER. A best-effort single curation
-    #    call (the producer-voice introduction and matter content are Skill 59's
-    #    OWN ae-0x pins, authored the same sole-model-call-site way as every
-    #    other stage's model call).
+    #    front/back matter (ae-04), contributor bios (ae-03), each via
+    #    S9Assembly (LONGCTX when configured, else chunked HEAVY-WRITER; every
+    #    call still funnels through model_router.py, the engine's sole model-
+    #    call site). Never fabricates: a producer with no supplied voice inputs
+    #    refuses the introduction rather than inventing one (AF-AE-S9-FABRICATION).
     rel, _ = WIRING[2]
-    curation_payload = json.dumps({
-        "tier": "HEAVY-WRITER",
-        "messages": [{"role": "user",
-                     "content": "Curate the contribution order for anthology %s: %s"
-                                % (anthology_id, ", ".join(order))}],
-        "context": {"anthology_id": anthology_id, "deliverable_key": "assembly-order"},
-    })
-    rc, curated = _step(2, rel, [py, str(_resolve(rel)), "route"], input_text=curation_payload)
-    if rc != EX_OK:
-        return rc
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, 3, len(WIRING), rel))
+    try:
+        proposal = eng.curate_order(chapters)
+        order = proposal["order"]
+        bios_out = eng.bios(contributors, order)
+        bios_by_key = {b["participant_key"]: json.dumps(b, ensure_ascii=False)
+                      for b in bios_out["bios"]}
+        producer_inputs = request.get("producer_inputs")
+        intro_markdown = ""
+        front_matter = ""
+        back_matter = ""
+        if producer_inputs:
+            intro_out = eng.editor_intro(producer_inputs, contributors,
+                                         producer.get("display_name"), order)
+            intro_markdown = intro_out["intro_markdown"]
+            matter_out = eng.front_back_matter(
+                producer_inputs, contributors, order, producer.get("display_name"),
+                request.get("copyright_year") or datetime.date.today().year,
+                subtitle=request.get("subtitle") or "")
+            front_matter = matter_out["front_matter_markdown"]
+            back_matter = matter_out["back_matter_markdown"]
+        else:
+            sys.stderr.write("[stage_%s] no producer_inputs in request.json; the editor's "
+                             "introduction and front/back matter are skipped rather than "
+                             "fabricated (AF-AE-S9-FABRICATION) -- the manuscript still "
+                             "compiles from the frozen chapters and bios.\n" % STAGE)
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] %s\n" % (STAGE, exc))
+        return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
+    except Exception as exc:  # noqa: BLE001 -- model_router itself raises bare
+        # exceptions (never an S9Error) for an unresolved model-map/credential
+        # chain; that is a collaborator-not-yet-configured condition (held),
+        # not an "unexpected" stage bug -- classify it as such rather than
+        # falling through to main()'s bare EX_ERR handler.
+        sys.stderr.write("[stage_%s] %d/%d %s: model_router dependency not ready: %s\n"
+                         % (STAGE, 3, len(WIRING), rel, exc))
+        return EX_HELD
 
-    # 4. anthology_state.py -- assembly-set-order, then compile (verify-sha
-    #    byte-identical per chapter; never guessed).
+    # 4. anthology_state.py -- compile from FROZEN approved chapter artifacts,
+    #    sha256 byte-identical per chapter (S9Assembly.compile_manuscript, which
+    #    itself calls assembly-advance --to compiled --verify-sha).
     rel, _ = WIRING[3]
-    rc, _ = _step(3, rel, [py, str(_resolve(rel)), "--json", "assembly-set-order",
-                          "--anthology-id", anthology_id,
-                          "--order", json.dumps(order, ensure_ascii=False), "--state", "proposed"])
-    if rc != EX_OK:
-        return rc
-    verify_sha = ",".join("%s=%s" % (k, v) for k, v in sha_by_key.items())
-    compile_argv = [py, str(_resolve(rel)), "--json", "assembly-advance",
-                    "--anthology-id", anthology_id, "--to", "compiled"]
-    if verify_sha:
-        compile_argv += ["--verify-sha", verify_sha]
-    rc, _ = _step(3, rel, compile_argv)
-    if rc != EX_OK:
-        return rc
-
-    # 5. qc-tier1-anthology.py -- assembly-scope Gate B (every chapter present
-    #    exactly once, order matches curation, one continuous 14pt-floor PDF).
-    rel, _ = WIRING[4]
     manuscript_path = Path(rundir) / "working" / "manuscript.md"
-    if not manuscript_path.is_file():
-        parts = []
-        for pk in order:
-            chap = next((a for a in frozen if a["participant_key"] == pk), None)
-            if chap and chap.get("caf_media_url"):
-                parts.append("# %s\n\n(see %s)\n" % (pk, chap["caf_media_url"]))
-        manuscript_path.write_text("\n\n".join(parts), encoding="utf-8")
-    envelope = Path(rundir) / "envelope.json"
-    envelope.write_text(json.dumps({
-        "kind": "manuscript", "mode": "assembly", "artifact_path": str(manuscript_path),
-        "chapter_order": order,
-    }, ensure_ascii=False), encoding="utf-8")
-    rc, _ = _step(4, rel, [py, str(_resolve(rel)), "--envelope", str(envelope),
-                          "--mode", "assembly", "--json"])
-    if rc != EX_OK:
-        return rc
+    try:
+        compiled = eng.compile_manuscript(order, frozen_shas, front_matter, intro_markdown,
+                                          bios_by_key, back_matter, out_path=manuscript_path)
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] %d/%d %s: %s\n" % (STAGE, 4, len(WIRING), rel, exc))
+        return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
+
+    # 5. qc-tier1-anthology.py -- assembly-scope Gate B (S9Assembly.assembly_gate_b).
+    rel, _ = WIRING[4]
+    gate = eng.assembly_gate_b(manuscript_path, order, contributors)
+    if not gate["passed"]:
+        sys.stderr.write("[stage_%s] %d/%d %s: assembly Gate B failed (rc=%s)\n"
+                         % (STAGE, 5, len(WIRING), rel, gate["rc"]))
+        return classify_child_rc(gate["rc"] or logic.EX_PROVER)
+
+    # record the manuscript artifact row (S9Assembly.record_manuscript_artifact;
+    # part of WIRING[3]'s "compile" role -- the sole writer records what step 4
+    # just proved byte-identical).
+    try:
+        eng.record_manuscript_artifact(compiled["manuscript_sha256"], bios_out.get("model_used"))
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] non-fatal: manuscript artifact record did not persist "
+                         "cleanly: %s\n" % (STAGE, exc))
 
     # 6. stage_s8_deliver.py -- deliver the full manuscript Doc + PDF, push the
     #    manuscript fields.
     rel, _ = WIRING[5]
-    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "--participant-key", order[0] if order else anthology_id,
-                          "--run-dir", str(rundir), "--deliverable", "anthology_manuscript",
-                          "--final", "--json"])
+    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "--participant-key",
+                          order[0] if order else anthology_id, "--run-dir", str(rundir),
+                          "--deliverable", "anthology_manuscript", "--final", "--json"])
     if rc != EX_OK:
         return rc
 
@@ -290,15 +357,16 @@ def _invoke_wiring(key, run_dir=None):
         return EX_OK
 
     # 7. anthology_state.py -- record the s9_producer sign-off that closes the
-    #    anthology.
+    #    anthology (S9Assembly.sign_off).
     rel, _ = WIRING[6]
-    rc, _ = _step(6, rel, [py, str(_resolve(rel)), "--json", "record-approval",
-                          "--gate", "s9_producer", "--subject-key", anthology_id,
-                          "--anthology-id", anthology_id, "--actor", "producer",
-                          "--decision", "approve", "--door", "dashboard",
-                          "--producer-id", producer_id, "--confirm-name", signoff_confirm])
-    if rc != EX_OK:
-        return rc
+    try:
+        rc, _signoff = eng.sign_off(producer_id, notes=request.get("signoff_notes"))
+    except logic.S9Error as exc:
+        sys.stderr.write("[stage_%s] %d/%d %s: %s\n" % (STAGE, 7, len(WIRING), rel, exc))
+        return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        return classified
 
     # 8. mc_board.py -- mirror the Assembly card sign-off (signed_off); the
     #    engine never sets 'done' (the QC scorer owns review->done at >=8.5).
