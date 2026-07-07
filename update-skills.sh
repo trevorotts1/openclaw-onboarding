@@ -1017,7 +1017,7 @@ main() {
     # install-ceo-intent-gate.sh + verify-routing.sh are persisted here (v16.2.19)
     # so the intent-gate wire + post-stamp verification below can resolve them after
     # the temp-clone cleanup, same as apply-routing-fix.sh / apply-fleet-standards.sh.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
@@ -1850,6 +1850,29 @@ except:
       echo "  tool-drift: STALE/UNPROVEN TOOLING DETECTED -- see $TOOL_DRIFT_JSON"
       echo "  (rebuild commands are printed in that JSON; rebuild is opt-in, never auto-run here)"
     fi || true
+  fi
+
+  # ----------------------------------------------------------
+  # Harden Google Workspace (gws) credential resilience on the ROLL path too.
+  # ----------------------------------------------------------
+  # Same guard install.sh Step 8c runs, so an updated box also gets: the file
+  # keyring backend forced for every shell (append-only ~/.zshenv etc.), the
+  # gws-as PATH wrapper, and an off-box encrypted snapshot of the default gws
+  # credential store. This closes the v16.1.x self-wipe class on every box that
+  # only ever takes the update path. Idempotent + additive + box-user; best-effort
+  # so it can never change the update's exit status.
+  HARDEN_GWS="$ONBOARDING_DIR/scripts/harden-gws-credential-resilience.sh"
+  [ -f "$HARDEN_GWS" ] || HARDEN_GWS="$OC_CONFIG/scripts/harden-gws-credential-resilience.sh"
+  if [ -f "$HARDEN_GWS" ]; then
+    echo ""
+    echo "  Hardening gws credential resilience (file keyring backend + gws-as wrapper + off-box backup)..."
+    if OC_CONFIG="${OC_CONFIG:-}" bash "$HARDEN_GWS" >> "$LOG_FILE" 2>&1; then
+      echo "  harden-gws-credential-resilience.sh: OK"
+    else
+      echo "  harden-gws-credential-resilience.sh: completed with warnings (see $LOG_FILE)"
+    fi || true
+  else
+    echo "  (harden-gws-credential-resilience.sh not found -- skipping gws hardening; older bundle)"
   fi
 
   # ----------------------------------------------------------

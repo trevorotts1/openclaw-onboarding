@@ -2,6 +2,18 @@
 
 Real examples showing the Google Workspace CLI (gws) in action.
 
+> **Credential safety (headless):** every example below is safe to run because the
+> install exports `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` in your shell env, so
+> `gws` never falls back to an OS keychain it cannot unlock headlessly (the vector
+> that silently wipes `~/.config/gws/credentials.enc`). In a script or cron, or for
+> a specific account, route through the installed `gws-as` wrapper, which forces the
+> file backend for you:
+> ```bash
+> gws-as default drive files list
+> gws-as sales gmail messages list --params '{"q": "is:unread"}'
+> ```
+> See INSTRUCTIONS.md → "CREDENTIAL SAFETY" for the full explanation.
+
 ---
 
 ## Gmail Examples

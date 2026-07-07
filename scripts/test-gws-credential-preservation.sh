@@ -32,6 +32,19 @@
 #                                       dropped, and NO install/update/verify script
 #                                       can rm/mv/chmod/chown/overwrite ~/.config/gws*
 #                                       or issue gws remove/logout/revoke/delete
+#   T6  resilience: shell env        — scripts/harden-gws-credential-resilience.sh
+#                                       forces the file keyring backend for every
+#                                       shell via APPEND-ONLY ~/.zshenv/.bashrc/
+#                                       .profile blocks (user content preserved,
+#                                       idempotent) so any bare gws cannot self-wipe
+#   T7  resilience: gws-as wrapper   — installs a PATH wrapper that FORCES the file
+#                                       backend even if the caller pre-set the
+#                                       dangerous OS-keyring backend, routes named
+#                                       accounts, and only ever `exec gws`
+#   T8  resilience: off-box backup   — snapshots credentials.enc + the file-keyring
+#                                       key off-box (secrets/backups/<box>-gws),
+#                                       byte-identical + copy-only (live store never
+#                                       mutated), private 600, change-gated
 #
 # Self-contained: bash + stdlib python3 only. No gateway / no real gws required.
 # Consumes only repo file content (no untrusted GitHub event fields).
@@ -41,6 +54,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QC_REAL="$REPO_ROOT/14-google-workspace-integration/qc-google-workspace-integration.sh"
 LIB_STATE="$REPO_ROOT/lib-onboarding-state.sh"
+HARDENER="$REPO_ROOT/scripts/harden-gws-credential-resilience.sh"
 
 PASS=0; FAIL=0
 ok()   { printf '  \033[32m✓ PASS\033[0m — %s\n' "$1"; PASS=$((PASS+1)); }
@@ -383,6 +397,151 @@ if [ -z "$OVR" ]; then
   ok "no install/update script OVERWRITES a user shell dotfile (append-only / read-only)"
 else
   bad "a script overwrites a user shell dotfile (could drop KEYRING_BACKEND export):\n$OVR"
+fi
+
+# perms helper (portable across macOS `stat -f` and GNU `stat -c`)
+perms() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null || echo "?"; }
+
+# ============================================================================
+hdr "T6 — resilience hardener: forces the FILE keyring backend for every shell"
+# ============================================================================
+# The fleet-wide guard: scripts/harden-gws-credential-resilience.sh must bake the
+# file backend into the user's shell env (append-only ~/.zshenv etc.) so that
+# ANY bare gws — a doc/EXAMPLES step, an agent shell, a cron — inherits it and can
+# never self-wipe. Drives the REAL hardener against a sandbox HOME, headless.
+if [ ! -f "$HARDENER" ]; then
+  bad "harden-gws-credential-resilience.sh MISSING at $HARDENER (fleet resilience not installed)"
+else
+  H="$SANDBOX/home-t6"; rm -rf "$H"
+  mkdir -p "$H/.config/gws" "$H/.openclaw"
+  printf 'ORIGINAL-USER-ZSHENV-CONTENT\n' > "$H/.zshenv"          # pre-existing user dotfile
+  printf '{"version":1,"accounts":{"a":{"credential_source":"oauth2","refresh_token":"RT-T6"}}}\n' \
+    > "$H/.config/gws/credentials.enc"
+  printf 'KEYBYTES-T6\n' > "$H/.config/gws/.encryption_key"
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  # (a) ~/.zshenv now forces the backend, and the ORIGINAL content is preserved.
+  if grep -q 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND' "$H/.zshenv" 2>/dev/null \
+     && grep -qE 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:?=file' "$H/.zshenv" 2>/dev/null \
+     && grep -q 'ORIGINAL-USER-ZSHENV-CONTENT' "$H/.zshenv" 2>/dev/null; then
+    ok "T6 — ~/.zshenv forces file backend AND preserves the user's original content (append-only)"
+  else
+    bad "T6 — ~/.zshenv missing the backend export or clobbered the user's content"
+  fi
+  # (b) bash + profile shells covered too.
+  if grep -q 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND' "$H/.bashrc" 2>/dev/null \
+     && grep -q 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND' "$H/.profile" 2>/dev/null; then
+    ok "T6 — ~/.bashrc and ~/.profile also export the file backend (non-zsh shells covered)"
+  else
+    bad "T6 — ~/.bashrc or ~/.profile missing the backend export"
+  fi
+  # (c) idempotent: a second run does NOT duplicate the managed block.
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  _n_block="$(grep -c 'openclaw:gws-keyring-backend (managed —' "$H/.zshenv" 2>/dev/null || echo 0)"
+  if [ "$_n_block" -eq 1 ]; then
+    ok "T6 — re-running the hardener is idempotent (exactly one managed block in ~/.zshenv)"
+  else
+    bad "T6 — hardener not idempotent: $_n_block managed blocks in ~/.zshenv"
+  fi
+fi
+
+# ============================================================================
+hdr "T7 — resilience hardener: installs a gws-as wrapper that FORCES file backend"
+# ============================================================================
+# The wrapper is the belt-and-suspenders for non-zsh / non-interactive shells and
+# for explicit scripted/cron calls: it must force the file backend even if the
+# caller pre-set the dangerous OS-keyring backend, and must only ever `exec gws`.
+if [ ! -f "$HARDENER" ]; then
+  bad "hardener missing — cannot verify gws-as wrapper"
+else
+  H="$SANDBOX/home-t7"; rm -rf "$H"; mkdir -p "$H/.config/gws" "$H/.openclaw" "$H/.config/gws-acct-sales"
+  printf '{"version":1,"accounts":{}}\n' > "$H/.config/gws/credentials.enc"
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  WRAP="$H/.openclaw/bin/gws-as"
+  if [ -x "$WRAP" ]; then
+    ok "T7 — gws-as wrapper installed + executable at ~/.openclaw/bin/gws-as"
+  else
+    bad "T7 — gws-as wrapper not installed at ~/.openclaw/bin/gws-as"
+  fi
+  # a fake gws that echoes the env the wrapper hands it
+  BIN7="$SANDBOX/bin7"; mkdir -p "$BIN7"
+  printf '#!/usr/bin/env bash\necho "BK=${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-unset} CD=${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-unset} A=$*"\n' > "$BIN7/gws"
+  chmod +x "$BIN7/gws"
+  if [ -x "$WRAP" ]; then
+    # even with the DANGEROUS keyring backend pre-set, the wrapper must force file
+    OUT_DEF="$(GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=keyring HOME="$H" PATH="$BIN7:$PATH" bash "$WRAP" default drive files list 2>&1)"
+    OUT_ACCT="$(env -u GOOGLE_WORKSPACE_CLI_CONFIG_DIR HOME="$H" PATH="$BIN7:$PATH" bash "$WRAP" sales gmail messages list 2>&1)"
+    if printf '%s' "$OUT_DEF" | grep -q 'BK=file'; then
+      ok "T7 — gws-as forces BACKEND=file even when the caller pre-set keyring (self-wipe blocked)"
+    else
+      bad "T7 — gws-as did NOT force the file backend: $OUT_DEF"
+    fi
+    if printf '%s' "$OUT_ACCT" | grep -q 'gws-acct-sales'; then
+      ok "T7 — gws-as routes a named account to its per-account config dir"
+    else
+      bad "T7 — gws-as did not route the named account: $OUT_ACCT"
+    fi
+  fi
+  # static: the installed wrapper forces file + only execs gws (no destructive verb)
+  if grep -qE 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file' "$WRAP" 2>/dev/null \
+     && grep -qE '^\s*exec gws ' "$WRAP" 2>/dev/null \
+     && ! grep -qE '\bgws +(auth +)?(remove|logout|revoke|delete|reset|clear|unlink)\b' "$WRAP" 2>/dev/null \
+     && ! grep -q 'gws auth status' "$WRAP" 2>/dev/null; then
+    ok "T7 — installed wrapper pins file backend, only execs gws, no destructive/self-clearing verb"
+  else
+    bad "T7 — installed wrapper shape is unsafe"
+  fi
+fi
+
+# ============================================================================
+hdr "T8 — resilience hardener: off-box snapshot, byte-identical, source untouched"
+# ============================================================================
+# A wipe by ANY path must be recoverable: the hardener snapshots credentials.enc
+# + its file-keyring key off-box (secrets/backups/<box>-gws) WITHOUT ever mutating
+# the live store, only when creds are present + changed.
+if [ ! -f "$HARDENER" ]; then
+  bad "hardener missing — cannot verify off-box backup"
+else
+  H="$SANDBOX/home-t8"; rm -rf "$H"; mkdir -p "$H/.config/gws" "$H/.openclaw"
+  printf '{"version":1,"accounts":{"a":{"credential_source":"oauth2","refresh_token":"RT-T8"}}}\n' \
+    > "$H/.config/gws/credentials.enc"
+  printf 'KEYBYTES-T8\n' > "$H/.config/gws/.encryption_key"
+  SRC_CRED="$(sha "$H/.config/gws/credentials.enc")"
+  SRC_KEY="$(sha "$H/.config/gws/.encryption_key")"
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  # live store never mutated
+  if [ "$(sha "$H/.config/gws/credentials.enc")" = "$SRC_CRED" ] \
+     && [ "$(sha "$H/.config/gws/.encryption_key")" = "$SRC_KEY" ]; then
+    ok "T8 — hardener left the LIVE gws store byte-identical (backup is copy-only, never a move)"
+  else
+    bad "T8 — hardener mutated the live gws store"
+  fi
+  SNAP_DIR="$(ls -1dt "$H/.openclaw/secrets/backups/"*-gws/*/ 2>/dev/null | head -1 || true)"
+  if [ -n "$SNAP_DIR" ] \
+     && [ "$(sha "${SNAP_DIR}credentials.enc")" = "$SRC_CRED" ] \
+     && [ "$(sha "${SNAP_DIR}.encryption_key")" = "$SRC_KEY" ]; then
+    ok "T8 — off-box snapshot holds credentials.enc + the file-keyring key, byte-identical (restorable)"
+  else
+    bad "T8 — off-box snapshot missing or not byte-identical to the source store"
+  fi
+  # snapshot files are private (600)
+  if [ -n "$SNAP_DIR" ] && [ "$(perms "${SNAP_DIR}credentials.enc")" = "600" ]; then
+    ok "T8 — snapshot credential files are private (chmod 600)"
+  else
+    bad "T8 — snapshot credential perms are not 600 (got $( [ -n "$SNAP_DIR" ] && perms "${SNAP_DIR}credentials.enc" ))"
+  fi
+  # idempotent: unchanged creds → no second snapshot; rotated creds → new snapshot
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  N1="$(ls -1d "$H/.openclaw/secrets/backups/"*-gws/*/ 2>/dev/null | grep -c . || true)"
+  sleep 1
+  printf '{"version":1,"accounts":{"a":{"credential_source":"oauth2","refresh_token":"RT-T8-ROTATED"}}}\n' \
+    > "$H/.config/gws/credentials.enc"
+  HOME="$H" OC_CONFIG="$H/.openclaw" bash "$HARDENER" >/dev/null 2>&1 </dev/null
+  N2="$(ls -1d "$H/.openclaw/secrets/backups/"*-gws/*/ 2>/dev/null | grep -c . || true)"
+  if [ "$N1" -eq 1 ] && [ "$N2" -eq 2 ]; then
+    ok "T8 — snapshot is change-gated (no dup when unchanged; a fresh snapshot when creds rotate)"
+  else
+    bad "T8 — snapshot change-gating wrong (unchanged→$N1 expected 1; rotated→$N2 expected 2)"
+  fi
 fi
 
 # ============================================================================

@@ -71,3 +71,5 @@ Before starting, make sure you have:
 7. **After setup, update all workspace files.** CORE_UPDATES.md includes exact text to add to AGENTS.md, TOOLS.md, and MEMORY.md.
 
 8. **Token refresh is automatic but can be manual.** If tokens expire, run `gws auth login` again to refresh.
+
+9. **Credential safety — `gws` MUST use the file keyring backend.** By default `gws` holds its keyring key in the OS keychain, which a headless/non-interactive shell (agent, cron, script) cannot unlock — and `gws`'s own failure mode then rewrites `~/.config/gws/credentials.enc` to `credential_source:"none"`, wiping every account. The install prevents this on every box by exporting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` in `~/.zshenv` (and `~/.bashrc`/`~/.profile`), installing the `gws-as` wrapper (which forces the file backend for scripted/cron/multi-account calls), and taking an off-box encrypted snapshot of the store so a wipe is recoverable. Never run a bare `gws` in a fresh shell that has not sourced that env, and never use `gws auth logout/remove/revoke` to "fix" a headless auth error. See INSTRUCTIONS.md → "CREDENTIAL SAFETY".
