@@ -4,6 +4,55 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.2] - 2026-07-07 - F2 create-modal wait FIX: poll-with-deadline (the v18.1.1 gate worked; the wait under it didn't get its budget)
+
+Fixes the F2 create-modal wait itself. A second live run (2026-07-07, same
+client account, AFTER v18.1.1 shipped) still stopped honestly at
+`STOP@F2.modal` — the v18.1.1 rc-checked gate worked EXACTLY as designed (it
+is not the bug) — but diagnosis of the wait it gates found the wait never got
+the budget its own `timeout=` argument implies:
+
+- `_wait_text(session, text, timeout=N)` shells out to a single
+  `agent-browser wait -- <text>` call. Per `agent-browser --help` there is no
+  generic per-call `--timeout` CLI flag — the Python `timeout=N` kwarg is ONLY
+  the `subprocess.run` kill-switch. The wait duration `agent-browser` itself
+  actually uses is its own `AGENT_BROWSER_DEFAULT_TIMEOUT` (default 25000ms),
+  entirely outside this file's control.
+- F2's modal wait passed `timeout=20` — SHORTER than agent-browser's own 25s
+  default — so the Python watchdog could silently force-kill the wait
+  subprocess up to 5s BEFORE agent-browser's own native wait would have
+  elapsed, on exactly the step (a cross-origin SPA modal transition) most
+  likely to need the full window on a slow, form-heavy real account. (F1's
+  forms-list wait, by contrast, used `timeout=25` — matching the native
+  default — and passed live both times.)
+
+Changes (`tools/ghl_form_builder.py`):
+
+- **New `_wait_text_polling(session, text, timeout_s=20.0)`**: polls short,
+  bounded `_wait_text` sub-calls (4s each, 0.5s pace) against OUR OWN
+  monotonic deadline — same poll-with-deadline doctrine as `_capture_form_id`
+  (v18.1.1) — instead of trusting one opaque single-shot call to honor a
+  budget it never actually receives from agent-browser.
+- F2's create-modal wait (both the initial wait and the one-retry wait) now
+  calls `_wait_text_polling` instead of a raw `_wait_text`. The rc-checked
+  gate, the one-click retry, and the honest `StopAndReport("F2.modal", ...)`
+  with page-state evidence (v18.1.1) are UNCHANGED — only the wait underneath
+  is now a real poll.
+- The `_wait_text` calls for F1 (`Create form`) and the Save-wait evidence
+  read after `Create` are left as-is: F1's is not gating and already matched
+  agent-browser's native default; the Save-wait is explicitly evidence-only
+  (`_capture_form_id`'s poll is the authoritative entered-the-builder check).
+
+Tests (`tests/test_ghl_form_builder_capture.py`, +8): `_wait_text_polling`
+rides through early misses to a later success; returns cleanly (bounded,
+never hangs) at the deadline; zero-budget keeps single-shot semantics; every
+sub-call gets a real positive int timeout; None-sentinel defaults read the
+module constants at call time; shipped 20s/4s/0.5s window locked; walk-level
+regression proving a late-rendering modal (misses twice, hits on the third
+poll) now succeeds on the FIRST `Create form` click with no click-retry
+needed — the exact scenario the pre-fix single-shot wait could not ride out.
+Suite: 1009 passed, 15 skipped (was 1001/15 before this fix).
+
 ## [v18.1.1] - 2026-07-07 - form-id capture FIX: poll-with-deadline + honest F2 modal/create gates (pre-existing bug blocking live verification of the iframe-drag fix)
 
 Fixes the PRE-EXISTING `_capture_form_id` failure (untouched by the v18.1.0

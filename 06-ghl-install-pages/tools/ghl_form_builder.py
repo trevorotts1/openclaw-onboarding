@@ -1079,6 +1079,51 @@ def _capture_entry_diag(session: str) -> str:
         return ""
 
 
+# POLL WINDOW for a text-appears wait, same doctrine as _FORM_ID_CAPTURE_TIMEOUT_S
+# above: poll-with-deadline, never trust one opaque single-shot call.
+#
+# live 2026-07-07 (follow-up to the poll-with-deadline fix above): a SINGLE
+# `_wait_text(session, text, timeout=N)` call does NOT actually get an N-second
+# budget from agent-browser. The Python `timeout=` kwarg is ONLY the
+# subprocess-level kill switch (see `_ab`); it is never forwarded to the CLI as
+# a `--timeout` (there is no generic per-call `--timeout` flag — confirmed
+# against `agent-browser --help`). The REAL wait duration agent-browser itself
+# uses is its own `AGENT_BROWSER_DEFAULT_TIMEOUT` (default 25000ms), entirely
+# outside this file's control. F2's create-modal wait passed timeout=20 —
+# SHORTER than agent-browser's own 25s default — so the Python watchdog could
+# silently force-kill the wait subprocess up to 5s BEFORE agent-browser's own
+# native wait would have elapsed, on exactly the step (a cross-origin SPA
+# modal transition) most likely to need the full window on a slow,
+# form-heavy real account. Poll short, bounded sub-waits against OUR OWN
+# monotonic deadline instead of trusting one single-shot call to honor a
+# budget it never actually receives.
+_TEXT_WAIT_TIMEOUT_S = 20.0
+_TEXT_WAIT_SUBCALL_S = 4.0
+_TEXT_WAIT_POLL_S = 0.5
+
+
+def _wait_text_polling(session: str, text: str, timeout_s: Optional[float] = None,
+                       subcall_s: Optional[float] = None,
+                       poll_s: Optional[float] = None) -> bool:
+    """POLL for ``text`` to appear, on a monotonic deadline, via short repeated
+    ``_wait_text`` sub-calls — never one long single-shot wait whose real
+    duration is entangled with agent-browser's own opaque default action
+    timeout (see module notes above ``_TEXT_WAIT_TIMEOUT_S``). Returns True as
+    soon as one sub-call reports success; returns False cleanly at the
+    deadline (bounded — never hangs). Always makes at least one attempt, even
+    with a zero/negative budget (mirrors ``_capture_form_id``)."""
+    budget = _TEXT_WAIT_TIMEOUT_S if timeout_s is None else timeout_s
+    sub = _TEXT_WAIT_SUBCALL_S if subcall_s is None else subcall_s
+    pause = _TEXT_WAIT_POLL_S if poll_s is None else poll_s
+    deadline = time.monotonic() + max(0.0, budget)
+    while True:
+        if _wait_text(session, text, timeout=max(1, int(round(sub)))).returncode == 0:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(max(0.0, pause))
+
+
 _EMBED_CAPTURE_JS = (
     "(() => {"
     "  const pick = (root) => {"
@@ -1313,13 +1358,18 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
                 # the walk blunder into Create/capture blind, and the miss surfaced two
                 # steps later as a misleading F2.create "iframe src" failure (evidence:
                 # f2-create-modal shot byte-identical to the forms-list shot).
+                #
+                # The wait itself POLLS on a deadline (live 2026-07-07 follow-up, same
+                # doctrine as _capture_form_id's poll-with-deadline fix): a single
+                # _wait_text call does not actually get the timeout=20 budget from
+                # agent-browser — see _wait_text_polling's module notes.
                 _click(session, "Create form")
-                modal = _wait_text(session, "Start from Scratch", timeout=20)
-                if modal.returncode != 0:
+                modal_ok = _wait_text_polling(session, "Start from Scratch")
+                if not modal_ok:
                     _log("F2: create-modal wait missed — retrying the 'Create form' click once")
                     _click(session, "Create form")
-                    modal = _wait_text(session, "Start from Scratch", timeout=20)
-                if modal.returncode != 0:
+                    modal_ok = _wait_text_polling(session, "Start from Scratch")
+                if not modal_ok:
                     raise StopAndReport(
                         "F2.modal",
                         "clicked 'Create form' (twice) but the Create-new-form modal never "

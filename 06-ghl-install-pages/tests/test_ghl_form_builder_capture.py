@@ -57,10 +57,17 @@ _BINDIR = os.path.expanduser("~/.npm-global/bin")
 # tests it is shrunk so the pre-existing failure-path cases (which now poll to
 # the deadline before returning '') stay hermetic-fast. Success-path cases are
 # unaffected (they return on the FIRST attempt).
+#
+# _wait_text_polling (live 2026-07-07 follow-up fix) also polls on a deadline;
+# its production window (20s) is shrunk the same way so failure-path tests
+# that exhaust the deadline stay hermetic-fast.
 @pytest.fixture(autouse=True)
 def _fast_capture_poll(monkeypatch):
     monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_TIMEOUT_S", 0.05)
     monkeypatch.setattr(fb, "_FORM_ID_CAPTURE_POLL_S", 0.005)
+    monkeypatch.setattr(fb, "_TEXT_WAIT_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(fb, "_TEXT_WAIT_SUBCALL_S", 1)
+    monkeypatch.setattr(fb, "_TEXT_WAIT_POLL_S", 0.005)
 
 
 # ── faithful Python re-implementation of _FORM_ID_CAPTURE_JS ──────────────────
@@ -370,6 +377,106 @@ class TestCaptureFormIdPolling:
 
 
 # ---------------------------------------------------------------------------
+# _wait_text_polling (live 2026-07-07 follow-up fix) — a SINGLE `_wait_text`
+# call does not actually get its `timeout=` kwarg as agent-browser's own wait
+# budget (that kwarg is only the Python subprocess kill-switch; there is no
+# generic per-call `--timeout` CLI flag). The F2 create-modal wait used
+# timeout=20, SHORTER than agent-browser's own AGENT_BROWSER_DEFAULT_TIMEOUT
+# (25000ms default), so the Python watchdog could force-kill the wait
+# subprocess before agent-browser's own native wait would have elapsed.
+# _wait_text_polling fixes this by polling short, bounded `_wait_text`
+# sub-calls against OUR OWN monotonic deadline — same doctrine as
+# _capture_form_id.
+# ---------------------------------------------------------------------------
+class TestWaitTextPolling:
+    def test_returns_true_on_first_success(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: (calls.append(text), _cp(0))[1])
+        assert fb._wait_text_polling("sess-1", "Start from Scratch") is True
+        assert calls == ["Start from Scratch"], "must call _wait_text with the exact text"
+
+    def test_rides_through_early_misses_to_a_later_success(self, monkeypatch):
+        """THE regression: the modal renders late (a slow, form-heavy real
+        account) — the first sub-calls miss, a later one hits. The poll must
+        ride through the misses rather than give up after one shot."""
+        state = {"n": 0}
+
+        def _fake_wait(session, text, timeout=20):
+            state["n"] += 1
+            return _cp(1 if state["n"] <= 2 else 0)
+
+        monkeypatch.setattr(fb, "_wait_text", _fake_wait)
+        got = fb._wait_text_polling("sess-2", "Start from Scratch",
+                                    timeout_s=5.0, subcall_s=0.01, poll_s=0.005)
+        assert got is True
+        assert state["n"] >= 3, "must have POLLED past the empty attempts"
+
+    def test_returns_false_cleanly_at_deadline_never_hangs(self, monkeypatch):
+        """If the text NEVER appears, return False at the deadline — bounded
+        wall-clock, multiple sub-calls (a poll, not a single shot), no hang."""
+        calls = []
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: (calls.append(1), _cp(1))[1])
+        started = time.monotonic()
+        got = fb._wait_text_polling("sess-3", "Start from Scratch",
+                                    timeout_s=0.2, subcall_s=0.01, poll_s=0.005)
+        elapsed = time.monotonic() - started
+        assert got is False
+        assert elapsed < 2.0, f"deadline not honored (took {elapsed:.2f}s)"
+        assert len(calls) > 1, "must poll (re-call), not check once"
+
+    def test_zero_budget_still_makes_exactly_one_attempt(self, monkeypatch):
+        """timeout_s=0 keeps single-shot semantics: one attempt, success
+        passes through, miss returns False immediately."""
+        calls = []
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: (calls.append(1), _cp(0))[1])
+        assert fb._wait_text_polling("s", "x", timeout_s=0.0) is True
+        assert len(calls) == 1
+
+        calls.clear()
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: (calls.append(1), _cp(1))[1])
+        assert fb._wait_text_polling("s", "x", timeout_s=0.0) is False
+        assert len(calls) == 1
+
+    def test_each_subcall_passes_a_bounded_positive_int_timeout(self, monkeypatch):
+        """Every underlying _wait_text sub-call must receive a real positive
+        int timeout (never 0/negative — a hang risk if agent-browser treats
+        that as 'wait forever')."""
+        seen = []
+
+        def _fake_wait(session, text, timeout=20):
+            seen.append(timeout)
+            return _cp(1)
+
+        monkeypatch.setattr(fb, "_wait_text", _fake_wait)
+        fb._wait_text_polling("s", "x", timeout_s=0.05, subcall_s=4.0, poll_s=0.005)
+        assert seen, "must have made at least one sub-call"
+        assert all(isinstance(t, int) and t >= 1 for t in seen)
+
+    def test_default_window_reads_module_constants_at_call_time(self, monkeypatch):
+        """The None-sentinel defaults must read the MODULE constants at call
+        time (the testability/ops seam) — with the budget pinned to 0 a
+        default-args call makes exactly one attempt."""
+        monkeypatch.setattr(fb, "_TEXT_WAIT_TIMEOUT_S", 0.0)
+        calls = []
+        monkeypatch.setattr(fb, "_wait_text",
+                            lambda session, text, timeout=20: (calls.append(1), _cp(1))[1])
+        assert fb._wait_text_polling("sess-const", "x") is False
+        assert len(calls) == 1
+
+    def test_production_poll_window_is_sane(self):
+        """Lock the shipped window against the pristine source text (the
+        autouse fixture monkeypatches the module attrs for every other test)."""
+        src = Path(fb.__file__).read_text(encoding="utf-8")
+        assert "_TEXT_WAIT_TIMEOUT_S = 20.0" in src
+        assert "_TEXT_WAIT_SUBCALL_S = 4.0" in src
+        assert "_TEXT_WAIT_POLL_S = 0.5" in src
+
+
+# ---------------------------------------------------------------------------
 # F2 walk gates (live 2026-07-07) — the create-modal wait rc was IGNORED, so on
 # a slow, form-heavy account where the modal never opened the walk blundered
 # into Create/capture blind and the miss surfaced two steps later as a
@@ -377,6 +484,14 @@ class TestCaptureFormIdPolling:
 # screenshot was byte-identical to the forms-list screenshot). The walk now
 # (a) fail-fasts honestly at F2.modal after ONE retry, and (b) attaches live
 # page-state evidence (top path + iframe srcs) to both F2 STOP reports.
+#
+# FOLLOW-UP (live 2026-07-07, same day): a second real run still stopped at
+# F2.modal after this fix shipped — the modal-wait rc gate worked exactly as
+# designed, but the wait UNDER it was a single _wait_text(timeout=20) call,
+# which does not actually get a 20s budget from agent-browser (see
+# _wait_text_polling's module notes). F2's modal wait now uses
+# _wait_text_polling so a late-rendering modal (within the real 20s window)
+# is caught WITHOUT needing the outer click-retry at all.
 # ---------------------------------------------------------------------------
 def _cp(rc: int) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(args=[], returncode=rc, stdout="", stderr="")
@@ -447,6 +562,32 @@ class TestWalkF2Gates:
                                   "/tmp/ev", [0], [], steps_done)
         assert steps_done and steps_done[0].startswith("F2:click:Create form")
         assert out["form_id"] == ""          # id capture happens on the Create step
+
+    def test_late_rendering_modal_succeeds_without_a_click_retry(self, monkeypatch):
+        """THE follow-up regression: the modal renders LATE (a slow, form-heavy
+        real account) but still within the intended wait window — several
+        underlying _wait_text sub-calls miss before one hits. Because the wait
+        is now a genuine poll-with-deadline (_wait_text_polling), this succeeds
+        on the FIRST 'Create form' click — no click retry needed, unlike the
+        pre-fix single-shot wait which would have given up too early."""
+        state = {"n": 0}
+
+        def _fake_wait(session, text, timeout=20):
+            state["n"] += 1
+            return _cp(1 if state["n"] <= 2 else 0)   # misses twice, then hits
+
+        clicks = []
+        monkeypatch.setattr(fb, "_click",
+                            lambda session, target, timeout=15: (clicks.append(target), _cp(0))[1])
+        monkeypatch.setattr(fb, "_wait_text", _fake_wait)
+
+        steps_done: list = []
+        click_list = {"steps": [{"phase": "F2", "action": "click", "target": "Create form"}]}
+        fb._walk_click_list("sess-f2late", click_list, _minimal_plan(),
+                            "/tmp/ev", [0], [], steps_done)
+        assert clicks == ["Create form"], "must succeed on the FIRST click — no retry needed"
+        assert state["n"] >= 3, "must have POLLED past the early misses"
+        assert steps_done and steps_done[0].startswith("F2:click:Create form")
 
     def test_create_step_uses_polling_capture_and_returns_id(self, monkeypatch):
         """The Create step must ride the POLL: the first capture attempts see a
