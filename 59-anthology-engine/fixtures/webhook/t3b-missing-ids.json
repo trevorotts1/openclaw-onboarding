@@ -1,0 +1,13 @@
+{
+  "source": "anthology-intake",
+  "location": "LOCsyntheticAnthologyAAA",
+  "form": "universal-intake",
+  "first_name": "Dev",
+  "last_name": "Sample",
+  "email": "dev.sample@example.com",
+  "phone": "+15550100003",
+  "ideal_avatar": "An operator with a story but no hidden routing ids on the payload.",
+  "niche": "operations",
+  "primary_goal": "contribute a chapter",
+  "_fixture_note": "Visible fields present but the hidden routing ids contact_id, anthology_id and stage are ABSENT. intake_router.py hidden-field validation must land this in Exceptions with reason unroutable_missing_ids (AF-AE-UNROUTABLE) carrying the raw payload. Never dropped, never guessed. This is a well-formed JSON body that is still unroutable."
+}

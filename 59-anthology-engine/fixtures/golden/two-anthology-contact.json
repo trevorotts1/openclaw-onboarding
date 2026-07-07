@@ -1,0 +1,73 @@
+{
+  "$schema_note": "GOLDEN FIXTURE 2 of 4 (W1.23). Proves the KEYING LAW: one Convert and Flow contact (a single contact_id, never email) participating in TWO anthologies yields TWO independent participant rows under the composite key contact_id::anthology_id. Re-upserting within the SAME anthology updates the one record (created=false); the SAME contact in a DIFFERENT anthology creates a distinct record (created=true). Title locks, rewrite counts, and stage cursors advance independently per key. fixtures/golden/replay_golden.py replays this; the W5.6 two-anthology canary drill exercises the same shape. All data is synthetic: zero PII, zero secrets, zero client identifiers, zero Anthropic model ids.",
+  "contract": "anthology-engine-golden-fixture",
+  "schema_version": 1,
+  "fixture_id": "two-anthology-contact",
+  "title": "One contact_id, two anthologies, two independent participant records",
+  "drills": ["W5.6"],
+  "synthetic": true,
+  "no_pii": true,
+  "no_secret_value": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true,
+
+  "keys": {
+    "producer_id": "PRODsyntheticTWO01",
+    "contact_id": "CONTACTsyntheticTWO01",
+    "anthology_a": "ANTHsyntheticTWOA1",
+    "anthology_b": "ANTHsyntheticTWOB1",
+    "participant_key_a": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1",
+    "participant_key_b": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1"
+  },
+
+  "narrative": "Ben Marlow is one contact in the producer's Convert and Flow account. He joins the Morning Voices Anthology and the Evening Voices Anthology. One contact_id, two anthology_ids, two participant rows. In Morning Voices he drafts a chapter and requests one rewrite (rewrite_count becomes 1) and locks the title 'Mornings I Almost Quit'; in Evening Voices he independently reaches outline with the title 'Evenings I Learned to Stay' and zero rewrites. The two memberships never collide.",
+
+  "steps": [
+    {"n": 1, "stage": "setup", "desc": "bootstrap the mirror schema", "cmd": "bootstrap", "args": {}, "expect_exit": 0, "expect": {"action": "bootstrap"}},
+    {"n": 2, "stage": "setup", "desc": "register the synthetic producer", "cmd": "upsert-producer", "args": {"--producer-id": "PRODsyntheticTWO01", "--producer-email": "producer.two-voices@example.com", "--display-name": "Synthetic Producer, Two Voices"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 3, "stage": "setup", "desc": "register anthology A (Morning Voices)", "cmd": "upsert-anthology", "args": {"--anthology-id": "ANTHsyntheticTWOA1", "--producer-id": "PRODsyntheticTWO01", "--name": "Morning Voices Anthology", "--theme": "small beginnings", "--caf-location-binding": "LOCsyntheticTwoVoicesAAA", "--min-chapters": "2"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 4, "stage": "setup", "desc": "register anthology B (Evening Voices)", "cmd": "upsert-anthology", "args": {"--anthology-id": "ANTHsyntheticTWOB1", "--producer-id": "PRODsyntheticTWO01", "--name": "Evening Voices Anthology", "--theme": "endings and staying", "--caf-location-binding": "LOCsyntheticTwoVoicesAAA", "--min-chapters": "2"}, "expect_exit": 0, "expect": {"created": true}},
+
+    {"n": 5, "stage": "S0", "desc": "Ben joins anthology A -> participant_key_a created", "door": "form", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticTWO01", "--anthology-id": "ANTHsyntheticTWOA1", "--first-name": "Ben", "--last-name": "Marlow", "--email": "ben.marlow@example.com", "--niche": "independent print shop operations", "--primary-goal": "publish a chapter on the discipline of saying no"}, "expect_exit": 0, "expect": {"created": true, "stage_cursor": "s0_intake"}},
+    {"n": 6, "stage": "S0", "desc": "KEYING: re-upsert the SAME contact in the SAME anthology updates the ONE record (created=false), never a duplicate", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticTWO01", "--anthology-id": "ANTHsyntheticTWOA1", "--phone": "+15550100020"}, "expect_exit": 0, "expect": {"created": false}},
+    {"n": 7, "stage": "S0", "desc": "KEYING: the SAME contact in a DIFFERENT anthology creates a DISTINCT record (created=true), one contact_id across both", "door": "form", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticTWO01", "--anthology-id": "ANTHsyntheticTWOB1", "--first-name": "Ben", "--last-name": "Marlow", "--email": "ben.marlow@example.com", "--niche": "independent print shop operations", "--primary-goal": "publish a chapter on learning to stay through hard endings"}, "expect_exit": 0, "expect": {"created": true, "stage_cursor": "s0_intake"}},
+
+    {"n": 8, "stage": "S1", "desc": "A: begin avatar", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s1_avatar"}, "expect_exit": 0, "expect": {"to": "s1_avatar"}},
+    {"n": 9, "stage": "S1", "desc": "A: record avatar", "cmd": "record-artifact", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--type": "avatar", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_avatar_morning/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_avatar_morning/view", "--sha256": "morningaa11000000000000000000000000000000000000000000000000avatar", "--model-used": "glm-5.2"}, "expect_exit": 0, "expect": {"type": "avatar", "version": 1}},
+    {"n": 10, "stage": "S1", "desc": "A: open s1 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s1_gate"}, "expect_exit": 0, "expect": {"to": "s1_gate"}},
+    {"n": 11, "stage": "S1", "desc": "A: producer approves avatar -> s2_tone", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s1_producer", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "approve", "--door": "dashboard"}, "expect_exit": 0, "expect": {"stage_cursor": "s2_tone"}},
+    {"n": 12, "stage": "S2", "desc": "A: open s2 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s2_gate"}, "expect_exit": 0, "expect": {"to": "s2_gate"}},
+    {"n": 13, "stage": "S2", "desc": "A: producer approves tone -> s3_title", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s2_producer", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "approve", "--door": "dashboard"}, "expect_exit": 0, "expect": {"stage_cursor": "s3_title"}},
+    {"n": 14, "stage": "S3", "desc": "A: record titles", "cmd": "record-artifact", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--type": "titles", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_titles_morning/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_titles_morning/view", "--sha256": "morningaa11000000000000000000000000000000000000000000000000titles", "--model-used": "glm-5.2"}, "expect_exit": 0, "expect": {"type": "titles", "version": 1}},
+    {"n": 15, "stage": "S3", "desc": "A: open s3 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s3_gate"}, "expect_exit": 0, "expect": {"to": "s3_gate"}},
+    {"n": 16, "stage": "S3", "desc": "A: lock the Morning title (independent of B)", "door": "nudge_link", "cmd": "record-approval", "args": {"--gate": "s3_selection", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "approve", "--title": "Mornings I Almost Quit", "--subtitle": "The Apprenticeship of Saying No", "--door": "nudge_link"}, "expect_exit": 0, "expect": {"stage_cursor": "s4_blurb_outline"}},
+    {"n": 17, "stage": "S4", "desc": "A: open s4 producer gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s4_gate_producer"}, "expect_exit": 0, "expect": {"to": "s4_gate_producer"}},
+    {"n": 18, "stage": "S4", "desc": "A: producer approves outline -> s4_gate_participant", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s4_producer", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "approve", "--door": "dashboard"}, "expect_exit": 0, "expect": {"stage_cursor": "s4_gate_participant"}},
+    {"n": 19, "stage": "S4", "desc": "A: participant approves outline -> s5_chapter", "door": "nudge_link", "cmd": "record-approval", "args": {"--gate": "s4_participant", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "approve", "--door": "nudge_link"}, "expect_exit": 0, "expect": {"stage_cursor": "s5_chapter"}},
+    {"n": 20, "stage": "S5", "desc": "A: record chapter v1", "cmd": "record-artifact", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--type": "chapter", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_chapter_morning/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_chapter_morning/view", "--sha256": "morningaa1100000000000000000000000000000000000000000000000chapter", "--model-used": "glm-5.2"}, "expect_exit": 0, "expect": {"type": "chapter", "version": 1}},
+    {"n": 21, "stage": "S5", "desc": "A: open s5 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--to": "s5_gate"}, "expect_exit": 0, "expect": {"to": "s5_gate"}},
+    {"n": 22, "stage": "S5", "desc": "A: participant requests ONE rewrite -> s6_rewrite, rewrite_count -> 1 (A only)", "door": "nudge_link", "cmd": "record-approval", "args": {"--gate": "s5_participant", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "--decision": "request_rewrite", "--notes": "Add the referral scene after the refusal.", "--door": "nudge_link"}, "expect_exit": 0, "expect": {"decision": "request_rewrite", "stage_cursor": "s6_rewrite"}},
+
+    {"n": 23, "stage": "S1", "desc": "B: begin avatar (independent of A)", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--to": "s1_avatar"}, "expect_exit": 0, "expect": {"to": "s1_avatar"}},
+    {"n": 24, "stage": "S1", "desc": "B: record avatar", "cmd": "record-artifact", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--type": "avatar", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_avatar_evening/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_avatar_evening/view", "--sha256": "eveningbb22000000000000000000000000000000000000000000000000avatar", "--model-used": "glm-5.2"}, "expect_exit": 0, "expect": {"type": "avatar", "version": 1}},
+    {"n": 25, "stage": "S1", "desc": "B: open s1 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--to": "s1_gate"}, "expect_exit": 0, "expect": {"to": "s1_gate"}},
+    {"n": 26, "stage": "S1", "desc": "B: producer approves avatar -> s2_tone", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s1_producer", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--decision": "approve", "--door": "dashboard"}, "expect_exit": 0, "expect": {"stage_cursor": "s2_tone"}},
+    {"n": 27, "stage": "S2", "desc": "B: open s2 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--to": "s2_gate"}, "expect_exit": 0, "expect": {"to": "s2_gate"}},
+    {"n": 28, "stage": "S2", "desc": "B: producer approves tone -> s3_title", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s2_producer", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--decision": "approve", "--door": "dashboard"}, "expect_exit": 0, "expect": {"stage_cursor": "s3_title"}},
+    {"n": 29, "stage": "S3", "desc": "B: record titles", "cmd": "record-artifact", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--type": "titles", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_titles_evening/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_titles_evening/view", "--sha256": "eveningbb22000000000000000000000000000000000000000000000000titles", "--model-used": "glm-5.2"}, "expect_exit": 0, "expect": {"type": "titles", "version": 1}},
+    {"n": 30, "stage": "S3", "desc": "B: open s3 gate", "cmd": "advance-stage", "args": {"--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--to": "s3_gate"}, "expect_exit": 0, "expect": {"to": "s3_gate"}},
+    {"n": 31, "stage": "S3", "desc": "B: lock a DIFFERENT title (independent of A's lock, same contact_id)", "door": "nudge_link", "cmd": "record-approval", "args": {"--gate": "s3_selection", "--participant-key": "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1", "--decision": "approve", "--title": "Evenings I Learned to Stay", "--subtitle": "Inventory of a Slow Recovery", "--door": "nudge_link"}, "expect_exit": 0, "expect": {"stage_cursor": "s4_blurb_outline"}}
+  ],
+
+  "final_assertions": {
+    "participants": {
+      "CONTACTsyntheticTWO01::ANTHsyntheticTWOA1": {"contact_id": "CONTACTsyntheticTWO01", "anthology_id": "ANTHsyntheticTWOA1", "stage_cursor": "s6_rewrite", "rewrite_count": 1, "title_locked": "Mornings I Almost Quit"},
+      "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1": {"contact_id": "CONTACTsyntheticTWO01", "anthology_id": "ANTHsyntheticTWOB1", "stage_cursor": "s4_blurb_outline", "rewrite_count": 0, "title_locked": "Evenings I Learned to Stay"}
+    },
+    "keying": {
+      "same_contact_id": ["CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1"],
+      "distinct_anthology_id": ["CONTACTsyntheticTWO01::ANTHsyntheticTWOA1", "CONTACTsyntheticTWO01::ANTHsyntheticTWOB1"],
+      "note": "two participant rows, one contact_id (the composite key contact_id::anthology_id keeps the two memberships distinct)"
+    }
+  }
+}

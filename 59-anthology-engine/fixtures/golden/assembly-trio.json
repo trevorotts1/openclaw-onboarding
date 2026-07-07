@@ -1,0 +1,95 @@
+{
+  "$schema_note": "GOLDEN FIXTURE 4 of 4 (W1.23). A full anthology assembly over THREE synthetic frozen chapters plus a FOURTH contributor who is explicitly excluded. Forces every PRD 3.11 / SPEC 7.3 S9 guard: below-minimum chapter count refused, unapproved-and-non-excluded participant blocking, own-producer auth, typed --confirm-name, the one-way / double-fire no-op, the assembly-advance second-door refusals, order validation, a producer reorder, the compile-time frozen-chapter sha256 byte-identity proof, and the s9_producer sign-off that transitions members approved -> delivered. Chapter sha256 values are the REAL sha256 of fixtures/golden/chapters/summit-g{1,2,3}-chapter.md, so the compile --verify-sha step proves byte-identity against the actual chapter bytes. The repeated S0->approved+frozen arc is a documented macro (drive_to_approved_frozen); replay_golden.py --explain prints the expanded subcommand sequence. fixtures/golden/replay_golden.py replays this; the W5.7 S9 assembly canary drill exercises the same guards from BOTH doors. All data is synthetic: zero PII, zero secrets, zero client identifiers, zero Anthropic model ids.",
+  "contract": "anthology-engine-golden-fixture",
+  "schema_version": 1,
+  "fixture_id": "assembly-trio",
+  "title": "Three synthetic chapters assembled, with the full S9 guard matrix and one exclusion",
+  "drills": ["W5.7"],
+  "synthetic": true,
+  "no_pii": true,
+  "no_secret_value": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true,
+
+  "keys": {
+    "producer_id": "PRODsyntheticASM01",
+    "anthology_id": "ANTHsyntheticASM01",
+    "anthology_name": "Voices of the Summit",
+    "min_chapters": 3,
+    "g1": "CONTACTsyntheticASMg1::ANTHsyntheticASM01",
+    "g2": "CONTACTsyntheticASMg2::ANTHsyntheticASM01",
+    "g3": "CONTACTsyntheticASMg3::ANTHsyntheticASM01",
+    "g4_excluded": "CONTACTsyntheticASMg4::ANTHsyntheticASM01"
+  },
+
+  "chapter_shas": {
+    "CONTACTsyntheticASMg1::ANTHsyntheticASM01": {"body_file": "chapters/summit-g1-chapter.md", "sha256": "be71ed57b130539b6d063550c6048f3eb16092e7572f3e2edffc567600840e1c"},
+    "CONTACTsyntheticASMg2::ANTHsyntheticASM01": {"body_file": "chapters/summit-g2-chapter.md", "sha256": "3b0be2f50b22454f6cdf5af4af6936aedcd024df5ec412943bdc85252bfb6594"},
+    "CONTACTsyntheticASMg3::ANTHsyntheticASM01": {"body_file": "chapters/summit-g3-chapter.md", "sha256": "71b27c39b7d9221f723f932efbaf11d26808adeb3143c8fdc37f02d52538afb7"}
+  },
+
+  "narrative": "Voices of the Summit needs at least three chapters (min_chapters 3). Three contributors (g1 a clinic owner, g2 a print-shop operator, g3 a warehouse owner) each complete a chapter and freeze it. A fourth contributor (g4) never gets going. The producer cannot fire the ready-to-assemble trigger while chapters are below the floor, nor while g4 is neither approved nor excluded. The producer excludes g4 (the one explicit exclusion), which arms the trigger. Wrong-name and non-producer attempts are refused; assembly-advance cannot back-door the guard states. The producer fires the trigger (typed name confirmation), the editor proposes an order, the producer adjusts it, the manuscript compiles with a frozen-chapter byte-identity proof, the manuscript artifact is recorded, and the producer signs off, delivering the three members.",
+
+  "steps": [
+    {"n": 1, "stage": "setup", "desc": "bootstrap the mirror schema", "cmd": "bootstrap", "args": {}, "expect_exit": 0, "expect": {"action": "bootstrap"}},
+    {"n": 2, "stage": "setup", "desc": "register the synthetic producer", "cmd": "upsert-producer", "args": {"--producer-id": "PRODsyntheticASM01", "--producer-email": "producer.summit@example.com", "--display-name": "Synthetic Producer, Summit"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 3, "stage": "setup", "desc": "register the anthology with min_chapters 3", "cmd": "upsert-anthology", "args": {"--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--name": "Voices of the Summit", "--theme": "small-business resilience", "--caf-location-binding": "LOCsyntheticSummitAAA", "--min-chapters": "3"}, "expect_exit": 0, "expect": {"created": true}},
+
+    {"n": 4, "stage": "S0", "desc": "create contributor g1", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticASMg1", "--anthology-id": "ANTHsyntheticASM01", "--first-name": "Grace", "--last-name": "Okonkwo", "--email": "grace.okonkwo@example.com", "--niche": "independent clinic operations"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 5, "stage": "S0", "desc": "create contributor g2", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticASMg2", "--anthology-id": "ANTHsyntheticASM01", "--first-name": "Gideon", "--last-name": "Park", "--email": "gideon.park@example.com", "--niche": "independent print shop operations"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 6, "stage": "S0", "desc": "create contributor g3", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticASMg3", "--anthology-id": "ANTHsyntheticASM01", "--first-name": "Greta", "--last-name": "Salcedo", "--email": "greta.salcedo@example.com", "--niche": "regional warehousing and fulfillment"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 7, "stage": "S0", "desc": "create contributor g4 (the one who will be excluded)", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticASMg4", "--anthology-id": "ANTHsyntheticASM01", "--first-name": "Gus", "--last-name": "Feld", "--email": "gus.feld@example.com", "--niche": "mobile coffee cart"}, "expect_exit": 0, "expect": {"created": true}},
+
+    {"n": 8, "stage": "S1-S8", "desc": "drive g1 through S0->approved with a frozen chapter (real sha256 of summit-g1-chapter.md)", "macro": "drive_to_approved_frozen", "params": {"participant_key": "CONTACTsyntheticASMg1::ANTHsyntheticASM01", "title": "What the Spreadsheet Could Not Say", "subtitle": "A Clinic in Two Ledgers", "sha256": "be71ed57b130539b6d063550c6048f3eb16092e7572f3e2edffc567600840e1c", "body_file": "chapters/summit-g1-chapter.md", "model": "glm-5.2"}, "expect_final_cursor": "approved"},
+    {"n": 9, "stage": "S1-S8", "desc": "drive g2 through S0->approved with a frozen chapter (real sha256 of summit-g2-chapter.md)", "macro": "drive_to_approved_frozen", "params": {"participant_key": "CONTACTsyntheticASMg2::ANTHsyntheticASM01", "title": "The Apprenticeship of Saying No", "subtitle": "How a Small Shop Learned to Refuse", "sha256": "3b0be2f50b22454f6cdf5af4af6936aedcd024df5ec412943bdc85252bfb6594", "body_file": "chapters/summit-g2-chapter.md", "model": "glm-5.2"}, "expect_final_cursor": "approved"},
+
+    {"n": 10, "stage": "S9", "desc": "readiness with only 2 of 3 frozen and g3/g4 unapproved: NOT ready (below the floor and blocked)", "cmd": "assembly-readiness-report", "args": {"--anthology-id": "ANTHsyntheticASM01"}, "expect_exit": 0, "expect": {"ready": false, "below_min_chapters": true, "frozen_chapter_count": 2, "assembly_state": "not_ready"}},
+    {"n": 11, "stage": "S9", "negative": true, "desc": "BELOW-MINIMUM GUARD: firing the trigger with correct producer + confirm-name is still refused because the collection is below min_chapters and has unapproved members (readiness illegal)", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--confirm-name": "Voices of the Summit", "--door": "dashboard"}, "expect_exit": 2, "expect": {"ok": false}},
+
+    {"n": 12, "stage": "S1-S8", "desc": "drive g3 through S0->approved with a frozen chapter (real sha256 of summit-g3-chapter.md); now 3 frozen but g4 still blocks", "macro": "drive_to_approved_frozen", "params": {"participant_key": "CONTACTsyntheticASMg3::ANTHsyntheticASM01", "title": "Inventory of a Slow Recovery", "subtitle": "When Feeling Fails, Structure Carries", "sha256": "71b27c39b7d9221f723f932efbaf11d26808adeb3143c8fdc37f02d52538afb7", "body_file": "chapters/summit-g3-chapter.md", "model": "glm-5.2"}, "expect_final_cursor": "approved"},
+
+    {"n": 13, "stage": "S9", "desc": "readiness with 3 frozen but g4 neither approved nor excluded: NOT ready, g4 named in the blocking list", "cmd": "assembly-readiness-report", "args": {"--anthology-id": "ANTHsyntheticASM01"}, "expect_exit": 0, "expect": {"ready": false, "below_min_chapters": false, "frozen_chapter_count": 3, "assembly_state": "not_ready"}},
+    {"n": 14, "stage": "S9", "negative": true, "desc": "UNAPPROVED-PARTICIPANT BLOCKING GUARD: the trigger is refused while g4 is neither approved nor excluded", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--confirm-name": "Voices of the Summit", "--door": "dashboard"}, "expect_exit": 2, "expect": {"ok": false}},
+
+    {"n": 15, "stage": "S9", "desc": "THE ONE EXPLICIT EXCLUSION: the producer excludes g4; excluding the last blocker auto-arms the trigger (not_ready -> armed)", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s4_producer", "--participant-key": "CONTACTsyntheticASMg4::ANTHsyntheticASM01", "--decision": "exclude", "--notes": "Contributor never started; excluded from this edition.", "--door": "dashboard"}, "expect_exit": 0, "expect": {"gate": "s4_producer", "decision": "exclude"}},
+    {"n": 16, "stage": "S9", "desc": "readiness now ready and armed (g1/g2/g3 approved+frozen, g4 excluded, 3 >= min 3)", "cmd": "assembly-readiness-report", "args": {"--anthology-id": "ANTHsyntheticASM01"}, "expect_exit": 0, "expect": {"ready": true, "armed": true, "assembly_state": "armed", "frozen_chapter_count": 3, "active_members": 3}},
+
+    {"n": 17, "stage": "S9", "negative": true, "desc": "CONFIRM-NAME GUARD: a wrong typed name is refused (nothing changes)", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--confirm-name": "Voices of the Valley", "--door": "dashboard"}, "expect_exit": 5, "expect": {"ok": false}},
+    {"n": 18, "stage": "S9", "negative": true, "desc": "OWN-PRODUCER GUARD: a non-producer is refused even with the right name", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODimposter999", "--confirm-name": "Voices of the Summit", "--door": "dashboard"}, "expect_exit": 5, "expect": {"ok": false}},
+
+    {"n": 19, "stage": "S9", "negative": true, "desc": "SECOND-DOOR GUARD: assembly-advance may not back-door into 'armed'", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "armed"}, "expect_exit": 2, "expect": {"ok": false}},
+    {"n": 20, "stage": "S9", "negative": true, "desc": "SECOND-DOOR GUARD: assembly-advance may not back-door into 'ready_confirmed'", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "ready_confirmed"}, "expect_exit": 2, "expect": {"ok": false}},
+    {"n": 21, "stage": "S9", "negative": true, "desc": "SECOND-DOOR GUARD: assembly-advance may not back-door into 'proposed'", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "proposed"}, "expect_exit": 2, "expect": {"ok": false}},
+    {"n": 22, "stage": "S9", "negative": true, "desc": "SECOND-DOOR GUARD: assembly-advance may not back-door into 'adjusted'", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "adjusted"}, "expect_exit": 2, "expect": {"ok": false}},
+    {"n": 23, "stage": "S9", "negative": true, "desc": "SECOND-DOOR GUARD: assembly-advance may not back-door into 'signed_off'", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "signed_off"}, "expect_exit": 2, "expect": {"ok": false}},
+    {"n": 24, "stage": "S9", "desc": "the five second-door refusals changed nothing: still armed", "cmd": "assembly-readiness-report", "args": {"--anthology-id": "ANTHsyntheticASM01"}, "expect_exit": 0, "expect": {"assembly_state": "armed", "ready": true}},
+
+    {"n": 25, "stage": "S9", "desc": "FIRE the ready-to-assemble trigger (own-producer + typed name) -> ready_confirmed", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--confirm-name": "Voices of the Summit", "--door": "dashboard"}, "expect_exit": 0, "expect": {"gate": "s9_ready", "assembly_state": "ready_confirmed", "frozen_chapter_count": 3}},
+    {"n": 26, "stage": "S9", "desc": "DOUBLE-FIRE GUARD: firing again is an acknowledged no-op (one-way trigger)", "door": "nudge_link", "cmd": "record-approval", "args": {"--gate": "s9_ready", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--confirm-name": "Voices of the Summit", "--door": "nudge_link"}, "expect_exit": 0, "expect": {"noop": true}},
+
+    {"n": 27, "stage": "S9", "desc": "the editor proposes the chapter order over the three frozen chapters -> proposed", "cmd": "assembly-set-order", "args": {"--anthology-id": "ANTHsyntheticASM01", "--order": ["CONTACTsyntheticASMg1::ANTHsyntheticASM01", "CONTACTsyntheticASMg2::ANTHsyntheticASM01", "CONTACTsyntheticASMg3::ANTHsyntheticASM01"]}, "expect_exit": 0, "expect": {"assembly_state": "proposed", "order_len": 3}},
+    {"n": 28, "stage": "S9", "negative": true, "desc": "ORDER VALIDATION: an order referencing a non-member/unfrozen key is refused", "cmd": "assembly-set-order", "args": {"--anthology-id": "ANTHsyntheticASM01", "--order": ["CONTACTsyntheticASMg1::ANTHsyntheticASM01", "CONTACTsyntheticASMg2::ANTHsyntheticASM01", "CONTACTsyntheticASMg4::ANTHsyntheticASM01"]}, "expect_exit": 5, "expect": {"ok": false}},
+    {"n": 29, "stage": "S9", "desc": "the producer adjusts the order (reorders g2 ahead of g1) -> adjusted", "cmd": "assembly-set-order", "args": {"--anthology-id": "ANTHsyntheticASM01", "--state": "adjusted", "--order": ["CONTACTsyntheticASMg2::ANTHsyntheticASM01", "CONTACTsyntheticASMg1::ANTHsyntheticASM01", "CONTACTsyntheticASMg3::ANTHsyntheticASM01"]}, "expect_exit": 0, "expect": {"assembly_state": "adjusted", "order_len": 3}},
+
+    {"n": 30, "stage": "S9", "desc": "compile the manuscript, re-proving each ordered frozen chapter byte-identical to its recorded sha256 -> compiled", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "compiled", "--verify-sha": "CONTACTsyntheticASMg1::ANTHsyntheticASM01=be71ed57b130539b6d063550c6048f3eb16092e7572f3e2edffc567600840e1c,CONTACTsyntheticASMg2::ANTHsyntheticASM01=3b0be2f50b22454f6cdf5af4af6936aedcd024df5ec412943bdc85252bfb6594,CONTACTsyntheticASMg3::ANTHsyntheticASM01=71b27c39b7d9221f723f932efbaf11d26808adeb3143c8fdc37f02d52538afb7"}, "expect_exit": 0, "expect": {"assembly_state": "compiled"}},
+    {"n": 31, "stage": "S9", "negative": true, "desc": "FROZEN BYTE-IDENTITY GUARD: had a chapter drifted, a mismatched --verify-sha aborts compile with nothing changed (shown here as a standalone refusal against a fabricated sha)", "cmd": "assembly-advance", "args": {"--anthology-id": "ANTHsyntheticASM01", "--to": "compiled", "--verify-sha": "CONTACTsyntheticASMg1::ANTHsyntheticASM01=0000000000000000000000000000000000000000000000000000000000000000"}, "expect_exit": 0, "expect": {"noop": true}, "note": "already compiled -> this replay is an acknowledged no-op; the live mismatch-abort (exit 5) is exercised in the W5.7 drill against a pre-compile state. Kept as a no-op here so the golden sequence stays linear."},
+    {"n": 32, "stage": "S9", "desc": "record the anthology manuscript artifact (anthology scope)", "cmd": "record-artifact", "args": {"--anthology-id": "ANTHsyntheticASM01", "--type": "anthology_manuscript", "--doc-url": "https://docs.google.com/document/d/gdoc_syn_manuscript_summit/edit", "--pdf-url": "https://drive.google.com/file/d/gfile_syn_manuscript_summit/view", "--sha256": "5umm17ma2c0ffee00000000000000000000000000000000000000manuscript01", "--model-used": "glm-5.2", "--custom-field-keys-written": ["contact.anthology_manuscript_doc_url", "contact.anthology_manuscript_pdf_url"]}, "expect_exit": 0, "expect": {"type": "anthology_manuscript", "version": 1}},
+    {"n": 33, "stage": "S9", "desc": "the producer signs off -> signed_off; the three members transition approved -> delivered; g4 (excluded) does not", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_producer", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--door": "dashboard"}, "expect_exit": 0, "expect": {"gate": "s9_producer", "assembly_state": "signed_off"}},
+    {"n": 34, "stage": "S9", "desc": "sign-off replay is an acknowledged no-op (idempotent)", "door": "dashboard", "cmd": "record-approval", "args": {"--gate": "s9_producer", "--anthology-id": "ANTHsyntheticASM01", "--producer-id": "PRODsyntheticASM01", "--door": "dashboard"}, "expect_exit": 0, "expect": {"noop": true}}
+  ],
+
+  "final_assertions": {
+    "participants": {
+      "CONTACTsyntheticASMg1::ANTHsyntheticASM01": {"stage_cursor": "delivered", "anthology_id": "ANTHsyntheticASM01"},
+      "CONTACTsyntheticASMg2::ANTHsyntheticASM01": {"stage_cursor": "delivered", "anthology_id": "ANTHsyntheticASM01"},
+      "CONTACTsyntheticASMg3::ANTHsyntheticASM01": {"stage_cursor": "delivered", "anthology_id": "ANTHsyntheticASM01"},
+      "CONTACTsyntheticASMg4::ANTHsyntheticASM01": {"stage_cursor": "s0_intake", "anthology_id": "ANTHsyntheticASM01"}
+    },
+    "anthology": {
+      "ANTHsyntheticASM01": {"assembly_state": "signed_off", "status": "delivered"}
+    },
+    "readiness": {
+      "ANTHsyntheticASM01": {"assembly_state": "signed_off", "frozen_chapter_count": 3, "active_members": 3}
+    }
+  }
+}

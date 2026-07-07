@@ -1,0 +1,17 @@
+{
+  "source": "anthology-intake",
+  "location": "LOCsyntheticAnthologyAAA",
+  "form": "universal-intake",
+  "contact_id": "CONTACTsynthetic0001",
+  "anthology_id": "ANTHsynthetic0001",
+  "stage": "s0_intake",
+  "first_name": "Ada",
+  "last_name": "Sample",
+  "email": "ada.sample@example.com",
+  "phone": "+15550100001",
+  "ideal_avatar": "A first-time nonfiction author who mentors early-career founders.",
+  "niche": "founder mentorship and operating discipline",
+  "primary_goal": "publish one signature chapter in a shared anthology to establish authority",
+  "producer": "Sample Producer",
+  "producer_email": "producer.sample@example.com"
+}

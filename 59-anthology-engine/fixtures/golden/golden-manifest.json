@@ -1,0 +1,86 @@
+{
+  "$schema_note": "SOURCE OF TRUTH for the W1.23 golden fixtures: it binds each synthetic fixture to the Wave 5 canary drill it drives, registers the synthetic chapter body files with their sha256 (verified against bytes by replay_golden.py), and restates the controlled vocabularies the fixtures draw from (so a drifted enum value is caught). Golden fixtures are the fixed, expected-outcome replays of the whole orchestrator ledger + assembly machine; the intake webhook battery lives separately under fixtures/webhook/ (W1.6). All data is synthetic: zero PII, zero secrets, zero client identifiers, zero Anthropic model ids, and none of the nine Downloads JSON exports in whole or in part.",
+  "contract": "anthology-engine-golden-manifest",
+  "schema_version": 1,
+
+  "fixtures": [
+    {
+      "fixture_id": "full-participant",
+      "file": "full-participant.json",
+      "title": "Full synthetic participant, S0 through approved, with one rewrite round",
+      "drills": ["W5.4"],
+      "exercises": ["every stage S0..S8 and every gate", "the S6 rewrite round (chapter v1 -> v2, budget 1 of 2)", "title-lock one-way guard", "gate-bypass-via-advance-stage refusal", "kill-and-resume idempotent replay", "a lone contributor cannot arm assembly (below min_chapters)"],
+      "producers": 1, "anthologies": 1, "participants": 1
+    },
+    {
+      "fixture_id": "two-anthology-contact",
+      "file": "two-anthology-contact.json",
+      "title": "One contact_id, two anthologies, two independent participant records",
+      "drills": ["W5.6"],
+      "exercises": ["the keying law contact_id::anthology_id", "re-upsert within an anthology updates the one record (created=false)", "same contact in a second anthology creates a distinct record (created=true)", "independent title locks, rewrite counts, and cursors per key"],
+      "producers": 1, "anthologies": 2, "participants": 2, "distinct_contacts": 1
+    },
+    {
+      "fixture_id": "exception",
+      "file": "exception.json",
+      "title": "Exceptions-queue capture and resolve across every typed reason",
+      "drills": ["W5.5"],
+      "exercises": ["capture across all five typed reasons incl. legacy_reconciliation", "participant-tied capture stamps stage_cursor='exception'", "resolve + idempotent resolve replay", "guard refusals: unknown reason (5), non-JSON raw (5), unknown id (3)"],
+      "producers": 1, "anthologies": 1, "participants": 1, "exceptions": 5
+    },
+    {
+      "fixture_id": "assembly-trio",
+      "file": "assembly-trio.json",
+      "title": "Three synthetic chapters assembled, with the full S9 guard matrix and one exclusion",
+      "drills": ["W5.7"],
+      "exercises": ["three frozen synthetic chapters assembled", "below-minimum-chapters guard", "unapproved-participant blocking guard", "the one explicit exclusion (arms the trigger)", "confirm-name and own-producer guards", "assembly-advance second-door refusals", "one-way / double-fire no-op", "order validation + producer reorder", "compile-time frozen-chapter sha256 byte-identity", "s9_producer sign-off delivers members"],
+      "producers": 1, "anthologies": 1, "participants": 4, "excluded": 1, "chapters": 3
+    }
+  ],
+
+  "chapters": [
+    {"path": "chapters/firstlight-ada-chapter-v1.md", "sha256": "94cb34a0980b3fa692af91b79e303fc926ad9c121f34216932c8fca915a5a254", "bytes": 1886, "words": 343, "used_by": "full-participant (S5 chapter v1)"},
+    {"path": "chapters/firstlight-ada-chapter-v2.md", "sha256": "47a3b0b1745a0610fe6abe9130c1ea52b595b2709b2060339eb6db3f59806a38", "bytes": 2132, "words": 391, "used_by": "full-participant (S6 rewrite -> chapter v2, the frozen version)"},
+    {"path": "chapters/summit-g1-chapter.md", "sha256": "be71ed57b130539b6d063550c6048f3eb16092e7572f3e2edffc567600840e1c", "bytes": 1631, "words": 287, "used_by": "assembly-trio (contributor g1 frozen chapter)"},
+    {"path": "chapters/summit-g2-chapter.md", "sha256": "3b0be2f50b22454f6cdf5af4af6936aedcd024df5ec412943bdc85252bfb6594", "bytes": 1644, "words": 294, "used_by": "assembly-trio (contributor g2 frozen chapter)"},
+    {"path": "chapters/summit-g3-chapter.md", "sha256": "71b27c39b7d9221f723f932efbaf11d26808adeb3143c8fdc37f02d52538afb7", "bytes": 1612, "words": 286, "used_by": "assembly-trio (contributor g3 frozen chapter)"}
+  ],
+  "chapter_length_note": "Chapter bodies are illustrative length only. The 2,000-3,500 stripped-word CHAP-BAND floor (AF-AE-CHAP-BAND) is enforced by Skill 54's prove_aw_chapter.py against Skill 54's own golden fixtures, never against these orchestrator-ledger fixtures. Here the chapter bytes exist only so the compile-time frozen-chapter sha256 byte-identity proof (assembly-advance --verify-sha) runs against real bytes.",
+
+  "controlled_vocabularies_referenced": {
+    "$note": "Restated from anthology_state.py so a drifted enum in a fixture is caught by review. The fixtures draw ONLY from these.",
+    "stage_cursors": ["s0_intake", "s1_avatar", "s1_gate", "s2_tone", "s2_gate", "s3_title", "s3_gate", "s4_blurb_outline", "s4_gate_producer", "s4_gate_participant", "s5_chapter", "s5_gate", "s6_rewrite", "s7_cover", "s8_deliver", "s9_wait_assembly", "approved", "delivered", "held", "exception"],
+    "artifact_types": ["avatar", "tone", "titles", "blurb", "outline", "chapter", "rewrite", "cover", "anthology_manuscript"],
+    "approval_gates": ["s1_producer", "s2_producer", "s3_selection", "s4_producer", "s4_participant", "s5_participant", "s9_ready", "s9_producer"],
+    "approval_decisions": ["approve", "request_rewrite", "escalate", "hold", "exclude", "ready_to_assemble"],
+    "approval_doors": ["dashboard", "nudge_link"],
+    "exception_reasons": ["unroutable_missing_ids", "unknown_anthology", "stage_mismatch", "tenant_mismatch", "legacy_reconciliation"],
+    "assembly_states": ["not_ready", "armed", "ready_confirmed", "proposed", "adjusted", "compiled", "signed_off"]
+  },
+
+  "exit_code_contract": {
+    "0": "verified success (including an idempotent no-op)",
+    "2": "illegal transition / guard refusal (readiness not-met, gate-bypass, second-door, unknown reason at open? no: reason=5)",
+    "3": "unknown key (participant / anthology / exception id)",
+    "4": "base unreachable (never reached here: mirror-only)",
+    "5": "validation, confirm-name mismatch, non-JSON raw payload, or order/sha validation"
+  },
+
+  "replay": {
+    "harness": "replay_golden.py",
+    "isolation": "each fixture replays in its own temp state dir; no base id configured -> mirror-only (SPEC 7.2), network-free",
+    "commands": [
+      "python3 fixtures/golden/replay_golden.py --list",
+      "python3 fixtures/golden/replay_golden.py --all",
+      "python3 fixtures/golden/replay_golden.py --fixture assembly-trio --explain"
+    ],
+    "canary": "on the operator canary (W5.4/W5.6/W5.7) the same step sequences are exercised from BOTH doors (board card and participant token page); the intake side (T1..T9) is fixtures/webhook/ (W5.3)."
+  },
+
+  "synthetic": true,
+  "no_pii": true,
+  "no_secret_value": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true,
+  "no_json_export_content": true
+}

@@ -1,0 +1,14 @@
+{
+  "source": "anthology-intake",
+  "location": "LOCsyntheticAnthologyAAA",
+  "form": "outline-approval",
+  "contact_id": "CONTACTsynthetic0007",
+  "anthology_id": "ANTHsynthetic0001",
+  "stage": "s4_blurb_outline",
+  "first_name": "Cal",
+  "last_name": "Sample",
+  "email": "cal.sample@example.com",
+  "phone": "+15550100007",
+  "outline": "Chapter beats the participant supposedly approved at the outline gate.",
+  "_fixture_note": "A stage-s4 (outline) form arriving for a participant whose ledger cursor is NOT at the s4 gate (e.g. a fresh or s0/s1 participant). Valid ids and matching tenant, but stage-form-vs-cursor disagree. intake_router.py stage validation must land this in Exceptions with reason stage_mismatch (AF-AE-STAGE-MISMATCH). A tone form arriving for a participant at S4 is the symmetric case."
+}

@@ -1,0 +1,51 @@
+{
+  "$schema_note": "GOLDEN FIXTURE 3 of 4 (W1.23). Exercises the exceptions-queue ledger mechanics (SPEC 7.3 EXCEPTIONS; W1.19): capture with the raw payload preserved across ALL FIVE typed reasons (unroutable_missing_ids, unknown_anthology, stage_mismatch, tenant_mismatch, legacy_reconciliation), the participant-tied capture that stamps stage_cursor='exception', resolve, idempotent resolve replay (no-op), and the guard refusals (unknown reason -> exit 5, non-JSON raw payload -> exit 5, unknown exception id -> exit 3). fixtures/golden/replay_golden.py replays this; the W5.5 force-failure drills exercise the same capture/reconcile shape end to end. All data is synthetic: zero PII, zero secrets, zero client identifiers, zero Anthropic model ids.",
+  "contract": "anthology-engine-golden-fixture",
+  "schema_version": 1,
+  "fixture_id": "exception",
+  "title": "Exceptions-queue capture and resolve across every typed reason",
+  "drills": ["W5.5"],
+  "synthetic": true,
+  "no_pii": true,
+  "no_secret_value": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true,
+
+  "keys": {
+    "producer_id": "PRODsyntheticEXC01",
+    "anthology_id": "ANTHsyntheticEXC01",
+    "contact_id": "CONTACTsyntheticEXC01",
+    "participant_key": "CONTACTsyntheticEXC01::ANTHsyntheticEXC01"
+  },
+
+  "valid_exception_reasons": ["unroutable_missing_ids", "unknown_anthology", "stage_mismatch", "tenant_mismatch", "legacy_reconciliation"],
+
+  "narrative": "Five malformed or misrouted synthetic submissions land in the exceptions queue, one per typed reason, each preserving its raw payload. One tenant-mismatch capture is tied to a known participant, stamping that participant's cursor to 'exception'. The operator resolves the unroutable capture (and a replayed resolve is a no-op) and resolves the legacy_reconciliation capture to a real participant key. Guard refusals prove the queue never accepts an unknown reason, a non-JSON payload, or an unknown exception id.",
+
+  "steps": [
+    {"n": 1, "stage": "setup", "desc": "bootstrap the mirror schema", "cmd": "bootstrap", "args": {}, "expect_exit": 0, "expect": {"action": "bootstrap"}},
+    {"n": 2, "stage": "setup", "desc": "register the synthetic producer", "cmd": "upsert-producer", "args": {"--producer-id": "PRODsyntheticEXC01", "--producer-email": "producer.exceptions@example.com", "--display-name": "Synthetic Producer, Exceptions Demo"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 3, "stage": "setup", "desc": "register the synthetic anthology", "cmd": "upsert-anthology", "args": {"--anthology-id": "ANTHsyntheticEXC01", "--producer-id": "PRODsyntheticEXC01", "--name": "Exceptions Ledger Demo", "--caf-location-binding": "LOCsyntheticExceptionsAAA", "--min-chapters": "2"}, "expect_exit": 0, "expect": {"created": true}},
+    {"n": 4, "stage": "S0", "desc": "create the participant used by the participant-tied capture", "door": "form", "cmd": "upsert-participant", "args": {"--contact-id": "CONTACTsyntheticEXC01", "--anthology-id": "ANTHsyntheticEXC01", "--first-name": "Cy", "--last-name": "Harbor", "--email": "cy.harbor@example.com"}, "expect_exit": 0, "expect": {"created": true, "stage_cursor": "s0_intake"}},
+
+    {"n": 5, "stage": "exceptions", "desc": "capture: a submission with no hidden ids (unroutable_missing_ids), raw payload preserved", "cmd": "exception-open", "args": {"--reason": "unroutable_missing_ids", "--exception-id": "excGoldenUnroutable", "--raw-submission": {"source": "anthology-intake", "body": {"first_name": "Nobody", "note": "form arrived with no contact_id / anthology_id / stage"}}}, "expect_exit": 0, "expect": {"exception_id": "excGoldenUnroutable", "reason": "unroutable_missing_ids"}},
+    {"n": 6, "stage": "exceptions", "desc": "capture: hidden ids present but the anthology is unregistered (unknown_anthology)", "cmd": "exception-open", "args": {"--reason": "unknown_anthology", "--exception-id": "excGoldenUnknownAnth", "--raw-submission": {"contact_id": "CONTACTsyntheticEXC01", "anthology_id": "ANTHdoesNotExist999", "stage": "s0_intake"}}, "expect_exit": 0, "expect": {"exception_id": "excGoldenUnknownAnth", "reason": "unknown_anthology"}},
+    {"n": 7, "stage": "exceptions", "desc": "capture: a stage form arrives for a participant whose cursor does not match (stage_mismatch)", "cmd": "exception-open", "args": {"--reason": "stage_mismatch", "--exception-id": "excGoldenStage", "--raw-submission": {"contact_id": "CONTACTsyntheticEXC01", "anthology_id": "ANTHsyntheticEXC01", "stage": "s5_gate", "note": "s5 gate form arrived while cursor was s0_intake"}}, "expect_exit": 0, "expect": {"exception_id": "excGoldenStage", "reason": "stage_mismatch"}},
+    {"n": 8, "stage": "exceptions", "desc": "capture: the payload location does not match the anthology registry binding (tenant_mismatch), tied to a known participant -> stamps stage_cursor='exception'", "cmd": "exception-open", "args": {"--reason": "tenant_mismatch", "--exception-id": "excGoldenTenant", "--participant-key": "CONTACTsyntheticEXC01::ANTHsyntheticEXC01", "--raw-submission": {"contact_id": "CONTACTsyntheticEXC01", "anthology_id": "ANTHsyntheticEXC01", "location": "LOCwrongTenantZZZ", "stage": "s0_intake"}}, "expect_exit": 0, "expect": {"exception_id": "excGoldenTenant", "reason": "tenant_mismatch"}},
+    {"n": 9, "stage": "exceptions", "desc": "capture: a legacy_reconciliation entry (W1.19 reconciliation replay type)", "cmd": "exception-open", "args": {"--reason": "legacy_reconciliation", "--exception-id": "excGoldenLegacy", "--raw-submission": {"origin": "legacy-pipeline", "contact_id": "CONTACTsyntheticEXC01", "anthology_id": "ANTHsyntheticEXC01", "note": "participant existed in the legacy flow; reconcile into the engine ledger"}}, "expect_exit": 0, "expect": {"exception_id": "excGoldenLegacy", "reason": "legacy_reconciliation"}},
+
+    {"n": 10, "stage": "exceptions", "negative": true, "desc": "GUARD: an unknown reason is refused (not in the SPEC enum) -> validation error, nothing captured", "cmd": "exception-open", "args": {"--reason": "not_a_real_reason", "--exception-id": "excGoldenBadReason", "--raw-submission": {"body": 1}}, "expect_exit": 5, "expect": {"ok": false}},
+    {"n": 11, "stage": "exceptions", "negative": true, "desc": "GUARD: a non-JSON raw payload is refused (the payload must be preserved as valid JSON)", "cmd": "exception-open", "args": {"--reason": "unroutable_missing_ids", "--exception-id": "excGoldenBadRaw", "--raw-submission": "this is not valid json"}, "expect_exit": 5, "expect": {"ok": false}},
+
+    {"n": 12, "stage": "exceptions", "desc": "resolve the unroutable capture", "cmd": "exception-resolve", "args": {"--exception-id": "excGoldenUnroutable", "--resolved-by": "operator-synthetic"}, "expect_exit": 0, "expect": {"exception_id": "excGoldenUnroutable"}},
+    {"n": 13, "stage": "exceptions", "desc": "resolve replay is an acknowledged no-op (idempotent)", "cmd": "exception-resolve", "args": {"--exception-id": "excGoldenUnroutable", "--resolved-by": "operator-synthetic"}, "expect_exit": 0, "expect": {"noop": true}},
+    {"n": 14, "stage": "exceptions", "desc": "resolve the legacy_reconciliation capture to a real participant key (reconciliation replay outcome)", "cmd": "exception-resolve", "args": {"--exception-id": "excGoldenLegacy", "--resolved-by": "operator-synthetic", "--resolved-participant-key": "CONTACTsyntheticEXC01::ANTHsyntheticEXC01"}, "expect_exit": 0, "expect": {"resolved_participant_key": "CONTACTsyntheticEXC01::ANTHsyntheticEXC01"}},
+    {"n": 15, "stage": "exceptions", "negative": true, "desc": "GUARD: resolving an unknown exception id is an unknown-key error", "cmd": "exception-resolve", "args": {"--exception-id": "excGoldenNope"}, "expect_exit": 3, "expect": {"ok": false}}
+  ],
+
+  "final_assertions": {
+    "participants": {
+      "CONTACTsyntheticEXC01::ANTHsyntheticEXC01": {"contact_id": "CONTACTsyntheticEXC01", "anthology_id": "ANTHsyntheticEXC01", "stage_cursor": "exception"}
+    }
+  }
+}

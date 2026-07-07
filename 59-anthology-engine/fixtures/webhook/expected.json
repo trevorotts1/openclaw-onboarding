@@ -1,0 +1,97 @@
+{
+  "$schema_note": "Expected-outcomes manifest binding each synthetic fixture to the SPEC 13.2 T-id it exercises, the auth posture, the observable HTTP ack contract, and the ledger-side outcome (participant created / no-op / Exceptions reason). Drives BOTH scripts/verify-webhook-t1-t9.sh (which reads it to know what to assert) and tests/test_webhook.py (which asserts the manifest is internally coherent and the reasons are in the SPEC enum). All data is synthetic; zero PII, zero secrets, zero client identifiers.",
+  "contract": "anthology-engine-webhook-expected",
+  "schema_version": 1,
+
+  "registry_bound_location": "LOCsyntheticAnthologyAAA",
+  "registry_bound_location_note": "The tenant the anthology registry is bound to for these fixtures. On the W5.3 canary, provision-anthology-client.sh binds the synthetic anthology to this location so T4/T5/T7 pass tenant_check and T6 (LOCwrongTenantZZZ) fails it.",
+
+  "valid_exception_reasons": ["unroutable_missing_ids", "unknown_anthology", "stage_mismatch", "tenant_mismatch", "legacy_reconciliation"],
+  "valid_exception_reasons_note": "The Exceptions.reason singleSelect enum (SPEC Section 7.3 EXCEPTIONS table). Any expect_exception_reason below MUST be one of these.",
+
+  "fingerprint_fields": ["contact_id", "anthology_id", "stage", "body"],
+  "fingerprint_note": "Idempotency key = sha256 over (contact_id, anthology_id, stage, payload body) (SPEC Section 5 PROCESS). t5-duplicate-intake.json is byte-identical to t4-valid-intake.json, so it carries the SAME fingerprint and must be a no-op acknowledge.",
+
+  "tests": {
+    "T1": {
+      "desc": "route registered on the gateway",
+      "fixture": null,
+      "probe": "hooks mapping id 'anthology-intake' present in the gateway hooks config (openclaw config get hooks) OR an authenticated request reaches the transform (non-404)",
+      "expect": "route_registered"
+    },
+    "T2": {
+      "desc": "requests without the route secret are refused",
+      "fixture": "t4-valid-intake.json",
+      "auth": "none",
+      "expect_http": "401",
+      "expect": "refused",
+      "note": "Auth is enforced BEFORE route mapping (W0.4.json live probe: 401, not 404, on an unmapped path). intake_router.py ALSO refuses on its independent app-layer secret check (exit 2)."
+    },
+    "T3": {
+      "desc": "malformed payload lands in Exceptions with a reason, never a crash",
+      "fixtures": ["t3-malformed-empty.json", "t3-malformed-notjson.txt", "t3b-missing-ids.json"],
+      "auth": "secret",
+      "expect_http": "2xx_ack",
+      "expect_exception_reason": "unroutable_missing_ids",
+      "never": "5xx_or_crash",
+      "note": "t3-malformed-notjson.txt is a NON-JSON body; the router must not crash on it. t3b-missing-ids.json is well-formed JSON but has no hidden ids. Both resolve to unroutable_missing_ids with the raw payload captured."
+    },
+    "T4": {
+      "desc": "valid synthetic submission acknowledges in under 2 seconds and creates the participant",
+      "fixture": "t4-valid-intake.json",
+      "auth": "secret",
+      "expect_http": "2xx_ack",
+      "ack_budget_seconds": 2,
+      "expect": "participant_created",
+      "expect_participant_key": "CONTACTsynthetic0001::ANTHsynthetic0001"
+    },
+    "T5": {
+      "desc": "duplicate delivery of the same submission is a no-op acknowledge",
+      "fixture": "t5-duplicate-intake.json",
+      "auth": "secret",
+      "expect_http": "2xx_ack",
+      "expect": "noop_acknowledge",
+      "duplicate_of": "t4-valid-intake.json",
+      "note": "Same fingerprint as T4; exactly one participant and one S0 run must exist after both deliveries."
+    },
+    "T6": {
+      "desc": "wrong-tenant payload lands in Exceptions (tenant_mismatch)",
+      "fixture": "t6-wrong-tenant.json",
+      "auth": "secret",
+      "expect_http": "2xx_ack",
+      "expect_exception_reason": "tenant_mismatch"
+    },
+    "T7": {
+      "desc": "stage-mismatched form lands in Exceptions (stage_mismatch)",
+      "fixture": "t7-stage-mismatch.json",
+      "auth": "secret",
+      "expect_http": "2xx_ack",
+      "expect_exception_reason": "stage_mismatch"
+    },
+    "T8": {
+      "desc": "the REAL public URL through the named Cloudflare Tunnel accepts a submission end to end",
+      "fixture": "t4-valid-intake.json",
+      "auth": "secret",
+      "requires": "--public-url",
+      "deferred_to": "W5.3 canary",
+      "expect": "end_to_end_ack",
+      "note": "Deferred unless a real Cloudflare Tunnel public URL is supplied; NEVER Tailscale."
+    },
+    "T9": {
+      "desc": "gateway restart preserves the route and the pending state (ledger intact, no lost event)",
+      "fixture": null,
+      "requires": "--allow-restart",
+      "deferred_to": "W5.3 canary",
+      "expect": "route_and_state_preserved",
+      "note": "Restarts the gateway, re-probes T1, and asserts the ledger cursor and any pending event survived."
+    }
+  },
+
+  "credential_shaped_keys_forbidden_in_fixtures": ["api_key", "apikey", "Openrouter_Api_Key", "authorization", "Authorization", "bearer", "token", "secret", "x-openclaw-token"],
+  "credential_shaped_keys_forbidden_note": "The legacy api_key payload field is ABOLISHED (SPEC Appendix B). No fixture may carry a credential-shaped key; the route secret rides the Authorization header at the transport, never the body. tests/test_webhook.py enforces this.",
+
+  "no_pii": true,
+  "no_secret_value": true,
+  "no_client_data": true,
+  "no_anthropic_identifiers": true
+}

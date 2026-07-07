@@ -1,0 +1,18 @@
+{
+  "source": "anthology-intake",
+  "location": "LOCwrongTenantZZZ",
+  "form": "universal-intake",
+  "contact_id": "CONTACTsynthetic0006",
+  "anthology_id": "ANTHsynthetic0001",
+  "stage": "s0_intake",
+  "first_name": "Bree",
+  "last_name": "Sample",
+  "email": "bree.sample@example.com",
+  "phone": "+15550100006",
+  "ideal_avatar": "A community organizer documenting a decade of local wins.",
+  "niche": "civic organizing",
+  "primary_goal": "contribute one chapter to the shared anthology",
+  "producer": "Sample Producer",
+  "producer_email": "producer.sample@example.com",
+  "_fixture_note": "location LOCwrongTenantZZZ does NOT equal the anthology registry Convert and Flow Location binding (expected.json registry_bound_location = LOCsyntheticAnthologyAAA). intake_router.py tenant_check must land this in Exceptions with reason tenant_mismatch (AF-AE-TENANT-MISMATCH). Never a guess, never dropped."
+}
