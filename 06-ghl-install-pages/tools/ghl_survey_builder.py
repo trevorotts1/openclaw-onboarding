@@ -115,6 +115,11 @@ try:
 except Exception:  # noqa: BLE001
     _ghl_method = None  # type: ignore[assignment]
 
+try:  # SHARED frame-scoped coordinate-drag primitive (cross-origin iframe FIX)
+    import ghl_iframe_drag as _ghl_iframe_drag  # noqa: E402
+except Exception:  # noqa: BLE001
+    _ghl_iframe_drag = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
@@ -127,6 +132,13 @@ GHL_APP_ORIGIN_DEFAULT = os.environ.get(
 GHL_SURVEY_BUILDER_HOST = (
     "leadgen-apps-form-survey-builder.leadconnectorhq.com"
 )
+
+# The survey builder renders inside this CROSS-ORIGIN iframe (same host as the form
+# builder). agent-browser 0.27.0 cannot LOCATE a non-interactive drag-source row
+# across that boundary, so the DRAG step is delegated to the shared
+# ghl_iframe_drag primitive (Playwright over the same session's CDP). See
+# ghl_iframe_drag.py + SELECTORS-LIVE-form.md §7.
+GHL_SURVEY_IFRAME_SELECTOR = 'iframe[src*="survey-builder-v2"]'
 
 # Material step totals for progress reporting
 _PART1_BASE_STEPS = 4   # navigate, settings, custom-fields, folder
@@ -457,6 +469,47 @@ def _snapshot(session: str) -> str:
     """Get the current accessibility snapshot (-i mode)."""
     result = _run_cmd(session, "snapshot", "-i", timeout=20)
     return result.stdout or ""
+
+
+def _get_cdp_url(session: str) -> str:
+    """Read the live agent-browser session's CDP url (`get cdp-url`) so Playwright
+    can attach to the SAME logged-in Chromium for the frame-scoped drag — one
+    browser, one login. Routed through the managed _run_cmd glue. '' if absent."""
+    result = _run_cmd(session, "get", "cdp-url", timeout=15)
+    return (result.stdout or "").strip().strip('"').strip("'")
+
+
+def _perform_iframe_drag(session: str, source_text: str, drop_target: str,
+                         *, verify_text: str,
+                         iframe_selector: str = GHL_SURVEY_IFRAME_SELECTOR) -> dict:
+    """Drag ONE object-field row (``source_text``) onto its target slide
+    (``drop_target``) INSIDE the cross-origin survey-builder iframe via the shared
+    ghl_iframe_drag primitive, verifying ``verify_text`` then appears. FAIL-CLOSED:
+    raises RuntimeError (never a fake success) if the primitive/CDP is unavailable
+    or the drag does not land. Replaces the top-frame-only `_run_cmd drag`, which
+    cannot reach the row across the cross-origin boundary."""
+    if _ghl_iframe_drag is None:
+        raise RuntimeError(
+            "STOP (survey iframe-drag): the shared ghl_iframe_drag primitive is not "
+            "importable, and agent-browser 0.27.0 alone cannot locate a non-interactive "
+            "field row across the cross-origin survey-builder iframe. Ship "
+            "ghl_iframe_drag.py + Playwright (scoped to Skill 6).")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise RuntimeError(
+            "STOP (survey iframe-drag): could not read the agent-browser CDP url "
+            "(`get cdp-url`) to hand the drag off to Playwright on the same session.")
+    try:
+        return _ghl_iframe_drag.coordinate_drag(
+            cdp_url,
+            iframe_selector=iframe_selector,
+            source=f"text={source_text}",
+            target=f"text={drop_target}",
+            url_marker="survey-builder",
+            verify_text=verify_text,
+        )
+    except _ghl_iframe_drag.IframeDragError as exc:
+        raise RuntimeError(f"STOP (survey iframe-drag:{exc.code}): {exc.reason}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1005,7 +1058,10 @@ def _p2_pull_object_fields(
 
         # Use Search by Name for fast, reliable location (PRD §5.B.2 Phase E)
         _fill(session, "Search by Name", f["label"][:20])
-        _run_cmd(session, "drag", label_prefix, target_slide, timeout=20)
+        # FRAME-SCOPED drag (cross-origin iframe): agent-browser cannot reach the
+        # field row, so hand this step to Playwright over the same session's CDP.
+        _perform_iframe_drag(session, label_prefix, target_slide,
+                             verify_text=label_prefix[:20])
         _wait(session, label_prefix[:20], timeout=20)
         shot_n[0] += 1
         _screenshot(session, _shot_path(evidence_root, shot_n[0],

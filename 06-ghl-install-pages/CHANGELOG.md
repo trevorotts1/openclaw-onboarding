@@ -4,6 +4,52 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.0] - 2026-07-07 - cross-origin iframe drag FIX: shared frame-scoped coordinate-drag primitive (forms + surveys)
+
+Fix branch **fix/skill6-ghl-form-iframe-drag**. Fixes the real bug where field
+placement in the GHL FORM (and SURVEY) builder could never complete because the
+builder renders inside a **cross-origin iframe** and `agent-browser` 0.27.0 cannot
+LOCATE a non-interactive drag-source tile across that boundary (its `frame` verb
+only re-scopes the read-only a11y snapshot; `eval`/`find`/`drag` still bind to the
+top frame — verified live, SELECTORS-LIVE-form.md §7, and re-verified against a
+two-origin fixture during this fix). There is NO GoHighLevel/LeadConnector REST API
+that creates or edits a form's field schema (public v1/v2 are read-only for form
+definitions — confirmed), so the fix does NOT go through an API.
+
+- **NEW `tools/ghl_iframe_drag.py`** — a SHARED, reusable, builder-AGNOSTIC
+  frame-scoped coordinate-drag primitive. Any Skill-6 script can import
+  `coordinate_drag(cdp_url, *, iframe_selector, source, target, verify_text, ...)`.
+  Architecture (hybrid): agent-browser stays the PRIMARY engine (Firebase-token
+  login injection, navigation, clicks); Playwright attaches to the SAME
+  already-logged-in Chromium over that session's CDP endpoint (`get cdp-url` →
+  `connect_over_cdp`) and performs ONLY the drag — one browser, one login, zero
+  duplicate auth. It resolves the tile's TRUE page coordinates with a frame-scoped
+  `frame_locator(...).bounding_box()` (works across the cross-origin boundary), then
+  drives a RAW interpolated-pointer drag (>= 20 moves per gates.json; a single
+  down→up does not trip GHL's drag sensor), which works whether the builder uses
+  native HTML5 DnD or a custom mousedown dragger. Headless (D6): live path uses
+  agent-browser's already-headless Chromium; the self-test browser uses
+  `launch_persistent_context(headless=True)` — never a bare `launch()`. FAIL-CLOSED:
+  `IframeDragError` on any unlocatable source/target, null box, or unverified
+  placement — never fakes success. Self-tests: `--selftest` (dep-free structural)
+  and `--live-selftest` (real Playwright vs a local cross-origin fixture, headless).
+- **`tools/ghl_form_builder.py`** — the F5 (Quick-Add) and F6 (Add-Object-Fields)
+  drag steps now route through the frame-scoped seam `_perform_iframe_drag(...)`
+  instead of the top-frame-only `_ab(session, "drag", ...)` (which could not reach
+  the tile). The existing STOP-and-report fail-closed behavior is preserved. Offline
+  self-test updated to prove the drag routes through the seam (not a top-frame drag).
+- **`tools/ghl_survey_builder.py`** — same fix wired into `_p2_pull_object_fields`
+  (same cross-origin builder host `survey-builder-v2`).
+- **NEW `tests/test_ghl_iframe_drag.py`** — 13-case regression suite (hermetic mocks
+  + Playwright-gated real cross-origin proof, skipped cleanly when Playwright absent).
+- **NEW `references/iframe-drag-capability.md`** — documents the capability, the
+  audit of other Skill-6 iframe surfaces (page/funnel Code-element drag noted as a
+  ready-to-wire follow-on; page/funnel CONTENT stays REST via `ghl_rest_canvas.py`),
+  and the smoke-test labeling convention (`TEST - OpenClaw Skill6 Verification - DO
+  NOT USE`, deleted at end of run).
+- **QC** — `qc-ghl-install-pages.sh` asserts the primitive parses + passes its
+  dep-free self-test, with a warn-only LIVE self-test (needs Playwright).
+
 ## [v17.0.35] - 2026-07-05 - copy-fidelity gate flipped opt-in → opt-out + FAB-QC fires on engine-routed builds (FIX-COPY-02, T-w1-copy-fidelity)
 
 Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**. The two "real" copy gates were no-ops

@@ -125,6 +125,11 @@ try:  # singleton pooled browser session
 except Exception:  # noqa: BLE001
     browser_manager = None  # type: ignore
 
+try:  # SHARED frame-scoped coordinate-drag primitive (Playwright over agent-browser CDP)
+    import ghl_iframe_drag  # type: ignore
+except Exception:  # noqa: BLE001
+    ghl_iframe_drag = None  # type: ignore
+
 try:  # rate limiter + keepalive (reused from dispatcher when present)
     from v2_dispatcher import RateGovernor as _RealRateGovernor  # type: ignore
     from v2_dispatcher import SessionKeepalive as _RealKeepalive  # type: ignore
@@ -815,6 +820,61 @@ def _shot(evidence_root: str, n: List[int], phase: str) -> str:
     return os.path.join(evidence_root, "shots", f"{n[0]:03d}-{phase}.png")
 
 
+# ── FRAME-SCOPED coordinate-drag seam (the cross-origin-iframe FIX) ───────────
+# The GHL form builder renders inside a CROSS-ORIGIN iframe; agent-browser 0.27.0
+# cannot LOCATE a non-interactive drag-source tile across that boundary (its
+# `frame` verb only re-scopes the read-only a11y snapshot; `eval`/`find`/`drag`
+# still bind to the top frame — verified live, SELECTORS-LIVE-form.md §7). So the
+# DRAG step alone is delegated to the SHARED ghl_iframe_drag primitive, which
+# attaches Playwright to THIS SAME already-logged-in agent-browser Chromium over
+# CDP and performs a raw interpolated-pointer drag inside the iframe. Everything
+# else (auth, nav, clicks, waits, fills, snapshots) stays on agent-browser.
+GHL_FORM_IFRAME_SELECTOR = 'iframe[src*="form-builder-v2"]'
+
+
+def _get_cdp_url(session: str) -> str:
+    """Read the CDP websocket endpoint of the live agent-browser session (`get
+    cdp-url`) so Playwright can attach to the SAME logged-in Chromium — no second
+    browser, no re-login. Routed through the managed `_ab` glue (browser_cmd),
+    never a raw spawn. Returns '' if unavailable."""
+    return _ab_val(_ab(session, "get", "cdp-url", timeout=15))
+
+
+def _perform_iframe_drag(session: str, source_text: str, drop_anchor: str,
+                         *, verify_text: str,
+                         iframe_selector: str = GHL_FORM_IFRAME_SELECTOR) -> dict:
+    """Drag ONE builder tile (``source_text``) onto the canvas landmark
+    (``drop_anchor``) INSIDE the cross-origin builder iframe, verifying that
+    ``verify_text`` then appears. FAIL-CLOSED: raises StopAndReport (not a fake
+    success) when the shared primitive is unavailable, the CDP url can't be read,
+    or the drag/verify does not land. This is the seam that replaces the
+    top-frame-only ``_ab(session, "drag", ...)`` (which cannot reach the tile)."""
+    if ghl_iframe_drag is None:
+        raise StopAndReport(
+            "iframe-drag.dep",
+            "the shared frame-scoped coordinate-drag primitive (ghl_iframe_drag) is not "
+            "importable, and agent-browser 0.27.0 alone CANNOT locate a non-interactive "
+            "tile across the cross-origin builder iframe. Ship ghl_iframe_drag.py + "
+            "Playwright (scoped to Skill 6) — STOP, do not brute-force a top-frame drag.")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise StopAndReport(
+            "iframe-drag.cdp",
+            "could not read the agent-browser session's CDP url (`get cdp-url`) to hand "
+            "the drag off to Playwright on the SAME logged-in Chromium. STOP.")
+    try:
+        return ghl_iframe_drag.coordinate_drag(  # type: ignore[union-attr]
+            cdp_url,
+            iframe_selector=iframe_selector,
+            source=f"text={source_text}",
+            target=f"text={drop_anchor}",
+            url_marker="form-builder",
+            verify_text=verify_text,
+        )
+    except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
+        raise StopAndReport(f"iframe-drag:{exc.code}", exc.reason) from exc
+
+
 # ── in-SPA navigation — $router.push ONLY (never open/reload) ────────────────
 _ROUTER_PUSH_JS = (
     "(async () => {"
@@ -1108,7 +1168,10 @@ def _place_quick_add_field(session: str, field: dict, evidence_root: str,
             f"F5.drop:{tile}",
             "no canvas drop landmark (Submit / a default field) is visible to drop the "
             f"{tile!r} tile onto.")
-    _ab(session, "drag", tile, anchor, timeout=25)
+    # FRAME-SCOPED drag (cross-origin iframe): agent-browser cannot reach the tile,
+    # so hand THIS step to Playwright over the same session's CDP (verify=the field
+    # label appears in the iframe). Fail-closed inside _perform_iframe_drag.
+    _perform_iframe_drag(session, tile, anchor, verify_text=label[:18])
     _wait_text(session, label[:18], timeout=15)
     after = _snapshot(session)
     if label[:12] not in after and tile not in after:
@@ -1149,7 +1212,9 @@ def _place_object_field(session: str, field: dict, evidence_root: str,
         raise StopAndReport(
             f"F6.drop:{key or label}",
             "no canvas drop landmark is visible to drop the object field onto.")
-    _ab(session, "drag", label[:24], anchor, timeout=25)
+    # FRAME-SCOPED drag (cross-origin iframe) — same fix as F5; the pre-created
+    # object-field row is a non-interactive node agent-browser cannot reach.
+    _perform_iframe_drag(session, label[:24], anchor, verify_text=label[:18])
     _wait_text(session, label[:18], timeout=15)
     if label[:12] not in _snapshot(session):
         raise StopAndReport(
@@ -1607,9 +1672,12 @@ def _selftest() -> int:
         errors.append("ConvertKit mislabel leaked")
 
     # 8. FIELD-PLACEMENT PATH (offline, mocked browser) — drive the REAL F5/F6
-    #    snapshot-and-bind drag+bind code with NO browser: a fake _ab that returns a
-    #    live-shaped snapshot. Proves placement runs end-to-end AND that a genuine miss
-    #    raises StopAndReport (not the default path) — i.e. this is NOT a skeleton.
+    #    snapshot-and-bind code with NO browser: a fake _ab returns a live-shaped
+    #    snapshot for the locate/verify steps, and a fake _perform_iframe_drag stands
+    #    in for the Playwright frame-scoped coordinate-drag (whose OWN mechanism is
+    #    proven in ghl_iframe_drag.py --selftest / --live-selftest). Proves placement
+    #    runs end-to-end, routes the DRAG through the frame-scoped seam (NOT a
+    #    top-frame `_ab drag`), AND that a genuine locate miss raises StopAndReport.
     class _FakeAB:
         def __init__(self, snapshot_text):
             self.snapshot_text = snapshot_text
@@ -1622,14 +1690,28 @@ def _selftest() -> int:
             return subprocess.CompletedProcess(args=list(args), returncode=0,
                                                stdout=out, stderr="")
 
+    class _FakeDrag:
+        """Stands in for _perform_iframe_drag — records each frame-scoped drag and
+        returns a placed receipt (so placement continues), never a top-frame drag."""
+        def __init__(self):
+            self.calls: List[tuple] = []
+
+        def __call__(self, session, source_text, drop_anchor, *, verify_text,
+                     iframe_selector=GHL_FORM_IFRAME_SELECTOR):
+            self.calls.append((source_text, drop_anchor, verify_text, iframe_selector))
+            return {"ok": True, "placed": True, "source": source_text}
+
     _orig_ab = globals()["_ab"]
+    _orig_drag = globals()["_perform_iframe_drag"]
     try:
         # (a) HAPPY PATH — tiles + canvas anchors + object field all present in snapshot.
         happy = ("Form Element Quick Add Add Object Fields First Name Last Name Email "
                  "Phone Submit State City Search by Name Podcast Rating Label Query Key "
                  "Field Width Required Hidden")
         fake = _FakeAB(happy)
+        fakedrag = _FakeDrag()
         globals()["_ab"] = fake
+        globals()["_perform_iframe_drag"] = fakedrag
         with tempfile.TemporaryDirectory() as tmp2:
             os.makedirs(os.path.join(tmp2, "shots"), exist_ok=True)
             w: List[str] = []
@@ -1646,17 +1728,24 @@ def _selftest() -> int:
                 errors.append("placement: standard field not recorded placed")
             if not any(x.startswith("F6:place:Podcast Rating") for x in sd):
                 errors.append("placement: custom field not recorded placed")
-            drags = [c for c in fake.calls if c and c[0] == "drag"]
-            if len(drags) < 2:
-                errors.append(f"placement: expected >=2 real drag commands, got {len(drags)}")
+            # the DRAG must route through the frame-scoped seam (>=2), NOT `_ab drag`.
+            if len(fakedrag.calls) < 2:
+                errors.append(f"placement: expected >=2 frame-scoped drags, got {len(fakedrag.calls)}")
+            if any(c and c[0] == "drag" for c in fake.calls):
+                errors.append("placement: a top-frame `_ab drag` was used (must be frame-scoped)")
+            if fakedrag.calls and fakedrag.calls[0][3] != GHL_FORM_IFRAME_SELECTOR:
+                errors.append("placement: frame-scoped drag used the wrong iframe selector")
             # standard field must bind Query Key (custom must NOT — locked key)
             fills = [c for c in fake.calls if c and c[0] == "fill"]
             if not any(len(c) >= 2 and c[1] == "Query Key" for c in fills):
                 errors.append("placement: standard field did not bind Query Key")
 
-        # (b) GENUINE MISS — the tile is absent from the snapshot → StopAndReport.
+        # (b) GENUINE MISS — the tile is absent from the snapshot → StopAndReport at
+        #     the LOCATE stage, BEFORE any drag is attempted (never a fake success).
         miss = _FakeAB("Form Element Quick Add Submit Email")   # no 'State' tile
+        missdrag = _FakeDrag()
         globals()["_ab"] = miss
+        globals()["_perform_iframe_drag"] = missdrag
         with tempfile.TemporaryDirectory() as tmp3:
             os.makedirs(os.path.join(tmp3, "shots"), exist_ok=True)
             raised = False
@@ -1669,8 +1758,11 @@ def _selftest() -> int:
                 raised = True
             if not raised:
                 errors.append("placement: absent tile did NOT raise StopAndReport")
+            if missdrag.calls:
+                errors.append("placement: attempted a drag despite an absent tile (should STOP first)")
     finally:
         globals()["_ab"] = _orig_ab
+        globals()["_perform_iframe_drag"] = _orig_drag
 
     if errors:
         for e in errors:
