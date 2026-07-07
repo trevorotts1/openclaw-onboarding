@@ -1,0 +1,158 @@
+{
+  "$schema_version": "1.0.0",
+  "artifact": "anthology-engine-department-wiring",
+  "purpose": "Machine-readable department wiring for the Anthology Engine (skill 59), unit W4.1. Binding on PRD Section 13. Unlike the Podcast Production Engine (skill 58), Anthology is NOT one of the 22 mandatory or 6 universal-primary departments on the fleet's 28-department universal floor. It is a NEW, client-optional department that Skill 32's add-department.sh seeds directly inside a client's own Command Center at provisioning time (already wired at W2.6 STEP 3.5 and W3.1). This document records the two-layer split PRD Section 13 requires: on the FLEET side the skill registers under the books/publishing floor grouping (the existing marketing department, reusing Skill 54's content-marketing-strategist binding); on the CLIENT side the board identity is the seeded Anthology department. Neither layer edits department-naming-map.json's mandatory or vertical_packs lists, so the 28-department floor invariant is provably unchanged. The enforcement pointer is verify-anthology-engine-wiring.py in this folder.",
+  "authored_by": "wave-4 department-wiring slice (W4.1)",
+  "authored_at": "2026-07-07",
+  "prd_sections": ["13"],
+
+  "skill": {
+    "number": "59",
+    "slug": "anthology-engine",
+    "canonical_binding": "23-ai-workforce-blueprint/skill-department-map.json (skill 59 entry)",
+    "entry_script": "59-anthology-engine/anthology-engine-entry.sh",
+    "note": "The skill directory (59-anthology-engine/) was authored by the core-skill-authoring slices (WAVE-PLAN W1.1, W1.5 to W1.24) and already ships ENGINE-MANIFEST.json, SKILL.md, and anthology-engine-entry.sh on this branch. This wiring references the skill by number and slug only; it does not author the skill body. check-skill-department-map.py's map-to-disk coverage assertion goes green as soon as this map entry lands, since the skill folder is already present."
+  },
+
+  "fleet_department": {
+    "id": "marketing",
+    "mandatory": true,
+    "naming_map_source": "23-ai-workforce-blueprint/department-naming-map.json (.mandatory.marketing)",
+    "why": "PRD Section 13: 'On the FLEET side, the skill registers under the books/publishing floor grouping for routing (Skill 54's existing role binding).' Skill 54 (anthology-writer) and Skill 53 (book-writer) both bind to the marketing department through the content-marketing-strategist role today; this slice reuses that EXACT binding rather than inventing a new fleet department for a books/publishing grouping that does not exist as its own department id.",
+    "role_home": "23-ai-workforce-blueprint/templates/role-library/marketing/",
+    "no_new_fleet_department": true
+  },
+
+  "client_department": {
+    "id": "anthology",
+    "name": "Anthology",
+    "kind": "client-optional, per-client custom department",
+    "seed_mechanism": "Skill 32 add-department.sh (equivalently POST /api/departments create:true), idempotent, verified by reading the department back at provisioning. Already wired in this branch at W2.6 STEP 3.5 and exercised by the board client at W3.1 (scripts/mc_board.py, department_slug 'anthology').",
+    "on_universal_floor": false,
+    "is_mandatory": false,
+    "is_universal_primary": false,
+    "in_department_naming_map": false,
+    "no_duplicate_reason": "Anthology is NEW and client-optional, never one of the 22 mandatory or 6 universal-primary departments. department-naming-map.json's mandatory and vertical_packs blocks are not touched by this slice, and Skill 32 seeds the department directly in the client's own Command Center database at runtime, entirely outside department-floor.py's build-time floor computation. This is the corrective PRD Section 13 calls out by name: Skill 53 (book-writer) cards to a books department that was never seeded, so its cards fall to the CEO catch-all; the Anthology Engine always seeds its own department, but per client at provisioning, never as a static floor member.",
+    "hard_lesson_reference": "PRD Section 2 item 14 and Section 13 ('the Anthology Engine does not repeat that defect')."
+  },
+
+  "floor_invariant": {
+    "expected_floor_count": 28,
+    "composition": "22 mandatory + 6 universal-primary-vertical",
+    "anthology_is_mandatory": false,
+    "anthology_is_universal_primary": false,
+    "floor_count_change": 0,
+    "department_naming_map_touched": false,
+    "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; expected_floor_count stays 28, computed live from len(HARDCODED_MANDATORY-equivalent mandatory keys) + len(universal-primary vertical packs), never a hardcoded integer. A raw-text scan of department-naming-map.json for the string 'anthology' returns zero hits in both the mandatory and vertical_packs blocks."
+  },
+
+  "self_invocation": {
+    "entry_script": "59-anthology-engine/anthology-engine-entry.sh",
+    "statement": "The seeded Anthology department's how-to doc names anthology-engine-entry.sh as the ONE sanctioned command every self-invocation runs through (PRD Section 13: 'when an anthology intake, gate event, or assembly trigger arrives, the department invokes the orchestrator skill through its entry script'). No department event ever calls a stage runner directly.",
+    "documented_in": "23-ai-workforce-blueprint/department-wiring/anthology-engine/HOW-TO-USE-THE-ANTHOLOGY-DEPARTMENT.md",
+    "events": [
+      {
+        "event": "intake",
+        "trigger": "an inbound Convert and Flow submission (stage S0) or an operator plain-language request ('run the anthology engine', 'start an anthology', 'onboard an anthology producer')",
+        "invocation": "bash anthology-engine-entry.sh --stage s0 --payload FILE",
+        "owning_role": "anthology-producer-orchestrator (PRD Section 13; skill-bundled role file 59-anthology-engine/roles/anthology-producer-orchestrator.role.md, landed W4.2; named in ENGINE-MANIFEST.json's S0 row)"
+      },
+      {
+        "event": "gate events",
+        "trigger": "a producer or participant decision on the Anthology board card or the participant token page (approve, request rewrite, mark ready to assemble, sign off)",
+        "invocation": "the relevant stage runner reaches gate_engine.py's shared both-door record-approval call through anthology-engine-entry.sh --stage sN; the board and the token page are the two doors onto that ONE call, never a second write path",
+        "owning_role": "anthology-approvals-steward (PRD Section 13; skill-bundled role file 59-anthology-engine/roles/anthology-approvals-steward.role.md, landed W4.2; named in ENGINE-MANIFEST.json's gates_nudges_readiness and content_qc rows)"
+      },
+      {
+        "event": "assembly trigger",
+        "trigger": "the producer firing ready-to-assemble (gate s9_ready) or the final sign-off (gate s9_producer)",
+        "invocation": "bash anthology-engine-entry.sh --stage s9 --anthology-id ID",
+        "owning_role": "anthology-producer-orchestrator (PRD Section 13; named in ENGINE-MANIFEST.json's S9 row)"
+      }
+    ]
+  },
+
+  "personas": [
+    {
+      "slug": "content-marketing-strategist",
+      "dept": "marketing",
+      "capacity": "fleet-routing owner",
+      "live_in_role_library": true,
+      "is_owner": true,
+      "is_drafting": false,
+      "is_qc": false,
+      "note": "The EXISTING live role this slice binds skill 59 to in skill-department-map.json, mirroring Skill 54's own binding exactly so the map's orphan check passes with zero new role-library entries required by W4.1. This is a fleet-routing binding, not a pipeline-stage-ownership claim."
+    },
+    {
+      "slug": "anthology-producer-orchestrator",
+      "capacity": "owner",
+      "live_in_role_library": false,
+      "role_library_role": false,
+      "skill_bundled_persona_path": "59-anthology-engine/roles/anthology-producer-orchestrator.role.md",
+      "is_owner": true,
+      "is_drafting": false,
+      "is_qc": false,
+      "note": "Landed at WAVE-PLAN W4.2 (already on this branch) as a SKILL-BUNDLED role file, the same kind of skill-internal persona as anthology-chapter-author, stamped into 23-ai-workforce-blueprint/persona-matching-protocol.md's Section 13 appendix. It is NOT a templates/role-library/_index.json department role, so it is out of scope for skill-department-map.json's role-library orphan check either way; it is never added to that map entry's owning-roles list, by design, not as a temporary gap. Owns the run end to end (S0 intake and routing, the ledger, the exceptions queue, escalations, S7 cover, S8 delivery, S9 assembly), per PRD Section 13 and 59-anthology-engine/ENGINE-MANIFEST.json's per-stage ownership rows."
+    },
+    {
+      "slug": "anthology-approvals-steward",
+      "capacity": "gate and qc owner",
+      "live_in_role_library": false,
+      "role_library_role": false,
+      "skill_bundled_persona_path": "59-anthology-engine/roles/anthology-approvals-steward.role.md",
+      "is_owner": false,
+      "is_drafting": false,
+      "is_qc": true,
+      "note": "Landed at WAVE-PLAN W4.2 (already on this branch), same skill-bundled kind and same out-of-scope reasoning as anthology-producer-orchestrator above. Owns gate hygiene, nudge cadence, the readiness report, the trigger and sign-off flow, and the Gate B independent Editorial Judge (judge_harness.py), per PRD Section 13 and ENGINE-MANIFEST.json's gates_nudges_readiness and content_qc rows."
+    },
+    {
+      "slug": "anthology-chapter-author",
+      "capacity": "authoring core (existing, Skill 54, drafting)",
+      "live_in_role_library": false,
+      "role_library_role": false,
+      "skill_bundled_persona_path": "54-anthology-writer/roles/anthology-writer.role.md",
+      "is_owner": false,
+      "is_drafting": true,
+      "is_qc": false,
+      "note": "The existing Skill 54 authoring persona. It is a SKILL-BUNDLED persona file, not a templates/role-library/_index.json department role, so it is out of scope for the map's orphan check either way. anthology-engine calls Skill 54 through anthology-entry.sh as its authoring core and never re-authors the chapter pipeline (SKILL.md)."
+    }
+  ],
+
+  "qc_independence_rule": {
+    "statement": "The content QC judge pass never runs the persona or model tier that drafted (PRD Section 13: 'QC independence rule: the content QC pass never runs on the persona or model tier that drafted').",
+    "drafting_persona": "anthology-chapter-author",
+    "qc_role": "anthology-approvals-steward",
+    "disjoint_required": true,
+    "structural_check_here": "verify-anthology-engine-wiring.py asserts the drafting persona slug and the qc role slug declared in this file are distinct, non-empty strings.",
+    "runtime_enforcement": "judge_harness.py's enforce_independence() (landed W4.2; refuses, exit 2, whenever the JUDGE tier, resolution, or persona equals the writer's), plus qc-tier1-anthology.py and qc-strike-gate.py. Full runtime proof is CHECKLIST.md Part C item 18, not this slice.",
+    "source": "PRD Section 13; QC-PROTOCOL-AND-MATRIX.md Gate B; 23-ai-workforce-blueprint/persona-matching-protocol.md Section 13 appendix (AF-AE-JUDGE-INDEPENDENCE)."
+  },
+
+  "access_matrix": {
+    "policy": "default-deny",
+    "principle": "PRD Section 13: 'Marketing and social get READ-ONLY on published links; every other department, no access. Client humans interact only through the board, the forms, the token page, and Convert and Flow.'",
+    "owner": {
+      "fleet_department": "marketing",
+      "client_board_department": "anthology",
+      "write": true,
+      "note": "The fleet-side owning department (marketing, via content-marketing-strategist for map/routing purposes, plus the skill-bundled anthology-producer-orchestrator and anthology-approvals-steward roles that actually operate the pipeline stages) runs the engine end to end. The only client-side write surface is the seeded Anthology department board (cards via mc_board.py) and the participant token page; a client human's only write actions are the gate decisions themselves (approve, request rewrite, mark ready to assemble, sign off)."
+    },
+    "read_only_downstream": [
+      { "department": "marketing", "capacity": "read-only", "write": false, "reads": ["published links"], "purpose": "Promotion planning only, per PRD Section 13." },
+      { "department": "social-media", "capacity": "read-only", "write": false, "reads": ["published links"], "purpose": "Promotion planning only, per PRD Section 13." }
+    ],
+    "no_access": {
+      "rule": "Every department not named above has NO access to the engine or its state. Customer messaging belongs to Convert and Flow and the participant token page; no department messages a participant directly.",
+      "explicit_examples": ["sales", "billing-finance", "legal", "personal-assistant", "customer-support"]
+    },
+    "enforced_by": "verify-anthology-engine-wiring.py asserts the read-only departments carry no write access and that no explicit no-access example is also a granted department."
+  },
+
+  "board_reference": {
+    "note": "Card vocabulary (STATUS_BY_CURSOR / STATUS_BY_ASSEMBLY_STATE), the ingest/status endpoints, and the review-to-done contract were already wired at W3.1 (59-anthology-engine/scripts/mc_board.py). This slice does not re-wire the board; it registers the department in the fleet floor files and documents the self-invocation entry. See card-lifecycle-proof-plan.md for the observed-move proof plan and WAVE-PLAN W4.3 for the mc_board.py-to-stage_cursor mapping unit.",
+    "sibling_units": ["W3.1 (mc_board.py)", "W4.3 (board wiring, engine side)"]
+  },
+
+  "proof_plan_pointer": "card-lifecycle-proof-plan.md",
+  "canary_owner": "WAVE-PLAN W5 exercises the full pipeline end to end on the operator box with a synthetic participant. This slice's own build-gate proof is department-floor.py pass plus verify-anthology-engine-wiring.py pass, both provable on the branch with no canary dependency."
+}
