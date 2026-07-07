@@ -19,6 +19,11 @@ WHAT IS A VIOLATION (an actual Anthropic identifier VALUE):
   where <A> and <C> are the two banned vendor tokens, assembled HERE from fragments so
   this shipped file itself carries no contiguous banned literal (the same convention
   model_router.py uses; the guard scans its own source clean, proved in the self-test).
+  Every compound shape requires an actual id-shaped character (`[a-z0-9]`) immediately
+  after its delimiter (`<A>/`, `us.<A>.`) -- exactly the discipline `<C>-<version>`
+  already had (`claude-[a-z0-9]`, never a bare `claude-`). A real routed id or ARN
+  always has real content there; only a GLOB or a bare deny-list token ends at the
+  delimiter (see below), so this costs no detection power over an actual leak.
 
 WHAT IS NOT A VIOLATION (the enforcement mechanisms themselves -- ALLOWED):
   The whole point of the engine is to REFUSE Anthropic ids, so the deny machinery has to
@@ -37,6 +42,19 @@ WHAT IS NOT A VIOLATION (the enforcement mechanisms themselves -- ALLOWED):
   RESOLVED id) and in preflight.sh over the resolved model-map; this static gate is
   deliberately narrower -- it flags the compound VALUE signatures that never occur in
   honest prose but always occur in a real leak.
+  A GLOB ban-phrase (`<C>-*` / `<A>/*`, e.g. "NEVER `claude-*` / `anthropic/*`") or a
+  bare deny-list token (`"<A>/"`, `"us.<A>."` as an array/allowlist entry with nothing
+  after) is NOT a value shape either -- see the delimiter-suffix rule above. Skill 54's
+  own model-map TEMPLATE, SKILL.md, and verify.sh all document the client-sovereignty
+  rule this exact way per tier (HEAVY-WRITER/MID-WRITER/LIGHT), and 59's own
+  MASTERDOC.md/SKILL.md state the identical rule; none of that is a runtime id.
+  CHANGELOG.md (any skill's, or the repo root's) is retrospective, historical prose
+  about changes that ALREADY shipped -- never itself executed or read as config -- so
+  it is exempt from this scan by basename (see `_NON_RUNTIME_BASENAMES`). Every
+  Anthropic-shaped mention actually found in a CHANGELOG.md across this repo, at the
+  time this exemption was added, was a "changed FROM <id> TO <replacement>" or
+  "<id> appears only in a deliberately-failing negative-test fixture" citation of a
+  value that no longer ships -- never a live one.
 
 DOCTRINE: prints the matched vendor-token span ONLY, never the whole source line by
 default (an offending line could sit beside a secret-shaped value); --show-line is a
@@ -71,9 +89,12 @@ _C = "clau" + "de"
 # law belongs at CALL time (model_router.py sees the RESOLVED id), not to this static gate.
 _VALUE_PATTERNS = [
     ("model-id",     re.compile(_C + r"-[a-z0-9]")),                # <C>-<version>
-    ("vendor-slash", re.compile(_A + r"/")),                        # <A>/<model>
+    ("vendor-slash", re.compile(_A + r"/[a-z0-9]")),                # <A>/<model> (real id char after
+                                                                     # the slash -- <A>/* is a ban-GLOB,
+                                                                     # never a routed id; see docstring)
     ("sdk-scope",    re.compile(r"@?" + _A + r"-ai\b")),            # @<A>-ai
-    ("bedrock",      re.compile(r"us\." + _A + r"\.")),             # us.<A>.<model>
+    ("bedrock",      re.compile(r"us\." + _A + r"\.[a-z0-9]")),     # us.<A>.<model> (same real-char-
+                                                                     # after-the-delimiter guard)
     ("dotted",       re.compile(_A + r"\.(?:" + _C + r"|com)")),    # <A>.<C> | <A>.com
 ]
 # A quoted scalar whose ENTIRE value is exactly the bare (lowercase) vendor token, a
@@ -99,6 +120,17 @@ DEFAULT_EXTS = {
 }
 DEFAULT_SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".build-state",
                      ".venv", "venv", ".next", "dist", "build", ".mypy_cache"}
+
+# Basenames that are NEVER shipped runtime, regardless of directory: a changelog is
+# retrospective prose about changes that already happened, never executed, never read
+# as config by the engine. Mirrors the non_runtime_docs allowlist convention in the
+# sibling 58-podcast-production-engine guard (config/anthropic-guard-allow.json), made
+# automatic here because it holds for EVERY changelog in this repo, not one skill's --
+# every Anthropic-shaped mention found in one, at the time this was added, was a
+# "changed FROM <id> TO <replacement>" or negative-test-fixture citation of a value
+# that no longer ships. This exemption is JOB-1-only and file-scoped by basename; it
+# never widens to SKILL.md or any runtime directory (scripts/, config/, prompts/, ...).
+_NON_RUNTIME_BASENAMES = {"changelog.md"}
 
 
 def _value_hit(line):
@@ -158,6 +190,10 @@ def scan_file(path, window=3):
     except (OSError, ValueError) as exc:
         return {"file": str(p), "scanned": False, "violations": [],
                 "skipped_reason": "unreadable: %s" % exc}
+    if p.name.lower() in _NON_RUNTIME_BASENAMES:
+        # Historical/retrospective doc, never shipped runtime -- see _NON_RUNTIME_BASENAMES.
+        return {"file": str(p), "scanned": True, "violations": [],
+                "exempt_reason": "non-runtime-doc"}
     lines = text.splitlines()
     violations = []
     for i, line in enumerate(lines):
@@ -273,13 +309,27 @@ def self_test(window=3):
         'DOC = "' + c + '-opus-4-8"  # guard-no-' + a + ": allow (documented example only)",
     ])
 
+    # Regression fixture for the AF-AE-ANTHROPIC false-positive fix (branch
+    # anthology-engine-build): a GLOB ban-phrase (Skill 54's SKILL.md / model-map
+    # TEMPLATE / verify.sh convention, "NEVER `claude-*` / `anthropic/*`") and a bare
+    # deny-list-array literal (nothing but a delimiter after the vendor token) must
+    # NOT flag -- neither is a real id, both end exactly at the delimiter (`/`, the
+    # trailing `.`) with no id-shaped character following it, which is precisely what
+    # distinguishes them from a real vendor-slash id or bedrock ARN.
+    bandoc = "\n".join([
+        "NEVER `" + c + "-*` / `" + a + "/*`. Client sovereignty: never substitute.",
+        '"banned_model_id_prefixes": ["' + c + '-", "' + a + '/", "us.' + a + '."]',
+    ])
+
     with tempfile.TemporaryDirectory() as td:
         pc = Path(td) / "clean.py"
         pl = Path(td) / "leak.py"
         pd = Path(td) / "denydef.py"
+        pb = Path(td) / "bandoc.md"
         pc.write_text(clean, encoding="utf-8")
         pl.write_text(leaks, encoding="utf-8")
         pd.write_text(denydef, encoding="utf-8")
+        pb.write_text(bandoc, encoding="utf-8")
 
         rc = scan_file(pc, window)
         assert rc["scanned"] and not rc["violations"], "CLEAN file wrongly flagged: %r" % rc
@@ -300,6 +350,49 @@ def self_test(window=3):
         print("[guard-no-anthropic] deny-definition case: PASS "
               "(regex + scrub-list + pragma all ALLOWED, 0 violations)")
 
+        rb = scan_file(pb, window)
+        assert rb["scanned"] and not rb["violations"], \
+            "ban-documentation GLOB/deny-list-literal wrongly flagged (AF-AE-ANTHROPIC FP " \
+            "regression -- Skill 54's SKILL.md/model-map TEMPLATE/verify.sh convention " \
+            "must stay clean): %r" % rb
+        print("[guard-no-anthropic] ban-documentation case: PASS "
+              "(GLOB ban-phrase + bare deny-list literal both ALLOWED, 0 violations)")
+
+        # The fix must NOT cost detection power: a real id immediately after the SAME
+        # delimiters (no glob, no bare deny-list truncation, and -- unlike bandoc.md --
+        # no adjacent ban wording) still trips the gate.
+        real_leak = Path(td) / "real_leak_check.py"
+        real_leak.write_text(
+            'ROUTED  = "' + a + '/' + c + '-3-5-sonnet"\n'
+            'BEDROCK = "us.' + a + '.' + c + '-3-haiku-20240307"\n',
+            encoding="utf-8")
+        rr = scan_file(real_leak, window)
+        assert rr["scanned"] and len(rr["violations"]) == 2, \
+            "fix over-broadened: a REAL vendor-slash/bedrock id stopped tripping: %r" % rr
+        print("[guard-no-anthropic] real-id-after-fix case: PASS "
+              "(real vendor-slash + bedrock ids still caught, 2 violations)")
+
+        # CHANGELOG.md exemption (basename-scoped, JOB-1-only): a real-shaped id with
+        # NO ban wording nearby -- the exact shape that WOULD trip every other file --
+        # is exempt only because the basename is CHANGELOG.md.
+        changelog = Path(td) / "CHANGELOG.md"
+        changelog.write_text(
+            "## [v1.2.3]\n- CLI `--model` default changed from `" + c
+            + "-sonnet-4-5` to `minimax-m3:cloud`.\n",
+            encoding="utf-8")
+        rch = scan_file(changelog, window)
+        assert rch["scanned"] and not rch["violations"] \
+            and rch.get("exempt_reason") == "non-runtime-doc", \
+            "CHANGELOG.md non-runtime-doc exemption regressed: %r" % rch
+        not_changelog = Path(td) / "not-a-changelog.md"
+        not_changelog.write_text(changelog.read_text(encoding="utf-8"), encoding="utf-8")
+        rnc = scan_file(not_changelog, window)
+        assert rnc["violations"], \
+            "exemption leaked past basename (a same-content non-CHANGELOG file wrongly " \
+            "passed clean): %r" % rnc
+        print("[guard-no-anthropic] CHANGELOG.md exemption case: PASS "
+              "(exempt by exact basename only; identical content elsewhere still caught)")
+
     self_report = scan_file(Path(__file__).resolve(), window)
     assert self_report["scanned"] and not self_report["violations"], \
         "guard flagged its OWN source (a contiguous banned literal leaked in): %r" % self_report
@@ -309,7 +402,12 @@ def self_test(window=3):
     assert deny("@" + a + "-ai/sdk") and deny(a + ".com")
     assert not deny("glm-5.2") and not deny("minimax-v3") and not deny("gemini-3.5-flash")
     assert not deny(a) and not deny(c), "a BARE vendor word is not a VALUE shape (call-time law owns it)"
-    print("[guard-no-anthropic] predicate case: PASS (value shapes deny; real ids and bare words pass)")
+    assert not deny(c + "-*") and not deny(a + "/*"), \
+        "a GLOB ban-phrase token is not a VALUE shape (no id-shaped char after the delimiter)"
+    assert not deny(a + "/") and not deny("us." + a + "."), \
+        "a bare deny-list-literal token (nothing after the delimiter) is not a VALUE shape"
+    print("[guard-no-anthropic] predicate case: PASS (value shapes deny; real ids, bare words, "
+          "GLOB ban-phrases, and bare deny-list tokens all pass)")
 
     print("[guard-no-anthropic] self-test: PASS")
     return EX_OK
