@@ -320,3 +320,58 @@ Churn cleanup rule: a departed client leaves ZERO recurring jobs behind. After t
 and the credit-out queue must hold no jobs for the slug. Re-provisioning a returning client is the
 mirror path (`provision-podcast-client.sh`), proven on the operator canary box before any client
 box is touched.
+
+### Anthology Engine blades (appended; scripted as revoke-anthology-client.sh)
+
+The Anthology Engine ships `revoke-anthology-client.sh --anthology-id <id> --confirm-name <name>
+--live` in the skill's scripts directory. This subsection IS the SOP Anthology Revocation and
+Churn: per PRD Section 13's SOP plan, it is appended to the fleet revocation runbook here rather
+than authored as a separate craft document under `universal-sops/anthology-craft/`, so the fleet
+keeps exactly the ONE revocation runbook and this never becomes a second, competing document.
+
+UNLIKE the podcast and Command Center surfaces above, the Anthology Engine provisions NO new
+Cloudflare hostname, Access application, or DNS record of its own: Layer 4 (the producer board and
+the participant token page) lives INSIDE the producer's EXISTING Command Center, behind whatever
+edge surface that box's Command Center already runs, and the intake webhook rides the box's
+EXISTING hooks hostname (shared, WAF POST-only, per the same tenancy-in-the-ledger rule as the
+podcast engine's shared hooks hostname). So the anthology blade below covers the APPLICATION and
+ENGINE blades only; when a box's Command Center dashboard itself sits behind a dedicated Access
+app, that app's edge blade is the standard two Cloudflare steps already documented above (revoke
+sessions, delete the Access app) and is NOT duplicated here.
+
+Full step detail and the design rationale live in `revoke-anthology-client.sh`'s own header (SPEC
+Section 13.3); the eight R-steps run in this order, as the node user, never root:
+
+1. R1, invalidate every outstanding participant gate token. Rotate `ANTHOLOGY_GATE_TOKEN_SECRET`
+   (value NEVER printed); every token signed by the old secret then fails verification.
+2. R2, archive the Anthology board cards (`mc_board.py`; FAIL-SOFT, board unreachability never
+   blocks the churn).
+3. R3, revoke Drive shares and hand back fresh view links (`drive_adapter.py revoke-share`; under
+   the anyone-can-read delivery root, TRUE revocation moves the file out of the public subtree,
+   surfaced, never guessed).
+4. R4, disable the intake webhook route. Remove ONLY the anthology-intake mapping from the
+   gateway hooks config; the box-wide hooks surface and every other integration (podcast, Command
+   Center) are left intact, shared-box safe.
+5. R5, produce the data-export bundle (`anthology_state.py export-bundle`; the client keeps their
+   own record; the file carries NO secret).
+6. R6, archive the ledger rows (`anthology_state.py upsert-anthology --status archived`;
+   deactivate-never-delete, ninety-day retention).
+7. R7, VERIFY. Probe a revoked token link and the disabled route; both must fail (bad_signature on
+   the token, route gone or 404 on the webhook).
+8. R8, prove ZERO recurring jobs remain. `guard-cron-inventory.py --expect zero` confirms no
+   anthology daily tick and no heartbeat entry survive for this producer; the daily tick is
+   removed as part of this step.
+
+R7 and R8 are the ENFORCED gates: if a probe still answers or a recurring job survives, the script
+exits 4. `--live` requires a typed `--confirm-name` matching the ledger anthology name (the same
+typed-name discipline as the s9_ready trigger) and refuses to run as root.
+
+Secret hygiene: both labels (`ANTHOLOGY_GATE_TOKEN_SECRET`, `ANTHOLOGY_INTAKE_HOOK_SECRET`) are
+reported SET or NOT SET only; no value is ever printed, logged, or echoed. Convert and Flow naming
+throughout; nothing Anthropic in this file or in the script it documents.
+
+Churn cleanup rule: a departed producer leaves ZERO recurring jobs behind. After R8,
+`guard-cron-inventory.py --sweep` doubles as the fleet check for any anthology cron belonging to a
+producer no longer on the active roster. This is the same standing guarantee SOP-ANTHOLOGY-05
+(Credit Health and Queue) owns for a healthy, active producer: exactly one cron, never zero while
+active and never more than zero once churned.
