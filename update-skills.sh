@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v18.0.1"
+ONBOARDING_VERSION="v18.0.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v18.0.1 - safe_json_edit
+# v18.0.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2231,27 +2231,44 @@ PYEOF
       # Unified repo: same URL for both Mac and VPS platforms
       if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
         PROMPT_CONTENT=$(cat "$PROMPT_TMP")
-        if openclaw cron create \
-            --name "weekly-onboarding-update" \
-            --description "Sunday 3am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything." \
-            --agent main \
-            --cron "0 3 * * 0" \
-            --tz "America/New_York" \
-            --exact \
-            --session-target main \
-            --light-context \
-            --thinking high \
-            --timeout-seconds 7200 \
-            --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
+        # fix/cron-flag-skew: define the runtime-compatible cron helper on the
+        # guaranteed path to the create below (the resume-cron lib that also
+        # defines it is sourced inside a conditional block above, so we re-guard
+        # it here — its definition wins if already present). Emits the flags the
+        # INSTALLED runtime accepts: 2026.6.11+ needs `--session main
+        # --system-event`; older CLIs `--session-target main --message`.
+        command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
+          local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5"; shift 5
+          local _extra=( "$@" ); local _n=${#_extra[@]}
+          local _base=( --name "$_name" --agent "$_agent" --cron "$_expr" --tz "$_tz" )
+          local _help _modern=0
+          _help="$(openclaw cron add --help 2>&1 || true)"
+          printf '%s' "$_help" | grep -qE '^[[:space:]]*--session[[:space:]<]' && _modern=1
+          local _order _k
+          if [ "$_modern" = "1" ]; then _order="modern old"; else _order="old modern"; fi
+          for _k in $_order; do
+            if [ "$_k" = "modern" ]; then
+              [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+              openclaw cron create "${_base[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+            else
+              [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+              openclaw cron create "${_base[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+            fi
+          done
+          openclaw cron create "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --tz "$_tz" --session main >/dev/null 2>&1 && return 0
+          openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
+          return 1
+        }
+        # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The
+        # 2026.6.11 runtime rejects `--session-target` and requires
+        # `--session main --system-event` for main-session jobs; the old two-branch
+        # form only ever emitted `--session-target main --message`, so a rolled box
+        # silently installed NO weekly cron. _oc_cron_silent_main probes the CLI,
+        # emits the accepted form, and degrades gracefully (never hard-fails).
+        _WEEKLY_DESC="Sunday 3am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything."
+        if _oc_cron_silent_main "weekly-onboarding-update" "main" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" \
+             --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then
           echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
-        elif openclaw cron create \
-            --name "weekly-onboarding-update" \
-            --agent main \
-            --cron "0 3 * * 0" \
-            --tz "America/New_York" \
-            --session-target main \
-            --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
-          echo "  ✓ Sunday weekly update-check cron installed (silent main-session, minimal-flag fallback)"
         else
           echo "  ⚠ Cron install failed -- agent can retry manually (SILENT main-session form)"
         fi

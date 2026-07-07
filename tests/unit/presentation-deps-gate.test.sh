@@ -73,8 +73,12 @@ assert_install_has "VPS: reportlab via pip --break-system-packages" 'pip install
 assert_install_has "VPS: python-pptx via pip --break-system-packages" 'pip install --break-system-packages.*python-pptx'
 
 # --- VPS durability: OpenClaw scheduler cron, NOT a system @reboot crontab ---
-assert_install_has "VPS: re-assert via openclaw cron create" 'openclaw cron create "\$\{BASE\[@\]\}" --message "\$REASSERT_PROMPT"'
-assert_install_has "VPS: cron named reassert-presentation-deps" '--name "reassert-presentation-deps"'
+# The reassert cron is registered via the runtime-compatible _oc_cron_silent_main
+# helper (fix/cron-flag-skew), which registers a SILENT main-session cron through
+# `openclaw cron create` (the OpenClaw scheduler) — never a system crontab. The
+# assertion checks the helper call carries the reassert prompt + cron name.
+assert_install_has "VPS: re-assert registered via openclaw scheduler (_oc_cron_silent_main)" '_oc_cron_silent_main "reassert-presentation-deps".*"\$REASSERT_PROMPT"'
+assert_install_has "VPS: cron named reassert-presentation-deps" '_oc_cron_silent_main "reassert-presentation-deps"'
 
 # Negative guard: the old fictional durability path piped the reassert script
 # into a system @reboot crontab. That must NOT return — durability is now the

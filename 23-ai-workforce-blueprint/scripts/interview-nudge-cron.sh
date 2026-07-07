@@ -74,27 +74,65 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "${LOG_FILE}"
 }
 
+# ── JSON helpers (python3-backed) ─────────────────────────────────────────────
+# These read/write build-state with python3 (guaranteed present in the OpenClaw
+# container) instead of jq. jq is NOT shipped in the container image and vanished
+# on a container recreate, which used to make this cron hard-abort ("jq not found
+# - aborting") every cycle — silently killing owner nudges. Parsing with python3
+# means a missing system binary can never break this lane again.
+# (fix/jq-hard-dep — remove hard jq dependency from the nudge + watchdog crons.)
 state_get() {
-  jq -r "$1 // empty" "${STATE_FILE}" 2>/dev/null
+  # $1 = simple dotted JSON path, e.g. .interviewProgress.lastQuestionAt
+  # Prints the value ("true"/"false" for booleans, compact JSON for objects/arrays)
+  # or nothing when the path is missing/null — mirrors jq '<path> // empty'.
+  _OC_JSON_PATH="$1" python3 - "${STATE_FILE}" <<'PY' 2>/dev/null
+import json, os, sys
+path = os.environ.get('_OC_JSON_PATH', '').lstrip('.')
+try:
+    cur = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for key in [p for p in path.split('.') if p != '']:
+    if isinstance(cur, dict) and key in cur:
+        cur = cur[key]
+    else:
+        sys.exit(0)
+# Mirror jq's `<path> // empty`: null AND boolean false both yield empty output.
+if cur is None or cur is False:
+    sys.exit(0)
+if cur is True:
+    sys.stdout.write('true')
+elif isinstance(cur, (dict, list)):
+    sys.stdout.write(json.dumps(cur))
+else:
+    sys.stdout.write(str(cur))
+PY
 }
 
-state_set() {
-  local tmp
-  tmp=$(mktemp)
-  if jq "$1" "${STATE_FILE}" > "$tmp" 2>/dev/null; then
-    mv "$tmp" "${STATE_FILE}"
-  else
-    rm -f "$tmp"
-    log "state_set failed for: $1"
-    return 1
-  fi
+# Clear the interview-nudge cron UUID from build-state after self-removal.
+# Replaces the old jq 'del(.interviewNudgeUuid) | .interviewNudgeRegisteredAt = null'.
+state_clear_nudge_uuid() {
+  python3 - "${STATE_FILE}" <<'PY' 2>/dev/null || return 1
+import json, os, sys
+f = sys.argv[1]
+try:
+    d = json.load(open(f))
+except Exception:
+    sys.exit(1)
+d.pop('interviewNudgeUuid', None)
+d['interviewNudgeRegisteredAt'] = None
+tmp = f + '.tmp'
+with open(tmp, 'w') as fh:
+    json.dump(d, fh, indent=2)
+os.replace(tmp, f)
+PY
 }
 
 # ── Self-removal (v12.3.10) ───────────────────────────────────────────────────
 # Find the cron UUID from state (preferred) or by name-scan (fallback for
 # boxes installed before UUID recording was added).
 find_nudge_cron_uuid() {
-  if [[ -f "${STATE_FILE}" ]] && command -v jq >/dev/null 2>&1; then
+  if [[ -f "${STATE_FILE}" ]] && command -v python3 >/dev/null 2>&1; then
     local uuid
     uuid=$(state_get '.interviewNudgeUuid')
     if [[ -n "$uuid" && "$uuid" != "null" ]]; then
@@ -123,7 +161,7 @@ self_remove_cron() {
   fi
   # Clear UUID from build-state
   if [[ -f "${STATE_FILE}" ]]; then
-    state_set 'del(.interviewNudgeUuid) | .interviewNudgeRegisteredAt = null' 2>/dev/null || true
+    state_clear_nudge_uuid 2>/dev/null || true
   fi
   # Kill loop-registry entry if available
   local _REPO_ROOT
@@ -156,7 +194,10 @@ if [[ ! -f "${STATE_FILE}" ]]; then
   exit 0
 fi
 
-command -v jq >/dev/null 2>&1 || { log "jq not found - aborting"; exit 1; }
+# python3 is the JSON parser now (guaranteed present in the container). If it is
+# somehow absent, degrade to a graceful no-op (exit 0) rather than a hard abort —
+# a missing binary must never mark this maintenance cron as failed.
+command -v python3 >/dev/null 2>&1 || { log "python3 not found - skipping (cannot parse state)"; exit 0; }
 
 # ── Cheap trigger check (token-free) ─────────────────────────────────────────
 interview_complete=$(state_get '.interviewComplete')
@@ -184,7 +225,17 @@ fi
 # (R3.2) and the operator watchdog surfaces (R3.4 STUCK_INTERVIEW_FLAG_MISSING).
 # Hand off to the watchdog (operator lane) and exit WITHOUT an owner nudge.
 nudge_qc_status=$(state_get '.interviewQc.status')
-nudge_phases_complete=$(jq -r '(.interviewProgress.phasesComplete // []) | length' "${STATE_FILE}" 2>/dev/null || echo 0)
+nudge_phases_complete=$(python3 - "${STATE_FILE}" <<'PY' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    v = (d.get('interviewProgress') or {}).get('phasesComplete') or []
+    print(len(v) if isinstance(v, list) else 0)
+except Exception:
+    print(0)
+PY
+)
+nudge_phases_complete=${nudge_phases_complete:-0}
 _content_complete_no_flag=0
 if [[ "${nudge_qc_status}" == "pass" ]]; then
   _content_complete_no_flag=1

@@ -13,8 +13,10 @@
 # WHAT THE CRON DOES
 #   The onboarding-resume cron is a */30 SILENT main-session self-ping. Every
 #   30 min, while any skill is still pending|downloaded|wired|qc-failed, it
-#   re-dispatches the activation+verification prompt into the agent's OWN
-#   session (--session-target main --light-context). It NEVER stops on a
+#   re-dispatches the activation+verification prompt into the agent's OWN main
+#   session (runtime-compatible flags via _oc_cron_silent_main: `--session main
+#   --system-event` on 2026.6.11+, `--session-target main --message` on older
+#   CLIs, + --light-context). It NEVER stops on a
 #   self-declared "done" — only on a real gate-pass. All of the boundedness
 #   (MAX_RUNS_BEFORE_ESCALATE, 402/429 backoff, Rescue-Rangers escalation to the
 #   OPERATOR, and HARD self-delete) lives in scripts/resume-onboarding.sh, which
@@ -23,7 +25,7 @@
 #
 # SILENT INVARIANT (enforced by tests/unit/cron-owner-chat-guard.test.sh)
 #   The cron registration carries NO --channel telegram / --to / --announce. It
-#   is a session-target=main agent-message cron — it can NEVER auto-deliver to a
+#   is a main-session agent-message cron — it can NEVER auto-deliver to a
 #   client chat. Owner-facing status is surfaced only by the agent's own
 #   deliberate `message send`, and operator escalation is handled by the bounded
 #   resume-onboarding.sh (operator / Rescue Rangers), never a client push.
@@ -62,6 +64,57 @@ command -v _cron_create_positional >/dev/null 2>&1 || _cron_create_positional() 
     _out=$(openclaw cron create "${_args[@]}" 2>&1) || _rc=$?
     echo "$_out" >> "${LOG_FILE:-/dev/null}"
     return "$_rc"
+}
+
+# ── Runtime-compatible SILENT main-session cron registration. ──────────────────
+# (fix/cron-flag-skew — updater↔runtime cron-flag skew.)
+# The silent main-session agent-cron shape changed across OpenClaw CLI builds:
+#   • 2026.5.x / 2026.6.8 : `--session-target main --message "<prompt>"`
+#   • 2026.6.11+          : `--session-target` was REMOVED and main-session jobs
+#     now REQUIRE `--system-event` (a `--message` main job is rejected with
+#     "Main jobs require --system-event"), so the accepted form is
+#     `--session main --system-event "<prompt>"`.
+# A rolled box on 2026.6.11 silently failed to install its self-heal cron because
+# the installer only ever emitted `--session-target main --message`.
+#
+# We feature-probe `openclaw cron add --help` to pick the form the INSTALLED
+# runtime advertises, then fall through the OTHER known-good forms so a mis-probe
+# still recovers, and finally degrade to a SILENT isolated agent-message job
+# (`--message "<prompt>" --no-deliver`) so a cron ALWAYS lands under the name
+# (the QC self-heal loop only checks the name). Every path is silent (no
+# --channel/--to/--announce) and NONE hard-fails the caller. A rejected form
+# creates nothing (the CLI validates before insert), so the ordered attempts are
+# safe and idempotent under --name. Guarded so a caller's own copy wins.
+#   $1 name  $2 agent  $3 cron-expr  $4 tz  $5 prompt ; $6.. = extra passthrough
+#            flags (e.g. --light-context --thinking high --exact --description …)
+# Returns 0 if a create succeeded, 1 only if every form failed.
+command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
+    local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5"; shift 5
+    local _extra=( "$@" )
+    local _n=${#_extra[@]}
+    local _base=( --name "$_name" --agent "$_agent" --cron "$_expr" --tz "$_tz" )
+    local _help _modern=0
+    _help="$(openclaw cron add --help 2>&1 || true)"
+    printf '%s' "$_help" | grep -qE '^[[:space:]]*--session[[:space:]<]' && _modern=1
+    local _order _k
+    if [ "$_modern" = "1" ]; then _order="modern old"; else _order="old modern"; fi
+    for _k in $_order; do
+        if [ "$_k" = "modern" ]; then
+            # 2026.6.11+ : main-session jobs REQUIRE --system-event (not --message).
+            [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+            openclaw cron create "${_base[@]}" --session main --system-event "$_prompt" >/dev/null 2>&1 && return 0
+        else
+            # 2026.6.8 / 2026.5.x : --session-target main + --message.
+            [ "$_n" -gt 0 ] && openclaw cron create "${_base[@]}" "${_extra[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+            openclaw cron create "${_base[@]}" --session-target main --message "$_prompt" >/dev/null 2>&1 && return 0
+        fi
+    done
+    # docs-canonical positional form (2026.6.8): schedule + prompt positional.
+    openclaw cron create "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --tz "$_tz" --session main >/dev/null 2>&1 && return 0
+    # Last resort — SILENT isolated agent-message job so a cron still lands under
+    # this name (self-heal loop keeps working); --no-deliver keeps it OFF the client chat.
+    openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
+    return 1
 }
 
 # ------------------------------------------------------------
@@ -127,47 +180,20 @@ install_onboarding_resume_cron() {
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
 
-    local OUT="" RC=0
-    local BASE=(
-        --name "onboarding-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/30 * * * *"
-        --tz "America/New_York"
-        --session-target main
-        --light-context
-    )
-    OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "${LOG_FILE:-/dev/null}"
-    if [ "$RC" -eq 0 ]; then
+    # Register the SILENT main-session resume cron with the form the INSTALLED
+    # runtime accepts — 2026.6.11+ needs `--session main --system-event`, older
+    # builds use `--session-target main --message`. _oc_cron_silent_main probes
+    # `openclaw cron add --help` and falls through every known-good form, so a
+    # rolled box on ANY CLI build lands the cron. Interval stays */30 (bounded-
+    # resume-cron guard); silent (no --channel/--to/--announce).
+    if _oc_cron_silent_main "onboarding-resume" "$CHANNEL_AGENT" "*/30 * * * *" "America/New_York" "$PROMPT_CONTENT" --light-context; then
         success "onboarding-resume cron installed — every 30 min, SILENT main-session (no client auto-announce); interview gate + backoff in scripts/resume-onboarding.sh"
         return 0
     fi
 
-    RC=0
-    local BASE_NO_LC=(
-        --name "onboarding-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/30 * * * *"
-        --tz "America/New_York"
-        --session-target main
-    )
-    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "${LOG_FILE:-/dev/null}"
-    if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed (silent main-session, no-light-context fallback)"
-        return 0
-    fi
-
-    # docs-canonical positional form (2026.6.8) — final attempt.
-    if _cron_create_positional "onboarding-resume" "$CHANNEL_AGENT" "*/30 * * * *" "America/New_York" "$PROMPT_CONTENT" "lc"; then
-        success "onboarding-resume cron installed (positional 2026.6.8 form)"
-        return 0
-    fi
-
     warn "onboarding-resume cron creation failed. Manual install (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name onboarding-resume \\"
-    warn "    --agent $CHANNEL_AGENT --cron '*/30 * * * *' --tz America/New_York \\"
-    warn "    --session-target main --light-context \\"
-    warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
+    warn "  openclaw cron create --name onboarding-resume --agent $CHANNEL_AGENT \\"
+    warn "    --cron '*/30 * * * *' --tz America/New_York \\"
+    warn "    --session main --system-event \"\$(cat $RESUME_PROMPT_FILE)\"   # older CLIs: --session-target main --message"
     return 0
 }
