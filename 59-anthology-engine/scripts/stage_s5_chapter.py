@@ -20,6 +20,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -47,6 +49,48 @@ WIRING = [
     ("scripts/anthology_state.py", "freeze the chapter on approve, or route to s6_rewrite on request_rewrite with the notes appended to chapter_updates"),
     ("scripts/mc_board.py", "mirror the participant card to in_progress as the decision advances the cursor to s7_cover (approve) or s6_rewrite (request_rewrite) -- both land in_progress (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
+
+
+KEY_DELIM = "::"
+WORKING_FILE = "chapter.md"    # 54-anthology-writer/run_anthology.py working/chapter.md
+
+
+def _run_dir_for(key, run_dir=None):
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180):
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180):
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed, rc
 
 
 def _resolve(rel):
@@ -85,19 +129,116 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    Steps 1-6 (load -> author -> Tier 1 -> Tier 2 -> strike-count -> deliver ->
+    open the participant gate) run synchronously here. Steps 8-9 (freeze OR route
+    to s6_rewrite, mirror the result) are the documented job of gate_engine.py's
+    own "decide" endpoint on the participant's actual Approve/Request-rewrite
+    action -- not this authoring-time dispatch. classify_child_rc's numeric
+    contract is unchanged; every executed step short-circuits on anything but
+    EX_OK, EXCEPT the QC battery, whose pass/fail outcome is deliberately routed
+    THROUGH qc-strike-gate.py (never short-circuited directly on a bare Tier 1/2
+    failure) so the retry-budget counter and the strike-out alert stay correct."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+    if not key or KEY_DELIM not in key:
+        sys.stderr.write("[stage_%s] --%s must be a contact_id%santhology_id composite "
+                         "key.\n" % (STAGE, KEY_ARG, KEY_DELIM))
+        return EX_HELD
+    pkey = key
+    anthology_id = pkey.split(KEY_DELIM, 1)[1]
+    py = sys.executable or "python3"
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # 1. anthology_state.py -- load everything (never re-asked).
+    rel, _ = WIRING[0]
+    rc, _, _ = _step(0, rel, [py, str(_resolve(rel)), "--json",
+                             "get-participant", "--participant-key", pkey])
+    if rc != EX_OK:
+        return rc
+
+    # 2. 54-anthology-writer/anthology-entry.sh -- Layer 1 P5 Write Chapter (aw-09)
+    #    on the HEAVY-WRITER tier; writes working/chapter.md.
+    rel, _ = WIRING[1]
+    rc, _, _ = _step(1, rel, ["bash", str(_resolve(rel)), "--run-dir", str(rundir),
+                             "--upto", "P5-CHAPTER-AUTHOR"])
+    if rc != EX_OK:
+        return rc
+
+    # 3. qc-tier1-anthology.py -- the full Tier 1 set (band, title lock, every
+    #    story, no leakage, no placeholder).
+    rel, _ = WIRING[2]
+    chapter_path = Path(rundir) / "working" / WORKING_FILE
+    envelope = Path(rundir) / "envelope.json"
+    envelope.write_text(json.dumps({"kind": "chapter", "artifact_path": str(chapter_path)},
+                                   ensure_ascii=False), encoding="utf-8")
+    rc, _, tier1_rc = _step(2, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
+    tier1_ok = (tier1_rc == 0)
+
+    # 4. judge_harness.py -- the Tier 2 ten-dimension rubric on the JUDGE tier
+    #    (never the drafting tier).
+    rel, _ = WIRING[3]
+    judge_envelope = Path(rundir) / "judge-envelope.json"
+    judge_envelope.write_text(json.dumps({
+        "kind": "chapter", "deliverable_path": str(chapter_path),
+        "participant_key": pkey, "anthology_id": anthology_id,
+    }, ensure_ascii=False), encoding="utf-8")
+    rc, _, judge_rc = _step(3, rel, [py, str(_resolve(rel)), "judge",
+                                    "--envelope", str(judge_envelope), "--json"])
+    judge_ok = (judge_rc == 0)
+
+    # 5. qc-strike-gate.py -- the internal QC attempts counter (max 3); the
+    #    combined Tier 1 + Tier 2 outcome is ONE QC attempt for this deliverable.
+    rel, _ = WIRING[4]
+    qc_pass = tier1_ok and judge_ok
+    strike_argv = [py, str(_resolve(rel)), "--json", "qc-attempt",
+                  "--participant-key", pkey, "--deliverable", "chapter",
+                  "--result", "pass" if qc_pass else "fail"]
+    rc, _, strike_rc = _step(4, rel, strike_argv)
+    if not qc_pass:
+        sys.stderr.write("[stage_%s] chapter did not clear Gate B this attempt "
+                         "(tier1_rc=%s judge_rc=%s); qc-strike-gate recorded the "
+                         "attempt (rc=%s).\n" % (STAGE, tier1_rc, judge_rc, strike_rc))
+        return EX_PROVER
+    if rc != EX_OK:
+        return rc
+
+    # 6. stage_s8_deliver.py -- deliver the Chapter Doc + PDF; the card lands
+    #    in review.
+    rel, _ = WIRING[5]
+    rc, delivered, _ = _step(5, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
+                                     "--run-dir", str(rundir), "--deliverable", "chapter", "--json"])
+    if rc != EX_OK:
+        return rc
+    delivered = delivered or {}
+
+    # 7. anthology_state.py -- record-artifact(chapter) from what stage_s8_deliver
+    #    just delivered (part of "load everything ... never re-asked" -- the same
+    #    sole writer already declared at WIRING[0]).
+    art_argv = [py, str(_resolve(WIRING[0][0])), "--json", "record-artifact",
+               "--participant-key", pkey, "--type", "chapter"]
+    if delivered.get("doc_url"):
+        art_argv += ["--doc-url", delivered["doc_url"]]
+    if delivered.get("pdf_url"):
+        art_argv += ["--pdf-url", delivered["pdf_url"]]
+    art_rc, _p, _e = _run(art_argv)
+    if classify_child_rc(art_rc) != EX_OK:
+        sys.stderr.write("[stage_%s] non-fatal: chapter artifact record did not persist "
+                         "cleanly (rc=%s); the doc/pdf still delivered.\n" % (STAGE, art_rc))
+
+    # 8. gate_engine.py -- open s5_participant: exactly two actions on the token
+    #    page (Approve as-is / Request rewrite with notes).
+    rel, _ = WIRING[6]
+    rc, _, _ = _step(6, rel, [py, str(_resolve(rel)), "open", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc
+
+    return EX_OK
 
 
 def self_test():
@@ -129,7 +270,7 @@ def main(argv=None):
             return plan()
         if not args.key:
             ap.error("--%s is required to dispatch stage %s" % (KEY_ARG, STAGE))
-        return _invoke_wiring(args.key)
+        return _invoke_wiring(args.key, args.run_dir)
     except SystemExit:
         raise
     except Exception as exc:

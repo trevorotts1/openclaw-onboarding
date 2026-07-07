@@ -19,6 +19,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +47,67 @@ WIRING = [
     ("scripts/gate_engine.py", "open the s2_producer gate; ONE nudge to the ledger-resolved recipient"),
     ("scripts/mc_board.py", "mirror the participant card to review at the s2_gate cursor (SPEC 11.2 stage_cursor projection, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
+
+
+KEY_DELIM = "::"
+WORKING_FILE = "tone-doc.md"    # 54-anthology-writer/run_anthology.py working/tone-doc.md
+
+
+def _run_dir_for(key, run_dir=None):
+    """Resolve (and create) this run's per-participant-per-stage working directory
+    -- the SAME directory 54-anthology-writer/anthology-entry.sh --run-dir targets,
+    so its working/*.md checkpoints are exactly what this dispatcher reads back."""
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180):
+    """Invoke one WIRING collaborator; return (rc, parsed_json_or_None, stderr_tail)."""
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180):
+    """Run WIRING[i]'s collaborator; classify via the FIXED contract; log. The
+    caller short-circuits on anything but EX_OK (rc==0)."""
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed
+
+
+def _write_envelope(run_dir, kind, extra=None):
+    """Assemble the qc-tier1-anthology.py envelope from the Layer 1 working/*.md
+    checkpoint. If Layer 1 has not produced it yet, the envelope still points at
+    the intended path; qc-tier1-anthology.py then correctly reports the gap."""
+    working = Path(run_dir) / "working" / WORKING_FILE
+    env = {"kind": kind, "artifact_path": str(working)}
+    if extra:
+        env.update(extra)
+    path = Path(run_dir) / "envelope.json"
+    path.write_text(json.dumps(env, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def _resolve(rel):
@@ -83,19 +146,95 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    classify_child_rc's numeric contract is unchanged; every step short-circuits
+    the stage on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+    if not key or KEY_DELIM not in key:
+        sys.stderr.write("[stage_%s] --%s must be a contact_id%santhology_id composite "
+                         "key.\n" % (STAGE, KEY_ARG, KEY_DELIM))
+        return EX_HELD
+    pkey = key
+    py = sys.executable or "python3"
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # 1. anthology_state.py -- load the participant row (tone form).
+    rel, _ = WIRING[0]
+    rc, _ = _step(0, rel, [py, str(_resolve(rel)), "--json",
+                          "get-participant", "--participant-key", pkey])
+    if rc != EX_OK:
+        return rc
+
+    # 2. 54-anthology-writer/anthology-entry.sh -- Layer 1 P2 TONE on the shared
+    #    tone core, byte identical, never forked; writes working/tone-doc.md.
+    rel, _ = WIRING[1]
+    rc, _ = _step(1, rel, ["bash", str(_resolve(rel)), "--run-dir", str(rundir),
+                          "--upto", "P2-TONE-AUTHOR"])
+    if rc != EX_OK:
+        return rc
+
+    # 3. verify_tone_core_sync.py -- the baked tone stages are byte-identical to
+    #    shared-utils/tone-writing-core (AF-AW-TONE-DRIFT); no per-run args.
+    rel, _ = WIRING[2]
+    rc, _ = _step(2, rel, [py, str(_resolve(rel))])
+    if rc != EX_OK:
+        return rc
+
+    # 4. qc-tier1-anthology.py -- 3,000 measured-word tone floor + Tier 1 subset.
+    rel, _ = WIRING[3]
+    envelope = _write_envelope(rundir, "tone")
+    rc, _ = _step(3, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
+    if rc != EX_OK:
+        return rc
+
+    # 5. stage_s8_deliver.py -- deliver the Tone Doc + PDF.
+    rel, _ = WIRING[4]
+    rc, delivered = _step(4, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
+                                  "--run-dir", str(rundir), "--deliverable", "tone", "--json"])
+    if rc != EX_OK:
+        return rc
+    delivered = delivered or {}
+
+    # 6. anthology_state.py -- record-artifact(tone), then advance to s2_gate.
+    rel, _ = WIRING[5]
+    art_argv = [py, str(_resolve(rel)), "--json", "record-artifact",
+               "--participant-key", pkey, "--type", "tone"]
+    if delivered.get("doc_url"):
+        art_argv += ["--doc-url", delivered["doc_url"]]
+    if delivered.get("pdf_url"):
+        art_argv += ["--pdf-url", delivered["pdf_url"]]
+    if delivered.get("custom_field_keys_written"):
+        art_argv += ["--custom-field-keys-written",
+                    json.dumps(delivered["custom_field_keys_written"], ensure_ascii=False)]
+    rc, _ = _step(5, rel, art_argv)
+    if rc != EX_OK:
+        return rc
+    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "--json", "advance-stage",
+                          "--participant-key", pkey, "--to", "s2_gate"])
+    if rc != EX_OK:
+        return rc
+
+    # 7. gate_engine.py -- open s2_producer (mints + fires ONE nudge internally
+    #    to the ledger-resolved recipient).
+    rel, _ = WIRING[6]
+    rc, _ = _step(6, rel, [py, str(_resolve(rel)), "open", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc
+
+    # 8. mc_board.py -- mirror the participant card to review at s2_gate (W4.3);
+    #    FAIL-SOFT, a board-down never blocks the pipeline.
+    rel, _ = WIRING[7]
+    rc, _ = _step(7, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc
+
+    return EX_OK
 
 
 def self_test():
@@ -127,7 +266,7 @@ def main(argv=None):
             return plan()
         if not args.key:
             ap.error("--%s is required to dispatch stage %s" % (KEY_ARG, STAGE))
-        return _invoke_wiring(args.key)
+        return _invoke_wiring(args.key, args.run_dir)
     except SystemExit:
         raise
     except Exception as exc:

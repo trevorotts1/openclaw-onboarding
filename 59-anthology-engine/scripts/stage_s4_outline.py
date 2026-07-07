@@ -20,6 +20,8 @@ Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   5  unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)
 """
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +47,57 @@ WIRING = [
     ("scripts/anthology_state.py", "record both approvals and advance to s5_chapter"),
     ("scripts/mc_board.py", "mirror the participant card to review across both s4_gate_producer and s4_gate_participant, then to in_progress once both approvals advance the cursor to s5_chapter (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
+
+
+KEY_DELIM = "::"
+
+
+def _run_dir_for(key, run_dir=None):
+    if run_dir:
+        d = Path(run_dir)
+    else:
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+    (d / "working").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _run(argv, timeout=180):
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return EX_HELD, None, "timed out (%ss): %s" % (timeout, " ".join(argv))
+    except OSError as exc:
+        return EX_ERR, None, "could not launch: %s" % exc
+    out = (proc.stdout or "").strip()
+    parsed = None
+    if out:
+        try:
+            parsed = json.loads(out)
+        except (ValueError, TypeError):
+            parsed = None
+    return proc.returncode, parsed, (proc.stderr or "").strip()
+
+
+def _step(i, rel, argv, timeout=180):
+    sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, i + 1, len(WIRING), rel))
+    rc, parsed, err = _run(argv, timeout=timeout)
+    classified = classify_child_rc(rc)
+    if classified != EX_OK:
+        sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
+                         % (STAGE, rel, rc, classified,
+                            (" :: %s" % err[-300:]) if err else ""))
+    return classified, parsed
+
+
+def _write_envelope(run_dir, kind, working_file, extra=None):
+    working = Path(run_dir) / "working" / working_file
+    env = {"kind": kind, "artifact_path": str(working)}
+    if extra:
+        env.update(extra)
+    path = Path(run_dir) / ("envelope-%s.json" % kind)
+    path.write_text(json.dumps(env, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def _resolve(rel):
@@ -83,19 +136,88 @@ def plan():
     return EX_OK
 
 
-def _invoke_wiring(key):
-    """INTEGRATOR: replace this body with the concrete argv per collaborator.
-    The ordering (WIRING), resolution (_resolve), and classification
-    (classify_child_rc) contract above is FIXED and must not change."""
+def _invoke_wiring(key, run_dir=None):
+    """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
+    Steps 1-5 (load -> author blurb+outline -> QC both -> deliver both -> open
+    the producer gate) run synchronously here. Steps 6-7 (record BOTH the
+    producer's and then the participant's approval, stamp the resulting cursor,
+    mirror it) are the documented job of gate_engine.py's own "decide" endpoint
+    invoked directly by the dashboard/token-page webhook on each actual approval
+    -- not this authoring-time dispatch, which has no approval to record yet.
+    classify_child_rc's numeric contract is unchanged; every executed step
+    short-circuits on anything but EX_OK."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
                          % (STAGE, ", ".join(pending)))
         sys.stderr.write("[stage_%s] held; the durable ledger keeps the cursor at zero cost.\n" % STAGE)
         return EX_HELD
-    sys.stderr.write("[stage_%s] all collaborators resolved; the serial integrator wires the concrete\n"
-                     "call sequence per the WIRING contract. Holding until wired.\n" % STAGE)
-    return EX_HELD
+    if not key or KEY_DELIM not in key:
+        sys.stderr.write("[stage_%s] --%s must be a contact_id%santhology_id composite "
+                         "key.\n" % (STAGE, KEY_ARG, KEY_DELIM))
+        return EX_HELD
+    pkey = key
+    py = sys.executable or "python3"
+    rundir = _run_dir_for(pkey, run_dir)
+
+    # 1. anthology_state.py -- load the participant row (locked title/subtitle,
+    #    tone, questions, chapter_about, personal_stories).
+    rel, _ = WIRING[0]
+    rc, _ = _step(0, rel, [py, str(_resolve(rel)), "--json",
+                          "get-participant", "--participant-key", pkey])
+    if rc != EX_OK:
+        return rc
+
+    # 2. 54-anthology-writer/anthology-entry.sh -- Layer 1 Book Blurb (aw-07) then
+    #    Create Outline (aw-08, every personal story placed); Skill 54 does not
+    #    declare a distinct blurb/outline phase id of its own -- both land inside
+    #    its P1-FIDELITY window (avatar/tone/title fidelity carried forward, blurb
+    #    and outline authored alongside) per ANTHOLOGY-MANIFEST.json's own phase
+    #    ownership notes; writes working/blurb.md and working/outline.md.
+    rel, _ = WIRING[1]
+    rc, _ = _step(1, rel, ["bash", str(_resolve(rel)), "--run-dir", str(rundir),
+                          "--upto", "P1-FIDELITY"])
+    if rc != EX_OK:
+        return rc
+
+    # 3. qc-tier1-anthology.py -- story-placement prover + title-lock carry, over
+    #    BOTH deliverables (blurb, then outline).
+    rel, _ = WIRING[2]
+    for kind, wf in (("blurb", "blurb.md"), ("outline", "outline.md")):
+        envelope = _write_envelope(rundir, kind, wf)
+        rc, _ = _step(2, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
+        if rc != EX_OK:
+            return rc
+
+    # 4. stage_s8_deliver.py -- deliver the Blurb and Outline Docs + PDFs.
+    rel, _ = WIRING[3]
+    for kind in ("blurb", "outline"):
+        rc, delivered = _step(3, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
+                                      "--run-dir", str(rundir), "--deliverable", kind, "--json"])
+        if rc != EX_OK:
+            return rc
+        delivered = delivered or {}
+        if delivered.get("doc_url") or delivered.get("pdf_url"):
+            art_argv = [py, str(_resolve(WIRING[0][0])), "--json", "record-artifact",
+                       "--participant-key", pkey, "--type", kind]
+            if delivered.get("doc_url"):
+                art_argv += ["--doc-url", delivered["doc_url"]]
+            if delivered.get("pdf_url"):
+                art_argv += ["--pdf-url", delivered["pdf_url"]]
+            art_rc, _p, _e = _run(art_argv)
+            if classify_child_rc(art_rc) != EX_OK:
+                sys.stderr.write("[stage_%s] non-fatal: %s artifact record did not persist "
+                                 "cleanly (rc=%s); the doc/pdf still delivered.\n"
+                                 % (STAGE, kind, art_rc))
+
+    # 5. gate_engine.py -- open s4_producer (mints + fires ONE nudge internally);
+    #    the s4_participant outline-approval gate opens on the producer's approve.
+    rel, _ = WIRING[4]
+    rc, _ = _step(4, rel, [py, str(_resolve(rel)), "open", "--subject-key", pkey, "--json"])
+    if rc != EX_OK:
+        return rc
+
+    return EX_OK
 
 
 def self_test():
@@ -127,7 +249,7 @@ def main(argv=None):
             return plan()
         if not args.key:
             ap.error("--%s is required to dispatch stage %s" % (KEY_ARG, STAGE))
-        return _invoke_wiring(args.key)
+        return _invoke_wiring(args.key, args.run_dir)
     except SystemExit:
         raise
     except Exception as exc:
