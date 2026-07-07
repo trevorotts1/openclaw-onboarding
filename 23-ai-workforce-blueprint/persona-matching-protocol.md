@@ -263,3 +263,60 @@ After completing any task, the agent MUST self-check:
 - Note the gap in the completion report
 - Re-run the task with explicit reference to the persona blueprint
 - Log both attempts for pattern analysis
+
+---
+
+## APPENDIX: Skill 59 (Anthology Engine) — Stage-to-Role-to-Persona Matching Table
+
+**Stamped:** W4.2 (Wave 4, Anthology Engine build), per PRD Section 13
+(`/Users/blackceomacmini/clawd/projects/Anthology-Engine/PRD.md`) and SPEC 6.3.
+
+**Which persona concept this table is.** The "Named persona" column below is
+neither concept 1 (`dept_label`/`workspace_hint`), concept 2 (the 81-persona
+`coaching-personas` library this whole document governs), nor concept 3 (the
+buyer/customer avatar) from the three-way distinction above and in
+`TERMINOLOGY.md`. It is a FOURTH, skill-internal kind: a named voice BAKED into
+one of Skill 54/59's own sha256-pinned prompt assets (the `aw-*`/`aa-*`/`ae-*`
+pin ids), fixed at authoring time, never matched at runtime by the 5-layer
+selector, and never derived from a department. This table is a STATIC binding
+of pipeline stage to the ROLE that operates it (concept-1-adjacent, a routing
+fact) and, where one exists, the persona voice pinned into that stage's prompt.
+It sits beside, and is never substituted for, the 5-layer runtime coaching-
+persona match this document otherwise governs — a task inside one of these
+stages that also needs a coaching persona (e.g. an operator-facing summary)
+still runs the full 5-layer alignment above.
+
+Roles: `anthology-chapter-author` (Skill 54's authoring core, pre-existing;
+`54-anthology-writer/roles/anthology-writer.role.md`); `anthology-producer-
+orchestrator` (new — owns the run end to end, the ledger, the exceptions
+queue, escalations, S7 cover, S8 delivery, and S9 assembly machinery;
+`59-anthology-engine/roles/anthology-producer-orchestrator.role.md`);
+`anthology-approvals-steward` (new — owns gate hygiene, nudge cadence, the
+readiness report, the trigger and sign-off flow, and the Gate B content judge;
+`59-anthology-engine/roles/anthology-approvals-steward.role.md`).
+
+| Stage | Operating role | Named persona (lives in the pinned prompt) |
+|---|---|---|
+| S0 intake and routing | anthology-producer-orchestrator | none (deterministic code) |
+| S1 avatar | anthology-chapter-author | the Avatar Profiler (Skill 52, pins aa-01 to aa-03) |
+| S2 tone | anthology-chapter-author | the Tone Analysts and Blender (tone core 04 to 08) |
+| S3 title | anthology-chapter-author | the Senior Title Strategist (aw-06) |
+| S4 blurb plus outline | anthology-chapter-author | the Blurb Copywriter (aw-07) and the Outline Architect (aw-08) |
+| S5 chapter | anthology-chapter-author | the Anthology Chapter Author (aw-09) |
+| S6 rewrite | anthology-chapter-author | Dr. Margaret Thornfield, editorial revisionist (aw-10) |
+| S7 cover | anthology-producer-orchestrator | the Senior Book-Cover Design Specialist (aw-11) |
+| S8 package and deliver | anthology-producer-orchestrator | none (deterministic rendering and delivery) |
+| All gates, nudges, readiness report | anthology-approvals-steward | none (gate logic; sanctioned templates only) |
+| S9 assembly | anthology-producer-orchestrator | the Anthology Editor voice (ae-01 to ae-04), subordinate to producer inputs |
+| Content QC (Gate B judge) | anthology-approvals-steward | the independent Editorial Judge on the JUDGE tier |
+
+**QC-independence rule (binding, explicit, AF-AE-JUDGE-INDEPENDENCE):** the
+Gate B content-QC judge harness NEVER runs the persona OR the model tier that
+drafted the piece it is reviewing. Concretely, in `59-anthology-engine/scripts/
+judge_harness.py`, `enforce_independence()` refuses (exit 2) whenever the
+JUDGE tier, resolution, or persona equals the writer's — the independent
+Editorial Judge on the JUDGE tier is, by construction, never the same operator
+that spoke the Anthology Chapter Author, Dr. Margaret Thornfield, or any other
+drafting-stage persona above. This mirrors, at the skill-authoring layer, the
+same never-self-grade principle this document's Gate A/Gate B separation
+enforces at the fleet build layer: a drafter is never its own reviewer.
