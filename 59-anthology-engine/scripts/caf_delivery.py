@@ -250,10 +250,19 @@ DEFAULT_FIELD_MAP = SKILL_DIR / "config" / "field-map.json"
 # id map; it NEVER creates a field.
 # ---------------------------------------------------------------------------
 class FieldMap:
-    def __init__(self, deliverables, control, source_path):
+    def __init__(self, deliverables, control, source_path, provisioned_ids=None,
+                artifact_type_aliases=None):
         self.deliverables = deliverables      # {name: {"doc_url": key, "pdf_url": key}}
         self.control = control                # {"active_id": key, "stage": key, "rewrite_count": key}
         self.source_path = str(source_path)
+        # Registry-stamped ids (W1.8's anthology_registry.py provision-fields writes
+        # these in place, per box): {intended_key: field_id}. NULL slots (the
+        # committed template) are dropped -- an unresolved slot is simply absent,
+        # never a false id. This is drift #1's fix: caf_delivery reads ids FROM
+        # THIS FILE (stamped by the registry) instead of resolving them live.
+        self.provisioned_ids = provisioned_ids or {}
+        # ledger artifact_type -> field-map deliverable name (drift #2's fix).
+        self.artifact_type_aliases = artifact_type_aliases or {}
 
     @classmethod
     def load(cls, path=None):
@@ -269,7 +278,15 @@ class FieldMap:
         control = data.get("control_fields") or {}
         if not deliverables or not control:
             raise _tenant("field-map.json at %s missing deliverable_fields or control_fields" % p)
-        return cls(deliverables, control, p)
+        provisioned_ids = {}
+        for row in (data.get("provisioning") or {}).get("fields") or []:
+            fid = row.get("field_id")
+            key = row.get("intended_key")
+            if key and fid:
+                provisioned_ids[key] = fid
+        aliases = {k: v for k, v in (data.get("artifact_type_aliases") or {}).items()
+                  if not k.startswith("$")}
+        return cls(deliverables, control, p, provisioned_ids, aliases)
 
     def all_keys(self):
         keys = []
@@ -288,6 +305,21 @@ class FieldMap:
             raise _tenant("unknown deliverable %r; field-map knows: %s"
                           % (name, ", ".join(sorted(self.deliverables))))
         return pair.get("doc_url"), pair.get("pdf_url")
+
+    def deliverable_for_artifact_type(self, artifact_type):
+        """Translate a ledger ARTIFACT_TYPES value (scripts/anthology_state.py) to
+        this file's deliverable name. Every S8/S9 call into this module MUST run its
+        artifact_type through this BEFORE naming a --deliverable (SESSION-LOG.md
+        drift #2). Refuses (exit 2) on an unmapped type -- never guesses."""
+        name = self.artifact_type_aliases.get(artifact_type)
+        if not name:
+            raise _tenant("no deliverable mapping for artifact_type %r (AF-AE-VOCAB-DRIFT); "
+                          "known artifact_type_aliases: %s"
+                          % (artifact_type, ", ".join(sorted(self.artifact_type_aliases))))
+        if name not in self.deliverables:
+            raise _tenant("artifact_type %r maps to deliverable %r, which field-map.json "
+                          "does not know (AF-AE-VOCAB-DRIFT)" % (artifact_type, name))
+        return name
 
 
 # ---------------------------------------------------------------------------
@@ -614,16 +646,25 @@ def load_id_map_override(path):
     return data.get("field_ids", data) if isinstance(data, dict) else {}
 
 
-def resolve_field_ids(keys, client, id_map_override=None):
-    """Return {key: custom_field_id}. Override wins; the live list fills the rest.
-    Any unresolved key STOPS with an operator surface (exit 2)."""
+def resolve_field_ids(keys, client, id_map_override=None, field_map=None):
+    """Return {key: custom_field_id}. Resolution order (drift #1's fix): an explicit
+    --field-id-map override wins first; then the REGISTRY-STAMPED ids already
+    sitting in config/field-map.json's provisioning.fields[].field_id (written
+    once, per box, by anthology_registry.py provision-fields) -- this is now the
+    DEFAULT path, not a live API call; a live customFields list is only the
+    last-resort fallback for a key neither source carries yet. Any key still
+    unresolved after all three STOPS with an operator surface (exit 2)."""
     override = id_map_override or {}
+    registry = field_map.provisioned_ids if field_map is not None else {}
     resolved = {}
     missing = []
     live = None
     for key in keys:
         if key in override and override[key]:
             resolved[key] = override[key]
+            continue
+        if key in registry and registry[key]:
+            resolved[key] = registry[key]
             continue
         if live is None:
             live = client.list_custom_fields()
@@ -643,7 +684,7 @@ def resolve_field_ids(keys, client, id_map_override=None):
 # ---------------------------------------------------------------------------
 # The write + read-back engine, shared by write-fields and deliver.
 # ---------------------------------------------------------------------------
-def write_and_verify(client, contact_id, key_value_pairs, id_map_override=None):
+def write_and_verify(client, contact_id, key_value_pairs, id_map_override=None, field_map=None):
     """key_value_pairs: list of (key, value). Resolves ids, writes ALL in one PUT,
     reads the contact back once, compares byte-for-byte. Returns a per-field result
     list. Raises exit 5 on any mismatch, exit 2 on a bad/anthropic value, exit 3 on
@@ -651,7 +692,7 @@ def write_and_verify(client, contact_id, key_value_pairs, id_map_override=None):
     for key, value in key_value_pairs:
         _guard_written_value(key, value)
     keys = [k for k, _ in key_value_pairs]
-    ids = resolve_field_ids(keys, client, id_map_override)
+    ids = resolve_field_ids(keys, client, id_map_override, field_map)
     id_pairs = [(ids[k], "" if v is None else str(v)) for k, v in key_value_pairs]
     client.write_custom_fields(contact_id, id_pairs)
     # ONE read-back for the whole batch (W0.5 GET /contacts/{id}).
@@ -790,7 +831,7 @@ def cmd_write_fields(args):
     if not pairs:
         raise _tenant("nothing to write: supply --deliverable/--doc-url/--pdf-url, "
                       "--field KEY=VALUE, and/or control-field flags")
-    results = write_and_verify(client, args.contact_id, pairs, id_override)
+    results = write_and_verify(client, args.contact_id, pairs, id_override, field_map=fm)
     print(json.dumps({"contact_id": args.contact_id, "operating_location": location,
                       "results": results, "readback_all_verified": True},
                      ensure_ascii=False, indent=2))
@@ -849,7 +890,7 @@ def cmd_deliver(args):
         raise _tenant("deliver: no doc/pdf source (supply --doc-file/--pdf-file or "
                       "--doc-url/--pdf-url)")
 
-    field_results = write_and_verify(client, args.contact_id, field_pairs, id_override)
+    field_results = write_and_verify(client, args.contact_id, field_pairs, id_override, field_map=fm)
     deliverable = {"type": args.deliverable, "doc": doc_part, "pdf": pdf_part,
                    "field_results": field_results}
 
@@ -862,7 +903,8 @@ def cmd_deliver(args):
         if val is not None:
             control_pairs.append((fm.control[ck], val))
     if control_pairs:
-        control_results = write_and_verify(client, args.contact_id, control_pairs, id_override)
+        control_results = write_and_verify(client, args.contact_id, control_pairs, id_override,
+                                           field_map=fm)
 
     # per-gate pipeline-stage update from the registry stage map (never hardcoded)
     stage_update = None
@@ -1151,6 +1193,55 @@ def self_test():
                                                 "contact.anthology_avatar_pdf_url"))
         check("field-map control exact",
               fm.control.get("active_id") == "contact.anthology_active_id")
+        check("committed template ships every provisioned id NULL (never a client-specific "
+              "id in the repo)", fm.provisioned_ids == {})
+
+        # ---- drift #2: ARTIFACT_TYPES <-> deliverable-vocabulary map ----------
+        # every artifact_type_aliases key must equal the sole ledger writer's
+        # ARTIFACT_TYPES exactly, and every value must be a real deliverable name.
+        try:
+            sys.path.insert(0, str(SKILL_DIR / "scripts"))
+            import anthology_state as _ledger  # noqa: E402
+            check("artifact_type_aliases keys == ledger ARTIFACT_TYPES",
+                  set(fm.artifact_type_aliases) == set(_ledger.ARTIFACT_TYPES))
+        except ImportError as exc:
+            check("artifact_type_aliases keys == ledger ARTIFACT_TYPES "
+                  "(sibling import unavailable: %s)" % exc, False)
+        check("artifact_type_aliases values are all known deliverables",
+              set(fm.artifact_type_aliases.values()) <= set(fm.deliverables))
+        check("deliverable_for_artifact_type: chapter -> chapter",
+              fm.deliverable_for_artifact_type("chapter") == "chapter")
+        check("deliverable_for_artifact_type: rewrite -> chapter (drift #2 fix)",
+              fm.deliverable_for_artifact_type("rewrite") == "chapter")
+        check("deliverable_for_artifact_type: anthology_manuscript -> manuscript (drift #2 fix)",
+              fm.deliverable_for_artifact_type("anthology_manuscript") == "manuscript")
+        try:
+            fm.deliverable_for_artifact_type("no_such_type")
+            check("deliverable_for_artifact_type refuses an unknown artifact_type", False)
+        except DeliveryError as e:
+            check("deliverable_for_artifact_type unknown type exit 2", e.code == EX_TENANT)
+
+        # ---- drift #1: ids resolve from the registry-stamped field-map, not live --
+        # Build a throwaway field-map carrying ONE resolved (registry-stamped) id,
+        # then resolve against a client whose list_custom_fields() POISONS the test
+        # if the live path is ever reached -- proving the registry path is used.
+        class _PoisonClient:
+            def list_custom_fields(self):
+                raise AssertionError("live customFields lookup must NOT be reached "
+                                     "when the registry already resolved the id")
+
+        registry_fm = FieldMap(fm.deliverables, fm.control, "memory",
+                               provisioned_ids={"contact.anthology_avatar_doc_url": "cf_registry_1"})
+        resolved = resolve_field_ids(["contact.anthology_avatar_doc_url"], _PoisonClient(),
+                                     field_map=registry_fm)
+        check("drift #1 fixed: id resolves from field-map registry, live never called",
+              resolved == {"contact.anthology_avatar_doc_url": "cf_registry_1"})
+        # override still wins over the registry id (explicit beats stamped)
+        resolved2 = resolve_field_ids(["contact.anthology_avatar_doc_url"], _PoisonClient(),
+                                      id_map_override={"contact.anthology_avatar_doc_url": "cf_override"},
+                                      field_map=registry_fm)
+        check("explicit --field-id-map override still wins over the registry id",
+              resolved2 == {"contact.anthology_avatar_doc_url": "cf_override"})
 
     # stage-map resolution: from registry only; refuse an unknown gate
     sm = {"s1_producer": "stage_abc", "s8_deliver": "stage_xyz"}

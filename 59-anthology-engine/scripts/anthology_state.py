@@ -1691,11 +1691,58 @@ def cmd_export_bundle(led: Ledger, a):
     return bundle
 
 
+# ---- lightweight single-row reads (W4.0) -----------------------------------
+# Every stage_sN.py WIRING list opens with "load the participant row" (or, for
+# S9, the anthology row); export-bundle is the only pre-existing read and it
+# pulls the WHOLE anthology (every member, every artifact, every approval) just
+# to answer a one-row question. These three READ-ONLY commands are the thin
+# stage dispatchers' actual first collaborator call: no new writer, no new
+# table, just Ledger.participant()/.anthology()/.latest_artifact() (already used
+# internally by cmd_export_bundle and the assembly path) exposed directly.
+def cmd_get_participant(led: Ledger, a):
+    key = _require(a.participant_key, "--participant-key")
+    row = led.participant(key)
+    if not row:
+        raise _unknown("unknown participant_key %r" % key)
+    out = dict(row)
+    out["ok"] = True
+    out["action"] = "get-participant"
+    out["read_only"] = True
+    return out
+
+
+def cmd_get_anthology(led: Ledger, a):
+    aid = _require(a.anthology_id, "--anthology-id")
+    row = led.anthology(aid)
+    if not row:
+        raise _unknown("unknown anthology_id %r" % aid)
+    out = dict(row)
+    out["ok"] = True
+    out["action"] = "get-anthology"
+    out["read_only"] = True
+    return out
+
+
+def cmd_get_artifact(led: Ledger, a):
+    key = _require(a.participant_key, "--participant-key")
+    art_type = _require(a.type, "--type")
+    if art_type not in ARTIFACT_TYPES:
+        raise _invalid("unknown artifact type %r (known: %s)"
+                       % (art_type, ", ".join(ARTIFACT_TYPES)))
+    row = led.latest_artifact(key, art_type)
+    out = {"ok": True, "action": "get-artifact", "read_only": True,
+           "participant_key": key, "type": art_type, "found": row is not None}
+    if row:
+        out["artifact"] = dict(row)
+    return out
+
+
 # ===========================================================================
 # CLI
 # ===========================================================================
 # Handlers that MUTATE (go through commit_write) vs read-only (no base flush).
-_READ_ONLY = {"assembly-readiness-report", "export-bundle", "bootstrap"}
+_READ_ONLY = {"assembly-readiness-report", "export-bundle", "bootstrap",
+              "get-participant", "get-anthology", "get-artifact"}
 
 
 def build_parser():
@@ -1845,6 +1892,19 @@ def build_parser():
     s = add("export-bundle", cmd_export_bundle, "emit the per-anthology export bundle")
     s.add_argument("--anthology-id", required=True)
     s.add_argument("--out", help="write to this path instead of stdout")
+
+    s = add("get-participant", cmd_get_participant,
+            "READ-ONLY: one participant row (the stage dispatchers' load-participant step)")
+    s.add_argument("--participant-key", required=True)
+
+    s = add("get-anthology", cmd_get_anthology,
+            "READ-ONLY: one anthology row")
+    s.add_argument("--anthology-id", required=True)
+
+    s = add("get-artifact", cmd_get_artifact,
+            "READ-ONLY: the latest artifact row of one type for a participant")
+    s.add_argument("--participant-key", required=True)
+    s.add_argument("--type", required=True)
 
     add("selftest", None, "run the in-process acceptance battery (temp DB)")
     return p
@@ -2019,6 +2079,16 @@ def run_selftest():
     p1 = "c1::anthA"
     p2 = "c2::anthA"
 
+    # ---- get-* read-only lookups (W4.0: the stage dispatchers' load step) ----
+    expect("get-participant known", ["get-participant", "--participant-key", p1], 0)
+    expect("get-participant unknown", ["get-participant", "--participant-key", "ghost::anthA"], 3)
+    expect("get-anthology known", ["get-anthology", "--anthology-id", "anthA"], 0)
+    expect("get-anthology unknown", ["get-anthology", "--anthology-id", "ghostAnth"], 3)
+    expect("get-artifact none-yet (still exit 0, found:false)",
+           ["get-artifact", "--participant-key", p1, "--type", "chapter"], 0)
+    expect("get-artifact bad type", ["get-artifact", "--participant-key", p1,
+                                     "--type", "not_a_type"], 5)
+
     # ---- happy path p1: S0 -> approved --------------------------------------
     expect("p1 s0->s1_avatar", ["advance-stage", "--participant-key", p1, "--to", "s1_avatar"], 0)
     # idempotent replay (kill-and-resume: replay the same advance) -> no-op 0
@@ -2061,6 +2131,8 @@ def run_selftest():
     expect("p1 record chapter dup", ["record-artifact", "--participant-key", p1,
                                      "--type", "chapter", "--sha256", "shaP1v1",
                                      "--model-used", "glm-5.2"], 0)
+    expect("get-artifact found after record", ["get-artifact", "--participant-key", p1,
+                                               "--type", "chapter"], 0)
     # NEGATIVE fixture proving the model_used deny-guard fires. The forbidden id
     # is assembled from fragments so NO literal Anthropic identifier appears in
     # this shipped runtime file (guard-no-anthropic-runtime.py scans .py source);

@@ -18,6 +18,20 @@
     "manuscript": {"doc_url": "contact.anthology_manuscript_doc_url", "pdf_url": "contact.anthology_manuscript_pdf_url"}
   },
   "cover_field_semantics": "For the cover deliverable the pair is not a Doc/PDF pair: doc_url carries the Convert and Flow media-storage image link (contact.anthology_cover_image_url) and pdf_url carries the Drive link (contact.anthology_cover_drive_url), per PRD Section 6.",
+
+  "artifact_type_aliases": {
+    "$note": "Bridges the ledger's ARTIFACT_TYPES vocabulary (scripts/anthology_state.py) to this file's deliverable_fields vocabulary above. The two were named independently and drifted (SESSION-LOG.md resume-checkpoint drift #2): the ledger names a chapter rewrite 'rewrite' (a new VERSION of the same chapter deliverable, never its own field pair) and names the assembled book 'anthology_manuscript' (this file's pair is 'manuscript'). caf_delivery.py's FieldMap.deliverable_for_artifact_type() is the ONE translation point and is called by every S8/S9 collaborator BEFORE it names a --deliverable to caf_delivery.py; an artifact_type absent from this map is a hard refusal (AF-AE-VOCAB-DRIFT), never a guess. Keys MUST equal scripts/anthology_state.py ARTIFACT_TYPES exactly (self-tested); values MUST each be a key of deliverable_fields above (self-tested).",
+    "avatar": "avatar",
+    "tone": "tone",
+    "titles": "titles",
+    "blurb": "blurb",
+    "outline": "outline",
+    "chapter": "chapter",
+    "rewrite": "chapter",
+    "cover": "cover",
+    "anthology_manuscript": "manuscript"
+  },
+
   "control_fields": {
     "active_id":     "contact.anthology_active_id",
     "stage":         "contact.anthology_stage",
