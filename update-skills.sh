@@ -1759,6 +1759,23 @@ except:
     SKILL_NAME=$(basename "$SKILL_DIR")
     case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
 
+    # Per-box model-map RE-RESOLVE -- NOT sentinel-gated (runs BEFORE the wired-sentinel
+    # short-circuit below). The anthology-engine's tier map (skill-dir model-map.json,
+    # preflight.sh's default output) is resolved from the CLIENT's OWN configured models;
+    # if a client changes their models
+    # between update passes, the .wired-<version> sentinel would otherwise skip install.sh
+    # and leave a STALE map -- which then fails closed deep at S9 (UnresolvedMapError) or
+    # trips judge-independence. Re-resolve every pass (idempotent; fail is non-fatal here,
+    # the engine's own GATE 1b RESOLVE-then-check is the fail-closed gate at run time).
+    if [ -f "$SKILL_DIR/preflight.sh" ] && [ -f "$SKILL_DIR/config/model-map.template.json" ]; then
+      echo "    Re-resolving model-map (preflight.sh) for $SKILL_NAME (not sentinel-gated)..."
+      if bash "$SKILL_DIR/preflight.sh" >> "$LOG_FILE" 2>&1; then
+        echo "    Model-map re-resolved: $SKILL_NAME"
+      else
+        echo "    Model-map re-resolve FAILED CLOSED for $SKILL_NAME (client has no resolvable/independent model; see $LOG_FILE) -- engine GATE 1b will refuse at run time until fixed"
+      fi
+    fi
+
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
     if [ -f "$WIRED_SENTINEL" ]; then

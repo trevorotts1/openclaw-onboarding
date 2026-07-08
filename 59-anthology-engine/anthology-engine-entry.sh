@@ -154,8 +154,26 @@ fi
 # ===========================================================================
 # GATE 1b -- MODEL-MAP PRE-GATE (preflight.sh --check)
 # ===========================================================================
-note "GATE 1b/3 -- MODEL-MAP PRE-GATE (preflight.sh --check)"
+note "GATE 1b/3 -- MODEL-MAP PRE-GATE (preflight.sh RESOLVE-then-check)"
 if [ -n "$RUN_DIR" ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
+    # RESOLVE-then-check. A plain --check PASSES on an ABSENT map ("installer resolves
+    # per box"), so a box the installer never resolved sails through GATE 1b only to
+    # hard-fail deep at S9 with UnresolvedMapError. Fail CLOSED early: if no resolved
+    # model-map.json exists in ANY location the router will read (run dir, skill dir,
+    # config/), resolve it now from the client's OWN models; a box that cannot resolve
+    # a REQUIRED tier (or has JUDGE == HEAVY-WRITER) exits 2 here, not mid-run.
+    if [ ! -f "$RUN_DIR/model-map.json" ] \
+       && [ ! -f "$SELF_DIR/model-map.json" ] \
+       && [ ! -f "$SELF_DIR/config/model-map.json" ]; then
+        echo "  no resolved model-map.json in run dir / skill dir / config -- resolving this box now..."
+        bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR"; RS_RC=$?
+        if [ ! -f "$RUN_DIR/model-map.json" ]; then
+            gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "no resolved model-map.json anywhere and per-box \
+resolution did not produce one (preflight rc=$RS_RC: the client has no resolvable model for a REQUIRED \
+tier, JUDGE resolved equal to HEAVY-WRITER, or the fleet shared-utils/select_model.py is absent). The \
+engine will not run unresolved; resolve the tier map on a configured box (preflight.sh) and re-run."
+        fi
+    fi
     if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
         :
     else

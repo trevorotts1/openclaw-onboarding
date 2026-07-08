@@ -145,10 +145,13 @@ if route is not None:
           "route-template surface is not gateway-core-hooks")
     hooks = route.get("hooks", {})
     tok = hooks.get("token")
-    sneed(isinstance(tok, dict), "hooks.token is not a SecretRef object (must not inline a value)")
-    if isinstance(tok, dict):
-        sneed(tok.get("source") == "env", "hooks.token.source is not 'env'")
-        sneed(tok.get("id") == LABEL, "hooks.token.id is not %s" % LABEL)
+    # 2026.6.11 gateway contract: hooks.token is a zod string() resolved from the env
+    # at load (an object SecretRef throws "hooks.enabled requires hooks.token"). The
+    # canonical form is the ${LABEL} env-template string; the value never inlines.
+    tok_ok = isinstance(tok, str) and bool(re.match(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$", tok.strip()))
+    sneed(tok_ok, "hooks.token must be the ${LABEL} env-template string, not an object or an inlined value")
+    if isinstance(tok, str):
+        sneed(tok.strip() == "${%s}" % LABEL, "hooks.token env-template id is not %s" % LABEL)
     sneed(hooks.get("allowRequestSessionKey") is False,
           "hooks.allowRequestSessionKey must be false")
     maps = hooks.get("mappings", [])
@@ -162,8 +165,16 @@ if route is not None:
         sneed(intake.get("deliver") is False, "mapping deliver must be false (client-silent)")
         sneed(intake.get("allowUnsafeExternalContent") is False,
               "mapping allowUnsafeExternalContent must be false (untrusted form content)")
-        sneed(isinstance(intake.get("transform"), dict) and intake["transform"].get("module"),
-              "mapping transform.module is absent (deterministic intake_router dispatch)")
+        xf = intake.get("transform") if isinstance(intake.get("transform"), dict) else {}
+        mod = xf.get("module")
+        sneed(bool(mod), "mapping transform.module is absent (deterministic intake_router dispatch)")
+        # The gateway loads transform.module via import() (Node ESM): a .py CANNOT be
+        # loaded (ERR_UNKNOWN_FILE_EXTENSION). It must be a Node module, and shipped.
+        sneed(bool(mod) and str(mod).endswith((".mjs", ".js", ".cjs")),
+              "transform.module must be a Node-loadable module (gateway import()s it); a .py cannot be loaded")
+        if mod:
+            sneed(os.path.isfile(P("config", "hooks", "transforms", str(mod))),
+                  "transform module %r is not shipped under config/hooks/transforms/" % mod)
     sneed(route.get("route_secret_label") == LABEL,
           "route-template route_secret_label is not %s" % LABEL)
 
@@ -220,6 +231,47 @@ try:
     sneed(t4 == t5, "t5-duplicate-intake.json is not identical to t4 (dedup fingerprint would differ)")
 except Exception as exc:
     struct_fails.append("t4/t5 comparison error: %s" % exc)
+
+# --------------------------------------------------------------------------
+# DISPATCH + LEDGER EFFECT (W5.3 hardening). Prove the route ACTUALLY dispatches to
+# intake_router.py and the dispatch has a LEDGER effect -- not just that an HTTP ack
+# came back. Two hermetic, network-free proofs:
+#   (a) the Node transform shim loads the EXACT way the gateway does
+#       (await import(pathToFileURL(module))) and exports a transform function -- a
+#       .py could never be import()'d, so this is the real "route -> transform" link.
+#   (b) intake_router.py --self-test really shells the sole writer and asserts the
+#       participant row PERSISTS in the ledger mirror (the router -> ledger effect,
+#       end to end). This is what "assert LEDGER effects, not just HTTP acks" means
+#       where no live gateway is available.
+import shutil as _sh, subprocess as _sp
+SHIM = P("config", "hooks", "transforms", "anthology-intake.mjs")
+ROUTER = P("scripts", "intake_router.py")
+sneed(os.path.isfile(SHIM), "transform shim missing: config/hooks/transforms/anthology-intake.mjs")
+_node = _sh.which("node")
+if _node and os.path.isfile(SHIM):
+    _probe = ("import { pathToFileURL } from 'node:url';"
+              "const m = await import(pathToFileURL(process.argv[1]).href);"
+              "const f = m.transform ?? m.default;"
+              "if (typeof f !== 'function') process.exit(3);")
+    try:
+        _r = _sp.run([_node, "--input-type=module", "-e", _probe, SHIM],
+                     capture_output=True, text=True, timeout=30)
+        sneed(_r.returncode == 0,
+              "transform shim is not Node-import()-loadable with a transform export (rc=%s)" % _r.returncode)
+    except Exception as exc:
+        struct_fails.append("transform shim import probe error: %s" % exc)
+elif not _node:
+    print("verify-webhook: (node not on PATH; shim Node-loadability proof skipped -- OWED)")
+if os.path.isfile(ROUTER):
+    try:
+        _r = _sp.run([sys.executable, ROUTER, "--self-test"],
+                     capture_output=True, text=True, timeout=180)
+        sneed(_r.returncode == 0,
+              "intake_router.py --self-test failed -- the router->ledger effect is not proven (rc=%s)" % _r.returncode)
+    except Exception as exc:
+        struct_fails.append("intake_router.py --self-test error: %s" % exc)
+else:
+    struct_fails.append("intake_router.py missing (the route cannot dispatch)")
 
 # No Anthropic id + no credential-shaped key in any owned webhook file.
 CRED_KEYS = {"api_key","apikey","openrouter_api_key","authorization","bearer",
@@ -321,6 +373,40 @@ def fixture_bytes(name):
 
 INTAKE_URL = BASEURL + "/hooks/anthology-intake"
 
+# --------------------------------------------------------------------------
+# Ledger-effect probe (W5.3 hardening). An HTTP 2xx ack alone does NOT prove the
+# route dispatched to intake_router.py -- only a ledger write does. Resolve the
+# engine state dir the same way intake_router.py does and read the participant
+# mirror READ-ONLY. Returns the row count for `key`, or None when the mirror is not
+# resolvable/readable here (then the caller keeps the ack result and OWES the ledger
+# assertion to the canary -- never a false pass).
+def _resolve_state_dir():
+    env = (os.environ.get("ANTHOLOGY_STATE_DIR") or "").strip()
+    if env: return os.path.expanduser(env)
+    data = (os.environ.get("OPENCLAW_DATA_DIR") or "").strip()
+    if data: return os.path.join(os.path.expanduser(data), "anthology-engine", "state")
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    return os.path.join(home, ".anthology-engine", "state")
+
+def ledger_participant_count(key):
+    import sqlite3
+    if not key:
+        return None
+    db = os.path.join(_resolve_state_dir(), "anthology_state.db")
+    if not os.path.isfile(db):
+        return None
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            return int(con.execute(
+                "SELECT COUNT(*) FROM participants WHERE participant_key=?", (key,)).fetchone()[0])
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+T4_KEY = (((expected or {}).get("tests", {}) or {}).get("T4", {}) or {}).get("expect_participant_key")
+
 def run_live():
     live = reachable(BASEURL)
     if not live:
@@ -363,16 +449,28 @@ def run_live():
                 t3ok = False
         rec("T3", PASS if t3ok else FAIL,
             "malformed payloads acknowledged without a 5xx/crash; ledger-reason assertion (unroutable_missing_ids) deferred to W5.3 (anthology_state.py)")
-        # T4 valid -> 2xx ack under 2s.
+        # T4 valid -> 2xx ack under 2s AND the participant lands in the ledger.
         st, el = post(INTAKE_URL, fixture_bytes("t4-valid-intake.json"), authed_headers())
         if st is not None and 200 <= st < 300 and el < 2.0:
-            rec("T4", PASS, "acknowledged in %.3fs (<2s); participant-created assertion deferred to W5.3" % el)
+            cnt = ledger_participant_count(T4_KEY)
+            if cnt is None:
+                rec("T4", PASS, "acknowledged in %.3fs (<2s); ledger mirror not resolvable here -- participant-created assertion OWED to the canary" % el)
+            elif cnt >= 1:
+                rec("T4", PASS, "acknowledged in %.3fs (<2s) AND participant %s created in the ledger (dispatch->intake_router.py effect VERIFIED)" % (el, T4_KEY))
+            else:
+                rec("T4", FAIL, "acked in %.3fs but participant %s was NOT created in the ledger (the route did not dispatch to intake_router.py)" % (el, T4_KEY))
         else:
             rec("T4", FAIL, "ack contract not met (status %s, elapsed %.3fs)" % (st, el))
-        # T5 duplicate -> no-op ack.
+        # T5 duplicate -> no-op ack AND still exactly one participant (dedup effect).
         st, _ = post(INTAKE_URL, fixture_bytes("t5-duplicate-intake.json"), authed_headers())
         if st is not None and 200 <= st < 300:
-            rec("T5", PASS, "duplicate acknowledged; single-participant no-op assertion deferred to W5.3")
+            cnt = ledger_participant_count(T4_KEY)
+            if cnt is None:
+                rec("T5", PASS, "duplicate acknowledged; single-participant no-op assertion OWED to the canary")
+            elif cnt == 1:
+                rec("T5", PASS, "duplicate acknowledged AND exactly one participant %s exists (dedup no-op effect VERIFIED)" % T4_KEY)
+            else:
+                rec("T5", FAIL, "duplicate acked but the ledger holds %d participant rows for %s (dedup no-op violated)" % (cnt, T4_KEY))
         else:
             rec("T5", FAIL, "duplicate not acknowledged (status %s)" % st)
         # T6 wrong-tenant -> ack + Exceptions(tenant_mismatch).

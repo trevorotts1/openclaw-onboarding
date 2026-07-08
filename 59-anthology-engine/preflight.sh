@@ -304,6 +304,27 @@ if unresolved_required:
           file=sys.stderr)
     sys.exit(2)
 
+# Resolution-time JUDGE independence invariant (AF-AE-JUDGE-INDEPENDENCE). A judge
+# may not grade its own draft, so the JUDGE tier must NOT resolve to the same primary
+# model as HEAVY-WRITER. For a THIN single-model client the REQUIRED-tier fallback
+# (client_best) resolves both tiers to the one configured model -- that passes tier
+# resolution but trips judge_harness.enforce_independence mid-run at S9 Gate B. Make
+# it a fail-closed resolution-time invariant so the box is flagged now (at resolve /
+# GATE 1b), not deep in the run. Compare the resolved PRIMARY provider+model.
+hw_chain = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
+jg_chain = resolved_tiers.get("JUDGE", {}).get("chain", [])
+if hw_chain and jg_chain:
+    hw0, jg0 = hw_chain[0], jg_chain[0]
+    if (hw0.get("provider"), hw0.get("model")) == (jg0.get("provider"), jg0.get("model")):
+        print("AF-AE-JUDGE-INDEPENDENCE: the JUDGE tier resolved to the SAME model as "
+              "HEAVY-WRITER (%s/%s); a judge cannot grade its own draft and the QC step would "
+              "fail closed mid-run at S9 Gate B. The client has no second distinct (non-Anthropic) "
+              "model for independent QC. Configure at least one additional client model and re-run. "
+              "Client models discovered: %s"
+              % (jg0.get("provider"), jg0.get("model"), ", ".join(inventory) or "(none)"),
+              file=sys.stderr)
+        sys.exit(2)
+
 resolved = {
     "skill": "anthology-engine",
     "resolved_per_box": True,

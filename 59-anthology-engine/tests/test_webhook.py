@@ -11,6 +11,7 @@ PII, or an Anthropic identifier.
 Run: python3 -m pytest 59-anthology-engine/tests/test_webhook.py -q
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -77,15 +78,19 @@ def test_route_template_surface_is_gateway_core_hooks():
     assert route["surface"] == "gateway-core-hooks"
 
 
-def test_hooks_token_is_a_secretref_never_inlined():
+def test_hooks_token_is_env_template_string_never_inlined():
     route = load(ROUTE_TPL)
     tok = route["hooks"]["token"]
-    # A SecretRef object, not a literal string value.
-    assert isinstance(tok, dict), "hooks.token must be a SecretRef object, not an inline value"
-    assert tok.get("source") == "env"
-    assert tok.get("id") == LABEL
-    # No key in the token object holds a literal secret-shaped value.
-    assert "value" not in tok
+    # The 2026.6.11 gateway reads hooks.token via normalizeOptionalString (a zod
+    # string()): an OBJECT SecretRef throws "hooks.enabled requires hooks.token" and
+    # the .strict() schema rejects it. The canonical form is the ${LABEL} env-template
+    # string -- resolved from the env at load and PRESERVED (never the value) on write,
+    # so no literal secret is ever inlined.
+    assert isinstance(tok, str), "hooks.token must be a plain env-template string, not an object"
+    assert re.fullmatch(r"\$\{[A-Z][A-Z0-9_]*\}", tok), "hooks.token must be a ${ENV} reference"
+    assert tok == "${%s}" % LABEL
+    # Never an inlined literal secret (no 64-hex value shape).
+    assert not re.search(r"[0-9a-f]{64}", tok)
 
 
 def test_intake_mapping_shape():
@@ -97,7 +102,12 @@ def test_intake_mapping_shape():
     assert intake["match"].get("source") is not None, "match.source needed for shared-box isolation"
     assert intake["deliver"] is False, "client-silent doctrine"
     assert intake["allowUnsafeExternalContent"] is False, "untrusted form content stays safety-wrapped"
-    assert intake["transform"]["module"], "deterministic intake_router dispatch"
+    mod = intake["transform"]["module"]
+    assert mod, "deterministic intake_router dispatch"
+    # The gateway loads transform.module via import() (Node ESM); a .py cannot be
+    # loaded (ERR_UNKNOWN_FILE_EXTENSION). Must be a Node module.
+    assert mod.endswith((".mjs", ".js", ".cjs")), "transform.module must be Node-loadable, not .py"
+    assert not mod.endswith(".py")
 
 
 def test_route_secret_label_agrees_with_engine_config():
@@ -286,6 +296,84 @@ def test_verifier_help_exits_zero():
 def test_verifier_unknown_arg_is_usage_error():
     r = _run("--nope")
     assert r.returncode == 2
+
+
+# --------------------------------------------------------------------------
+# Transform shim: Node-loadable (the gateway import()s it) and dispatches to
+# intake_router.py. A .py could never be a hook transform (W5.3 fix).
+# --------------------------------------------------------------------------
+TRANSFORMS = CONFIG / "hooks" / "transforms"
+SHIM = TRANSFORMS / "anthology-intake.mjs"
+ROUTER = SKILL_DIR / "scripts" / "intake_router.py"
+
+
+def _have(binary):
+    from shutil import which
+    return which(binary) is not None
+
+
+def test_transform_shim_present_and_matches_route_module():
+    route = load(ROUTE_TPL)
+    intake = next(m for m in route["hooks"]["mappings"] if m["id"] == "anthology-intake")
+    mod = intake["transform"]["module"]
+    assert (TRANSFORMS / mod).is_file(), \
+        "route names transform.module %r but it is not shipped under config/hooks/transforms/" % mod
+    assert SHIM.is_file()
+    src = SHIM.read_text(encoding="utf-8")
+    assert "intake_router.py" in src, "the shim must dispatch to intake_router.py"
+
+
+def test_transform_shim_is_node_import_loadable():
+    if not _have("node"):
+        pytest.skip("node not on PATH")
+    probe = ("import { pathToFileURL } from 'node:url';"
+             "const m = await import(pathToFileURL(process.argv[1]).href);"
+             "const f = m.transform ?? m.default;"
+             "if (typeof f !== 'function') process.exit(3);")
+    r = subprocess.run(["node", "--input-type=module", "-e", probe, str(SHIM)],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, "shim not Node-import()-loadable with a transform export: %s" % r.stderr
+
+
+def test_transform_shim_dispatches_t4_payload_to_intake_router(tmp_path):
+    """Load the shim EXACTLY like the gateway (dynamic import) and call transform(ctx)
+    with the real t4 payload; a recorder standing in for intake_router.py captures what
+    it received on stdin. Proves the route dispatches the form payload (hidden ids
+    intact) to the router and returns null -- the dispatch a .py could never provide."""
+    if not _have("node"):
+        pytest.skip("node not on PATH")
+    recorder = tmp_path / "recorder.py"
+    out = tmp_path / "received.json"
+    recorder.write_text(
+        "import sys, os\n"
+        "open(os.environ['REC_OUT'], 'w', encoding='utf-8').write(sys.stdin.read())\n"
+        "sys.exit(0)\n", encoding="utf-8")
+    driver = tmp_path / "driver.mjs"
+    driver.write_text(
+        "import { pathToFileURL } from 'node:url';\n"
+        "import { readFileSync } from 'node:fs';\n"
+        "const mod = await import(pathToFileURL(process.argv[2]).href);\n"
+        "const fn = mod.transform ?? mod.default;\n"
+        "const payload = JSON.parse(readFileSync(process.argv[3], 'utf8'));\n"
+        "const ret = fn({ path: 'anthology-intake', payload });\n"
+        "if (ret !== null) process.exit(4);\n", encoding="utf-8")
+    env = dict(os.environ, REC_OUT=str(out),
+               ANTHOLOGY_INTAKE_ROUTER=str(recorder), ANTHOLOGY_PYTHON="python3")
+    r = subprocess.run(["node", str(driver), str(SHIM), str(FIX / "t4-valid-intake.json")],
+                       capture_output=True, text=True, timeout=30, env=env)
+    assert r.returncode == 0, "driver failed (transform did not return null / dispatch failed): %s" % r.stderr
+    received = json.loads(out.read_text(encoding="utf-8"))
+    for k in ("contact_id", "anthology_id", "stage", "source"):
+        assert received.get(k), "router did not receive hidden field %s from the shim" % k
+    assert received["contact_id"] == "CONTACTsynthetic0001"
+
+
+def test_intake_router_self_test_proves_ledger_effect():
+    """The router --self-test really shells the sole writer and asserts the participant
+    row PERSISTS -- the router->ledger effect the HTTP ack alone cannot prove."""
+    r = subprocess.run([sys.executable, str(ROUTER), "--self-test"],
+                       capture_output=True, text=True, timeout=180)
+    assert r.returncode == 0, "intake_router.py --self-test failed:\n%s\n%s" % (r.stdout, r.stderr)
 
 
 if __name__ == "__main__":

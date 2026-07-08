@@ -79,6 +79,13 @@ EX_OK, EX_ERR, EX_REFUSE = 0, 1, 2
 KEY_DELIM = "::"     # a participant_key is contact_id::anthology_id (KEYING LAW);
                      # an anthology_id (the Assembly card subject) contains no '::'.
 
+# The Command Center's task title column cap. A card title is TRUNCATED to this
+# many characters on ingest, so any disambiguator the engine relies on must be
+# guaranteed to survive that truncation (see _participant_title -- the W5.6/W5.7
+# edge where a pathologically long name clipped the appended anthology_id suffix
+# and two anthologies for the same contact re-collided on the title-window dedupe).
+TITLE_MAX = 500
+
 # The terminal column this client is FORBIDDEN to ever set. review -> done is owned
 # exclusively by the independent QC scorer at or above 8.5 (qc-scorer.ts
 # runQCOnReview); the status route 403s a 'done' from a signed caller and this
@@ -425,6 +432,29 @@ def _anthology_disambiguator(subject_key, row):
     return anth
 
 
+def _participant_title(display, anth):
+    """Build the participant card TITLE so its anthology_id disambiguator can NEVER
+    be lost to the Command Center's TITLE_MAX truncation. The id is the ONLY thing
+    that keeps two anthologies for the SAME contact from collapsing onto one task
+    row via the generic same-title+workspace dedupe window; if it is appended after
+    the display name and a pathologically long name fills the cap, the ` · <id>`
+    suffix is clipped and the two titles re-collide (the W5.6/W5.7 edge). So we
+    RESERVE the id's full width first and clip the DISPLAY NAME, never the id."""
+    prefix = "Anthology chapter — "
+    display = display or ""
+    if not anth:
+        return ("%s%s" % (prefix, display))[:TITLE_MAX]
+    sep = " · "
+    fixed = len(prefix) + len(sep) + len(anth)
+    if fixed >= TITLE_MAX:
+        # Degenerate: the id alone (with decoration) already fills the cap. Preserve
+        # as much of the DISAMBIGUATOR as possible -- drop the human prefix, never
+        # the id chars -- so distinct ids stay maximally distinguishable.
+        return anth[:TITLE_MAX]
+    disp = display[:TITLE_MAX - fixed]
+    return "%s%s%s%s" % (prefix, disp, sep, anth)
+
+
 def build_card(kind, subject_key, row, bcfg):
     """Assemble the ingest payload for a subject's card. `source` becomes the
     "Source: <tag>" provenance marker in the card description (the marker the
@@ -446,13 +476,14 @@ def build_card(kind, subject_key, row, bcfg):
         anth = _anthology_disambiguator(subject_key, row)
         # Disambiguate by anthology so the SAME contact in TWO anthologies never
         # collides on title (the collision the CC title-window dedupe collapsed).
-        title = ("Anthology chapter — %s · %s" % (display, anth) if anth
-                 else "Anthology chapter — %s" % display)
+        # _participant_title RESERVES the anthology_id's width against TITLE_MAX so a
+        # long display name can never clip the disambiguator away (W5.6/W5.7 edge).
+        title = _participant_title(display, anth)
         desc = ("Participant chapter card. Mirrors the ledger stage_cursor; producer "
                 "deliverables land in the review column (the chapter-approval queue). "
                 "Only the QC scorer at or above 8.5 promotes review to done.")
     return {
-        "title": title[:500],
+        "title": title[:TITLE_MAX],
         "description": desc,
         "priority": bcfg.priority,
         "source": bcfg.source_tag,          # -> "Source: anthology" marker in the description
@@ -841,6 +872,29 @@ def self_test():
                               {"participant_key": pk_b, "first_name": "Same", "last_name": "Contact"}, bcfg)
     assert card_a_nokey["title"] != card_b_nokey["title"], \
         "titles must stay distinct even when anthology_id is derived from the key"
+
+    # -- W5.6/W5.7 EDGE: a pathologically long name must NOT clip the anthology_id --
+    # A display name longer than TITLE_MAX would, with a naive "name · id" build,
+    # fill the cap and let title[:TITLE_MAX] shear off the ` · <id>` suffix -- and
+    # the two anthologies for this one contact would re-collide on the CC
+    # title-window dedupe. The disambiguator is RESERVED, so it must survive.
+    long_name = "L" * (TITLE_MAX + 200)
+    row_a_long = {"participant_key": pk_a, "contact_id": contact, "anthology_id": "ANTHsynAAA",
+                  "first_name": long_name, "last_name": "", "stage_cursor": "s5_gate"}
+    row_b_long = {"participant_key": pk_b, "contact_id": contact, "anthology_id": "ANTHsynBBB",
+                  "first_name": long_name, "last_name": "", "stage_cursor": "s5_gate"}
+    card_a_long = build_card("participant", pk_a, row_a_long, bcfg)
+    card_b_long = build_card("participant", pk_b, row_b_long, bcfg)
+    assert len(card_a_long["title"]) <= TITLE_MAX and len(card_b_long["title"]) <= TITLE_MAX, \
+        "the built title must still honour the TITLE_MAX cap"
+    assert "ANTHsynAAA" in card_a_long["title"] and "ANTHsynBBB" in card_b_long["title"], \
+        "a name longer than TITLE_MAX must NOT truncate away the anthology_id disambiguator"
+    assert card_a_long["title"] != card_b_long["title"], \
+        "two anthologies for one LONG-named contact must still yield distinct titles"
+    # Degenerate id-fills-the-cap branch: even a near-cap-length id is preserved.
+    huge_id = "I" * (TITLE_MAX - 1)
+    assert _participant_title(long_name, huge_id) == huge_id[:TITLE_MAX], \
+        "when the id alone fills the cap, the id (the disambiguator) is what survives"
 
     # -- INGEST SUCCESS (fake transport returns 201) --------------------------
     calls = {"ingest": 0, "status": 0}

@@ -53,6 +53,12 @@ GOOD_CFG = {
 # A client with NO usable model -- their only configured model is Anthropic (which
 # the fleet filters as forbidden), so nothing eligible remains.
 NO_MODEL_CFG = {"agents": {"defaults": {"model": "anthropic/claude-opus-4"}, "list": []}}
+# A THIN client with exactly ONE usable model: HEAVY-WRITER and JUDGE both fall back
+# to the single configured model, so JUDGE would resolve == HEAVY-WRITER and the QC
+# step would fail closed mid-run at S9 Gate B (AF-AE-JUDGE-INDEPENDENCE). Resolution
+# must catch this and fail closed NOW, never write a same-model map.
+THIN_ONE_MODEL_CFG = {"agents": {"defaults": {"model": "openrouter/z-ai/glm-5.2"},
+                                 "list": []}, "models": {"list": []}}
 
 
 def _resolve(cfg_obj):
@@ -149,6 +155,31 @@ def test_no_client_model_fails_closed_never_hardcodes():
     assert not (run_dir / "model-map.json").is_file(), \
         "fail-closed must NOT write a map (it would carry a hardcoded/substituted model)"
     assert "AF-AE-UNRESOLVED-MODELMAP" in proc.stderr
+
+
+def test_judge_never_equals_heavy_writer_in_a_resolved_map():
+    # Defense in depth on the happy path: whenever a map resolves cleanly, its JUDGE
+    # primary must differ from its HEAVY-WRITER primary (independent QC at S9 Gate B).
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG)
+    assert rc == 0
+    mm = json.loads((run_dir / "model-map.json").read_text(encoding="utf-8"))
+    hw = mm["tiers"]["HEAVY-WRITER"]["chain"][0]
+    jg = mm["tiers"]["JUDGE"]["chain"][0]
+    assert (hw["provider"], hw["model"]) != (jg["provider"], jg["model"]), \
+        "JUDGE resolved to the same model as HEAVY-WRITER: %s" % jg
+
+
+def test_thin_single_model_client_fails_closed_on_judge_independence():
+    # A thin client with one usable model would resolve JUDGE == HEAVY-WRITER; that
+    # passes tier-fill but trips judge_harness mid-run at S9 Gate B. Resolution must
+    # fail CLOSED (exit 2, AF-AE-JUDGE-INDEPENDENCE) and write NO map.
+    rc, run_dir, proc, _td = _resolve(THIN_ONE_MODEL_CFG)
+    assert rc == 2, "thin single-model client must fail closed (exit 2), got %d:\n%s" \
+        % (rc, proc.stderr)
+    assert "AF-AE-JUDGE-INDEPENDENCE" in proc.stderr, \
+        "expected AF-AE-JUDGE-INDEPENDENCE, got:\n%s" % proc.stderr
+    assert not (run_dir / "model-map.json").is_file(), \
+        "a same-model (non-independent) map must NEVER be written"
 
 
 def test_anthropic_only_client_is_filtered_and_fails_closed():

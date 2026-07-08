@@ -9,8 +9,8 @@
   "per_client_secret_model": {
     "decision": "SURFACE A (gateway-core mapped hook) with a BOX-SCOPED `hooks.token` bound by SecretRef to the label ANTHOLOGY_INTAKE_HOOK_SECRET. The box-wide token IS the per-client secret because each client runs their OWN single-owner OpenClaw box (PRD Section 15: the Command Center is per-client, single-owner, white-label, on the client's own box). Per-box == per-client isolation, at zero intake friction.",
     "why_not_per_route_secret": "The gateway hooks surface on 2026.6.11 has NO per-mapping `secret` field (W0.4.json: normalizeHookMapping has no per-route secret); all /hooks routes share the ONE `hooks.token`. The only surface with a true per-route SecretRef is the webhooks plugin, which would force the TaskFlow action contract and break arbitrary intake. So per-route transport isolation is NOT available without breaking intake; per-box isolation is used instead.",
-    "token_binding": {"source": "env", "provider": "default", "id": "ANTHOLOGY_INTAKE_HOOK_SECRET"},
-    "token_binding_note": "SecretRef by LABEL; the value is NEVER inlined into config. `openclaw config get hooks` self-redacts the token ('__OPENCLAW_REDACTED__'), confirmed W0.4.json. The label resolves from the client env store or a 0600 secrets file (PRD Section 14).",
+    "token_binding": "${ANTHOLOGY_INTAKE_HOOK_SECRET}",
+    "token_binding_note": "PLAIN env-template reference string (2026.6.11 gateway contract: hooks.token is a zod string(); an object SecretRef throws 'hooks.enabled requires hooks.token'). The gateway resolves ${ANTHOLOGY_INTAKE_HOOK_SECRET} from the process env at load and PRESERVES the ${...} literal on write (io env-ref preservation), so the value is NEVER inlined into config. The label resolves from the client env store or a 0600 secrets file (PRD Section 14).",
     "defense_in_depth": "Because Surface A shares ONE box-wide token across ALL /hooks routes (the W0.4.json caveat: a box that ALSO runs other /hooks integrations shares the transport token), the anthology intake is isolated by TWO further mechanisms that do not depend on a per-route transport secret: (1) `match.source == 'anthology-intake'` so only Convert and Flow submissions carrying that source reach this transform; (2) intake_router.py performs its OWN independent route-secret check (SPEC 3.4 row 2 'secret check'; T2) against ANTHOLOGY_INTAKE_HOOK_SECRET, so intake auth does not rely on the gateway token ALONE and stays verifiable offline. On a dedicated client box this defense-in-depth is belt-and-suspenders; on a shared box it keeps anthology intake isolated."
   },
 
@@ -18,7 +18,7 @@
     "enabled": true,
     "path": "/hooks",
     "path_note": "Dedicated subpath; '/' is rejected by the gateway. Public reachability rides the named Cloudflare Tunnel -> loopback :18789/hooks/anthology-intake (NEVER Tailscale, per operator doctrine).",
-    "token": {"source": "env", "provider": "default", "id": "ANTHOLOGY_INTAKE_HOOK_SECRET"},
+    "token": "${ANTHOLOGY_INTAKE_HOOK_SECRET}",
     "allowRequestSessionKey": false,
     "allowedAgentIds": ["<CLIENT_ANTHOLOGY_AGENT_ID>"],
     "allowedAgentIds_note": "Limits which agent a hook can target; resolved per box by the fleet installer to the client's anthology orchestrator agent id.",
@@ -43,10 +43,10 @@
         "timeoutSeconds": 20,
         "timeoutSeconds_note": "Transport ceiling; intake_router.py itself acknowledges in under 2 seconds (SPEC 13.2 T4) and spawns the stage job detached.",
         "transform": {
-          "module": "anthology-intake.py",
+          "module": "anthology-intake.mjs",
           "export": "transform"
         },
-        "transform_note": "Deterministic transform module; lives under <configDir>/hooks/transforms/ (installed by provision-anthology-client.sh). Converts the Convert and Flow form payload into the intake_router.py dispatch. NO model call. Owns no secret; intake_router.py resolves ANTHOLOGY_INTAKE_HOOK_SECRET by label."
+        "transform_note": "Deterministic transform module; lives under <configDir>/hooks/transforms/ (installed by provision-anthology-client.sh). MUST be a Node-loadable ESM module (.mjs): the gateway loads hooks.*.transform.module via `await import(pathToFileURL(module))` (dist/hooks module-loader), so a .py CANNOT be loaded (Node throws ERR_UNKNOWN_FILE_EXTENSION). This .mjs shim exports transform(ctx), pipes the Convert and Flow form payload to the sibling intake_router.py on stdin (NO model call), and returns null so the gateway acknowledges with no agent turn. Owns no secret; intake_router.py resolves ANTHOLOGY_INTAKE_HOOK_SECRET by label."
       }
     ]
   },

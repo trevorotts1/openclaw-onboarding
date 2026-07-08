@@ -89,6 +89,45 @@ operates, and the owner benefits even without naming it.
 
 ---
 
+## Client-optional engine departments and self-invocation questions
+
+Most departments are floor departments: they live in
+`23-ai-workforce-blueprint/templates/role-library/`, their guide is rendered from
+the specialist index, and at build time it is written to
+`departments/<dept>/how-to-use-this-department.md`. A few client-facing
+capabilities are instead delivered by a client-optional ENGINE department that is
+seeded per client at provisioning (by Skill 32's `add-department.sh`). Such a
+department is NOT one of the floor departments, is NOT declared in
+`department-naming-map.json`, and its guide is hand-authored and shipped with the
+engine's wiring bundle rather than rendered. Answer from that shipped guide the
+same way, and never claim the department is on the standard floor.
+
+The first such department is **Anthology** (the Anthology Engine, skill 59):
+
+- Guide: `23-ai-workforce-blueprint/department-wiring/anthology-engine/HOW-TO-USE-THE-ANTHOLOGY-DEPARTMENT.md`.
+  At a client install the same guide is seeded into that client's
+  `departments/anthology/how-to-use-this-department.md` at provisioning, so the
+  standard read-and-answer path in the rule above still works for the owner.
+- Answer "how do I use the Anthology department?" and "what can the Anthology
+  department do for me?" from that guide, exactly as for any other department.
+- Self-invocation questions ("how does the Anthology department invoke itself?",
+  "how does it run itself?", "what actually runs when I start an anthology?") are
+  answered from the guide's Section 1a (Self-Invocation). The one-line answer:
+  every Anthology request, whether a fresh intake, a gate event, or the assembly
+  trigger, runs through exactly ONE sanctioned command,
+  `anthology-engine-entry.sh`, and never a pipeline stage runner directly. The
+  board card and the participant token page are two doors onto that one call, so
+  nothing is ever decided twice or in two places.
+- Do NOT tell the owner the Anthology department sits on the fleet floor, is
+  mandatory, or is one of the 28 floor departments. It is client-optional and
+  seeded only when the owner turns the engine on. The floor is unchanged either
+  way (see the wiring bundle's `FLOOR-EXPECTATIONS.md`).
+
+This is still an informational read-and-answer, not production work, and the
+"do not invent capabilities" rule applies unchanged.
+
+---
+
 ## Where this is wired
 
 - Master Orchestrator: `master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`

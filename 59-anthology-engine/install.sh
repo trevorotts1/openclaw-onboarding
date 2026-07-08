@@ -25,10 +25,22 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 note "STEP 1/4 -- dependency check"
+# PyMuPDF (fitz) is a HARD dependency of the output-side font-floor gate
+# (scripts/guard-font-floor.py exits 3 EX_DEP without it, leaving the 14pt floor
+# silently unenforced). Install it best-effort into the SAME interpreter the gate
+# runs under, BEFORE verify-deps.sh -- which then HARD-asserts fitz so this
+# bootstrap aborts loud below if it is still missing.
+if command -v python3 >/dev/null 2>&1 && ! python3 -c "import fitz" >/dev/null 2>&1; then
+    note "installing PyMuPDF (fitz) for the font-floor gate"
+    python3 -m pip install --user --break-system-packages --quiet PyMuPDF >/dev/null 2>&1 \
+        || python3 -m pip install --user --quiet PyMuPDF >/dev/null 2>&1 \
+        || echo "  (PyMuPDF install attempt failed; verify-deps.sh will name it as a hard prerequisite)"
+fi
 if [ -f "$SELF_DIR/verify-deps.sh" ]; then
-    bash "$SELF_DIR/verify-deps.sh" || { echo "MISSING PREREQUISITE: python3 (see verify-deps.sh)"; exit 2; }
+    bash "$SELF_DIR/verify-deps.sh" || { echo "MISSING PREREQUISITE: python3 and/or PyMuPDF/fitz (see verify-deps.sh)"; exit 2; }
 else
     command -v python3 >/dev/null 2>&1 || { echo "MISSING PREREQUISITE: python3"; exit 2; }
+    python3 -c "import fitz" >/dev/null 2>&1 || { echo "MISSING PREREQUISITE: PyMuPDF/fitz (the font-floor gate cannot run)"; exit 2; }
 fi
 
 note "STEP 2/4 -- resolve the engine tier map (preflight.sh)"

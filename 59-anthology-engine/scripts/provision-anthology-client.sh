@@ -481,6 +481,49 @@ step6_ledger() {
 # REAL error instead of a false success. Runs as the node user (never root).
 #   $1 = resolved route file ($STATE_DIR/hooks/anthology-intake.route.json)
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Install the Node-loadable hook transform shim (W5.3 canary fix). The gateway
+# loads hooks.*.transform.module via `await import(pathToFileURL(module))` (Node
+# ESM) — a .py CANNOT be loaded (ERR_UNKNOWN_FILE_EXTENSION). We ship a .mjs shim
+# that dispatches the form payload to intake_router.py (no model call) and returns
+# null so the gateway acknowledges with no agent turn. Installed under
+# <configDir>/hooks/transforms/ (the transformsDir the gateway resolves the module
+# path against). The absolute intake_router.py path is baked in at install time so
+# the gateway process finds it even without ANTHOLOGY_SCRIPTS_DIR (an env override
+# still wins at runtime). Idempotent (atomic replace). Runs as the node user.
+# --------------------------------------------------------------------------
+install_intake_transform() {
+    local src="$CONFIG_DIR/hooks/transforms/anthology-intake.mjs"
+    [ -f "$src" ] || { note "  transform shim source missing ($src)"; return 1; }
+    local cfg_file cfg_dir
+    cfg_file="$(openclaw config file 2>/dev/null)" || cfg_file=""
+    [ -n "$cfg_file" ] || { note "  cannot resolve gateway config dir (openclaw config file)"; return 1; }
+    cfg_dir="$(dirname "$cfg_file")"
+    local dest="$cfg_dir/hooks/transforms/anthology-intake.mjs"
+    local router="$SCRIPTS/intake_router.py"
+    if PROV_SRC="$src" PROV_DEST="$dest" PROV_ROUTER="$router" python3 - <<'PY'
+import os, tempfile
+src = os.environ["PROV_SRC"]; dest = os.environ["PROV_DEST"]; router = os.environ["PROV_ROUTER"]
+txt = open(src, encoding="utf-8").read().replace("__ANTHOLOGY_INTAKE_ROUTER__", router)
+d = os.path.dirname(dest)
+os.makedirs(d, exist_ok=True)
+fd, tmp = tempfile.mkstemp(prefix=".xf.", suffix=".mjs.tmp", dir=d)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(txt)
+    os.chmod(tmp, 0o644); os.replace(tmp, dest)
+except Exception:
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
+PY
+    then
+        note "  transform shim installed: $cfg_dir/hooks/transforms/anthology-intake.mjs (Node-loadable; dispatches to intake_router.py)"
+        return 0
+    fi
+    note "  failed to install the transform shim"; return 1
+}
+
 merge_intake_route_into_gateway() {
     local route_file="$1"
     [ -f "$route_file" ] || { note "  live-merge: resolved route file missing ($route_file)"; return 1; }
@@ -502,7 +545,20 @@ merge_intake_route_into_gateway() {
     local hooks_json
     hooks_json="$(PROV_ROUTE="$route_file" PROV_CUR="$cur_hooks" PROV_AGENT="$agent_id" \
                   PROV_SK="$session_key" python3 - <<'PY'
-import json, os, sys
+import json, os, re, sys
+# Gateway 2026.6.11 canonical env-secret template: ${UPPER_SNAKE}. hooks.token is a
+# zod string() -- an object SecretRef throws "hooks.enabled requires hooks.token".
+ENV_TEMPLATE_RE = re.compile(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$")
+def strip_notes(o):
+    # The gateway hooks/mapping/transform schemas are all zod .strict(): any unknown
+    # key (every *_note documentation key) is an "Unrecognized keys" reject. Strip
+    # them recursively BEFORE writing to the live gateway config.
+    if isinstance(o, dict):
+        return {k: strip_notes(v) for k, v in o.items()
+                if not (isinstance(k, str) and k.endswith("_note"))}
+    if isinstance(o, list):
+        return [strip_notes(v) for v in o]
+    return o
 route = json.load(open(os.environ["PROV_ROUTE"], encoding="utf-8"))
 rh = route.get("hooks") or {}
 try:
@@ -523,10 +579,13 @@ if tgt is None:
 if tgt.get("agentId") == "<CLIENT_ANTHOLOGY_AGENT_ID>": tgt["agentId"] = agent
 if tgt.get("sessionKey") == "<CLIENT_ANTHOLOGY_SESSION_KEY>": tgt["sessionKey"] = sk
 
-# The token MUST be a SecretRef by env label; assert we never inline a value.
+# The token MUST be the PLAIN env-template string ${LABEL} (never an object, never
+# an inlined value): the gateway resolves it from the env at load and preserves the
+# ${...} literal on write, so no secret value ever lands in the config.
 tok = rh.get("token")
-if not (isinstance(tok, dict) and tok.get("source") == "env"):
-    sys.stderr.write("route token must be a SecretRef by env label\n"); sys.exit(3)
+if not (isinstance(tok, str) and ENV_TEMPLATE_RE.match(tok.strip())):
+    sys.stderr.write("route token must be the env-template string ${LABEL}, not an object or an inlined value\n"); sys.exit(3)
+tok = tok.strip()
 
 merged = dict(cur)                      # preserve keys sibling integrations rely on
 merged["enabled"] = True
@@ -541,8 +600,10 @@ merged["allowedAgentIds"] = allowed
 # dedup-by-id: drop any prior anthology-intake, keep EVERY other route, append fresh.
 kept = [m for m in (merged.get("mappings") or [])
         if not (isinstance(m, dict) and m.get("id") == "anthology-intake")]
-kept.append(tgt)
+kept.append(strip_notes(tgt))
 merged["mappings"] = kept
+# Belt-and-suspenders: strip *_note anywhere in the object written to the gateway.
+merged = strip_notes(merged)
 print(json.dumps(merged, ensure_ascii=False))
 PY
 )"
@@ -564,36 +625,51 @@ PY
     fi
 
     # VERIFY-AFTER-WRITE — read the live config back. The mapping MUST be present
-    # (matched by id AND path) and the config MUST validate, else this is a REAL
-    # failure, not a claim. The token binding is checked by LABEL from the raw
-    # config file (a label is not a secret; the value is a SecretRef the gateway
-    # resolves at runtime and never lands here).
+    # (matched by id AND path), it MUST carry NO *_note keys (the .strict() schema
+    # would reject them), the token MUST be the env-template string ${LABEL} (never
+    # an object, never an inlined value), and the config MUST validate — else this is
+    # a REAL failure, not a claim. The token is checked from the raw config file (the
+    # ${...} literal is preserved on write; the resolved value never lands here).
     local mappings_back cfg_file
     mappings_back="$(openclaw config get hooks.mappings --json 2>/dev/null)" || mappings_back=""
     cfg_file="$(openclaw config file 2>/dev/null)" || cfg_file=""
     if ! PROV_MB="$mappings_back" PROV_CFG="$cfg_file" python3 - <<'PY'
-import json, os, sys
+import json, os, re, sys
+ENV_TEMPLATE_RE = re.compile(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$")
+def note_keys(o):
+    out = []
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if isinstance(k, str) and k.endswith("_note"): out.append(k)
+            out += note_keys(v)
+    elif isinstance(o, list):
+        for v in o: out += note_keys(v)
+    return out
 try:
     arr = json.loads(os.environ.get("PROV_MB") or "[]")
 except Exception:
     arr = []
-present = any(isinstance(m, dict) and m.get("id") == "anthology-intake"
-             and (m.get("match") or {}).get("path") == "anthology-intake"
-             for m in (arr if isinstance(arr, list) else []))
-if not present:
+intake = next((m for m in (arr if isinstance(arr, list) else [])
+               if isinstance(m, dict) and m.get("id") == "anthology-intake"
+               and (m.get("match") or {}).get("path") == "anthology-intake"), None)
+if intake is None:
     sys.stderr.write("verify: anthology-intake mapping NOT present in live hooks.mappings after write\n")
     sys.exit(1)
+leaked = note_keys(intake)
+if leaked:
+    sys.stderr.write("verify: unrecognized *_note key(s) leaked into the live mapping: %s\n" % ", ".join(leaked)); sys.exit(1)
+if not str((intake.get("transform") or {}).get("module") or "").endswith((".mjs", ".js", ".cjs")):
+    sys.stderr.write("verify: transform.module is not a Node-loadable module (a .py cannot be import()'d)\n"); sys.exit(1)
 cf = os.environ.get("PROV_CFG") or ""
 if cf and os.path.isfile(cf):
     try:
         tok = (json.load(open(cf, encoding="utf-8")).get("hooks") or {}).get("token")
     except Exception as exc:
         sys.stderr.write("verify: could not read back the config file (%s)\n" % exc); sys.exit(1)
-    ident = tok.get("id") if isinstance(tok, dict) else None
-    if ident is not None and ident != "ANTHOLOGY_INTAKE_HOOK_SECRET":
-        sys.stderr.write("verify: hooks.token SecretRef id is not ANTHOLOGY_INTAKE_HOOK_SECRET\n"); sys.exit(1)
-    if isinstance(tok, dict) and not tok:
-        sys.stderr.write("verify: hooks.token is empty after write\n"); sys.exit(1)
+    if not (isinstance(tok, str) and ENV_TEMPLATE_RE.match(tok.strip())):
+        sys.stderr.write("verify: hooks.token is not the env-template string ${LABEL}: %r\n" % tok); sys.exit(1)
+    if tok.strip() != "${ANTHOLOGY_INTAKE_HOOK_SECRET}":
+        sys.stderr.write("verify: hooks.token env-template id is not ANTHOLOGY_INTAKE_HOOK_SECRET\n"); sys.exit(1)
 PY
     then
         note "  live-merge: VERIFY FAILED — the route did not actually land in the live gateway config"
@@ -634,13 +710,16 @@ step7_webhook() {
     local now; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if PROV_TPL="$tpl" PROV_OUT="$STATE_DIR/hooks/anthology-intake.route.json" \
        PROV_LOC="$loc_masked" PROV_NOW="$now" python3 - <<'PY'
-import json, os, tempfile
+import json, os, re, tempfile
 tpl = os.environ["PROV_TPL"]; out = os.environ["PROV_OUT"]
 with open(tpl, "r", encoding="utf-8") as fh:
     route = json.load(fh)
-# SecretRef-by-label MUST already be present; assert we never inline a value.
+# The env-template string ${LABEL} MUST already be present; assert we never inline a
+# value (the 2026.6.11 gateway requires a plain string token, resolved from the env
+# at load and preserved literally on write).
 tok = (route.get("hooks") or {}).get("token")
-assert isinstance(tok, dict) and tok.get("source") == "env", "route token must be a SecretRef by env label"
+assert isinstance(tok, str) and re.match(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$", tok.strip()), \
+    "route token must be the env-template string ${LABEL}, not an object or an inlined value"
 route["resolved"] = {"location_masked": os.environ["PROV_LOC"], "provisioned_at": os.environ["PROV_NOW"]}
 os.makedirs(os.path.dirname(out), exist_ok=True)
 d = os.path.dirname(out)
@@ -667,6 +746,13 @@ PY
     # error, never a silent success. Deferral (CLI absent) is NOT a hard fail
     # unless --require-live.
     if command -v openclaw >/dev/null 2>&1; then
+        # The transform module MUST be installed BEFORE the mapping is live, or the
+        # gateway import()s a missing module at the first request. Install the
+        # Node-loadable .mjs shim under <configDir>/hooks/transforms/ first.
+        if ! install_intake_transform; then
+            note "  transform shim install did NOT take — reporting a real error (never a bare success claim)"
+            set_crc 1; echo "$EX_ERR"; return
+        fi
         if merge_intake_route_into_gateway "$STATE_DIR/hooks/anthology-intake.route.json"; then
             note "  gateway route merge VERIFIED live (hooks.mappings + hooks.token); verify-webhook proves T1 on the canary"
         else
@@ -848,7 +934,21 @@ PY
 # ~/.openclaw/agents/<dept-slug>/ to release this department."). This step materializes
 # exactly that runtime, following materialize-dept-agents.sh's schema byte-for-byte
 # (id=dept-<slug>, name, workspace, agentDir, memorySearch), idempotently, as the node
-# user, and VERIFIES it by reading the agents.list[] entry and the agent dir back.
+# user, and VERIFIES it by reading the agents.list[] entry and both on-disk dirs back.
+#
+# ACTIVATION (how the freshly-wired agent goes LIVE): there is NO reload verb --
+# `openclaw gateway ...` is start/restart/run/status/health/probe/... and `openclaw
+# config ...` is get/set/patch/unset/validate; a `gateway reload`/`config reload`
+# returns NON-ZERO because neither subcommand exists. The managed gateway instead
+# WATCHES openclaw.json (chokidar, awaitWriteFinish) and HOT-RELOADS the agent runtime
+# whenever agents.list changes -- OpenClaw dist server-reload-handlers
+# (startManagedGatewayConfigReloader + the agents.list branch of
+# shouldRefreshContextWindowCache), wired unconditionally at gateway "ready" in
+# server.impl. So the atomic openclaw.json write below IS the activation trigger; no
+# reload command is (or can be) invoked. The reloader only PROMOTES a schema-valid
+# config, so we best-effort `openclaw config validate` the written file to confirm the
+# gateway will ACCEPT the change. End-to-end live dispatch is confirmed on the Wave-7
+# canary (a real board card releasing out of no_specialist_runtime).
 wire_department_runtime() {
     note "STEP 3.6 -- wire the Anthology department's OpenClaw agent RUNTIME (agents.list[] + ~/.openclaw/agents/dept-$DEPT_SLUG/; read-back verified)"
     if [ "$SKIP_DEPARTMENT" = "1" ]; then note "  --skip-department: skipped (CC runtime wired elsewhere)"; echo "$EX_OK"; return; fi
@@ -931,23 +1031,49 @@ except Exception as exc:                                  # noqa: BLE001
     except OSError:
         pass
     sys.stderr.write("[wire] atomic write failed: %s\n" % exc); sys.exit(1)
-# The '~/.openclaw/agents/<dept-slug>/' the CC dispatch check requires.
+# Materialize BOTH on-disk dirs the entry points at, as the node user:
+#   * agentDir  (~/.openclaw/agents/dept-<slug>/) -- the CC dispatch check + the
+#     gateway's agent-state resolver require it (materialize-dept-agents.sh creates the
+#     same dir "so the gateway can resolve it at startup").
+#   * workspace (~/.openclaw/workspace/departments/<slug>/) -- the target of the
+#     agents.list[] entry's `workspace`; create it so the hot-reloaded agent has a real
+#     workspace root instead of a dangling path.
 os.makedirs(agent_dir, exist_ok=True)
-# READ-BACK verify: the entry must be present exactly once AND the dir must exist.
+os.makedirs(workspace, exist_ok=True)
+# READ-BACK verify: the entry must be present exactly once AND both dirs must exist.
 back = json.load(open(cfg_path, encoding="utf-8"))
 ids = [a.get("id") for a in back.get("agents", {}).get("list", []) if isinstance(a, dict)]
-if ids.count(agent_id) != 1 or not os.path.isdir(agent_dir):
-    sys.stderr.write("[wire] read-back FAILED: entry_count=%d dir=%s\n"
-                     % (ids.count(agent_id), os.path.isdir(agent_dir)))
+if ids.count(agent_id) != 1 or not os.path.isdir(agent_dir) or not os.path.isdir(workspace):
+    sys.stderr.write("[wire] read-back FAILED: entry_count=%d agentDir=%s workspace=%s\n"
+                     % (ids.count(agent_id), os.path.isdir(agent_dir), os.path.isdir(workspace)))
     sys.exit(5)
-sys.stderr.write("[wire] %s agents.list[] entry %s (agentDir %s); read-back verified\n"
-                 % (action, agent_id, agent_dir))
+sys.stderr.write("[wire] %s agents.list[] entry %s (agentDir %s, workspace %s); read-back verified\n"
+                 % (action, agent_id, agent_dir, workspace))
 PY
     rc=$?
     set_crc "$rc"
     case "$rc" in
-        0) note "  department runtime wired + read-back verified (dept-$DEPT_SLUG); board cards now dispatch (no more no_specialist_runtime)"; echo "$EX_OK" ;;
-        5) note "  department runtime read-back MISMATCH (entry/dir absent after write)"; echo "$EX_MISMATCH" ;;
+        0)
+            note "  department runtime wired + read-back verified (dept-$DEPT_SLUG): agents.list[] entry + agentDir + workspace on disk"
+            # ACTIVATION: the atomic openclaw.json write above is the trigger -- the
+            # managed gateway's config hot-reloader (chokidar watch on openclaw.json)
+            # reloads the agent runtime on the agents.list change. There is NO reload
+            # verb to call (gateway has no `reload`; config has no `reload`). Best-effort,
+            # READ-ONLY: validate the just-written file so we confirm the gateway will
+            # PROMOTE it (an invalid config makes the reloader keep last-good and NOT
+            # pick up the new agent). Skipped under a test OC-root override so the
+            # hermetic self-test never touches a real box. Never restarts the gateway.
+            if [ -z "${ANTHOLOGY_OC_ROOT:-}" ] && command -v openclaw >/dev/null 2>&1; then
+                if OPENCLAW_CONFIG_PATH="$oc_root/openclaw.json" openclaw config validate >/dev/null 2>&1; then
+                    note "  activation: openclaw.json validates -> gateway config hot-reloader will pick up dept-$DEPT_SLUG on its next watch cycle (no reload verb needed); live dispatch confirmed on the Wave-7 canary"
+                else
+                    note "  activation WARNING: openclaw.json failed 'openclaw config validate' -- the gateway keeps its last-good config and will NOT hot-reload dept-$DEPT_SLUG until it is valid; run 'openclaw doctor --fix' then re-verify on the canary"
+                fi
+            else
+                note "  activation: agents.list change is hot-reloaded by the gateway's openclaw.json watcher; end-to-end live dispatch is confirmed on the Wave-7 canary (no more no_specialist_runtime)"
+            fi
+            echo "$EX_OK" ;;
+        5) note "  department runtime read-back MISMATCH (entry/agentDir/workspace absent after write)"; echo "$EX_MISMATCH" ;;
         *) note "  department runtime wiring error (rc=$rc)"; echo "$EX_ERR" ;;
     esac
 }
@@ -1126,7 +1252,39 @@ rest = [a for a in args[1:] if not a.startswith("-")]
 if sub == "file":
     print(cfgp); sys.exit(0)
 if sub == "validate":
-    sys.exit(1 if os.environ.get("OC_STUB_VALIDATE_FAIL") == "1" else 0)
+    # W5.3 hardening: the validate stub is no longer a no-op. It enforces the parts
+    # of the REAL 2026.6.11 gateway hooks schema the merge must satisfy, so the
+    # self-test genuinely CATCHES a regression of defects A/B/C instead of rubber-
+    # stamping them: (A) hooks.token must be the plain ${LABEL} string (an object
+    # SecretRef throws in resolveHooksConfig); (B) the hooks/mapping/transform objects
+    # are zod .strict() -> NO unknown *_note keys; (C) transform.module must be a
+    # Node-loadable module (.mjs/.js/.cjs), never a .py that import() cannot load.
+    if os.environ.get("OC_STUB_VALIDATE_FAIL") == "1":
+        sys.exit(1)
+    import re as _re
+    ENV_T = _re.compile(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$")
+    def _notes(o):
+        n = []
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if isinstance(k, str) and k.endswith("_note"): n.append(k)
+                n += _notes(v)
+        elif isinstance(o, list):
+            for v in o: n += _notes(v)
+        return n
+    h = (load().get("hooks") or {})
+    if h:
+        if h.get("enabled") is True:
+            tok = h.get("token")
+            if not (isinstance(tok, str) and ENV_T.match(tok.strip())):
+                sys.stderr.write("validate: hooks.token must be the ${LABEL} env-template string\n"); sys.exit(1)
+        if _notes(h):
+            sys.stderr.write("validate: hooks has unrecognized *_note key(s): %s\n" % ", ".join(_notes(h))); sys.exit(1)
+        for m in (h.get("mappings") or []):
+            mod = str(((m or {}).get("transform") or {}).get("module") or "")
+            if mod and not mod.endswith((".mjs", ".js", ".cjs")):
+                sys.stderr.write("validate: transform.module %r is not a Node-loadable module\n" % mod); sys.exit(1)
+    sys.exit(0)
 if sub == "get":
     if not rest: sys.exit(2)
     ok, val = get_by_path(load(), rest[0])
@@ -1340,8 +1498,12 @@ PY
 import json, re, sys
 p = sys.argv[1]; r = json.load(open(p))
 tok = (r.get("hooks") or {}).get("token")
-assert isinstance(tok, dict) and tok.get("source") == "env" and tok.get("id") == "ANTHOLOGY_INTAKE_HOOK_SECRET", \
-    "route token must be a SecretRef by label, not an inlined value"
+assert isinstance(tok, str) and re.match(r"^\$\{[A-Z][A-Z0-9_]{0,127}\}$", tok.strip()) \
+    and tok.strip() == "${ANTHOLOGY_INTAKE_HOOK_SECRET}", \
+    "route token must be the env-template string ${LABEL}, not an object or an inlined value: %r" % (tok,)
+mod = ((r.get("hooks") or {}).get("mappings") or [{}])[0].get("transform", {}).get("module", "")
+assert str(mod).endswith((".mjs", ".js", ".cjs")), \
+    "transform.module must be a Node-loadable module (a .py cannot be import()'d): %r" % (mod,)
 assert not re.search(r"[0-9a-f]{64}", open(p).read()), "route file contains a secret-shaped 64-hex value"
 PY
         local _secf="$tmp/state7/secrets/anthology-intake-hook-secret"
@@ -1365,13 +1527,13 @@ PY
     # in for the live gateway; no operator config is ever touched.
     SCRIPTS="$save_scripts"; MODE="live"; REQUIRE_LIVE=0; STATE_DIR="$tmp/state13"
     local _sec13i="synthINTAKEsecretUNIT13" _sec13g="synthGATEsecretUNIT13"
-    # Pre-seed a COEXISTING sibling route + a DIFFERENT hooks.token so the merge
-    # is proven to (a) preserve other /hooks integrations and (b) set the token to
-    # the anthology SecretRef by label.
+    # Pre-seed a COEXISTING sibling route + a DIFFERENT hooks.token (env-template
+    # string, the gateway's real token shape) so the merge is proven to (a) preserve
+    # other /hooks integrations and (b) OVERWRITE the token to the anthology ${LABEL}.
     python3 - "$OC_STUB_CFG" <<'PY'
 import json, sys
 json.dump({"hooks": {"enabled": True, "path": "/hooks",
-    "token": {"source": "env", "provider": "default", "id": "SOME_OTHER_HOOK_SECRET"},
+    "token": "${SOME_OTHER_HOOK_SECRET}",
     "allowedAgentIds": ["ghl-agent"],
     "mappings": [{"id": "ghl-inbound", "match": {"path": "ghl-inbound"}, "action": "agent"}]}},
     open(sys.argv[1], "w"))
@@ -1379,7 +1541,7 @@ PY
     n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="$_sec13i" ANTHOLOGY_GATE_TOKEN_SECRET="$_sec13g" step7_webhook 2>/dev/null)"
     [ "$n" = "$EX_OK" ] || { echo "  FAIL unit13 fresh merge: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
     OC_STUB_CFG="$OC_STUB_CFG" PROV_SEC="$_sec13i" python3 - <<'PY' || fails=$((fails+1))
-import json, os
+import json, os, re
 cfg = json.load(open(os.environ["OC_STUB_CFG"], encoding="utf-8"))
 h = cfg.get("hooks") or {}
 maps = h.get("mappings") or []
@@ -1388,9 +1550,26 @@ assert ids.count("anthology-intake") == 1, "anthology-intake must be present exa
 assert "ghl-inbound" in ids, "sibling ghl-inbound route must be PRESERVED: %r" % ids
 am = next(m for m in maps if m.get("id") == "anthology-intake")
 assert (am.get("match") or {}).get("path") == "anthology-intake", "mapping match.path wrong"
+# (B) the .strict() gateway schema rejects unknown keys: NO *_note may survive into
+# the live mapping.
+def _notes(o):
+    n = []
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if isinstance(k, str) and k.endswith("_note"): n.append(k)
+            n += _notes(v)
+    elif isinstance(o, list):
+        for v in o: n += _notes(v)
+    return n
+assert not _notes(h), "*_note key(s) leaked into the live hooks block: %r" % _notes(h)
+# (C) transform.module must be a Node-loadable module, never a .py.
+mod = (am.get("transform") or {}).get("module", "")
+assert str(mod).endswith((".mjs", ".js", ".cjs")), "transform.module must be Node-loadable: %r" % (mod,)
+# (A) the token must be OVERWRITTEN to the anthology ${LABEL} env-template string.
 tok = h.get("token")
-assert isinstance(tok, dict) and tok.get("id") == "ANTHOLOGY_INTAKE_HOOK_SECRET", \
-    "hooks.token must be the anthology SecretRef by label: %r" % tok
+assert isinstance(tok, str) and tok.strip() == "${ANTHOLOGY_INTAKE_HOOK_SECRET}", \
+    "hooks.token must be the anthology env-template string ${ANTHOLOGY_INTAKE_HOOK_SECRET}: %r" % (tok,)
+assert "SOME_OTHER_HOOK_SECRET" not in tok, "the sibling token must be overwritten, not merged"
 assert h.get("enabled") is True, "hooks.enabled must be true"
 assert os.environ["PROV_SEC"] not in json.dumps(cfg), "a secret VALUE leaked into the live config"
 PY

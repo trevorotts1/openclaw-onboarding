@@ -39,7 +39,7 @@
 # detection class only. The reference dir is enumerated for names/hashes at runtime
 # and never printed. The four scanners self-exclude (their markers are definitions).
 #
-# EXPORTS_REF_DIR default: "/Users/blackceomacmini/Downloads/anthology project"
+# EXPORTS_REF_DIR default: "$HOME/Downloads/anthology project"
 # (the operator's out-of-tree exports). Absent in CI -- structural detection still
 # fully protects.
 #
@@ -62,7 +62,7 @@ trap _cleanup_selftest EXIT
 
 OPT_ROOT=""; OPT_SCOPE="engine"; OPT_BASE="origin/main"; OPT_JSON=0
 OPT_INCLUDE_SELF="${SCAN_INCLUDE_SELF:-0}"; OPT_ALL_FILES="${SCAN_ALL_FILES:-0}"
-EXPORTS_REF_DIR="${EXPORTS_REF_DIR:-/Users/blackceomacmini/Downloads/anthology project}"
+EXPORTS_REF_DIR="${EXPORTS_REF_DIR:-$HOME/Downloads/anthology project}"
 
 usage() {
     cat <<EOF
