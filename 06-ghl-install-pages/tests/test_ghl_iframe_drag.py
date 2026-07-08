@@ -985,6 +985,307 @@ def test_remove_canvas_field_fails_closed_when_count_never_drops():
     assert "never DROPPED" in ei.value.reason
 
 
+# ---------------------------------------------------------------------------
+# 7b. F4 REMOVE-CONTROL POLL (v1.2.1) — the LIVE ATTEMPT-#6 STOP@F4.delete fix.
+#     Live 2026-07-08: the Phone field was located, hovered, and click-selected
+#     against the real account, but `role=link:'Remove field'` never became
+#     visible inside ONE opaque 15s wait (TimeoutError). The primitive must now
+#     poll on a monotonic deadline, re-stimulate the §6 hover/selected reveal
+#     (park-away + re-enter), scan BOTH the exact spec and the literal
+#     documented lock form, and pick the control NEAREST the field.
+# ---------------------------------------------------------------------------
+class _F4World:
+    """Configurable remove-control world:
+      * reveal='hover'   — the control appears on the FIRST hover (pure
+                           hover-then-appear; no select-click needed);
+      * reveal='rehover' — the control appears ONLY on a hover AFTER the
+                           select-click, i.e. a REAL re-entry (the live
+                           attempt-#6 stimulation gap);
+      * reveal='never'   — the control never appears (must fail closed);
+      * exact_name=False — only the case-insensitive documented lock form
+                           matches (accessible-name drift)."""
+
+    def __init__(self, reveal="hover", exact_name=True):
+        self.reveal = reveal
+        self.exact_name = exact_name
+        self.field_count = 1
+        self.link_visible = False
+        self.clicked_field = False
+        self.hovers = 0
+        self.events = []
+
+    def on_hover(self):
+        self.hovers += 1
+        self.events.append("hover:field")
+        if self.reveal == "hover":
+            self.link_visible = True
+        elif self.reveal == "rehover" and self.clicked_field and self.hovers >= 2:
+            self.link_visible = True
+
+    def on_field_click(self):
+        self.clicked_field = True
+        self.events.append("click:field")
+
+    def on_link_click(self):
+        self.events.append("click:link")
+        self.field_count = 0
+        self.link_visible = False
+
+
+class _F4Loc:
+    def __init__(self, world, kind, match=True):
+        self._w, self._kind, self._match = world, kind, match
+
+    @property
+    def first(self):
+        return self
+
+    def nth(self, i):
+        return self
+
+    def is_visible(self):
+        if not self._match:
+            return False
+        return (self._w.field_count > 0) if self._kind == "field" else self._w.link_visible
+
+    def count(self):
+        return int(self.is_visible())
+
+    def wait_for(self, state="visible", timeout=0):
+        if not self.is_visible():
+            raise TimeoutError(f"mock: {self._kind} hidden")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        pass
+
+    def hover(self):
+        if self._kind == "field":
+            self._w.on_hover()
+
+    def click(self):
+        if self._kind == "field":
+            self._w.on_field_click()
+        else:
+            self._w.on_link_click()
+
+
+class _F4Frame:
+    def __init__(self, world):
+        self._w = world
+
+    def get_by_placeholder(self, text):
+        return _F4Loc(self._w, "field")
+
+    def get_by_text(self, text, exact=False):
+        return _F4Loc(self._w, "field")
+
+    def get_by_role(self, role, name=None, exact=False):
+        self._w.events.append(("role", role, name, exact))
+        # The exact form only matches when the accessible name is exactly
+        # right; the documented lock form (non-exact) always matches.
+        return _F4Loc(self._w, "link", match=(self._w.exact_name or not exact))
+
+    def locator(self, sel):
+        return _F4Loc(self._w, "field")
+
+
+def test_locator_spec_role_nonexact_lock_form_grammar():
+    """`role~=<role>:<name>` resolves via Playwright-DEFAULT name matching
+    (exact NOT set) — the literal form the SELECTORS §6 lock records; a
+    malformed spec still fails closed as bad-role-locator."""
+    class _Spy:
+        def __init__(self):
+            self.calls = []
+
+        def get_by_role(self, role, name=None, exact=False):
+            self.calls.append(("role", role, name, exact))
+            return object()
+
+    spy = _Spy()
+    idg._resolve_locator_all(spy, "role~=link:Remove field")
+    assert spy.calls == [("role", "link", "Remove field", False)]
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg._resolve_locator_all(spy, "role~=link")
+    assert ei.value.code == "bad-role-locator"
+
+
+def test_remove_canvas_field_hover_revealed_control_needs_no_select_click():
+    """A control revealed by HOVER alone (§6: 'hover/selected') is used WITHOUT
+    the select-click — least canvas disturbance, and the receipt says so."""
+    w = _F4World(reveal="hover")
+    rec = idg.drive_remove_canvas_field(
+        _MockPage(_F4Frame(w)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500,
+        sleeper=lambda s: None)
+    assert rec["removed"] is True
+    assert rec["select_clicked"] is False and rec["hover_cycles"] == 0
+    assert "click:field" not in w.events
+    assert rec["remove_link_matched"] == idg.REMOVE_FIELD_LINK_SPEC
+
+
+def test_remove_canvas_field_rehover_cycle_reveals_selected_field_control(monkeypatch):
+    """THE LIVE ATTEMPT-#6 STIMULATION GAP: after the select-click the pointer
+    never left the field, so the builder's hover reveal never re-fired and one
+    opaque 15s wait burned the whole budget. The poll must PARK the pointer
+    away, RE-enter the field (a REAL mouseenter), and then use the control."""
+    monkeypatch.setattr(idg, "_REMOVE_REHOVER_EVERY_S", 0.0)
+    w = _F4World(reveal="rehover")
+    page = _MockPage(_F4Frame(w))
+    rec = idg.drive_remove_canvas_field(
+        page, iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=2000,
+        sleeper=lambda s: None)
+    assert rec["removed"] is True
+    assert rec["select_clicked"] is True and rec["hover_cycles"] >= 1
+    assert w.hovers >= 2, "the control needed a REAL re-entry hover"
+    assert ("move", 0.0, 0.0) in page.mouse.ops, \
+        "the pointer must PARK AWAY so mouseenter re-fires on re-entry"
+    assert w.events.index("click:field") < w.events.index("click:link")
+
+
+def test_remove_canvas_field_falls_back_to_documented_lock_form_name():
+    """THE LIVE ATTEMPT-#6 SELECTOR CLASS: SELECTORS §6 records the lock as
+    getByRole('link', { name: 'Remove field' }) WITHOUT exact — Playwright-
+    default case-insensitive substring matching. v1.2.0 hardened the spec to
+    exact=True, so an accessible name drifting by case/suffix attaches ZERO
+    nodes for the whole budget (the observed TimeoutError). The poll must ALSO
+    scan the literal documented lock form and succeed through it."""
+    w = _F4World(reveal="hover", exact_name=False)
+    rec = idg.drive_remove_canvas_field(
+        _MockPage(_F4Frame(w)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500,
+        sleeper=lambda s: None)
+    assert rec["removed"] is True
+    assert rec["remove_link_matched"] == idg.REMOVE_FIELD_LINK_LOCK_SPEC
+    assert ("role", "link", "Remove field", False) in w.events, \
+        "must resolve the documented non-exact lock form"
+
+
+def test_remove_canvas_field_never_appearing_control_still_fails_closed(monkeypatch):
+    """A control that NEVER appears must still STOP honestly — after the select
+    -click AND re-hover stimulation were genuinely tried — with per-spec
+    attached-match diagnostics in the reason (so the next live run is
+    decisive), and the field left untouched."""
+    monkeypatch.setattr(idg, "_REMOVE_REHOVER_EVERY_S", 0.0)
+    w = _F4World(reveal="never")
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_remove_canvas_field(
+            _MockPage(_F4Frame(w)), iframe_selector="iframe",
+            field="placeholder=+1 (555) 000-0000", timeout_ms=300)
+    assert ei.value.code == "remove-link-not-found"
+    assert "attached match(es)" in ei.value.reason
+    assert "re-hover cycle" in ei.value.reason
+    assert w.clicked_field is True, "the select-click stimulation must be tried"
+    assert w.hovers >= 2, "the re-hover stimulation must be tried"
+    assert w.field_count == 1 and "click:link" not in w.events, \
+        "an unremovable field must be left untouched (never a fake delete)"
+
+
+class _NearWorld:
+    def __init__(self):
+        self.field_count = 1
+        self.clicked = []
+
+
+class _NearLink:
+    def __init__(self, world, box, is_right_one):
+        self._w, self._box, self._right = world, box, is_right_one
+
+    def is_visible(self):
+        return True
+
+    def bounding_box(self):
+        return self._box
+
+    def click(self):
+        self._w.clicked.append("near" if self._right else "far")
+        if self._right:
+            self._w.field_count = 0
+
+
+class _NearLinkAll:
+    def __init__(self, links):
+        self._links = links
+
+    @property
+    def first(self):
+        return self._links[0]
+
+    def count(self):
+        return len(self._links)
+
+    def nth(self, i):
+        return self._links[i]
+
+
+class _NearField:
+    def __init__(self, world):
+        self._w = world
+
+    @property
+    def first(self):
+        return self
+
+    def nth(self, i):
+        return self
+
+    def is_visible(self):
+        return self._w.field_count > 0
+
+    def count(self):
+        return self._w.field_count
+
+    def wait_for(self, state="visible", timeout=0):
+        pass
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        pass
+
+    def bounding_box(self):
+        return {"x": 380, "y": 280, "width": 60, "height": 40}   # center (410, 300)
+
+    def hover(self):
+        pass
+
+    def click(self):
+        pass
+
+
+class _NearFrame:
+    def __init__(self, world):
+        self._w = world
+        far = _NearLink(world, {"x": 40, "y": 40, "width": 20, "height": 10}, False)
+        near = _NearLink(world, {"x": 400, "y": 285, "width": 20, "height": 10}, True)
+        self._links = _NearLinkAll([far, near])    # DOM-first = the WRONG one
+
+    def get_by_placeholder(self, text):
+        return _NearField(self._w)
+
+    def get_by_role(self, role, name=None, exact=False):
+        return self._links
+
+    def get_by_text(self, text, exact=False):
+        return _NearField(self._w)
+
+    def locator(self, sel):
+        return _NearField(self._w)
+
+
+def test_remove_canvas_field_clicks_the_control_nearest_the_field():
+    """When SEVERAL 'Remove field' controls are visible at once (one per canvas
+    field), the one nearest the TARGET field's own box must be clicked — the
+    DOM-first one belongs to a KEEP field, and blind-clicking it would delete
+    the wrong field and only fail at the count proof AFTER the damage."""
+    w = _NearWorld()
+    rec = idg.drive_remove_canvas_field(
+        _MockPage(_NearFrame(w)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500,
+        sleeper=lambda s: None)
+    assert w.clicked == ["near"], \
+        f"must click the control NEAREST the field, never the DOM-first: {w.clicked}"
+    assert rec["removed"] is True
+
+
 def test_form_builder_f4_deletes_defaults_before_the_drag(monkeypatch):
     """REGRESSION (live attempt #5, `final_result.json` warnings): the F4
     delete_field steps for 'Phone' + 'Terms & Conditions' were warn-and-KEPT.

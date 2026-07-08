@@ -108,6 +108,31 @@ fixes, none Submit-specific:
     the v1.1.1 count-delta placement proof). 0 matches = a truthful idempotent
     already-absent no-op; everything else fails closed.
 
+REMOVE-CONTROL POLL: HOVER/SELECT STIMULATION + LOCK-FORM FALLBACK (v1.2.1)
+---------------------------------------------------------------------------
+Live 2026-07-08 (attempt #6 against a real account): F4 got the Phone field
+SELECTED (anchor resolved, hovered, clicked) but ``role=link:'Remove field'``
+never became visible within the single 15s wait → ``STOP@F4.delete:Phone``.
+Two coupled defects, same classes as the earlier F2/form-id fixes:
+  • The remove control is HOVER/SELECTED-revealed (§6) but the wait was ONE
+    opaque ``wait_for`` bound to the FIRST DOM match — no re-stimulation, no
+    rescan of the other attached matches. Now a monotonic-deadline POLL scans
+    ALL attached matches every pass, click-selects the field after the first
+    miss, and periodically RE-FIRES the hover by parking the pointer OFF the
+    field and re-entering it (``mouseenter`` only fires on a REAL re-entry;
+    hovering an already-hovered point is a browser no-op).
+  • The v1.2.0 spec hardened the anchor to ``exact=True``, but the documented
+    LOCK (§6) is ``getByRole('link', { name: 'Remove field' })`` WITHOUT
+    ``exact`` — Playwright-default, case-insensitive substring matching. An
+    accessible name that drifts by case/suffix attaches ZERO exact matches for
+    the whole budget. Every poll pass now ALSO scans the literal lock form
+    (new ``role~=<role>:<name>`` spec); the exact form still wins when present.
+  • When SEVERAL remove controls are visible at once (one per field), the one
+    NEAREST the target field's own box is clicked — never the DOM-first one,
+    which belongs to a KEEP field and would only fail at the count proof AFTER
+    the damage. The honest ``remove-link-not-found`` now carries per-spec
+    attached-match diagnostics + the stimulation trace (select/re-hover counts).
+
 FRAME-SCOPED INLINE-TITLE READ/SET (v1.1.0 — the F3 rename fix)
 ----------------------------------------------------------------
 The builder's title ("Form 55" / "Survey 0") is an in-iframe INLINE-EDIT surface
@@ -174,7 +199,7 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.2.0"
+IFRAME_DRAG_VERSION = "v1.2.1"
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -242,6 +267,13 @@ def _resolve_locator_all(frame: Any, spec: str) -> Any:
                           the canvas Submit as role=button name='Submit', while
                           plain ``text=Submit`` ALSO matches the Quick-Add panel's
                           'Submit' CATEGORY header + tile — live 2026-07-08)
+      * ``"role~=R:Name"`` → ``frame.get_by_role("R", name="Name")`` (v1.2.1 —
+                          Playwright-DEFAULT accessible-name matching: case-
+                          insensitive substring. This is the LITERAL form the
+                          SELECTORS locks record — ``getByRole('link', { name:
+                          'Remove field' })`` carries no ``exact`` — so it is the
+                          documented fallback when a live accessible name drifts
+                          by case/suffix and the exact form attaches ZERO nodes)
       * ``"placeholder=P"`` → ``frame.get_by_placeholder("P")`` (v1.2.0 — the
                           documented per-field canvas anchors, SELECTORS §6)
       * bare ``"Foo"``  → treated as ``text=Foo``
@@ -255,6 +287,16 @@ def _resolve_locator_all(frame: Any, spec: str) -> Any:
         return frame.get_by_text(s[6:], exact=True)
     if s.startswith("re:"):
         return frame.get_by_text(re.compile(s[3:]))
+    if s.startswith("role~="):
+        body = s[6:]
+        role, sep, name = body.partition(":")
+        if not sep or not role.strip() or not name.strip():
+            raise IframeDragError(
+                "bad-role-locator",
+                f"role~= spec must be 'role~=<role>:<accessible name>', got {spec!r}")
+        # Playwright-DEFAULT name matching (case-insensitive substring) — the
+        # literal documented SELECTORS-lock form (getByRole without `exact`).
+        return frame.get_by_role(role.strip(), name=name)
     if s.startswith("role="):
         body = s[5:]
         role, sep, name = body.partition(":")
@@ -747,6 +789,16 @@ def coordinate_drag(
 # field's own anchor (mirror of the v1.1.1 count-delta placement proof).
 # ---------------------------------------------------------------------------
 REMOVE_FIELD_LINK_SPEC = "role=link:Remove field"    # SELECTORS-LIVE-form.md §6
+# The LITERAL documented lock form (v1.2.1 — live attempt-#6): §6 records
+# `getByRole('link', { name: 'Remove field' })` WITHOUT `exact`, i.e. Playwright-
+# DEFAULT case-insensitive substring name matching. Scanned as the FALLBACK on
+# every poll pass so a live accessible name that drifts by case/suffix still
+# resolves the DOCUMENTED affordance instead of attaching ZERO exact matches for
+# the whole budget (the observed 15s TimeoutError). The exact form wins when both
+# attach — same collision discipline as the v18.1.4 F2 'Create' fix.
+REMOVE_FIELD_LINK_LOCK_SPEC = "role~=link:Remove field"
+_REMOVE_POLL_S = 0.25               # scan cadence while polling for the control
+_REMOVE_REHOVER_EVERY_S = 1.0       # park-away + re-enter cadence (re-fires mouseenter)
 
 
 def _verify_count_at_most(loc_all: Any, max_count: int, timeout_ms: int) -> Tuple[bool, int]:
@@ -763,13 +815,85 @@ def _verify_count_at_most(loc_all: Any, max_count: int, timeout_ms: int) -> Tupl
         time.sleep(0.25)
 
 
+def _visible_matches(loc_all: Any) -> "list[Any]":
+    """ALL currently-visible matches of an un-narrowed locator, in DOM order.
+    Never raises — an unevaluable candidate simply doesn't count as visible
+    (fail-closed), mirroring :func:`_first_visible_match`."""
+    out: "list[Any]" = []
+    try:
+        n = int(loc_all.count())
+    except Exception:  # noqa: BLE001
+        return out
+    for i in range(n):
+        try:
+            cand = loc_all.nth(i)
+            if cand.is_visible():
+                out.append(cand)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def _nearest_visible_match(loc_all: Any, ref_box: Optional[Dict[str, float]]) -> Optional[Any]:
+    """The visible match whose center sits NEAREST ``ref_box``'s center — for
+    per-field controls, the one that belongs to the reference field. GHL renders
+    one 'Remove field' control per canvas field; blind-clicking the DOM-first
+    visible one can delete a KEEP field and only fail at the count proof AFTER
+    the damage. Falls back to the first visible match when there is no reference
+    box / no candidate boxes. Never raises; ``None`` = nothing visible."""
+    cands = _visible_matches(loc_all)
+    if not cands:
+        return None
+    if not ref_box or len(cands) == 1:
+        return cands[0]
+    try:
+        rx, ry = _center(ref_box)
+    except IframeDragError:
+        return cands[0]
+    best, best_d2 = None, None
+    for cand in cands:
+        try:
+            box = cand.bounding_box()
+        except Exception:  # noqa: BLE001
+            box = None
+        if not box:
+            continue
+        cx = box["x"] + box["width"] / 2.0
+        cy = box["y"] + box["height"] / 2.0
+        d2 = (cx - rx) ** 2 + (cy - ry) ** 2
+        if best_d2 is None or d2 < best_d2:
+            best, best_d2 = cand, d2
+    return best if best is not None else cands[0]
+
+
+def _rehover_field(page: Any, anchor: Any) -> None:
+    """RE-FIRE the field's hover reveal: PARK the pointer off the field (top-left
+    of the top frame — outside the builder iframe), then hover the anchor again.
+    Hovering an already-hovered point is a browser NO-OP — ``mouseenter`` only
+    fires on a REAL re-entry — and the per-field controls are hover-revealed
+    (SELECTORS §6). Best-effort: a miss simply leaves the next poll pass to
+    retry (the deadline still fails closed)."""
+    try:
+        mouse = getattr(page, "mouse", None)
+        if mouse is not None:
+            mouse.move(0.0, 0.0)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        anchor.hover()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def drive_remove_canvas_field(
     page: Any,
     *,
     iframe_selector: str,
     field: str,
     remove_link_spec: str = REMOVE_FIELD_LINK_SPEC,
+    remove_link_lock_spec: Optional[str] = REMOVE_FIELD_LINK_LOCK_SPEC,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> Dict[str, Any]:
     """Remove ONE canvas field inside the builder iframe and VERIFY it is gone.
 
@@ -780,12 +904,31 @@ def drive_remove_canvas_field(
     Mechanism (all frame-scoped — Playwright drives the cross-origin iframe
     natively): 0 matches → the field is ALREADY absent → a truthful idempotent
     no-op receipt (reconciliation semantics: the desired end-state holds);
-    else resolve a VISIBLE match, scroll it on-screen, hover + click it to
-    select (the per-field controls appear on hover/selected — §6), resolve the
-    'Remove field' LINK by role+exact name, click it, and VERIFY the field
-    anchor's match count DECREASED below its pre-remove baseline. FAIL-CLOSED
-    codes: ``field-not-found`` (attached but never visible/selectable),
-    ``remove-link-not-found``, ``field-not-removed``. NEVER fakes a removal."""
+    else resolve a VISIBLE match, scroll it on-screen, HOVER it (§6: the
+    per-field controls are hover/selected-revealed), then POLL on a monotonic
+    deadline for the documented 'Remove field' control (v1.2.1 — the live
+    attempt-#6 ``STOP@F4.delete`` fix; one opaque 15s ``wait_for`` bound to the
+    first DOM match is exactly the class of bug the F2/form-id fixes killed):
+
+      * every pass scans ALL attached matches of the EXACT role+name spec AND
+        of the literal documented LOCK form (``role~=`` — Playwright-default,
+        case-insensitive substring name matching; §6 records ``getByRole``
+        WITHOUT ``exact``), the exact form winning when both attach;
+      * the FIRST miss CLICK-SELECTS the field (§6 'hover/selected'), once —
+        a control already revealed by hover alone is used WITHOUT the click
+        (least canvas disturbance);
+      * later misses RE-FIRE the hover on a cadence (park the pointer OFF the
+        field, re-enter it — ``mouseenter`` only fires on a REAL re-entry);
+      * several visible controls at once → the one NEAREST the field's own box
+        is clicked (a per-field control belongs to its field; the DOM-first
+        one may belong to a KEEP field).
+
+    Then click the control and VERIFY the field anchor's match count DECREASED
+    below its pre-remove baseline. FAIL-CLOSED codes: ``field-not-found``
+    (attached but never visible), ``field-not-selectable``,
+    ``remove-link-not-found`` (now with per-spec attached-match diagnostics +
+    the stimulation trace), ``remove-click-failed``, ``field-not-removed``.
+    NEVER fakes a removal."""
     if not iframe_selector or not str(iframe_selector).strip():
         raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
     if not field or not str(field).strip():
@@ -814,41 +957,81 @@ def drive_remove_canvas_field(
     try:
         anchor.hover()          # reveals the per-field hover controls (§6)
     except Exception:  # noqa: BLE001
-        pass                    # hover is best-effort; the click below selects
+        pass                    # best-effort; the poll below can click-select
     try:
-        anchor.click()          # selecting the field also shows its controls (§6)
-    except Exception as exc:  # noqa: BLE001
-        raise IframeDragError(
-            "field-not-selectable",
-            f"located canvas field {field!r} but the select-click failed "
-            f"({type(exc).__name__}). STOP.") from exc
+        anchor_box = anchor.bounding_box()
+    except Exception:  # noqa: BLE001
+        anchor_box = None       # proximity pick degrades to first-visible
 
-    try:
-        link, _ = _resolve_visible(frame, remove_link_spec, timeout_ms=timeout_ms)
-    except IframeDragError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise IframeDragError(
-            "remove-link-not-found",
-            f"selected canvas field {field!r} but the documented per-field control "
-            f"{remove_link_spec!r} (SELECTORS §6) never became visible within "
-            f"{timeout_ms}ms ({type(exc).__name__}). STOP — never invent another "
-            "delete affordance.") from exc
+    specs = [remove_link_spec]
+    if remove_link_lock_spec and remove_link_lock_spec != remove_link_spec:
+        specs.append(remove_link_lock_spec)
+    spec_locators = [(sp, _resolve_locator_all(frame, sp)) for sp in specs]
+
+    deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
+    select_clicked = False
+    hover_cycles = 0
+    next_rehover = float("inf")
+    link = None
+    matched_spec: Optional[str] = None
+    while True:
+        for sp, la in spec_locators:
+            cand = _nearest_visible_match(la, anchor_box)
+            if cand is not None:
+                link, matched_spec = cand, sp
+                break
+        if link is not None:
+            break
+        if not select_clicked:
+            # Hover alone did not reveal the control → click-SELECT the field
+            # (§6: the controls are hover/SELECTED-revealed), exactly once.
+            try:
+                anchor.click()
+            except Exception as exc:  # noqa: BLE001
+                raise IframeDragError(
+                    "field-not-selectable",
+                    f"located canvas field {field!r} but the select-click failed "
+                    f"({type(exc).__name__}). STOP.") from exc
+            select_clicked = True
+            next_rehover = time.monotonic() + _REMOVE_REHOVER_EVERY_S
+            continue                    # re-scan immediately after selecting
+        now = time.monotonic()
+        if now >= deadline:
+            diag = "; ".join(f"{sp!r}: {_safe_count(la)} attached match(es)"
+                             for sp, la in spec_locators)
+            raise IframeDragError(
+                "remove-link-not-found",
+                f"selected canvas field {field!r} (select-click done, "
+                f"{hover_cycles} re-hover cycle(s)) but no documented per-field "
+                f"remove control became VISIBLE within {timeout_ms}ms — {diag}. "
+                "The §6 affordance is getByRole('link', 'Remove field') on the "
+                "hovered/selected field. STOP — never invent another delete "
+                "affordance.")
+        if now >= next_rehover:
+            _rehover_field(page, anchor)
+            hover_cycles += 1
+            next_rehover = now + _REMOVE_REHOVER_EVERY_S
+        sleeper(_REMOVE_POLL_S)
+
     try:
         link.click()
     except Exception as exc:  # noqa: BLE001
         raise IframeDragError(
             "remove-click-failed",
-            f"the {remove_link_spec!r} control resolved for field {field!r} but the "
+            f"the {matched_spec!r} control resolved for field {field!r} but the "
             f"click failed ({type(exc).__name__}). STOP.") from exc
 
     ok, post = _verify_count_at_most(loc_all, max(0, pre - 1), timeout_ms)
     receipt = {"ok": True, "removed": ok, "already_absent": False, "field": field,
-               "pre_count": pre, "post_count": post, "remove_link": remove_link_spec}
+               "pre_count": pre, "post_count": post,
+               "remove_link": remove_link_spec,
+               "remove_link_matched": matched_spec,
+               "select_clicked": select_clicked,
+               "hover_cycles": hover_cycles}
     if not ok:
         raise IframeDragError(
             "field-not-removed",
-            f"clicked {remove_link_spec!r} for field {field!r} but its anchor match "
+            f"clicked {matched_spec!r} for field {field!r} but its anchor match "
             f"count never DROPPED below the pre-remove baseline ({pre} → {post}) — "
             f"the removal did NOT verify. STOP (never report a fake delete). "
             f"receipt={receipt}")
@@ -862,6 +1045,7 @@ def remove_canvas_field(
     field: str,
     url_marker: Optional[str] = None,
     remove_link_spec: str = REMOVE_FIELD_LINK_SPEC,
+    remove_link_lock_spec: Optional[str] = REMOVE_FIELD_LINK_LOCK_SPEC,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
 ) -> Dict[str, Any]:
     """LIVE entry point: attach over CDP (same logged-in Chromium; no second
@@ -875,7 +1059,9 @@ def remove_canvas_field(
             page = _select_page(browser, url_marker, iframe_selector)
             return drive_remove_canvas_field(
                 page, iframe_selector=iframe_selector, field=field,
-                remove_link_spec=remove_link_spec, timeout_ms=timeout_ms)
+                remove_link_spec=remove_link_spec,
+                remove_link_lock_spec=remove_link_lock_spec,
+                timeout_ms=timeout_ms)
         finally:
             try:
                 browser.close()
@@ -1183,10 +1369,12 @@ def _selftest() -> int:
     _resolve_locator(fs, "exact=Submit")
     _resolve_locator(fs, "css=#tile-state")
     _resolve_locator(fs, "role=button:Submit")
+    _resolve_locator(fs, "role~=link:Remove field")   # v1.2.1 lock-form (non-exact)
     _resolve_locator(fs, "placeholder=+1 (555) 000-0000")
     if fs.calls != [("text", "State", False), ("text", "City", False),
                     ("text", "Submit", True), ("css", "#tile-state"),
                     ("role", "button", "Submit", True),
+                    ("role", "link", "Remove field", False),
                     ("placeholder", "+1 (555) 000-0000")]:
         errors.append(f"locator dispatch wrong: {fs.calls}")
     try:
@@ -1200,6 +1388,12 @@ def _selftest() -> int:
     except IframeDragError as e:
         if e.code != "bad-role-locator":
             errors.append(f"malformed role= wrong code: {e.code}")
+    try:
+        _resolve_locator(fs, "role~=link")      # missing ':<name>' part
+        errors.append("malformed role~= spec did not raise")
+    except IframeDragError as e:
+        if e.code != "bad-role-locator":
+            errors.append(f"malformed role~= wrong code: {e.code}")
 
     # 4. HAPPY drag: mock page records the exact pointer sequence.
     class _MockMouse:
@@ -1625,8 +1819,8 @@ def _selftest() -> int:
     #     already-absent = truthful idempotent no-op; link-never-appears and
     #     count-never-drops both fail closed.
     class _RWLoc:
-        def __init__(self, world, kind):
-            self._w, self._kind = world, kind
+        def __init__(self, world, kind, match=True):
+            self._w, self._kind, self._match = world, kind, match
 
         @property
         def first(self):
@@ -1636,9 +1830,13 @@ def _selftest() -> int:
             return self
 
         def is_visible(self):
+            if not self._match:
+                return False
             return (self._w.field_count > 0) if self._kind == "field" else self._w.link_visible
 
         def count(self):
+            if not self._match:
+                return 0
             return self._w.field_count if self._kind == "field" else int(self._w.link_visible)
 
         def wait_for(self, state="visible", timeout=0):
@@ -1651,10 +1849,12 @@ def _selftest() -> int:
 
         def hover(self):
             self._w.events.append(f"hover:{self._kind}")
+            if self._kind == "field" and self._w.reveal_on_hover and self._w.link_appears:
+                self._w.link_visible = True
 
         def click(self):
             self._w.events.append(f"click:{self._kind}")
-            if self._kind == "field" and self._w.link_appears:
+            if self._kind == "field" and self._w.link_appears and not self._w.reveal_on_hover:
                 self._w.link_visible = True
             if self._kind == "link" and self._w.removal_works:
                 self._w.field_count = 0
@@ -1671,17 +1871,22 @@ def _selftest() -> int:
 
         def get_by_role(self, role, name=None, exact=False):
             self._w.events.append(("role", role, name, exact))
-            return _RWLoc(self._w, "link")
+            # An exact-form resolve only matches when the world's accessible
+            # name is exactly right; the documented lock form always matches.
+            return _RWLoc(self._w, "link", match=(self._w.exact_name or not exact))
 
         def locator(self, sel):
             return _RWLoc(self._w, "field")
 
     class _RWWorld:
-        def __init__(self, field_count=1, link_appears=True, removal_works=True):
+        def __init__(self, field_count=1, link_appears=True, removal_works=True,
+                     reveal_on_hover=False, exact_name=True):
             self.field_count = field_count
             self.link_visible = False
             self.link_appears = link_appears
             self.removal_works = removal_works
+            self.reveal_on_hover = reveal_on_hover
+            self.exact_name = exact_name
             self.events = []
 
     w13 = _RWWorld()
@@ -1722,6 +1927,27 @@ def _selftest() -> int:
     except IframeDragError as e:
         if e.code != "field-not-removed":
             errors.append(f"remove-field unverified wrong code: {e.code}")
+    # 13e (v1.2.1 — live attempt-#6): a HOVER-revealed control is used WITHOUT
+    # a select-click (least canvas disturbance).
+    w13e = _RWWorld(reveal_on_hover=True)
+    rec13e = drive_remove_canvas_field(
+        _MockPage(_RWFrame(w13e)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500, sleeper=lambda s: None)
+    if rec13e.get("removed") is not True or rec13e.get("select_clicked") is not False:
+        errors.append(f"hover-reveal remove receipt wrong: {rec13e}")
+    if "click:field" in w13e.events:
+        errors.append(f"hover-revealed control must not need a select-click: {w13e.events}")
+    # 13f (v1.2.1): an accessible name that misses the EXACT form must still be
+    # resolved via the literal documented LOCK form (role~=, non-exact).
+    w13f = _RWWorld(reveal_on_hover=True, exact_name=False)
+    rec13f = drive_remove_canvas_field(
+        _MockPage(_RWFrame(w13f)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500, sleeper=lambda s: None)
+    if rec13f.get("removed") is not True or \
+            rec13f.get("remove_link_matched") != REMOVE_FIELD_LINK_LOCK_SPEC:
+        errors.append(f"lock-form fallback receipt wrong: {rec13f}")
+    if ("role", "link", "Remove field", False) not in w13f.events:
+        errors.append(f"lock-form fallback did not resolve non-exact: {w13f.events}")
 
     if errors:
         for e in errors:
@@ -1787,12 +2013,18 @@ def _live_selftest() -> int:
         '<div class="tile" id="tile-city">City</div>'
         '<div class="tile">Postal Code</div>'
         "</div>"
-        # Default canvas field + per-field 'Remove field' link (v1.2.0 fixture —
+        # Default canvas fields + per-field 'Remove field' link (v1.2.0 fixture —
         # the F4 reconciliation surface, SELECTORS §6) and a REAL role=button
-        # Submit landmark (§5) instead of a bare text node.
+        # Submit landmark (§5) instead of a bare text node. v1.2.1: 'Phone'
+        # reveals the control on CLICK-select; 'Email' reveals it ONLY on a
+        # REAL re-entry hover AFTER selection — the live attempt-#6 class,
+        # where one opaque wait timed out because nothing re-stimulated the
+        # hover once the select-click had been made.
         '<div id="fields">'
-        '<div class="field" id="f-phone">Phone'
+        '<div class="field" id="f-phone" data-reveal="click">Phone'
         '<input placeholder="+1 (555) 000-0000"></div>'
+        '<div class="field" id="f-email" data-reveal="hover">Email'
+        '<input placeholder="your@email.com"></div>'
         "</div>"
         '<a id="remove-link" href="#" style="display:none">Remove field</a>'
         '<div id="canvas"><button id="submit-btn" type="button">Submit</button></div>'
@@ -1813,7 +2045,11 @@ def _live_selftest() -> int:
         "let selectedField=null;"
         "const removeLink=document.getElementById('remove-link');"
         "document.querySelectorAll('.field').forEach(f=>{"
-        "  f.addEventListener('click',()=>{selectedField=f;removeLink.style.display='inline';});"
+        "  f.addEventListener('click',()=>{selectedField=f;"
+        "    if(f.dataset.reveal==='click'){removeLink.style.display='inline';}});"
+        "  f.addEventListener('mouseenter',()=>{"
+        "    if(selectedField===f&&f.dataset.reveal==='hover'){"
+        "      removeLink.style.display='inline';}});"
         "});"
         "removeLink.addEventListener('click',e=>{e.preventDefault();"
         "  if(selectedField){selectedField.remove();selectedField=null;"
@@ -1957,6 +2193,23 @@ def _live_selftest() -> int:
                     field="placeholder=+1 (555) 000-0000", timeout_ms=4000)
                 if rec_h2.get("already_absent") is not True:
                     errors.append(f"live remove-field re-run not idempotent: {rec_h2}")
+
+                # (i) HOVER-REVEALED control (v1.2.1 — the live attempt-#6
+                #     class): the 'Email' field's control appears ONLY on a
+                #     REAL re-entry hover AFTER the select-click (the click
+                #     alone reveals nothing). The poll must click-select, park
+                #     the pointer away, RE-hover, and then remove — the old
+                #     single opaque wait burned its whole budget here
+                #     (STOP@F4.delete live).
+                rec_i = drive_remove_canvas_field(
+                    page, iframe_selector=iframe_selector,
+                    field="placeholder=your@email.com", timeout_ms=8000)
+                if rec_i.get("removed") is not True:
+                    errors.append(f"live hover-reveal remove wrong: {rec_i}")
+                if rec_i.get("select_clicked") is not True or \
+                        rec_i.get("hover_cycles", 0) < 1:
+                    errors.append("live hover-reveal remove did not exercise the "
+                                  f"select+re-hover stimulation: {rec_i}")
             finally:
                 ctx.close()
     except IframeDragError as e:

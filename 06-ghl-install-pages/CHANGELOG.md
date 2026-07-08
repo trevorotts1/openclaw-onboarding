@@ -4,6 +4,71 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.10] - 2026-07-08 - F4 remove-control acquisition is a POLL with hover/select re-stimulation + the documented lock-form name fallback (the live attempt-#6 `STOP@F4.delete:Phone` fix)
+
+**THE LIVE BUG (attempt #6 against a real account).** Auth, F1/F2 form
+creation, and the F3 rename all landed (now live-proven); F4 then STOPped at
+`F4.delete:Phone` — the Phone field's documented anchor resolved, was hovered
+and click-selected, but `role=link:'Remove field'` "never became visible
+within 15000ms (TimeoutError)". Root cause, two coupled defects in
+`drive_remove_canvas_field` (ghl_iframe_drag v1.2.0) — the SAME classes the
+earlier form-id/F2-modal and F2-'Create' fixes killed elsewhere:
+
+1. **One opaque wait, no re-stimulation.** The §6 lock says the per-field
+   controls are **hover/selected-revealed**, but after the single hover+click
+   the code made ONE `_resolve_visible` call whose slow path is
+   `first.wait_for(visible)` — bound to the FIRST DOM match, with nothing
+   re-firing the reveal for the whole 15s. The builder only re-renders the
+   control on a REAL `mouseenter`, and the pointer never left the field after
+   the select-click, so nothing could ever appear (hovering an already-hovered
+   point is a browser no-op).
+2. **Stricter-than-the-lock name matching.** SELECTORS-LIVE-form.md §6 records
+   the affordance as `getByRole('link', { name: 'Remove field' })` — WITHOUT
+   `exact`, i.e. Playwright-DEFAULT case-insensitive substring matching.
+   v1.2.0 hardened the spec to `exact=True`; a live accessible name drifting
+   by case/suffix then attaches ZERO nodes for the entire budget — precisely
+   the observed TimeoutError shape.
+
+**THE FIX (`ghl_iframe_drag` v1.2.1 — nothing Phone-specific):**
+
+- **Poll-with-deadline + hover/select re-stimulation.** The remove-control
+  acquisition is now a monotonic-deadline POLL (0.25s cadence): every pass
+  scans ALL attached matches for a VISIBLE one; the first miss CLICK-SELECTS
+  the field exactly once (a control already revealed by hover alone is used
+  WITHOUT the click — least canvas disturbance); later misses RE-FIRE the
+  hover on a 1s cadence by PARKING the pointer off the field and re-entering
+  it (`mouseenter` only fires on a real re-entry).
+- **Documented lock-form fallback.** New locator spec `role~=<role>:<name>`
+  (Playwright-default name matching — the LITERAL §6 lock form). Every poll
+  pass scans the exact spec first, then `role~=link:Remove field`
+  (`REMOVE_FIELD_LINK_LOCK_SPEC`); the exact form wins when both attach (the
+  v18.1.4 collision discipline stands).
+- **Nearest-control pick.** When SEVERAL remove controls are visible at once
+  (one per canvas field), the one NEAREST the target field's own bounding box
+  is clicked — never the DOM-first one, which belongs to a KEEP field and
+  would only fail at the count proof AFTER deleting the wrong field.
+- **Decisive honest failure.** `remove-link-not-found` now carries per-spec
+  attached-match diagnostics plus the stimulation trace (select-click done,
+  N re-hover cycles) so the next live run pins any residual mismatch in one
+  read. The receipt gains `remove_link_matched` / `select_clicked` /
+  `hover_cycles`. Count-decrease removal proof and the idempotent
+  already-absent no-op are unchanged; nothing ever fakes a delete.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (spec dispatch incl. `role~=` +
+new checks 13e/13f: hover-reveal-without-click, lock-form fallback) and
+`--live-selftest` PASS (real headless Chromium; the fixture now carries a
+field whose control appears ONLY on a re-entry hover AFTER selection — new
+case (i) proves the park-away + re-hover cycle against a real browser).
+`ghl_form_builder --selftest` PASS; `ghl_survey_builder --selftest` PASS.
+Full skill-6 pytest **1131 passed / 15 skipped** (was 1125 — +6 regression
+locks: `role~=` grammar, hover-reveal-needs-no-select-click, re-hover-cycle
+reveal, lock-form name fallback, never-appearing control fails closed with
+diagnostics + stimulation proven tried, nearest-control pick). Guards:
+no-secret-printing PASS, no-client-names PASS, no-telegram-chat-id-leak PASS,
+no-anthropic-runtime PASS.
+
+---
+
 ## [v18.1.9] - 2026-07-08 - F4 default-field reconciliation is REAL + the F5 drop target is role-scoped and visible-match robust (the live attempt-#5 `iframe-drag:target-not-found` fix)
 
 **THE LIVE BUG (attempt #5 against a real account, evidence bundle
