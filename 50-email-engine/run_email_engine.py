@@ -790,7 +790,16 @@ def _mc_board_begin(run_dir):
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title="Email Engine — %s" % run_dir.name,
-            department="email", persona="Email Engine", source="email-engine")
+            # department MUST be a REAL, seeded fleet department. Verified against
+            # 23-ai-workforce-blueprint/skill-department-map.json (Skill 50 declares
+            # departments ["marketing","crm"]; PRIMARY role email-campaign-strategist
+            # in "marketing") and department-naming-map.json / department-floor.py
+            # (the 22 mandatory + 6 universal-primary canonical set). "email" was NOT
+            # a department ANYWHERE in the fleet, so every Email Engine card silently
+            # stranded unrouted — the same class of bug as Skill 55's old "product-bio"
+            # and Skill 53's "books". Route to Skill 50's PRIMARY owning department,
+            # "marketing" (locked in by test_department_routing.py).
+            department="marketing", persona="Email Engine", source="email-engine")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
         return None
