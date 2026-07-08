@@ -293,7 +293,7 @@ Itinerary options above stated budget threshold, bookings on new airlines or hot
 
 | Situation | First contact | If unresolved (30 min) | Final |
 |-----------|---------------|------------------------|-------|
-| Technical blocker (booking site down, flight tracker API failure) | OpenClaw Maintenance | Master Orchestrator | Human owner via Telegram |
+| Technical blocker (booking site down, flight tracker API failure) | Technical Support | Master Orchestrator | Human owner via Telegram |
 | Budget concern (trip exceeds stated threshold across all options) | {{OWNER_NAME}} (flag with cost-benefit brief) | -- | -- |
 | Destination has travel advisory or safety concern | {{OWNER_NAME}} (surface advisory and alternatives) | -- | -- |
 | Impossible timeline (earliest arrival after meeting start) | {{OWNER_NAME}} (flag with options: earlier departure, alternate airport, virtual attendance) | -- | -- |

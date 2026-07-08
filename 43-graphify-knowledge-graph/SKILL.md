@@ -76,12 +76,12 @@ Graphify's semantic pass runs on the **CLIENT'S OWN model**:
 ```
 43-graphify-knowledge-graph/
 ├── SKILL.md                          # this file
-├── INSTALL.md                        # one-time setup (5 steps)
+├── INSTALL.md                        # one-time setup (7 steps)
 ├── INSTRUCTIONS.md                   # runtime: answering questions via the graph
 ├── CORE_UPDATES.md                   # AGENTS.md / TOOLS.md / MEMORY.md appends
 ├── CHANGELOG.md
 ├── skill-version.txt                 # tracks this skill's own version (see CHANGELOG.md)
-├── qc-graphify-knowledge-graph.sh    # install QC (10-assertion)
+├── qc-graphify-knowledge-graph.sh    # install QC (28-assertion)
 ├── scripts/
 │   └── verify-graphify-install.sh    # lightweight structural/install check
 └── references/

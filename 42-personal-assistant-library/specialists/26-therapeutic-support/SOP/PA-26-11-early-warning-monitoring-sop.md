@@ -64,7 +64,7 @@ No clinical diagnosis. {{OWNER_NAME}} must consent. All Red interventions includ
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when any dimension shows 3+ consecutive weeks of Yellow indicating slow steady decline that normalizes depletion, OR Competent Collapse pattern is active across multiple dimensions
-- **{{CRISIS_LINE}}** — when monitoring reveals indicators consistent with Level 3 crisis (suicidal ideation, self-harm, harm to others) — route to PA-26-12 immediately
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when monitoring reveals indicators consistent with Level 3 crisis (suicidal ideation, self-harm, harm to others) — route to PA-26-12 immediately
 - **{{COACH_NAME}}** — when red-flag detection threshold needs recalibration (false alarms exceeding 30%) OR {{OWNER_NAME}} expresses discomfort with monitoring requiring modality shift
 
 ## Definition of Done

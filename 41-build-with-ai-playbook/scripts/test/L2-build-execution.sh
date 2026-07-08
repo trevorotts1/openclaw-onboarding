@@ -97,9 +97,13 @@ fi
 rc=0; run_dep tag "bare-tag" >"$SB/dep-bad.out" 2>&1 || rc=$?
 hf_check "non-ZHC tag is rejected at build time (exit 1, got $rc)" test "$rc" = "1"
 
-# 4) Assemble the built-workflow snapshot and assert structural completeness (what L3 consumes).
-#    This is the contract L2 hands to the Big-Brother core (L3): a structurally complete
-#    workflow. Independent of the upstream create result so the hand-off shape is always tested.
+# 4) Assemble the built-workflow snapshot and validate the L2->L3 HAND-OFF SHAPE (what L3
+#    consumes). NOTE: this is a fixed fixture by design -- the checks below assert only that the
+#    hand-off SHAPE is well-formed, NOT that a build ran. Real execution is proven above by the
+#    non-tautological checks in steps 1-3 (authenticated GET fired, dependency-first ordering,
+#    ZHC-prefix enforced, broken-build escalation). Do NOT assert here that the create landed:
+#    on this code it deliberately does not (upstream jq bug), which step 2 handles as an
+#    escalation, not a level failure.
 SNAP="$SB/built-workflow.json"
 jq -nc \
   '{
@@ -120,5 +124,5 @@ hf_check "built-workflow If/Else has a None branch" bash -c "jq -e '[.conditions
 hf_check "every reference has a created dependency" bash -c "jq -e '((.references)-(.created_dependencies))|length==0' '$SNAP' >/dev/null"
 
 hf_log "checks=$HF_CHECKS fails=$HF_FAILS"
-if [[ $HF_FAILS -eq 0 ]]; then hf_pass "build executed end-to-end against loopback (deps-first, prefix enforced, structurally complete snapshot)"; exit 0; fi
+if [[ $HF_FAILS -eq 0 ]]; then hf_pass "shipped build code ran against loopback: authenticated GET fired, dependency-first ordering, ZHC-prefix enforced, broken-build escalated (not silently published), and the L2->L3 hand-off shape validated"; exit 0; fi
 hf_fail "$HF_FAILS build-execution check(s) failed"; exit 1

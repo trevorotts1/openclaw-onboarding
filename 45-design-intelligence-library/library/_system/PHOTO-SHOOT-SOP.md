@@ -6,6 +6,13 @@
 
 ## 1. CONSENT & IDENTITY RULES (non-negotiable)
 
+- **CODED FAIL-CLOSED GATE (mandatory first step):** before ANY generation involving a real person, run
+  `python3 scripts/diu_validator.py consent-check --identity-file <IDENTITY.md>`. It hard-fails (exit 4,
+  `AF-DIU-CONSENT`) unless the IDENTITY store carries documented+dated consent, an attested-adult subject,
+  and an at-rest protection attestation. A non-zero exit — including an absent IDENTITY file — means
+  consent is NOT confirmed: STOP, do not generate. This is a code path, not a matter of judgment.
+- **Minors = HARD NO.** Never generate a minor's likeness without explicit owner + legal sign-off; the gate
+  above fails closed on any subject not attested an adult.
 - Generate a real person's likeness ONLY for the client themself or with the client's documented permission, routed through the producer.
 - Never place the client's likeness in deceptive contexts (fake endorsements they didn't approve, fabricated events presented as real news, compromising scenarios).
 - All photo-shoot outputs route through the producer for approval before reaching the client — standard gatekeeper model.
@@ -26,12 +33,23 @@ Locate reference images in this order; use the FIRST source that yields usable r
 ## 3. CLIENT IDENTITY PROFILE (one per client)
 
 File: `personal-photo-shoot/{client-slug}/IDENTITY.md`
+
+The five fields below are **machine-read by the fail-closed consent gate** (`diu_validator.py consent-check`)
+and MUST be present as explicit `Key: value` lines. Consent that cannot be parsed is treated as absent
+(fail closed). The biometric Identity Description is PII: store it **encrypted-at-rest / access-restricted**,
+never as world-readable plaintext, and NEVER copy it into logs, analytics, or another client's file.
+
 ```markdown
 # IDENTITY — {Client Name}
-- Slug / Created / Updated / Consent status & date
+- Slug: {client-slug}
+- Consent: granted            # gate: affirmative (granted/yes/documented) required
+- Consent date: {YYYY-MM-DD}  # gate: a real date required
+- Minor: no                   # gate: subject must be attested an adult; Minors = HARD NO
+- Storage protection: encrypted-at-rest   # gate: biometric store must not be plaintext
+- Created / Updated
 ## Reference Images
 | # | Path or URL | Type (frontal/3-4/full-body) | Quality note |
-## Identity Description (what must NEVER change)
+## Identity Description (what must NEVER change) — BIOMETRIC PII; store encrypted-at-rest
 {facial structure, skin tone described richly and precisely, eye color, distinguishing
 features — glasses, locs, beard, beauty marks — typical hair, age range, build}
 ## Standing Retouch Preferences (pre-approved)

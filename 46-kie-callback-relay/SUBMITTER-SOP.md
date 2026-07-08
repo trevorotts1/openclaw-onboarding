@@ -90,7 +90,7 @@ Callback-mode registry row:
   "model": "gpt-image-2-text-to-image",
   "targetPath": "/abs/path/to/output.png",
   "perTaskSecret": "<64 hex chars, local only>",
-  "callBackUrl": "https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
+  "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
   "submittedAt": "<iso8601>",
   "status": "submitting",
   "taskId": null,
@@ -116,7 +116,7 @@ callback mode:
 ```json
 {
   "model": "gpt-image-2-text-to-image",
-  "callBackUrl": "https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
+  "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
   "input": {
     "prompt": "<slide image prompt>",
     "aspect_ratio": "16:9",
@@ -143,7 +143,7 @@ Do NOT wait for results during this phase. Submit all slides, then proceed.
 
 For each taskId, poll the Worker KV in parallel:
 
-1. `GET https://kie-callback.zerohumanworkforce.com/kv-read?c=<clientSlug>&j=<submitId>`
+1. `GET https://kie-callback.<your-cf-zone>/kv-read?c=<clientSlug>&j=<submitId>`
    every 2 seconds, with **two request pieces**:
    - Header `Authorization: Bearer <perClientKvReadToken>` (fix B/F)
    - Header `X-Kie-Preimage: <perTaskSecret>` (fix G -- the raw secret rides in a
@@ -239,7 +239,7 @@ On restart the submitter scans `.kie/registry/` by `label` (fix 37i):
 ## Callback URL Format (hardened)
 
 ```
-https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>
+https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>
 ```
 
 - `c`: client identifier (alphanumeric, no spaces)

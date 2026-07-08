@@ -96,7 +96,7 @@ Racial stress is not an attitude problem, a sensitivity issue, or something to "
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when severity reaches 4–5 and {{OWNER_NAME}} expresses interest in therapeutic support for race-based stress or trauma
-- **{{CRISIS_LINE}}** — when {{OWNER_NAME}} expresses suicidal ideation, self-harm, or acute psychological crisis
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when {{OWNER_NAME}} expresses suicidal ideation, self-harm, or acute psychological crisis
 - **{{COACH_NAME}}** — when same racial stressor type appears 3+ times in 30 days, warranting structural intervention discussion
 
 ## Definition of Done

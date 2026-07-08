@@ -62,7 +62,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - Customer support ticket handling (Customer Support department)
 - Sales outreach or deal negotiation (Sales department)
 - Personal email management for {{OWNER_NAME}} (separate boundary unless explicitly merged)
-- Email system administration (IT or OpenClaw Maintenance owns the tool, not the content)
+- Email system administration (IT or Technical Support owns the tool, not the content)
 
 ---
 

@@ -14,7 +14,7 @@ This script is a coaching tool for moments when a client becomes visibly overwhe
 **Crisis Resources:**
 - **988 Suicide & Crisis Lifeline** — Call or text 988
 - **Therapy for Black Girls** — https://therapyforblackgirls.com
-- **NAMI Helpline** — 1-800-950-NAMI (6264) or text "NAMI" to 741741
+- **NAMI Helpline** — 1-800-950-NAMI (6264) or text HOME to 741741
 
 **Hard Stop Triggers:** If the client (a) expresses intent to harm self or others, (b) describes active abuse or violence, (c) appears to be experiencing a panic attack with chest pain or breathing difficulty, or (d) becomes non-responsive — STOP the de-escalation script and immediately route to crisis resources. If in-person, stay with the client while calling 988. If virtual, stay on the line and help them connect to emergency services.
 
@@ -127,7 +127,7 @@ After the chosen intervention, ask a non-cognitive question — something the bo
 - [ ] De-escalation event documented: date, trigger topic, cues, intervention, outcome rating, and session disposition
 
 ## Escalation
-- **{{CRISIS_LINE}}** — when {{OWNER_NAME}} hits any Hard Stop Trigger (SI, SH, active abuse, panic with chest pain, non-responsiveness); if in-person stay with client while calling; if virtual stay on line
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when {{OWNER_NAME}} hits any Hard Stop Trigger (SI, SH, active abuse, panic with chest pain, non-responsiveness); if in-person stay with client while calling; if virtual stay on line
 - **{{THERAPIST_NAME}}** — when de-escalation occurs in 3 of 5 consecutive sessions, indicating coaching depth exceeds current window of tolerance
 - **{{COACH_NAME}}** — when coach experiences secondary stress or needs support processing repeated de-escalation events
 

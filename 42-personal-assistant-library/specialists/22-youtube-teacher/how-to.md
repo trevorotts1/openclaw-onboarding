@@ -273,7 +273,7 @@ Audit changes (drop/add decisions), playlist creation for a new domain where {{T
 
 | Situation | First contact | If unresolved (30 min) | Final |
 |-----------|---------------|------------------------|-------|
-| Technical blocker (YouTube blocked, API failure) | OpenClaw Maintenance | Master Orchestrator | Human owner via Telegram |
+| Technical blocker (YouTube blocked, API failure) | Technical Support | Master Orchestrator | Human owner via Telegram |
 | Unsure about channel quality or fit | Re-screen with stricter signal-density check | Present top 2 options to {{OWNER_NAME}} | — |
 | {{TOKEN}} disengaged from learning for 3+ weeks | Gentle check-in via weekly drop | Master Orchestrator (priority misalignment?) | Direct question to {{OWNER_NAME}} |
 | Playlist consistently underperforming (impact <6) | Review matching and construction SOPs | Master Orchestrator | {{OWNER_NAME}} (reset goals) |

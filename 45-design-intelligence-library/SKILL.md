@@ -1,7 +1,7 @@
 ---
 name: design-intelligence-library
 description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
-version: 1.3.0
+version: 1.3.1
 ---
 
 # Skill 45: Design Intelligence Library
@@ -118,7 +118,7 @@ This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Hand
 ├── CORE_UPDATES.md                                ← appends to AGENTS.md / TOOLS.md / MEMORY.md
 ├── CHANGELOG.md                                   ← version history
 ├── PREREQS.json                                   ← declares Skill 07 (KIE_API_KEY) dependency
-├── qc-design-intelligence-library.sh              ← QC: verify 19 library files, INDEX integrity, INDEX clobber-safety, no client data committed
+├── qc-design-intelligence-library.sh              ← QC: verify 20 library files, INDEX integrity, INDEX clobber-safety, no client data committed, diu_validator gate self-tests
 ├── skill-version.txt                              ← skill-independent version (see CHANGELOG.md for the current value)
 ├── scripts/
 │   └── diu_validator.py                           ← deterministic gates (prompt-length caps, routing interlock, fidelity + 3-strike) — stdlib only
@@ -139,6 +139,7 @@ This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Hand
     ├── banner-designs/_RULES.md
     ├── book-cover-designs/_RULES.md
     ├── facebook-ad-designs/_RULES.md
+    ├── funnel-page-designs/_RULES.md
     ├── magazine-cover-designs/_RULES.md
     ├── personal-photo-shoot/_RULES.md
     ├── powerpoint-designs/_RULES.md
@@ -172,15 +173,16 @@ INSTALL.md manages the idempotent seeding. On update (e.g., `update-skills.sh` r
 
 ## Binding enforcement — coded gates (`scripts/diu_validator.py`)
 
-The four gates above are no longer prose-only. `scripts/diu_validator.py` (Python stdlib, zero third-party deps) makes three of them MECHANICAL — a violation is a hard non-zero exit an agent cannot narrate past (mirrors Skill 47's deterministic-gate pattern):
+The gates above are no longer prose-only. `scripts/diu_validator.py` (Python stdlib, zero third-party deps) makes four of them MECHANICAL — a violation is a hard non-zero exit an agent cannot narrate past (mirrors Skill 47's deterministic-gate pattern):
 
 | Gate | Command | Enforces | Fail exit |
 |---|---|---|---|
 | **Prompt-length caps** | `diu_validator.py prompt-caps --tier {SHORT\|MEDIUM\|LONG} --prompt-file P` | SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 chars (MODEL-SPECS tier table). Over-cap ⇒ fall back a tier, never silently truncate. | 3 (`AF-DIU-PROMPT-CAP`) |
-| **DIU routing interlock** | `diu_validator.py route-check --deck-kind K` | SOP-DIU-611 §D.1 coded hard stop: audience/webinar/funnel/virtual-event decks CANNOT run on the Rotation Engine — route to Presentations. | 2 (`AF-DIU-ROUTING-INTERLOCK`) |
+| **DIU routing interlock** | `diu_validator.py route-check --deck-kind K` | SOP-DIU-611 §D.1 coded hard stop: audience/webinar/funnel/sales/virtual-event decks CANNOT run on the Rotation Engine — route to Presentations. | 2 (`AF-DIU-ROUTING-INTERLOCK`) |
+| **Consent + minor + PII gate** | `diu_validator.py consent-check --identity-file IDENTITY.md` | PHOTO-SHOOT-SOP §1 fail-closed: real-person likeness needs documented+dated consent, an attested-adult subject (Minors = HARD NO), and an at-rest-protected biometric store. Unconfirmed ⇒ do not generate. | 4 (`AF-DIU-CONSENT`) |
 | **Fidelity receipt + 3-strike** | `diu_validator.py fidelity --run-dir R --card-id ID --scores-file S` | TEST-PROTOCOL §5: avg ≥4.0 AND no dim <3 AND zero hard-rule violations; appends a receipt; 3 consecutive fails on one dimension ⇒ escalate to CDO. | 3 (fail) / 5 (`AF-DIU-3-STRIKE` escalate) |
 
-Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never deleted — the card's institutional memory). The Generation Operator runs `prompt-caps` before every dispatch; the Deck Systems Specialist runs `route-check` at SOP-DIU-611 step A before any manifest work; the Fidelity Tester runs `fidelity` on every graded PNG. The consent-gate-first rule (PHOTO-SHOOT-SOP §1) remains a human/legal gate, not a code path.
+Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never deleted — the card's institutional memory). The Generation Operator runs `prompt-caps` before every dispatch; the Deck Systems Specialist runs `route-check` at SOP-DIU-611 step A before any manifest work; the Fidelity Tester runs `fidelity` on every graded PNG. The consent-gate-first rule (PHOTO-SHOOT-SOP §1) is now a coded fail-closed gate (`consent-check`), run before any real-person generation — not prose alone.
 
 ---
 

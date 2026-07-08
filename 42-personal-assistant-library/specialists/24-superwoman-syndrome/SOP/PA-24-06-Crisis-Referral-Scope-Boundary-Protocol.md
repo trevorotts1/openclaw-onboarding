@@ -58,7 +58,7 @@ Active session with {{OWNER_NAME}}. Crisis resource list and Red Protocol steps 
 
 | Signal | Route To |
 |---|---|
-| Any Red-level incident | Operator — IMMEDIATE, URGENT flag |
+| Any Red-level incident | 988 (call/text) or 911 + the owner's designated emergency contact — connect immediately, stay present, do NOT end the interaction until a human/responder has them; log for human review. URGENT |
 | Repeated Orange despite redirection | {{OWNER_EMAIL}} + Specialist 26 (Therapeutic Support) |
 | {{OWNER_NAME}} resists referral during Red | Follow local duty-to-warn obligations |
 | 3+ Orange sessions despite redirection | {{OWNER_EMAIL}} — may need Specialist 26 before continuing |

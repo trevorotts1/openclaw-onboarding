@@ -222,13 +222,13 @@ Replies to high-stakes contacts, replies containing financial commitments, repli
 
 | Situation | First contact | If unresolved (30 min) | Final |
 |-----------|---------------|------------------------|-------|
-| Technical blocker (email down, API failure) | OpenClaw Maintenance | Master Orchestrator | Human owner via Telegram |
+| Technical blocker (email down, API failure) | Technical Support | Master Orchestrator | Human owner via Telegram |
 | Unsure about reply tone or content | {{OWNER_NAME}} (review draft) | — | — |
 | VIP email with unclear priority | {{OWNER_NAME}} (flag immediately) | — | — |
 | Reply draft rejected 3+ times by {{OWNER_NAME}} | Master Orchestrator (voice calibration issue) | — | {{OWNER_NAME}} (direct coaching) |
 | Cross-department conflict (department disagrees with routing) | Master Orchestrator | — | Human owner |
 | Crisis / legal / compliance risk in email | Master Orchestrator (immediate) | — | Human owner immediately |
-| Repeated spam/phishing attack | OpenClaw Maintenance | Master Orchestrator | Human owner |
+| Repeated spam/phishing attack | Technical Support | Master Orchestrator | Human owner |
 
 ---
 
@@ -343,8 +343,8 @@ For this role, the authoritative sources are:
 
 ### Edge Case 17.5 — An email from {{OWNER_NAME}}'s own address or a spoofed sender
 - **Trigger:** An email appears to come from {{OWNER_NAME}}'s own address or a suspiciously similar address.
-- **Action:** This is either a spoofing attempt or a security issue. Do not click any links. Flag to {{OWNER_NAME}} and OpenClaw Maintenance immediately: "⚠️ Potential spoofed email from '{{OWNER_NAME}}' — subject: [X]. Have not opened attachments or clicked links. Flagged for review."
-- **Escalate to:** OpenClaw Maintenance and {{OWNER_NAME}} simultaneously.
+- **Action:** This is either a spoofing attempt or a security issue. Do not click any links. Flag to {{OWNER_NAME}} and Technical Support immediately: "⚠️ Potential spoofed email from '{{OWNER_NAME}}' — subject: [X]. Have not opened attachments or clicked links. Flagged for review."
+- **Escalate to:** Technical Support and {{OWNER_NAME}} simultaneously.
 
 ---
 

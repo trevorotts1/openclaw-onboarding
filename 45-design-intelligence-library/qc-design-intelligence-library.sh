@@ -176,6 +176,48 @@ fi
 rm -rf "$CLOBBER_TMP"
 trap - EXIT
 
+# 6c. Validator gate self-tests (SK1-54/55/56): the coded gates were opt-in and
+# previously exercised by NO test. Assert each subcommand's exit-code contract on
+# fixtures so a regression (e.g. the "sales" archetype gap, or the fail-closed consent
+# gate) fails QC. Requires python3 (the gates need it on-box at runtime anyway).
+echo ""
+echo "[QC] diu_validator.py gate self-tests..."
+VALIDATOR="$SCRIPT_DIR/scripts/diu_validator.py"
+if [[ ! -f "$VALIDATOR" ]]; then
+  echo "  ✗ MISSING: scripts/diu_validator.py"; exit 1
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "  ⚠ python3 unavailable — skipping gate self-tests (gates run on-box at runtime)"
+else
+  GATE_TMP="$(mktemp -d)"
+  trap 'rm -rf "$GATE_TMP"' EXIT
+  gate() { # gate "<label>" <expected_rc> <cmd...>
+    local label="$1" want="$2"; shift 2
+    local got=0; "$@" >/dev/null 2>&1 || got=$?
+    if [[ "$got" == "$want" ]]; then
+      echo "  ✓ $label (exit $got)"
+    else
+      echo "  ✗ $label: expected exit $want, got $got"; exit 1
+    fi
+  }
+  gate "route-check webinar -> interlock"    2 python3 "$VALIDATOR" route-check --deck-kind webinar
+  gate "route-check sales deck -> interlock"  2 python3 "$VALIDATOR" route-check --deck-kind "sales deck"
+  gate "route-check funnel -> interlock"     2 python3 "$VALIDATOR" route-check --deck-kind funnel
+  gate "route-check brand -> DIU-routable"    0 python3 "$VALIDATOR" route-check --deck-kind brand
+  gate "prompt-caps SHORT within cap -> ok"   0 python3 "$VALIDATOR" prompt-caps --tier SHORT --prompt "hi"
+  gate "prompt-caps SHORT over cap -> fail"   3 python3 "$VALIDATOR" prompt-caps --tier SHORT --prompt "$(python3 -c 'print("x"*600)')"
+  printf '# IDENTITY — Adult\n- Consent: granted\n- Consent date: 2026-01-15\n- Minor: no\n- Storage protection: encrypted-at-rest\n' > "$GATE_TMP/id-ok.md"
+  printf '# IDENTITY — Minor\n- Consent: granted\n- Consent date: 2026-01-15\n- Minor: yes\n- Storage protection: encrypted-at-rest\n' > "$GATE_TMP/id-minor.md"
+  printf '# IDENTITY — NoConsent\n- Minor: no\n- Storage protection: encrypted-at-rest\n' > "$GATE_TMP/id-noconsent.md"
+  printf '# IDENTITY — Plaintext\n- Consent: granted\n- Consent date: 2026-01-15\n- Minor: no\n' > "$GATE_TMP/id-plaintext.md"
+  gate "consent-check compliant adult -> ok"    0 python3 "$VALIDATOR" consent-check --identity-file "$GATE_TMP/id-ok.md"
+  gate "consent-check MINOR -> hard no"          4 python3 "$VALIDATOR" consent-check --identity-file "$GATE_TMP/id-minor.md"
+  gate "consent-check missing consent -> fail"   4 python3 "$VALIDATOR" consent-check --identity-file "$GATE_TMP/id-noconsent.md"
+  gate "consent-check unprotected PII -> fail"   4 python3 "$VALIDATOR" consent-check --identity-file "$GATE_TMP/id-plaintext.md"
+  gate "consent-check missing file -> fail"      4 python3 "$VALIDATOR" consent-check --identity-file "$GATE_TMP/nope.md"
+  rm -rf "$GATE_TMP"
+  trap - EXIT
+fi
+
 # 7. Verify no spaces in category directory names (kebab-case)
 echo ""
 echo "[QC] Verifying kebab-case directory names..."

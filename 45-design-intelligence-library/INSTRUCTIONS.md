@@ -91,10 +91,13 @@ This folder holds:
 **Trigger:** "Do a photo shoot of [Client Name] in style SI-001"
 
 **Steps:**
-1. **Consent gate (MANDATORY):** open `_system/PHOTO-SHOOT-SOP.md` § 1.
+1. **Consent gate (MANDATORY, CODED — run FIRST):** per `_system/PHOTO-SHOOT-SOP.md` § 1, run
+   `python3 scripts/diu_validator.py consent-check --identity-file personal-photo-shoot/{client-slug}/IDENTITY.md`.
+   A non-zero exit (4 = `AF-DIU-CONSENT`) — unconfirmed consent, a minor, or an unprotected biometric store,
+   including a missing IDENTITY file — means STOP: do NOT generate.
    - If the person is the client themself → documented permission confirmed.
    - If the person is someone else → requires client's documented permission + routed through producer (CDO).
-   - **Minors:** HARD NO without explicit owner + legal sign-off.
+   - **Minors:** HARD NO without explicit owner + legal sign-off (the gate fails closed on any non-adult).
 2. Verify the client's identity profile → `personal-photo-shoot/{client-slug}/IDENTITY.md`.
 3. Gather reference images (order: attached > identity profile > media library > workspace config; see § 2).
 4. **Identity Lock Block (mandatory in every prompt)** — preserve skin tone, facial structure, age, features exactly (see § 4).

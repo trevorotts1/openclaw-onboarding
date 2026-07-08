@@ -1,11 +1,11 @@
 # Kie.ai Callback Relay Worker
-# Operator Cloudflare account: 13f808b72eb78027a8046357c6cf1afa
-# Zone: zerohumanworkforce.com (ID: a9ecc0a067f52eaa4c59dc9b11d9dd55)
+# Operator Cloudflare account: <CF_ACCOUNT_ID>
+# Zone: <your-cf-zone> (ID: <CF_ZONE_ID>)
 #
 # Deploy commands:
 #
 #   1. Create the KV namespace (run once):
-#      npx wrangler kv namespace create KIE_CALLBACK_KV --account-id 13f808b72eb78027a8046357c6cf1afa
+#      npx wrangler kv namespace create KIE_CALLBACK_KV --account-id <CF_ACCOUNT_ID>
 #
 #      Copy the returned id into kv_namespaces[0].id below, and the preview_id into
 #      kv_namespaces[0].preview_id.
@@ -17,20 +17,20 @@
 #      npx wrangler deploy --name kie-callback-relay
 #
 #   4. Verify the Worker is live:
-#      curl https://kie-callback.zerohumanworkforce.com/healthz
+#      curl https://kie-callback.<your-cf-zone>/healthz
 #
-# Route: kie-callback.zerohumanworkforce.com/*
-# The DNS CNAME for kie-callback.zerohumanworkforce.com must point to the Worker.
+# Route: kie-callback.<your-cf-zone>/*
+# The DNS CNAME for kie-callback.<your-cf-zone> must point to the Worker.
 # Wrangler adds the route automatically when routes[] is set and the zone is in the account.
 
 name            = "kie-callback-relay"
 main            = "src/index.js"
 compatibility_date = "2024-09-23"
-account_id      = "13f808b72eb78027a8046357c6cf1afa"
+account_id      = "<CF_ACCOUNT_ID>"
 
 # Workers + Pages routes
 routes = [
-  { pattern = "kie-callback.zerohumanworkforce.com/*", zone_name = "zerohumanworkforce.com" }
+  { pattern = "kie-callback.<your-cf-zone>/*", zone_name = "<your-cf-zone>" }
 ]
 
 # KV namespace binding

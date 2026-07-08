@@ -293,7 +293,7 @@ Final idea selection, strategic pivot decisions, name finalization that will go 
 | {{TOKEN}} is stuck creatively across multiple sessions (not a one-time block) | Flag to My Coach department — the block may be personal/mindset, not creative/method | Master Orchestrator | {{TOKEN}} |
 | Naming candidate passes VETO but {{TOKEN}} keeps rejecting the shortlist | Revisit the creative brief — the word's job may be defined wrong | Master Orchestrator | {{TOKEN}} (redefine the brief together) |
 | Cross-department creative conflict (another department wants input on ideation direction) | Master Orchestrator | — | {{TOKEN}} |
-| Technical blocker (tool failure, document access issues) | OpenClaw Maintenance | Master Orchestrator | {{TOKEN}} |
+| Technical blocker (tool failure, document access issues) | Technical Support | Master Orchestrator | {{TOKEN}} |
 
 ---
 

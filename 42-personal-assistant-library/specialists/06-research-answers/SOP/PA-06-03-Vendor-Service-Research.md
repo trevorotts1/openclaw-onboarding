@@ -22,7 +22,7 @@ When {{TOKEN}} is considering buying a service, subscribing to a platform, or hi
 **Trigger:** {{TOKEN}} asks about a specific vendor, service, or category of tools to solve a business need.
 
 **Examples:**
-- "Research cloud hosting options for the Command Center."
+- "Research cloud hosting options for a new internal tool."
 - "Look into email verification services -- what does NeverBounce cost?"
 - "Find a reliable printer for our event materials."
 

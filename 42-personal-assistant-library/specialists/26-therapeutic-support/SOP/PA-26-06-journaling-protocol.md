@@ -14,7 +14,7 @@ This protocol delivers structured journaling prompts for coaching clients. Journ
 **Crisis Resources:**
 - **988 Suicide & Crisis Lifeline** — Call or text 988
 - **Therapy for Black Girls** — https://therapyforblackgirls.com
-- **NAMI Helpline** — 1-800-950-NAMI (6264) or text "NAMI" to 741741
+- **NAMI Helpline** — 1-800-950-NAMI (6264) or text HOME to 741741
 
 If a client shares journal content that reveals suicidal ideation, self-harm, abuse, or unprocessed trauma, STOP the journaling track and route to Section 0 resources. Coaching boundary language: *"Journaling is a great coaching tool. If something comes up in your writing that feels bigger than what coaching can hold, tell me — I'll connect you with the right resource."*
 
@@ -119,7 +119,7 @@ Writing engages different neural pathways than thinking or speaking. The act of 
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when journal content reveals unprocessed trauma, clinical depression indicators, or material repeatedly exceeding coaching depth
-- **{{CRISIS_LINE}}** — when journal content reveals suicidal ideation, self-harm, abuse, or acute crisis indicators
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when journal content reveals suicidal ideation, self-harm, abuse, or acute crisis indicators
 - **{{COACH_NAME}}** — when completion rate stays below 50% for two consecutive weeks OR client becomes dependent on coach's reaction to entries
 
 ## Definition of Done

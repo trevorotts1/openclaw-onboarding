@@ -1,5 +1,5 @@
 # MODEL SPECS — API Limits, Routing & Request Templates
-**Version:** 1.3 | **Last Updated:** 2026-06-14 | **Source:** Verified Kie.ai API documentation (not blog estimates)
+**Version:** 1.4 | **Last Updated:** 2026-06-14 | **Source:** Verified Kie.ai API documentation (not blog estimates)
 **Audience:** AI agents. This is the ONLY file that changes when models update. Style cards never reference model versions directly — they reference tiers and capabilities defined here.
 
 ---

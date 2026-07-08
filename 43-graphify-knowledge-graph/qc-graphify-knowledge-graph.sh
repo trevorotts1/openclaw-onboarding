@@ -62,6 +62,14 @@ assert "NO-COMINGLING referenced (SKILL.md)" "grep -q 'NO-COMINGLING-RULE.md' \"
 assert "wires /graphify for codebase/workforce questions (SKILL.md)" "grep -q '/graphify' \"$GR_DIR/SKILL.md\""
 assert "no working artifacts shipped (.bak/.tmp/QC-READY.txt)" "[ \$(find \"$GR_DIR\" \\( -name '*.bak' -o -name '*.tmp' -o -name 'QC-READY.txt' \\) 2>/dev/null | wc -l | tr -d ' ') -eq 0 ]"
 
+# EXAMPLES.md worked flows must not leak a ':cloud' model into a copy-paste command (runs on
+# Ollama Cloud OFF the box and BILLS the client — the sovereignty leak the skill forbids), and
+# must map via the canonical 'graphify extract' subcommand, not the bare-re-map form that lets
+# detect_backend() auto-pick a resident key. (These greps close the EXAMPLES.md QC blind spot.)
+assert "EXAMPLES.md present" "[ -f \"$GR_DIR/EXAMPLES.md\" ]"
+assert "EXAMPLES.md has no ':cloud' model in a --model command (off-box billing/sovereignty leak)" "! grep -nE -- '--model[[:space:]]+[^[:space:]]*:cloud' \"$GR_DIR/EXAMPLES.md\""
+assert "EXAMPLES.md maps via the canonical 'graphify extract ... --backend ollama' form" "grep -qE 'graphify extract .* --backend ollama' \"$GR_DIR/EXAMPLES.md\""
+
 # Runtime (soft — present only after the client box runs INSTALL.md)
 warn_only "graphify CLI installed on this box" "command -v graphify"
 

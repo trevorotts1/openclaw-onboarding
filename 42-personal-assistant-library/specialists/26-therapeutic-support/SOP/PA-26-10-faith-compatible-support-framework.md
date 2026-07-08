@@ -97,7 +97,7 @@ The framework operates on a simple principle: **faith is her resource, not your 
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when {{OWNER_NAME}} expresses spiritual crisis, loss of faith, religious trauma, clergy abuse, or faith-related distress exceeding coaching scope (ideally a Black therapist specializing in religious/spiritual issues)
-- **{{CRISIS_LINE}}** — when faith content triggers clinical boundary crossing (religious delusions, faith-based self-harm, spiritual abuse disclosure requiring immediate intervention)
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when faith content triggers clinical boundary crossing (religious delusions, faith-based self-harm, spiritual abuse disclosure requiring immediate intervention)
 - **{{COACH_NAME}}** — when faith-based avoidance patterns emerge ("waiting on God" used to consistently avoid decisions) requiring supervision discussion
 
 ## Definition of Done

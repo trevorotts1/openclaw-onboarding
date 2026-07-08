@@ -54,6 +54,7 @@ rsync -av "$SKILL_DIR/library/advertisement-designs/" "$LIBRARY_HOME/advertiseme
 rsync -av "$SKILL_DIR/library/banner-designs/" "$LIBRARY_HOME/banner-designs/"
 rsync -av "$SKILL_DIR/library/book-cover-designs/" "$LIBRARY_HOME/book-cover-designs/"
 rsync -av "$SKILL_DIR/library/facebook-ad-designs/" "$LIBRARY_HOME/facebook-ad-designs/"
+rsync -av "$SKILL_DIR/library/funnel-page-designs/" "$LIBRARY_HOME/funnel-page-designs/"
 rsync -av "$SKILL_DIR/library/magazine-cover-designs/" "$LIBRARY_HOME/magazine-cover-designs/"
 rsync -av "$SKILL_DIR/library/personal-photo-shoot/" "$LIBRARY_HOME/personal-photo-shoot/"
 rsync -av "$SKILL_DIR/library/powerpoint-designs/" "$LIBRARY_HOME/powerpoint-designs/"
@@ -75,7 +76,7 @@ cp -n "$SKILL_DIR/library/INDEX.md" "$LIBRARY_HOME/INDEX.md"
 echo "[DIU] Index seeded (idempotent)"
 
 # Ensure category dirs exist for future style cards
-for dir in advertisement-designs banner-designs book-cover-designs facebook-ad-designs magazine-cover-designs personal-photo-shoot powerpoint-designs single-image-designs social-media-designs; do
+for dir in advertisement-designs banner-designs book-cover-designs facebook-ad-designs funnel-page-designs magazine-cover-designs personal-photo-shoot powerpoint-designs single-image-designs social-media-designs; do
   mkdir -p "$LIBRARY_HOME/$dir"
 done
 
@@ -114,7 +115,7 @@ test -f "$LIBRARY_HOME/_system/NEGATIVE-PROMPTING-SOP.md" && echo "✓ NEGATIVE-
 test -f "$LIBRARY_HOME/_system/STYLE-CARD-TEMPLATE.md" && echo "✓ STYLE-CARD-TEMPLATE.md" || echo "✗ STYLE-CARD-TEMPLATE.md missing"
 
 # Verify category _RULES exist
-for cat in advertisement-designs banner-designs book-cover-designs facebook-ad-designs magazine-cover-designs personal-photo-shoot powerpoint-designs single-image-designs social-media-designs; do
+for cat in advertisement-designs banner-designs book-cover-designs facebook-ad-designs funnel-page-designs magazine-cover-designs personal-photo-shoot powerpoint-designs single-image-designs social-media-designs; do
   test -f "$LIBRARY_HOME/$cat/_RULES.md" && echo "✓ $cat/_RULES.md" || echo "✗ $cat/_RULES.md missing"
 done
 

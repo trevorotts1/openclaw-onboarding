@@ -82,11 +82,15 @@ rm -f "$RUNLOG"
 
 # --- publish decision ---------------------------------------------------------
 # PASS only if every level passed AND nothing escalated. Any failure or escalation => the
-# closed-loop says DO NOT publish; escalate to a human (human-last).
-if [[ $FAILED -eq 0 && $ESCALATED -eq 0 ]]; then
-  DECISION="PASS"
-else
+# closed-loop says DO NOT publish; escalate to a human (human-last). A SKIP (host-tooling:
+# python3 missing) is NOT a pass -- the browser/build levels never ran, so the loop is
+# INCONCLUSIVE (WARN), never green. Treating a skip as PASS was a false-green rung.
+if [[ $FAILED -ne 0 || $ESCALATED -ne 0 ]]; then
   DECISION="ESCALATED"
+elif [[ $SKIPPED -ne 0 ]]; then
+  DECISION="WARN"
+else
+  DECISION="PASS"
 fi
 
 echo "[skill 41 harness] results: $(IFS=', '; echo "${RESULTS[*]}")"
@@ -98,11 +102,11 @@ echo "[skill 41 harness] total=$TOTAL pass=$PASS fixed=$FIXED escalated=$ESCALAT
 # no-op when TASK_ID is unset or no Command Center is reachable -- never affects the exit
 # code or the emitted event. Uses the shared column list in lib-command-center.sh.
 if declare -f cc_move_task >/dev/null 2>&1; then
-  if [[ "$DECISION" == "PASS" ]]; then
-    cc_move_task "${TASK_ID:-}" review "${AGENT_ID:-}" || true
-  else
-    cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}" || true
-  fi
+  case "$DECISION" in
+    PASS)      cc_move_task "${TASK_ID:-}" review  "${AGENT_ID:-}" || true ;;
+    ESCALATED) cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}" || true ;;
+    *)         : ;;  # WARN (host-tooling skip): inconclusive -> leave the card where it is
+  esac
 fi
 
 # --- emit the f52 qc_result event ---------------------------------------------
@@ -155,6 +159,7 @@ else
 fi
 
 case "$DECISION" in
-  PASS) echo "[skill 41 harness] CLOSED LOOP PROVEN: L1-L5 green, browser execution is safe to enable."; [[ $SKIPPED -gt 0 ]] && exit 3 || exit 0 ;;
+  PASS) echo "[skill 41 harness] CLOSED LOOP PROVEN: L1-L5 green, browser execution is safe to enable."; exit 0 ;;
+  WARN) echo "[skill 41 harness] INCONCLUSIVE: $SKIPPED level(s) SKIPPED (host tooling: python3 unavailable) -- browser execution NOT proven, NOT safe to enable yet. Re-run on a host with python3."; exit 3 ;;
   *)    echo "[skill 41 harness] DO NOT publish/enable -- $ESCALATED escalation(s), $FAILED failure(s). Human review required."; exit 2 ;;
 esac

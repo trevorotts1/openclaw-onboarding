@@ -14,7 +14,7 @@ This protocol provides a coaching framework for identifying and reframing unhelp
 **Crisis Resources:**
 - **988 Suicide & Crisis Lifeline** — Call or text 988
 - **Therapy for Black Girls** — https://therapyforblackgirls.com
-- **NAMI Helpline** — 1-800-950-NAMI (6264) or text "NAMI" to 741741
+- **NAMI Helpline** — 1-800-950-NAMI (6264) or text HOME to 741741
 
 If the client expresses suicidal ideation, describes trauma symptoms, or the thought pattern appears rooted in clinical depression/anxiety/OCD/PTSD, STOP and route to crisis resources. Coaching boundary language: *"What we're doing here is a coaching exercise for everyday thought patterns. If a thought feels too heavy or keeps coming back no matter what you try, that may be a sign to talk with a licensed therapist — and I can help you find someone."*
 
@@ -114,7 +114,7 @@ Now: *"And what's the evidence that this thought might NOT be true — or at lea
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when the same thought recurs unchanged across 4+ sessions despite reframing work, OR thought pattern appears rooted in clinical depression, anxiety, OCD, or PTSD
-- **{{CRISIS_LINE}}** — when {{OWNER_NAME}} expresses suicidal ideation, self-harm, or describes trauma symptoms
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when {{OWNER_NAME}} expresses suicidal ideation, self-harm, or describes trauma symptoms
 - **{{COACH_NAME}}** — when thought_log audit reveals patterns of catastrophizing or self-criticism unchanged by coaching intervention
 
 ## Definition of Done

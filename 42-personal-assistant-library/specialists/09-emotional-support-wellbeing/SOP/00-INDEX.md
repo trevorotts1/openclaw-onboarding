@@ -105,4 +105,4 @@
 - **Therapy Boundary:** All SOPs reference PA-09-04 escalation boundary. Every role is escalation-trained.
 - **Cultural Fluency:** All SOPs are written for and by the cultural context of Black women professionals. No explaining Blackness to a Black woman.
 - **Body-First:** All interventions begin with physiological regulation before cognitive work.
-- **Crisis Resources:** 988 Suicide & Crisis Lifeline, Therapy for Black Girls, NAMI Helpline (1-800-950-NAMI), National DV Hotline (1-800-799-7233).
+- **Crisis Resources:** 988 Suicide & Crisis Lifeline, Therapy for Black Girls, NAMI Helpline (1-800-950-6264), National DV Hotline (1-800-799-7233).
