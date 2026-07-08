@@ -20,7 +20,7 @@ graphify hook install
 graphify hook status
 
 # 4. Map the client's OWN workforce ONCE, on the CLIENT'S OWN model
-graphify . --backend ollama --model deepseek-v4-pro:cloud
+OLLAMA_BASE_URL="http://localhost:11434/v1" OLLAMA_MODEL="qwen2.5-coder:7b" graphify extract . --backend ollama
 ```
 
 Result: `graphify-out/graph.html` + `graph.json` + `GRAPH_REPORT.md` in the workspace.
@@ -58,7 +58,7 @@ The semantic pass is owner-triggered and runs on the client's own model:
 
 ```bash
 cd ~/.openclaw/workspace                 # VPS: /data/.openclaw/workspace
-graphify . --backend ollama --model deepseek-v4-pro:cloud
+OLLAMA_BASE_URL="http://localhost:11434/v1" OLLAMA_MODEL="qwen2.5-coder:7b" graphify extract . --backend ollama
 ```
 
 NEVER do this on your own initiative or on a schedule — it costs the client's own model tokens.

@@ -95,7 +95,7 @@ bash ~/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-inst
 # VPS: bash /data/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh "$WORKFORCE"
 ```
 
-Hard checks (these FAIL the verifier): the skill files are present and the graphify CLI is installed. **Advisory only — WARN, never fail:** the claw skill registration, `graphify-out/graph.json` existing for the mapped folder, and the hook being installed. The semantic map is owner-triggered and the target may not be a git repo yet, so their absence is often expected. Then run the full install QC:
+Hard checks (these FAIL the verifier): the skill files are present and the graphify CLI is installed. **Required — the claw skill registration** (`graphify install --platform claw`) is a mandatory install step, not optional: the verifier only WARNs on it because its path-based detection is best-effort, so if it WARNs, re-run the registration command and confirm `/graphify` is wired before proceeding. **Genuinely advisory — WARN, never fail:** `graphify-out/graph.json` existing for the mapped folder and the hook being installed. The semantic map is owner-triggered and the target may not be a git repo yet, so their absence is often expected. Then run the full install QC:
 
 ```bash
 bash ~/.openclaw/skills/43-graphify-knowledge-graph/qc-graphify-knowledge-graph.sh
