@@ -4,6 +4,24 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.7] - 2026-07-07 - Survey Phase-B rename wiring LOCKED + targeted mutation-kill evidence for the v18.1.5/v18.1.6 wave
+
+- NEW hermetic locks in `tests/test_ghl_iframe_drag.py`: the SURVEY builder's
+  Phase-B rename must route through the frame-scoped
+  `set_inline_title` (survey iframe selector + `re:^Survey \d+$` pattern
+  specs, url_marker `survey-builder`), and a missing primitive / missing CDP /
+  failed rename are all honest STOPs — a survey can never proceed
+  default-named (the same silent-failure class the FORM builder hit live
+  2026-07-07).
+- MUTATION-KILL PROOF for the wave's load-bearing lines (each mutation flipped
+  ONE line; the suite had to fail): source-scroll removal, hint-miss swallow,
+  editable-gate bypass, exactly-one-row gate bypass, post<=0-as-gone, save
+  rows<0 gate, rename-always-true — **7/7 KILLED**, working tree byte-restored
+  after each run.
+- Full skill-6 pytest: **1106 passed / 15 skipped** (+2).
+
+---
+
 ## [v18.1.6] - 2026-07-07 - PIPELINE (+stages) CREATION via BROWSER CONTROL — new `ghl_pipeline_builder.py` (no public API exists for this surface)
 
 Operator-ratified boundary (2026-07-07): GHL exposes NO public API to CREATE a

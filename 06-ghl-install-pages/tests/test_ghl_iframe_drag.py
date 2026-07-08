@@ -244,6 +244,71 @@ def test_survey_builder_drag_stops_when_no_cdp(monkeypatch):
     assert "iframe-drag" in str(ei.value)
 
 
+def test_survey_rename_routes_through_frame_scoped_primitive(monkeypatch):
+    """v18.1.5: the SURVEY Phase-B rename must ride set_inline_title with the
+    survey iframe selector + the 'Survey <n>' pattern specs — the old top-frame
+    dblclick/fill walk could never reach the in-iframe title (the same silent
+    failure the FORM builder hit live 2026-07-07)."""
+    calls = {}
+
+    class _FakeIdg:
+        DEFAULT_SURVEY_TITLE_SPECS = (r"re:^Survey\s*\d+$", "text=Untitled")
+
+        class IframeDragError(RuntimeError):
+            def __init__(self, code, reason):
+                self.code, self.reason = code, reason
+                super().__init__(f"{code}: {reason}")
+
+        @staticmethod
+        def set_inline_title(cdp_url, *, iframe_selector, new_title,
+                             title_specs, url_marker):
+            calls["set"] = {"iframe_selector": iframe_selector,
+                            "new_title": new_title,
+                            "title_specs": tuple(title_specs),
+                            "url_marker": url_marker}
+            return {"ok": True, "old_title": "Survey 0", "verified": True}
+
+    monkeypatch.setattr(sb, "_ghl_iframe_drag", _FakeIdg)
+    monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "ws://live")
+    monkeypatch.setattr(sb, "_wait", lambda session, text, timeout=25: None)
+    monkeypatch.setattr(sb, "_screenshot", lambda session, path: None)
+    sb._p2_rename_survey("s", "ZHC Intake Survey", "/tmp/x-sb-rename", [0])
+    assert calls["set"]["iframe_selector"] == sb.GHL_SURVEY_IFRAME_SELECTOR
+    assert calls["set"]["url_marker"] == "survey-builder"
+    assert calls["set"]["new_title"] == "ZHC Intake Survey"
+    assert any(s.startswith("re:^Survey") for s in calls["set"]["title_specs"])
+
+
+def test_survey_rename_stops_when_primitive_or_cdp_missing(monkeypatch):
+    """A survey must never proceed default-named: no primitive / no CDP / a
+    failed rename are all honest STOPs, not warnings."""
+    monkeypatch.setattr(sb, "_ghl_iframe_drag", None)
+    with pytest.raises(RuntimeError) as ei:
+        sb._p2_rename_survey("s", "ZHC X", "/tmp/x-sb-r1", [0])
+    assert "survey rename" in str(ei.value)
+
+    class _FailingIdg:
+        DEFAULT_SURVEY_TITLE_SPECS = (r"re:^Survey\s*\d+$",)
+
+        class IframeDragError(RuntimeError):
+            def __init__(self, code, reason):
+                self.code, self.reason = code, reason
+                super().__init__(f"{code}: {reason}")
+
+        @classmethod
+        def set_inline_title(cls, *a, **k):
+            raise cls.IframeDragError("title-not-editable", "no editor took focus")
+
+    monkeypatch.setattr(sb, "_ghl_iframe_drag", _FailingIdg)
+    monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "")
+    with pytest.raises(RuntimeError):
+        sb._p2_rename_survey("s", "ZHC X", "/tmp/x-sb-r2", [0])
+    monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "ws://live")
+    with pytest.raises(RuntimeError) as ei3:
+        sb._p2_rename_survey("s", "ZHC X", "/tmp/x-sb-r3", [0])
+    assert "title-not-editable" in str(ei3.value)
+
+
 # ---------------------------------------------------------------------------
 # 3. SCROLL-INTO-VIEW + CATEGORY-HINT locate (v1.1.0 — the F5.locate:City fix)
 # ---------------------------------------------------------------------------
