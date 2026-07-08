@@ -119,6 +119,46 @@ python3 -c "import ast; ast.parse(open('$OPENMONTAGE_DIR/tools/video/kie_video.p
 echo ""
 
 # ---------------------------------------------------------------------------
+# Step 4.5 — SK1-63: ship VIDEO-PIPELINE-MANIFEST.json to the runtime dir (fail-loud)
+# ---------------------------------------------------------------------------
+# The manifest is the SACRED source for executive_producer.py's autofail set. It lives
+# at repo-root universal-sops/video-pipeline-craft/ and is intentionally NOT bundled
+# inside the content-hashed skill dir. If it is never placed on the box, load_manifest()
+# hard-exits 2 mid-pipeline. Copy it to a runtime location OUTSIDE the hashed skill dir
+# (sibling of the OpenMontage clone, matching executive_producer._runtime_manifest_path)
+# and FAIL LOUD here at install time if we cannot find the source.
+echo "--- Step 4.5: Place VIDEO-PIPELINE-MANIFEST.json (runtime) ---"
+MANIFEST_DEST="$(dirname "$OPENMONTAGE_DIR")/VIDEO-PIPELINE-MANIFEST.json"
+MANIFEST_SRC="${OPENCLAW_VIDEO_PIPELINE_MANIFEST:-}"
+if [ -z "$MANIFEST_SRC" ]; then
+  # Walk up from the skill dir looking for the universal-sops sibling.
+  _cur="$SKILL_DIR"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if [ -f "$_cur/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json" ]; then
+      MANIFEST_SRC="$_cur/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+      break
+    fi
+    [ "$_cur" = "/" ] && break
+    _cur="$(dirname "$_cur")"
+  done
+fi
+if [ -n "$MANIFEST_SRC" ] && [ -f "$MANIFEST_SRC" ]; then
+  mkdir -p "$(dirname "$MANIFEST_DEST")"
+  cp "$MANIFEST_SRC" "$MANIFEST_DEST"
+  python3 -c "import json,sys; json.load(open('$MANIFEST_DEST'))" \
+    && green "VIDEO-PIPELINE-MANIFEST.json placed at $MANIFEST_DEST (valid JSON)" \
+    || { red "Copied manifest is not valid JSON — check $MANIFEST_SRC."; exit 1; }
+else
+  red "VIDEO-PIPELINE-MANIFEST.json source not found."
+  info "Looked for universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json above"
+  info "$SKILL_DIR, and OPENCLAW_VIDEO_PIPELINE_MANIFEST was unset. The fleet installer"
+  info "must ship the universal-sops sibling with this skill, OR set"
+  info "OPENCLAW_VIDEO_PIPELINE_MANIFEST to the manifest path, then re-run install.sh."
+  exit 1
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
 # Step 5 — Write the client .env (Kie key ONLY)
 # ---------------------------------------------------------------------------
 echo "--- Step 5: Write client .env ---"

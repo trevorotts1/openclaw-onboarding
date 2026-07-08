@@ -56,6 +56,7 @@ manifest symbol for it; AF-VID-PHASE-SKIPPED is enforced_by:driver with py_symbo
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -87,13 +88,31 @@ def _find_repo_root(start: Path):
     return None
 
 
+def _runtime_manifest_path() -> Path:
+    """SK1-63: the canonical manifest lives at repo-root universal-sops/, which is NOT
+    shipped inside the (content-hashed) skill dir. install.sh copies it here — a runtime
+    dir OUTSIDE the hashed skill dir (sibling of the OpenMontage clone) — so this driver
+    can resolve it on a client box that never received the universal-sops sibling."""
+    override = os.environ.get("OPENCLAW_OPENMONTAGE_DIR", "").strip()
+    if override:
+        # The manifest sits beside the OpenMontage clone dir.
+        return Path(override).parent / "VIDEO-PIPELINE-MANIFEST.json"
+    return Path.home() / ".openclaw" / "openmontage-runtime" / "VIDEO-PIPELINE-MANIFEST.json"
+
+
 def load_manifest() -> dict:
     repo = _find_repo_root(HERE)
     candidates = []
+    # Highest priority: an explicit operator override.
+    env_path = os.environ.get("OPENCLAW_VIDEO_PIPELINE_MANIFEST", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
     if repo:
         candidates.append(repo / "universal-sops" / "video-pipeline-craft"
                           / "VIDEO-PIPELINE-MANIFEST.json")
     candidates += [
+        # SK1-63: the runtime copy install.sh places outside the hashed skill dir.
+        _runtime_manifest_path(),
         HERE.parent / "sops" / "VIDEO-PIPELINE-MANIFEST.json",
         HERE.parent / "VIDEO-PIPELINE-MANIFEST.json",
         HERE / "VIDEO-PIPELINE-MANIFEST.json",
@@ -106,7 +125,12 @@ def load_manifest() -> dict:
                 print(f"FATAL: VIDEO-PIPELINE-MANIFEST.json is not valid JSON ({exc}).",
                       file=sys.stderr)
                 sys.exit(2)
-    print("FATAL: VIDEO-PIPELINE-MANIFEST.json not found.", file=sys.stderr)
+    looked = "\n  ".join(str(c) for c in candidates)
+    print("FATAL: VIDEO-PIPELINE-MANIFEST.json not found. The manifest ships in the repo "
+          "at universal-sops/video-pipeline-craft/ and is NOT bundled inside the hashed "
+          "skill dir; install.sh (Step 4.5) copies it to the runtime location below.\n"
+          "Re-run install.sh, or set OPENCLAW_VIDEO_PIPELINE_MANIFEST to its path.\n"
+          f"Looked in:\n  {looked}", file=sys.stderr)
     sys.exit(2)
 
 
