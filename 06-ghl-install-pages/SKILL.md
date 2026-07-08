@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v18.0.2"
+  version: "v18.1.11"
   priority: HIGH
 ---
 
@@ -301,11 +301,23 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      the browser layer executes the click list. Custom fields + tags are
      PRE-CREATED via Skill 44 (never in-browser create-on-the-fly). `--dry-run`
      (default) and `--selftest` need no network/browser.
+   - `ghl_pipeline_builder.py` - browser-controlled PIPELINE (+stages) builder
+     (v18.1.6). GHL has NO public API for pipeline/stage creation (confirmed
+     against the real v2 AND v3 OpenAPI specs 2026-07-07) — this walk drives
+     the real Opportunities ▸ Pipelines UI, reusing the form builder's proven
+     DO-layer primitives. Anchors are RUNTIME-BOUND by pattern (docs-seeded,
+     `tools/SELECTORS-LIVE-pipeline.md`); every outcome is POSITIVELY verified
+     (rendered leaf-count), and cleanup is a present→delete→absent proof that
+     refuses any delete affordance it cannot count to exactly one. BOUNDARY:
+     opportunity CRUD + pipeline LISTING stay on Skill 44's API (`caf
+     opportunities ...`) — only pipeline/stage CREATION is browser-driven.
+     `--dry-run` (default) and `--selftest` need no network/browser.
    - **Locked selector docs (one per browser builder).** Each browser builder
      names its LOCKED, runtime-snapshot-gated selector reference: funnel →
      `tools/SELECTORS-LIVE-funnel.md`, page → `tools/SELECTORS-LIVE-page.md`,
      survey → `tools/SELECTORS-LIVE-survey.md`, form →
-     `tools/SELECTORS-LIVE-form.md`.
+     `tools/SELECTORS-LIVE-form.md`, pipeline → `tools/SELECTORS-LIVE-pipeline.md`
+     (RESEARCH-SEEDED — the first live run upgrades it to LOCKED).
    - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
      generates recommended answers on request, then confirms before proceeding;
      output written to the task manifest before build starts.

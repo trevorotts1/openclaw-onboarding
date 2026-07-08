@@ -1,5 +1,48 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.31 — 2026-07-07 — fix(cc): durable converge guards so a Command Center rebuild can never re-break the Kanban
+
+Root cause (proven on a client box): Phase 6 of `scripts/run-full-install.sh` pulled fresh
+Command Center source and ran `npm install` (whose `postinstall` only `npm rebuild`s the
+better-sqlite3 native addon) then restarted pm2 — but **never ran `next build`**. `npm start`
+→ `scripts/cc-start.sh` → `next start` therefore kept serving the pre-existing `.next` bundle,
+which predates the pulled source. The Next.js instrumentation hook
+(`src/instrumentation.ts` → `registerCronJobs`) that registers the **intake-advance** +
+**backlog-redispatch** sweeps is compiled INTO `.next`; a stale bundle omits them, so nothing
+polls the backlog and cards stick in Backlog (`dispatch_attempts` stays 0). Three runtime env
+vars were also never provisioned, so even a fresh build could fail closed: an empty
+`OPENCLAW_GATEWAY_TOKEN` (Bridge unauthenticated to the local gateway), an unset
+`SOVEREIGN_DEFAULT_MODEL` (AF-MODEL-SOVEREIGNTY blocks every text dispatch when nothing else
+resolves a model), and unset `MC_API_TOKEN`/`WEBHOOK_SECRET` (newer CC middleware rejects the
+ingest + agent-completion webhooks).
+
+Four durable, idempotent, additive guards were added to `scripts/run-full-install.sh` and run
+in BOTH the full-install and `--update-only` Phase-6 branches, after `npm install` and before
+the pm2 (re)start:
+
+- **(1) `cc_ensure_fresh_build`** — rebuilds `.next` **only when it is stale** (`.next/BUILD_ID`
+  missing or older than any build input: `src/`, `public/`, `config/`, `next.config.*`,
+  `package*.json`, ts/tailwind/postcss configs, `middleware.ts`). A no-change re-run does not
+  rebuild. Verifies a fresh `BUILD_ID` (mtime ≥ build start) so a build that exits 0 yet
+  produces no output is caught. A full install with no usable `.next` hard-fails; an update
+  with a prior bundle degrades (resume cron retries). Freshness is folded into the FINAL
+  "no false done" degraded-phase gate (`commandCenterBuildFresh`).
+- **(2) `OPENCLAW_GATEWAY_TOKEN`** — copied into CC `.env.local` from **this box's own**
+  `gateway.auth.token` when `gateway.auth.mode == "token"`. The token value is never logged.
+- **(3) `SOVEREIGN_DEFAULT_MODEL`** — set to **this box's own** primary TEXT model, discovered
+  per-box from `agents.defaults.model.primary` (→ main-agent primary → sovereign fallback →
+  string form), gated to reject any free/Anthropic id (mirrors the CC model-selector) so the
+  value is actually honoured. Operator override: `CC_SOVEREIGN_DEFAULT_MODEL`. Never a shared
+  or hardcoded model.
+- **(4) API-auth posture** — provisions `MC_API_TOKEN` + `WEBHOOK_SECRET` (generated once,
+  reused, never rotated) by default so a rebuild cannot silently flip fail-closed; a
+  Cloudflare-Access box may opt into `ALLOW_INSECURE_OPEN_API=true` via
+  `CC_ALLOW_INSECURE_OPEN_API=true` (or `CC_API_AUTH_MODE=insecure`).
+
+`.env.local` is written 0600 as the box user; existing operator values are always preserved
+(never overwritten, secrets never rotated), so the guards are safe to re-run on every
+install/update/resume.
+
 ## v12.9.30 — 2026-07-05 — feat(sop): add-sop.sh emits per-step persona SLOTS for multi-craft SOPs (F3.9, DEP-4)
 
 - **`scripts/add-sop.sh` — new `--persona-slots` flag.** A multi-craft SOP (e.g. "build a

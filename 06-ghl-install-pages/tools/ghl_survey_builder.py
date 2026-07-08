@@ -115,6 +115,11 @@ try:
 except Exception:  # noqa: BLE001
     _ghl_method = None  # type: ignore[assignment]
 
+try:  # SHARED frame-scoped coordinate-drag primitive (cross-origin iframe FIX)
+    import ghl_iframe_drag as _ghl_iframe_drag  # noqa: E402
+except Exception:  # noqa: BLE001
+    _ghl_iframe_drag = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
@@ -127,6 +132,13 @@ GHL_APP_ORIGIN_DEFAULT = os.environ.get(
 GHL_SURVEY_BUILDER_HOST = (
     "leadgen-apps-form-survey-builder.leadconnectorhq.com"
 )
+
+# The survey builder renders inside this CROSS-ORIGIN iframe (same host as the form
+# builder). agent-browser 0.27.0 cannot LOCATE a non-interactive drag-source row
+# across that boundary, so the DRAG step is delegated to the shared
+# ghl_iframe_drag primitive (Playwright over the same session's CDP). See
+# ghl_iframe_drag.py + SELECTORS-LIVE-form.md §7.
+GHL_SURVEY_IFRAME_SELECTOR = 'iframe[src*="survey-builder-v2"]'
 
 # Material step totals for progress reporting
 _PART1_BASE_STEPS = 4   # navigate, settings, custom-fields, folder
@@ -394,8 +406,16 @@ def _run_cmd(
     *args: str,
     timeout: int = 30,
 ) -> subprocess.CompletedProcess:
-    """Execute one agent-browser command. Returns CompletedProcess; never raises."""
-    cmd_str = ghl_builder.browser_cmd("--session", session, *args)
+    """Execute one agent-browser command. Returns CompletedProcess; never raises.
+
+    Every arg is shell-quoted BEFORE the browser_cmd join (v18.1.3): browser_cmd
+    assembles one command STRING with a plain ' '.join and this glue re-splits it
+    with shlex.split, so an unquoted multi-word arg ('Create folder', a JS eval
+    payload, a screenshot path with spaces) would silently shatter into separate
+    CLI tokens. shlex.quote(arg) survives the round-trip as exactly ONE argv
+    token; bare flags like '-i' / '--text' are unchanged."""
+    cmd_str = ghl_builder.browser_cmd(
+        "--session", session, *(shlex.quote(str(a)) for a in args))
     _log(f"[ab] {cmd_str}")
     try:
         return subprocess.run(
@@ -422,29 +442,60 @@ def _open(session: str, url: str, timeout: int = 45) -> None:
     _run_cmd(session, "open", url, timeout=timeout)
 
 
+# ── TEXT-targeting verbs (v18.1.3 root-cause fix, mirrors ghl_form_builder) ──
+# agent-browser 0.27.0 treats a BARE positional on `click` / `fill` / `wait` /
+# `dblclick` / `type` as a CSS selector / XPath / @ref — NEVER a text match
+# (per each verb's --help). The old forms (`wait -- <text>`, `click <text>`,
+# `fill <label> <value>`) therefore parsed the text as a SELECTOR and could not
+# succeed even with the text visibly on the page (hermetic data:-URL probe
+# 2026-07-07: bare forms → rc=1; `wait --text` / `find text <x> click` → rc=0).
 def _wait(session: str, text: str, timeout: int = 25) -> None:
-    """Wait until visible text appears (no fixed sleep)."""
-    _run_cmd(session, "wait", "--", text, timeout=timeout)
+    """Wait until visible text appears (no fixed sleep) — `wait --text <text>`
+    (substring match). A bare `wait <arg>` positional is a selector or ms."""
+    _run_cmd(session, "wait", "--text", text, timeout=timeout)
 
 
 def _click(session: str, target: str, timeout: int = 15) -> None:
-    """Click a visible text/role target."""
-    _run_cmd(session, "click", target, timeout=timeout)
+    """Click by VISIBLE TEXT via `find text <target> click` (substring match).
+    A bare `click <target>` positional is a SELECTOR, not a text match."""
+    _run_cmd(session, "find", "text", target, "click", timeout=timeout)
+
+
+def _xpath_text(text: str) -> str:
+    """An XPath selector matching an element whose own text node equals ``text``
+    — the text-target form for verbs `find` has no action for (e.g. dblclick).
+    Quote-safe via XPath concat() when ``text`` carries both quote kinds."""
+    if '"' not in text:
+        lit = f'"{text}"'
+    elif "'" not in text:
+        lit = f"'{text}'"
+    else:
+        lit = "concat(" + ",'\"',".join(f'"{p}"' for p in text.split('"')) + ")"
+    return f"//*[normalize-space(text())={lit}]"
 
 
 def _dblclick(session: str, target: str) -> None:
-    """Double-click (e.g. to enter inline edit mode)."""
-    _run_cmd(session, "dblclick", target, timeout=15)
+    """Double-click the element carrying ``target`` as visible text (e.g. to
+    enter inline edit mode). `dblclick` has no text mode and `find` has no
+    dblclick action, so the text is bound via an XPath text-node match."""
+    _run_cmd(session, "dblclick", _xpath_text(target), timeout=15)
 
 
 def _fill(session: str, label: str, value: str) -> None:
-    """Fill an input field identified by label text."""
-    _run_cmd(session, "fill", label, value, timeout=15)
+    """Fill the input identified by its VISIBLE LABEL text (aria-label /
+    associated <label>), falling back to PLACEHOLDER text (GHL search boxes
+    like 'Search by Name' are placeholder-identified). A bare `fill <label>`
+    positional is a SELECTOR, so the old form could never bind by label."""
+    cp = _run_cmd(session, "find", "label", label, "fill", value, timeout=15)
+    if cp.returncode != 0:
+        _run_cmd(session, "find", "placeholder", label, "fill", value, timeout=15)
 
 
 def _type(session: str, text: str) -> None:
-    """Type text into the focused element."""
-    _run_cmd(session, "type", text, timeout=15)
+    """Type text into the FOCUSED element — `keyboard type <text>` (real
+    keystrokes, no selector). The old bare `type <text>` form parsed the text
+    as the SELECTOR of a `type <sel> <text>` call missing its text."""
+    _run_cmd(session, "keyboard", "type", text, timeout=15)
 
 
 def _eval(session: str, js: str, timeout: int = 15) -> str:
@@ -457,6 +508,47 @@ def _snapshot(session: str) -> str:
     """Get the current accessibility snapshot (-i mode)."""
     result = _run_cmd(session, "snapshot", "-i", timeout=20)
     return result.stdout or ""
+
+
+def _get_cdp_url(session: str) -> str:
+    """Read the live agent-browser session's CDP url (`get cdp-url`) so Playwright
+    can attach to the SAME logged-in Chromium for the frame-scoped drag — one
+    browser, one login. Routed through the managed _run_cmd glue. '' if absent."""
+    result = _run_cmd(session, "get", "cdp-url", timeout=15)
+    return (result.stdout or "").strip().strip('"').strip("'")
+
+
+def _perform_iframe_drag(session: str, source_text: str, drop_target: str,
+                         *, verify_text: str,
+                         iframe_selector: str = GHL_SURVEY_IFRAME_SELECTOR) -> dict:
+    """Drag ONE object-field row (``source_text``) onto its target slide
+    (``drop_target``) INSIDE the cross-origin survey-builder iframe via the shared
+    ghl_iframe_drag primitive, verifying ``verify_text`` then appears. FAIL-CLOSED:
+    raises RuntimeError (never a fake success) if the primitive/CDP is unavailable
+    or the drag does not land. Replaces the top-frame-only `_run_cmd drag`, which
+    cannot reach the row across the cross-origin boundary."""
+    if _ghl_iframe_drag is None:
+        raise RuntimeError(
+            "STOP (survey iframe-drag): the shared ghl_iframe_drag primitive is not "
+            "importable, and agent-browser 0.27.0 alone cannot locate a non-interactive "
+            "field row across the cross-origin survey-builder iframe. Ship "
+            "ghl_iframe_drag.py + Playwright (scoped to Skill 6).")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise RuntimeError(
+            "STOP (survey iframe-drag): could not read the agent-browser CDP url "
+            "(`get cdp-url`) to hand the drag off to Playwright on the same session.")
+    try:
+        return _ghl_iframe_drag.coordinate_drag(
+            cdp_url,
+            iframe_selector=iframe_selector,
+            source=f"text={source_text}",
+            target=f"text={drop_target}",
+            url_marker="survey-builder",
+            verify_text=verify_text,
+        )
+    except _ghl_iframe_drag.IframeDragError as exc:
+        raise RuntimeError(f"STOP (survey iframe-drag:{exc.code}): {exc.reason}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -757,7 +849,7 @@ def _p1_create_folder(
     # Step 6: type folder name + click Create in dialog
     _fill(session, "Folder name", folder_name)
     # Dialog Create button (scoped; distinct from any page-level Create)
-    _run_cmd(session, "click", "Create")
+    _click(session, "Create")
     _wait(session, folder_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p1-06-folder-created"))
@@ -885,16 +977,37 @@ def _p2_rename_survey(
     evidence_root: str,
     shot_n: List[int],
 ) -> None:
-    """Phase B: rename Survey 0 to the target name (steps 5–10, PRD §5.B.2)."""
-    _log(f"P2-B: rename survey to {survey_name!r}")
+    """Phase B: rename Survey 0 to the target name (steps 5–10, PRD §5.B.2).
 
-    # Transcript steps 5–10: multiple clicks on 'Survey 0' to enter inline edit.
-    # Double-click is the clean path; transcript shows multiple single-clicks as
-    # the recorder captured the operator double-clicking imprecisely.
-    _dblclick(session, "Survey 0")
-    _fill(session, "Survey 0", survey_name)
-    # Commit by clicking the canvas (outside the title input)
-    _click(session, "Slide 1")
+    v18.1.5 — FRAME-SCOPED: the survey title is an in-iframe inline-edit surface
+    (same cross-origin constraint as the drags; the FORM builder's identical
+    rename failed SILENTLY live 2026-07-07 via top-frame dblclick/fill). The
+    rename now rides the shared ``ghl_iframe_drag.set_inline_title`` primitive —
+    pattern-locate ('Survey <n>' — the number is unknowable), verified edit-mode
+    entry, select-all + type + Enter, and an in-iframe verification. FAIL-CLOSED:
+    a survey must never proceed (or be left behind) default-named."""
+    _log(f"P2-B: rename survey to {survey_name!r} (frame-scoped)")
+    if _ghl_iframe_drag is None:
+        raise RuntimeError(
+            "STOP (survey rename): the shared ghl_iframe_drag primitive is not "
+            "importable — the in-iframe survey title cannot be reached (top-frame "
+            "verbs fail silently on this cross-origin surface).")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise RuntimeError(
+            "STOP (survey rename): could not read the agent-browser CDP url "
+            "(`get cdp-url`) for the frame-scoped inline-title rename.")
+    try:
+        _ghl_iframe_drag.set_inline_title(
+            cdp_url,
+            iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+            new_title=survey_name,
+            title_specs=_ghl_iframe_drag.DEFAULT_SURVEY_TITLE_SPECS,
+            url_marker="survey-builder",
+        )
+    except _ghl_iframe_drag.IframeDragError as exc:
+        raise RuntimeError(
+            f"STOP (survey rename:{exc.code}): {exc.reason}") from exc
     _wait(session, survey_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-b-renamed"))
@@ -952,11 +1065,11 @@ def _p2_welcome_slide(
 
     # Step 12: optional styling (inter, Paragraph, 16px, Center, Text color)
     # Emit clicks — actual toolbar controls depend on snapshot refs
-    _run_cmd(session, "click", "inter", timeout=10)
-    _run_cmd(session, "click", "Paragraph", timeout=10)
+    _click(session, "inter", timeout=10)
+    _click(session, "Paragraph", timeout=10)
 
     # Step 13: rename slide via gear → Slide Name = 'Welcome Slide'
-    _run_cmd(session, "click", "gear", timeout=10)
+    _click(session, "gear", timeout=10)
     _fill(session, "Slide Name", "Welcome Slide")
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-d-slide-renamed"))
@@ -1005,7 +1118,10 @@ def _p2_pull_object_fields(
 
         # Use Search by Name for fast, reliable location (PRD §5.B.2 Phase E)
         _fill(session, "Search by Name", f["label"][:20])
-        _run_cmd(session, "drag", label_prefix, target_slide, timeout=20)
+        # FRAME-SCOPED drag (cross-origin iframe): agent-browser cannot reach the
+        # field row, so hand this step to Playwright over the same session's CDP.
+        _perform_iframe_drag(session, label_prefix, target_slide,
+                             verify_text=label_prefix[:20])
         _wait(session, label_prefix[:20], timeout=20)
         shot_n[0] += 1
         _screenshot(session, _shot_path(evidence_root, shot_n[0],
@@ -1032,7 +1148,7 @@ def _p2_rename_question_slides(
         short_name = f["slide_name"]
         _log(f"  Slide {slide_n} → {short_name!r}")
         _click(session, f"Slide {slide_n}")
-        _run_cmd(session, "click", "gear", timeout=10)
+        _click(session, "gear", timeout=10)
         _fill(session, "Slide Name", short_name)
         shot_n[0] += 1
         _screenshot(session, _shot_path(evidence_root, shot_n[0],
