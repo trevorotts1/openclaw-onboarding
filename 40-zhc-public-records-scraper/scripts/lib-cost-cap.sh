@@ -53,6 +53,9 @@ estimate() {
   # cost = batch * PR_COST_PER_QUERY  (awk for float math; no bc dependency)
   cost="$(awk -v b="$batch" -v c="$PR_COST_PER_QUERY" 'BEGIN{printf "%.2f", b*c}')"
   secs="$(awk -v b="$batch" -v r="$PR_PER_TARGET_MIN_INTERVAL_S" 'BEGIN{printf "%d", b*r}')"
+  # SK1-28: confirm_required is gated on BATCH SIZE, not est_cost — est_cost is
+  # $0.00 for free public portals (PR_COST_PER_QUERY defaults to 0.00) and is
+  # informational only. A paid vendor should set PR_COST_PER_QUERY to a real price.
   over="false"; [ "$batch" -gt "$PR_BULK_CONFIRM_THRESHOLD" ] 2>/dev/null && over="true"
   if command -v jq >/dev/null 2>&1; then
     jq -cn --argjson b "$batch" --arg cost "$cost" --argjson secs "$secs" \
