@@ -211,14 +211,17 @@ def check_intake(bk: Book):
 def check_avatar(bk: Book):
     p = bk.artifacts / "01-avatar.md"
     if not p.is_file():
-        return False, "missing run/artifacts/01-avatar.md (TODO: Wave-2 authors the dossier)", {}
+        return False, ("missing run/artifacts/01-avatar.md — FAIL-CLOSED: the book cannot "
+                       "complete without the authored avatar dossier (authoring stage deferred "
+                       "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
     return True, "avatar dossier present", {}
 
 
 def check_tone(bk: Book):
     p = bk.artifacts / "08-blended-tone.md"
     if not p.is_file():
-        return False, "missing run/artifacts/08-blended-tone.md (TODO: Wave-2 authors the tone)", {}
+        return False, ("missing run/artifacts/08-blended-tone.md — FAIL-CLOSED: the book "
+                       "cannot complete without the authored blended tone"), {}
     res = p_tone.evaluate(p.read_text(encoding="utf-8"))
     ok, msg = _phase_result(res)
     return ok, "tone %s" % msg, {"tone_word_count": c.word_count(p.read_text(encoding="utf-8"))}
@@ -240,7 +243,9 @@ def check_outline(bk: Book, approvals: dict):
     outline = bk.artifacts / "13-outline.md"
     stories = bk.rd / "stories.json"
     if not outline.is_file():
-        return False, "missing run/artifacts/13-outline.md (TODO: Wave-2 authors the outline)", {}
+        return False, ("missing run/artifacts/13-outline.md — FAIL-CLOSED: the book cannot "
+                       "complete without the authored outline (authoring stage deferred to a "
+                       "scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
     if not stories.is_file():
         return False, "missing run/stories.json", {}
     if not _gate_ok(approvals, "GATE-2-outline"):
@@ -261,7 +266,9 @@ def check_outline(bk: Book, approvals: dict):
 def check_chapters(bk: Book):
     files = bk.chapter_files()
     if not files:
-        return False, "no run/chapters/ch*.md (TODO: Wave-2 authors the 12 chapters)", {}
+        return False, ("no run/chapters/ch*.md — FAIL-CLOSED: the book cannot complete without "
+                       "authored chapters (authoring stage deferred to a scoped follow-up "
+                       "campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
     chap_texts = {}
     for i, p in enumerate(files, 1):
         chap_texts[i] = p.read_text(encoding="utf-8")
@@ -304,7 +311,9 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
     # challenge exactly 30
     ch = bk.artifacts / "21-30day-challenge.md"
     if not ch.is_file():
-        return False, "missing run/artifacts/21-30day-challenge.md (TODO: Wave-2)", {}
+        return False, ("missing run/artifacts/21-30day-challenge.md — FAIL-CLOSED: the book "
+                       "cannot complete without the authored 30-Day Challenge (authoring stage "
+                       "deferred to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
     res_ch = p_chal.evaluate(ch.read_text(encoding="utf-8"))
     # title-lock across required artifacts
     title, subtitle = bk.title_subtitle()
