@@ -83,6 +83,11 @@ def find_db():
     if _HAS_SHARED_RESOLVER:
         p = _shared_find_dashboard_db()
         return str(p) if is_db_found(p) else None
+    # DATA-08: honor the app's DB env vars first, even on this bootstrap path.
+    for _ev in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        _v = os.environ.get(_ev)
+        if _v and Path(_v).is_file():
+            return str(_v)
     # Fallback for bootstrap installs.
     candidates = [
         Path.home() / "projects/command-center/mission-control.db",
