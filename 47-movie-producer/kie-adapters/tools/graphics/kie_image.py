@@ -299,16 +299,27 @@ class KieImage(BaseTool):
     # ------------------------------------------------------------------
 
     def _upload_local_image(self, path_str: str, api_key: str) -> str:
-        """Upload a local file to KIE's base64-upload endpoint.
+        """Upload a local file to KIE's authenticated base64-upload endpoint.
 
         Returns a publicly reachable KIE-hosted URL.
         Raises RuntimeError on failure.
 
         Endpoint: POST https://kieai.redpandaai.co/api/file-base64-upload
         (verified in 07-kie-setup/EXAMPLES.md Example 7 + generate-celebration-video.sh)
+
+        SK1-66: the client's SOURCE images are uploaded here, so the request MUST be
+        authenticated with the client's Kie key — never an anonymous POST to a third
+        party. The api_key was previously accepted but not sent; it now goes in the
+        Authorization: Bearer header (same auth the Kie generation calls use).
         """
         import base64
         import requests
+
+        if not api_key:
+            raise RuntimeError(
+                "kie_image: refusing to upload a client source image without a Kie API "
+                "key — the reference-image upload must be authenticated (set KIE_API_KEY)."
+            )
 
         path = Path(path_str)
         if not path.exists():
@@ -330,6 +341,7 @@ class KieImage(BaseTool):
         resp = requests.post(
             "https://kieai.redpandaai.co/api/file-base64-upload",
             json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=60,
         )
         resp.raise_for_status()
