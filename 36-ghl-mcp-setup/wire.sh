@@ -44,23 +44,49 @@ else
   else
     if [ -f "$SOUL_MD" ] && grep -q '🔴 GHL Tier Escalation Protocol' "$SOUL_MD" 2>/dev/null; then
       cp "$SOUL_MD" "${SOUL_MD}.bak-convertandflow-${ISO}"
-      # Python span-delete: remove from the protocol header through the "Full reference:" line
-      python3 - "$SOUL_MD" <<'PYEOF'
+      # SK1-75: robust span-delete. The old regex hardcoded a `## ` heading level and a
+      # `Full reference:` terminator, so any variant (# / ### header, or a block without
+      # that trailing line) matched NOTHING — yet the success marker was written anyway,
+      # falsely recording the migration as done. Now: match the header at any heading
+      # level (optional 🔴, flexible suffix), delete through the `Full reference:` line
+      # OR the next heading OR EOF, and print REMOVED / NOCHANGE so the marker is only
+      # written when a removal ACTUALLY happened.
+      REMOVAL=$(python3 - "$SOUL_MD" <<'PYEOF' || echo PYERR
 import sys, re, pathlib
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding='utf-8')
-# Remove the block from the header line through the trailing "Full reference:" line
-pattern = r'## 🔴 GHL Tier Escalation Protocol[^\n]*\n.*?Full reference:.*?\n'
-new_text = re.sub(pattern, '', text, flags=re.DOTALL)
-path.write_text(new_text, encoding='utf-8')
+header = r'#{1,6}[ \t]*(?:🔴[ \t]*)?GHL Tier Escalation Protocol[^\n]*\n'
+patterns = [
+    header + r'.*?Full reference:[^\n]*\n?',   # canonical block (ends at Full reference:)
+    header + r'.*?(?=\n#{1,6}[ \t])',          # else: up to the next heading
+    header + r'.*\Z',                          # else: to end of file
+]
+new_text = text
+for pat in patterns:
+    candidate = re.sub(pat, '', text, count=1, flags=re.DOTALL)
+    if candidate != text:
+        new_text = candidate
+        break
+if new_text != text:
+    path.write_text(new_text, encoding='utf-8')
+    print("REMOVED")
+else:
+    print("NOCHANGE")
 PYEOF
-      echo "STATUS: M1 soul-relocation applied — legacy SOUL.md block removed"
+)
+      if [ "$REMOVAL" = "REMOVED" ]; then
+        echo "STATUS: M1 soul-relocation applied — legacy SOUL.md block removed"
+        echo "" >> "$AGENTS_MD"
+        echo "<!-- $M1_MARKER -->" >> "$AGENTS_MD"
+      else
+        echo "STATUS: M1 soul-relocation WARNING — a legacy SOUL.md block was detected but the removal did not match its shape ($REMOVAL); SOUL.md left untouched and NOT marked done (will retry next pass). Inspect $SOUL_MD."
+      fi
     else
       echo "STATUS: M1 soul-relocation — SOUL.md has no legacy block; no-op"
+      # No block to remove — the migration is satisfied; write the marker.
+      echo "" >> "$AGENTS_MD"
+      echo "<!-- $M1_MARKER -->" >> "$AGENTS_MD"
     fi
-    # Write success marker to AGENTS.md
-    echo "" >> "$AGENTS_MD"
-    echo "<!-- $M1_MARKER -->" >> "$AGENTS_MD"
   fi
 fi
 
