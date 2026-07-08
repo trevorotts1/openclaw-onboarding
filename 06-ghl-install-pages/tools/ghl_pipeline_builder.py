@@ -61,6 +61,31 @@ Anthology Engine's standard "Anthology Engine" pipeline (Skill 59's
 ``anthology_registry.py provision-pipeline`` invokes this builder when the
 standard pipeline is absent, then re-reads ``GET /opportunities/pipelines``
 and binds ONLY what that read surface shows).
+
+FIRST LIVE RUN (2026-07-08) — PL1.land hardening: the first real walk against
+a live sub-account authenticated, router-pushed to the real
+Opportunities▸Pipelines route, and confirmed ZERO iframes on the surface, but
+then STOPped honestly at PL1.land — no control matching CREATE_PIPELINE_RE
+ever rendered. Code inspection found the landing check took exactly ONE
+``_snapshot()`` after only a generic "Pipeline" text wait (satisfied by the
+page header regardless of whether the create control had hydrated) — the
+same single-shot-race bug class the sibling form builder's v18.1.2 fix
+(``_wait_text_polling``) already killed. Re-checked GHL's own support docs
+(2026-07-08): the button text itself is still documented as unchanged
+("Create new pipeline"/"Create New Pipeline"), but the Pipelines screen "now
+uses the HighRise design system" (a newer frontend), which is consistent with
+a render race rather than label drift. `_land_on_pipelines` now POLLS the
+create-control acquisition on our own monotonic deadline
+(``_poll_for_create_pipeline_label``) instead of trusting one opaque
+snapshot, and a miss now reports RICH diagnostics
+(``_diagnose_missing_create_control``) — every 'pipeline'-mentioning text
+window actually seen, any unconfirmed alternate-wording hint, and any
+possible plan/limit-gating text — so a second failure is actionable instead
+of a bare "not found". See ``SELECTORS-LIVE-pipeline.md`` "FIRST LIVE RUN"
+section for the full citations and the honest caveat: this fix closes the
+CONCRETE bug the code proved (single-snapshot race) and is NOT an
+independently live-confirmed fix — it has not yet been proven against a real
+account.
 """
 
 from __future__ import annotations
@@ -89,7 +114,7 @@ StopAndReport = fb.StopAndReport
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-PIPELINE_BUILDER_VERSION = "v0.1.0"
+PIPELINE_BUILDER_VERSION = "v0.2.0"
 
 # SPA route for the Pipelines management screen (Opportunities ▸ Pipelines).
 # RUNTIME SNAPSHOT-GATED: the official docs place the screen at Opportunities >
@@ -102,6 +127,25 @@ OPPORTUNITIES_ROUTE_TMPL = "/v2/location/{loc}/opportunities/list"
 # Label PATTERNS (GHL's own docs disagree on capitalization; bind at runtime).
 CREATE_PIPELINE_RE = re.compile(r"Create\s+[Nn]ew\s+[Pp]ipeline")
 ADD_STAGE_RE = re.compile(r"Add\s+[Ss]tage")
+
+# UNCONFIRMED alternate wordings for the create-pipeline control — NOT GHL's
+# own docs (help.gohighlevel.com/help.leadconnectorhq.com still show "Create
+# new pipeline"/"Create New Pipeline" as of this fix's research pass,
+# 2026-07-08 — see SELECTORS-LIVE-pipeline.md "FIRST LIVE RUN" section for the
+# citations). These patterns are NEVER clicked and NEVER bound as the create
+# label — they exist ONLY so a PL1.land STOP can tell the operator "the screen
+# showed X" instead of a bare "not found" if GHL's real UI has drifted further
+# than the docs record (docs are known to lag the live product by days).
+_ALT_CREATE_LABEL_HINTS: List["re.Pattern[str]"] = [
+    re.compile(r"[+]\s*Add\s+[Pp]ipeline"),
+    re.compile(r"[+]\s*New\s+[Pp]ipeline"),
+    re.compile(r"\bAdd\s+[Pp]ipeline\b"),
+    re.compile(r"\bNew\s+[Pp]ipeline\b"),
+]
+# Community-reported possibility (unconfirmed against official docs): pipeline
+# creation could be plan/limit-gated. Purely diagnostic — never a click target.
+_LIMIT_GATING_RE = re.compile(r"(upgrade|limit\s+reached|maximum\s+number|plan\s+limit)",
+                              re.IGNORECASE)
 
 # Reference stages (docs example flow). GHL auto-creates Won/Lost — NEVER add.
 REFERENCE_STAGES: List[str] = ["New Lead", "Contacted", "Booked Call", "Proposal Sent"]
@@ -133,6 +177,91 @@ def find_visible_label(snapshot: str, pattern: "re.Pattern[str]") -> str:
     never an invented/guessed literal."""
     m = pattern.search(snapshot or "")
     return m.group(0) if m else ""
+
+
+# ---------------------------------------------------------------------------
+# PL1.land hardening (first live run, 2026-07-08) — poll-with-deadline +
+# rich STOP diagnostics.
+#
+# THE BUG (first live attempt against a real Convert-and-Flow sub-account):
+# the walk authenticated, router-pushed to the real Opportunities▸Pipelines
+# route, and confirmed ZERO iframes on the surface (so it wasn't a cross-
+# origin capture miss) — but the OLD landing check waited only for the
+# generic word "Pipeline" (satisfied instantly by the screen's own header/
+# breadcrumb, which says "Pipelines" regardless of whether the create control
+# has hydrated yet), then took EXACTLY ONE `_snapshot()` and regex-searched
+# THAT SINGLE OPAQUE CALL for CREATE_PIPELINE_RE. No poll, no retry — the
+# textbook single-shot race this file's own doctrine (borrowed from
+# ghl_form_builder's `_wait_text_polling` / `_capture_form_id`) already killed
+# for the sibling form builder on 2026-07-07 (v18.1.2, F2's create-modal
+# wait). GHL's own support docs (help.gohighlevel.com, refetched 2026-07-08)
+# still describe the create control as "Create new pipeline" and note the
+# Pipelines screen "now uses the HighRise design system" — a newer frontend
+# implementation, which is exactly the kind of surface most likely to
+# hydrate its header before its data-dependent action buttons. That is the
+# best-evidenced hypothesis (a render race), NOT a wording change — but it is
+# NOT independently confirmed live, so the fix below both (1) closes the
+# concrete single-snapshot bug the code inspection proved, and (2) makes the
+# NEXT failure (if the label truly changed, or moved into a menu) actionable
+# instead of a bare "not found".
+def _poll_for_create_pipeline_label(session: str, timeout_s: Optional[float] = None,
+                                    poll_s: Optional[float] = None) -> "tuple[str, str]":
+    """POLL (our OWN monotonic deadline) for the runtime-bound create-pipeline
+    control across REPEATED snapshots — never trust one opaque single-shot
+    snapshot. Same poll-with-deadline doctrine as `fb._wait_text_polling` /
+    `fb._capture_form_id` / this file's own `_save_and_verify` leaf-count poll.
+    Returns ``(label, last_snapshot)``: ``label`` is '' on a deadline miss;
+    ``last_snapshot`` is ALWAYS the final snapshot taken, so a miss still
+    carries full evidence for the STOP diagnostic. Always makes at least one
+    attempt, even with a zero/negative budget."""
+    budget = fb._TEXT_WAIT_TIMEOUT_S if timeout_s is None else timeout_s
+    pause = fb._TEXT_WAIT_POLL_S if poll_s is None else poll_s
+    deadline = time.monotonic() + max(0.0, budget)
+    snap = ""
+    while True:
+        snap = fb._snapshot(session)
+        label = find_visible_label(snap, CREATE_PIPELINE_RE)
+        if label:
+            return label, snap
+        if time.monotonic() >= deadline:
+            return "", snap
+        time.sleep(max(0.0, pause))
+
+
+_PIPELINE_MENTION_RE = re.compile(r".{0,20}[Pp]ipeline.{0,20}")
+_MAX_DIAG_CANDIDATES = 12
+
+
+def _diagnose_missing_create_control(snap: str) -> str:
+    """Rich STOP-diagnostic for a PL1.land miss — NEVER a bare 'not found'.
+    Lists every distinct 'pipeline'-mentioning text window seen in the FINAL
+    polled snapshot (deduped, capped) plus any UNCONFIRMED alternate-wording
+    hint that matched (evidence only — never auto-clicked) and any possible
+    plan/limit-gating text, so a repeat failure tells the operator exactly
+    what the screen showed and why it didn't satisfy CREATE_PIPELINE_RE.
+    Never raises."""
+    if not snap:
+        return "the final polled snapshot was EMPTY — the page rendered no text at all"
+    seen: List[str] = []
+    for m in _PIPELINE_MENTION_RE.finditer(snap):
+        token = " ".join(m.group(0).split())
+        if token and token not in seen:
+            seen.append(token)
+        if len(seen) >= _MAX_DIAG_CANDIDATES:
+            break
+    hints = [pat.pattern for pat in _ALT_CREATE_LABEL_HINTS if pat.search(snap)]
+    hint_note = (f" UNCONFIRMED alternate-wording pattern(s) matched (evidence "
+                f"only, NEVER clicked): {hints!r}." if hints else "")
+    gate_match = _LIMIT_GATING_RE.search(snap)
+    gate_note = (" Possible plan/limit-gating text also present on screen "
+                f"(unconfirmed): {gate_match.group(0)!r}." if gate_match else "")
+    if not seen:
+        return ("no text containing 'pipeline' appeared ANYWHERE in the final "
+                "polled snapshot — this is not a label-wording miss, the "
+                f"screen itself never rendered pipeline content.{hint_note}{gate_note}")
+    return (f"{len(seen)} 'pipeline'-mentioning text window(s) seen across the "
+            f"poll but NONE matched /Create\\s+[Nn]ew\\s+[Pp]ipeline/: "
+            f"{seen!r}.{hint_note}{gate_note}")
 
 
 def _resolve_stages(task: dict) -> List[str]:
@@ -286,9 +415,17 @@ def _pipelines_route(loc: str) -> str:
 def _land_on_pipelines(session: str, loc: str) -> str:
     """Land on the Pipelines management screen and return the RUNTIME-BOUND
     exact label of the create button. Primary: SPA router-push to the
-    Opportunities▸Pipelines route. Fallback: the documented UI clicks. STOP
-    honestly when the create control never renders (the ONLY reliable proof we
-    are on the right screen)."""
+    Opportunities▸Pipelines route. Fallback: the documented UI clicks.
+
+    The create-control acquisition POLLS on a deadline across REPEATED
+    snapshots (`_poll_for_create_pipeline_label`, first-live-run fix,
+    2026-07-08) — never one opaque single-shot snapshot, which is the exact
+    bug the first live run's PL1.land STOP diagnosis found (the generic
+    `_wait_text_polling(session, "Pipeline")` pre-check below is satisfied
+    instantly by the page's own header/breadcrumb; it does NOT prove the
+    create control itself has hydrated). STOP honestly, with rich evidence of
+    what WAS on screen, when the create control never renders within the
+    poll window (the ONLY reliable proof we are on the right screen)."""
     try:
         fb._router_push(session, _pipelines_route(loc), expect_contains="opportunit")
     except StopAndReport:
@@ -297,14 +434,16 @@ def _land_on_pipelines(session: str, loc: str) -> str:
                         expect_contains="opportunit")
         fb._click(session, "Pipelines")
     fb._wait_text_polling(session, "Pipeline")
-    snap = fb._snapshot(session)
-    label = find_visible_label(snap, CREATE_PIPELINE_RE)
+    label, snap = _poll_for_create_pipeline_label(session)
     if not label:
+        diag = _diagnose_missing_create_control(snap)
         raise StopAndReport(
             "PL1.land",
             "landed via the Opportunities▸Pipelines route (and the documented "
-            "click fallback) but no 'Create new pipeline' control is visible — "
-            "cannot prove this is the Pipelines management screen. STOP "
+            "click fallback) but no control matching /Create\\s+[Nn]ew\\s+"
+            f"[Pp]ipeline/ rendered within {fb._TEXT_WAIT_TIMEOUT_S:.0f}s of "
+            "REPEATED polling (never a single static snapshot) — cannot prove "
+            f"this is the Pipelines management screen. {diag} "
             f"({fb._capture_entry_diag(session)})")
     return label
 
@@ -701,9 +840,15 @@ def _selftest() -> int:  # noqa: C901
     orig = {k: getattr(fb, k) for k in
             ("_router_push", "_wait_text_polling", "_snapshot", "_click_button",
              "_click", "_fill", "_ab", "_eval_leaf_count", "_screenshot",
-             "_capture_entry_diag")}
+             "_capture_entry_diag", "_TEXT_WAIT_TIMEOUT_S", "_TEXT_WAIT_POLL_S")}
     leaf_after_save = {"n": 0}
     try:
+        # Shrink the poll-with-deadline window to keep this NO-NETWORK selftest
+        # instant even when run standalone (outside pytest's own autouse
+        # timeout-shrinking fixture) — _poll_for_create_pipeline_label (the
+        # PL1.land hardening, 2026-07-08) reads these at call time.
+        fb._TEXT_WAIT_TIMEOUT_S = 0.3
+        fb._TEXT_WAIT_POLL_S = 0.01
         fb._router_push = lambda session, path, expect_contains="": "nav:" + path
         fb._wait_text_polling = lambda session, text, **kw: True
         fb._snapshot = lambda session, timeout=20: "list chrome Create New Pipeline Add stage"
@@ -735,6 +880,39 @@ def _selftest() -> int:  # noqa: C901
         except StopAndReport as sr:
             if sr.step != "PL1.land":
                 errors.append(f"wrong land STOP step: {sr.step}")
+            if "no text containing 'pipeline'" not in sr.reason:
+                errors.append(f"PL1.land STOP missing rich diagnostic: {sr.reason}")
+
+        # 5b. POLL RECOVERY (the actual first-live-run bug this fix kills): the
+        # create control renders a beat AFTER the generic page chrome — a
+        # single static snapshot would miss it, but the poll-with-deadline
+        # must catch it on a later attempt within the window.
+        _race = {"calls": 0}
+
+        def _racing_snapshot(session, timeout=20):
+            _race["calls"] += 1
+            if _race["calls"] < 3:
+                return "chrome Pipelines header only, list still loading"
+            return "list chrome Create new pipeline Add stage"
+
+        fb._snapshot = _racing_snapshot
+        label = _land_on_pipelines("s", "L")
+        if label != "Create new pipeline" or _race["calls"] < 3:
+            errors.append(f"poll recovery failed: label={label!r} calls={_race['calls']}")
+
+        # 5c. RICH DIAGNOSTICS: 'pipeline' text present but never matching the
+        # create pattern — the STOP must quote what was actually seen, plus
+        # any unconfirmed alt-label hint, rather than a bare 'not found'.
+        fb._snapshot = (lambda session, timeout=20:
+                        "Pipeline Settings header, + Add Pipeline (beta), no exact match")
+        try:
+            _land_on_pipelines("s", "L")
+            errors.append("near-miss labels did not STOP")
+        except StopAndReport as sr:
+            if "Pipeline Settings header" not in sr.reason:
+                errors.append(f"PL1.land STOP did not quote the seen text: {sr.reason}")
+            if "UNCONFIRMED alternate-wording" not in sr.reason:
+                errors.append(f"PL1.land STOP missed the alt-label hint: {sr.reason}")
 
         # 6. FAIL-CLOSED: typed pipeline name never renders → PL3.name STOP.
         fb._snapshot = lambda session, timeout=20: "list chrome Create new pipeline"

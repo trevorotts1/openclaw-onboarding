@@ -4,6 +4,54 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.13] - 2026-07-08 - Pipeline builder PL1.land: poll-with-deadline + rich diagnostics (the first-live-run STOP)
+
+**WHY:** tonight's first live test of the pipeline auto-create walk
+authenticated, router-pushed to the real Opportunities▸Pipelines route, and
+confirmed ZERO iframes on the surface — but STOPped honestly at `PL1.land`:
+no control matching `/Create\s+[Nn]ew\s+[Pp]ipeline/` was visible. Code
+inspection found the landing check waited only for the generic word
+"Pipeline" (satisfied instantly by the page's own header, regardless of
+whether the create control had hydrated), then took **exactly one**
+`_snapshot()` and regex-searched that single opaque result — the identical
+single-shot-race bug class the sibling `ghl_form_builder.py` already killed
+(v18.1.2's `_wait_text_polling`, v18.1.11's `_reveal_row_actions` hover-poll).
+
+**RESEARCH (2026-07-08, help.gohighlevel.com + help.leadconnectorhq.com,
+re-fetched — see `SELECTORS-LIVE-pipeline.md` §7 for full citations):** the
+button text itself is still documented as "Create new pipeline"/"Create New
+Pipeline" — unchanged. GHL's own material confirms the Pipelines screen
+"now uses the HighRise design system" (a newer frontend, opt-in via Labs),
+consistent with a render race rather than label drift. No source documents
+menu-nesting or plan/limit gating for this control. Diagnosis: render race
+is the best-evidenced hypothesis; NOT independently confirmed live.
+
+**THE CHANGE (`ghl_pipeline_builder.py`, v0.1.0 → v0.2.0):**
+
+- `_poll_for_create_pipeline_label()`: polls `_snapshot()` + the create-label
+  match on our own monotonic deadline — same poll-with-deadline doctrine as
+  `ghl_form_builder._wait_text_polling` / `_capture_form_id` / this file's
+  own `_save_and_verify` leaf-count poll. Never trusts one opaque snapshot.
+- `_diagnose_missing_create_control()`: on a genuine miss, lists every
+  distinct 'pipeline'-mentioning text window actually seen (deduped,
+  capped), flags any UNCONFIRMED alternate-wording hint (`+ Add Pipeline`,
+  `+ New Pipeline`, `Add Pipeline`, `New Pipeline` — evidence only, never
+  auto-clicked) and any possible plan/limit-gating text — a second failure
+  now explains exactly what was found and why, never a bare "not found".
+- `_land_on_pipelines()` STOP message names the poll window and folds in the
+  rich diagnostic alongside the existing `_capture_entry_diag` evidence.
+
+**Coverage:** 8 new hermetic pytest cases in
+`tests/test_ghl_pipeline_builder.py::TestLandingPoll` (render-race recovery,
+clean deadline give-up, zero-budget single-attempt guarantee, rich-diagnostic
+STOP text, and the diagnostic helper's empty/no-mention/limit-gating paths) +
+selftest sections 5b/5c. Full suite: zero regressions. Still NOT live-locked:
+`SELECTORS-LIVE-pipeline.md` remains RESEARCH-SEEDED (§7 records this run's
+evidence and the honest caveat that the render-race diagnosis is not
+independently confirmed); the next live run is a separate step.
+
+---
+
 ## [v18.1.12] - 2026-07-08 - Pipeline builder EXACT-NAME mode (the Anthology Engine integration contract)
 
 **WHY:** the Anthology Engine (Skill 59) needs its standard pipeline created
