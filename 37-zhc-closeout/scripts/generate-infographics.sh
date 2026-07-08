@@ -153,8 +153,16 @@ if [[ "$KIND" == "structure" ]]; then
   # (see workforce-org-chart/render.mjs default).
   CEO_TAGLINE="Routes all work · Reports to ${OWNER_NAME}"
 
-  INPUT_JSON="$OC_ROOT/workspace/.zhc-inf1-input.json"
-  OUTPUT_PNG="$OC_ROOT/workspace/.zhc-inf1-output.png"
+  # SK1-15: isolate render artifacts PER CLIENT. run-closeout.sh's lock is
+  # per-slug so DIFFERENT clients run concurrently on one box; a fixed output
+  # path let client B's render overwrite the shared .zhc-inf1-output.png, and
+  # client A's Telegram step then shipped B's org chart (with B's company/owner
+  # names) to A. Key the paths on the same slug run-closeout.sh locks on.
+  _client_slug="$(state_get '.companySlug')"
+  [[ -z "$_client_slug" ]] && _client_slug="$(printf '%s' "$COMPANY_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+  [[ -z "$_client_slug" ]] && _client_slug="default"
+  INPUT_JSON="$OC_ROOT/workspace/.zhc-inf1-input.${_client_slug}.json"
+  OUTPUT_PNG="$OC_ROOT/workspace/.zhc-inf1-output.${_client_slug}.png"
 
   # Build the renderer input JSON. The slug-to-cluster mapping happens inside
   # render.mjs via cluster-classifier.js, so we just hand it the dept list.
