@@ -1217,15 +1217,40 @@ mkdir -p ~/Downloads/openclaw-master-files
 ```
 
 #### Step 4: RUN build-workforce.py (Option A, B, or C)
+
+Option A/B/C is a conversational choice presented to the owner (see
+`main()` in `build-workforce.py`, and INSTRUCTIONS.md's "The 3 Options") —
+it is NOT a CLI flag. `build-workforce.py`'s `parse_args()` only defines
+`--non-interactive`, `--config-file`, and `--regenerate-org-chart-only`; there
+is no `--option` flag, and running one would fail immediately with an
+argparse error.
+
+The AI agent conducts the interview (or gathers quick-setup / audit context)
+conversationally, then packages the answers into a JSON config file whose
+`"option"` KEY (not a flag) records which path was taken — `"A"`, `"B"`, or
+`"C"` — read by `build_from_config()` via `config.get("option", "A")`. The
+actual command is the **same invocation shape for all three options**:
+
 ```bash
-# Option A: Automated scaffold
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option A
+# Real invocation (all of Option A, B, and C funnel through this):
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py \
+  --non-interactive --config-file workforce-config.json
+```
 
-# Option B: Manual guided build
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option B
+Where `workforce-config.json` contains `"option": "A"` (full interview),
+`"option": "B"` (quick setup — requires explicit live owner consent, see
+INSTRUCTIONS.md), or `"option": "C"` (audit/resume — picks up from
+`interview-handoff.md` / `.workforce-build-state.json` without overwriting
+custom edits). See `scripts/workforce-config.json` for the full schema and
+its `_usage` field, which documents this same command.
 
-# Option C: Audit/Resume existing
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option C
+If Option C is only re-rendering `ORG-CHART.md` from existing build-state
+(e.g. after `add-*.sh` adds a department, no full rebuild needed), use the
+dedicated flag instead:
+
+```bash
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py \
+  --regenerate-org-chart-only
 ```
 
 **SOP-pull RC-3 — Optional env vars for role-library importer:**
