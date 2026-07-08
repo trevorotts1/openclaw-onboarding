@@ -113,7 +113,7 @@ Skill 39 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/real-estat
 | `CORE_UPDATES.md` | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | `EXAMPLES.md` | Worked example flows (UNIVERSAL placeholders) |
 | `CHANGELOG.md` | Version history |
-| `skill-version.txt` | Currently `1.0.5` |
+| `skill-version.txt` | Machine-readable version pin — the single source of truth for this skill's version (read it at runtime; never hardcode the version elsewhere) |
 | `scripts/00-verify-prerequisites.sh` | Verifies Skill 38, MASTER_FILES_DIR, jq, curl; reports provider-key presence |
 | `scripts/01-locate-master-files-folder.sh` | Resolves + persists MASTER_FILES_DIR (reuses Skill 38 selection if present) |
 | `scripts/02-configure-providers.sh` | Records which property/geocode/StreetView providers are keyed; honest-gap report |
