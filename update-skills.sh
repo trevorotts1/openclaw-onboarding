@@ -1759,6 +1759,25 @@ except:
     SKILL_NAME=$(basename "$SKILL_DIR")
     case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
 
+    # (W5.7) Anthology engine: re-resolve the per-box model-map on EVERY update pass,
+    # NOT sentinel-gated. The resolver (preflight.sh, run by the skill's install.sh
+    # Step 2) is otherwise install-time only; the .wired-<version> sentinel below skips
+    # install.sh once wired, leaving an updated box on a stale/absent model-map that
+    # fails closed deep at S9. preflight.sh regenerates model-map.json deterministically
+    # from the (installer-filled) template, so re-running it here is idempotent.
+    case "$SKILL_NAME" in
+      *anthology-engine*)
+        if [ -f "$SKILL_DIR/preflight.sh" ]; then
+          echo "    (W5.7) Re-resolving anthology-engine model-map (preflight.sh)..."
+          if bash "$SKILL_DIR/preflight.sh" >> "$LOG_FILE" 2>&1; then
+            echo "    Model-map re-resolved: $SKILL_NAME"
+          else
+            echo "    preflight.sh reported warnings for $SKILL_NAME (see $LOG_FILE) -- continuing"
+          fi
+        fi
+        ;;
+    esac
+
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
     if [ -f "$WIRED_SENTINEL" ]; then

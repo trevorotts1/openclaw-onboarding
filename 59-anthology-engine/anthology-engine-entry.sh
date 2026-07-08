@@ -9,10 +9,14 @@
 # run-scoped nonce:
 #
 #   1.  DEPS CHECK        -- python3 must be present (exit 6, AE_DEPS_MISSING).
-#   1b. MODEL-MAP PRE-GATE -- if a resolved model-map.json exists in the run dir,
-#                          it must carry NO <CLIENT_*> placeholder and no
-#                          Anthropic-family id (exit 8, AF-AE-UNRESOLVED-MODELMAP);
-#                          preflight.sh --check is the resolver-as-pre-gate.
+#   1b. MODEL-MAP PRE-GATE -- RESOLVE-then-check: load the RESOLVED per-box
+#                          model-map from the SAME locations S9 uses (run dir ->
+#                          skill dir -> config) and fail-closed validate it. An
+#                          ABSENT/unresolved map, a residual <CLIENT_*> placeholder,
+#                          an Anthropic-family id, OR a JUDGE tier collapsed onto the
+#                          HEAVY-WRITER tier all fail CLOSED here (exit 8,
+#                          AF-AE-UNRESOLVED-MODELMAP) instead of deep at S9. This is
+#                          model_router.py validate-map -- the resolver-as-pre-gate.
 #   2.  BYPASS-SCAN       -- refuse any hand-rolled, UNGOVERNED external sender in
 #                          the RUN directory: an n8n webhook, an Airtable write, a
 #                          legacy prompt-base fetch, or a literal Authorization key
@@ -38,7 +42,8 @@
 #   5  -- BYPASS-SCAN tripped (hand-rolled ungoverned external sender in the run dir)
 #   6  -- DEPS CHECK failed (AE_DEPS_MISSING)
 #   7  -- VERSION/HASH PIN failed (hash mismatch, no owner skip)
-#   8  -- MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic-family id)
+#   8  -- MODEL-MAP PRE-GATE failed (absent/unresolved map, residual <CLIENT_*>
+#         placeholder, Anthropic-family id, or a JUDGE tier collapsed onto HEAVY-WRITER)
 # ============================================================================
 
 set -uo pipefail
@@ -152,24 +157,28 @@ else
 fi
 
 # ===========================================================================
-# GATE 1b -- MODEL-MAP PRE-GATE (preflight.sh --check)
+# GATE 1b -- MODEL-MAP PRE-GATE (resolve-then-check via model_router validate-map)
 # ===========================================================================
-note "GATE 1b/3 -- MODEL-MAP PRE-GATE (preflight.sh --check)"
-if [ -n "$RUN_DIR" ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
-    if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
-        :
+note "GATE 1b/3 -- MODEL-MAP PRE-GATE (resolve-then-check via model_router validate-map)"
+if [ -n "$RUN_DIR" ] && command -v python3 >/dev/null 2>&1 && [ -f "$SCRIPTS/model_router.py" ]; then
+    # RESOLVE-then-check: model_router loads the RESOLVED per-box map from the SAME
+    # candidate locations S9 uses (run dir -> skill dir -> config) and fail-closed
+    # validates it. Any non-zero -- an ABSENT/unresolved map (the very UnresolvedMapError
+    # S9 would raise deep, surfaced early), a residual <CLIENT_*> placeholder, an
+    # Anthropic-family id, or a JUDGE tier collapsed onto HEAVY-WRITER -- fails CLOSED here.
+    if PG_OUT="$(python3 "$SCRIPTS/model_router.py" --run-dir "$RUN_DIR" validate-map 2>&1)"; then
+        printf '%s\n' "$PG_OUT"
+        echo "  OK: resolved model-map validates (no placeholder, no Anthropic id, JUDGE independent)"
     else
         PF_RC=$?
-        if [ "$PF_RC" -eq 2 ]; then
-            gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "the run-dir model-map.json still carries \
-<CLIENT_*> placeholders or an Anthropic-family id -- the fleet installer has not resolved this box. \
-Resolve the tier map on a configured box (preflight.sh) and re-run."
-        else
-            echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"
-        fi
+        printf '%s\n' "$PG_OUT" >&2
+        gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "the resolved model-map did not validate (rc=$PF_RC): \
+it is absent/unresolved, still carries <CLIENT_*> placeholders or an Anthropic-family id, or its JUDGE tier \
+collapsed onto the HEAVY-WRITER tier (a model would grade its own draft). Resolve the tier map on a \
+configured box (preflight.sh / the fleet installer) so JUDGE stays independent, and re-run."
     fi
 else
-    echo "  (model-map pre-gate skipped: no --run-dir, python3 absent, or preflight.sh missing)"
+    echo "  (model-map pre-gate skipped: no --run-dir, python3 absent, or model_router.py missing)"
 fi
 
 # ===========================================================================

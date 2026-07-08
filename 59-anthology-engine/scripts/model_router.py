@@ -201,6 +201,16 @@ class UnresolvedMapError(ModelRouterError):
     exit_code = EX_ERR
 
 
+class JudgeIndependenceUnresolved(ModelRouterError):
+    """The JUDGE tier's PRIMARY resolution collapsed onto the HEAVY-WRITER tier's
+    PRIMARY resolution (a thin single-model box whose required-tier fallback filled
+    both with the same model). Judge independence is a RESOLUTION-time invariant, not
+    a mid-run surprise: fail closed here so the collision surfaces at preflight / the
+    entry pre-gate, never deep at S9 Gate B where judge_harness.py would otherwise
+    raise AF-AE-JUDGE-INDEPENDENCE with a half-built anthology in flight."""
+    exit_code = EX_DENY
+
+
 # ---------------------------------------------------------------------------
 # Transport (default: stdlib urllib; injectable for tests)
 # ---------------------------------------------------------------------------
@@ -310,6 +320,36 @@ def validate_resolved_map(model_map: dict) -> None:
                     "AF-AE-ANTHROPIC: resolved map carries a banned id at %s" % path)
 
     walk(tiers, "tiers")
+
+    # Judge independence is a RESOLUTION-time invariant, not a mid-run surprise. On a
+    # thin single-model box the required-tier fallback can fill the JUDGE primary with
+    # the SAME model as the HEAVY-WRITER primary; such a map passes the placeholder and
+    # Anthropic scans above yet lets a model grade its own draft, tripping judge_harness
+    # AF-AE-JUDGE-INDEPENDENCE deep at S9 Gate B. Fail closed here instead.
+    heavy_primary = _tier_primary_model(model_map, "HEAVY-WRITER")
+    judge_primary = _tier_primary_model(model_map, "JUDGE")
+    if heavy_primary and judge_primary \
+            and heavy_primary.strip().lower() == judge_primary.strip().lower():
+        raise JudgeIndependenceUnresolved(
+            "AF-AE-JUDGE-INDEPENDENCE: the JUDGE tier primary resolution (%r) equals the "
+            "HEAVY-WRITER tier primary resolution; a thin single-model box cannot judge its "
+            "own drafts. Configure a distinct JUDGE model (or provider) and re-resolve."
+            % judge_primary)
+
+
+def _tier_primary_model(model_map: dict, tier: str) -> Optional[str]:
+    """The first non-HOLD link's model for a tier (the model the tier resolves to on the
+    common, no-fallback path -- exactly what judge_harness.py compares), or None."""
+    obj = model_map.get("tiers", {}).get(tier)
+    if not isinstance(obj, dict):
+        return None
+    for link in ordered_chain(obj):
+        if str(link.get("provider", "")).upper() == HOLD_SENTINEL:
+            continue
+        model = str(link.get("model", "")).strip()
+        if model:
+            return model
+    return None
 
 
 def resolve_tier(model_map: dict, tier: str) -> dict:
@@ -1034,6 +1074,21 @@ def self_test() -> int:
                          hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
     lres = router.route("LIGHT", [{"role": "user", "content": "extract"}], {"deliverable_key": "d9"})
     check("LIGHT tier routes", lres.provider == "ollama-cloud" and lres.model_used == "minimax-v3")
+
+    # t14: a thin single-model box whose JUDGE primary collapses onto HEAVY-WRITER's
+    # primary fails closed at construction (resolution-time independence invariant),
+    # rather than passing every gate and tripping judge_harness deep at S9 Gate B.
+    collapsed = _synthetic_resolved_map()
+    heavy0 = ordered_chain(resolve_tier(collapsed, "HEAVY-WRITER"))[0]["model"]
+    for link in collapsed["tiers"]["JUDGE"]["chain"]:
+        if str(link.get("provider", "")).upper() != HOLD_SENTINEL:
+            link["model"] = heavy0            # collapse JUDGE primary onto HEAVY primary
+            break
+    try:
+        ModelRouter(model_map=collapsed)
+        check("collapsed JUDGE==HEAVY map fails closed", False)
+    except JudgeIndependenceUnresolved:
+        check("collapsed JUDGE==HEAVY map fails closed (JudgeIndependenceUnresolved, exit 2)", True)
 
     print("\nmodel_router self-test: %s (%d checks, %d failures)"
           % ("OK" if not failures else "FAILURES", total[0], len(failures)))
