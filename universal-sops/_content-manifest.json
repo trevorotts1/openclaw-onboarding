@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-07T19:43:42Z",
+  "generated_at": "2026-07-08T09:07:14Z",
   "file_count": 101,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -37,8 +37,8 @@
       "bytes": 7695
     },
     "anthology-craft/SOP-ANTHOLOGY-05-CREDIT-HEALTH-AND-QUEUE.md": {
-      "sha256": "76246b01b7147edbd5402120849cad797efd0b0b378dd80d65885802b8d39f71",
-      "bytes": 8857
+      "sha256": "c18e101cbd7a1c51271eacb96177c1f4ad11ad030c34591254dcf8e7a983354b",
+      "bytes": 9435
     },
     "avatar-craft/README.md": {
       "sha256": "64e4ff5333af250a4f99bd7727776171904a81f2a76e40adff218e8501a0c710",
