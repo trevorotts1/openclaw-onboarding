@@ -1,5 +1,15 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [v1.3.1] - 2026-07-08 - fix: fail-closed consent/minor/PII gate, sales interlock, funnel-category install, gate self-tests (OPENCLAW-FIX-SPEC L18)
+
+### Added
+- **Coded fail-closed consent gate** — `diu_validator.py consent-check --identity-file IDENTITY.md` (SK1-55). Real-person likeness generation was gated only by prose in PHOTO-SHOOT-SOP §1; an agent could proceed past it. The new subcommand reads the client's IDENTITY.md and HARD-FAILS (exit 4, `AF-DIU-CONSENT`) on unconfirmed/undated consent, a subject not attested an adult (Minors = HARD NO), an unprotected biometric store, or an absent IDENTITY file. PHOTO-SHOOT-SOP §1/§3 and INSTRUCTIONS job 4 now require it first; the IDENTITY schema declares machine-readable `Consent:`/`Consent date:`/`Minor:`/`Storage protection:` fields and mandates encrypted-at-rest biometric storage.
+- **QC gate self-tests** — `qc-design-intelligence-library.sh` now exercises `diu_validator.py` on fixtures (route-check webinar/sales/funnel→2, brand→0; prompt-caps over→3; consent-check adult→0, minor/no-consent/no-protection/missing→4), so a regression in any gate fails QC (SK1-56). Previously no test exercised any gate.
+
+### Changed
+- **Routing interlock now catches bare "sales" decks** (SK1-54): `_INTERLOCK_TERMS` gained `sales` — SKILL.md names sales decks as NOT owned by Skill 45, but `route-check --deck-kind "sales deck"` previously returned 0 (routable). Now exit 2.
+- **funnel-page-designs category install + doc drift fixed** (SK1-57): the 10th category (`funnel-page-designs`, present on disk + in INDEX.md and the QC) was omitted from INSTALL.md's rsync block, Step-4 dir loop, and Step-6 verify loop — so the installer never seeded it on-box. Added it to all three, to the SKILL.md ships-tree, and corrected the "19 library files" citations to **20**; bumped MODEL-SPECS.md header 1.3→1.4 to match its own changelog.
+
 ## [v1.3.0] - 2026-07-05 - fix: coded enforcement gates, QC clobber test, embedding honesty, twin dedup (T-45-design-intelligence)
 
 ### Added
