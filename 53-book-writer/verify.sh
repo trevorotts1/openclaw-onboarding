@@ -220,6 +220,14 @@ fi
 echo "-- 9) role-SOP registry (content_sha) --"
 run "roles/_index.json complete + not stale" "$PY" "$SCRIPTS/hash_role_index.py" --check
 
+# 10) Command Center department-slug regression (FIX-BK-DEPT-01) — the mc_board
+# department= wired in run_book_writer.py must be a REAL, already-seeded canonical
+# department (never a fabricated slug like the historic "books" bug: mc_board.py
+# fails SOFT on an unrecognized department_slug, so a fabricated value never throws
+# and every card is silently dropped/misrouted).
+echo "-- 10) Command Center department-slug regression --"
+run "test_department_slug.py" "$PY" "$SCRIPTS/test_department_slug.py"
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all runnable Skill 53 self-verification checks green."

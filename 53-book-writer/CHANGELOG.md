@@ -1,5 +1,33 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.1.3 — fabricated Command Center department slug corrected (FIX-BK-DEPT-01)
+
+- **Pre-existing shipped defect fixed — no gate/schema change.** `run_book_writer.py`'s
+  `_mc_board_begin` posted every Book Writer task card with a hardcoded `department="books"`,
+  but no script anywhere in this repo ever creates a "books" department (no workspace row, no
+  agent runtime, nothing in `department-naming-map.json`). `scripts/mc_board.py` fails SOFT on
+  an unrecognized `department_slug` (a board outage / bad value is caught, logged to stderr, and
+  the run continues — never a gate), so this never threw a visible error: every Book Writer card
+  has been silently dropped or misrouted since the skill shipped.
+- **Root cause:** `WIRING-SPEC.md` section 8 documented the ORIGINAL intent — ride on an
+  EXISTING department, the "Content / Publishing lineage, same owner as Skills 50/51" — but the
+  shipped code used a standalone "books" slug that was never actually seeded to match that
+  intent.
+- **Fix:** `department="books"` -> `department="marketing"`, the REAL, mandatory,
+  always-seeded canonical department (`23-ai-workforce-blueprint/department-naming-map.json`
+  `.mandatory`) that `23-ai-workforce-blueprint/skill-department-map.json`'s skill-53 entry
+  already authoritatively declares (`"departments": ["marketing"]`), matching sibling skills
+  52 (avatar-alchemist), 54 (anthology-writer), 55 (product-bio), and 56 (sales-page-assets) —
+  the same content/publishing family. Confirmed against a working sibling in the same shared
+  `mc_board.py` helper family: `55-product-bio/run_product_bio.py` already correctly posts
+  `department="marketing"`.
+- **New regression coverage:** `scripts/test_department_slug.py` statically extracts the
+  `department=` literal from `_mc_board_begin` and asserts it (a) is a member of the canonical
+  mandatory department set, (b) is never the historic fabricated `"books"` slug, and (c) matches
+  `skill-department-map.json`'s authoritative skill-53 binding. Wired into `verify.sh` (section
+  10). This is purely Command-Center-board metadata (fail-soft, never a gate): the
+  `certificate_sha` / SACRED invariants / golden `certificate_sha` are unaffected.
+
 ## 1.1.2 — Wave-2 doc-truth correction (FIX-S36-49 · ruling R5)
 
 - **Doc correction only — no code, no gate change.** Added an explicit **"Authoring layer — SHIPPED
