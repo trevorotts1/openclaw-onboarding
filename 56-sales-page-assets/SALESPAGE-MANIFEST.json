@@ -75,11 +75,11 @@
   ],
 
   "command_center_board": {
-    "department": "funnels",
-    "note": "FIX-IMG-04: Skill 56 cards route to the registered 'funnels' department (shared with Skill 49), NOT an unrouted 'sales-pages' catch-all column. Pinned here so the mc_board department is a machine-read choice, not a stray literal.",
+    "department": "marketing",
+    "note": "FIX-IMG-04 / SK2-04: Skill 56 cards route to the registered 'marketing' department — Skill 56's authoritative PRIMARY owning department per 23-ai-workforce-blueprint/skill-department-map.json — NOT an unrouted 'sales-pages'/'funnels' catch-all column. The prior 'funnels' literal was NOT a seeded canonical department, so cards silently misrouted / dropped. Pinned here so the mc_board department is a machine-read choice, not a stray literal.",
     "persona": "Sales Page Assets",
     "source": "sales-page-assets",
-    "enforced_by": "run_sales_page_assets._mc_board_begin (department='funnels')"
+    "enforced_by": "run_sales_page_assets._mc_board_begin (department='marketing')"
   },
 
   "chk_wrappers": {
