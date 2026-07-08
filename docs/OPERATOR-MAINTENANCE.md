@@ -371,7 +371,9 @@ reported SET or NOT SET only; no value is ever printed, logged, or echoed. Conve
 throughout; nothing Anthropic in this file or in the script it documents.
 
 Churn cleanup rule: a departed producer leaves ZERO recurring jobs behind. After R8,
-`guard-cron-inventory.py --sweep` doubles as the fleet check for any anthology cron belonging to a
-producer no longer on the active roster. This is the same standing guarantee SOP-ANTHOLOGY-05
-(Credit Health and Queue) owns for a healthy, active producer: exactly one cron, never zero while
-active and never more than zero once churned.
+`guard-cron-inventory.py --sweep --producer-id <id> --roster <active-roster.json>` (or an inline
+`--roster-id <id>`, repeatable, without a roster file) doubles as the fleet check for any anthology
+cron belonging to a producer no longer on the active roster: an off-roster producer whose tick
+still fires reports as CRON-ORPHAN, a nonzero (exit 4) result. This is the same standing guarantee
+SOP-ANTHOLOGY-05 (Credit Health and Queue) owns for a healthy, active producer: exactly one cron,
+never zero while active and never more than zero once churned.

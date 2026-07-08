@@ -24,7 +24,7 @@ heartbeat and every other unrelated cron are IGNORED by design -- the engine has
 business deleting the operator's schedule; it only proves that IT installed exactly one
 daily tick and left nothing recurring behind.
 
-TWO EXPECTATIONS:
+TWO EXPECTATIONS (single-producer inventory, the default mode):
   --expect one   (default; steady state / post-provision) exactly one recurring engine
                  job, it must be DAILY cadence (not sub-daily = a disguised heartbeat, not
                  supra-daily = not actually a daily tick), and no engine job may be a
@@ -33,17 +33,34 @@ TWO EXPECTATIONS:
                  heartbeat lingers -- a paused-but-present recurring definition still
                  counts as a leftover (enforcement, not description).
 
+A THIRD MODE, --sweep (SPEC 13.3; the fleet check): `revoke-anthology-client.sh` proves
+churn for the ONE producer it just offboarded, but an orphaned cron on a DIFFERENT,
+already-departed producer's box is the purest furnace there is (SOP-ANTHOLOGY-05 Section
+6; `docs/OPERATOR-MAINTENANCE.md`'s Anthology revocation blade). `--sweep` reports any
+engine-owned recurring cron job that belongs to a producer no longer on the ACTIVE
+ROSTER, given via `--roster PATH` (a JSON array of active producer/anthology ids, or an
+object with an "active"/"producers"/"roster" array) and/or repeatable `--roster-id`:
+  * with `--producer-id ID` (this inventory's own producer, e.g. the box being checked):
+    one membership decision for the whole box -- ON the roster delegates to the normal
+    `--expect one` guarantee (an active producer still needs exactly its one daily tick);
+    OFF the roster delegates to `--expect zero` and every leftover is reported as
+    CRON-ORPHAN, not merely CRON-CHURN-LEFTOVER, so a fleet sweep reads distinctly from
+    an in-progress churn.
+  * without `--producer-id` (an aggregated, multi-producer inventory swept in one pass):
+    each engine-owned recurring job is judged on its OWN identity -- a job whose
+    name/description/payload carries none of the roster ids is reported CRON-ORPHAN.
+
 DOCTRINE: this guard NEVER prints a cron PAYLOAD MESSAGE, a DELIVERY CHANNEL (chat ids
 are client-adjacent PII), or an agentId. Non-engine jobs are only ever counted, never
 named. Engine jobs (names the engine itself authors, e.g. "anthology-daily-tick") are
 named only to make a violation actionable. Move in silence.
 
 Exit codes (SPEC 3.4 row 25; house convention for the edge cases):
-  0  clean   (policy satisfied for the requested expectation, including idempotent no-op)
+  0  clean   (policy satisfied for the requested expectation/sweep, incl. idempotent no-op)
   4  violation (AF-AE-CRON-DRIFT: more than one tick, a heartbeat entry, a sub-daily/
-                non-daily tick, or churn left a recurring job)
-  2  bad invocation (no source given, an explicit --inventory path missing/unreadable, or
-                     malformed inventory JSON)
+                non-daily tick, churn left a recurring job, or --sweep found an orphan)
+  2  bad invocation (no source given, an explicit --inventory path missing/unreadable,
+                     malformed inventory JSON, or --sweep given an empty/unreadable roster)
   3  inventory unavailable (a live `openclaw cron list` could not be obtained)
   1  unexpected error
 """
@@ -271,6 +288,19 @@ def _safe_name(job):
     return "%s %s" % (name, tail) if tail else name
 
 
+def _entry(job):
+    """A print/JSON-safe summary of one job's schedule identity (name, enabled, kind,
+    expr, cadence) -- the shared shape analyze() and sweep() both report."""
+    sched = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
+    return {
+        "name": _safe_name(job),
+        "enabled": bool(job.get("enabled", True)),
+        "kind": str(sched.get("kind", "")),
+        "expr": str(sched.get("expr", sched.get("cron", ""))),
+        "cadence": classify_cadence(sched),
+    }
+
+
 # ---------------------------------------------------------------------------
 # The policy
 # ---------------------------------------------------------------------------
@@ -290,15 +320,7 @@ def analyze(jobs, expect="one", owner_tags=DEFAULT_OWNER_TAGS, tick_name=None):
     engine_recurring = [j for j in engine_jobs if _is_recurring(j.get("schedule"))]
     heartbeat_named = [j for j in engine_jobs if _is_heartbeat_by_name(j)]
 
-    def entry(job):
-        sched = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
-        return {
-            "name": _safe_name(job),
-            "enabled": bool(job.get("enabled", True)),
-            "kind": str(sched.get("kind", "")),
-            "expr": str(sched.get("expr", sched.get("cron", ""))),
-            "cadence": classify_cadence(sched),
-        }
+    entry = _entry
 
     violations = []
 
@@ -395,6 +417,131 @@ def evaluate(inventory, expect="one", owner_tags=None, tick_name=None):
         obj = inventory
     jobs = extract_jobs(obj)
     return analyze(jobs, expect=expect, owner_tags=tags, tick_name=tick_name)["ok"]
+
+
+# ---------------------------------------------------------------------------
+# The fleet check: --sweep (SPEC 13.3; SOP-ANTHOLOGY-05 Section 6; the Anthology
+# revocation blade of docs/OPERATOR-MAINTENANCE.md).
+# ---------------------------------------------------------------------------
+def load_roster(path):
+    """Load the ACTIVE-producer roster from a JSON file: a bare array of producer/
+    anthology ids, or an object carrying an "active", "producers", or "roster" array.
+    Returns a tuple of stripped, non-empty id strings (order-preserving, deduped).
+    Raises ValueError on a missing/unreadable/malformed roster (the CLI maps this to
+    exit 2, the same bad-invocation class as a malformed inventory)."""
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        raise ValueError("roster file not found: %s" % path)
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("roster file is not valid JSON: %s" % exc)
+    if isinstance(obj, list):
+        ids = obj
+    elif isinstance(obj, dict):
+        ids = obj.get("active")
+        if ids is None:
+            ids = obj.get("producers")
+        if ids is None:
+            ids = obj.get("roster")
+        if ids is None:
+            ids = []
+        if not isinstance(ids, list):
+            raise ValueError("roster object's active/producers/roster key must be an array")
+    else:
+        raise ValueError("roster must be a JSON array or object, got %s" % type(obj).__name__)
+    seen, out = set(), []
+    for x in ids:
+        s = str(x).strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return tuple(out)
+
+
+def _job_matches_roster(job, roster_ids):
+    """True iff ANY roster id token appears in the job's identity haystack -- the SAME
+    haystack (name/description/sessionTarget/agentId/payload, lowercased) ownership
+    matching already uses. This is how a per-job producer/anthology id, wherever
+    provisioning stamped it, is recognized as belonging to a still-active producer."""
+    if not roster_ids:
+        return False
+    hay = _job_haystack(job)
+    return any(str(r).strip().lower() in hay for r in roster_ids)
+
+
+def sweep(jobs, roster_ids, owner_tags=DEFAULT_OWNER_TAGS, producer_id=None):
+    """The FLEET check (SPEC 13.3): report every ENGINE-owned recurring cron job that
+    belongs to a producer no longer on the active roster -- the orphaned-churn leftover
+    a departed producer's box can be left carrying. `roster_ids` must be non-empty
+    (raises ValueError otherwise; an empty roster can never justify a verdict).
+
+    TWO MODES:
+      * `producer_id` given (this run's own box/producer identity -- the normal case,
+        since one box hosts exactly one Anthology producer): a single membership
+        decision. ON the roster delegates to analyze(expect='one') (an active producer
+        still owes exactly its one daily tick, unchanged). OFF the roster delegates to
+        analyze(expect='zero'), and every CRON-CHURN-LEFTOVER it finds is re-labeled
+        CRON-ORPHAN so a fleet-sweep report reads distinctly from an in-progress churn.
+      * `producer_id` absent (an aggregated, multi-producer inventory swept in one
+        pass): each engine-owned recurring job is judged on its OWN identity -- a job
+        whose haystack contains NO roster id is an orphan (CRON-ORPHAN); a job that DOES
+        match a roster id is left alone (its per-producer 'expect one' is judged
+        elsewhere, in that producer's own single-inventory run).
+
+    Returns a report dict shaped like analyze()'s (same 'ok'/'violations' keys, plus
+    'mode'/'roster_size', and 'producer_id'/'producer_active' when producer_id is given).
+    """
+    if not roster_ids:
+        raise ValueError("--sweep requires a non-empty active-producer roster")
+
+    if producer_id is not None:
+        roster_lower = {str(r).strip().lower() for r in roster_ids}
+        active = str(producer_id).strip().lower() in roster_lower
+        base = analyze(jobs, expect=("one" if active else "zero"), owner_tags=owner_tags)
+        violations = []
+        for v in base["violations"]:
+            if not active and v["code"] == "CRON-CHURN-LEFTOVER":
+                v = dict(v, code="CRON-ORPHAN",
+                         detail="engine-owned recurring job survives on a producer not on "
+                                "the active roster (fleet churn leftover)")
+            violations.append(v)
+        return dict(base, violations=violations, ok=(len(violations) == 0),
+                    mode="sweep", roster_size=len(roster_ids),
+                    producer_id=str(producer_id), producer_active=active)
+
+    # No single producer_id: judge each engine-owned recurring job on its own identity
+    # against the roster (the aggregated, multi-producer sweep).
+    engine_jobs, foreign_count = [], 0
+    for j in jobs:
+        if is_engine_owned(j, owner_tags):
+            engine_jobs.append(j)
+        else:
+            foreign_count += 1
+    engine_recurring = [j for j in engine_jobs if _is_recurring(j.get("schedule"))]
+
+    violations = []
+    for j in engine_recurring:
+        if not _job_matches_roster(j, roster_ids):
+            violations.append({
+                "code": "CRON-ORPHAN",
+                "detail": "engine-owned recurring job matches no id on the active roster "
+                          "(fleet churn leftover -- a departed producer's cron survives)",
+                "job": _entry(j),
+            })
+
+    return {
+        "mode": "sweep",
+        "owner_tags": list(owner_tags),
+        "roster_size": len(roster_ids),
+        "total_jobs": len(jobs),
+        "foreign_jobs_ignored": foreign_count,
+        "engine_jobs": len(engine_jobs),
+        "engine_recurring": len(engine_recurring),
+        "engine_recurring_detail": [_entry(j) for j in engine_recurring],
+        "violations": violations,
+        "ok": len(violations) == 0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +672,64 @@ def self_test():
             pass
     print("[guard-cron-inventory] malformed-inventory raises (CLI exit 2/3): PASS")
 
+    # -- sweep(): the fleet check (SPEC 13.3 / SOP-ANTHOLOGY-05 Section 6) ---------------
+    # 11. sweep, producer_id given, OFF the roster, tick still present -> CRON-ORPHAN.
+    r = sweep([_job("anthology-daily-tick", "0 9 * * *")], roster_ids=("prod-active-1",),
+              producer_id="prod-departed-9")
+    assert not r["ok"] and r["producer_active"] is False
+    assert any(v["code"] == "CRON-ORPHAN" for v in r["violations"]), r
+    print("[guard-cron-inventory] sweep DETECT orphaned cron on an off-roster producer (CRON-ORPHAN): PASS")
+
+    # 12. sweep, producer_id given, ON the roster, exactly one daily tick -> clean
+    # (delegates to the same standing guarantee analyze(expect='one') proves).
+    r = sweep([_job("anthology-daily-tick", "0 9 * * *")], roster_ids=("prod-active-1",),
+              producer_id="prod-active-1")
+    assert r["ok"] and r["producer_active"] is True, r
+    print("[guard-cron-inventory] sweep PASS active-roster producer (delegates to expect=one): PASS")
+
+    # 13. sweep, producer_id given, ON the roster, but the tick is MISSING -> still a
+    # violation (an active producer owes exactly one; sweep never loosens that).
+    r = sweep([], roster_ids=("prod-active-1",), producer_id="prod-active-1")
+    assert not r["ok"] and any(v["code"] == "CRON-COUNT" for v in r["violations"]), r
+    print("[guard-cron-inventory] sweep DETECT missing tick on an active-roster producer: PASS")
+
+    # 14. sweep, NO producer_id (aggregated multi-producer inventory): per-job identity
+    # match against the roster -- the tagged job is left alone, the untagged one is an
+    # orphan.
+    tagged = _job("anthology-daily-tick", "0 9 * * *", message="anthology daily tick prod-active-1")
+    untagged = _job("anthology-daily-tick", "0 10 * * *")
+    untagged["id"] = "id-untagged-orphan"
+    r = sweep([tagged, untagged], roster_ids=("prod-active-1",))
+    assert not r["ok"], r
+    orphans = [v for v in r["violations"] if v["code"] == "CRON-ORPHAN"]
+    assert len(orphans) == 1, r["violations"]
+    assert untagged["id"][-8:] in orphans[0]["job"]["name"]
+    print("[guard-cron-inventory] sweep DETECT per-job orphan on an aggregated inventory (CRON-ORPHAN): PASS")
+
+    # 15. sweep requires a non-empty roster -- ValueError on empty.
+    try:
+        sweep([tagged], roster_ids=())
+        raise AssertionError("expected ValueError on an empty roster")
+    except ValueError:
+        pass
+    print("[guard-cron-inventory] sweep empty-roster raises (bad invocation): PASS")
+
+    # 16. load_roster(): array form, object form (active/producers/roster), dedup.
+    with tempfile.TemporaryDirectory() as rtd:
+        arr_path = os.path.join(rtd, "roster-array.json")
+        Path(arr_path).write_text(json.dumps(["p1", "p2", "p1"]))
+        assert load_roster(arr_path) == ("p1", "p2"), "array roster must dedup, order-preserving"
+        for key in ("active", "producers", "roster"):
+            obj_path = os.path.join(rtd, "roster-%s.json" % key)
+            Path(obj_path).write_text(json.dumps({key: ["p3"]}))
+            assert load_roster(obj_path) == ("p3",), "object roster key %r must be read" % key
+        try:
+            load_roster(os.path.join(rtd, "no-such-file.json"))
+            raise AssertionError("expected ValueError on a missing roster file")
+        except ValueError:
+            pass
+    print("[guard-cron-inventory] load_roster: array + active/producers/roster object forms + missing-file raise: PASS")
+
     # -- force-observe the CLI exit-code mapping end to end -----------------------------
     with tempfile.TemporaryDirectory() as td:
         clean = os.path.join(td, "clean.json")
@@ -544,7 +749,29 @@ def self_test():
         assert main(["--live", "--cron-list-cmd",
                      "this-cron-binary-does-not-exist --json"]) == EX_DEP, \
             "unavailable live inventory must exit 3"
-    print("[guard-cron-inventory] CLI exit-code mapping (0/2/3/4): PASS")
+
+        # --sweep end to end: the real CLI surface docs cite (SOP-ANTHOLOGY-05,
+        # docs/OPERATOR-MAINTENANCE.md).
+        roster_path = os.path.join(td, "roster.json")
+        Path(roster_path).write_text(json.dumps(["prod-active-1"]))
+        sweep_snapshot = os.path.join(td, "sweep-snapshot.json")
+        Path(sweep_snapshot).write_text(json.dumps({"jobs": [tick]}))
+
+        assert main(["--inventory", sweep_snapshot, "--sweep", "--roster", roster_path,
+                     "--producer-id", "prod-departed-9"]) == EX_VIOLATION, \
+            "an off-roster producer's surviving tick must exit 4 (CRON-ORPHAN)"
+        assert main(["--inventory", sweep_snapshot, "--sweep", "--roster", roster_path,
+                     "--producer-id", "prod-active-1"]) == EX_OK, \
+            "an on-roster producer's single daily tick must exit 0"
+        assert main(["--inventory", sweep_snapshot, "--sweep",
+                     "--roster-id", "prod-active-1"]) == EX_VIOLATION, \
+            "an untagged tick must read as an orphan against an inline --roster-id (per-job mode)"
+        assert main(["--inventory", sweep_snapshot, "--sweep"]) == EX_BAD, \
+            "--sweep with no roster source at all must be a bad invocation"
+        assert main(["--inventory", sweep_snapshot, "--sweep", "--roster",
+                     os.path.join(td, "no-such-roster.json")]) == EX_BAD, \
+            "--sweep against a missing roster file must be a bad invocation"
+    print("[guard-cron-inventory] CLI exit-code mapping (0/2/3/4, incl. --sweep): PASS")
 
     print("[guard-cron-inventory] self-test: PASS")
     return EX_OK
@@ -556,10 +783,20 @@ def self_test():
 def _render(report):
     lines = []
     head = "CLEAN" if report["ok"] else "VIOLATION"
-    lines.append("[guard-cron-inventory] %s  expect=%s  engine_recurring=%d  "
-                 "engine_jobs=%d  foreign_ignored=%d"
-                 % (head, report["expect"], report["engine_recurring"],
-                    report["engine_jobs"], report["foreign_jobs_ignored"]))
+    if report.get("mode") == "sweep":
+        bits = ["mode=sweep", "roster_size=%d" % report.get("roster_size", 0)]
+        if "producer_id" in report:
+            bits.append("producer_id=%s" % report["producer_id"])
+            bits.append("producer_active=%s" % report["producer_active"])
+        lines.append("[guard-cron-inventory] %s  %s  engine_recurring=%d  "
+                     "engine_jobs=%d  foreign_ignored=%d"
+                     % (head, "  ".join(bits), report["engine_recurring"],
+                        report["engine_jobs"], report["foreign_jobs_ignored"]))
+    else:
+        lines.append("[guard-cron-inventory] %s  expect=%s  engine_recurring=%d  "
+                     "engine_jobs=%d  foreign_ignored=%d"
+                     % (head, report["expect"], report["engine_recurring"],
+                        report["engine_jobs"], report["foreign_jobs_ignored"]))
     for e in report["engine_recurring_detail"]:
         lines.append("    tick: %s  [%s %s]  cadence=%s  enabled=%s"
                      % (e["name"], e["kind"] or "cron", e["expr"], e["cadence"], e["enabled"]))
@@ -593,6 +830,21 @@ def main(argv=None):
                     help="token identifying an engine-owned job (repeatable; default 'anthology')")
     ap.add_argument("--tick-name", default=None,
                     help="pin the exact expected daily-tick job name (stricter identity check)")
+    ap.add_argument("--sweep", action="store_true",
+                    help="fleet-check mode (SPEC 13.3): report any engine-owned recurring "
+                        "cron that belongs to a producer not on the active roster (a "
+                        "departed producer's orphaned churn leftover); requires --roster "
+                        "and/or --roster-id")
+    sweep_grp = ap.add_argument_group("--sweep roster (used only with --sweep)")
+    sweep_grp.add_argument("--roster", metavar="PATH",
+                           help="JSON file: an array of active producer/anthology ids, or "
+                               "an object with an active/producers/roster array")
+    sweep_grp.add_argument("--roster-id", action="append", default=None,
+                           help="an active producer/anthology id (repeatable; additive to --roster)")
+    ap.add_argument("--producer-id", default=None,
+                    help="this inventory's own producer/anthology id (--sweep only); when "
+                        "given, --sweep judges the WHOLE box's roster membership once "
+                        "instead of judging each job by its own identity")
     ap.add_argument("--json", action="store_true", help="emit a machine-readable report to stdout")
     ap.add_argument("--self-test", action="store_true", help="run the built-in self-test and exit")
     args = ap.parse_args(argv)
@@ -647,8 +899,35 @@ def main(argv=None):
             sys.stderr.write("[guard-cron-inventory] bad invocation: %s\n" % exc)
             return EX_BAD
 
-        report = analyze(jobs, expect=args.expect, owner_tags=owner_tags,
-                         tick_name=args.tick_name)
+        if args.sweep:
+            roster_ids = []
+            if args.roster:
+                try:
+                    roster_ids.extend(load_roster(args.roster))
+                except ValueError as exc:
+                    sys.stderr.write("[guard-cron-inventory] bad invocation: %s\n" % exc)
+                    return EX_BAD
+            if args.roster_id:
+                roster_ids.extend(args.roster_id)
+            seen, deduped_roster = set(), []
+            for r in roster_ids:
+                s = str(r).strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    deduped_roster.append(s)
+            if not deduped_roster:
+                sys.stderr.write("[guard-cron-inventory] bad invocation: --sweep requires "
+                                 "a non-empty roster (--roster and/or --roster-id)\n")
+                return EX_BAD
+            try:
+                report = sweep(jobs, tuple(deduped_roster), owner_tags=owner_tags,
+                               producer_id=args.producer_id)
+            except ValueError as exc:
+                sys.stderr.write("[guard-cron-inventory] bad invocation: %s\n" % exc)
+                return EX_BAD
+        else:
+            report = analyze(jobs, expect=args.expect, owner_tags=owner_tags,
+                             tick_name=args.tick_name)
 
         if args.json:
             print(json.dumps(report, indent=2))
