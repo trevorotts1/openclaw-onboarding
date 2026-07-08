@@ -121,7 +121,7 @@ The first such department is **Anthology** (the Anthology Engine, skill 59):
 - Do NOT tell the owner the Anthology department sits on the fleet floor, is
   mandatory, or is one of the 28 floor departments. It is client-optional and
   seeded only when the owner turns the engine on. The floor is unchanged either
-  way (see the wiring bundle's `FLOOR-EXPECTATIONS.md`).
+  way.
 
 This is still an informational read-and-answer, not production work, and the
 "do not invent capabilities" rule applies unchanged.

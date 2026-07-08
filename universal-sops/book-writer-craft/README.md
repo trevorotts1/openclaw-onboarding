@@ -41,6 +41,7 @@ This craft cluster (`universal-sops/book-writer-craft/`) is the execution playbo
 |---|---|
 | **53** book-writer | "write my book" · "a nonfiction book" · "turn my ideas into a book" |
 | **54** anthology-writer | "my anthology chapter" · "write my contributor chapter" · "write my chapter for the anthology" |
+| **59** anthology-engine | "run the anthology engine" · "start an anthology" · "onboard an anthology producer" · "assemble the anthology" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->

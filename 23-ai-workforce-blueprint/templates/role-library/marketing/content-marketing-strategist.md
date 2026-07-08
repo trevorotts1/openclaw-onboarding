@@ -191,6 +191,7 @@ This role contributes to the company revenue cascade by: **building the owned me
 | **19** humanizer | "make this sound human" · "less AI-sounding" · "rewrite this naturally" | `~/.openclaw/skills/19-humanizer/` | — |
 | **53** book-writer | "write my book" · "a nonfiction book" · "turn my ideas into a book" | `~/.openclaw/skills/53-book-writer/` | `universal-sops/book-writer-craft/` |
 | **54** anthology-writer | "my anthology chapter" · "write my contributor chapter" · "write my chapter for the anthology" | `~/.openclaw/skills/54-anthology-writer/` | `universal-sops/book-writer-craft/` |
+| **59** anthology-engine | "run the anthology engine" · "start an anthology" · "onboard an anthology producer" | `~/.openclaw/skills/59-anthology-engine/` | `universal-sops/book-writer-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures

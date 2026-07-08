@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-08T14:47:32Z",
+  "generated_at": "2026-07-08T15:15:18Z",
   "file_count": 102,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -17,8 +17,8 @@
       "bytes": 15007
     },
     "answering-how-to-use-questions.md": {
-      "sha256": "71ad19c9bb788890807c969dfba42385b0d0d82c035967234fa1eb344c573b57",
-      "bytes": 7458
+      "sha256": "df008c483e86f68331afe1b514f0670f167d2a020c81e69d9475aaa474910383",
+      "bytes": 7408
     },
     "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
       "sha256": "8e298abd3a4552e56d7571a0f760d9b99803cc4e8424de034a7a494111f4059a",
@@ -49,8 +49,8 @@
       "bytes": 11210
     },
     "book-writer-craft/README.md": {
-      "sha256": "3a690335500ba10cf0fc27ab078ed8fb81eb5164c3f3c788433fc13200d4da42",
-      "bytes": 11032
+      "sha256": "2b2f7b8f69f0a89470596906bd0855381305968e3c27c5f8a28ad221416c89cb",
+      "bytes": 11176
     },
     "book-writer-craft/SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md": {
       "sha256": "48dfec5841569081ed7e498d888340a6ad4be91b60f66444e407a88d8db26dee",

@@ -177,6 +177,7 @@ You never have to know these by name or type a command. Just say what you want i
 | "my anthology chapter" · "write my contributor chapter" · "write my chapter for the anthology" | Turns one contributor intake into a finished, gated anthology chapter |
 | "write my product bio" · "a master brain for my product" · "a product sales knowledge base" | Product Bio Engine |
 | "a sales page" · "upsell and downsell copy" · "a high-ticket page" · "write my sales page" | Builds a Direct-Response sales-page asset stack from one survey (the DR sibling of Skill 49) |
+| "run the anthology engine" · "start an anthology" · "onboard an anthology producer" · "assemble the anthology" | Per-client engine that turns one contributor's Convert and Flow intake into one gated, quality-controlled 2,000 to 3,500 word anthology chapter end to end, delivered as both a Google Doc and a 14-point-floor PDF, with links pushed to standardized Convert and Flow contact fields keyed by contact_id, and assembles the whole anthology once every contributor is settled |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->
