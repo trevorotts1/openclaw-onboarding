@@ -14,7 +14,7 @@ This protocol delivers a coaching-grade grounding exercise. It is NOT therapy, N
 **Crisis Resources (share without hesitation):**
 - **988 Suicide & Crisis Lifeline** — Call or text 988 (24/7, free, confidential)
 - **Therapy for Black Girls** — https://therapyforblackgirls.com (therapist directory + podcast + community)
-- **NAMI Helpline** — 1-800-950-NAMI (6264) or text "NAMI" to 741741
+- **NAMI Helpline** — 1-800-950-NAMI (6264) or text HOME to 741741
 
 Coaching boundary language: *"This is a grounding tool I share as a coach. It's not therapy. If you ever feel you need clinical support, I have resources I can point you toward — just let me know."*
 
@@ -111,7 +111,7 @@ The 5-4-3-2-1 sequence forces the brain to engage the sensory cortex — pulling
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when grounding produces zero shift across two full rounds OR grounding used in 3+ consecutive sessions
-- **{{CRISIS_LINE}}** — when {{OWNER_NAME}} discloses suicidal ideation, self-harm intent, recent trauma, or severe distress beyond coaching scope
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when {{OWNER_NAME}} discloses suicidal ideation, self-harm intent, recent trauma, or severe distress beyond coaching scope
 - **{{COACH_NAME}}** — when repeated grounding without progress indicates possible modality mismatch requiring supervision discussion
 
 ## Definition of Done

@@ -237,4 +237,4 @@ All placeholders follow the canonical token format — no literal client data in
 
 ---
 
-*This roster is a living document. Every win {{OWNER_NAME}} tries to minimize is evidence that your work matters. Keep the map current — accurate handoffs are what make celebration a fleet-wide muscle, not a solo performance.*
+*This roster is a living document. Every win {{OWNER_NAME}} tries to minimize is evidence that your work matters. Keep the map current — accurate handoffs are what make celebration a shared, everyday muscle, not a solo performance.*

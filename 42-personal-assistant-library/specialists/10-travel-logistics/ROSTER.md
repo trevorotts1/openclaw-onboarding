@@ -47,7 +47,7 @@
 
 | Situation | First Contact | If Unresolved (30 min) | Final |
 |-----------|---------------|------------------------|-------|
-| Technical blocker (booking site down, API failure) | OpenClaw Maintenance | Master Orchestrator | Human owner via Telegram |
+| Technical blocker (booking site down, API failure) | Technical Support | Master Orchestrator | Human owner via Telegram |
 | Budget concern (trip exceeds stated threshold) | {{OWNER_NAME}} (flag with cost-benefit brief) | -- | -- |
 | Travel advisory or safety concern at destination | {{OWNER_NAME}} (surface advisory and alternatives) | -- | -- |
 | Impossible timeline (earliest flight lands after meeting) | {{OWNER_NAME}} (flag with options: earlier departure, alternate airport, virtual) | -- | -- |

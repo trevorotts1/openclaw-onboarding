@@ -14,7 +14,7 @@ This protocol covers coaching-grade breathwork: paced breathing, box breathing, 
 **Crisis Resources:**
 - **988 Suicide & Crisis Lifeline** — Call or text 988
 - **Therapy for Black Girls** — https://therapyforblackgirls.com
-- **NAMI Helpline** — 1-800-950-NAMI (6264) or text "NAMI" to 741741
+- **NAMI Helpline** — 1-800-950-NAMI (6264) or text HOME to 741741
 
 **Medical Caution:** If the client has a history of seizures, cardiovascular conditions, recent surgery, or is pregnant, advise them to check with their doctor before breathwork. Coach must ask: *"Do you have any medical conditions that might be affected by breathing exercises?"* If yes and unclear, skip breathwork.
 
@@ -116,7 +116,7 @@ Sample (Box Breathing):
 
 ## Escalation
 - **{{THERAPIST_NAME}}** — when breathwork produces zero shift across multiple techniques suggesting deeper dysregulation, OR client uses breathwork to suppress rather than regulate emotions
-- **{{CRISIS_LINE}}** — when {{OWNER_NAME}} experiences severe physical distress during breathwork (chest pain, severe dizziness, numbness beyond mild tingling) OR discloses SI/SH
+- **988 Suicide & Crisis Lifeline (call or text 988)** — when {{OWNER_NAME}} experiences severe physical distress during breathwork (chest pain, severe dizziness, numbness beyond mild tingling) OR discloses SI/SH
 - **{{COACH_NAME}}** — when adverse reactions occur or breathwork consistently fails to produce regulation, indicating possible supervision discussion
 
 ## Definition of Done

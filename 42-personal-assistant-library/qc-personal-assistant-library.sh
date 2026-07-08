@@ -38,7 +38,10 @@ SPEC_DIR="$PA_DIR/specialists"
 # for these). Runtime output-template slots ({{PERCENT}}, {{WIN_1}}, {{TREND_ARROW}},
 # {{COUNT}}, {{ACTION}} …) are intentionally NOT listed — the specialist fills those
 # every run, so they legitimately remain in a materialized copy and must not fail QC.
-INSTALL_PLACEHOLDERS='OWNER_NAME|OWNER|NAME|TOKEN|OWNER_EMAIL|OWNER_RECOVERY_EMAIL|OWNER_TIMEZONE|ROLE_TITLE|COMMUNICATION_STYLE|COMPANY_NAME|CLIENT_NAME|CLIENT_NAME_2|COMPANY_INDUSTRY|INDUSTRY_VERTICAL|DEPARTMENT_SLUG|WORKSPACE_PATH|COMPANY_LIBRARY_PATH|GENERATION_DATE|INBOX_TOOL|EMAIL_TOOL|CALENDAR_TOOL|TASK_TOOL|DOCS_TOOL|DOCUMENT_TOOL|MESSAGING_TOOL|COMMUNICATION_TOOL|CRM_TOOL|JOURNAL_TOOL|SEARCH_TOOL|DEEP_SEARCH_TOOL|NOTES_TOOL|RECORDING_TOOL|ZOOM_TOOL|VIDEO_TOOL|FINANCIAL_TOOL|METRICS_DASHBOARD|BOOK_PERSONA_MATRIX|ASSIGNED_PERSONA|ASSIGNED_PERSONA_VERSION|COACH_NAME|THERAPIST_NAME|CRISIS_LINE'
+# NOTE (SK1-34): the credential/finance owner-data tokens below MUST be in this list, or an
+# unfilled credential/finance pointer (e.g. {{PAYMENT_CARD_REF}}, {{BANK_NAME_1}}) survives
+# materialization and the residual scan passes exit 0 — shipping unfilled credential pointers.
+INSTALL_PLACEHOLDERS='OWNER_NAME|OWNER|NAME|TOKEN|OWNER_EMAIL|OWNER_RECOVERY_EMAIL|OWNER_TIMEZONE|ROLE_TITLE|COMMUNICATION_STYLE|COMPANY_NAME|CLIENT_NAME|CLIENT_NAME_2|COMPANY_INDUSTRY|INDUSTRY_VERTICAL|DEPARTMENT_SLUG|WORKSPACE_PATH|COMPANY_LIBRARY_PATH|GENERATION_DATE|INBOX_TOOL|EMAIL_TOOL|CALENDAR_TOOL|TASK_TOOL|DOCS_TOOL|DOCUMENT_TOOL|MESSAGING_TOOL|COMMUNICATION_TOOL|CRM_TOOL|JOURNAL_TOOL|SEARCH_TOOL|DEEP_SEARCH_TOOL|NOTES_TOOL|RECORDING_TOOL|ZOOM_TOOL|VIDEO_TOOL|FINANCIAL_TOOL|METRICS_DASHBOARD|BOOK_PERSONA_MATRIX|ASSIGNED_PERSONA|ASSIGNED_PERSONA_VERSION|COACH_NAME|THERAPIST_NAME|CRISIS_LINE|PAYMENT_CARD_REF|PAYMENT_CARD_REF_2|KEYCHAIN_ACCOUNT|GCP_SERVICE_ACCOUNT|BANK_NAME_1|BANK_NAME_2|PRIMARY_CHECKING|SECONDARY_CHECKING|PRIMARY_SAVINGS|CARD_ISSUER_1|CARD_ISSUER_2|CREDIT_CARD_1|CREDIT_CARD_2|CREDIT_CARD_1_PAYMENT|CREDIT_CARD_2_PAYMENT|BROKERAGE_NAME|INVESTMENT_ACCOUNT|RETIREMENT_ACCOUNT|RETIREMENT_PROVIDER|ACCOUNT_TYPE|SERVICE_PROVIDER|SUBSCRIPTION_1|SUBSCRIPTION_2|SUBSCRIPTION_3|SUBSCRIPTION_4|INSURANCE_AUTO|INSURANCE_HOME_RENTERS|INSURANCE_OTHER|INSURANCE_TYPE|INSURANCE_AGENT|HOUSING_PAYMENT|UTILITY_ELECTRIC|UTILITY_WATER|UTILITY_INTERNET|TAX_PAYMENT|TAX_SEASON|RENEWAL_MONTH'
 
 # The 29 specialist slugs (in order)
 SPECIALISTS=(
@@ -115,10 +118,33 @@ CC_SYNC="$SKILLS_DIR_DEFAULT/32-command-center-setup/scripts/sync-extensions.sh"
 # if either the PA dept or Skill 32 is absent, this is a no-op pass.
 live_assert "CC converge tool reachable for materialized PA dept (fail-soft if Skill 32 absent)" \
   "[ ! -d \"$PA_WS\" ] || [ ! -d \"$SKILLS_DIR_DEFAULT/32-command-center-setup\" ] || [ -x \"$CC_SYNC\" ]"
-# Zero unfilled owner-data placeholders may survive in the materialized copy (runtime
-# output slots are exempt by construction — they are not in INSTALL_PLACEHOLDERS).
-live_assert "no unfilled owner-data placeholder survives in materialized PA dept" \
+# Zero unfilled owner-data placeholders (incl. credential/finance tokens — SK1-34) may survive
+# in the materialized copy (runtime output slots are exempt by construction — they are not in
+# INSTALL_PLACEHOLDERS). Promoted from live_assert to a default assert so a materialized dept
+# with unfilled owner/credential/finance pointers FAILS QC even without --live; pre-deploy
+# (no materialized dept) it is a no-op pass.
+assert "no unfilled owner/credential/finance placeholder survives in materialized PA dept" \
   "[ ! -d \"$PA_WS\" ] || ! grep -rqE '\\{\\{('\"$INSTALL_PLACEHOLDERS\"')\\}\\}' \"$PA_WS\""
+
+echo ""
+echo "── Crisis-safety content gate (fail-closed — SK1-35/37) ──"
+# The crisis warm-handoff path must NEVER dead-end. Enforced fail-closed so the library cannot
+# ship a broken escalation:
+#   (1) NO shipped SOP may carry the unfilled {{CRISIS_LINE}} token — the public 988 lifeline is
+#       hardcoded, so a crisis SOP can never ship pointing at an unfilled per-owner slot.
+#   (2) the primary warm-handoff SOP (PA-26-12) must name BOTH 988 and 911 — always-present real
+#       endpoints — so its life-safety path terminates at a real destination, not only an internal
+#       role/notification that has no delivery mechanism.
+#   (3) the Crisis Text Line keyword must be HOME (741741), never the wrong "NAMI" keyword.
+CRISIS_SOP="$SPEC_DIR/26-therapeutic-support/SOP/PA-26-12-crisis-referral-warm-handoff-protocol.md"
+assert "no crisis SOP ships an unfilled {{CRISIS_LINE}} dead-end token" \
+  "! grep -rq '{{CRISIS_LINE}}' \"$SPEC_DIR\""
+assert "primary warm-handoff SOP (PA-26-12) names the 988 lifeline" \
+  "grep -q '988' \"$CRISIS_SOP\""
+assert "primary warm-handoff SOP (PA-26-12) names 911 (real emergency endpoint, not only an internal role)" \
+  "grep -q '911' \"$CRISIS_SOP\""
+assert "no crisis SOP uses the wrong Crisis Text Line keyword (must be 'text HOME to 741741')" \
+  "! grep -rq 'text \"NAMI\" to 741741' \"$SPEC_DIR\""
 
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings | $SKIP skipped ═══"

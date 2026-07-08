@@ -90,8 +90,8 @@ The Specialist MUST initiate warm-referral when ANY of the following are present
 
 | Signal | Route To |
 |---|---|
-| Any RED-level incident (suicidal ideation, self-harm, psychosis, severe impairment) | Operator — IMMEDIATE, URGENT flag |
-| 3+ consecutive sessions with YELLOW flags despite client declining referral | Operator — supervision consult; may discontinue coaching |
+| Any RED-level incident (suicidal ideation, self-harm, psychosis, severe impairment) | 988 (call/text) or 911 + the owner's designated emergency contact — connect immediately, stay present, do NOT end until connection confirmed; log for human review. URGENT |
+| 3+ consecutive sessions with YELLOW flags despite client declining referral | The owner's designated human supervisor/contact — supervision consult; may discontinue coaching |
 | {{TOKEN}} resists referral during active RED protocol | Follow local duty-to-warn obligations; do not end session until connection confirmed |
 | Specialist uncertain about clinical threshold in a specific case | Peer supervision review; Specialist 26 (Therapeutic Support) for consult |
 

@@ -6,7 +6,7 @@
 ---
 
 ## Purpose & Scope
-Recognize when needs cross from coaching into clinical territory. Execute warm referral to culturally-competent crisis resources. Not crisis counseling. Immediate: 988 (24/7), Therapy for Black Girls, NAMI (1-800-950-NAMI). If immediate danger: encourage 988/911. Your role: connect, not contain.
+Recognize when needs cross from coaching into clinical territory. Execute warm referral to culturally-competent crisis resources. Not crisis counseling. Immediate: 988 (24/7), Therapy for Black Girls, NAMI (1-800-950-6264). If immediate danger: encourage 988/911. Your role: connect, not contain.
 
 ## DMAIC
 
@@ -18,7 +18,7 @@ Recognize needs beyond scope. Connect to someone licensed. Warm handoff normaliz
 | Level | Indicators | Action |
 |-------|-----------|--------|
 | **1 — Clinical Concern** | Symptoms >2wk, interfering with function; client asks for diagnosis | TFBG + NAMI. Directory help. Document. |
-| **2 — Significant Distress** | Hopelessness; coaching not helping; trauma content; functional impairment | Level 1 + name boundary. Warm handoff. Notify MO within 2h. |
+| **2 — Significant Distress** | Hopelessness; coaching not helping; trauma content; functional impairment | Level 1 + name boundary. Warm handoff. Alert owner's contact + log for human review within 2h. |
 | **3 — Crisis** | Suicidal ideation; self-harm; harm to others; acute distress | 988 immediately. If plan/means: encourage 988/911. Stay present. Document. |
 
 100% crossings get referral same session. ≥80% include warm handoff. Zero coaching through Level 3.
@@ -53,7 +53,7 @@ A referral is not the end of the coaching relationship. Unless {{OWNER_NAME}} ex
 - Document the referral in the Therapeutic Support Log: date, triggering indicators, resources provided, handoff support offered, client response, and follow-up plan.
 
 ### Control
-Document every crossing: date, indicators, level, resources, handoff, client response, MO notified, follow-up. Level 3: MO notified within 30 min. Quarterly audit. Refusal + deterioration → escalate.
+Document every crossing: date, indicators, level, resources, handoff, client response, human review logged, follow-up. Level 3: human review logged within 30 min (the log is a record, NOT the handoff — the handoff is a human/988/911, per Escalation). Quarterly audit. Refusal + deterioration → escalate to a human.
 
 ## Voice & Guardrails
 Referral is upgrade: "This deserves a specialist." "Therapy and faith aren't enemies." No diagnosis. No coercion. No abandonment. No confidentiality breach. Level 3: 988/911 before paperwork.
@@ -66,9 +66,27 @@ Referral is upgrade: "This deserves a specialist." "Therapy and faith aren't ene
 - [ ] Phase 4 completed — continuity affirmed (coaching continues for in-scope goals), follow-up planned within timeframe, full documentation in Therapeutic Support Log
 
 ## Escalation
-- **{{CRISIS_LINE}}** — Level 3: suicidal ideation with plan/means, self-harm, harm to others → 988 immediately, encourage 988/911, stay present, notify Master Orchestrator within 30 minutes
-- **{{THERAPIST_NAME}}** — Level 2: hopelessness, trauma content, functional impairment → warm handoff to Therapy for Black Girls directory, notify Master Orchestrator within 2 hours
-- **{{COACH_NAME}}** — when {{OWNER_NAME}} refuses referral AND deteriorates → Master Orchestrator notified for escalation decision
+
+The life-safety endpoints below are **always present** — they are fixed public services, never
+per-owner fields, so this path can never ship pointing at an unfilled slot and can never dead-end.
+
+- **Level 3 (crisis — suicidal ideation with plan/means, self-harm, harm to others):** connect
+  {{OWNER_NAME}} to the **988 Suicide & Crisis Lifeline (call or text 988)** immediately, and if
+  there is a plan/means or imminent danger, **911**. **Stay present. Do NOT end the interaction
+  until a human or emergency responder has the person.** In parallel, alert a real human — the
+  owner's designated emergency contact (or 911 for imminent danger). **Fail-closed rule:** an
+  automated system notification is NOT the handoff; if you cannot confirm a human/clinical
+  responder or emergency services has the person, keep them with 988/911 and escalate loudly to a
+  human now — never silently drop the escalation. Log the crossing for human review within 30 minutes.
+- **Level 2 (significant distress):** warm handoff to the Therapy for Black Girls directory + NAMI
+  (1-800-950-6264); alert the owner's designated contact and log for human review within 2 hours.
+- **Level 1 (clinical concern) / refusal + deterioration:** provide Therapy for Black Girls + NAMI;
+  if {{OWNER_NAME}} refuses referral AND deteriorates, escalate to a human (the owner's emergency
+  contact, or 911 if in danger) — a refusal must never end the safety loop silently.
+
+> Optional per-owner contacts (`{{THERAPIST_NAME}}`, `{{COACH_NAME}}`) are SECONDARY additions. The
+> life-safety path above must never wait on them; if they are unfilled, use 988/911 and the owner's
+> emergency contact.
 
 ## Definition of Done
 The SOP is complete when {{OWNER_NAME}} has received culturally-competent crisis/referral resources with an active handoff offer, continuity of coaching relationship has been affirmed, and the referral event is fully documented in the Therapeutic Support Log with follow-up scheduled.
