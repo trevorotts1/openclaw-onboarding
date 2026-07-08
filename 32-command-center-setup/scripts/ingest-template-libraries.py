@@ -45,6 +45,11 @@ def _resolve_default_db() -> str:
             return str(p)
     except ImportError:
         pass
+    # DATA-08: honor the app's DB env vars first, even on this bootstrap path.
+    for _ev in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        _v = os.environ.get(_ev)
+        if _v and os.path.isfile(_v):
+            return _v
     home = os.path.expanduser("~")
     for c in (
         os.path.join(home, "projects", "command-center", "mission-control.db"),

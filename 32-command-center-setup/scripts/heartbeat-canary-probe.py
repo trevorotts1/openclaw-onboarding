@@ -75,6 +75,11 @@ def _find_db(explicit: str | None = None) -> str | None:
             return str(p)
     except ImportError:
         pass
+    # DATA-08: honor the app's DB env vars first, even on this bootstrap path.
+    for _ev in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        _v = os.environ.get(_ev)
+        if _v and Path(_v).is_file():
+            return str(_v)
     candidates = [
         Path("/data/projects/command-center/mission-control.db"),
         Path.home() / "projects/command-center/mission-control.db",

@@ -35,6 +35,11 @@ def _default_db() -> str:
         p = _shared_find_dashboard_db()
         if is_db_found(p):
             return str(p)
+    # DATA-08: honor the app's DB env vars first, even on this bootstrap path.
+    for _ev in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        _v = os.environ.get(_ev)
+        if _v and Path(_v).is_file():
+            return str(_v)
     for cand in (
         Path.home() / "projects/command-center/mission-control.db",
         Path.home() / "projects/mission-control/mission-control.db",
