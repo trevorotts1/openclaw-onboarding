@@ -118,6 +118,7 @@ PRODUCER_ID=""
 LOCATION_ID_OVERRIDE=""
 DEPT_SLUG="anthology"
 DEPT_NAME="Anthology"
+DEPT_HEAD_NAME="Anthology Producer"
 DAILY_TICK_SCHEDULE="0 8 * * *"
 DAILY_TICK_CMD=""
 SKIP_DEPARTMENT=0
@@ -134,12 +135,14 @@ while [ $# -gt 0 ]; do
         --plan|--list)          MODE="plan"; shift ;;
         --dry-run)              MODE="dryrun"; shift ;;
         --self-test)            MODE="selftest"; shift ;;
+        --wire-department)      MODE="wiredept"; shift ;;
         --require-live)         REQUIRE_LIVE=1; shift ;;
         --producer)             PRODUCER_NAME="${2:-}"; shift 2 ;;
         --producer-id)          PRODUCER_ID="${2:-}"; shift 2 ;;
         --location-id)          LOCATION_ID_OVERRIDE="${2:-}"; shift 2 ;;
         --department-slug)      DEPT_SLUG="${2:-}"; shift 2 ;;
         --department-name)      DEPT_NAME="${2:-}"; shift 2 ;;
+        --department-head-name) DEPT_HEAD_NAME="${2:-}"; shift 2 ;;
         --daily-tick-schedule)  DAILY_TICK_SCHEDULE="${2:-}"; shift 2 ;;
         --daily-tick-cmd)       DAILY_TICK_CMD="${2:-}"; shift 2 ;;
         --skip-department)      SKIP_DEPARTMENT=1; shift ;;
@@ -796,7 +799,7 @@ seed_department() {
     # Seed (idempotent): status is created OR already_exists on success.
     local out1 rc1
     out1="$(bash "$add" --slug "$DEPT_SLUG" --name "$DEPT_NAME" --icon "📚" \
-              --head-name "Anthology Producer" \
+              --head-name "$DEPT_HEAD_NAME" \
               --description "Anthology Engine department: the participant board, the chapter-approval review column, and the assembly card." 2>&1)"; rc1=$?
     echo "$out1" >&2
     if [ "$rc1" != "0" ]; then
@@ -835,6 +838,120 @@ PY
     echo "$EX_MISMATCH"
 }
 
+# Department RUNTIME wiring (SPEC 11.2 / CHECKLIST item 14b -- the Wave 5 canary fix).
+# seed_department (step 3.5) creates the Command Center board, its DB agent rows,
+# and the routing sidecar -- but add-department.sh does NOT add the OpenClaw agent
+# RUNTIME (the openclaw.json agents.list[] entry + the ~/.openclaw/agents/dept-<slug>/
+# agent dir). Without that runtime, Command Center's dispatch finds no specialist for
+# the department, so every card lands and immediately STICKS in "Blocked" with reason
+# no_specialist_runtime ("No OpenClaw runtime for 'Anthology Producer'. Wire
+# ~/.openclaw/agents/<dept-slug>/ to release this department."). This step materializes
+# exactly that runtime, following materialize-dept-agents.sh's schema byte-for-byte
+# (id=dept-<slug>, name, workspace, agentDir, memorySearch), idempotently, as the node
+# user, and VERIFIES it by reading the agents.list[] entry and the agent dir back.
+wire_department_runtime() {
+    note "STEP 3.6 -- wire the Anthology department's OpenClaw agent RUNTIME (agents.list[] + ~/.openclaw/agents/dept-$DEPT_SLUG/; read-back verified)"
+    if [ "$SKIP_DEPARTMENT" = "1" ]; then note "  --skip-department: skipped (CC runtime wired elsewhere)"; echo "$EX_OK"; return; fi
+    # OpenClaw root: an explicit test/installer override, else the platform default
+    # (VPS /data/.openclaw, Mac $HOME/.openclaw) -- mirrors materialize-dept-agents.sh.
+    local oc_root="${ANTHOLOGY_OC_ROOT:-}"
+    if [ -z "$oc_root" ]; then
+        if [ -d /data/.openclaw ]; then oc_root="/data/.openclaw"
+        elif [ -d "$HOME/.openclaw" ]; then oc_root="$HOME/.openclaw"; fi
+    fi
+    if [ -z "$oc_root" ] || [ ! -f "$oc_root/openclaw.json" ]; then
+        note "  openclaw.json not found under an OpenClaw root ($oc_root) -- Command Center not installed on this box; HELD"
+        note "  OPERATOR: install the OpenClaw gateway + Command Center (Skill 32), then re-run provisioning"
+        set_crc 127
+        echo "$EX_HELD"; return
+    fi
+    if [ "$MODE" = "dryrun" ]; then
+        note "  (dry-run) would add agents.list[] entry dept-$DEPT_SLUG (agentDir $oc_root/agents/dept-$DEPT_SLUG) to $oc_root/openclaw.json"
+        echo "$EX_OK"; return
+    fi
+    local rc
+    OC_ROOT="$oc_root" DEPT_SLUG="$DEPT_SLUG" DEPT_HEAD_NAME="$DEPT_HEAD_NAME" python3 - <<'PY'
+import datetime, json, os, sys, tempfile
+oc_root = os.environ["OC_ROOT"]
+slug = os.environ["DEPT_SLUG"]
+name = os.environ.get("DEPT_HEAD_NAME") or "Anthology Producer"
+cfg_path = os.path.join(oc_root, "openclaw.json")
+try:
+    cfg = json.load(open(cfg_path, encoding="utf-8"))
+except Exception as exc:                                  # noqa: BLE001
+    sys.stderr.write("[wire] openclaw.json unreadable: %s\n" % exc); sys.exit(1)
+if not isinstance(cfg.get("agents"), dict):
+    cfg["agents"] = {"list": []}
+if not isinstance(cfg["agents"].get("list"), list):
+    cfg["agents"]["list"] = []
+agent_id = "dept-%s" % slug
+agent_dir = os.path.join(oc_root, "agents", agent_id)
+workspace = os.path.join(oc_root, "workspace", "departments", slug)
+# Schema byte-for-byte with materialize-dept-agents.sh: multimodal disabled +
+# fallback openai (a text-only embedding provider throws on multimodal), agentDir
+# so the routing agent can resolve this dept agent at runtime -- the exact runtime
+# the CC dispatch no_specialist_runtime check looks for.
+desired = {
+    "id": agent_id, "name": name, "workspace": workspace, "agentDir": agent_dir,
+    "memorySearch": {"extraPaths": [], "multimodal": {"enabled": False, "modalities": []},
+                     "fallback": "openai"},
+}
+lst = cfg["agents"]["list"]
+by_id = {a.get("id"): a for a in lst if isinstance(a, dict) and a.get("id")}
+existing = by_id.get(agent_id)
+if existing is None:
+    lst.append(desired); action = "added"
+else:
+    changed = False
+    for k in ("name", "workspace", "agentDir"):
+        if existing.get(k) != desired[k]:
+            existing[k] = desired[k]; changed = True
+    existing.setdefault("memorySearch", desired["memorySearch"])
+    action = "updated" if changed else "no-op"
+# Backup (best-effort) + atomic write (node user; os.replace). No secret value.
+try:
+    os.makedirs(os.path.join(oc_root, "backups"), exist_ok=True)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    with open(cfg_path, encoding="utf-8") as f:
+        raw = f.read()
+    with open(os.path.join(oc_root, "backups", "openclaw-backup-%s-pre-wire.json" % ts),
+              "w", encoding="utf-8") as f:
+        f.write(raw)
+except Exception:                                         # noqa: BLE001 -- backup is best-effort
+    pass
+d = os.path.dirname(cfg_path)
+fd, tmp = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp", dir=d)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2); f.write("\n")
+    os.replace(tmp, cfg_path)
+except Exception as exc:                                  # noqa: BLE001
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    sys.stderr.write("[wire] atomic write failed: %s\n" % exc); sys.exit(1)
+# The '~/.openclaw/agents/<dept-slug>/' the CC dispatch check requires.
+os.makedirs(agent_dir, exist_ok=True)
+# READ-BACK verify: the entry must be present exactly once AND the dir must exist.
+back = json.load(open(cfg_path, encoding="utf-8"))
+ids = [a.get("id") for a in back.get("agents", {}).get("list", []) if isinstance(a, dict)]
+if ids.count(agent_id) != 1 or not os.path.isdir(agent_dir):
+    sys.stderr.write("[wire] read-back FAILED: entry_count=%d dir=%s\n"
+                     % (ids.count(agent_id), os.path.isdir(agent_dir)))
+    sys.exit(5)
+sys.stderr.write("[wire] %s agents.list[] entry %s (agentDir %s); read-back verified\n"
+                 % (action, agent_id, agent_dir))
+PY
+    rc=$?
+    set_crc "$rc"
+    case "$rc" in
+        0) note "  department runtime wired + read-back verified (dept-$DEPT_SLUG); board cards now dispatch (no more no_specialist_runtime)"; echo "$EX_OK" ;;
+        5) note "  department runtime read-back MISMATCH (entry/dir absent after write)"; echo "$EX_MISMATCH" ;;
+        *) note "  department runtime wiring error (rc=$rc)"; echo "$EX_ERR" ;;
+    esac
+}
+
 # ==========================================================================
 # Driver.
 # ==========================================================================
@@ -843,6 +960,7 @@ STEP_LABELS=(
     "2/10 — custom fields"
     "3/10 — pipeline bind (UI-only)"
     "3.5 — department seeding"
+    "3.6 — department runtime wiring"
     "4/10 — form contract"
     "5/10 — Drive producer root"
     "6/10 — ledger + mirror bootstrap"
@@ -856,6 +974,7 @@ STEP_AF=(
     "AF-AE-FIELD-MISSING (exit 2) / AF-AE-FIELD-KEY-MISMATCH (exit 5)"
     "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only -> exit 2); API unreachable or edge-block -> HELD 3"
     "department seed / read-back (Command Center unavailable -> HELD 3; read-back mismatch -> 5)"
+    "department runtime wiring: agents.list[] + ~/.openclaw/agents/dept-<slug>/ (openclaw.json absent / CC not installed -> HELD 3; read-back mismatch -> 5). Resolves the CC dispatch no_specialist_runtime block."
     "form-contract write error -> exit 1"
     "Drive root unreachable -> exit 2; API unreachable -> HELD 3"
     "ledger bootstrap error"
@@ -869,6 +988,7 @@ STEP_REMEDIATION=(
     "Grant the client PIT custom-field WRITE scope; a field that must pre-exist but is absent and cannot be created STOPS setup; a fieldKey mismatch STOPS setup"
     "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; create the standard pipeline once in the Convert and Flow UI (pipelines are UI-only, there is no API create endpoint) or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
     "Install Skill 32 command-center-setup so the Anthology department can be seeded and read back"
+    "Install the OpenClaw gateway + Command Center (Skill 32) so openclaw.json exists; then re-run so the dept-<slug> agent runtime (agents.list[] + ~/.openclaw/agents/dept-<slug>/) is materialized"
     "Free space / permissions for the state dir; re-run"
     "Confirm the EXISTING shared Drive root is reachable via the operator service account (GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
@@ -899,7 +1019,8 @@ run_pipeline() {
     # shellcheck disable=SC2064
     trap "rm -f '$RC_FILE'" RETURN
 
-    local -a fns=(step1_credentials step2_fields step3_pipeline seed_department step4_forms \
+    local -a fns=(step1_credentials step2_fields step3_pipeline seed_department \
+                  wire_department_runtime step4_forms \
                   step5_drive step6_ledger step7_webhook step8_cron step9_verify_webhook step10_smoke)
     local i n
     for i in "${!fns[@]}"; do
@@ -940,6 +1061,7 @@ print_plan() {
   2/10  custom fields              anthology_registry.py provision-fields (19 keys; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
+  3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked
   4/10  form contract              forms-manifest.json (hidden fields contact_id/anthology_id/stage; re-stamp; per-anthology bind)
   5/10  Drive producer root        drive-tree-provision.py verify-root (+ provision --producer); never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
@@ -1291,6 +1413,59 @@ PY
     [ "$n" = "$EX_ERR" ] || { echo "  FAIL unit13 failure-detection: a merge that did not take must be $EX_ERR, got $n" >&2; fails=$((fails+1)); }
     printf '{}' > "$OC_STUB_CFG"
 
+    # ---- unit 14: department RUNTIME wiring releases the no_specialist_runtime block --
+    # The Wave 5 canary gap: the board renders but no OpenClaw agent runtime is wired,
+    # so the CC dispatch sticks every card in "Blocked" with reason no_specialist_runtime.
+    # This proves wire_department_runtime materializes exactly the runtime that check
+    # looks for, against a HERMETIC mock of the CC dispatch gate (openclaw.json +
+    # ~/.openclaw/agents/dept-<slug>/ under a TEMP OC root -- never a live box). A
+    # synthetic board card would BLOCK before wiring and RELEASE after.
+    SCRIPTS="$save_scripts"; MODE="live"; SKIP_DEPARTMENT=0
+    local wtmp="$tmp/wire"; mkdir -p "$wtmp/.openclaw"
+    printf '{"agents":{"list":[]}}' > "$wtmp/.openclaw/openclaw.json"
+    # A hermetic stand-in for the CC dispatch check: does an OpenClaw runtime exist
+    # for this dept slug (an agents.list[] entry whose id resolves the dept AND its
+    # ~/.openclaw/agents/dept-<slug>/ dir)? Prints "released" or "no_specialist_runtime".
+    _mock_cc_dispatch() {   # $1 oc_root  $2 slug
+        OC_ROOT="$1" SLUG="$2" python3 - <<'PY'
+import json, os, sys
+root = os.environ["OC_ROOT"]; slug = os.environ["SLUG"]
+try:
+    cfg = json.load(open(os.path.join(root, "openclaw.json"), encoding="utf-8"))
+except Exception:
+    print("no_specialist_runtime"); sys.exit(0)
+aid = "dept-%s" % slug
+agents = cfg.get("agents", {}).get("list", [])
+has_entry = any(isinstance(a, dict) and (a.get("id") == aid or slug in str(a.get("id", "")))
+                for a in agents)
+has_dir = os.path.isdir(os.path.join(root, "agents", aid))
+print("released" if (has_entry and has_dir) else "no_specialist_runtime")
+PY
+    }
+    local before after
+    before="$(_mock_cc_dispatch "$wtmp/.openclaw" "$DEPT_SLUG")"
+    [ "$before" = "no_specialist_runtime" ] || { echo "  FAIL wire pre-state: expected no_specialist_runtime got '$before'" >&2; fails=$((fails+1)); }
+    n="$(ANTHOLOGY_OC_ROOT="$wtmp/.openclaw" wire_department_runtime 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL wire_department_runtime: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    after="$(_mock_cc_dispatch "$wtmp/.openclaw" "$DEPT_SLUG")"
+    [ "$after" = "released" ] || { echo "  FAIL wire post-state: expected released got '$after'" >&2; fails=$((fails+1)); }
+    # Idempotent re-run: still OK, and EXACTLY one dept-<slug> agents.list[] entry.
+    n="$(ANTHOLOGY_OC_ROOT="$wtmp/.openclaw" wire_department_runtime 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL wire idempotent re-run: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    local dup
+    dup="$(OC_ROOT="$wtmp/.openclaw" SLUG="$DEPT_SLUG" python3 - <<'PY'
+import json, os
+cfg = json.load(open(os.path.join(os.environ["OC_ROOT"], "openclaw.json"), encoding="utf-8"))
+aid = "dept-%s" % os.environ["SLUG"]
+print(sum(1 for a in cfg.get("agents", {}).get("list", []) if isinstance(a, dict) and a.get("id") == aid))
+PY
+)"
+    [ "$dup" = "1" ] || { echo "  FAIL wire idempotency: expected exactly 1 dept entry, got '$dup'" >&2; fails=$((fails+1)); }
+    # openclaw.json / Command Center absent -> HELD (never a crash, never a false success).
+    local wtmp2="$tmp/wire2"; mkdir -p "$wtmp2/.openclaw"   # no openclaw.json inside
+    n="$(ANTHOLOGY_OC_ROOT="$wtmp2/.openclaw" wire_department_runtime 2>/dev/null)"
+    [ "$n" = "$EX_HELD" ] || { echo "  FAIL wire CC-absent: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
+
     # ---- unit 11: no Anthropic identifier / no client PII in this file -----
     # Deny-pattern shapes assembled from fragments so no banned literal lives here.
     local _a="anthro""pic" _c="clau""de-"
@@ -1299,7 +1474,7 @@ PY
     fi
 
     if [ "$fails" -eq 0 ]; then
-        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure)" >&2
+        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure)" >&2
         return "$EX_OK"
     fi
     echo "[$PROG] SELF-TEST FAIL — $fails check(s) failed" >&2
@@ -1312,6 +1487,12 @@ PY
 case "$MODE" in
     plan)     print_plan; exit $? ;;
     selftest) self_test; exit $? ;;
+    wiredept)
+        if [ "$(check_root_guard "$(id -u)")" != "0" ]; then
+            echo "[$PROG] REFUSING: --wire-department writes openclaw.json and must run as the node user, never root (root config writes freeze the gateway)." >&2
+            exit "$EX_STOP"
+        fi
+        n="$(wire_department_runtime)"; exit "${n:-$EX_ERR}" ;;
     dryrun|live) run_pipeline; exit $? ;;
     *) echo "[$PROG] internal: unknown mode $MODE" >&2; exit "$EX_ERR" ;;
 esac
