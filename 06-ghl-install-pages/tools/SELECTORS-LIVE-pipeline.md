@@ -39,9 +39,18 @@ role=button + `--exact` on THAT string).
 ## 3. Post-save verification (positive, v18.1.5 doctrine)
 
 The saved pipeline must appear in the RENDERED Pipelines list: leaf-text count
-(`textContent`-exact leaf nodes) for the ZHC-prefixed name must be **>= 1**, on
+(`textContent`-exact leaf nodes) for the planned name must be **>= 1**, on
 a poll deadline. A dialog echo or the a11y snapshot alone is never accepted.
 Then capture the ids via Skill 44 (`caf opportunities pipelines`).
+
+**Name modes (v18.1.12):** default = the fleet `ZHC ` container prefix
+(`ensure_zhc_name`). `--exact-name` = the name is used BYTE-EXACT, for callers
+that bind the created pipeline by name through the read API afterwards — the
+Anthology Engine (Skill 59 `anthology_registry.py provision-pipeline`) invokes
+this walk with `--exact-name "Anthology Engine"` and its 9 standard stages
+(Intake, Avatar, Tone, Title, Outline, Chapter, Cover, Delivered, Assembled),
+then re-reads `GET /opportunities/pipelines` and binds ONLY what that read
+surface shows.
 
 ## 4. Stage management (docs-derived; NOT yet walked)
 

@@ -1,7 +1,7 @@
 ---
 name: anthology-writer
 description: The Anthology Writer — a governed skill that turns one contributor intake (anthology title, contributor name, chapter premise, and real personal stories) into a finished, gated anthology chapter (2,000-3,500 words) in that contributor's blended signature voice, plus the supporting blended tone doc, locked title/subtitle, blurb, and outline, delivered as a labeled LOCAL bundle. It bakes the anthology authoring IP as sha256-pinned prompt assets, references the shared tone-writing-core (04..08) in lockstep, replaces the source n8n / Airtable / Google Docs / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED floor with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER through one canonical entry (anthology-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. SEPARATE skill, sibling of Skill 53 Book Writer — they share the ONE tone core, never merged. Client runtime is NEVER Anthropic: every source Anthropic-model / "OpenRouter primary" tier is resolved to the client's strongest NON-Anthropic model. Trigger with "run anthology writer", "start my anthology", "anthology chapter for <contributor>", "add a contributor to book <id>", or "anthology status".
-version: 1.2.0
+version: 1.4.0
 ---
 
 # Anthology Writer (Skill 54)

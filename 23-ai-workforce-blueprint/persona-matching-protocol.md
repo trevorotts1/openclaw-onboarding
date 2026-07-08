@@ -268,8 +268,9 @@ After completing any task, the agent MUST self-check:
 
 ## APPENDIX: Skill 59 (Anthology Engine) — Stage-to-Role-to-Persona Matching Table
 
-**Stamped:** W4.2 (Wave 4, Anthology Engine build), per PRD Section 13
-(`/Users/blackceomacmini/clawd/projects/Anthology-Engine/PRD.md`) and SPEC 6.3.
+**Stamped:** W4.2 (Wave 4, Anthology Engine build), per the Anthology Engine
+PRD Section 13 (the operator's out-of-tree `Anthology-Engine/PRD.md` planning
+doc) and SPEC 6.3.
 
 **Which persona concept this table is.** The "Named persona" column below is
 neither concept 1 (`dept_label`/`workspace_hint`), concept 2 (the 81-persona

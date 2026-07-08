@@ -1,5 +1,35 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+## Unreleased (2026-07-08) -- pipeline auto-create via Skill 6 browser control
+
+provision_pipeline no longer STOPS-only when the standard "Anthology Engine"
+pipeline is absent: GoHighLevel / Convert and Flow has NO public API to create
+a pipeline (the UI is the only create surface), so a LIVE run now attempts ONE
+browser-control creation through Skill 6's pipeline builder
+(06-ghl-install-pages/tools/ghl_pipeline_builder.py, invoked as a subprocess
+in exact-name mode with the 9 standard stages from the field-map contract --
+the Skill 54 sibling-skill convention), then RE-READS the location's pipelines
+and binds ONLY what the API read surface shows. This fulfills PRD 3.12
+(locked): the standard pipeline is AUTO-PROVISIONED, never a manual operator
+step by default.
+
+Fail-closed contract (unchanged exit codes 0/2/3/5):
+- A failed, lying (rc 0 but nothing readable), or unavailable walk STOPS with
+  the same honest AF-AE-PIPELINE-UI-CREATE operator surface as before, now
+  carrying the attempt receipt (attempted/rc/detail). NOTHING is stamped.
+- An unreachable post-create verify read is HELD (exit 3, retryable) with
+  nothing stamped; the re-run re-reads and binds by name (idempotent).
+- Dry runs never invoke the browser. ANTHOLOGY_PIPELINE_BROWSER_CREATE=0
+  restores the STOP-only behavior.
+- Self-test additions: bind-on-verified-read, fail-closed STOP, lying-builder
+  STOP, verify-read HELD, opt-out, dry-run-no-attempt, missing-builder
+  receipt, and the exact --no-dry-run --exact-name argv (all with a MOCKED
+  creator -- the self-test never launches a browser).
+
+NOTE: the Skill 6 pipeline walk itself is RESEARCH-SEEDED (SELECTORS-LIVE-
+pipeline.md), not yet live-locked; the first live creation run is a separate,
+explicitly-operator-scheduled step.
+
 ## 0.1.0 (2026-07-07) -- initial skeleton (Wave 1, unit W1.1)
 
 Establishes the certified house layout and the interface contracts every other

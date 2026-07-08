@@ -53,6 +53,14 @@ USAGE
     python3 ghl_pipeline_builder.py --dry-run --location-id LOC123 \
         --pipeline-name "Sales Pipeline" --stages "New Lead,Contacted,Booked Call"
     python3 ghl_pipeline_builder.py --selftest
+
+EXACT-NAME MODE (``--exact-name`` / ``task["exact_name"]``): the pipeline name
+is used BYTE-EXACT — the ZHC container prefix is NOT applied. For callers that
+bind the created pipeline by name through the read API afterwards, e.g. the
+Anthology Engine's standard "Anthology Engine" pipeline (Skill 59's
+``anthology_registry.py provision-pipeline`` invokes this builder when the
+standard pipeline is absent, then re-reads ``GET /opportunities/pipelines``
+and binds ONLY what that read surface shows).
 """
 
 from __future__ import annotations
@@ -149,7 +157,14 @@ def _resolve_stages(task: dict) -> List[str]:
 def _build_pipeline_plan(task: dict, stages: List[str]) -> dict:
     location_id = (task.get("location_id") or task.get("GHL_LOCATION_ID")
                    or os.environ.get("GHL_LOCATION_ID", "")).strip()
-    name = fb.ensure_zhc_name(task.get("pipeline_name", task.get("title", "New Pipeline")))
+    # exact_name mode: the CALLER owns a byte-exact contract name that a later
+    # find-by-name bind depends on (e.g. the Anthology Engine's standard
+    # pipeline "Anthology Engine" — Skill 59 anthology_registry.py binds the
+    # created pipeline BY NAME through the read API afterwards, so the ZHC
+    # container prefix must NOT be applied). Default stays the fleet ZHC rail.
+    exact_name = bool(task.get("exact_name", False))
+    raw_name = task.get("pipeline_name", task.get("title", "New Pipeline"))
+    name = str(raw_name).strip() if exact_name else fb.ensure_zhc_name(raw_name)
     return {
         "schema_version": "1.0",
         "generated_at": _ts(),
@@ -157,7 +172,8 @@ def _build_pipeline_plan(task: dict, stages: List[str]) -> dict:
         "status": ("RESEARCH-SEEDED runtime-bound walk — anchors bound live by "
                    "pattern; first live run locks SELECTORS-LIVE-pipeline.md"),
         "location_id": location_id,
-        "pipeline_name": name,                  # ZHC <name> (fleet convention)
+        "pipeline_name": name,      # default: ZHC <name>; exact_name: byte-exact
+        "exact_name": exact_name,
         "stages": stages,
         "auto_stages": list(AUTO_STAGES),       # GHL adds these itself — never manual
         "cleanup_after_build": bool(task.get("cleanup_after_build", False)),
@@ -240,8 +256,14 @@ def _run_preflight(task: dict, plan: dict, stages: List[str]) -> dict:
 
     chk("PL-P1:location_id", bool(plan["location_id"]),
         f"location_id={plan['location_id']!r}")
-    chk("PL-P2:zhc_pipeline_name", plan["pipeline_name"].startswith(fb.ZHC_NAME_PREFIX),
-        "pipeline name carries the 'ZHC ' container prefix")
+    if plan.get("exact_name"):
+        chk("PL-P2:exact_pipeline_name", bool(plan["pipeline_name"]),
+            "exact-name mode: the caller owns the byte-exact contract name "
+            f"({plan['pipeline_name']!r}) for a later find-by-name bind — "
+            "the ZHC container prefix is deliberately NOT applied")
+    else:
+        chk("PL-P2:zhc_pipeline_name", plan["pipeline_name"].startswith(fb.ZHC_NAME_PREFIX),
+            "pipeline name carries the 'ZHC ' container prefix")
     chk("PL-P3:stages_present", bool(stages), f"{len(stages)} stage(s)")
     manual_terminal = [s for s in (task.get("stages") or [])
                        if str(s).strip().lower() in ("won", "lost")]
@@ -627,6 +649,24 @@ def _selftest() -> int:  # noqa: C901
     if plan["auto_stages"] != ["Won", "Lost"]:
         errors.append("auto stages wrong")
 
+    # 1b. EXACT-NAME mode: byte-exact contract name, no ZHC prefix, preflight
+    #     passes on a non-empty name and hard-fails on an empty one.
+    task_x = {"pipeline_name": "Anthology Engine", "location_id": "SELFTEST_LOC",
+              "exact_name": True}
+    plan_x = _build_pipeline_plan(task_x, ["Intake", "Avatar"])
+    if plan_x["pipeline_name"] != "Anthology Engine":
+        errors.append(f"exact-name mode mangled the name: {plan_x['pipeline_name']!r}")
+    if not plan_x.get("exact_name"):
+        errors.append("exact-name mode not recorded in the plan")
+    pf_x = _run_preflight(task_x, plan_x, ["Intake", "Avatar"])
+    if not pf_x["pass"]:
+        errors.append(f"exact-name preflight refused a valid contract name: {pf_x}")
+    task_e = {"pipeline_name": "   ", "location_id": "SELFTEST_LOC", "exact_name": True}
+    plan_e = _build_pipeline_plan(task_e, ["Intake"])
+    pf_e = _run_preflight(task_e, plan_e, ["Intake"])
+    if pf_e["pass"]:
+        errors.append("exact-name preflight accepted an EMPTY pipeline name")
+
     # 2. Runtime label binder tolerates GHL's capitalization drift.
     for snap_label in ("Create new pipeline", "Create New Pipeline"):
         got = find_visible_label(f"chrome header {snap_label} button", CREATE_PIPELINE_RE)
@@ -767,6 +807,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--pipeline-name", default="New Pipeline")
     p.add_argument("--stages", default="", help="Comma-separated stage names.")
     p.add_argument("--location-id", default=os.environ.get("GHL_LOCATION_ID", ""))
+    p.add_argument("--exact-name", action="store_true",
+                   help="Use --pipeline-name BYTE-EXACT (no ZHC container prefix). "
+                        "For callers that bind the created pipeline by name "
+                        "afterwards, e.g. the Anthology Engine's standard "
+                        "'Anthology Engine' pipeline (Skill 59).")
     p.add_argument("--cleanup-after-build", action="store_true",
                    help="TEST RUNS: delete the pipeline after a verified build.")
     args = p.parse_args(argv)
@@ -778,6 +823,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "id": "cli-pipeline-run",
         "pipeline_name": args.pipeline_name,
         "location_id": args.location_id,
+        "exact_name": args.exact_name,
         "stages": [s.strip() for s in args.stages.split(",") if s.strip()] or None,
         "cleanup_after_build": args.cleanup_after_build,
     }

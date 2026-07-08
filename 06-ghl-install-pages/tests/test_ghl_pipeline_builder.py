@@ -97,6 +97,75 @@ class TestThinkLayer:
 
 
 # ---------------------------------------------------------------------------
+# 1b. EXACT-NAME mode — the Anthology Engine (Skill 59) integration contract:
+#     anthology_registry.py provision-pipeline invokes this builder with
+#     --exact-name and binds the created pipeline BY NAME through the read API
+#     afterwards, so the ZHC container prefix must NOT be applied.
+# ---------------------------------------------------------------------------
+class TestExactNameMode:
+    def test_exact_name_is_byte_exact_no_zhc_prefix(self):
+        plan = pb._build_pipeline_plan({"pipeline_name": "Anthology Engine",
+                                        "location_id": "L", "exact_name": True},
+                                       ["Intake", "Avatar"])
+        assert plan["pipeline_name"] == "Anthology Engine"
+        assert plan["exact_name"] is True
+
+    def test_default_mode_unchanged_still_zhc(self):
+        plan = pb._build_pipeline_plan({"pipeline_name": "Anthology Engine",
+                                        "location_id": "L"}, ["Intake"])
+        assert plan["pipeline_name"] == "ZHC Anthology Engine"
+        assert plan["exact_name"] is False
+
+    def test_exact_name_preflight_passes(self):
+        task = {"pipeline_name": "Anthology Engine", "location_id": "L",
+                "exact_name": True}
+        plan = pb._build_pipeline_plan(task, ["Intake", "Avatar"])
+        pf = pb._run_preflight(task, plan, ["Intake", "Avatar"])
+        assert pf["pass"] is True
+        names = {c["check"] for c in pf["checks"]}
+        assert "PL-P2:exact_pipeline_name" in names
+        assert "PL-P2:zhc_pipeline_name" not in names
+
+    def test_exact_name_preflight_refuses_empty_name(self):
+        task = {"pipeline_name": "   ", "location_id": "L", "exact_name": True}
+        plan = pb._build_pipeline_plan(task, ["Intake"])
+        pf = pb._run_preflight(task, plan, ["Intake"])
+        assert pf["pass"] is False
+
+    def test_cli_exact_name_flag_wires_through(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def _fake_build(task, evidence_root, *, dry_run=True):
+            seen.update(task)
+            seen["_dry_run"] = dry_run
+            return {"location_gate_ok": True}
+
+        monkeypatch.setattr(pb, "build_pipeline", _fake_build)
+        rc = pb.main(["--dry-run", "--exact-name", "--location-id", "L",
+                      "--pipeline-name", "Anthology Engine",
+                      "--stages", "Intake,Avatar",
+                      "--evidence-root", str(tmp_path)])
+        assert rc == 0
+        assert seen["exact_name"] is True
+        assert seen["pipeline_name"] == "Anthology Engine"
+        assert seen["stages"] == ["Intake", "Avatar"]
+
+    def test_cli_default_has_no_exact_name(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def _fake_build(task, evidence_root, *, dry_run=True):
+            seen.update(task)
+            return {"location_gate_ok": True}
+
+        monkeypatch.setattr(pb, "build_pipeline", _fake_build)
+        rc = pb.main(["--dry-run", "--location-id", "L",
+                      "--pipeline-name", "Sales", "--stages", "A,B",
+                      "--evidence-root", str(tmp_path)])
+        assert rc == 0
+        assert seen["exact_name"] is False
+
+
+# ---------------------------------------------------------------------------
 # 2. Runtime label binding (docs disagree on capitalization — bind live)
 # ---------------------------------------------------------------------------
 class TestRuntimeLabelBinding:

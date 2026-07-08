@@ -20,14 +20,17 @@
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
 #   3  BIND the standard Anthology pipeline in the CLIENT's OWN Convert and Flow
 #      account through the CLIENT's OWN private integration token. GoHighLevel /
-#      Convert and Flow has NO public API to CREATE a pipeline (pipelines are
-#      UI-only), so this is FIND-AND-BIND: probe-scope first verifies the token
-#      can READ pipelines (STOP AF-AE-PIT-SCOPE if it cannot), then
-#      provision-pipeline finds the standard pipeline BY NAME and binds it into
-#      the registry. If the standard pipeline is absent it STOPs with an operator
-#      surface (AF-AE-PIPELINE-UI-CREATE) to create it once in the UI, or to bind
-#      a pre-existing pipeline via `--pipeline-id`; never a silent fallback and
-#      never a call to a nonexistent create endpoint.
+#      Convert and Flow has NO public API to CREATE a pipeline (the UI is the
+#      only create surface), so this is FIND-AND-BIND FIRST: probe-scope
+#      verifies the token can READ pipelines (STOP AF-AE-PIT-SCOPE if it
+#      cannot), then provision-pipeline finds the standard pipeline BY NAME and
+#      binds it into the registry. If the standard pipeline is absent, a LIVE
+#      run attempts ONE browser-control creation via Skill 6's pipeline builder
+#      (exact-name mode), RE-READS the pipelines, and binds only what the API
+#      shows; a failed or unavailable walk STOPs with an operator surface
+#      (AF-AE-PIPELINE-UI-CREATE) to create it once in the UI, or to bind a
+#      pre-existing pipeline via `--pipeline-id`; never a silent fallback,
+#      never a faked success, never a call to a nonexistent create endpoint.
 #   4  register the universal + per-stage forms with their hidden-field and
 #      re-stamp contract (contact_id, anthology_id, stage; keying by contact_id,
 #      never email); concrete Convert and Flow form ids are bound per anthology.
@@ -377,20 +380,23 @@ step2_fields() {
 }
 
 step3_pipeline() {
-    note "STEP 3/10 — BIND the standard Anthology pipeline (client's OWN PIT; pipelines are UI-only, no auto-create)"
+    note "STEP 3/10 — BIND the standard Anthology pipeline (client's OWN PIT; no API create -- absent pipeline triggers ONE Skill 6 browser-control creation, verified by API re-read)"
     # 3a PRE-FLIGHT: verify the token can READ pipelines; STOP (AF-AE-PIT-SCOPE) if not.
     local n; n="$(run_collab py "$SCRIPTS/anthology_registry.py" probe-scope $(dry_flag) \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
     if [ "$MODE" = "dryrun" ]; then
-        # A live bind needs the UI-created pipeline present; a dry-run stops after
-        # the read pre-flight above and reports intent only.
-        note "  (dry-run) would find the standard Anthology pipeline BY NAME and bind it into the registry"
+        # A dry-run stops after the read pre-flight above and reports intent only
+        # (a live run finds-and-binds BY NAME, attempting ONE browser-control
+        # creation via Skill 6 when the standard pipeline is absent).
+        note "  (dry-run) would find the standard Anthology pipeline BY NAME and bind it into the registry (browser-create when absent)"
         echo "$EX_OK"; return
     fi
     # 3b find the standard pipeline BY NAME and bind it into the registry. Absent
-    # pipeline -> STOP (AF-AE-PIPELINE-UI-CREATE): create once in the UI, or bind
-    # a pre-existing pipeline with `bind --pipeline-id`. Never an auto-create.
+    # pipeline -> ONE Skill 6 browser-control creation attempt (exact-name mode),
+    # then an API RE-READ; only a pipeline the read surface shows is ever bound.
+    # A failed/unavailable walk -> STOP (AF-AE-PIPELINE-UI-CREATE): create once
+    # in the UI, or bind a pre-existing pipeline with `bind --pipeline-id`.
     n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-pipeline \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     echo "$n"
@@ -701,7 +707,7 @@ STEP_LABELS=(
 STEP_AF=(
     "AF (credential): missing label -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
     "AF-AE-FIELD-MISSING (exit 2) / AF-AE-FIELD-KEY-MISMATCH (exit 5)"
-    "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only -> exit 2); API unreachable or edge-block -> HELD 3"
+    "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent and the Skill 6 browser-control create attempt failed or unavailable -> exit 2); API unreachable or edge-block -> HELD 3"
     "department seed / read-back (Command Center unavailable -> HELD 3; read-back mismatch -> 5)"
     "form-contract write error -> exit 1"
     "Drive root unreachable -> exit 2; API unreachable -> HELD 3"

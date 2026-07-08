@@ -10,14 +10,21 @@
 #      account using the CLIENT's OWN private-integration token. GoHighLevel /
 #      Convert and Flow exposes NO public v2 API to CREATE a pipeline -- pipelines
 #      are UI-only (confirmed against the official v2 API spec and the Skill 29
-#      413-endpoint reference). So this module is FIND-AND-BIND, never auto-create:
-#      it READS the location's pipelines, finds the standard one BY NAME, and
-#      persists its id + stage ids. If the standard pipeline is ABSENT it STOPS
-#      with an operator surface (AF-AE-PIPELINE-UI-CREATE) instructing a one-time
-#      creation in the Convert and Flow UI (or an explicit pre-existing bind via
-#      `bind --pipeline-id`) -- NEVER a silent fallback and NEVER a call to a
-#      nonexistent create endpoint. A token that cannot even READ pipelines STOPS
-#      with AF-AE-PIT-SCOPE.
+#      413-endpoint reference). So this module is FIND-AND-BIND FIRST: it READS
+#      the location's pipelines, finds the standard one BY NAME, and persists its
+#      id + stage ids. If the standard pipeline is ABSENT, a LIVE run attempts
+#      ONE browser-control creation through Skill 6's pipeline builder
+#      (06-ghl-install-pages/tools/ghl_pipeline_builder.py -- the walk drives the
+#      REAL Convert and Flow UI, the only surface that can create a pipeline;
+#      PRD 3.12 locked default: the standard pipeline is AUTO-PROVISIONED), then
+#      RE-READS the pipelines: the API read surface is the ONLY creation proof
+#      ever bound -- the builder's own claim is never trusted. A failed or
+#      unavailable walk STOPS with the same honest operator surface as before
+#      (AF-AE-PIPELINE-UI-CREATE: create once in the Convert and Flow UI, or an
+#      explicit pre-existing bind via `bind --pipeline-id`) -- NEVER a silent
+#      fallback, NEVER a faked success, and NEVER a call to a nonexistent create
+#      endpoint. A token that cannot even READ pipelines STOPS with
+#      AF-AE-PIT-SCOPE.
 #   2. CREATE-OR-VERIFY each PRD Section 6 contact custom field, then persist the
 #      SERVER-RETURNED fieldKey (and the field id the runtime write needs) into
 #      config/field-map.json with an EXACT-MATCH verify. A fieldKey that does not
@@ -35,7 +42,8 @@
 #   1  unexpected error
 #   2  STOP-setup guard refusal — PIT/Location label NOT SET, resolved value is
 #      not a pit- token, the token cannot READ pipelines, the standard pipeline is
-#      absent (UI-only; there is no API create endpoint), or an unknown
+#      absent AND the Skill 6 browser-control creation attempt did not yield an
+#      API-verifiable pipeline (there is no API create endpoint), or an unknown
 #      anthology/binding. Emits a LOUD operator surface; never silent.
 #   3  Convert and Flow API unreachable / dependency held (retryable; the daily
 #      tick or a re-run resumes; nothing half-written is relied upon)
@@ -44,17 +52,20 @@
 #
 # The setup STOP families map for provision-anthology-client.sh (W2.6):
 #   exit 2  ->  AF-AE-PIT-SCOPE (token cannot read pipelines) /
-#              AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only) /
-#              label-not-set STOP
+#              AF-AE-PIPELINE-UI-CREATE (standard pipeline absent and the
+#              Skill 6 browser-control create attempt failed or was
+#              unavailable; UI-only surface) / label-not-set STOP
 #   exit 5  ->  AF-AE-FIELD-KEY-MISMATCH / AF-AE-FIELD-MISSING
 # py_symbols the manifest binds live here: probe_write_scope, verify_fields.
 #
-# STDLIB ONLY (urllib + json). Calls NO model. Convert and Flow is a white-label
-# LeadConnector v2 instance (api base services.leadconnectorhq.com, Version
-# header 2021-07-28) per W0.5. DOCTRINE: move in silence (operator-verbose only);
-# NOTHING Anthropic in any runtime file; Convert and Flow naming in every client
-# surface; NEVER print a secret value (labels resolve SET / NOT SET only); config
-# and state writes run as the node user, never root.
+# STDLIB ONLY (urllib + json + subprocess -- subprocess ONLY to invoke the
+# sibling Skill 6 pipeline builder, the Skill-54 cross-skill convention). Calls
+# NO model. Convert and Flow is a white-label LeadConnector v2 instance (api
+# base services.leadconnectorhq.com, Version header 2021-07-28) per W0.5.
+# DOCTRINE: move in silence (operator-verbose only); NOTHING Anthropic in any
+# runtime file; Convert and Flow naming in every client surface; NEVER print a
+# secret value (labels resolve SET / NOT SET only); config and state writes run
+# as the node user, never root.
 # =============================================================================
 """anthology_registry.py — Convert and Flow provisioning + per-anthology bindings."""
 
@@ -64,6 +75,7 @@ import argparse
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -87,6 +99,20 @@ EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = 0, 1, 2, 3, 5
 # ---- layout -----------------------------------------------------------------
 SKILL_DIR = Path(__file__).resolve().parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
+
+# ---- Skill 6 browser-control pipeline builder (the ONLY create surface) ------
+# GoHighLevel / Convert and Flow exposes NO public v2/v3 API to CREATE a
+# pipeline -- the UI is the only surface that can. Skill 6 ships a
+# browser-control walk for exactly that (ghl_pipeline_builder.py), resolved
+# REPO_ROOT-relative exactly like the Skill 54 authoring core
+# (stage_s0_intake.py: REPO_ROOT / "54-anthology-writer" / ...). It is invoked
+# in EXACT-NAME mode so the created pipeline carries the engine's byte-exact
+# contract name ("Anthology Engine" -- never the ZHC container prefix) and the
+# find-by-name bind that follows can see it.
+REPO_ROOT = SKILL_DIR.parent
+PIPELINE_BUILDER_PATH = REPO_ROOT / "06-ghl-install-pages" / "tools" / "ghl_pipeline_builder.py"
+BROWSER_CREATE_TIMEOUT_S = 900          # one full seeded browser walk, generously bounded
+BROWSER_CREATE_OPTOUT_ENV = "ANTHOLOGY_PIPELINE_BROWSER_CREATE"  # set "0" to disable the walk
 
 # ---- Convert and Flow (LeadConnector v2) surface, verified at W0.5 ----------
 CAF_API_BASE = "https://services.leadconnectorhq.com"
@@ -549,7 +575,8 @@ def probe_write_scope(client, location_id: str, *, dry_run: bool = False, out=No
         return EX_HELD
 
     out.write("[probe-scope] OK: the token can READ %d pipeline(s) on this location (marker %s). "
-              "Pipeline creation is a one-time Convert and Flow UI step; provision-pipeline binds it by name.\n"
+              "provision-pipeline binds the standard pipeline by name (attempting ONE Skill 6 "
+              "browser-control creation first when it is absent).\n"
               % (len(pipelines), masked))
     if jsonout is not None:
         json.dump({"ok": True, "scope": "present", "pipelines_readable": len(pipelines)}, jsonout)
@@ -557,17 +584,100 @@ def probe_write_scope(client, location_id: str, *, dry_run: bool = False, out=No
     return EX_OK
 
 
+def _standard_stage_names(pconf: dict) -> list:
+    """The standard stage names in position order, straight from the committed
+    field-map contract (Intake .. Assembled) -- NEVER hardcoded here (SPEC M8:
+    nothing stage-shaped lives outside the field-map/registry contract)."""
+    stages = sorted(pconf.get("standard_stages") or [], key=lambda s: s.get("position", 0))
+    return [s["name"] for s in stages if s.get("name")]
+
+
+def _pipeline_builder_argv(location_id: str, name: str, stage_names, evidence_root) -> list:
+    """The exact Skill 6 invocation (a fixed argv list, never a shell string):
+    a LIVE walk in EXACT-NAME mode. --exact-name is load-bearing: the builder's
+    default applies the fleet 'ZHC ' container prefix, which would break the
+    find-by-name bind on the engine's byte-exact contract name."""
+    return [sys.executable, str(PIPELINE_BUILDER_PATH), "--no-dry-run", "--exact-name",
+            "--location-id", location_id,
+            "--pipeline-name", name,
+            "--stages", ",".join(stage_names),
+            "--evidence-root", str(evidence_root)]
+
+
+def browser_create_pipeline(location_id: str, name: str, stage_names, *, out=None) -> dict:
+    """Attempt ONE browser-control creation of the standard pipeline via
+    Skill 6's ghl_pipeline_builder.py (the Skill-54 sibling-skill convention:
+    REPO_ROOT-relative path, subprocess, fixed argv).
+
+    Returns an attempt RECEIPT {"attempted": bool, "rc": int|None, "detail": str}.
+    The receipt is NEVER a creation proof: the caller re-reads the location's
+    pipelines through the API and binds ONLY what that read surface shows
+    (no-false-done doctrine -- the builder's own claim is never trusted).
+    Never prints a secret (the builder's result JSON carries plan/step/stop
+    text only; credentials ride the child environment, never argv)."""
+    out = out or sys.stderr
+    if not PIPELINE_BUILDER_PATH.is_file():
+        return {"attempted": False, "rc": None,
+                "detail": "Skill 6 pipeline builder not installed (%s)" % PIPELINE_BUILDER_PATH}
+    evidence_root = (default_state_dir() / "pipeline-create"
+                     / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    argv = _pipeline_builder_argv(location_id, name, stage_names, evidence_root)
+    out.write("[provision-pipeline] standard pipeline absent -> attempting ONE BROWSER-CONTROL "
+              "creation via Skill 6 (%d stages; evidence %s).\n" % (len(stage_names), evidence_root))
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=BROWSER_CREATE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return {"attempted": True, "rc": None,
+                "detail": "browser walk timed out after %ss" % BROWSER_CREATE_TIMEOUT_S}
+    except (subprocess.SubprocessError, OSError) as exc:
+        return {"attempted": True, "rc": None,
+                "detail": "could not run the builder: %s" % type(exc).__name__}
+    detail = "builder emitted no parseable result JSON"
+    try:
+        res = json.loads(proc.stdout or "")
+        if isinstance(res, dict):
+            detail = str(res.get("stop_reason") or res.get("error")
+                         or "pipeline_created=%s" % res.get("pipeline_created"))
+    except ValueError:
+        pass
+    return {"attempted": True, "rc": proc.returncode, "detail": detail[:400]}
+
+
+def _bind_standard(fm: dict, pconf: dict, field_map_path: Path, found: dict,
+                   name: str, masked: str, action: str, note: str, out, jsonout) -> int:
+    """Stamp + persist a pipeline the API read surface actually shows (the one
+    shared bind path for bound_existing AND created_via_browser)."""
+    sid = _stage_id_map(found)
+    _stamp_pipeline(pconf, found.get("id"), sid, masked)
+    save_field_map(field_map_path, fm)
+    out.write("[provision-pipeline] OK (marker %s): bound the standard pipeline %r "
+              "(%d stage ids recorded; %s).\n" % (masked, name, len(sid), note))
+    if jsonout is not None:
+        json.dump({"ok": True, "action": action, "stages": len(sid)}, jsonout)
+        jsonout.write("\n")
+    return EX_OK
+
+
 def provision_pipeline(client, field_map_path: Path, location_id: str, *,
-                       dry_run: bool = False, out=None, jsonout=None):
-    """FIND-AND-BIND the standard Anthology pipeline into field-map.json.
+                       dry_run: bool = False, out=None, jsonout=None,
+                       browser_creator=None):
+    """FIND-AND-BIND the standard Anthology pipeline into field-map.json --
+    attempting ONE Skill 6 browser-control creation when it is absent.
 
     GoHighLevel / Convert and Flow has NO public v2 API to CREATE a pipeline
-    (pipelines are UI-only), so this is NEVER an auto-create: it READS the
-    location's pipelines, finds the standard one BY NAME, and persists its id +
-    stage ids (idempotent). If the standard pipeline is ABSENT it STOPS with an
-    operator instruction to create it ONCE in the Convert and Flow UI (or to bind
-    a pre-existing pipeline via `bind --pipeline-id`) -- it never calls a
-    nonexistent create endpoint."""
+    (the UI is the only create surface), so: READ the location's pipelines and
+    bind the standard one BY NAME when present (idempotent). When ABSENT on a
+    LIVE run, invoke Skill 6's browser-control pipeline builder ONCE (exact-name
+    mode, the standard stages from the field-map contract; PRD 3.12 locked
+    default -- the standard pipeline is AUTO-PROVISIONED), then RE-READ the
+    pipelines: the API read surface is the ONLY creation proof ever bound.
+    A failed or unavailable walk STOPS with the honest AF-AE-PIPELINE-UI-CREATE
+    operator surface (manual UI creation / `bind --pipeline-id` both remain
+    available) -- never a faked success, never a nonexistent create endpoint.
+    Set ANTHOLOGY_PIPELINE_BROWSER_CREATE=0 to disable the browser attempt
+    (STOP-only, the pre-wiring behavior). ``browser_creator`` is the test seam
+    (defaults to browser_create_pipeline)."""
     out = out or sys.stderr
     fm = load_field_map(field_map_path)
     pconf = fm.get("pipeline")
@@ -593,36 +703,65 @@ def provision_pipeline(client, field_map_path: Path, location_id: str, *,
 
     found = _find_pipeline(pipelines, name)
     if found:
-        sid = _stage_id_map(found)
-        _stamp_pipeline(pconf, found.get("id"), sid, masked)
-        save_field_map(field_map_path, fm)
-        out.write("[provision-pipeline] OK (marker %s): bound the standard pipeline %r "
-                  "(%d stage ids recorded; idempotent).\n" % (masked, name, len(sid)))
+        return _bind_standard(fm, pconf, field_map_path, found, name, masked,
+                              "bound_existing", "idempotent", out, jsonout)
+
+    # NOT present. There is NO API create endpoint -- but Skill 6 ships a
+    # browser-control builder that drives the REAL Convert and Flow UI (the only
+    # surface that can create a pipeline). A live run attempts that walk ONCE,
+    # then RE-READS the pipelines: binding happens ONLY on what the API read
+    # surface shows -- the builder's own success claim is never trusted.
+    if dry_run:
+        out.write("[provision-pipeline] DRY RUN (marker %s): the standard pipeline %r is NOT present. "
+                  "A live run attempts ONE browser-control creation via Skill 6 (there is no API create "
+                  "endpoint), re-reads the pipelines, and binds by name; a failed walk STOPS "
+                  "(AF-AE-PIPELINE-UI-CREATE). No write performed.\n" % (masked, name))
         if jsonout is not None:
-            json.dump({"ok": True, "action": "bound_existing", "stages": len(sid)}, jsonout)
+            json.dump({"ok": True, "dry_run": True, "standard_pipeline_present": False,
+                       "needs_ui_create": name, "would_attempt_browser_create": True}, jsonout)
             jsonout.write("\n")
         return EX_OK
 
-    # NOT present. Pipelines are UI-only; there is NO create endpoint to fall back
-    # on. STOP with a clear, actionable operator surface (never a nonexistent POST).
-    if dry_run:
-        out.write("[provision-pipeline] DRY RUN (marker %s): the standard pipeline %r is NOT present. "
-                  "It must be created ONCE in the Convert and Flow UI (there is no API create endpoint), "
-                  "then re-run to bind it by name. No write performed.\n" % (masked, name))
-        if jsonout is not None:
-            json.dump({"ok": True, "dry_run": True, "standard_pipeline_present": False, "needs_ui_create": name},
-                      jsonout)
-            jsonout.write("\n")
-        return EX_OK
-    _stop(out, "The standard Anthology pipeline %r is NOT present on this location, and Convert and Flow "
-               "(GoHighLevel) exposes NO API to create one -- pipelines are UI-only (AF-AE-PIPELINE-UI-CREATE)." % name,
+    attempt = {"attempted": False, "rc": None,
+               "detail": "browser-control creation disabled (%s=0)" % BROWSER_CREATE_OPTOUT_ENV}
+    if os.environ.get(BROWSER_CREATE_OPTOUT_ENV, "").strip() != "0":
+        creator = browser_creator or browser_create_pipeline
+        attempt = creator(location_id, name, _standard_stage_names(pconf), out=out)
+        if attempt.get("attempted"):
+            # POSITIVE RE-READ: the API list is the only creation proof.
+            try:
+                created = _find_pipeline(client.list_pipelines(location_id), name)
+            except ScopeDenied:
+                _stop(out, "The Convert and Flow token cannot READ pipelines on this location (AF-AE-PIT-SCOPE).",
+                      ["Location marker: %s" % masked,
+                       "Read scope was lost between the pre-read and the post-create verify.",
+                       "Grant the client's OWN location-scoped token the opportunities scope and re-run."])
+                return EX_STOP
+            except CafUnreachable as exc:   # includes UpstreamBlockedError
+                out.write("[provision-pipeline] HELD: %s (marker %s) while VERIFYING the browser-create "
+                          "attempt. Retryable -- a re-run re-reads and binds by name (idempotent); "
+                          "nothing was stamped.\n" % (exc, masked))
+                return EX_HELD
+            if created:
+                return _bind_standard(fm, pconf, field_map_path, created, name, masked,
+                                      "created_via_browser",
+                                      "created via the Skill 6 browser walk, verified by API read-back",
+                                      out, jsonout)
+
+    _stop(out, "The standard Anthology pipeline %r is NOT present on this location and could not be "
+               "auto-created -- Convert and Flow (GoHighLevel) exposes NO API to create one, and the "
+               "Skill 6 browser-control walk did not yield an API-verifiable pipeline "
+               "(AF-AE-PIPELINE-UI-CREATE)." % name,
           ["Location marker: %s" % masked,
+           "Browser-control attempt: attempted=%s rc=%s -- %s"
+           % (attempt.get("attempted"), attempt.get("rc"), attempt.get("detail")),
            "Create a pipeline named EXACTLY %r once in the Convert and Flow UI (with the standard stages)," % name,
            "then re-run provision-pipeline: it binds the pipeline by name and records the stage ids.",
            "Or bind a pre-existing pipeline explicitly: bind --anthology-id <id> --pipeline-id <existing-id>.",
-           "Setup STOPPED; the engine never calls a nonexistent create endpoint."])
+           "Setup STOPPED; a creation the API read surface cannot verify is NEVER bound."])
     if jsonout is not None:
-        json.dump({"ok": False, "reason": "pipeline_ui_create_required", "pipeline_name": name}, jsonout)
+        json.dump({"ok": False, "reason": "pipeline_ui_create_required", "pipeline_name": name,
+                   "browser_create": attempt}, jsonout)
         jsonout.write("\n")
     return EX_STOP
 
@@ -918,14 +1057,140 @@ def self_test() -> int:
     rc = provision_pipeline(_FakeCaf(pipeline_read=False), p5, "loc_test_QcDX", out=dev)
     assert rc == EX_STOP, "no pipeline-read scope should STOP exit 2, got %s" % rc
 
-    # -- pipeline (BUG 2): standard pipeline ABSENT -> UI-create STOP -------
-    # There is NO API create endpoint; an empty account must STOP with the
-    # UI-create instruction, NEVER attempt a (nonexistent) auto-create.
+    # -- pipeline (BUG 2): standard pipeline ABSENT + browser walk FAILS ----
+    # There is NO API create endpoint; when the ONE Skill 6 browser-control
+    # attempt fails, an empty account must STOP with the UI-create instruction
+    # and stamp NOTHING (fail-closed, never a faked success). The creator is
+    # mocked -- the self-test NEVER launches a real browser subprocess.
     p5b = _tmp_field_map()
-    rc = provision_pipeline(_FakeCaf(), p5b, "loc_test_QcDX", out=dev)
-    assert rc == EX_STOP, "absent standard pipeline should STOP (UI-create), got %s" % rc
+
+    def _creator_fail(location_id, name, stage_names, out=None):
+        return {"attempted": True, "rc": 2, "detail": "PL1.land STOP (mocked)"}
+
+    rc = provision_pipeline(_FakeCaf(), p5b, "loc_test_QcDX", out=dev,
+                            browser_creator=_creator_fail)
+    assert rc == EX_STOP, "absent pipeline + failed browser walk should STOP, got %s" % rc
     assert (load_field_map(p5b)["pipeline"].get("resolved") or {}).get("pipeline_id") is None, \
         "nothing may be stamped on the UI-create STOP"
+
+    # -- pipeline: ABSENT -> browser-control creation -> re-read -> BIND ----
+    # The mocked Skill 6 walk "creates" the pipeline (visible ONLY through the
+    # read API afterwards, exactly like the real UI walk); provision_pipeline
+    # must re-read, find it by the exact contract name, and bind it exactly as
+    # it binds a pre-existing pipeline. The creator must receive the standard
+    # stage names from the field-map contract, in position order.
+    p5c = _tmp_field_map()
+    caf5c = _FakeCaf()
+    creator_calls = []
+
+    def _creator_ok(location_id, name, stage_names, out=None):
+        creator_calls.append({"location_id": location_id, "name": name,
+                              "stage_names": list(stage_names)})
+        caf5c.pipelines.append(
+            {"id": "pl_browser_new", "name": name,
+             "stages": [{"name": s, "position": i, "id": "st_b_%d" % i}
+                        for i, s in enumerate(stage_names)]})
+        return {"attempted": True, "rc": 0, "detail": "pipeline_created=True"}
+
+    rc = provision_pipeline(caf5c, p5c, "loc_test_QcDX", out=dev,
+                            browser_creator=_creator_ok)
+    assert rc == EX_OK, "browser-created pipeline should bind, rc=%s" % rc
+    res5c = load_field_map(p5c)["pipeline"]["resolved"]
+    assert res5c["pipeline_id"] == "pl_browser_new" and len(res5c["stage_ids"]) == 9, \
+        "browser-created pipeline bound incompletely: %s" % res5c
+    fm5c_contract = load_field_map(FIELD_MAP_PATH)["pipeline"]
+    want_stages = [s["name"] for s in sorted(fm5c_contract["standard_stages"],
+                                             key=lambda s: s["position"])]
+    assert creator_calls == [{"location_id": "loc_test_QcDX",
+                              "name": fm5c_contract["standard_pipeline_name"],
+                              "stage_names": want_stages}], \
+        "creator did not receive the exact contract name + position-ordered stages: %s" % creator_calls
+    assert want_stages == ["Intake", "Avatar", "Tone", "Title", "Outline",
+                           "Chapter", "Cover", "Delivered", "Assembled"], \
+        "field-map standard stages drifted: %s" % want_stages
+
+    # -- pipeline: a LYING creator (rc 0, nothing created) -> STOP ----------
+    # The API read surface is the ONLY creation proof; a builder claim without
+    # a readable pipeline is a STOP with nothing stamped.
+    p5d = _tmp_field_map()
+
+    def _creator_liar(location_id, name, stage_names, out=None):
+        return {"attempted": True, "rc": 0, "detail": "pipeline_created=True"}
+
+    rc = provision_pipeline(_FakeCaf(), p5d, "loc_test_QcDX", out=dev,
+                            browser_creator=_creator_liar)
+    assert rc == EX_STOP, "a lying creator must STOP (API read is the proof), got %s" % rc
+    assert (load_field_map(p5d)["pipeline"].get("resolved") or {}).get("pipeline_id") is None, \
+        "nothing may be stamped when the API read cannot verify the creation"
+
+    # -- pipeline: verify-read unreachable after the walk -> HELD, no stamp -
+    # (retryable: a re-run re-reads and binds by name; nothing half-written)
+    p5g = _tmp_field_map()
+
+    class _FlakyVerifyCaf(_FakeCaf):
+        def __init__(self):
+            super().__init__()
+            self.reads = 0
+
+        def list_pipelines(self, location_id):
+            self.reads += 1
+            if self.reads >= 2:
+                raise CafUnreachable("verify read transport error (mocked)")
+            return super().list_pipelines(location_id)
+
+    rc = provision_pipeline(_FlakyVerifyCaf(), p5g, "loc_test_QcDX", out=dev,
+                            browser_creator=_creator_liar)
+    assert rc == EX_HELD, "unreachable verify-read must HELD (retryable), got %s" % rc
+    assert (load_field_map(p5g)["pipeline"].get("resolved") or {}).get("pipeline_id") is None, \
+        "nothing may be stamped when the verify-read is unreachable"
+
+    # -- pipeline: opt-out env -> creator NEVER invoked, STOP-only ----------
+    p5e = _tmp_field_map()
+
+    def _creator_forbidden(location_id, name, stage_names, out=None):
+        raise AssertionError("creator must not run when %s=0" % BROWSER_CREATE_OPTOUT_ENV)
+
+    _save_optout = os.environ.get(BROWSER_CREATE_OPTOUT_ENV)
+    os.environ[BROWSER_CREATE_OPTOUT_ENV] = "0"
+    try:
+        rc = provision_pipeline(_FakeCaf(), p5e, "loc_test_QcDX", out=dev,
+                                browser_creator=_creator_forbidden)
+    finally:
+        if _save_optout is None:
+            os.environ.pop(BROWSER_CREATE_OPTOUT_ENV, None)
+        else:
+            os.environ[BROWSER_CREATE_OPTOUT_ENV] = _save_optout
+    assert rc == EX_STOP, "opt-out must STOP without a browser attempt, got %s" % rc
+
+    # -- pipeline: DRY RUN never invokes the creator ------------------------
+    p5f = _tmp_field_map()
+    rc = provision_pipeline(_FakeCaf(), p5f, "loc_test_QcDX", dry_run=True, out=dev,
+                            browser_creator=_creator_forbidden)
+    assert rc == EX_OK, "dry-run absent-pipeline rc=%s" % rc
+    assert (load_field_map(p5f)["pipeline"].get("resolved") or {}).get("pipeline_id") is None
+
+    # -- browser_create_pipeline receipt: builder not installed -------------
+    # (module-global path swap; no subprocess is ever launched here)
+    global PIPELINE_BUILDER_PATH
+    _save_builder = PIPELINE_BUILDER_PATH
+    PIPELINE_BUILDER_PATH = Path(tempfile.mkdtemp(prefix="ae-no-builder-")) / "missing.py"
+    try:
+        receipt = browser_create_pipeline("loc_test_QcDX", "Anthology Engine",
+                                          ["Intake"], out=dev)
+    finally:
+        PIPELINE_BUILDER_PATH = _save_builder
+    assert receipt["attempted"] is False and receipt["rc"] is None, \
+        "missing builder must yield an honest not-attempted receipt: %s" % receipt
+
+    # -- the exact Skill 6 argv: live walk, exact-name mode, csv stages -----
+    argv = _pipeline_builder_argv("loc_test_QcDX", "Anthology Engine",
+                                  ["Intake", "Avatar"], "/tmp/ev")
+    assert argv[0] == sys.executable and argv[1].endswith("ghl_pipeline_builder.py")
+    assert "--no-dry-run" in argv and "--exact-name" in argv, \
+        "the builder must run LIVE in exact-name mode: %s" % argv
+    assert argv[argv.index("--pipeline-name") + 1] == "Anthology Engine"
+    assert argv[argv.index("--stages") + 1] == "Intake,Avatar"
+    assert argv[argv.index("--location-id") + 1] == "loc_test_QcDX"
 
     # -- pipeline (BUG 2): BIND a pre-existing standard pipeline -> persist -
     existing_std = _standard_pipeline_fixture()
@@ -939,9 +1204,11 @@ def self_test() -> int:
     # idempotent: same standard pipeline still present -> re-bind, OK
     rc = provision_pipeline(caf6, p6, "loc_test_QcDX", out=dev)
     assert rc == EX_OK, "idempotent pipeline rc=%s" % rc
-    # dry-run against an empty account: reports the UI-create need, stamps nothing
+    # dry-run against an empty account: reports the UI-create need, stamps
+    # nothing, and never invokes the browser creator
     p6d = _tmp_field_map()
-    assert provision_pipeline(_FakeCaf(), p6d, "loc_test_QcDX", dry_run=True, out=dev) == EX_OK
+    assert provision_pipeline(_FakeCaf(), p6d, "loc_test_QcDX", dry_run=True, out=dev,
+                              browser_creator=_creator_forbidden) == EX_OK
     assert (load_field_map(p6d)["pipeline"].get("resolved") or {}).get("pipeline_id") is None
 
     # -- probe-scope (BUG 2): read feasible (OK) and unreadable (STOP) ------
@@ -1047,9 +1314,11 @@ def self_test() -> int:
 
     print("anthology_registry self-test: OK "
           "(derivation, 19-field inventory, create/verify/persist, exact-match STOP, "
-          "scope STOP, dry-run, pipeline find-and-bind + UI-create STOP + idempotent, "
-          "probe-scope read feasibility, browser-UA + scope-vs-Cloudflare discrimination, "
-          "binding round-trip)")
+          "scope STOP, dry-run, pipeline find-and-bind + idempotent, "
+          "browser-control create: bind-on-verified-read / fail-closed STOP / "
+          "lying-builder STOP / verify-read HELD / opt-out / dry-run-no-attempt / "
+          "missing-builder receipt / exact-name argv, probe-scope read feasibility, "
+          "browser-UA + scope-vs-Cloudflare discrimination, binding round-trip)")
     return EX_OK
 
 
@@ -1068,8 +1337,9 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit a machine-readable summary on stdout")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, help_ in [
-        ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no create)"),
-        ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it (UI-only; no auto-create)"),
+        ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no API create)"),
+        ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it; when absent, attempt "
+                               "ONE Skill 6 browser-control creation, re-read, and bind only what the API shows"),
         ("provision-fields", "create-or-verify the 19 PRD Section 6 fields; persist server fieldKey + id"),
         ("provision-all", "provision-pipeline then provision-fields (stops on first STOP)"),
         ("verify-fields", "READ-ONLY: assert field-map.json is fully resolved and exact-match"),

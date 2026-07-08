@@ -4,6 +4,36 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.12] - 2026-07-08 - Pipeline builder EXACT-NAME mode (the Anthology Engine integration contract)
+
+**WHY:** the Anthology Engine (Skill 59) needs its standard pipeline created
+with the BYTE-EXACT contract name `"Anthology Engine"` — its
+`anthology_registry.py provision-pipeline` binds the created pipeline BY NAME
+through the read API (`GET /opportunities/pipelines`) afterwards. The
+builder's default applies the fleet `ZHC ` container prefix
+(`ensure_zhc_name`), which would rename the pipeline to
+`"ZHC Anthology Engine"` and silently break that find-by-name bind.
+
+**THE CHANGE (`ghl_pipeline_builder.py`):**
+
+- **`--exact-name` / `task["exact_name"]`**: the pipeline name is used
+  byte-exact — no ZHC prefix. The plan records `exact_name` and the preflight
+  swaps `PL-P2:zhc_pipeline_name` for `PL-P2:exact_pipeline_name` (non-empty
+  name, hard). The DEFAULT path is unchanged: no flag → ZHC prefix exactly as
+  before.
+- Skill 59's `provision_pipeline` now invokes this builder (subprocess, fixed
+  argv, `--no-dry-run --exact-name`) when the standard pipeline is absent,
+  then re-reads the pipelines through the API and binds ONLY what that read
+  surface shows — the builder's own success claim is never trusted.
+- Coverage: selftest section 1b (byte-exact name, recorded mode, preflight
+  pass/refuse-empty) + 6 new hermetic pytest cases in
+  `tests/test_ghl_pipeline_builder.py::TestExactNameMode` (plan, preflight,
+  CLI wiring, default-path regression). Still NOT live-locked:
+  `SELECTORS-LIVE-pipeline.md` remains RESEARCH-SEEDED; the first live run is
+  a separate step.
+
+---
+
 ## [v18.1.11] - 2026-07-08 - Forms-list row-'Actions' acquisition is the SAME hover-reveal POLL as F4 (cleanup could silently fail to delete) + F-P9 interpreter/Playwright preflight (a live attempt can never be burned on an environment mistake)
 
 **BUG 1 — the Forms-list row 'Actions' button has the SAME hover-reveal
