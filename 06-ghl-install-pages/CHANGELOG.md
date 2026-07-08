@@ -4,6 +4,57 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.6] - 2026-07-07 - PIPELINE (+stages) CREATION via BROWSER CONTROL — new `ghl_pipeline_builder.py` (no public API exists for this surface)
+
+Operator-ratified boundary (2026-07-07): GHL exposes NO public API to CREATE a
+pipeline or CREATE/EDIT pipeline stages — confirmed the same night against
+GHL's real v2 AND v3 OpenAPI specs. The only public surface is the read-only
+`GET /opportunities/pipelines` (Skill 44 `caf opportunities pipelines`), and
+Skill 44 was audited to have NO pipeline-creation capability of any kind
+(API or browser). Pipeline/stage creation is therefore UI-only and now ships
+as a Skill-6 browser walk. Custom FIELDS stay on the proven Skill-44 API path
+(explicitly out of scope per the same ratification); opportunity CRUD stays on
+Skill 44's `caf opportunities …` API.
+
+New `tools/ghl_pipeline_builder.py` (v0.1.0):
+
+- **THINK layer**: ZHC-prefixed pipeline name (fleet container convention),
+  stage normalization that STRIPS manual Won/Lost (GHL auto-creates the
+  terminal stages — a manual duplicate would corrupt win/loss semantics),
+  preflight, and a dry-run click list (PL1–PL7) that spells out the Skill-44
+  id-capture handoff for post-build opportunity wiring.
+- **DO layer**: REUSES the form builder's proven primitives (one implementation
+  of the v18.1.3 text-verb doctrine, v18.1.4 role+exact clicks, v18.1.1+
+  poll-with-deadline waits, the token-only seed rail, and the v18.1.5
+  walk_state + leaf-count positive-verification machinery) — locked by a
+  source-level test that forbids forked copies.
+- **RUNTIME-BOUND anchors**: the flow is docs-seeded (official HighLevel
+  support portal, researched 2026-07-07: Opportunities ▸ Pipelines →
+  "Create new pipeline" → Pipeline Name → per-stage "Add stage" → Save), and
+  GHL's own docs disagree on the button's capitalization — so labels are bound
+  by PATTERN from the live snapshot and clicked role=button + --exact on the
+  string the page ACTUALLY shows. Documented in NEW
+  `tools/SELECTORS-LIVE-pipeline.md`, honestly marked RESEARCH-SEEDED (NOT
+  live-locked) until the first live run captures real anchors.
+- **POSITIVE verification everywhere**: the typed pipeline name and every typed
+  stage must RENDER (STOP otherwise); the saved pipeline must appear in the
+  RENDERED Pipelines list (leaf-text count ≥ 1) or `PL6.verify` STOPs — never
+  an unverified 'created'.
+- **Fail-closed cleanup** (`_delete_pipeline`): present→delete→absent proof.
+  Requires EXACTLY ONE rendered row for the ZHC test name; the whole-pipeline
+  delete flow is UNDOCUMENTED (runtime-capture), so it only ever clicks a
+  delete affordance it can COUNT to exactly one on screen — ambiguous or
+  unlocatable affordances are an honest not-deleted + OPERATOR REVIEW flag,
+  never a blind click on a real account. Unknown counts (-1) never read as
+  gone. Auto-runs after a STOP that may have left a partial pipeline behind.
+
+Files: NEW `tools/ghl_pipeline_builder.py`, NEW `tools/SELECTORS-LIVE-pipeline.md`,
+NEW `tests/test_ghl_pipeline_builder.py` (28 cases), SKILL.md inventory.
+Proof: `ghl_pipeline_builder.py --selftest` PASS; full skill-6 pytest
+**1104 passed / 15 skipped** (was 1076 — +28, zero regressions).
+
+---
+
 ## [v18.1.5] - 2026-07-07 - F5 BELOW-THE-FOLD LOCATE + F3 FRAME-SCOPED RENAME + POSITIVE-VERIFY CLEANUP — the three defects live attempt #4 exposed, fixed at their shared root (the cross-origin iframe reach seam)
 
 Live attempt #4 (the furthest run yet — past auth, the Forms list, the create
