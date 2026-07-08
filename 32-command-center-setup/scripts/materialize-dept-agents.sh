@@ -41,6 +41,16 @@
 
 set -euo pipefail
 
+# ─── Root guard (config writes as the node user, NEVER root) ─────────────────
+# This script mutates openclaw.json (agents.list[]). Root writes to that file
+# freeze the gateway / leave a root-owned config the node user can no longer
+# write (EACCES on client boxes thereafter). Mirrors add-department.sh:87-90 and
+# check_root_guard() in 59-anthology-engine/scripts/provision-anthology-client.sh.
+if [[ "$(id -u)" == "0" ]]; then
+  echo "[materialize-dept-agents] FATAL: refusing to run as root -- config writes must be the node user (root writes freeze the gateway / EACCES on client boxes). Re-run as the node user, e.g. sudo -u node bash materialize-dept-agents.sh ..." >&2
+  exit 1
+fi
+
 # ─── Platform detection ──────────────────────────────────────────────────────
 if [[ -d /data/.openclaw ]]; then
   OC_ROOT="/data/.openclaw"

@@ -238,16 +238,29 @@ else
     [[ "$BATCH_SET" == "same-as-realtime" ]] && BATCH_SET="$RT_SET"
   fi
 
+  # SK1-01: clients NEVER use Anthropic. Hard-reject any Anthropic-family model id
+  # (anthropic/*, *claude*, us.anthropic.*) with a nonzero exit BEFORE any key check.
+  # Anthropic is deliberately absent from needs_key() so it can never resolve to a
+  # provider key on a client box.
+  reject_anthropic() {
+    local lc
+    lc="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$lc" in
+      anthropic/*|*claude*|us.anthropic.*)
+        echo "STOP: model '$1' is an Anthropic-family id — clients never use Anthropic. Choose a client-owned provider model and re-run." >&2
+        exit 7 ;;
+    esac
+  }
   # Verify provider key
   needs_key() {
     case "$1" in
       openrouter/*|google/*|deepseek/*|kimi/*|openai/gpt-*|qwen/*) echo "OPENROUTER_API_KEY" ;;
-      anthropic/*) echo "ANTHROPIC_API_KEY" ;;
       ollama-cloud/*) echo "OLLAMA_API_KEY" ;;
       *) echo "" ;;
     esac
   }
   for m in "$RT_SET" "$ASYNC_SET" "$BATCH_SET"; do
+    reject_anthropic "$m"
     k="$(needs_key "$m")"
     [[ -z "$k" ]] && continue
     if ! grep -qE "^${k}=" "$SECRETS_ENV_FILE" 2>/dev/null && [[ -z "${!k:-}" ]]; then
