@@ -148,21 +148,34 @@ The agent must verify ALL of these are in place before proceeding:
 
 ## Step 1: Install Playwright
 
+⚠️ **INTERPRETER TRAP (live 2026-07-08):** a bare `pip` or `playwright` on PATH
+can belong to a DIFFERENT python than the `python3` that will run this skill's
+tools (e.g. a Homebrew python3.14 without Playwright shadowing the interpreter
+Playwright is installed under). Always install and verify **through the same
+`python3` that will invoke the tools** (`python3 -m pip`, `python3 -m
+playwright`) — never bare `pip`/`playwright`. The live build preflight
+(F-P9 in `tools/ghl_form_builder.py`) hard-stops with the interpreter named if
+Playwright is not importable under the running python, so an environment
+mistake can never burn a live attempt.
+
 Execute the following commands to install Playwright:
 
 ```bash
-pip install playwright
-playwright install chromium
+python3 -m pip install playwright
+python3 -m playwright install chromium
 ```
 
-The first command installs the Playwright library. The second command downloads the Chromium browser that Playwright will control.
+The first command installs the Playwright library for THIS `python3`. The second command downloads the Chromium browser that Playwright will control.
 
-Verify installation:
+Verify installation — run with the SAME `python3` that will run the tools:
 ```bash
 python3 -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"
 ```
 
-Expected output: "Playwright installed successfully" printed to stdout.
+Expected output: "Playwright installed successfully" printed to stdout. If this
+fails with `ModuleNotFoundError`, `which -a python3` shows the shadowing
+install — re-run the two install commands with the intended interpreter's
+absolute path.
 
 
 ## Step 2: Verify Firebase Refresh Token (TOKEN-ONLY, D7)

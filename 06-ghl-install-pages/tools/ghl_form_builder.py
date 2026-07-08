@@ -633,7 +633,11 @@ def _emit_click_list(task: dict, fields: List[dict], plan: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
-def _run_preflight(task: dict, fields: List[dict], dep_plan: dict) -> dict:
+def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
+                   *, live: bool = False) -> dict:
+    """THINK-layer gate. ``live=True`` (the ``--no-dry-run`` path) additionally
+    HARD-verifies the runtime environment so a live attempt is never burned on
+    an environment mistake (F-P9)."""
     checks: List[dict] = []
     stop: Optional[str] = None
 
@@ -669,6 +673,39 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict) -> dict:
             chk("F-P8:headless_guard", False, str(exc))
     else:
         chk("F-P8:headless_guard", True, "skill module absent (dry-run/review) — deferred to live", hard=False)
+
+    # F-P9 (v18.1.11): Playwright must be importable under THIS interpreter
+    # BEFORE a live walk starts. F3 (inline-title rename) and F4 (default-field
+    # removal) ride ghl_iframe_drag's Playwright-over-CDP seam; with the wrong
+    # `python3` first on PATH (live 2026-07-08: a Homebrew python3.14 WITHOUT
+    # Playwright was picked up instead of the interpreter Playwright is
+    # installed under) the walk fails DEEP in the build — after a real form
+    # already exists — with an opaque `playwright-unavailable`. Fail HERE, with
+    # the interpreter named and the fix spelled out, so an environment mistake
+    # can never burn a live attempt. Dry-run/THINK keeps working anywhere
+    # (soft check, recorded as a warning).
+    pw_ok = bool(ghl_iframe_drag is not None
+                 and getattr(ghl_iframe_drag, "PLAYWRIGHT_AVAILABLE", False))
+    pw_detail = (
+        f"Playwright importable under {sys.executable}" if pw_ok else (
+            f"Playwright is NOT importable under this interpreter "
+            f"({sys.executable}, python {sys.version.split()[0]}). The LIVE "
+            "walk requires it: F3 rename + F4 field-removal ride "
+            "Playwright-over-CDP (ghl_iframe_drag). Re-run under the "
+            "interpreter that HAS Playwright — verify with: "
+            "<python3> -c 'import playwright.sync_api' — or install it for "
+            f"this one: {sys.executable} -m pip install playwright && "
+            f"{sys.executable} -m playwright install chromium. NOTE: a bare "
+            "`pip`/`playwright` on PATH may belong to a DIFFERENT python (e.g. "
+            "a Homebrew install); always use `<python3> -m pip` / "
+            "`<python3> -m playwright` with the same python3 that will run "
+            "this tool."))
+    if live:
+        chk("F-P9:playwright_interpreter", pw_ok, pw_detail)
+    else:
+        chk("F-P9:playwright_interpreter", True,
+            pw_detail if pw_ok else
+            f"WARNING (dry-run, soft): {pw_detail}", hard=False)
 
     out = {"pass": stop is None, "checks": checks, "ts": _ts()}
     if stop:
@@ -875,6 +912,46 @@ def _wait_text(session: str, text: str, timeout: int = 20) -> subprocess.Complet
     The previous `wait -- <text>` form parsed <text> as a CSS selector and
     timed out (rc=1) even with the text visibly present."""
     return _ab(session, "wait", "--text", text, timeout=timeout)
+
+
+def _hover_text(session: str, text: str, timeout: int = 15) -> subprocess.CompletedProcess:
+    """Hover the element carrying VISIBLE TEXT ``text`` via `find text <t>
+    hover` — a REAL Playwright pointer move (`hover` is a documented `find`
+    action, agent-browser 0.27.0 `find --help`), so CSS ``:hover`` rules and
+    Vue ``mouseenter`` handlers genuinely fire. Used to STIMULATE
+    hover-revealed per-row controls (the Forms-list row 'Actions' button,
+    SELECTORS-LIVE-form.md §3) — the list-surface analogue of the per-field
+    reveal ghl_iframe_drag v1.2.1 re-stimulates in the builder iframe.
+    Hermetic data:-page probe 2026-07-08: 0 visible 'Actions' buttons before
+    the hover, 1 after; parking the pointer at (0,0) hid it again."""
+    return _ab(session, "find", "text", text, "hover", timeout=timeout)
+
+
+def _park_pointer(session: str) -> subprocess.CompletedProcess:
+    """PARK the REAL pointer at the viewport origin (`mouse move 0 0`) so the
+    next hover is a genuine re-ENTRY — ``mouseenter`` only fires on a real
+    re-entry, and hovering an already-hovered point is a browser NO-OP.
+    Mirrors ghl_iframe_drag._rehover_field (v1.2.1)."""
+    return _ab(session, "mouse", "move", "0", "0", timeout=10)
+
+
+def _mouse_click_at(session: str, x: float, y: float) -> bool:
+    """REAL-pointer click at viewport coordinates: `mouse move` → `down` →
+    `up` (the same trusted-event rail the iframe coordinate-drag rides).
+    Returns True only when ALL THREE mouse commands landed rc=0.
+
+    Used ONLY for the nearest-match disambiguated click on a hover-revealed
+    row control whose role+name locator CANNOT be trusted with several
+    attached matches: hermetic probe 2026-07-08 proved `find role button
+    click --name Actions --exact` resolves the FIRST DOM match — which can be
+    a HIDDEN 0×0 button belonging to the WRONG row — and still returns rc=0
+    with NO click delivered (a silent wrong-target no-op)."""
+    for args in (("mouse", "move", f"{x:.0f}", f"{y:.0f}"),
+                 ("mouse", "down"), ("mouse", "up")):
+        cp = _ab(session, *args, timeout=10)
+        if cp.returncode != 0:
+            return False
+    return True
 
 
 def _snapshot(session: str, timeout: int = 20) -> str:
@@ -1373,9 +1450,43 @@ _LEAF_COUNT_JS = (
     "})()"
 )
 
-_ACTIONS_BUTTON_COUNT_JS = (
-    "(() => String(Array.from(document.querySelectorAll('button'))"
-    ".filter(b => (b.textContent || '').trim() === 'Actions').length))()"
+# One evidence pass over the rendered Forms list for the ROW-'Actions' control
+# (v18.1.11 — the hover-reveal fix): how many 'Actions' buttons are ATTACHED to
+# the DOM, how many are VISIBLE (non-zero client rect + not visibility:hidden),
+# and the viewport CENTER of the visible one NEAREST the matched row title's
+# leaf — a per-row control belongs to its own row (the top-frame analogue of
+# ghl_iframe_drag._nearest_visible_match, v1.2.1). Same evidence-not-selector
+# doctrine as _LEAF_COUNT_JS above.
+_ACTIONS_PROBE_JS = (
+    "(() => {"
+    "  const q = %s;"
+    "  let ref = null;"
+    "  for (const el of document.querySelectorAll('body *')) {"
+    "    if (el.childElementCount === 0 && (el.textContent || '').trim() === q) {"
+    "      ref = el; break;"
+    "    }"
+    "  }"
+    "  const btns = Array.from(document.querySelectorAll('button'))"
+    "    .filter(b => (b.textContent || '').trim() === 'Actions');"
+    "  const vis = btns.filter(b => {"
+    "    const r = b.getBoundingClientRect();"
+    "    return r.width > 0 && r.height > 0"
+    "      && getComputedStyle(b).visibility !== 'hidden';"
+    "  });"
+    "  const center = (el) => { const r = el.getBoundingClientRect();"
+    "    return [r.x + r.width / 2, r.y + r.height / 2]; };"
+    "  let best = null, bestD = Infinity;"
+    "  if (ref && vis.length) {"
+    "    const [rx, ry] = center(ref);"
+    "    for (const b of vis) {"
+    "      const [cx, cy] = center(b);"
+    "      const d = (cx - rx) ** 2 + (cy - ry) ** 2;"
+    "      if (d < bestD) { bestD = d; best = [cx, cy]; }"
+    "    }"
+    "  } else if (vis.length) { best = center(vis[0]); }"
+    "  return JSON.stringify({attached: btns.length, visible: vis.length,"
+    "                         x: best ? best[0] : -1, y: best ? best[1] : -1});"
+    "})()"
 )
 
 
@@ -1390,13 +1501,71 @@ def _eval_leaf_count(session: str, text: str) -> int:
         return -1
 
 
-def _eval_actions_button_count(session: str) -> int:
-    """Count visible row 'Actions' buttons (one per rendered list row). -1 = unknown."""
+def _probe_row_actions(session: str, row_title: str) -> Dict[str, Any]:
+    """Evaluate _ACTIONS_PROBE_JS once. Returns {attached, visible, x, y};
+    attached/visible == -1 means UNKNOWN (unevaluable) — callers must treat
+    -1 as fail-closed, NEVER as zero and NEVER as revealed."""
+    out: Dict[str, Any] = {"attached": -1, "visible": -1, "x": -1.0, "y": -1.0}
     try:
-        raw = _eval(session, _ACTIONS_BUTTON_COUNT_JS, timeout=12)
-        return int((raw or "").strip())
+        raw = _eval(session, _ACTIONS_PROBE_JS % json.dumps(row_title), timeout=12)
+        d = json.loads((raw or "").strip())
+        out["attached"] = int(d.get("attached", -1))
+        out["visible"] = int(d.get("visible", -1))
+        out["x"] = float(d.get("x", -1.0))
+        out["y"] = float(d.get("y", -1.0))
     except Exception:  # noqa: BLE001
-        return -1
+        pass
+    return out
+
+
+# Reveal-poll budget for the hover-revealed row 'Actions' control — same
+# poll-with-re-stimulation shape as ghl_iframe_drag's remove-control poll
+# (_REMOVE_POLL_S / _REMOVE_REHOVER_EVERY_S, v1.2.1), sized for a top-frame
+# list row (each evidence pass is a full `eval` subprocess round-trip).
+_ACTIONS_REVEAL_TIMEOUT_S = 12.0    # total budget before failing closed
+_ACTIONS_REVEAL_POLL_S = 0.5        # pause between evidence passes
+_ACTIONS_REHOVER_EVERY_S = 2.0      # park-away + re-enter cadence
+
+
+def _reveal_row_actions(session: str, row_title: str) -> Dict[str, Any]:
+    """Hover the matched row and POLL (monotonic deadline) until its
+    hover-revealed 'Actions' button is VISIBLE.
+
+    THE BUG THIS KILLS (live 2026-07-08, cleanup attempt): the Forms-list row
+    'Actions' button is HOVER-REVEALED — exactly one row title matched but
+    ZERO 'Actions' buttons existed in the DOM, so the old SINGLE
+    count-evaluation refused the click and cleanup silently failed to delete
+    the form. One peek at a hover-revealed control is exactly the class of
+    bug the v18.1.10 F4 remove-control fix killed inside the builder iframe;
+    this is the same fix on the list surface: hover first, then poll, and on
+    a cadence PARK the pointer off the row and re-enter it (``mouseenter``
+    only fires on a REAL re-entry — hovering an already-hovered point is a
+    browser NO-OP).
+
+    Returns the LAST probe (attached/visible/x/y) plus
+    {'revealed': bool, 'hover_cycles': n}. NEVER raises; NEVER clicks —
+    the deadline miss stays fail-closed in the caller."""
+    _hover_text(session, row_title)
+    hover_cycles = 1
+    deadline = time.monotonic() + _ACTIONS_REVEAL_TIMEOUT_S
+    next_rehover = time.monotonic() + _ACTIONS_REHOVER_EVERY_S
+    while True:
+        probe = _probe_row_actions(session, row_title)
+        if probe["visible"] > 0:
+            probe["revealed"] = True
+            probe["hover_cycles"] = hover_cycles
+            return probe
+        now = time.monotonic()
+        if now >= deadline:
+            probe["revealed"] = False
+            probe["hover_cycles"] = hover_cycles
+            return probe
+        if now >= next_rehover:
+            _park_pointer(session)
+            _hover_text(session, row_title)
+            hover_cycles += 1
+            next_rehover = time.monotonic() + _ACTIONS_REHOVER_EVERY_S
+        time.sleep(_ACTIONS_REVEAL_POLL_S)
 
 
 # ── cleanup: DELETE the built form + POSITIVELY VERIFY it is gone ─────────────
@@ -1414,10 +1583,14 @@ def _delete_form(session: str, location_id: str, form_id: str, form_name: str,
     """Delete the built form from the Forms list and POSITIVELY verify deletion.
 
     search (actual title first — the name the form REALLY carries, captured by
-    the F3 rename receipt) → require EXACTLY ONE matching row title AND EXACTLY
-    ONE visible row 'Actions' button (never risk the wrong row) → row Actions →
-    menuitem Delete (role-scoped) → confirm dialog Delete (role button, exact) →
-    POLL the re-searched list until ZERO rendered leaf matches remain.
+    the F3 rename receipt) → require EXACTLY ONE matching row title → HOVER the
+    row and POLL for its hover-revealed 'Actions' button (v18.1.11 — never one
+    peek; park-away + re-hover on a cadence, same doctrine as the F4
+    remove-control poll) → click it (role-exact when it is the ONLY attached
+    'Actions' button; otherwise a REAL-pointer click on the visible one NEAREST
+    the matched row — never the wrong row) → menuitem Delete (role-scoped) →
+    confirm dialog Delete (role button, exact) → POLL the re-searched list
+    until ZERO rendered leaf matches remain.
 
     Returns {deleted, verified_gone, matched_name, pre_delete_rows,
     post_delete_rows, residue_in_list, reason?} — deleted=True ONLY on the full
@@ -1450,19 +1623,61 @@ def _delete_form(session: str, location_id: str, form_id: str, form_name: str,
 
     out["matched_name"] = found
     out["pre_delete_rows"] = pre
-    actions_n = _eval_actions_button_count(session)
-    out["pre_delete_actions_buttons"] = actions_n
-    if pre != 1 or actions_n != 1:
+    if pre != 1:
         out["reason"] = (
-            f"expected EXACTLY ONE row for {found!r} (title-leafs={pre}, "
-            f"Actions-buttons={actions_n}) — refusing to click an Actions menu that "
+            f"expected EXACTLY ONE rendered row title for {found!r} (title-leafs="
+            f"{pre}) — several forms carry this exact name, so ANY Actions click "
             "could target the WRONG form. Fail-closed; operator review required.")
         return out
 
-    step_cp = _click_button(session, "Actions")
-    if step_cp.returncode != 0:
-        out["reason"] = f"row 'Actions' click did not land (rc={step_cp.returncode})"
+    # The per-row 'Actions' button is HOVER-REVEALED (live 2026-07-08: ONE
+    # matched row but ZERO 'Actions' buttons in the DOM until the row is
+    # hovered — the same reveal timing the v18.1.10 F4 fix killed for the
+    # per-field remove control). Hover the matched row and POLL; a single
+    # count-evaluation can never see a hover-revealed control.
+    probe = _reveal_row_actions(session, found)
+    out["pre_delete_actions_buttons"] = probe["visible"]
+    out["actions_buttons_attached"] = probe["attached"]
+    out["actions_hover_cycles"] = probe["hover_cycles"]
+    if not probe["revealed"]:
+        out["reason"] = (
+            f"the row 'Actions' button for {found!r} never became VISIBLE within "
+            f"{_ACTIONS_REVEAL_TIMEOUT_S:.0f}s (attached={probe['attached']}, "
+            f"visible={probe['visible']}, {probe['hover_cycles']} hover cycle(s) "
+            "with park-away re-entry) — the §3 per-row control is hover-revealed "
+            "and did not reveal. Refusing to click blind; fail-closed; operator "
+            "review required.")
         return out
+
+    if probe["attached"] == 1:
+        # Exactly ONE 'Actions' button in the whole DOM → the §3 locked
+        # role+name anchor is unambiguous; use the actionability-checked
+        # CLI click (hermetic probe 2026-07-08: single-attached role-exact
+        # click lands on the correct row).
+        out["actions_click_method"] = "role-exact"
+        step_cp = _click_button(session, "Actions")
+        if step_cp.returncode != 0:
+            out["reason"] = f"row 'Actions' click did not land (rc={step_cp.returncode})"
+            return out
+    else:
+        # SEVERAL rows carry an 'Actions' button (partial-name matches in the
+        # filtered list). The role+name locator resolves the FIRST DOM match —
+        # hermetic probe 2026-07-08: that can be a HIDDEN 0×0 button from the
+        # WRONG row, and the CLI still returns rc=0 with NO click delivered.
+        # So click the VISIBLE button NEAREST the matched row title (a per-row
+        # control belongs to its row — ghl_iframe_drag._nearest_visible_match
+        # doctrine) with a REAL pointer click at its measured center.
+        out["actions_click_method"] = "nearest-coordinate"
+        if probe["x"] < 0 or probe["y"] < 0:
+            out["reason"] = (
+                f"{probe['visible']} 'Actions' button(s) visible but the probe "
+                "returned no nearest-to-row coordinates — refusing to click "
+                "blind. Fail-closed; operator review required.")
+            return out
+        if not _mouse_click_at(session, probe["x"], probe["y"]):
+            out["reason"] = ("row 'Actions' nearest-coordinate click did not land "
+                             "(a mouse move/down/up command returned rc!=0)")
+            return out
     if not _wait_text_polling(session, "Delete", timeout_s=8):
         out["reason"] = "the Actions menu never showed a 'Delete' item"
         return out
@@ -2213,7 +2428,7 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
         existing_field_keys=task.get("existing_field_keys"),
         existing_tags=task.get("existing_tags"),
     )
-    preflight = _run_preflight(task, fields, dep_plan)
+    preflight = _run_preflight(task, fields, dep_plan, live=not dry_run)
 
     plan = _build_form_plan(task, fields, dep_plan)
     plan_path = os.path.join(evidence_root, "routing", "form-plan.json")

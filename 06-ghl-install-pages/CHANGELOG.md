@@ -4,6 +4,78 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.11] - 2026-07-08 - Forms-list row-'Actions' acquisition is the SAME hover-reveal POLL as F4 (cleanup could silently fail to delete) + F-P9 interpreter/Playwright preflight (a live attempt can never be burned on an environment mistake)
+
+**BUG 1 — the Forms-list row 'Actions' button has the SAME hover-reveal
+timing as the F4 per-field remove control** (proactively found in tonight's
+live-cleanup evidence: exactly ONE matched row title, ZERO 'Actions' buttons
+attached — the control does not EXIST in the DOM until the row is hovered).
+`_delete_form` made a SINGLE `_eval_actions_button_count` peek and correctly
+refused to click (fail-closed, good) — but that means cleanup silently fails
+to delete a form whenever the reveal needs a hover, the exact class of bug
+v18.1.10 killed inside the builder iframe.
+
+**THE FIX (`ghl_form_builder` — the v18.1.10 doctrine applied to the list
+surface):**
+
+- **Hover-then-POLL, never one peek.** `_reveal_row_actions` hovers the
+  matched row title (`find text <t> hover` — a REAL Playwright pointer move)
+  and polls a monotonic deadline (12s / 0.5s cadence); misses RE-FIRE the
+  reveal every 2s by PARKING the pointer at the viewport origin and
+  re-entering the row (`mouseenter` only fires on a real re-entry). Hermetic
+  data:-page probe: 0 visible 'Actions' buttons before the hover, 1 after;
+  parking hid it again.
+- **Attached-vs-visible evidence + nearest-row disambiguation.**
+  `_ACTIONS_PROBE_JS` measures, in ONE pass, the ATTACHED count, the VISIBLE
+  count (non-zero client rect, not `visibility:hidden`), and the viewport
+  center of the visible button NEAREST the matched row's title leaf. With
+  exactly ONE attached button the §3 locked role-exact anchor is clicked as
+  before; with SEVERAL (partial-name matches in the filtered list) the
+  nearest one is clicked with a REAL pointer click (`mouse move/down/up`) —
+  hermetic probe proved `find role button click --name Actions --exact`
+  resolves the FIRST DOM match, which can be a HIDDEN 0×0 button from the
+  WRONG row, and still returns rc=0 with NO click delivered (a silent
+  wrong-target no-op). Title ambiguity (several rows with the SAME title)
+  still fails closed.
+- **Fail-closed + diagnosable.** A control that never reveals within the
+  deadline refuses to click ANYTHING and reports attached/visible counts plus
+  the hover-cycle count; probe-unevaluable (-1) is UNKNOWN, never zero. The
+  receipt gains `actions_buttons_attached` / `actions_hover_cycles` /
+  `actions_click_method`.
+
+**BUG 2 — wrong-interpreter live harness (F-P9 preflight).** Tonight's live
+harness resolved `python3` to a Homebrew python3.14 WITHOUT Playwright instead
+of the interpreter Playwright is installed under; the miss would only surface
+DEEP in a live walk (F3/F4 ride Playwright-over-CDP) as an opaque
+`playwright-unavailable` AFTER a real form existed. `_run_preflight` now takes
+`live=` (wired `live=not dry_run` in `build_form`) and HARD-stops a live run
+when Playwright is not importable under `sys.executable`, naming the
+interpreter and spelling out the fix (`<python3> -m pip install playwright &&
+<python3> -m playwright install chromium`, plus the bare-`pip`-belongs-to-a-
+different-python trap); dry-run/THINK records it as a soft WARNING and keeps
+working. INSTALL.md Step 1 now pins `python3 -m pip` / `python3 -m playwright`
+(never bare `pip`/`playwright`) and documents the PATH-shadowing trap.
+
+**Proof:** hermetic E2E against a REAL headless Chromium via the REAL
+agent-browser CLI (fixture rows with CSS hover-revealed 'Actions' buttons):
+pre-hover probe 3 attached / 0 visible → reveal poll → nearest-coordinate
+real-pointer click landed on the CORRECT row (`window.__clicked` receipt) and
+opened its menu. `ghl_form_builder --selftest` PASS under BOTH a
+Playwright-bearing and the pytest interpreter. Full skill-6 pytest
+**1152 passed / 15 skipped** (was 1131 — +21 regression locks: re-hover-only
+reveal is found and clicked; never-appearing control fails closed with NO
+click and the stimulation proven tried; unknown probe never counts as
+revealed; nearest-coordinate click on multi-row reveal + its no-coordinates
+and failed-click fail-closed paths; role-exact rc-check; reveal receipt
+fields; hover/park/mouse CLI verb shapes; probe JSON parse fail-closed; probe
+JS geometry doctrine; F-P9 live hard-stop incl. module-absent, actionable
+message content, dry-run softness, `build_form` wiring both ways, and
+live-stop-before-any-browser). Guards: no-secret-printing PASS,
+no-client-names PASS, no-telegram-chat-id-leak PASS, no-anthropic-runtime
+PASS, version-drift OK.
+
+---
+
 ## [v18.1.10] - 2026-07-08 - F4 remove-control acquisition is a POLL with hover/select re-stimulation + the documented lock-form name fallback (the live attempt-#6 `STOP@F4.delete:Phone` fix)
 
 **THE LIVE BUG (attempt #6 against a real account).** Auth, F1/F2 form
