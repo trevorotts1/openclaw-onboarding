@@ -19,8 +19,8 @@ contract. The file is append-only; one JSON object per line; never rewritten.
 | `ts` | string (ISO-8601 UTC) | event timestamp, e.g. `2026-05-30T14:03:21Z` |
 | `skill` | string | always `"39-real-estate-playbook"` |
 | `event` | string | `property_lookup` \| `showing` \| `cma_request` |
-| `address` | string | the input address (as provided) |
-| `normalized` | object | `{ "street", "city", "state", "zip" }` heuristic split |
+| `address_hash` | string | sha256 of the lower-cased input address — an opaque, stable correlator. The raw address and street are NEVER persisted (PII-free contract). |
+| `normalized` | object | `{ "city", "state", "zip" }` heuristic split — coarse geography only, no street |
 | `capabilities` | object | per-capability state, e.g. `{ "comps":"AVAILABLE", "mls":"HONEST_GAP" }` (for `property_lookup`) |
 | `available` | number | count of capabilities that were AVAILABLE |
 | `honest_gaps` | number | count of capabilities that were an HONEST GAP |
@@ -31,13 +31,16 @@ fields it has (e.g. `datetime`, `requesting_party` for showings) and omits the
 
 ## Example line (property_lookup)
 ```json
-{"ts":"2026-05-30T14:03:21Z","skill":"39-real-estate-playbook","event":"property_lookup","address":"123 Main St, Springfield, IL 62701","normalized":{"street":"123 Main St","city":"Springfield","state":"IL","zip":"62701"},"capabilities":{"property_lookup":"AVAILABLE","geocode":"AVAILABLE","street_view":"HONEST_GAP","comps":"HONEST_GAP"},"available":2,"honest_gaps":2}
+{"ts":"2026-05-30T14:03:21Z","skill":"39-real-estate-playbook","event":"property_lookup","address_hash":"9f2c…","normalized":{"city":"Springfield","state":"IL","zip":"62701"},"capabilities":{"property_lookup":"AVAILABLE","geocode":"AVAILABLE","street_view":"HONEST_GAP","comps":"HONEST_GAP"},"available":2,"honest_gaps":2}
 ```
 
 ## Privacy
-The event log records PROPERTY interactions, not client PII beyond the address
-the operator/agent already entered. No names, phone numbers, or emails are
-written by Skill 39's event emitter. The companion log
+The event log records PROPERTY interactions with NO raw PII. The specific street
+address is never persisted — it is reduced to an opaque `address_hash` (sha256 of
+the lower-cased input) plus the coarse city/state/zip (shared by many properties).
+No names, phone numbers, or emails are written by Skill 39's event emitter.
+`qc-no-personal-data.sh` fails the build if the emitter is ever changed back to
+persisting a raw `address`/`street`. The companion log
 `public-records-queries.jsonl` (Skill 40) carries public-records provenance.
 
 ## Consumers

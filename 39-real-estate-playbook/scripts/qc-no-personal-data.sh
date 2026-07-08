@@ -76,6 +76,20 @@ if [ -n "$TREE_HITS" ]; then
   HITS=$(printf '%s\n' "$TREE_HITS" | grep -c .)
 fi
 
+# SK1-20: the F52 event emitter (property-lookup.sh) MUST be PII-free — it may
+# log only an opaque address_hash + coarse city/state/zip. Fail if it is ever
+# changed back to persisting a raw "address" or "street" field.
+_plookup="$SKILL_DIR/scripts/property-lookup.sh"
+if [ -f "$_plookup" ]; then
+  PII_EMITTER_HITS="$(grep -nE '"(address|street)"[[:space:]]*:' "$_plookup" || true)"
+  if [ -n "$PII_EMITTER_HITS" ]; then
+    echo ""
+    echo "Raw-PII field(s) in the F52 event emitter (must be address_hash + city/state/zip only):"
+    printf '%s\n' "$PII_EMITTER_HITS" | sed 's/^/  [PII] /'
+    HITS=$(( HITS + $(printf '%s\n' "$PII_EMITTER_HITS" | grep -c .) ))
+  fi
+fi
+
 echo ""
 if [ "$HITS" -eq 0 ]; then
   echo "RESULT: PASS — no real personal/client identifiers in Skill 39 (UNIVERSAL)."

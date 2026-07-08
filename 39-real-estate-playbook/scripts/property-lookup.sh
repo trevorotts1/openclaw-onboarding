@@ -133,25 +133,38 @@ jq_str() {
 }
 
 # ---------- 3. F52 event append ----------
+# SK1-20: the F52 log is PII-FREE by contract (see
+# templates/real-estate-events.schema.json → "NEVER raw property PII"). We do
+# NOT persist the raw street address or the street component. Instead we log an
+# opaque, stable address_hash (sha256 of the lower-cased input) so repeat
+# lookups still correlate/dedupe, plus the coarse city/state/zip (shared by many
+# properties, not personally identifying). qc-no-personal-data.sh fails the build
+# if this emitter is ever changed back to persisting a raw address/street.
+addr_hash() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' \
+    | (shasum -a 256 2>/dev/null || sha256sum) | awk '{print $1}'
+}
 if [ "$DO_LOG" -eq 1 ]; then
   mkdir -p "$MFD" 2>/dev/null || true
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   results_json="$(IFS=,; echo "${RESULTS[*]}")"
-  printf '{"ts":"%s","skill":"39-real-estate-playbook","event":"property_lookup","address":%s,"normalized":{"street":%s,"city":%s,"state":%s,"zip":%s},"capabilities":{%s},"available":%d,"honest_gaps":%d}\n' \
+  a_hash="$(addr_hash "$ADDRESS")"
+  printf '{"ts":"%s","skill":"39-real-estate-playbook","event":"property_lookup","address_hash":"%s","normalized":{"city":%s,"state":%s,"zip":%s},"capabilities":{%s},"available":%d,"honest_gaps":%d}\n' \
     "$ts" \
-    "$(jq_str "$ADDRESS")" \
-    "$(jq_str "$norm_street")" \
+    "$a_hash" \
     "$(jq_str "$norm_city")" \
     "$(jq_str "$norm_state")" \
     "$(jq_str "$norm_zip")" \
     "$results_json" "$avail_count" "$gap_count" >> "$EVENTS"
   echo ""
-  echo "  F52 event appended: $EVENTS"
+  echo "  F52 event appended: $EVENTS (address recorded as opaque hash; no raw PII)"
 fi
 
 if [ "$JSON" -eq 1 ]; then
-  printf '{"address":%s,"available":%d,"honest_gaps":%d}\n' \
-    "$(jq_str "$ADDRESS")" "$avail_count" "$gap_count"
+  # SK1-20: the machine-readable summary is also PII-free — report the opaque
+  # address_hash, never the raw address (a downstream tool may persist stdout).
+  printf '{"address_hash":"%s","available":%d,"honest_gaps":%d}\n' \
+    "$(addr_hash "$ADDRESS")" "$avail_count" "$gap_count"
 fi
 
 exit 0
