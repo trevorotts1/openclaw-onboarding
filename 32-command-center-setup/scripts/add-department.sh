@@ -33,6 +33,33 @@
 #   7. Drop /data/.openclaw/skills/23-ai-workforce-blueprint/.persona-index-stale
 #      so persona-selector-v2.py knows to rebuild any cached dept-tag → persona
 #      map next run (no-op if selector doesn't have caching today)
+#   8. scaffold_agent_files() -- per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT files
+#      + shared-file symlinks, written to $OC_ROOT/workspace/departments/<slug>/
+#   8b. wire_department_runtime() -- (ROOT-CAUSE FIX, see below) materialize the
+#      REAL OpenClaw agent runtime for the new department.
+#   9. register_routing_dept() -- routing-extension sidecar ledger entry
+#
+# THE BUG THIS FIXES (do not let it regress): despite this header's long-
+# standing claim that this script does "the full chain in one shot," it NEVER
+# actually wired the OpenClaw agent RUNTIME: an openclaw.json agents.list[]
+# entry (id=dept-<slug>) plus the $OC_ROOT/agents/dept-<slug>/ directory. The
+# workspaces/agents DB rows above make the department SHOW UP on the Command
+# Center board; register_routing_dept() only writes a routing-sidecar
+# bookkeeping file (extension-registry.json), never agents.list[]. Without the
+# real runtime entry, Command Center's dispatch resolves NO specialist for the
+# department and every card lands and immediately STICKS in "Blocked" with
+# reason no_specialist_runtime -- forever, since nothing here ever creates it.
+# This is the exact defect that hit the Anthology (Skill 59) department
+# tonight; that skill's own caller (provision-anthology-client.sh) was patched
+# with a working wire_department_runtime() step, but THIS shared tool -- used
+# by every other skill and by any operator adding a department by hand -- was
+# not, so the bug would keep reproducing indefinitely. wire_department_runtime()
+# below closes that gap for every caller of add-department.sh, present and
+# future, by preferring the real, shared materialize-dept-agents.sh (same
+# schema, one source of truth) and falling back to an inline replica (schema
+# matched byte-for-byte against materialize-dept-agents.sh /
+# 59-anthology-engine's tested wire_department_runtime()) only if that sibling
+# script is missing from the install.
 #
 # Usage:
 #   bash add-department.sh --slug podcast --name "Podcast Production"
@@ -50,6 +77,17 @@
 #   1 -- fatal (missing args, missing DB, malformed config, etc.)
 
 set -euo pipefail
+
+# ─── Root guard (config writes as the node user, NEVER root) ─────────────────
+# This script mutates mission-control.db, openclaw.json, and role-library
+# _index.json. Root writes to those files freeze the gateway / leave
+# root-owned files the node user can no longer write (EACCES on client boxes
+# thereafter). Mirrors check_root_guard() in
+# 59-anthology-engine/scripts/provision-anthology-client.sh.
+if [[ "$(id -u)" == "0" ]]; then
+  echo "[add-department] FATAL: refusing to run as root -- config writes must be the node user (root writes freeze the gateway / EACCES on client boxes). Re-run as the node user, e.g. sudo -u node bash add-department.sh ..." >&2
+  exit 1
+fi
 
 # ─── Arg parsing ─────────────────────────────────────────────────────────────
 SLUG=""
@@ -196,12 +234,25 @@ def main():
         if existing:
             ws_id = existing[0]
             print(f"[add-department] workspace already exists: id={ws_id}")
-            # Heal idempotently: role-library, persona-stale, and routing
-            # (routing may have been missing if this dept was created before G3 fix)
+            # Heal idempotently: role-library, per-agent file scaffold, persona-
+            # stale, RUNTIME WIRING, and routing. (routing may have been missing
+            # if this dept was created before the G3 fix; the runtime may be
+            # missing if this dept was created before the no_specialist_runtime
+            # fix below -- re-running add-department.sh on ANY existing
+            # department now self-heals it onto the real OpenClaw runtime.)
             upsert_role_library(SLUG, NAME)
+            scaffold_agent_files(SLUG, HEAD_NAME)
             mark_persona_stale()
+            runtime_status = wire_department_runtime(SLUG, HEAD_NAME)
             register_routing_dept(SLUG)
-            emit_summary({"slug": SLUG, "workspace_id": ws_id, "status": "already_exists"})
+            emit_summary({
+                "slug": SLUG,
+                "workspace_id": ws_id,
+                "status": "already_exists",
+                "runtime_status": runtime_status,
+            })
+            if runtime_status == "wiring_failed":
+                sys.exit(1)
             return
 
         # ─── 1. INSERT workspaces row (id == slug, per the schema convention) ──
@@ -422,6 +473,14 @@ def main():
     # Subagents excluded -- Skill 23 handles those.
     scaffold_agent_files(SLUG, HEAD_NAME)
 
+    # ─── 8b. (ROOT-CAUSE FIX) Materialize the OpenClaw agent RUNTIME ──────────
+    # See the header comment above ("THE BUG THIS FIXES"). scaffold_agent_files()
+    # just above already created $OC_ROOT/workspace/departments/<slug>/ -- the
+    # exact folder materialize-dept-agents.sh's department scanner looks for --
+    # so calling it now lets the new department's runtime be discovered and
+    # wired in the SAME pass, using the one shared schema.
+    runtime_status = wire_department_runtime(SLUG, HEAD_NAME)
+
     # ─── 9. (G3 fix) Register routing entry in openclaw.json ─────────────────
     # add-department.sh previously wrote the CC workspaces row + agent but
     # never called register-routing-dept.py → the dept existed in the CC board
@@ -437,8 +496,11 @@ def main():
         "research_agent_id": research_agent_id,
         "da_agent_id": da_agent_id,
         "starter_task_id": task_id,
+        "runtime_status": runtime_status,
         "status": "created",
     })
+    if runtime_status == "wiring_failed":
+        sys.exit(1)
 
 
 def upsert_role_library(slug, name):
@@ -620,6 +682,166 @@ def scaffold_agent_files(slug, head_name):
                   f"{result.stderr.strip()[:300]}", file=sys.stderr)
     except (subprocess.TimeoutExpired, Exception) as e:
         print(f"  [scaffold] WARN: scaffolder failed: {e}", file=sys.stderr)
+
+
+def wire_department_runtime(slug, head_name):
+    """(ROOT-CAUSE FIX) Materialize the REAL OpenClaw agent runtime for this
+    department: the openclaw.json agents.list[] entry (id=dept-<slug>) AND the
+    $OC_ROOT/agents/dept-<slug>/ directory. Command Center's dispatch resolves
+    a specialist for a department via THAT runtime -- not the workspaces/
+    agents DB rows inserted above, and not the routing sidecar
+    register_routing_dept() writes. Without it, every card for this
+    department lands and immediately STICKS in "Blocked" with reason
+    no_specialist_runtime, forever.
+
+    Prefers calling the REAL, shared materialize-dept-agents.sh so the
+    runtime schema has exactly one source of truth. materialize-dept-agents.sh
+    has no --dept flag (it is a batch scanner over all department folders on
+    disk), but it is documented idempotent for every department it finds, so
+    re-running it here -- now that scaffold_agent_files() has just created
+    $OC_ROOT/workspace/departments/<slug>/, one of the folders it scans -- is
+    safe and heals any other previously-unwired department in the same pass.
+
+    Falls back to an inline replica of the exact same schema (id, name,
+    workspace, agentDir, memorySearch: multimodal disabled + fallback openai)
+    ONLY if materialize-dept-agents.sh is missing from this install, so a
+    broken/absent sibling script never leaves a department unwired. This
+    schema is matched byte-for-byte against materialize-dept-agents.sh AND
+    against the tested, working wire_department_runtime() in
+    59-anthology-engine/scripts/provision-anthology-client.sh (tonight's fix
+    for the same bug, scoped to its one caller).
+
+    Returns one of:
+      "wired"                         -- agents.list[] entry + agent dir confirmed present (read-back verified)
+      "deferred_interview_incomplete" -- materialize-dept-agents.sh's own precondition (the AI Workforce
+                                          interview not marked complete yet) deferred materialization;
+                                          re-run add-department.sh (or materialize-dept-agents.sh) once it is
+      "no_openclaw_json"              -- openclaw.json not found under OC_ROOT; nothing to wire yet
+      "wiring_failed"                 -- wiring was attempted but the read-back check still failed
+    """
+    cfg_path = Path(OC_ROOT) / "openclaw.json"
+    if not cfg_path.is_file():
+        print(f"  [runtime] openclaw.json not found at {cfg_path} -- cannot wire dept-{slug} runtime, skipping",
+              file=sys.stderr)
+        return "no_openclaw_json"
+
+    agent_id = f"dept-{slug}"
+    agent_dir = Path(OC_ROOT) / "agents" / agent_id
+
+    def _runtime_present():
+        try:
+            cfg = json.load(open(cfg_path))
+        except (json.JSONDecodeError, OSError):
+            return False
+        agents_list = cfg.get("agents", {}).get("list", []) if isinstance(cfg.get("agents"), dict) else []
+        has_entry = any(isinstance(a, dict) and a.get("id") == agent_id for a in agents_list)
+        return has_entry and agent_dir.is_dir()
+
+    materializer = Path(SCRIPT_DIR) / "materialize-dept-agents.sh"
+    if materializer.is_file():
+        try:
+            result = subprocess.run(
+                ["bash", str(materializer)],
+                capture_output=True, text=True, timeout=60,
+            )
+        except (subprocess.TimeoutExpired, Exception) as e:
+            print(f"  [runtime] WARN: materialize-dept-agents.sh failed to run: {e}", file=sys.stderr)
+            result = None
+
+        if result is not None:
+            combined_out = (result.stdout or "") + (result.stderr or "")
+            if "INTERVIEW_NOT_COMPLETE" in combined_out:
+                print(f"  [runtime] materialize-dept-agents.sh deferred: the AI Workforce interview "
+                      f"is not marked complete yet for this client. dept-{slug}'s board card will show "
+                      f"Blocked (no_specialist_runtime) until the interview finishes and add-department.sh "
+                      f"(or materialize-dept-agents.sh) is re-run.", file=sys.stderr)
+                return "deferred_interview_incomplete"
+            if result.returncode != 0:
+                print(f"  [runtime] WARN: materialize-dept-agents.sh exited rc={result.returncode}: "
+                      f"{result.stderr.strip()[:400]}", file=sys.stderr)
+            else:
+                print(f"  ~ runtime         materialize-dept-agents.sh ran (batch pass; idempotent for "
+                      f"every department it finds)")
+
+        if _runtime_present():
+            print(f"  + runtime         dept-{slug} wired: agents.list[] entry + {agent_dir} "
+                  f"(read-back verified)")
+            return "wired"
+        print(f"  [runtime] WARN: materialize-dept-agents.sh ran but read-back still shows no "
+              f"agents.list[] entry / dir for {agent_id} -- falling back to inline wiring", file=sys.stderr)
+    else:
+        print(f"  [runtime] materialize-dept-agents.sh not found at {materializer} -- "
+              f"falling back to inline runtime wiring", file=sys.stderr)
+
+    # ─── Inline fallback: replicate materialize-dept-agents.sh's exact schema ──
+    try:
+        cfg = json.load(open(cfg_path))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  [runtime] FATAL: cannot read {cfg_path}: {e}", file=sys.stderr)
+        return "wiring_failed"
+
+    if not isinstance(cfg.get("agents"), dict):
+        cfg["agents"] = {"list": []}
+    if not isinstance(cfg["agents"].get("list"), list):
+        cfg["agents"]["list"] = []
+
+    workspace_path = str(Path(OC_ROOT) / "workspace" / "departments" / slug)
+    desired_entry = {
+        "id": agent_id,
+        "name": head_name,
+        "workspace": workspace_path,
+        "agentDir": str(agent_dir),
+        "memorySearch": {
+            "extraPaths": [],
+            "multimodal": {"enabled": False, "modalities": []},
+            "fallback": "openai",
+        },
+    }
+    agent_list = cfg["agents"]["list"]
+    by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
+    existing_entry = by_id.get(agent_id)
+    if existing_entry is None:
+        agent_list.append(desired_entry)
+    else:
+        for k in ("name", "workspace", "agentDir"):
+            if existing_entry.get(k) != desired_entry[k]:
+                existing_entry[k] = desired_entry[k]
+        existing_entry.setdefault("memorySearch", desired_entry["memorySearch"])
+
+    # Backup (best-effort) + atomic write. Never as root -- the bash guard at
+    # the top of this script already refused a root invocation before this
+    # python heredoc ever started.
+    try:
+        backups_dir = Path(OC_ROOT) / "backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        (backups_dir / f"openclaw-backup-{ts}-pre-wire-{slug}.json").write_text(
+            cfg_path.read_text(), encoding="utf-8")
+    except OSError:
+        pass  # backup is best-effort
+
+    try:
+        import tempfile
+        cfg_dir = cfg_path.parent
+        fd, tmp_path = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp", dir=str(cfg_dir))
+        with os.fdopen(fd, "w") as f:
+            json.dump(cfg, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, str(cfg_path))
+    except OSError as e:
+        print(f"  [runtime] FATAL: atomic write of {cfg_path} failed: {e}", file=sys.stderr)
+        return "wiring_failed"
+
+    agent_dir.mkdir(parents=True, exist_ok=True)
+
+    if _runtime_present():
+        print(f"  + runtime         dept-{slug} wired via inline fallback: agents.list[] entry + "
+              f"{agent_dir} (read-back verified)")
+        return "wired"
+
+    print(f"  [runtime] FATAL: wiring attempted but read-back STILL shows no runtime for {agent_id}",
+          file=sys.stderr)
+    return "wiring_failed"
 
 
 def mark_persona_stale():
