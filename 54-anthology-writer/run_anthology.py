@@ -922,9 +922,13 @@ def _mc_board_begin(run_dir):
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title="Anthology Writer — %s" % run_dir.name,
-            # department "books" (the same fleet department Skill 53 Book Writer
-            # cards to — the anthology is a book deliverable); persona names the role.
-            department="books", persona="Anthology Writer", source="anthology-writer")
+            # FIX-BK-DEPT-01 (SK2-01): "books" was never a real, seeded department
+            # (no script anywhere in this repo creates one) — mc_board fails SOFT on
+            # an unrecognized department_slug, so every Anthology Writer card was
+            # silently dropped/misrouted. skill-department-map.json resolves skill 54
+            # (and its sibling skill 53 Book Writer) to the real, mandatory,
+            # always-seeded "marketing" department.
+            department="marketing", persona="Anthology Writer", source="anthology-writer")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
         return None
