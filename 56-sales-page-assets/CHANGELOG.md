@@ -1,5 +1,39 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.4.1 — 2026-07-08 — fix: Command Center board department slug (FIX-SP56-BOARD-DEPT)
+
+Confirmed board-routing bug, identical in shape to Skill 53's `department="books"`
+defect. `run_sales_page_assets.py::_mc_board_begin` posted this run's Command Center
+Kanban card with `department="funnels"` — but `funnels` is **not** a seeded department
+anywhere in the fleet (verified against `23-ai-workforce-blueprint/department-naming-map.json`
+v2.6.1 and `scripts/department-floor.py`: 22 mandatory + 6 universal-primary = 28 canonical
+departments, none named `funnels`). The shared `mc_board.py` helper forwards the slug
+verbatim and does not validate it, so **every Sales Page Assets card silently misrouted /
+was dropped** since the skill shipped and the run was invisible on the board.
+
+### Fixed
+- **`run_sales_page_assets.py` `_mc_board_begin`**: `department="funnels"` →
+  `department="marketing"`. `marketing` is Skill 56's authoritative **primary** owning
+  department per `23-ai-workforce-blueprint/skill-department-map.json` (skill 56: the
+  `primary: true` role `sales-page-assets-specialist` lives under `marketing`;
+  `web-development` is the secondary owner). Board-routing metadata only — **no
+  sales-page content changed** (the committed golden `PROCESS-CERTIFICATE.json` hash is
+  byte-for-byte unchanged; the certificate is derived from ledger content + nonce, not
+  from the orchestrator source).
+
+### Added
+- **`scripts/test_sp_board_department.py`** — AST-based static regression lock on the
+  `_mc_board_begin` `department=` literal: fail-closed if it is missing / computed, and
+  asserts it (1) is a canonical department (mirrored from `department-floor.py`, plus a
+  live cross-check against `department-naming-map.json` when adjacent), (2) is never a
+  known-broken slug (`funnels`/`books`), and (3) equals Skill 56's declared primary
+  department (`marketing`). Wired into `verify.sh` as check (7).
+
+### Notes
+- The enforcement-core **hash pin** (`scripts/SPA-PROVER-PIN.sha256`) was re-minted because
+  `run_sales_page_assets.py` is a pinned file; this is expected and unrelated to the golden
+  content certificate (which is unchanged).
+
 ## 1.4.0 — 2026-07-05 — gate-integrity harness (train W2-gate-integrity-harness, FIX-XC-05a)
 
 Train **W2-gate-integrity-harness**. Fix IDs: FIX-XC-05a. Ports the presentation

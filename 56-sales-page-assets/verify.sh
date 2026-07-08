@@ -194,9 +194,18 @@ if [ -d "$GOLDEN" ]; then
   rm -rf "$TF"
 fi
 
+# ---------------------------------------------------------------------------
+# 7) BOARD DEPARTMENT ROUTING — the Command Center card's department= slug must be
+#    a REAL canonical department (never the historical "funnels"/"books" phantom).
+#    AST-based static check of the run_sales_page_assets.py _mc_board_begin literal.
+# ---------------------------------------------------------------------------
+echo "== Skill 56 verify :: (7) board department routing (canonical slug) =="
+run "board department slug is canonical (test_sp_board_department.py)" \
+    "$PY" "$SCRIPTS/test_sp_board_department.py"
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
-  echo "RESULT: PASS — all Skill 56 self-verification checks green (self-test + JSON + provider-purity + secret-scan + golden reproduce + broken rejections)."
+  echo "RESULT: PASS — all Skill 56 self-verification checks green (self-test + JSON + provider-purity + secret-scan + golden reproduce + broken rejections + board-department routing)."
   exit 0
 fi
 echo "RESULT: FAIL — $fails check(s) failed."

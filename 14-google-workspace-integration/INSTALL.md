@@ -88,6 +88,20 @@ You should see a version number like 1.0.0 or higher. If you see "command not fo
 
 ## Section 2: Authentication for Gmail Users
 
+> **⚠️ Credential safety (applies to the whole skill):** `gws` unlocks its encrypted
+> credential file with a keyring key held, by default, in the **OS keychain**. A
+> headless / non-interactive shell (agent, cron, script) cannot unlock that keychain,
+> and `gws`'s own failure mode then **rewrites `~/.config/gws/credentials.enc` to
+> `credential_source:"none"`, wiping every account.** The onboarding install closes
+> this on every box by exporting `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` in
+> `~/.zshenv` / `~/.bashrc` / `~/.profile`, installing the `gws-as` PATH wrapper
+> (forces the file backend for scripted/cron/multi-account calls), and snapshotting
+> the store off-box under `~/.openclaw/secrets/backups/<box>-gws/`. The install runs
+> `scripts/harden-gws-credential-resilience.sh` for you — it is idempotent, so you
+> can re-run it any time. Do the browser `gws auth login` below **in a real terminal
+> (TTY)**; never run a bare `gws` in a fresh headless shell that has not sourced your
+> env, and never `gws auth logout/remove/revoke` to "fix" a headless auth error.
+
 If you have a personal Gmail account (ending in @gmail.com), follow these steps.
 
 Step 1. Set up gws authentication:

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v18.0.2"
+ONBOARDING_VERSION="v18.1.2"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4426,6 +4426,29 @@ fi
 WRAPEOF
 chmod +x "$FW_WRAPPER"
 note "Wrote local transcription wrapper: $FW_WRAPPER (model: medium)"
+
+# ----------------------------------------------------------
+# Step 8c: Harden Google Workspace (gws) credential resilience (fleet-wide)
+# ----------------------------------------------------------
+# Bakes in the guard against the v16.1.x gws SELF-WIPE: a bare `gws` run headless
+# under the default OS "keyring" backend rewrites ~/.config/gws/credentials.enc
+# to credential_source:"none" — erasing every account's OAuth. The hardener is
+# idempotent + additive and (1) forces the FILE keyring backend for every shell
+# via an append-only ~/.zshenv (+ ~/.bashrc, ~/.profile) managed block, (2)
+# installs the `gws-as` PATH wrapper that forces the file backend for scripted/
+# cron calls, and (3) writes an off-box encrypted snapshot of the default
+# credential store so a wipe is always recoverable. Best-effort (never fatal);
+# runs as the box user (the hardener refuses/re-drops if invoked as root).
+_HARDEN_GWS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/harden-gws-credential-resilience.sh"
+[ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$ONBOARDING_DIR/scripts/harden-gws-credential-resilience.sh"
+[ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$SCRIPTS_DIR/harden-gws-credential-resilience.sh"
+if [ -f "$_HARDEN_GWS" ]; then
+    OC_CONFIG="$OC_CONFIG" bash "$_HARDEN_GWS" >> "$LOG_FILE" 2>&1 \
+        && note "gws credential-resilience hardening ran (file keyring backend + gws-as wrapper + off-box backup)" \
+        || note "gws credential-resilience hardening reported an issue (non-fatal; see $LOG_FILE)"
+else
+    note "harden-gws-credential-resilience.sh not found — skipping gws hardening (older bundle)"
+fi
 
 # 8b.3 — Bake tools.media.audio into openclaw.json (local primary + OpenAI fallback).
 OPENCLAW_JSON="$OC_JSON"

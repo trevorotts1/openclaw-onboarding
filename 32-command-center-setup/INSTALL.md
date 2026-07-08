@@ -802,6 +802,22 @@ cp .env.example .env.local
 # Edit .env.local with client-specific values
 ```
 
+> **Auto-provisioned by `run-full-install.sh` (v12.9.31+).** For the scripted install
+> path you do NOT edit these by hand — Phase 6 provisions CC `.env.local` (0600) from
+> **this box's own** config, idempotently and additively (existing values are always
+> preserved, generated secrets are never rotated):
+> - `OPENCLAW_GATEWAY_TOKEN` ← the box's `gateway.auth.token` when `gateway.auth.mode=token`.
+> - `SOVEREIGN_DEFAULT_MODEL` ← the box's own primary TEXT model (from
+>   `agents.defaults.model.primary`; free/Anthropic ids are rejected). Override per client
+>   with `CC_SOVEREIGN_DEFAULT_MODEL`.
+> - `MC_API_TOKEN` + `WEBHOOK_SECRET` are generated so the middleware never silently
+>   fails closed. A Cloudflare-Access box may instead set `CC_ALLOW_INSECURE_OPEN_API=true`
+>   to write `ALLOW_INSECURE_OPEN_API=true`.
+>
+> Phase 6 also runs a **freshness-gated `next build`** (rebuilds `.next` only when it is
+> stale vs source) so `next start` always serves code that registers the intake-advance +
+> backlog-redispatch dispatch sweeps — otherwise Kanban cards stick in Backlog.
+
 #### Step 5: SETUP database
 ```bash
 npm run db:push

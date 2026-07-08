@@ -35,6 +35,7 @@
 #   --update-only  Skip phases already done on a prior full install
 #                  (prereqs, workspace folders, agent materialize, tunnel,
 #                  Telegram topics). Only runs: git pull + npm install +
+#                  CC .env.local provisioning + freshness-gated `next build` +
 #                  db:push + sync-departments-from-build-state.py + pm2 restart.
 #                  Skips db:seed (protects client-customized rows).
 #                  Does NOT re-embed the persona index (live index stays
@@ -97,6 +98,10 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DASHBOARD_REPO="https://github.com/trevorotts1/blackceo-command-center.git"
 DASHBOARD_DIR="${HOME}/projects/command-center"
 DASHBOARD_PORT=4000
+# Box-own OpenClaw config — the ONLY source for this box's gateway auth token
+# (fix #2) and its own primary TEXT model (fix #3). Per-box + per-client: never a
+# shared/operator value. Read-only here; the token value is never logged/printed.
+OC_CONFIG="$OC_ROOT/openclaw.json"
 
 log() {
   printf '%s [%-5s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$LOG_FILE"
@@ -197,6 +202,257 @@ cc_reconcile_pm2_names() {
 # binds :4000. Returns the launcher's exit status.
 cc_pm2_start_canonical() {
   ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+}
+
+# ======================================================================
+# CC CONVERGE DURABLE GUARDS — Kanban-dead recurrence fix (v12.9.31)
+# ======================================================================
+# ROOT CAUSE (proven on a client box): Phase 6 pulled fresh CC source and ran
+# `npm install` — whose `postinstall` only `npm rebuild`s the better-sqlite3
+# native addon — then restarted pm2. It NEVER ran `next build`. `npm start` ->
+# scripts/cc-start.sh -> `next start` serves the pre-existing `.next` bundle,
+# which predates the pulled source. The Next.js instrumentation hook
+# (src/instrumentation.ts -> registerCronJobs) that registers the
+# intake-advance + backlog-redispatch sweeps is compiled INTO `.next`; a stale
+# bundle omits them, so nothing polls the backlog and cards stick in Backlog
+# (dispatch_attempts stays 0). Three runtime env vars were also never
+# provisioned, so even a fresh build fails closed:
+#   * OPENCLAW_GATEWAY_TOKEN empty  -> the Bridge cannot auth to the local
+#     gateway (auth.mode=token boxes).
+#   * SOVEREIGN_DEFAULT_MODEL unset -> AF-MODEL-SOVEREIGNTY blocks every text
+#     dispatch when nothing else resolves a model (null model_id root cause).
+#   * MC_API_TOKEN / WEBHOOK_SECRET unset -> newer CC middleware REJECTS the
+#     ingest + agent-completion webhooks (fail-closed) unless
+#     ALLOW_INSECURE_OPEN_API=true.
+#
+# The two guards below make a converge self-healing + idempotent:
+#   (1) cc_ensure_fresh_build  — rebuild `.next` IFF it is stale vs source.
+#   (2)+(3)+(4) cc_write_env_local — additively provision the three env families
+#       into CC .env.local (0600) from the box's OWN gateway token + primary TEXT
+#       model. Existing operator values are ALWAYS preserved; generated secrets
+#       are written once and reused (never rotated). Secret VALUES are never
+#       logged/printed — only the key name + a SET/preserved/skipped label.
+# ----------------------------------------------------------------------
+
+# _cc_mtime — epoch mtime of a file, portable across BSD (Mac) and GNU (Linux).
+_cc_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+# _cc_gen_secret — a strong random hex secret (openssl -> python3 -> urandom).
+_cc_gen_secret() {
+  if command -v openssl >/dev/null 2>&1; then openssl rand -hex 32 2>/dev/null && return 0; fi
+  if command -v python3 >/dev/null 2>&1; then python3 -c 'import secrets;print(secrets.token_hex(32))' 2>/dev/null && return 0; fi
+  head -c 32 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n'
+}
+
+# _cc_model_is_sovereign — exit 0 when the model id is a valid sovereign DEFAULT
+# for a TEXT task: non-empty, NOT a free default, and NOT Anthropic-forbidden.
+# Mirrors the CC model-selector rules (FORBIDDEN_PREFIXES + `:free`/openrouter
+# free) so the value we write is actually HONOURED by resolveSovereignDefault
+# rather than silently dropped. Case-insensitive.
+_cc_model_is_sovereign() {
+  local m
+  m="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$m" ]] || return 1
+  case "$m" in
+    openrouter/free|*:free) return 1 ;;                # free default — forbidden
+  esac
+  case "$m" in
+    # Anthropic in any form (never in a client runtime): provider-prefixed routes
+    # and BARE claude-* families that carry no `anthropic/` prefix.
+    *anthropic*|*claude*) return 1 ;;
+  esac
+  return 0
+}
+
+# cc_resolve_sovereign_model — echo the box's OWN primary TEXT model id (or empty
+# when none qualifies). Precedence, first sovereign candidate wins:
+#   1. CC_SOVEREIGN_DEFAULT_MODEL env  (explicit operator override, per client)
+#   2. .agents.defaults.model.primary  (box-wide default text model)
+#   3. main/head agent .model.primary  (list entry named Main/main, else list[0])
+#   4. .agents.defaults.model.fallbacks[]  (first sovereign fallback)
+#   5. .agents.defaults.model            (plain-string form, if used)
+# NEVER a hardcoded shared model — everything is read from THIS box's config.
+cc_resolve_sovereign_model() {
+  if [[ -n "${CC_SOVEREIGN_DEFAULT_MODEL:-}" ]] && _cc_model_is_sovereign "$CC_SOVEREIGN_DEFAULT_MODEL"; then
+    printf '%s' "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
+  fi
+  [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  local candidates cand
+  candidates="$(jq -r '
+    [ .agents.defaults.model.primary?,
+      ( (.agents.list // []) | map(select(.name=="Main" or .name=="main")) | .[0].model.primary? ),
+      .agents.list[0].model.primary?,
+      ( (.agents.defaults.model.fallbacks? // [])[] ),
+      .agents.defaults.model?
+    ] | map(select(type=="string" and . != "")) | .[]
+  ' "$OC_CONFIG" 2>/dev/null)"
+  while IFS= read -r cand; do
+    [[ -z "$cand" ]] && continue
+    if _cc_model_is_sovereign "$cand"; then printf '%s' "$cand"; return 0; fi
+  done <<< "$candidates"
+  printf ''
+}
+
+# cc_env_has_nonempty — exit 0 when KEY exists in the env file with a non-empty
+# value. (KEY is [A-Z_]+ here, so it carries no regex metacharacters.)
+cc_env_has_nonempty() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 1
+  grep -qE "^[[:space:]]*${key}=[^[:space:]]" "$file" 2>/dev/null
+}
+
+# cc_env_set_if_absent — additive + idempotent env writer. Sets KEY=VALUE only
+# when KEY is absent or empty; a pre-existing non-empty value is PRESERVED (never
+# overwrite an operator's setting, never rotate a secret). Atomic (temp+mv),
+# 0600. The VALUE is never echoed to a log. Returns 0=newly set, 2=preserved,
+# 1=write error.
+cc_env_set_if_absent() {
+  local file="$1" key="$2" val="$3" tmp
+  cc_env_has_nonempty "$file" "$key" && return 2
+  tmp="$(mktemp)" || return 1
+  if [[ -f "$file" ]]; then
+    # Drop any empty or commented placeholder for KEY; keep every other line.
+    grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
+  fi
+  printf '%s=%s\n' "$key" "$val" >> "$tmp"
+  if mv "$tmp" "$file"; then
+    chmod 600 "$file" 2>/dev/null || true
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  return 1
+}
+
+# cc_write_env_local — fixes (2)+(3)+(4). Provisions CC .env.local from the box's
+# own config so a rebuild/reboot can never silently fail closed. Idempotent +
+# additive; safe to re-run on every install/update/resume.
+cc_write_env_local() {
+  local dir="${DASHBOARD_DIR}" envf
+  envf="${dir}/.env.local"
+  if [[ ! -d "$dir" ]]; then
+    log "WARN" "cc-env: $dir missing — skipping .env.local provisioning"
+    return 0
+  fi
+  # Create the file with tight perms BEFORE any secret is written into it.
+  if [[ ! -f "$envf" ]]; then ( umask 177; : > "$envf" ) 2>/dev/null || true; fi
+  chmod 600 "$envf" 2>/dev/null || true
+
+  # ---- (2) OPENCLAW_GATEWAY_TOKEN — box gateway token when auth.mode=token ----
+  local gw_status="skipped" gw_mode gw_tok
+  if cc_env_has_nonempty "$envf" OPENCLAW_GATEWAY_TOKEN; then
+    gw_status="preserved(existing)"
+  elif [[ -f "$OC_CONFIG" ]] && command -v jq >/dev/null 2>&1; then
+    gw_mode="$(jq -r '.gateway.auth.mode // empty' "$OC_CONFIG" 2>/dev/null)"
+    if [[ "$gw_mode" == "token" ]]; then
+      gw_tok="$(jq -r '.gateway.auth.token // empty' "$OC_CONFIG" 2>/dev/null)"
+      if [[ -n "$gw_tok" ]]; then
+        if cc_env_set_if_absent "$envf" OPENCLAW_GATEWAY_TOKEN "$gw_tok" >/dev/null; then
+          gw_status="set(from-box-gateway)"
+        fi
+        gw_tok=""   # scrub from shell memory promptly
+      else
+        gw_status="skipped(no-token-in-config)"
+      fi
+    else
+      gw_status="skipped(auth.mode=${gw_mode:-unset})"
+    fi
+  else
+    gw_status="skipped(no-openclaw-config-or-jq)"
+  fi
+  log "INFO" "cc-env: OPENCLAW_GATEWAY_TOKEN ${gw_status}"
+
+  # ---- (3) SOVEREIGN_DEFAULT_MODEL — box's OWN primary TEXT model ----
+  local sm_status model_id
+  if cc_env_has_nonempty "$envf" SOVEREIGN_DEFAULT_MODEL; then
+    sm_status="preserved(existing)"
+  else
+    model_id="$(cc_resolve_sovereign_model)"
+    if [[ -n "$model_id" ]]; then
+      cc_env_set_if_absent "$envf" SOVEREIGN_DEFAULT_MODEL "$model_id" >/dev/null \
+        && sm_status="set(${model_id})"
+    else
+      sm_status="skipped(no-sovereign-text-model-in-box-config)"
+    fi
+  fi
+  log "INFO" "cc-env: SOVEREIGN_DEFAULT_MODEL ${sm_status}"
+
+  # ---- (4) API-auth posture — never leave the middleware silently fail-closed --
+  # Preserve any posture already chosen. Otherwise DEFAULT to provisioning real
+  # secrets (secure — webhooks authenticate). A Cloudflare-Access box may opt into
+  # the legacy open posture (matching the proven CF-Access remediation) by setting
+  # CC_ALLOW_INSECURE_OPEN_API=true (or CC_API_AUTH_MODE=insecure).
+  local api_status
+  if cc_env_has_nonempty "$envf" ALLOW_INSECURE_OPEN_API \
+     || { cc_env_has_nonempty "$envf" MC_API_TOKEN && cc_env_has_nonempty "$envf" WEBHOOK_SECRET; }; then
+    api_status="preserved(existing-posture)"
+  elif [[ "${CC_ALLOW_INSECURE_OPEN_API:-}" == "true" || "${CC_API_AUTH_MODE:-}" == "insecure" ]]; then
+    cc_env_set_if_absent "$envf" ALLOW_INSECURE_OPEN_API "true" >/dev/null
+    api_status="set(ALLOW_INSECURE_OPEN_API=true; CF-Access box)"
+  else
+    cc_env_has_nonempty "$envf" MC_API_TOKEN   || cc_env_set_if_absent "$envf" MC_API_TOKEN   "$(_cc_gen_secret)" >/dev/null
+    cc_env_has_nonempty "$envf" WEBHOOK_SECRET || cc_env_set_if_absent "$envf" WEBHOOK_SECRET "$(_cc_gen_secret)" >/dev/null
+    api_status="set(MC_API_TOKEN+WEBHOOK_SECRET provisioned)"
+  fi
+  log "INFO" "cc-env: API-auth ${api_status}"
+
+  chmod 600 "$envf" 2>/dev/null || true
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterEnvLocalProvisioned = true' 2>/dev/null || true
+  return 0
+}
+
+# cc_ensure_fresh_build — fix (1). Guarantee the served `.next` bundle matches the
+# checked-out source, so `next start` runs the code that registers the
+# intake-advance + backlog-redispatch sweeps. Idempotent: rebuilds ONLY when
+# `.next/BUILD_ID` is missing or older than a build input; a no-change re-run does
+# not rebuild. Returns 0=fresh bundle present, 1=build failed but a prior (stale)
+# .next remains, 2=build failed and NO usable .next bundle exists.
+cc_ensure_fresh_build() {
+  local dir="${DASHBOARD_DIR}" nextid
+  nextid="${dir}/.next/BUILD_ID"
+  if [[ ! -d "$dir" ]]; then
+    log "WARN" "cc-build: $dir missing — cannot build"
+    return 2
+  fi
+  # Build inputs whose change must invalidate the bundle.
+  local inputs=( src public config next.config.mjs next.config.js next.config.ts \
+                 package.json package-lock.json tsconfig.json tailwind.config.ts \
+                 postcss.config.mjs middleware.ts )
+  local present=() p
+  for p in "${inputs[@]}"; do [[ -e "$dir/$p" ]] && present+=("$dir/$p"); done
+
+  local need_build=0
+  if [[ ! -f "$nextid" ]]; then
+    need_build=1
+    log "INFO" "cc-build: no .next/BUILD_ID present — production build required"
+  elif [[ ${#present[@]} -gt 0 ]] \
+       && [[ -n "$(find "${present[@]}" -newer "$nextid" 2>/dev/null | head -n1)" ]]; then
+    need_build=1
+    log "INFO" "cc-build: source newer than .next/BUILD_ID — stale bundle, rebuild required"
+  fi
+
+  if [[ "$need_build" -eq 0 ]]; then
+    log "INFO" "cc-build: .next bundle is fresh vs source — skipping rebuild (idempotent)"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+    return 0
+  fi
+
+  local build_start; build_start="$(date +%s)"
+  log "INFO" "cc-build: running 'npm run build' (next build) in $dir"
+  if ( cd "$dir" && npm run build >>"$LOG_FILE" 2>&1 ); then
+    # Verify a FRESH BUILD_ID landed (mtime >= build start) — guards against a
+    # build that exits 0 yet produced no new output.
+    if [[ -f "$nextid" ]] && [[ "$(_cc_mtime "$nextid")" -ge "$build_start" ]]; then
+      log "INFO" "cc-build: next build done — fresh .next/BUILD_ID verified"
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+      return 0
+    fi
+    log "WARN" "cc-build: npm run build exited 0 but .next/BUILD_ID is missing/stale"
+  else
+    log "WARN" "cc-build: npm run build FAILED (see $LOG_FILE)"
+  fi
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
+  if [[ -f "$nextid" ]]; then return 1; else return 2; fi
 }
 
 # ---- preflight ----
@@ -310,7 +566,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # --update-only: git pull --ff-only + npm install + db:push + pm2 restart.
   # Skips db:seed (protects client-customized rows).
   # Skips git-clone (we already verified .git exists before invoking this flag).
-  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + db:push + pm2 restart (no db:seed)"
+  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + .env.local + next build (freshness-gated) + db:push + pm2 restart (no db:seed)"
   if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
     log "WARN" "phase=6 dashboard-update: $DASHBOARD_DIR/.git not found — run full install first (skipping refresh)"
   else
@@ -320,6 +576,16 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: npm install done" \
       || log "WARN" "phase=6: npm install reported errors (continuing)"
+    # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
+    # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
+    cc_write_env_local
+    # (1) rebuild `.next` IFF it is stale vs the just-pulled source. This is the
+    # Kanban-dead fix: without it `next start` keeps serving a bundle that predates
+    # the intake-advance + backlog-redispatch sweep registration.
+    cc_ensure_fresh_build; _bfrc=$?
+    if [[ "$_bfrc" -ne 0 ]]; then
+      log "WARN" "phase=6 (update-only): CC build not fresh (rc=$_bfrc) — board may serve a stale bundle until the resume cron rebuilds"
+    fi
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
@@ -357,6 +623,20 @@ else
   log "INFO" "phase=6: npm install in $DASHBOARD_DIR"
   if ! ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm install failed in $DASHBOARD_DIR"
+  fi
+
+  # (2)+(3)+(4) provision CC .env.local BEFORE build/boot (gateway token +
+  # sovereign text model + API-auth posture), from THIS box's own config.
+  cc_write_env_local
+  # (1) build the `.next` bundle so `next start` serves code matching the checkout
+  # (registers the intake-advance + backlog-redispatch sweeps). A fresh full
+  # install has NO `.next` at all — so a hard build failure with no usable bundle
+  # is fatal here (next start would EADDR/no-build crash-loop otherwise).
+  cc_ensure_fresh_build; _bfrc=$?
+  if [[ "$_bfrc" -ge 2 ]]; then
+    fail_install "phase=6: next build failed and no usable .next bundle exists — next start would crash-loop (see $LOG_FILE)"
+  elif [[ "$_bfrc" -eq 1 ]]; then
+    log "WARN" "phase=6: next build failed but a prior .next bundle exists — continuing (board may be stale; resume cron retries)"
   fi
 
   log "INFO" "phase=6: npm run db:push (runs migrations via getDb())"
@@ -720,6 +1000,61 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6e2 -- Department runtime parity guard (per-department reconciliation)
+# ----------------------------------------------------------------------
+# THE GAP THIS CLOSES: Phase 4's AGENT_COUNT check above is a blunt TOTAL COUNT
+# floor over agents.list[] -- it passes as long as *some* two agents exist
+# anywhere in agents.list[], and NEVER verifies that EVERY individual
+# department seeded onto the board by 6b/6e (a `workspaces` row in
+# mission-control.db) has ITS OWN matching runtime entry.
+# materialize-dept-agents.sh (folder-scan of 3 hardcoded roots) and
+# seed-workspaces.py (departments.json + its own separate folder-scan
+# fallback) are two INDEPENDENT department-discovery mechanisms with NO
+# cross-check between them. If N-2 departments wire correctly and 2 silently
+# don't, the total-count floor still passes -- those 2 departments get a full
+# board row (Kanban column, "<Name> Lead" agent row, starter task) and ZERO
+# working OpenClaw runtime. That is exactly the `no_specialist_runtime`
+# failure class blackceo-command-center's resolveSpecialistSessionKey()
+# (src/lib/task-dispatcher.ts) documents: a task assigned to that
+# department's dashboard agent can never resolve a runtime session key and is
+# held "routed but not dispatched" forever -- invisible until a client
+# notices nothing happens for that one department.
+#
+# Runs AFTER 6b (workspaces seeded) and 6e (dashboard agent rows exist) so
+# every department this box currently knows about gets checked. Unlike
+# 6b-6f (WARN-only), this IS a hard, install-blocking gate (fail-closed) --
+# a genuine per-department mismatch calls fail_install, listing exactly which
+# department(s) failed. A missing/empty mission-control.db (nothing seeded
+# yet) is NOT a failure -- there is nothing to reconcile.
+log "INFO" "phase=6e2 department-runtime-parity: starting"
+DEPT_PARITY_GUARD="$SKILL_DIR/scripts/guard-department-runtime-parity.py"
+if [[ -f "$DEPT_PARITY_GUARD" ]] && command -v python3 >/dev/null 2>&1; then
+  DEPT_PARITY_OUT="$(python3 "$DEPT_PARITY_GUARD" --config "$OC_ROOT/openclaw.json" --json 2>&1)"; DEPT_PARITY_RC=$?
+  printf '%s\n' "$DEPT_PARITY_OUT" >> "$LOG_FILE"
+  if [[ "$DEPT_PARITY_RC" -eq 0 ]]; then
+    DEPT_PARITY_CHECKED=$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('checked',0)))" 2>/dev/null || echo "0")
+    log "INFO" "phase=6e2 department-runtime-parity: PASS (${DEPT_PARITY_CHECKED} department(s) checked, all have a matching runtime)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = true'; fi
+  else
+    DEPT_PARITY_NAMES="$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    names = [m.get('name', '?') for m in d.get('mismatches', [])]
+    sys.stdout.write(', '.join(names) if names else '<unparseable guard output -- see log>')
+except Exception:
+    sys.stdout.write('<unparseable guard output -- see log>')
+" 2>/dev/null || echo "<unparseable guard output -- see log>")"
+    log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = false'; fi
+    fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+  fi
+else
+  log "WARN" "phase=6e2 department-runtime-parity: $DEPT_PARITY_GUARD not found (or python3 missing) -- skipping (Skill 32 not at the version that ships this guard)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = "script-missing"'; fi
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6f -- CEO Performance Board KPI rollup (kpi-rollup.json)
 # ----------------------------------------------------------------------
 # Wires the previously-orphaned generate-kpi-rollup.py so the CEO Performance
@@ -901,10 +1236,12 @@ if [[ -f "$STATE_FILE" ]]; then
   # as a regression. jq's `//` collapses false→empty, so this membership test is
   # done in one jq pass rather than via state_get.
   DEGRADED_PHASES="$(jq -r '
-    [ {k:"workspacesSeeded(6b)",       v:.commandCenterWorkspacesSeeded},
+    [ {k:"ccBuildFresh(6)",            v:.commandCenterBuildFresh},
+      {k:"workspacesSeeded(6b)",       v:.commandCenterWorkspacesSeeded},
       {k:"departmentsSynced(6c)",      v:.commandCenterDepartmentsSynced},
       {k:"mdContentSynced(6d)",        v:.commandCenterMdContentSynced},
-      {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded} ]
+      {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded},
+      {k:"deptRuntimeParity(6e2)",     v:.commandCenterDeptRuntimeParity} ]
     | map(select(.v != null and .v != true) | .k) | join(", ")
   ' "$STATE_FILE" 2>/dev/null || echo "")"
   if [[ "$(state_get '.zheGateStatus')" == "failed" ]]; then
