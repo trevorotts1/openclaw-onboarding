@@ -1,5 +1,37 @@
 # Changelog — Skill 50 (email-engine)
 
+## 1.1.1 — 2026-07-08 — board card routes to a REAL department (Command Center routing fix)
+
+### Fixed
+- **`run_email_engine.py` `_mc_board_begin` — the Command Center card was opened with
+  `department="email"`, but `"email"` is NOT a seeded department anywhere in the fleet**
+  (not one of the 22 mandatory canonical departments, not one of the 6 universal-primary
+  vertical departments, and not a variant alias — the CRM department's one-liner merely
+  mentions the word "email"). Every Email Engine card therefore silently stranded
+  unrouted/misrouted since the board hook shipped — the same class of defect as Skill 55's
+  old `"product-bio"` and Skill 53's `"books"`. Now routes to Skill 50's PRIMARY owning
+  department **`marketing`** — the ground truth in `23-ai-workforce-blueprint/skill-department-map.json`
+  (skill 50 `departments: ["marketing","crm"]`, PRIMARY role `email-campaign-strategist`
+  in `marketing`; corroborated by `EMAIL-MANIFEST.json`'s `role_reconciliation_note`).
+  Mirrors the sibling Skill 55 fix (`product-bio` → `marketing`). Board work stays
+  fail-soft; this is board-routing METADATA only — **no email content changed and the
+  deterministic `certificate_sha` is unchanged** (the golden `PROCESS-CERTIFICATE.json`
+  sha `6f9a3507…` reproduces byte-for-byte).
+
+### Added
+- **`test_department_routing.py`** — a stdlib-only, AST **static** regression guard (never
+  imports/runs the orchestrator). Parses `run_email_engine.py`, extracts the `department=`
+  literal passed to `mc_board.begin_run`, and asserts it is a plain string, is exactly
+  `marketing`, is a member of the canonical fleet department set (loaded live from
+  `department-naming-map.json`, with a hardcoded 22+6 floor fallback), and is **NEVER**
+  `"email"`. A companion assertion proves the canonical set has teeth (includes
+  `marketing`, excludes `email`). Wired into `verify.sh`.
+
+### Changed
+- Re-pinned **`ENGINE-PIN.sha256`** over the changed enforcement set
+  (`prove-email.py` + `run_email_engine.py` + `EMAIL-MANIFEST.json`), per the front-door
+  GATE-3 hash pin. `verify.sh` stays fully green.
+
 ## 1.1.0 — 2026-07-05 — F4.3 email-style ↔ canonical persona crosswalk (train DEP-7)
 
 Train **DEP-7**. Fix IDs: F4.3.

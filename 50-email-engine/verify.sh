@@ -7,6 +7,8 @@
 # gate a merge / CI / a post-install check. Mirrors 51-signature-presentation/verify.sh.
 #
 #   1. prove-email.py --self-test          (built-in VALID + VIOLATION fixtures)
+#   1b. test_department_routing.py         (AST static: board card routes to the REAL
+#                                           primary department "marketing", never "email")
 #   2. email_matcher_cli.py --selftest     (route corpus examples to their entry)
 #   3. emit_build_plan.py --selftest       (DRAFT-ONLY build-plan emitter)
 #   4. email-library/register.py --check   (paired files + built index + coverage)
@@ -56,6 +58,7 @@ echo "== Skill 50 (Email Engine) :: verify.sh =="
 
 run "prove-email.py --self-test"        "$PY" "$TOOLS/prove-email.py" --self-test
 run "run_email_engine.py --self-test"   "$PY" "$SKILL_DIR/run_email_engine.py" --self-test
+run "test_department_routing.py"        "$PY" "$SKILL_DIR/test_department_routing.py"
 run "email_matcher_cli.py --selftest"   "$PY" "$TOOLS/email_matcher_cli.py" --selftest
 run "emit_build_plan.py --selftest"     "$PY" "$TOOLS/emit_build_plan.py" --selftest
 run "email-library/register.py --check" "$PY" "$LIB/register.py" --check
