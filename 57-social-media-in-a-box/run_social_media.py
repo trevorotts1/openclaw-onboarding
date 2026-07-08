@@ -186,7 +186,10 @@ def _chk_media_ledger(run_dir):
 
 
 def _chk_scrub(run_dir):
-    rc = _run_script("scrub_gate.py", [run_dir / "working"])
+    # SK2-13: this is the RUNTIME scan over generated client content, so require the
+    # client-name list — an unconfigured list must fail closed (a silent pass could
+    # let a client name leak into published content), unlike the build-time scan.
+    rc = _run_script("scrub_gate.py", ["--require-names", run_dir / "working"])
     return rc == 0, ("scrub PASS" if rc == 0 else "scrub_gate.py FAILED (exit %d)" % rc)
 
 
