@@ -175,6 +175,14 @@ export CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
 export WORKSPACE="$HOME/clawd"
 [ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
 echo "Workspace: $WORKSPACE"
+
+# Detect platform (used by Actions 5 & the pm2/desktop branches below). macOS is
+# Darwin -> "desktop"; everything else (VPS/Docker/Linux) -> "vps". uname is the
+# reliable discriminator (a `[ -d ~/.openclaw ]` test is useless — ~/.openclaw exists
+# on both platforms). Every later `[ "$PLATFORM" = "vps"|"desktop" ]` branch depends
+# on this; without it $PLATFORM is empty and the platform-specific steps silently skip.
+if [ "$(uname -s)" = "Darwin" ]; then export PLATFORM="desktop"; else export PLATFORM="vps"; fi
+echo "Platform: $PLATFORM"
 ```
 
 ### Pre-Action 0.5: Command Center — Report Install Start (fail-soft)
@@ -285,18 +293,31 @@ Tell the user exactly this:
 ### Action 2: Store Credentials
 
 ```bash
-mkdir -p "$(dirname "$SECRETS_ENV")"
-# Append if not already present
-grep -q "^GOHIGHLEVEL_API_KEY=" "$SECRETS_ENV" 2>/dev/null || echo "GOHIGHLEVEL_API_KEY=pit-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" >> "$SECRETS_ENV"
-grep -q "^GOHIGHLEVEL_LOCATION_ID=" "$SECRETS_ENV" 2>/dev/null || echo "GOHIGHLEVEL_LOCATION_ID=YYYYYYYYYYYYYYYYYYYYYY" >> "$SECRETS_ENV"
-chmod 600 "$SECRETS_ENV"
+# Set these to the ACTUAL user-provided values (do NOT leave the placeholders).
+GHL_PIT="pit-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"   # <-- replace with the real Location PIT
+GHL_LOC="YYYYYYYYYYYYYYYYYYYYYY"                      # <-- replace with the real Location ID
 
-# Mirror to openclaw.json env.vars (gateway reads here at runtime)
-openclaw config set env.vars.GOHIGHLEVEL_API_KEY "pit-XXXXXXXX-..."
-openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID "YYYYYYYYYYYYYYYYYYYYYY"
+# SK1-72: refuse to persist a PLACEHOLDER credential. A pit-XXXX / all-Y / empty value is
+# not a real secret — writing it silently breaks Tiers 1-3 and leaves a fake token on disk.
+is_placeholder() {
+  case "$1" in ""|pit-XXXX*|*XXXX-XXXX-XXXX*|*YYYYYY*) return 0 ;; *) return 1 ;; esac
+}
+if is_placeholder "$GHL_PIT" || is_placeholder "$GHL_LOC"; then
+  echo "ERROR: GHL_PIT/GHL_LOC still hold a placeholder — set the real values first; refusing to write." >&2
+else
+  mkdir -p "$(dirname "$SECRETS_ENV")"
+  # Append if not already present
+  grep -q "^GOHIGHLEVEL_API_KEY=" "$SECRETS_ENV" 2>/dev/null || echo "GOHIGHLEVEL_API_KEY=$GHL_PIT" >> "$SECRETS_ENV"
+  grep -q "^GOHIGHLEVEL_LOCATION_ID=" "$SECRETS_ENV" 2>/dev/null || echo "GOHIGHLEVEL_LOCATION_ID=$GHL_LOC" >> "$SECRETS_ENV"
+  chmod 600 "$SECRETS_ENV"
+
+  # Mirror to openclaw.json env.vars (gateway reads here at runtime)
+  openclaw config set env.vars.GOHIGHLEVEL_API_KEY "$GHL_PIT"
+  openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID "$GHL_LOC"
+fi
 ```
 
-Replace `pit-XXX...` and `YYY...` with the actual user-provided values.
+`GHL_PIT`/`GHL_LOC` must be the actual user-provided values — the guard above refuses the `pit-XXX...` / `YYY...` placeholders.
 
 ### Action 3: Register Tier 1 — Official GHL MCP
 
@@ -490,8 +511,28 @@ fi
 ```bash
 if [ "$PLATFORM" = "vps" ]; then
   mkdir -p /data/logs
+  # SK1-70: keep the GHL PIT OUT of the world-readable ecosystem.config.js — write it to
+  # a 600-perm env file that pm2 loads at launch. (This mirrors start-ghl-mcp-server.sh,
+  # which is the canonical reference these blocks track.)
+  ( umask 077; printf 'GHL_API_KEY=%s\n' "$GOHIGHLEVEL_API_KEY" > "${MCP_DIR}/.ghl-mcp.env" )
+  chmod 600 "${MCP_DIR}/.ghl-mcp.env"
   # PORT + MCP_SERVER_PORT BOTH pinned (main.js reads PORT first → random bind otherwise).
   cat > "${MCP_DIR}/ecosystem.config.js" <<ECO
+// SK1-70: the GHL PIT is loaded at launch from the 600-perm .ghl-mcp.env, NOT inlined
+// into this world-readable config.
+const fs = require('fs');
+const path = require('path');
+function _loadEnvFile(f) {
+  const out = {};
+  try {
+    fs.readFileSync(f, 'utf8').split('\n').forEach(function (line) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)/);
+      if (m) out[m[1]] = m[2].trim();
+    });
+  } catch (e) {}
+  return out;
+}
+const _secret = _loadEnvFile(path.join(__dirname, '.ghl-mcp.env'));
 module.exports = {
   apps: [{
     name: "ghl-community-mcp",
@@ -501,14 +542,13 @@ module.exports = {
     autorestart: true,
     max_restarts: 50,
     restart_delay: 5000,
-    env: {
+    env: Object.assign({
       NODE_ENV: "production",
       PORT: "${GHL_MCP_PORT}",
       MCP_SERVER_PORT: "${GHL_MCP_PORT}",
-      GHL_API_KEY: "${GOHIGHLEVEL_API_KEY}",
       GHL_BASE_URL: "https://services.leadconnectorhq.com",
       GHL_LOCATION_ID: "${GOHIGHLEVEL_LOCATION_ID}"
-    },
+    }, _secret),
     out_file: "/data/logs/ghl-mcp.log",
     error_file: "/data/logs/ghl-mcp.err.log"
   }]
