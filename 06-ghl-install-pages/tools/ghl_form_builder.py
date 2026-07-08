@@ -108,7 +108,7 @@ import shlex
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Soft imports — selftest + dry-run stay runnable with ZERO deps (no ghl_builder /
@@ -916,20 +916,25 @@ def _get_cdp_url(session: str) -> str:
     return _ab_val(_ab(session, "get", "cdp-url", timeout=15))
 
 
-def _perform_iframe_drag(session: str, source_text: str, drop_anchor: str,
+def _perform_iframe_drag(session: str, source_text: str, drop_spec: str,
                          *, verify_text: str,
                          iframe_selector: str = GHL_FORM_IFRAME_SELECTOR,
                          source_scroll_hint: str = "") -> dict:
     """Drag ONE builder tile (``source_text``) onto the canvas landmark
-    (``drop_anchor``) INSIDE the cross-origin builder iframe, verifying that
-    ``verify_text`` then appears. ``source_scroll_hint`` (the tile's Quick-Add
-    CATEGORY header text, e.g. ``"Address"`` for ``City``) lets the primitive
-    scroll a below-the-fold panel section into view before locating the tile —
-    the general fix for the live 2026-07-07 ``F5.locate:City`` miss, for ANY
-    field in ANY category. FAIL-CLOSED: raises StopAndReport (not a fake
-    success) when the shared primitive is unavailable, the CDP url can't be read,
-    or the locate/scroll/drag/verify does not land. This is the seam that replaces
-    the top-frame-only ``_ab(session, "drag", ...)`` (which cannot reach the tile)."""
+    (``drop_spec``) INSIDE the cross-origin builder iframe, verifying that
+    ``verify_text`` then appears. ``drop_spec`` is a full locator SPEC passed
+    VERBATIM to the primitive (v18.1.9 — e.g. ``role=button:Submit`` per
+    SELECTORS §5; a bare string still resolves as visible text). The old
+    unconditional ``text=`` wrapping is exactly what made the live 2026-07-08
+    drop target ambiguous against the Quick-Add panel's own 'Submit' texts.
+    ``source_scroll_hint`` (the tile's Quick-Add CATEGORY header text, e.g.
+    ``"Address"`` for ``City``) lets the primitive scroll a below-the-fold panel
+    section into view before locating the tile — the general fix for the live
+    2026-07-07 ``F5.locate:City`` miss, for ANY field in ANY category.
+    FAIL-CLOSED: raises StopAndReport (not a fake success) when the shared
+    primitive is unavailable, the CDP url can't be read, or the
+    locate/scroll/drag/verify does not land. This is the seam that replaces the
+    top-frame-only ``_ab(session, "drag", ...)`` (which cannot reach the tile)."""
     if ghl_iframe_drag is None:
         raise StopAndReport(
             "iframe-drag.dep",
@@ -948,13 +953,44 @@ def _perform_iframe_drag(session: str, source_text: str, drop_anchor: str,
             cdp_url,
             iframe_selector=iframe_selector,
             source=f"text={source_text}",
-            target=f"text={drop_anchor}",
+            target=drop_spec,
             url_marker="form-builder",
             verify_text=verify_text,
             source_scroll_hint=(f"text={source_scroll_hint}" if source_scroll_hint else None),
         )
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
         raise StopAndReport(f"iframe-drag:{exc.code}", exc.reason) from exc
+
+
+def _perform_iframe_field_remove(session: str, field_spec: str,
+                                 *, iframe_selector: str = GHL_FORM_IFRAME_SELECTOR) -> dict:
+    """Remove ONE canvas field (``field_spec`` = its DOCUMENTED anchor, SELECTORS
+    §6) INSIDE the cross-origin builder iframe via the shared frame-scoped
+    primitive (select the field → per-field ``role=link 'Remove field'`` control
+    → count-decrease proof). Same dep/CDP fail-closed shell as the drag seam;
+    an already-absent field returns a truthful idempotent no-op receipt."""
+    if ghl_iframe_drag is None:
+        raise StopAndReport(
+            "iframe-remove.dep",
+            "the shared frame-scoped primitive (ghl_iframe_drag) is not importable, and "
+            "agent-browser 0.27.0 alone CANNOT reach the per-field controls across the "
+            "cross-origin builder iframe. Ship ghl_iframe_drag.py + Playwright (scoped "
+            "to Skill 6) — STOP, do not brute-force.")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise StopAndReport(
+            "iframe-remove.cdp",
+            "could not read the agent-browser session's CDP url (`get cdp-url`) to hand "
+            "the field removal off to Playwright on the SAME logged-in Chromium. STOP.")
+    try:
+        return ghl_iframe_drag.remove_canvas_field(  # type: ignore[union-attr]
+            cdp_url,
+            iframe_selector=iframe_selector,
+            field=field_spec,
+            url_marker="form-builder",
+        )
+    except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
+        raise StopAndReport(f"iframe-remove:{exc.code}", exc.reason) from exc
 
 
 # ── in-SPA navigation — $router.push ONLY (never open/reload) ────────────────
@@ -1511,18 +1547,99 @@ def _verify_no_residue(session: str, location_id: str, form_name: str,
 # primitive ghl_survey_builder.py._p2_pull_object_fields uses to place its object fields.
 # So every step below is snapshot-and-bind by visible text (never an invented selector),
 # and a genuine unplaceable field is a StopAndReport — NOT the default path.
-_CANVAS_DROP_ANCHORS = ("Submit", "Email", "Phone", "Last Name", "First Name")
+#
+# DROP-ANCHOR SPECS (v18.1.9 — the live 2026-07-08 `target-not-found` fix): each
+# anchor is (visible-name, DOCUMENTED frame-scoped locator spec). Plain
+# `text=Submit` is AMBIGUOUS inside the iframe — the Quick-Add panel carries a
+# 'Submit' CATEGORY header + a 'Submit' tile (SELECTORS §8) alongside the canvas
+# button, and attempt #5 proved the blind first-match binding times out against
+# a hidden match. SELECTORS §5 locks the canvas landmark as role=button
+# name='Submit' (conf 9); the default-field fallbacks use their §6 documented
+# placeholder anchors (conf 8.5) — which can never collide with a panel tile's
+# label text.
+_CANVAS_DROP_ANCHORS: Tuple[Tuple[str, str], ...] = (
+    ("Submit", "role=button:Submit"),                      # SELECTORS §5, conf 9
+    ("Email", "placeholder=your@email.com"),               # SELECTORS §6, conf 8.5
+    ("Phone", "placeholder=+1 (555) 000-0000"),            # SELECTORS §6, conf 8.5
+    ("Last Name", "placeholder=Enter your last name"),     # SELECTORS §6, conf 8.5
+    ("First Name", "placeholder=Enter your first name"),   # SELECTORS §6, conf 8.5
+)
 
 
 def _canvas_drop_anchor(session: str, snap: str = "") -> str:
-    """A visible-text landmark ON the form canvas to drop a dragged tile onto. A fresh
-    scratch form always carries Submit + the default fields (CLICK-MAP Step 8 / §6).
-    Returns the first present anchor from the live snapshot, or '' if none is visible."""
+    """The frame-scoped locator SPEC of a landmark ON the form canvas to drop a
+    dragged tile onto. A fresh scratch form always carries Submit + the default
+    fields (CLICK-MAP Step 8 / §6), and the Submit button is a PERMANENT part of
+    every form — so this always returns a spec: the first anchor whose visible
+    name appears in the (ADVISORY) top-frame snapshot, else the documented
+    role-scoped Submit spec. The snapshot is never the locate gate here — the
+    AUTHORITATIVE, fail-closed resolve happens frame-scoped inside
+    ``_perform_iframe_drag`` (`target-not-found`), the same doctrine as the
+    tile locate (v18.1.5)."""
     snap = snap or _snapshot(session)
-    for a in _CANVAS_DROP_ANCHORS:
-        if a in snap:
-            return a
-    return ""
+    for name, spec in _CANVAS_DROP_ANCHORS:
+        if name in snap:
+            return spec
+    _log("drop-anchor: no anchor name in the (advisory) top-frame snapshot — "
+         "falling back to the documented role-scoped Submit landmark; the "
+         "frame-scoped resolve remains the authoritative gate")
+    return _CANVAS_DROP_ANCHORS[0][1]
+
+
+# ── F4 default-field reconciliation (v18.1.9) ────────────────────────────────
+# GHL's Start-from-Scratch template PRE-SEEDS the canvas (SELECTORS §6 /
+# DEFAULT_FORM_FIELDS); the plan splits those into default_fields_keep /
+# default_fields_delete (see _build_form_plan), and the click list emits one F4
+# delete_field step per unwanted default. Until v18.1.8 those steps were
+# warn-and-KEEP — live 2026-07-08 attempt #5 shipped toward a form that would
+# have carried BOTH the kept default 'Phone' and the plan's dragged 'Phone'
+# (a duplicate-field spec violation), and the kept defaults are what made the
+# canvas tall enough to push Submit below the fold. Deletion is now REAL and
+# fail-closed, via the fields' DOCUMENTED canvas anchors — never invented CSS:
+# placeholders per §6 (conf 8.5); the Terms & Conditions consent block has no
+# placeholder, so its anchor is its consent paragraph text (§6 conf 6.5 —
+# opening phrase confirmed in the live attempt-#5 builder screenshots).
+_DEFAULT_FIELD_CANVAS_ANCHORS: Dict[str, str] = {
+    "first name": "placeholder=Enter your first name",
+    "last name": "placeholder=Enter your last name",
+    "phone": "placeholder=+1 (555) 000-0000",
+    "email": "placeholder=your@email.com",
+    "terms & conditions": "text=I consent",
+}
+
+
+def _delete_default_field(session: str, name: str, evidence_root: str,
+                          shot_n: List[int], warnings: List[str],
+                          steps_done: List[str]) -> None:
+    """F4 — reconcile ONE unwanted default field OFF the canvas (fail-closed).
+
+    Proceeding past a failed delete is NOT an option: the form would ship with
+    fields the plan excluded (client gets EXACTLY the spec), a kept default
+    whose label equals a later Quick-Add tile poisons that drag's source text,
+    and F5's count-delta placement proof would baseline against the leftover.
+    An ALREADY-absent field is the desired end-state → recorded, not an error."""
+    spec = _DEFAULT_FIELD_CANVAS_ANCHORS.get(name.strip().lower())
+    if not spec:
+        raise StopAndReport(
+            f"F4.anchor:{name[:24]}",
+            f"the plan asks to delete default field {name!r} but there is no "
+            "DOCUMENTED canvas anchor for it (SELECTORS §6 / "
+            "_DEFAULT_FIELD_CANVAS_ANCHORS). STOP — never invent a selector; "
+            "capture the anchor live first.")
+    try:
+        rec = _perform_iframe_field_remove(session, spec)
+    except StopAndReport as sr:
+        raise StopAndReport(
+            f"F4.delete:{name[:24]}",
+            f"could not remove default field {name!r} via its documented anchor "
+            f"{spec!r} (underlying: {sr.step}). {sr.reason}") from sr
+    if rec.get("already_absent"):
+        steps_done.append(f"F4:default-absent:{name[:20]}")
+        warnings.append(f"F4: default field {name!r} was already absent — "
+                        "recorded as reconciled (idempotent no-op)")
+        return
+    steps_done.append(f"F4:delete:{name[:20]}")
+    _screenshot(session, _shot(evidence_root, shot_n, f"f4-delete-{_slug(name)}"))
 
 
 def _bind_field_props(session: str, field: dict, warnings: List[str]) -> None:
@@ -1593,19 +1710,17 @@ def _place_quick_add_field(session: str, field: dict, evidence_root: str,
         # Advisory only — the frame-scoped locate below is authoritative.
         _log(f"F5: tile {tile!r} not in the top-frame snapshot — relying on the "
              f"frame-scoped locate (category hint {category!r})")
-    anchor = _canvas_drop_anchor(session, snap)
-    if not anchor:
-        raise StopAndReport(
-            f"F5.drop:{tile}",
-            "no canvas drop landmark (Submit / a default field) is visible to drop the "
-            f"{tile!r} tile onto.")
+    # The drop landmark is a frame-scoped locator SPEC (v18.1.9 — role-scoped
+    # Submit per SELECTORS §5; the snapshot is only advisory for the choice,
+    # the frame-scoped resolve inside the drag is the authoritative gate).
+    drop_spec = _canvas_drop_anchor(session, snap)
     # FRAME-SCOPED drag (cross-origin iframe): agent-browser cannot reach the tile,
     # so hand THIS step to Playwright over the same session's CDP (verify=the field
     # label appears in the iframe). The category hint lets the primitive scroll the
     # tile's section into view first. Fail-closed inside _perform_iframe_drag; a
     # locate-class miss is re-raised as the honest F5.locate step.
     try:
-        _perform_iframe_drag(session, tile, anchor, verify_text=label[:18],
+        _perform_iframe_drag(session, tile, drop_spec, verify_text=label[:18],
                              source_scroll_hint=category)
     except StopAndReport as sr:
         if sr.step in _DRAG_LOCATE_MISS_STEPS:
@@ -1656,16 +1771,12 @@ def _place_object_field(session: str, field: dict, evidence_root: str,
             "Fields after Search-by-Name. It must be created FIRST by Skill 44 (caf, "
             "LOCATION PIT) — the browser never mints a custom field on the fly (CLICK-MAP "
             "Phase H / SELECTORS §7). STOP — do not brute-force.")
-    anchor = _canvas_drop_anchor(session, snap)
-    if not anchor:
-        raise StopAndReport(
-            f"F6.drop:{key or label}",
-            "no canvas drop landmark is visible to drop the object field onto.")
+    drop_spec = _canvas_drop_anchor(session, snap)   # frame-scoped SPEC (v18.1.9)
     # FRAME-SCOPED drag (cross-origin iframe) — same fix as F5; the pre-created
     # object-field row is a non-interactive node agent-browser cannot reach.
     # (No scroll hint needed: Search-by-Name just filtered the list to this row,
     # and drive_drag scrolls the row into view itself when it sits below a fold.)
-    _perform_iframe_drag(session, label[:24], anchor, verify_text=label[:18])
+    _perform_iframe_drag(session, label[:24], drop_spec, verify_text=label[:18])
     # Authoritative placement gate = the frame-scoped verify above (raises
     # `not-placed` on a miss). Top-frame snapshot = secondary evidence only —
     # same doctrine as F5 (the auto-inlined snapshot can lag in-iframe content).
@@ -1826,10 +1937,17 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
                         f"read-back title {r['actual_title']!r}")
             continue
 
-        # F4 — delete default fields (per-field Remove link = in-iframe runtime-capture)
+        # F4 — default-field reconciliation (v18.1.9): DELETE each unwanted
+        # default FOR REAL via the frame-scoped seam (select the field by its
+        # documented §6 anchor → role=link 'Remove field' → count-decrease
+        # proof). The old warn-and-keep stub left 'Phone' + 'Terms & Conditions'
+        # on the canvas (live 2026-07-08 attempt #5) — a spec violation that
+        # also poisoned the F5 drag surfaces. Fail-closed inside
+        # _delete_default_field; already-absent = truthful idempotent no-op.
         if phase == "F4":
-            warnings.append(f"F4: default-field delete ({tgt[:24]!r}) is in-iframe runtime-capture — "
-                            "kept defaults for the minimal run")
+            if action == "delete_field" and tgt:
+                _delete_default_field(session, tgt, evidence_root, shot_n,
+                                      warnings, steps_done)
             continue
 
         # F5 / F6 — field placement. On the FIRST step of each phase we place ALL of
@@ -2289,6 +2407,14 @@ def _selftest() -> int:
                 errors.append("placement: a top-frame `_ab drag` was used (must be frame-scoped)")
             if fakedrag.calls and fakedrag.calls[0][3] != GHL_FORM_IFRAME_SELECTOR:
                 errors.append("placement: frame-scoped drag used the wrong iframe selector")
+            # v18.1.9: the drop target must be the ROLE-SCOPED Submit spec —
+            # plain 'Submit'/'text=Submit' is ambiguous inside the iframe (the
+            # Quick-Add panel's own 'Submit' category header + tile; the live
+            # 2026-07-08 target-not-found).
+            for c in fakedrag.calls:
+                if c[1] != "role=button:Submit":
+                    errors.append(f"placement: drop target must be the role-scoped "
+                                  f"Submit spec, got {c[1]!r}")
             # standard field must bind Query Key (custom must NOT — locked key)
             # v18.1.3: fills go through `find label <x> fill <v>` (a bare `fill
             # <label>` positional is a CSS selector, not a label bind).
@@ -2358,6 +2484,74 @@ def _selftest() -> int:
             if raised_step != "F5.locate:State":
                 errors.append("placement: frame-scoped locate miss must STOP at "
                               f"F5.locate:<tile> (got {raised_step!r})")
+
+        # (d) F4 DEFAULT-FIELD RECONCILIATION (v18.1.9): the walk must DELETE the
+        #     plan's unwanted defaults FOR REAL (frame-scoped, documented §6
+        #     anchors) BEFORE any F5 drag — never the old warn-and-keep stub —
+        #     and a genuine remove miss STOPs at the honest F4.delete step.
+        class _FakeRemove:
+            def __init__(self, fail=False):
+                self.calls: List[str] = []
+                self.fail = fail
+
+            def __call__(self, session, field_spec, *, iframe_selector=GHL_FORM_IFRAME_SELECTOR):
+                self.calls.append(field_spec)
+                if self.fail:
+                    raise StopAndReport("iframe-remove:remove-link-not-found",
+                                        "mock: control never appeared")
+                return {"ok": True, "removed": True, "already_absent": False,
+                        "pre_count": 1, "post_count": 0}
+
+        _orig_remove = globals()["_perform_iframe_field_remove"]
+        f4drag = _FakeDrag()
+        f4remove = _FakeRemove()
+        globals()["_ab"] = _FakeAB(happy)
+        globals()["_perform_iframe_drag"] = f4drag
+        globals()["_perform_iframe_field_remove"] = f4remove
+        try:
+            with tempfile.TemporaryDirectory() as tmp5:
+                os.makedirs(os.path.join(tmp5, "shots"), exist_ok=True)
+                plan5 = {"location_id": "LOC", "form_name": "ZHC T",
+                         "default_fields_keep": ["First Name", "Last Name", "Email"],
+                         "fields": [{"source": "standard", "element": "Phone",
+                                     "label": "Phone", "query_key": "phone",
+                                     "width_pct": 100, "required": False,
+                                     "hidden": False,
+                                     "quick_add_category": "Personal Info"}]}
+                cl5 = {"steps": [
+                    {"phase": "F4", "action": "delete_field", "target": "Phone"},
+                    {"phase": "F4", "action": "delete_field", "target": "Terms & Conditions"},
+                    {"phase": "F5", "action": "drag", "target": "Phone → canvas"},
+                ]}
+                sd5: List[str] = []
+                _walk_click_list("s", cl5, plan5, tmp5, [0], [], sd5)
+                if f4remove.calls != ["placeholder=+1 (555) 000-0000", "text=I consent"]:
+                    errors.append(f"F4: expected the two documented §6 anchors, got {f4remove.calls}")
+                if len(f4drag.calls) != 1:
+                    errors.append(f"F4: the F5 drag must still run once, got {len(f4drag.calls)}")
+                want_order = ["F4:delete:Phone", "F4:delete:Terms & Conditions",
+                              "F5:place:Phone"]
+                got_order = [s for s in sd5 if s in want_order]
+                if got_order != want_order:
+                    errors.append(f"F4: deletes must PRECEDE the drag in steps_done, got {sd5}")
+            # a genuine remove miss STOPs honestly at F4.delete:<name> and the
+            # walk never reaches the drag.
+            f4drag2 = _FakeDrag()
+            globals()["_perform_iframe_drag"] = f4drag2
+            globals()["_perform_iframe_field_remove"] = _FakeRemove(fail=True)
+            with tempfile.TemporaryDirectory() as tmp6:
+                os.makedirs(os.path.join(tmp6, "shots"), exist_ok=True)
+                raised = ""
+                try:
+                    _walk_click_list("s", cl5, plan5, tmp6, [0], [], [])
+                except StopAndReport as sr:
+                    raised = sr.step
+                if raised != "F4.delete:Phone":
+                    errors.append(f"F4: remove miss must STOP at F4.delete:Phone, got {raised!r}")
+                if f4drag2.calls:
+                    errors.append("F4: the walk must NOT drag past a failed default delete")
+        finally:
+            globals()["_perform_iframe_field_remove"] = _orig_remove
     finally:
         globals()["_ab"] = _orig_ab
         globals()["_perform_iframe_drag"] = _orig_drag

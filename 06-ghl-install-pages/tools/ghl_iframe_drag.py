@@ -86,6 +86,28 @@ City-only patch):
     Fail-closed at every step — a tile that genuinely does not exist still raises
     ``source-not-found``.
 
+VISIBLE-MATCH RESOLUTION + ROLE/PLACEHOLDER SPECS + FIELD REMOVE (v1.2.0)
+-------------------------------------------------------------------------
+Live 2026-07-08 (attempt #5 against a real account): the drop target
+``text=Submit`` timed out (``target-not-found``) even though the canvas Submit
+button was on screen — inside the builder iframe that text ALSO matches the
+Quick-Add panel's 'Submit' CATEGORY header + its 'Submit' tile (SELECTORS-LIVE-
+form.md §8), and the blind ``.first`` bound to a HIDDEN match. Three durable
+fixes, none Submit-specific:
+  • ``_resolve_visible``: source/target resolution scans ALL matches in DOM
+    order and binds the FIRST VISIBLE one (poll/wait fallback preserved);
+    honest fail-closed codes now carry attached-match diagnostics.
+  • New locator specs: ``role=<role>:<name>`` (``get_by_role(..., exact=True)``
+    — the same class of fix as the F2 'Create' collision; SELECTORS §5 locks
+    the canvas Submit as role=button) and ``placeholder=<text>`` (§6 — the
+    documented per-field canvas anchors).
+  • ``drive_remove_canvas_field`` / ``remove_canvas_field``: the F4 default-
+    field reconciliation primitive — select the canvas field by its documented
+    anchor, click the per-field ``role=link 'Remove field'`` control (§6), and
+    prove the removal by a COUNT-DECREASE of the field's own anchor (mirror of
+    the v1.1.1 count-delta placement proof). 0 matches = a truthful idempotent
+    already-absent no-op; everything else fails closed.
+
 FRAME-SCOPED INLINE-TITLE READ/SET (v1.1.0 — the F3 rename fix)
 ----------------------------------------------------------------
 The builder's title ("Form 55" / "Survey 0") is an in-iframe INLINE-EDIT surface
@@ -152,7 +174,7 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.1.0"
+IFRAME_DRAG_VERSION = "v1.2.0"
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -203,30 +225,116 @@ def _interpolate(sx: float, sy: float, tx: float, ty: float, steps: int):
         yield (sx + (tx - sx) * f, sy + (ty - sy) * f)
 
 
-def _resolve_locator(frame: Any, spec: str) -> Any:
-    """Resolve a locator SPEC against a Playwright FrameLocator.
+def _resolve_locator_all(frame: Any, spec: str) -> Any:
+    """Resolve a locator SPEC against a Playwright FrameLocator — UN-NARROWED
+    (no ``.first``), so callers can scan every match (see :func:`_resolve_visible`).
 
     Spec grammar (kept deliberately small; GHL tiles are located by visible text):
-      * ``"text=Foo"``  → ``frame.get_by_text("Foo", exact=False).first`` (default)
-      * ``"exact=Foo"`` → ``frame.get_by_text("Foo", exact=True).first``
-      * ``"re:PAT"``    → ``frame.get_by_text(re.compile(PAT)).first`` (regex —
+      * ``"text=Foo"``  → ``frame.get_by_text("Foo", exact=False)`` (default)
+      * ``"exact=Foo"`` → ``frame.get_by_text("Foo", exact=True)``
+      * ``"re:PAT"``    → ``frame.get_by_text(re.compile(PAT))`` (regex —
                           needed for pattern-only surfaces like the default
                           builder title ``Form <n>``, whose number is unknowable)
-      * ``"css=SEL"``   → ``frame.locator("SEL").first``
+      * ``"css=SEL"``   → ``frame.locator("SEL")``
+      * ``"role=R:Name"`` → ``frame.get_by_role("R", name="Name", exact=True)``
+                          (v1.2.0 — the F2-'Create'-collision class of fix for
+                          AMBIGUOUS visible text: SELECTORS-LIVE-form.md §5 locks
+                          the canvas Submit as role=button name='Submit', while
+                          plain ``text=Submit`` ALSO matches the Quick-Add panel's
+                          'Submit' CATEGORY header + tile — live 2026-07-08)
+      * ``"placeholder=P"`` → ``frame.get_by_placeholder("P")`` (v1.2.0 — the
+                          documented per-field canvas anchors, SELECTORS §6)
       * bare ``"Foo"``  → treated as ``text=Foo``
     """
     if not spec or not str(spec).strip():
         raise IframeDragError("empty-locator", "a source/target locator spec was empty")
     s = str(spec)
     if s.startswith("css="):
-        return frame.locator(s[4:]).first
+        return frame.locator(s[4:])
     if s.startswith("exact="):
-        return frame.get_by_text(s[6:], exact=True).first
+        return frame.get_by_text(s[6:], exact=True)
     if s.startswith("re:"):
-        return frame.get_by_text(re.compile(s[3:])).first
+        return frame.get_by_text(re.compile(s[3:]))
+    if s.startswith("role="):
+        body = s[5:]
+        role, sep, name = body.partition(":")
+        if not sep or not role.strip() or not name.strip():
+            raise IframeDragError(
+                "bad-role-locator",
+                f"role= spec must be 'role=<role>:<accessible name>', got {spec!r}")
+        return frame.get_by_role(role.strip(), name=name, exact=True)
+    if s.startswith("placeholder="):
+        return frame.get_by_placeholder(s[12:])
     if s.startswith("text="):
-        return frame.get_by_text(s[5:], exact=False).first
-    return frame.get_by_text(s, exact=False).first
+        return frame.get_by_text(s[5:], exact=False)
+    return frame.get_by_text(s, exact=False)
+
+
+def _resolve_locator(frame: Any, spec: str) -> Any:
+    """First match for SPEC (``_resolve_locator_all(...).first``) — kept for the
+    single-element surfaces (inline title, scroll hints)."""
+    return _resolve_locator_all(frame, spec).first
+
+
+def _safe_count(loc_all: Any) -> int:
+    try:
+        return int(loc_all.count())
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _first_visible_match(loc_all: Any) -> Optional[Any]:
+    """Scan the matches of an un-narrowed locator IN DOM ORDER and return the
+    first one that is CURRENTLY visible, else None. Never raises — an
+    unevaluable candidate simply doesn't count as visible (fail-closed)."""
+    try:
+        n = int(loc_all.count())
+    except Exception:  # noqa: BLE001
+        return None
+    for i in range(n):
+        try:
+            cand = loc_all.nth(i)
+            if cand.is_visible():
+                return cand
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _resolve_visible(frame: Any, spec: str, *, timeout_ms: int) -> Tuple[Any, int]:
+    """Resolve SPEC to a VISIBLE element, robust to AMBIGUOUS matches.
+
+    THE LIVE 2026-07-08 BUG THIS FIXES: a text spec can legitimately match
+    several in-iframe nodes (``text=Submit`` matched the Quick-Add panel's
+    'Submit' CATEGORY header + its 'Submit' tile + the canvas Submit button —
+    SELECTORS-LIVE-form.md §5/§8), and a blind ``.first`` binds to the first
+    DOM-order match. When that match is HIDDEN, ``wait_for(state='visible')``
+    times out (→ a false ``target-not-found``) even though the real landmark is
+    plainly on screen — proven live against the real account (attempt #5).
+
+    Resolution order:
+      1. immediate scan → the FIRST currently-visible match wins;
+      2. no visible match yet → ``first.wait_for(visible, timeout)`` (the
+         pre-existing behavior — correct for unambiguous/slow-rendering specs);
+      3. the wait missed → ONE final scan (content may have rendered with a
+         hidden first-in-DOM match) → else re-raise the wait's failure.
+
+    Returns ``(locator, attached_match_count)``; the count rides along for
+    honest diagnostics. Raises whatever ``wait_for`` raised when nothing
+    visible can be resolved (callers wrap it into their own fail-closed code)."""
+    loc_all = _resolve_locator_all(frame, spec)
+    cand = _first_visible_match(loc_all)
+    if cand is not None:
+        return cand, _safe_count(loc_all)
+    first = loc_all.first
+    try:
+        first.wait_for(state="visible", timeout=timeout_ms)
+        return first, _safe_count(loc_all)
+    except Exception:
+        cand = _first_visible_match(loc_all)
+        if cand is not None:
+            return cand, _safe_count(loc_all)
+        raise
 
 
 def _scroll_into_view(loc: Any, *, what: str, spec: str, timeout_ms: int) -> None:
@@ -247,14 +355,18 @@ def _scroll_into_view(loc: Any, *, what: str, spec: str, timeout_ms: int) -> Non
             "an off-screen element.") from exc
 
 
-def _bring_source_into_view(frame: Any, src: Any, source: str, *,
+def _bring_source_into_view(frame: Any, source: str, *,
                             iframe_selector: str,
                             scroll_hint: Optional[str],
-                            timeout_ms: int) -> None:
-    """Make the drag SOURCE actually on-screen inside the iframe, fail-closed.
+                            timeout_ms: int) -> Any:
+    """Make the drag SOURCE actually on-screen inside the iframe, fail-closed,
+    and RETURN the resolved locator (v1.2.0 — resolution is visible-match-aware,
+    so an AMBIGUOUS source text with a hidden first-in-DOM match still resolves
+    to the on-screen tile; see :func:`_resolve_visible`).
 
-    1. Direct path: wait for the source, then ``scroll_into_view_if_needed`` (this
-       alone fixes a tile that is rendered but below the fold of its panel).
+    1. Direct path: resolve a VISIBLE match for the source, then
+       ``scroll_into_view_if_needed`` (this alone fixes a tile that is rendered
+       but below the fold of its panel).
     2. Hint path (``scroll_hint`` — e.g. the Quick-Add CATEGORY header text): when
        the direct path misses (a lazily-rendered / far-off-screen section), scroll
        the HINT element into view first to reveal its section, then retry the
@@ -263,9 +375,9 @@ def _bring_source_into_view(frame: Any, src: Any, source: str, *,
        the tile genuinely is not there)."""
     direct_exc: Optional[Exception] = None
     try:
-        src.wait_for(state="visible", timeout=timeout_ms)
+        src, _ = _resolve_visible(frame, source, timeout_ms=timeout_ms)
         _scroll_into_view(src, what="source", spec=source, timeout_ms=timeout_ms)
-        return
+        return src
     except IframeDragError as exc:
         direct_exc = exc
     except Exception as exc:  # noqa: BLE001
@@ -296,8 +408,9 @@ def _bring_source_into_view(frame: Any, src: Any, source: str, *,
             f"{scroll_hint!r} was not found/visible inside {iframe_selector!r} "
             f"within {timeout_ms}ms ({type(exc).__name__}). STOP.") from exc
     try:
-        src.wait_for(state="visible", timeout=timeout_ms)
+        src, _ = _resolve_visible(frame, source, timeout_ms=timeout_ms)
         _scroll_into_view(src, what="source", spec=source, timeout_ms=timeout_ms)
+        return src
     except IframeDragError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -347,8 +460,6 @@ def drive_drag(
         raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
 
     frame = page.frame_locator(iframe_selector)
-    src = _resolve_locator(frame, source)
-    tgt = _resolve_locator(frame, target)
 
     # COUNT-DELTA verification baseline (v1.1.1): for a Quick-Add drag the
     # verify text EQUALS the tile's own label, which is already present in the
@@ -362,21 +473,29 @@ def drive_drag(
         except Exception:  # noqa: BLE001
             pre_count = 0
 
-    # Bring the SOURCE tile on-screen (scroll; category-hint fallback) — fail-closed.
-    _bring_source_into_view(frame, src, source, iframe_selector=iframe_selector,
-                            scroll_hint=source_scroll_hint, timeout_ms=timeout_ms)
+    # Bring the SOURCE tile on-screen (visible-match resolve; scroll;
+    # category-hint fallback) — fail-closed.
+    src = _bring_source_into_view(frame, source, iframe_selector=iframe_selector,
+                                  scroll_hint=source_scroll_hint, timeout_ms=timeout_ms)
 
-    # Bring the drop TARGET on-screen too (a canvas landmark can equally sit below
-    # the fold). Fail-closed with its own honest codes.
+    # Resolve the drop TARGET to a VISIBLE landmark (v1.2.0 — the live 2026-07-08
+    # 'target-not-found' fix: `text=Submit` ALSO matches the Quick-Add panel's
+    # 'Submit' category header/tile, and a blind `.first` bound to a HIDDEN match
+    # timed out for the full budget while the real canvas button sat on screen).
+    # Then bring it on-screen too (a canvas landmark can equally sit below the
+    # fold — the KEPT default fields push Submit under it). Fail-closed with its
+    # own honest codes, now carrying the attached-match diagnostics.
     try:
-        tgt.wait_for(state="visible", timeout=timeout_ms)
+        tgt, tgt_matches = _resolve_visible(frame, target, timeout_ms=timeout_ms)
     except IframeDragError:
         raise
     except Exception as exc:  # noqa: BLE001
+        n_attached = _safe_count(_resolve_locator_all(frame, target))
         raise IframeDragError(
             "target-not-found",
             f"drop TARGET {target!r} was not found/visible inside the cross-origin "
-            f"iframe {iframe_selector!r} within {timeout_ms}ms ({type(exc).__name__}). "
+            f"iframe {iframe_selector!r} within {timeout_ms}ms ({type(exc).__name__}; "
+            f"{max(n_attached, 0)} attached match(es), none visible). "
             "STOP — no drop landmark to aim at.") from exc
     _scroll_into_view(tgt, what="target", spec=target, timeout_ms=timeout_ms)
 
@@ -430,6 +549,7 @@ def drive_drag(
         "iframe_selector": iframe_selector,
         "source": source,
         "target": target,
+        "target_matches": tgt_matches,   # attached matches for the target spec (diagnostics)
         "source_box": sbox,
         "target_box": tbox,
         "source_point": [sx, sy],
@@ -605,6 +725,158 @@ def coordinate_drag(
             # Detach the Playwright CDP connection WITHOUT killing agent-browser's
             # Chromium (it owns the singleton pooled session + its teardown). For a
             # connect_over_cdp browser, close() disconnects the client only.
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ---------------------------------------------------------------------------
+# FRAME-SCOPED CANVAS-FIELD REMOVE (v1.2.0) — the F4 default-field
+# reconciliation fix. GHL's "Start from Scratch" template pre-seeds the canvas
+# (First Name, Last Name, Phone, Email, the Terms & Conditions consent block —
+# SELECTORS-LIVE-form.md §6); the plan's `default_fields_delete` entries were
+# previously warn-and-KEPT (live 2026-07-08 attempt #5), leaving extra fields
+# on the canvas — which both ships a form that deviates from the spec AND
+# poisons later drags (the kept default 'Phone' label collides with the Quick-
+# Add 'Phone' tile text; the taller canvas pushes Submit below the fold).
+# The DOCUMENTED delete affordance (§6, conf 8): select/hover the field → the
+# per-field controls appear as REAL links → getByRole('link', { name:
+# 'Remove field' }). All inside the cross-origin iframe → same CDP handoff as
+# the drag. FAIL-CLOSED; removal is verified by a COUNT-DECREASE of the
+# field's own anchor (mirror of the v1.1.1 count-delta placement proof).
+# ---------------------------------------------------------------------------
+REMOVE_FIELD_LINK_SPEC = "role=link:Remove field"    # SELECTORS-LIVE-form.md §6
+
+
+def _verify_count_at_most(loc_all: Any, max_count: int, timeout_ms: int) -> Tuple[bool, int]:
+    """Poll until the locator's attached-match count is <= ``max_count``.
+    Returns (ok, last_count). Never raises for a plain miss (caller decides)."""
+    deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
+    last = -1
+    while True:
+        last = _safe_count(loc_all)
+        if 0 <= last <= max_count:
+            return True, last
+        if time.monotonic() >= deadline:
+            return False, last
+        time.sleep(0.25)
+
+
+def drive_remove_canvas_field(
+    page: Any,
+    *,
+    iframe_selector: str,
+    field: str,
+    remove_link_spec: str = REMOVE_FIELD_LINK_SPEC,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> Dict[str, Any]:
+    """Remove ONE canvas field inside the builder iframe and VERIFY it is gone.
+
+    ``field`` is a locator spec for the field's DOCUMENTED canvas anchor
+    (SELECTORS §6 — e.g. ``placeholder=+1 (555) 000-0000`` for the default
+    Phone field; the consent paragraph text for the Terms & Conditions block).
+
+    Mechanism (all frame-scoped — Playwright drives the cross-origin iframe
+    natively): 0 matches → the field is ALREADY absent → a truthful idempotent
+    no-op receipt (reconciliation semantics: the desired end-state holds);
+    else resolve a VISIBLE match, scroll it on-screen, hover + click it to
+    select (the per-field controls appear on hover/selected — §6), resolve the
+    'Remove field' LINK by role+exact name, click it, and VERIFY the field
+    anchor's match count DECREASED below its pre-remove baseline. FAIL-CLOSED
+    codes: ``field-not-found`` (attached but never visible/selectable),
+    ``remove-link-not-found``, ``field-not-removed``. NEVER fakes a removal."""
+    if not iframe_selector or not str(iframe_selector).strip():
+        raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
+    if not field or not str(field).strip():
+        raise IframeDragError("empty-locator", "the field anchor spec was empty")
+
+    frame = page.frame_locator(iframe_selector)
+    loc_all = _resolve_locator_all(frame, field)
+    pre = _safe_count(loc_all)
+    if pre == 0:
+        return {"ok": True, "removed": False, "already_absent": True,
+                "field": field, "pre_count": 0, "post_count": 0,
+                "remove_link": remove_link_spec}
+
+    try:
+        anchor, _ = _resolve_visible(frame, field, timeout_ms=timeout_ms)
+    except IframeDragError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "field-not-found",
+            f"canvas field anchor {field!r} has {max(pre, 0)} attached match(es) but "
+            f"none became visible inside {iframe_selector!r} within {timeout_ms}ms "
+            f"({type(exc).__name__}). STOP — cannot select a field that is not on "
+            "screen (never blind-click).") from exc
+    _scroll_into_view(anchor, what="field", spec=field, timeout_ms=timeout_ms)
+    try:
+        anchor.hover()          # reveals the per-field hover controls (§6)
+    except Exception:  # noqa: BLE001
+        pass                    # hover is best-effort; the click below selects
+    try:
+        anchor.click()          # selecting the field also shows its controls (§6)
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "field-not-selectable",
+            f"located canvas field {field!r} but the select-click failed "
+            f"({type(exc).__name__}). STOP.") from exc
+
+    try:
+        link, _ = _resolve_visible(frame, remove_link_spec, timeout_ms=timeout_ms)
+    except IframeDragError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "remove-link-not-found",
+            f"selected canvas field {field!r} but the documented per-field control "
+            f"{remove_link_spec!r} (SELECTORS §6) never became visible within "
+            f"{timeout_ms}ms ({type(exc).__name__}). STOP — never invent another "
+            "delete affordance.") from exc
+    try:
+        link.click()
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "remove-click-failed",
+            f"the {remove_link_spec!r} control resolved for field {field!r} but the "
+            f"click failed ({type(exc).__name__}). STOP.") from exc
+
+    ok, post = _verify_count_at_most(loc_all, max(0, pre - 1), timeout_ms)
+    receipt = {"ok": True, "removed": ok, "already_absent": False, "field": field,
+               "pre_count": pre, "post_count": post, "remove_link": remove_link_spec}
+    if not ok:
+        raise IframeDragError(
+            "field-not-removed",
+            f"clicked {remove_link_spec!r} for field {field!r} but its anchor match "
+            f"count never DROPPED below the pre-remove baseline ({pre} → {post}) — "
+            f"the removal did NOT verify. STOP (never report a fake delete). "
+            f"receipt={receipt}")
+    return receipt
+
+
+def remove_canvas_field(
+    cdp_url: str,
+    *,
+    iframe_selector: str,
+    field: str,
+    url_marker: Optional[str] = None,
+    remove_link_spec: str = REMOVE_FIELD_LINK_SPEC,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> Dict[str, Any]:
+    """LIVE entry point: attach over CDP (same logged-in Chromium; no second
+    browser, no re-login) and remove ONE canvas field inside the builder iframe,
+    fail-closed. See :func:`drive_remove_canvas_field` for mechanism + receipt."""
+    _require_playwright("canvas-field remove")
+    _require_cdp_url(cdp_url)
+    with sync_playwright() as p:  # type: ignore[union-attr]
+        browser = _attach_over_cdp(p, cdp_url)
+        try:
+            page = _select_page(browser, url_marker, iframe_selector)
+            return drive_remove_canvas_field(
+                page, iframe_selector=iframe_selector, field=field,
+                remove_link_spec=remove_link_spec, timeout_ms=timeout_ms)
+        finally:
             try:
                 browser.close()
             except Exception:  # noqa: BLE001
@@ -879,7 +1151,7 @@ def _selftest() -> int:
     except IframeDragError:
         pass
 
-    # 3. locator spec dispatch.
+    # 3. locator spec dispatch (incl. the v1.2.0 role= / placeholder= specs).
     class _FrameSpy:
         def __init__(self):
             self.calls = []
@@ -892,6 +1164,14 @@ def _selftest() -> int:
             self.calls.append(("css", sel))
             return _LocStub()
 
+        def get_by_role(self, role, name=None, exact=False):
+            self.calls.append(("role", role, name, exact))
+            return _LocStub()
+
+        def get_by_placeholder(self, text):
+            self.calls.append(("placeholder", text))
+            return _LocStub()
+
     class _LocStub:
         @property
         def first(self):
@@ -902,14 +1182,24 @@ def _selftest() -> int:
     _resolve_locator(fs, "text=City")
     _resolve_locator(fs, "exact=Submit")
     _resolve_locator(fs, "css=#tile-state")
+    _resolve_locator(fs, "role=button:Submit")
+    _resolve_locator(fs, "placeholder=+1 (555) 000-0000")
     if fs.calls != [("text", "State", False), ("text", "City", False),
-                    ("text", "Submit", True), ("css", "#tile-state")]:
+                    ("text", "Submit", True), ("css", "#tile-state"),
+                    ("role", "button", "Submit", True),
+                    ("placeholder", "+1 (555) 000-0000")]:
         errors.append(f"locator dispatch wrong: {fs.calls}")
     try:
         _resolve_locator(fs, "")
         errors.append("empty locator spec did not raise")
     except IframeDragError:
         pass
+    try:
+        _resolve_locator(fs, "role=button")     # missing ':<name>' part
+        errors.append("malformed role= spec did not raise")
+    except IframeDragError as e:
+        if e.code != "bad-role-locator":
+            errors.append(f"malformed role= wrong code: {e.code}")
 
     # 4. HAPPY drag: mock page records the exact pointer sequence.
     class _MockMouse:
@@ -930,7 +1220,8 @@ def _selftest() -> int:
         read (the pre-drag baseline — the tile itself already matches) and,
         when the placement 'landed' (present_after), 2 on later reads (tile +
         the newly placed canvas field). A failed placement stays at 1 forever —
-        which must now read as NOT placed."""
+        which must now read as NOT placed. v1.2.0: also exposes the
+        nth()/is_visible() surface the visible-match scan touches."""
         def __init__(self, frame, box, present_after=True):
             self._frame = frame
             self._box = box
@@ -939,6 +1230,12 @@ def _selftest() -> int:
         @property
         def first(self):
             return self
+
+        def nth(self, i):
+            return self
+
+        def is_visible(self):
+            return self._box is not None
 
         def wait_for(self, state="visible", timeout=0):
             if self._box is None:
@@ -1074,6 +1371,12 @@ def _selftest() -> int:
         @property
         def first(self):
             return self
+
+        def nth(self, i):
+            return self
+
+        def is_visible(self):
+            return self._w.visible(self._k)
 
         def wait_for(self, state="visible", timeout=0):
             if not self._w.visible(self._k):
@@ -1242,6 +1545,184 @@ def _selftest() -> int:
     if any(o[0] == "type" for o in tp2.keyboard.ops):
         errors.append("typed into a non-editable title (must STOP first)")
 
+    # 12. AMBIGUOUS DROP TARGET (v1.2.0 — the live 2026-07-08 attempt-#5 fix):
+    #     'Submit' matches TWO in-iframe nodes — the first in DOM order HIDDEN
+    #     (the Quick-Add panel world), the second the VISIBLE canvas landmark.
+    #     The old blind `.first` timed out (a false target-not-found); the
+    #     visible-match resolve must aim the drop at the VISIBLE match. And
+    #     when NO match is visible, the honest target-not-found remains, now
+    #     carrying the attached-match diagnostics.
+    class _AmbigLoc:
+        def __init__(self, frame, key, boxes):
+            self._frame, self._key, self._boxes = frame, key, boxes
+            self._i = 0
+
+        @property
+        def first(self):
+            return self.nth(0)
+
+        def nth(self, i):
+            c = _AmbigLoc(self._frame, self._key, self._boxes)
+            c._i = i
+            return c
+
+        def is_visible(self):
+            return 0 <= self._i < len(self._boxes) and self._boxes[self._i] is not None
+
+        def wait_for(self, state="visible", timeout=0):
+            if not self.is_visible():
+                raise TimeoutError(f"mock: {self._key}[{self._i}] hidden")
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            if not self.is_visible():
+                raise TimeoutError("mock: cannot scroll a hidden element")
+
+        def bounding_box(self):
+            return self._boxes[self._i] if 0 <= self._i < len(self._boxes) else None
+
+        def count(self):
+            if self._key == "State":            # count-delta verify surface
+                self._frame.state_reads += 1
+                return 1 if self._frame.state_reads == 1 else 2
+            return len(self._boxes)
+
+    class _AmbigFrame:
+        def __init__(self, submit_boxes):
+            self.state_reads = 0
+            self._submit = submit_boxes
+            self._state = [{"x": 100, "y": 150, "width": 80, "height": 30}]
+
+        def get_by_text(self, text, exact=False):
+            key = "Submit" if "Submit" in str(text) else "State"
+            return _AmbigLoc(self, key, self._submit if key == "Submit" else self._state)
+
+        def locator(self, sel):
+            return _AmbigLoc(self, "css", [])
+
+    vis_box = {"x": 90, "y": 400, "width": 120, "height": 40}
+    page12 = _MockPage(_AmbigFrame([None, vis_box]))    # DOM-first match HIDDEN
+    rec12 = drive_drag(page12, iframe_selector="iframe", source="text=State",
+                       target="text=Submit", verify_text="State",
+                       move_interval_ms=0, settle_ms=0, timeout_ms=250,
+                       sleeper=lambda s: None)
+    if rec12.get("placed") is not True or rec12.get("target_matches") != 2:
+        errors.append(f"ambiguous-target receipt wrong: {rec12}")
+    last12 = [o for o in page12.mouse.ops if o[0] == "move"][-1]
+    if last12[1:] != (150.0, 420.0):
+        errors.append(f"ambiguous target did not aim at the VISIBLE match: {last12}")
+    try:
+        drive_drag(_MockPage(_AmbigFrame([None, None])), iframe_selector="iframe",
+                   source="text=State", target="text=Submit",
+                   move_interval_ms=0, settle_ms=0, timeout_ms=100,
+                   sleeper=lambda s: None)
+        errors.append("all-hidden target did NOT raise target-not-found")
+    except IframeDragError as e:
+        if e.code != "target-not-found" or "2 attached match(es)" not in e.reason:
+            errors.append(f"all-hidden target wrong code/diagnostics: {e.code}: {e.reason}")
+
+    # 13. CANVAS-FIELD REMOVE (v1.2.0 — F4 default-field reconciliation): select
+    #     the field → documented 'Remove field' link (§6) → count-decrease proof;
+    #     already-absent = truthful idempotent no-op; link-never-appears and
+    #     count-never-drops both fail closed.
+    class _RWLoc:
+        def __init__(self, world, kind):
+            self._w, self._kind = world, kind
+
+        @property
+        def first(self):
+            return self
+
+        def nth(self, i):
+            return self
+
+        def is_visible(self):
+            return (self._w.field_count > 0) if self._kind == "field" else self._w.link_visible
+
+        def count(self):
+            return self._w.field_count if self._kind == "field" else int(self._w.link_visible)
+
+        def wait_for(self, state="visible", timeout=0):
+            if not self.is_visible():
+                raise TimeoutError(f"mock: {self._kind} hidden")
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            if not self.is_visible():
+                raise TimeoutError("mock: cannot scroll")
+
+        def hover(self):
+            self._w.events.append(f"hover:{self._kind}")
+
+        def click(self):
+            self._w.events.append(f"click:{self._kind}")
+            if self._kind == "field" and self._w.link_appears:
+                self._w.link_visible = True
+            if self._kind == "link" and self._w.removal_works:
+                self._w.field_count = 0
+
+    class _RWFrame:
+        def __init__(self, world):
+            self._w = world
+
+        def get_by_placeholder(self, text):
+            return _RWLoc(self._w, "field")
+
+        def get_by_text(self, text, exact=False):
+            return _RWLoc(self._w, "field")
+
+        def get_by_role(self, role, name=None, exact=False):
+            self._w.events.append(("role", role, name, exact))
+            return _RWLoc(self._w, "link")
+
+        def locator(self, sel):
+            return _RWLoc(self._w, "field")
+
+    class _RWWorld:
+        def __init__(self, field_count=1, link_appears=True, removal_works=True):
+            self.field_count = field_count
+            self.link_visible = False
+            self.link_appears = link_appears
+            self.removal_works = removal_works
+            self.events = []
+
+    w13 = _RWWorld()
+    rec13 = drive_remove_canvas_field(
+        _MockPage(_RWFrame(w13)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500)
+    if rec13.get("removed") is not True or rec13.get("pre_count") != 1 or rec13.get("post_count") != 0:
+        errors.append(f"remove-field happy receipt wrong: {rec13}")
+    if "click:field" not in w13.events or "click:link" not in w13.events:
+        errors.append(f"remove-field did not select then remove: {w13.events}")
+    if w13.events.index("click:field") > w13.events.index("click:link"):
+        errors.append(f"remove-field clicked the link BEFORE selecting: {w13.events}")
+    if ("role", "link", "Remove field", True) not in w13.events:
+        errors.append(f"remove-field did not use the documented role=link anchor: {w13.events}")
+    w13b = _RWWorld(field_count=0)
+    rec13b = drive_remove_canvas_field(
+        _MockPage(_RWFrame(w13b)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=100)
+    if rec13b.get("already_absent") is not True or rec13b.get("removed") is not False:
+        errors.append(f"remove-field already-absent receipt wrong: {rec13b}")
+    if any(str(e).startswith("click") for e in w13b.events):
+        errors.append(f"already-absent must be a NO-OP (no clicks): {w13b.events}")
+    w13c = _RWWorld(link_appears=False)
+    try:
+        drive_remove_canvas_field(_MockPage(_RWFrame(w13c)), iframe_selector="iframe",
+                                  field="placeholder=+1 (555) 000-0000", timeout_ms=100)
+        errors.append("remove-field with no link did NOT raise")
+    except IframeDragError as e:
+        if e.code != "remove-link-not-found":
+            errors.append(f"remove-field no-link wrong code: {e.code}")
+    if w13c.field_count != 1 or "click:link" in w13c.events:
+        errors.append("remove-field no-link path must leave the field untouched")
+    w13d = _RWWorld(removal_works=False)
+    try:
+        drive_remove_canvas_field(_MockPage(_RWFrame(w13d)), iframe_selector="iframe",
+                                  field="placeholder=+1 (555) 000-0000", timeout_ms=0)
+        errors.append("remove-field unverified removal did NOT raise")
+    except IframeDragError as e:
+        if e.code != "field-not-removed":
+            errors.append(f"remove-field unverified wrong code: {e.code}")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -1288,6 +1769,9 @@ def _live_selftest() -> int:
         "#panel{height:170px;overflow:auto;width:240px;border:1px solid #aaa}"
         "h3{margin:6px 4px 2px}"
         "#canvas{min-height:180px;border:2px dashed #999;padding:10px}</style></head><body>"
+        # HIDDEN first-in-DOM 'Submit' text (v1.2.0 fixture) — mimics the live
+        # 2026-07-08 ambiguity: `text=Submit` must NOT bind to this node.
+        '<div id="ghost-submit" style="display:none">Submit</div>'
         '<div id="titlewrap"></div>'
         "<h2>Quick Add</h2>"
         '<div id="panel">'
@@ -1303,7 +1787,15 @@ def _live_selftest() -> int:
         '<div class="tile" id="tile-city">City</div>'
         '<div class="tile">Postal Code</div>'
         "</div>"
-        '<div id="canvas">Submit</div>'
+        # Default canvas field + per-field 'Remove field' link (v1.2.0 fixture —
+        # the F4 reconciliation surface, SELECTORS §6) and a REAL role=button
+        # Submit landmark (§5) instead of a bare text node.
+        '<div id="fields">'
+        '<div class="field" id="f-phone">Phone'
+        '<input placeholder="+1 (555) 000-0000"></div>'
+        "</div>"
+        '<a id="remove-link" href="#" style="display:none">Remove field</a>'
+        '<div id="canvas"><button id="submit-btn" type="button">Submit</button></div>'
         "<script>"
         "let dragging=null,moves=0;"
         "document.querySelectorAll('.tile').forEach(t=>{"
@@ -1318,6 +1810,14 @@ def _live_selftest() -> int:
         "  if(over&&moves>=3){const d=document.createElement('div');d.className='placed';"
         "    d.textContent=dragging+' placed';canvas.appendChild(d);}"
         "  dragging=null;});"
+        "let selectedField=null;"
+        "const removeLink=document.getElementById('remove-link');"
+        "document.querySelectorAll('.field').forEach(f=>{"
+        "  f.addEventListener('click',()=>{selectedField=f;removeLink.style.display='inline';});"
+        "});"
+        "removeLink.addEventListener('click',e=>{e.preventDefault();"
+        "  if(selectedField){selectedField.remove();selectedField=null;"
+        "  removeLink.style.display='none';}});"
         "const tw=document.getElementById('titlewrap');"
         "function mountTitle(text){"
         "  tw.innerHTML='';"
@@ -1426,6 +1926,37 @@ def _live_selftest() -> int:
                                    verify_text="State placed", timeout_ms=8000)
                 if rec_f.get("verify_pre_count") != 1 or rec_f.get("placed") is not True:
                     errors.append(f"live count-delta verify wrong: {rec_f}")
+                # NOTE (v1.2.0): cases (a)/(c)/(f) above now ALSO regression-prove
+                # the ambiguous-target fix against a real browser — the fixture
+                # carries a HIDDEN first-in-DOM 'Submit' node, so the old blind
+                # `.first` would have timed out on every one of them.
+
+                # (g) ROLE-SCOPED drop target (v1.2.0 — SELECTORS §5): the canvas
+                #     Submit is a REAL button; `role=button:Submit` must resolve
+                #     it (exact accessible name) and the drag must place.
+                rec_g = drive_drag(page, iframe_selector=iframe_selector,
+                                   source="text=Full Name",
+                                   target="role=button:Submit",
+                                   interpolated_moves=24,
+                                   verify_text="Full Name placed", timeout_ms=8000)
+                if rec_g.get("placed") is not True:
+                    errors.append(f"live role-target drag did not place: {rec_g}")
+
+                # (h) CANVAS-FIELD REMOVE (v1.2.0 — F4 reconciliation): select
+                #     the default 'Phone' field by its DOCUMENTED placeholder
+                #     anchor, click the per-field 'Remove field' link, VERIFY
+                #     the count dropped; a second remove is a truthful
+                #     already-absent NO-OP (idempotent reconciliation).
+                rec_h = drive_remove_canvas_field(
+                    page, iframe_selector=iframe_selector,
+                    field="placeholder=+1 (555) 000-0000", timeout_ms=8000)
+                if rec_h.get("removed") is not True or rec_h.get("pre_count") != 1:
+                    errors.append(f"live remove-field wrong: {rec_h}")
+                rec_h2 = drive_remove_canvas_field(
+                    page, iframe_selector=iframe_selector,
+                    field="placeholder=+1 (555) 000-0000", timeout_ms=4000)
+                if rec_h2.get("already_absent") is not True:
+                    errors.append(f"live remove-field re-run not idempotent: {rec_h2}")
             finally:
                 ctx.close()
     except IframeDragError as e:

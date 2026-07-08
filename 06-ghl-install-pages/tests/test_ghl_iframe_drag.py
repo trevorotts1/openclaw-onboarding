@@ -64,7 +64,8 @@ class _MockLoc:
     """Count-delta world (v1.1.1): count() returns 1 on the FIRST read (the
     pre-drag baseline — the tile itself already matches the verify text) and,
     when the placement 'landed' (present), 2 on later reads. A failed placement
-    stays at the baseline forever — which must read as NOT placed."""
+    stays at the baseline forever — which must read as NOT placed.
+    v1.2.0: also exposes nth()/is_visible() for the visible-match scan."""
     def __init__(self, frame, box, present=True):
         self._frame = frame
         self._box = box
@@ -74,6 +75,12 @@ class _MockLoc:
     @property
     def first(self):
         return self
+
+    def nth(self, i):
+        return self
+
+    def is_visible(self):
+        return self._box is not None
 
     def wait_for(self, state="visible", timeout=0):
         if self._box is None:
@@ -373,6 +380,12 @@ class _ScrollLoc:
     def first(self):
         return self
 
+    def nth(self, i):
+        return self
+
+    def is_visible(self):
+        return self._k in self._w.boxes
+
     def wait_for(self, state="visible", timeout=0):
         if self._k not in self._w.boxes:
             raise TimeoutError(f"mock: {self._k} not visible")
@@ -659,7 +672,9 @@ def test_f5_snapshot_miss_no_longer_stops_and_passes_category_hint(monkeypatch):
              "width_pct": 50, "required": True, "hidden": False}
     warnings, steps = [], []
     fb._place_quick_add_field("s", field, "/tmp/x-f5-city", [0], warnings, steps)
-    assert calls == [("City", "Submit", "Address")]
+    # v18.1.9: the drop anchor is the ROLE-SCOPED Submit spec (SELECTORS §5) —
+    # plain 'Submit' text is ambiguous inside the iframe (live 2026-07-08).
+    assert calls == [("City", "role=button:Submit", "Address")]
     assert any(s.startswith("F5:place:City") for s in steps)
 
 
@@ -700,11 +715,443 @@ def test_f5_in_frame_verified_placement_survives_snapshot_lag(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 6. Playwright-gated real cross-origin proof (skipped cleanly when absent)
+# 6. AMBIGUOUS-TARGET + role/placeholder specs (v1.2.0 — LIVE 2026-07-08 fix)
+#    Attempt #5 against the real account: the drop target `text=Submit` timed
+#    out (`target-not-found`) with the canvas Submit button ON SCREEN, because
+#    the Quick-Add panel carries its own 'Submit' CATEGORY header + tile
+#    (SELECTORS §8) and the blind `.first` bound to a hidden match. The
+#    template's KEPT default fields (Phone, Terms & Conditions) are what made
+#    those panel surfaces + the taller canvas collide in the first place.
+# ---------------------------------------------------------------------------
+class _AmbigLoc:
+    """A text spec with SEVERAL matches — per-match box (None = hidden)."""
+    def __init__(self, frame, key, boxes, idx=0):
+        self._frame, self._key, self._boxes, self._i = frame, key, boxes, idx
+
+    @property
+    def first(self):
+        return self.nth(0)
+
+    def nth(self, i):
+        return _AmbigLoc(self._frame, self._key, self._boxes, i)
+
+    def is_visible(self):
+        return 0 <= self._i < len(self._boxes) and self._boxes[self._i] is not None
+
+    def wait_for(self, state="visible", timeout=0):
+        if not self.is_visible():
+            raise TimeoutError(f"mock: {self._key}[{self._i}] hidden")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        if not self.is_visible():
+            raise TimeoutError("mock: cannot scroll a hidden element")
+
+    def bounding_box(self):
+        return self._boxes[self._i] if 0 <= self._i < len(self._boxes) else None
+
+    def count(self):
+        if self._key == "State":                 # count-delta verify surface
+            self._frame.state_reads += 1
+            return 1 if self._frame.state_reads == 1 else 2
+        return len(self._boxes)
+
+
+class _AmbigFrame:
+    """'Submit' matches N nodes (panel header/tile vs canvas button world);
+    'State' is the ordinary drag source."""
+    def __init__(self, submit_boxes):
+        self.state_reads = 0
+        self._submit = submit_boxes
+        self._state = [{"x": 100, "y": 150, "width": 80, "height": 30}]
+
+    def get_by_text(self, text, exact=False):
+        key = "Submit" if "Submit" in str(text) else "State"
+        return _AmbigLoc(self, key, self._submit if key == "Submit" else self._state)
+
+    def locator(self, sel):
+        return _AmbigLoc(self, "css", [])
+
+
+def test_ambiguous_target_resolves_the_visible_match_not_dom_first():
+    """THE live 2026-07-08 regression: the first-in-DOM 'Submit' match is HIDDEN
+    while the real canvas landmark is visible — the drag must bind the VISIBLE
+    match (the old blind `.first` timed out here) and aim the drop at ITS center."""
+    vis = {"x": 90, "y": 400, "width": 120, "height": 40}
+    page = _MockPage(_AmbigFrame([None, vis]))
+    rec = idg.drive_drag(page, iframe_selector="iframe", source="text=State",
+                         target="text=Submit", verify_text="State",
+                         move_interval_ms=0, settle_ms=0, timeout_ms=250,
+                         sleeper=lambda s: None)
+    assert rec["placed"] is True
+    assert rec["target_matches"] == 2, "diagnostics: both attached matches counted"
+    assert rec["target_point"] == [150.0, 420.0], "aimed at the VISIBLE match's center"
+
+
+def test_all_hidden_target_still_fails_closed_with_match_diagnostics():
+    """When NO 'Submit' match is visible the honest target-not-found remains —
+    now naming how many attached matches were scanned (evidence for the receipt)."""
+    page = _MockPage(_AmbigFrame([None, None]))
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_drag(page, iframe_selector="iframe", source="text=State",
+                       target="text=Submit", move_interval_ms=0, settle_ms=0,
+                       timeout_ms=100, sleeper=lambda s: None)
+    assert ei.value.code == "target-not-found"
+    assert "2 attached match(es)" in ei.value.reason
+
+
+def test_role_and_placeholder_locator_specs_dispatch():
+    """`role=button:Submit` → get_by_role(..., exact=True) (the F2-'Create'
+    collision class of fix, SELECTORS §5); `placeholder=...` → get_by_placeholder
+    (the §6 documented per-field canvas anchors)."""
+    calls = []
+
+    class _L:
+        @property
+        def first(self):
+            return self
+
+    class _F:
+        def get_by_role(self, role, name=None, exact=False):
+            calls.append(("role", role, name, exact))
+            return _L()
+
+        def get_by_placeholder(self, text):
+            calls.append(("placeholder", text))
+            return _L()
+
+        def get_by_text(self, text, exact=False):
+            raise AssertionError("role=/placeholder= must not fall through to text")
+
+        def locator(self, sel):
+            raise AssertionError("role=/placeholder= must not fall through to CSS")
+
+    idg._resolve_locator(_F(), "role=button:Submit")
+    idg._resolve_locator(_F(), "placeholder=+1 (555) 000-0000")
+    assert calls == [("role", "button", "Submit", True),
+                     ("placeholder", "+1 (555) 000-0000")]
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg._resolve_locator(_F(), "role=button")     # missing ':<name>'
+    assert ei.value.code == "bad-role-locator"
+
+
+def test_form_builder_drop_target_is_role_scoped_submit_with_defaults_present(monkeypatch):
+    """REGRESSION (live attempt #5): with the scratch template's DEFAULT FIELDS
+    still on the canvas (Phone + the consent block visible in the snapshot,
+    exactly the failing run's world) the F5 drag must aim at the ROLE-SCOPED
+    Submit spec — never bare 'Submit'/'text=Submit'."""
+    calls = []
+
+    def fake_drag(session, source_text, drop_spec, *, verify_text,
+                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        calls.append((source_text, drop_spec))
+        return {"ok": True, "placed": True}
+
+    # The attempt-#5 builder world: defaults present, panel 'Submit' category too.
+    snap = ("Form Element Quick Add Add Object Fields Personal Info Submit "
+            "First Name Last Name Phone Email Terms & Conditions State "
+            "Label Query Key Field Width Required Hidden")
+    monkeypatch.setattr(fb, "_ab", _snap_ab(snap))
+    monkeypatch.setattr(fb, "_perform_iframe_drag", fake_drag)
+    field = {"source": "standard", "element": "State", "label": "State",
+             "query_key": "state", "width_pct": 100, "required": False,
+             "hidden": False, "quick_add_category": "Address"}
+    fb._place_quick_add_field("s", field, "/tmp/x-role-submit", [0], [], [])
+    assert calls == [("State", "role=button:Submit")]
+
+
+def test_canvas_drop_anchor_always_returns_a_spec(monkeypatch):
+    """The top-frame snapshot is ADVISORY (documented laggy) — when it shows no
+    anchor name, the drop anchor falls back to the documented role-scoped Submit
+    spec instead of a false STOP; the frame-scoped resolve stays the
+    authoritative fail-closed gate (`target-not-found`)."""
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add"))
+    assert fb._canvas_drop_anchor("s") == "role=button:Submit"
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    assert fb._canvas_drop_anchor("s") == "role=button:Submit"
+
+
+# ---------------------------------------------------------------------------
+# 7. F4 DEFAULT-FIELD RECONCILIATION (v18.1.9) — delete-for-real, fail-closed
+# ---------------------------------------------------------------------------
+class _RemoveWorld:
+    def __init__(self, field_count=1, link_appears=True, removal_works=True):
+        self.field_count = field_count
+        self.link_visible = False
+        self.link_appears = link_appears
+        self.removal_works = removal_works
+        self.events = []
+
+
+class _RemoveLoc:
+    def __init__(self, world, kind):
+        self._w, self._kind = world, kind
+
+    @property
+    def first(self):
+        return self
+
+    def nth(self, i):
+        return self
+
+    def is_visible(self):
+        return (self._w.field_count > 0) if self._kind == "field" else self._w.link_visible
+
+    def count(self):
+        return self._w.field_count if self._kind == "field" else int(self._w.link_visible)
+
+    def wait_for(self, state="visible", timeout=0):
+        if not self.is_visible():
+            raise TimeoutError(f"mock: {self._kind} hidden")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        if not self.is_visible():
+            raise TimeoutError("mock: cannot scroll")
+
+    def hover(self):
+        self._w.events.append(f"hover:{self._kind}")
+
+    def click(self):
+        self._w.events.append(f"click:{self._kind}")
+        if self._kind == "field" and self._w.link_appears:
+            self._w.link_visible = True
+        if self._kind == "link" and self._w.removal_works:
+            self._w.field_count = 0
+
+
+class _RemoveFrame:
+    def __init__(self, world):
+        self._w = world
+
+    def get_by_placeholder(self, text):
+        return _RemoveLoc(self._w, "field")
+
+    def get_by_text(self, text, exact=False):
+        return _RemoveLoc(self._w, "field")
+
+    def get_by_role(self, role, name=None, exact=False):
+        self._w.events.append(("role", role, name, exact))
+        return _RemoveLoc(self._w, "link")
+
+    def locator(self, sel):
+        return _RemoveLoc(self._w, "field")
+
+
+def test_remove_canvas_field_selects_then_removes_and_verifies_count_drop():
+    """F4 mechanism: select the field by its DOCUMENTED anchor → click the
+    per-field role=link 'Remove field' control (SELECTORS §6) → the removal
+    proof is the COUNT-DECREASE of the field's own anchor (mirror of the
+    v1.1.1 count-delta placement proof)."""
+    w = _RemoveWorld()
+    rec = idg.drive_remove_canvas_field(
+        _MockPage(_RemoveFrame(w)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500)
+    assert rec["removed"] is True
+    assert rec["pre_count"] == 1 and rec["post_count"] == 0
+    assert w.events.index("click:field") < w.events.index("click:link"), \
+        "the field must be SELECTED before its Remove link is clicked"
+    assert ("role", "link", "Remove field", True) in w.events, \
+        "must use the documented role=link 'Remove field' anchor (§6)"
+
+
+def test_remove_canvas_field_already_absent_is_truthful_idempotent_noop():
+    """Reconciliation semantics: 0 matches = the desired end-state already holds
+    — a truthful no-op receipt, no clicks, never an error (re-runs stay safe)."""
+    w = _RemoveWorld(field_count=0)
+    rec = idg.drive_remove_canvas_field(
+        _MockPage(_RemoveFrame(w)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=100)
+    assert rec["already_absent"] is True and rec["removed"] is False
+    assert not any(str(e).startswith("click") for e in w.events)
+
+
+def test_remove_canvas_field_fails_closed_when_remove_link_never_appears():
+    w = _RemoveWorld(link_appears=False)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_remove_canvas_field(
+            _MockPage(_RemoveFrame(w)), iframe_selector="iframe",
+            field="placeholder=+1 (555) 000-0000", timeout_ms=100)
+    assert ei.value.code == "remove-link-not-found"
+    assert w.field_count == 1, "the field must be left untouched"
+    assert "click:link" not in w.events
+
+
+def test_remove_canvas_field_fails_closed_when_count_never_drops():
+    w = _RemoveWorld(removal_works=False)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_remove_canvas_field(
+            _MockPage(_RemoveFrame(w)), iframe_selector="iframe",
+            field="placeholder=+1 (555) 000-0000", timeout_ms=0)
+    assert ei.value.code == "field-not-removed"
+    assert "never DROPPED" in ei.value.reason
+
+
+def test_form_builder_f4_deletes_defaults_before_the_drag(monkeypatch):
+    """REGRESSION (live attempt #5, `final_result.json` warnings): the F4
+    delete_field steps for 'Phone' + 'Terms & Conditions' were warn-and-KEPT.
+    The walk must now delete them FOR REAL — via the documented §6 anchors, in
+    click-list order, BEFORE any F5 drag — with the defaults present on the
+    canvas exactly as the failing run's snapshot showed."""
+    removes, drags = [], []
+
+    def fake_remove(session, field_spec, *, iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR):
+        removes.append(field_spec)
+        return {"ok": True, "removed": True, "already_absent": False,
+                "pre_count": 1, "post_count": 0}
+
+    def fake_drag(session, source_text, drop_spec, *, verify_text,
+                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        drags.append((source_text, drop_spec))
+        return {"ok": True, "placed": True}
+
+    snap = ("Form Element Quick Add Add Object Fields Personal Info Submit "
+            "First Name Last Name Phone Email Terms & Conditions "
+            "Label Query Key Field Width Required Hidden")
+    monkeypatch.setattr(fb, "_ab", _snap_ab(snap))
+    monkeypatch.setattr(fb, "_perform_iframe_field_remove", fake_remove)
+    monkeypatch.setattr(fb, "_perform_iframe_drag", fake_drag)
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": ["First Name", "Last Name", "Email"],
+            "fields": [{"source": "standard", "element": "Phone", "label": "Phone",
+                        "query_key": "phone", "width_pct": 100, "required": False,
+                        "hidden": False, "quick_add_category": "Personal Info"}]}
+    click_list = {"steps": [
+        {"phase": "F4", "action": "delete_field", "target": "Phone"},
+        {"phase": "F4", "action": "delete_field", "target": "Terms & Conditions"},
+        {"phase": "F5", "action": "drag", "target": "Phone → form canvas"},
+    ]}
+    steps_done = []
+    fb._walk_click_list("s", click_list, plan, "/tmp/x-f4-walk", [0], [], steps_done)
+    assert removes == ["placeholder=+1 (555) 000-0000", "text=I consent"], \
+        "each unwanted default must be removed via its DOCUMENTED §6 anchor"
+    assert drags == [("Phone", "role=button:Submit")], \
+        "the F5 drag still runs, role-scoped, AFTER the reconciliation"
+    want = ["F4:delete:Phone", "F4:delete:Terms & Conditions", "F5:place:Phone"]
+    assert [s for s in steps_done if s in want] == want, \
+        f"deletes must precede the drag in steps_done: {steps_done}"
+
+
+def test_form_builder_f4_keeps_kept_defaults_untouched(monkeypatch):
+    """default_fields_keep entries never reach the remove seam — the click list
+    only emits delete_field for the plan's delete set, and the F5 skip for kept
+    defaults still applies (no duplicate placement)."""
+    removes = []
+
+    def fake_remove(session, field_spec, *, iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR):
+        removes.append(field_spec)
+        return {"ok": True, "removed": True, "already_absent": False,
+                "pre_count": 1, "post_count": 0}
+
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(fb, "_perform_iframe_field_remove", fake_remove)
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": ["First Name", "Last Name", "Email"],
+            "fields": [{"source": "standard", "element": "Email", "label": "Email",
+                        "query_key": "email", "width_pct": 100, "required": False,
+                        "hidden": False, "quick_add_category": "Personal Info"}]}
+    click_list = {"steps": [
+        {"phase": "F4", "action": "delete_field", "target": "Phone"},
+        {"phase": "F5", "action": "drag", "target": "Email → form canvas"},
+    ]}
+    steps_done = []
+    fb._walk_click_list("s", click_list, plan, "/tmp/x-f4-keep", [0], [], steps_done)
+    assert removes == ["placeholder=+1 (555) 000-0000"], "only the DELETE set is removed"
+    assert any(s.startswith("F5:default-kept:Email") for s in steps_done), \
+        "a kept default is skipped by F5 (never re-dragged)"
+
+
+def test_form_builder_f4_remove_miss_stops_at_the_honest_f4_step(monkeypatch):
+    """A genuine remove miss STOPs at F4.delete:<name> (fail-closed — the form
+    must never ship carrying fields the plan excluded) and the walk never
+    reaches the F5 drag."""
+    drags = []
+
+    def failing_remove(session, field_spec, *, iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR):
+        raise fb.StopAndReport("iframe-remove:remove-link-not-found",
+                               "mock: the documented control never appeared")
+
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(fb, "_perform_iframe_field_remove", failing_remove)
+    monkeypatch.setattr(
+        fb, "_perform_iframe_drag",
+        lambda *a, **k: drags.append(a) or {"ok": True, "placed": True})
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": [], "fields": []}
+    click_list = {"steps": [
+        {"phase": "F4", "action": "delete_field", "target": "Phone"},
+        {"phase": "F5", "action": "drag", "target": "Phone → form canvas"},
+    ]}
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._walk_click_list("s", click_list, plan, "/tmp/x-f4-stop", [0], [], [])
+    assert ei.value.step == "F4.delete:Phone"
+    assert "remove-link-not-found" in ei.value.reason
+    assert drags == [], "must not drag past a failed default delete"
+
+
+def test_form_builder_f4_already_absent_is_recorded_not_fatal(monkeypatch):
+    """An already-absent default (idempotent re-run / template drift) is the
+    desired end-state: recorded in steps_done + warnings, never a STOP."""
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(
+        fb, "_perform_iframe_field_remove",
+        lambda session, field_spec, *, iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR: {
+            "ok": True, "removed": False, "already_absent": True,
+            "pre_count": 0, "post_count": 0})
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": [], "fields": []}
+    click_list = {"steps": [{"phase": "F4", "action": "delete_field", "target": "Phone"}]}
+    warnings, steps_done = [], []
+    fb._walk_click_list("s", click_list, plan, "/tmp/x-f4-absent", [0], warnings, steps_done)
+    assert any(s.startswith("F4:default-absent:Phone") for s in steps_done)
+    assert any("already absent" in w for w in warnings)
+
+
+def test_form_builder_f4_unknown_default_stops_without_inventing_a_selector(monkeypatch):
+    """A plan naming a default with NO documented canvas anchor must STOP at
+    F4.anchor:<name> — never invent CSS (SELECTORS §7 doctrine)."""
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": [], "fields": []}
+    click_list = {"steps": [{"phase": "F4", "action": "delete_field",
+                             "target": "Mystery Field"}]}
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._walk_click_list("s", click_list, plan, "/tmp/x-f4-unk", [0], [], [])
+    assert ei.value.step == "F4.anchor:Mystery Field"
+    assert "never invent" in ei.value.reason
+
+
+def test_form_builder_field_remove_seam_stops_when_primitive_absent(monkeypatch):
+    """The F4 seam mirrors the drag seam's fail-closed shell: a missing shared
+    primitive STOPs at iframe-remove.dep (never a top-frame brute-force)."""
+    monkeypatch.setattr(fb, "ghl_iframe_drag", None)
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_iframe_field_remove("s", "placeholder=+1 (555) 000-0000")
+    assert ei.value.step == "iframe-remove.dep"
+
+
+def test_form_builder_field_remove_seam_stops_when_no_cdp(monkeypatch):
+    """No CDP url from the live session → STOP at iframe-remove.cdp (the removal
+    can never be handed to Playwright on the same logged-in Chromium)."""
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "")
+    assert fb.ghl_iframe_drag is not None
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_iframe_field_remove("s", "placeholder=+1 (555) 000-0000")
+    assert ei.value.step == "iframe-remove.cdp"
+
+
+# ---------------------------------------------------------------------------
+# 8. Playwright-gated real cross-origin proof (skipped cleanly when absent)
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not idg.PLAYWRIGHT_AVAILABLE, reason="Playwright not installed")
 def test_live_selftest_places_tile_across_cross_origin_iframe():
     """End-to-end: real Playwright drags a tile into a genuine CROSS-ORIGIN iframe
-    canvas headlessly (including the below-the-fold category-hint scroll and the
-    inline-title rename), and fails closed on an absent tile."""
+    canvas headlessly (including the below-the-fold category-hint scroll, the
+    inline-title rename, the AMBIGUOUS hidden-'Submit' world, the role-scoped
+    button target, and the F4 'Remove field' flow), and fails closed on an
+    absent tile."""
     assert idg._live_selftest() == 0

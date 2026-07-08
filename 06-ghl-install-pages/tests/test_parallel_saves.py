@@ -518,9 +518,13 @@ class TestHermeticConcurrency:
         _write_concurrency_stub(bindir, log)
         spec_path = self._build_batch_spec(session_name, 5, tmp_path)
 
-        # Override HOME to an isolated dir so _bm_durable_root() returns ""
-        # (falls back to ephemeral LOCKDIR), preventing the durable park marker
-        # at the real ~/.openclaw from blocking the hermetic test.
+        # Isolation (v18.1.9 — same fix as the singleton harnesses in
+        # test_browser_manager_singleton.py, commit v18.1.8): a fake HOME alone
+        # is NOT enough — _bm_durable_root() checks /data/.openclaw FIRST, so on
+        # a VPS/container box these fake-location runs would write REAL breaker
+        # state (agent-browser-test0*.count) into the box's durable park dir.
+        # BM_DURABLE_ROOT_OVERRIDE="" (set-even-if-empty) forces the ephemeral
+        # LOCKDIR fallback on EVERY box layout; production never sets it.
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir(parents=True, exist_ok=True)
         env = dict(
@@ -528,6 +532,7 @@ class TestHermeticConcurrency:
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             TMPDIR=str(lockdir),
             HOME=str(fake_home),
+            BM_DURABLE_ROOT_OVERRIDE="",   # park/breaker state stays EPHEMERAL
             GHL_LOCATION_ID="test0concurrencyloc",
             AB_MAX_SESSIONS="1",
             AB_SAVE_CONCURRENCY="5",
@@ -588,6 +593,7 @@ class TestHermeticConcurrency:
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             TMPDIR=str(lockdir),
             HOME=str(fake_home),
+            BM_DURABLE_ROOT_OVERRIDE="",   # park/breaker state stays EPHEMERAL (v18.1.9)
             GHL_LOCATION_ID="test0caploc",
             AB_MAX_SESSIONS="1",
             AB_SAVE_CONCURRENCY="3",
@@ -658,6 +664,7 @@ class TestHermeticConcurrency:
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             TMPDIR=str(lockdir),
             HOME=str(fake_home),
+            BM_DURABLE_ROOT_OVERRIDE="",   # park/breaker state stays EPHEMERAL (v18.1.9)
             GHL_LOCATION_ID="test0failureloc",
             AB_MAX_SESSIONS="1",
             AB_SAVE_CONCURRENCY="5",
@@ -703,6 +710,7 @@ class TestHermeticConcurrency:
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             TMPDIR=str(lockdir),
             HOME=str(fake_home),
+            BM_DURABLE_ROOT_OVERRIDE="",   # park/breaker state stays EPHEMERAL (v18.1.9)
             GHL_LOCATION_ID="test0maxsessionloc",
             AB_MAX_SESSIONS="1",   # explicitly stay at 1
             AB_SAVE_CONCURRENCY="5",

@@ -4,6 +4,87 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.9] - 2026-07-08 - F4 default-field reconciliation is REAL + the F5 drop target is role-scoped and visible-match robust (the live attempt-#5 `iframe-drag:target-not-found` fix)
+
+**THE LIVE BUG (attempt #5 against a real account, evidence bundle
+`live-attempt-5-evidence/`).** Auth, F1/F2 form creation, and the F3 rename all
+landed; the F5 field drag then STOPped at `iframe-drag:target-not-found` — the
+drop target `text=Submit` "was not found/visible" inside the builder iframe for
+the full 15s (TimeoutError) while the run's own screenshots show the builder
+open and healthy. Root cause, two coupled defects:
+
+1. **`text=Submit` is AMBIGUOUS inside the iframe.** The Quick-Add panel carries
+   its own **'Submit' CATEGORY header + 'Submit' tile** (SELECTORS-LIVE-form.md
+   §8, visible in shot `005-f3-renamed.png`) alongside the canvas Submit
+   button, and `drive_drag` bound the target with a blind
+   `get_by_text(...).first` — first-in-DOM match. That match never became
+   visible, so the visible-wait burned the whole budget and failed "honestly"
+   at the wrong element — the SAME class of defect as the v18.1.4 F2 'Create'
+   collision, now on the drop side.
+2. **F4 default-field reconciliation was a warn-and-keep STUB.** GHL's
+   Start-from-Scratch template pre-seeds the canvas (First Name, Last Name,
+   Phone, Email, the Terms & Conditions consent block — §6); the plan says
+   `default_fields_delete: [Phone, Terms & Conditions]` and the click list
+   emits real `delete_field` steps, but the walk just warned
+   "kept defaults for the minimal run" (the run's own warnings prove it). The
+   kept defaults (a) would have shipped a DUPLICATE Phone once F5 dragged the
+   plan's Phone tile in (spec violation), (b) make the kept 'Phone' canvas
+   label collide with the 'Phone' Quick-Add tile as a drag SOURCE text, and
+   (c) stretch the canvas so Submit sits below the viewport fold.
+
+**THE FIX (nothing Submit- or Phone-specific):**
+
+- **`ghl_iframe_drag` v1.2.0 — visible-match resolution.** Source AND target
+  resolution now scans ALL matches of a spec in DOM order and binds the FIRST
+  VISIBLE one (`_resolve_visible`; wait-then-rescan fallback preserved for
+  slow-rendering, unambiguous specs). An all-hidden target still fails closed
+  as `target-not-found` — now carrying attached-match diagnostics
+  ("N attached match(es), none visible") and a `target_matches` receipt field.
+- **New documented locator specs:** `role=<role>:<name>` →
+  `get_by_role(..., exact=True)` and `placeholder=<text>` →
+  `get_by_placeholder(...)`. The FORM builder's drop anchors are now SPEC
+  pairs: **`role=button:Submit`** (§5, conf 9 — the locked canvas landmark)
+  with the §6 placeholder anchors as fallbacks; `_perform_iframe_drag` passes
+  the spec VERBATIM (the old unconditional `text=` wrapping was the ambiguity).
+  `_canvas_drop_anchor` always returns a spec (advisory-snapshot doctrine —
+  the frame-scoped resolve is the authoritative fail-closed gate).
+- **F4 reconciliation is REAL and fail-closed.** New shared primitive
+  `drive_remove_canvas_field`/`remove_canvas_field`: select the canvas field by
+  its DOCUMENTED anchor (§6 placeholders; the consent block by its consent
+  paragraph text) → click the per-field **`role=link 'Remove field'`** control
+  (§6, conf 8) → prove the removal by a **COUNT-DECREASE** of the field's own
+  anchor (mirror of the v1.1.1 count-delta placement proof). 0 matches = a
+  truthful idempotent already-absent no-op (safe re-runs). The walk's F4 branch
+  now calls it per `delete_field` step — BEFORE any F5 drag — and a genuine
+  miss STOPs at the honest `F4.delete:<name>` / `F4.anchor:<name>` step
+  (never invented CSS, never a form shipped with fields the plan excluded).
+  The SURVEY builder has no default-field surface (blank first slide) — it
+  inherits the visible-match target robustness through the shared primitive.
+- **Hermetic-suite isolation completed (`tests/test_parallel_saves.py`).** The
+  four fake-location batch harnesses (`test0caploc` / `test0failureloc` /
+  `test0concurrencyloc` / `test0maxsessionloc`) now pass
+  `BM_DURABLE_ROOT_OVERRIDE=""` like the v18.1.8 singleton harnesses — a fake
+  HOME alone does NOT protect a box where `/data/.openclaw` exists (checked
+  FIRST by `_bm_durable_root`), so a suite run there wrote real
+  `agent-browser-test0*.count` breaker state into the box's durable park dir.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (new checks 12-13: ambiguous
+hidden-first 'Submit' resolves to the visible landmark + all-hidden still fails
+closed with diagnostics; remove-field happy/absent/no-link/no-drop paths);
+`--live-selftest` PASS against a real headless Chromium whose fixture now
+carries a hidden first-in-DOM 'Submit' node, a real `role=button` Submit, and a
+removable default field with a 'Remove field' link (cases a/c/f re-prove the
+ambiguity fix live; new g/h prove the role-scoped target + the F4 remove flow
+end-to-end, including idempotent re-run). `ghl_form_builder --selftest` PASS
+(drop spec locked to `role=button:Submit`; F4 walk deletes via the two
+documented §6 anchors in order BEFORE the drag; a remove miss STOPs at
+F4.delete and never drags). Full skill-6 pytest: **1125 passed / 15 skipped**
+(+16 new regression locks, zero regressions; the box's real durable park dir is
+byte-identical after a full suite run). Guards: no-secret-printing PASS,
+no-client-names PASS, no-anthropic-runtime PASS.
+
+---
+
 ## [v18.1.8] - 2026-07-07 - COUNT-DELTA placement proof + the suite can never PARK a real box again (two defects the final review pass caught)
 
 **1. Drag verification was trivially satisfiable for Quick-Add tiles.** The
