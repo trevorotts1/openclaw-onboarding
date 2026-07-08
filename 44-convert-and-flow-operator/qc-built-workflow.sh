@@ -192,7 +192,7 @@ record_na() {
 # ── WF-3: Trigger present ─────────────────────────────────────────────────────
 TRIGGER_TYPE=""
 if echo "$EXPORT_OUT" | grep -qiE '"type".*"trigger|triggerType|trigger_type|event_type'; then
-  TRIGGER_TYPE=$(echo "$EXPORT_OUT" | grep -oiE '"triggerType"\s*:\s*"[^"]*"|"trigger_type"\s*:\s*"[^"]*"|"type"\s*:\s*"[A-Z_]*TRIGGER[^"]*"' | head -1 || echo "present")
+  TRIGGER_TYPE=$(echo "$EXPORT_OUT" | grep -oiE '"triggerType"[[:space:]]*:[[:space:]]*"[^"]*"|"trigger_type"[[:space:]]*:[[:space:]]*"[^"]*"|"type"[[:space:]]*:[[:space:]]*"[A-Z_]*TRIGGER[^"]*"' | head -1 || echo "present")
   record_pass "WF-3" "${TRIGGER_TYPE:-present}" "trigger present" "Trigger node found in export"
 elif echo "$EXPORT_OUT" | grep -qiE 'trigger|contactCreated|formSubmitted|tagAdded|ContactCreate|FormSubmit|TagAdd'; then
   record_pass "WF-3" "trigger_found" "trigger present" "Trigger keyword found in export"
@@ -205,9 +205,12 @@ EXPECTED_ACTIVE="false"
 [ "$PUBLISH_INTENT" = "LIVE" ] && EXPECTED_ACTIVE="true"
 
 OBSERVED_ACTIVE="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"active"\s*:\s*true\|"triggerActive"\s*:\s*true\|active.*true'; then
+# Anchored to the JSON "key":value shape (never a loose whole-body `active.*true`,
+# which false-matched innocent email copy) and portable ERE `[[:space:]]` (BSD grep
+# does not support `\s` / `\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*true|"triggerActive"[[:space:]]*:[[:space:]]*true'; then
   OBSERVED_ACTIVE="true"
-elif echo "$EXPORT_OUT" | grep -qi '"active"\s*:\s*false\|"triggerActive"\s*:\s*false\|active.*false'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*false|"triggerActive"[[:space:]]*:[[:space:]]*false'; then
   OBSERVED_ACTIVE="false"
 fi
 
@@ -227,9 +230,10 @@ EXPECTED_STATUS="draft"
 [ "$PUBLISH_INTENT" = "LIVE" ] && EXPECTED_STATUS="published"
 
 OBSERVED_STATUS="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"status"\s*:\s*"published"\|status.*published'; then
+# Anchored "status":"value" + portable ERE (no loose `status.*published`, no `\s`/`\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"published"'; then
   OBSERVED_STATUS="published"
-elif echo "$EXPORT_OUT" | grep -qi '"status"\s*:\s*"draft"\|status.*draft'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"draft"'; then
   OBSERVED_STATUS="draft"
 fi
 
@@ -246,9 +250,10 @@ EXPECTED_REENTRY="false"
 [ "$RE_ENTRY_DECISION" = "ALLOW-MULTIPLE" ] && EXPECTED_REENTRY="true"
 
 OBSERVED_REENTRY="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"allowMultiple"\s*:\s*true\|"reEntry"\s*:\s*true\|allow_multiple.*true\|re_entry.*true'; then
+# Anchored key:value + portable ERE (no loose `allow_multiple.*true`, no `\s`/`\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*true|"reEntry"[[:space:]]*:[[:space:]]*true|"allow_multiple"[[:space:]]*:[[:space:]]*true|"re_entry"[[:space:]]*:[[:space:]]*true'; then
   OBSERVED_REENTRY="true"
-elif echo "$EXPORT_OUT" | grep -qi '"allowMultiple"\s*:\s*false\|"reEntry"\s*:\s*false\|allow_multiple.*false\|re_entry.*false'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*false|"reEntry"[[:space:]]*:[[:space:]]*false|"allow_multiple"[[:space:]]*:[[:space:]]*false|"re_entry"[[:space:]]*:[[:space:]]*false'; then
   OBSERVED_REENTRY="false"
 fi
 
@@ -262,7 +267,7 @@ fi
 
 # ── WF-7: Action sequence — at least one action node present ──────────────────
 ACTION_COUNT=0
-ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE '"type"\s*:\s*"(SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END)[^"]*"' | wc -l || echo 0)
+ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE '"type"[[:space:]]*:[[:space:]]*"(SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END)[^"]*"' | wc -l || echo 0)
 ACTION_COUNT=$(echo "$ACTION_COUNT" | tr -d ' ')
 
 if [ "$ACTION_COUNT" -gt 0 ]; then
@@ -319,10 +324,10 @@ read -r SMS_MISSING_KEY SMS_EMPTY_LIVE SMS_EMPTY_DRAFT SMS_TOTAL <<< "$SMS_FROM_
 
 if [ "$SMS_MISSING_KEY" = "-1" ]; then
   # Could not parse JSON — use text-grep fallback
-  if echo "$EXPORT_OUT" | grep -qiE '"type"\s*:\s*"(sms|send_sms)"'; then
-    if echo "$EXPORT_OUT" | grep -qi 'fromNumber.*""\|from_number.*""\|phoneNumber.*""'; then
+  if echo "$EXPORT_OUT" | grep -qiE '"type"[[:space:]]*:[[:space:]]*"(sms|send_sms)"'; then
+    if echo "$EXPORT_OUT" | grep -qiE '"?(fromNumber|from_number|phoneNumber)"?[[:space:]]*:[[:space:]]*""'; then
       record_fail "WF-12" "sms_node_with_empty_from_number" "fromNumber key present + non-empty on every SMS node" "CRITICAL: SMS node with empty From-number detected (text-grep fallback) — will silently fail to send"
-    elif echo "$EXPORT_OUT" | grep -qi 'fromNumber\|from_number\|phoneNumber'; then
+    elif echo "$EXPORT_OUT" | grep -qiE 'fromNumber|from_number|phoneNumber'; then
       record_pass "WF-12" "from_number_key_present" "fromNumber key present on every SMS node" "Text-grep fallback: a From-number key is present (human review recommended for full JSON parse)"
     else
       record_fail "WF-12" "sms_present_no_from_number_key" "fromNumber key present on every SMS node" "CRITICAL: SMS node(s) present but no From-number key found (text-grep fallback). sms_step must emit fromNumber."
@@ -343,7 +348,7 @@ else
 fi
 
 # ── WF-15: Delivery chain linkage ─────────────────────────────────────────────
-HAS_TARGET_ACTION=$(echo "$EXPORT_OUT" | grep -c 'targetActionId\|target_action_id\|nextStep\|next_step\|parentKey\|parent_key' || echo 0)
+HAS_TARGET_ACTION=$(echo "$EXPORT_OUT" | grep -cE 'targetActionId|target_action_id|nextStep|next_step|parentKey|parent_key' || echo 0)
 HAS_TARGET_ACTION=$(echo "$HAS_TARGET_ACTION" | tr -d ' ')
 
 if [ "$HAS_TARGET_ACTION" -gt 0 ]; then
