@@ -399,8 +399,20 @@ else
   bad "a script overwrites a user shell dotfile (could drop KEYRING_BACKEND export):\n$OVR"
 fi
 
-# perms helper (portable across macOS `stat -f` and GNU `stat -c`)
-perms() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null || echo "?"; }
+# perms helper (portable across GNU/Linux `stat -c` and macOS `stat -f`).
+# Each form is captured SEPARATELY and only the one that exits 0 is emitted, so a
+# fallback can never be concatenated with the first form's partial stdout.
+# (Previously `stat -f '%Lp' || stat -c '%a'` were chained inside one $()-subshell;
+# on the GNU/Linux CI runner `stat -f` means `--file-system`, which prints a
+# "  File: ..." line to stdout and exits non-zero — that line leaked into the
+# captured perms, so a genuinely chmod-0600 snapshot read as "  File: ...\n600"
+# != "600" and tripped a FALSE T8 failure while the file was in fact 0600.)
+perms() {
+  local p
+  if p=$(stat -c '%a' "$1" 2>/dev/null); then printf '%s' "$p"; return 0; fi
+  if p=$(stat -f '%Lp' "$1" 2>/dev/null); then printf '%s' "$p"; return 0; fi
+  printf '?'
+}
 
 # ============================================================================
 hdr "T6 — resilience hardener: forces the FILE keyring backend for every shell"
