@@ -58,12 +58,18 @@ append_jsonl() {
     session_ref="sess_$(date +%s%N | tail -c 6)"
   fi
   local line
-  line="$(jq -nc \
+  # A jq failure (bad jq_expr / --arg) leaves $line empty; appending that would write a BLANK
+  # line into the strict-JSONL sink (printf still returns 0, so the write guard below would be
+  # bypassed) -- log pollution / corruption. Guard on both jq success AND a non-empty line.
+  if ! line="$(jq -nc \
     --arg ts "$ts" \
     --arg event_type "$event_type" \
     --arg session_ref "$session_ref" \
     "$@" \
-    "{ts:\$ts,skill:\"41-build-with-ai-playbook\",event:\$event_type,session_ref:\$session_ref,source:\"script\"} + ($jq_expr)")"
+    "{ts:\$ts,skill:\"41-build-with-ai-playbook\",event:\$event_type,session_ref:\$session_ref,source:\"script\"} + ($jq_expr)")" || [[ -z "$line" ]]; then
+    echo "[skill 41] WARNING: could not build event '$event_type' (jq error) -- NOT logged, sink left clean" >&2
+    return 0
+  fi
   if ! printf '%s\n' "$line" >> "$events_file" 2>/dev/null; then
     echo "[skill 41] WARNING: cannot write '$events_file' -- event '$event_type' NOT logged" >&2
     return 0

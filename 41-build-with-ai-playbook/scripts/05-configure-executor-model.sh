@@ -198,9 +198,12 @@ try:
     minimax = [m['id'] for m in models if isinstance(m, dict) and 'minimax' in m.get('id','').lower()]
     # Sort: prefer m3, then by version descending
     def rank(mid):
-        # extract numeric suffix for sorting: m3 > m2.7 > m2.5 > m2
-        nums = re.findall(r'[\d.]+', mid.split('/')[-1])
-        return tuple(float(n) for n in nums) if nums else (0,)
+        # extract numeric components for sorting: m3 > m2.7 > m2.5 > m2. Match one well-formed
+        # decimal per component so a multi-dot id (e.g. m2.5.1) splits into valid numbers rather
+        # than one unparseable token ('2.5.1') that would make float() raise and, via the broad
+        # except below, silently discard EVERY discovered model.
+        nums = re.findall(r'\d+(?:\.\d+)?', mid.split('/')[-1])
+        return tuple(float(n) for n in nums) if nums else (0.0,)
     minimax.sort(key=rank, reverse=True)
     print(minimax[0] if minimax else '')
 except Exception:
