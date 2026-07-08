@@ -166,6 +166,24 @@ _should_exclude() {
     # persona/template files (including all healer-*.md role files) stays in scope, so
     # tamper-detection is unchanged. Same class as the */38-…/…-extension.md exclusion.
     */23-ai-workforce-blueprint/.persona-index-stale) return 0 ;;
+    # A3 RUNTIME-LOG FIX (WAVE-7): Skill 23 ships a PRISTINE
+    # persona-selection-log.md (a ~785 B header ending "Append new entries below
+    # this line. Do not delete historical entries."). At RUNTIME the persona
+    # selector (persona-selector-v2.py / create_role_workspaces.py /
+    # build-workforce.py) APPENDS one row per task dispatch to this exact file in
+    # the INSTALLED skill dir, so on any box that has ever selected a persona the
+    # DEST content diverges from the pristine SRC header — diverging Skill 23's
+    # DEST digest from SRC and withholding the version stamp fleet-wide (observed
+    # on the operator canary: DEST 4367 B vs SRC 785 B). The appended log is
+    # volatile runtime state, NOT the shipped integrity signal (same class as the
+    # _qc-summary.md / how-to-use / _index.json exclusions above). Exclude ONLY
+    # this exact path on BOTH sides. Basename is deliberately NOT used: the static
+    # golden-fixture copies under 49-signature-funnel/examples/ and
+    # 56-sales-page-assets/examples/ carry the SAME basename but are byte-stable
+    # shipped content and MUST stay in scope (the full-funnel-pipeline evidence
+    # copies are already covered by */working/*). Every real role/SOP/persona/
+    # template .md under Skill 23 remains hashed, so tamper-detection is unchanged.
+    */23-ai-workforce-blueprint/persona-selection-log.md) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__
