@@ -21,7 +21,7 @@ metadata:
 
 Moves large-deck image generation from sequential per-image polling to a
 webhook-primary architecture. A single Cloudflare Worker at
-`kie-callback.zerohumanworkforce.com` receives every Kie.ai callback for
+`kie-callback.<your-cf-zone>` receives every Kie.ai callback for
 all client boxes, verifies the HMAC signature centrally, and stores the
 result in Worker KV. The box polls the Worker KV (not Kie) for its result.
 If the callback does not arrive within the per-model timeout, the box falls
@@ -74,7 +74,7 @@ Slide rendered
 - `box-kv-poller.js` -- box-side KV polling module
 - `kie-slide-submitter.js` -- slide submitter (webhook-primary, poll-fallback)
 - `SUBMITTER-SOP.md` -- operator SOP for the slide submitter (hardened contract)
-- `DEPLOY.md` -- step-by-step deploy guide for Trevor
+- `DEPLOY.md` -- step-by-step deploy guide for the operator
 - `test/security.test.mjs` -- stubbed-fetch regression suite for the 3 security components
 - `qc-kie-callback-relay.sh` -- local QC gate (syntax + security suite + version)
 

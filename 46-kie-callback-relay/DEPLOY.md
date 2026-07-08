@@ -1,9 +1,9 @@
 # Deploy Guide: Kie Callback Relay Worker
 
-Operator account: 13f808b72eb78027a8046357c6cf1afa
-Zone: zerohumanworkforce.com (ID: a9ecc0a067f52eaa4c59dc9b11d9dd55)
+Operator account: <CF_ACCOUNT_ID>
+Zone: <your-cf-zone> (ID: <CF_ZONE_ID>)
 Worker name: kie-callback-relay
-Public URL: https://kie-callback.zerohumanworkforce.com/
+Public URL: https://kie-callback.<your-cf-zone>/
 
 ---
 
@@ -14,7 +14,7 @@ Public URL: https://kie-callback.zerohumanworkforce.com/
    ```
    npx wrangler login
    ```
-   Confirm account ID 13f808b72eb78027a8046357c6cf1afa is selected.
+   Confirm account ID <CF_ACCOUNT_ID> is selected.
 3. Your `webhookHmacKey` from https://kie.ai/settings (enable it there first).
 
 ---
@@ -26,7 +26,7 @@ Run from `46-kie-callback-relay/worker/`:
 ```bash
 cd 46-kie-callback-relay/worker
 npx wrangler kv namespace create KIE_CALLBACK_KV \
-  --account-id 13f808b72eb78027a8046357c6cf1afa
+  --account-id <CF_ACCOUNT_ID>
 ```
 
 Expected output:
@@ -39,7 +39,7 @@ Copy the `id` value. Repeat for the preview namespace:
 
 ```bash
 npx wrangler kv namespace create KIE_CALLBACK_KV --preview \
-  --account-id 13f808b72eb78027a8046357c6cf1afa
+  --account-id <CF_ACCOUNT_ID>
 ```
 
 Edit `wrangler.toml` and replace:
@@ -84,7 +84,7 @@ npx wrangler deploy --name kie-callback-relay
 Expected output:
 ```
 Deployed kie-callback-relay triggers:
-  https://kie-callback.zerohumanworkforce.com/*
+  https://kie-callback.<your-cf-zone>/*
 ```
 
 ---
@@ -92,7 +92,7 @@ Deployed kie-callback-relay triggers:
 ## Step 4: Verify
 
 ```bash
-curl https://kie-callback.zerohumanworkforce.com/healthz
+curl https://kie-callback.<your-cf-zone>/healthz
 ```
 
 Expected:
@@ -121,7 +121,7 @@ Worker performs on every request. Distribute ONLY the two derived values onto th
 box env store (`~/clawd/secrets/.env` or `/docker/<project>/.env`):
 
 ```
-KIE_KV_BASE_URL=https://kie-callback.zerohumanworkforce.com
+KIE_KV_BASE_URL=https://kie-callback.<your-cf-zone>
 KIE_CLIENT_SLUG=operator-demo
 KIE_CALLBACK_HMAC_KEY=<PER_CLIENT_CALLBACK_KEY>   # per-client, NOT the master
 KVREAD_TOKEN=<PER_CLIENT_KVREAD_TOKEN>            # per-client, NOT the master
@@ -158,7 +158,7 @@ const { KieSlideSubmitter } = require('./46-kie-callback-relay/kie-slide-submitt
 const submitter = new KieSlideSubmitter({
   clientSlug:      'operator-test',
   kieApiKey:       process.env.KIE_API_KEY,
-  kvWorkerUrl:     'https://kie-callback.zerohumanworkforce.com',
+  kvWorkerUrl:     'https://kie-callback.<your-cf-zone>',
   workspaceDir:    '/tmp/kie-test',
   callbackHmacKey: process.env.KIE_CALLBACK_HMAC_KEY, // per-client derived value (Step 4b)
   kvReadToken:     process.env.KVREAD_TOKEN           // per-client derived value (Step 4b)

@@ -12,14 +12,15 @@
  *   const result = await poller.waitForTask(submitId, taskId, perTaskSecret, { timeoutMs });
  *
  * Required env vars on the box (in ~/clawd/secrets/.env or /docker/<project>/.env):
- *   KIE_KV_BASE_URL   -- Worker base URL, e.g. https://kie-callback.zerohumanworkforce.com
+ *   KIE_KV_BASE_URL   -- Worker base URL, e.g. https://kie-callback.<your-cf-zone>
  *   KIE_CLIENT_SLUG   -- this box's client identifier (e.g. "operator-demo")
  *   KVREAD_TOKEN      -- bearer token shared with the Worker (fix B); name only, never in docs
  *
  * Security:
  *   - Fix B: every /kv-read request carries Authorization: Bearer <KVREAD_TOKEN>.
- *   - Fix C: the raw perTaskSecret is sent as &p= on /kv-read so the Worker can validate
- *     the stored HMAC. The Worker validates in constant time and NEVER returns perTaskSecret.
+ *   - Fix C/G: the raw perTaskSecret preimage is sent in the X-Kie-Preimage request header on
+ *     /kv-read (NOT a query param) so the Worker can validate the stored HMAC. The Worker
+ *     validates in constant time and NEVER returns perTaskSecret.
  *     The box validates the result by comparing its local registry copy of perTaskSecret
  *     against what was submitted (unchanged from before -- belt-and-suspenders).
  *   - Result URLs are allowlisted to Kie-owned domains before any download.
@@ -33,21 +34,26 @@ const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
 
-// Allowed Kie result CDN hosts (allowlist -- must confirm exact hosts from a live callback)
-// UNVERIFIED: capture from a real callback before locking; these are placeholders from the docs
-const KIE_RESULT_HOSTS = [
+// Allowed Kie result CDN hosts. These are the hosts Kie's docs describe; capture the EXACT
+// host(s) from a live callback and OVERRIDE via the KIE_RESULT_HOSTS env var (comma-separated)
+// so a changed/unexpected Kie CDN host can be corrected WITHOUT a code edit + redeploy. A wrong
+// allowlist silently converts every genuine result into a failure fleet-wide, so a mismatch is
+// surfaced loudly at check time (see the ALLOWLIST-MISMATCH branch in waitForTask).
+const DEFAULT_KIE_RESULT_HOSTS = [
   'tempfile.redpandaai.co',
   'tempfileb.aiquickdraw.com',
   'static.aiquickdraw.com',
   'tempfile.aiquickdraw.com',
-  // Add real CDN hostnames after observing a live callback
 ];
+const KIE_RESULT_HOSTS = (process.env.KIE_RESULT_HOSTS
+  ? process.env.KIE_RESULT_HOSTS.split(',').map(h => h.trim()).filter(Boolean)
+  : DEFAULT_KIE_RESULT_HOSTS);
 
 class KieKvPoller {
   /**
    * @param {object} opts
    * @param {string} opts.clientSlug        -- client identifier
-   * @param {string} opts.kvWorkerUrl       -- base URL of the Worker, e.g. https://kie-callback.zerohumanworkforce.com
+   * @param {string} opts.kvWorkerUrl       -- base URL of the Worker, e.g. https://kie-callback.<your-cf-zone>
    * @param {string} opts.workspaceDir      -- path to workspace, e.g. /data or ~/clawd
    * @param {string} opts.kvReadToken       -- per-client bearer token for /kv-read auth
    *                                            (fix B/F). Required ONLY when callbacks are
@@ -142,8 +148,20 @@ class KieKvPoller {
           status = 'failed';
         } else if (safeUrls.length === 0) {
           status = 'failed';
-          extra  = { reason: 'allowlist-rejected', rawUrlCount: (kvResult.resultUrls || []).length };
-          console.warn(`[kie-poller] task ${taskId}: code 200 but 0 allowlisted URLs -- marking failed`);
+          const rawUrlCount = (kvResult.resultUrls || []).length;
+          extra  = { reason: 'allowlist-rejected', rawUrlCount };
+          if (rawUrlCount > 0) {
+            // A code-200 callback that CARRIED result URLs yet had EVERY one dropped is almost
+            // always a stale/misconfigured KIE_RESULT_HOSTS allowlist, not a genuine failure --
+            // and left unnoticed it fails every slide fleet-wide. Make it LOUD (error, distinct
+            // tag) so monitoring pages on it and the operator sets KIE_RESULT_HOSTS to the real host.
+            console.error(`[kie-poller] ALLOWLIST-MISMATCH task ${taskId}: code 200 carried ` +
+              `${rawUrlCount} result URL(s) but ALL were rejected by the allowlist ` +
+              `(KIE_RESULT_HOSTS=${KIE_RESULT_HOSTS.join(',')}). Verify the real Kie CDN host from ` +
+              `a live callback and set the KIE_RESULT_HOSTS env var.`);
+          } else {
+            console.warn(`[kie-poller] task ${taskId}: code 200 but callback carried 0 URLs -- marking failed`);
+          }
         } else {
           status = 'done';
         }

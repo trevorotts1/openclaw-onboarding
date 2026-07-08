@@ -57,7 +57,8 @@
  *   B. /kv-read requires Authorization: Bearer <KVREAD_TOKEN>; returns 401 if missing/wrong.
  *   C. perTaskSecret is never stored in KV nor returned over the wire. The callBackUrl
  *      carries HMAC-SHA256(perTaskSecret, KIE_CALLBACK_HMAC_KEY) as param h=. The Worker
- *      stores this HMAC in KV. On /kv-read the box sends the raw perTaskSecret as &p=;
+ *      stores this HMAC in KV. On /kv-read the box sends the raw perTaskSecret in the
+ *      X-Kie-Preimage request header (fix G -- NOT a query param);
  *      the Worker recomputes HMAC(preimage) in constant time and compares against stored.
  *      The plaintext perTaskSecret never sits in KV and is never returned in any response.
  *   D. callBackUrl no longer carries the raw perTaskSecret. The s= param is now
@@ -283,8 +284,8 @@ export default {
     }
 
     // KV read endpoint (B2 transport): box polls for its result
-    // GET /kv-read?c=<clientSlug>&j=<submitId>&p=<perTaskSecretPreimage>
-    // Authorization: Bearer <KVREAD_TOKEN>
+    // GET /kv-read?c=<clientSlug>&j=<submitId>   (X-Kie-Preimage: <perTaskSecret> request header)
+    // Authorization: Bearer <perClientKvReadToken>  (= HMAC-SHA256(clientSlug, KVREAD_TOKEN master))
     if (request.method === 'GET' && url.pathname === '/kv-read') {
       return handleKvRead(request, url, env);
     }
@@ -334,9 +335,10 @@ export default {
 
     if (!timestampHeader || !signatureHeader) {
       // HMAC is opt-in on Kie; if webhookHmacKey is configured we REQUIRE the headers.
-      // Reject silently (return 200 so Kie does not retry; this is a misconfiguration).
+      // An unsigned callback is unauthenticated -> 401 so the failure SURFACES (CF analytics),
+      // rather than a silent 200 that hides forged/misconfigured callbacks fleet-wide.
       console.error('KIE_CB: missing HMAC headers for taskId', taskId);
-      return new Response('OK', { status: 200 });
+      return new Response('missing signature headers', { status: 401 });
     }
 
     // --- Replay protection (policy: +/- 300 seconds; Kie does not define a window) ---
@@ -352,13 +354,16 @@ export default {
     const hmacKey = env.KIE_WEBHOOK_HMAC_KEY;
     if (!hmacKey) {
       console.error('KIE_CB: KIE_WEBHOOK_HMAC_KEY secret not configured');
-      return new Response('OK', { status: 200 });
+      // Server misconfiguration (missing/rotated secret), NOT a bad callback: return 500 so it
+      // shows up in CF analytics and Kie retries once the secret is restored -- a silent 200 here
+      // kills the whole callback path fleet-wide with zero error signal (matches handleKvRead's 500).
+      return new Response('server misconfiguration', { status: 500 });
     }
 
     const sigValid = await verifyKieSignature(taskId, timestampHeader, signatureHeader, hmacKey);
     if (!sigValid) {
       console.warn('KIE_CB: HMAC mismatch for taskId', taskId);
-      return new Response('OK', { status: 200 }); // 200 to avoid infinite retries
+      return new Response('invalid signature', { status: 401 }); // surface unauthenticated callbacks
     }
 
     // --- Fix D + F: verify the callback validator (s=) in constant time ---
@@ -369,7 +374,9 @@ export default {
     const callbackMaster = env.KIE_CALLBACK_HMAC_KEY;
     if (!callbackMaster) {
       console.error('KIE_CB: KIE_CALLBACK_HMAC_KEY secret not configured');
-      return new Response('OK', { status: 200 });
+      // Server misconfiguration (missing/rotated master), NOT a bad callback -> 500 so it surfaces
+      // and Kie retries once restored (a silent 200 hides a fleet-wide dead callback path).
+      return new Response('server misconfiguration', { status: 500 });
     }
 
     const perClientCallbackKey = await derivePerClient(callbackMaster, clientSlug);
@@ -380,7 +387,7 @@ export default {
     );
     if (!validatorValid) {
       console.warn('KIE_CB: callback validator mismatch for submitId', submitId);
-      return new Response('OK', { status: 200 }); // 200 to avoid Kie retries; our guard
+      return new Response('invalid callback validator', { status: 403 }); // surface forged/misrouted callbacks
     }
 
     // --- Idempotency check (KV key: "idem:<taskId>", TTL 24h) ---
@@ -419,8 +426,8 @@ export default {
  * TTL: 3600 seconds (1 hour) -- boxes should poll within seconds; 1h is ample
  *
  * Fix C: perTaskSecretHmac (HMAC-SHA256(perTaskSecret, KIE_CALLBACK_HMAC_KEY)) is stored
- * instead of the raw perTaskSecret. On /kv-read, the box sends the raw perTaskSecret as
- * &p=<preimage>; the Worker recomputes the HMAC and compares in constant time.
+ * instead of the raw perTaskSecret. On /kv-read, the box sends the raw perTaskSecret in the
+ * X-Kie-Preimage header (fix G); the Worker recomputes the HMAC and compares in constant time.
  * The plaintext perTaskSecret is never written to KV and never returned over the wire.
  */
 async function writeResultToKV(env, result) {

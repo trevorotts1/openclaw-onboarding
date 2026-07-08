@@ -39,7 +39,10 @@ const crypto = require('crypto');
 const { KieKvPoller } = require('./box-kv-poller');
 
 const KIE_CREATE_TASK_URL = 'https://api.kie.ai/api/v1/jobs/createTask';
-const CALLBACK_WORKER_URL = 'https://kie-callback.zerohumanworkforce.com';
+// The relay Worker base URL is per-deployment. Read it from KIE_KV_BASE_URL (set per box in the
+// box .env; see DEPLOY.md) or pass opts.kvWorkerUrl. The placeholder default carries no operator
+// zone -- an unconfigured box fails loudly on DNS rather than silently hitting someone else's relay.
+const CALLBACK_WORKER_URL = process.env.KIE_KV_BASE_URL || 'https://kie-callback.<your-cf-zone>';
 
 // 20 requests per 10 seconds per account -- source: https://docs.kie.ai/ (verified 2026-06-14)
 const RATE_LIMIT_MAX    = 20;
