@@ -30,6 +30,12 @@ SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIER1_DIR="$SKILL_ROOT/references/tier1-counties"
 EVENTS="$SCRIPT_DIR/lib-pr-events.sh"
 COSTCAP="$SCRIPT_DIR/lib-cost-cap.sh"
+# SK1-26: the Command Center reflection helper shipped unwired (dead code). Source
+# it so query() can reflect a live scan on the operator's Kanban board — OPT-IN
+# via SKILL40_CC_TASK_ID, fail-soft, default no-op (see _cc_reflect below).
+CCLIB="$SCRIPT_DIR/lib-command-center.sh"
+# shellcheck source=/dev/null
+[ -f "$CCLIB" ] && . "$CCLIB"
 
 PR_CACHE_TTL_DAYS="${PR_CACHE_TTL_DAYS:-30}"
 
@@ -62,6 +68,15 @@ _tier3_dir() {
 }
 
 _emit() { bash "$EVENTS" pr_event "$1" "$2" >/dev/null 2>&1 || true; }
+
+# _cc_reflect <status> — SK1-26: opt-in Command Center card move. No-op unless
+# the operator wired a card id (SKILL40_CC_TASK_ID) and lib-command-center.sh is
+# present. Fail-soft: never blocks or fails a query.
+_cc_reflect() {
+  [ -n "${SKILL40_CC_TASK_ID:-}" ] || return 0
+  command -v cc_move_task >/dev/null 2>&1 || return 0
+  cc_move_task "$SKILL40_CC_TASK_ID" "${1:-in_progress}" "${SKILL40_CC_AGENT_ID:-}" >/dev/null 2>&1 || true
+}
 
 # ---------- compliance + attribution helpers (all enforced in query()) ----------
 
@@ -170,9 +185,19 @@ cache_put() {
   [ -n "$target" ] && [ -n "$rec" ] || { echo "cache_put: missing target/record" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "cache_put: jq required" >&2; return 2; }
   printf '%s' "$rec" | jq -e 'type=="object"' >/dev/null 2>&1 || { echo "cache_put: record is not a JSON object" >&2; return 2; }
-  # ATTRIBUTION CONTRACT — refuse a record missing source + retrieved_at.
-  if ! printf '%s' "$rec" | jq -e '(.source // "")!="" and (.retrieved_at // "")!=""' >/dev/null 2>&1; then
-    echo "cache_put: REFUSED — record missing source + retrieved_at (unattributed result is not a record)" >&2
+  # ATTRIBUTION CONTRACT (SK1-25) — refuse a record whose attribution is missing
+  # OR structurally implausible. `source` must be a real, non-placeholder origin
+  # (a URL, provider slug, or "census" — but NOT empty, a "<…>" placeholder, or
+  # "unknown"/"none"), and `retrieved_at` must be an ISO-8601 UTC timestamp — not
+  # merely a non-empty string. This raises the forgery bar: a hook can no longer
+  # pass the gate by stuffing arbitrary junk (e.g. retrieved_at:"yesterday" or a
+  # placeholder source) into those two fields.
+  if ! printf '%s' "$rec" | jq -e '
+        ((.source // "" | ascii_downcase) as $s
+          | ($s != "" and ($s | test("^<") | not) and $s != "unknown" and $s != "none"))
+        and ((.retrieved_at // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"))
+      ' >/dev/null 2>&1; then
+    echo "cache_put: REFUSED — record attribution invalid (source must be a real, non-placeholder origin and retrieved_at an ISO-8601 timestamp; an unattributed/implausible result is not a record)" >&2
     return 1
   fi
   local cdir key cfile
@@ -239,6 +264,12 @@ tier() {
   local fips="${1:-}" county="${2:-}" st="${3:-}"
   [ -n "$fips" ] || { echo '{"tier":"tier4_honest_gap","reason":"county_unresolved"}'; return 0; }
   local have_jq=0; command -v jq >/dev/null 2>&1 && have_jq=1
+  # SK1-24: track a config that MATCHES this county but is not yet servable
+  # (validated:false / placeholder URLs). The shipped Tier-1 configs all ship
+  # unvalidated by design, so without this the router would return a generic
+  # "no_online_db" and hide the fact that a curated config exists and just needs
+  # 05-validate-target.sh. Make that tier state EXPLICIT instead.
+  local matched_unvalidated=""
 
   # Tier 1: a curated config whose "county_fips" matches AND is servable.
   if [ "$have_jq" -eq 1 ] && [ -d "$TIER1_DIR" ]; then
@@ -256,7 +287,9 @@ tier() {
           '{tier:"tier1", target_ref:$slug, platform:$plat, reason:"curated tier1 config (validated)"}'
         return 0
       fi
-      # matched but not validated/filled → do NOT serve; fall through.
+      # matched but not validated/filled → do NOT serve; record it (SK1-24) so
+      # the honest gap can say the config exists and just needs validation.
+      [ -z "$matched_unvalidated" ] && matched_unvalidated="$(jq -r '.slug // empty' "$f" 2>/dev/null || true)"
     done
   fi
 
@@ -298,11 +331,21 @@ tier() {
           jq -cn --arg slug "$gslug" '{tier:"tier3", target_ref:$slug, platform:"custom", reason:"operator tier3 config (validated)"}'
           return 0
         fi
+        # matched but not validated/filled → record it (SK1-24) for an explicit gap.
+        [ -z "$matched_unvalidated" ] && matched_unvalidated="$(jq -r '.slug // empty' "$g" 2>/dev/null || true)"
       done
     fi
   fi
 
-  # Else Tier 4 — honest gap. NEVER FABRICATE.
+  # Else Tier 4 — honest gap. NEVER FABRICATE. Make the tier state EXPLICIT
+  # (SK1-24): if a curated/operator config MATCHED this county but was not yet
+  # validated/filled, say so — the operator can then run 05-validate-target.sh —
+  # rather than implying no data source exists at all.
+  if [ -n "$matched_unvalidated" ] && [ "$have_jq" -eq 1 ]; then
+    jq -cn --arg slug "$matched_unvalidated" \
+      '{tier:"tier4_honest_gap", reason:"config_present_unvalidated", target_ref:$slug, hint:"a curated config matches this county but is not validated/filled — run 05-validate-target.sh, fill portal_url/tos_url/selectors, set validated:true"}' \
+      2>/dev/null && return 0
+  fi
   echo '{"tier":"tier4_honest_gap","reason":"no_online_db"}'
   return 0
 }
@@ -374,6 +417,10 @@ query() {
     echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, available:false}'
     return 0
   fi
+
+  # SK1-26: a real (non-tier4) route is live work — reflect it on the operator's
+  # Command Center board when they opted in (no-op otherwise).
+  _cc_reflect in_progress
 
   # 3) cache check (fresh hit = free + instant). Cache entries are only ever
   #    written by cache_put (attribution-gated), so a hit is already attributed.
@@ -460,24 +507,47 @@ query() {
   #    source + retrieved_at (attribution). The router NEVER synthesizes a record
   #    itself; a hookless call is an honest available:false handoff, not a
   #    fabricated record.
+  # SK1-25: the operator retrieval hook is FAIL-CLOSED and sandboxed.
+  #   - It runs ONLY when explicitly enabled (SKILL40_ALLOW_RETRIEVE_CMD=1), so a
+  #     stray/injected SKILL40_RETRIEVE_CMD can never trigger code execution.
+  #   - SKILL40_RETRIEVE_CMD must resolve to an executable (command -v) and is
+  #     invoked DIRECTLY, never via `bash -c "<string>"` — an inline shell
+  #     payload (metacharacters, pipes, subshells) is no longer evaluated.
+  #   - Its output is still attribution-gated by cache_put (now http(s)+ISO gated).
   if [ -n "${SKILL40_RETRIEVE_CMD:-}" ]; then
     local rec put
-    rec="$(SKILL40_QUERY="$q" SKILL40_TARGET="$target" SKILL40_RTYPE="$rtype" bash -c "$SKILL40_RETRIEVE_CMD" 2>/dev/null || true)"
-    if [ -n "$rec" ]; then
-      if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
-        _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
-        jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+    if [ "${SKILL40_ALLOW_RETRIEVE_CMD:-0}" != "1" ]; then
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_enabled"}')"
+    elif ! command -v "$SKILL40_RETRIEVE_CMD" >/dev/null 2>&1; then
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_executable"}')"
+    else
+      rec="$(SKILL40_QUERY="$q" SKILL40_TARGET="$target" SKILL40_RTYPE="$rtype" "$SKILL40_RETRIEVE_CMD" 2>/dev/null || true)"
+      if [ -n "$rec" ]; then
+        if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
+          _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
+          jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+          _cc_reflect review   # SK1-26: attributed record obtained → move card to review
+          return 0
+        fi
+        # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
+        _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')"
+        echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"unattributed", available:false}'
         return 0
       fi
-      # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')"
-      echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"unattributed", available:false}'
-      return 0
     fi
   fi
 
-  echo "$t" | jq -c --arg q "$qref" --arg rt "$rtype" \
-    '. + {query_ref:$q, record_type:$rt, available:false, note:"live retrieval is performed by the tier adapter after robots+ToS+attribution pass; the router NEVER synthesizes a record itself"}'
+  # SK1-26: for a Tier-2 vendor route, surface the adapter's --plan (robots+ToS
+  # obligations + the request shape the agent must issue) in the handoff. The
+  # router never fetches — the agent does — so it needs the plan. Previously
+  # --plan was implemented in every adapter but NEVER invoked (a dead contract).
+  local _plan=""
+  if [ "$tname" = "tier2" ]; then
+    local _ad="$SCRIPT_DIR/adapters/$target.sh"
+    [ -f "$_ad" ] && _plan="$(bash "$_ad" --plan "$county" "$st_abbr" "$rtype" "$q" 2>/dev/null || true)"
+  fi
+  echo "$t" | jq -c --arg q "$qref" --arg rt "$rtype" --arg plan "$_plan" \
+    '. + {query_ref:$q, record_type:$rt, available:false, note:"live retrieval is performed by the tier adapter after robots+ToS+attribution pass; the router NEVER synthesizes a record itself"} + (if $plan != "" then {plan:$plan} else {} end)'
   return 0
 }
 

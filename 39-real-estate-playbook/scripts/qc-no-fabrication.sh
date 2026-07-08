@@ -39,24 +39,33 @@ assert_json_false() { # label, json, jq-filter-that-must-be-false-or-absent
   fi
 }
 
-if command -v jq >/dev/null 2>&1; then
-  # geocode with a deliberately non-matching string: must return a JSON object
-  # with a boolean "matched" field — it must never invent lat/lon. (A real
-  # Census match is fine and not a failure; the floor is "no fabricated
-  # coordinates", which an object-with-matched proves.)
-  GEO="$(run_offline geocode 'zzzz-no-such-address-zzzz, XX 00000')"
-  if printf '%s' "$GEO" | jq -e 'type=="object" and has("matched")' >/dev/null 2>&1; then
-    echo "  [PASS] geocode: returns object with explicit matched field ($GEO)"
-  else
-    echo "  [FAIL] geocode: did not return an object with a matched field: $GEO"; FAIL=1
-  fi
-
-  assert_json_false "lookup (no key)"     "$(run_offline lookup 'any address')"   '.available'
-  assert_json_false "comps (no key)"      "$(run_offline comps 'any address')"    '.available'
-  assert_json_false "streetview (no key)" "$(run_offline streetview '0,0')"       '.available'
-else
-  echo "  [WARN] jq not present — skipping runtime sandbox assertions (static check still runs)."
+# SK1-22: jq is REQUIRED. The substantive gate is the offline `env -i` sandbox
+# below (it actually drives lib-property.sh and proves honest-gap shapes). The
+# old "jq absent => skip the sandbox but still PASS on two static greps" branch
+# was fail-OPEN — it let a box pass without ever exercising the no-fabrication
+# behavior. lib-property.sh itself hard-requires jq, so a jq-less host cannot
+# legitimately run the skill; fail CLOSED here instead of passing vacuously.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  [FAIL] jq not installed — cannot drive the no-fabrication sandbox (lib-property.sh also requires jq). Failing closed."
+  echo ""
+  echo "RESULT: FAIL — jq required to prove the no-fabrication floor."
+  exit 1
 fi
+
+# geocode with a deliberately non-matching string: must return a JSON object
+# with a boolean "matched" field — it must never invent lat/lon. (A real
+# Census match is fine and not a failure; the floor is "no fabricated
+# coordinates", which an object-with-matched proves.)
+GEO="$(run_offline geocode 'zzzz-no-such-address-zzzz, XX 00000')"
+if printf '%s' "$GEO" | jq -e 'type=="object" and has("matched")' >/dev/null 2>&1; then
+  echo "  [PASS] geocode: returns object with explicit matched field ($GEO)"
+else
+  echo "  [FAIL] geocode: did not return an object with a matched field: $GEO"; FAIL=1
+fi
+
+assert_json_false "lookup (no key)"     "$(run_offline lookup 'any address')"   '.available'
+assert_json_false "comps (no key)"      "$(run_offline comps 'any address')"    '.available'
+assert_json_false "streetview (no key)" "$(run_offline streetview '0,0')"       '.available'
 
 # Static: the library must explicitly carry the no-fabrication contract and the
 # honest-gap markers, and must NOT hardcode placeholder property values.

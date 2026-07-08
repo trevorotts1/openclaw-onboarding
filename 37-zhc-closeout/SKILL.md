@@ -1,6 +1,6 @@
 ---
 name: zhc-closeout
-description: Delivers the full ZeroHumanWorkforce closeout experience — KIE.ai infographics, Veo celebration video, 9-section Notion page tree, 6-message Telegram sequence, Command Center fire, and n8n wire-up. Every deliverable must pass the 8.5 quality gate before delivery.
+description: Delivers the full ZeroHumanWorkforce closeout experience — KIE.ai infographics, Veo celebration video, 9-section Notion page tree, 7-message Telegram sequence, Command Center fire, and n8n wire-up. Every deliverable must pass the 8.5 quality gate before delivery.
 ---
 
 # Skill 37: ZHC Closeout
@@ -56,7 +56,7 @@ Skill 23 build (departments + roles) ──────────────�
    ├── Step 3: Generate Infographic #2 (Workflow) ───► infographic2Url captured
    ├── Step 4: Generate Celebration Video ───────────► celebrationVideoUrl captured
    ├── Step 5: Build Notion Page Tree (9 sections) ──► notionRootPageUrl captured
-   └── Step 6: Telegram Delivery (6-message sequence)► closeoutCompletedAt set
+   └── Step 6: Telegram Delivery (7-message sequence)► closeoutCompletedAt set
 ```
 
 The resume cron (Skill 23's `scripts/resume-workforce-build.sh`) is **extended in v10.14.17** to also fire whenever `buildCompletedAt` is set but `closeoutStatus != "done" && closeoutStatus != "sent"`. So if the closeout dies mid-way, the cron wakes the agent back up to finish it — same mechanism, same lockfile, same attempt cap.
@@ -201,7 +201,7 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | `scripts/generate-infographics.sh` | KIE.AI calls for both infographics |
 | `scripts/generate-celebration-video.sh` | KIE.AI celebration video (primary `gemini-omni-video`; fallback `veo3_fast`/`veo3`) |
 | `scripts/create-notion-closeout.sh` | Notion API page-tree creation |
-| `scripts/send-telegram-celebration.sh` | 6-message Telegram delivery |
+| `scripts/send-telegram-celebration.sh` | 7-message Telegram delivery |
 | `scripts/send-operator-summary.sh` | Success-path operator Telegram summary with LINKS to every delivered artifact (via OpenClaw gateway; opt-in `env.vars.OPERATOR_ESCALATION_CHAT_ID`, back-compat `ZHC_OPERATOR_CHAT_ID` — NO hardcoded default; skips send when unset). Idempotent. |
 | `scripts/upload-ghl-media.sh` | Conditional GHL media-library upload of the closeout media (Version 2021-07-28, LOCATION PIT only). Skips gracefully if GHL/Convert-and-Flow + a working PIT are absent. |
 | `templates/infographic-1-prompt.md` | Structure infographic prompt template |

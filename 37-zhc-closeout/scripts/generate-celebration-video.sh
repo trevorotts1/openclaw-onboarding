@@ -79,7 +79,14 @@ LOG_FILE="${ZHC_LOG_FILE:-$OC_ROOT/workspace/.zhc-closeout.log}"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$SKILL_DIR/templates/veo-prompt.txt"
 STEP_LABEL="celebration-video"
-LOCAL_MP4="$OC_ROOT/workspace/.zhc-celebration-video.mp4"
+# SK1-15: isolate the rendered video per client. run-closeout.sh's lock is
+# per-slug so different clients run concurrently; a fixed .zhc-celebration-video.mp4
+# let one client's render overwrite another's, shipping the wrong video. Key the
+# path on the same slug run-closeout.sh locks on (direct jq — state_get is defined
+# further down).
+_client_slug="$(jq -r '.companySlug // .companyName // empty' "$STATE_FILE" 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+[[ -z "$_client_slug" ]] && _client_slug="default"
+LOCAL_MP4="$OC_ROOT/workspace/.zhc-celebration-video.${_client_slug}.mp4"
 
 log() {
   printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >> "$LOG_FILE"

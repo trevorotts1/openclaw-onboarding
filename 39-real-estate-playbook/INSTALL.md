@@ -71,6 +71,7 @@ After scripts run, follow INSTRUCTIONS.md for the runtime flows (property lookup
 ```bash
 bash scripts/qc-no-personal-data.sh   # UNIVERSAL: zero client/personal identifiers
 bash scripts/qc-no-fabrication.sh     # no script returns invented data on a provider miss
+bash scripts/qc-fair-housing.sh       # CODED fair-housing gate (fail-closed; no protected-class field)
 ```
 
 Both must PASS before the skill is considered installed cleanly (per `../QC-PROTOCOL.md` Rule 5).

@@ -18,6 +18,27 @@ set -uo pipefail
 
 SKILL_NAME="39-real-estate-playbook"
 
+# SK1-21: CODED fair-housing gate (fail-closed). Fair housing was previously
+# enforced ONLY by LLM prose (references/fair-housing-guardrails.md). Routing and
+# qualification must NEVER record or route on a protected characteristic, so any
+# event payload carrying a protected-class field is a violation and is REFUSED at
+# the write chokepoint below — no protected attribute ever reaches the audit log
+# or a downstream routing decision. Covers the federal Fair Housing Act classes
+# plus common state/local additions (age, marital status, source of income,
+# military/veteran status). qc-fair-housing.sh exercises this denylist.
+FAIR_HOUSING_DENY_KEYS='^(race|ethnicity|color|religion|religious|creed|national_origin|nationality|ancestry|sex|gender|gender_identity|sexual_orientation|orientation|familial_status|family_status|children|num_children|disability|handicap|age|marital_status|source_of_income|section_?8|housing_voucher|voucher|veteran_status|military_status|immigration_status)$'
+
+# fair_housing_offending_keys <payload> -> prints any protected-class keys found
+# in the JSON payload (recursively), one per line; empty output == clean.
+fair_housing_offending_keys() {
+  local payload="${1:-}"
+  command -v jq >/dev/null 2>&1 || return 0
+  printf '%s' "$payload" \
+    | jq -r 'try ([.. | objects | keys[]] | .[]) catch empty' 2>/dev/null \
+    | tr '[:upper:]' '[:lower:]' \
+    | grep -E "$FAIR_HOUSING_DENY_KEYS" || true
+}
+
 # Resolve MASTER_FILES_DIR from the SAME persisted single-source-of-truth that
 # 01-locate-master-files-folder.sh writes — NEVER a caller-env-dependent
 # $HOME/Downloads (or /data) fallback. That fallback was the Skill-23-class
@@ -71,6 +92,15 @@ re_event() {
   if ! printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "re_event: payload is not a JSON object: $payload" >&2
     return 2
+  fi
+  # SK1-21: fair-housing chokepoint — REFUSE (fail-closed) any event that carries
+  # a protected-class field. Routing/qualification must never record or route on
+  # a protected characteristic; this stops it reaching the audit log.
+  local _fh_hits
+  _fh_hits="$(fair_housing_offending_keys "$payload")"
+  if [ -n "$_fh_hits" ]; then
+    echo "re_event: REFUSED (fair-housing) — payload contains protected-class field(s): $(printf '%s' "$_fh_hits" | paste -sd, - 2>/dev/null | sed 's/,$//'). Never record or route on a protected characteristic (references/fair-housing-guardrails.md)." >&2
+    return 3
   fi
   local ts log line
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

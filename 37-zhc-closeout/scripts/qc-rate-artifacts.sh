@@ -26,6 +26,12 @@
 #   guarantees the gate is never blocked on a missing rating. Set
 #   ZHC_DISABLE_AUTO_RATE=1 to defer entirely to a human/agent rating (legacy).
 #
+#   CONTENT JUDGMENT (SK1-10): the deterministic checks are a reachability/
+#   existence floor, NOT a quality score. Set ZHC_ARTIFACT_JUDGE_CMD to an
+#   independent judge (an LLM call that prints {"score","qc","note"}); on a floor
+#   PASS its real content score REPLACES the flat floor value. Unset/broken judge
+#   => the floor stands (keyless, unattended boxes stay fail-safe).
+#
 # USAGE:
 #   qc-rate-artifacts.sh --key <org_chart|flow_diagram|celebration_video|closeout_docs> [--state <path>]
 #
@@ -74,18 +80,62 @@ command -v jq >/dev/null 2>&1 || { log "ERROR" "jq not installed"; exit 2; }
 
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 
+# SK1-10: optional INDEPENDENT content judge. The deterministic raters below are
+# a reachability/existence FLOOR (does the artifact resolve, is it a non-trivial
+# image/video, does the doc have its sections) — NOT a judgment of content
+# quality. The flat 8.7 is that floor, not a quality claim. When
+# ZHC_ARTIFACT_JUDGE_CMD is set, a floor PASS is escalated to a REAL content
+# score: the judge command is run with ZHC_JUDGE_KEY, ZHC_JUDGE_STATE and
+# ZHC_JUDGE_FLOOR_NOTE in its env and MUST print one JSON object
+# {"score":<num>,"qc":"pass|fail","note":"..."} on stdout. Its verdict REPLACES
+# the floor rating (ratedBy:"llm-judge"). If the judge is unset, errors, or
+# prints nothing parseable, the deterministic floor stands — so an unattended,
+# keyless box keeps its fail-safe behavior and never blocks on a missing judge.
+_llm_judge() {  # <key> <floor_score> <floor_note> -> prints "score<TAB>qc<TAB>note" or nothing
+  local key="$1" floor_score="$2" floor_note="$3" out
+  [[ -n "${ZHC_ARTIFACT_JUDGE_CMD:-}" ]] || return 1
+  out="$(ZHC_JUDGE_KEY="$key" ZHC_JUDGE_STATE="$STATE_FILE" ZHC_JUDGE_FLOOR_NOTE="$floor_note" \
+         bash -c "$ZHC_ARTIFACT_JUDGE_CMD" 2>/dev/null)" || return 1
+  [[ -n "$out" ]] || return 1
+  printf '%s' "$out" | jq -e 'type=="object" and has("score") and has("qc")' >/dev/null 2>&1 || return 1
+  local s q n
+  s="$(printf '%s' "$out" | jq -r '.score')"
+  q="$(printf '%s' "$out" | jq -r '.qc')"
+  n="$(printf '%s' "$out" | jq -r '.note // ""')"
+  [[ "$q" == "pass" || "$q" == "fail" ]] || return 1
+  [[ "$s" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
+  printf '%s\t%s\t%s' "$s" "$q" "judge: ${n:-no-note} | floor: $floor_note"
+  return 0
+}
+
 # write_rating <score> <qc:pass|fail> <note>
 write_rating() {
   local score="$1" qc="$2" note="$3" tmp
+  # SK1-10: on a deterministic PASS, let an independent judge (if configured)
+  # replace the floor with a real content score. A judge FAIL downgrades; a judge
+  # PASS carries the judge's actual score. Absent/broken judge => floor stands.
+  local rated_by="qc-rate-artifacts"
+  if [[ "$qc" == "pass" ]]; then
+    local verdict
+    if verdict="$(_llm_judge "$KEY" "$score" "$note")"; then
+      score="${verdict%%$'\t'*}"
+      local _rest="${verdict#*$'\t'}"
+      qc="${_rest%%$'\t'*}"
+      note="${_rest#*$'\t'}"
+      rated_by="llm-judge"
+      log "INFO" "LLM judge scored $KEY: score=$score qc=$qc"
+    fi
+  fi
   tmp=$(mktemp)
   if jq \
       --arg k "$KEY" \
       --argjson score "$score" \
       --arg qc "$qc" \
       --arg note "$note" \
+      --arg rb "$rated_by" \
       --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       '.qualityRatings = (.qualityRatings // {}) |
-       .qualityRatings[$k] = {score:$score, qc:$qc, note:$note, ratedBy:"qc-rate-artifacts", ratedAt:$at}' \
+       .qualityRatings[$k] = {score:$score, qc:$qc, note:$note, ratedBy:$rb, ratedAt:$at}' \
       "$STATE_FILE" > "$tmp"; then
     mv "$tmp" "$STATE_FILE"
   else

@@ -56,18 +56,19 @@ grep -q 'extract_message_id' "$TG"          || fail "$TG dropped extract_message
 grep -q 'GHL_VIDEO_PUBLIC_URL' "$TG"        || fail "$TG msg-4 does not consider a GHL public video url"
 
 # ---- C. openable_link() unit behavior ----
-# Source just the function body in a subshell to unit-test it without running
-# the whole script (which requires an OpenClaw root + state file).
-openable_link() {
-  local ghl="$1" remote="$2"
-  if [[ -n "$ghl" && "$ghl" == https://* ]]; then printf '%s' "$ghl"; return 0; fi
-  if [[ -n "$remote" && "$remote" != "null" && "$remote" == http* && "$remote" != file://* ]]; then
-    printf '%s' "$remote"; return 0
-  fi
-  printf ''
-}
-# Prove the SCRIPT's copy matches this reference body (guards against drift).
-# Extract the function block from the script and compare its core decisions.
+# SK1-17: unit-test the REAL function SHIPPED in send-telegram-celebration.sh,
+# not a hand-copied reference body. The old test declared its OWN openable_link()
+# and asserted against that copy — a tautology that proved nothing and would keep
+# passing even if the shipped resolver was changed to be buggy (its only link to
+# the real code was a comment grep). Extract the actual function definition from
+# the script and eval it here so these assertions exercise the shipped code and
+# fail on any behavioral drift.
+_fn="$(awk '/^openable_link\(\) \{/{grab=1} grab{print} grab&&/^\}/{exit}' "$TG")"
+[[ -n "$_fn" ]] || fail "$TG: could not extract openable_link() to unit-test the REAL resolver"
+eval "$_fn"
+command -v openable_link >/dev/null 2>&1 || fail "$TG: extracted openable_link() did not define a function"
+
+# The precedence-intent contract comment must remain.
 if ! grep -q 'prefer the durable GHL public URL' "$TG"; then
   fail "$TG openable_link() lost its 'prefer GHL public URL' contract comment"
 fi

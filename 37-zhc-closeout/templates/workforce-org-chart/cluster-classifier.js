@@ -134,7 +134,16 @@ function keywordCluster(slug, name) {
   if (/\bhr\b/.test(hay)) return 'ops';
   for (const cluster of KEYWORD_ORDER) {
     for (const kw of KEYWORDS[cluster]) {
-      if (hay.indexOf(kw) !== -1) return cluster;
+      // SK1-11: match on WORD BOUNDARIES (whole token), not raw substring. A bare
+      // token like 'it'/'app'/'dev'/'web' previously matched any dept whose name
+      // merely CONTAINED those letters — "editorial", "security", "recruiting",
+      // "community" all collapsed into Technology. Normalize the keyword's dashes
+      // to spaces (hay already is) and require a standalone token match, mirroring
+      // the existing \bhr\b guard. This also correctly revives the multi-word
+      // keywords (e.g. 'human-resources', 'gov-contracting') that raw indexOf
+      // never matched against the dash-stripped haystack.
+      const kwn = kw.replace(/-/g, ' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp('(^|\\s)' + kwn + '(\\s|$)').test(hay)) return cluster;
     }
   }
   return null;

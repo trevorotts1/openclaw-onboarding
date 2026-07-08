@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# send-telegram-celebration.sh -- 6-message paced Telegram delivery to the owner.
+# send-telegram-celebration.sh -- 7-message paced Telegram delivery to the owner.
 #
 # DELIVERY CONFIRMATION (anti-faking, hardened):
 #   `openclaw message send` can exit 0 while the message never reached Telegram
@@ -264,6 +264,16 @@ send_video() {
   return 1
 }
 
+# SK1-16: an artifact HELD by the 8.5 quality gate must NOT be shipped to the
+# client. run-closeout.sh exports the held list (ZHC_QUALITY_HELD, comma-joined
+# artifact keys: org_chart|flow_diagram|celebration_video|closeout_docs). Before
+# shipping a media slot we check the list and, if held, SKIP the slot (leave it
+# undelivered + record it) rather than deliver sub-bar work. The slot stays
+# unsent so the resume cron can regenerate the artifact and a later run delivers
+# the real one once it passes — never marking a held slot "delivered".
+_held_list=",${ZHC_QUALITY_HELD:-},"
+_is_held() { case "$_held_list" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
 failed_messages=()
 
 # ---- Message 1: Announcement ----
@@ -291,6 +301,9 @@ fi
 # ---- Message 2: Infographic #1 ----
 if is_delivered 2; then
   log "INFO" "msg 2: already delivered -- skipping"
+elif _is_held org_chart; then
+  log "WARN" "msg 2: org chart HELD by 8.5 quality gate -- NOT delivering sub-bar work; leaving slot for regeneration"
+  failed_messages+=("msg-2-held")
 elif [[ ( -z "$INFO_1" || "$INFO_1" == "null" ) && ( -z "$INFO_1_LOCAL" || ! -s "$INFO_1_LOCAL" ) ]]; then
   log "WARN" "msg 2: infographic1Url and infographic1LocalPath both missing -- skipping"
   failed_messages+=("msg-2-no-url")
@@ -309,6 +322,9 @@ fi
 # ---- Message 3: Infographic #2 ----
 if is_delivered 3; then
   log "INFO" "msg 3: already delivered -- skipping"
+elif _is_held flow_diagram; then
+  log "WARN" "msg 3: flow diagram HELD by 8.5 quality gate -- NOT delivering; leaving slot for regeneration"
+  failed_messages+=("msg-3-held")
 elif [[ -z "$INFO_2" || "$INFO_2" == "null" ]]; then
   log "WARN" "msg 3: infographic2Url missing -- skipping"
   failed_messages+=("msg-3-no-url")
@@ -332,6 +348,9 @@ fi
 # cron will re-attempt the video tonight when vendor congestion clears.
 if is_delivered 4; then
   log "INFO" "msg 4: already delivered -- skipping"
+elif _is_held celebration_video; then
+  log "WARN" "msg 4: celebration video HELD by 8.5 quality gate -- NOT delivering; leaving slot for regeneration"
+  failed_messages+=("msg-4-held")
 elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
   log "INFO" "msg 4: video generation failed upstream -- sending text-only deferred notice"
   MSG4_DEFERRED="🎬 Your celebration video is queued but deferred for tonight -- the video vendor is hitting congestion right now. It'll show up in this thread automatically when it lands. Everything else below is ready to go."
@@ -361,12 +380,15 @@ fi
 # ---- Message 5: Notion doc link ----
 if is_delivered 5; then
   log "INFO" "msg 5: already delivered -- skipping"
+elif _is_held closeout_docs; then
+  log "WARN" "msg 5: onboarding doc HELD by 8.5 quality gate -- NOT delivering incomplete doc; leaving slot for regeneration"
+  failed_messages+=("msg-5-held")
 elif [[ -z "$NOTION_URL" || "$NOTION_URL" == "null" ]]; then
   log "WARN" "msg 5: notionRootPageUrl missing -- skipping"
   failed_messages+=("msg-5-no-url")
 else
   log "INFO" "msg 5: sending Notion doc link"
-  MSG5="📕 Your full closeout doc is in your Notion workspace:
+  MSG5="📕 Your full onboarding doc is in your Notion workspace:
 ${NOTION_URL}
 
 It explains your departments, your AI employees, the communication hierarchy, the Six Sigma framework we'll use to keep improving, the Book-to-Persona system that picks how each task is handled, and your First 7 Days action plan. Read it when you have 15 minutes."
@@ -397,7 +419,12 @@ cc_url_is_real() {
   return 0
 }
 
-CC_BOOKMARK_FILE="$OC_ROOT/workspace/.zhc-dashboard-url"
+# SK1-15: per-client bookmark file so concurrent closeouts don't overwrite each
+# other's recovery URL (keyed on the same slug run-closeout.sh locks on).
+_bm_slug="$(state_get '.companySlug')"
+[[ -z "$_bm_slug" ]] && _bm_slug="$(printf '%s' "$COMPANY_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+[[ -z "$_bm_slug" ]] && _bm_slug="default"
+CC_BOOKMARK_FILE="$OC_ROOT/workspace/.zhc-dashboard-url.${_bm_slug}"
 
 if is_delivered 6; then
   log "INFO" "msg 6: already delivered -- skipping"
@@ -467,9 +494,20 @@ if is_delivered 7; then
   log "INFO" "msg 7: already delivered -- skipping"
 else
   log "INFO" "msg 7: sending bookmark hint"
-  MSG7="🔖 Your dashboard URL has been bookmarked at \`${CC_BOOKMARK_FILE}\`. If you ever lose this message, that file has it.
+  # SK1-14: never leak the internal server path (CC_BOOKMARK_FILE) to the client
+  # — it is a filesystem path they cannot open and pure internal jargon. Restate
+  # the actual Command Center URL when we have a real one; otherwise a plain,
+  # useful reassurance (no path).
+  if cc_url_is_real "$CC_URL"; then
+    MSG7="🔖 Keep your Command Center link handy — if this thread ever scrolls away, here it is again:
+${CC_URL}
 
 -- ${AGENT_NAME}"
+  else
+    MSG7="🔖 Your Command Center link is in this thread just above — bookmark it so it's always one tap away, and message me any time if you need it resent.
+
+-- ${AGENT_NAME}"
+  fi
   if send_text 7 "$MSG7"; then
     log "INFO" "msg 7: delivered"
   else

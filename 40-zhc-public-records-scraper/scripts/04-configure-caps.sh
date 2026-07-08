@@ -39,7 +39,7 @@ echo "$P caps written → $CFG"
 echo "$P    daily cap                 : $PR_DAILY_CAP queries/day"
 echo "$P    per-target rate limit     : 1 request / ${PR_PER_TARGET_MIN_INTERVAL_S}s"
 echo "$P    bulk confirm threshold    : $PR_BULK_CONFIRM_THRESHOLD queries (above this => cost estimate + operator confirm)"
-echo "$P    est. cost per query       : \$$PR_COST_PER_QUERY"
+echo "$P    est. cost per query       : \$$PR_COST_PER_QUERY  (public portals are free; the bulk-confirm gate is batch-size-based — set this only for a PAID vendor)"
 echo "$P    cache TTL                 : $PR_CACHE_TTL_DAYS days"
 echo "$P Override any cap via its env var (PR_DAILY_CAP, PR_PER_TARGET_MIN_INTERVAL_S, PR_BULK_CONFIRM_THRESHOLD, PR_COST_PER_QUERY, PR_CACHE_TTL_DAYS) and re-run."
 exit 0

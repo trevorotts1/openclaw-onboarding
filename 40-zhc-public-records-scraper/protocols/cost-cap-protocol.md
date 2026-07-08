@@ -10,7 +10,17 @@ runs; no daily overruns; no hammering a target.
 | Global daily query cap | `PR_DAILY_CAP` | 200 |
 | Per-target rate limit | `PR_PER_TARGET_MIN_INTERVAL_S` | 5s |
 | Bulk-op confirm threshold | `PR_BULK_CONFIRM_THRESHOLD` | 25 |
-| Estimated cost per query | `PR_COST_PER_QUERY` | $0.00 |
+| Estimated cost per query | `PR_COST_PER_QUERY` | $0.00 (see below) |
+
+## Cost is $0.00 by default — the bulk-confirm gate is batch-size-gated
+
+Public-records county portals are **free**, so `PR_COST_PER_QUERY` defaults to
+`$0.00` and the computed `est_cost` (`batch_size × PR_COST_PER_QUERY`) is `$0.00`
+until the operator sets a real per-query cost. Because of that, the bulk-confirm
+gate below triggers on **batch size** (`PR_BULK_CONFIRM_THRESHOLD`), NOT on a
+dollar figure — the `$0.00` estimate is informational, not a cost cap. If you
+route through a **paid** Tier-2 vendor, set `PR_COST_PER_QUERY` to that vendor's
+real per-query price so the estimate reflects an actual spend before you confirm.
 
 ## Per-day cap
 
@@ -29,9 +39,10 @@ between requests to that target. If the interval has not elapsed, it waits (logs
 
 For any batch above `PR_BULK_CONFIRM_THRESHOLD`, BEFORE running:
 
-1. Compute the estimate: `batch_size × PR_COST_PER_QUERY` (cost) and
-   `batch_size × PR_PER_TARGET_MIN_INTERVAL_S` (approx wall-clock seconds at the
-   rate limit).
+1. Compute the estimate: `batch_size × PR_COST_PER_QUERY` (cost — `$0.00` unless a
+   paid vendor cost is configured) and `batch_size × PR_PER_TARGET_MIN_INTERVAL_S`
+   (approx wall-clock seconds at the rate limit). The confirm is gated on the
+   batch size crossing `PR_BULK_CONFIRM_THRESHOLD`, not on the dollar figure.
 2. Log a `cost_estimate` event (`confirmed:false`).
 3. PRESENT the estimate to the operator and WAIT for explicit confirmation.
 4. On confirmation, log `cost_estimate` (`confirmed:true`) and run, still
