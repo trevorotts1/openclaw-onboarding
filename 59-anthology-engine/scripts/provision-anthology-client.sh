@@ -38,6 +38,10 @@
 #      SECRET; also the gate-token secret ANTHOLOGY_GATE_TOKEN_SECRET) — the
 #      secret is generated only when NOT already SET, written 0600, and NEVER
 #      printed; the resolved route carries the secret as a SecretRef by LABEL.
+#      When the openclaw CLI is present the route is then MERGED into the LIVE
+#      gateway config (hooks.mappings + hooks.token) via `openclaw config`,
+#      idempotently (dedup by mapping id; sibling /hooks routes preserved) and
+#      VERIFIED by reading it back — a merge that does not take is a real error.
 #   8  register EXACTLY the ONE daily tick in the cron inventory — no heartbeat,
 #      ever (guard-cron-inventory.py proves it).
 #   9  run verify-webhook-t1-t9.sh (structure now; the live T1..T9 battery is
@@ -461,6 +465,145 @@ step6_ledger() {
     echo "$n"
 }
 
+# --------------------------------------------------------------------------
+# LIVE gateway hooks merge (W5.3 canary fix). Actually MERGE the resolved
+# anthology-intake route into the box's LIVE OpenClaw gateway config via the
+# real `openclaw config` CLI, then VERIFY the merge by reading it back — never a
+# bare claim. Idempotent: dedup by mapping id (a re-run UPDATES, never
+# duplicates), union of allowedAgentIds, and every OTHER integration's /hooks
+# route is preserved (we start from the live hooks object and overlay). The
+# token is a SecretRef by LABEL (ANTHOLOGY_INTAKE_HOOK_SECRET) — no value is ever
+# inlined or printed. Returns 0 ONLY when the mapping is genuinely present in the
+# live config AND the config validates; nonzero otherwise so the caller reports a
+# REAL error instead of a false success. Runs as the node user (never root).
+#   $1 = resolved route file ($STATE_DIR/hooks/anthology-intake.route.json)
+# --------------------------------------------------------------------------
+merge_intake_route_into_gateway() {
+    local route_file="$1"
+    [ -f "$route_file" ] || { note "  live-merge: resolved route file missing ($route_file)"; return 1; }
+
+    # Per-box slot resolution. The agent id + session key are box configuration,
+    # NOT credentials; they never carry a secret value.
+    local agent_id="${ANTHOLOGY_AGENT_ID:-main}"
+    local session_key="${ANTHOLOGY_SESSION_KEY:-anthology:intake}"
+
+    # Read the CURRENT live hooks object (an absent key -> {}; never fatal). This
+    # is also the box-truth we verify against after the write.
+    local cur_hooks
+    cur_hooks="$(openclaw config get hooks --json 2>/dev/null)" || cur_hooks=""
+    case "$cur_hooks" in ""|"null") cur_hooks="{}" ;; esac
+
+    # Compute the merged hooks object: preserve every existing key, set the
+    # box-scoped SecretRef token, union the allowed agent id, and dedup-by-id
+    # merge the anthology-intake mapping (idempotent update, never a duplicate).
+    local hooks_json
+    hooks_json="$(PROV_ROUTE="$route_file" PROV_CUR="$cur_hooks" PROV_AGENT="$agent_id" \
+                  PROV_SK="$session_key" python3 - <<'PY'
+import json, os, sys
+route = json.load(open(os.environ["PROV_ROUTE"], encoding="utf-8"))
+rh = route.get("hooks") or {}
+try:
+    cur = json.loads(os.environ["PROV_CUR"] or "{}")
+    if not isinstance(cur, dict): cur = {}
+except Exception:
+    cur = {}
+agent = os.environ["PROV_AGENT"]; sk = os.environ["PROV_SK"]
+
+# The one anthology-intake mapping from the committed template, per-box slots
+# resolved. NEVER an inlined secret.
+tgt = None
+for m in (rh.get("mappings") or []):
+    if isinstance(m, dict) and m.get("id") == "anthology-intake":
+        tgt = json.loads(json.dumps(m)); break
+if tgt is None:
+    sys.stderr.write("route template has no anthology-intake mapping\n"); sys.exit(3)
+if tgt.get("agentId") == "<CLIENT_ANTHOLOGY_AGENT_ID>": tgt["agentId"] = agent
+if tgt.get("sessionKey") == "<CLIENT_ANTHOLOGY_SESSION_KEY>": tgt["sessionKey"] = sk
+
+# The token MUST be a SecretRef by env label; assert we never inline a value.
+tok = rh.get("token")
+if not (isinstance(tok, dict) and tok.get("source") == "env"):
+    sys.stderr.write("route token must be a SecretRef by env label\n"); sys.exit(3)
+
+merged = dict(cur)                      # preserve keys sibling integrations rely on
+merged["enabled"] = True
+merged.setdefault("path", rh.get("path") or "/hooks")
+merged["token"] = tok
+allowed = list(merged.get("allowedAgentIds") or [])
+for a in (rh.get("allowedAgentIds") or []):
+    a = agent if a == "<CLIENT_ANTHOLOGY_AGENT_ID>" else a
+    if a and a not in allowed: allowed.append(a)
+if agent and agent not in allowed: allowed.append(agent)
+merged["allowedAgentIds"] = allowed
+# dedup-by-id: drop any prior anthology-intake, keep EVERY other route, append fresh.
+kept = [m for m in (merged.get("mappings") or [])
+        if not (isinstance(m, dict) and m.get("id") == "anthology-intake")]
+kept.append(tgt)
+merged["mappings"] = kept
+print(json.dumps(merged, ensure_ascii=False))
+PY
+)"
+    if [ -z "$hooks_json" ]; then note "  live-merge: failed to compute the merged hooks object"; return 1; fi
+
+    # ONE validated write via the real config CLI. Prefer `config patch` (validated
+    # recursive-merge write on 2026.6.11+); fall back to `config set hooks` on a
+    # gateway that predates patch. Objects merge recursively; the full arrays we
+    # pass replace in place, so the dedup + preserve semantics land exactly.
+    local wrote=0
+    if openclaw config patch --help >/dev/null 2>&1 \
+       && printf '{"hooks":%s}\n' "$hooks_json" | openclaw config patch --stdin >/dev/null 2>&1; then
+        wrote=1; note "  live-merge: applied via 'openclaw config patch --stdin' (validated write)"
+    elif openclaw config set hooks "$hooks_json" --strict-json >/dev/null 2>&1; then
+        wrote=1; note "  live-merge: applied via 'openclaw config set hooks --strict-json'"
+    fi
+    if [ "$wrote" != "1" ]; then
+        note "  live-merge: both 'openclaw config patch' and 'config set hooks' write attempts FAILED"; return 1
+    fi
+
+    # VERIFY-AFTER-WRITE — read the live config back. The mapping MUST be present
+    # (matched by id AND path) and the config MUST validate, else this is a REAL
+    # failure, not a claim. The token binding is checked by LABEL from the raw
+    # config file (a label is not a secret; the value is a SecretRef the gateway
+    # resolves at runtime and never lands here).
+    local mappings_back cfg_file
+    mappings_back="$(openclaw config get hooks.mappings --json 2>/dev/null)" || mappings_back=""
+    cfg_file="$(openclaw config file 2>/dev/null)" || cfg_file=""
+    if ! PROV_MB="$mappings_back" PROV_CFG="$cfg_file" python3 - <<'PY'
+import json, os, sys
+try:
+    arr = json.loads(os.environ.get("PROV_MB") or "[]")
+except Exception:
+    arr = []
+present = any(isinstance(m, dict) and m.get("id") == "anthology-intake"
+             and (m.get("match") or {}).get("path") == "anthology-intake"
+             for m in (arr if isinstance(arr, list) else []))
+if not present:
+    sys.stderr.write("verify: anthology-intake mapping NOT present in live hooks.mappings after write\n")
+    sys.exit(1)
+cf = os.environ.get("PROV_CFG") or ""
+if cf and os.path.isfile(cf):
+    try:
+        tok = (json.load(open(cf, encoding="utf-8")).get("hooks") or {}).get("token")
+    except Exception as exc:
+        sys.stderr.write("verify: could not read back the config file (%s)\n" % exc); sys.exit(1)
+    ident = tok.get("id") if isinstance(tok, dict) else None
+    if ident is not None and ident != "ANTHOLOGY_INTAKE_HOOK_SECRET":
+        sys.stderr.write("verify: hooks.token SecretRef id is not ANTHOLOGY_INTAKE_HOOK_SECRET\n"); sys.exit(1)
+    if isinstance(tok, dict) and not tok:
+        sys.stderr.write("verify: hooks.token is empty after write\n"); sys.exit(1)
+PY
+    then
+        note "  live-merge: VERIFY FAILED — the route did not actually land in the live gateway config"
+        return 1
+    fi
+    if ! openclaw config validate >/dev/null 2>&1; then
+        note "  live-merge: VERIFY FAILED — 'openclaw config validate' rejected the merged config"
+        return 1
+    fi
+    note "  live-merge: VERIFIED — anthology-intake present in live hooks.mappings; hooks.token is the SecretRef by label; config validates"
+    return 0
+}
+
 step7_webhook() {
     note "STEP 7/10 — generate the webhook route + its secret (label ANTHOLOGY_INTAKE_HOOK_SECRET)"
     report_intake_hook_state
@@ -513,10 +656,20 @@ PY
     else
         note "  failed to materialize the resolved route"; set_crc 1; echo "$EX_ERR"; return
     fi
-    # Best-effort live gateway registration; deferral is NOT a hard fail unless
-    # --require-live (T1 is executed and observed on the W5.3 canary).
+    # LIVE gateway registration. When the openclaw CLI is present we ACTUALLY
+    # merge the route into hooks.mappings + set hooks.token via the real config
+    # CLI and VERIFY the merge by reading it back (W5.3 canary fix: the old code
+    # only PRINTED that the merge happened, with nothing backing it — the live
+    # gateway never received the route). A merge that does not take is a REAL
+    # error, never a silent success. Deferral (CLI absent) is NOT a hard fail
+    # unless --require-live.
     if command -v openclaw >/dev/null 2>&1; then
-        note "  openclaw CLI present — the gateway route merge is performed at the box's hooks surface (verify-webhook proves T1)"
+        if merge_intake_route_into_gateway "$STATE_DIR/hooks/anthology-intake.route.json"; then
+            note "  gateway route merge VERIFIED live (hooks.mappings + hooks.token); verify-webhook proves T1 on the canary"
+        else
+            note "  gateway route merge did NOT take — reporting a real error (never a bare success claim)"
+            set_crc 1; echo "$EX_ERR"; return
+        fi
     else
         note "  openclaw CLI not on PATH; route materialized to state dir, gateway merge DEFERRED to the canary"
         if [ "$REQUIRE_LIVE" = "1" ]; then set_crc 3; echo "$EX_HELD"; return; fi
@@ -790,7 +943,7 @@ print_plan() {
   4/10  form contract              forms-manifest.json (hidden fields contact_id/anthology_id/stage; re-stamp; per-anthology bind)
   5/10  Drive producer root        drive-tree-provision.py verify-root (+ provision --producer); never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
-  7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label)
+  7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver
   9/10  verify-webhook T1..T9      verify-webhook-t1-t9.sh (structure now; live battery observed on the W5.3 canary)
   10/10 smoke test                 anthology-smoke-test.py run --max-spend-cents 1 (balance endpoints only)
@@ -813,19 +966,81 @@ self_test() {
     local _saved_home="${HOME:-}" _saved_path="${PATH:-}"
     HOME="$tmp"
     local stub_bin="$tmp/bin"; mkdir -p "$stub_bin"
+    # A config-STATEFUL, side-effect-CONTAINED openclaw stub. It records cron adds
+    # (never mutating the real cron backend) AND implements exactly the config
+    # surface the live-gateway merge uses (file/get/patch/set/validate) against a
+    # temp JSON store ($OC_STUB_CFG), so step7's live merge is exercised END TO
+    # END without touching the operator's real gateway. Sabotage flags
+    # (OC_STUB_PATCH_NOOP / OC_STUB_SET_NOOP / OC_STUB_VALIDATE_FAIL) let the
+    # self-test force-observe the merge-did-not-take failure path. The config ops
+    # live in oc_stub.py so python's stdin stays the caller's pipe (config patch
+    # --stdin reads the real merged body, not a heredoc).
+    cat > "$stub_bin/oc_stub.py" <<'PY'
+import json, os, sys
+args = sys.argv[1:]
+if any(a in ("--help", "-h") for a in args):
+    sys.exit(0)
+cfgp = os.environ.get("OC_STUB_CFG", "")
+def load():
+    try:
+        with open(cfgp, encoding="utf-8") as fh: return json.load(fh)
+    except Exception: return {}
+def save(o):
+    with open(cfgp, "w", encoding="utf-8") as fh: json.dump(o, fh)
+def get_by_path(root, dotted):
+    cur = root
+    for part in dotted.split("."):
+        if isinstance(cur, dict) and part in cur: cur = cur[part]
+        else: return (False, None)
+    return (True, cur)
+def deep_merge(base, over):
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict): deep_merge(base[k], v)
+        elif v is None: base.pop(k, None)
+        else: base[k] = v          # arrays + scalars REPLACE (mirrors real `config patch`)
+    return base
+sub = args[0] if args else ""
+rest = [a for a in args[1:] if not a.startswith("-")]
+if sub == "file":
+    print(cfgp); sys.exit(0)
+if sub == "validate":
+    sys.exit(1 if os.environ.get("OC_STUB_VALIDATE_FAIL") == "1" else 0)
+if sub == "get":
+    if not rest: sys.exit(2)
+    ok, val = get_by_path(load(), rest[0])
+    if not ok: sys.exit(1)
+    print(json.dumps(val, ensure_ascii=False)); sys.exit(0)
+if sub == "patch":
+    if os.environ.get("OC_STUB_PATCH_NOOP") == "1": sys.exit(0)
+    try: patch = json.loads(sys.stdin.read())
+    except Exception: sys.exit(2)
+    save(deep_merge(load(), patch)); sys.exit(0)
+if sub == "set":
+    if os.environ.get("OC_STUB_SET_NOOP") == "1": sys.exit(0)
+    if len(rest) < 2: sys.exit(2)
+    path, raw = rest[0], rest[1]
+    try: val = json.loads(raw)
+    except Exception: val = raw
+    cfg = load(); cur = cfg; parts = path.split(".")
+    for p in parts[:-1]: cur = cur.setdefault(p, {})
+    cur[parts[-1]] = val; save(cfg); sys.exit(0)
+sys.exit(0)
+PY
     cat > "$stub_bin/openclaw" <<'OCSTUB'
 #!/usr/bin/env bash
-# Recording, side-effect-free openclaw stub for the provisioner self-test.
+SD="$(cd "$(dirname "$0")" && pwd)"
 if [ "$1" = "cron" ] && [ "$2" = "list" ]; then exit 0; fi          # no existing crons
 if [ "$1" = "cron" ] && [ "$2" = "add" ]; then
     echo "$*" >> "${OC_STUB_LOG:?}"; exit 0                          # record, never mutate
 fi
+if [ "$1" = "config" ]; then shift; exec python3 "$SD/oc_stub.py" "$@"; fi
 exit 0
 OCSTUB
     chmod +x "$stub_bin/openclaw"
     export OC_STUB_LOG="$tmp/openclaw-cron-add.log"; : > "$OC_STUB_LOG"
+    export OC_STUB_CFG="$tmp/openclaw.json"; printf '{}' > "$OC_STUB_CFG"
     PATH="$stub_bin:$PATH"
-    trap 'rm -rf "$tmp"; HOME="$_saved_home"; PATH="$_saved_path"; unset OC_STUB_LOG' RETURN
+    trap 'rm -rf "$tmp"; HOME="$_saved_home"; PATH="$_saved_path"; unset OC_STUB_LOG OC_STUB_CFG OC_STUB_PATCH_NOOP OC_STUB_SET_NOOP OC_STUB_VALIDATE_FAIL' RETURN
     local stub_scripts="$tmp/scripts"; mkdir -p "$stub_scripts"
 
     # ---- unit 1: normalize_rc mapping -------------------------------------
@@ -1020,6 +1235,62 @@ PY
     [ -n "$_sv1" ] && export ANTHOLOGY_INTAKE_HOOK_SECRET="$_sv1"
     [ -n "$_sv2" ] && export ANTHOLOGY_GATE_TOKEN_SECRET="$_sv2"
 
+    # ---- unit 13: step7 LIVE gateway merge (real `openclaw config` CLI path) --
+    # W5.3 canary fix. Proves step7 ACTUALLY merges the route into the live
+    # gateway hooks (idempotently, preserving sibling routes) and VERIFIES the
+    # merge by reading it back — and genuinely FAILS (never a bare success claim)
+    # when the merge does not take. The config-aware openclaw stub on PATH stands
+    # in for the live gateway; no operator config is ever touched.
+    SCRIPTS="$save_scripts"; MODE="live"; REQUIRE_LIVE=0; STATE_DIR="$tmp/state13"
+    local _sec13i="synthINTAKEsecretUNIT13" _sec13g="synthGATEsecretUNIT13"
+    # Pre-seed a COEXISTING sibling route + a DIFFERENT hooks.token so the merge
+    # is proven to (a) preserve other /hooks integrations and (b) set the token to
+    # the anthology SecretRef by label.
+    python3 - "$OC_STUB_CFG" <<'PY'
+import json, sys
+json.dump({"hooks": {"enabled": True, "path": "/hooks",
+    "token": {"source": "env", "provider": "default", "id": "SOME_OTHER_HOOK_SECRET"},
+    "allowedAgentIds": ["ghl-agent"],
+    "mappings": [{"id": "ghl-inbound", "match": {"path": "ghl-inbound"}, "action": "agent"}]}},
+    open(sys.argv[1], "w"))
+PY
+    n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="$_sec13i" ANTHOLOGY_GATE_TOKEN_SECRET="$_sec13g" step7_webhook 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL unit13 fresh merge: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    OC_STUB_CFG="$OC_STUB_CFG" PROV_SEC="$_sec13i" python3 - <<'PY' || fails=$((fails+1))
+import json, os
+cfg = json.load(open(os.environ["OC_STUB_CFG"], encoding="utf-8"))
+h = cfg.get("hooks") or {}
+maps = h.get("mappings") or []
+ids = [m.get("id") for m in maps if isinstance(m, dict)]
+assert ids.count("anthology-intake") == 1, "anthology-intake must be present exactly once: %r" % ids
+assert "ghl-inbound" in ids, "sibling ghl-inbound route must be PRESERVED: %r" % ids
+am = next(m for m in maps if m.get("id") == "anthology-intake")
+assert (am.get("match") or {}).get("path") == "anthology-intake", "mapping match.path wrong"
+tok = h.get("token")
+assert isinstance(tok, dict) and tok.get("id") == "ANTHOLOGY_INTAKE_HOOK_SECRET", \
+    "hooks.token must be the anthology SecretRef by label: %r" % tok
+assert h.get("enabled") is True, "hooks.enabled must be true"
+assert os.environ["PROV_SEC"] not in json.dumps(cfg), "a secret VALUE leaked into the live config"
+PY
+    # Idempotent re-run: EXACTLY one anthology-intake mapping, sibling preserved.
+    n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="$_sec13i" ANTHOLOGY_GATE_TOKEN_SECRET="$_sec13g" step7_webhook 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL unit13 idempotent re-run: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    OC_STUB_CFG="$OC_STUB_CFG" python3 - <<'PY' || fails=$((fails+1))
+import json, os
+maps = (json.load(open(os.environ["OC_STUB_CFG"], encoding="utf-8")).get("hooks") or {}).get("mappings") or []
+ids = [m.get("id") for m in maps if isinstance(m, dict)]
+assert ids.count("anthology-intake") == 1, "re-run must NOT duplicate the mapping: %r" % ids
+assert "ghl-inbound" in ids, "re-run must keep the sibling route: %r" % ids
+PY
+    # Failure detection: a write that does NOT take must be a REAL error (EX_ERR),
+    # never a bare success claim. Reset config sans anthology, disable BOTH writers.
+    printf '{"hooks":{"mappings":[{"id":"ghl-inbound","match":{"path":"ghl-inbound"}}]}}' > "$OC_STUB_CFG"
+    export OC_STUB_PATCH_NOOP=1 OC_STUB_SET_NOOP=1
+    n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="$_sec13i" ANTHOLOGY_GATE_TOKEN_SECRET="$_sec13g" step7_webhook 2>/dev/null)"
+    unset OC_STUB_PATCH_NOOP OC_STUB_SET_NOOP
+    [ "$n" = "$EX_ERR" ] || { echo "  FAIL unit13 failure-detection: a merge that did not take must be $EX_ERR, got $n" >&2; fails=$((fails+1)); }
+    printf '{}' > "$OC_STUB_CFG"
+
     # ---- unit 11: no Anthropic identifier / no client PII in this file -----
     # Deny-pattern shapes assembled from fragments so no banned literal lives here.
     local _a="anthro""pic" _c="clau""de-"
@@ -1028,7 +1299,7 @@ PY
     fi
 
     if [ "$fails" -eq 0 ]; then
-        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, cron single-tick, 0600 secret non-leak, smoke violation)" >&2
+        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure)" >&2
         return "$EX_OK"
     fi
     echo "[$PROG] SELF-TEST FAIL — $fails check(s) failed" >&2

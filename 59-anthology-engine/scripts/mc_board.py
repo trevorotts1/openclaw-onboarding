@@ -410,12 +410,29 @@ def _participant_display(row):
     return "Participant %s" % (short or "unknown")
 
 
+def _anthology_disambiguator(subject_key, row):
+    """The participant card's anthology, for TITLE disambiguation. One contact can
+    be in TWO anthologies (KEYING LAW: contact_id::anthology_id), so a title built
+    from the contact alone COLLIDES across anthologies -- and the Command Center's
+    generic same-title+workspace dedupe window then wrongly merges the two cards
+    onto ONE task row, overriding the distinct idempotency keys the engine sent.
+    Including the anthology_id makes the two titles genuinely distinct. The
+    anthology_id is a synthetic ledger id (never PII); prefer the row's column,
+    fall back to parsing it out of the composite key."""
+    anth = ((row or {}).get("anthology_id") or "").strip()
+    if not anth and KEY_DELIM in (subject_key or ""):
+        anth = subject_key.split(KEY_DELIM, 1)[1].strip()
+    return anth
+
+
 def build_card(kind, subject_key, row, bcfg):
     """Assemble the ingest payload for a subject's card. `source` becomes the
     "Source: <tag>" provenance marker in the card description (the marker the
     status-transition consumer scopes on); `idempotency_key` makes a re-post
     DEDUPE onto the same card. Titles/notes carry NO secret and NO tool/model
-    plumbing -- Convert and Flow is the only platform name."""
+    plumbing -- Convert and Flow is the only platform name. The participant card
+    TITLE carries the anthology_id so two anthologies for the SAME contact yield
+    DISTINCT titles (never collapsed by a generic title-dedupe window)."""
     if kind == "anthology":
         name = (row or {}).get("name") or subject_key
         idem = "anthology:assembly:%s" % subject_key
@@ -426,7 +443,11 @@ def build_card(kind, subject_key, row, bcfg):
     else:
         idem = "anthology:card:%s" % subject_key
         display = _participant_display(row or {"participant_key": subject_key})
-        title = "Anthology chapter — %s" % display
+        anth = _anthology_disambiguator(subject_key, row)
+        # Disambiguate by anthology so the SAME contact in TWO anthologies never
+        # collides on title (the collision the CC title-window dedupe collapsed).
+        title = ("Anthology chapter — %s · %s" % (display, anth) if anth
+                 else "Anthology chapter — %s" % display)
         desc = ("Participant chapter card. Mirrors the ledger stage_cursor; producer "
                 "deliverables land in the review column (the chapter-approval queue). "
                 "Only the QC scorer at or above 8.5 promotes review to done.")
@@ -792,6 +813,35 @@ def self_test():
     acard = build_card(kind_a, aid, row_a, bcfg)
     assert acard["idempotency_key"] == "anthology:assembly:%s" % aid
 
+    # -- TWO anthologies, ONE contact -> DISTINCT titles (never collide) -------
+    # The KEYING LAW puts one contact_id into two anthologies as two rows keyed
+    # contact::anthology_a and contact::anthology_b. Their idempotency keys are
+    # already distinct; the TITLES must ALSO be distinct so the Command Center's
+    # generic same-title+workspace dedupe window can never merge the two cards
+    # onto one task row (the W5.6 canary bug).
+    contact = "contactSYN0777"
+    pk_a = "%s%sANTHsynAAA" % (contact, KEY_DELIM)
+    pk_b = "%s%sANTHsynBBB" % (contact, KEY_DELIM)
+    row_a2 = {"participant_key": pk_a, "contact_id": contact, "anthology_id": "ANTHsynAAA",
+              "first_name": "Same", "last_name": "Contact", "stage_cursor": "s5_gate"}
+    row_b2 = {"participant_key": pk_b, "contact_id": contact, "anthology_id": "ANTHsynBBB",
+              "first_name": "Same", "last_name": "Contact", "stage_cursor": "s5_gate"}
+    card_a = build_card("participant", pk_a, row_a2, bcfg)
+    card_b = build_card("participant", pk_b, row_b2, bcfg)
+    assert card_a["idempotency_key"] != card_b["idempotency_key"], "Layer-1 keys must differ per anthology"
+    assert card_a["title"] != card_b["title"], (
+        "two anthologies for one contact MUST yield distinct titles (else the CC "
+        "title-window dedupe collapses them): %r == %r" % (card_a["title"], card_b["title"]))
+    assert "ANTHsynAAA" in card_a["title"] and "ANTHsynBBB" in card_b["title"], \
+        "each participant title must carry its own anthology id"
+    # Even with the anthology_id column ABSENT, the id is recovered from the key.
+    card_a_nokey = build_card("participant", pk_a,
+                              {"participant_key": pk_a, "first_name": "Same", "last_name": "Contact"}, bcfg)
+    card_b_nokey = build_card("participant", pk_b,
+                              {"participant_key": pk_b, "first_name": "Same", "last_name": "Contact"}, bcfg)
+    assert card_a_nokey["title"] != card_b_nokey["title"], \
+        "titles must stay distinct even when anthology_id is derived from the key"
+
     # -- INGEST SUCCESS (fake transport returns 201) --------------------------
     calls = {"ingest": 0, "status": 0}
 
@@ -874,8 +924,8 @@ def self_test():
 
     print("mc_board self-test: OK (status maps never 'done', never-done guard, HMAC "
           "== CC scheme, header gating, ledger read+project, ingest success, "
-          "board-down fail-soft, auth/scope fail-soft, Assembly transitions, "
-          "archive Assembly+participants fail-soft)")
+          "two-anthology-one-contact distinct titles, board-down fail-soft, "
+          "auth/scope fail-soft, Assembly transitions, archive Assembly+participants fail-soft)")
     return EX_OK
 
 
