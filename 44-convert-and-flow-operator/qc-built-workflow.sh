@@ -494,6 +494,17 @@ RUBRIC_FLOOR_X100=$(( D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*
 RUBRIC_FLOOR=$(printf "%d.%02d" $(( RUBRIC_FLOOR_X100 / 100 )) $(( RUBRIC_FLOOR_X100 % 100 )))
 RUBRIC_NEEDS_HUMAN=$(( D1_HUMAN + D4_HUMAN + D5_HUMAN + D6_HUMAN + D7_HUMAN + D8_HUMAN ))
 
+# Weighted CEILING (SK1-46): best case where every human-graded dimension is later
+# scored 10 (mechanical D2/D3 keep their machine score). If even this ceiling is
+# below the 8.5 ship threshold, the weighted rubric PROVES the build can never ship
+# regardless of human grading — so the rubric must participate in the exit decision,
+# not merely be printed. (Gate applied in the exit section below.)
+_ceil() { if [ "$2" = "1" ]; then echo 10; else echo "$1"; fi; }
+RUBRIC_CEILING_X100=$(( $(_ceil "$D1" "$D1_HUMAN")*20 + $(_ceil "$D2" 0)*15 \
+  + $(_ceil "$D3" 0)*15 + $(_ceil "$D4" "$D4_HUMAN")*12 + $(_ceil "$D5" "$D5_HUMAN")*12 \
+  + $(_ceil "$D6" "$D6_HUMAN")*10 + $(_ceil "$D7" "$D7_HUMAN")*8 + $(_ceil "$D8" "$D8_HUMAN")*8 ))
+RUBRIC_CEILING=$(printf "%d.%02d" $(( RUBRIC_CEILING_X100 / 100 )) $(( RUBRIC_CEILING_X100 % 100 )))
+
 # Identify the lowest scoring dimension(s) for the loop-back message.
 LOWEST_DIM=""; LOWEST_VAL=11
 for d in "D1:$D1" "D2:$D2" "D3:$D3" "D4:$D4" "D5:$D5" "D6:$D6" "D7:$D7" "D8:$D8"; do
@@ -544,6 +555,7 @@ if [ "$JSON_MODE" -eq 1 ]; then
   # Weighted quality rubric (SUPERSET overlay, computed AFTER WF-1..21)
   echo "  \"rubric\": {"
   echo "    \"weighted_floor\": $RUBRIC_FLOOR,"
+  echo "    \"weighted_ceiling\": $RUBRIC_CEILING,"
   echo "    \"ship_threshold\": 8.5,"
   echo "    \"needs_human_grading\": $RUBRIC_NEEDS_HUMAN,"
   echo "    \"lowest_dimension\": \"$LOWEST_DIM\","
@@ -605,6 +617,7 @@ else
   printf "  %-22s w=%-3s %s\n" "D8 Naming/testability" "8" "floor=$D8  [HUMAN GRADE REQUIRED]"
   echo "  ─────────────────────────────────────────────"
   echo "  WEIGHTED FLOOR SCORE: $RUBRIC_FLOOR / 10   (ship threshold: >= 8.5)"
+  echo "  WEIGHTED CEILING:     $RUBRIC_CEILING / 10   (best case if human dims all grade 10)"
   echo "  Lowest dimension: $LOWEST_DIM"
   echo "  NOTE: this is the machine-knowable FLOOR. The Step-9 QC sub-agent must grade the"
   echo "        $RUBRIC_NEEDS_HUMAN human dimensions (D1/D4/D5/D6/D7/D8) 1/5/10 per the rubric and"
@@ -682,7 +695,7 @@ mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
@@ -694,6 +707,16 @@ if [ "$FAB_RC" -ne 0 ]; then
   else
     echo "PER-BUILD QC FAILED — ${FAB_FAIL_REASON:-FAB-QC below 8.5 (score $FAB_SCORE)}. Fix the lowest dimension and re-run."
   fi
+  exit 1
+fi
+# ── Rubric ship gate (SK1-46): the weighted rubric now participates in the exit ──
+# decision. If the CEILING (every human dimension optimistically graded 10) is still
+# below the 8.5 ship threshold, the build can NEVER ship regardless of human grading
+# — so this is a hard, no-false-positive FAIL. (When --fab ran, the FAB overlay above
+# is the authoritative >= 8.5 proof; this ceiling gate is the floor-side backstop for
+# the mechanical-only path that previously ignored the rubric entirely.)
+if [ "$RUBRIC_CEILING_X100" -lt 850 ]; then
+  echo "PER-BUILD QC FAILED — weighted rubric ceiling ${RUBRIC_CEILING}/10 is below the 8.5 ship threshold; even perfect human grading of the ungraded dimensions cannot reach ship quality. Lowest dimension: ${LOWEST_DIM}. Fix it and re-run."
   exit 1
 fi
 exit 0
