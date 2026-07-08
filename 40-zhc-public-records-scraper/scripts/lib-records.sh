@@ -30,6 +30,12 @@ SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIER1_DIR="$SKILL_ROOT/references/tier1-counties"
 EVENTS="$SCRIPT_DIR/lib-pr-events.sh"
 COSTCAP="$SCRIPT_DIR/lib-cost-cap.sh"
+# SK1-26: the Command Center reflection helper shipped unwired (dead code). Source
+# it so query() can reflect a live scan on the operator's Kanban board — OPT-IN
+# via SKILL40_CC_TASK_ID, fail-soft, default no-op (see _cc_reflect below).
+CCLIB="$SCRIPT_DIR/lib-command-center.sh"
+# shellcheck source=/dev/null
+[ -f "$CCLIB" ] && . "$CCLIB"
 
 PR_CACHE_TTL_DAYS="${PR_CACHE_TTL_DAYS:-30}"
 
@@ -62,6 +68,15 @@ _tier3_dir() {
 }
 
 _emit() { bash "$EVENTS" pr_event "$1" "$2" >/dev/null 2>&1 || true; }
+
+# _cc_reflect <status> — SK1-26: opt-in Command Center card move. No-op unless
+# the operator wired a card id (SKILL40_CC_TASK_ID) and lib-command-center.sh is
+# present. Fail-soft: never blocks or fails a query.
+_cc_reflect() {
+  [ -n "${SKILL40_CC_TASK_ID:-}" ] || return 0
+  command -v cc_move_task >/dev/null 2>&1 || return 0
+  cc_move_task "$SKILL40_CC_TASK_ID" "${1:-in_progress}" "${SKILL40_CC_AGENT_ID:-}" >/dev/null 2>&1 || true
+}
 
 # ---------- compliance + attribution helpers (all enforced in query()) ----------
 
@@ -403,6 +418,10 @@ query() {
     return 0
   fi
 
+  # SK1-26: a real (non-tier4) route is live work — reflect it on the operator's
+  # Command Center board when they opted in (no-op otherwise).
+  _cc_reflect in_progress
+
   # 3) cache check (fresh hit = free + instant). Cache entries are only ever
   #    written by cache_put (attribution-gated), so a hit is already attributed.
   local cdir key cfile
@@ -507,6 +526,7 @@ query() {
         if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
           _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
           jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+          _cc_reflect review   # SK1-26: attributed record obtained → move card to review
           return 0
         fi
         # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
@@ -517,8 +537,17 @@ query() {
     fi
   fi
 
-  echo "$t" | jq -c --arg q "$qref" --arg rt "$rtype" \
-    '. + {query_ref:$q, record_type:$rt, available:false, note:"live retrieval is performed by the tier adapter after robots+ToS+attribution pass; the router NEVER synthesizes a record itself"}'
+  # SK1-26: for a Tier-2 vendor route, surface the adapter's --plan (robots+ToS
+  # obligations + the request shape the agent must issue) in the handoff. The
+  # router never fetches — the agent does — so it needs the plan. Previously
+  # --plan was implemented in every adapter but NEVER invoked (a dead contract).
+  local _plan=""
+  if [ "$tname" = "tier2" ]; then
+    local _ad="$SCRIPT_DIR/adapters/$target.sh"
+    [ -f "$_ad" ] && _plan="$(bash "$_ad" --plan "$county" "$st_abbr" "$rtype" "$q" 2>/dev/null || true)"
+  fi
+  echo "$t" | jq -c --arg q "$qref" --arg rt "$rtype" --arg plan "$_plan" \
+    '. + {query_ref:$q, record_type:$rt, available:false, note:"live retrieval is performed by the tier adapter after robots+ToS+attribution pass; the router NEVER synthesizes a record itself"} + (if $plan != "" then {plan:$plan} else {} end)'
   return 0
 }
 

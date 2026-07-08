@@ -128,7 +128,7 @@ Skill 40 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/public-rec
 | `CORE_UPDATES.md` | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | `EXAMPLES.md` | Worked example queries (UNIVERSAL placeholders, honest gaps shown) |
 | `CHANGELOG.md` | Version history |
-| `skill-version.txt` | Currently `1.0.1` |
+| `skill-version.txt` | Machine-readable version pin — the single source of truth for this skill's version (read it at runtime; never hardcode the version elsewhere) |
 | `scripts/00-verify-prerequisites.sh` | MASTER_FILES_DIR, jq, curl; reports Skill 39 + browser presence |
 | `scripts/01-locate-master-files-folder.sh` | Resolves + persists MASTER_FILES_DIR (reuses Skill 38/39 selection) |
 | `scripts/02-init-cache.sh` | Creates the 30-day cache dir + the event log + schema sidecar |
@@ -141,7 +141,7 @@ Skill 40 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/public-rec
 | `scripts/adapters/*.sh` | Executable Tier-2 vendor adapters (`tyler-technologies.sh`, `govos-landmark.sh`) — each honors the `--covers`/`--plan`/`--vendor` contract; `tier()` iterates them on a Tier-1 miss |
 | `scripts/lib-pr-events.sh` | Append-one-line helper for `public-records-queries.jsonl` |
 | `scripts/lib-cost-cap.sh` | Cost estimate + per-day + per-target rate-limit guard (bulk confirm); state under the resolved master-files dir (no Downloads fallback) |
-| `scripts/lib-command-center.sh` | Fail-soft, health-gated Command Center Kanban reflection for bulk scans (silent no-op when the Command Center is down; never fatal) |
+| `scripts/lib-command-center.sh` | Fail-soft, health-gated Command Center Kanban reflection, wired opt-in in `lib-records.sh` query() via `SKILL40_CC_TASK_ID` (moves the scan card to in_progress, then review on an attributed result); silent no-op when unset or the Command Center is down; never fatal |
 | `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) |
 | `scripts/qc-no-fabrication.sh` | Asserts the router returns Tier-4 honest gap (never invented records) on a miss |
 | `scripts/qc-compliance.sh` | Asserts robots respected, ToS referenced per target, attribution required |
