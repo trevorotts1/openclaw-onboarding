@@ -20,8 +20,11 @@ import sys
 from pathlib import Path
 
 _SKILL_DIR = Path(__file__).resolve().parent.parent
-# Sales-page copy is funnels work — the department the selector scores against.
-DEPARTMENT = "funnels"
+# Skill 56's authoritative PRIMARY owning department (skill-department-map.json) —
+# the seeded canonical slug the selector scores against. Must match the board
+# routing in run_sales_page_assets._mc_board_begin; the prior "funnels" literal was
+# never a seeded department and silently misrouted (SK2-06).
+DEPARTMENT = "marketing"
 # brief.answers fields folded into the selector query (brand + product + offers).
 _QUERY_FIELDS = ("brand_info", "product_info", "upsell_desc", "high_ticket_desc")
 
