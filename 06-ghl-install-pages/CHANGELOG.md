@@ -4,6 +4,41 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.8] - 2026-07-07 - COUNT-DELTA placement proof + the suite can never PARK a real box again (two defects the final review pass caught)
+
+**1. Drag verification was trivially satisfiable for Quick-Add tiles.** The
+in-frame `verify_text` equals the TILE's own label — which already matches
+BEFORE the drag (object-field search rows too) — so a FAILED drop would have
+verified as placed; and with the top-frame snapshot re-check demoted to a
+warning in v18.1.5, nothing downstream would have caught it. `drive_drag`
+(v1.1.1) now reads the PRE-drag match count as a baseline and the placement
+proof is `count > baseline` (`_verify_placed(min_count=pre+1)`); the receipt
+carries `verify_pre_count`, and `not-placed` names the baseline. Proven
+hermetically AND against a real headless Chromium (live-selftest case (f):
+a SECOND drag of the same tile must push 'State placed' from 1 → 2).
+
+**2. The hermetic suite was PARKING the operator's real box.** The
+teardown-abort test simulates aborts for the fake location `abortloc`, but the
+v14.1.5 durable-breaker change moved park state to the box's REAL
+`.openclaw/workspace/.park` — so every full-suite run appended a real abort
+count until the circuit-breaker tripped and wrote the box-level
+`workforce-build.parked` (observed live 2026-07-07 on the operator box; the
+marker read `location=abortloc` — pure test provenance; the three abortloc
+artifacts were removed, pre-existing park files untouched). Fix:
+`browser_manager.sh:_bm_durable_root` honors an explicit
+`BM_DURABLE_ROOT_OVERRIDE` (set-even-if-empty semantics; production callers
+never set it), the two bash harnesses in
+`tests/test_browser_manager_singleton.py` pass override='' + a fake HOME so
+breaker/park state stays in the ephemeral lockdir, and NEW regression locks
+prove BOTH directions: ephemeral isolation (state lands in the lockdir, no
+durable `.openclaw` appears under HOME) AND preserved durable semantics (an
+explicit override root receives the state).
+
+Full skill-6 pytest: **1109 passed / 15 skipped**; the durable park dir is
+byte-identical after a full suite run. `--selftest` + `--live-selftest` PASS.
+
+---
+
 ## [v18.1.7] - 2026-07-07 - Survey Phase-B rename wiring LOCKED + targeted mutation-kill evidence for the v18.1.5/v18.1.6 wave
 
 - NEW hermetic locks in `tests/test_ghl_iframe_drag.py`: the SURVEY builder's

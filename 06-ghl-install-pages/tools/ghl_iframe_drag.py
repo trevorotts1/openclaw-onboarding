@@ -350,6 +350,18 @@ def drive_drag(
     src = _resolve_locator(frame, source)
     tgt = _resolve_locator(frame, target)
 
+    # COUNT-DELTA verification baseline (v1.1.1): for a Quick-Add drag the
+    # verify text EQUALS the tile's own label, which is already present in the
+    # panel BEFORE the drag (and an object-field's search row matches too) — a
+    # plain "text exists" check would report a FAILED drop as placed. Read the
+    # pre-drag match count NOW; the placement proof below is count > pre.
+    pre_count = 0
+    if verify_text:
+        try:
+            pre_count = int(frame.get_by_text(verify_text, exact=False).count())
+        except Exception:  # noqa: BLE001
+            pre_count = 0
+
     # Bring the SOURCE tile on-screen (scroll; category-hint fallback) — fail-closed.
     _bring_source_into_view(frame, src, source, iframe_selector=iframe_selector,
                             scroll_hint=source_scroll_hint, timeout_ms=timeout_ms)
@@ -407,7 +419,11 @@ def drive_drag(
 
     placed: Optional[bool] = None
     if verify_text:
-        placed = _verify_placed(frame, verify_text, timeout_ms)
+        # Placement proof = the match count INCREASED past its pre-drag
+        # baseline (the tile/search-row that matched before the drag can never
+        # satisfy this on its own — the v1.1.1 count-delta hardening).
+        placed = _verify_placed(frame, verify_text, timeout_ms,
+                                min_count=pre_count + 1)
 
     receipt = {
         "ok": True,
@@ -422,25 +438,31 @@ def drive_drag(
         "interpolated_moves": int(max(1, interpolated_moves)),
         "source_scroll_hint": source_scroll_hint,
         "verify_text": verify_text,
+        "verify_pre_count": pre_count if verify_text else None,
         "placed": placed,
     }
     if verify_text and placed is False:
         raise IframeDragError(
             "not-placed",
-            f"performed the drag but {verify_text!r} did not appear inside the iframe "
-            f"after drop — the placement did NOT verify. STOP (never report a fake "
-            f"success). receipt={receipt}")
+            f"performed the drag but the match count for {verify_text!r} never "
+            f"EXCEEDED its pre-drag baseline ({pre_count}) inside the iframe — "
+            f"the placement did NOT verify (a pre-existing tile/search-row match "
+            f"is not proof). STOP (never report a fake success). receipt={receipt}")
     return receipt
 
 
-def _verify_placed(frame: Any, text: str, timeout_ms: int) -> bool:
-    """Best-effort confirmation that ``text`` is now present inside the iframe.
-    Returns True/False; never raises for a plain 'not found' (the caller decides)."""
+def _verify_placed(frame: Any, text: str, timeout_ms: int, *,
+                   min_count: int = 1) -> bool:
+    """Best-effort confirmation that at least ``min_count`` matches of ``text``
+    are present inside the iframe (callers pass pre-drag-count + 1 so a match
+    that existed BEFORE the action can never fake the proof). Returns
+    True/False; never raises for a plain 'not found' (the caller decides)."""
     deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
     loc = frame.get_by_text(text, exact=False)
+    need = max(1, int(min_count))
     while True:
         try:
-            if loc.count() > 0:
+            if loc.count() >= need:
                 return True
         except Exception:  # noqa: BLE001
             pass
@@ -904,7 +926,13 @@ def _selftest() -> int:
             self.ops.append(("up",))
 
     class _MockLoc:
-        def __init__(self, box, present_after=True):
+        """Models the v1.1.1 count-delta world: count() returns 1 on the FIRST
+        read (the pre-drag baseline — the tile itself already matches) and,
+        when the placement 'landed' (present_after), 2 on later reads (tile +
+        the newly placed canvas field). A failed placement stays at 1 forever —
+        which must now read as NOT placed."""
+        def __init__(self, frame, box, present_after=True):
+            self._frame = frame
             self._box = box
             self._present = present_after
 
@@ -924,18 +952,23 @@ def _selftest() -> int:
             return self._box
 
         def count(self):
-            return 1 if self._present else 0
+            self._frame.count_reads += 1
+            if self._frame.count_reads == 1:
+                return 1                        # pre-drag baseline: the tile itself
+            return 2 if self._present else 1    # placed → one MORE match; failed → same
 
     class _MockFrame:
         def __init__(self, boxes, verify_present=True):
             self._boxes = boxes
             self._verify_present = verify_present
+            self.count_reads = 0
 
         def get_by_text(self, text, exact=False):
-            return _MockLoc(self._boxes.get(text), present_after=self._verify_present)
+            return _MockLoc(self, self._boxes.get(text),
+                            present_after=self._verify_present)
 
         def locator(self, sel):
-            return _MockLoc(self._boxes.get(sel))
+            return _MockLoc(self, self._boxes.get(sel))
 
     class _MockPage:
         def __init__(self, frame):
@@ -1383,6 +1416,16 @@ def _live_selftest() -> int:
                     title_specs=("re:^ZHC TEST",), timeout_ms=4000)
                 if rec_e.get("title") != "ZHC TEST Title":
                     errors.append(f"live inline-title read wrong: {rec_e}")
+
+                # (f) COUNT-DELTA against a REAL browser (v1.1.1): 'State placed'
+                #     already exists from (a); a SECOND drag must push the match
+                #     count PAST that baseline (1 → 2) to verify.
+                rec_f = drive_drag(page, iframe_selector=iframe_selector,
+                                   source="text=State", target="text=Submit",
+                                   interpolated_moves=24,
+                                   verify_text="State placed", timeout_ms=8000)
+                if rec_f.get("verify_pre_count") != 1 or rec_f.get("placed") is not True:
+                    errors.append(f"live count-delta verify wrong: {rec_f}")
             finally:
                 ctx.close()
     except IframeDragError as e:

@@ -114,6 +114,16 @@ mkdir -p "$LOCKDIR/leases" 2>/dev/null || true
 # dev checkout) we fall back to the ephemeral LOCKDIR so the hermetic tests keep
 # their old TMPDIR-only behavior.
 _bm_durable_root() {
+  # TEST-ISOLATION OVERRIDE (v18.1.8): when BM_DURABLE_ROOT_OVERRIDE is SET
+  # (even to the empty string) it wins verbatim. The hermetic suite sets it to
+  # "" so breaker/park state falls back to the ephemeral $LOCKDIR — WITHOUT
+  # this, repeated suite runs on a REAL box accumulated the teardown-test's
+  # fake-location ('abortloc') aborts in the DURABLE park dir until the
+  # circuit-breaker tripped and PARKED the box's real workforce-build rail
+  # (live 2026-07-07 on the operator box; marker read
+  # 'location=abortloc' — pure test provenance). Production callers never set
+  # this variable; /data-then-$HOME detection below is unchanged.
+  if [ -n "${BM_DURABLE_ROOT_OVERRIDE+x}" ]; then printf '%s' "${BM_DURABLE_ROOT_OVERRIDE}"; return; fi
   if [ -d /data/.openclaw ]; then printf '%s' "/data/.openclaw"
   elif [ -d "${HOME:-}/.openclaw" ]; then printf '%s' "${HOME}/.openclaw"
   else printf '%s' ""; fi

@@ -61,7 +61,12 @@ class _MockMouse:
 
 
 class _MockLoc:
-    def __init__(self, box, present=True):
+    """Count-delta world (v1.1.1): count() returns 1 on the FIRST read (the
+    pre-drag baseline — the tile itself already matches the verify text) and,
+    when the placement 'landed' (present), 2 on later reads. A failed placement
+    stays at the baseline forever — which must read as NOT placed."""
+    def __init__(self, frame, box, present=True):
+        self._frame = frame
         self._box = box
         self._present = present
         self.scrolled = 0
@@ -83,19 +88,23 @@ class _MockLoc:
         return self._box
 
     def count(self):
-        return 1 if self._present else 0
+        self._frame.count_reads += 1
+        if self._frame.count_reads == 1:
+            return 1
+        return 2 if self._present else 1
 
 
 class _MockFrame:
     def __init__(self, boxes, verify_present=True):
         self._boxes = boxes
         self._verify_present = verify_present
+        self.count_reads = 0
 
     def get_by_text(self, text, exact=False):
-        return _MockLoc(self._boxes.get(text), present=self._verify_present)
+        return _MockLoc(self, self._boxes.get(text), present=self._verify_present)
 
     def locator(self, sel):
-        return _MockLoc(self._boxes.get(sel))
+        return _MockLoc(self, self._boxes.get(sel))
 
 
 class _MockPage:
@@ -159,6 +168,35 @@ def test_fail_closed_unverified_placement():
                        move_interval_ms=0, settle_ms=0, timeout_ms=0,
                        sleeper=lambda s: None)
     assert ei.value.code == "not-placed"
+
+
+def test_preexisting_tile_match_cannot_fake_placement():
+    """v1.1.1 COUNT-DELTA hardening: for a Quick-Add drag the verify text
+    equals the TILE's own label, which matches BEFORE the drag. A drop that
+    never landed leaves the count at its baseline — that must be `not-placed`,
+    never a success (this was trivially satisfiable before)."""
+    boxes = {"City": {"x": 0, "y": 0, "width": 10, "height": 10},
+             "Submit": {"x": 0, "y": 50, "width": 10, "height": 10}}
+    frame = _MockFrame(boxes, verify_present=False)   # count NEVER increases
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                       target="text=Submit", verify_text="City",
+                       move_interval_ms=0, settle_ms=0, timeout_ms=0,
+                       sleeper=lambda s: None)
+    assert ei.value.code == "not-placed"
+    assert "pre-drag baseline" in str(ei.value)
+
+
+def test_receipt_carries_the_verify_baseline():
+    boxes = {"State": {"x": 100, "y": 150, "width": 80, "height": 30},
+             "Submit": {"x": 90, "y": 400, "width": 120, "height": 40}}
+    page = _MockPage(_MockFrame(boxes, verify_present=True))
+    rec = idg.drive_drag(page, iframe_selector="iframe", source="text=State",
+                         target="text=Submit", verify_text="State",
+                         move_interval_ms=0, settle_ms=0, sleeper=lambda s: None)
+    assert rec["verify_pre_count"] == 1, "the tile's own pre-drag match is the baseline"
+    assert rec["placed"] is True, "count 2 > baseline 1 = the real placement proof"
 
 
 def test_coordinate_drag_reports_when_playwright_absent(monkeypatch):
