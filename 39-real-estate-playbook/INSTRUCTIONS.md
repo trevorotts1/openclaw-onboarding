@@ -131,3 +131,4 @@ All `00`–`08` scripts are idempotent (version/marker compare, then act). `lib-
 - [ ] Sales-Brain RE extension installed as a NEW file in Skill 38 (not an overwrite) + AGENTS.md pointer present
 - [ ] `bash scripts/qc-no-personal-data.sh` → PASS
 - [ ] `bash scripts/qc-no-fabrication.sh` → PASS
+- [ ] `bash scripts/qc-fair-housing.sh` → PASS (coded fair-housing gate, fail-closed)

@@ -127,8 +127,9 @@ Skill 39 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/real-estat
 | `scripts/lib-property.sh` | Provider-abstraction library: geocode, lookup, comps, Street View (honest-gap aware; Street View key kept out of the emitted output) |
 | `scripts/lib-re-events.sh` | Append-one-line helper for `real-estate-events.jsonl` (resolves `MASTER_FILES_DIR` from persisted state; loud-fails, no Downloads fallback) |
 | `scripts/lib-ghl-sync.sh` | Fail-soft GHL (via caf) + Command Center write layer: `ghl_tag` / `ghl_opportunity` / `ghl_book` / `cc_move`; HONEST no-op without credentials |
-| `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) |
+| `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) + PII-free F52 emitter check |
 | `scripts/qc-no-fabrication.sh` | Asserts no script returns invented property data on a provider miss |
+| `scripts/qc-fair-housing.sh` | CODED fail-closed fair-housing gate — refuses any event/payload carrying a protected-class field (also enforced at the `re_event` chokepoint) |
 | `protocols/showing-scheduler-protocol.md` | Lockbox / MLS-rules showing scheduler runtime |
 | `protocols/lead-routing-protocol.md` | Route leads by agent specialty + fair-housing guardrails |
 | `protocols/open-house-automation-protocol.md` | Open-house registration → follow-up automation |
