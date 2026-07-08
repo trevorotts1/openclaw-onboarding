@@ -129,7 +129,40 @@ element).
 
 - Field inputs are `textbox`es anchored by placeholder: `getByPlaceholder('Enter your first name'|'Enter your last name'|'+1 (555) 000-0000'|'your@email.com')`. Conf 8.5.
 - Consent checkboxes: `checkbox` (empty name) — anchor by the adjacent consent `paragraph` text. Conf 6.5.
-- **Per-field hover/selected controls appear as real `link`s:** `getByRole('link', { name: 'Open settings' })` (opens field properties) and `getByRole('link', { name: 'Remove field' })` (deletes the field). These are the reliable field-level anchors. Conf 8. *(Fills CLICK-MAP Ambiguity #4 for in-builder field delete.)*
+- **Per-field remove control — ⚠️ the original link claim is CONTRADICTED LIVE.**
+  This section originally locked the controls as real `link`s —
+  `getByRole('link', { name: 'Open settings' })` / `getByRole('link', { name:
+  'Remove field' })` (captured ONCE, 2026-07-02; the raw snapshot was NOT
+  retained). **Three consecutive live runs (2026-07-07/08, attempts #6, #7,
+  and the v18.1.11 `skill6-live-verify-20260708-040836` run) attached ZERO
+  nodes for BOTH the exact and the substring form of that lock** — after the
+  select-click and 13 genuine park-away/re-hover cycles: `'role=link:Remove
+  field': 0 attached match(es); 'role~=link:Remove field': 0 attached
+  match(es)`. Confidence on the link form is downgraded to **4** (kept only as
+  tier 1 of the ladder below, in case the accessible names return).
+  **Best-evidenced real mechanism** (training-video CLICK-MAP Step 8: *"Delete
+  a field = select it → trash icon (top-right of the selected field's blue
+  bar)"*; Step 15: a dropped field *"auto-selects (blue outline + gear/trash
+  icons)"*; the 2026-07-02 capture screenshot `008-field-selected.png` shows a
+  SELECTED field's blue pill at its top-right with two ICON-ONLY controls —
+  gear = settings, trash = delete; GHL help/community: *"hover over the field
+  until you see the delete or trash icon"*): an **icon pill on the SELECTED
+  field's top-right**, most likely the §5 icon-only pattern (NO accessible
+  name / aria-label / testid). Conf 7 on the mechanism, unknown on DOM shape.
+  **Driver doctrine (ghl_iframe_drag v1.3.0 tiered acquisition):** select the
+  field (anchor click, wrapper-strip click fallback), then scan tiers in
+  order — (1) the documented link specs above, (2) role link/button named
+  /remove|delete|trash/i, (3) `[aria-label]`/`[title]` deletion attributes
+  (tiers 2–3 gated to the field's top-right CONTROL ZONE), (4) last-resort
+  geometric icon-pill ladder (census of small visible clickables in the zone,
+  clicked rightmost-first — trash sits right of gear — each click
+  count-verified). Every failure persists a rich diagnostics receipt
+  (`routing/f4-remove-diag-<field>.json`: strategy census, geometric census
+  with per-candidate rejection reasons, capped whole-frame aria snapshot,
+  stimulation trace) + a failure-moment screenshot — the NEXT live run must
+  update this section with what the census actually saw. *(CLICK-MAP
+  Ambiguity #4 for in-builder field delete is therefore OPEN again, pending
+  live census evidence.)*
 
 ## 7. ⛔ LOCKED CONSTRAINT — what is NOT stably anchorable (evidence-backed)
 

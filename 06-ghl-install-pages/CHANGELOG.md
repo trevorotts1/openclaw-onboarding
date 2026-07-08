@@ -4,6 +4,103 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.12] - 2026-07-08 - F4 remove-control TIERED acquisition — the §6 `role=link 'Remove field'` claim is CONTRADICTED live; rebuild around the evidenced icon-pill mechanism + rich failure diagnostics (the 3×-failed `STOP@F4.delete:Phone` root-cause fix)
+
+**THE ROOT CAUSE (finally evidence-pinned, not another timing tweak).** Three
+consecutive live runs failed at `F4.delete:Phone` — attempt #6 (v18.1.9),
+attempt #7 (`skill6-attempt7-20260707-222852`), and the v18.1.11 verify run
+(`skill6-live-verify-20260708-040836`, HEAD 07d5c453). The v18.1.11 run's own
+diagnostics are decisive: after the select-click AND **13 genuine
+park-away/re-hover cycles**, BOTH documented forms attached **ZERO** nodes for
+the whole 15s budget — `'role=link:Remove field': 0 attached match(es);
+'role~=link:Remove field': 0 attached match(es)`. That is NOT hover timing
+(v18.1.10's poll/re-stimulation worked exactly as built and proved the point):
+**the SELECTORS-LIVE-form.md §6 lock itself is wrong against the live UI.**
+The link claim was captured ONCE (2026-07-02) and its raw snapshot was never
+retained; it has never been reproduced since. Cross-evidence for the REAL
+mechanism: the training video (CLICK-MAP Step 8: "Delete a field = select it →
+**trash icon** (top-right of the selected field's blue bar)"; Step 15: a
+dropped field "auto-selects (blue outline + **gear/trash icons**)"), the
+2026-07-02 capture's own screenshot `008-field-selected.png` (a SELECTED
+field's blue pill at its top-right with two ICON-ONLY controls), and GHL
+help/community docs ("hover over the field until you see the delete or trash
+icon, then click the delete icon"). The per-field controls are therefore in
+the §5-documented icon-only class (Naive-UI buttons with NO accessible
+name/aria-label/testid) — invisible to EVERY role+name query, which is exactly
+what three live runs measured.
+
+**THE REDESIGN (`ghl_iframe_drag` v1.3.0 — tiered acquisition, evidence-first):**
+
+- **Tier 1 — documented specs (unchanged):** `role=link:Remove field` exact +
+  the `role~=` lock form still scan first and still win when they attach (§6
+  downgraded to conf 4, kept in case the names return).
+- **Tier 2 — broad accessible-name scan:** role link/button whose name matches
+  `/remove|delete|trash/i`.
+- **Tier 3 — attribute scan:** `[aria-label]`/`[title]` containing
+  remove/delete/trash (case-insensitive CSS attr match).
+  Tiers 2–3 are GATED to the field's top-right **CONTROL ZONE** (geometry from
+  the capture screenshot) so a deletion-ish control elsewhere (settings panel,
+  dialog) can never be wrong-target clicked.
+- **Tier 4 — LAST-RESORT geometric icon-pill ladder** (deadline expired,
+  select-click done): a JS census enumerates every small visible clickable
+  (`a`/`button`/`[role]`/`svg`) whose center sits in the control zone, with
+  per-candidate rejection reasons; accepted candidates are clicked
+  RIGHTMOST-FIRST with a REAL pointer (trash sits right of gear on the pill),
+  each click individually verified by the count-decrease proof before trying
+  the next (max 3; a wrong click hits the benign gear/settings).
+- **Selection stimulation widened (the never-actually-SELECTED hypothesis):**
+  after 2 fruitless re-hover cycles, ONE real-pointer click lands on the field
+  WRAPPER/label strip just above the anchor — the pill provably renders on a
+  *selected* field, and clicking the inner input may not register as
+  selection. Receipted as `wrapper_click_done`.
+- **A 4th failure must explain itself:** `remove-link-not-found` now carries
+  `IframeDragError.details` — per-strategy attached/visible counts, the FULL
+  geometric census (accepted + rejected-with-reasons), a capped whole-frame
+  ARIA snapshot, and the stimulation trace. `ghl_form_builder` persists it as
+  `routing/f4-remove-diag-<field>.json` AND captures a failure-moment
+  screenshot (`f4-delete-FAILED-<field>`) showing whether the field was even
+  selected. Count-decrease proof, idempotent already-absent no-op, and every
+  fail-closed code are unchanged; nothing ever fakes a delete.
+
+**Honest docs:** SELECTORS-LIVE-form.md §6 now records the contradiction
+(3 live runs, 0 attached, dates), the evidence chain for the icon-pill
+mechanism, the tiered doctrine, and re-OPENS CLICK-MAP Ambiguity #4 pending
+live census evidence.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (new 13g: broad name-scan finds a
+0-attached-doc-spec control and refuses out-of-zone candidates; 13h: failure
+details carry the full strategy census + stimulation + geometric/aria slots)
+and `--live-selftest` PASS against a REAL headless Chromium — the fixture now
+carries a field whose per-field controls are an icon-only gear+trash pill (NO
+name, NO href, NO title — the evidenced live pattern): new case (j) proves the
+geometric ladder censuses the pill, real-pointer clicks the RIGHTMOST icon,
+and count-verifies the removal. `ghl_form_builder --selftest` PASS;
+`ghl_survey_builder --selftest` PASS. Full skill-6 pytest **1169 passed / 15
+skipped** (was 1152 — +17 regression locks in
+`tests/test_ghl_f4_remove_redesign.py`: name-scan drift + case-insensitive
+regex; attr-scan by title/aria-label; out-of-zone deletion controls NEVER
+clicked; doc spec still wins over broad tiers; already-absent keeps idempotent
+semantics; geometric rightmost-first + count proof; wrong-first-click ladder
+fallback; no geometric click without a select-click; wrapper-click fires
+exactly once and reveals; failure details census/aria/strategy-counts +
+JSON-serializable; unevaluable census degrades honestly; details attribute
+contract; deletion-name regex scope; details threading through StopAndReport;
+diag receipt + failure screenshot persisted; success path unchanged;
+unwritable receipt never masks the STOP). Guards: no-secret-printing PASS,
+no-client-names PASS (structural), no-telegram-chat-id-leak PASS,
+skill-frontmatter-version PASS, skill-version-newline PASS, version-drift OK.
+(Honesty note: earlier entries cite a "no-anthropic-runtime" guard as a
+skill-6 gate — the only script by that name in this repo is skill-58-scoped
+and does not apply here; it was NOT run as a skill-6 gate for this release.)
+
+**Live status: NOT yet live-proven.** This is the best-evidenced attempt, not
+a claim of certainty — the pill's true DOM shape is still unobserved. If a 4th
+live attempt fails, `routing/f4-remove-diag-phone.json` + the failure
+screenshot will finally show exactly what sits near the selected field's
+top-right, and §6 gets locked from that census.
+
+---
+
 ## [v18.1.11] - 2026-07-08 - Forms-list row-'Actions' acquisition is the SAME hover-reveal POLL as F4 (cleanup could silently fail to delete) + F-P9 interpreter/Playwright preflight (a live attempt can never be burned on an environment mistake)
 
 **BUG 1 — the Forms-list row 'Actions' button has the SAME hover-reveal

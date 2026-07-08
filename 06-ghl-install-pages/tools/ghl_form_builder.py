@@ -1043,9 +1043,12 @@ def _perform_iframe_field_remove(session: str, field_spec: str,
                                  *, iframe_selector: str = GHL_FORM_IFRAME_SELECTOR) -> dict:
     """Remove ONE canvas field (``field_spec`` = its DOCUMENTED anchor, SELECTORS
     §6) INSIDE the cross-origin builder iframe via the shared frame-scoped
-    primitive (select the field → per-field ``role=link 'Remove field'`` control
-    → count-decrease proof). Same dep/CDP fail-closed shell as the drag seam;
-    an already-absent field returns a truthful idempotent no-op receipt."""
+    primitive (v1.3.0 tiered acquisition: documented specs → broad name/attr
+    scans → geometric icon-pill ladder → count-decrease proof). Same dep/CDP
+    fail-closed shell as the drag seam; an already-absent field returns a
+    truthful idempotent no-op receipt. A primitive failure's RICH diagnostics
+    (``IframeDragError.details``) ride along on the raised ``StopAndReport`` so
+    the F4 caller can persist them as an evidence receipt."""
     if ghl_iframe_drag is None:
         raise StopAndReport(
             "iframe-remove.dep",
@@ -1067,7 +1070,9 @@ def _perform_iframe_field_remove(session: str, field_spec: str,
             url_marker="form-builder",
         )
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
-        raise StopAndReport(f"iframe-remove:{exc.code}", exc.reason) from exc
+        sr = StopAndReport(f"iframe-remove:{exc.code}", exc.reason)
+        sr.details = getattr(exc, "details", None)   # rich diagnostics ride along
+        raise sr from exc
 
 
 # ── in-SPA navigation — $router.push ONLY (never open/reload) ────────────────
@@ -1832,7 +1837,14 @@ def _delete_default_field(session: str, name: str, evidence_root: str,
     fields the plan excluded (client gets EXACTLY the spec), a kept default
     whose label equals a later Quick-Add tile poisons that drag's source text,
     and F5's count-delta placement proof would baseline against the leftover.
-    An ALREADY-absent field is the desired end-state → recorded, not an error."""
+    An ALREADY-absent field is the desired end-state → recorded, not an error.
+
+    v18.1.12: a remove failure now PERSISTS the primitive's rich diagnostics
+    (strategy census, geometric candidate census with rejection reasons, aria
+    snapshot, stimulation trace — see ghl_iframe_drag v1.3.0) as
+    ``routing/f4-remove-diag-<field>.json`` AND captures a failure-moment
+    screenshot, so a live miss produces decisive evidence (was the field even
+    SELECTED? what WAS near its top-right?) instead of a generic timeout."""
     spec = _DEFAULT_FIELD_CANVAS_ANCHORS.get(name.strip().lower())
     if not spec:
         raise StopAndReport(
@@ -1844,10 +1856,27 @@ def _delete_default_field(session: str, name: str, evidence_root: str,
     try:
         rec = _perform_iframe_field_remove(session, spec)
     except StopAndReport as sr:
-        raise StopAndReport(
+        details = getattr(sr, "details", None)
+        diag_path = os.path.join(evidence_root, "routing",
+                                 f"f4-remove-diag-{_slug(name)}.json")
+        try:
+            _write_json(diag_path, {"field": name, "anchor": spec,
+                                    "step": sr.step, "reason": sr.reason,
+                                    "details": details})
+        except Exception as exc:  # noqa: BLE001 — evidence is best-effort
+            _log(f"F4 diagnostics write best-effort failed for {diag_path!r}: {exc}")
+            diag_path = ""
+        # Failure-moment screenshot: shows whether the field was actually
+        # SELECTED (blue outline + top-right pill) when the budget expired.
+        _screenshot(session, _shot(evidence_root, shot_n,
+                                   f"f4-delete-FAILED-{_slug(name)}"))
+        wrapped = StopAndReport(
             f"F4.delete:{name[:24]}",
             f"could not remove default field {name!r} via its documented anchor "
-            f"{spec!r} (underlying: {sr.step}). {sr.reason}") from sr
+            f"{spec!r} (underlying: {sr.step}). {sr.reason}"
+            + (f" Diagnostics receipt: {diag_path}" if diag_path else ""))
+        wrapped.details = details
+        raise wrapped from sr
     if rec.get("already_absent"):
         steps_done.append(f"F4:default-absent:{name[:20]}")
         warnings.append(f"F4: default field {name!r} was already absent — "

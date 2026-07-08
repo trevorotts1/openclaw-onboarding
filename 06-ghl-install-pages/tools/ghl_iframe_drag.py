@@ -133,6 +133,49 @@ Two coupled defects, same classes as the earlier F2/form-id fixes:
     the damage. The honest ``remove-link-not-found`` now carries per-spec
     attached-match diagnostics + the stimulation trace (select/re-hover counts).
 
+REMOVE-CONTROL TIERED ACQUISITION — THE §6 LINK CLAIM IS CONTRADICTED (v1.3.0)
+------------------------------------------------------------------------------
+Live 2026-07-08, THIRD consecutive ``STOP@F4.delete:Phone`` (v18.1.11 run,
+`skill6-live-verify-20260708-040836`): after the select-click AND 13 genuine
+park-away/re-hover cycles, BOTH documented forms attached **ZERO** nodes for
+the entire 15s budget — ``'role=link:Remove field': 0 attached match(es);
+'role~=link:Remove field': 0 attached match(es)``. That is NOT a timing bug:
+Playwright role queries also skip a11y-hidden nodes, so either the control is
+never in the DOM in that state, or it exists with a DIFFERENT role/name than
+SELECTORS-LIVE-form.md §6 recorded. Cross-evidence says the latter/richer UI:
+  • the source training video (CLICK-MAP.md Step 8: "Delete a field = select
+    it → trash icon (top-right of the selected field's blue bar)"; Step 15:
+    a dropped field "auto-selects (blue outline + gear/trash icons)");
+  • the 2026-07-02 live capture screenshot (008-field-selected.png) showing a
+    SELECTED field's blue pill at its top-right with two ICON-ONLY controls
+    (gear = settings, trash = delete) — the same icon-only pattern §5 already
+    documents for the toolbar (Naive-UI buttons, NO accessible name);
+  • GHL help/community docs: "hover over the field until you see the delete
+    or trash icon, then click the delete icon".
+The §6 ``role=link 'Remove field'`` lock was captured once (2026-07-02, raw
+snapshot not retained) and has never been reproduced live since. v1.3.0 stops
+betting on it exclusively — the acquisition is now TIERED, most-documented
+first, each tier verified by the same count-decrease proof:
+  1. ``role=link:Remove field`` (exact) and ``role~=link:Remove field``
+     (documented lock form) — unchanged, still win when they attach;
+  2. broad accessible-name scan: role link/button whose name matches
+     /remove|delete|trash/i, gated to the field's CONTROL ZONE (top-right);
+  3. attribute scan: ``[aria-label]``/``[title]`` containing remove/delete/
+     trash (case-insensitive), same control-zone gate;
+  4. LAST RESORT geometric icon-pill ladder: a JS census enumerates every
+     small visible clickable (a/button/[role]/svg) whose center sits in the
+     selected field's top-right control zone; candidates are real-pointer
+     clicked RIGHTMOST-FIRST (trash sits right of gear on the pill), each
+     click verified by the count proof before trying the next (max 3).
+Stimulation also covers the field-never-actually-selected hypothesis: after
+two fruitless re-hover cycles, ONE real-pointer click lands just ABOVE the
+anchor (the field wrapper/label strip) in case clicking the input itself does
+not register as field selection. On final failure the error carries RICH
+diagnostics (per-strategy attached/visible counts, the full geometric census
+with per-candidate rejection reasons, a capped whole-frame ARIA snapshot, the
+stimulation trace) via ``IframeDragError.details`` so a fourth live failure
+pins the real UI in one read instead of another generic timeout.
+
 FRAME-SCOPED INLINE-TITLE READ/SET (v1.1.0 — the F3 rename fix)
 ----------------------------------------------------------------
 The builder's title ("Form 55" / "Survey 0") is an in-iframe INLINE-EDIT surface
@@ -199,7 +242,7 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.2.1"
+IFRAME_DRAG_VERSION = "v1.3.0"
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -219,11 +262,16 @@ class IframeDragError(RuntimeError):
     """A frame-scoped coordinate-drag could not be completed HONESTLY (source /
     target unlocatable, null bounding box, page/frame missing, Playwright absent,
     or a placement that did not verify). Carries a short ``code`` + human reason so
-    the caller can STOP-and-report rather than fake success."""
+    the caller can STOP-and-report rather than fake success. ``details`` (v1.3.0)
+    optionally carries a JSON-serializable rich-diagnostics dict (strategy census,
+    geometric candidate census, aria snapshot, stimulation trace) so a live miss
+    produces evidence, not just a generic timeout message."""
 
-    def __init__(self, code: str, reason: str):
+    def __init__(self, code: str, reason: str,
+                 details: Optional[Dict[str, Any]] = None):
         self.code = code
         self.reason = reason
+        self.details = details
         super().__init__(f"{code}: {reason}")
 
 
@@ -782,13 +830,15 @@ def coordinate_drag(
 # on the canvas — which both ships a form that deviates from the spec AND
 # poisons later drags (the kept default 'Phone' label collides with the Quick-
 # Add 'Phone' tile text; the taller canvas pushes Submit below the fold).
-# The DOCUMENTED delete affordance (§6, conf 8): select/hover the field → the
-# per-field controls appear as REAL links → getByRole('link', { name:
-# 'Remove field' }). All inside the cross-origin iframe → same CDP handoff as
-# the drag. FAIL-CLOSED; removal is verified by a COUNT-DECREASE of the
+# §6 ORIGINALLY locked the affordance as getByRole('link', { name: 'Remove
+# field' }) on the selected/hovered field — v1.3.0 NOTE: that claim went
+# 0-attached on THREE live runs (see the module docstring, "REMOVE-CONTROL
+# TIERED ACQUISITION"); the link specs below are now tier 1 of a ladder, no
+# longer the only bet. All inside the cross-origin iframe → same CDP handoff
+# as the drag. FAIL-CLOSED; removal is verified by a COUNT-DECREASE of the
 # field's own anchor (mirror of the v1.1.1 count-delta placement proof).
 # ---------------------------------------------------------------------------
-REMOVE_FIELD_LINK_SPEC = "role=link:Remove field"    # SELECTORS-LIVE-form.md §6
+REMOVE_FIELD_LINK_SPEC = "role=link:Remove field"    # SELECTORS-LIVE-form.md §6 (conf 4)
 # The LITERAL documented lock form (v1.2.1 — live attempt-#6): §6 records
 # `getByRole('link', { name: 'Remove field' })` WITHOUT `exact`, i.e. Playwright-
 # DEFAULT case-insensitive substring name matching. Scanned as the FALLBACK on
@@ -799,6 +849,239 @@ REMOVE_FIELD_LINK_SPEC = "role=link:Remove field"    # SELECTORS-LIVE-form.md §
 REMOVE_FIELD_LINK_LOCK_SPEC = "role~=link:Remove field"
 _REMOVE_POLL_S = 0.25               # scan cadence while polling for the control
 _REMOVE_REHOVER_EVERY_S = 1.0       # park-away + re-enter cadence (re-fires mouseenter)
+
+# ---------------------------------------------------------------------------
+# v1.3.0 TIERED ACQUISITION — the §6 link claim went 0-attached on THREE live
+# runs (module docstring, "REMOVE-CONTROL TIERED ACQUISITION"). The broad and
+# geometric tiers below are grounded in the training video (CLICK-MAP Step 8:
+# select the field → TRASH ICON on the blue bar at its top-right), the
+# 2026-07-02 live capture screenshot (gear+trash icon pill), and GHL help
+# docs — never in an invented CSS selector.
+# ---------------------------------------------------------------------------
+REMOVE_NAME_HINT_REGEX = re.compile(r"remove|delete|trash", re.IGNORECASE)
+REMOVE_ATTR_CSS = (
+    '[aria-label*="remove" i], [title*="remove" i], '
+    '[aria-label*="delete" i], [title*="delete" i], '
+    '[aria-label*="trash" i], [title*="trash" i]'
+)
+_REMOVE_WRAPPER_CLICK_AT_CYCLE = 2  # fruitless re-hover cycles before the wrapper click
+_GEOM_VERIFY_MS = 1500              # per-candidate count-proof window (geometric ladder)
+_GEOM_MAX_CLICKS = 3                # max geometric candidates ever clicked
+_ARIA_SNAPSHOT_CAP = 12000          # chars of frame aria snapshot kept in diagnostics
+_CENSUS_REJECTED_CAP = 60           # rejected geometric candidates kept in diagnostics
+
+# CONTROL ZONE around the SELECTED field where its per-field icon pill renders
+# (008-field-selected.png: the gear+trash pill overlaps the field's TOP-RIGHT
+# corner, slightly ABOVE the top edge). All pads in CSS px, relative to the
+# field anchor's box. The JS census below embeds the SAME numbers.
+_ZONE_LEFT_PAD = 260.0              # zone starts this far LEFT of the right edge
+_ZONE_RIGHT_PAD = 50.0              # ... and ends this far RIGHT of it
+_ZONE_ABOVE_PAD = 110.0             # zone starts this far ABOVE the top edge
+_ZONE_BELOW_PAD = 40.0              # ... and ends this far BELOW the top edge
+
+
+def _control_zone(box: Dict[str, float]) -> Dict[str, float]:
+    """The field's per-field-control zone (its top-right pill region)."""
+    right = box["x"] + box["width"]
+    return {"x0": right - _ZONE_LEFT_PAD, "x1": right + _ZONE_RIGHT_PAD,
+            "y0": box["y"] - _ZONE_ABOVE_PAD, "y1": box["y"] + _ZONE_BELOW_PAD}
+
+
+def _try_box(loc: Any) -> Optional[Dict[str, float]]:
+    """``loc.bounding_box()`` that never raises (fakes/hidden nodes → None)."""
+    try:
+        return loc.bounding_box()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# JS census of EVERY small visible clickable near the field's top-right control
+# zone — the LAST-RESORT geometric tier AND the failure-diagnostics payload.
+# Runs on the field anchor element itself (frame-scoped coordinates); the pads
+# mirror the _ZONE_* constants above. Every candidate is returned WITH its
+# rejection reason (or none) so a live miss documents exactly what was seen.
+_PILL_CENSUS_JS = """
+(el) => {
+  const doc = el.ownerDocument;
+  const win = doc.defaultView;
+  const fr = el.getBoundingClientRect();
+  const zone = { x0: fr.right - %(left)f, x1: fr.right + %(right)f,
+                 y0: fr.top - %(above)f, y1: fr.top + %(below)f };
+  const out = [];
+  const seen = new Set();
+  const nodes = doc.querySelectorAll('a, button, [role="button"], [role="link"], svg');
+  for (const n of nodes) {
+    let r;
+    try { r = n.getBoundingClientRect(); } catch (e) { continue; }
+    const cx = r.left + r.width / 2.0, cy = r.top + r.height / 2.0;
+    let reason = null, cs = null;
+    try { cs = win.getComputedStyle(n); } catch (e) {}
+    if (r.width <= 0 || r.height <= 0) reason = 'zero-size';
+    else if (cs && (cs.visibility === 'hidden' || cs.display === 'none')) reason = 'css-hidden';
+    else if (r.width > 90 || r.height > 90) reason = 'too-big-for-a-per-field-icon';
+    else if (cx < zone.x0 || cx > zone.x1 || cy < zone.y0 || cy > zone.y1)
+      reason = 'outside-control-zone';
+    else {
+      const key = Math.round(cx) + ':' + Math.round(cy);
+      if (seen.has(key)) reason = 'duplicate-position'; else seen.add(key);
+    }
+    let cls = '';
+    try {
+      const c = n.className;
+      cls = String(c && c.baseVal !== undefined ? c.baseVal : (c || '')).slice(0, 80);
+    } catch (e) {}
+    out.push({ tag: String(n.tagName || '').toLowerCase(), cls: cls,
+               aria: n.getAttribute ? n.getAttribute('aria-label') : null,
+               title: n.getAttribute ? n.getAttribute('title') : null,
+               text: String(n.textContent || '').trim().slice(0, 40),
+               x: cx, y: cy, w: r.width, h: r.height, rejected: reason });
+  }
+  return { field: { x: fr.left, y: fr.top, w: fr.width, h: fr.height },
+           zone: zone, candidates: out };
+}
+""" % {"left": _ZONE_LEFT_PAD, "right": _ZONE_RIGHT_PAD,
+       "above": _ZONE_ABOVE_PAD, "below": _ZONE_BELOW_PAD}
+
+
+def _pill_census(anchor: Any) -> Dict[str, Any]:
+    """Run the geometric census on the field anchor. NEVER raises — an
+    unevaluable anchor (hermetic fakes, detached node) reports itself honestly
+    as an error census with zero candidates (the ladder then does nothing)."""
+    try:
+        data = anchor.evaluate(_PILL_CENSUS_JS)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"census-unevaluable ({type(exc).__name__})", "candidates": []}
+    if not isinstance(data, dict) or not isinstance(data.get("candidates"), list):
+        return {"error": "census-payload-unrecognized", "candidates": []}
+    return data
+
+
+def _census_for_report(census: Dict[str, Any]) -> Dict[str, Any]:
+    """Diagnostics view of a census: ALL accepted candidates, a capped sample
+    of rejected ones (with reasons), and the zone/field geometry."""
+    cands = census.get("candidates") or []
+    accepted = [c for c in cands if isinstance(c, dict) and not c.get("rejected")]
+    rejected = [c for c in cands if isinstance(c, dict) and c.get("rejected")]
+    out = {k: v for k, v in census.items() if k != "candidates"}
+    out.update({"accepted": accepted, "rejected_count": len(rejected),
+                "rejected_sample": rejected[:_CENSUS_REJECTED_CAP]})
+    return out
+
+
+def _safe_aria_snapshot(frame: Any, cap: int = _ARIA_SNAPSHOT_CAP) -> Optional[str]:
+    """Whole-frame ARIA snapshot (Playwright >= 1.49), capped. Never raises —
+    a frame/fake without the capability reads as None (recorded as such)."""
+    try:
+        snap = frame.locator("body").first.aria_snapshot()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(snap, str):
+        return None
+    return snap[:cap]
+
+
+def _wrapper_click(page: Any, ref_box: Optional[Dict[str, float]]) -> bool:
+    """ONE real-pointer click just ABOVE the anchor's top edge — the field
+    WRAPPER / label strip. Covers the never-actually-selected hypothesis: the
+    builder may only set its selected-field state from a click on the field
+    BLOCK, not on the inner input (the capture screenshot shows the pill on a
+    SELECTED field). Best-effort; False = not delivered."""
+    if not ref_box:
+        return False
+    x = ref_box["x"] + ref_box["width"] / 2.0
+    y = ref_box["y"] - 12.0
+    if y < 0:
+        y = max(0.0, ref_box["y"] - 2.0)
+    try:
+        mouse = page.mouse
+        mouse.move(x, y)
+        mouse.down()
+        mouse.up()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _nearest_zone_match(loc_all: Any, ref_box: Optional[Dict[str, float]]) -> Optional[Any]:
+    """Zone-GATED nearest visible match — for the BROAD tiers only. A broad
+    scan may legitimately match deletion-ish controls elsewhere in the builder
+    (a settings-panel 'Delete', a dialog button); only a candidate whose box
+    center sits inside the field's control zone (top-right pill region) may be
+    clicked, ranked by distance to the field's top-right corner. No reference
+    box → no zone → NO broad candidate (fail-closed; the doc tiers and the
+    failure diagnostics still run)."""
+    if not ref_box:
+        return None
+    zone = _control_zone(ref_box)
+    rx = ref_box["x"] + ref_box["width"]
+    ry = ref_box["y"]
+    best, best_d2 = None, None
+    for cand in _visible_matches(loc_all):
+        box = _try_box(cand)
+        if not box:
+            continue
+        cx = box["x"] + box["width"] / 2.0
+        cy = box["y"] + box["height"] / 2.0
+        if not (zone["x0"] <= cx <= zone["x1"] and zone["y0"] <= cy <= zone["y1"]):
+            continue
+        d2 = (cx - rx) ** 2 + (cy - ry) ** 2
+        if best_d2 is None or d2 < best_d2:
+            best, best_d2 = cand, d2
+    return best
+
+
+def _attempt_pill_click_ladder(page: Any, anchor_box: Optional[Dict[str, float]],
+                               loc_all: Any, pre: int, census: Dict[str, Any],
+                               trail: "list[Dict[str, Any]]",
+                               verify_ms: int = _GEOM_VERIFY_MS) -> Optional[Dict[str, Any]]:
+    """LAST-RESORT geometric tier: real-pointer click the accepted census
+    candidates RIGHTMOST-FIRST (the trash icon sits RIGHT of the gear on the
+    pill — 008-field-selected.png), verifying each click by the count proof
+    before trying the next. A wrong click (the gear) opens the benign settings
+    panel and simply fails its count proof. Census coordinates are FRAME-
+    relative; the anchor's Playwright box (page coords) vs the census field
+    rect gives the page-coordinate delta. Returns the successful trail entry,
+    else None; every attempt is appended to ``trail`` (the receipt/diagnostics)."""
+    field_rect = census.get("field")
+    cands = [c for c in (census.get("candidates") or [])
+             if isinstance(c, dict) and not c.get("rejected")]
+    if not cands or not isinstance(field_rect, dict) or not anchor_box:
+        return None
+    try:
+        dx = float(anchor_box["x"]) - float(field_rect.get("x", 0.0))
+        dy = float(anchor_box["y"]) - float(field_rect.get("y", 0.0))
+    except (TypeError, ValueError, KeyError):
+        return None
+    cands.sort(key=lambda c: -float(c.get("x", 0.0)))   # rightmost first
+    for cand in cands[:_GEOM_MAX_CLICKS]:
+        entry = dict(cand)
+        try:
+            px = float(cand["x"]) + dx
+            py = float(cand["y"]) + dy
+        except (TypeError, ValueError, KeyError):
+            entry["clicked"] = False
+            entry["click_error"] = "bad-candidate-coordinates"
+            trail.append(entry)
+            continue
+        entry["page_x"], entry["page_y"] = px, py
+        try:
+            mouse = page.mouse
+            mouse.move(px, py)
+            mouse.down()
+            mouse.up()
+            entry["clicked"] = True
+        except Exception as exc:  # noqa: BLE001
+            entry["clicked"] = False
+            entry["click_error"] = type(exc).__name__
+            trail.append(entry)
+            continue
+        ok, post = _verify_count_at_most(loc_all, max(0, pre - 1), verify_ms)
+        entry["post_count"] = post
+        entry["removed"] = ok
+        trail.append(entry)
+        if ok:
+            return entry
+    return None
 
 
 def _verify_count_at_most(loc_all: Any, max_count: int, timeout_ms: int) -> Tuple[bool, int]:
@@ -904,31 +1187,41 @@ def drive_remove_canvas_field(
     Mechanism (all frame-scoped — Playwright drives the cross-origin iframe
     natively): 0 matches → the field is ALREADY absent → a truthful idempotent
     no-op receipt (reconciliation semantics: the desired end-state holds);
-    else resolve a VISIBLE match, scroll it on-screen, HOVER it (§6: the
-    per-field controls are hover/selected-revealed), then POLL on a monotonic
-    deadline for the documented 'Remove field' control (v1.2.1 — the live
-    attempt-#6 ``STOP@F4.delete`` fix; one opaque 15s ``wait_for`` bound to the
-    first DOM match is exactly the class of bug the F2/form-id fixes killed):
+    else resolve a VISIBLE match, scroll it on-screen, HOVER it, then POLL on
+    a monotonic deadline over the TIERED strategy ladder (v1.3.0 — module
+    docstring "REMOVE-CONTROL TIERED ACQUISITION"; three live runs proved the
+    §6 ``role=link 'Remove field'`` claim attaches ZERO nodes, so the doc
+    specs are first-among-equals, no longer the only bet):
 
-      * every pass scans ALL attached matches of the EXACT role+name spec AND
-        of the literal documented LOCK form (``role~=`` — Playwright-default,
-        case-insensitive substring name matching; §6 records ``getByRole``
-        WITHOUT ``exact``), the exact form winning when both attach;
-      * the FIRST miss CLICK-SELECTS the field (§6 'hover/selected'), once —
-        a control already revealed by hover alone is used WITHOUT the click
-        (least canvas disturbance);
-      * later misses RE-FIRE the hover on a cadence (park the pointer OFF the
-        field, re-enter it — ``mouseenter`` only fires on a REAL re-entry);
-      * several visible controls at once → the one NEAREST the field's own box
-        is clicked (a per-field control belongs to its field; the DOM-first
-        one may belong to a KEEP field).
+      * tier 1 — documented specs: the EXACT role+name spec AND the literal
+        documented LOCK form (``role~=``), the exact form winning when both
+        attach (unchanged from v1.2.1);
+      * tier 2 — broad accessible-name scan: role link/button whose name
+        matches /remove|delete|trash/i, GATED to the field's control zone;
+      * tier 3 — attribute scan: aria-label/title containing remove/delete/
+        trash (case-insensitive), same control-zone gate;
+      * stimulation: the FIRST miss CLICK-SELECTS the field, once; later
+        misses RE-FIRE the hover on a cadence (park + re-enter); after
+        ``_REMOVE_WRAPPER_CLICK_AT_CYCLE`` fruitless re-hover cycles ONE
+        real-pointer click lands on the field WRAPPER (just above the
+        anchor) in case clicking the inner input never registered as field
+        selection;
+      * several visible controls at once → the one NEAREST the field wins
+        (doc tiers: nearest to the field's box; broad tiers: nearest to its
+        top-right corner, inside the control zone only);
+      * tier 4 (deadline expired, select-click done) — LAST-RESORT geometric
+        icon-pill ladder: JS census of small visible clickables in the
+        field's top-right control zone, clicked RIGHTMOST-FIRST (trash sits
+        right of gear), each click individually count-verified (max 3).
 
-    Then click the control and VERIFY the field anchor's match count DECREASED
-    below its pre-remove baseline. FAIL-CLOSED codes: ``field-not-found``
-    (attached but never visible), ``field-not-selectable``,
-    ``remove-link-not-found`` (now with per-spec attached-match diagnostics +
-    the stimulation trace), ``remove-click-failed``, ``field-not-removed``.
-    NEVER fakes a removal."""
+    Every successful path is VERIFIED by the field anchor's match count
+    DECREASING below its pre-remove baseline. FAIL-CLOSED codes:
+    ``field-not-found`` (attached but never visible), ``field-not-selectable``,
+    ``remove-link-not-found`` (with RICH diagnostics: per-strategy
+    attached/visible counts, the geometric census incl. per-candidate
+    rejection reasons, a capped whole-frame aria snapshot, the stimulation
+    trace — all on ``IframeDragError.details``), ``remove-click-failed``,
+    ``field-not-removed``. NEVER fakes a removal."""
     if not iframe_selector or not str(iframe_selector).strip():
         raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
     if not field or not str(field).strip():
@@ -940,7 +1233,7 @@ def drive_remove_canvas_field(
     if pre == 0:
         return {"ok": True, "removed": False, "already_absent": True,
                 "field": field, "pre_count": 0, "post_count": 0,
-                "remove_link": remove_link_spec}
+                "remove_link": remove_link_spec, "strategy": None}
 
     try:
         anchor, _ = _resolve_visible(frame, field, timeout_ms=timeout_ms)
@@ -955,36 +1248,53 @@ def drive_remove_canvas_field(
             "screen (never blind-click).") from exc
     _scroll_into_view(anchor, what="field", spec=field, timeout_ms=timeout_ms)
     try:
-        anchor.hover()          # reveals the per-field hover controls (§6)
+        anchor.hover()          # reveals hover-revealed per-field controls
     except Exception:  # noqa: BLE001
         pass                    # best-effort; the poll below can click-select
-    try:
-        anchor_box = anchor.bounding_box()
-    except Exception:  # noqa: BLE001
-        anchor_box = None       # proximity pick degrades to first-visible
+    anchor_box = _try_box(anchor)   # None → broad tiers skip, doc tiers degrade
 
-    specs = [remove_link_spec]
+    # ---- strategy ladder (scanned in order on EVERY poll pass) -------------
+    strategies: "list[Tuple[str, str, Any]]" = [
+        ("doc-exact", remove_link_spec, _resolve_locator_all(frame, remove_link_spec))]
     if remove_link_lock_spec and remove_link_lock_spec != remove_link_spec:
-        specs.append(remove_link_lock_spec)
-    spec_locators = [(sp, _resolve_locator_all(frame, sp)) for sp in specs]
+        strategies.append(("doc-lock", remove_link_lock_spec,
+                           _resolve_locator_all(frame, remove_link_lock_spec)))
+    for sname, sspec, factory in (
+            ("name-scan-link", "role=link name~/remove|delete|trash/i",
+             lambda: frame.get_by_role("link", name=REMOVE_NAME_HINT_REGEX)),
+            ("name-scan-button", "role=button name~/remove|delete|trash/i",
+             lambda: frame.get_by_role("button", name=REMOVE_NAME_HINT_REGEX)),
+            ("attr-scan", REMOVE_ATTR_CSS,
+             lambda: frame.locator(REMOVE_ATTR_CSS))):
+        try:
+            strategies.append((sname, sspec, factory()))
+        except Exception:  # noqa: BLE001 — a fake/engine without the surface
+            strategies.append((sname, sspec, None))
 
     deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
     select_clicked = False
+    wrapper_clicked = False
     hover_cycles = 0
     next_rehover = float("inf")
     link = None
+    matched_strategy: Optional[str] = None
     matched_spec: Optional[str] = None
     while True:
-        for sp, la in spec_locators:
-            cand = _nearest_visible_match(la, anchor_box)
+        for sname, sspec, la in strategies:
+            if la is None:
+                continue
+            if sname in ("doc-exact", "doc-lock"):
+                cand = _nearest_visible_match(la, anchor_box)
+            else:
+                cand = _nearest_zone_match(la, anchor_box)
             if cand is not None:
-                link, matched_spec = cand, sp
+                link, matched_strategy, matched_spec = cand, sname, sspec
                 break
         if link is not None:
             break
         if not select_clicked:
             # Hover alone did not reveal the control → click-SELECT the field
-            # (§6: the controls are hover/SELECTED-revealed), exactly once.
+            # (the controls are hover/SELECTED-revealed), exactly once.
             try:
                 anchor.click()
             except Exception as exc:  # noqa: BLE001
@@ -997,44 +1307,99 @@ def drive_remove_canvas_field(
             continue                    # re-scan immediately after selecting
         now = time.monotonic()
         if now >= deadline:
-            diag = "; ".join(f"{sp!r}: {_safe_count(la)} attached match(es)"
-                             for sp, la in spec_locators)
-            raise IframeDragError(
-                "remove-link-not-found",
-                f"selected canvas field {field!r} (select-click done, "
-                f"{hover_cycles} re-hover cycle(s)) but no documented per-field "
-                f"remove control became VISIBLE within {timeout_ms}ms — {diag}. "
-                "The §6 affordance is getByRole('link', 'Remove field') on the "
-                "hovered/selected field. STOP — never invent another delete "
-                "affordance.")
+            break                       # → geometric last resort + diagnostics
         if now >= next_rehover:
             _rehover_field(page, anchor)
             hover_cycles += 1
+            if not wrapper_clicked and hover_cycles >= _REMOVE_WRAPPER_CLICK_AT_CYCLE:
+                # The field may never have been SELECTED by the input click —
+                # one real-pointer click on the wrapper/label strip above it.
+                wrapper_clicked = _wrapper_click(page, anchor_box)
             next_rehover = now + _REMOVE_REHOVER_EVERY_S
         sleeper(_REMOVE_POLL_S)
+
+    stim = {"select_clicked": select_clicked, "hover_cycles": hover_cycles,
+            "wrapper_click_done": wrapper_clicked}
+
+    if link is None:
+        # ---- tier 4: LAST-RESORT geometric icon-pill ladder ----------------
+        census = _pill_census(anchor)
+        geom_trail: "list[Dict[str, Any]]" = []
+        hit = None
+        if select_clicked:
+            hit = _attempt_pill_click_ladder(page, anchor_box, loc_all, pre,
+                                             census, geom_trail,
+                                             verify_ms=_GEOM_VERIFY_MS)
+        if hit is not None:
+            receipt = {"ok": True, "removed": True, "already_absent": False,
+                       "field": field, "pre_count": pre,
+                       "post_count": hit.get("post_count", 0),
+                       "remove_link": remove_link_spec,
+                       "remove_link_matched": "geometric-pill",
+                       "strategy": "geometric-pill",
+                       "geometric_clicked": {k: hit.get(k) for k in
+                                             ("tag", "cls", "aria", "title", "text",
+                                              "x", "y", "w", "h", "page_x", "page_y")},
+                       "geometric_trail": geom_trail}
+            receipt.update(stim)
+            return receipt
+
+        # ---- decisive honest failure WITH rich diagnostics -----------------
+        strat_diag = []
+        for sname, sspec, la in strategies:
+            attached = _safe_count(la) if la is not None else None
+            visible = len(_visible_matches(la)) if la is not None else None
+            strat_diag.append({"strategy": sname, "spec": sspec,
+                               "attached": attached, "visible": visible})
+        aria = _safe_aria_snapshot(frame)
+        details = {"field": field, "iframe_selector": iframe_selector,
+                   "strategies": strat_diag, "stimulation": stim,
+                   "geometric": {"census": _census_for_report(census),
+                                 "click_trail": geom_trail},
+                   "aria_snapshot": aria}
+        diag = "; ".join(f"{d['spec']!r}: {d['attached']} attached match(es)"
+                         for d in strat_diag
+                         if d["strategy"] in ("doc-exact", "doc-lock"))
+        n_census = len(census.get("candidates") or [])
+        raise IframeDragError(
+            "remove-link-not-found",
+            f"selected canvas field {field!r} (select-click "
+            f"{'done' if select_clicked else 'NOT done'}, {hover_cycles} re-hover "
+            f"cycle(s), wrapper-click {'done' if wrapper_clicked else 'not done'}) "
+            f"but no per-field remove control became VISIBLE within {timeout_ms}ms "
+            f"— {diag}; the broad name/attribute scans and the geometric icon-pill "
+            f"ladder near the field's top-right also found nothing actionable "
+            f"({len(geom_trail)} geometric click(s) tried). Rich diagnostics "
+            f"captured on error.details (strategy census, geometric census of "
+            f"{n_census} candidate(s) with rejection reasons, aria snapshot "
+            f"{len(aria) if aria else 0} chars). STOP — never delete blindly.",
+            details=details)
 
     try:
         link.click()
     except Exception as exc:  # noqa: BLE001
         raise IframeDragError(
             "remove-click-failed",
-            f"the {matched_spec!r} control resolved for field {field!r} but the "
-            f"click failed ({type(exc).__name__}). STOP.") from exc
+            f"the {matched_spec!r} control ({matched_strategy}) resolved for field "
+            f"{field!r} but the click failed ({type(exc).__name__}). STOP.",
+            details={"strategy": matched_strategy, "spec": matched_spec,
+                     "stimulation": stim}) from exc
 
     ok, post = _verify_count_at_most(loc_all, max(0, pre - 1), timeout_ms)
     receipt = {"ok": True, "removed": ok, "already_absent": False, "field": field,
                "pre_count": pre, "post_count": post,
                "remove_link": remove_link_spec,
                "remove_link_matched": matched_spec,
-               "select_clicked": select_clicked,
-               "hover_cycles": hover_cycles}
+               "strategy": matched_strategy}
+    receipt.update(stim)
     if not ok:
         raise IframeDragError(
             "field-not-removed",
             f"clicked {matched_spec!r} for field {field!r} but its anchor match "
             f"count never DROPPED below the pre-remove baseline ({pre} → {post}) — "
             f"the removal did NOT verify. STOP (never report a fake delete). "
-            f"receipt={receipt}")
+            f"receipt={receipt}",
+            details=receipt)
     return receipt
 
 
@@ -1949,6 +2314,142 @@ def _selftest() -> int:
     if ("role", "link", "Remove field", False) not in w13f.events:
         errors.append(f"lock-form fallback did not resolve non-exact: {w13f.events}")
 
+    # 13g (v1.3.0 — three live runs attached ZERO §6 links): a control exposed
+    # ONLY as role=button with a deletion-ish name and a box inside the field's
+    # top-right CONTROL ZONE must be found by the broad name scan; an equally
+    # deletion-ish control OUTSIDE the zone must NEVER be clicked.
+    class _TierWorld:
+        def __init__(self):
+            self.field_count = 1
+            self.clicked = []
+
+    _FIELD_BOX = {"x": 300.0, "y": 200.0, "width": 400.0, "height": 50.0}
+
+    class _TierBtn:
+        def __init__(self, world, box, tag):
+            self._w, self._box, self._tag = world, box, tag
+
+        def is_visible(self):
+            return True
+
+        def bounding_box(self):
+            return self._box
+
+        def click(self):
+            self._w.clicked.append(self._tag)
+            if self._tag == "in-zone":
+                self._w.field_count = 0
+
+    class _TierList:
+        def __init__(self, items):
+            self._items = items
+
+        @property
+        def first(self):
+            return self._items[0] if self._items else self
+
+        def count(self):
+            return len(self._items)
+
+        def nth(self, i):
+            return self._items[i]
+
+        def is_visible(self):
+            return False
+
+        def wait_for(self, state="visible", timeout=0):
+            raise TimeoutError("mock: empty tier list")
+
+    class _TierField:
+        def __init__(self, world):
+            self._w = world
+
+        @property
+        def first(self):
+            return self
+
+        def nth(self, i):
+            return self
+
+        def is_visible(self):
+            return self._w.field_count > 0
+
+        def count(self):
+            return self._w.field_count
+
+        def wait_for(self, state="visible", timeout=0):
+            pass
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            pass
+
+        def bounding_box(self):
+            return dict(_FIELD_BOX)
+
+        def hover(self):
+            pass
+
+        def click(self):
+            pass
+
+    class _TierFrame:
+        def __init__(self, world):
+            self._w = world
+            # zone (from _FIELD_BOX): x in [440, 750], y in [90, 240]
+            self._buttons = _TierList([
+                _TierBtn(world, {"x": 20.0, "y": 20.0, "width": 24.0, "height": 24.0},
+                         "out-zone"),
+                _TierBtn(world, {"x": 660.0, "y": 170.0, "width": 24.0, "height": 24.0},
+                         "in-zone"),
+            ])
+
+        def get_by_placeholder(self, text):
+            return _TierField(self._w)
+
+        def get_by_text(self, text, exact=False):
+            return _TierField(self._w)
+
+        def get_by_role(self, role, name=None, exact=False):
+            if isinstance(name, str):
+                return _TierList([])            # §6 doc specs: 0 attached (live!)
+            return self._buttons if role == "button" else _TierList([])
+
+        def locator(self, sel):
+            return _TierList([])
+
+    w13g = _TierWorld()
+    rec13g = drive_remove_canvas_field(
+        _MockPage(_TierFrame(w13g)), iframe_selector="iframe",
+        field="placeholder=+1 (555) 000-0000", timeout_ms=500)
+    if rec13g.get("removed") is not True or rec13g.get("strategy") != "name-scan-button":
+        errors.append(f"broad name-scan receipt wrong: {rec13g}")
+    if w13g.clicked != ["in-zone"]:
+        errors.append(f"broad scan must click ONLY the in-zone control: {w13g.clicked}")
+
+    # 13h (v1.3.0): a control that never appears STILL fails closed — now with
+    # RICH diagnostics on error.details (strategy census incl. the broad tiers,
+    # stimulation trace, geometric census, aria-snapshot slot).
+    w13h = _RWWorld(link_appears=False)
+    try:
+        drive_remove_canvas_field(_MockPage(_RWFrame(w13h)), iframe_selector="iframe",
+                                  field="placeholder=+1 (555) 000-0000", timeout_ms=100)
+        errors.append("13h: no-control remove did NOT raise")
+    except IframeDragError as e:
+        det = getattr(e, "details", None)
+        if not isinstance(det, dict):
+            errors.append(f"13h: details missing on remove-link-not-found: {det!r}")
+        else:
+            snames = [d.get("strategy") for d in det.get("strategies", [])]
+            for want in ("doc-exact", "doc-lock", "name-scan-link",
+                         "name-scan-button", "attr-scan"):
+                if want not in snames:
+                    errors.append(f"13h: strategy census missing {want}: {snames}")
+            if not isinstance(det.get("stimulation"), dict) or \
+                    det["stimulation"].get("select_clicked") is not True:
+                errors.append(f"13h: stimulation trace wrong: {det.get('stimulation')}")
+            if "geometric" not in det or "aria_snapshot" not in det:
+                errors.append(f"13h: geometric/aria diagnostics missing: {sorted(det)}")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -2025,6 +2526,21 @@ def _live_selftest() -> int:
         '<input placeholder="+1 (555) 000-0000"></div>'
         '<div class="field" id="f-email" data-reveal="hover">Email'
         '<input placeholder="your@email.com"></div>'
+        # v1.3.0 fixture — the REAL GHL pattern (CLICK-MAP Step 8 + the
+        # 2026-07-02 capture screenshot): selecting the field reveals an
+        # ICON-ONLY pill at its top-right (gear then trash, NO accessible
+        # names, NO href, NO aria-label/title) — invisible to every role/name
+        # tier; ONLY the geometric icon-pill ladder can remove it.
+        '<div class="field" id="f-company" data-reveal="pill" '
+        'style="position:relative;margin-top:10px">Company'
+        '<input placeholder="Enter your company" style="width:95%">'
+        '<span id="pill-company" style="display:none;position:absolute;'
+        'top:-14px;right:30px;background:#26f">'
+        '<a class="icon-btn" id="co-gear" style="padding:2px;display:inline-block">'
+        '<svg width="16" height="16"><circle cx="8" cy="8" r="6"/></svg></a>'
+        '<a class="icon-btn" id="co-trash" style="padding:2px;display:inline-block">'
+        '<svg width="16" height="16"><rect x="4" y="3" width="8" height="10"/></svg>'
+        "</a></span></div>"
         "</div>"
         '<a id="remove-link" href="#" style="display:none">Remove field</a>'
         '<div id="canvas"><button id="submit-btn" type="button">Submit</button></div>'
@@ -2046,7 +2562,9 @@ def _live_selftest() -> int:
         "const removeLink=document.getElementById('remove-link');"
         "document.querySelectorAll('.field').forEach(f=>{"
         "  f.addEventListener('click',()=>{selectedField=f;"
-        "    if(f.dataset.reveal==='click'){removeLink.style.display='inline';}});"
+        "    if(f.dataset.reveal==='click'){removeLink.style.display='inline';}"
+        "    if(f.dataset.reveal==='pill'){"
+        "      document.getElementById('pill-company').style.display='inline-block';}});"
         "  f.addEventListener('mouseenter',()=>{"
         "    if(selectedField===f&&f.dataset.reveal==='hover'){"
         "      removeLink.style.display='inline';}});"
@@ -2054,6 +2572,11 @@ def _live_selftest() -> int:
         "removeLink.addEventListener('click',e=>{e.preventDefault();"
         "  if(selectedField){selectedField.remove();selectedField=null;"
         "  removeLink.style.display='none';}});"
+        "document.getElementById('co-trash').addEventListener('click',e=>{"
+        "  e.preventDefault();e.stopPropagation();"
+        "  document.getElementById('f-company').remove();});"
+        "document.getElementById('co-gear').addEventListener('click',e=>{"
+        "  e.preventDefault();e.stopPropagation();});"
         "const tw=document.getElementById('titlewrap');"
         "function mountTitle(text){"
         "  tw.innerHTML='';"
@@ -2210,6 +2733,26 @@ def _live_selftest() -> int:
                         rec_i.get("hover_cycles", 0) < 1:
                     errors.append("live hover-reveal remove did not exercise the "
                                   f"select+re-hover stimulation: {rec_i}")
+
+                # (j) GEOMETRIC ICON-PILL ladder (v1.3.0 — the REAL GHL
+                #     pattern per CLICK-MAP Step 8 + the 2026-07-02 capture
+                #     screenshot): selecting the 'Company' field reveals an
+                #     icon-only gear+trash pill at its top-right — NO
+                #     accessible name, NO href, NO aria-label/title — so
+                #     every role/name/attribute tier attaches ZERO nodes
+                #     (exactly the three live failures). The geometric census
+                #     must find the pill icons in the control zone, click the
+                #     RIGHTMOST (trash) with a real pointer, and prove the
+                #     removal by the count decrease.
+                rec_j = drive_remove_canvas_field(
+                    page, iframe_selector=iframe_selector,
+                    field="placeholder=Enter your company", timeout_ms=2500)
+                if rec_j.get("removed") is not True or \
+                        rec_j.get("strategy") != "geometric-pill":
+                    errors.append(f"live geometric-pill remove wrong: {rec_j}")
+                if not rec_j.get("geometric_trail"):
+                    errors.append("live geometric-pill remove carried no trail "
+                                  f"receipt: {rec_j}")
             finally:
                 ctx.close()
     except IframeDragError as e:
