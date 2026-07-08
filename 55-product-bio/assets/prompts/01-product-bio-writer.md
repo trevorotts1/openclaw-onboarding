@@ -2,7 +2,7 @@
 
 - **Source workflow:** "Product bio, October 26, 2026" (n8n, 25 nodes, active)
 - **Source node:** `write product bio` (type `lc.chainLlm`)
-- **Model node:** `OpenRouter Chat Model` (type `lc.lmChatOpenRouter`, model `google/gemini-2.5-pro`)
+- **Model node:** `OpenRouter Chat Model` (type `lc.lmChatOpenRouter`; model resolved at runtime by the client's OpenRouter routing — concrete provenance id stripped, SK2-18)
 - **Function:** Transforms raw product info into a 6,000-7,000-word, 10-section "master brain" product bio / sales knowledge base (intros, power adjectives, ICP, description, positioning, objections, FAQ, social proof, StoryBrand 2.0, 24 signature closes + completion verification block).
 - **Extraction:** VERBATIM from `workflow-digest.json` -> `.nodes[] | select(.name=="write product bio") | .llm_chain`. System text = `messages[0].message` (n8n chainLlm chat message; system role). User text = `prompt` field. The leading `=` on the User prompt is the n8n expression-mode marker; `{{ ... }}` are n8n expressions.
 
