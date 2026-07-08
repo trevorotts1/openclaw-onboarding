@@ -53,6 +53,10 @@ REQUIRED_BRIEF_FIELDS = [
 NATIVE_PAID_PROVIDERS = [
     "fal", "runway", "heygen", "openai", "google", "imagen",
     "flux", "veo-native", "kling", "minimax", "xai", "elevenlabs",
+    # SK1-65: Replicate + Stability are native paid image/video GENERATION hosts and
+    # were missing from the ban-list even though install.sh's .env already warns against
+    # REPLICATE_API_KEY. All generative assets route through Kie.AI ONLY.
+    "replicate", "stability", "stability-ai", "stabilityai",
 ]
 
 # Env-var name fragments that, if present in a recorded generation environment,
@@ -69,6 +73,8 @@ NATIVE_PAID_PROVIDERS = [
 NATIVE_PROVIDER_ENV_KEYS = [
     "FAL_KEY", "FAL_API_KEY", "RUNWAY", "HEYGEN", "OPENAI_API_KEY",
     "KLING", "MINIMAX", "XAI_API_KEY", "ELEVENLABS",
+    # SK1-65: catch a Replicate/Stability generation key in a recorded generation_env.
+    "REPLICATE", "STABILITY",
 ]
 
 # Providers whose MERE availability in the tool-registry audit is embedding-only
@@ -415,6 +421,50 @@ def _resolve_run_path(run_dir: Path, path_str: str) -> Path:
     return p if p.is_absolute() else (run_dir / p)
 
 
+def _ffprobe_probe(path: Path):
+    """SK1-62/SK1-68. Probe the ACTUAL file with ffprobe so the completeness gate is
+    bound to the real render, not the receipt's self-attested ffprobe_pass or a blind
+    byte count. Returns (ok, duration, has_video, detail):
+      ok is None  -> ffprobe is NOT installed; caller degrades to the byte-size floor.
+      ok is False -> ffprobe ran and the file is NOT a decodable video (detail says why).
+      ok is True  -> ffprobe decoded the file; duration/has_video carry the findings.
+    Never raises; a probe error is reported as ok=False so the gate fails closed."""
+    import shutil
+    import subprocess
+    if shutil.which("ffprobe") is None:
+        return (None, 0.0, False, "ffprobe not on PATH")
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-print_format", "json",
+             "-show_format", "-show_streams", str(path)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return (False, 0.0, False, f"ffprobe invocation failed: {exc}")
+    if proc.returncode != 0:
+        return (False, 0.0, False,
+                f"ffprobe exit {proc.returncode}: {(proc.stderr or '').strip()[:160]}")
+    try:
+        meta = json.loads(proc.stdout or "{}")
+    except Exception as exc:  # noqa: BLE001
+        return (False, 0.0, False, f"ffprobe output not JSON: {exc}")
+    streams = meta.get("streams") if isinstance(meta.get("streams"), list) else []
+    has_video = any(
+        isinstance(s, dict) and str(s.get("codec_type", "")).lower() == "video"
+        for s in streams
+    )
+    dur = 0.0
+    fmt = meta.get("format") if isinstance(meta.get("format"), dict) else {}
+    for cand in [fmt.get("duration")] + [s.get("duration") for s in streams if isinstance(s, dict)]:
+        try:
+            d = float(cand)
+            if d > dur:
+                dur = d
+        except (TypeError, ValueError):
+            continue
+    return (True, dur, has_video, "")
+
+
 def _final_mp4_deliverable_ok(run_dir: Path, min_bytes: int) -> str:
     """FIX-S36-44. Validate the SPECIFIC final MP4 the render receipt declares —
     never 'any .mp4 anywhere' (a recursive glob let raw stock footage under assets/
@@ -448,6 +498,21 @@ def _final_mp4_deliverable_ok(run_dir: Path, min_bytes: int) -> str:
                     f"exist and be >= {min_bytes} bytes")
     except OSError as exc:
         return f"the declared final_mp4_path ({path_str!r}) could not be stat-ed ({exc})"
+    # SK1-62/SK1-68: bind the gate to the ACTUAL render — probe codec/duration of the
+    # declared file, never trust only the byte floor (a 100KB text/zero file cleared it)
+    # or the receipt's self-attested ffprobe_pass. Degrade to the byte floor ONLY when
+    # ffprobe is absent (ok is None); a present-but-undecodable file fails closed.
+    ok, dur, has_video, detail = _ffprobe_probe(p)
+    if ok is False:
+        return (f"the declared final_mp4_path ({path_str!r}) is above the size floor but "
+                f"ffprobe could not decode it as a video ({detail}) — a byte-padded or "
+                "non-video file is not a finished render")
+    if ok is True and not has_video:
+        return (f"the declared final_mp4_path ({path_str!r}) has NO video stream on "
+                "ffprobe — it cleared the size floor but is not a valid video")
+    if ok is True and dur <= 0:
+        return (f"the declared final_mp4_path ({path_str!r}) ffprobe duration is {dur} — a "
+                "zero-duration file is not a finished render")
     return ""
 
 

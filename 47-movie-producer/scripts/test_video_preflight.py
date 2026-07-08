@@ -51,6 +51,34 @@ def _write(rd: Path, rel: str, obj) -> None:
         p.write_text(str(obj))
 
 
+def _make_mp4(path: Path, min_bytes: int = 150_000) -> None:
+    """Write a deliverable MP4 for the GOOD fixtures. With ffmpeg available it is a REAL,
+    ffprobe-decodable clip (so the SK1-62/SK1-68 ffprobe binding in run_postflight_gate
+    is exercised for real); without ffmpeg it is a byte placeholder (the gate degrades
+    to the size floor when ffprobe is absent, so the fixture still passes)."""
+    import shutil
+    import subprocess
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-f", "lavfi",
+                 "-i", "testsrc=size=320x240:rate=15:duration=2",
+                 "-pix_fmt", "yuv420p", str(path)],
+                capture_output=True, timeout=60, check=True,
+            )
+            # Pad up to the size floor if the tiny clip is under it; trailing bytes after
+            # the last box do not stop ffprobe from reading the streams.
+            if path.stat().st_size < min_bytes:
+                with open(path, "ab") as fh:
+                    fh.write(b"\x00" * (min_bytes - path.stat().st_size))
+            return
+        except Exception:  # noqa: BLE001 — fall back to a placeholder below
+            pass
+    path.write_bytes(b"\x00" * min_bytes)
+
+
 _GOOD_BRIEF = {
     "job_id": "job-good", "pipeline_selected": "documentary-montage.yaml",
     "kie_in_scope": False, "brief_complete": True, "topic": "the deep ocean",
@@ -85,7 +113,7 @@ def _good_free(rd: Path):
     _write(rd, "working/checkpoints/measure-receipt.json", dict(_GOOD_MEASURE))
     _write(rd, "working/checkpoints/render-receipt.json", dict(_GOOD_RENDER))
     _write(rd, "working/render-receipt.json", dict(_GOOD_RENDER))
-    (rd / "working" / "final.mp4").write_bytes(b"\x00" * 150_000)
+    _make_mp4(rd / "working" / "final.mp4")
     done = dict(_GOOD_BRIEF)
     done.update({"status": "complete", "actual_cost_usd": 0.0,
                  "handoff": "captions->Skill 26 (caption-creator)"})
@@ -304,6 +332,18 @@ def _probe_final_mp4_and_handoff() -> list:
         if "AF-VID-DELIVERY-INCOMPLETE" not in vbc.run_postflight_gate(rd2):
             fails.append("FIX-S36-44: a non-enum handoff ('predelivery...') passed the "
                          "exact-enum handoff check (substring match leaked).")
+        # (c) SK1-62/SK1-68: a byte-padded NON-VIDEO file above the size floor must NOT
+        # satisfy the deliverable once ffprobe can decode-check it. Only meaningful when
+        # ffprobe is installed; the gate degrades to the size floor without it.
+        import shutil as _sh
+        if _sh.which("ffprobe"):
+            rd3 = _mk_run(Path(tmp))
+            _good_free(rd3)  # real MP4 + complete manifest + valid enum handoff
+            # Clobber the real MP4 with 200KB of zeros (over the size floor, not a video).
+            (rd3 / "working" / "final.mp4").write_bytes(b"\x00" * 200_000)
+            if "AF-VID-DELIVERY-INCOMPLETE" not in vbc.run_postflight_gate(rd3):
+                fails.append("SK1-62/SK1-68: a byte-padded non-video final.mp4 above the "
+                             "size floor passed run_postflight_gate (codec-blind gate).")
     return fails
 
 
