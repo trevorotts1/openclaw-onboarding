@@ -192,7 +192,7 @@ record_na() {
 # ── WF-3: Trigger present ─────────────────────────────────────────────────────
 TRIGGER_TYPE=""
 if echo "$EXPORT_OUT" | grep -qiE '"type".*"trigger|triggerType|trigger_type|event_type'; then
-  TRIGGER_TYPE=$(echo "$EXPORT_OUT" | grep -oiE '"triggerType"\s*:\s*"[^"]*"|"trigger_type"\s*:\s*"[^"]*"|"type"\s*:\s*"[A-Z_]*TRIGGER[^"]*"' | head -1 || echo "present")
+  TRIGGER_TYPE=$(echo "$EXPORT_OUT" | grep -oiE '"triggerType"[[:space:]]*:[[:space:]]*"[^"]*"|"trigger_type"[[:space:]]*:[[:space:]]*"[^"]*"|"type"[[:space:]]*:[[:space:]]*"[A-Z_]*TRIGGER[^"]*"' | head -1 || echo "present")
   record_pass "WF-3" "${TRIGGER_TYPE:-present}" "trigger present" "Trigger node found in export"
 elif echo "$EXPORT_OUT" | grep -qiE 'trigger|contactCreated|formSubmitted|tagAdded|ContactCreate|FormSubmit|TagAdd'; then
   record_pass "WF-3" "trigger_found" "trigger present" "Trigger keyword found in export"
@@ -205,9 +205,12 @@ EXPECTED_ACTIVE="false"
 [ "$PUBLISH_INTENT" = "LIVE" ] && EXPECTED_ACTIVE="true"
 
 OBSERVED_ACTIVE="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"active"\s*:\s*true\|"triggerActive"\s*:\s*true\|active.*true'; then
+# Anchored to the JSON "key":value shape (never a loose whole-body `active.*true`,
+# which false-matched innocent email copy) and portable ERE `[[:space:]]` (BSD grep
+# does not support `\s` / `\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*true|"triggerActive"[[:space:]]*:[[:space:]]*true'; then
   OBSERVED_ACTIVE="true"
-elif echo "$EXPORT_OUT" | grep -qi '"active"\s*:\s*false\|"triggerActive"\s*:\s*false\|active.*false'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*false|"triggerActive"[[:space:]]*:[[:space:]]*false'; then
   OBSERVED_ACTIVE="false"
 fi
 
@@ -227,9 +230,10 @@ EXPECTED_STATUS="draft"
 [ "$PUBLISH_INTENT" = "LIVE" ] && EXPECTED_STATUS="published"
 
 OBSERVED_STATUS="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"status"\s*:\s*"published"\|status.*published'; then
+# Anchored "status":"value" + portable ERE (no loose `status.*published`, no `\s`/`\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"published"'; then
   OBSERVED_STATUS="published"
-elif echo "$EXPORT_OUT" | grep -qi '"status"\s*:\s*"draft"\|status.*draft'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"draft"'; then
   OBSERVED_STATUS="draft"
 fi
 
@@ -246,9 +250,10 @@ EXPECTED_REENTRY="false"
 [ "$RE_ENTRY_DECISION" = "ALLOW-MULTIPLE" ] && EXPECTED_REENTRY="true"
 
 OBSERVED_REENTRY="unknown"
-if echo "$EXPORT_OUT" | grep -qi '"allowMultiple"\s*:\s*true\|"reEntry"\s*:\s*true\|allow_multiple.*true\|re_entry.*true'; then
+# Anchored key:value + portable ERE (no loose `allow_multiple.*true`, no `\s`/`\|`).
+if echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*true|"reEntry"[[:space:]]*:[[:space:]]*true|"allow_multiple"[[:space:]]*:[[:space:]]*true|"re_entry"[[:space:]]*:[[:space:]]*true'; then
   OBSERVED_REENTRY="true"
-elif echo "$EXPORT_OUT" | grep -qi '"allowMultiple"\s*:\s*false\|"reEntry"\s*:\s*false\|allow_multiple.*false\|re_entry.*false'; then
+elif echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*false|"reEntry"[[:space:]]*:[[:space:]]*false|"allow_multiple"[[:space:]]*:[[:space:]]*false|"re_entry"[[:space:]]*:[[:space:]]*false'; then
   OBSERVED_REENTRY="false"
 fi
 
@@ -262,7 +267,7 @@ fi
 
 # ── WF-7: Action sequence — at least one action node present ──────────────────
 ACTION_COUNT=0
-ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE '"type"\s*:\s*"(SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END)[^"]*"' | wc -l || echo 0)
+ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE '"type"[[:space:]]*:[[:space:]]*"(SMS|EMAIL|WAIT|IF_ELSE|ADD_TAG|REMOVE_TAG|UPDATE_CONTACT|WEBHOOK|CREATE_TASK|CREATE_NOTE|REMOVE_FROM_WORKFLOW|END)[^"]*"' | wc -l || echo 0)
 ACTION_COUNT=$(echo "$ACTION_COUNT" | tr -d ' ')
 
 if [ "$ACTION_COUNT" -gt 0 ]; then
@@ -319,10 +324,10 @@ read -r SMS_MISSING_KEY SMS_EMPTY_LIVE SMS_EMPTY_DRAFT SMS_TOTAL <<< "$SMS_FROM_
 
 if [ "$SMS_MISSING_KEY" = "-1" ]; then
   # Could not parse JSON — use text-grep fallback
-  if echo "$EXPORT_OUT" | grep -qiE '"type"\s*:\s*"(sms|send_sms)"'; then
-    if echo "$EXPORT_OUT" | grep -qi 'fromNumber.*""\|from_number.*""\|phoneNumber.*""'; then
+  if echo "$EXPORT_OUT" | grep -qiE '"type"[[:space:]]*:[[:space:]]*"(sms|send_sms)"'; then
+    if echo "$EXPORT_OUT" | grep -qiE '"?(fromNumber|from_number|phoneNumber)"?[[:space:]]*:[[:space:]]*""'; then
       record_fail "WF-12" "sms_node_with_empty_from_number" "fromNumber key present + non-empty on every SMS node" "CRITICAL: SMS node with empty From-number detected (text-grep fallback) — will silently fail to send"
-    elif echo "$EXPORT_OUT" | grep -qi 'fromNumber\|from_number\|phoneNumber'; then
+    elif echo "$EXPORT_OUT" | grep -qiE 'fromNumber|from_number|phoneNumber'; then
       record_pass "WF-12" "from_number_key_present" "fromNumber key present on every SMS node" "Text-grep fallback: a From-number key is present (human review recommended for full JSON parse)"
     else
       record_fail "WF-12" "sms_present_no_from_number_key" "fromNumber key present on every SMS node" "CRITICAL: SMS node(s) present but no From-number key found (text-grep fallback). sms_step must emit fromNumber."
@@ -343,7 +348,7 @@ else
 fi
 
 # ── WF-15: Delivery chain linkage ─────────────────────────────────────────────
-HAS_TARGET_ACTION=$(echo "$EXPORT_OUT" | grep -c 'targetActionId\|target_action_id\|nextStep\|next_step\|parentKey\|parent_key' || echo 0)
+HAS_TARGET_ACTION=$(echo "$EXPORT_OUT" | grep -cE 'targetActionId|target_action_id|nextStep|next_step|parentKey|parent_key' || echo 0)
 HAS_TARGET_ACTION=$(echo "$HAS_TARGET_ACTION" | tr -d ' ')
 
 if [ "$HAS_TARGET_ACTION" -gt 0 ]; then
@@ -489,6 +494,17 @@ RUBRIC_FLOOR_X100=$(( D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*
 RUBRIC_FLOOR=$(printf "%d.%02d" $(( RUBRIC_FLOOR_X100 / 100 )) $(( RUBRIC_FLOOR_X100 % 100 )))
 RUBRIC_NEEDS_HUMAN=$(( D1_HUMAN + D4_HUMAN + D5_HUMAN + D6_HUMAN + D7_HUMAN + D8_HUMAN ))
 
+# Weighted CEILING (SK1-46): best case where every human-graded dimension is later
+# scored 10 (mechanical D2/D3 keep their machine score). If even this ceiling is
+# below the 8.5 ship threshold, the weighted rubric PROVES the build can never ship
+# regardless of human grading — so the rubric must participate in the exit decision,
+# not merely be printed. (Gate applied in the exit section below.)
+_ceil() { if [ "$2" = "1" ]; then echo 10; else echo "$1"; fi; }
+RUBRIC_CEILING_X100=$(( $(_ceil "$D1" "$D1_HUMAN")*20 + $(_ceil "$D2" 0)*15 \
+  + $(_ceil "$D3" 0)*15 + $(_ceil "$D4" "$D4_HUMAN")*12 + $(_ceil "$D5" "$D5_HUMAN")*12 \
+  + $(_ceil "$D6" "$D6_HUMAN")*10 + $(_ceil "$D7" "$D7_HUMAN")*8 + $(_ceil "$D8" "$D8_HUMAN")*8 ))
+RUBRIC_CEILING=$(printf "%d.%02d" $(( RUBRIC_CEILING_X100 / 100 )) $(( RUBRIC_CEILING_X100 % 100 )))
+
 # Identify the lowest scoring dimension(s) for the loop-back message.
 LOWEST_DIM=""; LOWEST_VAL=11
 for d in "D1:$D1" "D2:$D2" "D3:$D3" "D4:$D4" "D5:$D5" "D6:$D6" "D7:$D7" "D8:$D8"; do
@@ -539,6 +555,7 @@ if [ "$JSON_MODE" -eq 1 ]; then
   # Weighted quality rubric (SUPERSET overlay, computed AFTER WF-1..21)
   echo "  \"rubric\": {"
   echo "    \"weighted_floor\": $RUBRIC_FLOOR,"
+  echo "    \"weighted_ceiling\": $RUBRIC_CEILING,"
   echo "    \"ship_threshold\": 8.5,"
   echo "    \"needs_human_grading\": $RUBRIC_NEEDS_HUMAN,"
   echo "    \"lowest_dimension\": \"$LOWEST_DIM\","
@@ -600,6 +617,7 @@ else
   printf "  %-22s w=%-3s %s\n" "D8 Naming/testability" "8" "floor=$D8  [HUMAN GRADE REQUIRED]"
   echo "  ─────────────────────────────────────────────"
   echo "  WEIGHTED FLOOR SCORE: $RUBRIC_FLOOR / 10   (ship threshold: >= 8.5)"
+  echo "  WEIGHTED CEILING:     $RUBRIC_CEILING / 10   (best case if human dims all grade 10)"
   echo "  Lowest dimension: $LOWEST_DIM"
   echo "  NOTE: this is the machine-knowable FLOOR. The Step-9 QC sub-agent must grade the"
   echo "        $RUBRIC_NEEDS_HUMAN human dimensions (D1/D4/D5/D6/D7/D8) 1/5/10 per the rubric and"
@@ -677,7 +695,7 @@ mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
@@ -689,6 +707,16 @@ if [ "$FAB_RC" -ne 0 ]; then
   else
     echo "PER-BUILD QC FAILED — ${FAB_FAIL_REASON:-FAB-QC below 8.5 (score $FAB_SCORE)}. Fix the lowest dimension and re-run."
   fi
+  exit 1
+fi
+# ── Rubric ship gate (SK1-46): the weighted rubric now participates in the exit ──
+# decision. If the CEILING (every human dimension optimistically graded 10) is still
+# below the 8.5 ship threshold, the build can NEVER ship regardless of human grading
+# — so this is a hard, no-false-positive FAIL. (When --fab ran, the FAB overlay above
+# is the authoritative >= 8.5 proof; this ceiling gate is the floor-side backstop for
+# the mechanical-only path that previously ignored the rubric entirely.)
+if [ "$RUBRIC_CEILING_X100" -lt 850 ]; then
+  echo "PER-BUILD QC FAILED — weighted rubric ceiling ${RUBRIC_CEILING}/10 is below the 8.5 ship threshold; even perfect human grading of the ungraded dimensions cannot reach ship quality. Lowest dimension: ${LOWEST_DIM}. Fix it and re-run."
   exit 1
 fi
 exit 0

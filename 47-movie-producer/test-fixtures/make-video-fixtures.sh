@@ -84,9 +84,20 @@ RENDER_RECEIPT='{
 printf '%s\n' "$RENDER_RECEIPT" > "$GOOD/working/checkpoints/render-receipt.json"
 printf '%s\n' "$RENDER_RECEIPT" > "$GOOD/working/render-receipt.json"
 
-# A real >100KB MP4 deliverable (zero-filled; the gate validates the receipt, not the codec).
-: > "$GOOD/working/final.mp4"
-head -c 150000 /dev/zero > "$GOOD/working/final.mp4"
+# A finished MP4 deliverable. SK1-62/SK1-68: run_postflight_gate now ffprobe-decodes the
+# declared final MP4 (not just its byte size), so the GOOD fixture must be a REAL video
+# when ffmpeg is present. Falls back to a byte placeholder only when ffmpeg is absent
+# (there the gate degrades to the size floor, so the placeholder still passes).
+if command -v ffmpeg >/dev/null 2>&1; then
+  ffmpeg -y -f lavfi -i "testsrc=size=320x240:rate=15:duration=2" \
+    -pix_fmt yuv420p "$GOOD/working/final.mp4" >/dev/null 2>&1 || head -c 150000 /dev/zero > "$GOOD/working/final.mp4"
+  # Pad up to the >100KB floor if the tiny clip is under it (trailing bytes after the
+  # last box do not stop ffprobe from reading the streams).
+  _sz=$(wc -c < "$GOOD/working/final.mp4" 2>/dev/null | tr -d ' ')
+  if [ "${_sz:-0}" -lt 150000 ]; then head -c $((150000 - ${_sz:-0})) /dev/zero >> "$GOOD/working/final.mp4"; fi
+else
+  head -c 150000 /dev/zero > "$GOOD/working/final.mp4"
+fi
 
 # ---------- BAD: the bypass signature ----------
 cat > "$BAD/working/job-manifest.json" <<'JSON'

@@ -56,6 +56,7 @@ manifest symbol for it; AF-VID-PHASE-SKIPPED is enforced_by:driver with py_symbo
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -87,13 +88,31 @@ def _find_repo_root(start: Path):
     return None
 
 
+def _runtime_manifest_path() -> Path:
+    """SK1-63: the canonical manifest lives at repo-root universal-sops/, which is NOT
+    shipped inside the (content-hashed) skill dir. install.sh copies it here — a runtime
+    dir OUTSIDE the hashed skill dir (sibling of the OpenMontage clone) — so this driver
+    can resolve it on a client box that never received the universal-sops sibling."""
+    override = os.environ.get("OPENCLAW_OPENMONTAGE_DIR", "").strip()
+    if override:
+        # The manifest sits beside the OpenMontage clone dir.
+        return Path(override).parent / "VIDEO-PIPELINE-MANIFEST.json"
+    return Path.home() / ".openclaw" / "openmontage-runtime" / "VIDEO-PIPELINE-MANIFEST.json"
+
+
 def load_manifest() -> dict:
     repo = _find_repo_root(HERE)
     candidates = []
+    # Highest priority: an explicit operator override.
+    env_path = os.environ.get("OPENCLAW_VIDEO_PIPELINE_MANIFEST", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
     if repo:
         candidates.append(repo / "universal-sops" / "video-pipeline-craft"
                           / "VIDEO-PIPELINE-MANIFEST.json")
     candidates += [
+        # SK1-63: the runtime copy install.sh places outside the hashed skill dir.
+        _runtime_manifest_path(),
         HERE.parent / "sops" / "VIDEO-PIPELINE-MANIFEST.json",
         HERE.parent / "VIDEO-PIPELINE-MANIFEST.json",
         HERE / "VIDEO-PIPELINE-MANIFEST.json",
@@ -106,7 +125,12 @@ def load_manifest() -> dict:
                 print(f"FATAL: VIDEO-PIPELINE-MANIFEST.json is not valid JSON ({exc}).",
                       file=sys.stderr)
                 sys.exit(2)
-    print("FATAL: VIDEO-PIPELINE-MANIFEST.json not found.", file=sys.stderr)
+    looked = "\n  ".join(str(c) for c in candidates)
+    print("FATAL: VIDEO-PIPELINE-MANIFEST.json not found. The manifest ships in the repo "
+          "at universal-sops/video-pipeline-craft/ and is NOT bundled inside the hashed "
+          "skill dir; install.sh (Step 4.5) copies it to the runtime location below.\n"
+          "Re-run install.sh, or set OPENCLAW_VIDEO_PIPELINE_MANIFEST to its path.\n"
+          f"Looked in:\n  {looked}", file=sys.stderr)
     sys.exit(2)
 
 
@@ -179,6 +203,17 @@ def _pipeline_selected(run_dir: Path) -> str:
 # column is never skipped. A disabled board (no MISSION_CONTROL_URL) makes all of
 # this a clean no-op, and the campaign_id + finished MP4 path are stamped into the
 # render receipt at V-CONTROL. (FIX-S36-40)
+#
+# SK1-64 (producer self-done — INTENTIONAL EXEMPTION, documented): the producer walks
+# the card to `done` client-side, but two things keep this from being an unchecked
+# self-grade. (1) The board move is fail-soft and the CENTRAL Command Center server is
+# the final authority: an enforcing board rejects a builder review->done self-advance
+# (403) and its INDEPENDENT auto-scorer owns the promotion (same contract as Skill 36's
+# cc-task.sh). (2) The V-CONTROL completeness gate itself is independent of the
+# producer's claim — run_postflight_gate now ffprobe-DECODES the actual rendered MP4
+# (SK1-62/SK1-68) rather than trusting the receipt's self-attested ffprobe_pass. So the
+# "done" here is gated by a machine re-verification of the real artifact, not a bare
+# self-attestation. This is an intentional exemption, not an ungated promotion.
 # ---------------------------------------------------------------------------
 def _board_stage_slug(phase_id: str) -> str:
     return str(phase_id).lower()[:64]
@@ -411,9 +446,18 @@ def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:
     est = _estimated_cost(run_dir)
     api_key = _load_kie_api_key()
     if not api_key:
-        print("=== PHASE-0 — no Kie API key on this box; balance pre-flight deferred to "
-              "the generation subprocess ===", flush=True)
-    reason = vbc.kie_balance_preflight(run_dir, est, api_key or None)
+        # SK1-67: a PAID job with no Kie key can never run — its balance cannot be
+        # verified and the paid generation will fail downstream. Deferring here (silent
+        # pass) let a keyless paid job proceed to a mid-run failure. Fail LOUD now.
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: AF-VID-KIE-BALANCE — this is a PAID Kie job but KIE_API_KEY "
+              "is not set on this box. A paid pipeline cannot run and its credit balance "
+              "cannot be verified without the client's Kie key. Set KIE_API_KEY, switch to "
+              "the free documentary-montage path, or re-run adhoc (owner-authorized) to "
+              "skip the balance pre-flight deliberately.", file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
+    reason = vbc.kie_balance_preflight(run_dir, est, api_key)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)
         print("FATAL PHASE-0: " + reason, file=sys.stderr)
