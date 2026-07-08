@@ -10,7 +10,7 @@
 // sibling intake_router.py, which owns all of S0 (parse, secret defense-in-depth,
 // tenant check, dedup, sole-writer upsert, Exceptions capture, detached stage).
 //
-// CONTRACT (verified against dist/hooks-*.js applyHookMappings):
+// CONTRACT (verified against the dist/hooks-*.js hook-mapping applier):
 //   const override = await (await loadTransform(mapping.transform))(ctx);
 //   if (override === null) return { ok: true, action: null, skipped: true };
 // Returning null => the gateway ACKNOWLEDGES the request with NO agent/model turn

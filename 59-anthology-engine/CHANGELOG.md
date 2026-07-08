@@ -1,5 +1,21 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+## 0.1.1 (2026-07-08) -- intake-transform comment scrub (guard-prompt-pins)
+
+Patch fix, no runtime behavior change.
+
+Changed:
+- `config/hooks/transforms/anthology-intake.mjs`: reworded the CONTRACT comment so
+  it no longer contains a token matching the Airtable base-id shape (`app` + 14
+  base62 chars). The token was an incidental camelCase code-identifier (a gateway
+  hook-mapping function name) referenced in documentation, NOT any Airtable base id,
+  and never a runtime value -- but the shipped `guard-prompt-pins.py` runtime-surface
+  scan (check 4a, AF-AE-PROMPT-PIN) matched its shape and failed W5.8. The comment
+  now describes the same dist/hooks-*.js hook-mapping applier without the matching
+  token. The transform still resolves its router purely from environment
+  (`ANTHOLOGY_INTAKE_ROUTER` / `ANTHOLOGY_SCRIPTS_DIR`) and never carries a base id;
+  the engine reaches its state base by the `ANTHOLOGY_STATE_BASE_ID` label only.
+
 ## 0.1.0 (2026-07-07) -- initial skeleton (Wave 1, unit W1.1)
 
 Establishes the certified house layout and the interface contracts every other
