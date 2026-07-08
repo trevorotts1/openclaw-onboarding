@@ -217,6 +217,47 @@ class TestWhitelistEnforced(unittest.TestCase):
             os.environ.pop("CAF_APPROVAL_TOKEN", None)
 
 
+class TestNoneLocationFailClosed(unittest.TestCase):
+    """SK1-48: a WRITE whose target location_id is None (unresolved sub-account) must
+    be REFUSED, never allowed to skip the whitelist. GETs still pass (they return
+    before the whitelist rule)."""
+
+    def setUp(self):
+        os.environ.pop("CAF_DRY_RUN", None)
+        # Whitelist + approval BOTH satisfied — proving the None-location refusal is
+        # independent of them (the old code let a None-location write through here).
+        os.environ["CAF_ALLOWED_LOCATION_IDS"] = "ALLOWED_LOC"
+        os.environ["CAF_APPROVAL_TOKEN"] = "test-token"
+        self.sg = _fresh_safety_gate()
+        socket.socket.connect = _guarded_connect
+
+    def tearDown(self):
+        os.environ.pop("CAF_ALLOWED_LOCATION_IDS", None)
+        os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        socket.socket.connect = _original_connect
+
+    def test_none_location_on_write_is_refused(self):
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.sg.check_write(
+                method="POST",
+                url="https://services.leadconnectorhq.com/contacts/",
+                payload={},
+                location_id=None,
+            )
+
+    def test_none_location_on_get_still_passes(self):
+        # A GET with no location must NOT raise (returns before the whitelist rule).
+        try:
+            self.sg.check_write(
+                method="GET",
+                url="https://services.leadconnectorhq.com/contacts/",
+                payload=None,
+                location_id=None,
+            )
+        except self.sg.SafetyRefused:
+            self.fail("A GET must not be blocked by the location whitelist")
+
+
 class TestZHCStandingApproval(unittest.TestCase):
     """ZHC-prefixed workflow names must pass approval without a token."""
 
@@ -335,6 +376,7 @@ if __name__ == "__main__":
         TestDryRunEnvPath,
         TestWhitelistFailClosed,
         TestWhitelistEnforced,
+        TestNoneLocationFailClosed,
         TestZHCStandingApproval,
         TestZHCFolderApprovalGate,
         TestDraftOnlyFlag,

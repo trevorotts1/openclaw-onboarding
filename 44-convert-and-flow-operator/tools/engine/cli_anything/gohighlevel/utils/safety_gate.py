@@ -71,7 +71,9 @@ def check_write(
         url:           Full request URL.
         payload:       Request body (for dry-run printing).
         location_id:   The GHL location/sub-account ID being targeted.
-                       If None the gate skips the whitelist check (GET-only callers).
+                       For a WRITE this MUST resolve to a real, whitelisted id — None
+                       (unresolved target) is refused fail-closed. GET callers return
+                       before the whitelist check, so None is only meaningful on writes.
         workflow_name: Workflow/folder name for ZHC standing-approval check.
 
     Raises:
@@ -89,21 +91,30 @@ def check_write(
         sys.exit(0)
 
     # Rule 2 — LOCATION WHITELIST: fail-closed (empty list = refuse all).
-    if location_id is not None:
-        allowed = _env_set("CAF_ALLOWED_LOCATION_IDS")
-        if not allowed:
-            raise SafetyRefused(
-                "WRITE REFUSED: CAF_ALLOWED_LOCATION_IDS is empty or unset.\n"
-                "Set it in ~/.openclaw/secrets/.env:\n"
-                "  GOHIGHLEVEL_ALLOWED_LOCATION_IDS=YOUR_LOCATION_ID\n"
-                "Leaving it empty intentionally blocks all writes (fail-closed)."
-            )
-        if location_id not in allowed:
-            raise SafetyRefused(
-                f"WRITE REFUSED: location '{location_id}' is not in the approved whitelist.\n"
-                f"Approved: {sorted(allowed)}\n"
-                "Add it to GOHIGHLEVEL_ALLOWED_LOCATION_IDS if this is your sub-account."
-            )
+    # A WRITE with an UNKNOWN target (location_id is None) can NOT be whitelist-checked.
+    # GET callers already returned above, so reaching here with None means a mutating
+    # request whose sub-account is unresolved — refuse it (never skip the whitelist).
+    if location_id is None:
+        raise SafetyRefused(
+            "WRITE REFUSED: the target location_id is unknown/unresolved for this write.\n"
+            "A mutating request must target an explicit, whitelisted GHL sub-account.\n"
+            "Set GOHIGHLEVEL_LOCATION_ID (and GOHIGHLEVEL_ALLOWED_LOCATION_IDS) so the\n"
+            "safety gate can verify the location before any write (fail-closed)."
+        )
+    allowed = _env_set("CAF_ALLOWED_LOCATION_IDS")
+    if not allowed:
+        raise SafetyRefused(
+            "WRITE REFUSED: CAF_ALLOWED_LOCATION_IDS is empty or unset.\n"
+            "Set it in ~/.openclaw/secrets/.env:\n"
+            "  GOHIGHLEVEL_ALLOWED_LOCATION_IDS=YOUR_LOCATION_ID\n"
+            "Leaving it empty intentionally blocks all writes (fail-closed)."
+        )
+    if location_id not in allowed:
+        raise SafetyRefused(
+            f"WRITE REFUSED: location '{location_id}' is not in the approved whitelist.\n"
+            f"Approved: {sorted(allowed)}\n"
+            "Add it to GOHIGHLEVEL_ALLOWED_LOCATION_IDS if this is your sub-account."
+        )
 
     # Rule 3 — APPROVAL GATE: internal-API writes require approval.
     if not _is_approved(workflow_name):
