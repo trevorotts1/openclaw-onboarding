@@ -50,14 +50,25 @@ import sys
 from typing import Optional
 
 
-# Hardcoded filter — never recommend these
+# Hardcoded filter — never recommend these. ROOT-anchored (MODEL-01), never
+# per-generation, so renamed/future Claude families stay forbidden with no code
+# change. Kept at BYTE parity with the Command Center TypeScript selector's
+# FORBIDDEN_PREFIXES (blackceo-command-center src/lib/model-selector.ts):
+#   anthropic/            canonical provider-prefixed route
+#   anthropic.            Bedrock/Vertex dot-form (anthropic.claude-…, any gen)
+#   openrouter/anthropic/ nested OpenRouter route
+#   claude-               any Claude family/generation slug w/ no provider prefix
+#                         (claude-5, claude-fable-5, claude-mythos-5, claude-instant)
+# The old per-generation list (claude-3/-4/-opus/-sonnet/-haiku) silently ALLOWED
+# the anthropic. dot route, claude-5/future gens, and named future models.
+# Bare opus/sonnet/haiku (no vendor prefix, no `claude-` stem) are NOT routable
+# model ids on any connector, so they are deliberately NOT matched — a substring
+# match would false-positive on unrelated ids.
 FORBIDDEN_PREFIXES = (
     "anthropic/",
-    "claude-opus",
-    "claude-sonnet",
-    "claude-haiku",
-    "claude-3",
-    "claude-4",
+    "anthropic.",
+    "openrouter/anthropic/",
+    "claude-",
 )
 
 # ─── Intelligent Model Selector (v12.15.0) ───────────────────────────────────
@@ -436,6 +447,9 @@ def _parse_version(s: str) -> tuple:
 
 
 def _is_forbidden(model_id: str) -> bool:
+    # Substring match against the ROOT anchors (MODEL-01). Semantics kept identical
+    # to the TS twin's isForbidden (`mid.includes(p)`): `p in mid` already subsumes
+    # `startswith`, so both engines forbid the SAME set. See parity check.
     mid = model_id.lower()
     return any(mid.startswith(p) or p in mid for p in FORBIDDEN_PREFIXES)
 
