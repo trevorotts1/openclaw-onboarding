@@ -1068,6 +1068,18 @@ else
     guard_reasons+=("telegram-no-messages-delivered")
   fi
 
+  # SK1-18: an artifact HELD by the 8.5 quality gate must BLOCK "done". The step
+  # matrix above only sees STEP_*_STATUS=="failed", but an artifact that
+  # generated fine and then failed the gate keeps STEP_*_STATUS=ok while
+  # GATE_*_RESULT=held and .qualityHeld lists it — so a sub-8.5 org chart / flow
+  # diagram / notion doc / video could otherwise reach a "done" stamp. Force
+  # partial while anything is held; the resume cron regenerates + re-rates, and
+  # "done" becomes reachable only once .qualityHeld is empty (all passed).
+  held_artifacts=$(state_get '.qualityHeld | join(",")')
+  if [[ -n "$held_artifacts" ]]; then
+    guard_reasons+=("artifacts-held-by-quality-gate:${held_artifacts}")
+  fi
+
   if (( ${#guard_reasons[@]} > 0 )); then
     greason="phantom-closeout-guard: $(IFS=,; echo "${guard_reasons[*]}")"
     state_set ".closeoutStatus = \"partial\" | .closeoutPartialReason = \"$greason\" | .closeoutCompletedAt = \"$(now_iso)\""
