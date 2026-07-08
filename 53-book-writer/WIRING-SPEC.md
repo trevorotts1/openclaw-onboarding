@@ -163,6 +163,14 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 - Owning department: the Content / Publishing lineage (same owner as Skills 50/51). One Kanban `sops`
   row ("Book Writer build"); one card per book run, lane advances at gate boundaries; Review/QC → Done
   is BLOCKED without the `PROCESS-CERTIFICATE`. No new endpoint, no schema change.
+  **Resolved concrete slug (FIX-BK-DEPT-01):** the real, mandatory, always-seeded department this
+  lineage resolves to is `marketing` — see `23-ai-workforce-blueprint/skill-department-map.json`'s
+  skill-53 entry (`"departments": ["marketing"]`, matching siblings 52/54/55/56) and
+  `23-ai-workforce-blueprint/department-naming-map.json`'s `.mandatory` list. `run_book_writer.py`'s
+  `mc_board.begin_run(..., department=...)` call MUST use this exact slug — a standalone `"books"`
+  slug was shipped instead and was never actually seeded anywhere, so every card silently
+  dropped/misrouted (`mc_board.py` fails soft on an unrecognized `department_slug`). See
+  `scripts/test_department_slug.py` for the regression guard.
 - Add a bullet to the owning department's `how-to-use-this-department.md`: *"Write my 12-chapter book /
   4x3x3 offer book — the Book version of the Avatar Alchemist."*
 - Section-8 "Tools You Use" bullet in relevant role files points to `53-book-writer/SKILL.md` +

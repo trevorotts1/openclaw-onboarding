@@ -703,10 +703,18 @@ def run(bk: Book) -> int:
 def _mc_board_begin(run_dir):
     try:
         import mc_board
+        # FIX-BK-DEPT-01: "books" was never a real, seeded department (no script
+        # anywhere in this repo creates one) — mc_board fails SOFT on an unrecognized
+        # department_slug, so every Book Writer card was silently dropped/misrouted.
+        # WIRING-SPEC.md section 8 documents the intended owner as the Content /
+        # Publishing lineage, same owner as Skills 50/51; skill-department-map.json's
+        # skill-53 entry (and its siblings 52/54/55/56) resolves that lineage to the
+        # real, mandatory, always-seeded "marketing" department (see
+        # 23-ai-workforce-blueprint/department-naming-map.json .mandatory).
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title="Book Writer — %s" % run_dir.name,
-            department="books", persona="Book Writer", source="book-writer",
+            department="marketing", persona="Book Writer", source="book-writer",
             receipt_subdir=RECEIPT_SUBDIR)
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
