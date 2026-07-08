@@ -87,7 +87,7 @@ _json_create() {
   local desc="$1" extra=""
   [ -n "$SOP_ID" ]     && extra="${extra},\"sop_id\":\"${SOP_ID}\""
   [ -n "$CREATOR_ID" ] && extra="${extra},\"created_by_agent_id\":\"${CREATOR_ID}\""
-  printf '{"title":"Skill 38 — Conversational AI System install","description":"%s","priority":"medium","department":"Communications"%s}' "$desc" "$extra"
+  printf '{"title":"Skill 38 — Conversational AI System install","description":"%s","priority":"medium","department":"communications"%s}' "$desc" "$extra"
 }
 
 # Build a status-transition JSON body. $1 = target column (in_progress | review | blocked).
