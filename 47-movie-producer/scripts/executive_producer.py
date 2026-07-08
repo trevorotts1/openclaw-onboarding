@@ -203,6 +203,17 @@ def _pipeline_selected(run_dir: Path) -> str:
 # column is never skipped. A disabled board (no MISSION_CONTROL_URL) makes all of
 # this a clean no-op, and the campaign_id + finished MP4 path are stamped into the
 # render receipt at V-CONTROL. (FIX-S36-40)
+#
+# SK1-64 (producer self-done — INTENTIONAL EXEMPTION, documented): the producer walks
+# the card to `done` client-side, but two things keep this from being an unchecked
+# self-grade. (1) The board move is fail-soft and the CENTRAL Command Center server is
+# the final authority: an enforcing board rejects a builder review->done self-advance
+# (403) and its INDEPENDENT auto-scorer owns the promotion (same contract as Skill 36's
+# cc-task.sh). (2) The V-CONTROL completeness gate itself is independent of the
+# producer's claim — run_postflight_gate now ffprobe-DECODES the actual rendered MP4
+# (SK1-62/SK1-68) rather than trusting the receipt's self-attested ffprobe_pass. So the
+# "done" here is gated by a machine re-verification of the real artifact, not a bare
+# self-attestation. This is an intentional exemption, not an ungated promotion.
 # ---------------------------------------------------------------------------
 def _board_stage_slug(phase_id: str) -> str:
     return str(phase_id).lower()[:64]
