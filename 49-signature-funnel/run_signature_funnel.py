@@ -644,7 +644,13 @@ def _mc_board_begin(run_dir: Path) -> Optional[str]:
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title=f"Signature Funnel — {run_dir.name}",
-            department="funnels", persona="Signature Funnel",
+            # FIX-BOARD-DEPT-01: route the CC card to Skill 49's real owning
+            # department. "funnels" was NEVER a seeded fleet department (absent
+            # from 23-ai-workforce-blueprint/department-naming-map.json + the
+            # department-floor), so every card silently misrouted/dropped. Skill
+            # 49's authoritative department in skill-department-map.json is
+            # web-development (primary role: signature-funnel-specialist).
+            department="web-development", persona="Signature Funnel",
             source="signature-funnel")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print(f"[mc_board] begin best-effort skip ({exc})", file=sys.stderr)
