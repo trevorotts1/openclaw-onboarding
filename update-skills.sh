@@ -2509,6 +2509,28 @@ PYEOF
       else
         echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in agents.list[])"
       fi
+
+      # DEPARTMENT-RUNTIME-PARITY GUARD (belt-and-suspenders on update runs): the
+      # WIRING-ASSERT above only floors the TOTAL agents.list[] count — it never
+      # verifies EACH INDIVIDUAL department board row (a mission-control.db
+      # `workspaces` row) has ITS OWN matching runtime entry (the
+      # no_specialist_runtime failure class). Cross-checks every seeded
+      # department against agents.list[] using the same slug variants
+      # blackceo-command-center's resolveSpecialistSessionKey() tries. Non-fatal
+      # here (matches this block's own WARN-and-continue convention above) —
+      # the SAME check is a HARD, install-blocking gate in run-full-install.sh
+      # Phase 6e2, which this update run also invokes moments later via
+      # --update-only below, so a real mismatch is never silently swallowed.
+      _DEPT_PARITY_GUARD="$SKILLS_DIR/32-command-center-setup/scripts/guard-department-runtime-parity.py"
+      if [ -f "$_DEPT_PARITY_GUARD" ]; then
+        if _DEPT_PARITY_OUT="$(python3 "$_DEPT_PARITY_GUARD" --config "$OC_JSON" 2>&1)"; then
+          echo "  ✓ ${_DEPT_PARITY_OUT##*] }"
+        else
+          echo "  ⚠ DEPARTMENT-RUNTIME-PARITY FAIL — one or more seeded departments have no matching OpenClaw runtime:"
+          printf '%s\n' "$_DEPT_PARITY_OUT" | while IFS= read -r _line; do echo "  ⚠   $_line"; done
+          echo "  ⚠ Update continues; this is also a hard install-blocking gate in run-full-install.sh (Phase 6e2)"
+        fi
+      fi
     else
       echo "  ⚠ WIRING-ASSERT FAIL: materialize-dept-agents.sh exited non-zero — dept agents NOT registered"
       echo "  ⚠ Check that Skill 32 is installed and build-workforce.py has produced department folders"

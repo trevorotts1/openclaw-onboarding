@@ -1000,6 +1000,61 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6e2 -- Department runtime parity guard (per-department reconciliation)
+# ----------------------------------------------------------------------
+# THE GAP THIS CLOSES: Phase 4's AGENT_COUNT check above is a blunt TOTAL COUNT
+# floor over agents.list[] -- it passes as long as *some* two agents exist
+# anywhere in agents.list[], and NEVER verifies that EVERY individual
+# department seeded onto the board by 6b/6e (a `workspaces` row in
+# mission-control.db) has ITS OWN matching runtime entry.
+# materialize-dept-agents.sh (folder-scan of 3 hardcoded roots) and
+# seed-workspaces.py (departments.json + its own separate folder-scan
+# fallback) are two INDEPENDENT department-discovery mechanisms with NO
+# cross-check between them. If N-2 departments wire correctly and 2 silently
+# don't, the total-count floor still passes -- those 2 departments get a full
+# board row (Kanban column, "<Name> Lead" agent row, starter task) and ZERO
+# working OpenClaw runtime. That is exactly the `no_specialist_runtime`
+# failure class blackceo-command-center's resolveSpecialistSessionKey()
+# (src/lib/task-dispatcher.ts) documents: a task assigned to that
+# department's dashboard agent can never resolve a runtime session key and is
+# held "routed but not dispatched" forever -- invisible until a client
+# notices nothing happens for that one department.
+#
+# Runs AFTER 6b (workspaces seeded) and 6e (dashboard agent rows exist) so
+# every department this box currently knows about gets checked. Unlike
+# 6b-6f (WARN-only), this IS a hard, install-blocking gate (fail-closed) --
+# a genuine per-department mismatch calls fail_install, listing exactly which
+# department(s) failed. A missing/empty mission-control.db (nothing seeded
+# yet) is NOT a failure -- there is nothing to reconcile.
+log "INFO" "phase=6e2 department-runtime-parity: starting"
+DEPT_PARITY_GUARD="$SKILL_DIR/scripts/guard-department-runtime-parity.py"
+if [[ -f "$DEPT_PARITY_GUARD" ]] && command -v python3 >/dev/null 2>&1; then
+  DEPT_PARITY_OUT="$(python3 "$DEPT_PARITY_GUARD" --config "$OC_ROOT/openclaw.json" --json 2>&1)"; DEPT_PARITY_RC=$?
+  printf '%s\n' "$DEPT_PARITY_OUT" >> "$LOG_FILE"
+  if [[ "$DEPT_PARITY_RC" -eq 0 ]]; then
+    DEPT_PARITY_CHECKED=$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('checked',0)))" 2>/dev/null || echo "0")
+    log "INFO" "phase=6e2 department-runtime-parity: PASS (${DEPT_PARITY_CHECKED} department(s) checked, all have a matching runtime)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = true'; fi
+  else
+    DEPT_PARITY_NAMES="$(printf '%s' "$DEPT_PARITY_OUT" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    names = [m.get('name', '?') for m in d.get('mismatches', [])]
+    sys.stdout.write(', '.join(names) if names else '<unparseable guard output -- see log>')
+except Exception:
+    sys.stdout.write('<unparseable guard output -- see log>')
+" 2>/dev/null || echo "<unparseable guard output -- see log>")"
+    log "ERROR" "phase=6e2 department-runtime-parity: FAIL (rc=$DEPT_PARITY_RC) -- department(s) with no matching runtime: $DEPT_PARITY_NAMES"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = false'; fi
+    fail_install "phase=6e2: department-runtime-parity guard found department(s) with a board row but NO matching OpenClaw runtime entry: ${DEPT_PARITY_NAMES} (rc=$DEPT_PARITY_RC; see $LOG_FILE for full detail; run materialize-dept-agents.sh then re-run install)"
+  fi
+else
+  log "WARN" "phase=6e2 department-runtime-parity: $DEPT_PARITY_GUARD not found (or python3 missing) -- skipping (Skill 32 not at the version that ships this guard)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDeptRuntimeParity = "script-missing"'; fi
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6f -- CEO Performance Board KPI rollup (kpi-rollup.json)
 # ----------------------------------------------------------------------
 # Wires the previously-orphaned generate-kpi-rollup.py so the CEO Performance
@@ -1185,7 +1240,8 @@ if [[ -f "$STATE_FILE" ]]; then
       {k:"workspacesSeeded(6b)",       v:.commandCenterWorkspacesSeeded},
       {k:"departmentsSynced(6c)",      v:.commandCenterDepartmentsSynced},
       {k:"mdContentSynced(6d)",        v:.commandCenterMdContentSynced},
-      {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded} ]
+      {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded},
+      {k:"deptRuntimeParity(6e2)",     v:.commandCenterDeptRuntimeParity} ]
     | map(select(.v != null and .v != true) | .k) | join(", ")
   ' "$STATE_FILE" 2>/dev/null || echo "")"
   if [[ "$(state_get '.zheGateStatus')" == "failed" ]]; then
