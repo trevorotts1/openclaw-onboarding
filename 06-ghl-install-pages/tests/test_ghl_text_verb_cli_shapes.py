@@ -211,23 +211,46 @@ class TestFormBuilderTextVerbShapes:
         assert cp.returncode != 0, "a double miss must stay rc!=0 (never fake ok)"
         assert len(rec.argvs) == 2
 
-    def test_try_rename_uses_xpath_dblclick_and_keyboard_type(self, monkeypatch):
-        rec = _Recorder(stdout_map={"snapshot": "Form 1 Untitled Podcast Signup"})
-        monkeypatch.setattr(subprocess, "run", rec.run)
-        with bm.browser_session(_SESSION):
-            ok = fb._try_rename(_SESSION, "Podcast Signup")
-        assert ok is True
-        joined = [" ".join(a) for a in rec.argvs]
-        assert any('dblclick //*[normalize-space(text())="Form 1"]' in j
-                   for j in joined), (
-            "title dblclick must bind by XPath TEXT (dblclick has no text mode "
-            f"and 'Form 1' is not a selector): {joined!r}")
-        assert any(_tail(a, 3) == ["keyboard", "type", "Podcast Signup"]
-                   for a in rec.argvs), (
-            "typing into the focused inline editor must be `keyboard type "
-            f"<text>` (bare `type <text>` parses the text as a selector): {joined!r}")
-        for a in rec.argvs:   # the bare `type` VERB itself must never be emitted
-            assert a[a.index("--session") + 2] != "type", f"bare `type`: {a!r}"
+    def test_rename_no_longer_uses_the_unreachable_top_frame_walk(self, monkeypatch):
+        """v18.1.5 REGRESSION LOCK: the F3 rename must ride the FRAME-SCOPED
+        inline-title primitive — the old top-frame `dblclick <xpath>` +
+        `keyboard type` walk (locked here until v18.1.4) could NEVER reach the
+        in-iframe title and failed SILENTLY (live 2026-07-07: a real form was
+        left default-named, so cleanup's name search missed it). `_try_rename`
+        is gone; `_rename_form_title` delegates to ghl_iframe_drag with the
+        form iframe selector + the pattern specs (the default number in
+        'Form <n>' is unknowable)."""
+        assert not hasattr(fb, "_try_rename"), \
+            "the silent top-frame rename walk must not come back"
+        calls = {}
+
+        class _FakeIdg:
+            DEFAULT_FORM_TITLE_SPECS = (r"re:^Form\s*\d+$", "text=Untitled")
+
+            class IframeDragError(RuntimeError):
+                def __init__(self, code, reason):
+                    self.code, self.reason = code, reason
+                    super().__init__(f"{code}: {reason}")
+
+            @staticmethod
+            def set_inline_title(cdp_url, *, iframe_selector, new_title,
+                                 title_specs, url_marker):
+                calls["set"] = {"iframe_selector": iframe_selector,
+                                "new_title": new_title,
+                                "title_specs": tuple(title_specs),
+                                "url_marker": url_marker}
+                return {"ok": True, "old_title": "Form 55", "verified": True}
+
+        monkeypatch.setattr(fb, "ghl_iframe_drag", _FakeIdg)
+        monkeypatch.setattr(fb, "_get_cdp_url", lambda s: "ws://live")
+        r = fb._rename_form_title(_SESSION, "Podcast Signup")
+        assert r["renamed"] is True
+        assert r["actual_title"] == "Podcast Signup"
+        assert r["old_title"] == "Form 55"
+        assert calls["set"]["iframe_selector"] == fb.GHL_FORM_IFRAME_SELECTOR
+        assert calls["set"]["url_marker"] == "form-builder"
+        assert any(s.startswith("re:^Form") for s in calls["set"]["title_specs"]), \
+            "the title must be located by PATTERN (the default number is unknowable)"
 
 
 # ---------------------------------------------------------------------------

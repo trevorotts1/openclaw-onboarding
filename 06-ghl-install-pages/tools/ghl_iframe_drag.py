@@ -67,6 +67,39 @@ SURVEY builder (``ghl_survey_builder.py``) by this fix; the PAGE/FUNNEL "Code"
 element drag (gates.json recipe, currently REST-served so not yet a live drag) can
 be wired to the SAME primitive when that path goes live.
 
+SCROLL-INTO-VIEW + CATEGORY-HINT LOCATE (v1.1.0 — the ``F5.locate:City`` fix)
+-----------------------------------------------------------------------------
+The Quick-Add panel is a SCROLLABLE column of category sections (SELECTORS-LIVE-
+form.md §8: Personal Info · Submit · Payments · Address · Text · Choice · Rating ·
+Customized · Other). A tile in a category below the fold (live 2026-07-07:
+``City`` under ``Address``) is NOT on screen at drag time, so the old flow either
+missed it in the a11y snapshot (→ a false ``F5.locate`` STOP) or aimed the pointer
+at off-viewport coordinates. Fix, for ANY field in ANY category (never a
+City-only patch):
+  • ``drive_drag`` now calls Playwright's ``scroll_into_view_if_needed()`` on BOTH
+    the source tile and the drop target BEFORE reading their bounding boxes
+    (actionability-aware; no-op when already fully visible per IntersectionObserver
+    — playwright.dev/python docs, verified 2026-07-07).
+  • ``source_scroll_hint`` (e.g. the tile's CATEGORY header text ``"Address"``):
+    when the source cannot be located/scrolled directly, the hint element is
+    scrolled into view FIRST (revealing its section), then the source is retried.
+    Fail-closed at every step — a tile that genuinely does not exist still raises
+    ``source-not-found``.
+
+FRAME-SCOPED INLINE-TITLE READ/SET (v1.1.0 — the F3 rename fix)
+----------------------------------------------------------------
+The builder's title ("Form 55" / "Survey 0") is an in-iframe INLINE-EDIT surface
+— not a top-frame input — so agent-browser's top-frame ``dblclick``/``fill`` can
+never reach it (same cross-origin constraint as the drag). ``set_inline_title``
+attaches over the SAME CDP session and, inside the iframe: locates the title by a
+PATTERN list (regex-capable — the default number in "Form <n>" is unknowable),
+clicks (then double-clicks) it into edit mode, VERIFIES an editable element
+actually took focus (fail-closed ``title-not-editable`` otherwise), selects-all
+(``ControlOrMeta+A``), types the new title, commits (Enter), and VERIFIES the new
+text is present in the iframe (fail-closed ``title-not-set``). ``read_inline_title``
+returns the CURRENT title text so cleanup can positively target the form by the
+name it ACTUALLY carries even when the rename failed.
+
 HEADLESS (D6): this module NEVER opens a visible window. The live path attaches to
 agent-browser's already-headless Chromium via CDP; the self-test's own browser
 uses ``launch_persistent_context(..., headless=True)`` (never a bare ``launch()``,
@@ -96,9 +129,10 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 # ---------------------------------------------------------------------------
 # Soft import — the module stays importable (and its dep-free --selftest stays
@@ -118,7 +152,7 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.0.0"
+IFRAME_DRAG_VERSION = "v1.1.0"
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -175,6 +209,9 @@ def _resolve_locator(frame: Any, spec: str) -> Any:
     Spec grammar (kept deliberately small; GHL tiles are located by visible text):
       * ``"text=Foo"``  → ``frame.get_by_text("Foo", exact=False).first`` (default)
       * ``"exact=Foo"`` → ``frame.get_by_text("Foo", exact=True).first``
+      * ``"re:PAT"``    → ``frame.get_by_text(re.compile(PAT)).first`` (regex —
+                          needed for pattern-only surfaces like the default
+                          builder title ``Form <n>``, whose number is unknowable)
       * ``"css=SEL"``   → ``frame.locator("SEL").first``
       * bare ``"Foo"``  → treated as ``text=Foo``
     """
@@ -185,9 +222,91 @@ def _resolve_locator(frame: Any, spec: str) -> Any:
         return frame.locator(s[4:]).first
     if s.startswith("exact="):
         return frame.get_by_text(s[6:], exact=True).first
+    if s.startswith("re:"):
+        return frame.get_by_text(re.compile(s[3:])).first
     if s.startswith("text="):
         return frame.get_by_text(s[5:], exact=False).first
     return frame.get_by_text(s, exact=False).first
+
+
+def _scroll_into_view(loc: Any, *, what: str, spec: str, timeout_ms: int) -> None:
+    """Scroll ``loc`` into view via Playwright's actionability-aware
+    ``scroll_into_view_if_needed`` (a no-op when the element is already fully
+    visible per IntersectionObserver). FAIL-CLOSED: a scroll that cannot complete
+    (detached / permanently hidden element) raises :class:`IframeDragError` — the
+    pointer must NEVER be aimed at coordinates that were never brought on-screen."""
+    try:
+        loc.scroll_into_view_if_needed(timeout=timeout_ms)
+    except IframeDragError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any Playwright timeout/lookup failure
+        raise IframeDragError(
+            f"{what}-scroll-failed",
+            f"{what} {spec!r} resolved but could not be scrolled into view within "
+            f"{timeout_ms}ms ({type(exc).__name__}). STOP — never aim the pointer at "
+            "an off-screen element.") from exc
+
+
+def _bring_source_into_view(frame: Any, src: Any, source: str, *,
+                            iframe_selector: str,
+                            scroll_hint: Optional[str],
+                            timeout_ms: int) -> None:
+    """Make the drag SOURCE actually on-screen inside the iframe, fail-closed.
+
+    1. Direct path: wait for the source, then ``scroll_into_view_if_needed`` (this
+       alone fixes a tile that is rendered but below the fold of its panel).
+    2. Hint path (``scroll_hint`` — e.g. the Quick-Add CATEGORY header text): when
+       the direct path misses (a lazily-rendered / far-off-screen section), scroll
+       the HINT element into view first to reveal its section, then retry the
+       source. The hint element missing too → ``scroll-hint-not-found``; the
+       source still missing after the hint scroll → ``source-not-found`` (honest —
+       the tile genuinely is not there)."""
+    direct_exc: Optional[Exception] = None
+    try:
+        src.wait_for(state="visible", timeout=timeout_ms)
+        _scroll_into_view(src, what="source", spec=source, timeout_ms=timeout_ms)
+        return
+    except IframeDragError as exc:
+        direct_exc = exc
+    except Exception as exc:  # noqa: BLE001
+        direct_exc = exc
+    if not scroll_hint:
+        raise IframeDragError(
+            "source-not-found",
+            f"drag SOURCE {source!r} was not found/visible inside the cross-origin "
+            f"iframe {iframe_selector!r} within {timeout_ms}ms "
+            f"({type(direct_exc).__name__}), and no scroll hint (category) was "
+            "given to reveal it. STOP — the tile is genuinely unreachable; do not "
+            "brute-force.") from direct_exc
+    hint = _resolve_locator(frame, scroll_hint)
+    try:
+        hint.wait_for(state="visible", timeout=timeout_ms)
+        _scroll_into_view(hint, what="scroll-hint", spec=scroll_hint,
+                          timeout_ms=timeout_ms)
+    except IframeDragError as exc:
+        raise IframeDragError(
+            "scroll-hint-not-found",
+            f"drag SOURCE {source!r} missed directly AND its scroll hint "
+            f"{scroll_hint!r} could not be scrolled into view ({exc.code}). "
+            "STOP — cannot reveal the tile's section.") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "scroll-hint-not-found",
+            f"drag SOURCE {source!r} missed directly AND its scroll hint "
+            f"{scroll_hint!r} was not found/visible inside {iframe_selector!r} "
+            f"within {timeout_ms}ms ({type(exc).__name__}). STOP.") from exc
+    try:
+        src.wait_for(state="visible", timeout=timeout_ms)
+        _scroll_into_view(src, what="source", spec=source, timeout_ms=timeout_ms)
+    except IframeDragError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "source-not-found",
+            f"drag SOURCE {source!r} is still not found/visible inside "
+            f"{iframe_selector!r} even after scrolling its hint {scroll_hint!r} "
+            f"into view ({type(exc).__name__}). STOP — the tile is genuinely "
+            "absent; do not brute-force.") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -210,16 +329,20 @@ def drive_drag(
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     target_dx: float = 0.0,
     target_dy: float = 0.0,
+    source_scroll_hint: Optional[str] = None,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> Dict[str, Any]:
     """Perform the frame-scoped coordinate-drag on ``page`` and return a receipt.
 
-    Resolve source + target INSIDE the (possibly cross-origin) iframe, take their
-    true page-coordinate bounding boxes, then move the real pointer from source to
-    target in many interpolated hops so GHL's drag sensor fires. FAIL-CLOSED: any
-    unlocatable element / null box raises :class:`IframeDragError`. When
-    ``verify_text`` is given, the placement is confirmed by re-querying the iframe
-    for that text and the receipt's ``placed`` reflects the truth (never faked)."""
+    Resolve source + target INSIDE the (possibly cross-origin) iframe, SCROLL BOTH
+    INTO VIEW (with the optional ``source_scroll_hint`` — e.g. the Quick-Add
+    category header — revealing a below-the-fold section first; v1.1.0), take
+    their true page-coordinate bounding boxes AFTER the scrolls, then move the
+    real pointer from source to target in many interpolated hops so GHL's drag
+    sensor fires. FAIL-CLOSED: any unlocatable / unscrollable element / null box
+    raises :class:`IframeDragError`. When ``verify_text`` is given, the placement
+    is confirmed by re-querying the iframe for that text and the receipt's
+    ``placed`` reflects the truth (never faked)."""
     if not iframe_selector or not str(iframe_selector).strip():
         raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
 
@@ -227,18 +350,26 @@ def drive_drag(
     src = _resolve_locator(frame, source)
     tgt = _resolve_locator(frame, target)
 
-    # Wait for the SOURCE tile to be present in the iframe (fail-closed on absence).
+    # Bring the SOURCE tile on-screen (scroll; category-hint fallback) — fail-closed.
+    _bring_source_into_view(frame, src, source, iframe_selector=iframe_selector,
+                            scroll_hint=source_scroll_hint, timeout_ms=timeout_ms)
+
+    # Bring the drop TARGET on-screen too (a canvas landmark can equally sit below
+    # the fold). Fail-closed with its own honest codes.
     try:
-        src.wait_for(state="visible", timeout=timeout_ms)
+        tgt.wait_for(state="visible", timeout=timeout_ms)
     except IframeDragError:
         raise
-    except Exception as exc:  # noqa: BLE001 - any Playwright timeout/lookup failure
+    except Exception as exc:  # noqa: BLE001
         raise IframeDragError(
-            "source-not-found",
-            f"drag SOURCE {source!r} was not found/visible inside the cross-origin "
+            "target-not-found",
+            f"drop TARGET {target!r} was not found/visible inside the cross-origin "
             f"iframe {iframe_selector!r} within {timeout_ms}ms ({type(exc).__name__}). "
-            "STOP — the tile is genuinely unreachable; do not brute-force.") from exc
+            "STOP — no drop landmark to aim at.") from exc
+    _scroll_into_view(tgt, what="target", spec=target, timeout_ms=timeout_ms)
 
+    # Boxes are read AFTER both scrolls so the coordinates reflect the final
+    # scroll positions (a stale pre-scroll box would aim the pointer wrong).
     sbox = src.bounding_box()
     tbox = tgt.bounding_box()
     if sbox is None:
@@ -289,6 +420,7 @@ def drive_drag(
         "target_point": [tx, ty],
         "mouse_events": moves,        # move + down(implicit) + interp + settle
         "interpolated_moves": int(max(1, interpolated_moves)),
+        "source_scroll_hint": source_scroll_hint,
         "verify_text": verify_text,
         "placed": placed,
     }
@@ -352,6 +484,38 @@ def _select_page(browser: Any, url_marker: Optional[str], iframe_selector: str) 
 # ---------------------------------------------------------------------------
 # The public LIVE entry point — attach to agent-browser's Chromium via CDP.
 # ---------------------------------------------------------------------------
+def _attach_over_cdp(p: Any, cdp_url: str) -> Any:
+    """Attach Playwright to the already-running agent-browser Chromium; fail-closed."""
+    try:
+        return p.chromium.connect_over_cdp(cdp_url)
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "cdp-connect-failed",
+            f"could not attach Playwright to agent-browser's Chromium at the given "
+            f"CDP endpoint ({type(exc).__name__}). Confirm the session is alive "
+            f"(`get cdp-url`).") from exc
+
+
+def _require_playwright(capability: str) -> None:
+    if not PLAYWRIGHT_AVAILABLE:
+        raise IframeDragError(
+            "playwright-unavailable",
+            f"the frame-scoped {capability} needs Playwright (Python) to reach into "
+            "the cross-origin GHL builder iframe, and it is not importable here. Install "
+            "it SCOPED to Skill 6 (e.g. `python3 -m pip install playwright && python3 -m "
+            "playwright install chromium`). agent-browser 0.27.0 alone CANNOT reach a "
+            "non-interactive element across a cross-origin iframe (see module docstring).")
+
+
+def _require_cdp_url(cdp_url: str) -> None:
+    if not cdp_url or not str(cdp_url).strip():
+        raise IframeDragError(
+            "no-cdp-url",
+            "no CDP url was supplied — read it from the live agent-browser session with "
+            "`get cdp-url` and pass it in so Playwright attaches to the SAME logged-in "
+            "Chromium (no second browser, no re-login).")
+
+
 def coordinate_drag(
     cdp_url: str,
     *,
@@ -366,6 +530,7 @@ def coordinate_drag(
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     target_dx: float = 0.0,
     target_dy: float = 0.0,
+    source_scroll_hint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Attach Playwright to the ALREADY-RUNNING agent-browser Chromium over CDP and
     perform ONE frame-scoped coordinate-drag inside a (cross-origin) builder iframe.
@@ -379,6 +544,9 @@ def coordinate_drag(
         target: Locator spec for the drop landmark inside the iframe.
         url_marker: Substring to pick the builder page among open tabs.
         verify_text: If given, confirm this text appears in the iframe after drop.
+        source_scroll_hint: Optional locator spec (e.g. the tile's CATEGORY header
+            text) scrolled into view FIRST when the source misses directly — the
+            general below-the-fold Quick-Add fix (v1.1.0).
         (others): drag-sensor tuning + a small target offset.
 
     Returns:
@@ -390,30 +558,11 @@ def coordinate_drag(
             fakes success. The underlying agent-browser Chromium is NOT closed —
             only the Playwright CDP connection is detached.
     """
-    if not PLAYWRIGHT_AVAILABLE:
-        raise IframeDragError(
-            "playwright-unavailable",
-            "the frame-scoped coordinate-drag needs Playwright (Python) to reach into "
-            "the cross-origin GHL builder iframe, and it is not importable here. Install "
-            "it SCOPED to Skill 6 (e.g. `python3 -m pip install playwright && python3 -m "
-            "playwright install chromium`). agent-browser 0.27.0 alone CANNOT locate a "
-            "non-interactive tile across a cross-origin iframe (see module docstring).")
-    if not cdp_url or not str(cdp_url).strip():
-        raise IframeDragError(
-            "no-cdp-url",
-            "no CDP url was supplied — read it from the live agent-browser session with "
-            "`get cdp-url` and pass it in so Playwright attaches to the SAME logged-in "
-            "Chromium (no second browser, no re-login).")
+    _require_playwright("coordinate-drag")
+    _require_cdp_url(cdp_url)
 
     with sync_playwright() as p:  # type: ignore[union-attr]
-        try:
-            browser = p.chromium.connect_over_cdp(cdp_url)
-        except Exception as exc:  # noqa: BLE001
-            raise IframeDragError(
-                "cdp-connect-failed",
-                f"could not attach Playwright to agent-browser's Chromium at the given "
-                f"CDP endpoint ({type(exc).__name__}). Confirm the session is alive "
-                f"(`get cdp-url`).") from exc
+        browser = _attach_over_cdp(p, cdp_url)
         try:
             page = _select_page(browser, url_marker, iframe_selector)
             return drive_drag(
@@ -428,11 +577,241 @@ def coordinate_drag(
                 timeout_ms=timeout_ms,
                 target_dx=target_dx,
                 target_dy=target_dy,
+                source_scroll_hint=source_scroll_hint,
             )
         finally:
             # Detach the Playwright CDP connection WITHOUT killing agent-browser's
             # Chromium (it owns the singleton pooled session + its teardown). For a
             # connect_over_cdp browser, close() disconnects the client only.
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ---------------------------------------------------------------------------
+# FRAME-SCOPED INLINE-TITLE READ/SET (v1.1.0) — the F3 rename fix.
+# The builder title ("Form 55" / "Survey 0") is an in-iframe inline-edit surface;
+# top-frame verbs can never reach it (same cross-origin constraint as the drag).
+# ---------------------------------------------------------------------------
+DEFAULT_FORM_TITLE_SPECS: Tuple[str, ...] = (r"re:^Form\s*\d+$", "text=Untitled")
+DEFAULT_SURVEY_TITLE_SPECS: Tuple[str, ...] = (r"re:^Survey\s*\d+$", "text=Untitled")
+
+_FOCUSED_EDITABLE_JS = (
+    "el => { const d = el.ownerDocument; const a = d.activeElement;"
+    "  if (!a) return false;"
+    "  const t = (a.tagName || '').toUpperCase();"
+    "  return t === 'INPUT' || t === 'TEXTAREA' || a.isContentEditable === true; }"
+)
+
+
+def _frame_has_focused_editable(frame: Any) -> bool:
+    """True iff the iframe's document currently focuses an editable element
+    (input / textarea / contenteditable). Evaluated on the always-attached
+    ``body`` (the clicked title node may be REPLACED by the editor and detach).
+    Never raises — an unevaluable frame reads as 'not editable' (fail-closed)."""
+    try:
+        return bool(frame.locator("body").first.evaluate(_FOCUSED_EDITABLE_JS))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _select_all(page: Any) -> None:
+    """Select-all in the FOCUSED element. ``ControlOrMeta+A`` (Playwright's
+    cross-platform alias — playwright.dev/python Keyboard docs) with per-platform
+    fallbacks for older Playwrights that predate the alias."""
+    for combo in ("ControlOrMeta+a", "Meta+a", "Control+a"):
+        try:
+            page.keyboard.press(combo)
+            return
+        except Exception:  # noqa: BLE001
+            continue
+    raise IframeDragError(
+        "select-all-failed",
+        "could not issue a select-all keystroke (ControlOrMeta/Meta/Control+a all "
+        "failed) — cannot safely replace the inline title text. STOP.")
+
+
+def _find_first_title(frame: Any, title_specs: Sequence[str], *,
+                      timeout_ms: int) -> Tuple[Any, str]:
+    """Resolve the FIRST title spec that is present+visible in the iframe.
+    Returns (locator, matched_spec); raises ``title-not-found`` when none match.
+    The per-spec wait is a short slice of the budget so a long pattern list
+    cannot multiply the total wait unboundedly."""
+    specs = [s for s in (title_specs or []) if str(s).strip()]
+    if not specs:
+        raise IframeDragError("title-not-found", "no title locator specs were given")
+    per_spec = max(500, int(timeout_ms / len(specs)))
+    last: Optional[Exception] = None
+    for spec in specs:
+        loc = _resolve_locator(frame, spec)
+        try:
+            loc.wait_for(state="visible", timeout=per_spec)
+            return loc, spec
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            continue
+    raise IframeDragError(
+        "title-not-found",
+        f"no inline title matched any of the specs {list(specs)!r} inside the "
+        f"iframe within ~{timeout_ms}ms ({type(last).__name__ if last else 'none'}). "
+        "STOP — cannot rename/read a title that cannot be located.")
+
+
+def drive_read_inline_title(page: Any, *, iframe_selector: str,
+                            title_specs: Sequence[str],
+                            timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict[str, Any]:
+    """Read the CURRENT inline title text inside the builder iframe (fail-closed).
+    Returns {ok, title, matched_spec}."""
+    if not iframe_selector or not str(iframe_selector).strip():
+        raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
+    frame = page.frame_locator(iframe_selector)
+    loc, spec = _find_first_title(frame, title_specs, timeout_ms=timeout_ms)
+    try:
+        text = (loc.text_content() or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "title-not-readable",
+            f"located the inline title via {spec!r} but could not read its text "
+            f"({type(exc).__name__}). STOP.") from exc
+    return {"ok": True, "title": text, "matched_spec": spec}
+
+
+def drive_set_inline_title(
+    page: Any,
+    *,
+    iframe_selector: str,
+    new_title: str,
+    title_specs: Sequence[str] = DEFAULT_FORM_TITLE_SPECS,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    commit_key: str = "Enter",
+    sleeper: Callable[[float], None] = time.sleep,
+) -> Dict[str, Any]:
+    """Rename the in-iframe inline title to ``new_title`` and VERIFY it, fail-closed.
+
+    Mechanism (all inside the cross-origin iframe, which Playwright drives natively):
+      1. locate the title by the FIRST matching spec (regex-capable — the default
+         number in "Form <n>" is unknowable ahead of time);
+      2. read the OLD title text (receipt evidence — cleanup can target it);
+      3. click it; if no editable takes focus, double-click; still nothing →
+         ``title-not-editable`` (STOP — never blind-type into a non-editor);
+      4. select-all + type ``new_title`` + commit (``commit_key``);
+      5. VERIFY ``new_title`` is present in the iframe → else ``title-not-set``.
+    NEVER fakes success; the receipt carries the truth."""
+    if not iframe_selector or not str(iframe_selector).strip():
+        raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
+    if not new_title or not str(new_title).strip():
+        raise IframeDragError("empty-title", "new_title must be non-empty")
+
+    frame = page.frame_locator(iframe_selector)
+    loc, spec = _find_first_title(frame, title_specs, timeout_ms=timeout_ms)
+    _scroll_into_view(loc, what="title", spec=spec, timeout_ms=timeout_ms)
+    try:
+        old_title = (loc.text_content() or "").strip()
+    except Exception:  # noqa: BLE001
+        old_title = ""
+
+    entered_via = "click"
+    try:
+        loc.click()
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "title-not-clickable",
+            f"located the inline title via {spec!r} but the click to enter edit "
+            f"mode failed ({type(exc).__name__}). STOP.") from exc
+    if not _frame_has_focused_editable(frame):
+        entered_via = "dblclick"
+        try:
+            loc.dblclick()
+        except Exception:  # noqa: BLE001
+            pass
+        if not _frame_has_focused_editable(frame):
+            raise IframeDragError(
+                "title-not-editable",
+                f"clicked (and double-clicked) the inline title ({spec!r}, current "
+                f"text {old_title!r}) but NO editable element took focus inside the "
+                "iframe — this surface did not enter edit mode. STOP — typing now "
+                "would go nowhere (the silent-failure mode this fix removes).")
+
+    _select_all(page)
+    page.keyboard.type(str(new_title))
+    if commit_key:
+        try:
+            page.keyboard.press(commit_key)
+        except Exception as exc:  # noqa: BLE001
+            raise IframeDragError(
+                "title-commit-failed",
+                f"typed the new title but the commit key {commit_key!r} failed "
+                f"({type(exc).__name__}). STOP — the rename is unverified.") from exc
+
+    verified = _verify_placed(frame, str(new_title), timeout_ms)
+    receipt = {
+        "ok": True,
+        "old_title": old_title,
+        "new_title": str(new_title),
+        "matched_spec": spec,
+        "entered_via": entered_via,
+        "verified": verified,
+    }
+    if not verified:
+        raise IframeDragError(
+            "title-not-set",
+            f"typed + committed the new title but {new_title!r} did not appear "
+            f"inside the iframe afterwards — the rename did NOT verify. STOP "
+            f"(never report a fake rename). receipt={receipt}")
+    return receipt
+
+
+def set_inline_title(
+    cdp_url: str,
+    *,
+    iframe_selector: str,
+    new_title: str,
+    title_specs: Sequence[str] = DEFAULT_FORM_TITLE_SPECS,
+    url_marker: Optional[str] = None,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    commit_key: str = "Enter",
+) -> Dict[str, Any]:
+    """LIVE entry point: attach over CDP (same logged-in Chromium; no second
+    browser, no re-login) and rename the in-iframe inline title, fail-closed.
+    See :func:`drive_set_inline_title` for the mechanism + receipt."""
+    _require_playwright("inline-title rename")
+    _require_cdp_url(cdp_url)
+    with sync_playwright() as p:  # type: ignore[union-attr]
+        browser = _attach_over_cdp(p, cdp_url)
+        try:
+            page = _select_page(browser, url_marker, iframe_selector)
+            return drive_set_inline_title(
+                page, iframe_selector=iframe_selector, new_title=new_title,
+                title_specs=title_specs, timeout_ms=timeout_ms, commit_key=commit_key)
+        finally:
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def read_inline_title(
+    cdp_url: str,
+    *,
+    iframe_selector: str,
+    title_specs: Sequence[str],
+    url_marker: Optional[str] = None,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> Dict[str, Any]:
+    """LIVE entry point: read the CURRENT in-iframe inline title text (so cleanup
+    can positively target the container by the name it ACTUALLY carries, even
+    after a failed rename). Fail-closed; see :func:`drive_read_inline_title`."""
+    _require_playwright("inline-title read")
+    _require_cdp_url(cdp_url)
+    with sync_playwright() as p:  # type: ignore[union-attr]
+        browser = _attach_over_cdp(p, cdp_url)
+        try:
+            page = _select_page(browser, url_marker, iframe_selector)
+            return drive_read_inline_title(
+                page, iframe_selector=iframe_selector, title_specs=title_specs,
+                timeout_ms=timeout_ms)
+        finally:
             try:
                 browser.close()
             except Exception:  # noqa: BLE001
@@ -537,6 +916,10 @@ def _selftest() -> int:
             if self._box is None:
                 raise TimeoutError("mock: not visible")
 
+        def scroll_into_view_if_needed(self, timeout=0):
+            if self._box is None:
+                raise TimeoutError("mock: cannot scroll a missing element")
+
         def bounding_box(self):
             return self._box
 
@@ -631,6 +1014,201 @@ def _selftest() -> int:
     if iframe_selector_for("form") != 'iframe[src*="form-builder-v2"]':
         errors.append("iframe_selector_for('form') wrong")
 
+    # 9. SCROLL-HINT locate (v1.1.0 — the F5.locate:City fix): a tile hidden below
+    #    the fold is revealed by scrolling its CATEGORY header into view, then
+    #    scrolled + dragged; without the hint the same miss fails closed.
+    class _ScrollWorld:
+        def __init__(self):
+            self.boxes = {"Address": {"x": 20, "y": 300, "width": 100, "height": 20},
+                          "Submit": {"x": 90, "y": 400, "width": 120, "height": 40}}
+            self.hidden = {"City": {"x": 24, "y": 340, "width": 80, "height": 30}}
+            self.scrolled = []
+
+        def visible(self, key):
+            return key in self.boxes
+
+        def scroll(self, key):
+            self.scrolled.append(key)
+            if key == "Address":            # revealing the category reveals its tiles
+                self.boxes.update(self.hidden)
+                self.hidden = {}
+
+    class _ScrollLoc:
+        def __init__(self, world, key):
+            self._w = world
+            self._k = key
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, state="visible", timeout=0):
+            if not self._w.visible(self._k):
+                raise TimeoutError(f"mock: {self._k} not visible")
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            if not self._w.visible(self._k):
+                raise TimeoutError(f"mock: {self._k} cannot scroll")
+            self._w.scroll(self._k)
+
+        def bounding_box(self):
+            return self._w.boxes.get(self._k)
+
+        def count(self):
+            return 1 if self._w.visible(self._k) else 0
+
+    class _ScrollFrame:
+        def __init__(self, world):
+            self._w = world
+
+        def get_by_text(self, text, exact=False):
+            key = text if isinstance(text, str) else "City"
+            return _ScrollLoc(self._w, key)
+
+        def locator(self, sel):
+            return _ScrollLoc(self._w, sel)
+
+    world = _ScrollWorld()
+    page9 = _MockPage(_ScrollFrame(world))
+    rec9 = drive_drag(page9, iframe_selector="iframe", source="text=City",
+                      target="text=Submit", source_scroll_hint="text=Address",
+                      verify_text="City", move_interval_ms=0, settle_ms=0,
+                      sleeper=lambda s: None)
+    if world.scrolled != ["Address", "City", "Submit"]:
+        errors.append(f"hint scroll order wrong: {world.scrolled}")
+    if rec9.get("placed") is not True or rec9.get("source_scroll_hint") != "text=Address":
+        errors.append(f"hint receipt wrong: {rec9}")
+    if page9.mouse.ops[-1] != ("up",):
+        errors.append("hint drag did not complete the pointer envelope")
+    # same miss WITHOUT the hint fails closed (never a guessed point).
+    try:
+        drive_drag(_MockPage(_ScrollFrame(_ScrollWorld())), iframe_selector="iframe",
+                   source="text=City", target="text=Submit",
+                   move_interval_ms=0, settle_ms=0, sleeper=lambda s: None)
+        errors.append("hidden tile WITHOUT hint did not raise")
+    except IframeDragError as e:
+        if e.code != "source-not-found":
+            errors.append(f"hidden-no-hint wrong code: {e.code}")
+
+    # 10. INLINE-TITLE rename (v1.1.0 — the F3 fix): locate by regex pattern,
+    #     enter edit mode, select-all + type + commit, VERIFY — plus fail-closed
+    #     when the surface never becomes editable (the old silent-failure mode).
+    class _TitleFrame:
+        def __init__(self, editable=True):
+            self.texts = {"Form 55"}
+            self.editable = editable
+            self.focused = False
+
+        def get_by_text(self, pattern, exact=False):
+            if hasattr(pattern, "search"):
+                for t in sorted(self.texts):
+                    if pattern.search(t):
+                        return _TitleLoc(self, t)
+                return _TitleLoc(self, None)
+            hit = next((t for t in sorted(self.texts)
+                        if (t == pattern if exact else str(pattern) in t)), None)
+            return _TitleLoc(self, hit)
+
+        def locator(self, sel):
+            return _BodyLoc(self) if sel == "body" else _TitleLoc(self, None)
+
+    class _TitleLoc:
+        def __init__(self, frame, text):
+            self._f = frame
+            self._t = text
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, state="visible", timeout=0):
+            if self._t is None:
+                raise TimeoutError("mock: title text absent")
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            pass
+
+        def text_content(self):
+            return self._t
+
+        def click(self):
+            if self._f.editable:
+                self._f.focused = True
+
+        def dblclick(self):
+            if self._f.editable:
+                self._f.focused = True
+
+        def count(self):
+            return 1 if self._t is not None else 0
+
+    class _BodyLoc:
+        def __init__(self, frame):
+            self._f = frame
+
+        @property
+        def first(self):
+            return self
+
+        def evaluate(self, js):
+            return self._f.focused
+
+    class _TitleKeyboard:
+        def __init__(self, frame):
+            self._f = frame
+            self.ops = []
+
+        def press(self, combo):
+            self.ops.append(("press", combo))
+
+        def type(self, text):
+            self.ops.append(("type", text))
+            if self._f.focused:
+                self._f.texts.add(text)     # the typed title renders in the iframe
+
+    class _TitlePage:
+        def __init__(self, frame):
+            self._frame = frame
+            self.keyboard = _TitleKeyboard(frame)
+            self.mouse = _MockMouse()
+
+        def frame_locator(self, sel):
+            return self._frame
+
+    tf = _TitleFrame(editable=True)
+    tp = _TitlePage(tf)
+    rec10 = drive_set_inline_title(
+        tp, iframe_selector="iframe", new_title="ZHC TEST Title",
+        title_specs=(r"re:^Form\s*\d+$",), timeout_ms=1000, sleeper=lambda s: None)
+    if rec10.get("old_title") != "Form 55" or rec10.get("verified") is not True:
+        errors.append(f"inline-title receipt wrong: {rec10}")
+    presses = [o[1] for o in tp.keyboard.ops if o[0] == "press"]
+    if not any(p.lower().endswith("+a") for p in presses):
+        errors.append(f"inline-title did not select-all first: {presses}")
+    if presses[-1] != "Enter":
+        errors.append(f"inline-title did not commit with Enter: {presses}")
+    if ("type", "ZHC TEST Title") not in tp.keyboard.ops:
+        errors.append("inline-title did not type the new title")
+    rd = drive_read_inline_title(
+        _TitlePage(tf), iframe_selector="iframe",
+        title_specs=("re:^ZHC TEST",), timeout_ms=500)
+    if rd.get("title") != "ZHC TEST Title":
+        errors.append(f"read_inline_title wrong: {rd}")
+
+    # 11. FAIL-CLOSED: a title that never becomes editable STOPs BEFORE typing.
+    tf2 = _TitleFrame(editable=False)
+    tp2 = _TitlePage(tf2)
+    try:
+        drive_set_inline_title(tp2, iframe_selector="iframe", new_title="X",
+                               title_specs=(r"re:^Form\s*\d+$",), timeout_ms=500,
+                               sleeper=lambda s: None)
+        errors.append("non-editable title did NOT raise")
+    except IframeDragError as e:
+        if e.code != "title-not-editable":
+            errors.append(f"non-editable wrong code: {e.code}")
+    if any(o[0] == "type" for o in tp2.keyboard.ops):
+        errors.append("typed into a non-editable title (must STOP first)")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -667,13 +1245,31 @@ def _live_selftest() -> int:
         '<iframe id="builder" src="http://localhost:{iport}/inner.html" '
         'style="width:900px;height:520px;border:0"></iframe>'
         "</body></html>")
+    # Mimics the REAL GHL builder iframe surfaces: an inline-edit TITLE ("Form 55"
+    # — click swaps to an input, Enter commits), a fixed-height SCROLLABLE Quick-Add
+    # panel with CATEGORY sections ("City" sits under "Address", far below the
+    # fold), and a mouse-event drag canvas with a pointer-distance sensor.
     inner_html = (
         "<!doctype html><html><head><title>inner</title><style>"
         ".tile{padding:8px;margin:4px;border:1px solid #4a4;cursor:grab;user-select:none}"
+        "#panel{height:170px;overflow:auto;width:240px;border:1px solid #aaa}"
+        "h3{margin:6px 4px 2px}"
         "#canvas{min-height:180px;border:2px dashed #999;padding:10px}</style></head><body>"
+        '<div id="titlewrap"></div>'
         "<h2>Quick Add</h2>"
+        '<div id="panel">'
+        "<h3>Personal Info</h3>"
         '<div class="tile" id="tile-state">State</div>'
+        '<div class="tile">Full Name</div>'
+        '<div class="tile">Phone</div>'
+        '<div class="tile">Email</div>'
+        "<h3>Payments</h3>"
+        '<div class="tile">Sell Products</div>'
+        '<div class="tile">Collect Payment</div>'
+        "<h3>Address</h3>"
         '<div class="tile" id="tile-city">City</div>'
+        '<div class="tile">Postal Code</div>'
+        "</div>"
         '<div id="canvas">Submit</div>'
         "<script>"
         "let dragging=null,moves=0;"
@@ -689,6 +1285,18 @@ def _live_selftest() -> int:
         "  if(over&&moves>=3){const d=document.createElement('div');d.className='placed';"
         "    d.textContent=dragging+' placed';canvas.appendChild(d);}"
         "  dragging=null;});"
+        "const tw=document.getElementById('titlewrap');"
+        "function mountTitle(text){"
+        "  tw.innerHTML='';"
+        "  const d=document.createElement('div');d.id='title';d.textContent=text;"
+        "  d.addEventListener('click',()=>{"
+        "    const i=document.createElement('input');i.id='title-edit';i.value=d.textContent;"
+        "    tw.innerHTML='';tw.appendChild(i);i.focus();"
+        "    i.addEventListener('keydown',e=>{if(e.key==='Enter'){mountTitle(i.value);}});"
+        "  });"
+        "  tw.appendChild(d);"
+        "}"
+        "mountTitle('Form 55');"
         "</script></body></html>")
 
     tmp = tempfile.mkdtemp(prefix="ghl-iframe-drag-live-")
@@ -746,6 +1354,35 @@ def _live_selftest() -> int:
                 except IframeDragError as e:
                     if e.code != "source-not-found":
                         errors.append(f"live absent-tile wrong code: {e.code}")
+
+                # (c) SCROLL-HINT — 'City' sits under the 'Address' category BELOW
+                #     the fold of the fixed-height panel; the category-hint scroll
+                #     reveals it and the drag then places it (the F5.locate fix).
+                rec_c = drive_drag(page, iframe_selector=iframe_selector,
+                                   source="text=City", target="text=Submit",
+                                   source_scroll_hint="text=Address",
+                                   interpolated_moves=24, verify_text="City placed",
+                                   timeout_ms=8000)
+                if rec_c.get("placed") is not True:
+                    errors.append(f"live scroll-hint drag did not place: {rec_c}")
+
+                # (d) INLINE-TITLE rename — click-to-edit surface inside the
+                #     cross-origin iframe (the F3 fix): pattern-locate 'Form 55',
+                #     edit, commit, VERIFY.
+                rec_d = drive_set_inline_title(
+                    page, iframe_selector=iframe_selector,
+                    new_title="ZHC TEST Title",
+                    title_specs=(r"re:^Form\s*\d+$",), timeout_ms=8000)
+                if rec_d.get("old_title") != "Form 55" or rec_d.get("verified") is not True:
+                    errors.append(f"live inline-title rename wrong: {rec_d}")
+
+                # (e) INLINE-TITLE read-back — cleanup targets the name the
+                #     container ACTUALLY carries.
+                rec_e = drive_read_inline_title(
+                    page, iframe_selector=iframe_selector,
+                    title_specs=("re:^ZHC TEST",), timeout_ms=4000)
+                if rec_e.get("title") != "ZHC TEST Title":
+                    errors.append(f"live inline-title read wrong: {rec_e}")
             finally:
                 ctx.close()
     except IframeDragError as e:

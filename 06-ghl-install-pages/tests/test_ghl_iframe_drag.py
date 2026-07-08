@@ -64,6 +64,7 @@ class _MockLoc:
     def __init__(self, box, present=True):
         self._box = box
         self._present = present
+        self.scrolled = 0
 
     @property
     def first(self):
@@ -72,6 +73,11 @@ class _MockLoc:
     def wait_for(self, state="visible", timeout=0):
         if self._box is None:
             raise TimeoutError("mock: not visible")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        if self._box is None:
+            raise TimeoutError("mock: cannot scroll a missing element")
+        self.scrolled += 1
 
     def bounding_box(self):
         return self._box
@@ -175,12 +181,13 @@ def test_iframe_selector_presets():
 # ---------------------------------------------------------------------------
 def test_form_builder_drag_routes_through_frame_scoped_seam(monkeypatch):
     """The FORM builder must call the frame-scoped seam (NOT a top-frame `_ab drag`)
-    and pass the form-builder iframe selector."""
+    and pass the form-builder iframe selector + the tile's CATEGORY scroll hint."""
     calls = []
 
     def fake_drag(session, source_text, drop_anchor, *, verify_text,
-                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR):
-        calls.append((source_text, drop_anchor, verify_text, iframe_selector))
+                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        calls.append((source_text, drop_anchor, verify_text, iframe_selector,
+                      source_scroll_hint))
         return {"ok": True, "placed": True}
 
     ab_calls = []
@@ -200,6 +207,7 @@ def test_form_builder_drag_routes_through_frame_scoped_seam(monkeypatch):
 
     assert len(calls) == 1, "standard field must be placed via the frame-scoped seam"
     assert calls[0][3] == fb.GHL_FORM_IFRAME_SELECTOR
+    assert calls[0][4] == "Address", "the tile's Quick-Add CATEGORY must ride along as the scroll hint"
     assert not any(c and c[0] == "drag" for c in ab_calls), "must NOT use a top-frame `_ab drag`"
 
 
@@ -237,10 +245,363 @@ def test_survey_builder_drag_stops_when_no_cdp(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 3. Playwright-gated real cross-origin proof (skipped cleanly when absent)
+# 3. SCROLL-INTO-VIEW + CATEGORY-HINT locate (v1.1.0 — the F5.locate:City fix)
+# ---------------------------------------------------------------------------
+class _ScrollWorld:
+    """City is hidden below the Quick-Add fold until 'Address' is scrolled into view."""
+    def __init__(self):
+        self.boxes = {"Address": {"x": 20, "y": 300, "width": 100, "height": 20},
+                      "Submit": {"x": 90, "y": 400, "width": 120, "height": 40}}
+        self.hidden = {"City": {"x": 24, "y": 340, "width": 80, "height": 30}}
+        self.scrolled = []
+
+    def scroll(self, key):
+        self.scrolled.append(key)
+        if key == "Address":
+            self.boxes.update(self.hidden)
+            self.hidden = {}
+
+
+class _ScrollLoc:
+    def __init__(self, world, key):
+        self._w, self._k = world, key
+
+    @property
+    def first(self):
+        return self
+
+    def wait_for(self, state="visible", timeout=0):
+        if self._k not in self._w.boxes:
+            raise TimeoutError(f"mock: {self._k} not visible")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        if self._k not in self._w.boxes:
+            raise TimeoutError(f"mock: {self._k} cannot scroll")
+        self._w.scroll(self._k)
+
+    def bounding_box(self):
+        return self._w.boxes.get(self._k)
+
+    def count(self):
+        return 1 if self._k in self._w.boxes else 0
+
+
+class _ScrollFrame:
+    def __init__(self, world):
+        self._w = world
+
+    def get_by_text(self, text, exact=False):
+        return _ScrollLoc(self._w, text if isinstance(text, str) else "City")
+
+    def locator(self, sel):
+        return _ScrollLoc(self._w, sel)
+
+
+def test_scroll_hint_reveals_below_the_fold_tile_and_drag_places_it():
+    """The general F5.locate fix: a tile in a category below the panel fold is
+    revealed by scrolling the CATEGORY header, then scrolled + dragged — for ANY
+    field/category, not a City-only patch."""
+    world = _ScrollWorld()
+    page = _MockPage(_ScrollFrame(world))
+    rec = idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                         target="text=Submit", source_scroll_hint="text=Address",
+                         verify_text="City", move_interval_ms=0, settle_ms=0,
+                         sleeper=lambda s: None)
+    assert world.scrolled == ["Address", "City", "Submit"], \
+        "hint scrolls first, then the revealed tile, then the drop target"
+    assert rec["placed"] is True
+    assert rec["source_scroll_hint"] == "text=Address"
+    assert page.mouse.ops[-1] == ("up",)
+
+
+def test_scroll_hint_missing_tile_still_fails_closed():
+    """The hint reveals the section but the tile is GENUINELY absent → honest
+    source-not-found (never a guessed pointer target)."""
+    world = _ScrollWorld()
+    world.hidden = {}                      # Address scroll reveals nothing
+    page = _MockPage(_ScrollFrame(world))
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                       target="text=Submit", source_scroll_hint="text=Address",
+                       move_interval_ms=0, settle_ms=0, sleeper=lambda s: None)
+    assert ei.value.code == "source-not-found"
+    assert "Address" in str(ei.value)
+
+
+def test_hidden_tile_without_hint_fails_closed():
+    page = _MockPage(_ScrollFrame(_ScrollWorld()))
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                       target="text=Submit", move_interval_ms=0, settle_ms=0,
+                       sleeper=lambda s: None)
+    assert ei.value.code == "source-not-found"
+
+
+def test_absent_scroll_hint_fails_closed_with_its_own_code():
+    world = _ScrollWorld()
+    page = _MockPage(_ScrollFrame(world))
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                       target="text=Submit", source_scroll_hint="text=Nope",
+                       move_interval_ms=0, settle_ms=0, sleeper=lambda s: None)
+    assert ei.value.code == "scroll-hint-not-found"
+
+
+def test_boxes_read_after_scroll_positions():
+    """The drag must aim at the POST-scroll coordinates of the revealed tile."""
+    world = _ScrollWorld()
+    page = _MockPage(_ScrollFrame(world))
+    rec = idg.drive_drag(page, iframe_selector="iframe", source="text=City",
+                         target="text=Submit", source_scroll_hint="text=Address",
+                         move_interval_ms=0, settle_ms=0, sleeper=lambda s: None)
+    assert rec["source_point"] == [64.0, 355.0]     # center of the REVEALED City box
+
+
+def test_regex_locator_spec_dispatch():
+    """The 're:' spec resolves through get_by_text(re.compile(...)) — needed for
+    pattern-only surfaces like the default builder title 'Form <n>'."""
+    calls = []
+
+    class _F:
+        def get_by_text(self, pat, exact=False):
+            calls.append(pat)
+            class _L:
+                first = None
+            l = _L()
+            l.first = l
+            return l
+
+        def locator(self, sel):
+            raise AssertionError("re: must not fall through to CSS")
+
+    idg._resolve_locator(_F(), r"re:^Form\s*\d+$")
+    assert len(calls) == 1 and hasattr(calls[0], "search"), "must pass a compiled regex"
+
+
+# ---------------------------------------------------------------------------
+# 4. FRAME-SCOPED INLINE-TITLE read/set (v1.1.0 — the F3 rename fix)
+# ---------------------------------------------------------------------------
+class _TitleFrame:
+    def __init__(self, editable=True):
+        self.texts = {"Form 55"}
+        self.editable = editable
+        self.focused = False
+
+    def get_by_text(self, pattern, exact=False):
+        if hasattr(pattern, "search"):
+            hit = next((t for t in sorted(self.texts) if pattern.search(t)), None)
+        else:
+            hit = next((t for t in sorted(self.texts)
+                        if (t == pattern if exact else str(pattern) in t)), None)
+        return _TitleLoc(self, hit)
+
+    def locator(self, sel):
+        return _BodyLoc(self) if sel == "body" else _TitleLoc(self, None)
+
+
+class _TitleLoc:
+    def __init__(self, frame, text):
+        self._f, self._t = frame, text
+
+    @property
+    def first(self):
+        return self
+
+    def wait_for(self, state="visible", timeout=0):
+        if self._t is None:
+            raise TimeoutError("mock: title text absent")
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        pass
+
+    def text_content(self):
+        return self._t
+
+    def click(self):
+        if self._f.editable:
+            self._f.focused = True
+
+    def dblclick(self):
+        if self._f.editable:
+            self._f.focused = True
+
+    def count(self):
+        return 1 if self._t is not None else 0
+
+
+class _BodyLoc:
+    def __init__(self, frame):
+        self._f = frame
+
+    @property
+    def first(self):
+        return self
+
+    def evaluate(self, js):
+        return self._f.focused
+
+
+class _TitleKeyboard:
+    def __init__(self, frame):
+        self._f = frame
+        self.ops = []
+
+    def press(self, combo):
+        self.ops.append(("press", combo))
+
+    def type(self, text):
+        self.ops.append(("type", text))
+        if self._f.focused:
+            self._f.texts.add(text)
+
+
+class _TitlePage:
+    def __init__(self, frame):
+        self._frame = frame
+        self.keyboard = _TitleKeyboard(frame)
+        self.mouse = _MockMouse()
+
+    def frame_locator(self, sel):
+        return self._frame
+
+
+def test_set_inline_title_renames_and_verifies():
+    tf = _TitleFrame(editable=True)
+    tp = _TitlePage(tf)
+    rec = idg.drive_set_inline_title(
+        tp, iframe_selector="iframe", new_title="ZHC TEST - DO NOT USE",
+        title_specs=(r"re:^Form\s*\d+$",), timeout_ms=1000, sleeper=lambda s: None)
+    assert rec["old_title"] == "Form 55"
+    assert rec["verified"] is True
+    presses = [o[1] for o in tp.keyboard.ops if o[0] == "press"]
+    assert any(p.lower().endswith("+a") for p in presses), "select-all must precede typing"
+    assert presses[-1] == "Enter", "commit key must be pressed"
+    assert ("type", "ZHC TEST - DO NOT USE") in tp.keyboard.ops
+
+
+def test_set_inline_title_fails_closed_when_not_editable():
+    """The OLD silent-failure mode (typing into a surface that never entered edit
+    mode) must now be an honest STOP, BEFORE any keystroke."""
+    tf = _TitleFrame(editable=False)
+    tp = _TitlePage(tf)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_set_inline_title(tp, iframe_selector="iframe", new_title="X",
+                                   title_specs=(r"re:^Form\s*\d+$",),
+                                   timeout_ms=500, sleeper=lambda s: None)
+    assert ei.value.code == "title-not-editable"
+    assert not any(o[0] == "type" for o in tp.keyboard.ops), \
+        "must NOT type into a non-editable surface"
+
+
+def test_set_inline_title_fails_closed_when_title_absent():
+    tf = _TitleFrame()
+    tf.texts = {"Something Else"}
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_set_inline_title(_TitlePage(tf), iframe_selector="iframe",
+                                   new_title="X", title_specs=(r"re:^Form\s*\d+$",),
+                                   timeout_ms=500, sleeper=lambda s: None)
+    assert ei.value.code == "title-not-found"
+
+
+def test_read_inline_title_returns_actual_text():
+    tf = _TitleFrame()
+    rec = idg.drive_read_inline_title(_TitlePage(tf), iframe_selector="iframe",
+                                      title_specs=(r"re:^Form\s*\d+$",),
+                                      timeout_ms=500)
+    assert rec["title"] == "Form 55"
+
+
+def test_title_entry_points_require_playwright_and_cdp(monkeypatch):
+    monkeypatch.setattr(idg, "PLAYWRIGHT_AVAILABLE", False)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.set_inline_title("ws://x", iframe_selector="iframe", new_title="T")
+    assert ei.value.code == "playwright-unavailable"
+    with pytest.raises(idg.IframeDragError) as ei2:
+        idg.read_inline_title("ws://x", iframe_selector="iframe",
+                              title_specs=("text=T",))
+    assert ei2.value.code == "playwright-unavailable"
+    monkeypatch.setattr(idg, "PLAYWRIGHT_AVAILABLE", True)
+    with pytest.raises(idg.IframeDragError) as ei3:
+        idg.set_inline_title("", iframe_selector="iframe", new_title="T")
+    assert ei3.value.code == "no-cdp-url"
+
+
+# ---------------------------------------------------------------------------
+# 5. FORM-BUILDER F5 wiring of the scroll-hint locate (the live failure surface)
+# ---------------------------------------------------------------------------
+def _snap_ab(snap_text):
+    def fake_ab(session, *args, timeout=30, stdin=None):
+        out = snap_text if (args and args[0] == "snapshot") else ""
+        return subprocess.CompletedProcess(args=list(args), returncode=0,
+                                           stdout=out, stderr="")
+    return fake_ab
+
+
+def test_f5_snapshot_miss_no_longer_stops_and_passes_category_hint(monkeypatch):
+    """LIVE 2026-07-07 regression (F5.locate:City): the tile absent from the
+    TOP-FRAME snapshot must NOT stop the walk — the frame-scoped drag runs with
+    the tile's category as the scroll hint."""
+    calls = []
+
+    def fake_drag(session, source_text, drop_anchor, *, verify_text,
+                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        calls.append((source_text, drop_anchor, source_scroll_hint))
+        return {"ok": True, "placed": True}
+
+    # snapshot has the canvas anchors but NOT the City tile (below the fold)
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(fb, "_perform_iframe_drag", fake_drag)
+    field = {"source": "standard", "element": "City", "label": "City",
+             "query_key": "city", "quick_add_category": "Address",
+             "width_pct": 50, "required": True, "hidden": False}
+    warnings, steps = [], []
+    fb._place_quick_add_field("s", field, "/tmp/x-f5-city", [0], warnings, steps)
+    assert calls == [("City", "Submit", "Address")]
+    assert any(s.startswith("F5:place:City") for s in steps)
+
+
+def test_f5_frame_scoped_locate_miss_maps_to_f5_locate_step(monkeypatch):
+    """A GENUINE in-frame miss (tile absent even after the category scroll) must
+    surface as the honest F5.locate:<tile> STOP."""
+    def missing_drag(session, source_text, drop_anchor, *, verify_text,
+                     iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        raise fb.StopAndReport("iframe-drag:source-not-found", "mock: genuinely absent")
+
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(fb, "_perform_iframe_drag", missing_drag)
+    field = {"source": "standard", "element": "City", "label": "City",
+             "query_key": "city", "quick_add_category": "Address",
+             "width_pct": 100, "required": False, "hidden": False}
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._place_quick_add_field("s", field, "/tmp/x-f5-miss", [0], [], [])
+    assert ei.value.step == "F5.locate:City"
+    assert "Address" in ei.value.reason
+
+
+def test_f5_in_frame_verified_placement_survives_snapshot_lag(monkeypatch):
+    """The frame-scoped verify is AUTHORITATIVE: a placement verified in-frame
+    must not be failed by a lagging top-frame snapshot — it is recorded as a
+    warning instead (the same unreliable surface that caused the false STOP)."""
+    monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
+    monkeypatch.setattr(
+        fb, "_perform_iframe_drag",
+        lambda session, s, a, *, verify_text, iframe_selector=None,
+        source_scroll_hint="": {"ok": True, "placed": True})
+    field = {"source": "standard", "element": "City", "label": "City",
+             "query_key": "city", "quick_add_category": "Address",
+             "width_pct": 100, "required": False, "hidden": False}
+    warnings, steps = [], []
+    fb._place_quick_add_field("s", field, "/tmp/x-f5-lag", [0], warnings, steps)
+    assert any("snapshot" in w for w in warnings), "snapshot lag recorded as evidence"
+    assert any(s.startswith("F5:place:City") for s in steps), "placement still recorded"
+
+
+# ---------------------------------------------------------------------------
+# 6. Playwright-gated real cross-origin proof (skipped cleanly when absent)
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not idg.PLAYWRIGHT_AVAILABLE, reason="Playwright not installed")
 def test_live_selftest_places_tile_across_cross_origin_iframe():
     """End-to-end: real Playwright drags a tile into a genuine CROSS-ORIGIN iframe
-    canvas headlessly, and fails closed on an absent tile."""
+    canvas headlessly (including the below-the-fold category-hint scroll and the
+    inline-title rename), and fails closed on an absent tile."""
     assert idg._live_selftest() == 0

@@ -4,6 +4,93 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v18.1.5] - 2026-07-07 - F5 BELOW-THE-FOLD LOCATE + F3 FRAME-SCOPED RENAME + POSITIVE-VERIFY CLEANUP — the three defects live attempt #4 exposed, fixed at their shared root (the cross-origin iframe reach seam)
+
+Live attempt #4 (the furthest run yet — past auth, the Forms list, the create
+modal, INTO the real builder) exposed three distinct defects. All three are
+fixed through the SAME proven frame-scoped Playwright-over-CDP seam
+(`ghl_iframe_drag`, now v1.1.0), hermetically proven (dep-free selftest + a
+real-Playwright cross-origin fixture + pytest), with zero regressions
+(1076 passed / 15 skipped, up from 1035).
+
+**1. `F5.locate:City` — a Quick-Add tile below the panel fold was a false STOP.**
+The Quick-Add panel is a scrollable column of category sections
+(SELECTORS-LIVE-form.md §8); `City` sits under `Address`, below the fold, so it
+was absent from the top-frame a11y snapshot and the old snapshot-gate STOPped a
+tile that was 100% reachable. General fix for ANY field in ANY category (never a
+City-only patch):
+
+- `ghl_iframe_drag.drive_drag` now scrolls BOTH the source tile and the drop
+  target into view (Playwright `scroll_into_view_if_needed`, actionability-aware,
+  no-op when already visible — playwright.dev/python, verified) BEFORE reading
+  bounding boxes, and reads the boxes AFTER all scrolls.
+- New `source_scroll_hint` parameter: when the source misses directly, the hint
+  (the tile's CATEGORY header text from `QUICK_ADD_TAXONOMY`) is scrolled into
+  view FIRST to reveal its section, then the source is retried. Fail-closed codes
+  `scroll-hint-not-found` / `source-not-found` keep a genuinely absent tile an
+  honest STOP.
+- `ghl_form_builder._place_quick_add_field` passes each field's
+  `quick_add_category` as the hint automatically and demotes the top-frame
+  snapshot to ADVISORY (the frame-scoped locate is authoritative — it has real
+  access to the cross-origin frame); a frame-scoped locate miss maps back to the
+  honest `F5.locate:<tile>` step. The post-drag top-frame snapshot re-check at
+  F5/F6 is likewise demoted to recorded evidence — the in-frame `verify_text`
+  gate (which raises `not-placed`) is the authoritative placement proof.
+
+**2. F3 rename silently failed → a REAL form left default-named ("Form 55").**
+The title is an in-iframe inline-edit surface; the old top-frame
+`dblclick <xpath>` + `keyboard type` walk could never reach it (same cross-origin
+constraint as the drags) and was treated as cosmetic. Fix:
+
+- New `ghl_iframe_drag.set_inline_title` / `read_inline_title`: pattern-locate
+  the title (`re:^Form\s*\d+$` — the default number is unknowable), click (then
+  double-click) into edit mode with a VERIFIED editable-focus check (fail-closed
+  `title-not-editable` — typing into a non-editor is now impossible), select-all
+  (`ControlOrMeta+A`, per-platform fallbacks) + type + Enter, then VERIFY the new
+  text inside the iframe (`title-not-set` otherwise). Proven against a real
+  click-to-edit input inside a genuine cross-origin fixture (--live-selftest).
+- `ghl_form_builder._rename_form_title` (replaces `_try_rename`): renames via the
+  primitive and — success OR failure — records the title the form ACTUALLY
+  carries (`actual_title`, read back from the iframe) so cleanup targets the real
+  name, never an assumption. Idempotent (an already-renamed form reads back as
+  the target → renamed).
+- The walk's F3 is now FAIL-CLOSED by default (`rename_required`, plan-carried):
+  a build never proceeds on an unlabeled container; even on STOP the actual title
+  is recorded for cleanup. The SURVEY builder's Phase B rename
+  (`_p2_rename_survey`) rides the same primitive (`re:^Survey\s*\d+$`).
+
+**3. Cleanup claimed "no form was created" while a real form sat live.**
+Two compounding defects: (a) `_walk_click_list` captured the form id into a LOCAL
+thrown away when a later step raised StopAndReport, so cleanup saw no id; (b)
+`_delete_form` ignored every click rc and inferred success from a name-match
+absence — with the rename silently failed, the search for the intended name found
+nothing and "no residue" was fabricated. Fix:
+
+- New caller-owned `walk_state` dict: `form_id` / `actual_title` are recorded AT
+  CAPTURE TIME and survive the exception path; `_live_build`'s cleanup uses them.
+- `_delete_form` overhauled to a POSITIVE present→delete→absent proof: search the
+  ACTUAL title first, count RENDERED leaf-text matches via top-frame eval (the
+  search textbox echoing the query can never satisfy the check — input values are
+  not textContent), require EXACTLY ONE matching row title AND EXACTLY ONE
+  visible row `Actions` button (never risk the wrong row), rc-check every click
+  (row `Actions` role-button, `Delete` role-MENUITEM exact — new
+  `_click_menuitem`, dialog `Delete` role-button exact per SELECTORS §3), then
+  POLL the re-searched list to ZERO matches. Anything unverifiable returns
+  `deleted=False` + evidence; unknown counts (-1) NEVER read as gone.
+- New `_verify_no_residue` for the no-form-id path: positively proves the
+  intended name is absent from the RENDERED list (leaf-count 0), actually deletes
+  a row if one is found, and flags `possible_unnamed_orphan` LOUDLY when the walk
+  stopped between the create-confirm and the id capture (a default-named form
+  cannot be safely auto-deleted by name — operator review required).
+
+Files: `tools/ghl_iframe_drag.py` (v1.1.0), `tools/ghl_form_builder.py`,
+`tools/ghl_survey_builder.py`, `references/iframe-drag-capability.md`,
+`tests/test_ghl_iframe_drag.py` (+13 cases), NEW
+`tests/test_ghl_form_rename_and_cleanup.py` (27 cases),
+`tests/test_ghl_text_verb_cli_shapes.py` (rename lock modernized).
+
+---
+
 ## [v18.1.4] - 2026-07-07 - F2 MODAL-CONFIRM DISAMBIGUATION: the 'Create' confirm click now targets role=button + EXACT accessible name — a substring click resolves to the WRONG element when three 'Create'-text elements coexist
 
 The next defect in the F2 chain, live-evidenced the same day and UNDER the

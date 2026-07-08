@@ -1,8 +1,9 @@
 # Cross-origin iframe drag capability (`ghl_iframe_drag.py`)
 
-**Status:** LIVE (v1.0.0). Shared, reusable, builder-agnostic. Wired into the FORM
+**Status:** LIVE (v1.1.0). Shared, reusable, builder-agnostic. Wired into the FORM
 builder and the SURVEY builder; ready to wire into the PAGE/FUNNEL "Code" element
-drag.
+drag. v1.1.0 adds (a) scroll-into-view + category-hint locate (the `F5.locate:City`
+below-the-fold fix) and (b) frame-scoped INLINE-TITLE read/set (the F3 rename fix).
 
 ## The problem this solves
 
@@ -68,17 +69,52 @@ snapshots). Playwright's ONLY job is the frame-scoped coordinate-drag step:
 `tools/ghl_iframe_drag.py`:
 
 - `coordinate_drag(cdp_url, *, iframe_selector, source, target, url_marker=None,
-  verify_text=None, interpolated_moves=24, move_interval_ms=16, ...)` — attach over
-  CDP, drag inside the iframe, verify placement, detach. Returns a receipt.
+  verify_text=None, source_scroll_hint=None, interpolated_moves=24,
+  move_interval_ms=16, ...)` — attach over CDP, drag inside the iframe, verify
+  placement, detach. Returns a receipt.
 - `drive_drag(page, ...)` — the load-bearing core (operates on any Playwright-`page`
   surface; shared by the live path and the self-test).
+- `set_inline_title(cdp_url, *, iframe_selector, new_title, title_specs=...,
+  url_marker=None)` — **v1.1.0** frame-scoped rename of the builder's inline
+  title: pattern-locate (`re:^Form \d+$` — the default number is unknowable),
+  click into edit mode with a VERIFIED editable-focus check (fail-closed
+  `title-not-editable` — the old silent-typing failure mode is impossible),
+  select-all (`ControlOrMeta+A`) + type + commit, then VERIFY the new text inside
+  the iframe (`title-not-set` otherwise).
+- `read_inline_title(cdp_url, *, iframe_selector, title_specs, url_marker=None)`
+  — **v1.1.0** read the title a container ACTUALLY carries, so cleanup can
+  positively target it even after a failed rename.
 - `iframe_selector_for("form" | "survey" | "page_code")` — known selector presets.
+- `DEFAULT_FORM_TITLE_SPECS` / `DEFAULT_SURVEY_TITLE_SPECS` — title patterns.
 - `IframeDragError` — fail-closed exception (unlocatable source/target, null box,
-  missing page/frame, Playwright absent, or an unverified placement). NEVER fakes a
-  placement.
+  missing page/frame, Playwright absent, or an unverified placement/rename). NEVER
+  fakes an outcome.
 
 Locator spec grammar (small on purpose — GHL tiles are located by visible text):
-`text=Foo` (default), `exact=Foo`, `css=SEL`, or a bare `Foo` (treated as `text=`).
+`text=Foo` (default), `exact=Foo`, `re:PATTERN` (regex), `css=SEL`, or a bare
+`Foo` (treated as `text=`).
+
+## Scroll-into-view + category-hint locate (v1.1.0)
+
+The Quick-Add panel is a SCROLLABLE column of category sections
+(SELECTORS-LIVE-form.md §8). A tile below the fold (live 2026-07-07:
+`City` under `Address`) is not on-screen at drag time — the old flow either missed
+it in the a11y snapshot (a false `F5.locate` STOP) or would have aimed the pointer
+at off-viewport coordinates. Now, for ANY tile in ANY category:
+
+1. `drive_drag` calls Playwright's actionability-aware
+   `scroll_into_view_if_needed()` on BOTH the source tile and the drop target
+   BEFORE reading their bounding boxes (a no-op when already fully visible, per
+   IntersectionObserver — playwright.dev/python, verified 2026-07-07).
+2. When the source misses directly, the `source_scroll_hint` (its CATEGORY header
+   text, from `QUICK_ADD_TAXONOMY`) is scrolled into view FIRST to reveal the
+   section, then the source is retried. Codes: `scroll-hint-not-found`,
+   `source-not-found` (still honest when the tile genuinely does not exist).
+3. Boxes are read AFTER all scrolls so the pointer aims at final positions.
+
+The form builder passes each field's `quick_add_category` as the hint
+automatically; the TOP-FRAME snapshot is now ADVISORY at F5 (the frame-scoped
+locate is authoritative — it has real access to the cross-origin frame).
 
 ## How the builders call it
 
@@ -130,7 +166,8 @@ never `headless=False`.
 | Form builder Quick-Add / Object fields | YES | **FIXED** (wired) |
 | Survey builder Object fields | YES (same host) | **FIXED** (wired) |
 | Page/Funnel "Code" element tile | YES (`page-builder.leadconnectorhq.com`) | NOTED — page/funnel CONTENT is created via `ghl_rest_canvas.py` (REST JSON, no drag), so there is no active live-drag call today. gates.json documents the Code-element drag as a Playwright-fallback recipe; wire it to `coordinate_drag(iframe_selector=iframe_selector_for("page_code"), ...)` when that path goes live. |
-| In-iframe field PROPERTY panel edits, builder TAB switches, inline title rename | Not drag — a related cross-origin element-reach limitation | NOTED (out of scope for this fix). These are handled today as `[runtime-capture]` best-effort via the a11y snapshot; if a future need requires reliable reach, the same CDP+Playwright frame-scoped `frame_locator` approach in this module can locate/click them (extend with a `frame_click` helper). Not fixed in this pass. |
+| Inline TITLE rename (form "Form <n>" / survey "Survey <n>") | Not drag — the same cross-origin element-reach limitation | **FIXED (v1.1.0)** — `set_inline_title` / `read_inline_title`, wired into the FORM builder's F3 (fail-closed via `rename_required`, with the actual-title read-back feeding cleanup) and the SURVEY builder's Phase B. |
+| In-iframe field PROPERTY panel edits, builder TAB switches | Not drag — a related cross-origin element-reach limitation | NOTED (out of scope). Handled today as `[runtime-capture]` best-effort via the a11y snapshot; if a future need requires reliable reach, the same CDP+Playwright frame-scoped `frame_locator` approach in this module can locate/click them (extend with a `frame_click` helper). |
 
 ## Smoke-test labeling convention (for the separate live verifier)
 

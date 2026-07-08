@@ -455,6 +455,9 @@ def _build_form_plan(task: dict, fields: List[dict], dep_plan: dict) -> dict:
         "status": "LIVE (runtime snapshot-and-bind field placement; v0.1.0)",
         "location_id": location_id,
         "form_name": form_name,                 # ZHC <name>
+        # FAIL-CLOSED rename (v18.1.5): a created form must never proceed (or be
+        # left behind) carrying its default name — see the walk's F3 branch.
+        "rename_required": bool(task.get("rename_required", True)),
         "start_from": task.get("start_from", "scratch"),  # "scratch" | "template"
         "default_fields_keep": keep_defaults,
         "default_fields_delete": delete_defaults,
@@ -915,13 +918,18 @@ def _get_cdp_url(session: str) -> str:
 
 def _perform_iframe_drag(session: str, source_text: str, drop_anchor: str,
                          *, verify_text: str,
-                         iframe_selector: str = GHL_FORM_IFRAME_SELECTOR) -> dict:
+                         iframe_selector: str = GHL_FORM_IFRAME_SELECTOR,
+                         source_scroll_hint: str = "") -> dict:
     """Drag ONE builder tile (``source_text``) onto the canvas landmark
     (``drop_anchor``) INSIDE the cross-origin builder iframe, verifying that
-    ``verify_text`` then appears. FAIL-CLOSED: raises StopAndReport (not a fake
+    ``verify_text`` then appears. ``source_scroll_hint`` (the tile's Quick-Add
+    CATEGORY header text, e.g. ``"Address"`` for ``City``) lets the primitive
+    scroll a below-the-fold panel section into view before locating the tile —
+    the general fix for the live 2026-07-07 ``F5.locate:City`` miss, for ANY
+    field in ANY category. FAIL-CLOSED: raises StopAndReport (not a fake
     success) when the shared primitive is unavailable, the CDP url can't be read,
-    or the drag/verify does not land. This is the seam that replaces the
-    top-frame-only ``_ab(session, "drag", ...)`` (which cannot reach the tile)."""
+    or the locate/scroll/drag/verify does not land. This is the seam that replaces
+    the top-frame-only ``_ab(session, "drag", ...)`` (which cannot reach the tile)."""
     if ghl_iframe_drag is None:
         raise StopAndReport(
             "iframe-drag.dep",
@@ -943,6 +951,7 @@ def _perform_iframe_drag(session: str, source_text: str, drop_anchor: str,
             target=f"text={drop_anchor}",
             url_marker="form-builder",
             verify_text=verify_text,
+            source_scroll_hint=(f"text={source_scroll_hint}" if source_scroll_hint else None),
         )
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
         raise StopAndReport(f"iframe-drag:{exc.code}", exc.reason) from exc
@@ -1237,42 +1246,261 @@ def _xpath_text(text: str) -> str:
     return f"//*[normalize-space(text())={lit}]"
 
 
-def _try_rename(session: str, form_name: str) -> bool:
-    """Best-effort rename of the in-iframe inline title (a [runtime-capture] surface).
-    ONE snapshot-bound attempt; on miss returns False (caller records a warning —
-    rename is cosmetic, never a hard stop, never brute-forced).
+def _rename_form_title(session: str, form_name: str) -> dict:
+    """FRAME-SCOPED rename of the in-iframe inline title (the F3 fix, v18.1.5).
 
-    v18.1.3 text-verb fix: `dblclick` has no text mode (a bare positional is a
-    selector — 'Form 1' parsed as CSS and always missed), so the title is bound
-    via an XPath text-node match; the typing goes through `keyboard type`
-    (types into the FOCUSED inline editor — `type` requires a selector)."""
-    snap = _snapshot(session)
-    if ("Form " not in snap) and ("Untitled" not in snap):
-        return False
-    _ab(session, "dblclick", _xpath_text("Form 1"), timeout=10)
-    _ab(session, "keyboard", "type", form_name, timeout=10)
-    _ab(session, "press", "Enter", timeout=8)
-    return form_name[:14] in _snapshot(session)
+    The title ("Form <n>") lives INSIDE the cross-origin builder iframe and is an
+    inline-edit surface — the old top-frame ``dblclick <xpath>`` + ``keyboard
+    type`` walk could never reach it and FAILED SILENTLY (live 2026-07-07: a real
+    form stayed default-named, so cleanup's name search never found it — the
+    orphan hazard this fix removes). The rename now rides the SAME proven
+    Playwright-over-CDP seam as the drag (``ghl_iframe_drag.set_inline_title``):
+    pattern-locate the title (the default number is unknowable), click into edit
+    mode (VERIFIED — an editable must take focus), select-all + type + Enter,
+    then VERIFY the new text inside the iframe.
+
+    Returns ``{"renamed", "actual_title", "old_title", "reason"}`` — NEVER raises.
+    ``actual_title`` is the name the form is POSITIVELY known to carry afterwards
+    (the new name on success; the read-back current title on failure; '' when even
+    the read-back failed) so cleanup can target the form by the name it ACTUALLY
+    has, not the name we intended."""
+    out = {"renamed": False, "actual_title": "", "old_title": "", "reason": ""}
+    if ghl_iframe_drag is None:
+        out["reason"] = ("the shared frame-scoped primitive (ghl_iframe_drag) is not "
+                         "importable — the in-iframe title cannot be reached")
+        return out
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        out["reason"] = "could not read the session CDP url (`get cdp-url`)"
+        return out
+    try:
+        rec = ghl_iframe_drag.set_inline_title(  # type: ignore[union-attr]
+            cdp_url,
+            iframe_selector=GHL_FORM_IFRAME_SELECTOR,
+            new_title=form_name,
+            title_specs=ghl_iframe_drag.DEFAULT_FORM_TITLE_SPECS,  # type: ignore[union-attr]
+            url_marker="form-builder",
+        )
+        out.update(renamed=True, actual_title=form_name,
+                   old_title=rec.get("old_title", ""))
+        return out
+    except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
+        out["reason"] = f"{exc.code}: {exc.reason}"
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] = f"{type(exc).__name__}: {exc}"
+    # Rename failed → READ BACK the title the form ACTUALLY carries so cleanup can
+    # still positively target it (idempotency: an already-renamed form reads back
+    # as the target name → treat as renamed).
+    try:
+        specs = (f"exact={form_name}",) + tuple(
+            ghl_iframe_drag.DEFAULT_FORM_TITLE_SPECS)  # type: ignore[union-attr]
+        rd = ghl_iframe_drag.read_inline_title(  # type: ignore[union-attr]
+            cdp_url, iframe_selector=GHL_FORM_IFRAME_SELECTOR,
+            title_specs=specs, url_marker="form-builder")
+        out["actual_title"] = rd.get("title", "")
+        if out["actual_title"] == form_name:
+            out["renamed"] = True
+            out["reason"] = f"already carries the target name ({out['reason']})"
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] += f"; title read-back also failed ({type(exc).__name__})"
+    return out
 
 
-# ── cleanup: DELETE the built form (SELECTORS-LIVE-form.md §3) ────────────────
-def _delete_form(session: str, location_id: str, form_id: str, form_name: str) -> dict:
-    """search → row Actions → menuitem Delete → confirm dialog Delete → verify gone.
-    Returns {deleted, residue_in_list}. Best-effort but honest about residue."""
+def _click_menuitem(session: str, name: str, timeout: int = 15) -> subprocess.CompletedProcess:
+    """Click the MENUITEM whose accessible name is EXACTLY ``name`` —
+    SELECTORS-LIVE-form.md §3's locked anchor for the row-Actions menu items
+    (`getByRole('menuitem', { name })`, conf 9.5), expressed through the CLI.
+    Role-scoped + --exact so the menu 'Delete' can never collide with the
+    confirm dialog's 'Delete' BUTTON (or any other on-screen 'Delete' text)."""
+    return _ab(session, "find", "role", "menuitem", "click",
+               "--name", name, "--exact", timeout=timeout)
+
+
+# ── POSITIVE list-evidence (cleanup verification, v18.1.5) ────────────────────
+# The forms LIST is a TOP-FRAME surface (SELECTORS-LIVE-form.md §3), so its DOM
+# is directly evaluable. These reads are EVIDENCE-GATHERING (like
+# _FORM_ID_CAPTURE_JS / _ENTRY_DIAG_JS), never invented click selectors.
+#
+# WHY NOT the a11y snapshot: the search TEXTBOX echoes the queried name (an input
+# value can appear in the snapshot), so `name in snapshot` is satisfiable by the
+# search box ALONE — exactly the class of false evidence that let the live
+# 2026-07-07 cleanup claim success. Leaf-node textContent === name counts only
+# RENDERED text (row titles); an input's value is not textContent.
+_LEAF_COUNT_JS = (
+    "(() => {"
+    "  const q = %s;"
+    "  let n = 0;"
+    "  for (const el of document.querySelectorAll('body *')) {"
+    "    if (el.childElementCount === 0 && (el.textContent || '').trim() === q) n++;"
+    "  }"
+    "  return String(n);"
+    "})()"
+)
+
+_ACTIONS_BUTTON_COUNT_JS = (
+    "(() => String(Array.from(document.querySelectorAll('button'))"
+    ".filter(b => (b.textContent || '').trim() === 'Actions').length))()"
+)
+
+
+def _eval_leaf_count(session: str, text: str) -> int:
+    """Count RENDERED leaf elements whose exact trimmed text equals ``text``.
+    Returns -1 when the count could not be evaluated — callers must treat -1 as
+    UNKNOWN (fail-closed), never as zero."""
+    try:
+        raw = _eval(session, _LEAF_COUNT_JS % json.dumps(text), timeout=12)
+        return int((raw or "").strip())
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _eval_actions_button_count(session: str) -> int:
+    """Count visible row 'Actions' buttons (one per rendered list row). -1 = unknown."""
+    try:
+        raw = _eval(session, _ACTIONS_BUTTON_COUNT_JS, timeout=12)
+        return int((raw or "").strip())
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+# ── cleanup: DELETE the built form + POSITIVELY VERIFY it is gone ─────────────
+# (SELECTORS-LIVE-form.md §3 anchors; v18.1.5 overhaul)
+#
+# THE OLD BUG (live 2026-07-07): cleanup searched for the INTENDED name, found
+# nothing (the rename had silently failed, so the real form still carried its
+# default "Form <n>" name), ignored every click rc, saw no residue FOR THAT NAME,
+# and reported deleted=true — while a real, live form sat in the account. Every
+# step below is now rc-checked and the outcome is POSITIVELY verified
+# (present-before → delete → absent-after, on RENDERED leaf text); anything
+# unverifiable returns deleted=False with the evidence, never an assumption.
+def _delete_form(session: str, location_id: str, form_id: str, form_name: str,
+                 actual_title: str = "") -> dict:
+    """Delete the built form from the Forms list and POSITIVELY verify deletion.
+
+    search (actual title first — the name the form REALLY carries, captured by
+    the F3 rename receipt) → require EXACTLY ONE matching row title AND EXACTLY
+    ONE visible row 'Actions' button (never risk the wrong row) → row Actions →
+    menuitem Delete (role-scoped) → confirm dialog Delete (role button, exact) →
+    POLL the re-searched list until ZERO rendered leaf matches remain.
+
+    Returns {deleted, verified_gone, matched_name, pre_delete_rows,
+    post_delete_rows, residue_in_list, reason?} — deleted=True ONLY on the full
+    present→deleted→absent proof."""
+    out: Dict[str, Any] = {"deleted": False, "verified_gone": False,
+                           "form_id": form_id, "method": "browser-list-delete"}
     _router_push(session, _forms_list_route(location_id), expect_contains="form-builder")
-    _wait_text(session, "Create form", timeout=20)
-    query = form_name or form_id
-    _fill(session, "Search for forms", query, timeout=12)
-    _wait_text(session, "Actions", timeout=12)
-    _click(session, "Actions")
-    _wait_text(session, "Delete", timeout=10)
-    _click(session, "Delete")            # menuitem
-    _wait_text(session, "Delete form", timeout=10)   # confirm dialog title
-    _click(session, "Delete")            # dialog-scoped confirm
-    _wait_text(session, "Create form", timeout=12)
-    snap = _snapshot(session)
-    residue = bool(form_id and form_id in snap)
-    return {"deleted": not residue, "form_id": form_id, "residue_in_list": residue}
+    if not _wait_text_polling(session, "Create form"):
+        out["reason"] = "the forms list did not render ('Create form' never appeared)"
+        return out
+
+    candidates = [c for c in dict.fromkeys([actual_title, form_name]) if c and c.strip()]
+    out["candidates_checked"] = candidates
+    found = ""
+    pre = 0
+    for cand in candidates:
+        _fill(session, "Search for forms", cand, timeout=12)
+        _wait_text_polling(session, cand, timeout_s=6)
+        n = _eval_leaf_count(session, cand)
+        if n > 0:
+            found, pre = cand, n
+            break
+    if not found:
+        out["reason"] = (
+            f"no rendered list row positively matched any known name {candidates!r} "
+            "(leaf-count 0/unknown for each) — NOT claiming deletion. If the build "
+            "created a form under an unknown name it is RESIDUE; operator review "
+            "required.")
+        return out
+
+    out["matched_name"] = found
+    out["pre_delete_rows"] = pre
+    actions_n = _eval_actions_button_count(session)
+    out["pre_delete_actions_buttons"] = actions_n
+    if pre != 1 or actions_n != 1:
+        out["reason"] = (
+            f"expected EXACTLY ONE row for {found!r} (title-leafs={pre}, "
+            f"Actions-buttons={actions_n}) — refusing to click an Actions menu that "
+            "could target the WRONG form. Fail-closed; operator review required.")
+        return out
+
+    step_cp = _click_button(session, "Actions")
+    if step_cp.returncode != 0:
+        out["reason"] = f"row 'Actions' click did not land (rc={step_cp.returncode})"
+        return out
+    if not _wait_text_polling(session, "Delete", timeout_s=8):
+        out["reason"] = "the Actions menu never showed a 'Delete' item"
+        return out
+    step_cp = _click_menuitem(session, "Delete")
+    if step_cp.returncode != 0:
+        out["reason"] = f"'Delete' menuitem click did not land (rc={step_cp.returncode})"
+        return out
+    if not _wait_text_polling(session, "Delete form", timeout_s=8):
+        out["reason"] = "the 'Delete form' confirm dialog never appeared"
+        return out
+    step_cp = _click_button(session, "Delete")
+    if step_cp.returncode != 0:
+        out["reason"] = f"confirm 'Delete' click did not land (rc={step_cp.returncode})"
+        return out
+
+    # POSITIVE post-verify: re-search and poll until ZERO rendered matches (the
+    # present→absent transition is the proof; -1/unknown NEVER counts as gone).
+    deadline = time.monotonic() + _TEXT_WAIT_TIMEOUT_S
+    post = -1
+    while True:
+        _fill(session, "Search for forms", found, timeout=12)
+        post = _eval_leaf_count(session, found)
+        if post == 0 or time.monotonic() >= deadline:
+            break
+        time.sleep(1.0)
+    out["post_delete_rows"] = post
+    out["residue_in_list"] = (post != 0)
+    if post == 0:
+        out["deleted"] = True
+        out["verified_gone"] = True
+    else:
+        out["reason"] = (
+            f"post-delete leaf-count for {found!r} is {post} (expected 0) — the "
+            "deletion did NOT verify; treating as residue. Operator review required.")
+    return out
+
+
+def _verify_no_residue(session: str, location_id: str, form_name: str,
+                       possible_unnamed_orphan: bool) -> dict:
+    """POSITIVE no-form-created verification (v18.1.5). When the walk captured no
+    form id, cleanup must still PROVE the intended name is absent from the
+    rendered Forms list — and, if a row IS found, actually delete it. A walk that
+    stopped between the create-click and the id-capture may have created a form
+    still carrying its DEFAULT name; that cannot be safely auto-deleted by name
+    (any 'Form <n>' could be a real client form), so it is flagged loudly for the
+    operator instead of being silently ignored."""
+    out: Dict[str, Any] = {"method": "browser-list-no-residue-check",
+                           "deleted": False, "verified_gone": False}
+    _router_push(session, _forms_list_route(location_id), expect_contains="form-builder")
+    if not _wait_text_polling(session, "Create form"):
+        out["reason"] = "the forms list did not render — cannot verify no-residue"
+        return out
+    _fill(session, "Search for forms", form_name, timeout=12)
+    n = _eval_leaf_count(session, form_name)
+    out["intended_name_rows"] = n
+    if n == 0:
+        out["deleted"] = True
+        out["verified_gone"] = True
+        out["note"] = (f"no form id was captured AND the intended name {form_name!r} "
+                       "is POSITIVELY absent from the rendered list (leaf-count 0)")
+    elif n > 0:
+        # A row with our intended name exists after all — delete it for real.
+        out.update(_delete_form(session, location_id, "", form_name))
+    else:
+        out["reason"] = ("could not evaluate the rendered list (leaf-count unknown) — "
+                         "NOT claiming clean")
+    if possible_unnamed_orphan:
+        out["possible_unnamed_orphan"] = True
+        out["orphan_note"] = (
+            "the walk stopped AFTER the create-confirm but BEFORE the id capture — "
+            "a form still carrying its DEFAULT 'Form <n>' name may exist. A default-"
+            "named form cannot be safely auto-deleted by name (it could be a real "
+            "client form); OPERATOR REVIEW REQUIRED.")
+    return out
 
 
 # ── field placement (F5 Quick-Add + F6 Add-Object-Fields) — runtime snapshot-bind ──
@@ -1332,22 +1560,39 @@ def _ensure_quick_add_panel(session: str) -> str:
     return snap
 
 
+# iframe-drag failure codes that mean "the TILE could not be located/revealed" —
+# re-mapped to the honest F5.locate step (the live 2026-07-07 failure surface).
+_DRAG_LOCATE_MISS_STEPS = (
+    "iframe-drag:source-not-found",
+    "iframe-drag:scroll-hint-not-found",
+    "iframe-drag:source-scroll-failed",
+)
+
+
 def _place_quick_add_field(session: str, field: dict, evidence_root: str,
                            shot_n: List[int], warnings: List[str],
                            steps_done: List[str]) -> None:
-    """F5 — place ONE standard field via Quick Add. LOCATE the tile by visible text →
-    DRAG onto the canvas → VERIFY it landed → BIND props. StopAndReport ONLY on a genuine
-    miss (tile absent, no drop landmark, or nothing placed) — never as the default path."""
+    """F5 — place ONE standard field via Quick Add. LOCATE the tile INSIDE the
+    builder iframe (frame-scoped, scrolling its CATEGORY into view when it sits
+    below the panel fold — the live 2026-07-07 ``F5.locate:City`` fix, general for
+    ANY field/category) → DRAG onto the canvas → VERIFY it landed → BIND props.
+    StopAndReport ONLY on a genuine miss (tile absent even after the category
+    scroll, no drop landmark, or nothing placed) — never as the default path.
+
+    The top-frame a11y snapshot is ADVISORY here, never the locate gate: the
+    Quick-Add panel scrolls, and a below-the-fold tile is legitimately absent from
+    the snapshot while being 100%% reachable after a frame-scoped scroll (proven
+    live 2026-07-07: ``City`` under ``Address``). The authoritative locate is the
+    frame-scoped one inside ``_perform_iframe_drag`` — it has REAL access to the
+    cross-origin frame and fails closed honestly."""
     tile = field["element"]
     label = field["label"]
+    category = field.get("quick_add_category") or _find_quick_add_category(tile) or ""
     snap = _ensure_quick_add_panel(session)
     if tile not in snap:
-        raise StopAndReport(
-            f"F5.locate:{tile}",
-            f"Quick-Add tile {tile!r} is not present in the live builder snapshot "
-            "(Form Element ▸ Quick Add). Its category may need scrolling into view "
-            "(SELECTORS-LIVE-form.md §8). A tile that is not on screen cannot be dragged "
-            "— resolve live; no CSS invented, no brute-force.")
+        # Advisory only — the frame-scoped locate below is authoritative.
+        _log(f"F5: tile {tile!r} not in the top-frame snapshot — relying on the "
+             f"frame-scoped locate (category hint {category!r})")
     anchor = _canvas_drop_anchor(session, snap)
     if not anchor:
         raise StopAndReport(
@@ -1356,15 +1601,33 @@ def _place_quick_add_field(session: str, field: dict, evidence_root: str,
             f"{tile!r} tile onto.")
     # FRAME-SCOPED drag (cross-origin iframe): agent-browser cannot reach the tile,
     # so hand THIS step to Playwright over the same session's CDP (verify=the field
-    # label appears in the iframe). Fail-closed inside _perform_iframe_drag.
-    _perform_iframe_drag(session, tile, anchor, verify_text=label[:18])
+    # label appears in the iframe). The category hint lets the primitive scroll the
+    # tile's section into view first. Fail-closed inside _perform_iframe_drag; a
+    # locate-class miss is re-raised as the honest F5.locate step.
+    try:
+        _perform_iframe_drag(session, tile, anchor, verify_text=label[:18],
+                             source_scroll_hint=category)
+    except StopAndReport as sr:
+        if sr.step in _DRAG_LOCATE_MISS_STEPS:
+            raise StopAndReport(
+                f"F5.locate:{tile}",
+                f"Quick-Add tile {tile!r} could not be located inside the builder "
+                f"iframe even after scrolling its category {category or '?'!r} into "
+                f"view (frame-scoped locate; underlying: {sr.step}). {sr.reason}") from sr
+        raise
+    # The AUTHORITATIVE placement gate already ran INSIDE the iframe: the
+    # frame-scoped drag verifies `verify_text` with real frame access and raises
+    # `not-placed` (→ StopAndReport) when the field did not land. The top-frame
+    # snapshot below is secondary EVIDENCE only — the auto-inlined snapshot can
+    # legitimately lag/miss in-iframe content (the same unreliable surface that
+    # produced the false F5.locate:City STOP), so it must never hard-fail a
+    # placement the frame itself verified.
     _wait_text(session, label[:18], timeout=15)
     after = _snapshot(session)
     if label[:12] not in after and tile not in after:
-        raise StopAndReport(
-            f"F5.place:{tile}",
-            f"dragged {tile!r} onto {anchor!r} but no {label!r} field appeared on the "
-            "canvas (snapshot-and-bind miss). STOP — do not brute-force or invent CSS.")
+        warnings.append(
+            f"F5: {label!r} placed + verified IN-FRAME, but the top-frame snapshot "
+            "does not (yet) echo it — snapshot lag recorded as evidence, not a STOP")
     _bind_field_props(session, field, warnings)
     steps_done.append(f"F5:place:{label[:24]}")
     _screenshot(session, _shot(evidence_root, shot_n, f"f5-{_slug(label)}"))
@@ -1400,13 +1663,17 @@ def _place_object_field(session: str, field: dict, evidence_root: str,
             "no canvas drop landmark is visible to drop the object field onto.")
     # FRAME-SCOPED drag (cross-origin iframe) — same fix as F5; the pre-created
     # object-field row is a non-interactive node agent-browser cannot reach.
+    # (No scroll hint needed: Search-by-Name just filtered the list to this row,
+    # and drive_drag scrolls the row into view itself when it sits below a fold.)
     _perform_iframe_drag(session, label[:24], anchor, verify_text=label[:18])
+    # Authoritative placement gate = the frame-scoped verify above (raises
+    # `not-placed` on a miss). Top-frame snapshot = secondary evidence only —
+    # same doctrine as F5 (the auto-inlined snapshot can lag in-iframe content).
     _wait_text(session, label[:18], timeout=15)
     if label[:12] not in _snapshot(session):
-        raise StopAndReport(
-            f"F6.place:{key or label}",
-            f"dragged object field {label!r} but it did not appear on the canvas "
-            "(snapshot-and-bind miss). STOP — no brute-force or invented CSS.")
+        warnings.append(
+            f"F6: {label!r} placed + verified IN-FRAME, but the top-frame snapshot "
+            "does not (yet) echo it — snapshot lag recorded as evidence, not a STOP")
     _bind_field_props(session, field, warnings)
     _fill(session, "Search by Name", "")               # clear for the next field
     steps_done.append(f"F6:place:{label[:24]}")
@@ -1415,9 +1682,21 @@ def _place_object_field(session: str, field: dict, evidence_root: str,
 
 # ── the click-list walk (locked-anchor interpreter) ──────────────────────────
 def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: str,
-                     shot_n: List[int], warnings: List[str], steps_done: List[str]) -> dict:
+                     shot_n: List[int], warnings: List[str], steps_done: List[str],
+                     walk_state: Optional[Dict[str, Any]] = None) -> dict:
     """Interpret each click-list step through the LOCKED anchors. Returns
-    {form_id, form_url, embed_snippet}. Raises StopAndReport on a REQUIRED miss."""
+    {form_id, form_url, embed_snippet, actual_title}. Raises StopAndReport on a
+    REQUIRED miss.
+
+    ``walk_state`` (v18.1.5): a caller-owned MUTABLE dict that receives
+    ``form_id`` / ``actual_title`` THE MOMENT they are captured. The old
+    return-value-only contract THREW THE CAPTURED ID AWAY whenever a LATER step
+    raised StopAndReport — live 2026-07-07: the walk had created a real form and
+    captured its id at F2, then STOPped at F5, and cleanup (seeing only the
+    never-assigned local) claimed 'no form was created — nothing to delete'
+    while the form sat live in the account. State that cleanup depends on must
+    survive the exception path."""
+    st: Dict[str, Any] = walk_state if walk_state is not None else {}
     loc = plan["location_id"]
     form_name = plan["form_name"]
     form_id = ""
@@ -1502,28 +1781,49 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
                 # the capture poll is the authoritative entered-the-builder check.
                 form_id = _capture_form_id(session)
                 if not form_id:
+                    st["stopped_after_create_confirm"] = True   # a DEFAULT-named form may exist
                     raise StopAndReport(
                         "F2.create",
                         "entered the builder but could not read the form id from the "
                         "/form-builder-v2/<id> route after polling "
                         f"{_FORM_ID_CAPTURE_TIMEOUT_S:.0f}s (Save-wait rc={entered.returncode}; "
                         f"page-state {_capture_entry_diag(session)})")
+                st["form_id"] = form_id     # survives a later-step StopAndReport (v18.1.5)
                 _screenshot(session, _shot(evidence_root, shot_n, "f2-builder"))
                 steps_done.append(tag)
             elif action == "click" and tgt.lower() == "use a template":
                 warnings.append("F2: template path requested — minimal live run uses Start-from-Scratch")
             continue
 
-        # F3 — rename (in-iframe inline title = runtime-capture; best-effort, never STOP)
+        # F3 — rename via the FRAME-SCOPED inline-title primitive (v18.1.5).
+        # Runs BEFORE any field dragging (the click list orders F3 ahead of F5/F6)
+        # so a created form is NEVER left carrying its default name past this
+        # point. FAIL-CLOSED by default (plan['rename_required']): an unrenamed
+        # container is exactly the orphan hazard that bit the live 2026-07-07 run
+        # — and even on STOP, the receipt's actual_title lets cleanup positively
+        # target the form by the name it REALLY carries.
         if phase == "F3":
             if tag.startswith("F3:click") or action == "click":
-                if _try_rename(session, form_name):
+                r = _rename_form_title(session, form_name)
+                st["actual_title"] = r.get("actual_title", "")
+                st["rename"] = r
+                if r["renamed"]:
                     steps_done.append(f"F3:rename:{form_name[:24]}")
                     _screenshot(session, _shot(evidence_root, shot_n, "f3-renamed"))
+                elif plan.get("rename_required", True):
+                    _screenshot(session, _shot(evidence_root, shot_n, "f3-rename-failed"))
+                    raise StopAndReport(
+                        "F3.rename",
+                        f"could not rename the form to {form_name!r} via the frame-"
+                        f"scoped inline-title primitive ({r['reason']}). The form "
+                        f"currently carries {r['actual_title'] or 'an unknown name'!r} "
+                        "(recorded for cleanup targeting). STOP — a build must never "
+                        "proceed on an unlabeled container (rename_required=True).")
                 else:
-                    warnings.append("F3: the form title is an in-iframe inline-edit [runtime-capture] "
-                                    "surface — snapshot-bind miss; left the default name (no brute-force). "
-                                    "Rename via a later capture or the Settings tab.")
+                    warnings.append(
+                        f"F3: rename to {form_name!r} failed ({r['reason']}) and "
+                        "rename_required=False — proceeding; cleanup will target the "
+                        f"read-back title {r['actual_title']!r}")
             continue
 
         # F4 — delete default fields (per-field Remove link = in-iframe runtime-capture)
@@ -1621,7 +1921,8 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
             steps_done.append(tag)
             continue
 
-    return {"form_id": form_id, "form_url": form_url, "embed_snippet": embed}
+    return {"form_id": form_id, "form_url": form_url, "embed_snippet": embed,
+            "actual_title": st.get("actual_title", "")}
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
@@ -1639,6 +1940,11 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
     cleanup: Dict[str, Any] = {"attempted": False}
     form_id = ""
     stop: Optional[StopAndReport] = None
+    # Mutable walk state (v18.1.5): form_id / actual_title recorded AT CAPTURE
+    # TIME so cleanup still sees them when a LATER step raises StopAndReport —
+    # the old locals-only flow claimed 'no form was created' after a mid-walk
+    # STOP even though a real, id-captured form existed (live 2026-07-07).
+    walk_state: Dict[str, Any] = {}
 
     # D6 headless + agent-browser version-pin guards (refuse a headed window / drift).
     browser_manager.headless_guard()                 # type: ignore[union-attr]
@@ -1659,7 +1965,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         _screenshot(session, _shot(evidence_root, shot_n, "auth-landed"))
 
         walk = _walk_click_list(session, click_list, plan, evidence_root,
-                                shot_n, warnings, steps_done)
+                                shot_n, warnings, steps_done, walk_state)
         form_id = walk["form_id"]
         form_url = walk["form_url"]
         embed = walk["embed_snippet"]
@@ -1706,19 +2012,30 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         stop = StopAndReport("unexpected", f"{type(exc).__name__}: {exc}")
         _log(f"live build unexpected error: {type(exc).__name__}: {exc}")
     finally:
-        # CLEANUP — ALWAYS delete the created form, then close the session (no residue).
+        # CLEANUP — ALWAYS delete the created form, then close the session (no
+        # residue), with a POSITIVE verification either way (v18.1.5): the id +
+        # actual title come from walk_state so a mid-walk STOP can no longer hide
+        # a created form, and 'nothing to delete' is only ever CLAIMED after the
+        # rendered Forms list positively shows zero rows for the intended name.
         cleanup["attempted"] = True
         try:
-            if form_id:
-                cleanup.update(_delete_form(session, location_id, form_id, plan["form_name"]))
+            effective_form_id = walk_state.get("form_id") or form_id
+            actual_title = walk_state.get("actual_title", "")
+            if effective_form_id:
+                cleanup.update(_delete_form(session, location_id, effective_form_id,
+                                            plan["form_name"], actual_title=actual_title))
                 _screenshot(session, _shot(evidence_root, shot_n, "cleanup-deleted"))
             else:
-                cleanup["deleted"] = True
-                cleanup["note"] = "no form was created — nothing to delete"
+                cleanup.update(_verify_no_residue(
+                    session, location_id, plan["form_name"],
+                    possible_unnamed_orphan=bool(
+                        walk_state.get("stopped_after_create_confirm"))))
+                _screenshot(session, _shot(evidence_root, shot_n, "cleanup-no-residue"))
         except Exception as exc:  # noqa: BLE001
             cleanup["deleted"] = False
+            cleanup["verified_gone"] = False
             cleanup["error"] = f"{type(exc).__name__}: {exc}"
-            warnings.append(f"cleanup: delete_form raised: {exc}")
+            warnings.append(f"cleanup: delete/verify raised: {exc}")
         finally:
             try:
                 _session_cm.__exit__(None, None, None)   # emit the teardown step
@@ -1731,7 +2048,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
     if stop is not None:
         return {
             "pages": [], "location_gate_ok": False, "duration_s": duration,
-            "form_url": "", "form_id": form_id, "embed_code": "",
+            "form_url": "", "form_id": walk_state.get("form_id") or form_id,
+            "actual_title": walk_state.get("actual_title", ""), "embed_code": "",
             "error": str(stop), "stop_step": stop.step, "stop_reason": stop.reason,
             "warnings": warnings, "steps_done": steps_done, "cleanup": cleanup,
             "preflight": preflight,
@@ -1932,8 +2250,9 @@ def _selftest() -> int:
             self.calls: List[tuple] = []
 
         def __call__(self, session, source_text, drop_anchor, *, verify_text,
-                     iframe_selector=GHL_FORM_IFRAME_SELECTOR):
-            self.calls.append((source_text, drop_anchor, verify_text, iframe_selector))
+                     iframe_selector=GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+            self.calls.append((source_text, drop_anchor, verify_text, iframe_selector,
+                               source_scroll_hint))
             return {"ok": True, "placed": True, "source": source_text}
 
     _orig_ab = globals()["_ab"]
@@ -1990,26 +2309,55 @@ def _selftest() -> int:
                     errors.append(f"placement: `wait -- <text>` emitted (selector "
                                   f"semantics — must use `wait --text`): {c!r}")
 
-        # (b) GENUINE MISS — the tile is absent from the snapshot → StopAndReport at
-        #     the LOCATE stage, BEFORE any drag is attempted (never a fake success).
-        miss = _FakeAB("Form Element Quick Add Submit Email")   # no 'State' tile
+        # (b) SNAPSHOT-MISS + FRAME-SCOPED SCROLL-LOCATE (the F5.locate:City fix):
+        #     a tile absent from the TOP-FRAME snapshot (below the Quick-Add fold)
+        #     must NOT stop the walk — the frame-scoped drag is attempted WITH the
+        #     tile's category as the scroll hint (the primitive scrolls the section
+        #     into view; proven in ghl_iframe_drag --selftest/--live-selftest).
+        miss = _FakeAB("Form Element Quick Add Submit Email")   # no 'City' tile in snap
         missdrag = _FakeDrag()
         globals()["_ab"] = miss
         globals()["_perform_iframe_drag"] = missdrag
         with tempfile.TemporaryDirectory() as tmp3:
             os.makedirs(os.path.join(tmp3, "shots"), exist_ok=True)
-            raised = False
+            _place_quick_add_field("s", {"source": "standard", "element": "City",
+                                         "label": "City", "query_key": "city",
+                                         "quick_add_category": "Address",
+                                         "width_pct": 100, "required": False,
+                                         "hidden": False}, tmp3, [0], [], [])
+            if len(missdrag.calls) != 1:
+                errors.append("placement: snapshot-missing tile must still reach the "
+                              f"frame-scoped drag (got {len(missdrag.calls)} calls)")
+            elif missdrag.calls[0][4] != "Address":
+                errors.append("placement: the tile's CATEGORY must be passed as the "
+                              f"scroll hint (got {missdrag.calls[0][4]!r})")
+
+        # (c) GENUINE MISS — the FRAME-SCOPED locate itself fails (tile absent even
+        #     after the category scroll) → StopAndReport at the honest F5.locate
+        #     step (never a fake success, never an un-mapped iframe-drag step).
+        class _MissDrag:
+            def __call__(self, session, source_text, drop_anchor, *, verify_text,
+                         iframe_selector=GHL_FORM_IFRAME_SELECTOR,
+                         source_scroll_hint=""):
+                raise StopAndReport(
+                    "iframe-drag:source-not-found",
+                    "mock: tile genuinely absent inside the iframe")
+
+        globals()["_perform_iframe_drag"] = _MissDrag()
+        with tempfile.TemporaryDirectory() as tmp4:
+            os.makedirs(os.path.join(tmp4, "shots"), exist_ok=True)
+            raised_step = ""
             try:
                 _place_quick_add_field("s", {"source": "standard", "element": "State",
                                              "label": "State", "query_key": "state",
+                                             "quick_add_category": "Address",
                                              "width_pct": 100, "required": False,
-                                             "hidden": False}, tmp3, [0], [], [])
-            except StopAndReport:
-                raised = True
-            if not raised:
-                errors.append("placement: absent tile did NOT raise StopAndReport")
-            if missdrag.calls:
-                errors.append("placement: attempted a drag despite an absent tile (should STOP first)")
+                                             "hidden": False}, tmp4, [0], [], [])
+            except StopAndReport as sr:
+                raised_step = sr.step
+            if raised_step != "F5.locate:State":
+                errors.append("placement: frame-scoped locate miss must STOP at "
+                              f"F5.locate:<tile> (got {raised_step!r})")
     finally:
         globals()["_ab"] = _orig_ab
         globals()["_perform_iframe_drag"] = _orig_drag

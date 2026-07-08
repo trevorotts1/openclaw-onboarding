@@ -977,16 +977,37 @@ def _p2_rename_survey(
     evidence_root: str,
     shot_n: List[int],
 ) -> None:
-    """Phase B: rename Survey 0 to the target name (steps 5–10, PRD §5.B.2)."""
-    _log(f"P2-B: rename survey to {survey_name!r}")
+    """Phase B: rename Survey 0 to the target name (steps 5–10, PRD §5.B.2).
 
-    # Transcript steps 5–10: multiple clicks on 'Survey 0' to enter inline edit.
-    # Double-click is the clean path; transcript shows multiple single-clicks as
-    # the recorder captured the operator double-clicking imprecisely.
-    _dblclick(session, "Survey 0")
-    _fill(session, "Survey 0", survey_name)
-    # Commit by clicking the canvas (outside the title input)
-    _click(session, "Slide 1")
+    v18.1.5 — FRAME-SCOPED: the survey title is an in-iframe inline-edit surface
+    (same cross-origin constraint as the drags; the FORM builder's identical
+    rename failed SILENTLY live 2026-07-07 via top-frame dblclick/fill). The
+    rename now rides the shared ``ghl_iframe_drag.set_inline_title`` primitive —
+    pattern-locate ('Survey <n>' — the number is unknowable), verified edit-mode
+    entry, select-all + type + Enter, and an in-iframe verification. FAIL-CLOSED:
+    a survey must never proceed (or be left behind) default-named."""
+    _log(f"P2-B: rename survey to {survey_name!r} (frame-scoped)")
+    if _ghl_iframe_drag is None:
+        raise RuntimeError(
+            "STOP (survey rename): the shared ghl_iframe_drag primitive is not "
+            "importable — the in-iframe survey title cannot be reached (top-frame "
+            "verbs fail silently on this cross-origin surface).")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise RuntimeError(
+            "STOP (survey rename): could not read the agent-browser CDP url "
+            "(`get cdp-url`) for the frame-scoped inline-title rename.")
+    try:
+        _ghl_iframe_drag.set_inline_title(
+            cdp_url,
+            iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+            new_title=survey_name,
+            title_specs=_ghl_iframe_drag.DEFAULT_SURVEY_TITLE_SPECS,
+            url_marker="survey-builder",
+        )
+    except _ghl_iframe_drag.IframeDragError as exc:
+        raise RuntimeError(
+            f"STOP (survey rename:{exc.code}): {exc.reason}") from exc
     _wait(session, survey_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-b-renamed"))
