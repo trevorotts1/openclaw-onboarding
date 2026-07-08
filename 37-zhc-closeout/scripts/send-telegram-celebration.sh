@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# send-telegram-celebration.sh -- 6-message paced Telegram delivery to the owner.
+# send-telegram-celebration.sh -- 7-message paced Telegram delivery to the owner.
 #
 # DELIVERY CONFIRMATION (anti-faking, hardened):
 #   `openclaw message send` can exit 0 while the message never reached Telegram

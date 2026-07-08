@@ -53,9 +53,9 @@ Nothing. The closeout is a one-shot operation per client — there is nothing th
 
 **Sub-scripts:**
 - `scripts/generate-infographics.sh structure|workflow "<prompt>"` — KIE.AI image generation
-- `scripts/generate-celebration-video.sh "<prompt>"` — KIE.AI Veo 3.1 video
+- `scripts/generate-celebration-video.sh "<prompt>"` — KIE.AI Gemini Omni Video (default `gemini-omni-video`; fallback `veo3_fast`)
 - `scripts/create-notion-closeout.sh` — Notion page-tree creation
-- `scripts/send-telegram-celebration.sh` — 6-message Telegram delivery
+- `scripts/send-telegram-celebration.sh` — 7-message Telegram delivery
 
 **Trigger:** Auto-fires when `.workforce-build-state.json` has `buildCompletedAt`
 set AND `closeoutStatus` is not "done" or "sent". Either invoked inline by the

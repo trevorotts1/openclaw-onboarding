@@ -143,7 +143,7 @@ Stylized flow diagram. Less text-heavy than Step 2, so AI image gen is still app
 2. Fill `templates/infographic-2-prompt.md` with the same placeholders + one extra:
    - `{{EXAMPLE_TASK}}` — pulled from `workforce-interview-answers.md`; if not present, use a generic task seeded by the client's industry (e.g. "Launch a new email campaign" for a marketing-heavy client; "Onboard a new patient" for a healthcare client).
 3. Invoke `scripts/generate-infographics.sh workflow`. The script POSTs to KIE.AI `/jobs/createTask` with:
-   - Primary model: `gemini-3-1-flash-image` (Nano Banana 2) - much better at text rendering than the prior `gpt-image-2`. Override via env `ZHC_IMAGE_MODEL`.
+   - Primary model: `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image) - much better at text rendering than the prior `gpt-image-2`. Fallback `gpt-image-2-text-to-image`. Override via env `ZHC_IMAGE_MODEL`. (The bare `gemini-3-1-flash-image` slug returns HTTP 422 on KIE — the code pins `nano-banana-2`.)
    - Fallback model (attempt 3): `gpt-image-2-text-to-image`.
 4. Write `infographic2Url` to state file.
 
@@ -288,7 +288,7 @@ After every artifact cleared the 8.5 gate, was delivered, the phantom-closeout g
 
 **Retries per message:** 3 (with 2s/4s/8s backoff). If a message fails 3x:
 - If it's Message 1 (the announcement), abort the whole delivery, mark `closeoutStatus: "failed"`, set `closeoutFailureReason: "telegram-message-1: <error>"`. Resume cron will retry on next fire.
-- If it's Messages 2–6, log the failure but CONTINUE to the next message. After all attempted, if any failed, set `closeoutStatus: "failed"` with a summary listing which messages failed. The resume cron will pick up failed messages individually on its next fire (Step 6 is idempotent per-message via the `messagesDelivered` array). Each delivered slot is recorded as an OBJECT carrying its real gateway messageId — `{ "n": 1, "messageId": "51678", "chatId": "<owner>", "ts": "<iso>" }` — and a slot that the gateway accepted-but-returned-no-id is recorded as `{ "n": <slot>, "status": "send-failed" }` and is NOT counted delivered (so it is retried). A slot is "delivered" only when it carries a non-empty messageId.
+- If it's Messages 2–7, log the failure but CONTINUE to the next message. After all attempted, if any failed, set `closeoutStatus: "failed"` with a summary listing which messages failed. The resume cron will pick up failed messages individually on its next fire (Step 6 is idempotent per-message via the `messagesDelivered` array). Each delivered slot is recorded as an OBJECT carrying its real gateway messageId — `{ "n": 1, "messageId": "51678", "chatId": "<owner>", "ts": "<iso>" }` — and a slot that the gateway accepted-but-returned-no-id is recorded as `{ "n": <slot>, "status": "send-failed" }` and is NOT counted delivered (so it is retried). A slot is "delivered" only when it carries a non-empty messageId.
 
 ---
 
