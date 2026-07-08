@@ -37,6 +37,25 @@ WHAT IT GUARANTEES
     (working/checkpoints/adhoc_authorization.json). Without the logged record,
     --adhoc is REFUSED (exit 2). --adhoc NEVER relaxes a human gate.
 
+CC BOARD STATUS — INTENTIONAL EXEMPTION (SK2-11)
+  Skill 48 moves a producer-attested phase card straight to `done` (attest_phase)
+  and closes the epic card to `done` at run end, rather than parking every phase
+  in `review` for a separate scorer. This is a DELIBERATE exemption from the
+  "route producer output to review, reserve done for an independent scorer"
+  pattern, sound here because BOTH of the following hold:
+    (a) A phase is attested "attested" ONLY after validate_phase_receipt() passes
+        — the deterministic, fail-closed receipt-validation gate (ad_build_check
+        ._chk_*). That gate, not the language model's self-claim, is the
+        independent verification; `done` therefore never reflects a bare producer
+        assertion, only a gate-validated artifact.
+    (b) The CC board is FAIL-SOFT and a VIEW, never a runtime gate (see
+        cc_board.py) — its card status can never affect this foreman's exit code
+        or gate any spend/dispatch.
+  The two human gates (PICK-10, PUBLISH) still route to `review` (never auto-done)
+  so a human pause is always visible on the board. If a future deployment wires
+  an independent server-side QC scorer for ad campaigns, revisit this exemption
+  and route producer-attested phases to `review` for that scorer to promote.
+
 MONEY MODEL (LOCKED DECISIONS) — enforced via the receipt checkers, not here:
   estimate up front (AF-FBAD-COST-CEILING) -> per-job ceiling -> a cheap LOCAL
   running tally that stops before crossing (AF-FBAD-TALLY-CROSS) -> a single
@@ -288,7 +307,12 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
     obj["finalized"] = (phase_id == "PUBLISH" and status == "attested")
     p.write_text(json.dumps(obj, indent=2))
     # Board: an attested phase's card moves to done (fail-soft no-op when the
-    # board is disabled / unreachable).
+    # board is disabled / unreachable). INTENTIONAL EXEMPTION (SK2-11): a phase is
+    # only "attested" after validate_phase_receipt()'s deterministic fail-closed
+    # gate passes, so `done` reflects a gate-validated artifact, not a bare
+    # producer claim; and the board is a fail-soft VIEW, never a runtime gate. The
+    # human gates (PICK-10, PUBLISH) route to `review`, never auto-done. See the
+    # module docstring "CC BOARD STATUS — INTENTIONAL EXEMPTION" for the rationale.
     if status == "attested":
         _board_move(run_dir, phase_id, "done", reason=(note or f"{phase_id} attested"))
 
