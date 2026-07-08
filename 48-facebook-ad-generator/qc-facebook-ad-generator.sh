@@ -47,6 +47,7 @@ AD_RECOVERY="${SKILL_DIR}/scripts/ad_recovery.py"
 AD_RECOVERY_TEST="${SKILL_DIR}/scripts/test_ad_recovery.py"
 CC_BOARD="${SKILL_DIR}/scripts/cc_board.py"
 CC_BOARD_TEST="${SKILL_DIR}/scripts/test_cc_board.py"
+AD_MODELSOV="${SKILL_DIR}/scripts/ad_model_sovereignty.py"
 AD_UNPARK="${REPO_ROOT}/scripts/unpark-ad-run.sh"
 AD_FIXTURES="${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
 AD_CI="${REPO_ROOT}/.github/workflows/ad-pipeline-lockstep.yml"
@@ -62,13 +63,14 @@ assert "ad_recovery.py self-correct/park engine present" "[ -f \"${AD_RECOVERY}\
 assert "test_ad_recovery.py recovery proof suite present" "[ -f \"${AD_RECOVERY_TEST}\" ]"
 assert "cc_board.py producer-side board caller present" "[ -f \"${CC_BOARD}\" ]"
 assert "test_cc_board.py board-caller test suite present" "[ -f \"${CC_BOARD_TEST}\" ]"
+assert "ad_model_sovereignty.py no-Anthropic/model-tier gate present" "[ -f \"${AD_MODELSOV}\" ]"
 assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
 assert "make-ad-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${AD_FIXTURES}\" ]"
 assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
 
 # ---- The enforcement code must parse ----
 for py in "${AD_DRIVER}" "${AD_BUILDCHK}" "${AD_SYNC}" "${AD_GUARDA}" "${AD_TEST}" \
-          "${AD_RECOVERY}" "${AD_RECOVERY_TEST}"; do
+          "${AD_RECOVERY}" "${AD_RECOVERY_TEST}" "${AD_MODELSOV}"; do
   assert "$(basename "$py") parses" "python3 -c \"import ast; ast.parse(open('${py}').read())\""
 done
 assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
@@ -111,6 +113,8 @@ assert "test_cc_board.py — board caller fail-soft + auth/HMAC parity + legal-p
   "python3 \"${CC_BOARD_TEST}\" >/dev/null 2>&1"
 assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested+recovery (exit 0)" \
   "python3 \"${AD_GUARDA}\" >/dev/null 2>&1"
+assert "ad_model_sovereignty.py — model-content-receipt + no-Anthropic gate (self-test exit 0)" \
+  "python3 \"${AD_MODELSOV}\" --self-test >/dev/null 2>&1"
 
 # ---- The foreman must HARD-ABORT a bypass and ATTEST a complete run ----
 QC_TMP="$(mktemp -d 2>/dev/null || echo /tmp/fbad-qc-$$)"
