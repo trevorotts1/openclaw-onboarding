@@ -473,10 +473,19 @@ def self_test() -> int:
 def _mc_board_begin(run_dir: Path) -> Optional[str]:
     try:
         import mc_board
+        # The board department MUST be a real, seeded canonical department
+        # (23-ai-workforce-blueprint/department-naming-map.json). Skill 56's
+        # authoritative owning department per 23-ai-workforce-blueprint/
+        # skill-department-map.json is "marketing" (the PRIMARY role
+        # sales-page-assets-specialist lives under marketing; web-development is
+        # the secondary owner). The prior literal "funnels" was NOT a seeded
+        # department anywhere in the fleet, so every card silently misrouted /
+        # dropped — the same class of bug as Skill 53's "books". Regression-locked
+        # by scripts/test_sp_board_department.py (AST check of this literal).
         return mc_board.begin_run(
             run_dir, slug=run_dir.name,
             title=f"Sales Page Assets — {run_dir.name}",
-            department="funnels", persona="Sales Page Assets",
+            department="marketing", persona="Sales Page Assets",
             source="sales-page-assets")
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         print(f"[mc_board] begin best-effort skip ({exc})", file=sys.stderr)
