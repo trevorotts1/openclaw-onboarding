@@ -75,6 +75,7 @@ golden_bundle_reproduce() {
     run "golden[$label] intake PASS"    "$PY" "$SCRIPTS/prove_pb_intake.py"    "$dir/intake.json"
     run "golden[$label] wordcount PASS" "$PY" "$SCRIPTS/prove_pb_wordcount.py" "$dir/product-bio.md"
     run "golden[$label] sections PASS"  "$PY" "$SCRIPTS/prove_pb_sections.py"  "$dir/product-bio.md"
+    run "golden[$label] authenticity PASS" "$PY" "$SCRIPTS/prove_pb_authenticity.py" "$dir/product-bio.md"
     run "golden[$label] html PASS"      "$PY" "$SCRIPTS/prove_pb_html.py"      "$dir/product-bio.html" --source-bio "$dir/product-bio.md"
 }
 
@@ -101,7 +102,7 @@ golden_bundle_pilot() {
 echo "== Skill 55 (Product Bio Engine) :: verify.sh =="
 
 # 1) the five provers --self-test + the orchestrator gate self-test.
-for p in prove_pb_intake prove_pb_fidelity prove_pb_wordcount prove_pb_sections prove_pb_html; do
+for p in prove_pb_intake prove_pb_fidelity prove_pb_wordcount prove_pb_sections prove_pb_html prove_pb_authenticity; do
     if [ -f "$SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
     else
@@ -115,6 +116,7 @@ run "golden intake PASS"   "$PY" "$SCRIPTS/prove_pb_intake.py"   "$GOLD/intake.j
 run "golden fidelity PASS" "$PY" "$SCRIPTS/prove_pb_fidelity.py"
 run "golden wordcount PASS" "$PY" "$SCRIPTS/prove_pb_wordcount.py" "$GOLD/product-bio.md"
 run "golden sections PASS" "$PY" "$SCRIPTS/prove_pb_sections.py"  "$GOLD/product-bio.md"
+run "golden authenticity PASS" "$PY" "$SCRIPTS/prove_pb_authenticity.py" "$GOLD/product-bio.md"
 run "golden html PASS"     "$PY" "$SCRIPTS/prove_pb_html.py"      "$GOLD/product-bio.html" --source-bio "$GOLD/product-bio.md"
 
 # 2b) extra golden bundles reproduce — a SERVICE-type bio and a PHYSICAL-PRODUCT

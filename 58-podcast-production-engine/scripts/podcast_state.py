@@ -640,7 +640,19 @@ def cmd_create(conn, args):
 
     _assert_active(conn, args.client_id)
 
-    fingerprint = compute_fingerprint(args.contact_id, args.style, payload)
+    # SK2-14: the webhook layer already computed the authoritative canonical
+    # job_key over the SUPERSET of submission fields (webhook/job_key.HASH_FIELDS).
+    # Key THIS SQLite dedup off that SAME job_key so the two idempotency layers can
+    # never disagree. Previously this layer hashed a NARROWER field set
+    # (contact_id + style + q1..q10 + additional_info), so a submission the webhook
+    # treats as NEW (e.g. differs only in transparency_answer / show_name / target
+    # runtime — fields the webhook hashes but the local fingerprint ignored) would
+    # be seen here as a duplicate and NO episode would ever be created. Keying off
+    # the webhook job_key closes that never-create/drop hole. When no job_key is
+    # supplied (standalone CLI use, no webhook) we fall back to the local content
+    # fingerprint so create still works.
+    job_key = (args.job_key or "").strip()
+    fingerprint = job_key if job_key else compute_fingerprint(args.contact_id, args.style, payload)
 
     # Idempotency: same (client_id, submission_fingerprint) never runs twice.
     existing = conn.execute(

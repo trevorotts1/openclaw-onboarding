@@ -221,6 +221,7 @@ ENFORCE_FILES=(
     "$SCRIPTS/prove_pb_wordcount.py"
     "$SCRIPTS/prove_pb_sections.py"
     "$SCRIPTS/prove_pb_html.py"
+    "$SCRIPTS/prove_pb_authenticity.py"
     "$SELF_DIR/PRODUCT-BIO-MANIFEST.json"
     "$SCRIPTS/mc_board.py"
 )
@@ -233,7 +234,7 @@ version_hash_pin() {
     else
         echo "  (no sha256 tool; hash pin skipped)"; return 0
     fi
-    echo "  enforcement hash (sha256 of orchestrator+5 provers+common): $computed"
+    echo "  enforcement hash (sha256 of orchestrator+6 provers+common+manifest): $computed"
     local pin="$SELF_DIR/ENGINE-PIN.sha256"
     if [ -f "$pin" ]; then
         local expected; expected="$(tr -d ' \t\n' < "$pin")"

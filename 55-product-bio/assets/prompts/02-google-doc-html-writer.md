@@ -2,7 +2,7 @@
 
 - **Source workflow:** "Product bio, October 26, 2026" (n8n, 25 nodes, active)
 - **Source node:** `html writer` (type `lc.chainLlm`)
-- **Model node:** `OpenRouter Chat Model1` (type `lc.lmChatOpenRouter`, model `google/gemini-2.5-pro`)
+- **Model node:** `OpenRouter Chat Model1` (type `lc.lmChatOpenRouter`; model resolved at runtime by the client's OpenRouter routing — concrete provenance id stripped, SK2-18)
 - **Function:** Transforms the Product Bio Writer's plain-text output (`{{ $json.text }}`) into a Google Docs-compatible HTML document (starts exactly `<!DOCTYPE html>`, ends exactly `</html>`, no commentary) so Google Drive can convert it to a Google Doc.
 - **Extraction:** VERBATIM from `workflow-digest.json` -> `.nodes[] | select(.name=="html writer") | .llm_chain`. System text = `messages[0].message` (n8n chainLlm chat message; system role). User text = `prompt` field. The leading `=` on the User prompt is the n8n expression-mode marker; `{{ ... }}` are n8n expressions.
 

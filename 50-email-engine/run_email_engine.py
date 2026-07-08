@@ -127,9 +127,11 @@ def _chk_prove_email(run_dir: Path) -> tuple[bool, str]:
 
 
 def _certificate_sha(seq_id: str, email_count: int, steps) -> str:
-    """The deterministic certificate sha (shared by the writer and the deploy-time
-    verifier so the two can NEVER drift). Computed over the sequence identity, the
-    email count, and the ordered (phase_id, ok) steps — NOT the wall clock."""
+    """The deterministic certificate sha — an INTERNAL-CONSISTENCY digest over the
+    sequence identity, the email count, and the ordered (phase_id, ok) steps (NOT
+    the wall clock). It proves the cert body is self-consistent, but it is a PUBLIC
+    formula, so on its own it can be forged from scratch — the certificate_sig HMAC
+    below (SK2-07) is the real anti-forgery gate."""
     import hashlib
     sha_src = json.dumps(
         {"seq": seq_id, "n": email_count, "steps": [list(s) for s in steps]},
@@ -137,10 +139,72 @@ def _certificate_sha(seq_id: str, email_count: int, steps) -> str:
     return hashlib.sha256(sha_src.encode("utf-8")).hexdigest()
 
 
+# --- SK2-07: certificate HMAC signature (unforgeable-from-scratch) ------------
+# The public certificate_sha lets anyone hand-craft a passing certificate. Bind
+# the certificate to a per-run-dir SECRET so only a real governed run can mint one
+# and a deploy-time verifier checks the SIGNATURE, not the public formula.
+#
+# Why a dedicated key and not the front-door nonce: the front-door nonce
+# (.email-entry-nonce) is intentionally EPHEMERAL — it is deleted when
+# email-engine-entry.sh exits — and the deploy gate re-verifies the certificate in
+# a LATER run (build-plan.json is emitted AFTER the first governed pass; see the
+# P4-DEPLOY manifest label). A cert keyed on the ephemeral nonce could therefore
+# never be re-verified across runs. Instead the writer mints a persistent,
+# run-scoped 0600 key alongside the certificate; the verifier reads it. A
+# from-scratch forgery that fabricates a cert body has NO key, so it fails closed.
+def _cert_key_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / ".cert-hmac-key"
+
+
+def _cert_key(run_dir: Path, create: bool) -> str:
+    """Return the per-run-dir certificate signing key. When create=True (writer),
+    mint a random 0600 key if absent. When create=False (verifier), return "" if
+    absent so the verifier fails closed on an unkeyed (forged) certificate."""
+    p = _cert_key_path(run_dir)
+    if p.is_file():
+        try:
+            k = p.read_text(encoding="utf-8").strip()
+            if k:
+                return k
+        except OSError:
+            pass
+    if not create:
+        return ""
+    import secrets
+    k = secrets.token_hex(32)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(k, encoding="utf-8")
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+    except OSError:
+        return ""
+    return k
+
+
+def _certificate_canonical(body: dict) -> bytes:
+    """The signed portion = the whole cert MINUS its signature + wall-clock fields,
+    serialized deterministically. Writer and verifier must agree byte-for-byte."""
+    payload = {k: v for k, v in body.items()
+               if k not in ("certificate_sig", "certified_at")}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _certificate_sig(key: str, body: dict) -> str:
+    import hashlib
+    import hmac
+    return hmac.new(key.encode("utf-8"), _certificate_canonical(body), hashlib.sha256).hexdigest()
+
+
 def _verify_process_certificate(run_dir: Path) -> tuple[bool, str]:
-    """FIX-S36-46: the REAL delivery/PROCESS-CERTIFICATE.json is required — with
-    all_phases_pass:true AND a certificate_sha that RECOMPUTES from the cert body.
-    An inline self-signed dict is never accepted; a forged/tampered sha fails."""
+    """FIX-S36-46 + SK2-07: the REAL delivery/PROCESS-CERTIFICATE.json is required —
+    with all_phases_pass:true, a certificate_sha that RECOMPUTES from the cert body,
+    AND a certificate_sig HMAC that verifies against the run-scoped signing key. An
+    inline self-signed dict, a forged/tampered sha, or a from-scratch forgery with a
+    valid public sha but no valid HMAC (no key) all fail closed."""
+    import hmac
     cert_path = run_dir / "delivery" / "PROCESS-CERTIFICATE.json"
     if not cert_path.is_file():
         return False, ("a deploy artifact (build-plan.json) is present but "
@@ -159,7 +223,19 @@ def _verify_process_certificate(run_dir: Path) -> tuple[bool, str]:
     if body.get("certificate_sha") != recomputed:
         return False, ("PROCESS-CERTIFICATE.json certificate_sha does not recompute "
                        "(forge/tamper check failed)")
-    return True, "process certificate valid (all_phases_pass + sha recomputes)"
+    # SK2-07: verify the HMAC signature — this is the real anti-forgery gate. The
+    # signing key is minted 0600 by a genuine run; a from-scratch forgery has none.
+    key = _cert_key(run_dir, create=False)
+    if not key:
+        return False, ("PROCESS-CERTIFICATE.json present but its run-scoped signing key "
+                       "(working/checkpoints/.cert-hmac-key) is absent — the certificate cannot "
+                       "be authenticated (a from-scratch forgery carries no key); fail-closed")
+    sig = body.get("certificate_sig")
+    if not (isinstance(sig, str) and sig
+            and hmac.compare_digest(sig, _certificate_sig(key, body))):
+        return False, ("PROCESS-CERTIFICATE.json HMAC signature is missing/invalid — the "
+                       "certificate was not minted by a genuine governed run (forge/tamper)")
+    return True, "process certificate valid (all_phases_pass + sha recomputes + HMAC signature)"
 
 
 def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
@@ -591,6 +667,11 @@ def _write_certificate(run_dir: Path, proc: dict):
     # Shared with the deploy-time verifier (FIX-S36-46) so the two can never drift.
     body["certificate_sha"] = _certificate_sha(
         seq_id, email_count, [(s["phase_id"], s["ok"]) for s in steps])
+    # SK2-07: bind the certificate to a per-run-dir signing key so it cannot be
+    # forged from scratch. Mint the key (0600) if absent; sign the canonical body
+    # (which already carries certificate_sha, so a tampered sha breaks the sig too).
+    _key = _cert_key(run_dir, create=True)
+    body["certificate_sig"] = _certificate_sig(_key, body) if _key else ""
     body["certified_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     out_dir = run_dir / "delivery"
     try:
@@ -743,19 +824,35 @@ def self_test() -> int:
             json.dumps(valid_plan), encoding="utf-8")
         good, _ = _chk_deploy_approval(rd)
         _ck("_chk_deploy_approval build-plan w/o cert -> FAIL", good is False)
-        # a real, correctly-sha'd certificate -> PASS.
+        # SK2-07: a from-scratch forgery — a valid PUBLIC sha but NO signing key /
+        # signature — must FAIL. This is the exact hole the HMAC closes.
         steps = [(pid, True) for pid in PHASE_ORDER]
+        forged = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
+                  "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
+        forged["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
+        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(forged), encoding="utf-8")
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval from-scratch forgery (valid sha, NO HMAC key) -> FAIL", good is False)
+        # a REAL certificate: run-scoped key minted + valid HMAC signature -> PASS.
+        key = _cert_key(rd, create=True)
         cert = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
                 "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
         cert["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
+        cert["certificate_sig"] = _certificate_sig(key, cert)
         (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
         good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval real cert -> PASS", good is True)
-        # a forged sha must fail closed.
-        cert["certificate_sha"] = "0" * 64
-        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
+        _ck("_chk_deploy_approval real signed cert -> PASS", good is True)
+        # a forged sha must fail closed (sha recompute AND HMAC both break).
+        tampered = dict(cert); tampered["certificate_sha"] = "0" * 64
+        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered), encoding="utf-8")
         good, _ = _chk_deploy_approval(rd)
         _ck("_chk_deploy_approval forged sha -> FAIL", good is False)
+        # a body tamper the public sha does NOT cover (adds a field) must still fail
+        # the HMAC — proving the signature, not the public formula, is the gate.
+        tampered2 = dict(cert); tampered2["deploy_mode"] = "live"
+        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered2), encoding="utf-8")
+        good, _ = _chk_deploy_approval(rd)
+        _ck("_chk_deploy_approval body tamper (valid sha, broken HMAC) -> FAIL", good is False)
 
     # --- FIX-S36-48: _write_proc PRESERVES logged owner_skip_approvals ---
     with tempfile.TemporaryDirectory() as td:

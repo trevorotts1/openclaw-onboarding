@@ -83,6 +83,11 @@ from typing import Optional
 # Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map
 # (src/lib/validation.ts + src/lib/task-lifecycle.ts). Kept here ONLY to walk a
 # minimal legal path client-side; the server is always the final authority.
+# NOTE (SK2-11): the producer drives phase cards review->done deliberately — a
+# phase reaches `done` only after ad_director.validate_phase_receipt()'s
+# deterministic fail-closed gate passes, and this board is a fail-soft VIEW,
+# never a runtime gate. See ad_director.py "CC BOARD STATUS — INTENTIONAL
+# EXEMPTION" for the full rationale.
 VALID_STATUSES = ("backlog", "in_progress", "review", "blocked", "done")
 _LEGAL = {
     "backlog": {"in_progress", "blocked"},

@@ -1,12 +1,12 @@
 # Product Bio — PROCESS CERTIFICATE
 
 - **Product:** AtlasFlow (`atlasflow`)
-- **Measured word count:** 6105 (stripped; self-report ignored)
+- **Measured word count:** 6110 (stripped; self-report ignored)
 - **Measured signature closes:** 24 / 24
 - **All phases pass:** True
 - **Runtime:** local-only (no n8n / Google Drive / Slack / Gmail)
-- **Certificate SHA:** `5311779354e4febb6b4d1d242e258561386c9db163ae260d5e01f7478f4b8470`
-- **Certified at:** 2026-07-02T13:38:02.704295+00:00
+- **Certificate SHA:** `d737912745f374823a4b2222bddb5482e2a963106c142745f413e4a12ce26d34`
+- **Certified at:** 2026-07-08T22:52:46.799149+00:00
 
 | Phase | Verified |
 |---|---|

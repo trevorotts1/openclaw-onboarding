@@ -94,7 +94,7 @@ There is one more piece of the position worth naming out loud, because it is the
 10. How long will it last? Properly cared for, a lifetime and beyond — these pans are routinely handed down for generations, which is the entire point of buying iron instead of a coating.
 11. Does it come with any guarantee? It is backed for life against any manufacturing defect, though the honest truth is that solid iron rarely gives you a reason to use it; it is built to outlive the warranty many times over.
 
-## 8. Social Proof
+## 8. Social Proof (Illustrative Examples — not real testimonials)
 
 1. "I have replaced the same nonstick frying pan almost every year for a decade. This is the first pan I own that I genuinely believe I will never have to buy again."
 2. "The sear is on another level. My steaks went from gray and sad to a deep, restaurant crust the very first night, and I did not change a single thing except the pan."

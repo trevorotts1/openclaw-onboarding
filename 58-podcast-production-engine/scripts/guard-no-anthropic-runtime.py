@@ -444,6 +444,12 @@ def assert_routing(models):
                 findings.append((AF_ROUTING, "deny_patterns-missing-token:%s" % tok))
 
     # qc_judge cheap-tier only, no denied ids, no primary creative (kimi).
+    # SK2-15: the QC judge must be INDEPENDENT of the writer. The writer is the
+    # primary content-tier model (content[0], the strongest tier that authors the
+    # episode). Assert no qc_judge entry's model id equals the writer's — a
+    # judge==writer routing lets the writing model rubber-stamp its own output, so
+    # config-shape "independence" (cheap-tier + not-kimi) is not enough on its own.
+    writer_id = (ids[0] if ids else "").strip().lower()
     judge = models.get("qc_judge")
     if judge is not None:
         if not isinstance(judge, list) or not judge:
@@ -457,6 +463,9 @@ def assert_routing(models):
                     findings.append((AF_ROUTING, "qc_judge-entry-%d-not-cheap-tier" % i))
                 if "kimi" in jlow:
                     findings.append((AF_ROUTING, "qc_judge-entry-%d-uses-primary-creative-model" % i))
+                if writer_id and jid.strip().lower() == writer_id:
+                    findings.append((AF_ROUTING,
+                                     "qc_judge-entry-%d-equals-writer-model:%s" % (i, jid)))
                 for tok in _DENY_TOKENS_MATCH:
                     if tok in jlow:
                         findings.append((AF_ROUTING, "qc_judge-entry-%d-matches-deny-token:%s" % (i, tok)))
@@ -636,6 +645,17 @@ def self_test():
     check("routing-deny-incomplete", has(assert_routing(nodeny), "deny_patterns-missing-token"))
     judgebad = dict(good); judgebad["qc_judge"] = ["ollama-cloud/kimi-2.6"]
     check("routing-judge-kimi", has(assert_routing(judgebad), "primary-creative-model"))
+    # SK2-15: judge == writer (primary content model) is a fail; a distinct cheap
+    # judge is clean. Use a non-kimi writer so ONLY the writer-equality check fires.
+    judge_eq_writer = dict(good)
+    judge_eq_writer["content"] = ["ollama-cloud/glm-5.2", "openrouter/moonshotai/kimi-k2",
+                                  "gemini-3.1-flash-lite"]
+    judge_eq_writer["qc_judge"] = ["ollama-cloud/glm-5.2"]  # == content[0] writer
+    check("routing-judge-equals-writer",
+          has(assert_routing(judge_eq_writer), "equals-writer-model"))
+    judge_indep = dict(judge_eq_writer)
+    judge_indep["qc_judge"] = ["gemini-3.1-flash-lite"]  # distinct from writer -> clean
+    check("routing-judge-independent-of-writer-ok", assert_routing(judge_indep) == [])
     thinkbad = dict(good)
     thinkbad["content"] = [
         {"model": "ollama-cloud/kimi-2.6", "thinking": "high"},

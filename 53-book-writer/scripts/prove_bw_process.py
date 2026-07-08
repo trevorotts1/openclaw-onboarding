@@ -97,15 +97,22 @@ def bypass_scan(sources: dict) -> c.Result:
 
 
 def version_hash_pin(files, pin) -> c.Result:
-    """files: list of (name, bytes). pin: expected combined sha256 or None."""
+    """files: list of (name, bytes). pin: expected combined sha256 or None.
+
+    SK2-09: a MISSING pin is now a FAIL, not an advisory note. The ENGINE-PIN.sha256
+    must be shipped/committed with the skill; without it the enforcement-set hash is
+    UNPINNED and a modified orchestrator/prover could pass silently (the pin gate is
+    the AF-BK-HASH-PIN teeth). book-writer-entry.sh mints the pin at install if
+    absent, and it is committed in the repo, so a genuine install always has it."""
     r = c.Result("prove_bw_process:hash-pin")
     h = hashlib.sha256()
     for _name, data in files:
         h.update(data)
     computed = h.hexdigest()
     if pin is None:
-        r.note("no ENGINE-PIN.sha256 recorded; enforcement hash computed (%s..) not enforced"
-               % computed[:12])
+        r.fail(AF_HASH_PIN, "no ENGINE-PIN.sha256 present — the enforcement-set hash (%s..) is "
+               "UNPINNED; fail-closed (the pin must be committed/minted so a modified prover or "
+               "orchestrator cannot pass silently)" % computed[:12])
     elif pin.strip() != computed:
         r.fail(AF_HASH_PIN, "enforcement-set hash %s.. != pinned head %s.. (a prover was modified)"
                % (computed[:12], pin.strip()[:12]))
@@ -180,9 +187,12 @@ def self_test() -> int:
                    any(cd == AF_ENTRY_BYPASS for cd, _ in
                        bypass_scan({"ghl.py": "requests.get('https://services.leadconnectorhq.com/x')"}).violations)))
     files = [("a", b"x"), ("b", b"y")]
-    checks.append(("no pin -> note only, PASS", version_hash_pin(files, None).passed))
+    checks.append(("MISSING pin AUTOFAILs AF-BK-HASH-PIN (SK2-09 fail-closed)",
+                   any(cd == AF_HASH_PIN for cd, _ in version_hash_pin(files, None).violations)))
     checks.append(("wrong pin AUTOFAILs AF-BK-HASH-PIN",
                    any(cd == AF_HASH_PIN for cd, _ in version_hash_pin(files, "deadbeef").violations)))
+    _good_pin = hashlib.sha256(b"xy").hexdigest()
+    checks.append(("matching pin PASSES", version_hash_pin(files, _good_pin).passed))
     return c.selftest_report("prove_bw_process", checks)
 
 

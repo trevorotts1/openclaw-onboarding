@@ -2,7 +2,7 @@
 
 - **Source workflow:** "Product bio, October 26, 2026" (n8n, 25 nodes, active)
 - **Source node:** `write product bio` (type `lc.chainLlm`)
-- **Model node:** `OpenRouter Chat Model` (type `lc.lmChatOpenRouter`, model `google/gemini-2.5-pro`)
+- **Model node:** `OpenRouter Chat Model` (type `lc.lmChatOpenRouter`; model resolved at runtime by the client's OpenRouter routing — concrete provenance id stripped, SK2-18)
 - **Function:** Transforms raw product info into a 6,000-7,000-word, 10-section "master brain" product bio / sales knowledge base (intros, power adjectives, ICP, description, positioning, objections, FAQ, social proof, StoryBrand 2.0, 24 signature closes + completion verification block).
 - **Extraction:** VERBATIM from `workflow-digest.json` -> `.nodes[] | select(.name=="write product bio") | .llm_chain`. System text = `messages[0].message` (n8n chainLlm chat message; system role). User text = `prompt` field. The leading `=` on the User prompt is the n8n expression-mode marker; `{{ ... }}` are n8n expressions.
 
@@ -215,18 +215,18 @@ This is often said by business owners who don't realize they're bleeding money a
 
 **Why This Matters:** FAQs handle the logical concerns after emotional buy-in is achieved. They should remove final barriers to purchase and build confidence in the decision.
 
-### **8\. Social Proof Section (What Industry Leaders Are Saying)**
+### **8\. Social Proof Section (Illustrative Market-Voice Examples)**
 
 **What to Include:**
 
-* 8-10 unattributed but specific testimonial-style statements  
+* 8-10 ILLUSTRATIVE, specific example statements — clearly labeled as illustrative example copy, NOT real customer testimonials (never invent named people or companies and present them as real)  
 * Variety of perspectives (different industries, use cases, benefits)  
 * Specific results and transformations  
 * Emotional and logical appeals
 
-**Why This Matters:** Social proof reduces risk and builds confidence. Unattributed testimonials allow for powerful statements without needing actual names, while still conveying market consensus.
+**Why This Matters:** Social proof reduces risk and builds confidence. These are ILLUSTRATIVE example statements and MUST be presented as such — include a visible "illustrative — not real testimonials" disclaimer with the section. If genuine testimonials are used instead, each MUST be a sourced, attributed quote used with the customer's consent. NEVER present fabricated statements as real testimonials.
 
-**Good Example:**
+**Good Example (ILLUSTRATIVE — not a real testimonial):**
 
 ```
 **Marketing experts are calling it** the death of traditional marketing platforms. Why settle for basic automation when you can have AI that thinks, learns, and optimizes in real-time? They say their campaigns now run themselves better than they ever could manually.

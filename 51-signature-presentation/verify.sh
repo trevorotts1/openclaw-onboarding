@@ -69,16 +69,26 @@ if [ -f "$ENGINE" ]; then
     run "engine wire-presence (P-SP gates wired into build_deck.py)" \
         "$PY" "$SP_SCRIPTS/prove_sp_routing.py" --check-wiring "$ENGINE"
 else
-    printf '  [WARN] engine build_deck.py not co-located at %s — ' "$ENGINE"
-    printf 'skipping the wire-presence check (skill 23 engine not installed here)\n'
+    # SK2-08: FAIL (not WARN). Skill 51 has NO build path of its own — its gates
+    # bite ONLY when the Skill-23 presentations engine (build_deck.py) is present
+    # AND has the four _chk_sp_* wrappers wired. A missing engine means ZERO SP
+    # enforcement at runtime, so a WARN-and-pass here would certify a box on which
+    # the skill is completely unwired. skill 23 is the declared prerequisite engine.
+    printf '  [FAIL] engine build_deck.py NOT co-located at %s — ' "$ENGINE"
+    printf 'skill 23 (prerequisite presentations engine) is absent; SP enforcement is unwired.\n'
+    fails=$((fails + 1))
 fi
 
 # 2) library-register --check sanity: both SP roles are registered in _index.json.
 if [ -f "$REGISTER" ]; then
     run "register-library-additions.py --check" "$PY" "$REGISTER" --check
 else
-    printf '  [WARN] register-library-additions.py not found at %s — ' "$REGISTER"
-    printf 'skipping the library-register sanity (skill 23 engine not co-located)\n'
+    # SK2-08: FAIL (not WARN) — same rationale. The register script is part of the
+    # Skill-23 engine; its absence means the SP roles were never registered, so the
+    # skill cannot enforce anything.
+    printf '  [FAIL] register-library-additions.py NOT found at %s — ' "$REGISTER"
+    printf 'skill 23 engine is not co-located; SP roles are unregistered.\n'
+    fails=$((fails + 1))
 fi
 
 echo "=================================================="

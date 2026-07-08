@@ -174,9 +174,19 @@ def _emit(report, as_json, name_list_len):
             print("  [%s] %s:%d — %s" % (r["code"], r["file"], r["line"], r["class"]))
 
 
-def run(targets, as_json=False):
-    names = _client_names()
-    report = scan_targets(targets, names)
+def run(targets, as_json=False, require_names=False, names=None):
+    names = names if names is not None else _client_names()
+    report = []
+    # SK2-13: fail-CLOSED when the client-name list is unconfigured while a client-
+    # content scan is required. At BUILD time (scanning shipped skill files) an empty
+    # list is correct — client names are NEVER shipped. But at RUNTIME over generated
+    # client content, an empty list means the client-name leak screen never actually
+    # ran; silently passing would let a client name leak into published content. The
+    # runtime caller passes --require-names (or sets SMIB_SCRUB_REQUIRE_NAMES=1).
+    if require_names and not names:
+        report.append({"file": "SMIB_SCRUB_NAMES(_FILE)", "code": AF_NAME,
+                       "class": "name-list-unconfigured-fail-closed", "line": 0})
+    report += scan_targets(targets, names)
     _emit(report, as_json, len(names))
     return EXIT_PASS if not report else EXIT_AUTOFAIL
 
@@ -222,6 +232,31 @@ def self_test():
     cf("anthropic-env", "export ANTHROPIC_API_KEY=x", AF_NOANTHROPIC)
     cf("client-name", "The ACME Parenting Co brand", AF_NAME, ["Acme Parenting Co"])
 
+    print("== self-test: require-names fail-closed (SK2-13) ==")
+    import contextlib
+    import io
+    import tempfile
+
+    def _run_quiet(targets, require_names, names):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            return run(targets, as_json=True, require_names=require_names, names=names)
+
+    def chk(name, cond):
+        nonlocal ok
+        ok = ok and bool(cond)
+        print("  [%s] %s" % ("PASS" if cond else "MISS", name))
+
+    with tempfile.TemporaryDirectory() as td:
+        clean = Path(td) / "clean.md"
+        clean.write_text("Brand ships weekly content. No secrets here.\n", encoding="utf-8")
+        chk("require-names + UNCONFIGURED list -> AUTOFAIL (fail-closed)",
+            _run_quiet([str(clean)], require_names=True, names=[]) == EXIT_AUTOFAIL)
+        chk("require-names + configured list, no leak -> PASS",
+            _run_quiet([str(clean)], require_names=True, names=["Acme Parenting Co"]) == EXIT_PASS)
+        chk("build scan (no require-names) + empty list -> PASS (names never shipped)",
+            _run_quiet([str(clean)], require_names=False, names=[]) == EXIT_PASS)
+
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -230,13 +265,18 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Fail-closed scrub gate for Social Media in a Box (Skill 57).")
     ap.add_argument("targets", nargs="*", help="files or directories to screen")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--require-names", dest="require_names", action="store_true",
+                    help="fail-closed if the client-name list (SMIB_SCRUB_NAMES[_FILE]) is "
+                         "unset — pass this when scanning generated CLIENT content")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
     if not args.targets:
         ap.error("at least one file/dir target is required (or use --self-test)")
-    return run(args.targets, as_json=args.json)
+    require_names = args.require_names or \
+        os.environ.get("SMIB_SCRUB_REQUIRE_NAMES", "").strip().lower() in ("1", "true", "yes", "on")
+    return run(args.targets, as_json=args.json, require_names=require_names)
 
 
 if __name__ == "__main__":
