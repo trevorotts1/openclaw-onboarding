@@ -170,9 +170,19 @@ cache_put() {
   [ -n "$target" ] && [ -n "$rec" ] || { echo "cache_put: missing target/record" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "cache_put: jq required" >&2; return 2; }
   printf '%s' "$rec" | jq -e 'type=="object"' >/dev/null 2>&1 || { echo "cache_put: record is not a JSON object" >&2; return 2; }
-  # ATTRIBUTION CONTRACT — refuse a record missing source + retrieved_at.
-  if ! printf '%s' "$rec" | jq -e '(.source // "")!="" and (.retrieved_at // "")!=""' >/dev/null 2>&1; then
-    echo "cache_put: REFUSED — record missing source + retrieved_at (unattributed result is not a record)" >&2
+  # ATTRIBUTION CONTRACT (SK1-25) — refuse a record whose attribution is missing
+  # OR structurally implausible. `source` must be a real, non-placeholder origin
+  # (a URL, provider slug, or "census" — but NOT empty, a "<…>" placeholder, or
+  # "unknown"/"none"), and `retrieved_at` must be an ISO-8601 UTC timestamp — not
+  # merely a non-empty string. This raises the forgery bar: a hook can no longer
+  # pass the gate by stuffing arbitrary junk (e.g. retrieved_at:"yesterday" or a
+  # placeholder source) into those two fields.
+  if ! printf '%s' "$rec" | jq -e '
+        ((.source // "" | ascii_downcase) as $s
+          | ($s != "" and ($s | test("^<") | not) and $s != "unknown" and $s != "none"))
+        and ((.retrieved_at // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"))
+      ' >/dev/null 2>&1; then
+    echo "cache_put: REFUSED — record attribution invalid (source must be a real, non-placeholder origin and retrieved_at an ISO-8601 timestamp; an unattributed/implausible result is not a record)" >&2
     return 1
   fi
   local cdir key cfile
@@ -460,19 +470,32 @@ query() {
   #    source + retrieved_at (attribution). The router NEVER synthesizes a record
   #    itself; a hookless call is an honest available:false handoff, not a
   #    fabricated record.
+  # SK1-25: the operator retrieval hook is FAIL-CLOSED and sandboxed.
+  #   - It runs ONLY when explicitly enabled (SKILL40_ALLOW_RETRIEVE_CMD=1), so a
+  #     stray/injected SKILL40_RETRIEVE_CMD can never trigger code execution.
+  #   - SKILL40_RETRIEVE_CMD must resolve to an executable (command -v) and is
+  #     invoked DIRECTLY, never via `bash -c "<string>"` — an inline shell
+  #     payload (metacharacters, pipes, subshells) is no longer evaluated.
+  #   - Its output is still attribution-gated by cache_put (now http(s)+ISO gated).
   if [ -n "${SKILL40_RETRIEVE_CMD:-}" ]; then
     local rec put
-    rec="$(SKILL40_QUERY="$q" SKILL40_TARGET="$target" SKILL40_RTYPE="$rtype" bash -c "$SKILL40_RETRIEVE_CMD" 2>/dev/null || true)"
-    if [ -n "$rec" ]; then
-      if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
-        _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
-        jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+    if [ "${SKILL40_ALLOW_RETRIEVE_CMD:-0}" != "1" ]; then
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_enabled"}')"
+    elif ! command -v "$SKILL40_RETRIEVE_CMD" >/dev/null 2>&1; then
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_executable"}')"
+    else
+      rec="$(SKILL40_QUERY="$q" SKILL40_TARGET="$target" SKILL40_RTYPE="$rtype" "$SKILL40_RETRIEVE_CMD" 2>/dev/null || true)"
+      if [ -n "$rec" ]; then
+        if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
+          _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
+          jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+          return 0
+        fi
+        # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
+        _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')"
+        echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"unattributed", available:false}'
         return 0
       fi
-      # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')"
-      echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"unattributed", available:false}'
-      return 0
     fi
   fi
 
