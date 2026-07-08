@@ -92,6 +92,20 @@ _should_exclude() {
     # by the test-how-to-use-docs.sh gate, not A3.
     how-to-use-this-department.md)
       return 0 ;;
+    # A3 LIVE-BOX RESOLVE FIX: the Anthology Engine's preflight.sh renders a resolved
+    # model-map.json (OUT_DIR defaults to the skill dir) at install time on every
+    # live-model box, so the file lands INSIDE the A3-hashed skill tree
+    # (59-anthology-engine/model-map.json). It is ABSENT from the clean source tree
+    # (only config/model-map.template.json is shipped), carries per-box resolved
+    # tier→credential-LABEL bindings (never a key value), and therefore made the DEST
+    # digest of 59-anthology-engine diverge from SRC on every live box — withholding
+    # the version stamp fleet-wide. Its integrity is enforced separately by
+    # preflight.sh --check (AF-AE-UNRESOLVED-MODELMAP / AF-AE-ANTHROPIC), so excluding
+    # it does not weaken A3. Basename match ONLY hits the resolved artifact; the
+    # shipped model-map.template.json (different basename) stays fully in scope. Same
+    # class as the */OpenMontage/*, */node_modules/*, and */working/* exclusions.
+    model-map.json)
+      return 0 ;;
   esac
   case "$f" in
     */.git/*) return 0 ;;
