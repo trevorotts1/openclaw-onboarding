@@ -411,9 +411,18 @@ def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:
     est = _estimated_cost(run_dir)
     api_key = _load_kie_api_key()
     if not api_key:
-        print("=== PHASE-0 — no Kie API key on this box; balance pre-flight deferred to "
-              "the generation subprocess ===", flush=True)
-    reason = vbc.kie_balance_preflight(run_dir, est, api_key or None)
+        # SK1-67: a PAID job with no Kie key can never run — its balance cannot be
+        # verified and the paid generation will fail downstream. Deferring here (silent
+        # pass) let a keyless paid job proceed to a mid-run failure. Fail LOUD now.
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: AF-VID-KIE-BALANCE — this is a PAID Kie job but KIE_API_KEY "
+              "is not set on this box. A paid pipeline cannot run and its credit balance "
+              "cannot be verified without the client's Kie key. Set KIE_API_KEY, switch to "
+              "the free documentary-montage path, or re-run adhoc (owner-authorized) to "
+              "skip the balance pre-flight deliberately.", file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
+    reason = vbc.kie_balance_preflight(run_dir, est, api_key)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)
         print("FATAL PHASE-0: " + reason, file=sys.stderr)
