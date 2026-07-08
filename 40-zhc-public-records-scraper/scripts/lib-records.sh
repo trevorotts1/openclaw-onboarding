@@ -249,6 +249,12 @@ tier() {
   local fips="${1:-}" county="${2:-}" st="${3:-}"
   [ -n "$fips" ] || { echo '{"tier":"tier4_honest_gap","reason":"county_unresolved"}'; return 0; }
   local have_jq=0; command -v jq >/dev/null 2>&1 && have_jq=1
+  # SK1-24: track a config that MATCHES this county but is not yet servable
+  # (validated:false / placeholder URLs). The shipped Tier-1 configs all ship
+  # unvalidated by design, so without this the router would return a generic
+  # "no_online_db" and hide the fact that a curated config exists and just needs
+  # 05-validate-target.sh. Make that tier state EXPLICIT instead.
+  local matched_unvalidated=""
 
   # Tier 1: a curated config whose "county_fips" matches AND is servable.
   if [ "$have_jq" -eq 1 ] && [ -d "$TIER1_DIR" ]; then
@@ -266,7 +272,9 @@ tier() {
           '{tier:"tier1", target_ref:$slug, platform:$plat, reason:"curated tier1 config (validated)"}'
         return 0
       fi
-      # matched but not validated/filled → do NOT serve; fall through.
+      # matched but not validated/filled → do NOT serve; record it (SK1-24) so
+      # the honest gap can say the config exists and just needs validation.
+      [ -z "$matched_unvalidated" ] && matched_unvalidated="$(jq -r '.slug // empty' "$f" 2>/dev/null || true)"
     done
   fi
 
@@ -308,11 +316,21 @@ tier() {
           jq -cn --arg slug "$gslug" '{tier:"tier3", target_ref:$slug, platform:"custom", reason:"operator tier3 config (validated)"}'
           return 0
         fi
+        # matched but not validated/filled → record it (SK1-24) for an explicit gap.
+        [ -z "$matched_unvalidated" ] && matched_unvalidated="$(jq -r '.slug // empty' "$g" 2>/dev/null || true)"
       done
     fi
   fi
 
-  # Else Tier 4 — honest gap. NEVER FABRICATE.
+  # Else Tier 4 — honest gap. NEVER FABRICATE. Make the tier state EXPLICIT
+  # (SK1-24): if a curated/operator config MATCHED this county but was not yet
+  # validated/filled, say so — the operator can then run 05-validate-target.sh —
+  # rather than implying no data source exists at all.
+  if [ -n "$matched_unvalidated" ] && [ "$have_jq" -eq 1 ]; then
+    jq -cn --arg slug "$matched_unvalidated" \
+      '{tier:"tier4_honest_gap", reason:"config_present_unvalidated", target_ref:$slug, hint:"a curated config matches this county but is not validated/filled — run 05-validate-target.sh, fill portal_url/tos_url/selectors, set validated:true"}' \
+      2>/dev/null && return 0
+  fi
   echo '{"tier":"tier4_honest_gap","reason":"no_online_db"}'
   return 0
 }

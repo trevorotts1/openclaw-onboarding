@@ -44,3 +44,20 @@ county. Tier 2 membership is determined by the config's `platform` field linking
 to a `references/tier2-adapters/<vendor>.md` adapter. Tier 3 is whatever
 validated config the operator built under their master files. This keeps routing
 data-driven — adding a county is adding a config, not editing the router.
+
+## Ships honest-gap-until-validated (explicit tier state)
+
+The shipped Tier-1 configs are curated ROUTING TEMPLATES, not live retrievers:
+they ship with `validated:false` and placeholder `portal_url`/`tos_url`/selectors,
+and Skill 40 ships **no** built-in scraper. A config is only servable once the
+operator runs `05-validate-target.sh`, fills the real portal/ToS/selectors, and
+sets `validated:true` (a live retriever is then supplied via the Tier-2 adapter
+or the `SKILL40_RETRIEVE_CMD` hook). Until then every query for that county is an
+honest gap — but an EXPLICIT one: `lib-records.sh` distinguishes
+
+- `reason:"config_present_unvalidated"` (+ `target_ref` + a `hint`) — a curated
+  config matches this county but needs validation, versus
+- `reason:"no_online_db"` — no config exists for this county at all.
+
+This is by design: the skill NEVER fabricates a record, so an unvalidated county
+is a truthful "not connected yet", not a silent failure.
