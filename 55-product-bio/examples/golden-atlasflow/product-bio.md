@@ -94,7 +94,7 @@ There is one more piece of the position worth naming out loud, because it is the
 10. What does onboarding a new hire look like? They open one screen and see the real, current state of the work, so ramp time shrinks from foggy weeks of asking around to a clear day or two of doing.
 11. Can we customize it to our workflow? Yes — it adapts to how your team already works rather than forcing a rigid process on you, so you shape the tool instead of the tool reshaping your team.
 
-## 8. Social Proof
+## 8. Social Proof (Illustrative Examples — not real testimonials)
 
 1. "We got our evenings back in the very first week, and the low-grade dread of the Monday scramble is simply gone — I did not realize how much it was costing me until it lifted."
 2. "For the first time, everyone on the team trusts the same record. No more he-said, she-said about status, no more meetings that exist only to reconcile whose spreadsheet is right."

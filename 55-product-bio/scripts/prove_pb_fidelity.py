@@ -34,7 +34,7 @@ _FIX = _SKILL_DIR / "test-fixtures"
 # Recorded pins — the sha256 of the byte-identical baked copies of P1 / P2.
 EXPECTED_HASHES = {
     "01-product-bio-writer.md":
-        "67ead6929555dff09e1d2ed88d75b6a8325d31260eaa6caa9dd495cb2a245527",
+        "abe7c6ebd1da6ce519de025d9e6d52f7ae697bfb2f4234258473b42b7814bfac",
     "02-google-doc-html-writer.md":
         "5cd1b2833c4da6bf2e2de153f359edecd1c34a5462cfa10a5a670103f6fa2d39",
 }

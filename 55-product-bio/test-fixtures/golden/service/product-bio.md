@@ -94,7 +94,7 @@ There is one more piece of the position worth naming out loud, because it is the
 10. What do you need from me to begin? An honest willingness to be challenged and to act on what you commit to; the engagement does the rest, meeting you exactly where you are with no prerequisite reading or prep.
 11. What happens when the engagement ends? You leave with a sharper internal compass and the habits to coach yourself, so ending well is a feature, not a loss — and the door stays open if a new season calls for it.
 
-## 8. Social Proof
+## 8. Social Proof (Illustrative Examples — not real testimonials)
 
 1. "For the first time since I started the company, I have one place where I can say the scary thing out loud and get an honest answer instead of a nervous one."
 2. "I stopped relitigating the same three decisions every week. I make the call, I trust it, and I move — that alone gave me back hours and most of my sleep."

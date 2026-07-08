@@ -129,8 +129,18 @@ def _chk_bio_qc(run_dir: Path):
     extra = ["--intake", str(intake)] if intake.is_file() else []
     rc_w = _run_prover("prove_pb_wordcount.py", str(bio), *extra)
     rc_s = _run_prover("prove_pb_sections.py", str(bio), *extra)
-    ok = (rc_w == 0 and rc_s == 0)
-    return ok, ("bio QC PASS" if ok else "bio QC FAILED (wordcount exit %d, sections exit %d)" % (rc_w, rc_s))
+    # SK2-17: social-proof authenticity — fabricated statements may NOT be presented
+    # as real testimonials (fail-closed). If the client supplied genuine, attributed,
+    # consented quotes they live at working/copy/testimonials-sourced.json.
+    auth_args = [str(bio)]
+    sourced = run_dir / "working" / "copy" / "testimonials-sourced.json"
+    if sourced.is_file():
+        auth_args += ["--sourced", str(sourced)]
+    rc_a = _run_prover("prove_pb_authenticity.py", *auth_args)
+    ok = (rc_w == 0 and rc_s == 0 and rc_a == 0)
+    return ok, ("bio QC PASS" if ok else
+                "bio QC FAILED (wordcount exit %d, sections exit %d, authenticity exit %d)"
+                % (rc_w, rc_s, rc_a))
 
 
 def _chk_html_authored(run_dir: Path):
