@@ -175,6 +175,20 @@ def webhook_step(name: str, url: str, method: str = "POST", data: list | None = 
 
 
 def ai_step(name: str, prompt: str, model: str = "gpt-4o", **kw: Any) -> dict:
+    # NOTE (SK1-47): this is a GHL "ChatGPT" workflow ACTION node. The model runs on
+    # GoHighLevel's OWN platform (GHL bills its Conversation-AI credits) — it is NOT
+    # the client's sovereign OpenClaw model, so client model-sovereignty does not
+    # govern this platform field. Reject an Anthropic/Claude id here anyway: GHL's
+    # ChatGPT node cannot run one, so a claude/anthropic value is a mis-wiring, not a
+    # valid GHL platform model.
+    _m = str(model or "").lower()
+    if "anthropic" in _m or "claude" in _m:
+        raise ValueError(
+            f"GHL ChatGPT action model {model!r} is invalid: the GHL platform ChatGPT "
+            "node does not run Anthropic/Claude models. Use a GHL-supported ChatGPT "
+            "model id (e.g. gpt-4o). This node is a GHL-platform field, not the "
+            "client's sovereign OpenClaw model."
+        )
     return {
         "id": _uid(), "type": "chatgpt", "name": name,
         "attributes": {
