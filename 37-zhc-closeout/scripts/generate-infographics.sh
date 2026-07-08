@@ -242,17 +242,32 @@ if [[ -z "$WHAT_THEY_DELIVER" ]]; then
   esac
 fi
 
+# SK1-12: substitute client-derived values with a PURE-BASH literal replacer,
+# never sed. A client string containing sed metacharacters (| & \ / or a
+# newline) or a prompt-injection payload can no longer break out of the
+# substitution or corrupt the KIE prompt body — the values are treated strictly
+# as data. NOTE: bash 5.1+ treats a bare `&` in ${v//pat/repl} replacements as
+# the matched text, so we use prefix/suffix removal (which never interprets `&`)
+# for correct output on every bash version.
+_literal_replace() {  # <haystack> <needle> <replacement> -> stdout (literal)
+  local needle="$2" repl="$3" out="" rest="$1"
+  while [[ "$rest" == *"$needle"* ]]; do
+    out+="${rest%%"$needle"*}$repl"
+    rest="${rest#*"$needle"}"
+  done
+  printf '%s' "$out$rest"
+}
 PROMPT_RAW=$(cat "$TEMPLATE")
-PROMPT=$(printf '%s' "$PROMPT_RAW" \
-  | sed "s|{{COMPANY_NAME}}|${COMPANY_NAME}|g" \
-  | sed "s|{{OWNER_NAME}}|${OWNER_NAME}|g" \
-  | sed "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
-  | sed "s|{{DEPT_LIST}}|${DEPT_LIST}|g" \
-  | sed "s|{{ROLE_COUNT}}|${ROLE_COUNT}|g" \
-  | sed "s|{{BRAND_COLOR}}|${BRAND_COLOR}|g" \
-  | sed "s|{{INDUSTRY}}|${INDUSTRY}|g" \
-  | sed "s|{{WHAT_THEY_DELIVER}}|${WHAT_THEY_DELIVER}|g" \
-  | sed "s|{{EXAMPLE_TASK}}|${EXAMPLE_TASK}|g")
+PROMPT="$PROMPT_RAW"
+PROMPT="$(_literal_replace "$PROMPT" '{{COMPANY_NAME}}'     "$COMPANY_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{OWNER_NAME}}'       "$OWNER_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{AGENT_NAME}}'       "$AGENT_NAME")"
+PROMPT="$(_literal_replace "$PROMPT" '{{DEPT_LIST}}'        "$DEPT_LIST")"
+PROMPT="$(_literal_replace "$PROMPT" '{{ROLE_COUNT}}'       "$ROLE_COUNT")"
+PROMPT="$(_literal_replace "$PROMPT" '{{BRAND_COLOR}}'      "$BRAND_COLOR")"
+PROMPT="$(_literal_replace "$PROMPT" '{{INDUSTRY}}'         "$INDUSTRY")"
+PROMPT="$(_literal_replace "$PROMPT" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
+PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 
 PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
 FALLBACK_MODEL="gpt-image-2-text-to-image"

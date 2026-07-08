@@ -159,18 +159,23 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
   if [[ "$_early_qc" != "pass" ]]; then
     _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
     log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
+    # SK1-12: pass client-derived strings via jq --arg, never string-interpolate
+    # them into the jq program. _early_block_reason embeds .interviewQc.status
+    # (state-file data); a value containing a double-quote or jq syntax would
+    # otherwise corrupt the state write or inject into the filter.
     _tmp_s=$(mktemp)
-    jq ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_early_block_reason\"" \
+    jq --arg reason "$_early_block_reason" \
+      '.closeoutStatus = "blocked-interview-incomplete" | .closeoutBlockReason = $reason' \
       "$STATE_FILE" > "$_tmp_s" && mv "$_tmp_s" "$STATE_FILE" || rm -f "$_tmp_s"
     _TS_EARLY=$(now_iso)
     _tmp_b=$(mktemp)
-    jq "
-      .closeoutBlockers = (
+    jq --arg reason "$_early_block_reason" --arg since "$_TS_EARLY" \
+      '.closeoutBlockers = (
         (.closeoutBlockers // [])
-        | map(select(.class != \"STUCK_QC_FAILED\"))
-        | . + [{\"class\":\"STUCK_QC_FAILED\",\"reason\":\"$_early_block_reason\",\"since\":\"$_TS_EARLY\",\"escalatedAt\":null,\"cleared\":false}]
-      )
-    " "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
+        | map(select(.class != "STUCK_QC_FAILED"))
+        | . + [{"class":"STUCK_QC_FAILED","reason":$reason,"since":$since,"escalatedAt":null,"cleared":false}]
+      )' \
+      "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
     # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
     _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
     if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
