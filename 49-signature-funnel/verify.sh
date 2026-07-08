@@ -82,6 +82,12 @@ run "manifest/structure JSON parse" "$PY" -c "import json,sys; \
 [json.load(open('$SKILL_DIR/'+f)) for f in ('FUNNEL-MANIFEST.json','structure/funnel_structure.json','intake/sf-intake-questions.json')]"
 run "intake spec conforms to prove_sf_intake" "$PY" "$SCRIPTS/prove_sf_intake.py" "$SKILL_DIR/intake/sf-intake-questions.json"
 
+# 4b) FIX-BOARD-DEPT-01 — AST guard: the Command Center board department slug is a
+#     REAL, seeded fleet department (Skill 49's declared web-development/marketing),
+#     never the non-existent "funnels" (nor the sibling Skill 53 "books") defect.
+run "board department slug is canonical (test_sf_department.py)" \
+    "$PY" "$SCRIPTS/test_sf_department.py"
+
 # ---------------------------------------------------------------------------
 # 5) GOLDEN REPRODUCE — the committed golden funnel clears every gate + certifies.
 # ---------------------------------------------------------------------------

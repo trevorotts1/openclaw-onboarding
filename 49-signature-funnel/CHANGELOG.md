@@ -1,5 +1,46 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.3.1 — 2026-07-08 — Command Center board department slug fix (FIX-BOARD-DEPT-01)
+
+Board-routing metadata fix only — **no funnel content, gate, or certificate change**.
+The golden `PROCESS-CERTIFICATE.json` HMAC is byte-for-byte unchanged and still
+re-verifies; the department slug lives ONLY in the fail-soft Command Center board
+seam (a VIEW, never a gate), so no ledger, prompt, image, page, or certificate is
+touched.
+
+### Fixed
+- **FIX-BOARD-DEPT-01** — `run_signature_funnel.py::_mc_board_begin` hardcoded
+  `department="funnels"` when opening the run's Command Center card
+  (`mc_board.begin_run` → `card_open`, which posts `department_slug=<slug>` to
+  `POST /api/tasks/ingest`). **"funnels" is NOT a real, seeded fleet department**:
+  it is absent from the 22 mandatory departments and the universal-primary vertical
+  departments in `23-ai-workforce-blueprint/department-naming-map.json` and from the
+  canonical set enforced by `23-ai-workforce-blueprint/scripts/department-floor.py`
+  (it appears ONLY as descriptive text inside the web-development one-liner). Every
+  Signature Funnel card was therefore silently dropped / misrouted and never
+  surfaced on the kanban — the same defect shape as the Skill 53 Book Writer
+  `department="books"` bug. Repointed to Skill 49's authoritative owning department
+  **`web-development`** (its primary role `signature-funnel-specialist`, per
+  `23-ai-workforce-blueprint/skill-department-map.json`, which declares
+  `["web-development", "marketing"]`).
+
+### Added
+- **`scripts/test_sf_department.py`** — AST static regression guard: parses
+  `run_signature_funnel.py` and asserts every `department=` board literal is a
+  string that (1) is one of Skill 49's declared departments in
+  `skill-department-map.json`, (2) is a real seeded fleet department in
+  `department-naming-map.json`, and (3) is NEVER the broken `"funnels"` (or sibling
+  `"books"`) slug. Wired into `verify.sh` (check 4b). No import, no network.
+
+### Notes
+- `run_signature_funnel.py` is in the enforcement-core **hash pin**, so
+  `scripts/SF-PROVER-PIN.sha256` was re-minted (`bash signature-funnel-entry.sh
+  --write-pin`) for the one-line slug change. This re-stamp is the code-integrity
+  pin only and is distinct from the golden funnel certificate, which is unchanged.
+- `scripts/test_cc_contract.py` (byte-identical shared board contract across
+  49/50/53/55/56/57) is intentionally **not** modified — its `department="funnels"`
+  is an arbitrary mock label for a disabled-board no-op, not a routed slug.
+
 ## 1.3.0 — 2026-07-05 — gate-integrity harness (train W2-gate-integrity-harness, FIX-XC-05a)
 
 Train **W2-gate-integrity-harness**. Fix IDs: FIX-XC-05a. Ports the presentation
