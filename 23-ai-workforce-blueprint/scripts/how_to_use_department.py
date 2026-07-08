@@ -928,10 +928,44 @@ Honor an explicit owner choice above any template; build net-new only when nothi
 automation must clear the FAB-QC >= 8.5 build-quality gate before it counts as done.
 """
 
+# Telegram target-resolution doctrine, surfaced in the Communications guide
+# (Communications owns messaging / Telegram sends). A Telegram bot can deliver
+# ONLY to a numeric chat_id, never to a phone number, so the send target is
+# resolved from the fleet's own registry FIRST. ASCII dashes only (appended AFTER
+# the _sanitize_block pass); the sanctioned placeholder 1234567890 + a synthetic
+# name are the only example values. Doctrine: universal-sops/telegram-target-resolution.md.
+_TELEGRAM_TARGET_APPENDIX = """\
+---
+
+## Telegram Messages Go To A Chat ID, Never A Phone Number
+
+When this department sends you or your team a Telegram message, it delivers to a \
+numeric Telegram chat ID - never a phone number. A Telegram bot cannot text a \
+phone number: the Bot API has no way to turn a phone number (even a correct one \
+like +15551234567, or a phone saved on a CRM contact) into a delivery target.
+
+So before any Telegram send, your specialist resolves the correct numeric chat ID \
+from the company's own registry FIRST, using \
+`shared-utils/resolve-client-chat-id.sh "<your business name>"` (it prints the \
+numeric id, e.g. 1234567890). This lookup happens BEFORE any thought of a CRM \
+phone number, and a phone number is NEVER used as a fallback.
+
+If no chat ID is on file (the lookup comes back empty), the message is NOT sent to \
+some other target. The task is marked BLOCKED and escalated to the operator to \
+confirm or supply the right chat ID, rather than delivered to the wrong place or \
+silently dropped.
+
+- Doctrine: `universal-sops/telegram-target-resolution.md`
+- Resolver: `shared-utils/resolve-client-chat-id.sh`
+- Blocked-and-escalate rule: \
+`23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md`
+"""
+
 # Department-specific appendix blocks. Each value is appended verbatim after
 # the generated guide body (after the _sanitize_block pass, so they must
 # already be em-dash-free). Keep entries sorted by dept_folder key.
 _DEPT_APPENDIX = {
+    "communications": _TELEGRAM_TARGET_APPENDIX,
     "crm": _REUSABLE_LIBRARIES_APPENDIX,
     "marketing": _REUSABLE_LIBRARIES_APPENDIX,
     "presentations": """\

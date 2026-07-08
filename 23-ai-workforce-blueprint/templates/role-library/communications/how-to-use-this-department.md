@@ -195,3 +195,17 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## Telegram Messages Go To A Chat ID, Never A Phone Number
+
+When this department sends you or your team a Telegram message, it delivers to a numeric Telegram chat ID - never a phone number. A Telegram bot cannot text a phone number: the Bot API has no way to turn a phone number (even a correct one like +15551234567, or a phone saved on a CRM contact) into a delivery target.
+
+So before any Telegram send, your specialist resolves the correct numeric chat ID from the company's own registry FIRST, using `shared-utils/resolve-client-chat-id.sh "<your business name>"` (it prints the numeric id, e.g. 1234567890). This lookup happens BEFORE any thought of a CRM phone number, and a phone number is NEVER used as a fallback.
+
+If no chat ID is on file (the lookup comes back empty), the message is NOT sent to some other target. The task is marked BLOCKED and escalated to the operator to confirm or supply the right chat ID, rather than delivered to the wrong place or silently dropped.
+
+- Doctrine: `universal-sops/telegram-target-resolution.md`
+- Resolver: `shared-utils/resolve-client-chat-id.sh`
+- Blocked-and-escalate rule: `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md`

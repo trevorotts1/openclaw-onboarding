@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-06T22:24:39Z",
-  "file_count": 96,
+  "generated_at": "2026-07-07T22:41:56Z",
+  "file_count": 97,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
@@ -343,6 +343,10 @@
     "social-media-craft/SOP-SOCIAL-05-ENGAGE-REPORT.md": {
       "sha256": "bd47dbb6bee7b26a9810961151a3900889c31ddbdf205cfde29828eb00b924d3",
       "bytes": 2301
+    },
+    "telegram-target-resolution.md": {
+      "sha256": "d2066ad219471c6a8cd2052b5ae0d5e788ad331366231722a0adb4b90e9ba4e4",
+      "bytes": 5056
     },
     "video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md": {
       "sha256": "51188eb88c4cfe87883dbbe8c05d185912a1f3e9c3580fa19776b5961410b6a7",
