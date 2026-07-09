@@ -79,18 +79,32 @@ USABLE_AS_DEFAULT = ("topic", "task")
 # for. A task that hits none of these is treated as a NON-CONTENT task: the blend
 # still runs (topic expertise + task decomposition) but no audience voice gates
 # the write (backward-compatible for non-content tasks).
-_CONTENT_INTENT_SIGNALS = (
-    "email", "e-mail", "newsletter", "broadcast", "blast", "sequence",
+#
+# Signals are split into WORDS and PHRASES so they are matched WORD-WISE, never as
+# a raw substring. The old substring test flagged ops tasks as content because a
+# short signal appeared INSIDE an unrelated word ('ad' in read/download/admin/
+# grade/headshot, 'post' in compost, 'story' in history), wrongly gating writes.
+#   • _CONTENT_WORDS  — single-word signals matched against the task's TOKEN set
+#     (or a token's light stem: 'posts'→'post', 'ads'→'ad'). 'ad'/'dm'/'post'/
+#     'copy'/'hook'/'bio'/'reel'/'short'/'slide'/'deck' live here ONLY.
+#   • _CONTENT_PHRASES — multi-word / hyphenated signals matched as a space-bounded
+#     substring (specific enough that a bounded substring is safe).
+_CONTENT_WORDS = frozenset({
+    "email", "newsletter", "broadcast", "blast", "sequence",
     "social", "post", "caption", "tweet", "thread", "reel", "story",
-    "instagram", "facebook", "linkedin", "tiktok", "youtube", "x post",
-    "podcast", "episode", "show notes", "script", "voiceover", "vsl",
-    "blog", "article", "essay", "op-ed", "guest post",
-    "landing page", "sales page", "sales letter", "opt-in", "lead magnet",
-    "ad", "advert", "advertisement", "ad copy", "headline", "hook",
-    "copy", "copywriting", "web copy", "about page", "bio",
-    "video", "reel", "short", "carousel", "slide", "deck", "webinar",
+    "instagram", "facebook", "linkedin", "tiktok", "youtube",
+    "podcast", "episode", "script", "voiceover", "vsl",
+    "blog", "article", "essay",
+    "ad", "advert", "advertisement", "headline", "hook",
+    "copy", "copywriting", "bio",
+    "video", "short", "carousel", "slide", "deck", "webinar",
     "write", "draft", "rewrite", "ghostwrite", "compose", "pitch",
     "message", "dm", "outreach", "nurture", "announcement",
+})
+_CONTENT_PHRASES = (
+    "e-mail", "x post", "show notes", "op-ed", "guest post",
+    "landing page", "sales page", "sales letter", "opt-in", "lead magnet",
+    "ad copy", "web copy", "about page",
 )
 
 # Stopwords stripped before tag/query token overlap.
@@ -153,6 +167,11 @@ def _stem(tok: str) -> str:
     if len(tok) > 3 and tok.endswith("s"):
         return tok[:-1]
     return tok
+
+
+# Stemmed content-word signals, so a plural/gerund token still matches its base
+# ('posts'→'post', 'reels'→'reel', 'ads'→'ad'). Computed once _stem is defined.
+_CONTENT_WORD_STEMS = frozenset(_stem(w) for w in _CONTENT_WORDS)
 
 
 def _tag_hit(query_tokens: set, tags) -> tuple:
@@ -297,11 +316,25 @@ def validate_catalog_tags(catalog: dict) -> dict:
 
 # ── content-intent detection ──────────────────────────────────────────────────
 def is_content_task(task_text: str) -> bool:
-    """True when the task is a content / communication job (audience voice matters)."""
+    """True when the task is a content / communication job (audience voice matters).
+
+    Single-word signals are matched against the task's TOKEN set (or a token's light
+    stem), NEVER as a raw substring — so 'ad' matches the token 'ad'/'ads' but not
+    'read'/'download'/'admin'/'grade', and 'post' matches 'post'/'posts' but not
+    'compost'. Multi-word / hyphenated signals are matched as a space-bounded phrase.
+    This keeps ops tasks with an incidental content substring correctly non-content
+    (the module's back-compatibility guarantee) while genuine content still matches.
+    """
     if not task_text:
         return False
-    t = " " + str(task_text).lower() + " "
-    return any(sig in t for sig in _CONTENT_INTENT_SIGNALS)
+    text = str(task_text).lower()
+    words = {w for w in re.split(r"[^a-z0-9]+", text) if w}
+    if words & _CONTENT_WORDS:
+        return True
+    if any(_stem(w) in _CONTENT_WORD_STEMS for w in words):
+        return True
+    padded = " " + text + " "
+    return any(ph in padded for ph in _CONTENT_PHRASES)
 
 
 # ── audience resolution from ICP ──────────────────────────────────────────────
@@ -521,6 +554,12 @@ def match_topic_persona(catalog: dict, task_text: str, topic_hint: str = "",
         return None
     ranked.sort(key=lambda r: (-r[0], -r[1], -r[2], r[3]))
     score, hits, _n, pid, mtags, mtoks = ranked[0]
+    if hits == 0:
+        # Pure semantic-NUDGE winner: no topics[] tag actually matched the job (a
+        # 1.2 catalog, or a job with zero topic overlap). Return None so the caller
+        # falls back to the semantic pick with an HONEST rationale — never emit a
+        # 'topics[] match the job on [] (0 signal(s))' claim that did not happen.
+        return None
     vs = (personas[pid].get("voice_style") or {})
     summary = vs.get("summary") if isinstance(vs, dict) else None
     why = (f"Topic expertise: its topics[] match the job on {mtoks} "
@@ -727,10 +766,20 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
     # ── TOPIC persona (whole-catalog tags, semantic nudge) ──────────────────────
     tp = match_topic_persona(catalog, task, topic_hint, semantic_pick)
     if tp is None and semantic_pick:
-        # 1.2 catalog / no topics[] — fall back to the semantic selector's pick.
+        # No topics[] tag matched the job — inherit the 5-layer semantic pick. Keep
+        # the rationale honest: distinguish an un-enriched catalog (no topics[]
+        # ANYWHERE) from an enriched one where nothing matched THIS job.
+        _catalog_has_topics = any(
+            isinstance(v, dict) and v.get("topics")
+            for v in _persona_meta(catalog).values())
+        if _catalog_has_topics:
+            _fallback_why = ("Topic expertise inherited from the 5-layer semantic "
+                             "selector — no topics[] tag in the catalog matched this job.")
+        else:
+            _fallback_why = ("Topic expertise from the 5-layer semantic selector "
+                             "(catalog has no topics[] tags to reason over).")
         tp = {"persona_id": semantic_pick,
-              "why": "Topic expertise from the 5-layer semantic selector "
-                     "(catalog has no topics[] tags to reason over).",
+              "why": _fallback_why,
               "matched_tags": [], "matched_tokens": [],
               "score": semantic_score if semantic_score is not None else 0.0}
     if tp is None:
@@ -749,16 +798,24 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
     else:
         topic = task_category
 
-    # ── AUDIENCE persona (only for content tasks with a resolved label) ─────────
+    # ── AUDIENCE persona (only for content tasks with a CONFIRMED-ENOUGH label) ──
+    # When the ICP holds MULTIPLE known audiences and the operator has NOT chosen
+    # yet (source == 'asked'), audience_label is only the arbitrary FIRST descriptor
+    # — do NOT pre-commit its voice, neither directly nor via an audience-matching
+    # collapse. The write stays gated (confirm_required=True) and the ASK enumerates
+    # every candidate; the voice falls to the neutral house branch until confirmed.
+    _audience_unconfirmed_multi = (
+        ra.get("source") == "asked" and len(ra.get("candidates", [])) > 1)
+    voice_audience_label = "" if _audience_unconfirmed_multi else audience_label
     ap = None
-    if content_task and audience_label:
-        ap = match_audience_persona(catalog, audience_label)
+    if content_task and voice_audience_label:
+        ap = match_audience_persona(catalog, voice_audience_label)
     audience_pid = ap["persona_id"] if ap else None
 
     # ── COLLAPSE decision ───────────────────────────────────────────────────────
     if content_task:
         collapsed, collapsed_pid = decide_collapse(
-            catalog, audience_pid, topic_pid, audience_label, task, topic_hint)
+            catalog, audience_pid, topic_pid, voice_audience_label, task, topic_hint)
     else:
         # Non-content: no audience voice — the topic persona carries the voice.
         collapsed, collapsed_pid = True, topic_pid
@@ -784,7 +841,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
 
     blend_directive = build_blend_directive(
         audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
-        audience_label)
+        voice_audience_label)
 
     # ── TASK personas (up to 10) ────────────────────────────────────────────────
     task_personas, combined = build_task_personas(

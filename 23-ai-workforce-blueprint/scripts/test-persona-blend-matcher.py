@@ -28,6 +28,16 @@ Locks:
       "STYLE-INSPIRED, NEVER IMPERSONATION" clause.
   T8  TAG VALIDATOR — validates audiences/topics vs the new vocabs + usable_as vs
       the enum on a 1.3 catalog; a NO-OP on a 1.2 catalog.
+  T9  CONTENT-INTENT IS WORD-WISE — ops tasks whose text merely CONTAINS a content
+      substring ('ad' in read/download/admin, 'post' in compost, 'story' in
+      history) stay non-content and never gate a write; genuine content still
+      matches (whole-token/plural words + hyphenated/multi-word phrases).
+  T10 TOPIC RATIONALE HONESTY — a pure semantic-nudge (no topics[] tag matched)
+      defers so the emitted why never claims 'topics[] match the job on [] (0
+      signal(s))'; a real hit still reports an accurate topics[] rationale.
+  T11 MULTI-AUDIENCE (asked) — with several unconfirmed ICP audiences no voice is
+      pre-committed (neutral directive, write still gated, ASK lists all); a single
+      onboarding ICP is still pre-proposed for confirmation.
 
 Each check pairs with a NO-WEAKENING probe proving it FAILS on injected drift.
 
@@ -409,6 +419,142 @@ if v12["ok"] and v12.get("note", "").startswith("pre-enrichment"):
     ok("1.2 catalog → validator is a NO-OP (never turns a pre-enrichment box RED)")
 else:
     bad(f"1.2 validator should be a no-op: {v12}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section("T9  CONTENT-INTENT is WORD-WISE — ops tasks with incidental substrings stay non-content")
+
+# NO-WEAKENING: ops tasks whose text merely CONTAINS a content substring
+# ('ad' in read/download/admin/grade/headshot, 'post' in compost, 'story' in
+# history) must NOT be flagged as content — else the audience blend wrongly gates
+# an ops write. Each of these returns True on the old substring test (the bug).
+OPS_NON_CONTENT = [
+    "read the logs and restart", "update the readme file", "download the report",
+    "admin panel cleanup", "review the history of the directory",
+    "compost the old branches", "grade the homework", "make a headshot thumbnail",
+    "reconcile the admin ledger", "download the quarterly report",
+]
+_ops_wrong = [t for t in OPS_NON_CONTENT if pb.is_content_task(t) is not False]
+if not _ops_wrong:
+    ok(f"is_content_task=False for all {len(OPS_NON_CONTENT)} ops-with-incidental-substring tasks")
+else:
+    bad(f"is_content_task false-positives (should be non-content): {_ops_wrong}")
+
+# The other half of the NO-WEAKENING pair: genuine content still matches (single
+# words as whole tokens/plurals + hyphenated/multi-word phrases). Guards against
+# over-correcting the fix into a regression on real content jobs.
+GENUINE_CONTENT = [
+    "write the launch email", "draft an Instagram carousel post",
+    "record a podcast episode", "design the ad creative", "post to LinkedIn",
+    "write the sales page copy", "design the posts", "send an e-mail blast",
+    "build an opt-in page", "write an op-ed", "record a voiceover",
+]
+_content_wrong = [t for t in GENUINE_CONTENT if pb.is_content_task(t) is not True]
+if not _content_wrong:
+    ok(f"is_content_task=True for all {len(GENUINE_CONTENT)} genuine content tasks (no over-correction)")
+else:
+    bad(f"is_content_task missed genuine content: {_content_wrong}")
+
+# Through the BUNDLE: a non-mechanical ops task must be content_task=False AND
+# confirm_required=False (no audience voice, no write gate). This exact contract
+# FAILS on the pre-fix code (content_task=True gated the write) and locks it.
+for _optask in ("update the readme file", "reconcile the admin ledger",
+                "download the quarterly report"):
+    paths, db = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+    bo9 = pb.build_bundle(_optask, "operations", paths=paths, db_path=db,
+                          use_llm=False, record=False)
+    if (bo9["content_task"] is False and bo9["confirm_required"] is False
+            and bo9["voice"]["audience_persona"] is None):
+        ok(f"bundle: ops task {_optask!r} → content_task=False, confirm_required=False (no gate)")
+    else:
+        bad(f"bundle mis-gated ops task {_optask!r}: content={bo9['content_task']} "
+            f"confirm={bo9['confirm_required']} audience={bo9['voice']['audience_persona']}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section("T10  TOPIC RATIONALE HONESTY — never claim a topics[] match that did not happen")
+
+# A pure semantic-NUDGE (no topics[] tag actually matched) must return None from
+# match_topic_persona so the caller can emit an honest fallback rationale — never
+# the misleading 'its topics[] match the job on [] (0 signal(s))'.
+tp_nudge = pb.match_topic_persona(CAT13, "update the readme file",
+                                  semantic_pick="brunson-dotcom-secrets")
+if tp_nudge is None:
+    ok("match_topic_persona returns None on a pure-nudge/no-topic-match job (defers to fallback)")
+else:
+    bad(f"pure-nudge did not defer: {tp_nudge}")
+
+# A REAL topic hit still returns the persona with an accurate 'its topics[] match' why.
+tp_real = pb.match_topic_persona(CAT13, "write a marketing funnel email sequence",
+                                 semantic_pick="brunson-dotcom-secrets")
+if (tp_real and tp_real["persona_id"] == "brunson-dotcom-secrets"
+        and tp_real["matched_tokens"] and "its topics[] match" in tp_real["why"]):
+    ok("a real topics[] hit still returns the persona with an accurate rationale")
+else:
+    bad(f"real topic-hit rationale wrong: {tp_real}")
+
+# Through the BUNDLE on a 1.3 catalog: a no-topic-match job inherits the semantic
+# pick with an HONEST why, and NEVER the '[] (0 signal(s))' misclaim.
+paths, db = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+b10 = pb.build_bundle("update the readme file", "operations", paths=paths, db_path=db,
+                      use_llm=False, record=False)
+why10 = b10["voice"]["topic_persona"]["why"]
+if ("no topics[] tag in the catalog matched this job" in why10
+        and "match the job on []" not in why10 and "(0 signal(s))" not in why10):
+    ok("1.3 no-match bundle: honest 'no topics[] tag ... matched' rationale (no false claim)")
+else:
+    bad(f"1.3 no-match rationale dishonest: {why10!r}")
+
+# On a 1.2 catalog the rationale correctly says the catalog has NO topics[] at all.
+paths, db = _hermetic(FIXTURE_12, ICP_FOUNDERS)
+b10b = pb.build_bundle("write a marketing funnel email sequence", "marketing",
+                       paths=paths, db_path=db, use_llm=False, record=False)
+why10b = b10b["voice"]["topic_persona"]["why"]
+if ("catalog has no topics[] tags to reason over" in why10b
+        and "match the job on []" not in why10b):
+    ok("1.2 catalog: honest 'catalog has no topics[] tags' rationale")
+else:
+    bad(f"1.2 rationale wrong: {why10b!r}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section("T11  MULTI-AUDIENCE (asked) — do NOT pre-commit the arbitrary first voice")
+
+# A company with MULTIPLE known audiences whose FIRST descriptor happens to match a
+# real audience persona (shonda) must NOT have that voice pre-selected before the
+# operator chooses: audience_persona stays None, the directive is the neutral
+# house-voice branch, the write is still gated, and the ASK enumerates EVERY
+# candidate. On the pre-fix code shonda's voice was pre-committed here.
+ICP_MULTI_MATCH = {"audiences": ["Black women entrepreneurs", "financial beginners in debt"]}
+paths, db = _hermetic(FIXTURE_13, ICP_MULTI_MATCH)
+b11 = pb.build_bundle("write a marketing funnel email sequence", "marketing",
+                      paths=paths, db_path=db, use_llm=False, record=False)
+ra11 = b11["resolved_audience"]
+if (ra11["source"] == "asked" and b11["confirm_required"] is True
+        and b11["voice"]["audience_persona"] is None
+        and b11["voice"]["collapsed"] is False
+        and "Audience not yet confirmed" in b11["blend_directive"]
+        and all(c in ra11["ask"] for c in ("Black women entrepreneurs",
+                                           "financial beginners in debt"))):
+    ok("multi-audience: no voice pre-committed, neutral directive, write gated, ASK lists all")
+else:
+    bad(f"multi-audience pre-committed a voice: audience={b11['voice']['audience_persona']} "
+        f"collapsed={b11['voice']['collapsed']} directive={b11['blend_directive'][:60]!r}")
+
+# NO-WEAKENING: a SINGLE-ICP onboarding audience is still pre-proposed (the confirm
+# prompt shows the one known voice) — proving the suppression is scoped to the
+# unconfirmed-multi case only and does not gut the single-audience confirm flow.
+paths, db = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+b11s = pb.build_bundle("write a marketing funnel email sequence to launch our fund",
+                       "marketing", paths=paths, db_path=db, use_llm=False, record=False)
+if (b11s["resolved_audience"]["source"] == "onboarding_icp"
+        and b11s["voice"]["audience_persona"] is not None
+        and b11s["voice"]["audience_persona"]["id"] == "shonda-year-of-yes"
+        and b11s["confirm_required"] is True):
+    ok("NO-WEAKENING: single-ICP still pre-proposes the one known audience voice (confirm prompt)")
+else:
+    bad(f"single-ICP suppression regression: {b11s['voice']['audience_persona']} "
+        f"source={b11s['resolved_audience']['source']}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
