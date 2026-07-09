@@ -241,7 +241,7 @@ self_test() {
     { echo 'support = "help@example.com"   # example domain, allowed'
       echo 'remote  = "git@github.com"      # infra, allowed'
       echo 'recipient = "<PARTICIPANT_EMAIL>"  # placeholder, allowed'
-      echo 'telegram_chat_id = 8959124298   # bare digits = configuration, not PII'; } > "$td/clean/config.py"
+      echo 'telegram_chat_id = 1234567890   # bare digits = configuration, not PII'; } > "$td/clean/config.py"
     if run_scan "$td/clean" >/dev/null 2>&1; then echo "  clean case: PASS (exit 0)"
     else echo "$TAG self-test FAIL: clean tree flagged" >&2; OPT_SCOPE="$save_scope"; return $EX_ERR; fi
 
