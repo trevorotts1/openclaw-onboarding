@@ -1366,7 +1366,7 @@ looks_like_real_key() {
                 if printf '%s' "$val" | grep -qE '^(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]{20,})$'; then
                     regex_matched="yes"; else regex_matched="no"; fi ;;
             TELEGRAM_BOT_TOKEN)
-                # <bot_id>:<token>  e.g. 8873988361:AAGNmtD8vnYlgGcgG4Xzj3gXTNk5mbuZucU
+                # <bot_id>:<token>  e.g. 123456789:AAFake-Example-Token-Not-A-Real-Secret00
                 if printf '%s' "$val" | grep -qE '^[0-9]{8,12}:[A-Za-z0-9_-]{30,40}$'; then
                     regex_matched="yes"; else regex_matched="no"; fi ;;
             VERCEL_TOKEN)
