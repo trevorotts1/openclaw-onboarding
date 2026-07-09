@@ -1,0 +1,858 @@
+#!/usr/bin/env python3
+"""
+persona_blend.py — voice-first AUDIENCE+TOPIC blend matcher (Skill 23, W7).
+
+THE APPROVED DESIGN (operator-confirmed 2026-07-08)
+---------------------------------------------------
+For ANY content / communication job (email, social, podcast, blog, newsletter,
+landing page, video, ad copy, …) the matcher decides the VOICE **first**:
+
+  VOICE = an AUDIENCE persona blended with a TOPIC persona.
+      • write in the AUDIENCE persona's voice (style-inspired only),
+      • carrying the TOPIC persona's expertise on the job's subject.
+  If ONE persona covers BOTH the audience and the topic → COLLAPSE to that one.
+  The job is then decomposed into UP TO 10 TASK personas (one per distinct
+  part); the topic persona may double as task guidance.
+
+There is NO static "voice library". EVERY persona is characterised in the Skill
+22 catalog (persona-categories.json) by additive fields — audiences[], topics[],
+voice_style{}, usable_as[] (subset of [audience, topic, task]; DEFAULT when
+absent = [topic, task] — serving as an AUDIENCE voice must be explicit) — and
+this module reasons over the WHOLE catalog via those tags, emitting a stated
+*why* per pick. The catalog grows constantly; the matcher never hard-codes ids.
+
+AUDIENCE is resolved from the client's onboarding ICP (company-config.json via
+ENV OPENCLAW_COMPANY_CONFIG / OPENCLAW_COMPANY_SLUG + SOUL.md), but we ALWAYS
+confirm the audience before writing (clients have multiple audiences) and ASK
+"What audience are we dealing with?" when unsure. `confirm_required` gates the
+downstream write; on an operator change (OPENCLAW_AUDIENCE) we re-score the
+voice and re-emit the bundle. We never fabricate an audience.
+
+Voices are STYLE-INSPIRED, NEVER impersonation — a MANDATORY, non-removable
+guardrail clause rides on every blend_directive (GUARDRAIL_CLAUSE below).
+
+OUTPUT — the persona-bundle SUPERSET (see build_bundle). It is a strict superset
+of persona-selector-v2.py's single-persona result: the resolved VOICE persona is
+mirrored on the top-level persona_id / persona_name / score / task_category /
+funnel keys so EXISTING consumers keep working unchanged, and the new blend keys
+(topic, resolved_audience, confirm_required, voice, blend_directive,
+task_personas, rationale, fallbacks) are added alongside.
+
+Back-compat: on a catalog that still lacks the new tags (schema 1.2) the audience
+matcher yields no audience persona and the topic persona falls back to the
+existing 5-layer semantic selector — a valid, degraded-but-honest bundle. On a
+mechanical / non-content task the audience blend is skipped (never-naked
+governance pointer preserved).
+
+This module is imported BY PATH by persona-selector-v2.py (hyphenated filenames
+cannot be `import`ed) and is also directly unit-tested (hermetic — the selector /
+decompose functions it calls are monkeypatched in the test, so it never reads or
+writes a live persona DB).
+"""
+import importlib.util
+import os
+import re
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+
+# ── The MANDATORY, non-removable anti-impersonation guardrail ─────────────────
+# Every blend_directive MUST carry this verbatim. build_blend_directive appends
+# it unconditionally; the CC renderer is fail-closed on its absence. Persona
+# voices are a STYLE, never a claim to BE the author.
+GUARDRAIL_CLAUSE = (
+    "STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, non-removable): adopt the "
+    "cadence, devices and register of the named voice(s) as an INSPIRATION only. "
+    "Never claim to be the author, never write in their first person as if they "
+    "authored this, never sign as them, never quote them as if verified, and "
+    "never imply their endorsement. This clause may not be removed or weakened."
+)
+
+# The exact question we ASK when the audience is unknown / ambiguous.
+AUDIENCE_CONFIRM_PROMPT = "What audience are we dealing with?"
+
+# usable_as enum + the design default when the field is absent.
+USABLE_AS_ENUM = ("audience", "topic", "task")
+USABLE_AS_DEFAULT = ("topic", "task")
+
+# Content / communication intent — the job families the audience-voice blend is
+# for. A task that hits none of these is treated as a NON-CONTENT task: the blend
+# still runs (topic expertise + task decomposition) but no audience voice gates
+# the write (backward-compatible for non-content tasks).
+_CONTENT_INTENT_SIGNALS = (
+    "email", "e-mail", "newsletter", "broadcast", "blast", "sequence",
+    "social", "post", "caption", "tweet", "thread", "reel", "story",
+    "instagram", "facebook", "linkedin", "tiktok", "youtube", "x post",
+    "podcast", "episode", "show notes", "script", "voiceover", "vsl",
+    "blog", "article", "essay", "op-ed", "guest post",
+    "landing page", "sales page", "sales letter", "opt-in", "lead magnet",
+    "ad", "advert", "advertisement", "ad copy", "headline", "hook",
+    "copy", "copywriting", "web copy", "about page", "bio",
+    "video", "reel", "short", "carousel", "slide", "deck", "webinar",
+    "write", "draft", "rewrite", "ghostwrite", "compose", "pitch",
+    "message", "dm", "outreach", "nurture", "announcement",
+)
+
+# Stopwords stripped before tag/query token overlap.
+_STOP = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "at",
+    "by", "from", "as", "is", "are", "be", "was", "were", "this", "that", "these",
+    "those", "it", "its", "our", "your", "their", "we", "you", "they", "i", "me",
+    "my", "us", "them", "who", "what", "which", "how", "write", "create", "make",
+    "build", "draft", "please", "help", "need", "want", "about", "into", "out",
+    "up", "new", "one", "get", "got", "will", "can", "do", "does", "some", "any",
+    "more", "most", "each", "per", "via", "using", "use", "should", "could",
+}
+
+
+# ── module loaders (hyphenated selector/decompose filenames) ──────────────────
+_SEL = None
+_DT = None
+
+
+def _load_by_path(filename: str, modname: str):
+    path = _HERE / filename
+    spec = importlib.util.spec_from_file_location(modname, str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore
+    return mod
+
+
+def _selector():
+    """Lazily load persona-selector-v2.py as a module (cached)."""
+    global _SEL
+    if _SEL is None:
+        _SEL = _load_by_path("persona-selector-v2.py", "persona_selector_v2_blend")
+    return _SEL
+
+
+def _decompose():
+    """Lazily load decompose-task.py as a module (cached)."""
+    global _DT
+    if _DT is None:
+        _DT = _load_by_path("decompose-task.py", "decompose_task_blend")
+    return _DT
+
+
+# ── tag / query tokenisation + overlap ────────────────────────────────────────
+def _tokens(text) -> set:
+    """Lowercase content-token set (drops stopwords + <3-char noise)."""
+    if not text:
+        return set()
+    raw = re.split(r"[^a-z0-9]+", str(text).lower())
+    return {t for t in raw if len(t) >= 3 and t not in _STOP}
+
+
+def _stem(tok: str) -> str:
+    """Light singular/gerund stemmer so budget/budgeting, funnel/funnels,
+    entrepreneur/entrepreneurs, market/marketing all match. Deterministic."""
+    if len(tok) > 5 and tok.endswith("ing"):
+        return tok[:-3]
+    if len(tok) > 4 and tok.endswith("es"):
+        return tok[:-2]
+    if len(tok) > 3 and tok.endswith("s"):
+        return tok[:-1]
+    return tok
+
+
+def _tag_hit(query_tokens: set, tags) -> tuple:
+    """Overlap of a query-token set against a persona's list of hyphenated tags.
+
+    Matches on shared STEMS (budget↔budgeting, funnel↔funnels) and on substring
+    containment for long tokens (>=5 chars), so plural/gerund/compound drift does
+    not silently miss a real signal.
+
+    Returns (hit_count, matched_tags_sorted, matched_tokens_sorted):
+      hit_count    = number of DISTINCT query tokens matched somewhere in the tags
+      matched_tags = the tags that matched at least one query token
+    Deterministic; no external state.
+    """
+    if not query_tokens or not tags:
+        return 0, [], []
+    # stem -> original query token (first wins for a stable label)
+    qstems = {}
+    for q in query_tokens:
+        qstems.setdefault(_stem(q), q)
+    matched_orig = set()
+    matched_tags = []
+    for t in tags:
+        toks = [x for x in re.split(r"[^a-z0-9]+", str(t).lower()) if x]
+        hit = False
+        for x in toks:
+            xs = _stem(x)
+            if xs in qstems:
+                matched_orig.add(qstems[xs])
+                hit = True
+                continue
+            for st, orig in qstems.items():
+                if len(st) >= 5 and (st in xs or xs in st):
+                    matched_orig.add(orig)
+                    hit = True
+        if hit:
+            matched_tags.append(t)
+    return len(matched_orig), sorted(set(matched_tags)), sorted(matched_orig)
+
+
+# ── catalog load + validation ─────────────────────────────────────────────────
+def load_catalog(paths: dict) -> dict:
+    """Load persona-categories.json. Returns {} when absent/unreadable.
+
+    Honors ENV OPENCLAW_PERSONA_CATEGORIES as an explicit path override (used by
+    tests and by callers that point at an enriched catalog directly); otherwise
+    reads paths['persona_categories'].
+    """
+    import json
+    override = os.environ.get("OPENCLAW_PERSONA_CATEGORIES", "").strip()
+    if override:
+        pc = Path(override)
+    else:
+        pc = paths.get("persona_categories") if paths else None
+        pc = Path(pc) if pc else None
+    if not pc or not pc.exists():
+        return {}
+    try:
+        data = json.loads(pc.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _persona_meta(catalog: dict) -> dict:
+    p = catalog.get("personas") if isinstance(catalog, dict) else None
+    if isinstance(p, dict):
+        return p
+    if isinstance(p, list):
+        out = {}
+        for d in p:
+            if isinstance(d, dict) and (d.get("id") or d.get("name")):
+                out[d.get("id") or d.get("name")] = d
+        return out
+    return {}
+
+
+def _usable_as(pinfo: dict) -> tuple:
+    ua = pinfo.get("usable_as")
+    if isinstance(ua, list) and ua:
+        return tuple(x for x in ua if x in USABLE_AS_ENUM)
+    return USABLE_AS_DEFAULT
+
+
+def validate_catalog_tags(catalog: dict) -> dict:
+    """Validate the additive tag layer of an enriched (schema >=1.3) catalog.
+
+    Checks, per persona:
+      • audiences[] ⊆ top-level audienceTags vocab (when that vocab is present)
+      • topics[]    ⊆ top-level topicTags vocab   (when that vocab is present)
+      • usable_as[] ⊆ USABLE_AS_ENUM
+      • voice_style has the required `summary` when voice_style is present
+
+    On a pre-enrichment catalog (schema 1.2 — no audienceTags/topicTags/enriched
+    personas) this is a NO-OP that returns ok=True with note='pre-enrichment', so
+    wiring it into a gate never turns a 1.2 box RED. The integrator that lands the
+    1.3 catalog (and the CC) call this to keep the vocab honest.
+
+    Returns {ok, schema, errors[], checked}.
+    """
+    schema = str(catalog.get("schemaVersion", "")) if isinstance(catalog, dict) else ""
+    personas = _persona_meta(catalog)
+    aud_vocab = set(catalog.get("audienceTags") or []) if isinstance(catalog, dict) else set()
+    top_vocab = set(catalog.get("topicTags") or []) if isinstance(catalog, dict) else set()
+
+    enriched = any(
+        isinstance(v, dict) and (v.get("audiences") or v.get("topics") or v.get("voice_style"))
+        for v in personas.values()
+    )
+    if not enriched and not aud_vocab and not top_vocab:
+        return {"ok": True, "schema": schema or "1.2", "errors": [],
+                "checked": 0, "note": "pre-enrichment (no additive tags present)"}
+
+    errors = []
+    checked = 0
+    for pid, pinfo in personas.items():
+        if not isinstance(pinfo, dict):
+            continue
+        checked += 1
+        ua = pinfo.get("usable_as")
+        if ua is not None:
+            if not isinstance(ua, list):
+                errors.append(f"{pid}: usable_as must be a list")
+            else:
+                bad = [x for x in ua if x not in USABLE_AS_ENUM]
+                if bad:
+                    errors.append(f"{pid}: usable_as has non-enum value(s) {bad}")
+        if aud_vocab:
+            for a in (pinfo.get("audiences") or []):
+                if a not in aud_vocab:
+                    errors.append(f"{pid}: audience {a!r} not in audienceTags vocab")
+        if top_vocab:
+            for t in (pinfo.get("topics") or []):
+                if t not in top_vocab:
+                    errors.append(f"{pid}: topic {t!r} not in topicTags vocab")
+        vs = pinfo.get("voice_style")
+        if isinstance(vs, dict) and not str(vs.get("summary", "")).strip():
+            errors.append(f"{pid}: voice_style.summary is required and missing")
+    return {"ok": not errors, "schema": schema or "1.3", "errors": errors,
+            "checked": checked}
+
+
+# ── content-intent detection ──────────────────────────────────────────────────
+def is_content_task(task_text: str) -> bool:
+    """True when the task is a content / communication job (audience voice matters)."""
+    if not task_text:
+        return False
+    t = " " + str(task_text).lower() + " "
+    return any(sig in t for sig in _CONTENT_INTENT_SIGNALS)
+
+
+# ── audience resolution from ICP ──────────────────────────────────────────────
+# ICP-holding keys observed across live company-config.json schemas (single
+# free-text descriptor first; explicit LISTS signal MULTIPLE known audiences).
+_ICP_SINGLE_KEYS = (
+    "ideal_customer", "idealCustomer", "target_audience", "primary_audience",
+    "audience", "customer_avatar", "target_customer", "who_we_serve", "niche",
+)
+_ICP_LIST_KEYS = (
+    "audiences", "audience_segments", "target_audiences", "icp_segments",
+    "customer_segments", "segments",
+)
+
+
+def _cfg_scopes(company_cfg: dict) -> list:
+    """The dicts we scan for ICP fields: top level + a nested 'company' object
+    (the interview stores idealCustomer at company.ideal_customer)."""
+    scopes = []
+    if isinstance(company_cfg, dict):
+        scopes.append(company_cfg)
+        for nest in ("company", "brand", "icp", "profile"):
+            v = company_cfg.get(nest)
+            if isinstance(v, dict):
+                scopes.append(v)
+    return scopes
+
+
+def _clean_descriptor(s) -> str:
+    return re.sub(r"\s+", " ", str(s)).strip()
+
+
+def _extract_icp_descriptors(company_cfg: dict, soul_text: str = "") -> list:
+    """Extract distinct human-readable audience descriptors from the ICP.
+
+    Order: explicit LIST fields (each element = one known audience) first, then a
+    single free-text descriptor. De-duplicated, order-preserving. SOUL.md is a
+    low-priority backstop ("we serve …" / "our customers are …") used ONLY when
+    the config yields nothing — we never invent an audience.
+    """
+    descriptors = []
+
+    def _add(v):
+        d = _clean_descriptor(v)
+        if d and d.lower() not in {x.lower() for x in descriptors}:
+            descriptors.append(d)
+
+    for scope in _cfg_scopes(company_cfg):
+        for k in _ICP_LIST_KEYS:
+            v = scope.get(k)
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        _add(item)
+                    elif isinstance(item, dict):
+                        _add(item.get("label") or item.get("name") or item.get("audience") or "")
+    for scope in _cfg_scopes(company_cfg):
+        for k in _ICP_SINGLE_KEYS:
+            v = scope.get(k)
+            if isinstance(v, str) and v.strip():
+                _add(v)
+
+    if not descriptors and soul_text:
+        for m in re.finditer(
+            r"(?:we serve|our (?:customers|clients|audience)(?:\s+are)?|"
+            r"target(?:\s+audience)?|ideal (?:customer|client))\s*[:\-]?\s*([^\n.]{4,120})",
+            soul_text, flags=re.I,
+        ):
+            _add(m.group(1))
+    return descriptors
+
+
+def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
+                     audience_override: str = "") -> dict:
+    """Resolve the audience + whether the operator must confirm before writing.
+
+    ALWAYS-confirm doctrine:
+      • operator_confirmed (OPENCLAW_AUDIENCE / explicit override) → confirm_required=False.
+      • single ICP descriptor → source 'onboarding_icp', confidence 'high',
+        confirm_required=True (a confirm PROMPT — clients have >1 audience).
+      • multiple ICP descriptors → source 'asked', confirm_required=True,
+        ask = "What audience are we dealing with?" enumerating the known ones.
+      • none → source 'asked', confidence 'none', confirm_required=True, same ASK.
+
+    Returns {source, candidates[], confidence, label, ask, confirm_required}.
+    Candidates carry the proposed audience persona per known audience. Never
+    fabricates an audience (candidates=[] when the ICP yields nothing).
+    """
+    if audience_override and str(audience_override).strip():
+        label = _clean_descriptor(audience_override)
+        ap = match_audience_persona(catalog, label)
+        return {
+            "source": "operator_confirmed",
+            "candidates": [_candidate(label, ap)],
+            "confidence": "high",
+            "label": label,
+            "ask": None,
+            "confirm_required": False,
+        }
+
+    descriptors = _extract_icp_descriptors(company_cfg, soul_text)
+    candidates = [_candidate(d, match_audience_persona(catalog, d)) for d in descriptors]
+
+    if len(descriptors) == 1:
+        return {
+            "source": "onboarding_icp",
+            "candidates": candidates,
+            "confidence": "high",
+            "label": descriptors[0],
+            "ask": (f'Onboarding ICP says the audience is "{descriptors[0]}". '
+                    f"Confirm this audience before I write, or tell me the audience."),
+            "confirm_required": True,
+        }
+    if len(descriptors) > 1:
+        enum = "; ".join(f'"{d}"' for d in descriptors)
+        return {
+            "source": "asked",
+            "candidates": candidates,
+            "confidence": "medium",
+            "label": descriptors[0],  # top proposal; ASK still required
+            "ask": f"{AUDIENCE_CONFIRM_PROMPT} Known from onboarding: {enum}.",
+            "confirm_required": True,
+        }
+    return {
+        "source": "asked",
+        "candidates": [],
+        "confidence": "none",
+        "label": None,
+        "ask": (f"{AUDIENCE_CONFIRM_PROMPT} No audience is on file in the "
+                f"onboarding ICP — name the audience so I can pick the voice."),
+        "confirm_required": True,
+    }
+
+
+def _candidate(label: str, ap) -> dict:
+    d = {"label": label, "audience_persona_id": None, "matched_tags": []}
+    if ap:
+        d["audience_persona_id"] = ap["persona_id"]
+        d["matched_tags"] = ap.get("matched_tags", [])
+        d["why"] = ap.get("why")
+    return d
+
+
+# ── whole-catalog tag matchers ────────────────────────────────────────────────
+def match_audience_persona(catalog: dict, audience_label: str):
+    """Pick the AUDIENCE-voice persona for an audience label, over the WHOLE catalog.
+
+    Candidate universe = personas whose usable_as INCLUDES 'audience' (serving as
+    an audience voice must be explicit) AND whose audiences[] is non-empty. Ranked
+    by audience-tag overlap with the label. Returns None when nothing matches (a
+    1.2 catalog, or an audience no persona speaks to) — the caller then keeps the
+    audience unconfirmed / falls back to the topic voice; we never force a match.
+    """
+    personas = _persona_meta(catalog)
+    if not audience_label or not personas:
+        return None
+    q = _tokens(audience_label)
+    ranked = []
+    for pid, pinfo in personas.items():
+        if not isinstance(pinfo, dict) or pinfo.get("fallback"):
+            continue
+        if "audience" not in _usable_as(pinfo):
+            continue
+        auds = pinfo.get("audiences") or []
+        if not auds:
+            continue
+        hits, mtags, mtoks = _tag_hit(q, auds)
+        if hits > 0:
+            ranked.append((hits, len(mtags), pid, mtags, mtoks))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: (-r[0], -r[1], r[2]))
+    hits, _n, pid, mtags, mtoks = ranked[0]
+    vs = (personas[pid].get("voice_style") or {})
+    summary = vs.get("summary") if isinstance(vs, dict) else None
+    why = (f"Audience voice for '{audience_label}': its audiences[] match on "
+           f"{mtoks} ({hits} signal(s)); usable_as includes 'audience'"
+           + (f"; voice: {summary}" if summary else "") + ".")
+    return {"persona_id": pid, "why": why, "matched_tags": mtags,
+            "matched_tokens": mtoks, "score": hits}
+
+
+def match_topic_persona(catalog: dict, task_text: str, topic_hint: str = "",
+                        semantic_pick: str = ""):
+    """Pick the TOPIC-expertise persona for the job, over the WHOLE catalog.
+
+    Ranked by topics[] overlap with the task (+ optional topic_hint) tokens. A
+    small nudge is given to `semantic_pick` (the existing 5-layer selector's pick)
+    so the tag pass and the semantic engine agree when they can, without letting
+    an all-ties semantic stub override a clear tag winner. Returns None only when
+    NO persona carries topics[] (a 1.2 catalog) — the caller then falls back to
+    the semantic selector's pick.
+    """
+    personas = _persona_meta(catalog)
+    if not personas:
+        return None
+    q = _tokens(task_text) | _tokens(topic_hint)
+    ranked = []
+    any_topics = False
+    for pid, pinfo in personas.items():
+        if not isinstance(pinfo, dict) or pinfo.get("fallback"):
+            continue
+        ua = _usable_as(pinfo)
+        if "topic" not in ua:
+            continue
+        tops = pinfo.get("topics") or []
+        if tops:
+            any_topics = True
+        hits, mtags, mtoks = _tag_hit(q, tops)
+        nudge = 1 if (semantic_pick and pid == semantic_pick) else 0
+        score = hits + 0.25 * nudge
+        if hits > 0 or nudge:
+            ranked.append((score, hits, len(mtags), pid, mtags, mtoks))
+    if not any_topics and not ranked:
+        return None
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: (-r[0], -r[1], -r[2], r[3]))
+    score, hits, _n, pid, mtags, mtoks = ranked[0]
+    vs = (personas[pid].get("voice_style") or {})
+    summary = vs.get("summary") if isinstance(vs, dict) else None
+    why = (f"Topic expertise: its topics[] match the job on {mtoks} "
+           f"({hits} signal(s))"
+           + ("; agrees with the semantic selector" if semantic_pick == pid else "")
+           + (f"; voice: {summary}" if summary else "") + ".")
+    return {"persona_id": pid, "why": why, "matched_tags": mtags,
+            "matched_tokens": mtoks, "score": score}
+
+
+# ── collapse rule ─────────────────────────────────────────────────────────────
+def decide_collapse(catalog: dict, audience_pid, topic_pid,
+                    audience_label: str, task_text: str, topic_hint: str = "") -> tuple:
+    """Decide whether ONE persona covers BOTH the audience and the topic.
+
+    Rules (first match wins):
+      1. audience_pid == topic_pid            → collapse onto it.
+      2. the TOPIC persona also qualifies as the audience voice (usable_as has
+         'audience' AND its audiences[] match the audience label) → collapse onto
+         the topic persona (it carries expertise AND speaks to the audience,
+         e.g. a finance-for-women voice covering a personal-finance job).
+      3. the AUDIENCE persona also strongly covers the topic (its topics[] match
+         the job) → collapse onto the audience persona.
+    Returns (collapsed: bool, collapsed_pid or None).
+    """
+    if audience_pid and topic_pid and audience_pid == topic_pid:
+        return True, audience_pid
+    personas = _persona_meta(catalog)
+    q_topic = _tokens(task_text) | _tokens(topic_hint)
+    q_aud = _tokens(audience_label)
+
+    if topic_pid and audience_label:
+        tinfo = personas.get(topic_pid, {})
+        if isinstance(tinfo, dict) and "audience" in _usable_as(tinfo):
+            hits, _mt, _mk = _tag_hit(q_aud, tinfo.get("audiences") or [])
+            if hits > 0:
+                return True, topic_pid
+    if audience_pid:
+        ainfo = personas.get(audience_pid, {})
+        if isinstance(ainfo, dict):
+            hits, _mt, _mk = _tag_hit(q_topic, ainfo.get("topics") or [])
+            if hits >= 2:  # a genuine dual-competence, not a single incidental tag
+                return True, audience_pid
+    return False, None
+
+
+# ── blend directive (carries the mandatory guardrail) ─────────────────────────
+def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
+                          collapsed_pid, content_task: bool,
+                          audience_label: str = "") -> str:
+    """Compose the writer's blend instruction. GUARDRAIL_CLAUSE is ALWAYS appended
+    and can never be omitted (fail-closed guardrail)."""
+    def _name(pid):
+        return pid.replace("-", " ").title() if pid else None
+
+    if not content_task:
+        body = (f"Non-content task — no audience-voice blend. Execute with "
+                f"{_name(topic_pid)}'s expert judgement on {topic!r}.")
+    elif collapsed and collapsed_pid:
+        aud = f" for the '{audience_label}' audience" if audience_label else ""
+        body = (f"Write in {_name(collapsed_pid)}'s voice{aud}: one persona covers "
+                f"both the audience register and the {topic!r} expertise.")
+    elif audience_pid and topic_pid:
+        aud = f" ({audience_label})" if audience_label else ""
+        body = (f"Write in {_name(audience_pid)}'s VOICE{aud} — its cadence, "
+                f"devices and register — while carrying {_name(topic_pid)}'s "
+                f"EXPERTISE on {topic!r}. Audience voice leads; topic expertise "
+                f"informs substance.")
+    elif topic_pid:
+        body = (f"Audience not yet confirmed — draft with {_name(topic_pid)}'s "
+                f"expertise on {topic!r} in a neutral house voice; the audience "
+                f"voice is applied once confirmed.")
+    else:
+        body = f"Proceed in the default house voice on {topic!r}."
+    return body + " " + GUARDRAIL_CLAUSE
+
+
+# ── task decomposition → up to 10 task personas ───────────────────────────────
+def build_task_personas(task_text: str, department: str, *, max_task_personas: int = 10,
+                        use_llm: bool = True, record: bool = True,
+                        variety: bool = True) -> tuple:
+    """Decompose the job into UP TO `max_task_personas` (<=10) parts, each with its
+    own best-fit persona, by REUSING decompose-task.combined_select (the existing
+    per-sub-task matcher). Returns (task_personas[], combined_raw).
+
+    task_personas rows: {seq, part, persona_id, why} (the bundle shape). The
+    combined engine's default DECOMP_MAX_SUBTASKS ceiling (6) is raised to the
+    blend cap for this call only, then restored (raise-only, never lowered below
+    the operator's configured value).
+    """
+    dt = _decompose()
+    cap = max(1, min(int(max_task_personas or 10), 10))
+    orig = getattr(dt, "DECOMP_MAX_SUBTASKS", 6)
+    try:
+        if cap > orig:
+            dt.DECOMP_MAX_SUBTASKS = cap
+        combined = dt.combined_select(
+            task_text, department, use_llm=use_llm, record=record,
+            max_subtasks=cap, variety=variety,
+        )
+    finally:
+        dt.DECOMP_MAX_SUBTASKS = orig
+
+    task_personas = []
+    for p in combined.get("plan", [])[:cap]:
+        task_personas.append({
+            "seq": p.get("seq"),
+            "part": p.get("subtask"),
+            "persona_id": p.get("persona_id"),
+            "why": p.get("why"),
+            "no_persona_required": p.get("no_persona_required", False),
+            "governance_persona_id": p.get("governance_persona_id"),
+            "task_category": p.get("task_category"),
+        })
+    return task_personas, combined
+
+
+# ── the bundle assembler ──────────────────────────────────────────────────────
+def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
+                 use_llm: bool = True, record: bool = True,
+                 max_task_personas: int = 10, variety: bool = True,
+                 topic_hint: str = "", audience_override: str = "") -> dict:
+    """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
+
+    paths/db_path default to the live resolution when omitted; tests pass a
+    hermetic paths dict and monkeypatch the selector/decompose functions.
+    """
+    sel = _selector()
+    if paths is None:
+        paths = sel.get_openclaw_paths()
+    if db_path is None:
+        db_path = sel.find_dashboard_db()
+    db_field = str(db_path) if sel.is_db_found(db_path) else "none"
+
+    catalog = load_catalog(paths)
+    company_cfg = sel.load_company_config(paths) or {}
+    soul_text = ""
+    try:
+        soul_p = paths.get("soul_md")
+        if soul_p and Path(soul_p).exists():
+            soul_text = Path(soul_p).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        soul_text = ""
+
+    task_category = sel.infer_task_category(task)
+    default_pid, default_src = sel._resolve_default_persona_id(paths)
+    gov_pid, gov_src = sel._resolve_governance_persona_id(paths)
+    fallbacks = {"default_persona": default_pid, "default_persona_source": default_src,
+                 "governance": gov_pid, "governance_source": gov_src}
+
+    # ── Mechanical / no-persona task — never-naked governance pointer, no blend ──
+    if sel.is_mechanical_task(task):
+        return {
+            "mode": "blend",
+            "persona_id": None,
+            "no_persona_required": True,
+            "content_task": False,
+            "governance_persona_id": gov_pid,
+            "governance_persona_source": gov_src,
+            "confirm_required": False,
+            "task_category": task_category,
+            "topic": topic_hint or task_category,
+            "resolved_audience": {"source": "n/a", "candidates": [],
+                                  "confidence": "none", "label": None, "ask": None,
+                                  "confirm_required": False},
+            "voice": {"audience_persona": None, "topic_persona": None,
+                      "collapsed": False, "collapsed_persona_id": None,
+                      "topic_as_task_guidance": False},
+            "blend_directive": ("Operational/mechanical task — no persona voice "
+                                "required. " + GUARDRAIL_CLAUSE),
+            "task_personas": [],
+            "rationale": {"note": "mechanical task — governance persona attached, "
+                                  "no audience/topic blend."},
+            "funnel": {"pool": 0, "category": 0, "semantic": 0, "mechanical": True},
+            "fallbacks": fallbacks,
+            "catalog_version": str(catalog.get("schemaVersion", "")) or "unknown",
+            "db": db_field,
+            "message": (f"Operational/mechanical task — no persona required "
+                        f"(governance persona '{gov_pid}' attached for oversight)."),
+        }
+
+    content_task = is_content_task(task)
+
+    # ── AUDIENCE (voice decided first) ──────────────────────────────────────────
+    ra = resolve_audience(catalog, company_cfg, soul_text, audience_override)
+    audience_label = ra.get("label") or ""
+
+    # ── semantic topic pick from the existing 5-layer selector (best-effort) ────
+    semantic_pick = ""
+    semantic_funnel = None
+    semantic_score = None
+    try:
+        mode = sel.detect_interaction_mode(task)
+        weights = sel.get_weights_for_task(task, mode)
+        _sr = sel.select_persona(task, department, mode, weights, paths, db_path,
+                                 variety=False)
+        if isinstance(_sr, dict):
+            semantic_pick = _sr.get("persona_id") or ""
+            semantic_funnel = _sr.get("funnel")
+            semantic_score = _sr.get("score")
+    except Exception:
+        semantic_pick = ""
+
+    # ── TOPIC persona (whole-catalog tags, semantic nudge) ──────────────────────
+    tp = match_topic_persona(catalog, task, topic_hint, semantic_pick)
+    if tp is None and semantic_pick:
+        # 1.2 catalog / no topics[] — fall back to the semantic selector's pick.
+        tp = {"persona_id": semantic_pick,
+              "why": "Topic expertise from the 5-layer semantic selector "
+                     "(catalog has no topics[] tags to reason over).",
+              "matched_tags": [], "matched_tokens": [],
+              "score": semantic_score if semantic_score is not None else 0.0}
+    if tp is None:
+        # No catalog at all — fall back to the guaranteed default persona.
+        tp = {"persona_id": default_pid,
+              "why": f"No topic candidates in the catalog — default fallback "
+                     f"persona ({default_src}).",
+              "matched_tags": [], "matched_tokens": [], "score": 0.0}
+    topic_pid = tp["persona_id"]
+
+    # topic string: prefer explicit hint, else the matched topic tags, else category.
+    if topic_hint:
+        topic = topic_hint
+    elif tp.get("matched_tags"):
+        topic = ", ".join(tp["matched_tags"][:3])
+    else:
+        topic = task_category
+
+    # ── AUDIENCE persona (only for content tasks with a resolved label) ─────────
+    ap = None
+    if content_task and audience_label:
+        ap = match_audience_persona(catalog, audience_label)
+    audience_pid = ap["persona_id"] if ap else None
+
+    # ── COLLAPSE decision ───────────────────────────────────────────────────────
+    if content_task:
+        collapsed, collapsed_pid = decide_collapse(
+            catalog, audience_pid, topic_pid, audience_label, task, topic_hint)
+    else:
+        # Non-content: no audience voice — the topic persona carries the voice.
+        collapsed, collapsed_pid = True, topic_pid
+
+    # ── resolved VOICE persona (back-compat mirror) ─────────────────────────────
+    if collapsed and collapsed_pid:
+        voice_pid = collapsed_pid
+    elif audience_pid:
+        voice_pid = audience_pid
+    else:
+        voice_pid = topic_pid  # audience pending/none → interim voice = topic
+    voice_score = tp.get("score") if voice_pid == topic_pid else (ap or {}).get("score", 0.0)
+
+    # ── confirm_required (gates the write) ──────────────────────────────────────
+    # Top-level confirm_required is authoritative. A non-content task never gates
+    # on an audience voice (there is none), so it is False; keep the nested
+    # resolved_audience.confirm_required in lockstep so consumers see one truth.
+    if not content_task:
+        confirm_required = False
+    else:
+        confirm_required = bool(ra.get("confirm_required", True))
+    ra["confirm_required"] = confirm_required
+
+    blend_directive = build_blend_directive(
+        audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
+        audience_label)
+
+    # ── TASK personas (up to 10) ────────────────────────────────────────────────
+    task_personas, combined = build_task_personas(
+        task, department, max_task_personas=max_task_personas,
+        use_llm=use_llm, record=record, variety=variety)
+
+    funnel = semantic_funnel if isinstance(semantic_funnel, dict) else {
+        "pool": len(_persona_meta(catalog)),
+        "category": len([p for p in _persona_meta(catalog).values()
+                         if isinstance(p, dict) and (p.get("topics") or p.get("audiences"))]),
+        "semantic": len(tp.get("matched_tags", [])),
+    }
+
+    voice = {
+        "audience_persona": ({"id": audience_pid, "why": ap["why"]} if ap else None),
+        "topic_persona": {"id": topic_pid, "why": tp["why"]},
+        "collapsed": collapsed,
+        "collapsed_persona_id": collapsed_pid if collapsed else None,
+        "topic_as_task_guidance": True,
+    }
+
+    rationale = {
+        "audience_resolution": (
+            f"source={ra['source']}, confidence={ra['confidence']}, "
+            f"candidates={[c['label'] for c in ra.get('candidates', [])]}"
+            + ("" if not ra.get('ask') else f" — ASK: {ra['ask']}")),
+        "audience_persona": (ap["why"] if ap else
+                             ("no audience persona: " + (
+                                 "audience not yet confirmed" if content_task
+                                 else "non-content task (no audience voice)"))),
+        "topic_persona": tp["why"],
+        "collapse": (f"collapsed onto {collapsed_pid}" if collapsed
+                     else "distinct audience + topic personas (blend)"),
+        "voice_persona_mirror": f"back-compat persona_id mirrors the voice persona {voice_pid}",
+        "task_decomposition": (
+            f"{combined.get('subtask_count', len(task_personas))} part(s), "
+            f"{combined.get('distinct_persona_count', 0)} distinct persona(s) "
+            f"[{combined.get('decomposition_method', 'n/a')}] — topic persona "
+            f"doubles as task guidance"),
+    }
+
+    bundle = {
+        # ── back-compat single-persona mirror (existing consumers) ──
+        "persona_id": voice_pid,
+        "persona_name": voice_pid.replace("-", " ").title() if voice_pid else None,
+        "persona_version": 1,
+        "score": voice_score,
+        "interaction_mode": sel.detect_interaction_mode(task),
+        "task_category": task_category,
+        "funnel": funnel,
+        # ── blend superset ──
+        "mode": "blend",
+        "content_task": content_task,
+        "topic": topic,
+        "resolved_audience": ra,
+        "confirm_required": confirm_required,
+        "voice": voice,
+        "blend_directive": blend_directive,
+        "task_personas": task_personas[:10],
+        "rationale": rationale,
+        "fallbacks": fallbacks,
+        "catalog_version": str(catalog.get("schemaVersion", "")) or "unknown",
+        "task_id": combined.get("task_id"),
+        "db": db_field,
+    }
+    if not catalog:
+        bundle["warning"] = "NO_CATALOG"
+        bundle.setdefault("message",
+                          "persona-categories.json not found — blend ran on the "
+                          "semantic selector + fallbacks only.")
+    return bundle
