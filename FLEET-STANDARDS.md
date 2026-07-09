@@ -228,6 +228,56 @@ any existing `toolSearch` block and enforces **only** `mode` — any per-box tun
 invoke `apply-fleet-standards.sh`. `openclaw config validate` is the backstop: if a
 gateway version ever rejects the key, the run rolls back to the pre-apply backup.
 
+> **Per-turn token-burn — the full picture.** Fleet measurement (2026-07-09)
+> showed the *dominant* driver is **prompt caching structurally OFF on the ollama /
+> Ollama-Cloud path** (`cacheRead=0` on ~100% of ollama calls across every measured
+> box — the whole payload re-billed every turn). Directory mode (§8) is only the
+> **tool-schema** lever (it helps GHL-heavy boxes). The other two levers are §9
+> (caching — reserved) and §10 (core-bootstrap size). Treat §8–§11 as one
+> token-burn-control family.
+
+### 9. Prompt caching on the ollama path — RESERVED (do NOT guess the key)
+
+**Status: reserved slot, no config written yet.** The measured dominant per-turn
+burn is that prompt caching is off on the ollama path, so the entire payload is
+re-billed every turn. The durable fix is enabling prompt caching on that path —
+**but the exact config key, and whether Ollama-Cloud even supports server-side
+caching, are still being verified against the OpenClaw docs.** Until that returns,
+**no key is written** (a wrong key fails `openclaw config validate` and rolls the
+whole fleet-standards apply back, or silently no-ops).
+
+`scripts/apply-fleet-standards.sh` carries a clearly-marked, idempotent slot —
+grep sentinel `RESERVED-SLOT: PROMPT-CACHING-OLLAMA` — positioned inside the
+validated config path. When the verified key/value returns, it is written into the
+canonical deep-merge block (§ "2. Deep-merge the canonical fleet block") and is
+then automatically covered by the `openclaw config validate` + rollback gate.
+**Do not populate this slot by guessing.**
+
+### 10. Core-bootstrap size guard (WARN-ONLY, ~150K-char target)
+
+The gateway-injected core bootstrap (`AGENTS.md` + `MEMORY.md` + `TOOLS.md` +
+`SOUL.md` + `IDENTITY.md` + `USER.md` + `HEARTBEAT.md` in the resolved workspace)
+is re-injected on **every turn** — and, while §9 caching is off, re-billed every
+turn. Measurement found several boxes at **190K–330K chars**. The fleet standard
+sets a **target of ~150,000 chars** for the compiled core bootstrap per box.
+
+`scripts/apply-fleet-standards.sh` measures the injected core-file set (the same
+files the gateway reads — `shared-utils/resolve_injected_core_files.py`) and
+**logs a WARN + per-file breakdown + the target** when the total exceeds it. This
+is a **warning only — it never edits core-file content** (trimming is an operator
+decision). Non-blocking and idempotent (pure measurement). Override the threshold
+via `FLEET_CORE_BOOTSTRAP_TARGET_CHARS`.
+
+### 11. Transcript / compaction cap — conservative default only
+
+**Do not set an aggressive `softThresholdTokens`.** OpenClaw's compaction
+`softThresholdTokens` is **subtractive**; setting it too low mis-configures
+compaction and surfaces as *"context too large"* (the fix for that symptom is a
+fresh session / `/new`, not a lower threshold). The fleet standard is therefore to
+**leave the gateway's documented default in place** and tune compaction only
+conservatively and per-box when genuinely needed. No aggressive cap is written by
+the fleet-standards apply.
+
 ## Source of Truth
 
 Configuration verified against:
@@ -262,4 +312,4 @@ present in `AGENTS.md`).
 
 ---
 
-Last verified: 2026-07-09 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0; §8 on-demand MCP tool loading `tools.toolSearch.mode="directory"` added — fleet-wide schema-every-turn token-burn fix)
+Last verified: 2026-07-09 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0; §8 on-demand MCP tool loading `tools.toolSearch.mode="directory"` added — fleet-wide schema-every-turn token-burn fix; §9 prompt-caching RESERVED slot [awaiting verified key], §10 core-bootstrap size guard [warn-only ~150K], §11 conservative compaction-cap note added — per-turn token-burn-control family)
