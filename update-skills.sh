@@ -1155,6 +1155,32 @@ main() {
     echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
   fi
 
+  # SK1-63 (fleet-installer wiring, update path): mirror the same runtime-dir
+  # manifest placement install.sh's install_skill_47_movie_producer() does on
+  # fresh installs. executive_producer.py's load_manifest() resolves the
+  # manifest via a repo-root walk-up (finds universal-sops/ as a sibling of
+  # 47-movie-producer/ under $SKILLS_DIR, refreshed just above) BEFORE it ever
+  # reaches this runtime-dir copy, so this is defense-in-depth — not the only
+  # path — but it is the one Skill 47's OWN install.sh documents as canonical
+  # and the fleet installer must not depend solely on the walk-up continuing to
+  # work. Only runs when Skill 47 is actually installed on this box (opt-in
+  # skill — never install OpenMontage or touch the network here, pure local
+  # file copy). Non-fatal: never fails the update over an optional video skill.
+  if [ -d "$SKILLS_DIR/47-movie-producer" ]; then
+    S47_MANIFEST_SRC="$SKILLS_DIR/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+    S47_OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
+    S47_MANIFEST_DEST="$(dirname "$S47_OPENMONTAGE_DIR")/VIDEO-PIPELINE-MANIFEST.json"
+    if [ -f "$S47_MANIFEST_SRC" ]; then
+      mkdir -p "$(dirname "$S47_MANIFEST_DEST")" 2>/dev/null
+      if cp "$S47_MANIFEST_SRC" "$S47_MANIFEST_DEST" 2>>"$LOG_FILE" && \
+         python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$S47_MANIFEST_DEST" 2>>"$LOG_FILE"; then
+        echo "  ✓ Skill 47: VIDEO-PIPELINE-MANIFEST.json refreshed at $S47_MANIFEST_DEST (fleet-installer path)"
+      else
+        echo "  ⚠ Skill 47: could not refresh VIDEO-PIPELINE-MANIFEST.json at $S47_MANIFEST_DEST (see $LOG_FILE) — load_manifest() falls back to the universal-sops sibling walk-up"
+      fi
+    fi
+  fi
+
   # ----------------------------------------------------------
   # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
   # (v14.25.0) — mirrors install.sh Step 6b so update-only boxes receive

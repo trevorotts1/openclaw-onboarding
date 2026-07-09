@@ -14,6 +14,10 @@
 #      and build-workforce.py --regenerate-org-chart-only)
 #   5. Re-syncs the Command Center: POST /api/system/converge (HTTP preferred);
 #      falls back to on-box seed-workspaces.py + ingest-sop-library.py if unreachable
+#   5b. Recompiles the Command Center via scripts/atomic-deploy.sh when a NEW
+#      department was added (structural change ⇒ `next build`+restart required;
+#      consumes the converge route's `deploy` directive). Fail-loud if
+#      atomic-deploy.sh / bash 4+ is missing; degrades only when no local CC.
 #   6. Handles untagged personas: writes needs-tags.json; surfaces in Telegram
 #   7. Updates last-sync.json (extended: depts+roles+SOPs+personas)
 #   8. Sends Telegram summary (new entities + untagged personas + CC sync path)
@@ -499,6 +503,7 @@ fi
 
 # ─── Step 4: Re-sync Command Center (converge mode only, §1.6 step 5) ────────
 CC_SYNC_PATH="none"
+CC_RECOMPILE="skipped"
 if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
   info "Step 4: Re-syncing Command Center..."
 
@@ -569,6 +574,102 @@ if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
   fi
 fi
 
+# ─── Step 4b: Recompile the Command Center (atomic-deploy) ───────────────────
+# A NEW department is a STRUCTURAL change: the converge above re-seeds the CC
+# database (workspaces + SOPs) but NEVER triggers a `next build`. Without a
+# recompile+restart the new department's Kanban cards stick in Backlog and the
+# board silently reads stale — the "converge-missing-next-build" defect. So when
+# NEW_DEPTS is non-empty we hand the CC to scripts/atomic-deploy.sh (the ONE
+# sanctioned deploy rail: npm ci/install → npm run build → pm2 restart → health
+# check). We consume the converge route's `deploy` directive when the HTTP
+# converge returns one (deploy:false ⇒ CC says no rebuild needed, honour it);
+# absent/true ⇒ recompile. FAIL LOUD if atomic-deploy.sh or bash 4+ is missing
+# (a new dept is invisible until rebuilt); degrade gracefully only when this box
+# has no local CC checkout to touch (HTTP converge already resynced a remote CC).
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 && -n "$NEW_DEPTS" ]]; then
+  info "Step 4b: New department(s) added — recompiling Command Center via atomic-deploy.sh..."
+
+  # Consume the converge route's `deploy` directive (forward-compatible). Older
+  # CC releases omit it (parse yields ""), in which case we default to deploying.
+  CC_DEPLOY_DIRECTIVE="true"
+  if [[ "$CC_SYNC_PATH" == "http" && -n "${CC_CONVERGE_RESP:-}" ]]; then
+    _CC_DIR_PARSE="$(printf '%s' "$CC_CONVERGE_RESP" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+v=d.get("deploy")
+print("" if v is None else ("true" if v else "false"))' 2>/dev/null || true)"
+    [[ -n "$_CC_DIR_PARSE" ]] && CC_DEPLOY_DIRECTIVE="$_CC_DIR_PARSE"
+  fi
+
+  if [[ "$CC_DEPLOY_DIRECTIVE" == "false" ]]; then
+    info "Step 4b: converge route deploy directive = false — recompile not required, skipping"
+    CC_RECOMPILE="not-required"
+  else
+    # Resolve the deployed CC checkout (skill-32 convention; override via CC_DIR).
+    if [[ -z "${CC_DIR:-}" ]]; then
+      if [[ "$OC_PLATFORM" == "vps" ]]; then
+        CC_DIR="/data/projects/command-center"
+      else
+        CC_DIR="$HOME/projects/command-center"
+      fi
+    fi
+    ATOMIC_DEPLOY="$CC_DIR/scripts/atomic-deploy.sh"
+
+    if [[ ! -d "$CC_DIR" ]]; then
+      # No local CC checkout on this box — the converge above resynced a remote
+      # CC over HTTP. Recompile is that CC host's responsibility; degrade (warn).
+      warn "Step 4b: no local CC checkout at $CC_DIR — recompile SKIPPED (converge ran via $CC_SYNC_PATH; the CC host must rebuild). Set CC_DIR to force a local recompile."
+      CC_RECOMPILE="degraded-no-local-cc"
+    elif [[ ! -f "$ATOMIC_DEPLOY" ]]; then
+      # CC checkout present but predates the atomic-deploy (B.2) contract. FAIL
+      # LOUD: shipping without a rebuild would leave the new dept invisible.
+      die "Step 4b: atomic-deploy.sh not found at $ATOMIC_DEPLOY — the Command Center checkout is older than the atomic-deploy (B.2) contract. Update blackceo-command-center so converge can recompile; a new department is invisible until the CC is rebuilt."
+    elif [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+      # atomic-deploy.sh requires bash 4+ (it exits 2 under bash 3.2). FAIL LOUD
+      # with the same remediation, matching the CC bash4 guard.
+      die "Step 4b: atomic-deploy.sh requires bash 4+ but this shell is ${BASH_VERSINFO[0]:-?}.x (macOS ships 3.2). Install: brew install bash, then re-run converge with /opt/homebrew/bin/bash. A new department is invisible until the CC is rebuilt."
+    else
+      # Bounded, synchronous invocation via the current (verified 4+) interpreter.
+      # Exit contract (atomic-deploy.sh B.2): 0=success, 3=UNKNOWN/transient (NEVER
+      # destructive, never rollback), anything else=hard fail. 124=timeout.
+      _TIMEOUT_BIN=""
+      if command -v timeout >/dev/null 2>&1; then
+        _TIMEOUT_BIN="timeout"
+      elif command -v gtimeout >/dev/null 2>&1; then
+        _TIMEOUT_BIN="gtimeout"
+      fi
+      info "Step 4b: invoking atomic-deploy.sh in $CC_DIR${_TIMEOUT_BIN:+ (timeout 600s)}..."
+      DEPLOY_RC=0
+      if [[ -n "$_TIMEOUT_BIN" ]]; then
+        ( cd "$CC_DIR" && "$_TIMEOUT_BIN" 600 "${BASH:-bash}" "$ATOMIC_DEPLOY" ) || DEPLOY_RC=$?
+      else
+        ( cd "$CC_DIR" && "${BASH:-bash}" "$ATOMIC_DEPLOY" ) || DEPLOY_RC=$?
+      fi
+      case "$DEPLOY_RC" in
+        0)
+          ok "Step 4b: Command Center recompiled + restarted (atomic-deploy.sh exit 0)"
+          CC_RECOMPILE="deployed"
+          ;;
+        3)
+          # UNKNOWN/transient health check after all retries — never destructive.
+          # Do NOT fail converge: the deploy likely applied but health was
+          # inconclusive; the operator must verify (mirrors fleet-refresh exit-3).
+          warn "Step 4b: atomic-deploy.sh exit 3 (UNKNOWN/transient health check after retries) — CC state indeterminate; operator must verify. NOT failing converge (exit 3 is never destructive)."
+          CC_RECOMPILE="unknown-exit3"
+          ;;
+        124)
+          die "Step 4b: atomic-deploy.sh timed out after 600s in $CC_DIR — CC recompile did not complete. Investigate the build/health check, then re-run: (cd $CC_DIR && bash $ATOMIC_DEPLOY)."
+          ;;
+        *)
+          die "Step 4b: atomic-deploy.sh exited $DEPLOY_RC — CC recompile FAILED. The new department will not be visible until the CC is rebuilt. Fix the CC build and re-run: (cd $CC_DIR && bash $ATOMIC_DEPLOY)."
+          ;;
+      esac
+    fi
+  fi
+elif [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 1 && -n "$NEW_DEPTS" ]]; then
+  info "Step 4b: [DRY-RUN] would recompile Command Center via atomic-deploy.sh (NEW_DEPTS present)"
+fi
+
 # ─── Step 5: Persona tags (converge mode, §1.6 step 6) ───────────────────────
 UNTAGGED_COUNT=0
 if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 && -n "${UNTAGGED_PERSONAS:-}" ]]; then
@@ -623,12 +724,13 @@ converge_status = sys.argv[3] if len(sys.argv) > 3 else "done"
 gate_reason = sys.argv[4] if len(sys.argv) > 4 else ""
 new_depts = """${NEW_DEPTS:-}""".strip()
 new_roles = """${NEW_ROLES:-}""".strip()
+cc_recompile = """${CC_RECOMPILE:-skipped}""".strip()
 record = json.dumps({
     "ts": datetime.now(timezone.utc).isoformat(),
     "type": "converge",
     "slug": "full-converge",
     "status": converge_status,
-    "detail": f"new_depts={len([d for d in new_depts.splitlines() if d])}, new_roles={len([r for r in new_roles.splitlines() if r])}, cc_sync_path={cc_path}, gate_reason={gate_reason}",
+    "detail": f"new_depts={len([d for d in new_depts.splitlines() if d])}, new_roles={len([r for r in new_roles.splitlines() if r])}, cc_sync_path={cc_path}, cc_recompile={cc_recompile}, gate_reason={gate_reason}",
     "by": "converge",
 }, separators=(",", ":"))
 try:
@@ -667,7 +769,7 @@ $REG_LIST"
       [[ -n "${NEW_PERSONAS:-}" ]] && NEW_PERSONAS_COUNT=$(echo "$NEW_PERSONAS" | wc -l | tr -d ' ')
       MSG="$MSG
 New roles: $NEW_ROLES_COUNT | New SOPs: $NEW_SOPS_COUNT | New personas: $NEW_PERSONAS_COUNT
-CC sync path: $CC_SYNC_PATH"
+CC sync path: $CC_SYNC_PATH | CC recompile: $CC_RECOMPILE"
       if [[ $UNTAGGED_COUNT -gt 0 ]]; then
         MSG="$MSG
 ATTENTION: $UNTAGGED_COUNT persona(s) need domain/perspective tags before they are routable.
@@ -696,7 +798,7 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
 fi
 
 if [[ $CONVERGE_MODE -eq 1 ]]; then
-  ok "sync-extensions.sh --converge complete — ${#REGISTERED[@]} new dept(s), CC sync: $CC_SYNC_PATH"
+  ok "sync-extensions.sh --converge complete — ${#REGISTERED[@]} new dept(s), CC sync: $CC_SYNC_PATH, CC recompile: $CC_RECOMPILE"
 else
   ok "sync-extensions.sh complete — ${#REGISTERED[@]} new dept(s) registered."
 fi

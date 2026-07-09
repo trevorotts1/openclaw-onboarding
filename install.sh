@@ -6376,6 +6376,37 @@ install_skill_47_movie_producer() {
     }
     chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
 
+    # SK1-63 (fleet-installer wiring): executive_producer.py's load_manifest()
+    # resolves the manifest via a repo-root walk-up FIRST (finds universal-sops/
+    # as a sibling of this skill dir under $SKILLS_DIR — already delivered above)
+    # before it ever reaches the runtime-dir copy Skill 47's OWN install.sh
+    # places at activation time (Step 4.5, when the client clones OpenMontage).
+    # That walk-up fallback is the common case today, but it is NOT something
+    # this fleet installer path guarantees on its own — a future single-skill
+    # distribution channel, or universal-sops going missing/partial on a box,
+    # would silently remove it. So mirror Skill 47's own Step 4.5 HERE too: a
+    # pure local file copy (no clone, no npm/pip, no network) placing the
+    # manifest at the SAME runtime path _runtime_manifest_path() expects
+    # ($HOME/.openclaw/openmontage-runtime/, or OPENCLAW_OPENMONTAGE_DIR's
+    # parent) so load_manifest() resolves even if the walk-up fallback ever
+    # stops working. Skill 47 is optional/opt-in — never fail the whole fleet
+    # install over this; warn and continue on any problem.
+    local S47_MANIFEST_SRC="$SKILLS_DIR/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+    local S47_OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
+    local S47_MANIFEST_DEST
+    S47_MANIFEST_DEST="$(dirname "$S47_OPENMONTAGE_DIR")/VIDEO-PIPELINE-MANIFEST.json"
+    if [ -f "$S47_MANIFEST_SRC" ]; then
+        mkdir -p "$(dirname "$S47_MANIFEST_DEST")" 2>/dev/null
+        if cp "$S47_MANIFEST_SRC" "$S47_MANIFEST_DEST" 2>>"$LOG_FILE" && \
+           python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$S47_MANIFEST_DEST" 2>>"$LOG_FILE"; then
+            success "Skill 47: VIDEO-PIPELINE-MANIFEST.json placed at $S47_MANIFEST_DEST (fleet-installer path)"
+        else
+            warn "Skill 47: could not place VIDEO-PIPELINE-MANIFEST.json at $S47_MANIFEST_DEST — load_manifest() will fall back to the universal-sops sibling walk-up (see $LOG_FILE)"
+        fi
+    else
+        warn "Skill 47: universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json not found at $S47_MANIFEST_SRC — runtime-dir copy skipped (universal-sops install step above may have failed; load_manifest() will hard-exit 2 if this is never resolved)"
+    fi
+
     success "Skill 47 (Movie Producer — Automated Video Production) installed -> $SKILL_DEST"
     note "Skill 47 powers the video dept Automated Video Production Specialist (OpenMontage Pipeline Operator)."
     note "AGPLv3: OpenMontage is cloned on the CLIENT box at activation per INSTALL.md — its source is NEVER vendored into this template."
