@@ -9,7 +9,7 @@ description: >
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   skill_number: 46
   requires_skills: [07]
   priority: HIGH
