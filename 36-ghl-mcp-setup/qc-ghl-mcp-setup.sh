@@ -84,6 +84,48 @@ echo "  Date:     $(date)"
 echo ""
 
 # ----------------------------------------------------------
+# Section 0: Offline structural QC (SK1-73) — no live GHL required
+# ----------------------------------------------------------
+# Sections A–H below are LIVE-ONLY: every meaningful assert needs a live box
+# (resolved creds, a running/supervised MCP, curl to leadconnectorhq.com, and the
+# workspace core .md files). On a fresh clone / CI / offline box they ALL FAIL,
+# so the QC gives ZERO signal about the SKILL's own shipped correctness. This
+# section validates the skill's COMMITTED artifacts, which are always co-located
+# with this QC script — so it runs on ANY box (offline included) AND still PASSES
+# on a healthy client box (no false FAIL), while catching a regression in the
+# shipped skill (e.g. a dropped SK1-69 pin or a committed real PIT) that the
+# live sections could never see.
+echo "── Section 0: Offline structural QC (no live GHL required) ──"
+assert "skill-version.txt present and non-empty"        "[ -s \"$SKILL_DIR/skill-version.txt\" ]"
+assert "INSTALL.md present"                             "[ -f \"$SKILL_DIR/INSTALL.md\" ]"
+assert "SKILL.md present"                               "[ -f \"$SKILL_DIR/SKILL.md\" ]"
+assert "scripts/cc-task.sh present (final CC hook)"     "[ -f \"$SKILL_DIR/scripts/cc-task.sh\" ]"
+# SK1-72 regression lock: the installer must refuse to persist a placeholder PIT.
+assert "INSTALL.md carries the placeholder-credential refusal guard (SK1-72)" \
+  "grep -qiE 'pit-XXXX|placeholder' \"$SKILL_DIR/INSTALL.md\""
+# Security (offline): no REAL PIT literal committed into the skill's own tree.
+# The hex class matches only a real-looking PIT — `pit-XXXX` placeholders (X's,
+# not hex) never match, so example text is not flagged.
+assert "no real PIT literal committed in skill files" \
+  "! grep -rIqE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$SKILL_DIR\""
+# SK1-69 regression lock: the community-MCP start script pins a git SHA before
+# start (supply-chain). Check whichever co-located copy is shipped; if none is
+# present next to this skill (fleet layout varies), warn rather than false-FAIL.
+_S36_START=""
+for c in "$SKILL_DIR/../platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" \
+         "$SKILL_DIR/platform/vps/start-ghl-mcp-server.sh" \
+         "$SKILL_DIR/scripts/start-ghl-mcp-server.sh"; do
+  [ -f "$c" ] && _S36_START="$c" && break
+done
+if [ -n "$_S36_START" ]; then
+  assert "community-MCP start script pins a git SHA before start (SK1-69)" \
+    "grep -qE 'git -C .* checkout .*GHL_MCP_PINNED_SHA' \"$_S36_START\""
+else
+  warn_only "community-MCP start script co-located for SHA-pin check (SK1-69)" "false"
+fi
+echo ""
+
+# ----------------------------------------------------------
 # Section A: Master files + platform
 # ----------------------------------------------------------
 echo "── Section A: Master files + platform ──"

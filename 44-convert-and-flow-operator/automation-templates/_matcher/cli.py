@@ -101,16 +101,29 @@ def selftest(threshold: float) -> int:
         flag = "ok " if passed else "FAIL"
         print(f"[{flag}] mode={dec['intent_mode']:<24} dec={dec['decision']:<16} "
               f"tmpl={str(dec['matched_template'])[:34]:<34} :: {str(req)[:40]}")
-    # funnel expansion coverage: every funnel resolves to >=1 buildable automation
+    # funnel expansion coverage: every funnel resolves to >=1 CORRECT per-variant plan.
+    # SK1-49: the predicate must assert the plan built is the RIGHT variant, not merely
+    # that A plan EXISTS. The old `buildable = [... if a.get("workflow_plan")]` check
+    # passed as long as any plan was attached — so a cross-wired variant (the
+    # soap-opera-sequence id-collision class, where the same bare id lives in two
+    # categories) would still count as a pass, exactly the gap that let the bug slip.
+    # Each plan's source_ref MUST live under its declared category — the same invariant
+    # CI locks in tests/test_automation_matcher.py::test_all_38_funnels_expand_to_correct_variant
+    # — so the CLI selftest and CI no longer diverge.
     data = json.load(open(_LINKS, encoding="utf-8"))
     exp_ok = 0
     for l in data["links"]:
         out = am.expand_funnel_to_automations(l["funnel_template_id"], link_map_path=_LINKS,
                                               catalog=cat, intent_mode=flex.MODE_HANDSOFF)
-        buildable = [a for a in out["automations"] if a.get("workflow_plan")]
-        exp_ok += bool(out["found"] and buildable)
+        plans = [a for a in out["automations"] if a.get("workflow_plan")]
+        correct = bool(plans) and all(
+            f"{a['category']}/{a['automation_id']}.json"
+            in (a["workflow_plan"].get("source_ref") or "")
+            for a in plans
+        )
+        exp_ok += bool(out["found"] and correct)
     print(f"\nmatch: {ok}/{len(_CASES)} cases passed")
-    print(f"funnel-expansion: {exp_ok}/{len(data['links'])} funnels resolve to a buildable plan")
+    print(f"funnel-expansion: {exp_ok}/{len(data['links'])} funnels resolve to a CORRECT per-variant plan")
     allok = (ok == len(_CASES)) and (exp_ok == len(data["links"]))
     print("SELFTEST PASS" if allok else "SELFTEST FAIL")
     return 0 if allok else 1

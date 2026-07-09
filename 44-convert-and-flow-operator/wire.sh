@@ -116,6 +116,22 @@ fi
 rebuild() {
   log "rebuilding caf for SKILL_VERSION=$SRC_VER -> $CAF_DIR"
 
+  # SK1-50 (idempotent rebuild): $CAF_DIR/engine is a THROWAWAY mirror of the
+  # tools/engine source. `cp -r "$SRC/." "$DST/"` only ADDS/overwrites — a module
+  # DELETED upstream between versions would linger in the mirror and stay
+  # importable through the editable (`pip install -e`) install, silently drifting
+  # the installed CLI from source. That breaks the "(re)build (idempotent)"
+  # contract this function claims. Clean the mirror first so every rebuild yields
+  # a deterministic, faithful copy of the current source (same input -> same
+  # result regardless of prior state). The venv ($VENV_DIR) and the data dir both
+  # live OUTSIDE engine/, so this never touches them — but guard against a
+  # non-default VENV_DIR placed inside engine/ just in case.
+  case "$VENV_DIR" in
+    "$CAF_DIR/engine"|"$CAF_DIR/engine/"*)
+      log "WARN: VENV_DIR is inside engine/ — skipping mirror-clean (overlay copy only)." ;;
+    *)
+      rm -rf "$CAF_DIR/engine" 2>/dev/null || true ;;
+  esac
   mkdir -p "$CAF_DIR/engine" || { log "ERROR: mkdir $CAF_DIR/engine failed"; return 1; }
 
   if [ ! -x "$VENV_DIR/bin/python" ]; then
