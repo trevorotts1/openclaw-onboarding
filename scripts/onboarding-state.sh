@@ -191,12 +191,25 @@ obs_verify_skill() {
   fi
 
   # (a) openclaw skills info <name> -> Ready/visible
+  #
+  # v19.0.1 fix: a bare `error` substring match false-positives on any skill
+  # whose own SKILL.md description legitimately contains the word "error"
+  # (e.g. skill 05's frontmatter: "...and handle errors."), which `openclaw
+  # skills info` echoes back verbatim in its description block. That flagged
+  # 05-ghl-setup as skills-info:not-registered on every install even though
+  # the skill IS registered (Source: openclaw-managed; Path:/Details: present)
+  # and its own qc-*.sh passed. Bring this in line with the canonical
+  # oc_skill_registered() in lib-onboarding-state.sh: require a positive
+  # registration signal AND check negative signals against SPECIFIC phrases
+  # only (never a bare "error" substring).
   if command -v openclaw >/dev/null 2>&1; then
     local info_out
     info_out="$(openclaw skills info "$skill_name" 2>/dev/null || true)"
     if [ -z "$info_out" ]; then
       reasons="${reasons}skills-info:not-visible; "
-    elif printf '%s' "$info_out" | grep -qiE 'error|not found|unknown skill'; then
+    elif printf '%s' "$info_out" | grep -qiE 'not found|unknown skill|no such skill'; then
+      reasons="${reasons}skills-info:not-registered; "
+    elif ! printf '%s' "$info_out" | grep -qiE 'ready|enabled|visible|installed|name:|path:|details:|source:'; then
       reasons="${reasons}skills-info:not-registered; "
     fi
   fi
@@ -213,10 +226,29 @@ obs_verify_skill() {
     [ "$found_sentinel" -eq 0 ] && reasons="${reasons}core-updates:sentinel-missing; "
   fi
 
-  # (c) qc-*.sh exits 0 (only if it ships one). Prefer canonical qc-<folder>.sh.
+  # (c) qc-*.sh exits 0 (only if it ships one).
+  # Prefer canonical qc-<folder>.sh, then qc-<skill_name>.sh (the SKILL.md
+  # `name:` frontmatter, already resolved above as $skill_name), then the
+  # old "first qc-*.sh alphabetically" fallback.
+  #
+  # v19.0.1 fix: some skills (06-ghl-install-pages, 28-cinematic-forge,
+  # 35-social-media-planner, 44-convert-and-flow-operator) ship MULTIPLE
+  # qc-*.sh files — a canonical per-skill install-QC gate plus one or more
+  # BUILT-ARTIFACT helper QC scripts that require a positional argument
+  # (evidence_root/slug/workflow-id) and are meant to be run by hand AFTER a
+  # build, not by this gate. The canonical gate script is named after the
+  # skill's frontmatter name (e.g. folder 06-ghl-install-pages, name
+  # ghl-install-pages -> qc-ghl-install-pages.sh), not the folder and not
+  # alphabetical order. The old fallback picked qc-built-form.sh for 06 and
+  # qc-built-workflow.sh for 44 — both exit non-zero on a bare usage error
+  # with no argument, which is what tripped the "05/06 not verified" Wave-7
+  # install advisory (05 was a separate, since-fixed false-positive in check
+  # (a) above; this is 06's qc-script:nonzero-exit half).
   local qc_script=""
   if [ -x "$skill_path/qc-${folder}.sh" ]; then
     qc_script="$skill_path/qc-${folder}.sh"
+  elif [ -n "$skill_name" ] && [ -x "$skill_path/qc-${skill_name}.sh" ]; then
+    qc_script="$skill_path/qc-${skill_name}.sh"
   else
     # first qc-*.sh in the folder
     for c in "$skill_path"/qc-*.sh; do

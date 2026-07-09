@@ -270,12 +270,35 @@ oc_gate_skill() {
   fi
 
   # (c) qc-*.sh exit 0 (only the skill's own qc script, run read-only)
-  local qc
-  # v16.2.13: `|| true` — on the common no-qc-script path the glob stays literal,
-  # `ls` exits rc 2 (pipefail adopts it); multi-match makes `head -1` SIGPIPE `ls`
-  # (rc 141). This plain assignment would otherwise throw under a caller's `set -e`
-  # BEFORE the `[ -n "$qc" ]` empty-handling below. Empty is handled below.
-  qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1 || true)
+  #
+  # v19.0.1 fix: some skills (06-ghl-install-pages, 28-cinematic-forge,
+  # 35-social-media-planner, 44-convert-and-flow-operator) ship MULTIPLE
+  # qc-*.sh files — a canonical per-skill install-QC gate plus one or more
+  # BUILT-ARTIFACT helper QC scripts that take a required positional argument
+  # (evidence_root/slug/workflow-id) and are meant to be invoked by hand
+  # AFTER a build, not by this gate. The canonical gate script is named after
+  # the skill's SKILL.md `name:` field (e.g. folder 06-ghl-install-pages,
+  # name ghl-install-pages -> qc-ghl-install-pages.sh), NOT the folder name
+  # and NOT alphabetical order. Picking "first qc-*.sh alphabetically" landed
+  # on qc-built-form.sh for 06 and qc-built-workflow.sh for 44 — both exit
+  # non-zero with a bare usage error when run with no argument, which is what
+  # tripped the "05/06 not verified" Wave-7 install advisory (05 was a
+  # separate, since-fixed false-positive in the (a) registration check; this
+  # is 06's qc-script:nonzero-exit half). Resolution order below: exact
+  # folder-name match, then exact skill-name match, then the old alphabetical
+  # fallback (unchanged) for skills that only ever shipped one qc-*.sh.
+  local qc="" _qc_skill_name
+  # v16.2.13: `|| true` — awk/ls exit non-zero on a missing file / no-match
+  # glob; `|| true` keeps this a plain assignment under a caller's `set -e`.
+  _qc_skill_name=$(awk -F': ' '/^name:/{gsub(/[[:space:]]/,"",$2);print $2;exit}' \
+                      "$OC_SKILLS_DIR/$folder/SKILL.md" 2>/dev/null || true)
+  if [ -x "$OC_SKILLS_DIR/$folder/qc-${folder}.sh" ]; then
+    qc="$OC_SKILLS_DIR/$folder/qc-${folder}.sh"
+  elif [ -n "$_qc_skill_name" ] && [ -x "$OC_SKILLS_DIR/$folder/qc-${_qc_skill_name}.sh" ]; then
+    qc="$OC_SKILLS_DIR/$folder/qc-${_qc_skill_name}.sh"
+  else
+    qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1 || true)
+  fi
   if [ -n "$qc" ] && [ -f "$qc" ]; then
     local qc_rc=0
     bash "$qc" >/dev/null 2>&1 || qc_rc=$?
