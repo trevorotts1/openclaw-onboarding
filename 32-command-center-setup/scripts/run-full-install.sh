@@ -455,6 +455,53 @@ cc_ensure_fresh_build() {
   if [[ -f "$nextid" ]]; then return 1; else return 2; fi
 }
 
+# cc_verify_db_parity — DATA-08 decoy-DB guard, wired into deploy.
+#
+# shared-utils/resolve_db.py's find_dashboard_db() candidate list is what EVERY
+# Skill 32 Python script (seed-workspaces.py, guard-department-runtime-parity.py,
+# move-task.py, sync-md-content-to-db.py, ...) uses to locate mission-control.db.
+# The Command Center APP resolves the SAME file independently, in TypeScript,
+# via src/lib/db/index.ts: DATABASE_PATH env override, else
+# process.cwd()/mission-control.db (cwd = $DASHBOARD_DIR under pm2 — see
+# cc_pm2_start_canonical). If those two resolutions ever diverge — a stray
+# DATABASE_PATH left in the shell env, a decoy DB from an old install layout,
+# a script invoked from the wrong cwd — every Skill 32 script silently
+# reads/writes a DIFFERENT file than the one the app actually serves. That is
+# the DATA-08 decoy-DB class of bug: workspace edits, dept seeding, and
+# persona-selector writes all land somewhere the board never shows.
+#
+# Runs resolve_db.py --verify-parity FROM the app's OWN cwd ($DASHBOARD_DIR) so
+# its cwd-based default resolution is mirrored exactly — the same DATABASE_PATH
+# (or absence of it) that both the app process and this shell inherit. Returns
+# 0 on parity, non-zero (2, per resolve_db.py's argparse contract) on a genuine
+# mismatch or an unresolvable script-side DB. Fail-CLOSED by design: the caller
+# is expected to fail_install() on a non-zero return, exactly like the
+# department-runtime-parity guard (Phase 6e2) it is modeled on — this is a
+# regression class in the same family (silent per-box DB divergence), not a
+# best-effort warning.
+cc_verify_db_parity() {
+  local script="$SKILL_DIR/../shared-utils/resolve_db.py"
+  if [[ ! -f "$script" ]]; then
+    log "WARN" "phase=6 db-parity (DATA-08): $script not found -- skipping (onboarding not at the version that ships resolve_db.py --verify-parity)"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    log "WARN" "phase=6 db-parity (DATA-08): python3 not found -- skipping"
+    return 0
+  fi
+  local out rc
+  out="$(cd "$DASHBOARD_DIR" && python3 "$script" --verify-parity 2>&1)"; rc=$?
+  printf '%s\n' "$out" >> "$LOG_FILE"
+  if [[ "$rc" -eq 0 ]]; then
+    log "INFO" "phase=6 db-parity (DATA-08): PASS -- $out"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterDbPathParity = true' 2>/dev/null || true
+    return 0
+  fi
+  log "ERROR" "phase=6 db-parity (DATA-08): FAIL (rc=$rc) -- $out"
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterDbPathParity = false' 2>/dev/null || true
+  return "$rc"
+}
+
 # ---- preflight ----
 if [[ ! -f "$STATE_FILE" ]]; then
   if [[ "$UPDATE_ONLY" == "true" ]]; then
@@ -589,6 +636,12 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
+    # DATA-08 decoy-DB guard — hard, deploy-blocking gate. db:push has just
+    # created/migrated the real mission-control.db, so this is the earliest
+    # point the app-side and scripts-side resolutions can be compared for real.
+    if ! cc_verify_db_parity; then
+      fail_install "phase=6 (update-only): DATA-08 decoy-DB guard failed -- shared-utils/resolve_db.py resolves a DIFFERENT mission-control.db than the app (see $LOG_FILE). Set/clear DATABASE_PATH so scripts and app agree, then re-run."
+    fi
     # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
     # (mission-control, command-center), then restart the canonical
     # "blackceo-command-center" (start fresh if it isn't registered yet). This
@@ -649,6 +702,17 @@ else
   log "INFO" "phase=6: npm run db:seed (no demo content injected)"
   if ! ( cd "$DASHBOARD_DIR" && npm run db:seed >>"$LOG_FILE" 2>&1 ); then
     log "WARN" "phase=6: npm run db:seed failed — dashboard will still start but workspace selector may be empty"
+  fi
+
+  # DATA-08 decoy-DB guard — hard, deploy-blocking gate. db:push/db:seed have
+  # just created/migrated the real mission-control.db, so this is the earliest
+  # point the app-side and scripts-side resolutions can be compared for real.
+  # A genuine mismatch here means every Skill 32 Python script (seeders,
+  # dept-runtime-parity, persona-selector) would silently read/write a
+  # DIFFERENT file than the one pm2 is about to start serving — fail BEFORE
+  # that happens, not after a client reports "my edits vanished".
+  if ! cc_verify_db_parity; then
+    fail_install "phase=6: DATA-08 decoy-DB guard failed -- shared-utils/resolve_db.py resolves a DIFFERENT mission-control.db than the app (see $LOG_FILE). Set/clear DATABASE_PATH so scripts and app agree, then re-run."
   fi
 
   # Pin CC_PORT so the bind is deterministic on :4000 — cc-start.sh (npm start ->

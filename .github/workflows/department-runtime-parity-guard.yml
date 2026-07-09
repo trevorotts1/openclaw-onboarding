@@ -1,0 +1,95 @@
+name: department-runtime-parity-guard
+
+# BUILD-08: wires guard-department-runtime-parity.py's regression suite into CI.
+#
+# The guard closes the `no_specialist_runtime` failure class: run-full-install.sh
+# Phase 4's WIRING-ASSERT only floors the TOTAL agents.list[] count, so N-2
+# departments wiring correctly while 2 silently don't still passes that floor —
+# those 2 departments get a full board row (Kanban column, "<Name> Lead" agent
+# row, starter task) with ZERO working OpenClaw runtime. guard-department-
+# runtime-parity.py cross-checks EVERY seeded department (a mission-control.db
+# `workspaces` row) against agents.list[] individually and is already wired as a
+# hard, install-blocking gate in run-full-install.sh Phase 6e2 (and a belt-and-
+# suspenders warn in update-skills.sh's D5 CC-refresh block) — but until this
+# workflow, nothing proved the guard ITSELF stays correct in CI. A silent
+# regression in its slug-matching / DB-reading logic (e.g. a canonical-alias
+# drift from src/lib/routing/canonical-slug.ts) would only surface live, on a
+# client box, exactly where it is least affordable.
+#
+# tests/32-command-center-setup/scripts/test_guard_department_runtime_parity.py
+# is hermetic (mocked mission-control.db + mocked openclaw.json, both in a
+# tempdir; no network, no real box state) and proves:
+#   1. A department seeded on the board with NO matching runtime entry is
+#      caught by name and fails closed (never a false pass).
+#   2. Every department having a matching runtime entry passes.
+#   3. All 6 slug-matching variants the real dispatcher
+#      (resolveSpecialistSessionKey in blackceo-command-center's
+#      src/lib/task-dispatcher.ts) tries are covered, including the
+#      canonical-alias mapping mirrored from shared-utils/canonical_slug.py.
+#   4. Soft-fail vs. hard-fail boundary: missing DB / empty workspaces is NOT a
+#      failure (nothing seeded yet); departments seeded but config unreadable
+#      IS a hard failure (distinct exit code).
+#
+# Runs on every push to main and on any PR touching the guard, its shared
+# dependencies (resolve_db.py, canonical_slug.py), or the two converge sites
+# that invoke it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/guard-department-runtime-parity.py"
+      - "32-command-center-setup/scripts/test_guard_department_runtime_parity.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "shared-utils/resolve_db.py"
+      - "shared-utils/canonical_slug.py"
+      - "update-skills.sh"
+      - ".github/workflows/department-runtime-parity-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/guard-department-runtime-parity.py"
+      - "32-command-center-setup/scripts/test_guard_department_runtime_parity.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "shared-utils/resolve_db.py"
+      - "shared-utils/canonical_slug.py"
+      - "update-skills.sh"
+      - ".github/workflows/department-runtime-parity-guard.yml"
+
+jobs:
+  department-runtime-parity-guard:
+    name: guard-department-runtime-parity.py regression suite (17 hermetic cases)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the department-runtime-parity regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 32-command-center-setup/scripts
+          python3 test_guard_department_runtime_parity.py
+          echo "department-runtime-parity-guard: PASS — no_specialist_runtime regressions caught fail-closed."
+
+      - name: Assert the guard is actually wired into run-full-install.sh (BUILD-08)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A regression suite passing for the standalone script is necessary but
+          # not sufficient — BUILD-08 was the guard shipping UNWIRED from converge.
+          # Fail loud if a future edit ever detaches the Phase 6e2 hard gate.
+          if ! grep -q 'guard-department-runtime-parity.py' 32-command-center-setup/scripts/run-full-install.sh; then
+            echo "FAIL: guard-department-runtime-parity.py is no longer referenced by run-full-install.sh — the install-blocking gate was removed." >&2
+            exit 1
+          fi
+          if ! grep -q 'fail_install "phase=6e2' 32-command-center-setup/scripts/run-full-install.sh; then
+            echo "FAIL: the department-runtime-parity gate in run-full-install.sh Phase 6e2 no longer fail_install()s on mismatch — regressed to warn-only." >&2
+            exit 1
+          fi
+          echo "PASS: guard-department-runtime-parity.py remains a hard, install-blocking gate in run-full-install.sh Phase 6e2."
