@@ -103,8 +103,15 @@ _RUNTIME_DIR_NAMES = {
 # --- Anthropic id SHAPES (concrete ids only; the bare word is intentionally
 #     NOT matched so rule-stating prose and the deny_patterns list stay clean) -
 _ANTHROPIC_PATTERNS = [
-    ("claude-model-id", re.compile(r"claude-(?:opus|sonnet|haiku|instant|fable|[0-9])", re.I)),
-    ("anthropic-slash-model", re.compile(r"anthropic/claude-(?:[0-9]|opus|sonnet|haiku|instant)", re.I)),
+    # ROOT-ANCHORED (MODEL-01), matching the canonical shared-utils text detector
+    # (claude- followed by one id char): any claude-<id-char> token, never a
+    # per-generation enumeration. The old enumerated suffix list silently ALLOWED
+    # an unenumerated future family id (a renamed/future claude-<family>
+    # generation) to ship in a runtime file. It still stays prose-safe: a bare
+    # word "claude", the claude-* wildcard, and the deny_patterns list never
+    # carry claude-<alnum>.
+    ("claude-model-id", re.compile(r"claude-[a-z0-9]", re.I)),
+    ("anthropic-slash-model", re.compile(r"anthropic/claude-[a-z0-9]", re.I)),
     ("bedrock-anthropic", re.compile(r"us\.anthropic\.claude", re.I)),
     ("anthropic-npm", re.compile(r"@anthropic-ai/")),
     ("anthropic-env-key", re.compile(r"ANTHROPIC_API_KEY")),

@@ -151,8 +151,14 @@ skill = os.environ["SKILL_DIR"]
 # Concrete Anthropic MODEL-ID shapes only (lowercase, as real config ids are) —
 # NOT the words "Anthropic"/"claude-*" wildcards or "Anthropic/claude-*" prose
 # used in this skill's own ban documentation. Case-SENSITIVE on purpose.
-pat = re.compile(r"claude-(?:opus|sonnet|haiku|instant|fable)\b"
-                 r"|claude-\d"
+# ROOT-ANCHORED (MODEL-01), matching the canonical shared-utils text detector:
+# any claude-<id-char> token, never a per-generation enumeration. The old
+# enumerated suffix list silently ALLOWED an unenumerated future family id (a
+# renamed/future claude-<family> generation). Still prose-safe (case-sensitive,
+# lowercase ids only): the claude-* wildcard and the bare word "claude" used in
+# this skill's own ban docs never carry claude-<alnum>. This comment itself is
+# deliberately id-shape-free so the whole-dir scan does not flag verify.sh.
+pat = re.compile(r"claude-[a-z0-9]"
                  r"|anthropic/[a-z]"
                  r"|us\.anthropic\.[a-z]")
 hits = []
