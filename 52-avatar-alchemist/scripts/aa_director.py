@@ -280,9 +280,9 @@ def load_model_map(run_dir: Optional[Path], root: Path) -> Optional[Dict[str, An
         except (OSError, ValueError):
             continue
         for tier, tid in (mm.get("tiers") or {}).items():
-            if _ANTHROPIC_ID_RE.search(str(tid)):
+            if is_anthropic_model(tid):
                 raise ValueError(
-                    f"AF-AV-NOANTHROPIC: model-map tier {tier}={tid!r} matches the Anthropic ban "
+                    f"AF-AV-NOANTHROPIC: model-map tier {tier}={tid!r} is an Anthropic/Claude model "
                     f"(client-path rule) — refusing to consume {p}")
         mm["_source"] = str(p)
         return mm
@@ -392,7 +392,7 @@ def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
                         last_err = str(exc)
                         continue
                     # G-NOANTHROPIC on the REAL returned model id (fail-closed).
-                    if _ANTHROPIC_ID_RE.search(model or ""):
+                    if is_anthropic_model(model):
                         _park(run_dir, sid, f"AF-AV-NOANTHROPIC: dispatch returned an Anthropic model id {model!r}")
                         return 2
                     if _stage_output_ok(cand_text):
@@ -524,7 +524,26 @@ def _require_nonce(nonce_path: str | None) -> bool:
 
 
 _FORBIDDEN_DEP_RE = re.compile(r"\bimport\s+(requests|openai|anthropic|httpx|aiohttp)\b")
-_ANTHROPIC_ID_RE = re.compile(r"anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku", re.IGNORECASE)
+
+# SK2-16 — the ONE canonical Anthropic detector (shared-utils). `is_anthropic_model`
+# tests a discrete model-id string; `text_has_anthropic_model_id` scans free text
+# (prompts/manifests) for an id-shaped Anthropic reference without false-positiving
+# on prose that merely names the vendor. Fail-closed vendored fallback below.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
+try:
+    from assert_model_sovereignty import (  # type: ignore  # noqa: E402
+        is_anthropic_model,
+        text_has_anthropic_model_id,
+    )
+except Exception:  # noqa: BLE001
+    _AA_ANTHROPIC_RE = re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", re.IGNORECASE)
+    _AA_ANTHROPIC_TEXT_RE = re.compile(r"anthropic[/.][a-z0-9]|\bclaude-[a-z0-9]", re.IGNORECASE)
+
+    def is_anthropic_model(model_id) -> bool:  # type: ignore
+        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
+
+    def text_has_anthropic_model_id(text) -> bool:  # type: ignore
+        return bool(_AA_ANTHROPIC_TEXT_RE.search(str(text or "")))
 
 
 def _skill_root() -> Path:
@@ -550,16 +569,17 @@ def _front_door_reverify() -> List[str]:
         if _FORBIDDEN_DEP_RE.search(src):
             problems.append(f"deps: {py.name} imports a forbidden external runtime dep")
 
-    # 2) bypass-scan: no Anthropic ids in prompts/manifests
+    # 2) bypass-scan: no Anthropic ids in prompts/manifests (id-shaped scan — does
+    #    not false-positive on prose that names the vendor while documenting removal)
     for p in (root / "prompts").rglob("*.md"):
         try:
-            if _ANTHROPIC_ID_RE.search(p.read_text(encoding="utf-8", errors="replace")):
+            if text_has_anthropic_model_id(p.read_text(encoding="utf-8", errors="replace")):
                 problems.append(f"bypass-scan: Anthropic/claude model id found in {p.relative_to(root)}")
         except OSError:
             continue
     for j in root.glob("*.json"):
         try:
-            if _ANTHROPIC_ID_RE.search(j.read_text(encoding="utf-8", errors="replace")):
+            if text_has_anthropic_model_id(j.read_text(encoding="utf-8", errors="replace")):
                 problems.append(f"bypass-scan: Anthropic/claude model id found in {j.name}")
         except OSError:
             continue

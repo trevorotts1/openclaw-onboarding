@@ -53,6 +53,17 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+# SK2-16 — the ONE canonical Anthropic model-id detector (shared-utils).
+# Fail-closed vendored fallback (same canonical pattern) if unresolvable.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
+try:
+    from assert_model_sovereignty import is_anthropic_model  # type: ignore  # noqa: E402
+except Exception:  # noqa: BLE001
+    _AA_ANTHROPIC_RE = re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", re.IGNORECASE)
+
+    def is_anthropic_model(model_id) -> bool:  # type: ignore
+        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
+
 
 def _manifest_path() -> Path:
     return Path(__file__).resolve().parent.parent / "AA-PIPELINE-MANIFEST.json"
@@ -442,9 +453,9 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
                  f"stage '{sid}': no resolved model id recorded (cannot prove client-path-only "
                  f"by omission — a ledger/receipt lacking a model id fails, it does not pass vacuously)")
             continue
-        if re.search(r"anthropic|claude", str(mid), re.IGNORECASE):
+        if is_anthropic_model(mid):
             fail("AF-AV-NOANTHROPIC",
-                 f"stage '{sid}': resolved model id {mid!r} matches /anthropic|claude/i (client-path ban)")
+                 f"stage '{sid}': resolved model id {mid!r} is an Anthropic/Claude model (client-path ban)")
     # operator/anthropic credential-NAME ban (defense in depth only — the LIVE
     # enforcement of this half is entry.sh's env-credential-name bypass-scan
     # leg, which actually sees the process env; this loop only sees whatever

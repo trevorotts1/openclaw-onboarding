@@ -42,6 +42,20 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 import aa_build_check as build  # noqa: E402
 
+# SK2-16 — the ONE canonical Anthropic model-id detector lives in
+# shared-utils/assert_model_sovereignty.py. Fail-closed vendored fallback (same
+# canonical pattern) so detection can never silently weaken if shared-utils is
+# not resolvable at runtime.
+sys.path.insert(0, str(SKILL_ROOT.parent / "shared-utils"))
+try:
+    from assert_model_sovereignty import is_anthropic_model  # type: ignore  # noqa: E402
+except Exception:  # noqa: BLE001
+    import re as _re
+    _AA_ANTHROPIC_RE = _re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", _re.IGNORECASE)
+
+    def is_anthropic_model(model_id) -> bool:  # type: ignore
+        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
+
 QC_METHODOLOGY = (
     "deterministic 10-category structural/provenance composite computed by "
     "aa_qc_cert.py (a separate program from the generator and the delivery "
@@ -228,8 +242,6 @@ OPENCLAW_QC_CATEGORIES = [
 # a CLIENT tier-A id placeholder for the deterministic stand-in verifier; a real
 # run records the client box's own tier-A model. NEVER an Anthropic id.
 VERIFIER_TIER_A_DEFAULT = "ollama-cloud/qwen3-235b"
-_SEMANTIC_ANTHROPIC_RE = __import__("re").compile(
-    r"anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku", __import__("re").IGNORECASE)
 
 
 def synth_semantic_judgment(manifest: Dict[str, Any], run_dir: Path,
@@ -316,7 +328,8 @@ def verify_semantic_signature(cert: Dict[str, Any], key: bytes) -> bool:
 
 
 def semantic_verifier_is_anthropic(cert: Dict[str, Any]) -> bool:
-    return bool(_SEMANTIC_ANTHROPIC_RE.search(str(cert.get("verifier_model", ""))))
+    # SK2-16 — defer to the one canonical detector (shared-utils).
+    return is_anthropic_model(cert.get("verifier_model", ""))
 
 
 # ---------------------------------------------------------------------------
