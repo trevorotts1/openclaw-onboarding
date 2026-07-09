@@ -55,18 +55,25 @@ state_get() {
   jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null
 }
 
-state_set() {
-  # Usage: state_set '.field = value | .other = value'
-  local tmp
-  tmp=$(mktemp)
-  if jq "$1" "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
-    log "ERROR" "state_set failed for expr: $1"
-    return 1
-  fi
-}
+# SK1-13: shared, concurrency-safe state_set (portable mkdir-mutex + stale-lock
+# breaker) replaces the former unlocked jq->tmp->mv copy, so a resume-cron write
+# can never lost-update a concurrent run-closeout write. See lib-closeout-state.sh.
+# Usage unchanged: state_set '.field = value | .other = value'
+# shellcheck source=lib-closeout-state.sh disable=SC1090,SC1091
+if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" 2>/dev/null; then
+  # Fallback for an older bundle without the shared lib: unlocked atomic write.
+  state_set() {
+    local tmp
+    tmp=$(mktemp)
+    if jq "$1" "$STATE_FILE" > "$tmp"; then
+      mv "$tmp" "$STATE_FILE"
+    else
+      rm -f "$tmp"
+      log "ERROR" "state_set failed for expr: $1"
+      return 1
+    fi
+  }
+fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
@@ -1177,8 +1184,8 @@ else
   fi
   # Loop-registry hygiene
   if [[ -f "$SKILL_DIR/../scripts/loop-registry.sh" ]]; then
-    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
     # shellcheck disable=SC1090
+    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
     source "$SKILL_DIR/../scripts/loop-registry.sh" 2>/dev/null || true
     LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
     lr_kill "interview-nudge" 2>/dev/null || true

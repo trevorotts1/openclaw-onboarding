@@ -70,17 +70,25 @@ state_get() {
   jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null
 }
 
-state_set() {
-  local tmp
-  tmp=$(mktemp)
-  if jq "$1" "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
-    log "state_set failed for: $1"
-    return 1
-  fi
-}
+# SK1-13: shared, concurrency-safe state_set (portable mkdir-mutex + stale-lock
+# breaker) replaces the former unlocked jq->tmp->mv copy. This cron writes state
+# while a still-running (nohup'd) run-closeout.sh writes the SAME file; the shared
+# lock serializes those read-modify-writes so neither can lost-update the other.
+# shellcheck source=lib-closeout-state.sh disable=SC1090,SC1091
+if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" 2>/dev/null; then
+  # Fallback for an older bundle without the shared lib: unlocked atomic write.
+  state_set() {
+    local tmp
+    tmp=$(mktemp)
+    if jq "$1" "$STATE_FILE" > "$tmp"; then
+      mv "$tmp" "$STATE_FILE"
+    else
+      rm -f "$tmp"
+      log "state_set failed for: $1"
+      return 1
+    fi
+  }
+fi
 
 # ---- run count (defense-in-depth cap) ----
 run_count=0
