@@ -43,6 +43,20 @@ trap cleanup EXIT INT TERM HUP
 # work dir so verify.sh NEVER writes test brand folders into the real ~/Downloads.
 export SMIB_DELIVER_DEST="$WORK/deliverables"
 
+# SK2-13: the RUNTIME scrub gate (run_social_media.py _chk_scrub) now runs with
+# --require-names, which fail-CLOSES when the client-name screen list is
+# unconfigured — a silent pass could let a client's private name leak into
+# published posts. In production the orchestrator supplies SMIB_SCRUB_NAMES (the
+# client's private names to keep OUT of public content). This self-test supplies a
+# synthetic demo value to the runtime golden runs ONLY (applied inline on each
+# entry invocation below) — NEVER exported globally, because the BUILD-TIME
+# full-tree scrub (step 5/7 scans verify.sh itself) must keep the correct EMPTY
+# build-time list; a global export would make that scan flag this file's own demo
+# literal. The value is absent from the golden content, so the fail-closed screen
+# runs and every golden reproduces green. Honors an operator value if pre-set.
+SMIB_DEMO_SCRUB_NAMES="${SMIB_SCRUB_NAMES:-Zzq Private Holdings LLC}"
+unset SMIB_SCRUB_NAMES SMIB_SCRUB_NAMES_FILE
+
 GOLD_SRC="examples/golden-week"
 
 # assert a prover REJECTS: exit code == $2 and (if $3 given) $3 is among the --json codes
@@ -69,7 +83,7 @@ golden_cert() {
     local run="$WORK/gc-$label"
     cp -R "$src" "$run"
     rm -f "$run/working/checkpoints/gates.json" "$run/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-    if ! bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1; then
+    if ! SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1; then
         bad "$label ($mode): run did not pass through the entry"; return; fi
     if "$PY" - "$run/delivery/PROCESS-CERTIFICATE.json" "$src/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
@@ -89,7 +103,7 @@ golden_report() {
     local run="$WORK/gr-$label"
     cp -R "$src" "$run"
     rm -f "$run/working/checkpoints/gates.json" 2>/dev/null || true
-    if bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1 && [ -f "$run/$artifact" ]; then
+    if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1 && [ -f "$run/$artifact" ]; then
         ok "$label ($mode) -> read-only PASS, $artifact present (no certificate, by design)"
     else bad "$label ($mode): read-only run failed or the report artifact is missing"; fi
 }
@@ -105,7 +119,7 @@ step "2/7 golden-week reproduces PASS in a read-only temp copy (mode week, via e
 GOLD_RUN="$WORK/golden"
 cp -R "$GOLD_SRC" "$GOLD_RUN"
 rm -f "$GOLD_RUN/working/checkpoints/gates.json" "$GOLD_RUN/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-if bash social-media-entry.sh --run-dir "$GOLD_RUN" --mode week >/dev/null 2>&1; then
+if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$GOLD_RUN" --mode week >/dev/null 2>&1; then
     CERT="$GOLD_RUN/delivery/PROCESS-CERTIFICATE.json"
     if [ -f "$CERT" ] && "$PY" - "$CERT" "$GOLD_SRC/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
@@ -139,7 +153,7 @@ golden_report "engage"     examples/golden-modes/engage         engage working/q
 step "2c/7 golden-creative brief (wildcard theme + logged overrides + verbatim client copy)"
 GC="$WORK/golden-creative"; cp -R examples/golden-creative/run "$GC"
 rm -f "$GC/working/checkpoints/gates.json" "$GC/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-if bash social-media-entry.sh --run-dir "$GC" --mode brief >/dev/null 2>&1 \
+if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$GC" --mode brief >/dev/null 2>&1 \
    && "$PY" - "$GC/delivery/PROCESS-CERTIFICATE.json" examples/golden-creative/run/delivery/PROCESS-CERTIFICATE.json <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1])); ref=json.load(open(sys.argv[2]))
