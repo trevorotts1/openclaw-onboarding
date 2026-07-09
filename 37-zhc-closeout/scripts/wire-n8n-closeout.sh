@@ -43,17 +43,24 @@ state_get() {
   jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null
 }
 
-state_set() {
-  local tmp
-  tmp=$(mktemp)
-  if jq "$1" "$STATE_FILE" > "$tmp"; then
-    mv "$tmp" "$STATE_FILE"
-  else
-    rm -f "$tmp"
-    log "ERROR" "state_set failed for expr: $1"
-    return 1
-  fi
-}
+# SK1-13: shared, concurrency-safe state_set (portable mkdir-mutex + stale-lock
+# breaker) replaces the former unlocked jq->tmp->mv copy, so a resume-cron write
+# can never lost-update a concurrent run-closeout write. See lib-closeout-state.sh.
+# shellcheck source=lib-closeout-state.sh disable=SC1090,SC1091
+if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" 2>/dev/null; then
+  # Fallback for an older bundle without the shared lib: unlocked atomic write.
+  state_set() {
+    local tmp
+    tmp=$(mktemp)
+    if jq "$1" "$STATE_FILE" > "$tmp"; then
+      mv "$tmp" "$STATE_FILE"
+    else
+      rm -f "$tmp"
+      log "ERROR" "state_set failed for expr: $1"
+      return 1
+    fi
+  }
+fi
 
 # ---- guard: jq required ----
 command -v jq >/dev/null 2>&1 || { log "ERROR" "jq not found -- aborting"; exit 1; }
