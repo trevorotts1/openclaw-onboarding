@@ -62,8 +62,16 @@ BLUEPRINT_NAME = "persona-blueprint.md"
 # list_available_personas() drops fallback:true personas from the candidate
 # universe so blackceo-house-voice stays terminal-only and never competes. It
 # MUST survive the workspace→repo categories sync, so it is a canonical field.
+# v1.3 additive enrichment layer (Skill-22 catalog schema 1.3): the voice-first
+# audience+topic BLEND matcher (Skill 23, persona_blend.py) reasons over the WHOLE
+# catalog via these per-persona fields. They MUST survive the workspace→repo
+# categories sync intact — else a publish run would silently STRIP the enrichment
+# and drop the matcher back to a degraded schema-1.2 (topic-only) mode.
+_ENRICHMENT_FIELDS = ("audiences", "topics", "voice_style", "usable_as")
 CANONICAL_ENTRY_FIELDS = ("author", "book", "domain", "perspective", "custom",
-                          "fallback")
+                          "fallback") + _ENRICHMENT_FIELDS
+# usable_as enum (must mirror persona_blend.USABLE_AS_ENUM).
+USABLE_AS_ENUM = ("audience", "topic", "task")
 
 # ── Operator-local absolute-path patterns to strip from a shipped blueprint ──
 # These are machine/operator-local roots that must NEVER appear in a tracked,
@@ -346,7 +354,8 @@ def cmd_diff_slugs(args):
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def _validate_entry(slug, entry, domain_vocab, perspective_vocab):
+def _validate_entry(slug, entry, domain_vocab, perspective_vocab,
+                    audience_vocab=None, topic_vocab=None):
     errs = []
     if not isinstance(entry, dict):
         return [f"{slug}: categories entry is not an object"]
@@ -373,6 +382,49 @@ def _validate_entry(slug, entry, domain_vocab, perspective_vocab):
         for t in cus:
             if not _KEBAB_RE.match(str(t)):
                 errs.append(f"{slug}: custom tag '{t}' is not kebab-case")
+
+    # ── v1.3 additive enrichment layer (schema 1.3) ──────────────────────────
+    # These fields are OPTIONAL (a 1.2 entry omits them and stays valid), but when
+    # present they must be well-formed and — when the top-level audienceTags /
+    # topicTags controlled vocab is populated — a subset of it. usable_as must be a
+    # subset of the enum; voice_style.summary is required when voice_style is given.
+    aud = entry.get("audiences")
+    if aud is not None:
+        if not isinstance(aud, list):
+            errs.append(f"{slug}: 'audiences' must be a list")
+        else:
+            for t in aud:
+                if not _KEBAB_RE.match(str(t)):
+                    errs.append(f"{slug}: audience tag '{t}' is not kebab-case")
+                elif audience_vocab and t not in audience_vocab:
+                    errs.append(f"{slug}: audience tag '{t}' is not in the "
+                                f"controlled vocabulary audienceTags")
+    top = entry.get("topics")
+    if top is not None:
+        if not isinstance(top, list):
+            errs.append(f"{slug}: 'topics' must be a list")
+        else:
+            for t in top:
+                if not _KEBAB_RE.match(str(t)):
+                    errs.append(f"{slug}: topic tag '{t}' is not kebab-case")
+                elif topic_vocab and t not in topic_vocab:
+                    errs.append(f"{slug}: topic tag '{t}' is not in the "
+                                f"controlled vocabulary topicTags")
+    ua = entry.get("usable_as")
+    if ua is not None:
+        if not isinstance(ua, list):
+            errs.append(f"{slug}: 'usable_as' must be a list")
+        else:
+            bad = [x for x in ua if x not in USABLE_AS_ENUM]
+            if bad:
+                errs.append(f"{slug}: usable_as has non-enum value(s) {bad} "
+                            f"(allowed: {list(USABLE_AS_ENUM)})")
+    vs = entry.get("voice_style")
+    if vs is not None:
+        if not isinstance(vs, dict):
+            errs.append(f"{slug}: 'voice_style' must be an object")
+        elif not str(vs.get("summary", "")).strip():
+            errs.append(f"{slug}: voice_style.summary is required and missing")
     return errs
 
 
@@ -387,6 +439,11 @@ def sync_categories(workspace_cat_path, repo_cat_path, slugs):
     repo_personas = repo.setdefault("personas", {})
     domain_vocab = set(repo.get("domainTags", []))
     perspective_vocab = set(repo.get("perspectiveTags", []))
+    # v1.3: the additive audience/topic controlled vocab. Empty on a 1.2 seed —
+    # membership is then only enforced once the seed carries the vocab (a 1.2 box
+    # syncing 1.2 entries stays valid; a 1.3 seed enforces subset membership).
+    audience_vocab = set(repo.get("audienceTags", []))
+    topic_vocab = set(repo.get("topicTags", []))
 
     errors = []
     to_write = {}
@@ -395,7 +452,8 @@ def sync_categories(workspace_cat_path, repo_cat_path, slugs):
         if entry is None:
             errors.append(f"{slug}: no persona-categories.json entry in the workspace")
             continue
-        errors.extend(_validate_entry(slug, entry, domain_vocab, perspective_vocab))
+        errors.extend(_validate_entry(slug, entry, domain_vocab, perspective_vocab,
+                                      audience_vocab, topic_vocab))
         # Ship only the canonical seed fields (drop workspace-only bookkeeping).
         clean = {}
         for f in CANONICAL_ENTRY_FIELDS:
@@ -404,6 +462,16 @@ def sync_categories(workspace_cat_path, repo_cat_path, slugs):
         clean.setdefault("domain", [])
         clean.setdefault("perspective", [])
         clean.setdefault("custom", [])
+        # ADDITIVE-SAFE: the v1.3 enrichment layer (audiences/topics/voice_style/
+        # usable_as) lives in the REPO seed and may not yet exist in an older 1.2
+        # workspace. Preserve any enrichment field already on the repo entry that
+        # this workspace sync does not itself supply — so a publish from a 1.2
+        # workspace NEVER strips the enrichment landed directly in the 1.3 seed.
+        existing = repo_personas.get(slug)
+        if isinstance(existing, dict):
+            for f in _ENRICHMENT_FIELDS:
+                if f not in clean and f in existing:
+                    clean[f] = existing[f]
         to_write[slug] = clean
 
     if errors:
