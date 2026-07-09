@@ -28,13 +28,17 @@ assert "gate registry present"      "[ -f \"$SK/tools/gates.json\" ]"
 # D8 contract: exactly 2 captured gates (login form + auth storage), 26 runtime snapshot-gates.
 assert "gate registry has 2 captured gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"captured\"))' 2>/dev/null)\" = '2' ]"
 assert "gate registry has 26 runtime gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"runtime\"))' 2>/dev/null)\" = '26' ]"
-# Version-drift triple-equality gate (repo version-bump hygiene): the single
-# version of record must agree across skill-version.txt, SKILL.md frontmatter,
-# and the top CHANGELOG entry. Drift = a missed bump shipped. The checker prints
-# the three values to stderr on drift.
+# Version-marker consistency gate (repo version-bump hygiene, v19.0.1 fix):
+# skill-version.txt and SKILL.md's metadata.version are repo-locked in
+# lockstep by scripts/bump-version.sh (same pattern as
+# 23-ai-workforce-blueprint/skill-version.txt) — they must agree with EACH
+# OTHER. CHANGELOG.md keeps its own independent per-skill semver (like every
+# other skill's CHANGELOG) and is only checked for being present/well-formed,
+# not for numeric equality to the repo-locked markers. See
+# scripts/check-version-drift.py docstring for the full rationale.
 VER_CHECK="$SKILL_DIR/scripts/check-version-drift.py"
 if [ -f "$VER_CHECK" ]; then
-  assert "Version is consistent (skill-version.txt == SKILL.md == CHANGELOG top)" \
+  assert "Version markers consistent (skill-version.txt == SKILL.md; CHANGELOG well-formed)" \
     "python3 \"$VER_CHECK\" \"$SK\""
 else
   warn_only "version-drift checker available (scripts/check-version-drift.py)" "[ -f \"$VER_CHECK\" ]"
