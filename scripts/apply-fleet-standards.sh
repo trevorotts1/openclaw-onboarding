@@ -9,6 +9,9 @@
 #     CEO gated while every other agent inherits the wide-open baseline).
 #   • Telegram media limit 50 MB (inbound + outbound)
 #   • WhatsApp PERMANENTLY DISABLED (fleet-wide, non-negotiable — see FLEET-STANDARDS.md §3)
+#   • tools.toolSearch.mode="directory" — ON-DEMAND MCP tool loading (fleet-wide
+#     "schema-every-turn" token-burn fix; compacts GHL's hundreds of tools + all
+#     MCP/plugin tools behind a search-on-demand catalog — see FLEET-STANDARDS.md §8)
 #
 # NOTE (v11.3.1): agents.defaults.tools.exec is INVALID on OpenClaw 2026.6.1+
 #   and causes "agents.defaults: Invalid input" / auto-revert by doctor --fix.
@@ -166,6 +169,27 @@ CANONICAL = {
         "exec": {
             "security": "full",
             "ask": "off"
+        },
+        # ON-DEMAND MCP TOOL LOADING — fleet-wide "schema-every-turn" token-burn fix.
+        # (FLEET-STANDARDS.md §8.) tools.toolSearch.mode = "directory" compacts EVERY
+        # OpenClaw / plugin / MCP tool behind a bounded names+descriptions catalog that
+        # the model searches and hydrates ON DEMAND (openclaw.tools search/describe/call),
+        # instead of injecting every full tool JSON schema into context on every turn.
+        # This is the durable fix for the fleet-wide burn — most acute on the GHL
+        # community MCP (`ghl-community-mcp`, ~hundreds of tools) that update-skills.sh
+        # `wire_ghl_mcp` re-registers on every pass: directory mode compacts it regardless
+        # of how many servers/tools are registered, so re-registration can NEVER
+        # reintroduce the full-schema cost. Client-provided run tools stay directly
+        # visible; only the standing catalog (OpenClaw/plugin/MCP) is compacted.
+        # Verified: docs.openclaw.ai/tools/tool-search — tools.toolSearch.mode accepts
+        #   "code" (gateway default) | "tools" | "directory"  (or `false` to disable).
+        # Idempotent + override-preserving: deep_merge() recurses into an existing
+        # toolSearch block and enforces ONLY `mode`, leaving any per-box tuning
+        # (codeTimeoutMs / searchDefaultLimit / maxSearchLimit) untouched. The
+        # `openclaw config validate` gate below is the backstop + auto-rollback if a
+        # gateway version ever rejects the key.
+        "toolSearch": {
+            "mode": "directory"
         }
     },
     "agents": {

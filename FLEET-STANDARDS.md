@@ -189,12 +189,52 @@ repo), and CI (`.github/workflows/qc-static.yml` runs the gate +
 gate fails on a removed roster / unresolvable role / missing persona-mapping /
 corrupt library slug).
 
+### 8. On-Demand MCP Tool Loading — `tools.toolSearch.mode = "directory"` (fleet-wide token-burn fix)
+
+Every box loads MCP tool schemas **on demand** instead of injecting every tool's
+full JSON schema into the model context on **every turn**. The fleet standard sets:
+
+```json
+"tools": {
+  "toolSearch": {
+    "mode": "directory"
+  }
+}
+```
+
+**What it does.** In `directory` mode the gateway keeps a bounded prompt *directory*
+of available tool **names + descriptions** and exposes `search` / `describe` / `call`
+operations. The model sees compact descriptors and hydrates a tool's full schema only
+when it actually needs it (`openclaw.tools.describe` / `call`). Client-provided run
+tools stay directly visible; the standing catalog (OpenClaw + plugin + **MCP**) is
+compacted behind the directory.
+
+**Why it's a fleet standard.** The full-schema-every-turn injection is the durable,
+fleet-wide token burn. It is most acute on the **GHL community MCP**
+(`ghl-community-mcp`, hundreds of tools) that `update-skills.sh` `wire_ghl_mcp`
+re-registers on every update pass. Directory mode compacts that server **regardless
+of how many tools/servers are registered**, so re-registration can never reintroduce
+the full-schema cost — the fix is provider-agnostic and survives every update.
+
+**Valid values** (`tools.toolSearch.mode`): `"code"` (gateway default) · `"tools"` ·
+`"directory"` · or `false` to disable. The fleet pins `"directory"`.
+Source: `docs.openclaw.ai/tools/tool-search`.
+
+**Enforced + idempotent + override-preserving.** Written by
+`scripts/apply-fleet-standards.sh` via the canonical deep-merge, which recurses into
+any existing `toolSearch` block and enforces **only** `mode` — any per-box tuning
+(`codeTimeoutMs` / `searchDefaultLimit` / `maxSearchLimit`) is preserved. Applied on
+**both** new provision (`install.sh`) and every update (`update-skills.sh`), since both
+invoke `apply-fleet-standards.sh`. `openclaw config validate` is the backstop: if a
+gateway version ever rejects the key, the run rolls back to the pre-apply backup.
+
 ## Source of Truth
 
 Configuration verified against:
 - docs.openclaw.ai/tools/subagents
 - docs.openclaw.ai/gateway/security
 - docs.openclaw.ai/tools/multi-agent-sandbox-tools
+- docs.openclaw.ai/tools/tool-search (§8 on-demand MCP tool loading — `tools.toolSearch.mode="directory"`)
 - docs.openclaw.ai/providers/ollama (Ollama "Cloud + Local" hybrid flow, §5)
 - Live test on OpenClaw 2026.5.28 (a Mac mini client box, session logs)
 
@@ -222,4 +262,4 @@ present in `AGENTS.md`).
 
 ---
 
-Last verified: 2026-06-17 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0)
+Last verified: 2026-07-09 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0; §8 on-demand MCP tool loading `tools.toolSearch.mode="directory"` added — fleet-wide schema-every-turn token-burn fix)
