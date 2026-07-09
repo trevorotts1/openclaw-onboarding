@@ -44,7 +44,7 @@ Maintain one master ledger — a spreadsheet or Notion database — with these c
 **NEVER store passwords, API keys, tokens, or secrets in the account inventory or any document under `{{WORKSPACE_PATH}}/`.**
 
 Instead, store a *pointer* — a description of where the credential lives:
-- `~/.openclaw/secrets/.env` → `STRIPE_API_KEY_BCEO_MAIN`
+- `~/.openclaw/secrets/.env` → `STRIPE_API_KEY_MAIN`
 - `1Password` → "Google Workspace Admin"
 - `macOS Keychain` → "{{KEYCHAIN_ACCOUNT}}"
 - `~/.openclaw/secrets/gcp-service-account.json` → `{{GCP_SERVICE_ACCOUNT}}`
