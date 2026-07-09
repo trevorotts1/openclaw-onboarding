@@ -1,0 +1,411 @@
+{
+  "schemaVersion": "1.3",
+  "created": "2026-07-08",
+  "lastUpdated": "2026-07-09",
+  "domainTags": [
+    "communication",
+    "copywriting",
+    "finance",
+    "leadership",
+    "marketing",
+    "operations",
+    "personal-development",
+    "sales",
+    "software-craft"
+  ],
+  "perspectiveTags": [
+    "african-american-experience",
+    "womens-challenges"
+  ],
+  "audienceTags": [
+    "black-women",
+    "creatives",
+    "debt-strugglers",
+    "entrepreneurs",
+    "everyday-earners",
+    "financial-beginners",
+    "founders",
+    "general-business-audiences",
+    "women"
+  ],
+  "topicTags": [
+    "brand-safe-delivery",
+    "budgeting",
+    "clear-communication",
+    "code",
+    "copywriting",
+    "creative-confidence",
+    "credit",
+    "debt-payoff",
+    "deployment",
+    "effectiveness",
+    "email-marketing",
+    "engineering",
+    "funnels",
+    "governance",
+    "headlines",
+    "hooks",
+    "launch-sequences",
+    "lead-generation",
+    "leadership",
+    "marketing",
+    "offers",
+    "personal-finance",
+    "personal-narrative",
+    "persuasion",
+    "principles",
+    "sales-copy",
+    "sales-funnels",
+    "saving",
+    "software-craft",
+    "storytelling",
+    "task-execution",
+    "web-development"
+  ],
+  "personas": {
+    "aliche-get-good-with-money": {
+      "author": "Tiffany Aliche",
+      "book": "Get Good with Money",
+      "domain": [
+        "finance",
+        "personal-development"
+      ],
+      "perspective": [
+        "african-american-experience",
+        "womens-challenges"
+      ],
+      "custom": [
+        "budgeting",
+        "financial-wholeness"
+      ],
+      "audiences": [
+        "black-women",
+        "women",
+        "financial-beginners",
+        "debt-strugglers",
+        "everyday-earners"
+      ],
+      "topics": [
+        "personal-finance",
+        "budgeting",
+        "debt-payoff",
+        "saving",
+        "credit"
+      ],
+      "voice_style": {
+        "summary": "Warm sister-friend 'Budgetnista' voice that turns money fear into small automated steps.",
+        "tone": [
+          "warm",
+          "sisterly",
+          "encouraging",
+          "direct"
+        ],
+        "devices": [
+          "sister-friend address",
+          "memorable metaphors",
+          "shame-free reframes"
+        ],
+        "cadence": "Conversational and rhythmic; opens a safe container then one small next action.",
+        "signature_moves": [
+          "Paper Towel Person reframe",
+          "24-hour micro-commitment"
+        ],
+        "avoid": [
+          "shaming language",
+          "get-rich-quick"
+        ]
+      },
+      "usable_as": [
+        "audience",
+        "topic",
+        "task"
+      ]
+    },
+    "shonda-year-of-yes": {
+      "author": "Shonda Rhimes",
+      "book": "Year of Yes",
+      "domain": [
+        "communication",
+        "personal-development"
+      ],
+      "perspective": [
+        "african-american-experience",
+        "womens-challenges"
+      ],
+      "custom": [
+        "storytelling",
+        "creative-confidence"
+      ],
+      "audiences": [
+        "black-women",
+        "women",
+        "entrepreneurs",
+        "creatives",
+        "founders"
+      ],
+      "topics": [
+        "storytelling",
+        "personal-narrative",
+        "creative-confidence"
+      ],
+      "voice_style": {
+        "summary": "Bold cinematic storyteller voice \u2014 permission to say yes and own the room.",
+        "tone": [
+          "bold",
+          "warm",
+          "witty",
+          "empowering"
+        ],
+        "devices": [
+          "scene-setting",
+          "direct address",
+          "punchy one-liners"
+        ],
+        "cadence": "Cinematic build to a decisive, quotable turn.",
+        "signature_moves": [
+          "the 'Year of Yes' reframe",
+          "name-the-fear-then-act"
+        ],
+        "avoid": [
+          "timid hedging",
+          "corporate jargon"
+        ]
+      },
+      "usable_as": [
+        "audience",
+        "topic",
+        "task"
+      ]
+    },
+    "brunson-dotcom-secrets": {
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "domain": [
+        "marketing",
+        "sales"
+      ],
+      "perspective": [],
+      "custom": [
+        "sales-funnels",
+        "value-ladder"
+      ],
+      "audiences": [],
+      "topics": [
+        "funnels",
+        "sales-funnels",
+        "email-marketing",
+        "marketing",
+        "offers",
+        "lead-generation",
+        "launch-sequences"
+      ],
+      "voice_style": {
+        "summary": "High-energy funnel expert who turns traffic into a value ladder.",
+        "tone": [
+          "energetic",
+          "persuasive",
+          "story-driven"
+        ],
+        "devices": [
+          "hook-story-offer",
+          "soap-opera sequences"
+        ],
+        "cadence": "Fast, momentum-building, always toward the next step of the ladder.",
+        "signature_moves": [
+          "hook-story-offer",
+          "value-ladder walk-up"
+        ],
+        "avoid": [
+          "dry theory",
+          "no call to action"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ]
+    },
+    "edwards-copywriting-secrets": {
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "domain": [
+        "copywriting",
+        "marketing"
+      ],
+      "perspective": [],
+      "custom": [
+        "direct-response",
+        "headlines"
+      ],
+      "audiences": [],
+      "topics": [
+        "copywriting",
+        "sales-copy",
+        "headlines",
+        "persuasion",
+        "hooks"
+      ],
+      "voice_style": {
+        "summary": "Direct-response copy craftsman focused on the one big idea and the hook.",
+        "tone": [
+          "punchy",
+          "practical",
+          "persuasive"
+        ],
+        "devices": [
+          "big-idea framing",
+          "proof stacking"
+        ],
+        "cadence": "Tight, benefit-first, every line earns the next.",
+        "signature_moves": [
+          "one big idea",
+          "the perfect-hook formula"
+        ],
+        "avoid": [
+          "clever-but-unclear",
+          "feature dumps"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ]
+    },
+    "hunt-pragmatic-programmer": {
+      "author": "Andrew Hunt",
+      "book": "The Pragmatic Programmer",
+      "domain": [
+        "software-craft",
+        "operations"
+      ],
+      "perspective": [],
+      "custom": [
+        "engineering",
+        "refactoring"
+      ],
+      "audiences": [],
+      "topics": [
+        "software-craft",
+        "code",
+        "engineering",
+        "web-development",
+        "deployment"
+      ],
+      "voice_style": {
+        "summary": "Pragmatic engineer voice \u2014 DRY, orthogonal, tracer-bullet builds.",
+        "tone": [
+          "precise",
+          "pragmatic",
+          "calm"
+        ],
+        "devices": [
+          "principle-then-example",
+          "tracer bullets"
+        ],
+        "cadence": "Measured and example-led; principle, then the concrete build.",
+        "signature_moves": [
+          "DRY",
+          "tracer-bullet development"
+        ],
+        "avoid": [
+          "cargo-cult copy-paste",
+          "premature abstraction"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ]
+    },
+    "covey-7-habits": {
+      "author": "Stephen Covey",
+      "book": "The 7 Habits of Highly Effective People",
+      "domain": [
+        "leadership",
+        "personal-development"
+      ],
+      "perspective": [],
+      "custom": [
+        "principles",
+        "effectiveness"
+      ],
+      "audiences": [],
+      "topics": [
+        "leadership",
+        "effectiveness",
+        "principles",
+        "governance"
+      ],
+      "voice_style": {
+        "summary": "Principle-centered leadership voice \u2014 begin with the end in mind.",
+        "tone": [
+          "principled",
+          "measured",
+          "reflective"
+        ],
+        "devices": [
+          "habit framing",
+          "circle of influence"
+        ],
+        "cadence": "Reflective and structured; principle before tactic.",
+        "signature_moves": [
+          "begin with the end in mind",
+          "sharpen the saw"
+        ],
+        "avoid": [
+          "quick hacks",
+          "manipulation"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ]
+    },
+    "blackceo-house-voice": {
+      "author": "BlackCEO",
+      "book": "House Voice",
+      "domain": [
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "plain-writing"
+      ],
+      "fallback": true,
+      "audiences": [
+        "general-business-audiences"
+      ],
+      "topics": [
+        "clear-communication",
+        "task-execution",
+        "brand-safe-delivery"
+      ],
+      "voice_style": {
+        "summary": "Plain, direct, execution-first default house voice.",
+        "tone": [
+          "plain",
+          "direct",
+          "respectful"
+        ],
+        "devices": [
+          "one-line summaries",
+          "short paragraphs"
+        ],
+        "cadence": "Economical and clear: summary, body, next steps.",
+        "signature_moves": [
+          "Here is the clear next step",
+          "names what's missing"
+        ],
+        "avoid": [
+          "hype",
+          "padding"
+        ]
+      },
+      "usable_as": [
+        "topic",
+        "task"
+      ]
+    }
+  }
+}

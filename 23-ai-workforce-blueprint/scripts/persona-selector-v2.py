@@ -2422,6 +2422,89 @@ def _load_decompose_module():
     return None
 
 
+_BLEND_MOD_CACHE = None
+
+
+def _load_blend_module():
+    """Lazily load persona_blend.py (the voice-first AUDIENCE+TOPIC blend engine).
+
+    Loaded ONLY when --blend is requested. persona_blend imports THIS selector
+    read-only (by path), so eager import would be a self-import; lazy-loading
+    avoids that and keeps the default single-persona / --combined paths zero-cost.
+    persona_blend is a NORMAL (underscored) module name so a plain import works;
+    kept path-based for symmetry + relocation via PERSONA_BLEND_PATH. Cached."""
+    global _BLEND_MOD_CACHE
+    if _BLEND_MOD_CACHE is not None:
+        return _BLEND_MOD_CACHE
+    import importlib.util as _ilu
+    override = os.environ.get("PERSONA_BLEND_PATH")
+    here = Path(__file__).resolve().parent
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates += [here / "persona_blend.py", here / "scripts" / "persona_blend.py"]
+    for c in candidates:
+        if c.is_file():
+            spec = _ilu.spec_from_file_location("persona_blend_mod", str(c))
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            _BLEND_MOD_CACHE = mod
+            return mod
+    return None
+
+
+def _blend_is_degraded(result) -> bool:
+    """True iff a --blend BUNDLE is a DEGRADED outcome a --strict consumer should
+    treat as non-zero. A mechanical (no_persona_required) bundle and a normal
+    confirm_required=True gate are NOT degradation. Degraded when: no catalog /
+    empty universe, the mirrored VOICE persona is a fallback tier, or a NAKED
+    task-persona part (a real part with no persona)."""
+    if not isinstance(result, dict):
+        return False
+    if result.get("no_persona_required"):
+        return False
+    if result.get("warning") in ("NO_CATALOG", "NO_PERSONAS_AVAILABLE"):
+        return True
+    if result.get("persona_id") is None:
+        return True
+    for part in result.get("task_personas") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("persona_id") is None and not part.get("no_persona_required"):
+            return True
+    return False
+
+
+def _blend_human(bundle: dict) -> str:
+    """Compact human-readable rendering of a --blend bundle (--format human)."""
+    if not isinstance(bundle, dict):
+        return str(bundle)
+    if bundle.get("no_persona_required"):
+        return bundle.get("message", "Mechanical task — no persona required.")
+    v = bundle.get("voice", {}) or {}
+    ra = bundle.get("resolved_audience", {}) or {}
+    lines = [
+        f"BLEND — topic={bundle.get('topic')!r}  content_task={bundle.get('content_task')}",
+        f"  voice persona (mirror): {bundle.get('persona_id')} "
+        f"(score {bundle.get('score')})",
+        f"  audience: source={ra.get('source')} confidence={ra.get('confidence')} "
+        f"label={ra.get('label')!r}  confirm_required={bundle.get('confirm_required')}",
+    ]
+    if ra.get("ask") and bundle.get("confirm_required"):
+        lines.append(f"    ASK: {ra['ask']}")
+    ap = v.get("audience_persona")
+    tp = v.get("topic_persona")
+    lines.append(f"  audience_persona: {ap.get('id') if ap else '(pending/none)'}")
+    lines.append(f"  topic_persona:    {tp.get('id') if tp else '(none)'}")
+    lines.append(f"  collapsed: {v.get('collapsed')} -> {v.get('collapsed_persona_id')}")
+    lines.append(f"  task_personas ({len(bundle.get('task_personas', []))}):")
+    for tpp in bundle.get("task_personas", []):
+        lines.append(f"    {tpp.get('seq')}. {tpp.get('persona_id')} "
+                     f"— {tpp.get('part')}")
+    lines.append(f"  blend_directive: {bundle.get('blend_directive')}")
+    return "\n".join(lines)
+
+
 def _assert_persona_categories_canonical(paths: dict) -> None:
     """P9-1 (FINAL-REVIEW-2026-07-01 Point 9 fix 1): canonical-path assertion.
 
@@ -2596,8 +2679,32 @@ def main():
                              "surfacing re-weighting. Records which persona did "
                              "which sub-task (task_subtask_persona).")
     parser.add_argument("--max-subtasks", type=int, default=None,
-                        help="(--combined) hard cap on sub-tasks (token-furnace "
-                             "budget). Defaults to DECOMP_MAX_SUBTASKS.")
+                        help="(--combined / --blend) hard cap on sub-tasks / task "
+                             "personas (token-furnace budget). --combined defaults "
+                             "to DECOMP_MAX_SUBTASKS; --blend caps at 10.")
+    # ── W7 voice-first AUDIENCE+TOPIC blend (approved design 2026-07-08) ──────
+    # --blend decides the VOICE first: resolve the audience from the client ICP
+    # (ALWAYS-confirm / ASK-when-unsure), pick an AUDIENCE persona + a TOPIC
+    # persona and BLEND (write in audience voice, carry topic expertise),
+    # COLLAPSE to one persona when it covers both, decompose the job into up to
+    # 10 TASK personas, and emit the persona-bundle SUPERSET (a strict superset
+    # of the single-persona result — existing consumers keep working). The
+    # audience comes from company-config.json via ENV OPENCLAW_COMPANY_CONFIG /
+    # OPENCLAW_COMPANY_SLUG (+ SOUL.md); an operator confirmation is passed via
+    # ENV OPENCLAW_AUDIENCE (re-scores the voice, clears confirm_required). NOT a
+    # CLI flag — the strict-argparse contract keeps company-config out of argv.
+    parser.add_argument("--blend", action="store_true",
+                        help="Voice-first audience+topic blend: emit the persona-"
+                             "bundle SUPERSET (resolved_audience + confirm gate, "
+                             "voice{audience+topic, collapse}, blend_directive with "
+                             "the mandatory style-inspired/NEVER-impersonation "
+                             "guardrail, up to 10 task_personas, rationale, "
+                             "fallbacks). Backward-compatible for non-content / "
+                             "mechanical tasks.")
+    parser.add_argument("--topic", default=None,
+                        help="(--blend) optional explicit topic hint for the job "
+                             "(otherwise inferred from the task text). Folds into "
+                             "topic matching + the emitted `topic`.")
     parser.add_argument("--sop-slots", default=None,
                         help="(--combined) JSON array of SOP persona_slot objects "
                              "({slot, task_category, domains, audience_from, "
@@ -2742,6 +2849,35 @@ def main():
         print(json.dumps(result, indent=2) if args.format == "json"
               else _dt._format_human(result))
         return _strict_exit(args.strict, _combined_is_degraded(result))
+
+    # ─── W7 voice-first AUDIENCE+TOPIC blend (approved design 2026-07-08) ───
+    # Decide the VOICE first (audience from ICP with ALWAYS-confirm), pick an
+    # audience + a topic persona and BLEND (collapse when one covers both),
+    # decompose into up to 10 task personas, emit the persona-bundle SUPERSET.
+    # build_bundle handles the mechanical / non-content / empty-catalog paths
+    # internally (never-naked), so this branch is a single call. The audience
+    # confirmation is read from ENV (OPENCLAW_AUDIENCE) — never argv.
+    if getattr(args, "blend", False):
+        _pb = _load_blend_module()
+        if _pb is None:
+            print(json.dumps({"error": "persona_blend.py not found next to "
+                                       "persona-selector-v2.py (set "
+                                       "PERSONA_BLEND_PATH to override)."}, indent=2))
+            return 2
+        bundle = _pb.build_bundle(
+            args.task, args.department,
+            paths=paths, db_path=db_path,
+            use_llm=not args.no_llm,
+            record=not args.no_record,
+            max_task_personas=(args.max_subtasks if args.max_subtasks is not None else 10),
+            variety=not args.no_variety,
+            topic_hint=(args.topic or ""),
+            audience_override=os.environ.get("OPENCLAW_AUDIENCE", ""),
+        )
+        bundle.setdefault("db", db_field)
+        print(json.dumps(bundle, indent=2) if args.format == "json"
+              else _blend_human(bundle))
+        return _strict_exit(args.strict, _blend_is_degraded(bundle))
 
     # SOP-aware composite query (F3.4 / F4.2). Fold the governing SOP name/steps/
     # slug into the task text and parse the persona_hints list. When no --sop-*

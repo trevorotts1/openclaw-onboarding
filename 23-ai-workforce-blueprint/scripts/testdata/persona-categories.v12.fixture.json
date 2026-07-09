@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "1.2",
+  "created": "2026-07-06",
+  "lastUpdated": "2026-07-06",
+  "domainTags": [
+    "communication",
+    "copywriting",
+    "finance",
+    "leadership",
+    "marketing",
+    "operations",
+    "personal-development",
+    "sales",
+    "software-craft"
+  ],
+  "perspectiveTags": [
+    "african-american-experience",
+    "womens-challenges"
+  ],
+  "personas": {
+    "aliche-get-good-with-money": {
+      "author": "Tiffany Aliche",
+      "book": "Get Good with Money",
+      "domain": [
+        "finance",
+        "personal-development"
+      ],
+      "perspective": [
+        "african-american-experience",
+        "womens-challenges"
+      ],
+      "custom": [
+        "budgeting",
+        "financial-wholeness"
+      ]
+    },
+    "shonda-year-of-yes": {
+      "author": "Shonda Rhimes",
+      "book": "Year of Yes",
+      "domain": [
+        "communication",
+        "personal-development"
+      ],
+      "perspective": [
+        "african-american-experience",
+        "womens-challenges"
+      ],
+      "custom": [
+        "storytelling",
+        "creative-confidence"
+      ]
+    },
+    "brunson-dotcom-secrets": {
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "domain": [
+        "marketing",
+        "sales"
+      ],
+      "perspective": [],
+      "custom": [
+        "sales-funnels",
+        "value-ladder"
+      ]
+    },
+    "edwards-copywriting-secrets": {
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "domain": [
+        "copywriting",
+        "marketing"
+      ],
+      "perspective": [],
+      "custom": [
+        "direct-response",
+        "headlines"
+      ]
+    },
+    "hunt-pragmatic-programmer": {
+      "author": "Andrew Hunt",
+      "book": "The Pragmatic Programmer",
+      "domain": [
+        "software-craft",
+        "operations"
+      ],
+      "perspective": [],
+      "custom": [
+        "engineering",
+        "refactoring"
+      ]
+    },
+    "covey-7-habits": {
+      "author": "Stephen Covey",
+      "book": "The 7 Habits of Highly Effective People",
+      "domain": [
+        "leadership",
+        "personal-development"
+      ],
+      "perspective": [],
+      "custom": [
+        "principles",
+        "effectiveness"
+      ]
+    },
+    "blackceo-house-voice": {
+      "author": "BlackCEO",
+      "book": "House Voice",
+      "domain": [
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "plain-writing"
+      ],
+      "fallback": true
+    }
+  }
+}
