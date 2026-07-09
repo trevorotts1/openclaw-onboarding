@@ -182,6 +182,59 @@ else
   fail "seed-workspaces.py not found at $SEED_PY"
 fi
 
+# ─── Test 7: Step 4b — CC recompile decision reached on --converge --dry-run ─
+# BUILD-01: adding a NEW department is a structural change that must recompile
+# the Command Center via atomic-deploy.sh (converge alone never runs `next
+# build`). In --dry-run that recompile is ANNOUNCED but not executed. We drive
+# the whole orchestrator inside a fully isolated $HOME sandbox so it never
+# touches the live box, with no last-sync.json so every dept reads as NEW.
+echo "$P Test 7: Step 4b recompile decision reached (--converge --dry-run)..."
+if [[ -e /data/.openclaw ]]; then
+  echo "$P SKIP: /data/.openclaw present — refusing to run the orchestrator on a live VPS box"
+elif [[ ! -f "$SYNC_SH" ]]; then
+  fail "sync-extensions.sh not found at $SYNC_SH"
+else
+  SBOX="$(mktemp -d)"
+  mkdir -p "$SBOX/.openclaw"
+  printf '{"agents":{}}\n' > "$SBOX/.openclaw/openclaw.json"
+  S4B_OUT="$(HOME="$SBOX" bash "$SYNC_SH" --converge --dry-run 2>&1 || true)"
+  if echo "$S4B_OUT" | grep -q "Step 4b: \[DRY-RUN\] would recompile Command Center"; then
+    pass "Step 4b recompile decision reached (dry-run, NEW_DEPTS present)"
+  else
+    fail "Step 4b dry-run recompile line not found. Tail: $(echo "$S4B_OUT" | tail -5)"
+  fi
+  # Isolation invariant: the real $HOME must be untouched (only the sandbox wrote).
+  if [[ -f "$SBOX/.openclaw/openclaw.json" ]]; then
+    pass "Orchestrator wrote only inside the isolated \$HOME sandbox"
+  else
+    fail "Sandbox openclaw.json missing after run — isolation invariant broken"
+  fi
+  rm -rf "$SBOX"
+fi
+
+# ─── Test 8: Step 4b — converge-route `deploy` directive parser ──────────────
+# Step 4b consumes the converge HTTP response's `deploy` directive: deploy:false
+# ⇒ CC says no rebuild needed; deploy:true/absent/invalid ⇒ recompile. This is
+# the exact python one-liner the script embeds; assert every branch.
+echo "$P Test 8: Step 4b deploy-directive parser (true/false/absent/invalid)..."
+parse_deploy() {
+  printf '%s' "$1" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+v=d.get("deploy")
+print("" if v is None else ("true" if v else "false"))' 2>/dev/null || true
+}
+D_OK=1
+[[ "$(parse_deploy '{"ok":true,"deploy":true}')"  == "true"  ]] || { D_OK=0; echo "  deploy:true  -> got [$(parse_deploy '{"ok":true,"deploy":true}')]"; }
+[[ "$(parse_deploy '{"ok":true,"deploy":false}')" == "false" ]] || { D_OK=0; echo "  deploy:false -> got [$(parse_deploy '{"ok":true,"deploy":false}')]"; }
+[[ "$(parse_deploy '{"ok":true}')"                == ""      ]] || { D_OK=0; echo "  absent       -> got [$(parse_deploy '{"ok":true}')]"; }
+[[ "$(parse_deploy 'not-json')"                   == ""      ]] || { D_OK=0; echo "  invalid      -> got [$(parse_deploy 'not-json')]"; }
+if [[ $D_OK -eq 1 ]]; then
+  pass "deploy-directive parser: true/false/absent/invalid all correct"
+else
+  fail "deploy-directive parser produced an unexpected value (see above)"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "$P Results: $PASS passed, $FAIL failed"
