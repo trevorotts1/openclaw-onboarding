@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.17.0 - 2026-07-09 - feat(schema 1.3): additive audience/topic/voice_style/usable_as enrichment across all 99 personas + vocab-validated publish path
+
+Additive-only enrichment layer that turns the catalog into the reasoning surface for the Skill-23 voice-first AUDIENCE+TOPIC blend matcher. No persona keys added or removed (the N38 count triad stays green at 99); the persona-set count, blueprint dirs, and INDEX-MANIFEST are untouched.
+
+- **`persona-categories.json` schema 1.2 -> 1.3:** every one of the 99 personas gains `audiences[]`, `topics[]`, `voice_style{summary(req),tone[],devices[],cadence,signature_moves[],avoid[]}`, and `usable_as[]` (subset of `[audience,topic,task]`; default when absent = `[topic,task]` — serving as an AUDIENCE voice must be explicit; 21 personas carry `audience`). Adds top-level controlled-vocabulary arrays `audienceTags` (450) and `topicTags` (752), derived as the union of the per-persona tags so every used tag is a vocab member. `lastUpdated` bumped to 2026-07-09.
+- **Tag-validator extended (`pipeline/persona_fleet.py`):** `_validate_entry` now validates `audiences[]`/`topics[]` against the `audienceTags`/`topicTags` controlled vocab (kebab-case + membership when the vocab is populated), `usable_as[]` against the enum, and requires `voice_style.summary` when `voice_style` is present. All new fields OPTIONAL so a schema-1.2 entry still validates.
+- **Publish path made enrichment-safe:** `CANONICAL_ENTRY_FIELDS` extended with the four enrichment fields and `sync_categories` now carries forward any repo-side enrichment a (possibly older 1.2) workspace does not itself supply — so a `publish-personas-to-fleet.sh` run can never silently strip the 1.3 enrichment. Propagation stays through the one atomic publish command; the coupled artifacts are never hand-edited.
+
 ## v6.16.2 - 2026-07-06 - feat(FDN-1 + DEP-6): blackceo-house-voice fallback seed + hunt-thomas CODE-craft specialist + software-craft domainTag (81->83, prebuilt-index v2.4.0)
 
 Lands the two remaining persona-library additions against the published **prebuilt-index-v2.4.0** asset (83 personas). Supersedes ONB PRs #532/#539.
