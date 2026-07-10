@@ -153,7 +153,7 @@ else
   eq "$(gdrift '{"config":{"ingress":[{"hostname":"acme.zerohumanworkforce.com","service":"http://localhost:4000"},{"hostname":"acme-hooks.zerohumanworkforce.com","service":"http://localhost:18789"},{"service":"http_status:404"}]}}')" \
      "" "shipping guard: legit shared tunnel is NOT flagged"
   # hyphenated slug CC on 4000 -> no false positive
-  eq "$(gdrift '{"config":{"ingress":[{"hostname":"star-bobatoon.zerohumanworkforce.com","service":"http://localhost:4000"},{"hostname":"star-bobatoon-hooks.zerohumanworkforce.com","service":"http://localhost:18789"},{"service":"http_status:404"}]}}')" \
+  eq "$(gdrift '{"config":{"ingress":[{"hostname":"acme-west.zerohumanworkforce.com","service":"http://localhost:4000"},{"hostname":"acme-west-hooks.zerohumanworkforce.com","service":"http://localhost:18789"},{"service":"http_status:404"}]}}')" \
      "" "shipping guard: hyphenated CC slug is NOT false-flagged"
   # podcast sibling on 4010 -> not flagged
   eq "$(gdrift '{"config":{"ingress":[{"hostname":"acme.zerohumanworkforce.com","service":"http://localhost:4000"},{"hostname":"acme-podcast.zerohumanworkforce.com","service":"http://localhost:4010"},{"service":"http_status:404"}]}}')" \

@@ -84,6 +84,21 @@ sleep 15
 CC_INGRESS_PORT="${CC_INGRESS_PORT:-4000}"
 LOCAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${CC_INGRESS_PORT}" 2>/dev/null || echo "000")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")
+# Retry/backoff the PUBLIC probe before trusting a bad code: cloudflared commonly
+# returns 502/1033 for the first several seconds after `tunnel run` while the
+# edge connection is still warming up, and a single probe here would false-flag
+# that transient blip as the wrong-port/no-route condition and hard-fail
+# provisioning. Only keep treating it as wrong-port if it is STILL failing after
+# retrying — a persistent 1303/502/etc still falls through to the exit-7 branch
+# below unchanged.
+if echo "$LOCAL_CODE" | grep -qE '^(200|301|302|307|404)$' && echo "$HTTP_CODE" | grep -qE '^(502|1033|1303|530|503)$'; then
+  for _wdelay in 4 4 4; do
+    echo "[4/5] public probe returned $HTTP_CODE (possible warm-up blip); retrying in ${_wdelay}s..." >&2
+    sleep "$_wdelay"
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")
+    echo "$HTTP_CODE" | grep -qE '^(502|1033|1303|530|503)$' || break
+  done
+fi
 
 echo "[5/5] Result"
 echo "Subdomain: https://$SUBDOMAIN"
