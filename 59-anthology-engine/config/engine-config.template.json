@@ -13,7 +13,8 @@
     "route_path": "/hooks/anthology-intake",
     "route_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET",
     "forms_base_url": null,
-    "forms_base_note": "The PUBLIC base URL of the client's Convert and Flow author-intake form, resolved per box by install.sh / provision-anthology-client.sh (NULL in this template; never committed, never hardcoded). scripts/anthology_book.py appends /anthology-intake?anthology_id=<minted>&book_name=<url-encoded> to build each book's shareable intake link (the Book ID rides the URL param onto the form's hidden anthology_id field). When unset, the minter emits a RELATIVE link and flags forms_base_configured=false; the operator sets the base per box or passes --forms-base.",
+    "universal_intake_form_id": null,
+    "forms_base_note": "The minted author-intake link is the Convert and Flow (GHL/LeadConnector) HOSTED-form URL <forms_base_url>/widget/form/<universal_intake_form_id>?anthology_id=<minted>, built by scripts/anthology_book.py (the Book ID rides the ONE query param anthology_id onto the form's hidden anthology_id field). Both knobs default to FLEET-WIDE, non-client values baked in anthology_book.py — the shared LeadConnector hosted-form domain and the ONE universal author-intake form id — so a fresh box already emits the live link. These two OVERRIDE slots (NULL here) let a box repoint the base and/or form id per box (or pass --forms-base / --intake-form-id); NULL means use the built-in fleet default. G3: the query key is EXACTLY anthology_id, never anthology_active_id (that is the contact custom field the delivery writer stamps).",
     "acknowledge_budget_seconds": 2,
     "tenant_check": "payload location must equal the anthology registry Convert and Flow Location binding; a mismatch lands in Exceptions (tenant_mismatch), never a guess",
     "keying": "contact_id plus anthology_id composite; never email; unroutable submissions land in the exceptions queue with the raw payload and a typed reason"

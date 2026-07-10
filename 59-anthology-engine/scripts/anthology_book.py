@@ -38,9 +38,13 @@
 # sub-CLI's own exit code so the operator sees the real reason (e.g. exit 3 =
 # unknown producer, exit 2/EX_STOP = pipeline unresolved on the bind step).
 #
-# Convert and Flow is the only platform name. No client identifier, no domain,
-# and no credential is ever hardcoded here (the forms base is sourced from the
-# per-box engine config). Zero Anthropic identifiers ship in this file.
+# Convert and Flow is the only platform name. The minted author-intake link is the
+# GHL/LeadConnector hosted-form URL <base>/widget/form/<form_id>?anthology_id=<minted>.
+# Its two knobs default to FLEET-WIDE, non-client values — the shared LeadConnector
+# hosted-form domain and the ONE universal author-intake form id — and both stay
+# overridable per box (config / --forms-base / --intake-form-id). No PER-CLIENT domain,
+# no client identifier, and no credential is ever hardcoded here. Zero Anthropic
+# identifiers ship in this file.
 # =============================================================================
 import argparse
 import json
@@ -75,11 +79,24 @@ EX_STATE_BASE_DEFERRED = 4
 
 ANTH_PREFIX = "ANTH"          # Book IDs are "ANTH_<20 hex>".
 KEY_DELIM = "::"              # the composite-key delimiter a Book ID must never contain.
-# The engine's own author-intake form route. The Book ID rides this URL param onto
-# the form's HIDDEN anthology_id field (SKILL.md:52; router accepts customData.
-# anthology_id, intake_router.py:133-134). It is the engine's route name, not a
-# client secret, so it is a module constant — the DOMAIN is what comes from config.
-INTAKE_FORM_PATH = "/anthology-intake"
+# The LIVE author-intake form is a Convert and Flow (LeadConnector) HOSTED form; its
+# public URL shape is <base>/widget/form/<form_id>. The Book ID rides the ONE query
+# param anthology_id onto the form's HIDDEN anthology_id field (SKILL.md:52; router
+# accepts customData.anthology_id, intake_router.py:133-134), so authors never type it.
+#
+# G3 QUERY-KEY LAW: the query key is EXACTLY "anthology_id" (the form's hidden-field
+# key) — NEVER "anthology_active_id" (that is the CONTACT custom field the delivery
+# writer stamps with the ACTIVE anthology, a different thing; conflating the two is the
+# G3 defect this constant pins shut).
+#
+# The GHL hosted-form domain and the UNIVERSAL intake form id are fleet-wide platform /
+# universal values (ONE shared author-intake form for the whole engine), never a per-
+# client domain or credential; both stay overridable per box (config intake.forms_base_url
+# / intake.universal_intake_form_id, or --forms-base / --intake-form-id).
+WIDGET_FORM_PATH = "/widget/form"                         # GHL/LeadConnector hosted-form path prefix
+INTAKE_QUERY_KEY = "anthology_id"                         # G3: the hidden-field key (NOT anthology_active_id)
+DEFAULT_FORMS_BASE = "https://link.msgsndr.com"           # GHL LeadConnector public hosted-form domain
+DEFAULT_UNIVERSAL_INTAKE_FORM_ID = "U65pwoeMTy1niMqllKWG" # the LIVE universal author-intake form id
 
 PY = sys.executable or "python3"
 
@@ -118,24 +135,37 @@ def _load_config(explicit=None) -> dict:
 
 
 def resolve_forms_base(cfg, override="") -> str:
-    """The PUBLIC forms base URL — sourced from the per-box config, NEVER hardcoded:
-    CLI override > config intake.forms_base_url > "" (relative). A client domain is
-    never baked into the code."""
+    """The PUBLIC GHL hosted-form base URL. Precedence: CLI override > config
+    intake.forms_base_url > the fleet-wide GHL LeadConnector default. A per-CLIENT
+    domain is never baked in; the default is the shared platform host only."""
     if override and override.strip():
         return override.strip()
-    base = ((cfg.get("intake") or {}).get("forms_base_url")) or ""
-    return base.strip()
+    base = (((cfg.get("intake") or {}).get("forms_base_url")) or "").strip()
+    return base or DEFAULT_FORMS_BASE
 
 
-def build_intake_link(forms_base, anthology_id, book_name) -> str:
-    """<forms_base>/anthology-intake?anthology_id=<id>&book_name=<url-encoded>.
-    forms_base may be empty -> a RELATIVE link (path only), never a fabricated
-    domain. Both params are url-encoded; book_name is display-only, anthology_id
-    maps to the form's hidden field."""
+def resolve_form_id(cfg, override="") -> str:
+    """The intake FORM id the minted link targets. Precedence: CLI --intake-form-id >
+    config intake.universal_intake_form_id > the fleet-wide UNIVERSAL author-intake
+    form. One shared universal form serves the whole engine; it is not a per-client
+    secret, and it stays overridable per box."""
+    if override and override.strip():
+        return override.strip()
+    fid = (((cfg.get("intake") or {}).get("universal_intake_form_id")) or "").strip()
+    return fid or DEFAULT_UNIVERSAL_INTAKE_FORM_ID
+
+
+def build_intake_link(forms_base, form_id, anthology_id) -> str:
+    """The minted author-intake link, EXACTLY:
+        <forms_base>/widget/form/<form_id>?anthology_id=<minted>
+    The SINGLE query key is anthology_id (G3: the form's hidden-field key, NEVER
+    anthology_active_id) and its value is the minted Book ID. forms_base may be empty
+    -> a RELATIVE link (path only), never a fabricated domain. The form id and the id
+    value are url-encoded."""
     base = (forms_base or "").rstrip("/")
-    qs = "anthology_id=%s&book_name=%s" % (
-        quote(anthology_id or "", safe=""), quote(book_name or "", safe=""))
-    return "%s%s?%s" % (base, INTAKE_FORM_PATH, qs)
+    fid = quote(form_id or "", safe="")
+    return "%s%s/%s?%s=%s" % (
+        base, WIDGET_FORM_PATH, fid, INTAKE_QUERY_KEY, quote(anthology_id or "", safe=""))
 
 
 # --------------------------------------------------------------------------- #
@@ -179,6 +209,12 @@ def run_start(*, producer_id, book_name, location_id, intake_form_id="",
     # ---- B1: mint the Book ID (the single authority).
     aid = mint_book_id()
 
+    # Resolve the forms base + universal intake form id ONCE (per-box config / built-in
+    # universal default); used by BOTH the registry binding and the emitted link so the
+    # binding records the same form the author link points at.
+    cfg = _load_config(config)
+    resolved_form_id = resolve_form_id(cfg, intake_form_id)
+
     # ---- B2: register the book in the ledger (the authoritative Book ID registry).
     up = [STATE_WRITER, "upsert-anthology", "--anthology-id", aid,
           "--producer-id", producer_id, "--name", book_name,
@@ -211,8 +247,8 @@ def run_start(*, producer_id, book_name, location_id, intake_form_id="",
     bind += ["bind", "--anthology-id", aid]
     if pipeline_id:                                   # explicit override only
         bind += ["--pipeline-id", pipeline_id]
-    if intake_form_id:
-        bind += ["--form-ids", json.dumps({"intake": intake_form_id})]
+    if resolved_form_id:
+        bind += ["--form-ids", json.dumps({"intake": resolved_form_id})]
     if drive_folder:
         bind += ["--drive-folder", drive_folder]
     rc_b, _ = _run(bind)
@@ -224,10 +260,9 @@ def run_start(*, producer_id, book_name, location_id, intake_form_id="",
                         "`anthology_registry.py provision-pipeline` first, or pass "
                         "--pipeline-id for an explicit pre-existing pipeline"}, rc_b
 
-    # ---- B4: emit the per-book intake link (forms base from per-box config).
-    cfg = _load_config(config)
+    # ---- B4: emit the per-book author-intake link (GHL hosted form; ONE query key).
     fb = resolve_forms_base(cfg, forms_base)
-    link = build_intake_link(fb, aid, book_name)
+    link = build_intake_link(fb, resolved_form_id, aid)
 
     result = {
         "ok": True, "action": "start", "anthology_id": aid,
@@ -235,7 +270,7 @@ def run_start(*, producer_id, book_name, location_id, intake_form_id="",
         "location": _mask(location_id),
         "pipeline": ("override:%s" % pipeline_id) if pipeline_id else "shared-standard",
         "created": bool((parsed or {}).get("created", True)),
-        "intake_form_id": intake_form_id or None,
+        "intake_form_id": resolved_form_id or None,
         "intake_link": link,
         "forms_base_configured": bool(fb),
     }
@@ -243,9 +278,6 @@ def run_start(*, producer_id, book_name, location_id, intake_form_id="",
         result["base_deferred"] = True
         result["note"] = ("ledger mirror write committed; base op queued (state exit "
                            "4) — reconcile-mirror flushes it")
-    if not fb:
-        result["note_link"] = ("no forms base configured (intake.forms_base_url); "
-                               "emitted a RELATIVE link — set the base per box")
     return result, EX_OK
 
 
@@ -280,13 +312,11 @@ def cmd_intake_link(args):
                      args.json), EX_VALIDATION
     cfg = _load_config(args.config)
     fb = resolve_forms_base(cfg, getattr(args, "forms_base", "") or "")
-    link = build_intake_link(fb, aid, args.book_name or "")
+    fid = resolve_form_id(cfg, getattr(args, "intake_form_id", "") or "")
+    link = build_intake_link(fb, fid, aid)
     out = {"ok": True, "action": "intake-link", "anthology_id": aid,
-           "book_name": args.book_name or "", "intake_link": link,
-           "forms_base_configured": bool(fb)}
-    if not fb:
-        out["note_link"] = ("no forms base configured (intake.forms_base_url); "
-                            "emitted a RELATIVE link — pass --forms-base or set it per box")
+           "book_name": args.book_name or "", "intake_form_id": fid,
+           "intake_link": link, "forms_base_configured": bool(fb)}
     return _emit(out, args.json), EX_OK
 
 
@@ -331,9 +361,11 @@ def build_parser():
     s = add("intake-link", cmd_intake_link,
             "build a book's shareable author intake link from a Book ID + name")
     s.add_argument("--anthology-id", required=True)
-    s.add_argument("--book-name", default="", help="display name (url-encoded into the link)")
+    s.add_argument("--book-name", default="", help="display name (metadata only; NOT in the link)")
     s.add_argument("--forms-base", dest="forms_base", default="",
-                   help="override the public forms base URL (else per-box config)")
+                   help="override the public forms base URL (else per-box config / built-in host)")
+    s.add_argument("--intake-form-id", dest="intake_form_id", default="",
+                   help="override the universal intake form id (else per-box config / built-in universal)")
     s.add_argument("--config", default=None, help="path to the resolved engine-config.json")
 
     s = add("start", cmd_start,
@@ -482,20 +514,36 @@ def self_test():
                       "--contact-id", "cSELF", "--anthology-id", "ANTH_neverminted00000"])
         ok("intake with UNKNOWN id refused (exit 3)", rc == 3)
 
-        # (5) the intake link is well-formed and round-trips.
+        # (5) the intake link is the GHL hosted-form URL, ONE query key, round-trips.
         link = result.get("intake_link", "")
-        ok("link starts with the configured forms base",
-           link.startswith("https://forms.example.test/anthology-intake?"))
         parts = urlsplit(link)
         q = parse_qs(parts.query)
-        ok("link path is /anthology-intake", parts.path == "/anthology-intake")
+        ok("link uses the configured forms base",
+           link.startswith("https://forms.example.test/widget/form/"))
+        ok("link path is /widget/form/<form_id>", parts.path == "/widget/form/form_self")
         ok("link carries the minted anthology_id", q.get("anthology_id", [""])[0] == minted)
-        ok("link book_name url-decodes to the original", q.get("book_name", [""])[0] == book)
+        # G3: the ONE query key is anthology_id, NEVER anthology_active_id.
+        ok("link query key is anthology_id (G3)", "anthology_id" in q)
+        ok("link has NO anthology_active_id key (G3)", "anthology_active_id" not in q)
+        ok("link has EXACTLY one query key", list(q.keys()) == ["anthology_id"])
+        ok("start records the resolved intake form id", result.get("intake_form_id") == "form_self")
+        ok("start keeps the book name as metadata", result.get("book_name") == book)
 
-        # relative fallback when no forms base is configured (never fabricates a domain).
-        rel = build_intake_link("", minted, book)
-        ok("relative link when forms base unset", rel.startswith("/anthology-intake?"))
-        ok("relative link still carries the id + name", ("anthology_id=%s" % minted) in rel)
+        # CANONICAL live link: GHL host + the LIVE universal intake form id -> EXACT shape.
+        canon = build_intake_link(DEFAULT_FORMS_BASE, DEFAULT_UNIVERSAL_INTAKE_FORM_ID, minted)
+        ok("canonical live link is the exact GHL widget-form URL",
+           canon == "https://link.msgsndr.com/widget/form/%s?anthology_id=%s"
+                    % (DEFAULT_UNIVERSAL_INTAKE_FORM_ID, minted))
+
+        # Defaults (no config, no override) -> the built-in universal form + GHL host.
+        ok("default forms base resolves to the GHL host", resolve_forms_base({}) == DEFAULT_FORMS_BASE)
+        ok("default form id resolves to the universal intake form",
+           resolve_form_id({}) == DEFAULT_UNIVERSAL_INTAKE_FORM_ID)
+
+        # relative fallback when forms base is explicitly empty (never fabricates a domain).
+        rel = build_intake_link("", "form_self", minted)
+        ok("relative link when forms base empty", rel.startswith("/widget/form/"))
+        ok("relative link still carries the minted id", ("anthology_id=%s" % minted) in rel)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
