@@ -15,6 +15,20 @@ CLI:
                        have validated answers or logged circled-back skips; sets
                        intake_ledger.json status="complete" on success
   --selftest           run offline self-test in a temp dir; exits 0 on pass
+  --signature --next / --signature --answer ID TEXT
+                       SAME blocked/validated turn-gate as --next/--answer, but
+                       walked over sp-8-questions.json (choice question, then
+                       q1..q8, then the frame question) into a SEPARATE ledger
+                       (working/interview/sp_intake_ledger.json). Emits exactly
+                       ONE question per --next call and BLOCKS on the active
+                       question until answered -- no batch payload on this path.
+                       The final answer auto-assembles working/copy/sp_intake.json
+                       and runs prove_sp_intake.py (AF-SP-8Q-SPLIT) against it.
+  --signature (no --next/--answer)
+                       legacy PLAN/inspection mode: emits the full intake plan
+                       (all 8 Questions + frame question) as one JSON payload
+                       for an agent to run one turn at a time itself; --record
+                       assembles + proves a pre-gathered answers file directly.
 
 Dependency-free: stdlib only (json, os, pathlib, datetime, argparse, sys, tempfile, time).
 """
@@ -36,6 +50,12 @@ QUESTIONS_FILE_NAME = "deck-intake-questions.json"
 LEDGER_REL = pathlib.Path("working") / "interview" / "intake_ledger.json"
 ANSWERS_REL = pathlib.Path("working") / "interview" / "answers"
 
+# SIGNATURE mode turn-gate uses a SEPARATE ledger/answers area so a run that
+# offers both a standard pre-presentation capture and a signature deck never
+# cross-contaminates entries between the two question sets.
+SP_LEDGER_REL = pathlib.Path("working") / "interview" / "sp_intake_ledger.json"
+SP_ANSWERS_REL = pathlib.Path("working") / "interview" / "sp_answers"
+
 
 def find_questions_file(run_dir: pathlib.Path) -> pathlib.Path:
     """Locate deck-intake-questions.json: beside this script, or in the intake/ dir."""
@@ -56,8 +76,8 @@ def find_questions_file(run_dir: pathlib.Path) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 # Ledger I/O
 # ---------------------------------------------------------------------------
-def load_ledger(run_dir: pathlib.Path) -> dict:
-    lp = run_dir / LEDGER_REL
+def load_ledger(run_dir: pathlib.Path, ledger_rel: pathlib.Path = LEDGER_REL) -> dict:
+    lp = run_dir / ledger_rel
     if lp.exists():
         try:
             with open(lp) as f:
@@ -73,8 +93,8 @@ def load_ledger(run_dir: pathlib.Path) -> dict:
     }
 
 
-def save_ledger(run_dir: pathlib.Path, ledger: dict) -> None:
-    lp = run_dir / LEDGER_REL
+def save_ledger(run_dir: pathlib.Path, ledger: dict, ledger_rel: pathlib.Path = LEDGER_REL) -> None:
+    lp = run_dir / ledger_rel
     lp.parent.mkdir(parents=True, exist_ok=True)
     with open(lp, "w") as f:
         json.dump(ledger, f, indent=2)
@@ -83,22 +103,22 @@ def save_ledger(run_dir: pathlib.Path, ledger: dict) -> None:
 # ---------------------------------------------------------------------------
 # Answer file I/O
 # ---------------------------------------------------------------------------
-def answer_path(run_dir: pathlib.Path, qid: str) -> pathlib.Path:
-    return run_dir / ANSWERS_REL / f"{qid}.txt"
+def answer_path(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> pathlib.Path:
+    return run_dir / answers_rel / f"{qid}.txt"
 
 
-def answer_exists(run_dir: pathlib.Path, qid: str) -> bool:
-    p = answer_path(run_dir, qid)
+def answer_exists(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> bool:
+    p = answer_path(run_dir, qid, answers_rel)
     return p.exists() and p.stat().st_size > 0
 
 
-def read_answer_file(run_dir: pathlib.Path, qid: str) -> str:
-    with open(answer_path(run_dir, qid)) as f:
+def read_answer_file(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> str:
+    with open(answer_path(run_dir, qid, answers_rel)) as f:
         return f.read().strip()
 
 
-def write_answer_file(run_dir: pathlib.Path, qid: str, text: str) -> None:
-    p = answer_path(run_dir, qid)
+def write_answer_file(run_dir: pathlib.Path, qid: str, text: str, answers_rel: pathlib.Path = ANSWERS_REL) -> None:
+    p = answer_path(run_dir, qid, answers_rel)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         f.write(text)
@@ -110,6 +130,65 @@ def write_answer_file(run_dir: pathlib.Path, qid: str, text: str) -> None:
 def ordered_questions(qdata: dict) -> list:
     """Return questions sorted by order field (ascending)."""
     return sorted(qdata["questions"], key=lambda q: q.get("order", 999))
+
+
+# ---------------------------------------------------------------------------
+# ask_if conditional questions (question-bank migration)
+#
+# A migrated prose question that only applies in some branches (e.g. D2/D3's
+# "ask only if DELIVERABLE_SET includes '+audio'"/"...a speech is in scope",
+# VIP follow-ups, PRICE_ANCHOR only on a price-drop) carries an `ask_if`
+# block: {"question_id": <id of the gating question>, and one of
+# "truthy"/"equals"/"contains"/"in"}. Resolved against the ANSWER already
+# recorded for that gating question id. If the gating question has not been
+# answered yet, the conditional question is left pending (neither asked nor
+# auto-skipped) until it is.
+# ---------------------------------------------------------------------------
+def _ask_if_satisfied(cond: dict, ledger: dict) -> Optional[bool]:
+    """Returns True/False once resolvable, or None if the gating answer isn't
+    recorded yet (caller should treat None as 'not yet decidable')."""
+    ref_id = cond.get("question_id")
+    entry = ledger.get("entries", {}).get(ref_id, {})
+    if not entry.get("validated"):
+        return None
+    val = str(entry.get("answer") or "").strip().lower()
+    if "truthy" in cond:
+        is_truthy = val in ("yes", "true", "y", "1") or (val not in ("", "no", "false", "n", "0") and bool(val))
+        return is_truthy == bool(cond["truthy"])
+    if "equals" in cond:
+        return val == str(cond["equals"]).strip().lower()
+    if "contains" in cond:
+        return str(cond["contains"]).strip().lower() in val
+    if "contains_any" in cond:
+        return any(str(x).strip().lower() in val for x in cond["contains_any"])
+    if "in" in cond:
+        return val in [str(x).strip().lower() for x in cond["in"]]
+    return True
+
+
+def auto_skip_unmet_conditions(qdata: dict, ledger: dict) -> bool:
+    """Housekeeping pass: for every not-yet-asked/validated question carrying
+    an ask_if whose gating answer is ALREADY recorded and evaluates False,
+    mark it validated+skipped so it never blocks --next or --complete.
+    Returns True if the ledger was mutated (caller should save)."""
+    entries = ledger.setdefault("entries", {})
+    mutated = False
+    for q in ordered_questions(qdata):
+        cond = q.get("ask_if")
+        if not cond:
+            continue
+        e = entries.get(q["id"], {})
+        if e.get("validated") or e.get("asked_at"):
+            continue
+        satisfied = _ask_if_satisfied(cond, ledger)
+        if satisfied is False:
+            entries.setdefault(q["id"], {})
+            entries[q["id"]]["validated"] = True
+            entries[q["id"]]["validated_at"] = _now()
+            entries[q["id"]]["answer"] = None
+            entries[q["id"]]["skipped_ask_if"] = True
+            mutated = True
+    return mutated
 
 
 def find_active_question(qdata: dict, ledger: dict) -> Optional[dict]:
@@ -186,6 +265,57 @@ def validate_answer(text: str, question: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def sp_validate_answer(text: str, question: dict) -> Tuple[bool, str]:
+    """Signature-mode-only validator: adds a real enum check on top of
+    validate_answer's base rules, scoped to the sp turn-gate so it can never
+    change behavior for the standard deck-intake-questions.json flow (whose
+    'enum' questions, e.g. deck_type, intentionally accept free text today)."""
+    valid, reason = validate_answer(text, question)
+    if not valid:
+        return valid, reason
+    if question.get("kind") != "enum":
+        return True, ""
+    allowed = [str(v).strip().lower() for v in (question.get("allowed_values") or [])]
+    if not allowed:
+        return True, ""
+    labels = question.get("value_labels") or {}
+    lowered = (text or "").strip().lower()
+    label_lookup = {str(v).strip().lower(): k for k, v in labels.items()}
+    letter_lookup = {chr(ord("a") + i): v for i, v in enumerate(allowed)}
+    matched = (
+        lowered in allowed
+        or lowered in label_lookup
+        or lowered.strip("(). ") in letter_lookup
+    )
+    if not matched:
+        return False, f"Please choose one of: {', '.join(question.get('allowed_values') or [])}."
+    return True, ""
+
+
+def canonicalize_enum_answer(text: str, question: dict) -> str:
+    """Map a free-typed enum answer ('A', 'the rulebook', 'rulebook') to its
+    canonical allowed_value. Falls back to the raw stripped text when the
+    question has no allowed_values or no match is found (validate_answer
+    already rejected genuinely unmatched enum answers before this is called)."""
+    stripped = (text or "").strip()
+    allowed = [str(v).strip() for v in (question.get("allowed_values") or [])]
+    if not allowed:
+        return stripped
+    lowered = stripped.lower()
+    for v in allowed:
+        if v.lower() == lowered:
+            return v
+    labels = question.get("value_labels") or {}
+    for k, v in labels.items():
+        if str(v).strip().lower() == lowered and k in allowed:
+            return k
+    letter = lowered.strip("(). ")
+    idx = ord(letter) - ord("a") if len(letter) == 1 and letter.isalpha() else -1
+    if 0 <= idx < len(allowed):
+        return allowed[idx]
+    return stripped
+
+
 # ---------------------------------------------------------------------------
 # Budget
 # ---------------------------------------------------------------------------
@@ -234,6 +364,12 @@ def check_budget(qdata: dict, ledger: dict) -> dict:
 # ---------------------------------------------------------------------------
 def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     """--next: return exactly one question; block if active question has no answer yet."""
+    # Auto-skip any ask_if-conditional question whose gating answer is
+    # already on record and evaluates false (e.g. TARGET_WPM when no speech
+    # is in scope) so it never surfaces as a turn or blocks --complete.
+    if auto_skip_unmet_conditions(qdata, ledger):
+        save_ledger(run_dir, ledger)
+
     # Check budget first
     bstatus = check_budget(qdata, ledger)
     if not bstatus["budget_ok"]:
@@ -737,6 +873,218 @@ def build_signature_block(spec: dict, block_msg_id: str) -> dict:
     }
 
 
+def sp_ordered_questions(spec: dict) -> list:
+    """Build the FULL sp question set as a flat, order-sorted list the SAME
+    ledger/blocked machinery (find_active_question/find_next_question) can
+    walk: the choice-first interview question, then q1..q8, then the frame-
+    selection question. This is what makes signature mode a REAL turn-gate
+    instead of a one-shot batch payload."""
+    cc = ((spec.get("delivery") or {}).get("conversation_contract")) or {}
+    choices = cc.get("interview_choices") or ["quick", "in-depth"]
+    choice_q = {
+        "id": "interview_choice",
+        "order": 0,
+        "prompt": cc.get("choice_question") or (
+            "Would you like a QUICK interview or a more IN-DEPTH one? "
+            "Either way we go one question at a time."
+        ),
+        "kind": "enum",
+        "allowed_values": list(choices),
+        "required": True,
+        "block_gate": True,
+    }
+    body = [dict(q) for q in (spec.get("questions") or [])]
+    for q in body:
+        q.setdefault("required", True)
+        q.setdefault("block_gate", True)
+        q.setdefault("kind", "text")
+    frame_q = dict(spec.get("frame_selection_question") or {})
+    if frame_q:
+        frame_q.setdefault("order", len(body) + 1)
+        frame_q.setdefault("required", True)
+        frame_q.setdefault("block_gate", True)
+        frame_q.setdefault("kind", "enum")
+    return sorted([choice_q] + body + ([frame_q] if frame_q else []), key=lambda q: q.get("order", 999))
+
+
+def cmd_sp_next(run_dir: pathlib.Path, spec: dict, ledger: dict) -> None:
+    """--signature --next: the SAME blocked/validated ledger machinery as the
+    standard flow (cmd_next), walked over sp_ordered_questions(spec) — choice
+    question first, then q1..q8, then the frame question. Dumping >=2 of these
+    in one turn is impossible through this entrypoint: --next returns exactly
+    ONE question and blocks on the active one until it is answered."""
+    qdata = {"questions": sp_ordered_questions(spec)}
+    active = find_active_question(qdata, ledger)
+    if active:
+        qid = active["id"]
+        if not answer_exists(run_dir, qid, SP_ANSWERS_REL):
+            print(json.dumps({
+                "status": "blocked",
+                "current_question_id": qid,
+                "message": (
+                    f"Waiting for answer to '{qid}'. Call --signature --answer {qid} '<text>' "
+                    f"to record and validate the answer, then call --signature --next again."
+                ),
+                "question": active,
+            }))
+            sys.exit(0)
+        else:
+            answer_text = read_answer_file(run_dir, qid, SP_ANSWERS_REL)
+            valid, reason = sp_validate_answer(answer_text, active)
+            entries = ledger.setdefault("entries", {})
+            if valid:
+                entries.setdefault(qid, {})
+                entries[qid]["answer"] = canonicalize_enum_answer(answer_text, active) if active.get("kind") == "enum" else answer_text
+                entries[qid]["validated"] = True
+                entries[qid]["validated_at"] = _now()
+            else:
+                entries.setdefault(qid, {})
+                entries[qid].setdefault("wander_count", 0)
+                entries[qid]["wander_count"] += 1
+                entries[qid]["last_wander_at"] = _now()
+                save_ledger(run_dir, ledger, SP_LEDGER_REL)
+                print(json.dumps({
+                    "status": "re_ask",
+                    "current_question_id": qid,
+                    "reason": reason,
+                    "message": f"Answer for '{qid}' did not pass validation: {reason}. Re-asking the same question.",
+                    "question": active,
+                }))
+                sys.exit(0)
+            save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    nxt = find_next_question(qdata, ledger)
+    if nxt is None:
+        # All sp questions (choice + q1..q8 + frame) validated: auto-assemble
+        # the atomic record and run the AF-SP-8Q-SPLIT prover. This is the
+        # "on the final --answer the driver assembles + proves" contract.
+        result = _sp_finalize(run_dir, spec, ledger)
+        print(json.dumps(result))
+        sys.exit(0 if result.get("passed") else 2)
+
+    entries = ledger.setdefault("entries", {})
+    entries.setdefault(nxt["id"], {})
+    entries[nxt["id"]]["asked_at"] = _now()
+    ledger["turns"] = ledger.get("turns", 0) + 1
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    print(json.dumps({
+        "status": "question",
+        "id": nxt["id"],
+        "prompt": nxt["prompt"],
+        "help": nxt.get("help", ""),
+        "kind": nxt.get("kind", "text"),
+        "required": nxt.get("required", True),
+        "block_gate": nxt.get("block_gate", True),
+        "allowed_values": nxt.get("allowed_values"),
+        "turn": ledger["turns"],
+        "question": nxt,
+    }))
+    sys.exit(0)
+
+
+def cmd_sp_answer(run_dir: pathlib.Path, spec: dict, ledger: dict, qid: str, text: str) -> None:
+    """--signature --answer ID TEXT: validate + record one sp answer. Mirrors
+    cmd_answer exactly, over the sp question set."""
+    qdata = {"questions": sp_ordered_questions(spec)}
+    question = next((q for q in qdata["questions"] if q["id"] == qid), None)
+    if question is None:
+        print(json.dumps({
+            "status": "error",
+            "message": f"Unknown signature question id '{qid}'. Valid ids: {[q['id'] for q in qdata['questions']]}",
+        }))
+        sys.exit(1)
+
+    valid, reason = sp_validate_answer(text, question)
+    entries = ledger.setdefault("entries", {})
+    entries.setdefault(qid, {})
+
+    if not valid:
+        entries[qid].setdefault("wander_count", 0)
+        entries[qid]["wander_count"] += 1
+        entries[qid]["last_wander_at"] = _now()
+        save_ledger(run_dir, ledger, SP_LEDGER_REL)
+        print(json.dumps({
+            "status": "rejected",
+            "id": qid,
+            "reason": reason,
+            "message": f"Answer for '{qid}' was rejected: {reason}. Please re-answer.",
+            "question": question,
+        }))
+        sys.exit(0)
+
+    stored = canonicalize_enum_answer(text, question) if question.get("kind") == "enum" else text
+    write_answer_file(run_dir, qid, text, SP_ANSWERS_REL)
+    entries[qid]["answer"] = stored
+    entries[qid]["validated"] = True
+    entries[qid]["validated_at"] = _now()
+    if not entries[qid].get("asked_at"):
+        entries[qid]["asked_at"] = _now()
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    # If that was the LAST outstanding question, auto-finalize (assemble +
+    # prove) right here so a caller that only ever calls --answer (never
+    # --next again after the final answer) still gets the record committed.
+    remaining = find_next_any(qdata, ledger)
+    if remaining is None:
+        result = _sp_finalize(run_dir, spec, ledger)
+        result["status"] = "accepted_and_finalized" if result.get("passed") else "accepted_but_finalize_failed"
+        print(json.dumps(result))
+        sys.exit(0 if result.get("passed") else 2)
+
+    print(json.dumps({
+        "status": "accepted",
+        "id": qid,
+        "message": f"Answer for '{qid}' recorded and validated.",
+    }))
+    sys.exit(0)
+
+
+def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
+    """Assemble the ledger's validated answers into the runtime intake record
+    and run prove_sp_intake.py (AF-SP-8Q-SPLIT) against it — the RECORD-layer
+    commit that closes out a turn-gated signature interview. Marks the sp
+    ledger complete on a passing prove."""
+    entries = ledger.get("entries", {})
+    answers_record = {
+        "answers": {
+            qid: entries.get(qid, {}).get("answer")
+            for qid in SP_REQUIRED_QUESTIONS
+        },
+        "signature_frame": entries.get("frame_selection", {}).get("answer"),
+        "offer_token_ledger": [entries.get("q7", {}).get("answer")] if entries.get("q7", {}).get("answer") else [],
+        "interview_choice": entries.get("interview_choice", {}).get("answer"),
+    }
+    block_msg_id = _sp_block_msg_id()
+    intake = assemble_sp_intake(answers_record, block_msg_id)
+    out_path = run_dir / "working" / "copy" / "sp_intake.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    rc, prover_out = _run_sp_prover(out_path)
+    passed = rc == 0
+    if passed:
+        ledger["status"] = "complete"
+        ledger["completed_at"] = _now()
+        ledger["complete"] = True
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+    return {
+        "status": "signature_intake_verified" if passed else "signature_intake_rejected",
+        "passed": passed,
+        "prover_rc": rc,
+        "gate": "AF-SP-8Q-SPLIT (prove_sp_intake.py)",
+        "intake_path": str(out_path),
+        "signature_frame": intake.get("signature_frame"),
+        "prover_output": prover_out.strip(),
+        "message": (
+            "Signature intake gathered one question at a time and committed as ONE atomic "
+            "record; verified by prove_sp_intake.py."
+            if passed else
+            "Signature intake record assembled but FAILED prove_sp_intake.py — see prover_output."
+        ),
+    }
+
+
 def _sp_extract_answers(record: dict) -> dict:
     """Pull q1..q8 out of a flat or {answers:{...}} record."""
     src = record.get("answers") if isinstance(record.get("answers"), dict) else record
@@ -937,6 +1285,80 @@ def signature_selftest() -> bool:
     print(f"[sig-selftest] Test 4 {'PASS' if step4 else 'FAIL'}: MISSING-q7 record -> prover exit {rc} "
           f"(want 2, AF-SP-8Q-MISSING present={('AF-SP-8Q-MISSING' in out)})")
 
+    # (5) the REAL turn-gate: walk --signature --next / --answer one question
+    # at a time end-to-end in a temp run dir and confirm (a) --next never
+    # returns more than one question per call, (b) it BLOCKS when the active
+    # question has no answer yet, and (c) the final answer auto-finalizes
+    # (assembles + proves) exactly like a passing --record call.
+    import io
+    from contextlib import redirect_stdout
+
+    def _call(fn, *a):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            try:
+                fn(*a)
+            except SystemExit:
+                pass
+        return json.loads(buf.getvalue().strip())
+
+    answers = {
+        "interview_choice": "quick",
+        "q1": "The Signature Talk", "q2": "yes, propose two alternates",
+        "q3": "the overlooked mid-career expert who feels unseen",
+        "q4": "left a secure post to build the practice; a first-in-family milestone",
+        "q5": "The 5-Step Signature Method", "q6": "no, the working title is fine",
+        "q7": "The Signature Intensive", "q8": "keep the tone warm and direct",
+        "frame_selection": "rulebook",
+    }
+    with tempfile.TemporaryDirectory() as td:
+        run_dir = pathlib.Path(td)
+        sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+        seen_ids = []
+        never_blocked_wrongly = True
+        rounds = 0
+        finalized = None
+        while rounds < 30:
+            rounds += 1
+            out = _call(cmd_sp_next, run_dir, spec, sp_ledger)
+            sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+            if out["status"] in ("signature_intake_verified", "signature_intake_rejected"):
+                finalized = out
+                break
+            if out["status"] == "blocked":
+                # Immediately answer the blocked question — proves the
+                # active question truly gated further advance.
+                qid = out["current_question_id"]
+                ans = _call(cmd_sp_answer, run_dir, spec, sp_ledger, qid, answers.get(qid, "a fine answer"))
+                sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+                if ans["status"] in ("accepted_and_finalized",):
+                    finalized = ans
+                    break
+                continue
+            if out["status"] == "question":
+                qid = out["id"]
+                if qid in seen_ids:
+                    never_blocked_wrongly = False
+                seen_ids.append(qid)
+                # answer it directly, then loop back to --next (proves --next
+                # will BLOCK if we hadn't done this)
+                ans = _call(cmd_sp_answer, run_dir, spec, sp_ledger, qid, answers.get(qid, "a fine answer"))
+                sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+                if ans["status"] in ("accepted_and_finalized",):
+                    finalized = ans
+                    break
+                continue
+        step5 = (
+            finalized is not None
+            and finalized.get("passed") is True
+            and never_blocked_wrongly
+            and len(set(seen_ids)) >= 9  # choice + 8 + frame, minus whichever finalized inline
+        )
+        ok = ok and step5
+        print(f"[sig-selftest] Test 5 {'PASS' if step5 else 'FAIL'}: --signature --next/--answer "
+              f"real turn-gate walked {len(seen_ids)} distinct questions one at a time, "
+              f"finalized={finalized is not None and finalized.get('passed')}")
+
     print(f"[deck-intake-driver] --signature --selftest: {'ALL PASS' if ok else 'FAILED'}")
     return ok
 
@@ -987,6 +1409,28 @@ def main() -> None:
     if args.signature:
         if args.selftest:
             sys.exit(0 if signature_selftest() else 1)
+        if args.next or args.answer:
+            # --signature --next / --signature --answer: the REAL turn-gate.
+            # Runs the SAME blocked/validated ledger machinery as the standard
+            # flow, over sp-8-questions.json (choice question first, q1..q8,
+            # then the frame question) — no batch payload on this path.
+            if not args.run_dir:
+                parser.error("--run-dir DIR is required for --signature --next/--answer")
+            sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+            if not sp_run_dir.exists():
+                print(json.dumps({"status": "error", "message": f"--run-dir not found: {sp_run_dir}"}))
+                sys.exit(1)
+            try:
+                sp_spec = json.loads(find_sp_spec(args.sp_spec).read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+                print(json.dumps({"status": "error", "message": f"cannot load SP spec: {exc}"}))
+                sys.exit(3)
+            sp_ledger = load_ledger(sp_run_dir, SP_LEDGER_REL)
+            if args.next:
+                cmd_sp_next(sp_run_dir, sp_spec, sp_ledger)
+            else:
+                cmd_sp_answer(sp_run_dir, sp_spec, sp_ledger, args.answer[0], args.answer[1])
+            return  # both exit internally
         cmd_signature(args)
         return  # cmd_signature exits internally
 

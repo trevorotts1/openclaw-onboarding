@@ -630,6 +630,19 @@ Skip only if the answer is already confirmed on file (the driver auto-skips if v
   reference to the Graphics DIU Style Analyst for a PPT-tier style card (the only permitted DIU
   crossing); on create the Brand Steward builds the STYLE BLOCK fresh.
 
+### OPENING / SIMPLE / EXTENSIVE (machine-paced -- v1.2.0 migration)
+
+**DRIVER IS AUTHORITATIVE for these too.** As of `deck-intake-questions.json` v1.2.0, every
+question below (O1-O3, SIMPLE 1-7, EXTENSIVE 8-20) is a real entry in that file and flows
+through `deck-intake-driver.py --next --run-dir <RUN_DIR>` exactly like the pre-presentation
+capture -- one question per turn, blocked until answered, conditional questions (VIP
+follow-ups, PRICE_ANCHOR on a price-drop, WANT_AUDIO_DEMO/TARGET_WPM only when in scope)
+auto-skipped by the driver's `ask_if` evaluation instead of by agent judgment. Do NOT emit
+these questions yourself from this prose bank -- it is REFERENCE ONLY, kept for the field
+names, help text, and the two-prices/pricing doctrine notes. The mode offer (SIMPLE vs
+EXTENSIVE depth) still happens in conversation before pulling the corresponding driver
+questions; the driver does not choose depth for you.
+
 ### OPENING (after SOP 9.0 pre-presentation capture; before mode offer)
 
 - O1. "In one line, what is this presentation FOR -- what do you want people to do at the end?" -> `GOAL`, `CTA_ACTION`
