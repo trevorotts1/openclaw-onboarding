@@ -115,6 +115,51 @@ def _secrets_candidates() -> list:
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
 
+# ---------------------------------------------------------------------------
+# SHARED IMAGE-PROMPT GATE (prompt_gate.py) — the ONE gate every image-API path runs
+# ---------------------------------------------------------------------------
+# Before this, kie_generate.py submitted any `prompt` to the paid kie.ai API with ZERO
+# quality checks — a sanctioned side-door around build_deck.py's 9,000–18,000-char floor.
+# It now imports the SAME shared prompt_gate every canonical path uses. Because this helper
+# is REUSED by non-presentations skills (06 GHL, 49 funnel, ...), the FULL presentations
+# rich gate is OPT-IN via KIE_PROMPT_GATE=presentations; every caller ALWAYS gets the
+# universal-safe floor (dead-endpoint + empty-prompt refusal).
+#
+# The import is NON-FATAL (returns None if the module is not yet deployed beside this file)
+# so a shared caller on a partially-updated box is never hard-broken; the per-slide gate
+# then degrades to an inline universal-safe check — UNLESS KIE_PROMPT_GATE=presentations was
+# explicitly requested, in which case a missing gate FAILS CLOSED (a presentation run must
+# never submit ungated).
+def _import_prompt_gate():
+    import importlib
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here,                                                         # role-library copy (same dir)
+        here.parent / "role-library" / "presentations" / "scripts",  # presentation-render copy
+        here.parent.parent / "role-library" / "presentations" / "scripts",
+    ]
+    for cand in candidates:
+        if (cand / "prompt_gate.py").is_file():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            try:
+                return importlib.import_module("prompt_gate")
+            except Exception:  # noqa: BLE001 — a broken module degrades to the inline check
+                return None
+    return None
+
+
+def _presentations_gate_requested() -> bool:
+    """True iff KIE_PROMPT_GATE opts into the FULL presentations gate. Read directly from
+    the environment so it works even when the shared prompt_gate module could not be
+    imported (in which case a requested presentations gate FAILS CLOSED)."""
+    return os.environ.get("KIE_PROMPT_GATE", "").strip().lower() in (
+        "presentations", "full", "1", "on", "true")
+
+
+prompt_gate = _import_prompt_gate()
+
+
 def _load_api_key() -> str:
     """Read KIE_API_KEY from environment, falling back to the client's standard
     secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3)."""
@@ -169,6 +214,23 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
         ) from exc
 
 
+def _expected_ratio_and_minwidth(slide: dict):
+    """Return (expected_ratio, min_width) for post-download aspect verification of this
+    slide. The ratio is parsed from the slide's declared 'W:H' aspect_ratio (default 16:9).
+    The 2K width floor is applied ONLY for the default 16:9 pin; a slide that deliberately
+    requests a different ratio (FIX-IMG-03, e.g. 3:4) is shape-checked against that ratio
+    without the 16:9-specific 2K floor (min_width=1 = off)."""
+    ar = str(slide.get("aspect_ratio", ASPECT_RATIO)).strip()
+    try:
+        w_s, h_s = ar.split(":")
+        ratio = float(w_s) / float(h_s)
+    except Exception:  # noqa: BLE001 — malformed ratio falls back to the 16:9 pin
+        ratio = 16.0 / 9.0
+    is_default_169 = abs(ratio - (16.0 / 9.0)) <= prompt_gate.ASPECT_RATIO_TOLERANCE
+    min_width = prompt_gate.MIN_2K_WIDTH if is_default_169 else 1
+    return ratio, min_width
+
+
 def _submit_slide(slide: dict, api_key: str) -> str:
     """Submit one slide to createTask; return taskId."""
     mode = slide.get("mode", "i2i").lower()
@@ -179,24 +241,65 @@ def _submit_slide(slide: dict, api_key: str) -> str:
     else:
         raise ValueError(f"Slide {slide['slide']}: unknown mode '{mode}'. Use 'i2i' or 't2i'.")
 
+    # SHARED PROMPT GATE (prompt_gate.py). This helper is REUSED by non-presentations
+    # skills (06 GHL, 49 funnel, and others), so the FULL presentations rich gate
+    # (9,000–18,000-char floor + structural / 8-class negative / spelling-lock / density /
+    # demographic teeth + English pin + gpt-image-2 mode-pin) is OPT-IN via
+    # KIE_PROMPT_GATE=presentations. Every caller ALWAYS gets the universal-safe floor
+    # (dead-endpoint + empty-prompt refusal) so no path submits a literally-empty prompt.
+    raw_prompt = slide["prompt"]
+    if prompt_gate is None:
+        # Shared prompt_gate module unavailable (not-yet-deployed / partial update).
+        if _presentations_gate_requested():
+            raise RuntimeError(
+                f"Slide {slide['slide']}: KIE_PROMPT_GATE=presentations is set but the shared "
+                "prompt_gate.py was not found beside kie_generate.py — refusing to submit "
+                "ungated presentation prompts to the paid kie.ai API.")
+        # Inline universal-safe check for shared callers (degraded, module absent).
+        if DEAD_ENDPOINT_FRAGMENT in raw_prompt:
+            raise ValueError(f"Slide {slide['slide']}: dead endpoint fragment in prompt — refusing.")
+        if not raw_prompt.strip():
+            raise ValueError(f"Slide {slide['slide']}: empty / whitespace-only prompt — refusing.")
+        _pres_gate = False
+    else:
+        _pres_gate = prompt_gate.presentations_gate_enabled()
+        if _pres_gate:
+            prompt_gate.verify_prompt(raw_prompt, copy_val=slide.get("copy"),
+                                      slide_id=slide.get("slide"))
+        else:
+            prompt_gate.verify_prompt_minimal(raw_prompt, slide_id=slide.get("slide"))
+
+    urls = slide.get("input_urls", []) if mode == "i2i" else []
+    if _pres_gate:
+        # Mode consistency (transport-layer kill for the invented-logo defect): references
+        # present => model MUST be gpt-image-2-image-to-image; a logo-bearing slide with
+        # empty input_urls hard-fails. Presentations-only (other skills use other models).
+        prompt_gate.check_mode_consistency(model, urls,
+                                           logo_bearing=bool(slide.get("logo_bearing")),
+                                           slide_id=slide.get("slide"))
+    if mode == "i2i" and not urls:
+        raise ValueError(
+            f"Slide {slide['slide']}: mode=i2i requires at least one input_urls entry "
+            "(first entry must be the logo URL). If there truly is no logo, set mode=t2i."
+        )
+
+    # Make the English/Latin anti-garble pin REAL: append it if the author omitted it
+    # (belt-and-braces). Presentations-only — other skills may legitimately render
+    # non-Latin text, so the pin is scoped to the presentations gate.
+    prompt = prompt_gate.ensure_english_pin(raw_prompt) if _pres_gate else raw_prompt
+
     # FIX-IMG-03: honor an OPTIONAL per-entry aspect_ratio / resolution when the
     # prompts.json entry carries one, else fall back to the module defaults. This
     # is purely additive — a slide without these keys renders exactly as before
     # (16:9 / 2K). It lets the Skill 6 rail respect a section's mandated ratio
     # (e.g. 49 Section 12 -> 3:4) instead of silently forcing 16:9.
     input_block: dict = {
-        "prompt": slide["prompt"],
+        "prompt": prompt,
         "aspect_ratio": slide.get("aspect_ratio", ASPECT_RATIO),
         "resolution": slide.get("resolution", RESOLUTION),
     }
 
     if mode == "i2i":
-        urls = slide.get("input_urls", [])
-        if not urls:
-            raise ValueError(
-                f"Slide {slide['slide']}: mode=i2i requires at least one input_urls entry "
-                "(first entry must be the logo URL). If there truly is no logo, set mode=t2i."
-            )
         input_block["input_urls"] = urls
 
     payload = {"model": model, "input": input_block}
@@ -386,8 +489,30 @@ def main():
                     f"Check KIE resultUrls[0] is a direct image URL."
                 )
 
+            # POST-DOWNLOAD ASPECT/2K + OCR verification (prompt_gate) — PRESENTATIONS-ONLY
+            # (opt-in via KIE_PROMPT_GATE=presentations). Skipped for shared callers (GHL,
+            # funnel, etc.) whose renders are not English-only 16:9 2K, so their behavior is
+            # unchanged. When enabled: a non-16:9 / sub-2K response, or rendered text that
+            # does not match the approved copy, fails the slide instead of shipping distorted
+            # or garbled.
+            extra = ""
+            if prompt_gate is not None and prompt_gate.presentations_gate_enabled():
+                exp_ratio, min_w = _expected_ratio_and_minwidth(slide)
+                dims = prompt_gate.verify_aspect_ratio(
+                    out_path, expected_ratio=exp_ratio, min_width=min_w, slide_id=slide_name)
+                readback = prompt_gate.ocr_readback(out_path, slide.get("copy"), slide_id=slide_name)
+                if readback.get("checked") and readback.get("matched") is False:
+                    raise RuntimeError(
+                        f"OCR readback: rendered text does not match approved copy "
+                        f"(unreadable/garbled: {readback.get('misses')}). Re-render this slide."
+                    )
+                ocr_note = ("ocr=match" if readback.get("matched")
+                            else ("ocr=engine-absent" if not readback.get("available")
+                                  else "ocr=recorded"))
+                extra = f", {dims['width']}x{dims['height']}, {ocr_note}"
+
             file_size = out_path.stat().st_size
-            print(f"  DOWNLOADED -> {out_path} ({file_size:,} bytes, PNG verified)")
+            print(f"  DOWNLOADED -> {out_path} ({file_size:,} bytes, PNG verified{extra})")
             succeeded.append(slide_name)
 
         except Exception as exc:

@@ -74,6 +74,9 @@ _CORE_CANONICAL = {
     "presenters_speech_pdf.py", "gate_integrity_check.py",
     "doctrine_residual_check.py", "intelligence_engines_check.py",
     "pitch_engines_check.py", "test_preflight.py",
+    # The ONE shared image-prompt gate every image-API path imports, and its standalone
+    # CI-runnable prover. Allow-listed by basename so they pass even if copied into a run dir.
+    "prompt_gate.py", "prove_pres_prompt_floor.py",
 }
 
 

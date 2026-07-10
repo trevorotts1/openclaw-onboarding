@@ -69,6 +69,10 @@ HERE = Path(__file__).resolve().parent                       # .../presentations
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
+# The ONE shared image-prompt gate every image-API path imports. Its char-band constants
+# are an EXTRACTION of build_deck.py's and MUST never silently diverge from them — the same
+# drift class V1 pins for the retired render_deck.py. V3 proves prompt_gate == build_deck.
+PROMPT_GATE = HERE / "prompt_gate.py"
 TEST_PREFLIGHT = HERE / "test_preflight.py"
 
 # The manifest + MASTER ruleset live in the universal-sops/presentation-slide-craft
@@ -429,6 +433,29 @@ def value_checks(manifest_text):
                     f"render_deck.py {name}={rdv} != build_deck.py {name}={bdv}. The "
                     f"retired render module's prompt band must never silently diverge "
                     f"from the canonical renderer's. Reconcile render_deck.py to {bdv}.")
+
+    # V3 — the shared prompt_gate.py band == the canonical build_deck.py band. prompt_gate
+    # is the ONE gate every image-API path (kie_generate.py x2, the relay) imports; its
+    # floor/ceiling/distinct-word constants are an extraction of build_deck.py's and must
+    # never diverge, or a side-door could enforce a stale band. Same class as V1.
+    if PROMPT_GATE and PROMPT_GATE.exists():
+        pg_vals = _const_int_values(PROMPT_GATE)
+        for name in ("PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_MIN_DISTINCT_WORDS"):
+            bdv = bd_vals.get(name)
+            pgv = pg_vals.get(name)
+            if bdv is None:
+                continue  # V2 already flags a missing build_deck constant
+            if pgv is None:
+                add("V3", name,
+                    f"prompt_gate.py is missing the {name} constant; build_deck.py has "
+                    f"{name}={bdv}. The shared gate every image-API path imports must carry "
+                    f"the SAME band as the canonical renderer. Add {name}={bdv} to prompt_gate.py.")
+            elif pgv != bdv:
+                add("V3", name,
+                    f"prompt_gate.py {name}={pgv} != build_deck.py {name}={bdv}. The shared "
+                    f"image-prompt gate's band must never silently diverge from the canonical "
+                    f"renderer's (a side-door would enforce a stale floor). Reconcile "
+                    f"prompt_gate.py to {bdv}.")
 
     # V2 — manifest-cited floor/standard/ceiling integers == code constants.
     if floor is not None:

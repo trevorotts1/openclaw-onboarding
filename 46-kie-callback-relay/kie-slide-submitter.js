@@ -62,6 +62,82 @@ const MODEL_TIMEOUTS = {
   'default':         180000   // 3 minutes fallback
 };
 
+// ---------------------------------------------------------------------------
+// SHARED IMAGE-PROMPT GATE PARITY (canonical gate: prompt_gate.py)
+// ---------------------------------------------------------------------------
+// This relay used to POST any `slide.prompt` to the paid kie.ai API with ZERO quality
+// checks. It is SHARED across skills — Skill 47 (movie frames), Skill 59 (Anthology book
+// covers), and the video roles all submit through it — so the PRESENTATIONS-specific
+// 9,000–18,000-char floor + English/Latin pin + gpt-image-2 mode-pin are OPT-IN via
+// KIE_PROMPT_GATE=presentations (mirrors prompt_gate.presentations_gate_enabled). Forcing
+// the deck band / English-only pin on a movie frame or a portrait book cover would break
+// those skills, so by DEFAULT this relay enforces only the universal-safe floor
+// (dead-endpoint + empty-prompt refusal). Keep these constants in lockstep with prompt_gate.py.
+const PROMPT_CHAR_FLOOR   = 9000;   // HARD floor (AF-P1)  — mirror of prompt_gate.PROMPT_CHAR_FLOOR
+const PROMPT_CHAR_CEILING = 18000;  // HARD ceiling (AF-P2)— mirror of prompt_gate.PROMPT_CHAR_CEILING
+const GATE_MODEL_I2I      = 'gpt-image-2-image-to-image';
+const DEAD_ENDPOINT_FRAGMENT = '/api/v1/image/gpt-image';
+const ENGLISH_PIN =
+  'All text rendered in the image MUST be in English, Latin alphabet ONLY. ' +
+  'NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled ' +
+  'correctly, letter-for-letter. No garbled, misspelled, or invented text.';
+
+function _normWs(s) { return String(s).replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+// True iff the PRESENTATIONS full gate is opted into (KIE_PROMPT_GATE=presentations|full|1|on|true).
+function _presentationsGateEnabled() {
+  const v = String(process.env.KIE_PROMPT_GATE || '').trim().toLowerCase();
+  return v === 'presentations' || v === 'full' || v === '1' || v === 'on' || v === 'true';
+}
+
+/**
+ * Gate one slide's prompt before it reaches the paid kie.ai createTask call. Throws on any
+ * violation (the caller's try/catch marks the slide failed and it is never submitted).
+ * Universal-safe checks (dead-endpoint + empty-prompt refusal) ALWAYS run. The presentations
+ * length + mode + pin invariants run only when KIE_PROMPT_GATE=presentations, so shared
+ * callers (movie / Anthology / video) are unaffected by default.
+ * Returns the prompt (with the English/Latin pin appended when the presentations gate is on).
+ */
+function gateSlidePrompt(slide, model) {
+  const raw      = String(slide.prompt || '');
+  const stripped = raw.trim();
+  const id       = slide.slideId;
+
+  // Universal-safe floor — applies to EVERY caller regardless of skill.
+  if (stripped.includes(DEAD_ENDPOINT_FRAGMENT)) {
+    throw new Error(`slide ${id}: dead endpoint fragment '${DEAD_ENDPOINT_FRAGMENT}' present in prompt body — refusing`);
+  }
+  if (!stripped) {
+    throw new Error(`slide ${id}: empty / whitespace-only prompt — nothing to render; refusing to submit to the paid API`);
+  }
+
+  if (!_presentationsGateEnabled()) {
+    return raw;  // shared callers: universal-safe only, behavior unchanged
+  }
+
+  // ── PRESENTATIONS gate (opt-in) ──
+  const len = stripped.length;
+  if (len < PROMPT_CHAR_FLOOR) {
+    throw new Error(`slide ${id}: prompt is ${len} chars, UNDER the ${PROMPT_CHAR_FLOOR}-char floor (AF-P1) — a thin/garbled prompt is NOT submitted to the paid kie.ai API. Re-author the rich prompt.`);
+  }
+  if (len > PROMPT_CHAR_CEILING) {
+    throw new Error(`slide ${id}: prompt is ${len} chars, OVER the ${PROMPT_CHAR_CEILING}-char ceiling (AF-P2) — tighten redundant phrasing (never delete the negative block or spelling-lock).`);
+  }
+  // Mode consistency: reference images present => model MUST be image-to-image, or the
+  // references are ignored and the model invents its own logo/portrait.
+  if (slide.inputImages?.length && model !== GATE_MODEL_I2I) {
+    throw new Error(`slide ${id}: inputImages present but model is '${model}'; a reference-bearing render MUST use '${GATE_MODEL_I2I}' (image-to-image).`);
+  }
+  // A logo-bearing slide with no reference image invents a NEW mark each render.
+  if (slide.logoBearing && !(slide.inputImages?.length)) {
+    throw new Error(`slide ${id}: logo-bearing slide with empty inputImages — a text-to-image call invents a NEW mark each render (logo-mutation defect). Pass the real logo via inputImages and use '${GATE_MODEL_I2I}'.`);
+  }
+  // Make the English/Latin anti-garble pin REAL: append it if the author omitted it.
+  if (_normWs(raw).includes(_normWs(ENGLISH_PIN))) return raw;
+  return raw.replace(/\s+$/, '') + '\n\n' + ENGLISH_PIN;
+}
+
+
 class KieSlideSubmitter {
   /**
    * @param {object} opts
@@ -225,10 +301,15 @@ class KieSlideSubmitter {
       this._writeRegistry(submitId, regRow);
 
       try {
+        // SHARED-GATE PARITY: enforce the 9,000–18,000-char floor + model/reference
+        // mode-consistency and append the mandatory English/Latin pin BEFORE the paid
+        // createTask. A violation throws here and the slide is marked failed (never
+        // submitted ungated). See gateSlidePrompt / prompt_gate.py.
+        const gatedPrompt = gateSlidePrompt(slide, model);
         const body = {
           model,
           input: {
-            prompt:       slide.prompt,
+            prompt:       gatedPrompt,
             aspect_ratio: slide.aspect_ratio || '16:9',
             resolution:   slide.resolution   || '2K',
             output_format: 'png'

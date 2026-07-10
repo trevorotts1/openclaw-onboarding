@@ -1195,7 +1195,97 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
         raise RuntimeError(f"NETWORK ERROR reaching {url}: {exc}. KIE is unreachable.") from exc
 
 
+def _import_prompt_gate():
+    """Import the shared prompt_gate module that ships beside build_deck.py (the ONE
+    image-prompt gate every path uses). Tries a normal import first (scripts/ is on
+    sys.path when build_deck runs / is imported), then a path-based load from this file's
+    own directory. Returns the module or None (callers degrade gracefully). Mirrors
+    _import_intelligence_engines_check."""
+    try:
+        import importlib
+        return importlib.import_module("prompt_gate")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "prompt_gate",
+                str(Path(__file__).resolve().parent / "prompt_gate.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _ensure_english_pin(prompt: str) -> str:
+    """Make the mandatory English/Latin anti-garble pin REAL on the render payload. The
+    ENGLISH_PIN constant was historically defined and appended NOWHERE (dead code); this
+    appends it (belt-and-braces) if the authored rich prompt does not already carry it, so
+    every createTask the canonical renderer submits pins the copy to correctly-spelled
+    Latin-alphabet text. Prefers the shared prompt_gate helper (single source of truth);
+    falls back to a local append if the module is unavailable, so the pin is ALWAYS on the
+    payload. Never appends past the 20,000-char GPT-Image-2 API ceiling."""
+    pg = _import_prompt_gate()
+    if pg is not None:
+        try:
+            return pg.ensure_english_pin(prompt)
+        except Exception:  # noqa: BLE001 — never let the pin helper break a render
+            pass
+    norm = lambda s: re.sub(r"\s+", " ", s).strip().lower()  # noqa: E731
+    if norm(ENGLISH_PIN) in norm(prompt):
+        return prompt
+    candidate = prompt.rstrip() + "\n\n" + ENGLISH_PIN
+    return candidate if len(candidate) <= 20000 else prompt
+
+
+def _record_ocr_readback(out_path: Path, readback: dict) -> None:
+    """Write the OCR text-readback provenance record beside the slide PNG (best-effort,
+    never raises). Mirrors the AF-IMAGE-QC-VISION provenance pattern: on a box WITHOUT an
+    OCR engine the absence is visible in the record rather than silently skipped."""
+    try:
+        sidecar = out_path.with_suffix(".ocr.json")
+        sidecar.write_text(json.dumps(readback, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> None:
+    """POST-DOWNLOAD image verification, run after verify_png inside render_slide's per-slide
+    attempt loop so a failure retries against SLIDE_MAX_ATTEMPTS:
+      * ASPECT/2K — the canonical renderer always requests the 16:9 / 2K pin; a response
+        whose shape/size does not match is stretched/distorted by assemble_pptx, so refuse
+        it (raises -> retry) instead of shipping a distorted slide.
+      * OCR TEXT-READBACK — a deterministic garbled-text catch (optional engine;
+        provenance-recorded when absent). When the engine RAN and the rendered text does not
+        match the slide's approved copy, re-render (retry). This converts garbled baked text
+        from an LLM-honesty check into code.
+    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return
+    label = f"slide-{ordinal:02d}"
+    # Aspect/resolution: build_deck always renders the pinned 16:9 / 2K. Raises on mismatch.
+    pg.verify_aspect_ratio(out_path, slide_id=label)
+    # OCR readback (optional engine; provenance-recorded). Compare the baked text to the
+    # slide's approved copy strings.
+    readback = pg.ocr_readback(out_path, slide.get("copy"), slide_id=label)
+    _record_ocr_readback(out_path, readback)
+    if readback.get("checked") and readback.get("matched") is False:
+        raise RuntimeError(
+            f"slide {ordinal}: OCR readback — rendered text does not match the approved "
+            f"copy (unreadable/garbled: {readback.get('misses')}). Re-rendering this slide."
+        )
+
+
 def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> str:
+    # Make the English/Latin anti-garble pin REAL: append it (belt-and-braces) if the
+    # authored rich prompt does not already carry it. Before this, ENGLISH_PIN was a dead
+    # constant — defined and appended nowhere — so the #1 defense against garbled/CJK baked
+    # text never rode on the payload.
+    prompt = _ensure_english_pin(prompt)
+
     # OFFICIAL-LOGO mode = IMAGE-TO-IMAGE: pass the real logo URL as input_urls so
     # KIE (gpt-image-2-image-to-image) composites the ACTUAL logo into the slide
     # (the verified technique). No logo_url -> plain text-to-image.
@@ -1363,6 +1453,11 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    success resultUrls[0]={result_url}", flush=True)
             download_unauthenticated(result_url, out_path)
             verify_png(out_path)
+            # POST-DOWNLOAD aspect/2K verification + OCR text-readback (shared prompt_gate).
+            # A non-16:9 / sub-2K response, or rendered text that does not match the approved
+            # copy, raises here and retries against SLIDE_MAX_ATTEMPTS rather than shipping a
+            # distorted or garbled slide.
+            _verify_aspect_and_readback(out_path, slide, ordinal)
             size = out_path.stat().st_size
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
