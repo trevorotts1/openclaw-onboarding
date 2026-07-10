@@ -27,6 +27,19 @@
 #      from the canonical hash. All payload text is inert DATA, never instructions
 #      (prompt-injection posture, consistent with the ingest-agent hijack lesson).
 #
+# Per-style answer routing (E1, a pre-pass that runs BEFORE steps 2-4): the
+# selected `style` is resolved FIRST, then that style's ORDERED
+# survey_answer_keys_by_style keys are wired as positional q-slot aliases for THIS
+# payload only (the Nth key -> q{N}_answer, BY ORDER in the list, not by the
+# q-number in the internal label). A Convert and Flow survey posts EVERY style
+# branch's fields on one contact with the unselected siblings blank; scoping the
+# routing to the resolved style is what stops a blank -- or wrongly filled --
+# same-position sibling field from colliding with a q-slot. Only the resolved
+# style's keys are ever aliased, so this is TRUE positional-by-style value routing,
+# not a static all-styles alias table. When the style is absent or does not
+# normalize, no routing is wired and the required-field gate raises needs_input for
+# the missing style, exactly as before.
+#
 # EXIT: 0 mapped OK / 4 needs_input (required missing OR invalid required value) /
 #       5 tenant mismatch (quarantine) / 3 usage.
 # USAGE:
@@ -358,6 +371,65 @@ def required_missing(canonical, tables):
 
 
 # -----------------------------------------------------------------------------
+# Two-pass style-aware answer-key routing (TRUE positional value routing, E1)
+# -----------------------------------------------------------------------------
+# survey_answer_keys_by_style maps each style path to the ORDERED list of that
+# style's real Convert and Flow survey field keys (podcast_survey__barry_q1,
+# __brene_q1, __dan_q1, __jia_q1, ...). A survey posts EVERY style branch's fields
+# on one contact; the unselected sibling branches arrive BLANK (see
+# PODCAST-SNAPSHOT-BUILD-MANIFEST.md Section A Group 2). The Nth key of the
+# SELECTED style fills q<N>_answer positionally -- by ORDER in the list, not by the
+# q-number embedded in the internal label (so counter_intuitive's second key
+# `podcast_survey__barry_q6` fills q2_answer, and provocative's third key
+# `podcast_survey__dan_q7` fills q3_answer). The routing is style-SCOPED: only the
+# resolved style's keys are wired as q-slot aliases, so a blank -- or even wrongly
+# populated -- same-position field from an UNSELECTED sibling style is never an
+# alias and can never collide with a q-slot. This is what closes the E1 gap:
+# previously len(keys) sized the required-field gate but the key STRINGS routed
+# nothing, so an inbound podcast_survey__barry_q1 fell into unknown_extras instead
+# of landing in q1_answer.
+def _resolve_style_token(candidates, tables):
+    """Pass 1: resolve ONLY the selected style token from the router field(s)
+    (podcast_survey_writing_style, the personal-podcast select field, or any other
+    `style` alias) using the same exact/fuzzy alias machinery, then enum-normalize
+    to a canonical style id. Returns None when the style is absent or does not
+    normalize -- in which case NO per-style routing is wired and the required-field
+    gate raises needs_input for the missing style, unchanged."""
+    style_aliases = tables.get("field_aliases", {}).get("style", [])
+    mini_tables = {"field_aliases": {"style": style_aliases}}
+    raw, _prov, _unknown = resolve_fields(candidates, mini_tables)
+    if "style" not in raw:
+        return None
+    return normalize_enum("style", raw["style"], tables)
+
+
+def _augment_field_aliases_for_style(tables, style_token):
+    """Pass 2 wiring: return a tables dict whose q<N>_answer alias lists gain the
+    SELECTED style's N-th survey answer key (survey_answer_keys_by_style[style][i]
+    -> q{i+1}_answer), and NO sibling style's keys. Returns `tables` unchanged when
+    the style is unresolved or has no key list, so the generic q/question/answer
+    aliases still cover non-survey upstreams. A shallow copy is made so the loaded
+    tables (and every other caller) are never mutated."""
+    keys = None
+    if style_token:
+        keys = tables.get("survey_answer_keys_by_style", {}).get(style_token)
+    if not isinstance(keys, list) or not keys:
+        return tables
+    new_aliases = {field: list(aliases)
+                   for field, aliases in tables.get("field_aliases", {}).items()}
+    for i, key in enumerate(keys):
+        if not isinstance(key, str) or not key.strip():
+            continue
+        slot = "q%d_answer" % (i + 1)
+        bucket = new_aliases.setdefault(slot, [])
+        if key not in bucket:
+            bucket.append(key)
+    augmented = dict(tables)
+    augmented["field_aliases"] = new_aliases
+    return augmented
+
+
+# -----------------------------------------------------------------------------
 # Top-level mapping entry point
 # -----------------------------------------------------------------------------
 def map_payload(body, tables=None, expected_location_id=None):
@@ -366,7 +438,14 @@ def map_payload(body, tables=None, expected_location_id=None):
        status in: mapped | needs_input | tenant_mismatch."""
     tables = tables or load_tables()
     candidates = flatten(body)
-    raw, provenance, unknown = resolve_fields(candidates, tables)
+    # Two-pass value routing (E1): resolve the selected style FIRST, then wire ONLY
+    # that style's survey answer keys positionally (key[i] -> q{i+1}_answer) before
+    # the main resolve pass, so a blank same-position field from an unselected
+    # sibling style can never collide with a q-slot. Enum normalization, the tenant
+    # check, and required_missing keep reading the base tables (unchanged behavior).
+    style_token = _resolve_style_token(candidates, tables)
+    eff_tables = _augment_field_aliases_for_style(tables, style_token)
+    raw, provenance, unknown = resolve_fields(candidates, eff_tables)
     canonical, warnings = validate_and_normalize(raw, tables)
 
     result = {
@@ -632,6 +711,124 @@ def self_test():
     r12 = map_payload({"data": pro_partial_smiq}, tables, expected_location_id=loc)
     check("E1: Provocative 2-of-3 slots + transparency -> mapped (last-slot fallback)",
           r12["status"] == "mapped")
+
+    # -------------------------------------------------------------------------
+    # E1 (VALUE ROUTING, the deeper gap): the REAL Convert and Flow survey shape.
+    # A survey posts EVERY style branch's fields on one contact; the UNSELECTED
+    # siblings arrive BLANK. Style is resolved FIRST, then ONLY the selected
+    # style's keys are wired positionally, so a sibling's same-position field can
+    # never bleed into a q-slot. Before this fix the real keys were not aliased at
+    # all -- podcast_survey__barry_q1 fell into unknown_extras, never q1_answer.
+    # -------------------------------------------------------------------------
+    def ghl_survey(style_label, extra=None, contact="CNTe1routetesttest01"):
+        cd = {
+            "podcast_mode": "Personal Podcast Style",
+            "podcast_survey_writing_style": style_label,
+            # every per-style branch key present; only the selected style's are filled
+            "podcast_survey__barry_q1": "", "podcast_survey__barry_q6": "",
+            "podcast_survey__brene_q1": "", "podcast_survey__brene_q6": "",
+            "podcast_survey__dan_q1": "", "podcast_survey__dan_q2": "",
+            "podcast_survey__dan_q7": "",
+            "podcast_survey__jia_q1": "", "podcast_survey__jia_q6": "",
+            "podcast_survey__jia_q7": "",
+            "podcast_interview_smiq": "I almost shut it all down last winter.",
+            "podcast_survey__additional_info": "Keep the tone warm.",
+        }
+        if extra:
+            cd.update(extra)
+        return {"customData": cd, "contact": {"id": contact, "first_name": "Nia"},
+                "location": {"id": loc}, "podbean_podcast_id": "pb-e1-route"}
+
+    # Counter Intuitive selected: barry_q1 -> q1_answer, barry_q6 -> q2_answer.
+    ci = ghl_survey("Counter Intuitive", {
+        "podcast_survey__barry_q1": "Slower decisions compounded into faster growth.",
+        "podcast_survey__barry_q6": "Warm, deliberate, a little contrarian.",
+    })
+    rci = map_payload(ci, tables, expected_location_id=loc)
+    cci = rci["canonical"]
+    check("E1 route: CI style resolved first", cci.get("style") == "counter_intuitive")
+    check("E1 route: real key barry_q1 -> q1_answer (was unknown_extras before)",
+          cci.get("q1_answer") == "Slower decisions compounded into faster growth.")
+    check("E1 route: real key barry_q6 -> q2_answer positionally by ORDER (not q6)",
+          cci.get("q2_answer") == "Warm, deliberate, a little contrarian.")
+    check("E1 route: q1_answer provenance is the barry key, not a sibling",
+          "barry_q1" in rci["provenance"].get("q1_answer", ""))
+    check("E1 route: CI complete -> mapped", rci["status"] == "mapped")
+
+    # No-bleed (the deeper E1 case): a POPULATED sibling field at the SAME position
+    # must NOT map, because routing is style-SCOPED, not merely blank-dropping.
+    ci_bleed = ghl_survey("Counter Intuitive", {
+        "podcast_survey__barry_q1": "The correct counter-intuitive thesis.",
+        "podcast_survey__barry_q6": "The correct tone.",
+        "podcast_survey__brene_q1": "WRONG vulnerable thesis that must never map.",
+        "podcast_survey__dan_q1": "WRONG provocative thesis that must never map.",
+    })
+    rb = map_payload(ci_bleed, tables, expected_location_id=loc)
+    check("E1 no-bleed: q1_answer is the SELECTED style's answer",
+          rb["canonical"].get("q1_answer") == "The correct counter-intuitive thesis.")
+    check("E1 no-bleed: no sibling style's value ever entered the canonical record",
+          "WRONG vulnerable thesis" not in json.dumps(rb["canonical"])
+          and "WRONG provocative thesis" not in json.dumps(rb["canonical"]))
+    check("E1 no-bleed: unmapped sibling keys retained as inert unknown_extras",
+          any("brene_q1" in k for k in rb["unknown_extras"]))
+
+    # Provocative has THREE keys in a non-1:1 label order: dan_q1 -> q1, dan_q2 ->
+    # q2, dan_q7 -> q3. Proves positional-by-ORDER, and that a blank barry sibling
+    # at position 1 does not collide.
+    prov = ghl_survey("Provocative", {
+        "podcast_mode": "Interview Style Podcast",
+        "podcast_survey__dan_q1": "The safe path is the risky one.",
+        "podcast_survey__dan_q2": "Every cautious case study that still failed.",
+        "podcast_survey__dan_q7": "Sharp, direct, unafraid.",
+        "show_name": "The Unfiltered Founder", "host_name": "Dana",
+    }, contact="CNTe1provoke0000001")
+    rp2 = map_payload(prov, tables, expected_location_id=loc)
+    cp2 = rp2["canonical"]
+    check("E1 route: Provocative dan_q1 -> q1_answer", cp2.get("q1_answer") == "The safe path is the risky one.")
+    check("E1 route: Provocative dan_q2 -> q2_answer", cp2.get("q2_answer") == "Every cautious case study that still failed.")
+    check("E1 route: Provocative dan_q7 -> q3_answer (3rd key -> 3rd slot, not q7)",
+          cp2.get("q3_answer") == "Sharp, direct, unafraid.")
+    check("E1 route: q3_answer provenance is the dan_q7 key",
+          "dan_q7" in rp2["provenance"].get("q3_answer", ""))
+    check("E1 route: Provocative complete interview -> mapped", rp2["status"] == "mapped")
+
+    # Partial (real keys): CI with only barry_q1 filled and NO transparency answer
+    # -> needs_input naming q2_answer (barry_q6 blank; sibling blanks cannot
+    # substitute), and q1_answer is NOT flagged since it did route.
+    ci_partial_real = ghl_survey("Counter Intuitive", {
+        "podcast_survey__barry_q1": "Only the thesis was answered.",
+        "podcast_interview_smiq": "",
+    })
+    rpr = map_payload(ci_partial_real, tables, expected_location_id=loc)
+    check("E1 route: CI real-key partial -> needs_input naming q2_answer",
+          rpr["status"] == "needs_input" and "q2_answer" in rpr["missing"]
+          and "q1_answer" not in rpr["missing"])
+
+    # Last-slot transparency fallback preserved with real keys: barry_q6 (last
+    # required slot) blank but the SMIQ transparency answer present -> still mapped.
+    ci_fallback_real = ghl_survey("Counter Intuitive", {
+        "podcast_survey__barry_q1": "Thesis present, tone slot left blank.",
+    })
+    rfr = map_payload(ci_fallback_real, tables, expected_location_id=loc)
+    check("E1 route: CI real-key blank last slot + transparency -> mapped (fallback preserved)",
+          rfr["status"] == "mapped")
+
+    # Style resolved from the PERSONAL-variant selector when the primary is absent.
+    pv = {
+        "customData": {
+            "podcast_mode": "Personal Podcast Style",
+            "select_your_presentation_style_personal_podcast": "Counterintuitive",
+            "podcast_survey__barry_q1": "Personal-variant routed thesis.",
+            "podcast_survey__barry_q6": "Personal-variant tone.",
+        },
+        "contact": {"id": "CNTe1personalvar001", "first_name": "Sam"},
+        "location": {"id": loc}, "podbean_podcast_id": "pb-e1-pv",
+    }
+    rpv = map_payload(pv, tables, expected_location_id=loc)
+    check("E1 route: style resolved from personal-variant field",
+          rpv["canonical"].get("style") == "counter_intuitive")
+    check("E1 route: personal-variant barry_q1 routed via the resolved style",
+          rpv["canonical"].get("q1_answer") == "Personal-variant routed thesis.")
 
     print("== mapper self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
