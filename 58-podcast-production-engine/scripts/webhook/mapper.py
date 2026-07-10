@@ -504,12 +504,15 @@ def self_test():
     check("GHL: q1 whitespace collapsed", c.get("q1_answer") == "Everyone optimizes for speed; I optimize for silence.")
     check("GHL: transport eventId not mapped", "eventId" not in c.values() and "evt-transient-123" in r["unknown_extras"].values())
 
-    # Make.com shape: flat data container, camelCase, human enum forms
+    # Make.com shape: flat data container, camelCase, human enum forms. Vulnerable
+    # has 2 real answer slots (E1: survey_answer_keys_by_style.vulnerable), so a
+    # complete submission answers both q1 and q2.
     mk = {
         "data": {
             "mode": "Personal", "style": "vulnerable",
             "contactId": "CNTmakemakemake123456", "locationId": loc,
             "podcastId": "pb-55", "firstName": "Sam", "q1": "My failure taught me everything.",
+            "q2": "Warm, unhurried, and direct.",
         }
     }
     r2 = map_payload(mk, tables, expected_location_id=loc)
@@ -517,13 +520,17 @@ def self_test():
     check("Make: mode Personal -> personal_podcast_style", r2["canonical"].get("mode") == "personal_podcast_style")
     check("Make: fuzzy contactId -> contact_id", r2["canonical"].get("contact_id") == "CNTmakemakemake123456")
 
-    # n8n shape: nested body container, snake and dash mixed
+    # n8n shape: nested body container, snake and dash mixed. Provocative has 3 real
+    # answer slots (E1: survey_answer_keys_by_style.provocative); the transparency
+    # answer (podcast_interview_smiq) covers only the LAST slot (q3_answer) via the
+    # required_missing() fallback, so a complete submission still answers q2 directly.
     n8 = {
         "body": {
             "Production-Mode": "interview", "writing_style": "Provocative",
             "contact_id": "CNTn8nn8nn8nn8n000001", "location_id": loc,
             "podcast_id": "pb-1", "first_name": "Lee", "show_name": "Edges",
             "host_name": "Lee", "answer_1": "Comfort is the enemy.",
+            "answer_2": "The evidence that overturns it.",
             "podcast_interview_smiq": "Transparent about sponsorship.",
         }
     }
@@ -577,6 +584,54 @@ def self_test():
           and "disclose the AI assist" not in blob)
     check("safe verdict hides unknown-extra values", "evt-transient-123" not in blob)
     check("safe verdict exposes no canonical values key", "canonical" not in safe and "raw" not in safe)
+
+    # E1: survey_answer_keys_by_style ships filled with the REAL legacy GHL survey
+    # field keys (PODCAST-SNAPSHOT-BUILD-MANIFEST.md Section A Group 2), one entry
+    # per style, in the exact positional order the required-field gate expects
+    # (the Nth key corresponds to q<N>_answer). Pin the exact lists so a future
+    # accidental edit (typo, dropped key, wrong order) fails loudly.
+    survey_keys = tables.get("survey_answer_keys_by_style", {})
+    check("E1: counter_intuitive keys", survey_keys.get("counter_intuitive")
+          == ["podcast_survey__barry_q1", "podcast_survey__barry_q6"])
+    check("E1: vulnerable keys", survey_keys.get("vulnerable")
+          == ["podcast_survey__brene_q1", "podcast_survey__brene_q6"])
+    check("E1: provocative keys", survey_keys.get("provocative")
+          == ["podcast_survey__dan_q1", "podcast_survey__dan_q2", "podcast_survey__dan_q7"])
+    check("E1: passionate keys", survey_keys.get("passionate")
+          == ["podcast_survey__jia_q1", "podcast_survey__jia_q6", "podcast_survey__jia_q7"])
+
+    # E1: required_missing() sizes the required-slot gate from len(survey_answer_
+    # keys_by_style[style]) (mapper.py step 6). Counter Intuitive has 2 real answer
+    # slots, so a submission with only q1 answered must still be needs_input naming
+    # q2_answer; Provocative has 3, so q1+q2 alone must still name q3_answer missing.
+    ci_partial = {"data": {"mode": "Personal", "style": "counter_intuitive",
+                           "contactId": "CNTe1e1e1e1e1e1e1e1e1e1", "locationId": loc,
+                           "podcastId": "pb-e1-1", "firstName": "Robin",
+                           "q1": "Thesis answer for the E1 self-test."}}
+    r9 = map_payload(ci_partial, tables, expected_location_id=loc)
+    check("E1: CI 1-of-2 slots -> needs_input naming q2_answer",
+          r9["status"] == "needs_input" and "q2_answer" in r9["missing"]
+          and "q1_answer" not in r9["missing"])
+
+    ci_full = dict(ci_partial["data"]); ci_full["q2"] = "Tone answer for the E1 self-test."
+    r10 = map_payload({"data": ci_full}, tables, expected_location_id=loc)
+    check("E1: CI 2-of-2 slots -> mapped", r10["status"] == "mapped")
+
+    pro_partial = {"data": {"mode": "Personal", "style": "provocative",
+                            "contactId": "CNTe1e1e1e1e1e1e1e1e1e2", "locationId": loc,
+                            "podcastId": "pb-e1-2", "firstName": "Sam",
+                            "q1": "Popular assumption on trial.", "q2": "Overturning evidence."}}
+    r11 = map_payload(pro_partial, tables, expected_location_id=loc)
+    check("E1: Provocative 2-of-3 slots -> needs_input naming q3_answer",
+          r11["status"] == "needs_input" and "q3_answer" in r11["missing"])
+
+    # The existing last-slot transparency fallback (required_missing, step 6) still
+    # covers Provocative's 3rd slot when the SMIQ transparency answer is present.
+    pro_partial_smiq = dict(pro_partial["data"])
+    pro_partial_smiq["podcast_interview_smiq"] = "Transparent about the methodology."
+    r12 = map_payload({"data": pro_partial_smiq}, tables, expected_location_id=loc)
+    check("E1: Provocative 2-of-3 slots + transparency -> mapped (last-slot fallback)",
+          r12["status"] == "mapped")
 
     print("== mapper self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1

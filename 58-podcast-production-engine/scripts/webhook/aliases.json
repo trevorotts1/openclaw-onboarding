@@ -61,10 +61,10 @@
   "required_fields_interview_extra": ["show_name", "host_name"],
   "required_answer_slots_default": ["q1_answer"],
   "survey_answer_keys_by_style": {
-    "_comment": "Populated per client at onboarding (W1.24 questionnaire wiring). Maps a style path to the ordered list of GHL survey field keys; the Nth key fills q<N>_answer positionally. Left empty here so this slice invents no Barry/Brene/Dan/Jia label table; the generic q/question/answer aliases above cover the common upstreams.",
-    "counter_intuitive": [],
-    "vulnerable": [],
-    "provocative": [],
-    "passionate": []
+    "_comment": "Populated at onboarding (W1.24 questionnaire wiring, task E1) from PODCAST-SNAPSHOT-BUILD-MANIFEST.md Section A Group 2 (the REAL legacy custom-field create-names, byte-for-byte, double underscore after survey) and cross-checked against config/questionnaires/*.json path_shape.per_style_content_fields and each question's survey_position. Maps a style path (the canonical style token the mapper resolves style to, matching enum_normalization.style) to the ordered list of GHL survey field KEYS (not the Barry/Brene/Dan/Jia internal labels, which never appear in any output); the Nth key fills q<N>_answer positionally.",
+    "counter_intuitive": ["podcast_survey__barry_q1", "podcast_survey__barry_q6"],
+    "vulnerable": ["podcast_survey__brene_q1", "podcast_survey__brene_q6"],
+    "provocative": ["podcast_survey__dan_q1", "podcast_survey__dan_q2", "podcast_survey__dan_q7"],
+    "passionate": ["podcast_survey__jia_q1", "podcast_survey__jia_q6", "podcast_survey__jia_q7"]
   }
 }
