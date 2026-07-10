@@ -794,9 +794,27 @@ def register_deliverable(
         _log("register_deliverable skipped — empty url.")
         return False
 
-    payload: dict = {"url": artifact_url}
+    # The CC server's POST /api/tasks/{id}/deliverables validates against a Zod
+    # schema requiring deliverable_type (enum: file|url|artifact|image) + a
+    # non-empty title, with optional path/description — it does NOT accept a
+    # bare `url` or `meta` key, so the old {"url": ..., "meta": ...} shape 400s.
+    title = "Artifact URL"
     if meta and isinstance(meta, dict):
-        payload["meta"] = meta
+        for _key in ("title", "slug", "type"):
+            _val = meta.get(_key)
+            if _val:
+                title = str(_val)
+                break
+
+    payload: dict = {
+        "deliverable_type": "url",
+        "title": title,
+        "path": artifact_url,
+    }
+    if meta and isinstance(meta, dict):
+        # Fold the metadata into `description` (JSON) so nothing is lost — the
+        # schema has no `meta` field to carry it.
+        payload["description"] = json.dumps(meta, separators=(",", ":"))
 
     endpoint = f"{cfg['base_url']}/api/tasks/{tid}/deliverables"
     try:
@@ -1340,7 +1358,44 @@ def _activity_selftest() -> int:
     except Exception as exc:  # noqa: BLE001
         errors.append(f"register_deliverable(empty url) raised: {exc}")
 
-    # 13. Verify all valid activity_type values are in _CC_ACTIVITY_TYPES.
+    # 13. register_deliverable — payload shape matches the CC Zod schema
+    #     (deliverable_type + title + path; NEVER a bare top-level url/meta —
+    #     that shape 400s against the real POST /api/tasks/{id}/deliverables).
+    _captured_payload: dict = {}
+    _orig_post_json = globals()["_post_json"]
+
+    def _fake_post_json(url, payload, cfg, method="POST"):  # noqa: ANN001
+        _captured_payload.clear()
+        _captured_payload.update(payload)
+        return 201, {"ok": True}
+
+    globals()["_post_json"] = _fake_post_json
+    try:
+        register_deliverable(
+            "t1",
+            "https://example.com/survey",
+            meta={"type": "survey_url", "slug": "intake-survey"},
+            env=base_env,
+        )
+        if "deliverable_type" not in _captured_payload:
+            errors.append("register_deliverable payload missing 'deliverable_type'")
+        if "title" not in _captured_payload:
+            errors.append("register_deliverable payload missing 'title'")
+        if _captured_payload.get("path") != "https://example.com/survey":
+            errors.append(
+                "register_deliverable payload 'path' should equal the url, got "
+                f"{_captured_payload.get('path')!r}"
+            )
+        if "url" in _captured_payload:
+            errors.append("register_deliverable payload must NOT contain a bare top-level 'url' key")
+        if "meta" in _captured_payload:
+            errors.append("register_deliverable payload must NOT contain a bare top-level 'meta' key")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"register_deliverable(payload-shape) raised: {exc}")
+    finally:
+        globals()["_post_json"] = _orig_post_json
+
+    # 14. Verify all valid activity_type values are in _CC_ACTIVITY_TYPES.
     for at in ("spawned", "updated", "completed", "file_created", "status_changed"):
         if at not in _CC_ACTIVITY_TYPES:
             errors.append(f"_CC_ACTIVITY_TYPES missing expected value: {at!r}")

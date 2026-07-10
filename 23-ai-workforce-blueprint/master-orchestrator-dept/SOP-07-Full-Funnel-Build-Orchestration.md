@@ -133,14 +133,25 @@ The orchestrator runs this gate before dispatching any stage to in_progress:
 for each stage card with status=waiting_on_dependency:
   if ALL depends_on task_ids are in {done, APPROVED, verified}:
     PATCH /api/tasks/{child_task_id}
+    Authorization: Bearer $MC_API_TOKEN
       { "status": "in_progress" }
-    POST /api/tasks/ingest (re-route to dept agent)
+    POST /api/tasks/ingest (re-route to dept agent — HMAC-signed, NOT Bearer)
     emit board handoff event:
       { "from_dept": "<completing dept>",
         "to_dept": "<receiving dept>",
         "artifact": "<artifact produced by upstream>",
         "job_id": "<child_task_id>" }
 ```
+
+> **Write-back auth (required).** The `PATCH .../{child_task_id}` status call above
+> MUST send `Authorization: Bearer $MC_API_TOKEN` — the Command Center is fail-closed
+> and rejects an unauthenticated write-back with **401 Unauthorized**, leaving the
+> child card stuck `waiting_on_dependency`/`in_progress` instead of dispatching.
+> `$MC_API_TOKEN` is provisioned into the agent's runtime environment; do NOT use
+> `$OPENCLAW_GATEWAY_TOKEN` (gateway bridge token — it 401s this API). The
+> `POST /api/tasks/ingest` re-route call above uses a DIFFERENT scheme entirely
+> (HMAC `x-webhook-signature` over `WEBHOOK_SECRET` — see Step 2) and must NEVER
+> carry a Bearer line.
 
 The orchestrator subscribes to the Command Center SSE stream (`/api/events`) to receive `task_completed`, `task_approved`, and `task_verified` events. On each event, it re-evaluates the gate for all downstream stage cards.
 

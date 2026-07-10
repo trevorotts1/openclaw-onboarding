@@ -87,9 +87,11 @@ Deterministic test: now() - last_progress_at > threshold for the card's current 
 
 ## Structured Handback Schema
 
-When a worker agent cannot complete a task, it emits this structured handback via `POST /api/tasks/{id}/return-to-orchestrator`:
+When a worker agent cannot complete a task, it emits this structured handback:
 
-```json
+```
+POST {COMMAND_CENTER_URL}/api/tasks/{id}/return-to-orchestrator
+Authorization: Bearer $MC_API_TOKEN
 {
   "task_id": "<uuid>",
   "problem": "<one concise line describing exactly what failed>",
@@ -98,6 +100,13 @@ When a worker agent cannot complete a task, it emits this structured handback vi
   "suggested_department": "<slug or null>"
 }
 ```
+
+> **Write-back auth (required).** The POST above MUST send `Authorization: Bearer
+> $MC_API_TOKEN` — the Command Center is fail-closed and rejects an unauthenticated
+> write-back with **401 Unauthorized**, so the handback is lost and the task never
+> reaches the orchestrator's re-router (it stays stuck until a stale sweep catches
+> it). `$MC_API_TOKEN` is provisioned into the agent's runtime environment; do NOT
+> use `$OPENCLAW_GATEWAY_TOKEN` (gateway bridge token — it 401s this API).
 
 **Rules for the handback:**
 - `problem` MUST be specific and actionable. "It didn't work" is not valid.

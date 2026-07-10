@@ -2582,3 +2582,54 @@ jobs:
           rm -rf "$ng"
           [ "$rc" -eq 1 ] || { echo "✗ secret-printing gate should FAIL (exit 1) on a planted value-printing grep, got $rc"; exit 1; }
           echo "✓ Secret-printing grep gate is clean and proven to bite on a value-printing grep"
+
+      - name: Command Center task-API write-back auth doctrine (401 fix)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Dispatched department/persona agents finish work and write the result
+          # back to the Command Center task API (POST .../activities,
+          # .../deliverables, PATCH status, POST .../events, POST
+          # .../return-to-orchestrator). The CC is FAIL-CLOSED: every non-ingest
+          # write-back call needs `Authorization: Bearer $MC_API_TOKEN` or it 401s
+          # — the finished task freezes in_progress until a stale sweep blocks it.
+          # guard-taskapi-auth-docs.sh scans every tracked .md/.sh/.py write-back
+          # EXAMPLE an agent would copy (a POST/PATCH invocation line, in a fenced
+          # code block or bare prose) and FAILS if its surrounding block/window
+          # carries no Authorization/Bearer mention. /api/tasks/ingest (HMAC path)
+          # and server source-path citations (src/app/api/tasks/[id]/route.ts) are
+          # exempt; CHANGELOG.md files are exempt.
+          bash scripts/guard-taskapi-auth-docs.sh
+          echo "✓ Every Command Center write-back example carries Authorization: Bearer \$MC_API_TOKEN"
+
+      - name: Command Center write-back auth guard negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove guard-taskapi-auth-docs.sh actually FAILS on a planted
+          # unauthenticated write-back example (a green gate that never fails is
+          # worthless). The guard shells out to `git ls-files`, so the fixture
+          # needs its own throwaway git repo: copy the guard alone, git init, plant
+          # an unauthenticated POST .../activities example, stage it, and assert
+          # exit 1; then remove the plant, re-stage, and assert exit 0.
+          ng="$(mktemp -d)"
+          mkdir -p "$ng/scripts" "$ng/universal-sops"
+          cp scripts/guard-taskapi-auth-docs.sh "$ng/scripts/"
+          ( cd "$ng" && git init -q && git config user.email t@example.test && git config user.name t )
+          printf '%s\n' \
+            '```' \
+            'POST {missionControlUrl}/api/tasks/{task.id}/activities' \
+            '{"activity_type": "completed", "message": "no auth"}' \
+            '```' \
+            > "$ng/universal-sops/BAD.md"
+          ( cd "$ng" && git add -A )
+          rc=0
+          bash "$ng/scripts/guard-taskapi-auth-docs.sh" --repo-root "$ng" >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "✗ write-back auth gate should FAIL (exit 1) on a planted unauthenticated example, got $rc"; rm -rf "$ng"; exit 1; }
+          rm -f "$ng/universal-sops/BAD.md"
+          ( cd "$ng" && git add -A )
+          rc2=0
+          bash "$ng/scripts/guard-taskapi-auth-docs.sh" --repo-root "$ng" >/dev/null 2>&1 || rc2=$?
+          rm -rf "$ng"
+          [ "$rc2" -eq 0 ] || { echo "✗ write-back auth gate should PASS (exit 0) once the unauthenticated example is removed, got $rc2"; exit 1; }
+          echo "✓ guard-taskapi-auth-docs negative test passes (fails on a planted unauthenticated example, passes once removed)"
