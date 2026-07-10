@@ -1,0 +1,70 @@
+{
+  "$schema_version": "1.0.0",
+  "target": {
+    "location_id": "CjxATjhv9Gt21qSqURIt",
+    "allowed_location_names": [
+      "Template ZHC Podcasts Engine",
+      "[Template] zhc podcast engine"
+    ],
+    "api_version": "v3",
+    "snapshot_version": "v2.0.0"
+  },
+  "custom_fields": [
+    {
+      "name": "podcast_survey_writing_style",
+      "data_type": "SINGLE_OPTIONS",
+      "options": [
+        "Counter Intuitive (Introduce a different way of thinking about something.)",
+        "Vulnerable (High levels of empathy and perfect for people who are sharing emotional and personal stories of tragedy and triumph.)",
+        "Provocative (In your face, disruptive, and willing to challenge the norm.)",
+        "Passionate (Inspirational and Motivational.)"
+      ]
+    },
+    {
+      "name": "select_your_presentation_style_personal_podcast",
+      "data_type": "SINGLE_OPTIONS",
+      "options": [
+        "Counterintuitive",
+        "Passionate"
+      ]
+    },
+    {"name": "my_preferred_pronoun", "data_type": "TEXT"},
+    {"name": "podcast_interview_smiq", "data_type": "LARGE_TEXT"},
+    {"name": "smiq_answers", "data_type": "LARGE_TEXT"},
+    {"name": "smiq_history", "data_type": "LARGE_TEXT"},
+    {"name": "my_client_smiq_answers", "data_type": "LARGE_TEXT"},
+    {"name": "my_client_smiq_history", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_survey__additional_info", "data_type": "LARGE_TEXT"},
+    {"name": "date_for_release", "data_type": "DATE"},
+    {"name": "podcast_survey_quick_visual_description", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_ci_thesis", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_ci_tone", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_vul_thesis", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_vul_tone", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pro_assumption", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pro_evidence", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pro_tone", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pas_insight", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pas_emotions", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_pas_tone", "data_type": "LARGE_TEXT"},
+    {"name": "podcast_survey_episode_url", "data_type": "TEXT"},
+    {"name": "podcast_survey_episode_title", "data_type": "TEXT"},
+    {"name": "podcast_survey_episode_description", "data_type": "LARGE_TEXT"},
+    {"name": "finish_podcast_google_doc_link", "data_type": "TEXT"},
+    {"name": "podcast_transcript_link", "data_type": "TEXT"},
+    {"name": "podcast_full_transcript", "data_type": "LARGE_TEXT"},
+    {"name": "book_teaser", "data_type": "TEXT"}
+  ],
+  "custom_values": [
+    {"name": "podcast_show_name", "value": "SET_AT_PROVISIONING"},
+    {"name": "podcast_host_name", "value": "SET_AT_PROVISIONING"},
+    {"name": "podbean_podcast_id", "value": "SET_AT_PROVISIONING"},
+    {"name": "podcast_intake_webhook_url", "value": "https://SET-AT-PROVISIONING/hooks/podcast-intake"},
+    {"name": "podcast_intake_hook_secret", "value": "SET_AT_PROVISIONING"},
+    {"name": "podcast_snapshot_version", "value": "v2.0.0", "stamp_last": true}
+  ],
+  "tags": [
+    "podcast episode is ready",
+    "Podcast Completed Survey Style"
+  ]
+}
