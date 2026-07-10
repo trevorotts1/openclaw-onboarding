@@ -275,9 +275,21 @@ def _invoke_wiring(key, run_dir=None):
     #    refuses the introduction rather than inventing one (AF-AE-S9-FABRICATION).
     rel, _ = WIRING[2]
     sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, 3, len(WIRING), rel))
+    transitions = None
+    finale = None
     try:
         proposal = eng.curate_order(chapters)
         order = proposal["order"]
+        # U9(c): the ordering + one-line-per-slot rationale the CC assembly cockpit
+        # renders is on proposal["cockpit_view"]; persist it for the cockpit read
+        # path (a durable file the dashboard loads; the ledger keeps chapter_order).
+        try:
+            (Path(rundir) / "working" / "order_proposal.json").write_text(
+                json.dumps(proposal.get("cockpit_view") or {}, ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        except OSError as exc:
+            sys.stderr.write("[stage_%s] non-fatal: could not persist the cockpit ordering "
+                             "view (%s); the ledger still holds chapter_order.\n" % (STAGE, exc))
         bios_out = eng.bios(contributors, order)
         bios_by_key = {b["participant_key"]: json.dumps(b, ensure_ascii=False)
                       for b in bios_out["bios"]}
@@ -285,6 +297,25 @@ def _invoke_wiring(key, run_dir=None):
         intro_markdown = ""
         front_matter = ""
         back_matter = ""
+        # U9(a)+(b): the producer's "Confirm the finalized set & order" is the
+        # trigger that authorizes the FINAL edition: the N-1 inter-chapter
+        # transitions and the brand-new Grand Finale are written ONLY after the
+        # set is finalized, approved, and ordered. Without that confirmation this
+        # call still curates/compiles a working manuscript, but no transitions or
+        # finale are inserted (final-edition-only, per the assembly directive).
+        if request.get("confirm_order"):
+            chapters_meta = [{
+                "participant_key": pk,
+                "chapter_title": members_by_key.get(pk, {}).get("title_locked"),
+                "first_name": members_by_key.get(pk, {}).get("first_name"),
+                "last_name": members_by_key.get(pk, {}).get("last_name"),
+                "one_line_summary": members_by_key.get(pk, {}).get("one_line_summary") or "",
+            } for pk in order]
+            transitions = eng.write_transitions(order, chapters_meta)
+            finale = eng.write_finale(order, chapters_meta, producer.get("display_name"))
+            sys.stderr.write("[stage_%s] final edition: %d inter-chapter transition(s) + "
+                             "Grand Finale %r written (producer confirmed the set & order).\n"
+                             % (STAGE, len(transitions), finale.get("finale_title")))
         if producer_inputs:
             intro_out = eng.editor_intro(producer_inputs, contributors,
                                          producer.get("display_name"), order)
@@ -319,7 +350,8 @@ def _invoke_wiring(key, run_dir=None):
     manuscript_path = Path(rundir) / "working" / "manuscript.md"
     try:
         compiled = eng.compile_manuscript(order, frozen_shas, front_matter, intro_markdown,
-                                          bios_by_key, back_matter, out_path=manuscript_path)
+                                          bios_by_key, back_matter, transitions=transitions,
+                                          finale=finale, out_path=manuscript_path)
     except logic.S9Error as exc:
         sys.stderr.write("[stage_%s] %d/%d %s: %s\n" % (STAGE, 4, len(WIRING), rel, exc))
         return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))
