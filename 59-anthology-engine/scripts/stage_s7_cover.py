@@ -14,7 +14,10 @@ distinctly-styled portrait covers -- the config-pinned named styles in cover_ren
 in the participant Drive folder AND uploaded to Convert and Flow media storage; the four
 anthology_cover_sample{1..4}_url fields are written (read-back). S7 then HOLDS: the producer
 approves the SET (no down-select) and the client picks ONE style in the universal-review cover
-dropdown. The pick (--apply-pick --choice <style>) copies the chosen style's art into the
+dropdown. The producer's set-approval is the board-door s7_producer RELEASE gate -- a committed
+producer approve fires the anthology-release-cover tag through the gate-engine release bus
+(GATE_BY_CURSOR cursor s7_cover, release-only) while the cursor genuinely HOLDS at s7_cover for
+the client pick; --apply-pick then advances to S8. The pick (--apply-pick --choice <style>) copies the chosen style's art into the
 EXISTING cover image/drive fields and advances to S8 exactly as the single cover did before.
 
 Two phases (both idempotent):

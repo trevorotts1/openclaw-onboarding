@@ -115,6 +115,22 @@ GATE_BY_CURSOR = {
     # THE CHAPTER GATE -- EXACTLY TWO ACTIONS (SPEC S5; asserted in self_test).
     "s5_gate":              GateSpec("s5_participant", "participant", "participant",
                                      ("approve_as_is", "request_rewrite_with_notes")),
+    # RELEASE-ONLY PRODUCER GATES (chapter S5 / rewrite S6 / cover S7) -- now LIVE
+    # (promoted from wired-ahead). Each is the producer's BOARD-DOOR review of the
+    # just-produced artifact while its card sits in the review column; a committed
+    # board approve fires the stage's §3 release slug (anthology-release-chapter /
+    # -rewrite / -cover) through the SAME release bus as s1/s2/s4, then STOPS. They
+    # own NO cursor edge: the sole writer records the approve append-only and leaves
+    # the cursor put (the stage runners + the s5_participant gate own the pipeline
+    # advance). Keyed on the cursor the participant sits at while that artifact is in
+    # producer review (s5_chapter / s6_rewrite / s7_cover). Actions mirror the other
+    # producer gates (approve = release; hold / exclude / escalate never release).
+    "s5_chapter":           GateSpec("s5_producer",   "producer",    "producer",
+                                     ("approve", "hold", "exclude", "escalate")),
+    "s6_rewrite":           GateSpec("s6_producer",   "producer",    "producer",
+                                     ("approve", "hold", "exclude", "escalate")),
+    "s7_cover":             GateSpec("s7_producer",   "producer",    "producer",
+                                     ("approve", "hold", "exclude", "escalate")),
 }
 
 # The participant gates a token/PIN may scope to (the token page serves ONLY these:
@@ -170,10 +186,13 @@ ORDER_WINDOW_STATES = ("ready_confirmed", "proposed", "adjusted")
 # is exactly what fires the §3 W3-W10 notification workflow (email + SMS carrying
 # the PDF-view + Doc-edit links). Keyed by PRODUCER gate id, never hardcoded per
 # stage elsewhere:
-#   * s1/s2/s4 producer gates exist today (avatar / tone / outline).
-#   * s5/s6/s7 producer gates are engine-gated follow-ons the cover + assembly
-#     build units add; their slugs are wired here in advance so the bus lights up
-#     with no re-plumbing the moment the gate appears in GATE_BY_CURSOR.
+#   * s1/s2/s4 producer gates release avatar / tone / outline.
+#   * s5/s6/s7 producer gates release chapter / rewrite / cover. They are now LIVE
+#     in GATE_BY_CURSOR (promoted from wired-ahead): a committed board-door producer
+#     approve fires the stage's slug through this one bus with no re-plumbing. They
+#     are RELEASE-ONLY (they own no cursor edge; the sole writer records the approve
+#     append-only), so the release fires while the pipeline advance stays with the
+#     stage runners and the s5_participant gate.
 #   * Assembly gates (s9_ready / s9_producer) key on an anthology_id, not a single
 #     contact, so they never fire this per-contact bus (the assembly cockpit stamps
 #     anthology-delivered on every contact itself).
@@ -185,9 +204,9 @@ GATE_RELEASE_SLUG = {
     "s1_producer": "anthology-release-avatar",
     "s2_producer": "anthology-release-tone",
     "s4_producer": "anthology-release-outline",
-    "s5_producer": "anthology-release-chapter",   # engine-gated follow-on (producer chapter gate)
-    "s6_producer": "anthology-release-rewrite",    # engine-gated follow-on (producer rewrite gate)
-    "s7_producer": "anthology-release-cover",       # engine-gated follow-on (producer cover gate)
+    "s5_producer": "anthology-release-chapter",   # LIVE: producer chapter release gate (GATE_BY_CURSOR s5_chapter)
+    "s6_producer": "anthology-release-rewrite",    # LIVE: producer rewrite release gate (GATE_BY_CURSOR s6_rewrite)
+    "s7_producer": "anthology-release-cover",       # LIVE: producer cover release gate (GATE_BY_CURSOR s7_cover)
 }
 
 # The engine action that means "producer approves = release to the client" (SPEC
@@ -1368,6 +1387,27 @@ def self_test():
     assert release_slug_for(GATE_BY_CURSOR["s5_gate"], "approve_as_is", "board", True) is None  # participant chapter approve
     assert release_slug_for(GATE_BY_CURSOR["s3_gate"], "select", "board", True) is None         # participant title-select
     assert release_slug_for(GATE_BY_CURSOR["s4_gate_participant"], "approve", "board", True) is None  # participant gate
+    # THE THREE NEWLY-LIVE PRODUCER RELEASE GATES (chapter / rewrite / cover): each is
+    # a producer gate in GATE_BY_CURSOR carrying its §3 slug, and its slug fires ONLY on
+    # a committed BOARD-door producer APPROVE -- never on hold / exclude / escalate, the
+    # token door, or an uncommitted decision (exactly like s1/s2/s4).
+    for _cursor, _gid, _slug in (
+            ("s5_chapter", "s5_producer", "anthology-release-chapter"),
+            ("s6_rewrite", "s6_producer", "anthology-release-rewrite"),
+            ("s7_cover",   "s7_producer", "anthology-release-cover")):
+        _g = GATE_BY_CURSOR[_cursor]
+        assert _g.gate_id == _gid and _g.door_kind == "producer", (_cursor, _g)
+        assert GATE_RELEASE_SLUG[_gid] == _slug
+        assert release_slug_for(_g, "approve", "board", True) == _slug, (_cursor, "approve must fire")
+        assert release_slug_for(_g, "hold", "board", True) is None, (_cursor, "hold must not fire")
+        assert release_slug_for(_g, "exclude", "board", True) is None, (_cursor, "exclude must not fire")
+        assert release_slug_for(_g, "escalate", "board", True) is None, (_cursor, "escalate must not fire")
+        assert release_slug_for(_g, "approve", "token", True) is None, (_cursor, "token door never releases")
+        assert release_slug_for(_g, "approve", "board", False) is None, (_cursor, "uncommitted must not fire")
+    # the release map is EXACTLY the six producer gates now (three original + three new).
+    assert set(GATE_RELEASE_SLUG) == {
+        "s1_producer", "s2_producer", "s4_producer",
+        "s5_producer", "s6_producer", "s7_producer"}, sorted(GATE_RELEASE_SLUG)
     # assembly gates key on an anthology_id, not a contact -> no per-contact release.
     _s9r = GateSpec("s9_ready", "producer", "producer", ("ready_to_assemble",))
     _s9p = GateSpec("s9_producer", "producer", "producer", ("sign_off",))
@@ -1430,7 +1470,8 @@ def self_test():
 
     print("gate_engine self-test: OK "
           "(token mint/verify + refusals, PIN, chapter gate == 2 actions, "
-          "door map, exit-code map, §3 release-tag bus, U9 order-confirm flag)")
+          "door map, exit-code map, §3 release-tag bus incl. the now-LIVE "
+          "chapter/rewrite/cover producer gates, U9 order-confirm flag)")
     return EX_OK
 
 

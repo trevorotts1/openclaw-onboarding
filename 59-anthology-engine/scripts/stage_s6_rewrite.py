@@ -9,7 +9,10 @@ the exit-code classification contract are FIXED here.
 
 S6 rewrite (optional, budget 2): the notes become chapter_updates; the Thornfield persona
 rewrites INSIDE the band with the title lock held; the result RE-ENTERS the S5 gate. A
-silent third rewrite is an illegal transition the writer refuses.
+silent third rewrite is an illegal transition the writer refuses. Producer RELEASE gate
+(board door): s6_producer -- a committed producer approve of the rewritten chapter fires
+the anthology-release-rewrite tag through the gate-engine release bus (GATE_BY_CURSOR
+cursor s6_rewrite), release-only (no cursor move).
 
 Persona (PRD Section 13): anthology-chapter-author speaking Dr. Margaret Thornfield, editorial revisionist (aw-10).
 

@@ -9,7 +9,10 @@ the exit-code classification contract are FIXED here.
 
 S5 chapter: ONE complete chapter, 2,000 to 3,500 MEASURED stripped words, title locked,
 every story placed. The FULL Gate B battery runs BEFORE the gate opens; the participant
-never sees an ungated draft. Participant gate: Approve as-is OR Request rewrite with notes.
+never sees an ungated draft. Producer RELEASE gate (board door): s5_producer -- a
+committed producer approve of the delivered chapter fires the anthology-release-chapter
+tag through the gate-engine release bus (GATE_BY_CURSOR cursor s5_chapter), release-only
+(no cursor move). Participant gate: Approve as-is OR Request rewrite with notes.
 
 Persona (PRD Section 13): anthology-chapter-author speaking the Anthology Chapter Author (aw-09).
 
@@ -45,7 +48,7 @@ WIRING = [
     ("scripts/judge_harness.py", "the Tier 2 ten-dimension rubric on the JUDGE tier (never the drafting tier)"),
     ("scripts/qc-strike-gate.py", "internal QC attempts counter (max 3); hold-and-alert on strike-out"),
     ("scripts/stage_s8_deliver.py", "deliver the Chapter Doc plus PDF; the card lands in review"),
-    ("scripts/gate_engine.py", "open the s5_participant gate: exactly two actions on the token page"),
+    ("scripts/gate_engine.py", "producer chapter RELEASE gate (board door) s5_producer fires anthology-release-chapter on a committed producer approve; then open the s5_participant gate: exactly two actions on the token page"),
     ("scripts/anthology_state.py", "freeze the chapter on approve, or route to s6_rewrite on request_rewrite with the notes appended to chapter_updates"),
     ("scripts/mc_board.py", "mirror the participant card to in_progress as the decision advances the cursor to s7_cover (approve) or s6_rewrite (request_rewrite) -- both land in_progress (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]

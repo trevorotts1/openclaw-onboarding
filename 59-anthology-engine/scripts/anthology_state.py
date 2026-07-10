@@ -116,8 +116,20 @@ ARTIFACT_TYPES = (
 
 APPROVAL_GATES = (
     "s1_producer", "s2_producer", "s3_selection", "s4_producer",
-    "s4_participant", "s5_participant", "s9_ready", "s9_producer",
+    "s4_participant", "s5_participant",
+    # RELEASE-ONLY producer gates (chapter S5 / rewrite S6 / cover S7). A committed
+    # board-door producer approve at one of these is a §3 RELEASE event: the gate
+    # engine turns it into the anthology-release-chapter / -rewrite / -cover tag.
+    # Unlike the s1/s2/s4 producer gates they do NOT own a legal cursor edge -- the
+    # pipeline advance stays with the stage runners and the s5_participant gate -- so
+    # the approval is recorded append-only with the cursor UNCHANGED.
+    "s5_producer", "s6_producer", "s7_producer",
+    "s9_ready", "s9_producer",
 )
+# The subset of APPROVAL_GATES whose approve is a RELEASE-ONLY producer stamp (no
+# cursor edge, no participant-gate guard). Consulted only by record-approval; the
+# release TAG itself is fired by gate_engine.py's release bus, never written here.
+RELEASE_ONLY_PRODUCER_GATES = ("s5_producer", "s6_producer", "s7_producer")
 APPROVAL_ACTORS = ("producer", "participant")
 APPROVAL_DECISIONS = (
     "approve", "request_rewrite", "escalate", "hold", "exclude",
@@ -1063,7 +1075,14 @@ def _record_participant_approval(led: Ledger, a, gate):
     cur = p["stage_cursor"]
     part_fields = {}
 
-    if decision in ("approve", "request_rewrite"):
+    if gate in RELEASE_ONLY_PRODUCER_GATES and decision == "approve":
+        # A producer RELEASE approve (chapter S5 / rewrite S6 / cover S7): recorded
+        # append-only so gate_engine.py can stamp the §3 release tag. It owns NO cursor
+        # edge (the stage runners + the s5_participant gate move the pipeline) and runs
+        # none of the participant-gate guards (title lock, rewrite budget, chapter
+        # freeze). part_fields stays empty -> the cursor is left exactly where it is.
+        pass
+    elif decision in ("approve", "request_rewrite"):
         edge = GATE_EDGE.get((gate, decision))
         if not edge:
             raise _illegal("gate %s does not accept decision %s" % (gate, decision))
