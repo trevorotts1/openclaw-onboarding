@@ -242,6 +242,10 @@ def _invoke_wiring(key, run_dir=None):
         sys.stderr.write("[stage_%s] no drive_folder_id on the participant row; held.\n" % STAGE)
         return EX_HELD
     contact_id = pkey.split(KEY_DELIM, 1)[0]
+    # The cover is a PNG IMAGE, not a deliverable Google Doc: EDIT-share (U7,
+    # Trevor's LOCKED #4) applies "for deliverable Docs" only. There is nothing to
+    # pull back from an image and the co-author only picks a favorite, so the cover
+    # stays anyone-with-link VIEW-only. (Deliverable Docs flip to --share-edit at S8.)
     rc, uploaded = _step(3, rel, [py, str(_resolve(rel)), "upload",
                                  "--name", "%s-cover.png" % contact_id,
                                  "--parent-folder-id", folder_id,
