@@ -67,13 +67,30 @@ USAGE
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
-import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+# F6 receipts store + reducer live in their own module (ghl_receipts.py) so any
+# builder — not just the router — can depend on receipts without pulling in
+# rail-matrix/browser machinery. Re-exported here for backward compatibility
+# with existing callers of ``ghl_object_router.make_receipt`` etc.
+import ghl_receipts as receipts  # noqa: E402
+from ghl_receipts import (  # noqa: E402,F401
+    make_receipt,
+    receipt_path,
+    write_receipt,
+    list_receipts,
+    reduce_receipts,
+    assert_consistent,
+    ReceiptContradiction,
+)
 
 ROUTER_VERSION = "v1.0.0"
 
@@ -485,84 +502,11 @@ def classify_failure(error_kind: Optional[str] = None,
 
 # ---------------------------------------------------------------------------
 # F6 receipts — "no receipt = not created"
-# ---------------------------------------------------------------------------
-def _request_shape_hash(request_shape: Any) -> str:
-    try:
-        raw = json.dumps(request_shape, sort_keys=True, default=str)
-    except Exception:  # noqa: BLE001
-        raw = repr(request_shape)
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-
-def make_receipt(object_type: str, slug: str, action: str, *,
-                 rail: Optional[RailStep] = None,
-                 response_id: Optional[str] = None,
-                 request_shape: Any = None,
-                 verify: Optional[dict] = None,
-                 disclosures: Optional[List[str]] = None,
-                 error: Optional[str] = None) -> dict:
-    """Build the F6 per-object receipt dict (the ONLY thing a summary may reduce)."""
-    return {
-        "object_type": object_type,
-        "slug": slug,
-        "action": action,               # reused | created | failed
-        "rail": rail.rail if rail else None,
-        "tier": rail.tier if rail else None,
-        "tool": rail.tool if rail else None,
-        "token_context": rail.token if rail else None,
-        "response_id": response_id,
-        "request_shape_hash": _request_shape_hash(request_shape),
-        "verify": verify or {},          # re-GET / rendered-DOM proof
-        "disclosures": disclosures or [],
-        "created": action in ("created", "reused"),
-        "error": error,                  # honest failure record (None on success)
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-
-
-def receipt_path(evidence_root: str, object_type: str, slug: str) -> str:
-    safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in slug)[:80]
-    return os.path.join(evidence_root, "ecosystem", f"{object_type}-{safe}.json")
-
-
-def write_receipt(evidence_root: str, receipt: dict) -> str:
-    path = receipt_path(evidence_root, receipt["object_type"], receipt["slug"])
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(receipt, fh, indent=2)
-    return path
-
-
-def reduce_receipts(evidence_root: str) -> dict:
-    """Summary = pure reduction of receipts (F6). No receipt = not created."""
-    eco = os.path.join(evidence_root, "ecosystem")
-    created: List[str] = []
-    reused: List[str] = []
-    failed: List[str] = []
-    if os.path.isdir(eco):
-        for fn in sorted(os.listdir(eco)):
-            if not fn.endswith(".json"):
-                continue
-            try:
-                with open(os.path.join(eco, fn), encoding="utf-8") as fh:
-                    r = json.load(fh)
-            except Exception:  # noqa: BLE001
-                continue
-            tag = f"{r.get('object_type')}:{r.get('slug')}"
-            action = r.get("action")
-            if action == "created":
-                created.append(tag)
-            elif action == "reused":
-                reused.append(tag)
-            else:
-                failed.append(tag)
-    return {
-        "created": created, "reused": reused, "failed": failed,
-        "total": len(created) + len(reused) + len(failed),
-        "all_verified": not failed,
-    }
-
-
+#
+# make_receipt / receipt_path / write_receipt / list_receipts / reduce_receipts
+# / assert_consistent / ReceiptContradiction now live in ghl_receipts.py and are
+# imported + re-exported above. This router calls them exactly as any other
+# builder would — it has no privileged access to the receipts store.
 # ---------------------------------------------------------------------------
 # The orchestrator — probe → attempt rail → classify → fallback → verify → receipt
 # ---------------------------------------------------------------------------
