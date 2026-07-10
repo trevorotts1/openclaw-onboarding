@@ -705,7 +705,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 - The PPTX shape geometry (every text box and overlay element's x / y / w / h, read from the PPTX XML via python-pptx)
 - (Decision 5C) NO pptx_text_overlays.json — native overlays are eliminated. The QC instead confirms the delivered PPTX carries NO native (non-notes) on-slide text run on any slide (every slide is a single composed gpt-image-2 image; AF-OVERLAY-DELIVERED). A present pptx_text_overlays.json is itself AF-OVERLAY-DELIVERED.
 - working/copy/slides_copy.md (for copy verification in the assembled deck)
-- working/copy/presenter_notes.json (for speaker notes verification)
+- working/presenter-speech/PRESENTERS-SPEECH.md (for the PPTX speaker-notes verification, once the P9.5-NOTES-SYNC re-sync has run; NOT presenter_notes.json -- that file is a short Presenter's Guide cue, not the PPTX notes-pane source)
 - working/brand/style_block.md + the captured REPRESENTATION_MIX (for the tally re-run)
 - working/brief GROUNDED_CONTENT variable (for the grounding re-verification)
 - working/copy/price_ladder.json + working/copy/intake.json (for the offer-slide price == FINAL_PRICE assert, AF-F8)
@@ -765,7 +765,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 
 5. **Additional final-deck-specific checks:**
    a. Slide order matches arc_allocation.json exactly.
-   b. Speaker notes are present in the PPTX for every slide per presenter_notes.json.
+   b. **Speaker notes match the QC-passed speech (AF-EMPTY-NOTES-PANE, code-enforced by `build_deck._chk_notes_pane` at postflight; re-confirm here).** Every content slide's PPTX notes pane (`slide.notes_slide.notes_text_frame.text`) is non-empty and its content is drawn from `PRESENTERS-SPEECH.md` (the full word-for-word script injected by `notes_sync_pass()` at P9.5-NOTES-SYNC) -- NOT from `presenter_notes.json`, which is a short Presenter's Guide cue, not the PPTX notes-pane source. An empty notes pane on a content slide, or notes that do not match the speech, fails here even if the mechanical postflight gate has not yet run.
    c. No slides are missing (total count matches slide_count_final in mission_prd.json).
    d. No images are stretched, cropped, or misaligned in the PPTX layout.
    e. Font embedding: if PPTX-native text is used, fonts are embedded (verify by opening in a clean environment without the brand fonts installed -- text should still display correctly).

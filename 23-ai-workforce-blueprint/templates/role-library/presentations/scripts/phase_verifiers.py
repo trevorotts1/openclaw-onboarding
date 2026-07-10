@@ -355,6 +355,44 @@ def _verify_assemble(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, ["NOTE: build_deck.check_deck_harmony unavailable — filesystem-only check (pass)"]
 
 
+def _verify_notes_sync(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P9.5-NOTES-SYNC: notes_sync.json must record a 'synced' pass (notes actually
+    injected from the QC-passed speech), AND the delivered PPTX must have no empty
+    notes panes (via build_deck._chk_notes_pane / AF-EMPTY-NOTES-PANE) when a bundle
+    dir can be located. 'no_speech' status is a HARD FAIL here — by the time this
+    phase's precondition gate runs, P9-SPEECH + P-SPEECH-QC are already attested, so
+    the speech MUST exist; a notes_sync.json still reporting no_speech means the
+    reorder did not do its job and the deck would still ship with empty notes."""
+    reasons: List[str] = []
+    ok_json, r = _check_json_nonempty(run_dir, "working/checkpoints/notes_sync.json")
+    if not ok_json:
+        return False, r
+    obj = _read_json(run_dir / "working" / "checkpoints" / "notes_sync.json")
+    if isinstance(obj, dict):
+        status = obj.get("status")
+        if status == "error":
+            reasons.append(f"AF-EMPTY-NOTES-PANE: notes_sync.json status=error: "
+                           f"{obj.get('reason', '')}")
+        elif status == "no_speech":
+            reasons.append("AF-EMPTY-NOTES-PANE: notes_sync.json status=no_speech — "
+                           "P9-SPEECH/P-SPEECH-QC are attested (this phase's own "
+                           "precondition) but no speech was found at re-sync time; "
+                           "the notes pane would still ship empty.")
+        elif status != "synced":
+            reasons.append(f"AF-EMPTY-NOTES-PANE: notes_sync.json has unexpected "
+                           f"status={status!r}")
+    fn = _bd_fn("_chk_notes_pane")
+    if fn is not None:
+        bundle_pptx = obj.get("bundle_pptx") if isinstance(obj, dict) else None
+        if bundle_pptx:
+            bundle_dir = Path(bundle_pptx).parent
+            result = fn(bundle_dir, run_dir=run_dir, slides_path=None)
+            if not _checker_pass(result):
+                reasons.append(str(result))
+    hard = [r for r in reasons if not r.startswith("NOTE")]
+    return (len(hard) == 0), reasons
+
+
 def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
     """P9-DELIVER: verify the delivery artifact (PRESENTER-AUDIO.mp3) or bundle exists."""
     audio = run_dir / "working" / "delivery" / "PRESENTER-AUDIO.mp3"
@@ -457,6 +495,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
     "P-SPEECH-QC":        _verify_json_artifact("working/qc/speech_qc_report.json"),
+    # Phase 8.7   Notes-Pane Sync (reorder — AF-EMPTY-NOTES-PANE)
+    "P9.5-NOTES-SYNC":    _verify_notes_sync,
     # Phase 9     Delivery
     "P9-DELIVER":         _verify_delivery,
     # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)

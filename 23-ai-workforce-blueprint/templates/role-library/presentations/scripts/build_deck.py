@@ -1601,8 +1601,10 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 
     Search order (first hit wins): the working-dir locations the speech roles write
     to, then the delivered bundle copy. Filenames use the standardized possessive
-    plural PRESENTERS-SPEECH.md (canonical); the legacy singular PRESENTER-SPEECH.md
-    and the speech.md scratch name are also accepted."""
+    plural PRESENTERS-SPEECH.md (canonical); the legacy singular PRESENTER-SPEECH.md,
+    the speech.md scratch name, and the presenters_speech.md snake_case variant
+    (audio-demonstration-specialist.md's legacy reference name) are also accepted —
+    legacy tolerance, so no producer's output silently never reaches the notes pane."""
     candidates = [
         run_dir / "working/presenter-speech/speech.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
@@ -1611,6 +1613,9 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
         run_dir / "working/delivery/PRESENTER-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTER-SPEECH.md",
         bundle_dir / "PRESENTER-SPEECH.md",
+        run_dir / "working/presenter-speech/presenters_speech.md",
+        run_dir / "working/delivery/presenters_speech.md",
+        bundle_dir / "presenters_speech.md",
     ]
     for path in candidates:
         try:
@@ -1693,6 +1698,186 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out_path))
+
+
+# ---------------------------------------------------------------------------
+# P9.5-NOTES-SYNC — reorder notes-pane assembly to AFTER the speech is finalized.
+#
+# ROOT CAUSE (spec §9.1): assemble_pptx() runs at P8-ASSEMBLE, but the presenter
+# speech (PRESENTERS-SPEECH.md) is a P9-SPEECH / P-SPEECH-QC artifact. On a normal
+# linear run the notes pane is injected BEFORE the speech exists, so it ships
+# empty. Fix: REORDER (do not rewrite) — a small idempotent pass that reopens the
+# already-assembled .pptx after the speech has been written AND QC-passed, and
+# re-runs the same discover_speech_chunks()/notes injection this time with the
+# real word-for-word script on disk. This is the "P9.5-NOTES-SYNC" phase
+# (PIPELINE-MANIFEST.json order 8.7, between P-SPEECH-QC and P9-DELIVER).
+# ---------------------------------------------------------------------------
+
+def notes_sync_pass(bundle_pptx: Path, run_dir: Path, bundle_dir: Path) -> dict:
+    """P9.5-NOTES-SYNC: reopen the assembled .pptx and inject the FULL word-for-word
+    presenter speech into every slide's notes pane, now that the speech is (expected
+    to be) present and QC-passed. IDEMPOTENT — this OVERWRITES the notes text frame
+    on every matched slide each time it runs; it never appends or duplicates, and
+    running it twice on the same inputs produces the same output.
+
+    Returns a small JSON-able result dict:
+      {"status": "synced"|"no_speech"|"error", "slides_total": N,
+       "slides_with_notes": N, "speech_source": "<path or None>",
+       "reason": "<human string>"}
+    NEVER raises — a notes-sync problem must never take down a build that already
+    has a valid assembled deck; the AF-EMPTY-NOTES-PANE postflight gate is what
+    turns an unsynced deck into a hard failure, not this pass."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": "python-pptx is not installed (pip install python-pptx)."}
+
+    if not bundle_pptx.is_file():
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": f"assembled PPTX not found at {bundle_pptx}; run assembly "
+                          f"(P8-ASSEMBLE) before P9.5-NOTES-SYNC."}
+
+    speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
+    if not speech_chunks:
+        return {"status": "no_speech", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": "no presenter speech found (or it parsed to zero chunks); "
+                          "the notes pane is left as-is. This is non-fatal here — the "
+                          "AF-EMPTY-NOTES-PANE postflight gate is what fails the run "
+                          "if notes are still empty at delivery."}
+
+    try:
+        prs = Presentation(str(bundle_pptx))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": f"could not open {bundle_pptx} with python-pptx: {exc}"}
+
+    slides_total = len(prs.slides)
+    slides_with_notes = 0
+    for idx, slide in enumerate(prs.slides, start=1):
+        spoken = speech_chunks.get(idx)
+        if spoken:
+            # Overwrite (never append) so re-running this pass is idempotent.
+            slide.notes_slide.notes_text_frame.text = spoken
+            slides_with_notes += 1
+
+    try:
+        prs.save(str(bundle_pptx))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "slides_total": slides_total,
+                "slides_with_notes": slides_with_notes, "speech_source": None,
+                "reason": f"could not save {bundle_pptx} after notes injection: {exc}"}
+
+    print(f"=== P9.5-NOTES-SYNC: injected notes for {slides_with_notes}/{slides_total} "
+          f"slide(s) into {bundle_pptx} from the QC-passed presenter speech ===",
+          flush=True)
+    return {"status": "synced", "slides_total": slides_total,
+            "slides_with_notes": slides_with_notes, "speech_source": "found",
+            "reason": ""}
+
+
+# Env-overridable, comma-separated, case-insensitive slide-tag substrings that
+# exempt a slide from AF-EMPTY-NOTES-PANE (structural/divider slides carry no
+# spoken content of their own — the spec's "section-banner slides, configurable").
+NOTES_PANE_EXEMPT_TAG_DEFAULT = "banner,divider,section,transition,intermission"
+
+
+def _notes_pane_exempt_tags() -> set:
+    raw = os.environ.get("NOTES_PANE_EXEMPT_TAGS", NOTES_PANE_EXEMPT_TAG_DEFAULT)
+    return {t.strip().lower() for t in raw.split(",") if t.strip()}
+
+
+def _notes_pane_exempt_slide_numbers(slides_path: Optional[Path]) -> set:
+    """Read slides.json (if available) and return the set of 1-based slide numbers
+    tagged as structural/divider — exempt from the AF-EMPTY-NOTES-PANE requirement.
+    Best-effort: any parse problem yields an empty exemption set (fail toward MORE
+    checking, never less)."""
+    if slides_path is None:
+        return set()
+    try:
+        slides = json.loads(Path(slides_path).read_text())
+    except Exception:  # noqa: BLE001
+        return set()
+    if not isinstance(slides, list):
+        return set()
+    exempt_tags = _notes_pane_exempt_tags()
+    exempt = set()
+    for i, s in enumerate(slides, start=1):
+        if not isinstance(s, dict):
+            continue
+        tokens = []
+        for k in ("arc_section", "section", "beat", "tag", "type", "role", "kind"):
+            v = s.get(k)
+            if isinstance(v, str):
+                tokens.append(v.lower())
+        tags = s.get("tags")
+        if isinstance(tags, list):
+            tokens += [str(t).lower() for t in tags]
+        blob = " ".join(tokens)
+        if any(tag in blob for tag in exempt_tags):
+            exempt.add(i)
+    return exempt
+
+
+def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
+                    slides_path: Optional[Path] = None) -> str:
+    """AF-EMPTY-NOTES-PANE (delivery/closeout gate, D11 in the Master Ruleset).
+    Opens the delivered *.pptx in bundle_dir and reads
+    slide.notes_slide.notes_text_frame.text for every slide; any audience-facing
+    CONTENT slide with an empty notes pane is a hard fail (structural/divider
+    slides are exempt per _notes_pane_exempt_slide_numbers). Returns "" on pass, or
+    a fatal AF-EMPTY-NOTES-PANE message naming the empty slide numbers.
+
+    This is the code implementation of the autofail that previously existed only
+    on paper (sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md:578-582) — closing
+    the exact gap the notes-pane reorder (P9.5-NOTES-SYNC) exists to prevent: a
+    deck assembled before the speech existed, never re-synced, shipping silent."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return ("AF-EMPTY-NOTES-PANE: python-pptx is not installed, so the notes "
+                "pane cannot be verified. Install python-pptx before delivery.")
+
+    pptx_candidates = [p for p in sorted(Path(bundle_dir).glob("*.pptx"))
+                       if not p.name.startswith("~$")]
+    if not pptx_candidates:
+        # No delivered PPTX here yet — another gate (AF-BUNDLE-COMPLETE) owns the
+        # "missing deliverable" failure; this gate has nothing to inspect.
+        return ""
+
+    exempt = _notes_pane_exempt_slide_numbers(slides_path)
+    empty_slides = []
+    for pptx_path in pptx_candidates:
+        try:
+            prs = Presentation(str(pptx_path))
+        except Exception:  # noqa: BLE001
+            # A file python-pptx cannot open is NOT a valid deck to scan here — the
+            # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) and
+            # the C2 content-type check own malformed/decoy .pptx files. Defer rather
+            # than false-fail AF-EMPTY-NOTES-PANE (mirrors _delivered_pptx_native_text).
+            continue
+        for idx, slide in enumerate(prs.slides, start=1):
+            if idx in exempt:
+                continue
+            has_notes_part = slide.has_notes_slide
+            text = (slide.notes_slide.notes_text_frame.text.strip()
+                    if has_notes_part else "")
+            if not text:
+                empty_slides.append((pptx_path.name, idx))
+
+    if empty_slides:
+        listing = "; ".join(f"{fname} slide {n}" for fname, n in empty_slides[:20])
+        more = f" (+{len(empty_slides) - 20} more)" if len(empty_slides) > 20 else ""
+        return (f"AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty "
+                f"notes panes on content slides: {listing}{more}. Re-assemble with "
+                f"the presenter speech present so per-slide notes are injected "
+                f"(build_deck.py auto-injection at P8-ASSEMBLE, re-synced at "
+                f"P9.5-NOTES-SYNC / notes_sync_pass()), then re-verify.")
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -8118,6 +8303,22 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                   error=overlay_reason)
 
+    # --- AF-EMPTY-NOTES-PANE sub-check (P9.5-NOTES-SYNC reorder) ---
+    # Previously documented (SOP-SLIDE-00:578-582) but never code-enforced. At
+    # closeout — AFTER notes_sync_pass() has had the chance to re-inject notes from
+    # the now-QC-passed speech — re-open the delivered PPTX and refuse to ship any
+    # audience-facing content slide with an empty notes pane.
+    notes_pane_reason = _chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=slides_path)
+    if notes_pane_reason:
+        missing_or_short.append((
+            "deck_pptx",
+            _expand_filename("deck.pptx", deck_slug),
+            "per-slide speaker notes present (AF-EMPTY-NOTES-PANE; notes injected "
+            "from the QC-passed presenter speech)",
+            0, 0, "EMPTY_NOTES_PANE"))
+        update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                  error=notes_pane_reason)
+
     # --- FIX-2: CANONICAL-RENDER-PATH sub-check (AF-CANONICAL-RENDER-BYPASS /
     # AF-LOCAL-CANVAS) — at closeout, re-prove no hand-rolled renderer/assembler in
     # the run dir produced (part of) the deck. The canonical render path is
@@ -8544,6 +8745,7 @@ def main():
     skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
                                     # publish sub-check (never via a persisted status).
     sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
+    notes_sync_mode = False  # P9.5-NOTES-SYNC (8.7): re-inject notes post-speech-QC.
     style_spec_arg = None
     positional = []
     i = 0
@@ -8553,6 +8755,8 @@ def main():
             adhoc = True
         elif tok == "--sample":
             sample_mode = True
+        elif tok == "--notes-sync":
+            notes_sync_mode = True
         elif tok == "--style-spec":
             i += 1
             if i >= len(argv):
@@ -8650,6 +8854,56 @@ def main():
         _api_key = "" if adhoc else load_api_key()
         _spec = Path(style_spec_arg) if style_spec_arg else None
         sys.exit(run_style_preview_samples(_sp, _run_dir, _spec, _api_key, logo_url=_logo_url))
+
+    # P9.5-NOTES-SYNC (order 8.7) --notes-sync mode: reopen the already-assembled
+    # bundle .pptx and re-inject per-slide speaker notes now that the presenter
+    # speech exists and has passed P-SPEECH-QC. Fires AFTER P8-ASSEMBLE / P9-SPEECH /
+    # P-SPEECH-QC and BEFORE P9-DELIVER (run_signature_deck.py dispatches this the
+    # same way it dispatches P4-RENDER). Writes
+    # working/checkpoints/notes_sync.json as the phase's produces_artifact so the
+    # runner can attest it. Idempotent — safe to re-run.
+    if notes_sync_mode:
+        if len(positional) not in (2, 3):
+            print("Usage: python3 build_deck.py <slides.json> <out.pptx> "
+                  "--notes-sync --run-dir DIR [--out BUNDLE_DIR]", file=sys.stderr)
+            sys.exit(2)
+        _ns_slides_path = Path(positional[0])
+        _ns_out_path = Path(positional[1])
+        if not _ns_slides_path.exists():
+            print(f"FATAL: slides.json not found: {_ns_slides_path}", file=sys.stderr)
+            sys.exit(2)
+        _ns_deck_slug = _ns_out_path.stem or "deck"
+        _ns_bundle_dir = _resolve_bundle_dir(out_dir_arg, _ns_out_path)
+        _ns_run_dir = find_run_dir(run_dir_arg, _ns_slides_path, _ns_out_path.parent)
+        _ns_bundle_pptx = _ns_bundle_dir / f"{_ns_deck_slug}-FINAL.pptx"
+        if not _ns_bundle_pptx.is_file():
+            # Fall back to out.pptx itself when it already lives in the bundle dir
+            # under a non-"-FINAL" name (e.g. a direct/adhoc invocation).
+            if _ns_out_path.is_file():
+                _ns_bundle_pptx = _ns_out_path
+            else:
+                print(f"FATAL: no assembled PPTX found at {_ns_bundle_pptx} or "
+                      f"{_ns_out_path}; run P8-ASSEMBLE (the normal render) before "
+                      f"P9.5-NOTES-SYNC.", file=sys.stderr)
+                sys.exit(2)
+        _ns_result = notes_sync_pass(_ns_bundle_pptx, _ns_run_dir, _ns_bundle_dir)
+        _ns_ckpt_dir = _ns_run_dir / "working" / "checkpoints"
+        _ns_ckpt_dir.mkdir(parents=True, exist_ok=True)
+        _ns_record_path = _ns_ckpt_dir / "notes_sync.json"
+        _ns_record = dict(_ns_result)
+        _ns_record["bundle_pptx"] = str(_ns_bundle_pptx)
+        _ns_record["timestamp"] = (timestamp_arg or time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                                    or time.strftime("%Y-%m-%dT%H:%M:%S"))
+        try:
+            _ns_record_path.write_text(json.dumps(_ns_record, indent=2))
+        except OSError as exc:
+            print(f"WARNING: notes-sync succeeded but could not write "
+                  f"{_ns_record_path}: {exc}", file=sys.stderr, flush=True)
+        print(json.dumps(_ns_record, indent=2))
+        # "no_speech" is NON-FATAL (the speech may still be mid-write on a re-run of
+        # this phase before the send-back loop settles) — AF-EMPTY-NOTES-PANE at
+        # postflight is the hard gate, this pass only exits non-zero on a real error.
+        sys.exit(1 if _ns_result.get("status") == "error" else 0)
 
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
