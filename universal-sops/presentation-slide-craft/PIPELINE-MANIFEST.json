@@ -751,6 +751,24 @@
       }
     },
     {
+      "id": "P9.5-NOTES-SYNC",
+      "order": 8.7,
+      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/notes_sync.json",
+      "gate_codes": [
+        "AF-EMPTY-NOTES-PANE"
+      ],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      }
+    },
+    {
       "id": "P9-DELIVER",
       "order": 9,
       "name": "Delivery Interlock + Postflight Completeness Gate",
@@ -949,6 +967,15 @@
       "trigger": "presenter speech word count below target_talk_minutes x 120 wpm floor",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_speech_length"
+    },
+    {
+      "code": "AF-EMPTY-NOTES-PANE",
+      "stage": "8.7",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the final .pptx ships with empty notes panes on content slides (per-slide speaker notes not injected) \u2014 fixed by reordering notes assembly to P9.5-NOTES-SYNC (AFTER the speech is finalized and QC-passed), then re-verified here at postflight",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_notes_pane"
     },
     {
       "code": "AF-DELIVER",

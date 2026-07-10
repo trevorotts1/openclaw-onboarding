@@ -577,8 +577,9 @@ These codes wire the nine Intelligence Engines (SOP-ENGINE-00) and their require
 
 ### AF-EMPTY-NOTES-PANE -- per-slide speaker notes in the notes pane (package-level, closeout)
 **Doctrine (pptx-assembly-specialist-sops.md SOP 9.1, D11):** the shipped `.pptx` carries each content slide's talking points in its native NOTES pane so the file is self-coaching. Enforced at CLOSEOUT (after the Phase-9 speech exists), not at the Phase-4 render (where an absent speech is non-fatal).
-**Detection:** open the final `.pptx`; read `slide.notes_slide.notes_text_frame.text` per slide; any audience-facing content slide with an empty notes pane = fail (structural/divider slides exempt).
-**Failure message:** `AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty notes panes on content slides. Re-assemble with the presenter speech present so per-slide notes are injected (build_deck.py auto-injection), then re-verify.`
+**CODE-ENFORCED (build_deck.py `_chk_notes_pane`, wired into `run_postflight_gate`; PIPELINE-MANIFEST.json phase `P9.5-NOTES-SYNC`, order 8.7).** The reorder that closes this gap: `assemble_pptx()` still runs at P8-ASSEMBLE (where the speech is usually still absent — non-fatal there by design), but a NEW phase, `P9.5-NOTES-SYNC`, fires AFTER `P9-SPEECH`/`P-SPEECH-QC` are attested and BEFORE `P9-DELIVER`: it reopens the assembled `.pptx` and re-runs `discover_speech_chunks()` (now guaranteed to find the QC-passed speech) via `build_deck.notes_sync_pass()`, overwriting every slide's notes pane (idempotent — safe to re-run). `_chk_notes_pane` is then the final gate at postflight: it opens the delivered `.pptx` and hard-fails if any content slide's notes pane is still empty.
+**Detection:** open the final `.pptx`; read `slide.notes_slide.notes_text_frame.text` per slide; any audience-facing content slide with an empty notes pane = fail. Structural/divider slides are exempt via `NOTES_PANE_EXEMPT_TAGS` (env-overridable, default `banner,divider,section,transition,intermission`) matched against each slide's `slides.json` tag-like fields.
+**Failure message:** `AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty notes panes on content slides. Re-assemble with the presenter speech present so per-slide notes are injected (build_deck.py auto-injection at P8-ASSEMBLE, re-synced at P9.5-NOTES-SYNC), then re-verify.`
 
 ---
 

@@ -2684,6 +2684,136 @@ def test_chk_no_overlay():
     return fails
 
 
+# ---------------------------------------------------------------------------
+# P9.5-NOTES-SYNC / AF-EMPTY-NOTES-PANE — the notes-pane reorder fix. Builds a
+# REAL .pptx (via build_deck.assemble_pptx, python-pptx end to end, not a magic-byte
+# stub) with a small solid-color PNG per slide, so _chk_notes_pane and
+# notes_sync_pass exercise the actual OOXML notes part.
+# ---------------------------------------------------------------------------
+
+def _tiny_png(path: Path, color=(20, 40, 60)) -> None:
+    """Write a minimal real PNG (python-pptx needs real image dimensions)."""
+    try:
+        from PIL import Image as _PilImage
+        _PilImage.new("RGB", (64, 36), color).save(str(path))
+    except ImportError:
+        # PIL absent: raw 1x1 PNG (still openable by python-pptx's Pillow dep in
+        # most environments; if this environment lacks Pillow entirely the whole
+        # PPTX-building test suite is already degraded, not just this one).
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0"
+            b"\x00\x00\x03\x01\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82")
+
+
+def _notes_pane_bundle(n_slides: int = 3, speech_chunks=None) -> tuple:
+    """Build a real bundle dir with an assembled <slug>-FINAL.pptx (n_slides slides)
+    and, when speech_chunks is given, injects those notes via assemble_pptx exactly
+    as P8-ASSEMBLE does. Returns (bundle_dir, run_dir, slug, pptx_path)."""
+    import tempfile
+    bundle_dir = Path(tempfile.mkdtemp(prefix="deck_notespane_bundle_"))
+    run_dir = Path(tempfile.mkdtemp(prefix="deck_notespane_run_"))
+    (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    slug = "test-deck"
+    renders_dir = bundle_dir / "_renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    rendered = []
+    for i in range(1, n_slides + 1):
+        p = renders_dir / f"slide-{i:02d}.png"
+        _tiny_png(p)
+        rendered.append({"slide": i, "file": str(p)})
+    pptx_path = bundle_dir / f"{slug}-FINAL.pptx"
+    build_deck.assemble_pptx(rendered, pptx_path, logo_path=None,
+                             speech_chunks=speech_chunks)
+    return bundle_dir, run_dir, slug, pptx_path
+
+
+def test_chk_notes_pane():
+    """AF-EMPTY-NOTES-PANE: a delivered .pptx with no notes on any slide FAILS; the
+    same deck re-assembled WITH speech chunks injected PASSES; a bundle dir with no
+    .pptx at all defers to AF-BUNDLE-COMPLETE (passes here, nothing to inspect)."""
+    fails = []
+
+    # (a) empty notes panes -> FAIL, naming the empty slides.
+    bundle_dir, run_dir, slug, pptx_path = _notes_pane_bundle(n_slides=3)
+    r = build_deck._chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=None)
+    if not r or "AF-EMPTY-NOTES-PANE" not in r:
+        fails.append(f"NOTES-PANE-A: empty notes panes should FAIL, got {r!r}")
+
+    # (b) every slide carries a real spoken chunk -> PASS.
+    chunks = {1: "Welcome, this is slide one, word for word.",
+              2: "Here is slide two's full spoken script.",
+              3: "And the close, slide three, word for word."}
+    bundle_dir2, run_dir2, slug2, pptx_path2 = _notes_pane_bundle(n_slides=3,
+                                                                   speech_chunks=chunks)
+    r2 = build_deck._chk_notes_pane(bundle_dir2, run_dir=run_dir2, slides_path=None)
+    if r2:
+        fails.append(f"NOTES-PANE-B: fully-noted deck should PASS, got {r2!r}")
+
+    # (c) no .pptx in bundle_dir at all -> defers (AF-BUNDLE-COMPLETE's job, not ours).
+    import tempfile
+    empty_bundle = Path(tempfile.mkdtemp(prefix="deck_notespane_empty_"))
+    r3 = build_deck._chk_notes_pane(empty_bundle, run_dir=None, slides_path=None)
+    if r3:
+        fails.append(f"NOTES-PANE-C: no pptx present should defer (pass), got {r3!r}")
+
+    print(f"NOTES-PANE (AF-EMPTY-NOTES-PANE) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_notes_sync_pass():
+    """notes_sync_pass (P9.5-NOTES-SYNC): reopens an assembled-but-empty .pptx and
+    injects notes from a real PRESENTERS-SPEECH.md on disk. Idempotent: running it
+    twice produces the same notes (overwrite, never append/duplicate)."""
+    fails = []
+    bundle_dir, run_dir, slug, pptx_path = _notes_pane_bundle(n_slides=2)
+
+    speech_dir = run_dir / "working" / "presenter-speech"
+    speech_dir.mkdir(parents=True, exist_ok=True)
+    (speech_dir / "PRESENTERS-SPEECH.md").write_text(
+        "## Slide 1 -- Welcome\n"
+        "Welcome everyone, thanks for joining today's session.\n"
+        "---\n"
+        "## Slide 2 -- The Close\n"
+        "That is everything -- let's get you started right now.\n"
+        "---\n"
+    )
+
+    result = build_deck.notes_sync_pass(pptx_path, run_dir, bundle_dir)
+    if result.get("status") != "synced":
+        fails.append(f"NOTES-SYNC-A: expected status=synced, got {result!r}")
+    if result.get("slides_with_notes") != 2:
+        fails.append(f"NOTES-SYNC-A: expected 2 slides noted, got {result!r}")
+
+    # AF-EMPTY-NOTES-PANE must now PASS on the re-synced deck.
+    r = build_deck._chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=None)
+    if r:
+        fails.append(f"NOTES-SYNC-B: post-sync deck should clear AF-EMPTY-NOTES-PANE, "
+                     f"got {r!r}")
+
+    # Idempotency: run again — same slide count noted, no duplication/append.
+    result2 = build_deck.notes_sync_pass(pptx_path, run_dir, bundle_dir)
+    if result2.get("slides_with_notes") != 2:
+        fails.append(f"NOTES-SYNC-C (idempotent re-run): expected 2, got {result2!r}")
+    from pptx import Presentation
+    prs = Presentation(str(pptx_path))
+    note1 = prs.slides[0].notes_slide.notes_text_frame.text
+    if note1.count("Welcome everyone") != 1:
+        fails.append(f"NOTES-SYNC-C: re-run should OVERWRITE not append, got note "
+                     f"text {note1!r}")
+
+    # No-speech case: a fresh assembled deck with no speech on disk -> status
+    # 'no_speech', non-fatal, notes pane left untouched (still empty).
+    bundle_dir3, run_dir3, slug3, pptx_path3 = _notes_pane_bundle(n_slides=1)
+    result3 = build_deck.notes_sync_pass(pptx_path3, run_dir3, bundle_dir3)
+    if result3.get("status") != "no_speech":
+        fails.append(f"NOTES-SYNC-D: no speech on disk should report no_speech, "
+                     f"got {result3!r}")
+
+    print(f"NOTES-SYNC (P9.5-NOTES-SYNC) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_doctrine_gates_fire_and_pass():
     """v16.0.1 (FIX-2) — POSITIVE-FIRE + CLEAN-PASS coverage for the v18 priority-shift
     doctrine gates. For each gate it builds a doctrine-active fixture that SHOULD trip the
@@ -3275,6 +3405,14 @@ def emit_af_coverage():
     # native-overlay path) FAILS _chk_no_overlay.
     record("AF-OVERLAY-DELIVERED",
            build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=True)))
+
+    # AF-EMPTY-NOTES-PANE (P9.5-NOTES-SYNC reorder) — an assembled deck with no
+    # speech chunks injected (empty notes panes on every content slide) FAILS
+    # _chk_notes_pane.
+    _np_bundle_dir, _np_run_dir, _np_slug, _np_pptx = _notes_pane_bundle(n_slides=2)
+    record("AF-EMPTY-NOTES-PANE",
+           build_deck._chk_notes_pane(_np_bundle_dir, run_dir=_np_run_dir,
+                                      slides_path=None))
 
     # AF-PHASE-SKIPPED (3C) — dispatching a phase before a prior phase is attested
     # (and with no owner-authorized skip record) FAILS check_phase_preconditions. An
@@ -4327,6 +4465,11 @@ def main():
 
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
+
+    # Notes-pane reorder (P9.5-NOTES-SYNC / AF-EMPTY-NOTES-PANE) — the gate fires on
+    # an empty notes pane and clears once notes_sync_pass() re-injects real notes.
+    failures += test_chk_notes_pane()
+    failures += test_notes_sync_pass()
 
     # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).

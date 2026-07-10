@@ -133,8 +133,8 @@ _GOVERNED_VERIFIER_PHASES = frozenset({
     "P-CONVERTER", "P-0.5-RESEARCH", "P0A-INTAKE", "P0B-PRIORITY", "P3-ARC",
     "P-3.5-RESEARCH-MAP", "P4-COPY", "P1Q-COPY-QC", "PF-DESIGN", "P-TYPO-QC",
     "P4-PROMPT", "P-PROMPT-QC", "P-STYLE-PREVIEW", "P4-RENDER", "P-IMAGE-QC",
-    "P-SHIFT-QC", "P8-ASSEMBLE", "P9-SPEECH", "P-SPEECH-QC", "P9-DELIVER",
-    "P-SP-INTAKE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
+    "P-SHIFT-QC", "P8-ASSEMBLE", "P9-SPEECH", "P-SPEECH-QC", "P9.5-NOTES-SYNC",
+    "P9-DELIVER", "P-SP-INTAKE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
 })
 if _pv is not None:
     try:
@@ -181,6 +181,14 @@ PROMPT_QC_MAX_ATTEMPTS = max(1, int(os.environ.get("PROMPT_QC_MAX_ATTEMPTS", "4"
 COPY_QC_PHASE_ID = "P1Q-COPY-QC"     # manifest order 4.2 — BEFORE any prompt authored
 PROMPT_QC_PHASE_ID = "P-PROMPT-QC"   # manifest order 4.8 — BEFORE any render
 ASSEMBLE_PHASE_ID = "P8-ASSEMBLE"    # manifest order 8 — deck-harmony checkpoint fires first
+# P9.5-NOTES-SYNC (manifest order 8.7) — fires AFTER P9-SPEECH/P-SPEECH-QC and BEFORE
+# P9-DELIVER. Reopens the already-assembled .pptx and re-injects per-slide speaker
+# notes from the now QC-passed presenter speech (build_deck.notes_sync_pass). This is
+# the code fix for the documented root cause: assembly (P8) precedes the speech
+# (P9), so the notes pane is empty at assembly time on a normal linear run. The
+# postflight AF-EMPTY-NOTES-PANE gate (build_deck._chk_notes_pane) is what turns an
+# un-synced deck into a hard delivery failure; this phase is what fixes it in time.
+NOTES_SYNC_PHASE_ID = "P9.5-NOTES-SYNC"
 
 # Exit codes for the loops (distinct from guard=5, balance=4, render=3, skip=2).
 EXIT_QC_ROUTEBACK = 6   # routeback written; downstream phase BLOCKED pending re-author
@@ -1566,9 +1574,10 @@ def main():
             if rc != 0:
                 sys.exit(rc)
 
-        # The render phase is the only one this runner dispatches into build_deck.py;
-        # all other phases are produced by their owning department role/agent, and the
-        # runner records their attestation once their produces_artifact is present.
+        # The render phase and P9.5-NOTES-SYNC are the two phases this runner
+        # dispatches into build_deck.py as a subprocess; all other phases are
+        # produced by their owning department role/agent, and the runner records
+        # their attestation once their produces_artifact is present.
         if args.phase == "P4-RENDER":
             if not args.out:
                 print("FATAL: --out is required to dispatch the render phase.",
@@ -1578,6 +1587,45 @@ def main():
                                   platform=args.platform, adhoc=args.adhoc)
             if rc == 0:
                 # FIX 4b: emit AF-PHASE-REPORT-DONE after successful render subprocess.
+                emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+            sys.exit(rc)
+        # P9.5-NOTES-SYNC: reorder the notes-pane injection to AFTER the speech has
+        # been written and QC-passed (P9-SPEECH + P-SPEECH-QC attested — the
+        # ordinary precondition gate above already enforces that before this branch
+        # is reached). Reopens the assembled .pptx and re-injects per-slide notes.
+        if args.phase == NOTES_SYNC_PHASE_ID:
+            if not args.out:
+                print("FATAL: --out is required to dispatch P9.5-NOTES-SYNC.",
+                      file=sys.stderr)
+                sys.exit(2)
+            rc = _dispatch_notes_sync(run_dir, slides_path, Path(args.out).resolve(),
+                                      adhoc=args.adhoc)
+            if rc == 0:
+                # FIX 5d parity: run the substance verifier (same governed-phase
+                # contract as the generic artifact-present branch below) before
+                # attesting. Explicit attestation is needed here (unlike P4-RENDER)
+                # because build_deck.py's --notes-sync writes notes_sync.json, not a
+                # process_manifest.json "phases" record with the render special-case.
+                if _pv is not None:
+                    _ns_ok, _ns_reasons = _pv.verify(args.phase, run_dir)
+                elif args.phase in _GOVERNED_VERIFIER_PHASES and not _degraded_verifiers_allowed(run_dir):
+                    _ns_ok, _ns_reasons = False, [
+                        "phase_verifiers.py missing beside the runner — P9.5-NOTES-SYNC "
+                        "cannot attest without its substance verifier."]
+                else:
+                    _ns_ok, _ns_reasons = True, ["phase_verifiers unavailable — degraded pass"]
+                if not _ns_ok:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print(f"FATAL: substance verifier failed for phase {args.phase!r}:",
+                          file=sys.stderr)
+                    for _r in _ns_reasons:
+                        print("  - " + str(_r), file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_QC_ROUTEBACK)
+                _sha = _compute_artifact_sha(run_dir, "working/checkpoints/notes_sync.json")
+                attest_phase(run_dir, args.phase, "pptx-assembly-specialist",
+                            "artifact_present", artifact_sha=_sha,
+                            substance_verified=True)
                 emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
             sys.exit(rc)
         # PRE-DELIVERY GUARD: the delivery phase may not be attested until the WHOLE
@@ -1810,6 +1858,31 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
         # build_deck.py appends its own render record; the attestation reader counts it.
         print("=== RENDER phase complete — build_deck.py render record attested ===",
               flush=True)
+    return proc.returncode
+
+
+def _dispatch_notes_sync(run_dir: Path, slides_path: Path, out_path: Path,
+                         adhoc: bool = False) -> int:
+    """Dispatch P9.5-NOTES-SYNC by invoking build_deck.py --notes-sync as a
+    SUBPROCESS. Reopens the already-assembled bundle .pptx (located from out_path's
+    deck-slug stem, same convention _resolve_bundle_dir/assemble use) and re-injects
+    per-slide speaker notes now that the presenter speech exists and (per the
+    ordinary phase-precondition gate) has already passed P-SPEECH-QC. Returns the
+    subprocess return code. No pre-render guard here — this phase only rewrites the
+    notes pane of an already-assembled deck; it renders nothing and calls kie.ai
+    for nothing."""
+    # Same (slides_path, out_path, --run-dir) shape as _dispatch_render, and
+    # deliberately NO --out override here: build_deck.py's default bundle-dir
+    # resolution (slug-from-out_path.stem) must land on the SAME bundle dir the
+    # render dispatch used, so P9.5-NOTES-SYNC re-opens the deck P8-ASSEMBLE wrote.
+    cmd = [sys.executable, str(HERE / "build_deck.py"), str(slides_path), str(out_path),
+           "--notes-sync", "--run-dir", str(run_dir)]
+    if adhoc:
+        cmd += ["--adhoc-no-process"]
+    print(f"=== DISPATCH P9.5-NOTES-SYNC (subprocess): {' '.join(cmd)} ===", flush=True)
+    proc = subprocess.run(cmd)
+    if proc.returncode == 0:
+        print("=== P9.5-NOTES-SYNC complete — notes_sync.json written ===", flush=True)
     return proc.returncode
 
 
