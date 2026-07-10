@@ -40,6 +40,42 @@ Notes:
 - Publish state: the caf Firebase rail builds these as drafts with triggers created ACTIVE;
   each needs one Publish toggle in the Convert and Flow UI to fire live.
 
+### Release bus: the chapter / rewrite / cover producer gates are now LIVE
+
+Promotes the s5 (chapter), s6 (rewrite) and s7 (cover) producer RELEASE gates from
+wired-ahead to LIVE, so a committed board-door producer approve fires the
+`anthology-release-chapter` / `-rewrite` / `-cover` tag through the SAME release bus
+as the avatar / tone / outline gates. The release-tag slugs were already defined in
+`gate_engine.py` (`GATE_RELEASE_SLUG`) and seeded in the snapshot contract; only the
+`GATE_BY_CURSOR` entry + the sole writer's gate vocabulary were missing.
+
+Changed:
+- `scripts/gate_engine.py`: `GATE_BY_CURSOR` now maps the producer-review cursors
+  `s5_chapter` -> `s5_producer`, `s6_rewrite` -> `s6_producer`, `s7_cover` ->
+  `s7_producer` (board-door producer gates, actions approve/hold/exclude/escalate).
+  `release_slug_for` fires each stage's slug on a committed BOARD approve and nothing
+  else. Self-test extended to prove all three fire on approve and never on
+  hold/exclude/escalate, the token door, or an uncommitted decision.
+- `scripts/anthology_state.py`: adds `s5_producer` / `s6_producer` / `s7_producer` to
+  `APPROVAL_GATES` as RELEASE-ONLY producer gates. A committed producer approve is
+  recorded append-only so the release tag can fire, but owns NO cursor edge -- the
+  pipeline advance stays with the stage runners + the `s5_participant` gate (no
+  title-lock / rewrite-budget / chapter-freeze guard applies). Existing gate edges,
+  the rewrite budget, and the S9 assembly rules are untouched.
+- `scripts/stage_s5_chapter.py` / `stage_s6_rewrite.py` / `stage_s7_cover.py`: docstring
+  + wiring notes describing the now-live board-door producer release gate for each
+  stage's artifact.
+
+Added:
+- `tests/test_release_bus_producer_gates.py`: 12 hermetic tests -- pure
+  `release_slug_for` proofs plus end-to-end walks through the real gate machine
+  proving each producer approve fires its tag (release-only, cursor unchanged) and
+  hold/exclude/token-door never release; the three original live gates regress clean.
+
+The snapshot contract's WIRED-AHEAD -> LIVE status flip + the tag->notification GHL
+workflow are owned by the concurrent snapshot unit landed just above (this change is
+engine-only).
+
 ### U9: S9 assembly transitions + brand-new Grand Finale + ordering data
 
 Adds the three assembly-finale pieces the current engine did not do. All LLM calls
