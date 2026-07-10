@@ -1,0 +1,45 @@
+{
+  "_comment": "D9 billing-model catalog. S5 (furnace/idle-burn) must ingest each box's provider BILLING MODEL and frame WASTED-TOKEN impact correctly: 'furnace' is about wasted tokens/usage in ALL billing models, not only money. Two billing types: (i) subscription/flat/allowance - extra tokens may cost no extra dollars but STILL consume session/weekly usage limits; (ii) pay-per-token/metered - extra tokens = direct money. The per-box binding (which provider is on which billing type) is resolved from the box's OWN provider config and pinned in baseline.json; this file is the generic catalog + framing templates. NO client names, NO secrets, NO account ids.",
+  "version": 1,
+  "billing_types": {
+    "subscription_allowance": {
+      "impact_unit": "usage",
+      "frame": "Wasted tokens consume the session/weekly USAGE ALLOWANCE, not dollars. Burning the allowance risks throttling or a hard stop mid-task even though the invoice does not move.",
+      "alert_verb": "consuming usage allowance"
+    },
+    "pay_per_token_metered": {
+      "impact_unit": "dollars",
+      "frame": "Wasted tokens are DIRECT MONEY - every idle/heartbeat token is billed. This is spend leaving the account with no work produced.",
+      "alert_verb": "spending metered dollars"
+    }
+  },
+  "provider_billing_defaults": [
+    {
+      "provider_match": ["ollama-cloud", ":cloud"],
+      "billing_type": "subscription_allowance",
+      "note": "Ollama Cloud - flat/allowance. Extra tokens may cost no extra dollars but STILL burn session-usage and weekly-usage limits. The classic signed-in-daemon idle furnace."
+    },
+    {
+      "provider_match": ["openrouter"],
+      "billing_type": "pay_per_token_metered",
+      "note": "OpenRouter - metered. Extra tokens = direct money."
+    },
+    {
+      "provider_match": ["openai"],
+      "billing_type": "pay_per_token_metered",
+      "note": "Metered pay-per-token."
+    },
+    {
+      "provider_match": ["deepseek-direct", "moonshot"],
+      "billing_type": "pay_per_token_metered",
+      "note": "Metered pay-per-token (never touched by the sentinel beyond read-only posture)."
+    }
+  ],
+  "default_billing_type": "pay_per_token_metered",
+  "default_note": "When a box's provider billing type cannot be resolved from its own config, assume metered (the conservative, money-framed case) and say so in the alert (posture: UNRESOLVED).",
+  "provider_check": {
+    "read_only": true,
+    "escalate_only_when_onbox_flags": true,
+    "note": "D9 hybrid tail: the READ-ONLY provider usage/balance check runs ONLY when on-box detection flags idle burn or needs confirmation. It reports usage-consumed vs balance-remaining; it never mutates a provider account and never prints a credential value."
+  }
+}

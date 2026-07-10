@@ -1,0 +1,36 @@
+{
+  "_comment": "The self-update cadence and its approval history. D8 LOCKED: WEEKLY, PINNED. The recommender (ews_cadence.py) may write a note into the digest, but 'current' NEVER changes itself - only an explicit operator 'ews-entry.sh cadence set ...' writes a new history entry. This file is EWS data: it rides the repo + rollout, never a box-local edit.",
+  "version": 1,
+  "current": {
+    "cadence": "weekly",
+    "pinned": true,
+    "approved_by": "operator",
+    "approved_at": "2026-07-10",
+    "reason": "D8 LOCKED - start weekly and stay weekly; do not auto-downshift to monthly."
+  },
+  "recommender": {
+    "enabled": true,
+    "may_change_current": false,
+    "note": "Surfaces a recommendation LINE in the weekly digest only. It never mutates 'current'. Hysteresis and the drift-velocity rule live in ews_cadence.py; with pinned=true the recommendation is advisory text, not an action."
+  },
+  "drift_velocity_rule": {
+    "recommend_weekly_when_any": {
+      "material_drift_events_per_fleet_week_gte": 3,
+      "signature_misses_gte": 1,
+      "new_model_ids_observed_gte": 5
+    },
+    "recommend_monthly_when_all_below_for_weeks": 4,
+    "hysteresis_periods": 2,
+    "p1_signature_miss_short_circuits": true,
+    "note": "Retained for the advisory recommendation only. Because current.pinned=true (D8), a 'monthly' recommendation is shown but never applied by the system."
+  },
+  "history": [
+    {
+      "cadence": "weekly",
+      "pinned": true,
+      "approved_by": "operator",
+      "approved_at": "2026-07-10",
+      "reason": "Initial pin at Skill 60 v0.1.0 (D8)."
+    }
+  ]
+}

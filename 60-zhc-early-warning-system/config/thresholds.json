@@ -1,0 +1,54 @@
+{
+  "_comment": "All tunable thresholds in ONE place. LOCKED operator decisions are marked. The sentinel reads these; it never rewrites them (a threshold change rides the repo + rollout, like all EWS data).",
+  "version": 1,
+  "tick": {
+    "cadence_minutes": 15,
+    "jitter_seconds": 90,
+    "max_tick_seconds": 5,
+    "_locked": "D3: every 15 minutes per box. Zero model calls; cadence costs CPU only."
+  },
+  "aggregator": {
+    "cycle_minutes": 60,
+    "dead_man_cycles": 2,
+    "_locked": "D3/D4: operator-box aggregator hourly; a box with no fresh tick for 2 consecutive cycles = P1 'sentinel dark'."
+  },
+  "context": {
+    "note_threshold_pct": 70,
+    "handoff_threshold_pct": 85,
+    "handoff_target": "box_own_agent",
+    "operator_alert_only_on": "broken_config",
+    "_locked": "D5: running-low (>=70 note, >=85 handoff) is a LOCAL matter routed to the BOX'S OWN agent so it self-handles (handoff/memory flush). The OPERATOR is alerted ONLY for the broken-config case (effective ceiling <= 0, or softThresholdTokens >= contextWindow) - a crash-no-matter-what only the operator can repair."
+  },
+  "alert": {
+    "dedup_window_hours": 6,
+    "max_operator_alerts_per_box_per_day": 4,
+    "p1_bypasses_batch": true,
+    "escalation": {
+      "p1_unacked_minutes": 30,
+      "channel": "rescue-rangers",
+      "_locked": "D4: an unacknowledged P1 goes to the Rescue Rangers channel after 30 minutes; a dead-man P1 escalates immediately."
+    }
+  },
+  "snapshots": {
+    "retention_count": 60,
+    "retention_days": 45,
+    "retention_rule": "max",
+    "_locked": "D7: keep the LARGER of 60 snapshots or 45 days. Pruning is a P3 digest line."
+  },
+  "furnace": {
+    "idle_window_minutes": 60,
+    "idle_paid_event_floor": 1,
+    "escalate_to_provider_check": true,
+    "_locked": "D9: HYBRID. On-box detection first; escalate to a READ-ONLY provider usage/balance check only when on-box flags something. Billing-aware framing per config/billing-models.json."
+  },
+  "caps": {
+    "enforce_caps_default": false,
+    "_locked": "D2: ALERT-ONLY fleet-wide. enforce_caps defaults OFF on every box; it is a documented per-box opt-in only, never a fleet default."
+  },
+  "self_update": {
+    "cadence": "weekly",
+    "pinned": true,
+    "auto_downshift_to_monthly": false,
+    "_locked": "D8: WEEKLY, PINNED. Starts weekly and STAYS weekly; it must NOT auto-downshift. The recommender may surface a note, but the default cadence never changes itself."
+  }
+}

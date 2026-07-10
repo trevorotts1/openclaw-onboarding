@@ -1,0 +1,30 @@
+{
+  "_comment": "Signature DATA the sentinel classifies against. This is the part of the system that rots at the speed the fleet drifts (model ids churn constantly), so it is updated ONLY through the repo + sanctioned rollout - never hand-edited on a box (a box-local edit trips S9 by design). NO secret values live here; the anthropic-family entries are DENY DATA (bare prefix tokens that name the families the sentinel must flag on a client box), and secret detection is delegated to scan-no-secrets.sh by version pin.",
+  "version": 1,
+  "secret_shapes": {
+    "detector": "scan-no-secrets.sh",
+    "class_pin": "provider_sk|caf_pit|google_api|aws_akid|slack_token|github_pat|private_key|jwt|bearer_literal",
+    "note": "S8 reuses the Skill 59 secret-CLASS detector verbatim. This pin records which classes the sentinel expects; a class version bump rides the repo, never a box-local edit. The VALUE is never stored, printed, or reproduced."
+  },
+  "anthropic_family_deny_prefixes": [
+    "claude-",
+    "anthropic/",
+    "us.anthropic."
+  ],
+  "anthropic_family_deny_note": "S1/S2 flag a model/provider id beginning with any of these prefixes as an Anthropic-family change; on a CLIENT box that is P1 (client skills never use Anthropic models). These are deny-list prefixes, not runtime ids.",
+  "paid_tier_markers": {
+    "suffix_deny": [":cloud"],
+    "metered_provider_slugs": ["openrouter", "openai", "fish_audio", "kie"],
+    "note": "S1/S5 treat a model/provider carrying one of these markers on a client box as a paid tier worth a P1/P2 depending on signal. A :cloud suffix on a heartbeat model is the classic idle-burn furnace."
+  },
+  "known_writer_argv_tokens": [
+    "openclaw",
+    "update-skills",
+    "ews-entry.sh",
+    "ews_",
+    "bump-version.sh"
+  ],
+  "known_writer_note": "S6: a config.write audit event whose argv contains NONE of these tokens is an UNKNOWN WRITER (P2). The sanctioned writers are the openclaw CLI, the fleet updater, this skill itself, and the version bumper.",
+  "trajectory_allowlist_source": "baseline.json:model_allowlist",
+  "trajectory_note": "S2 classifies a per-event modelId/provider as out-of-allowlist by comparing against the pinned baseline model allowlist, NOT a hard-coded list here (the allowlist is per-box and sovereign)."
+}
