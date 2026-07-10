@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: anthology_registry.py
-# PER-ANTHOLOGY BINDINGS + CONVERT AND FLOW AUTO-PROVISIONING (SPEC 3.4 row 3;
+# PER-ANTHOLOGY BINDINGS + CONVERT AND FLOW PIPELINE FIND-AND-BIND (SPEC 3.4 row 3;
 # PRD Gap 9; W0.5.json surface 5). Manifest exit-code line: "0; 2 unknown
 # anthology or binding; 5 validation" — refined below with the house 1/3 codes.
 # -----------------------------------------------------------------------------
@@ -1107,7 +1107,7 @@ def self_test() -> int:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="anthology_registry.py",
-        description="Convert and Flow auto-provisioning + per-anthology bindings (Skill 59).")
+        description="Convert and Flow pipeline find-and-bind + per-anthology bindings (Skill 59).")
     ap.add_argument("--field-map", default=str(FIELD_MAP_PATH),
                     help="path to field-map.json (default: the skill's config copy)")
     ap.add_argument("--registry", default="", help="path to the per-box registry.json (default: state dir)")
