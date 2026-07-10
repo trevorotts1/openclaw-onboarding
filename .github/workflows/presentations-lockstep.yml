@@ -43,6 +43,10 @@ on:
       # Guard B — retired-doctrine residual lint + its pattern registry
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/retired-doctrine-patterns.json"
+      # Shared image-prompt gate — the ONE gate every image-API path imports + its prover
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove_pres_prompt_floor.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py"
 
 jobs:
   presentations-lockstep:
@@ -210,3 +214,22 @@ jobs:
             exit 1
           fi
           echo "STANDARD-presenter-speech-layout.pdf present ($SIZE bytes)."
+
+      - name: prove_pres_prompt_floor.py — shared image-prompt gate self-test (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROVER="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove_pres_prompt_floor.py"
+          if [ ! -f "$PROVER" ]; then
+            echo "FATAL: prove_pres_prompt_floor.py not found at $PROVER" >&2
+            exit 2
+          fi
+          # The shared prompt_gate.py (imported by build_deck.py and EVERY side-door —
+          # kie_generate.py x2 + the Skill-46 relay) is the ONE gate that keeps a thin /
+          # garbled / ungated prompt off the paid kie.ai API. Its fixture prover proves the
+          # 9,000-18,000-char floor + structural + 8-class negative + spelling-lock + density
+          # + demographic teeth still fire (a PASS fixture passes, each FAIL fixture fails),
+          # plus the pin / mode-consistency helpers. A regression that loosens the gate
+          # exits non-zero and blocks the merge.
+          python3 "$PROVER" --self-test
+          echo "prove_pres_prompt_floor: shared image-prompt gate self-test PASSED."
