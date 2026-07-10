@@ -1404,10 +1404,14 @@ BEFORE you reason, BEFORE you read any SOP, BEFORE you write one word of reply.
 It is not a "remember to route" reminder — it is a hard gate on your first action.
 
 TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
-  presentation · present · deck · slide · slides · slide deck · pitch deck · webinar deck ·
-  powerpoint · power point · ppt · .pptx · keynote · carousel · one-pager · talk track · pitch ·
+  presentation · deck · slide · slides · slide deck · pitch deck · webinar deck ·
+  powerpoint · power point · ppt · .pptx · keynote · carousel · one-pager · talk track ·
   "make me a deck/ppt" · "build a deck" · "put together slides" · "some slides" ·
   "a talk/webinar with slides" · "slides for" · presentación · presentation deck
+
+  (Tightened: the bare words "present" and "pitch" no longer trigger — a Marketing ask like
+  "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
+  presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
 WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order — nothing before them:
 

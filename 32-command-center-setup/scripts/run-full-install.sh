@@ -324,6 +324,72 @@ cc_env_set_if_absent() {
   return 1
 }
 
+# cc_env_get — echo KEY's value from an env file (empty when absent). Reads the
+# LAST assignment (matching cc_env_set_if_absent's append semantics) and strips a
+# single layer of surrounding quotes. The value is returned on stdout for capture
+# only — NEVER logged. (KEY is [A-Z_]+ here, so it carries no regex metacharacters.)
+cc_env_get() {
+  local file="$1" key="$2" line
+  [[ -f "$file" ]] || return 0
+  line="$(grep -E "^[[:space:]]*${key}=" "$file" 2>/dev/null | tail -n1)" || return 0
+  line="${line#*=}"
+  line="${line%\"}"; line="${line#\"}"
+  line="${line%\'}"; line="${line#\'}"
+  printf '%s' "$line"
+}
+
+# cc_mirror_api_auth_to_agent_secrets — WRITE-BACK-401 durable fix.
+#
+# A dispatched DEPARTMENT agent writes its result back to the Command Center task
+# API (POST /api/tasks/:id/activities, /deliverables, PATCH :id status). Those
+# calls must present `Authorization: Bearer $MC_API_TOKEN` (and, for the signed
+# ingest/status routes, an HMAC over WEBHOOK_SECRET) or the fail-closed middleware
+# rejects them 401 and the finished task freezes in_progress. But dept agents read
+# those secrets from their OpenClaw RUNTIME env ($OC_ROOT/secrets/.env — the same
+# file the GHL keys live in), NOT from the CC server's .env.local that
+# cc_write_env_local provisions. This mirrors the SAME values into the agent
+# secrets env so `$MC_API_TOKEN` actually resolves agent-side and the write-back
+# authenticates instead of 401ing.
+#
+# Additive + idempotent: an existing agent-side value is PRESERVED (never rotated),
+# the secret VALUE is never echoed to a log, and the file is 0600.
+cc_mirror_api_auth_to_agent_secrets() {
+  local envf="$1" secrets_dir secrets_env tok whs t_status w_status
+  secrets_dir="$OC_ROOT/secrets"
+  secrets_env="$secrets_dir/.env"
+  [[ -d "$secrets_dir" ]] || ( umask 077; mkdir -p "$secrets_dir" ) 2>/dev/null || true
+  if [[ ! -d "$secrets_dir" ]]; then
+    log "WARN" "cc-env: $secrets_dir missing — dept-agent MC_API_TOKEN mirror skipped (write-backs may 401)"
+    return 0
+  fi
+  if [[ ! -f "$secrets_env" ]]; then ( umask 177; : > "$secrets_env" ) 2>/dev/null || true; fi
+  chmod 600 "$secrets_env" 2>/dev/null || true
+
+  tok="$(cc_env_get "$envf" MC_API_TOKEN)"
+  whs="$(cc_env_get "$envf" WEBHOOK_SECRET)"
+
+  t_status="skipped(no-token-in-.env.local; insecure-open posture?)"
+  w_status="skipped(no-secret-in-.env.local)"
+  if [[ -n "$tok" ]]; then
+    if cc_env_has_nonempty "$secrets_env" MC_API_TOKEN; then
+      t_status="preserved(existing-agent-value)"
+    elif cc_env_set_if_absent "$secrets_env" MC_API_TOKEN "$tok" >/dev/null; then
+      t_status="mirrored(from-cc-.env.local)"
+    fi
+  fi
+  if [[ -n "$whs" ]]; then
+    if cc_env_has_nonempty "$secrets_env" WEBHOOK_SECRET; then
+      w_status="preserved(existing-agent-value)"
+    elif cc_env_set_if_absent "$secrets_env" WEBHOOK_SECRET "$whs" >/dev/null; then
+      w_status="mirrored(from-cc-.env.local)"
+    fi
+  fi
+  tok=""; whs=""   # scrub from shell memory promptly
+  chmod 600 "$secrets_env" 2>/dev/null || true
+  log "INFO" "cc-env: dept-agent secrets MC_API_TOKEN ${t_status}; WEBHOOK_SECRET ${w_status} (dept agents can now auth CC task write-backs)"
+  return 0
+}
+
 # cc_write_env_local — fixes (2)+(3)+(4). Provisions CC .env.local from the box's
 # own config so a rebuild/reboot can never silently fail closed. Idempotent +
 # additive; safe to re-run on every install/update/resume.
@@ -395,6 +461,12 @@ cc_write_env_local() {
     api_status="set(MC_API_TOKEN+WEBHOOK_SECRET provisioned)"
   fi
   log "INFO" "cc-env: API-auth ${api_status}"
+
+  # WRITE-BACK-401 durable fix: mirror MC_API_TOKEN + WEBHOOK_SECRET into the
+  # dept-agent OpenClaw runtime secrets env so a dispatched agent's $MC_API_TOKEN
+  # resolves and its task write-backs authenticate (else they 401 and finished
+  # work freezes in_progress). Idempotent; preserves any existing agent value.
+  cc_mirror_api_auth_to_agent_secrets "$envf"
 
   chmod 600 "$envf" 2>/dev/null || true
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterEnvLocalProvisioned = true' 2>/dev/null || true
