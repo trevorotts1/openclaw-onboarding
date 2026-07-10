@@ -24,10 +24,12 @@ WHAT IS CHECKED
      member of the authoritative set.
   3. 'delivered' specifically is emitted by NONE of those files (the exact
      P9-DELIVER regression).
-  4. OWNERSHIP/ORDERING: build_deck's P9-DELIVER 'done' close is GUARDED by
+  4. OWNERSHIP/ORDERING: the producer STOPS at 'review' (never self-closes 'done').
+     build_deck's P9-DELIVER 'review' close is GUARDED by
      `if _process_certificate_present(...)` (so in the runner flow, where render runs
-     before the cert exists, build_deck emits no premature terminal 'done'); and the
-     RUNNER (run_signature_deck.py) emits the terminal status='done' close itself.
+     before the cert exists, build_deck emits no premature terminal 'review'); and the
+     RUNNER (run_signature_deck.py) emits the terminal status='review' close itself.
+     Promotion 'review'->'done' is the CC-side QC scorer / Devil's-Advocate gate's job.
   5. (Self-check, skipped when the CC clone is absent) the hardcoded authoritative
      set matches the z.enum([...]) TaskStatus in the CC repo validation.ts.
 """
@@ -144,11 +146,12 @@ def _test_references(test: ast.AST, name: str) -> bool:
     return False
 
 
-def _p9_done_close_counts(source: str, guard_func: str = "_process_certificate_present"):
-    """Count P9-DELIVER terminal 'done' board closes in `source` and how many are
+def _p9_terminal_close_counts(source: str, status: str = "review",
+                              guard_func: str = "_process_certificate_present"):
+    """Count P9-DELIVER terminal ``status`` board closes in `source` and how many are
     lexically nested inside an ``if <guard_func>(...)`` block. Returns (total, guarded).
     A 'close' is a patch_phase / _board_patch_phase call carrying BOTH the 'P9-DELIVER'
-    phase id and the 'done' status as constant string args."""
+    phase id and the ``status`` literal as constant string args."""
     tree = ast.parse(source)
 
     guarded_call_ids = set()
@@ -166,7 +169,7 @@ def _p9_done_close_counts(source: str, guard_func: str = "_process_certificate_p
                 a.value for a in node.args
                 if isinstance(a, ast.Constant) and isinstance(a.value, str)
             }
-            if "P9-DELIVER" in const_strs and "done" in const_strs:
+            if "P9-DELIVER" in const_strs and status in const_strs:
                 total += 1
                 if id(node) in guarded_call_ids:
                     guarded += 1
@@ -212,35 +215,48 @@ class ContractTest(unittest.TestCase):
             "use status='done' and put 'delivered' in the note only.",
         )
 
-    def test_build_deck_terminal_close_is_done(self):
-        # Positive assertion: build_deck DOES emit a terminal 'done' status somewhere
-        # (the completed-deck close), so the fix is present, not merely 'delivered'
-        # removed.
+    def test_build_deck_terminal_close_is_review(self):
+        # Positive assertion: build_deck's TERMINAL producer close is 'review', NOT a
+        # self-closed 'done' — the pipeline stops at review and hands promotion to the
+        # CC QC scorer / Devil's-Advocate gate. build_deck must therefore emit 'review'
+        # (the terminal close) and NOT 'done' (it never self-closes).
         emitted = _emitted_status_literals(self._read("build_deck.py"))
-        self.assertIn("done", emitted)
+        self.assertIn("review", emitted)
         self.assertIn("in_progress", emitted)  # P4-RENDER START still a status change.
-
-    def test_build_deck_terminal_done_is_cert_guarded(self):
-        # Ownership/ordering proof: build_deck's P9-DELIVER 'done' close must be
-        # GUARDED by `if _process_certificate_present(...)`, so in the runner flow
-        # (render before the cert is minted) build_deck emits NO terminal 'done' —
-        # it defers to the runner. Every P9-DELIVER 'done' close must be guarded.
-        total, guarded = _p9_done_close_counts(self._read("build_deck.py"))
-        self.assertGreaterEqual(
-            total, 1, "build_deck.py no longer has a P9-DELIVER 'done' close.")
-        self.assertEqual(
-            total, guarded,
-            "build_deck.py has a P9-DELIVER 'done' close that is NOT guarded by "
-            "_process_certificate_present — it could 422 a premature terminal close in "
-            "the runner flow (cert not yet minted).",
+        self.assertNotIn(
+            "done", emitted,
+            "build_deck.py still emits a self-closed status='done' — the producer must "
+            "stop at 'review' and let the CC QC scorer / Devil's-Advocate promote to done.",
         )
 
-    def test_runner_emits_terminal_done_close(self):
-        # The RUNNER owns the terminal close: after prove-deck mints the cert it fires
-        # a task-level status='done' via cc_board.patch_phase (which attaches the
-        # process_certificate_sha). Assert the runner emits 'done', only valid
-        # statuses, and never 'delivered'. Also assert the close is NOT hidden behind
-        # the cert guard (the runner runs AFTER prove-deck, so it needs no guard).
+    def test_build_deck_terminal_review_is_cert_guarded(self):
+        # Ownership/ordering proof: build_deck's P9-DELIVER 'review' close must be
+        # GUARDED by `if _process_certificate_present(...)`, so in the runner flow
+        # (render before the cert is minted) build_deck emits NO terminal 'review' —
+        # it defers to the runner. Every P9-DELIVER 'review' close must be guarded.
+        total, guarded = _p9_terminal_close_counts(self._read("build_deck.py"), "review")
+        self.assertGreaterEqual(
+            total, 1, "build_deck.py no longer has a P9-DELIVER 'review' close.")
+        self.assertEqual(
+            total, guarded,
+            "build_deck.py has a P9-DELIVER 'review' close that is NOT guarded by "
+            "_process_certificate_present — it could patch a premature terminal close in "
+            "the runner flow (cert not yet minted).",
+        )
+        # And the retired self-close must be gone entirely (guarded or not).
+        done_total, _ = _p9_terminal_close_counts(self._read("build_deck.py"), "done")
+        self.assertEqual(
+            done_total, 0,
+            "build_deck.py still has a P9-DELIVER 'done' self-close — retired: the "
+            "producer stops at 'review'.",
+        )
+
+    def test_runner_emits_terminal_review_close(self):
+        # The RUNNER owns the terminal producer close: after prove-deck mints the cert
+        # it fires a task-level status='review' via cc_board.patch_phase (which attaches
+        # the process_certificate_sha + the real QC scores). Assert the runner emits
+        # 'review', only valid statuses, never 'delivered', and never a self-closed
+        # 'done' (promotion review->done is the CC-side gate's job).
         src = self._read("run_signature_deck.py")
         emitted = _emitted_status_literals(src)
         bad = emitted - AUTHORITATIVE_CC_TASK_STATUSES
@@ -249,8 +265,13 @@ class ContractTest(unittest.TestCase):
             f"run_signature_deck.py emits status literal(s) outside the CC enum: {sorted(bad)}",
         )
         self.assertIn(
+            "review", emitted,
+            "run_signature_deck.py must emit the terminal status='review' delivery close.",
+        )
+        self.assertNotIn(
             "done", emitted,
-            "run_signature_deck.py must emit the terminal status='done' delivery close.",
+            "run_signature_deck.py must NOT self-close status='done' — the producer "
+            "stops at 'review'; the CC QC scorer / Devil's-Advocate promotes to done.",
         )
         self.assertNotIn("delivered", emitted)
 

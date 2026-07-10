@@ -1367,13 +1367,15 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 # Command Center board — TERMINAL delivery close (FAIL-SOFT). Ownership note:
 # build_deck.py runs the RENDER phase and drives the card's in-run motion — the
 # P4-RENDER START (backlog->in_progress) and the P4/P8 render/assemble PROGRESS
-# ACTIVITY posts — but it CANNOT close the card: the terminal close is a task-level
-# status='done' whose process_certificate_sha the CC presentations no-skip done-gate
-# REQUIRES, and that certificate does not exist until prove-deck.py mints
-# delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json here in the P9-DELIVER phase. So the
-# RUNNER owns the terminal close and fires it right after prove-deck PASS. The move
-# receipt (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to,
-# so the render-phase activities and this close land on one consistent ledger.
+# ACTIVITY posts — but it CANNOT close the card: the terminal producer close is a
+# task-level status='review' that carries the process_certificate_sha (the ticket
+# INTO review) + the real per-gate QC scores, and that certificate does not exist
+# until prove-deck.py mints delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json here in the
+# P9-DELIVER phase. So the RUNNER owns the terminal close and fires it right after
+# prove-deck PASS. The producer NEVER self-closes to 'done' — the CC-side QC scorer /
+# Devil's-Advocate gate promotes 'review'->'done'. The move receipt
+# (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to, so the
+# render-phase activities and this close land on one consistent ledger.
 # ---------------------------------------------------------------------------
 def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
     """FIX-PRES-08(a): ensure the deck's Command Center card exists at Phase-0,
@@ -1402,12 +1404,19 @@ def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
 def _board_close_delivery(run_dir) -> None:
     """Fire the TERMINAL Command Center card close for a delivered deck, FAIL-SOFT.
 
+    The producer STOPS at 'review': the presentations pipeline never self-closes to
+    'done'. Promotion 'review'->'done' is the CC-side QC scorer / Devil's-Advocate
+    gate's job — the same interlock every sibling department respects. This close
+    hands the card to that reviewer with (a) the real per-gate QC scores posted as
+    activities and folded into the review note + a structured qc_scores key, and
+    (b) the PROCESS-CERTIFICATE sha as the ticket INTO review.
+
     Precondition: called ONLY after prove-deck.py has minted the run's
-    PROCESS-CERTIFICATE, so cc_board.patch_phase(status='done') can read and attach
-    its process_certificate_sha (satisfying the CC presentations done-gate). The
-    task_id is recovered from working/checkpoints/process_manifest.json (stamped at
-    run-begin by build_deck's ingest). A disabled board or a missing id is a clean
-    no-op. NEVER raises — the board is a view, never a gate."""
+    PROCESS-CERTIFICATE, so cc_board.patch_phase(status='review') can read and attach
+    its process_certificate_sha. The task_id is recovered from
+    working/checkpoints/process_manifest.json (stamped at run-begin by build_deck's
+    ingest). A disabled board or a missing id is a clean no-op. NEVER raises — the
+    board is a view, never a gate."""
     try:
         import cc_board
         tid = None
@@ -1419,8 +1428,12 @@ def _board_close_delivery(run_dir) -> None:
             tid = None
         if not tid:
             return
-        cc_board.patch_phase(run_dir, tid, DELIVERY_PHASE_ID, "done",
-                             note="bundle complete — deck delivered")
+        # Per-gate QC grades onto the activity feed FIRST (so they precede the
+        # status move in the timeline), then the terminal producer close to 'review'.
+        cc_board.post_qc_activities(run_dir, tid)
+        cc_board.patch_phase(run_dir, tid, DELIVERY_PHASE_ID, "review",
+                             note="bundle complete — deck delivered; awaiting CC QC "
+                                  "scorer / Devil's-Advocate promotion to done")
     except Exception as exc:  # noqa: BLE001 — the board is a view, never a gate
         print(f"[cc_board] terminal delivery close raised ({exc}) — run continues; "
               "the board update is best-effort.", file=sys.stderr, flush=True)
@@ -1688,10 +1701,12 @@ def main():
 
             # BOARD (terminal close): prove-deck just minted the run's
             # PROCESS-CERTIFICATE, so this is the ONLY correct moment to close the CC
-            # card — a task-level status='done' whose process_certificate_sha cc_board
-            # reads from that freshly-minted cert (satisfying the presentations no-skip
-            # done-gate). build_deck ran the RENDER phase before any cert existed and
-            # therefore never emits this close. FAIL-SOFT: never raises, never blocks.
+            # card — a task-level status='review' whose process_certificate_sha cc_board
+            # reads from that freshly-minted cert (the ticket INTO review) plus the real
+            # per-gate QC scores. The producer STOPS at review; the CC QC scorer /
+            # Devil's-Advocate gate promotes to done. build_deck ran the RENDER phase
+            # before any cert existed and therefore never emits this close. FAIL-SOFT:
+            # never raises, never blocks.
             _board_close_delivery(run_dir)
 
         # Non-render phase: verify the artifact landed + run substance verifier +

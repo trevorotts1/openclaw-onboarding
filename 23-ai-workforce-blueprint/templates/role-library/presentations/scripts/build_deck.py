@@ -8141,16 +8141,18 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
 #   P4-RENDER START     -> STATUS  backlog -> in_progress   (_board_patch_phase)
 #   P4-RENDER complete  -> ACTIVITY progress post           (_board_post_activity)
 #   P8-ASSEMBLE complete-> ACTIVITY progress post           (_board_post_activity)
-#   run-end (bundle OK) -> STATUS  -> done + process_certificate_sha, but ONLY when
-#                          the PROCESS-CERTIFICATE already exists on disk
+#   run-end (bundle OK) -> STATUS  -> review + process_certificate_sha + QC scores,
+#                          but ONLY when the PROCESS-CERTIFICATE already exists on disk
 #                          (_process_certificate_present guard); otherwise the close
 #                          is DEFERRED to the runner (run_signature_deck.py) which
 #                          fires it right after prove-deck mints the cert.
 #
 # Mid-run phase progress is an ACTIVITY, NOT a task-level status change: a mid-run
-# status='done' 422s the presentations cert done-gate (the PROCESS-CERTIFICATE is
-# minted at delivery, not mid-run) and would wrongly close a non-presentation card.
-# The COMPLETED deck closes with status='done' (there is NO 'delivered' status in
+# terminal status 422s the presentations cert gate (the PROCESS-CERTIFICATE is
+# minted at delivery, not mid-run) and would wrongly move a non-presentation card.
+# The COMPLETED deck's producer close is status='review' — the pipeline STOPS at
+# review and the CC-side QC scorer / Devil's-Advocate gate promotes review->done
+# (the interlock every sibling department respects; there is NO 'delivered' status in
 # the CC UpdateTaskSchema enum — "delivered" belongs in the note only). build_deck
 # runs the RENDER phase BEFORE the cert exists, so in the normal runner flow the
 # terminal close is the RUNNER's job; build_deck only closes here in a standalone
@@ -8715,20 +8717,22 @@ def main():
                          run_dir=run_dir, slides_path=slides_path)
 
     # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
-    # The completed deck closes with the TERMINAL status 'done' (there is NO
-    # 'delivered' status in the CC UpdateTaskSchema enum — "delivered" goes in the note
-    # only), and that close carries the process_certificate_sha the presentations
-    # no-skip done-gate REQUIRES. In the RUNNER flow build_deck runs the RENDER phase
-    # BEFORE prove-deck mints the cert, so the cert is ABSENT here and the terminal
-    # close is DEFERRED to the runner (run_signature_deck.py fires it right after
-    # prove-deck). Emitting a terminal 'done' without the cert would 422 the done-gate,
-    # so the guard prevents a doomed premature close. In a standalone full build where
-    # the cert is already present, close here. Fail-soft either way — a board problem
-    # never changes this run's exit code.
+    # The producer STOPS at the TERMINAL status 'review' (there is NO 'delivered'
+    # status in the CC UpdateTaskSchema enum — "delivered" goes in the note only): the
+    # presentations pipeline never self-closes to 'done'. Promotion 'review'->'done' is
+    # the CC-side QC scorer / Devil's-Advocate gate's job, the interlock every sibling
+    # department respects. This close carries the process_certificate_sha (the ticket
+    # INTO review) + the real per-gate QC scores. In the RUNNER flow build_deck runs the
+    # RENDER phase BEFORE prove-deck mints the cert, so the cert is ABSENT here and the
+    # terminal close is DEFERRED to the runner (run_signature_deck.py fires it right
+    # after prove-deck). The guard prevents a doomed premature close before the cert
+    # exists. In a standalone full build where the cert is already present, close here.
+    # Fail-soft either way — a board problem never changes this run's exit code.
     if not adhoc:
         if _process_certificate_present(run_dir):
-            _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "done",
-                               note="bundle complete — deck delivered")
+            _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "review",
+                               note="bundle complete — deck delivered; awaiting CC QC "
+                                    "scorer / Devil's-Advocate promotion to done")
             # Lightweight VISIBILITY gate: a completed run should have recorded >= 1
             # SUCCESSFUL board advance. This only DIAGNOSES (never blocks) — a disabled
             # board legitimately records none; the detail is on disk in cc-board.json.
@@ -8743,8 +8747,9 @@ def main():
                 pass
         else:
             print("[cc_board] P9-DELIVER terminal close DEFERRED — no PROCESS-CERTIFICATE "
-                  "on disk yet; the runner closes the card with status='done'+cert after "
-                  "prove-deck mints it. Render-phase progress is already on the board.",
+                  "on disk yet; the runner closes the card to status='review'+cert+QC "
+                  "scores after prove-deck mints it (CC QC scorer / Devil's-Advocate then "
+                  "promotes review->done). Render-phase progress is already on the board.",
                   file=sys.stderr, flush=True)
     sys.exit(0)
 
