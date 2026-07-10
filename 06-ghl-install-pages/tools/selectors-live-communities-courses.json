@@ -1,11 +1,38 @@
 {
-  "_doc": "Machine-readable selector map for the Skill-6 COMMUNITY / COURSE / CHANNEL builders (F3b: code and doc cannot diverge; the builders load THIS file). Companion prose: SELECTORS-LIVE-community.md + SELECTORS-LIVE-course.md.",
+  "_doc": "Machine-readable selector map for the Skill-6 COMMUNITY / COURSE / CHANNEL builders (F3b: code and doc cannot diverge; the builders load THIS file). Companion prose: SELECTORS-LIVE-community.md + SELECTORS-LIVE-course.md. Anchors are recorded in Playwright getBy* notation and translated to agent-browser 0.27.0 `find`/native-eval calls by ghl_ab_executor.py (fix a).",
   "_status_legend": {
     "verified-shared-rail": "Confirmed live for forms/surveys on the SAME leadconnectorhq rail, or captured in references/form-click-map.md (global left rail). Cited; safe to act on.",
-    "capture-pending": "NOT yet captured live for this object. D8: NO invented CSS. A REQUIRED capture-pending anchor makes the live builder STOP-and-report until the live capture run flips it to 'locked'. Fallback-chain is the CAPTURE recipe, not a fact."
+    "capture-pending": "NOT yet LOCKed for this object. D8: NO invented CSS. A REQUIRED capture-pending anchor makes the live builder STOP-and-report until the live capture run (create scratch object -> walk -> record real anchor + conf -> DELETE/deactivate) flips it to 'locked'. An `observed` field records a value SEEN in the 2026-07-10 live-capture attempt (operator template location) but not yet LOCKed via the full capture procedure — Phase B locks it. Fallback-chain is a CAPTURE recipe, not a fact."
   },
-  "_capture_contract": "Flip a target to status:'locked' ONLY by a live capture run (create a scratch object, walk it, record the real anchor + confidence, DELETE the object). See the 'capture_procedure' in each SELECTORS-LIVE-*.md.",
+  "_exec_legend": {
+    "auto": "ghl_ab_executor: try `find <locator> <value> click [--name]`, native-eval .click() fallback on a find miss (default).",
+    "native": "ghl_ab_executor: go straight to a trusted DOM element.click() via eval. REQUIRED for GHL's Naive-UI submit buttons — proven live that `find ... click`/`click @ref` report Done but do NOT submit; only native .click() fires the create toast."
+  },
+  "_capture_contract": "Flip a target to status:'locked' ONLY by a live capture run (create a scratch object, walk it, record the real anchor + confidence, DELETE-or-deactivate the object). See the 'capture_procedure' in each SELECTORS-LIVE-*.md.",
   "_pinned_agent_browser": "0.27.0",
+  "_cleanup_reality": {
+    "community_group": {
+      "has_ui_delete": false,
+      "has_api_delete": false,
+      "primitive": "inactivate",
+      "evidence": "Live capture 2026-07-10: community GROUPS have NO UI delete (row chevron = login-as menu; portal group settings has Details/Subscriptions/Branding/Themes but no Delete/Danger Zone; only an Active<->Inactive status toggle). Tier-1 (36-tool) + Tier-2 (588-tool community MCP) lists have NO delete_community/delete_group/delete_channel — only validate_group_slug (which confirms SLUG keying). Literal 0-residue is IMPOSSIBLE for a group via any known rail; cleanup = set Inactive. NOT a fake delete.",
+      "phase_b": "capture the group-settings Active/Inactive toggle anchor to LOCK _deactivate_group."
+    },
+    "channel": {
+      "has_ui_delete": "unknown-capture-pending",
+      "has_api_delete": false,
+      "primitive": "unknown-capture-pending",
+      "evidence": "No delete_channel on Tier 1/2. The live-capture attempt created a channel but did NOT locate a channel delete/remove control. Channel residue remains inside its (deactivated) group until a real remove primitive is captured.",
+      "phase_b": "capture the channel remove/delete control (if any) inside the group nav/settings."
+    },
+    "course": {
+      "has_ui_delete": true,
+      "has_api_delete": true,
+      "primitive": "delete",
+      "evidence": "Live capture 2026-07-10: each course row has a 'More actions' per-row menu (delete path). Tier-2 community MCP ships create_course/get_course/update_course AND delete_course, delete_course_category, delete_course_post, delete_course_offer, delete_course_product (verified in 36-ghl-mcp-setup/ghl-mcp-setup-full.md tool list). COURSES support true 0-residue delete -> the zero-residue proof is scoped to courses.",
+      "phase_b": "lock the row 'More actions' -> Delete anchors; OPTIONALLY verify the Tier-2 delete_course API is a real endpoint (GHL-LOOKUP-SOP warns community-MCP create/delete tools may be unverified shells) and, per spec §3, let ghl_object_router flip primary if it is real. Router edit is out of Phase-A scope (protected file)."
+    }
+  },
   "shared_rail": {
     "memberships_left_rail": {
       "status": "verified-shared-rail",
@@ -33,85 +60,85 @@
     }
   },
   "community": {
+    "_idempotency": {
+      "method": "list-scan",
+      "note": "fix b: the communities list has NO search box (live-captured 2026-07-10) — enumerate the rendered group list and match by name/slug via ghl_community_builder._list_has. There is NO list_page.search_box target because none exists."
+    },
+    "_identity": {
+      "method": "slug+portal_host",
+      "note": "fix c: after Create the SPA lands on https://<portal_host>/communities/groups/<slug>/home. Groups are keyed by SLUG (no opaque group id in the route; Tier-2 validate_group_slug confirms slug keying). ghl_community_builder._capture_group_identity reads this."
+    },
     "routes": {
       "communities_list": {
         "status": "capture-pending",
         "kind": "route",
-        "anchor": "/v2/location/<LOCATION_ID>/communities/<?>",
-        "fallbacks": ["reach via Memberships left-rail → Communities/Groups tab (getByText)"],
+        "anchor": "/v2/location/<LOCATION_ID>/memberships/communities/community-groups",
+        "observed": "2026-07-10: reached via Memberships sub-nav link 'Communities'; content is in the TOP document under app.convertandflow.com (NOT a cross-origin iframe; the only iframe is the chat widget).",
+        "fallbacks": ["reach via Memberships left-rail → 'Communities' sub-nav link (getByText)"],
         "conf": 0,
-        "note": "Exact route segment UNKNOWN. Never deep-link the builder standalone (spins forever, per funnel/survey rule) — reach via SPA router.push AFTER a Memberships nav."
+        "note": "Never deep-link the builder standalone (spins forever) — reach via SPA nav AFTER a Memberships nav."
       },
-      "group_builder": {
+      "group_portal": {
         "status": "capture-pending",
         "kind": "route",
-        "anchor": "/v2/location/<LOCATION_ID>/communities/<?>/<GROUP_ID>",
-        "fallbacks": ["capture GROUP_ID from location.href OR an iframe .src after Create"],
-        "conf": 0,
-        "note": "Capture the id shape (form ids are opaque [A-Za-z0-9]{15,30}) on the first live run and pin it."
+        "anchor": "https://<PORTAL_HOST>/communities/groups/<SLUG>/home",
+        "observed": "2026-07-10: post-create URL on the white-label community portal; group keyed by SLUG (e.g. zhc-capture-probe-c6); default channel 'Announcements'; tabs Discussion/Learning/Events/Leaderboard/Members/About.",
+        "fallbacks": ["read location.href after Create; derive host+slug"],
+        "conf": 0
       }
     },
     "list_page": {
-      "search_box": {
-        "status": "capture-pending",
-        "kind": "placeholder",
-        "anchor": "getByPlaceholder('Search...')",
-        "fallbacks": ["getByRole('textbox') near the list header"],
-        "conf": 0,
-        "note": "Search-first idempotency (F14). Forms/surveys use getByPlaceholder('Search for forms'/'Search for surveys'); the communities placeholder text is UNKNOWN — capture it."
-      },
       "create_group_button": {
         "status": "capture-pending",
         "kind": "role_name",
         "anchor": "getByRole('button', { name: 'Create Group' })",
+        "observed": "2026-07-10: button 'Create Group' on the list opens a FULL PAGE at /memberships/communities/create-group (NOT a modal).",
         "fallbacks": ["getByRole('button', { name: /Create|Add|New.*(Group|Community)/ })", "getByText('Create Group')"],
         "conf": 0,
-        "note": "Label UNKNOWN (forms='Create form', surveys='Add survey' — NOT symmetric). Capture the exact button name."
-      },
-      "row_actions": {
-        "status": "capture-pending",
-        "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Actions' })",
-        "fallbacks": ["row kebab/⋮ icon-button + menuitem"],
-        "conf": 0,
-        "note": "Delete flow parity with forms/surveys (Actions → menuitem Delete → confirm dialog). Capture confirms."
-      },
-      "delete_menuitem": {
-        "status": "capture-pending",
-        "kind": "role_name",
-        "anchor": "getByRole('menuitem', { name: 'Delete' })",
-        "fallbacks": ["dialog-scoped getByRole('button', { name: 'Delete' })"],
-        "conf": 0
+        "note": "Observed name confirmed live; kept capture-pending until the full create-then-deactivate capture LOCKs it (Phase B)."
       }
     },
-    "create_modal": {
+    "create_page": {
       "name_input": {
         "status": "capture-pending",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Group name')",
-        "fallbacks": ["getByRole('textbox') labeled Name in the create dialog"],
+        "anchor": "getByPlaceholder('Group Name')",
+        "observed": "2026-07-10: placeholder 'Group Name' on the create-group page.",
+        "fallbacks": ["getByRole('textbox') labeled Name on the create page"],
+        "conf": 0
+      },
+      "slug_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Group Slug')",
+        "observed": "2026-07-10: auto-slug field placeholder 'Group Slug' (usually auto-filled from the name — the slug is the group identity key, fix c).",
+        "fallbacks": ["auto-derived from name; leave default unless a collision"],
         "conf": 0
       },
       "description_input": {
         "status": "capture-pending",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Description')",
-        "fallbacks": ["textarea in the create dialog"],
+        "anchor": "getByPlaceholder('Enter a brief description')",
+        "observed": "2026-07-10: description placeholder 'Enter a brief description'.",
+        "fallbacks": ["textarea on the create page"],
         "conf": 0
       },
-      "privacy_toggle": {
+      "privacy_switch": {
         "status": "capture-pending",
         "kind": "get_text",
-        "anchor": "getByText('Private')",
-        "fallbacks": ["Public/Private radio or switch in the create dialog"],
+        "anchor": "getByText('Private Group Radio Button')",
+        "observed": "2026-07-10: privacy is a switch on the create page (default checked = PUBLIC); settings radios 'Public Group Radio Button' / 'Private Group Radio Button'.",
+        "fallbacks": ["Public/Private radio or switch on the create page"],
         "conf": 0,
-        "note": "Privacy control shape (radio vs switch vs dropdown) UNKNOWN — capture."
+        "note": "Default is PUBLIC; set Private explicitly when plan.privacy == private."
       },
       "create_confirm": {
         "status": "capture-pending",
         "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Create' })",
-        "fallbacks": ["dialog-scoped primary button"],
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Create Group' })",
+        "observed": "2026-07-10: page-confirm button 'Create Group' is a Naive-UI submit — find/@ref click reported Done but did NOT submit; native element.click() fired the 'Group Created ... successfully' toast. exec:native REQUIRED.",
+        "fallbacks": ["native DOM .click() on the 'Create Group' submit"],
         "conf": 0
       }
     },
@@ -120,35 +147,72 @@
         "status": "capture-pending",
         "kind": "role_name",
         "anchor": "getByRole('button', { name: 'Add Channel' })",
-        "fallbacks": ["'+' next to the Channels section header (icon-only SVG path-d + order)", "getByText('Add Channel')"],
-        "conf": 0,
-        "note": "The channel-add control is the LEAST-known surface. Capture both the trigger AND the channel-create modal (name field + confirm)."
+        "observed": "2026-07-10: button '+ Add Channel' in the group portal nav.",
+        "fallbacks": ["getByText('Add Channel')", "'+' next to the Channels header (SVG path-d + order)"],
+        "conf": 0
       },
       "channel_name_input": {
         "status": "capture-pending",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Channel name')",
+        "anchor": "getByPlaceholder('e.g Marketing Reports')",
+        "observed": "2026-07-10: channel name input placeholder 'e.g Marketing Reports'.",
         "fallbacks": ["textbox in the add-channel dialog"],
+        "conf": 0
+      },
+      "channel_description_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Enter Description')",
+        "observed": "2026-07-10: channel description placeholder 'Enter Description'.",
+        "fallbacks": ["textarea in the add-channel dialog"],
         "conf": 0
       },
       "channel_create_confirm": {
         "status": "capture-pending",
         "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Create' })",
-        "fallbacks": ["dialog-scoped primary button"],
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'CREATE CHANNEL' })",
+        "observed": "2026-07-10: channel confirm button 'CREATE CHANNEL' (Naive-UI submit — native .click() path like the group create).",
+        "fallbacks": ["native DOM .click() on 'CREATE CHANNEL'"],
         "conf": 0
+      }
+    },
+    "group_settings": {
+      "settings_nav": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Settings')",
+        "fallbacks": ["group portal Settings tab/gear"],
+        "conf": 0,
+        "note": "Cleanup path (fix d): community has NO delete — only Active<->Inactive. Reach the group Settings, then toggle status_toggle to Inactive."
+      },
+      "status_toggle": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Active')",
+        "fallbacks": ["Active/Inactive status switch in group Settings"],
+        "conf": 0,
+        "note": "The ONLY cleanup primitive for a group (no delete anywhere). Toggling to Inactive is the honest 'cleanup'; the group ROW/portal remains (documented residue)."
       }
     }
   },
   "course": {
+    "_idempotency": {
+      "method": "list-scan",
+      "note": "fix b: search box no longer a hard dependency; the courses list DOES have a 'Search Courses' box (observed 2026-07-10) usable as an OPTIONAL narrowing step, but idempotency matches the rendered list by name/slug via ghl_community_builder._list_has."
+    },
+    "_cleanup": {
+      "primitive": "delete",
+      "note": "fix d: courses are deletable — row 'More actions' menu (UI, observed) and Tier-2 delete_course API. The 0-residue proof is scoped here."
+    },
     "routes": {
       "courses_list": {
         "status": "capture-pending",
         "kind": "route",
-        "anchor": "/v2/location/<LOCATION_ID>/memberships/courses/<?>",
-        "fallbacks": ["reach via Memberships left-rail → Courses/Products tab (getByText)"],
-        "conf": 0,
-        "note": "Exact route UNKNOWN. GHL courses live in the Memberships area (spec §5). Reach via SPA router.push after a Memberships nav."
+        "anchor": "/v2/location/<LOCATION_ID>/memberships/courses/products-v2",
+        "observed": "2026-07-10: courses list route .../memberships/courses/products-v2.",
+        "fallbacks": ["reach via Memberships left-rail → Courses tab (getByText); never deep-link"],
+        "conf": 0
       },
       "outline_builder": {
         "status": "capture-pending",
@@ -162,22 +226,26 @@
       "search_box": {
         "status": "capture-pending",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Search...')",
+        "required": false,
+        "anchor": "getByPlaceholder('Search Courses')",
+        "observed": "2026-07-10: courses list search box placeholder 'Search Courses'.",
         "fallbacks": ["list-header textbox"],
         "conf": 0,
-        "note": "Search-first idempotency (F14). Capture the placeholder text."
+        "note": "OPTIONAL narrowing only (fix b) — idempotency is list-scan; do not hard-require this."
       },
       "create_course_button": {
         "status": "capture-pending",
         "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Create Course' })",
-        "fallbacks": ["getByRole('button', { name: /Create|Add|New.*(Course|Product)/ })", "getByText('Create Course')"],
+        "anchor": "getByRole('button', { name: 'Create New' })",
+        "observed": "2026-07-10: create button 'Create New' on the courses list.",
+        "fallbacks": ["getByRole('button', { name: /Create|Add|New.*(Course|Product)/ })", "getByText('Create New')"],
         "conf": 0
       },
       "row_actions": {
         "status": "capture-pending",
         "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Actions' })",
+        "anchor": "getByRole('button', { name: 'More actions' })",
+        "observed": "2026-07-10: each course row has a 'More actions' per-row menu (courses support delete, unlike groups).",
         "fallbacks": ["row kebab/⋮ + menuitem"],
         "conf": 0
       },
@@ -186,7 +254,17 @@
         "kind": "role_name",
         "anchor": "getByRole('menuitem', { name: 'Delete' })",
         "fallbacks": ["dialog-scoped Delete button"],
-        "conf": 0
+        "conf": 0,
+        "note": "Courses ARE deletable (fix d) — this is a REAL 0-residue delete, unlike communities."
+      },
+      "delete_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Delete' })",
+        "fallbacks": ["dialog-scoped confirm Delete (Naive-UI native .click())"],
+        "conf": 0,
+        "note": "confirm dialog after the row menu Delete → true 0-residue for courses (fix d)."
       }
     },
     "create_modal": {
@@ -208,8 +286,9 @@
       "create_confirm": {
         "status": "capture-pending",
         "kind": "role_name",
+        "exec": "native",
         "anchor": "getByRole('button', { name: 'Create' })",
-        "fallbacks": ["dialog primary button"],
+        "fallbacks": ["native DOM .click() on the dialog primary button (Naive-UI submit)"],
         "conf": 0
       }
     },

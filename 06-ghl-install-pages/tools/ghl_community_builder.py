@@ -113,6 +113,13 @@ except Exception:  # noqa: BLE001
     _router = None  # type: ignore
     _HAVE_ROUTER = False
 
+# ── agent-browser 0.27.0 anchor→executor resolver (fix a) ─────────────────────
+# Playwright-style anchors (getByRole/getByText/getByPlaceholder) are REJECTED by
+# agent-browser 0.27.0 `click`/`fill`. This adapter translates them into the accepted
+# `find <locator> <value> <action> [--name]` calls (+ native eval .click() for Naive-UI
+# submits). Every in-area click/fill routes through it. See ghl_ab_executor.py.
+import ghl_ab_executor as _abx  # type: ignore
+
 # ── rate limiter + keepalive (F5/F8) — soft, like the form/survey builders ────
 try:
     from v2_dispatcher import RateGovernor as _RealRateGovernor  # type: ignore
@@ -184,6 +191,92 @@ def anchor(selectors: dict, dotted: str, *, required: bool = True) -> str:
 
 
 # ---------------------------------------------------------------------------
+# agent-browser 0.27.0 executor wrappers (fix a) — SHARED by both builders
+# ---------------------------------------------------------------------------
+# These reference the module globals `_ab`/`_eval` at CALL time (late binding), so a
+# test that monkeypatches `_cb._ab`/`_cb._eval` is honored. The course builder imports
+# `_ex_click`/`_ex_fill`/`_ex_wait_text` from here so both drivers share ONE adapter.
+def _exec():
+    return _abx.AbExecutor(ab=_ab, ev=_eval, log=_log)
+
+
+def _ex_click(session: str, sels: dict, dotted: str, *, native: Optional[bool] = None,
+              required: bool = True, timeout: int = 15) -> dict:
+    """Resolve a Playwright anchor (D8 gate) and click via the 0.27.0 executor. `native`
+    forces the eval .click() path (Naive-UI submits); None reads the node's `exec` hint.
+    Raises StopAndReport if the executor cannot resolve+click (never brute-forces)."""
+    a = anchor(sels, dotted, required=required)
+    if not a:
+        return {"ok": False, "path": "skipped", "reason": "optional capture-pending"}
+    node = _target(sels, dotted)
+    if native is None:
+        native = node.get("exec") == "native"
+    res = _exec().click(session, a, kind=node.get("kind", ""),
+                        mode=("native" if native else "auto"), timeout=timeout)
+    if not res.get("ok"):
+        raise StopAndReport(
+            f"click:{dotted}",
+            f"agent-browser 0.27.0 could not resolve+click {a!r} "
+            f"(path={res.get('path')}, detail={res.get('detail')}). STOP — no brute-force.")
+    return res
+
+
+def _ex_fill(session: str, sels: dict, dotted: str, value: str, *,
+             required: bool = True, timeout: int = 15) -> dict:
+    a = anchor(sels, dotted, required=required)
+    if not a:
+        return {"ok": False, "path": "skipped", "reason": "optional capture-pending"}
+    node = _target(sels, dotted)
+    res = _exec().fill(session, a, value, kind=node.get("kind", ""), timeout=timeout)
+    if not res.get("ok"):
+        raise StopAndReport(
+            f"fill:{dotted}",
+            f"agent-browser 0.27.0 could not resolve+fill {a!r} (path={res.get('path')}). STOP.")
+    return res
+
+
+def _ex_wait_text(session: str, text: str, *, timeout: int = 20):
+    """Wait for text — routed through the executor so a multi-word name is quoted as ONE
+    argv token (the raw `_ab(session,'wait','--',text)` glue splits it)."""
+    return _exec().wait_text(session, text, timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
+# List-scan idempotency (fix b) — the communities list has NO search box
+# ---------------------------------------------------------------------------
+_LIST_SCAN_JS = (
+    "(() => Array.from(document.querySelectorAll("
+    "'a,[role=listitem],[role=row],[role=gridcell],h1,h2,h3,h4,h5,button,"
+    "[class*=group],[class*=card],[data-testid]'))"
+    ".map(e => (e.textContent || '').replace(/\\s+/g, ' ').trim())"
+    ".filter(Boolean).join(' | '))()"
+)
+
+
+def _list_scan(session: str) -> str:
+    """Enumerate the rendered list items into one text blob. Uses the a11y snapshot
+    (the builder's read primitive) PLUS a light DOM text sweep — because the communities
+    list has NO search box to type into (live-captured); membership is read, not typed."""
+    blob = _snapshot(session) or ""
+    try:
+        dom = _eval(session, _LIST_SCAN_JS, timeout=12) or ""
+    except Exception:  # noqa: BLE001
+        dom = ""
+    return blob + "\n" + dom
+
+
+def _list_has(session: str, name: str, slug: str = "") -> bool:
+    """Idempotency read (fix b): is a group/course named `name` (or slugged `slug`)
+    already present in the rendered list? Match by name first, then slug."""
+    blob = _list_scan(session)
+    if name and name in blob:
+        return True
+    if slug and slug.lower() in blob.lower():
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # THINK layer — plan + click list (network-free)
 # ---------------------------------------------------------------------------
 def _resolve_channels(task: dict) -> List[dict]:
@@ -200,6 +293,7 @@ def _resolve_channels(task: dict) -> List[dict]:
         seen.add(key)
         out.append({"name": name,
                     "type": (c.get("type") if isinstance(c, dict) else "") or "post",
+                    "description": (c.get("description") if isinstance(c, dict) else "") or "",
                     "slug": _slug(name)})
     return out
 
@@ -235,24 +329,37 @@ def emit_click_list(plan: dict) -> dict:
                       "target": target, "note": note})
 
     add("C1", "nav", "Memberships → Communities/Groups list",
-        "SPA router.push after Memberships left-rail (getByText); NEVER deep-link the builder")
-    add("C2", "search", plan["community_name"],
-        "search-first idempotency (F14): if a ZHC group of this name exists → REUSE, skip create")
-    add("C3", "click", "Create Group", "list-page create button (capture-pending anchor)")
-    add("C3", "fill", "Group name", plan["community_name"])
+        "SPA nav after Memberships left-rail (getByText); NEVER deep-link the builder")
+    add("C2", "list-scan", plan["community_name"],
+        "list-scan idempotency (fix b): the communities list has NO search box — enumerate "
+        "the rendered group list; if a ZHC group of this name/slug exists → REUSE, skip create")
+    add("C3", "click", "Create Group",
+        "list button → opens the create-group PAGE (not a modal; capture-pending anchor)")
+    add("C3", "fill", "Group Name", plan["community_name"])
+    add("C3", "note", f"slug={plan['slug']}",
+        "slug auto-derives from the name; the SLUG is the group identity key (fix c)")
     if plan["description"]:
         add("C3", "fill", "Description", plan["description"])
-    add("C3", "set", f"privacy={plan['privacy']}", "Public/Private control (capture-pending)")
-    add("C3", "click", "Create", "confirm the create modal → capture GROUP_ID from location.href/iframe src")
+    add("C3", "set", f"privacy={plan['privacy']}",
+        "create-page privacy switch (default PUBLIC; set Private explicitly when needed)")
+    add("C3", "native-click", "Create Group (submit)",
+        "Naive-UI submit — native DOM .click() (exec:native); find/@ref click do NOT submit")
+    add("C3", "capture", "group identity",
+        "read location.href → slug + white-label portal host (fix c); no opaque group id exists")
     if plan["branding_image_url"]:
         add("C3", "set", "branding image (CDN URL)",
             "insert the ghl_media CDN URL — NEVER browser-upload a file")
     for ch in plan["channels"]:
         add("C4", "add_channel", ch["name"],
             "idempotent: skip if the channel name already exists in the group nav")
-    add("C5", "capture", "group URL",
-        "read the public/client-portal group URL; verify via render_check (200 + group name in DOM)")
-    add("C5", "verify", "render_check", "un-fakeable read-back — list-row + rendered group name")
+    add("C5", "capture", "portal URL",
+        "member-visible portal URL https://<portal_host>/communities/groups/<slug>/home (fix c/e)")
+    add("C5", "verify", "render_check",
+        "un-fakeable read-back: PUBLIC → anonymous render_check 200 + name; PRIVATE → "
+        "authenticated in-session portal DOM shows the group name (fix e)")
+    add("C6", "cleanup", f"deactivate (privacy={plan['privacy']})",
+        "community has NO delete (Tier 1/2 + UI both lack one) — cleanup = set Inactive (fix d); "
+        "documented residue, NOT a fake delete")
     return {"object_type": "community", "total_steps": len(steps), "steps": steps,
             "selector_source": os.path.basename(SELECTORS_FILE),
             "notes": ["DUMB-BROWSER SCRIPT — every in-area target resolves through the "
@@ -305,24 +412,26 @@ def _add_channel(session: str, sels: dict, ch: dict, evidence_root: str,
     """Add ONE channel to the open group — idempotent (skip if present). Every anchor
     is a required capture-pending gate today (STOP-and-report). Returns a channel receipt."""
     name = ch["name"]
-    snap = _snapshot(session)
-    if name in snap:                          # F14 idempotency: already present → reuse
+    if _list_has(session, name):              # F14/fix-b idempotency: present → reuse
         return _receipt("channel", ch["slug"], "reused",
-                        verify={"present_in_nav": True, "method": "snapshot"})
+                        verify={"present_in_nav": True, "method": "list-scan"})
     if keep.due():
         _ab(session, "eval", "--stdin", timeout=10, stdin="true")   # keepalive ping (F5)
-    _click(session, anchor(sels, "community.group_nav.add_channel_control"))
-    _fill(session, anchor(sels, "community.group_nav.channel_name_input"), name)
+    _ex_click(session, sels, "community.group_nav.add_channel_control")
+    _ex_fill(session, sels, "community.group_nav.channel_name_input", name)
+    if ch.get("description"):
+        _ex_fill(session, sels, "community.group_nav.channel_description_input",
+                 ch["description"], required=False)
     gov.before_save()
-    _click(session, anchor(sels, "community.group_nav.channel_create_confirm"))
-    _wait_text(session, name, timeout=15)
-    if name not in _snapshot(session):
+    _ex_click(session, sels, "community.group_nav.channel_create_confirm")   # exec:native
+    _ex_wait_text(session, name, timeout=15)
+    if not _list_has(session, name):
         raise StopAndReport(f"C4.verify:{name}",
                             f"created channel {name!r} but it did not appear in the group nav "
                             "(snapshot-and-bind miss). STOP — no brute-force.")
     _screenshot(session, _shot(evidence_root, shot_n, f"c4-channel-{ch['slug']}"))
     return _receipt("channel", ch["slug"], "created",
-                    verify={"present_in_nav": True, "method": "snapshot"})
+                    verify={"present_in_nav": True, "method": "list-scan"})
 
 
 def _receipt(object_type: str, slug: str, action: str, *,
@@ -353,30 +462,34 @@ def _write_receipt(evidence_root: str, receipt: dict) -> str:
     return path
 
 
-def _delete_group(session: str, sels: dict, plan: dict, group_id: str) -> dict:
-    """search → Actions → Delete → confirm → verify gone. Best-effort, honest residue."""
+def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict) -> dict:
+    """Cleanup for a community GROUP (fix d) — HONEST: GHL has NO group delete.
+
+    Verified two ways: (1) live capture 2026-07-10 — the row chevron is a login-as menu,
+    and the portal group Settings has Details/Subscriptions/Branding/Themes but NO
+    Delete / Danger Zone; only an Active↔Inactive status toggle; (2) the Tier-1 (36) and
+    Tier-2 (588 community-MCP) tool lists have NO delete_community/delete_group/
+    delete_channel — only `validate_group_slug` (which confirms SLUG keying). So literal
+    0-residue is IMPOSSIBLE for a group on any known rail. The ONLY cleanup primitive is
+    to set the group Inactive; the group ROW/portal REMAINS as documented residue. This
+    is NOT a fake delete — the true 0-residue proof is scoped to COURSES (which ARE
+    deletable). The status-toggle anchor is capture-pending → Phase B locks it."""
+    result: Dict[str, Any] = {
+        "cleanup_primitive": "inactivate",
+        "deleted": False,
+        "inactivated": False,
+        "slug": identity.get("slug", plan["slug"]),
+        "residue": "group remains (GHL has no group delete on any known rail); set Inactive",
+    }
     try:
-        _router_push_to_list(session, plan)
-        _fill(session, anchor(sels, "community.list_page.search_box"),
-              plan["community_name"])
-        _click(session, anchor(sels, "community.list_page.row_actions"))
-        _click(session, anchor(sels, "community.list_page.delete_menuitem"))
-        # dialog-scoped confirm shares the menuitem anchor family; re-click Delete
-        _ab(session, "click", "Delete", timeout=12)
-        _wait_text(session, "Create", timeout=12)
-        residue = plan["community_name"] in _snapshot(session)
-        return {"deleted": not residue, "residue_in_list": residue}
+        _ex_click(session, sels, "community.group_settings.settings_nav")
+        _ex_click(session, sels, "community.group_settings.status_toggle")
+        _ex_wait_text(session, "Inactive", timeout=12)
+        result["inactivated"] = True
     except StopAndReport as sr:
-        return {"deleted": False, "residue_in_list": True, "stop": str(sr)}
-
-
-def _router_push_to_list(session: str, plan: dict) -> None:
-    """Reach the communities list via a Memberships nav, NEVER a standalone deep-link."""
-    sels = load_selectors()
-    # Memberships left-rail is a verified-shared-rail getByText; the list route is
-    # capture-pending, so we navigate by clicking the rail item + the Communities tab.
-    _click(session, anchor(sels, "shared_rail.memberships_left_rail"))
-    _wait_text(session, "Memberships", timeout=15)
+        result["stop"] = str(sr)
+        result["residue"] += f" (deactivate toggle capture-pending — Phase B: {sr.reason[:80]})"
+    return result
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
@@ -396,6 +509,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
     steps_done: List[str] = []
     group_id = ""
     group_url = ""
+    action = ""
+    identity: Dict[str, Any] = {}
     stop: Optional[StopAndReport] = None
     cleanup: Dict[str, Any] = {"attempted": False}
 
@@ -411,42 +526,43 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
                     {"landed": auth["landed"], "seeded_at": _ts()})
 
         # C1 — Memberships nav → communities list (verified-shared-rail entry).
-        _click(session, anchor(sels, "shared_rail.memberships_left_rail"))
-        _wait_text(session, "Memberships", timeout=20)
+        _ex_click(session, sels, "shared_rail.memberships_left_rail")
+        _ex_wait_text(session, "Memberships", timeout=20)
         _screenshot(session, _shot(evidence_root, shot_n, "c1-memberships"))
         steps_done.append("C1:memberships")
 
-        # C2 — search-first idempotency (capture-pending search box gates here).
-        _fill(session, anchor(sels, "community.list_page.search_box"),
-              plan["community_name"])
-        existed = plan["community_name"] in _snapshot(session)
+        # C2 — LIST-SCAN idempotency (fix b): the communities list has NO search box.
+        existed = _list_has(session, plan["community_name"], plan["slug"])
 
         if existed:
-            warnings.append("C2: a ZHC community of this name already exists — REUSED (no create)")
-            group_url = _capture_group_url(session)
+            warnings.append("C2: a ZHC community of this name/slug already exists — REUSED (no create)")
+            identity = _capture_group_identity(session, plan)
             action = "reused"
         else:
-            # C3 — create group (all capture-pending → STOP until captured).
-            _click(session, anchor(sels, "community.list_page.create_group_button"))
-            _fill(session, anchor(sels, "community.create_modal.name_input"),
-                  plan["community_name"])
+            # C3 — create group on the create PAGE (all capture-pending → STOP until captured).
+            _ex_click(session, sels, "community.list_page.create_group_button")
+            _ex_fill(session, sels, "community.create_page.name_input", plan["community_name"])
             if plan["description"]:
-                _fill(session, anchor(sels, "community.create_modal.description_input"),
-                      plan["description"])
+                _ex_fill(session, sels, "community.create_page.description_input",
+                         plan["description"], required=False)
+            if plan["privacy"] == "private":
+                _ex_click(session, sels, "community.create_page.privacy_switch", required=False)
             gov.before_save()
-            _click(session, anchor(sels, "community.create_modal.create_confirm"))
-            _wait_text(session, plan["community_name"][:18], timeout=25)
-            group_id = _capture_id_from_url(session)
-            group_url = _capture_group_url(session)
+            _ex_click(session, sels, "community.create_page.create_confirm")   # exec:native submit
+            _ex_wait_text(session, plan["community_name"][:18], timeout=25)
+            identity = _capture_group_identity(session, plan)               # fix c: slug + portal host
             _screenshot(session, _shot(evidence_root, shot_n, "c3-created"))
             action = "created"
+        group_id = identity.get("slug", "")            # groups are keyed by SLUG (fix c)
+        group_url = identity.get("portal_url", "")
         steps_done.append(f"C3:{action}")
 
         # community receipt (F6).
-        verify_block = _verify_community(session, plan, group_url, evidence_root)
+        verify_block = _verify_community(session, plan, identity, evidence_root)   # fix e
         _write_receipt(evidence_root, _receipt(
             "community", plan["slug"], action, response_id=group_id,
-            request_shape={"name": plan["community_name"], "privacy": plan["privacy"]},
+            request_shape={"name": plan["community_name"], "privacy": plan["privacy"],
+                           "slug": identity.get("slug"), "portal_host": identity.get("portal_host")},
             verify=verify_block))
 
         # C4 — channels (idempotent, per-channel receipt).
@@ -456,8 +572,9 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
 
         _write_json(os.path.join(evidence_root, "routing", "community-built.json"), {
-            "community_id": group_id, "community_name": plan["community_name"],
-            "community_url": group_url, "verify": verify_block,
+            "community_id": group_id, "community_slug": identity.get("slug", ""),
+            "community_name": plan["community_name"], "community_url": group_url,
+            "portal_host": identity.get("portal_host", ""), "verify": verify_block,
             "channels": [c["name"] for c in plan["channels"]],
             "warnings": warnings, "steps_done": steps_done, "built_at": _ts()})
     except StopAndReport as sr:
@@ -468,10 +585,14 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
     finally:
         cleanup["attempted"] = True
         try:
-            if group_id or plan["community_name"]:
-                cleanup.update(_delete_group(session, sels, plan, group_id))
+            # Only touch a scratch group we CREATED (never deactivate a reused/existing
+            # group; a STOP-and-report before create means nothing was made — no-op).
+            if action == "created" and identity.get("slug"):
+                cleanup.update(_deactivate_group(session, sels, plan, identity))   # fix d
             else:
                 cleanup["deleted"] = True
+                cleanup["note"] = ("nothing to clean — no scratch group created "
+                                   "(reused, or STOP-and-report before create)")
         except Exception as exc:  # noqa: BLE001
             cleanup["deleted"] = False
             cleanup["error"] = f"{type(exc).__name__}: {exc}"
@@ -497,33 +618,115 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             "receipts_summary": summary, "dry_run": False}
 
 
-def _capture_group_url(session: str) -> str:
-    js = ("(() => { const a=Array.from(document.querySelectorAll('a[href],input'))"
-          ".map(e=>(e.href||e.value||'')).find(u=>/(community|group|portal)/i.test(u)); "
-          "return a||location.href||''; })()")
-    return _eval(session, js, timeout=12) or ""
+# ── group identity (fix c) — slug + white-label portal host, not an opaque id ──
+_GROUP_IDENTITY_JS = (
+    "(() => {"
+    "  const RE = /\\/communities\\/groups\\/([^/?#]+)/;"
+    "  let host = location.host || '';"
+    "  let slug = '';"
+    "  const hay = (location.pathname || '') + (location.hash || '');"
+    "  let m = hay.match(RE);"
+    "  if (m) { slug = m[1]; } else {"
+    "    for (const f of document.querySelectorAll('iframe')) {"
+    "      const s = f.src || ''; const mm = s.match(RE);"
+    "      if (mm) { slug = mm[1]; try { host = new URL(s).host; } catch (e) {} break; }"
+    "    }"
+    "  }"
+    "  return JSON.stringify({ url: location.href || '', host: host, slug: slug });"
+    "})()"
+)
 
 
-def _verify_community(session: str, plan: dict, group_url: str, evidence_root: str) -> dict:
-    """Un-fakeable read-back: list-row present + (when a public URL exists) render_check
-    200 with the group name in the RENDERED DOM. Deferred honestly if no public URL."""
-    row_present = plan["community_name"] in _snapshot(session)
-    block: Dict[str, Any] = {"list_row_present": row_present, "community_url": group_url}
+def _capture_group_identity(session: str, plan: dict) -> dict:
+    """Fix (c): group identity = SLUG + white-label portal host (NOT an opaque id). Live
+    capture proved groups are keyed by SLUG and the post-create URL is
+    ``https://<portal_host>/communities/groups/<slug>/home`` — there is NO opaque group id
+    in the route; the Tier-2 `validate_group_slug` tool independently confirms slug keying.
+    Returns {slug, portal_host, portal_url}; falls back to the planned slug on any miss."""
+    raw = _eval(session, _GROUP_IDENTITY_JS, timeout=12) or ""
+    data: Dict[str, Any] = {}
+    try:
+        if raw.strip().startswith("{"):
+            data = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        data = {}
+    slug = (data.get("slug") or "").strip() or plan["slug"]
+    host = (data.get("host") or "").strip()
+    url = (data.get("url") or "").strip()
+    is_app_host = any(h in host for h in ("convertandflow.com", "leadconnector", "gohighlevel"))
+    portal_url = url
+    if host and slug and not is_app_host:
+        portal_url = f"https://{host}/communities/groups/{slug}/home"
+    return {"slug": slug, "portal_host": ("" if is_app_host else host), "portal_url": portal_url}
+
+
+# ── render-check on the RIGHT url (fix e) — public anon vs private authenticated ──
+_AUTH_PORTAL_CHECK_JS_TMPL = (
+    "(() => {"
+    "  const want = %s;"
+    "  const t = (document.body ? (document.body.innerText || '') : '');"
+    "  return JSON.stringify({"
+    "    ready: document.readyState === 'complete',"
+    "    has: t.indexOf(want) !== -1,"
+    "    url: location.href || ''"
+    "  });"
+    "})()"
+)
+
+
+def _authenticated_portal_check(session: str, name: str) -> dict:
+    """Fix (e): a PRIVATE group's portal requires login, so an anonymous render_check
+    can't return 200 + name. Verify in the ALREADY-authenticated seeded session — the
+    member-visible portal (we landed on it after Create) shows the group name."""
+    raw = _eval(session, _AUTH_PORTAL_CHECK_JS_TMPL % json.dumps(name), timeout=12) or ""
+    d: Dict[str, Any] = {}
+    try:
+        if raw.strip().startswith("{"):
+            d = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        d = {}
+    has = bool(d.get("has"))
+    return {"http": 200 if (has and d.get("ready")) else None,
+            "marker_in_rendered_dom": has, "render_errors": [],
+            "render_method": "authenticated_in_session", "current_url": d.get("url", "")}
+
+
+def _verify_community(session: str, plan: dict, identity: dict, evidence_root: str) -> dict:
+    """Un-fakeable read-back (fix e). PUBLIC group → anonymous `render_check` on the
+    derived member-visible portal URL (200 + name in RENDERED DOM). PRIVATE group →
+    authenticated in-session portal check (an anonymous fetch would hit the login wall).
+    Always records which URL + mode was used; deferred cleanly when no portal URL exists."""
+    portal_url = identity.get("portal_url", "")
+    is_private = plan["privacy"] == "private"
+    block: Dict[str, Any] = {
+        "privacy": plan["privacy"],
+        "slug": identity.get("slug", plan["slug"]),
+        "portal_host": identity.get("portal_host", ""),
+        "community_url": portal_url,
+        "requires_auth": is_private,
+        "list_row_present": _list_has(session, plan["community_name"], plan["slug"]),
+    }
+    if is_private:
+        block.update(_authenticated_portal_check(session, plan["community_name"]))
+        if block.get("http") != 200:
+            block["status"] = "deferred"
+            block["reason"] = ("private group not confirmed in the authenticated portal DOM "
+                               "(capture-pending create flow may not have landed) — Phase B")
+        return block
+    if not portal_url:
+        block["status"] = "deferred"
+        block["reason"] = "no member-visible portal URL captured — snapshot row only"
+        return block
     try:
         import ghl_verify  # type: ignore
-        if group_url:
-            rec = ghl_verify.verify_page(
-                {"step": "community", "name": plan["community_name"],
-                 "page_id": plan["slug"], "preview_url": group_url,
-                 "marker": plan["community_name"]},
-                run_dir=evidence_root, live=True)
-            block.update({"http": rec.get("http"),
-                          "marker_in_rendered_dom": rec.get("marker_in_rendered_dom"),
-                          "render_errors": rec.get("render_errors", []),
-                          "method": "render_check"})
-        else:
-            block["status"] = "deferred"
-            block["reason"] = "no public/client-portal group URL captured — snapshot row only"
+        rec = ghl_verify.verify_page(
+            {"step": "community", "name": plan["community_name"], "page_id": plan["slug"],
+             "preview_url": portal_url, "marker": plan["community_name"]},
+            run_dir=evidence_root, live=True)
+        block.update({"http": rec.get("http"),
+                      "marker_in_rendered_dom": rec.get("marker_in_rendered_dom"),
+                      "render_errors": rec.get("render_errors", []),
+                      "render_method": "anonymous_render_check"})
     except Exception as exc:  # noqa: BLE001
         block["status"] = "deferred"
         block["reason"] = f"ghl_verify unavailable ({exc}) — snapshot row only"
@@ -622,62 +825,110 @@ def _selftest() -> int:  # noqa: C901
     if anchor(sels, "community.list_page.create_group_button", required=False) != "":
         errors.append("capture-pending optional anchor should return ''")
 
-    # 6. mocked-browser walk proves the live path is REAL code (not a skeleton):
-    #    with the selector map patched to 'locked' + a fake _ab, _add_channel drags a
-    #    channel and writes a receipt; with a channel already present it REUSES.
+    # 6. mocked-browser walk proves the live path is REAL code routed through the
+    #    agent-browser 0.27.0 executor (fix a): with group_nav LOCKed + fake ab/eval,
+    #    _add_channel issues a real `find` command AND a native `.click()` for the
+    #    Naive-UI 'CREATE CHANNEL' submit, and writes a receipt; an already-present
+    #    channel REUSES via list-scan (fix b).
     if _HAVE_FFB:
         import copy
         locked = copy.deepcopy(sels)
         for t in locked["community"]["group_nav"].values():
             t["status"] = "locked"
         calls: List[tuple] = []
+        evals: List[str] = []
         present = {"ZHC Founders Circle", "General", "Welcome"}   # base group nav
 
         def fake_ab(session, *args, timeout=30, stdin=None):
             calls.append(args)
             verb = args[0] if args else ""
-            # model "the channel appeared": a wait('--', <name>) makes it visible next snapshot
+            # a wait('--', <name>) makes the channel visible next snapshot (list-scan)
             if verb == "wait" and len(args) >= 3:
-                present.add(args[2])
+                present.add(args[2].strip("'\""))
             snap = " ".join(sorted(present)) if verb == "snapshot" else ""
             return subprocess.CompletedProcess(args=list(args), returncode=0,
                                                stdout=snap, stderr="")
-        orig = _ffb._ab
+
+        def fake_eval(session, js, timeout=20):
+            evals.append(js)
+            return "CLICKED:x" if ".click()" in js else ""   # list-scan DOM sweep → empty
+
+        orig_ab, orig_eval = globals().get("_ab"), globals().get("_eval")
         try:
-            _ffb._ab = fake_ab
-            # rebind module-level glue that closed over the original
             globals()["_ab"] = fake_ab
+            globals()["_eval"] = fake_eval
             globals()["_snapshot"] = lambda s, timeout=20: (fake_ab(s, "snapshot").stdout or "")
-            globals()["_click"] = lambda s, t, timeout=15: fake_ab(s, "click", t)
-            globals()["_fill"] = lambda s, l, v, timeout=15: fake_ab(s, "fill", l, v)
-            globals()["_wait_text"] = lambda s, t, timeout=20: fake_ab(s, "wait", "--", t)
             globals()["_screenshot"] = lambda s, p: None
             with tempfile.TemporaryDirectory() as tmp2:
                 os.makedirs(os.path.join(tmp2, "shots"), exist_ok=True)
-                # NEW channel (not in snapshot) → created + real drag/click commands
+                # NEW channel (not present) → created + real `find`/native-click commands
                 rc_new = _add_channel("s", locked,
-                                      {"name": "Announcements", "type": "post", "slug": "announcements"},
+                                      {"name": "Announcements", "type": "post",
+                                       "description": "", "slug": "announcements"},
                                       tmp2, [0], _NoopGovernor(), _NoopKeepalive())
                 if rc_new["action"] != "created":
                     errors.append(f"mocked walk: new channel should be created (got {rc_new['action']})")
-                if not any(c and c[0] == "click" for c in calls):
-                    errors.append("mocked walk: no real click command issued (skeleton?)")
-                # EXISTING channel (in snapshot) → reused, no create
+                if not any(c and c[0] == "find" for c in calls):
+                    errors.append("mocked walk: no real `find` command issued (executor skeleton?)")
+                if not any(".click()" in j for j in evals):
+                    errors.append("mocked walk: Naive-UI submit did not use native .click() (fix a)")
+                # EXISTING channel (present) → reused via list-scan, no create
                 rc_dup = _add_channel("s", locked,
-                                      {"name": "General", "type": "post", "slug": "general"},
+                                      {"name": "General", "type": "post",
+                                       "description": "", "slug": "general"},
                                       tmp2, [0], _NoopGovernor(), _NoopKeepalive())
                 if rc_dup["action"] != "reused":
                     errors.append(f"mocked walk: existing channel should be reused (got {rc_dup['action']})")
         finally:
-            _ffb._ab = orig
-            globals()["_ab"] = _ffb._ab
+            globals()["_ab"] = orig_ab if orig_ab is not None else _ffb._ab
+            globals()["_eval"] = orig_eval if orig_eval is not None else _ffb._eval
             globals()["_snapshot"] = _ffb._snapshot
-            globals()["_click"] = _ffb._click
-            globals()["_fill"] = _ffb._fill
-            globals()["_wait_text"] = _ffb._wait_text
             globals()["_screenshot"] = _ffb._screenshot
 
-    # 7. router registers community + channel
+    # 7. FIXES b/c/d/e — network-free proofs with injected fakes.
+    if _HAVE_FFB:
+        try:
+            globals()["_snapshot"] = lambda s, timeout=20: "ZHC Alpha | zhc-beta-group | Gamma"
+            globals()["_eval"] = lambda s, js, timeout=20: ""
+            if not _list_has("s", "ZHC Alpha"):                       # fix b: match by name
+                errors.append("fix b: list_has should match by name")
+            if not _list_has("s", "Nope", slug="zhc-beta-group"):    # fix b: match by slug
+                errors.append("fix b: list_has should match by slug")
+            if _list_has("s", "Missing", slug="absent"):
+                errors.append("fix b: list_has false positive")
+
+            # fix c: identity = slug + portal host derived from the post-create URL
+            globals()["_eval"] = lambda s, js, timeout=20: json.dumps(
+                {"url": "https://portal.example.com/communities/groups/zhc-founders/home",
+                 "host": "portal.example.com", "slug": "zhc-founders"})
+            ident = _capture_group_identity("s", {"slug": "zhc-founders"})
+            if ident["slug"] != "zhc-founders" or ident["portal_host"] != "portal.example.com":
+                errors.append(f"fix c: identity wrong: {ident}")
+            if ident["portal_url"] != "https://portal.example.com/communities/groups/zhc-founders/home":
+                errors.append(f"fix c: portal_url wrong: {ident['portal_url']}")
+
+            # fix e: PRIVATE group verify uses the authenticated in-session check + derived URL
+            globals()["_eval"] = lambda s, js, timeout=20: json.dumps(
+                {"ready": True, "has": True, "url": "https://portal.example.com/x"})
+            globals()["_snapshot"] = lambda s, timeout=20: "ZHC Founders"
+            vb = _verify_community("s", {"community_name": "ZHC Founders", "slug": "zhc-founders",
+                                         "privacy": "private"}, ident, "/tmp/x")
+            if vb.get("render_method") != "authenticated_in_session" or vb.get("http") != 200:
+                errors.append(f"fix e: private authenticated verify wrong: {vb}")
+            if vb.get("community_url") != ident["portal_url"]:
+                errors.append("fix e: verify did not use the derived portal URL")
+
+            # fix d: community cleanup = inactivate (no delete); capture-pending toggle → residue
+            cl = _deactivate_group("s", load_selectors(), {"slug": "zhc-founders"}, ident)
+            if cl["cleanup_primitive"] != "inactivate" or cl["deleted"] is not False:
+                errors.append(f"fix d: cleanup should be inactivate/not-deleted: {cl}")
+            if "stop" not in cl:
+                errors.append("fix d: capture-pending toggle should record a STOP residue note")
+        finally:
+            globals()["_snapshot"] = _ffb._snapshot
+            globals()["_eval"] = _ffb._eval
+
+    # 8. router registers community + channel
     if _HAVE_ROUTER:
         for ot in ("community", "channel"):
             try:
