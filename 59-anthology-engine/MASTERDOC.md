@@ -55,10 +55,27 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
     supplied root and NEVER creates a NEW Drive root. Per-document sharing is EDIT on the
     co-author's OWN Doc (friction-free pull-back) and VIEW on PDFs/images; the root itself
     is never anyone-can-read. Enforced by `caf_credential_gate.py` (the delivery-credential
-    presence gate: SA key + impersonate user + root are ALL required per box, a missing one
-    STOPS provisioning), `drive_adapter.load_root_folder_id` (resolves the per-box root and
+    presence gate), `drive_adapter.load_root_folder_id` (resolves the per-box root and
     refuses an unresolved template slot), and `drive-tree-provision.py` verify_root (never
     creates a root).
+
+    FLEET UPDATE -- the n8n CREDENTIAL BROKER (client boxes hold NO Google key). The
+    fleet Drive model is now the n8n credential broker: Trevor's Google service-account
+    key lives ONLY inside n8n (his n8n VPS). A client box holds NO Google key -- only the
+    broker webhook URL plus a low-privilege shared token (`N8N_DRIVE_WEBHOOK_TOKEN`). The
+    PRIVILEGED per-book folder-tree creation + producer editor share are POSTed to n8n
+    (action `create_book_tree`) via `drive_adapter.provision_book_tree`, which uses the
+    folder ids n8n returns; a compromised client box cannot leak Google creds because they
+    were never there. The U19 SA-key-on-box path (SA key + impersonate user + per-client
+    root) remains ONLY for the operator's OWN box, which legitimately holds the SA key.
+    Selection is per box: broker if configured (`drive_adapter.broker_configured`), else
+    local SA. `caf_credential_gate.py` enforces EITHER the broker pair OR the SA trio per
+    box (a half-configured broker, or a mode missing its levers, STOPS provisioning, exit
+    2). The per-Doc broker actions (`create_doc`, `upload_pdf`, `share_doc_edit`,
+    `pull_doc_text`) and the per-participant runtime tree are DESIGNED extension points,
+    stubbed not faked: until they are brokered, those ops still require the operator's OWN
+    box (local SA), and a client box in broker mode flags them loudly (exit 3). The n8n
+    workflow asset ships at `config/n8n/anthology-drive-broker.workflow.json`.
 11. AUTO-PROVISIONED PIPELINE: onboarding auto-provisions the standard Anthology
     pipeline in the CLIENT's OWN Convert and Flow account through the CLIENT's OWN
     private integration token; binding a pre-existing pipeline is an explicit

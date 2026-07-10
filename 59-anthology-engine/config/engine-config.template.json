@@ -25,7 +25,17 @@
     "google_impersonate_user_label": "GOOGLE_IMPERSONATE_USER",
     "google_scope": "https://www.googleapis.com/auth/drive",
     "pdf_font_floor_pt": 14,
-    "pdf_house_style_dir": "config/pdf-house-style"
+    "pdf_house_style_dir": "config/pdf-house-style",
+    "drive_broker": {
+      "mode_note": "FLEET delivery model: the n8n Drive CREDENTIAL BROKER. Trevor's Google service-account key lives ONLY inside n8n (his n8n VPS main.blackceoautomations.com); a client box holds NO Google key -- only this webhook URL plus a low-privilege shared token (label N8N_DRIVE_WEBHOOK_TOKEN). When configured, drive_adapter.provision_book_tree POSTs the PRIVILEGED per-book folder-tree creation + producer editor share to n8n (action create_book_tree) and uses the returned folder ids; a compromised client box cannot leak Google creds because they were never there. When NOT configured, the box falls back to the local service account -- the ONLY box that legitimately holds the SA key is the operator's OWN box. Selection is per box: broker if BOTH url + token resolve, else local SA. Enforced by caf_credential_gate (EITHER the broker pair OR the SA trio per box) and drive_adapter.broker_configured.",
+      "webhook_url": "<LABEL:N8N_DRIVE_WEBHOOK_URL>",
+      "webhook_url_note": "The n8n Anthology Drive Broker webhook, e.g. https://main.blackceoautomations.com/webhook/anthology-drive. Resolved per box from the N8N_DRIVE_WEBHOOK_URL env or this slot; an unresolved slot keeps the box in local-SA mode. NOT a secret.",
+      "webhook_token_label": "N8N_DRIVE_WEBHOOK_TOKEN",
+      "workflow_asset": "config/n8n/anthology-drive-broker.workflow.json",
+      "implemented_actions": ["create_book_tree"],
+      "pending_broker_actions": ["create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text"],
+      "pending_note": "The per-Doc ops are designed extension points, stubbed not faked. Until they are brokered, a pure client box can mint the per-book tree through the broker but the per-Doc operations still require the operator's OWN box (local SA). See MASTERDOC floor #10."
+    }
   },
   "registry_defaults": {
     "auto_provision_pipeline": true,
@@ -81,7 +91,7 @@
       "GOOGLE_IMPERSONATE_USER",
       "GOOGLE_DRIVE_ROOT_FOLDER"
     ],
-    "required_note": "GOOGLE_SA_KEY_FILE (the BlackCEO-owned delivery service-account key path), GOOGLE_IMPERSONATE_USER (the BlackCEO Workspace user the SA impersonates), and GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root) are the three delivery levers. All three are gated per box by caf_credential_gate.py: a box missing any one FAILS provisioning loudly (exit 2) instead of silently no-op'ing delivery. Confirmed SET or NOT SET by label only; the SA key contents are never read or printed.",
+    "required_note": "DELIVERY CREDENTIALS ARE EITHER/OR PER BOX (caf_credential_gate.py google_delivery_presence). n8n-BROKER MODE (fleet client box): the box holds NO Google key -- only N8N_DRIVE_WEBHOOK_URL + N8N_DRIVE_WEBHOOK_TOKEN (both required; a half-configured broker FAILS loudly, exit 2). LOCAL-SA MODE (the operator's OWN box): the three GOOGLE_* levers below are required instead -- GOOGLE_SA_KEY_FILE (the BlackCEO-owned delivery service-account key path), GOOGLE_IMPERSONATE_USER (the BlackCEO Workspace user the SA impersonates), and GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root). A box missing its mode's levers FAILS provisioning loudly (exit 2) instead of silently no-op'ing delivery. The three GOOGLE_* levers therefore appear in `required` for the operator local-SA box; a client box satisfies delivery via the broker pair (in `optional`) and holds none of them. Confirmed SET or NOT SET by label only; the SA key contents and the broker token value are never read or printed.",
     "provider_chain": [
       "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>",
       "<CLIENT_OPENROUTER_KEY_LABEL>",
@@ -90,8 +100,11 @@
       "<CLIENT_KIE_KEY_LABEL>"
     ],
     "optional": [
+      "N8N_DRIVE_WEBHOOK_URL",
+      "N8N_DRIVE_WEBHOOK_TOKEN",
       "<CLIENT_DEEPSEEK_OR_KIMI_KEY_LABEL>",
       "<CLIENT_PERPLEXITY_OR_SEARCH_KEY_LABEL>"
-    ]
+    ],
+    "optional_note": "N8N_DRIVE_WEBHOOK_URL + N8N_DRIVE_WEBHOOK_TOKEN are the n8n Drive credential-broker pair for a FLEET CLIENT BOX. They are `optional` at the schema level because they are mutually exclusive with the GOOGLE_* delivery trio (a client box sets the broker pair and NONE of the GOOGLE_* levers; the operator's own box sets the GOOGLE_* trio and no broker). The either/or is enforced at runtime by caf_credential_gate.py, not by this static list. N8N_DRIVE_WEBHOOK_TOKEN is a secret (SET/NOT-SET only); N8N_DRIVE_WEBHOOK_URL is not."
   }
 }

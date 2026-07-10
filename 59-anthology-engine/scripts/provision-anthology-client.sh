@@ -451,12 +451,36 @@ JSON
     fi
 }
 
+# Whether the n8n Drive CREDENTIAL BROKER is configured on this box (fleet client
+# box). drive_adapter.py broker-status prints JSON; parse the boolean directly (its
+# stdout, unlike run_collab, is captured here). No Google key is read.
+drive_broker_configured() {
+    [ -f "$SCRIPTS/drive_adapter.py" ] || return 1
+    python3 "$SCRIPTS/drive_adapter.py" broker-status 2>/dev/null \
+        | python3 -c 'import sys,json;
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if d.get("broker_configured") else 1)' 2>/dev/null
+}
+
 step5_drive() {
-    note "STEP 5/10 — provision the Drive producer root under this client's per-client BlackCEO-hosted Shared-Drive root (never a new root)"
+    note "STEP 5/10 — provision the client's Drive delivery root (n8n credential broker if configured; else the local per-client BlackCEO-hosted Shared-Drive root via the BlackCEO SA)"
     if [ "$MODE" = "dryrun" ]; then
-        note "  (dry-run) would verify the per-client Shared-Drive root reachability and get-or-create the Producer folder; no network"
+        note "  (dry-run) would detect the broker; in broker mode nothing is verified here (per-book trees mint via n8n at book bind); in local-SA mode would verify the per-client Shared-Drive root and get-or-create the Producer folder; no network"
         echo "$EX_OK"; return
     fi
+    # FLEET BROKER MODE: this box holds NO Google key. Trevor's Google creds live ONLY
+    # in n8n. Per-book folder trees are minted through the broker (create_book_tree) at
+    # book bind, so there is no local SA root to verify and no Producer folder to create
+    # here. A compromised client box cannot leak Google creds because they were never here.
+    if drive_broker_configured; then
+        note "  n8n Drive broker CONFIGURED: Google creds live ONLY in n8n; this box holds no Google SA key."
+        note "  Per-book folder trees are minted via the broker (drive-tree-provision.py create-book-tree) at book bind; nothing to verify locally."
+        echo "$EX_OK"; return
+    fi
+    # LOCAL-SA MODE (the operator's OWN box, which legitimately holds the SA key).
     # Verify the configured per-client root first (resolved from GOOGLE_DRIVE_ROOT_FOLDER; never creates one).
     local n; n="$(run_collab py "$SCRIPTS/drive-tree-provision.py" verify-root)"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
