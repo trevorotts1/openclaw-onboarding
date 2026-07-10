@@ -52,16 +52,29 @@ it can ship.
    have to be pre-declared for the engine to work (GoHighLevel creates a tag on first
    add-tags call), but seeding them keeps the account clean and lets the notification
    automation pre-bind its triggers.
-5. **The tag-triggered notification automation**, shipped DISABLED. When a release tag lands
-   on a contact it greets the producer/participant and (optionally) calls the box's intake
-   hook. Its trigger is contact-tag-added on the three LIVE slugs (avatar / tone / outline)
-   first, with the three wired-ahead slugs added when those gates ship. Its ordered actions
-   are: a Custom Webhook POST (URL = the `anthology_webhook_url` custom value, Authorization
-   header = the `anthology_hook_secret` custom value), a producer-branded email, and an
-   optional SMS. This automation is the single biggest thing the snapshot adds beyond
+5. **The eight tag-triggered release-notification workflows** (contract
+   `workflows.release_notifications`), built once in the template location in ONE workflow
+   folder named `Anthology Engine` via the Skill 44 caf Convert and Flow Firebase build rail.
+   Each fires on ONE release tag added to a contact and sends the AUTHOR both a
+   producer-branded **email** and a **link-only SMS**:
+   `Anthology Release: Avatar` (`anthology-release-avatar`), `... Tone`
+   (`anthology-release-tone`), `... Outline & Blurb` (`anthology-release-outline`), `...
+   Chapter` (`anthology-release-chapter`), `... Rewrite` (`anthology-release-rewrite`), `...
+   Cover Picks` (`anthology-release-cover`), `... Final Chapter` (`anthology-release-final`),
+   and `Anthology: Book Delivered` (`anthology-delivered`). Every email carries that stage's
+   premium **PDF (view)** link plus editable **Google Doc (edit)** link, pulled from the
+   matching contact custom fields in `field-map.json → deliverable_fields`; the SMS is one
+   warm sentence plus one link. Copy law (Trevor, verbatim): say **"editors" never "AI"**,
+   **zero em-dashes**, and the producer-name merge `{{ custom_values.producer }}` (also the
+   email From name). This automation set is the single biggest thing the snapshot adds beyond
    field/pipeline parity — the engine EMITS the release tags, but nothing in the repo turns
    a tag into the client-facing email + SMS (workflow JSON exports are banned from the repo
-   by `scan-no-json-exports.sh`).
+   by `scan-no-json-exports.sh`), so these workflows MUST be present in the cut snapshot. The
+   caf build rail creates them as GHL drafts with contact_tag triggers created ACTIVE; each
+   must be **published** (one toggle per workflow in the Convert and Flow UI) before it fires
+   live — enable the three LIVE slugs (avatar / tone / outline) first, the three wired-ahead
+   slugs when those producer gates ship. SMS steps need a provisioned LeadConnector phone
+   number per client sub-account (Gap G15) or they silently no-op.
 6. **The forms** as a hidden-field contract: one REQUIRED universal author-intake form plus
    three per-stage gate forms (title-subtitle-selection, outline-approval,
    chapter-approve-or-rewrite). Every form carries the universal hidden fields `contact_id`,
@@ -101,9 +114,15 @@ location `2HIKGNgsixWx0yds7Qnx`, never in a client account:
    Values): `anthology_webhook_url`, `anthology_hook_secret`, `producer`, `producer_email`.
    Do not put real values here — the placeholders are what ships.
 4. Seed the eight release tags.
-5. Build the tag-triggered notification automation (contact-tag-added on the LIVE slugs →
-   Custom Webhook using the two REPLACE-ME custom values → producer email → optional SMS).
-   Ship it DISABLED. Set the Custom Webhook Content-Type to `application/json`.
+5. Build the eight tag-triggered release-notification workflows (contract
+   `workflows.release_notifications`) in one folder named `Anthology Engine`, via the Skill 44
+   caf Firebase build rail (`caf --experimental workflows build --from-plan <plan>` against
+   location `2HIKGNgsixWx0yds7Qnx`). Each is a contact-tag-added trigger on one release slug →
+   producer-branded email (PDF-view + Doc-edit links from the matching contact custom fields,
+   From name `{{ custom_values.producer }}`) → link-only SMS. Copy law: "editors" never "AI",
+   zero em-dashes. Publish each and enable the three LIVE slug triggers (avatar / tone /
+   outline) first; the wired-ahead slugs when those gates ship. (The 2026-07-10 build of these
+   eight is why the snapshot must be RE-CUT — the first `-20260710` cut predated them.)
 6. Create the universal author-intake form and the three per-stage gate forms with the
    hidden fields `contact_id`, `anthology_id`, `stage`.
 
@@ -111,8 +130,10 @@ location `2HIKGNgsixWx0yds7Qnx`, never in a client account:
 
 1. Export the snapshot from the template location (Settings → Snapshots → Create Snapshot).
 2. Version it with the date-stamped name recorded in the contract's `snapshot_version`
-   (currently `anthology-engine-snapshot-20260710`). Bump both the exported name and the
-   contract's `snapshot_version` whenever the pipeline / fields / tags / forms / automation
+   (currently `anthology-engine-snapshot-20260710-r2`; the `-r2` revision marks that the eight
+   release-notification workflows were built after the first `-20260710` cut, so that cut is
+   STALE and the snapshot must be RE-CUT to include them). Bump both the exported name and the
+   contract's `snapshot_version` whenever the pipeline / fields / tags / forms / workflows
    change and the snapshot is re-cut.
 3. Keep the exported snapshot link where the install agent can reference it per install.
 

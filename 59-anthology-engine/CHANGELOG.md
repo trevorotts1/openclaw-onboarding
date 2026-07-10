@@ -6,6 +6,40 @@ Integration branch consolidating the Anthology Engine feature units (U5, U6, U7,
 U9, U10, U19, U20, U21) under one Unreleased heading. Version intentionally left
 unbumped (see skill-version.txt / SKILL.md) until the release cut.
 
+### Snapshot: eight tag->notification release workflows built + snapshot contract updated (2026-07-10)
+
+Closes the release-bus gap: the engine EMITS `anthology-release-*` / `anthology-delivered`
+tags, but the GHL automation that turned a release tag into the author's email + SMS did not
+exist. Built the eight per-stage tag->notification workflows in the operator's OWN template
+location `2HIKGNgsixWx0yds7Qnx` (folder `Anthology Engine`) via the Skill 44 caf Convert and
+Flow Firebase build rail, and recorded them in the snapshot contract so a re-cut snapshot
+carries them.
+
+Added:
+- `config/anthology-snapshot-contract.json` -> `workflows.release_notifications`: the eight
+  release-notification workflows as a CONTRACT DESCRIPTION (not a banned workflow JSON export)
+  -- `Anthology Release: Avatar / Tone / Outline & Blurb / Chapter / Rewrite / Cover Picks /
+  Final Chapter` and `Anthology: Book Delivered`, each a contact_tag trigger on one release
+  slug -> producer-branded email (per-stage PDF-view + Doc-edit links from
+  `field-map.json deliverable_fields`) -> link-only SMS. Plus `workflows.copy_law`
+  ("editors" never "AI", zero em-dashes, `{{ custom_values.producer }}` merge),
+  `workflows.publish_state_note`, and `workflows.per_client_sms_phone_flag` (Gap G15).
+- `references/anthology-snapshot-guide.md`: Section 1 item 5 and Section 2 item 5 now
+  describe the eight workflows, the per-stage links, the copy law, the publish + enable order
+  (LIVE avatar/tone/outline first), and the SMS phone-number requirement.
+
+Changed:
+- `snapshot_version` bumped `anthology-engine-snapshot-20260710` ->
+  `anthology-engine-snapshot-20260710-r2`: the first `-20260710` cut PREDATED these eight
+  workflows and is STALE. The snapshot MUST be RE-CUT (or push-updated) so it carries them.
+
+Notes:
+- The drift gate `scripts/qc-snapshot-contract.sh` does not assert the `workflows` block, and
+  no new tag slugs were introduced (the eight slugs were already in `tags.slugs`), so the gate
+  and the hardcoded `EXPECTED_TAG_SLUGS` / `LIVE_SLUGS` are unaffected.
+- Publish state: the caf Firebase rail builds these as drafts with triggers created ACTIVE;
+  each needs one Publish toggle in the Convert and Flow UI to fire live.
+
 ### U9: S9 assembly transitions + brand-new Grand Finale + ordering data
 
 Adds the three assembly-finale pieces the current engine did not do. All LLM calls
