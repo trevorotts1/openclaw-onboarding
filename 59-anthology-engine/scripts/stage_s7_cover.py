@@ -270,6 +270,33 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
+    # 5b. caf_delivery.py update-stage -- move the Convert and Flow opportunity to
+    #     the mapped Cover pipeline stage (engine gate s7 -> "Cover" from the
+    #     registry caf_stage_map, NEVER hardcoded). S7 has no producer gate and no
+    #     per-deliverable S8 delivery call of its own (the cover's CAF field write
+    #     rides the completion sweep), so this per-gate pipeline move is fired here
+    #     directly through the SAME update-stage subcommand S8 uses -- no new
+    #     adapter code. FAIL-SOFT: unbound on this box -> skipped; a scope-denied
+    #     opportunity write (exit 3) or any error is logged and NEVER blocks the
+    #     cover stage (the durable ledger + daily-tick retry hold it) (B6 / SPEC 7.6).
+    contact_id, anthology_id = pkey.split(KEY_DELIM, 1)
+    _, binding, _ = _run([py, str(_resolve("scripts/anthology_registry.py")),
+                         "resolve", "--anthology-id", anthology_id, "--json"])
+    binding = binding or {}
+    if binding.get("pipeline_id") and binding.get("caf_stage_map"):
+        move_rc, _mv, move_err = _run(
+            [py, str(_resolve("scripts/caf_delivery.py")), "update-stage",
+             "--contact-id", contact_id, "--pipeline-id", binding["pipeline_id"],
+             "--gate", "s7",
+             "--stage-map", json.dumps(binding["caf_stage_map"], ensure_ascii=False)])
+        if classify_child_rc(move_rc) != EX_OK:
+            sys.stderr.write("[stage_%s] per-gate pipeline-stage move to Cover held/"
+                             "failed (rc=%s); non-fatal, the daily-tick retries%s\n"
+                             % (STAGE, move_rc, (" :: %s" % move_err[-200:]) if move_err else ""))
+    else:
+        sys.stderr.write("[stage_%s] no pipeline binding on this box yet; the Cover "
+                         "pipeline-stage move is skipped (delivery still lands).\n" % STAGE)
+
     # 6. mc_board.py -- mirror the participant card to in_progress at s8_deliver
     #    (W4.3); FAIL-SOFT.
     rel, _ = WIRING[5]

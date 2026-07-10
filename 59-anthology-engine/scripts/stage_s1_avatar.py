@@ -244,9 +244,15 @@ def _invoke_wiring(key, run_dir=None):
         return rc
 
     # 6. stage_s8_deliver.py -- deliver the Avatar Doc + PDF at S8 standards.
+    #    --gate s1 threads THIS engine stage into S8 so the Convert and Flow
+    #    opportunity moves to the mapped pipeline stage (Avatar) from the
+    #    registry caf_stage_map (NEVER hardcoded); the move fires only where the
+    #    anthology is bound to a pipeline, and a scope-denied opportunity write
+    #    surfaces as a HELD (exit 3), never a fatal error (B6 / SPEC 7.6).
     rel, _ = WIRING[5]
     rc, delivered = _step(5, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
-                                  "--run-dir", str(rundir), "--deliverable", "avatar", "--json"])
+                                  "--run-dir", str(rundir), "--deliverable", "avatar",
+                                  "--gate", "s1", "--json"])
     if rc != EX_OK:
         return rc
     delivered = delivered or {}

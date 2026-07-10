@@ -209,10 +209,15 @@ def _invoke_wiring(key, run_dir=None):
         return rc
 
     # 6. stage_s8_deliver.py -- deliver the Chapter Doc + PDF; the card lands
-    #    in review.
+    #    in review. --gate s5 moves the Convert and Flow opportunity to the mapped
+    #    pipeline stage (Chapter) from the registry caf_stage_map (never
+    #    hardcoded); a rewrite (S6) re-enters the s5 gate and maps to the SAME
+    #    Chapter stage, so no separate move is needed there; scope-denied stays
+    #    HELD (exit 3), never fatal (B6 / SPEC 7.6).
     rel, _ = WIRING[5]
     rc, delivered, _ = _step(5, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
-                                     "--run-dir", str(rundir), "--deliverable", "chapter", "--json"])
+                                     "--run-dir", str(rundir), "--deliverable", "chapter",
+                                     "--gate", "s5", "--json"])
     if rc != EX_OK:
         return rc
     delivered = delivered or {}
