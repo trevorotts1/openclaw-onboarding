@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""guard-no-anthropic-runtime.py -- static Anthropic-identifier gate over the shipped
+Loop Protection System (Skill 61).
+
+Adapted verbatim from Skill 59's four-scanner merge-gate family (guard-no-anthropic-
+runtime.py, scan-no-secrets.sh, scan-no-client-identifiers.sh, scan-no-json-exports.sh):
+same static-scan mechanics, same value-shape detectors, same enforcement-context
+allowlist, same CHANGELOG.md basename exemption, same self-test, same 0/1/2/3/4 exit
+contract and value-free doctrine -- per Skill 61 SKILL.md's "Reuse before rebuild"
+table. This guard is the static half of Skill 61's own doctrine point 7: "NOTHING
+Anthropic-family runs at runtime. The sentinel calls no model at all, so the rule is
+satisfied vacuously at runtime AND enforced statically over every shipped file. NEVER
+ship a `claude-*` / `anthropic/*` / `us.anthropic.*` runtime identifier; the signature
+catalog names those families only as deny data." It proves that ZERO Anthropic-family
+model-id / SDK / endpoint VALUES ship in any Skill 61 runtime file (the sentinel, the
+ledger, the alert router, the baseline manager, the config catalogs), and it is built
+to fold every future Skill 61 surface into a later full pass via extra path arguments
+(positional paths / --include).
+
+WHAT IS A VIOLATION (an actual Anthropic identifier VALUE):
+  - a `<C>-<version>` model id             (the drafting-vendor id shape)
+  - an `<A>/<model>` vendor-prefixed id     (OpenRouter-style routing)
+  - a `us.<A>.<model>` id                   (Bedrock-style ARN)
+  - the `@<A>-ai` package scope             (the SDK on npm)
+  - `<A>.<C>` or `<A>.com`                  (Bedrock dotted modelId / the API host)
+  - a quoted scalar whose ENTIRE value is exactly the bare vendor token
+        ( a `"..."` equal to <A> or <C> -- e.g. a `"provider": "<A>"` config leak )
+  where <A> and <C> are the two banned vendor tokens, assembled HERE from fragments so
+  this shipped file itself carries no contiguous banned literal (the same convention
+  model_router.py uses; the guard scans its own source clean, proved in the self-test).
+  Every compound shape requires an actual id-shaped character (`[a-z0-9]`) immediately
+  after its delimiter (`<A>/`, `us.<A>.`) -- exactly the discipline `<C>-<version>`
+  already had (`claude-[a-z0-9]`, never a bare `claude-`). A real routed id or ARN
+  always has real content there; only a GLOB or a bare deny-list token ends at the
+  delimiter (see below), so this costs no detection power over an actual leak.
+
+WHAT IS NOT A VIOLATION (the enforcement mechanisms themselves -- ALLOWED):
+  The whole point of the engine is to REFUSE Anthropic ids, so the deny machinery has to
+  name the thing it bans. A value-shape hit is treated as an ALLOWED enforcement
+  DEFINITION, never a violation, when the line is one of:
+    - a REGEX definition (carries `(?i)`, a `[^...]` character class, or an
+      `re.compile/search/match/fullmatch` call) -- e.g. anthology_state.py and
+      caf_delivery.py define `_ANTHROPIC_DENY_RE` as a literal deny regex, and
+      model_router.py assembles the identical law from fragments;
+    - a deny / scrub / blocklist construct (the line, or a non-blank line just above it,
+      names a deny-, scrub-, or block- symbol -- e.g. nudge_send.py's INTERNAL_DENY tuple);
+    - a line carrying an explicit inline allow pragma.
+  A bare mention of the vendor name in prose, a comment, a docstring, or an identifier
+  (`is_<A>_shaped`, `AF-AE-ANTHROPIC`, this file's own name) is NEVER a value shape and is
+  never flagged. The bare-token law lives at CALL time in model_router.py (which sees the
+  RESOLVED id) and in preflight.sh over the resolved model-map; this static gate is
+  deliberately narrower -- it flags the compound VALUE signatures that never occur in
+  honest prose but always occur in a real leak.
+  A GLOB ban-phrase (`<C>-*` / `<A>/*`, e.g. "NEVER `claude-*` / `anthropic/*`") or a
+  bare deny-list token (`"<A>/"`, `"us.<A>."` as an array/allowlist entry with nothing
+  after) is NOT a value shape either -- see the delimiter-suffix rule above. Skill 54's
+  own model-map TEMPLATE, SKILL.md, and verify.sh all document the client-sovereignty
+  rule this exact way per tier (HEAVY-WRITER/MID-WRITER/LIGHT), and 59's own
+  MASTERDOC.md/SKILL.md state the identical rule; none of that is a runtime id.
+  CHANGELOG.md (any skill's, or the repo root's) is retrospective, historical prose
+  about changes that ALREADY shipped -- never itself executed or read as config -- so
+  it is exempt from this scan by basename (see `_NON_RUNTIME_BASENAMES`). Every
+  Anthropic-shaped mention actually found in a CHANGELOG.md across this repo, at the
+  time this exemption was added, was a "changed FROM <id> TO <replacement>" or
+  "<id> appears only in a deliberately-failing negative-test fixture" citation of a
+  value that no longer ships -- never a live one.
+
+DOCTRINE: prints the matched vendor-token span ONLY, never the whole source line by
+default (an offending line could sit beside a secret-shaped value); --show-line is a
+LOCAL-DEBUG escape hatch. Never prints a credential value. Move in silence.
+
+Exit codes (Skill 61 merge-gate; house convention for the edge cases, mirrored
+from Skill 59's four-scanner family):
+  0  clean (no Anthropic identifier VALUE in any scanned file)
+  4  violation (at least one Anthropic identifier VALUE found)
+  2  bad invocation (a requested path is missing, or no paths to scan)
+  1  unexpected error
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+EX_OK, EX_ERR, EX_BAD, EX_DEP, EX_VIOLATION = 0, 1, 2, 3, 4
+
+# The two banned vendor tokens, assembled from fragments so this shipped file carries no
+# contiguous banned literal (mirrors model_router.py; proved by the SELF self-test case).
+_A = "anthro" + "pic"
+_C = "clau" + "de"
+
+# --- VALUE-shape detectors (a real Anthropic identifier value) -----------------------
+# Each is a COMPOUND shape that does not occur in honest prose, comments, or identifiers.
+# Matched CASE-SENSITIVELY against the lowercase canonical form: every functional
+# Anthropic model-id / endpoint / SDK-scope / provider VALUE that could actually ship is
+# lowercase, so this cleanly excludes the Capitalized proper-noun ("Anthropic", "Claude")
+# that saturates the doctrine, comments, and operator prose. The any-casing bare-token
+# law belongs at CALL time (model_router.py sees the RESOLVED id), not to this static gate.
+_VALUE_PATTERNS = [
+    ("model-id",     re.compile(_C + r"-[a-z0-9]")),                # <C>-<version>
+    ("vendor-slash", re.compile(_A + r"/[a-z0-9]")),                # <A>/<model> (real id char after
+                                                                     # the slash -- <A>/* is a ban-GLOB,
+                                                                     # never a routed id; see docstring)
+    ("sdk-scope",    re.compile(r"@?" + _A + r"-ai\b")),            # @<A>-ai
+    ("bedrock",      re.compile(r"us\." + _A + r"\.[a-z0-9]")),     # us.<A>.<model> (same real-char-
+                                                                     # after-the-delimiter guard)
+    ("dotted",       re.compile(_A + r"\.(?:" + _C + r"|com)")),    # <A>.<C> | <A>.com
+]
+# A quoted scalar whose ENTIRE value is exactly the bare (lowercase) vendor token, a
+# config leak such as a `"provider": "<A>"`. Lowercase-only, so a Capitalized proper-noun
+# in an English quotation (a `"Anthropic"` mention in operator prose) is NOT a value.
+_SCALAR_PATTERN = ("bare-scalar",
+                   re.compile(r"(['\"])(?:" + _A + r"|" + _C + r")\1"))
+
+# --- Enforcement-context discriminators (ALLOWED, never a violation) ------------------
+# A value-shape hit on such a line is the deny machinery naming what it bans.
+_REGEX_CONTEXT_RE = re.compile(r"\(\?i\)|\[\^|re\.(?:compile|search|match|fullmatch)")
+_ENFORCEMENT_MARKER_RE = re.compile(
+    r"(?i)(?:deny|blocklist|blocked|scrub|forbidden"
+    r"|guard-no-" + _A + r"|is_" + _A + r"_shaped)")
+_ALLOW_PRAGMA_RE = re.compile(
+    r"(?i)guard-no-" + _A + r"\s*[:=]?\s*(?:allow|ok|ignore|expected)")
+
+# Text file kinds that ship in the engine (and, in the W3 full pass, the Command Center).
+# `.env` is deliberately absent: it holds real secrets and is never scanned by default.
+DEFAULT_EXTS = {
+    ".py", ".sh", ".json", ".md", ".txt", ".tsx", ".ts", ".js", ".jsx",
+    ".html", ".css", ".yaml", ".yml", ".toml", ".cfg", ".ini",
+}
+DEFAULT_SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".build-state",
+                     ".venv", "venv", ".next", "dist", "build", ".mypy_cache"}
+
+# Basenames that are NEVER shipped runtime, regardless of directory: a changelog is
+# retrospective prose about changes that already happened, never executed, never read
+# as config by the engine. Mirrors the non_runtime_docs allowlist convention in the
+# sibling 58-podcast-production-engine guard (config/anthropic-guard-allow.json), made
+# automatic here because it holds for EVERY changelog in this repo, not one skill's --
+# every Anthropic-shaped mention found in one, at the time this was added, was a
+# "changed FROM <id> TO <replacement>" or negative-test-fixture citation of a value
+# that no longer ships. This exemption is JOB-1-only and file-scoped by basename; it
+# never widens to SKILL.md or any runtime directory (scripts/, config/, prompts/, ...).
+_NON_RUNTIME_BASENAMES = {"changelog.md"}
+
+
+def _value_hit(line):
+    """Return (kind, matched_text) for the first Anthropic VALUE shape on the line, else
+    None. Checks the compound value shapes first, then the exact bare-scalar shape."""
+    for kind, rx in _VALUE_PATTERNS:
+        m = rx.search(line)
+        if m:
+            return kind, m.group(0)
+    kind, rx = _SCALAR_PATTERN
+    m = rx.search(line)
+    if m:
+        return kind, m.group(0)
+    return None
+
+
+def deny(text):
+    """AF-AE-ANTHROPIC py_symbol. True iff `text` carries an Anthropic-family identifier
+    VALUE shape (the static-scan law). Enforcement-context allowlisting is a per-LINE
+    concern owned by the scanner; this bare predicate answers only 'is this string an
+    Anthropic identifier value?'. Companion to model_router.is_anthropic_shaped, scoped to
+    the compound VALUE signatures this static gate enforces."""
+    return bool(text) and _value_hit(str(text)) is not None
+
+
+def _is_enforcement_context(lines, idx, window=3):
+    """Return an allow-reason string when the hit at lines[idx] is a deny / scrub / regex
+    enforcement DEFINITION (ALLOWED), else None. Looks at the hit line plus up to `window`
+    preceding NON-BLANK lines, so an assignment header one line above the literal (the
+    `_ANTHROPIC_DENY_RE = re.compile(` or `INTERNAL_DENY = (` shape) still covers it."""
+    line = lines[idx]
+    if _ALLOW_PRAGMA_RE.search(line):
+        return "allow-pragma"
+    if _REGEX_CONTEXT_RE.search(line):
+        return "regex-definition"
+    if _ENFORCEMENT_MARKER_RE.search(line):
+        return "deny-symbol"
+    seen = 0
+    j = idx - 1
+    while j >= 0 and seen < window:
+        prev = lines[j]
+        if prev.strip():
+            seen += 1
+            if _ENFORCEMENT_MARKER_RE.search(prev):
+                return "deny-symbol-header"
+        j -= 1
+    return None
+
+
+def scan_file(path, window=3):
+    """Scan one text file. Returns {file, scanned, violations:[{line, kind, match, _line}]}.
+    Never raises on a read error -- an unreadable file is reported as scanned=False so the
+    caller can surface it without turning a read glitch into a false CLEAN."""
+    p = Path(path)
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError) as exc:
+        return {"file": str(p), "scanned": False, "violations": [],
+                "skipped_reason": "unreadable: %s" % exc}
+    if p.name.lower() in _NON_RUNTIME_BASENAMES:
+        # Historical/retrospective doc, never shipped runtime -- see _NON_RUNTIME_BASENAMES.
+        return {"file": str(p), "scanned": True, "violations": [],
+                "exempt_reason": "non-runtime-doc"}
+    lines = text.splitlines()
+    violations = []
+    for i, line in enumerate(lines):
+        hit = _value_hit(line)
+        if not hit:
+            continue
+        if _is_enforcement_context(lines, i, window):
+            continue
+        kind, matched = hit
+        violations.append({"line": i + 1, "kind": kind, "match": matched, "_line": line})
+    return {"file": str(p), "scanned": True, "violations": violations}
+
+
+def collect_files(roots, exts, skip_dirs):
+    """Yield the text files under the given roots (each a file or directory) matching
+    `exts`. A root named directly as a FILE is scanned regardless of extension (an explicit
+    ask overrides the extension filter). Raises FileNotFoundError if a root is missing."""
+    found = []
+    for root in roots:
+        rp = Path(root)
+        if not rp.exists():
+            raise FileNotFoundError(str(root))
+        if rp.is_file():
+            found.append(rp)
+            continue
+        for dirpath, dirnames, filenames in os.walk(rp):
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+            for fn in filenames:
+                if Path(fn).suffix.lower() in exts:
+                    found.append(Path(dirpath) / fn)
+    seen = set()
+    uniq = []
+    for f in sorted(found, key=str):
+        key = str(f.resolve())
+        if key not in seen:
+            seen.add(key)
+            uniq.append(f)
+    return uniq
+
+
+def default_engine_root():
+    """The skill root that ships this guard: the parent of the scripts/ directory."""
+    return Path(__file__).resolve().parent.parent
+
+
+def scan_paths(roots, exts=None, skip_dirs=None, window=3):
+    """Scan every text file under `roots`; return an aggregate report dict."""
+    exts = exts or DEFAULT_EXTS
+    skip_dirs = skip_dirs or DEFAULT_SKIP_DIRS
+    files = collect_files(roots, exts, skip_dirs)
+    reports = [scan_file(f, window) for f in files]
+    total = sum(len(r["violations"]) for r in reports)
+    return {
+        "roots": [str(r) for r in roots],
+        "files_scanned": sum(1 for r in reports if r["scanned"]),
+        "files_skipped": sum(1 for r in reports if not r["scanned"]),
+        "violation_count": total,
+        "violations": [r for r in reports if r["violations"]],
+        "skipped": [r for r in reports if not r["scanned"]],
+        "ok": total == 0,
+    }
+
+
+def evaluate(roots=None):
+    """Importable harness API (matches the guard-font-floor `evaluate` convention): True
+    iff every scanned file is clean of Anthropic identifier VALUES. Defaults to the engine
+    root. Accepts a single path or an iterable of paths."""
+    if roots is None:
+        roots = [default_engine_root()]
+    elif isinstance(roots, (str, Path)):
+        roots = [roots]
+    return scan_paths(list(roots))["ok"]
+
+
+def self_test(window=3):
+    """Force-observe every failure mode: a clean file passes, a planted leak is caught on
+    every shape, a deny-DEFINITION is NOT flagged, and the guard's own source scans clean.
+    All planted content is built from fragments so this .py file stays free of any
+    contiguous banned literal; the temp files carry the literals and are then discarded."""
+    import tempfile
+    a, c = _A, _C
+    print("[guard-no-anthropic] self-test: clean file, planted leak, deny-definition, self-scan")
+
+    # Adversarial CLEAN content: honest non-Anthropic ids, an enforcement predicate name,
+    # and the exact prose shapes that must NEVER flag -- a Capitalized proper-noun quoted
+    # in operator prose ("Anthropic") and a Title-cased mention ("Claude-3"), neither of
+    # which is a lowercase functional VALUE (this regression-guards the delivery_report FP).
+    q = chr(34)  # a double-quote, kept out of any contiguous banned literal
+    clean = "\n".join([
+        "# Nothing " + a.capitalize() + " ships in any runtime file (doctrine, bare word).",
+        'CHAIN = ["glm-5.2", "minimax-v3", "gemini-3.5-flash", "deepseek-v4"]',
+        "def is_" + a + "_shaped(x): return bool(_DENY.search(x))  # named predicate only",
+        "# the certificate legitimately names " + q + a.capitalize() + q + " in its prose",
+        "# and mentions the " + q + c.capitalize() + "-3" + q + " family once; neither is a value",
+    ])
+    # One shape per line so each detector is isolated (a line carrying several shapes is
+    # caught by whichever matches first, proved by the REALISTIC line at the end).
+    leaks = "\n".join([
+        'PRIMARY   = "' + c + '-opus-4-8"',                       # model-id  <C>-<ver>
+        'ROUTED    = "' + a + '/opus-4-1"',                       # vendor-slash  <A>/<model>
+        'BEDROCK   = "us.' + a + '.reasoning-v2:0"',              # bedrock  us.<A>.<model>
+        'PKG       = "@' + a + '-ai/sdk"',                        # sdk-scope  @<A>-ai
+        'HOST      = "api.' + a + '.com/v1/messages"',           # dotted  <A>.com
+        'CONF      = {"provider": "' + a + '"}',                  # bare-scalar  exact "<A>"
+        'REALISTIC = "' + a + "/" + c + '-3-5-sonnet-latest"',    # combined; still caught
+    ])
+    denydef = "\n".join([
+        "_ANTHROPIC_DENY_RE = re.compile(",
+        '    r"(?i)(^|[^a-z0-9])(' + c + "|" + a + ")([^a-z0-9]|$)|"
+        + a + "/|" + c + "-|us." + a + '.",',
+        ")",
+        'INTERNAL_DENY = ("' + a + '", "' + c + '-", "openrouter")',
+        'DOC = "' + c + '-opus-4-8"  # guard-no-' + a + ": allow (documented example only)",
+    ])
+
+    # Regression fixture for the AF-AE-ANTHROPIC false-positive fix (branch
+    # anthology-engine-build): a GLOB ban-phrase (Skill 54's SKILL.md / model-map
+    # TEMPLATE / verify.sh convention, "NEVER `claude-*` / `anthropic/*`") and a bare
+    # deny-list-array literal (nothing but a delimiter after the vendor token) must
+    # NOT flag -- neither is a real id, both end exactly at the delimiter (`/`, the
+    # trailing `.`) with no id-shaped character following it, which is precisely what
+    # distinguishes them from a real vendor-slash id or bedrock ARN.
+    bandoc = "\n".join([
+        "NEVER `" + c + "-*` / `" + a + "/*`. Client sovereignty: never substitute.",
+        '"banned_model_id_prefixes": ["' + c + '-", "' + a + '/", "us.' + a + '."]',
+    ])
+
+    with tempfile.TemporaryDirectory() as td:
+        pc = Path(td) / "clean.py"
+        pl = Path(td) / "leak.py"
+        pd = Path(td) / "denydef.py"
+        pb = Path(td) / "bandoc.md"
+        pc.write_text(clean, encoding="utf-8")
+        pl.write_text(leaks, encoding="utf-8")
+        pd.write_text(denydef, encoding="utf-8")
+        pb.write_text(bandoc, encoding="utf-8")
+
+        rc = scan_file(pc, window)
+        assert rc["scanned"] and not rc["violations"], "CLEAN file wrongly flagged: %r" % rc
+        print("[guard-no-anthropic] clean case: PASS (0 violations, %d lines)"
+              % len(clean.splitlines()))
+
+        rl = scan_file(pl, window)
+        kinds = {v["kind"] for v in rl["violations"]}
+        assert len(rl["violations"]) >= 7, "planted leak not fully caught: %r" % rl
+        for expect in ("model-id", "vendor-slash", "bedrock", "sdk-scope", "dotted", "bare-scalar"):
+            assert expect in kinds, "planted %s leak missed (got %s)" % (expect, sorted(kinds))
+        print("[guard-no-anthropic] leak case: PASS (caught %d, shapes %s)"
+              % (len(rl["violations"]), sorted(kinds)))
+
+        rd = scan_file(pd, window)
+        assert rd["scanned"] and not rd["violations"], \
+            "deny-DEFINITION wrongly flagged (regex/scrub/pragma must be ALLOWED): %r" % rd
+        print("[guard-no-anthropic] deny-definition case: PASS "
+              "(regex + scrub-list + pragma all ALLOWED, 0 violations)")
+
+        rb = scan_file(pb, window)
+        assert rb["scanned"] and not rb["violations"], \
+            "ban-documentation GLOB/deny-list-literal wrongly flagged (AF-AE-ANTHROPIC FP " \
+            "regression -- Skill 54's SKILL.md/model-map TEMPLATE/verify.sh convention " \
+            "must stay clean): %r" % rb
+        print("[guard-no-anthropic] ban-documentation case: PASS "
+              "(GLOB ban-phrase + bare deny-list literal both ALLOWED, 0 violations)")
+
+        # The fix must NOT cost detection power: a real id immediately after the SAME
+        # delimiters (no glob, no bare deny-list truncation, and -- unlike bandoc.md --
+        # no adjacent ban wording) still trips the gate.
+        real_leak = Path(td) / "real_leak_check.py"
+        real_leak.write_text(
+            'ROUTED  = "' + a + '/' + c + '-3-5-sonnet"\n'
+            'BEDROCK = "us.' + a + '.' + c + '-3-haiku-20240307"\n',
+            encoding="utf-8")
+        rr = scan_file(real_leak, window)
+        assert rr["scanned"] and len(rr["violations"]) == 2, \
+            "fix over-broadened: a REAL vendor-slash/bedrock id stopped tripping: %r" % rr
+        print("[guard-no-anthropic] real-id-after-fix case: PASS "
+              "(real vendor-slash + bedrock ids still caught, 2 violations)")
+
+        # CHANGELOG.md exemption (basename-scoped, JOB-1-only): a real-shaped id with
+        # NO ban wording nearby -- the exact shape that WOULD trip every other file --
+        # is exempt only because the basename is CHANGELOG.md.
+        changelog = Path(td) / "CHANGELOG.md"
+        changelog.write_text(
+            "## [v1.2.3]\n- CLI `--model` default changed from `" + c
+            + "-sonnet-4-5` to `minimax-m3:cloud`.\n",
+            encoding="utf-8")
+        rch = scan_file(changelog, window)
+        assert rch["scanned"] and not rch["violations"] \
+            and rch.get("exempt_reason") == "non-runtime-doc", \
+            "CHANGELOG.md non-runtime-doc exemption regressed: %r" % rch
+        not_changelog = Path(td) / "not-a-changelog.md"
+        not_changelog.write_text(changelog.read_text(encoding="utf-8"), encoding="utf-8")
+        rnc = scan_file(not_changelog, window)
+        assert rnc["violations"], \
+            "exemption leaked past basename (a same-content non-CHANGELOG file wrongly " \
+            "passed clean): %r" % rnc
+        print("[guard-no-anthropic] CHANGELOG.md exemption case: PASS "
+              "(exempt by exact basename only; identical content elsewhere still caught)")
+
+    self_report = scan_file(Path(__file__).resolve(), window)
+    assert self_report["scanned"] and not self_report["violations"], \
+        "guard flagged its OWN source (a contiguous banned literal leaked in): %r" % self_report
+    print("[guard-no-anthropic] self-scan case: PASS (own source carries no Anthropic value)")
+
+    assert deny(c + "-3-5-sonnet") and deny(a + "/" + c) and deny("us." + a + ".x")
+    assert deny("@" + a + "-ai/sdk") and deny(a + ".com")
+    assert not deny("glm-5.2") and not deny("minimax-v3") and not deny("gemini-3.5-flash")
+    assert not deny(a) and not deny(c), "a BARE vendor word is not a VALUE shape (call-time law owns it)"
+    assert not deny(c + "-*") and not deny(a + "/*"), \
+        "a GLOB ban-phrase token is not a VALUE shape (no id-shaped char after the delimiter)"
+    assert not deny(a + "/") and not deny("us." + a + "."), \
+        "a bare deny-list-literal token (nothing after the delimiter) is not a VALUE shape"
+    print("[guard-no-anthropic] predicate case: PASS (value shapes deny; real ids, bare words, "
+          "GLOB ban-phrases, and bare deny-list tokens all pass)")
+
+    print("[guard-no-anthropic] self-test: PASS")
+    return EX_OK
+
+
+def _strip_line(v, show):
+    v = dict(v)
+    if not show:
+        v.pop("_line", None)
+    return v
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Static Anthropic-identifier gate over the shipped Loop Protection "
+                    "System (Skill 61) file set, extensible to future scan targets via "
+                    "--include / positional paths.")
+    ap.add_argument("paths", nargs="*",
+                    help="extra files or directories to include (e.g. a later full-repo "
+                         "pass); the skill root is scanned too unless --no-default-root "
+                         "is given")
+    ap.add_argument("--root", help="override the skill root (default: this skill's root)")
+    ap.add_argument("--include", action="append", default=[], metavar="PATH",
+                    help="an additional root to scan (repeatable; same effect as a positional path)")
+    ap.add_argument("--no-default-root", action="store_true",
+                    help="do NOT scan the engine root; scan only the given paths")
+    ap.add_argument("--ext", action="append", default=[], metavar=".EXT",
+                    help="an additional file extension to scan (repeatable)")
+    ap.add_argument("--window", type=int, default=3,
+                    help="preceding non-blank lines examined for deny-definition context (default 3)")
+    ap.add_argument("--json", action="store_true", help="emit a machine-readable report to stdout")
+    ap.add_argument("--show-line", action="store_true",
+                    help="print the full offending line (LOCAL DEBUG ONLY; a line may sit "
+                         "beside a secret-shaped value)")
+    ap.add_argument("--list-files", action="store_true",
+                    help="list the files that would be scanned, then exit 0")
+    ap.add_argument("--self-test", action="store_true", help="run the built-in self-test and exit")
+    args = ap.parse_args(argv)
+
+    try:
+        if args.self_test:
+            return self_test(args.window)
+
+        exts = set(DEFAULT_EXTS)
+        for e in args.ext:
+            exts.add(e if e.startswith(".") else "." + e)
+
+        roots = []
+        if not args.no_default_root:
+            roots.append(Path(args.root) if args.root else default_engine_root())
+        roots.extend(Path(p) for p in args.include)
+        roots.extend(Path(p) for p in args.paths)
+        if not roots:
+            ap.error("no paths to scan (engine root suppressed and no paths given)")
+
+        try:
+            files = collect_files(roots, exts, DEFAULT_SKIP_DIRS)
+        except FileNotFoundError as exc:
+            sys.stderr.write("[guard-no-anthropic] bad invocation: no such path: %s\n" % exc)
+            return EX_BAD
+
+        if args.list_files:
+            for f in files:
+                print(str(f))
+            return EX_OK
+
+        reports = [scan_file(f, args.window) for f in files]
+        file_reports = [r for r in reports if r["violations"]]
+        skipped = [r for r in reports if not r["scanned"]]
+        total = sum(len(r["violations"]) for r in reports)
+        scanned = sum(1 for r in reports if r["scanned"])
+
+        if args.json:
+            print(json.dumps({
+                "roots": [str(r) for r in roots],
+                "files_scanned": scanned,
+                "files_skipped": len(skipped),
+                "violation_count": total,
+                "ok": total == 0,
+                "violations": [
+                    {"file": r["file"],
+                     "violations": [_strip_line(v, args.show_line) for v in r["violations"]]}
+                    for r in file_reports],
+            }, indent=2))
+        elif total == 0:
+            print("[guard-no-anthropic] CLEAN  %d file(s) scanned, 0 Anthropic identifier "
+                  "value(s)  (roots: %s)" % (scanned, ", ".join(str(r) for r in roots)))
+        else:
+            for r in file_reports:
+                for v in r["violations"]:
+                    loc = "%s:%d" % (r["file"], v["line"])
+                    if args.show_line:
+                        print("[guard-no-anthropic] VIOLATION %s [%s]  %s"
+                              % (loc, v["kind"], v.get("_line", "")))
+                    else:
+                        print("[guard-no-anthropic] VIOLATION %s [%s]  match=%r"
+                              % (loc, v["kind"], v["match"]))
+            print("[guard-no-anthropic] %d violation(s) in %d file(s)"
+                  % (total, len(file_reports)))
+
+        for r in skipped:
+            sys.stderr.write("[guard-no-anthropic] skipped (unreadable): %s (%s)\n"
+                             % (r["file"], r.get("skipped_reason", "")))
+
+        return EX_VIOLATION if total else EX_OK
+
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write("[guard-no-anthropic] unexpected error: %s\n" % exc)
+        return EX_ERR
+
+
+if __name__ == "__main__":
+    sys.exit(main())

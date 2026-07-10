@@ -1,0 +1,40 @@
+{
+  "_comment": "Circuit breaker defaults (spec Section 5.1). A breaker = (unit, window, max-events, trip-action). Every ceiling is a SAFETY CAP under Skill 60 Signal S4's law: a raise without an operator approval stamp is a P1; the system never silently raises its own limits. Overridable per box, but a loosened ceiling without a stamp is itself a P1.",
+  "version": 1,
+  "breakers": {
+    "process": {
+      "watches": "D1 restart velocity per supervised unit",
+      "window_minutes": 15,
+      "max_events_per_window": 10,
+      "max_events_per_day": 40,
+      "trip_action": "stop_and_park_unit",
+      "note": "STOP + park the unit (supervisor-native: max-restarts + exponential backoff restart delay) + P1 with last boot-log excerpt. A parked unit is visible-red until fixed; it never silently respawns. Feeds LP-B1/LP-B2 (LF-6)."
+    },
+    "turn": {
+      "watches": "D2 paid-token velocity",
+      "window_minutes": 60,
+      "max_tokens_per_window": 250000,
+      "trip_action": "heartbeat_allowlist_enforce_and_park_cron",
+      "note": "Heartbeat allowlist enforcement + offending cron parked + P1. NEVER touches the client's model choice (sovereignty) - it parks TIMERS, not models. Feeds LP-A2 (LF-8)."
+    },
+    "retry": {
+      "watches": "D3 identical-signature count per job",
+      "max_consecutive": 5,
+      "trip_action": "park_resumable_and_escalate",
+      "note": "Job parked in a resumable state + Rescue Rangers escalation (the auto-redispatch doctrine's own step 4: escalate after K tries, never tight-loop). Feeds LP-A4."
+    },
+    "cron": {
+      "watches": "D4 re-fire storm",
+      "overfire_multiple_of_declared": 2,
+      "trip_action": "disable_cron_not_delete",
+      "note": "Cron disabled (not deleted) + P1 with the cron id and its declared-vs-actual cadence. Feeds LP-A6/LP-C2/LP-D3 (LF-4)."
+    },
+    "healer": {
+      "watches": "the watchdog's OWN fix actions per target",
+      "max_fixes_per_target_per_day": 3,
+      "trip_on_any_verify_failure": true,
+      "trip_action": "stop_fixing_target_and_escalate",
+      "note": "The session-health.sh lesson encoded: a healer that loops is disabled by its OWN breaker, never by discovering the damage later. > 3 fixes on the same target / 24h OR any fix-verify failure = STOP fixing that target, flag healer-loop-suspected, escalate."
+    }
+  }
+}

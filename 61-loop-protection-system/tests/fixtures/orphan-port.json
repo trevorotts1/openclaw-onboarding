@@ -1,0 +1,7 @@
+{
+  "_note": "LP-B3 orphan handoff fixture: a zombie orphan holds :18789 outside the declared supervisor, plus a stale handoff marker. The kill-list must contain ONLY the orphan pid.",
+  "gateway_healthy_no_progress_ticks": 0,
+  "orphan_listener_pid": 33101,
+  "supervisor_pid": 40088,
+  "handoff_age_hours": 30
+}

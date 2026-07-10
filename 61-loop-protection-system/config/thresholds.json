@@ -1,0 +1,57 @@
+{
+  "_comment": "All tunable Loop Protection thresholds in ONE place (spec Section 3). The watchdog READS these; it never rewrites them (a threshold change rides the repo + rollout, like all Loop Protection data). Every ceiling here is also a SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is itself a P1 (spec 5.1/5.2).",
+  "version": 1,
+  "tick": {
+    "cadence_minutes": 15,
+    "jitter_seconds": 90,
+    "max_tick_seconds": 5,
+    "_locked": "T5/Section 3: every 15 minutes, jittered. Zero model calls; cadence costs CPU only. The system that hunts furnaces must be structurally incapable of being one."
+  },
+  "burn_in": {
+    "dry_run_days": 7,
+    "_locked": "T5: DRY_RUN observe-only for the first 7 days on any box; then Tier 1 arms. armed=false is the ledger default until the operator runs `arm`."
+  },
+  "d1_restart_velocity": {
+    "warn_per_tick": 3,
+    "p1_per_tick": 10,
+    "p1_per_day": 40,
+    "warn_consecutive_ticks_to_p1": 4,
+    "_source": "Box A ~56,050 restarts; Box F 4,528-in-10h. pm2 jlist restarts / launchctl runs / docker RestartCount, delta per unit per tick. NEVER an env dump (name/status/pid/restarts ONLY)."
+  },
+  "d2_token_burn_rate": {
+    "idle_window_minutes": 60,
+    "warn_tokens_per_hour": 50000,
+    "p1_tokens_per_hour": 250000,
+    "idle_paid_windows_to_p1": 4,
+    "_source": "Operator box ~11,800 calls/week; Box C ~10-12M input tokens/day idle. Paid vs local split, correlated with initiated-session presence (Skill 60 S5 method)."
+  },
+  "d3_identical_signature": {
+    "warn_repeat": 3,
+    "p1_repeat": 5,
+    "_source": "Generalized loop-detector.sh progress test, made content-based: rolling hash over (error class + tool-call name sequence + target) in the new-bytes-since-last-tick slice."
+  },
+  "d4_timer_refire": {
+    "cron_overfire_multiple": 2,
+    "wedge_no_progress_ticks": 3,
+    "handoff_file_age_hours": 6,
+    "gateway_port": 18789,
+    "_source": "Cron fires > 2x declared cadence = P1; healthy-probe-but-no-progress 3 ticks = P1 wedge; any orphan listener on :18789 = P1 (Box E deferral deadlock)."
+  },
+  "backoff": {
+    "base_seconds": 7200,
+    "multiplier": 2,
+    "cap_seconds": 86400,
+    "jitter_fraction": 0.1,
+    "_locked": "Section 5.2/5.4: exponential backoff with jitter is the ONLY sanctioned retry shape. Base 2h (the never-stop doctrine's own number), doubling, capped 24h, state persisted on disk per job (a backoff that lives in memory resets to zero on the next crash)."
+  },
+  "alert": {
+    "dedup_window_hours": 6,
+    "max_operator_alerts_per_box_per_day": 4,
+    "p1_bypasses_batch": true,
+    "escalation": {
+      "p1_unacked_minutes": 30,
+      "channel": "rescue-rangers",
+      "_locked": "Section 7: an unacknowledged P1 goes to Rescue Rangers after 30 minutes; a dead-man P1 escalates immediately. Thresholds shared with Skill 60."
+    }
+  }
+}

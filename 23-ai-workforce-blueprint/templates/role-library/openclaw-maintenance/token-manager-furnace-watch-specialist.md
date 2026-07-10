@@ -54,7 +54,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ### Hourly Sweep (the core job)
 
-Every hour — or more frequently when anomalies are detected — run SOP 9.1 (Furnace Sweep). This is a lightweight, read-only probe suite. It should complete in under two minutes and produce zero noise when nothing is wrong. If nothing has changed since the last sweep, emit no notification. Notify on change only.
+Every hour — or more frequently when anomalies are detected — run the sweep. The sweep is no longer a hand-rolled probe: it INVOKES the Loop Protection System (Skill 61), the deterministic, zero-model-call enforcement pipeline behind these SOPs. Run `bash ~/.openclaw/skills/61-loop-protection-system/loop-companion.sh audit --local` (VPS: `docker exec -u node <container> bash /data/.openclaw/skills/61-loop-protection-system/loop-companion.sh audit --local`). It is a lightweight, read-only detector pass (D1 restart velocity, D2 idle token-burn rate, D3 repeated-identical-signature, D4 timer re-fire / wedge / orphan-port) plus a provisioning-prevention checklist and the current breaker/backoff state; it completes in seconds and produces zero noise when nothing is wrong. If nothing has changed since the last sweep, emit no notification. Notify on change only. Skill 61's furnace-class detectors are the machinery this role's F1/F2/F3/F6/F10/F11/F13 ownership describes — the role no longer re-implements the probes, it operates the skill.
 
 ### Morning Routine (First Pass of the Day)
 
@@ -93,7 +93,7 @@ Every hour — or more frequently when anomalies are detected — run SOP 9.1 (F
 
 ## 5. Monthly Operations
 
-- Full cross-driver audit: map every active cron and heartbeat against the 14 furnace driver classes (F1-F14). Produce a per-driver risk score for this box.
+- Full cross-driver audit: map every active cron and heartbeat against the furnace driver classes. The taxonomy now EXTENDS the original F1–F13 with the Loop Protection loop classes (F14+), which share one vocabulary with Skill 61's `config/signatures.json` `loop_classes[]`: F14 = LP-A1 compaction-misconfig loop, plus the process/channel/task loop families (LP-B1..B5, LP-C1/C2, LP-D1..D3) that the Uptime / Connectivity Watchdog and this role co-own. Produce a per-driver risk score for this box from the Skill 61 audit output (`loop-companion.sh audit --local --json`).
 - Review all `needs_owner_decision` items from the past month. Escalate to Rescue Rangers any that have been open more than 14 days without resolution.
 - Coordinate with Cost/Model Optimizer on the monthly right-size ledger: ensure every cron that was disabled or repointed this month has a rationale logged.
 - Produce the Monthly Furnace Risk Report for the Director: top 3 active furnace risks, recommended remediation priority, estimated token burn delta since last month.
@@ -146,6 +146,8 @@ Every hour — or more frequently when anomalies are detected — run SOP 9.1 (F
 **When to run:** At least once per hour, lightweight and read-only. This is the primary recurring job of this role. Full procedure is in `sops/sop-furnace-watch-hourly.md`; the canonical steps are reproduced here.
 
 **When to run:** Triggered by: hourly cron, gateway-restart event, Uptime Watchdog handoff, or any change to AGENTS.md/openclaw.json.
+
+**Invoke the tooling, do not hand-roll it.** The sweep runs `loop-companion.sh audit --local` (Skill 61). The kill decisions below are references to Skill 61 kill cards, not bespoke edits: F1 heartbeat furnace → LF-8; F3 broken/context-bloat resume cron → LF-4 / LF-5; F10/F11 broken-delivery & duplicate crons → LF-4; the invalid-config engine freeze → LF-7; the orphan-gateway defer loop → LF-3. Skill 61 applies a Tier-1 kill card only on an armed box and always reversibly (disable-never-delete, snapshot-first, verify-it-stays); it prepares Tier-2/3 as an operator proposal or a Rescue Rangers escalation. The steps below are the same three-tier decisions, now backed by that pipeline.
 
 **Steps:**
 1. **Back up config.** Copy `openclaw.json` to `working/furnace-watch/backup/openclaw.json.$(date +%Y%m%d%H%M%S).bak` before any edit. Skip backup if sweep is read-only (no fix needed).

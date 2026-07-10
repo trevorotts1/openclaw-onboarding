@@ -16,6 +16,8 @@
 
 **When to run:** Every hour, lightweight read-only probe. This is NOT an agentTurn on a 2-minute cron -- it is a host-level pure-shell cron (`*/60` or an equivalent host watchdog) that costs zero agent tokens unless a finding is detected.
 
+**How to run (invoke the tooling, do not hand-roll it):** the probe is `bash ~/.openclaw/skills/61-loop-protection-system/loop-companion.sh audit --local` (VPS: `docker exec -u node <container> bash /data/.openclaw/skills/61-loop-protection-system/loop-companion.sh audit --local`). Skill 61 is the deterministic, zero-model-call Loop Protection System that ships the detectors (D1 restart velocity, D2 idle token-burn, D3 repeated-identical-signature, D4 timer re-fire / wedge / orphan-port) and the kill cards the steps below reference. `audit` is read-only and exits 0 clean / 4 on findings; `--json` feeds the aggregator. The manual inputs and steps below are retained as the canonical description of what that audit checks.
+
 **Inputs:**
 - Host process table (gateway PID, known watchdog PIDs)
 - OpenClaw session ledger / active-agents list (read-only)
@@ -84,9 +86,9 @@
 
 ---
 
-### SOP 9.4 -- Furnace Driver Reference (F1-F13)
+### SOP 9.4 -- Furnace Driver Reference (F1-F13, extended F14+)
 
-**When to run:** Reference only -- use when triaging a candidate to identify its known driver.
+**When to run:** Reference only -- use when triaging a candidate to identify its known driver. The taxonomy now EXTENDS to the Loop Protection loop classes (F14+), sharing one vocabulary with Skill 61's `config/signatures.json` `loop_classes[]`: F14 = LP-A1 (compaction-misconfig loop), and the process/channel/task loop families LP-B1..B5 / LP-C1/C2 / LP-D1..D3. Each maps to a Skill 61 kill card (LF-1..LF-8); triage against `loop-companion.sh audit --local` output rather than a hand kill.
 
 **Drivers this role owns:**
 - **F1 Heartbeat-poll session loop:** `[heartbeat poll]` log spam per memory rule `heartbeat-poll-session-loop-fleetwide.md`. Fix: JSON deep-merge `gateway: { heartbeat: { intervalMs: 1800000 } }`.

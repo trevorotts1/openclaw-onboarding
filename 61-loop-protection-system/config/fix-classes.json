@@ -1,0 +1,59 @@
+{
+  "_comment": "The Tier 1 auto-fix list (spec Section 6.2/6.3). This list is DATA, shipped from the repo, NEVER hand-edited on a box. Qualification bar for tier 1: the signature is unambiguous (a hard evidence predicate, not a heuristic), the fix has succeeded on a real incident at least once, the fix is reversible in one line, and the blast radius is the looping unit only. tier 2 = fix-with-operator-stamp (config-shape change); tier 3 = never-auto (propose and hold).",
+  "version": 1,
+  "fix_classes": [
+    {
+      "id": "LF-1", "loop_class": "build-stall", "tier": 1,
+      "title": "stale-lock removal (dead-pid-proven, JSON-parsed)",
+      "reversible_in": "restore the archived lock file",
+      "proof": "the session-health failure defines the safe version (parse with a real parser; dead-pid proof required; never touch a live lock)"
+    },
+    {
+      "id": "LF-2", "loop_class": "LP-C1", "tier": 1,
+      "title": "telegram offset rewind + channel restart",
+      "reversible_in": "restore the prior offset file",
+      "proof": "shipped and running fleet-wide since v10.14.5 (telegram-offset-healthcheck.sh)"
+    },
+    {
+      "id": "LF-3", "loop_class": "LP-B3", "tier": 1,
+      "title": "orphan-gateway clear + kickstart (marker archive -> port kill -> kickstart -> stability watch)",
+      "reversible_in": "restore the archived handoff marker",
+      "proof": "the Box E verified 4-step procedure; kill-list contains ONLY the orphan pid"
+    },
+    {
+      "id": "LF-4", "loop_class": "LP-A4/LP-A6/LP-C2/LP-D3", "tier": 1,
+      "title": "cron park on breaker trip (disable, never delete)",
+      "reversible_in": "re-enable the cron (uncomment / enabled:true)",
+      "proof": "the loop-detector / furnace-watch encoded rule (disable never delete)"
+    },
+    {
+      "id": "LF-5", "loop_class": "LP-A6", "tier": 1,
+      "title": "light-context set on a bloating resume cron",
+      "reversible_in": "unset lightContext on the cron",
+      "proof": "the encoded loop-detector fix (740,269 input tokens/tick -> 0)"
+    },
+    {
+      "id": "LF-6", "loop_class": "LP-B1/LP-B2", "tier": 1,
+      "title": "process-unit park on process-breaker trip + boot-log capture",
+      "reversible_in": "unpark the unit (single start + stability watch)",
+      "proof": "stop-and-flag is strictly safer than the status quo (infinite respawn)"
+    },
+    {
+      "id": "LF-7", "loop_class": "LP-B5", "tier": 1,
+      "title": "config restore from last-good snapshot on validate-fail (as box user)",
+      "reversible_in": "the snapshot IS the revert; the prior file is itself snapshotted first",
+      "proof": "Skill 60's snapshot/revert machinery, drilled"
+    },
+    {
+      "id": "LF-8", "loop_class": "LP-A2", "tier": 2,
+      "title": "heartbeat allowlist flip on a confirmed idle-burn P1",
+      "reversible_in": "restore the prior heartbeat block (snapshot revert line)",
+      "proof": "applied twice (operator box, Box C). STARTS as Tier 2 on client boxes; graduates to Tier 1 per box AFTER the operator stamps it once (Open Decision T4)."
+    }
+  ],
+  "tier_notes": {
+    "1": "AUTO-FIX: deterministic, proven, reversible; apply immediately, report after.",
+    "2": "FIX WITH OPERATOR STAMP: the watchdog prepares the exact command + snapshot + revert line and sends it as a one-tap proposal to the OPERATOR (never the client); an `approve <finding-id>` reply executes it.",
+    "3": "NEVER AUTO (propose and hold): anything touching a client's model choice (sovereignty is absolute), credentials, doctrine files, deletion of anything, ambiguous findings, and any fix whose verify failed once -> Rescue Rangers with the structured escalation format."
+  }
+}

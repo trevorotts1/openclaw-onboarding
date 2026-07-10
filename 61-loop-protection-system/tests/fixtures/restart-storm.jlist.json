@@ -1,0 +1,19 @@
+[
+  {
+    "name": "cc-app",
+    "pid": 40412,
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 56050,
+      "env": {
+        "NOTE": "This env block MUST be dropped by loop_common.filter_pm2_record.",
+        "PLACEHOLDER_TOKEN": "<NEVER_A_REAL_SECRET_PLACEHOLDER>"
+      }
+    }
+  },
+  {
+    "name": "gateway",
+    "pid": 701,
+    "pm2_env": { "status": "online", "restart_time": 0, "env": {} }
+  }
+]
