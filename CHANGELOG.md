@@ -1,3 +1,25 @@
+## [v19.14.0]  -  2026-07-10  -  fix(cc-writeback): Command Center task-API write-back auth (401 fix) — onboarding docs + templates, CI guard, cc_board payload
+
+Merges `integration/cc-writeback-fleet-train1` as the serial single onboarding writer, off fresh `origin/main` (v19.13.0). Closes the onboarding half of the Command Center "carded-but-trapped" 401 defect: dispatched department/persona agents finish work and write results back to the task API (`POST .../activities|deliverables|events|return-to-orchestrator`, `PATCH .../status`), but the CC is fail-closed and 401s any non-`ingest` write-back that omits `Authorization: Bearer $MC_API_TOKEN`, freezing finished work `in_progress` until a sweep discards it. Companion to the `blackceo-command-center` v5.1.0 server-side train (dispatcher auth injection + fail-loud preflight + sweep recovery + namespace fix).
+
+### fix — write-back auth in every remaining example
+- `23-ai-workforce-blueprint/templates/role-library/presentations/SOUL.md` + `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` (already landed at 474c1a45): `Authorization: Bearer $MC_API_TOKEN` on the deliverables/activities/status write-backs + a 401-trap note.
+- `universal-sops/cross-dept-request-template.md` (`POST .../events`), `master-orchestrator-dept/SOP-01-Blocked-vs-Return.md` (`POST .../return-to-orchestrator`), `master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md` (`PATCH .../status`; the sibling `POST /api/tasks/ingest` is explicitly labelled HMAC-signed, NOT Bearer), `references/BLOCKED-IS-GATED.md`, and `AGENTS.md` N36 — bearer line + note added; the `ingest` HMAC path is never given a bearer.
+
+### fix — installer secret mirror (474c1a45)
+- `32-command-center-setup/scripts/run-full-install.sh`: `cc_mirror_api_auth_to_agent_secrets()` mirrors `MC_API_TOKEN` + `WEBHOOK_SECRET` from the CC `.env.local` into the dept-agent runtime secrets env (0600, idempotent, preserves any existing value) so a dispatched agent's `$MC_API_TOKEN` resolves and its write-backs authenticate.
+
+### enforcement — CI guard
+- `scripts/guard-taskapi-auth-docs.sh` (NEW) + `.github/workflows/qc-static.yml`: scans tracked `.md`/`.sh`/`.py` for write-back EXAMPLES an agent would copy and fails when the surrounding block carries no `Authorization`/`Bearer` mention. Exempts `/api/tasks/ingest` (HMAC), `CHANGELOG.md`, server source-path citations (`route.ts`/`[id]`), and `.py`/`.sh` files that delegate to the signed board client (`_cc_board`/`_post_json`/`mc_route`). A negative-fixture CI step proves the guard bites (planted unauthenticated example → exit 1, passes once removed).
+
+### fix — cc_board.py deliverable payload drift
+- `06-ghl-install-pages/tools/cc_board.py` `register_deliverable()`: the old `{"url","meta"}` body 400s against the CC deliverables Zod schema; now sends `{"deliverable_type":"url","title":<meta.title|slug|type|"Artifact URL">,"path":<url>}` with `meta` folded into `description`. Signature/auth/returns unchanged; new selftest case 13 captures + asserts the schema-correct payload (`--selftest` PASS).
+
+### bundled
+- `scripts/apply-fleet-standards.sh` + `scripts/apply-routing-fix.sh` (474c1a45): drop the over-broad bare `present`/`pitch` triggers from the presentation routing reflex (`pitch deck`/`presentation deck` still route correctly).
+
+Scope: CC-401 onboarding auth files + the guard + cc_board payload — ZERO overlap with the Area-5 survey-builder train (`ghl_survey_builder.py`, landed at v19.12.0) or the podcast E1 train (v19.13.0). Repo-only merge; fleet fan-out is a separate operator decision (canary the operator's own box first). No operator PII, no client names, no Anthropic runtime identifiers, no secret values.
+
 ## [v19.13.0]  -  2026-07-10  -  fix(podcast-engine): E1 webhook mapper answer-key alias-map fill (survey_answer_keys_by_style)
 
 Merges `fix/podcast-e1-answer-key-aliases` as the serial single onboarding writer, off fresh `origin/main` (v19.12.0). Scoped ENTIRELY to `58-podcast-production-engine/scripts/webhook/aliases.json` (data), `58-podcast-production-engine/scripts/webhook/mapper.py` (self-test coverage only, no algorithm change), and the skill's own `SKILL.md` + `skill-version.txt` version stamp (plus the standard lockstep version markers `bump-version.sh` rolls repo-wide). No other department, no CC-401 onboarding auth/SOUL files, no Area-5 survey-builder files touched; ZERO overlap with the other in-flight trains on this branch (CC-401 onboarding, Area-5 survey branching already landed at v19.12.0, live-capture selectors). Repo-only merge; fleet fan-out is a separate operator decision. No operator PII, no client names, no Anthropic runtime identifiers, no secret values.
