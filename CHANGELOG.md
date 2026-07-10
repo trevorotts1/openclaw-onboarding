@@ -1,3 +1,5 @@
+## [v19.15.0]  -  2026-07-10  -  fix(podcast-engine): E1 webhook mapper TRUE positional value-routing of survey answers by style
+
 ## [v19.14.0]  -  2026-07-10  -  fix(cc-writeback): Command Center task-API write-back auth (401 fix) — onboarding docs + templates, CI guard, cc_board payload
 
 Merges `integration/cc-writeback-fleet-train1` as the serial single onboarding writer, off fresh `origin/main` (v19.13.0). Closes the onboarding half of the Command Center "carded-but-trapped" 401 defect: dispatched department/persona agents finish work and write results back to the task API (`POST .../activities|deliverables|events|return-to-orchestrator`, `PATCH .../status`), but the CC is fail-closed and 401s any non-`ingest` write-back that omits `Authorization: Bearer $MC_API_TOKEN`, freezing finished work `in_progress` until a sweep discards it. Companion to the `blackceo-command-center` v5.1.0 server-side train (dispatcher auth injection + fail-loud preflight + sweep recovery + namespace fix).
