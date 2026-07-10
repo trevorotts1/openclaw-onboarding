@@ -1,0 +1,50 @@
+{
+  "_comment": "SYNTHETIC test fixture for the Skill 60 EWS sentinel test suite. No client data. subtractive-misconfig: identical to baseline-clean.json EXCEPT agents.defaults.compaction.memoryFlush.softThresholdTokens is set to 900000, larger than the _contextWindow hint below (128000). effective ceiling = contextWindow - softThresholdTokens <= 0, the exact S3 broken-config case (config/monitored-keys.json: compaction.memoryFlush.softThresholdTokens, severity=P1_on_broken_arithmetic). This is a P1 to the OPERATOR under D5 -- NOT the running-low case, which never reaches the operator. See tests/fixtures/README.md and tests/drills/D-S3.md.",
+  "_contextWindow": 128000,
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "glm-5.2",
+        "fallbacks": ["minimax-m3:cloud", "deepseek-v4"]
+      },
+      "models": {
+        "glm-5.2": { "provider": "openrouter" },
+        "minimax-m3:cloud": { "provider": "ollama-cloud" }
+      },
+      "maxConcurrent": 16,
+      "subagents": {
+        "model": {
+          "primary": "glm-5.2",
+          "fallbacks": ["minimax-m3:cloud"]
+        },
+        "maxConcurrent": 16,
+        "maxChildrenPerAgent": 8,
+        "maxSpawnDepth": 3
+      },
+      "compaction": {
+        "mode": "memoryFlush",
+        "memoryFlush": {
+          "softThresholdTokens": 900000
+        }
+      },
+      "heartbeat": {
+        "every": "@daily",
+        "model": "minimax-m3"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "accounts": {
+        "default": {
+          "allowFrom": ["11111111"],
+          "dmPolicy": "allowlist",
+          "groupPolicy": "closed"
+        }
+      }
+    }
+  },
+  "cron": [
+    { "name": "ews-tick", "schedule": "*/15 * * * *", "delivery": "silent" }
+  ]
+}

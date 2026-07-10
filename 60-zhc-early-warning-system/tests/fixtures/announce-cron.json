@@ -1,0 +1,50 @@
+{
+  "_comment": "SYNTHETIC test fixture for the Skill 60 EWS sentinel test suite. No client data. announce-cron: identical to baseline-clean.json PLUS a second cron entry, 'daily-report', delivery=announce targeting a non-operator chat ('client'). Drives the S10 announce-to-non-operator P1 case (config/monitored-keys.json: cron, escalate_announce_nonoperator=P1) -- the exact --no-deliver client-spam trap this signal exists to catch. See tests/fixtures/README.md, REPAIRS.md signal table row S10, and tests/drills/D-ALERT.md.",
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "glm-5.2",
+        "fallbacks": ["minimax-m3:cloud", "deepseek-v4"]
+      },
+      "models": {
+        "glm-5.2": { "provider": "openrouter" },
+        "minimax-m3:cloud": { "provider": "ollama-cloud" }
+      },
+      "maxConcurrent": 16,
+      "subagents": {
+        "model": {
+          "primary": "glm-5.2",
+          "fallbacks": ["minimax-m3:cloud"]
+        },
+        "maxConcurrent": 16,
+        "maxChildrenPerAgent": 8,
+        "maxSpawnDepth": 3
+      },
+      "compaction": {
+        "mode": "memoryFlush",
+        "memoryFlush": {
+          "softThresholdTokens": 20000
+        }
+      },
+      "heartbeat": {
+        "every": "@daily",
+        "model": "minimax-m3"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "accounts": {
+        "default": {
+          "allowFrom": ["11111111"],
+          "dmPolicy": "allowlist",
+          "groupPolicy": "closed"
+        }
+      }
+    }
+  },
+  "cron": [
+    { "name": "ews-tick", "schedule": "*/15 * * * *", "delivery": "silent" },
+    { "name": "daily-report", "schedule": "0 9 * * *", "delivery": "announce", "target": "client" }
+  ]
+}

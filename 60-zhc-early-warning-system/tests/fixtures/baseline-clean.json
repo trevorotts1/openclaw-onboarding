@@ -1,0 +1,49 @@
+{
+  "_comment": "SYNTHETIC test fixture for the Skill 60 EWS sentinel test suite. No client data, no real credentials -- example placeholders only. baseline-clean: every monitored key (config/monitored-keys.json) sits at a safe, non-Anthropic, non-paid value with no cap raised past the fleet floor. This is the fixture every other cap-raise / subtractive-misconfig / announce-cron variant is derived from by ONE targeted change. See tests/fixtures/README.md.",
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "glm-5.2",
+        "fallbacks": ["minimax-m3:cloud", "deepseek-v4"]
+      },
+      "models": {
+        "glm-5.2": { "provider": "openrouter" },
+        "minimax-m3:cloud": { "provider": "ollama-cloud" }
+      },
+      "maxConcurrent": 16,
+      "subagents": {
+        "model": {
+          "primary": "glm-5.2",
+          "fallbacks": ["minimax-m3:cloud"]
+        },
+        "maxConcurrent": 16,
+        "maxChildrenPerAgent": 8,
+        "maxSpawnDepth": 3
+      },
+      "compaction": {
+        "mode": "memoryFlush",
+        "memoryFlush": {
+          "softThresholdTokens": 20000
+        }
+      },
+      "heartbeat": {
+        "every": "@daily",
+        "model": "minimax-m3"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "accounts": {
+        "default": {
+          "allowFrom": ["11111111"],
+          "dmPolicy": "allowlist",
+          "groupPolicy": "closed"
+        }
+      }
+    }
+  },
+  "cron": [
+    { "name": "ews-tick", "schedule": "*/15 * * * *", "delivery": "silent" }
+  ]
+}

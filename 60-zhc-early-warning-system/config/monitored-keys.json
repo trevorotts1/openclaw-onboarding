@@ -1,0 +1,139 @@
+{
+  "_comment": "S1/S4/S10 monitored-key catalog. Each entry names a dot-path into openclaw.json, its class (model|cap|furnace|access|cron|compaction), the DIRECTION that is dangerous, and the base severity. The sentinel diffs the live value against baseline.json every tick and on every config.write audit event. Sensitive keys are baselined by sha256 (hashed:true), never by value. NO client names, NO secret values in this file - it is pure catalog.",
+  "version": 1,
+  "keys": [
+    {
+      "path": "agents.defaults.model.primary",
+      "class": "model",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_family_or_paid_on_client": "P1",
+      "note": "S1: primary model swap. Client model choice is sovereign - ALERT never acts."
+    },
+    {
+      "path": "agents.defaults.model.fallbacks",
+      "class": "model",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_family_or_paid_on_client": "P1",
+      "note": "S1: fallback chain widened/changed; a paid or family fallback on a client box is P1."
+    },
+    {
+      "path": "agents.defaults.models",
+      "class": "model",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_family_or_paid_on_client": "P1",
+      "note": "S1: the explicit provider/model allowlist map. A new family/paid entry on a client box is P1."
+    },
+    {
+      "path": "agents.defaults.subagents.model.primary",
+      "class": "model",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_family_or_paid_on_client": "P1",
+      "note": "S1: subagent primary model."
+    },
+    {
+      "path": "agents.defaults.subagents.model.fallbacks",
+      "class": "model",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_family_or_paid_on_client": "P1",
+      "note": "S1: subagent fallback chain."
+    },
+    {
+      "path": "agents.defaults.maxConcurrent",
+      "class": "cap",
+      "direction": "raise",
+      "severity": "P1",
+      "note": "S4: agent concurrency ceiling. A RAISE without a valid approval stamp is P1; a lower value is P3."
+    },
+    {
+      "path": "agents.defaults.subagents.maxConcurrent",
+      "class": "cap",
+      "direction": "raise",
+      "severity": "P1",
+      "note": "S4: subagent concurrency ceiling (the 20-agents-per-wave class)."
+    },
+    {
+      "path": "agents.defaults.subagents.maxChildrenPerAgent",
+      "class": "cap",
+      "direction": "raise",
+      "severity": "P1",
+      "note": "S4: children-per-agent ceiling."
+    },
+    {
+      "path": "agents.defaults.subagents.maxSpawnDepth",
+      "class": "cap",
+      "direction": "raise",
+      "severity": "P1",
+      "note": "S4: spawn-depth ceiling."
+    },
+    {
+      "path": "agents.defaults.compaction.mode",
+      "class": "compaction",
+      "direction": "any_change",
+      "severity": "P2",
+      "note": "S3: compaction mode; validated together with the subtractive threshold."
+    },
+    {
+      "path": "agents.defaults.compaction.memoryFlush.softThresholdTokens",
+      "class": "compaction",
+      "direction": "any_change",
+      "severity": "P1_on_broken_arithmetic",
+      "note": "S3: SUBTRACTIVE. effective ceiling = contextWindow - softThresholdTokens. ceiling<=0 or threshold>=window => box WILL die with 'Context too large'; that broken-config case is P1 to the OPERATOR. Running-low (usage vs ceiling) goes to the box's OWN agent (D5), not the operator."
+    },
+    {
+      "path": "agents.defaults.heartbeat.every",
+      "class": "furnace",
+      "direction": "tighten",
+      "severity": "P2",
+      "note": "S5: heartbeat cadence IS spend. A cadence tightened below the fleet floor is P2 (cadence is a spend cap)."
+    },
+    {
+      "path": "agents.defaults.heartbeat.model",
+      "class": "furnace",
+      "direction": "any_change",
+      "severity": "P2",
+      "note": "S5: a heartbeat model resolving to a paid :cloud or metered tier is P2."
+    },
+    {
+      "path": "channels.telegram.accounts.default.allowFrom",
+      "class": "access",
+      "direction": "widen",
+      "severity": "P1",
+      "note": "S4: an access cap. A widened allowFrom list without an approval stamp is P1."
+    },
+    {
+      "path": "channels.telegram.accounts.default.dmPolicy",
+      "class": "access",
+      "direction": "loosen",
+      "severity": "P1",
+      "note": "S4: a loosened DM policy is an access-cap raise."
+    },
+    {
+      "path": "channels.telegram.accounts.default.groupPolicy",
+      "class": "access",
+      "direction": "loosen",
+      "severity": "P1",
+      "note": "S4: a loosened group policy is an access-cap raise."
+    },
+    {
+      "path": "channels.telegram.accounts.default.botToken",
+      "class": "access",
+      "direction": "any_change",
+      "severity": "P2",
+      "hashed": true,
+      "note": "Baselined by sha256 ONLY - never the value. A change to the token hash is P2 (rotation is legitimate; a surprise rotation is worth a note)."
+    },
+    {
+      "path": "cron",
+      "class": "cron",
+      "direction": "any_change",
+      "severity": "P2",
+      "escalate_announce_nonoperator": "P1",
+      "note": "S10: cron inventory (ids + delivery modes). A new cron not in baseline is P2; a delivery=announce cron bound to a non-operator chat is P1 (the --no-deliver client-spam trap)."
+    }
+  ]
+}
