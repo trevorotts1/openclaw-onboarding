@@ -98,9 +98,25 @@ The survey's shape comes from the TASK payload, never a hardcoded demo:
                                may carry ONE OR MORE fields and branches may
                                target ANY slide. Omit for the default one-field-
                                per-slide linear layout (fully backward compatible).
-Every ``if_field`` and ``then_slide`` is validated against the resolved field and
-slide sets during preflight (P4 family) — a dangling reference is a HARD STOP
-BEFORE any browser action, never a mid-build failure.
+  task['converge_slide']     — optional slide ref (label / name / "Pn" / index).
+                               BRANCH-CONVERGENCE primitive (Area 5.1): once the
+                               router sends a respondent into ONE branch, the other
+                               branch slides must be skipped — otherwise their
+                               (required) fields sit between the respondent and the
+                               submit button and the survey is UNSUBMITTABLE. When
+                               ``converge_slide`` is set the builder auto-derives one
+                               Jump-To rule per branch, OWNED by that branch's exit
+                               slide and conditioned on the router field, that jumps
+                               forward to the shared converge slide. Omit for a plain
+                               forward-router survey (byte-for-byte backward compat).
+A conditional_logic rule may also carry an explicit ``owner_slide`` (slide ref) to
+host the rule on a slide OTHER than the one that holds ``if_field`` — this is how a
+branch-exit slide jumps on an EARLIER router field's value. ``owner_slide`` defaults
+to the slide that hosts ``if_field`` (the forward-router case).
+Every ``if_field``, ``then_slide``, ``owner_slide`` and ``converge_slide`` is
+validated against the resolved field and slide sets during preflight (P4 family) —
+a dangling reference OR a branch that falls through into a sibling (no convergence
+jump) is a HARD STOP BEFORE any browser action, never a mid-build failure.
 """
 
 from __future__ import annotations
@@ -147,7 +163,7 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.2.0"
+SURVEY_BUILDER_VERSION = "v1.3.0"
 
 # ── Field-creation posture (F1 fix — grocery-shopping rule) ────────────────
 # The survey rail MUST reuse API-pre-created custom fields (map-only via the
@@ -449,13 +465,20 @@ def _run_cmd(
     session: str,
     *args: str,
     timeout: int = 30,
+    stdin: Optional[str] = None,
 ) -> subprocess.CompletedProcess:
-    """Execute one agent-browser command. Returns CompletedProcess; never raises."""
+    """Execute one agent-browser command. Returns CompletedProcess; never raises.
+
+    ``stdin`` pipes a payload to the command (used by ``eval --stdin`` so a
+    multi-token JS body is NOT shredded by ``browser_cmd`` space-join +
+    ``shlex.split``). Mirrors ``ghl_form_builder._ab``.
+    """
     cmd_str = ghl_builder.browser_cmd("--session", session, *args)
     _log(f"[ab] {cmd_str}")
     try:
         return subprocess.run(
             shlex.split(cmd_str),
+            input=stdin,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -504,8 +527,13 @@ def _type(session: str, text: str) -> None:
 
 
 def _eval(session: str, js: str, timeout: int = 15) -> str:
-    """Evaluate JS and return stdout (for URL capture, keepalive, etc.)."""
-    result = _run_cmd(session, "eval", js, timeout=timeout)
+    """Evaluate JS and return stdout (for URL capture, keepalive, router.push).
+
+    JS is piped via ``eval --stdin`` — NEVER a CLI arg: ``browser_cmd`` space-joins
+    the argv and ``_run_cmd`` ``shlex.split``s it, which would shred any multi-token
+    JS body (proven no-response on ``$router.push`` payloads). ``--stdin`` is the
+    proven-safe path (mirrors ``ghl_form_builder._eval``)."""
+    result = _run_cmd(session, "eval", "--stdin", stdin=js, timeout=timeout)
     return (result.stdout or "").strip().strip('"').strip("'")
 
 
@@ -513,6 +541,69 @@ def _snapshot(session: str) -> str:
     """Get the current accessibility snapshot (-i mode)."""
     result = _run_cmd(session, "snapshot", "-i", timeout=20)
     return result.stdout or ""
+
+
+# ── in-SPA navigation — $router.push ONLY (never open/reload after a token seed) ─
+# ROOT CAUSE (2026-07 first live run): Phase A used a full ``open`` of the app URL.
+# A full open/reload re-runs GHL's SPA boot gate, which signs a TOKEN-SEEDED
+# session out and bounces it to the login form — so Part 2 then fail-softs through
+# a login page and builds nothing. The community + form builders never hit this
+# because they navigate via ``$router.push`` exclusively (inject-ghl-auth.sh's
+# "DO NOT RELOAD" note). These helpers port that proven pattern.
+class SurveyAuthStop(RuntimeError):
+    """A token-seeded session is not authenticated, or the SPA router is not
+    mounted for an in-app navigation. STOP and report — there is NO UI-login / 2FA
+    fallback (D7 token-only doctrine)."""
+
+
+_ROUTER_PUSH_JS = (
+    "(async () => {"
+    "  const el = document.querySelector('#app');"
+    "  const gp = el && el.__vue_app__ && el.__vue_app__.config && el.__vue_app__.config.globalProperties;"
+    "  if (!gp || !gp.$router) return 'NO-ROUTER';"
+    "  await gp.$router.push({ path: %s });"
+    "  await new Promise(r => setTimeout(r, 900));"
+    "  return 'nav:' + location.pathname;"
+    "})()"
+)
+
+_LOGIN_CHECK_JS = (
+    "(() => {"
+    "  const pwd = !!document.querySelector('input[type=password]');"
+    "  const onLogin = /[?&]logout=true/.test(location.href) "
+    "|| /\\/login(\\b|$)/.test(location.pathname) || pwd;"
+    "  return (onLogin ? 'login:' : 'app:') + location.pathname;"
+    "})()"
+)
+
+
+def _assert_logged_in(session: str) -> str:
+    """Confirm the token-seeded session is on the app, NOT the login form — so a
+    bounced seed STOPS immediately instead of fail-softing Part 2 through a login
+    page (the 2026-07 live-run root cause)."""
+    res = _eval(session, _LOGIN_CHECK_JS, timeout=15)
+    if not res.startswith("app:"):
+        raise SurveyAuthStop(
+            f"session is NOT logged in ({res or 'no-response'}): the token seed did "
+            "not survive. Seed via inject-ghl-auth.sh with GHL_INJECT_KEEP_SESSION=1 "
+            "--pre-open and navigate in-app only (a full open/reload re-runs the SPA "
+            "boot gate). NO UI-login / 2FA fallback exists.")
+    return res
+
+
+def _router_push(session: str, path: str, expect_contains: str = "") -> str:
+    """SPA-navigate via ``$router.push`` (NEVER open/reload — that bounces a
+    token-seeded session to login). Raises SurveyAuthStop on a mismatch."""
+    res = _eval(session, _ROUTER_PUSH_JS % json.dumps(path), timeout=25)
+    if "NO-ROUTER" in res:
+        raise SurveyAuthStop(f"SPA store/router not mounted for push to {path!r}")
+    if expect_contains and expect_contains not in res:
+        loc = _eval(session, "location.pathname", timeout=10)
+        if expect_contains not in (loc or ""):
+            raise SurveyAuthStop(
+                f"router.push to {path!r} landed at {(res or loc)!r} "
+                f"(expected to contain {expect_contains!r})")
+    return res
 
 
 def _pre_phase_check(session: str, keepalive: "SessionKeepalive") -> None:
@@ -679,11 +770,18 @@ def _resolve_conditional_rules(task: dict) -> List[dict]:
     module constant ENTIRELY. The constant is only the documented demo / no-task
     fallback — never the branching source once a task supplies its own rules. A
     task may pass an EMPTY list to build a survey with NO conditional logic.
+
+    Area-5.1: when the task sets ``converge_slide`` the ROUTER rules are augmented
+    with auto-derived branch-convergence jumps (one per branch, owned by that
+    branch's exit slide) so no branch falls through into a sibling. Absent
+    ``converge_slide`` the result is byte-for-byte the pre-existing behaviour.
     """
     raw = task.get("conditional_logic")
     if isinstance(raw, list):
-        return [dict(r) for r in raw]
-    return [dict(r) for r in CONDITIONAL_LOGIC_RULES]
+        router = [dict(r) for r in raw]
+    else:
+        router = [dict(r) for r in CONDITIONAL_LOGIC_RULES]
+    return router + _derive_convergence_rules(task, router)
 
 
 def _norm(s: Any) -> str:
@@ -717,6 +815,104 @@ def _slide_target_label(slide: dict) -> str:
     """Canonical GHL jump-to / navigation label for a question or capture slide:
     ``P{index} - {name}`` (the "Pn -" prefix GHL auto-assigns by position)."""
     return f"P{slide['index']} - {slide['name']}"
+
+
+def _make_slide_resolver(slides: List[dict]):
+    """Return ``resolve(ref) -> slide_dict | None`` for the addressable (question
+    + capture) slides. A ref may be a canonical ``P{n} - Name`` label, a bare
+    slide name, a ``Pn`` / ``Slide n`` token, or a bare index. Shared by the
+    branching normaliser, the convergence-rule deriver, and the topology
+    validator so every slide-ref resolves identically."""
+    import re as _re
+    target_slides = [s for s in slides if s.get("type") in ("question", "capture")]
+    by_target_label = {_slide_target_label(s).lower(): s for s in target_slides}
+    by_name: dict = {}
+    for s in target_slides:
+        by_name.setdefault(_norm(s.get("name", "")), s)
+    by_index = {s["index"]: s for s in slides}
+
+    def resolve(ref: Any) -> Optional[dict]:
+        if ref is None:
+            return None
+        ref_s = str(ref).strip()
+        ref_l = ref_s.lower()
+        if ref_l in by_target_label:
+            return by_target_label[ref_l]
+        if ref_l in by_name:
+            return by_name[ref_l]
+        m = _re.match(r"^(?:p|slide)\s*(\d+)$", ref_l) or _re.match(r"^(\d+)$", ref_l)
+        if m:
+            n = int(m.group(1))
+            tgt = by_index.get(n)
+            if tgt is not None and tgt.get("type") in ("question", "capture"):
+                return tgt
+        return None
+
+    return resolve
+
+
+def _derive_convergence_rules(task: dict, router_rules: List[dict]) -> List[dict]:
+    """Area-5.1 branch-convergence primitive.
+
+    When the task sets ``converge_slide`` (a slide ref), each router branch must
+    re-join the shared tail of the survey instead of falling through into a
+    sibling branch (whose required fields would block submission). For every
+    ROUTER rule ``{if_field: R, if_value: V, then_slide: B}`` this derives a
+    Jump-To rule OWNED by branch B's exit slide, conditioned on ``R == V`` (always
+    true once the respondent is on that branch), that jumps forward to the shared
+    converge slide C. Emitting these as ordinary rules reuses the whole normalize
+    / group / click-list / browser path — the only new datum is ``owner_slide``.
+
+    Returns [] when ``converge_slide`` is absent (byte-for-byte backward
+    compatible) or the topology is degenerate (a dangling converge ref is surfaced
+    separately by ``_validate_topology``); it NEVER raises.
+    """
+    converge_ref = task.get("converge_slide")
+    if not converge_ref:
+        return []
+    fields = _resolve_fields(task)
+    slides = _plan_slides(task, fields)
+    resolve = _make_slide_resolver(slides)
+    converge = resolve(converge_ref)
+    if converge is None:
+        return []  # dangling — _validate_topology reports P4:topology_valid failure
+
+    # Branch entry slides = the router rules' then_slide targets. Skip any rule
+    # that already carries an explicit owner_slide (i.e. is itself a jump wired
+    # onto a non-router slide, not a forward router).
+    entries: List[tuple] = []  # [(branch_entry_slide, rule), …]
+    for r in router_rules:
+        if r.get("owner_slide"):
+            continue
+        b = resolve(r.get("then_slide"))
+        if b is not None:
+            entries.append((b, r))
+    if not entries:
+        return []
+
+    entry_indices = sorted({b["index"] for b, _ in entries})
+    by_index = {s["index"]: s for s in slides}
+    derived: List[dict] = []
+    for b, r in entries:
+        if b["index"] >= converge["index"]:
+            continue  # branch at/after the converge slide — nothing to skip
+        # The branch runs contiguously from its entry to just before the next
+        # branch entry (or the converge slide). Wire the jump onto its EXIT slide
+        # — for the single-slide branches these intakes use, exit == entry.
+        later = [i for i in entry_indices if i > b["index"]]
+        boundary = min(later) if later else converge["index"]
+        exit_index = min(boundary - 1, converge["index"] - 1)
+        if exit_index < b["index"]:
+            exit_index = b["index"]
+        exit_slide = by_index.get(exit_index, b)
+        derived.append({
+            "if_field": r.get("if_field"),
+            "if_value": r.get("if_value"),
+            "then_slide": converge_ref,
+            "owner_slide": _slide_target_label(exit_slide),
+            "kind": "converge",
+        })
+    return derived
 
 
 def _plan_slides(task: dict, fields: List[dict]) -> List[dict]:
@@ -830,16 +1026,10 @@ def _normalize_conditional_logic(
     RIGHT slide instead of a hardcoded "Slide 2". ``errors`` lists every unknown
     ``if_field`` and every dangling ``then_slide``.
     """
-    import re as _re
     errors: List[str] = []
 
-    # Jump-to targets: question + capture slides are addressable.
-    target_slides = [s for s in slides if s.get("type") in ("question", "capture")]
-    by_target_label = {_slide_target_label(s).lower(): s for s in target_slides}
-    by_name: dict = {}
-    for s in target_slides:
-        by_name.setdefault(_norm(s.get("name", "")), s)
-    by_index = {s["index"]: s for s in slides}
+    # Jump-to targets: question + capture slides are addressable (shared resolver).
+    resolve_then = _make_slide_resolver(slides)
 
     # field label -> owner (first question slide that lists the label)
     owner_by_label: dict = {}
@@ -848,23 +1038,6 @@ def _normalize_conditional_logic(
             continue
         for lbl in s.get("field_labels", []):
             owner_by_label.setdefault(_norm(lbl), s)
-
-    def resolve_then(ref: Any) -> Optional[dict]:
-        if ref is None:
-            return None
-        ref_s = str(ref).strip()
-        ref_l = ref_s.lower()
-        if ref_l in by_target_label:
-            return by_target_label[ref_l]
-        if ref_l in by_name:
-            return by_name[ref_l]
-        m = _re.match(r"^(?:p|slide)\s*(\d+)$", ref_l) or _re.match(r"^(\d+)$", ref_l)
-        if m:
-            n = int(m.group(1))
-            tgt = by_index.get(n)
-            if tgt is not None and tgt.get("type") in ("question", "capture"):
-                return tgt
-        return None
 
     normalized: List[dict] = []
     for i, rule in enumerate(rules, start=1):
@@ -886,6 +1059,19 @@ def _normalize_conditional_logic(
                     f"conditional rule {i}: if_field {mf.get('label')!r} is not "
                     "placed on any survey slide"
                 )
+        # An explicit ``owner_slide`` hosts the rule on a slide OTHER than the one
+        # that holds ``if_field`` (branch-convergence / cross-slide jumps). It
+        # OVERRIDES the field-derived owner; a dangling ref is a hard error.
+        explicit_owner_ref = rule.get("owner_slide")
+        if explicit_owner_ref is not None:
+            ex_owner = resolve_then(explicit_owner_ref)
+            if ex_owner is None:
+                errors.append(
+                    f"conditional rule {i}: dangling owner_slide "
+                    f"{explicit_owner_ref!r} (no matching slide in the planned survey)"
+                )
+            else:
+                owner = ex_owner
         then_ref = rule.get("then_slide")
         target = resolve_then(then_ref)
         if target is None:
@@ -975,6 +1161,50 @@ def _validate_topology(
     # (4) branching references
     _norm_rules, rule_errors = _normalize_conditional_logic(rules, fields, slides)
     errors.extend(rule_errors)
+
+    # (5) branch convergence (opt-in via ``converge_slide``): every router branch
+    # must reach the shared converge slide — either it is immediately before it
+    # (linear next) or it carries a convergence jump. A branch with neither falls
+    # through into a sibling branch whose required fields make the survey
+    # UNSUBMITTABLE, so it is a HARD STOP here (not a mid-build surprise).
+    converge_ref = task.get("converge_slide")
+    if converge_ref:
+        resolve = _make_slide_resolver(slides)
+        converge = resolve(converge_ref)
+        if converge is None:
+            errors.append(
+                f"converge_slide {converge_ref!r} does not resolve to a survey slide"
+            )
+        else:
+            c_label = _slide_target_label(converge)
+            c_idx = converge["index"]
+            # A convergence jump is any normalized rule that carries an explicit
+            # ``owner_slide`` (it re-hosts the jump on a branch-exit slide); a
+            # forward router does not. ``_norm_rules`` preserves both ``owner_slide``
+            # and ``owner_slide_label``, so no re-zip against the raw rules is needed.
+            conv_by_owner_idx: dict = {}
+            for nr in _norm_rules:
+                if nr.get("owner_slide"):
+                    ow = resolve(nr.get("owner_slide_label"))
+                    if ow is not None:
+                        conv_by_owner_idx.setdefault(ow["index"], set()).add(
+                            nr.get("then_slide"))
+            for nr in _norm_rules:
+                if nr.get("owner_slide"):
+                    continue  # a convergence jump, not a forward router
+                b = resolve(nr.get("then_slide"))
+                if b is None or b["index"] >= c_idx or nr.get("then_slide") == c_label:
+                    continue
+                reaches = b["index"] == c_idx - 1 or any(
+                    c_label in tgts and b["index"] <= oi < c_idx
+                    for oi, tgts in conv_by_owner_idx.items()
+                )
+                if not reaches:
+                    errors.append(
+                        f"branch slide {nr.get('then_slide')!r} falls through into a "
+                        f"sibling branch (no convergence jump to {c_label!r}) — "
+                        "respondent cannot submit; set converge_slide / add a jump"
+                    )
     return errors
 
 
@@ -1430,10 +1660,15 @@ def _p2_navigate_create(
 ) -> None:
     """Phase A: navigate to Surveys and click Add survey (PRD §5.B.2 steps 1–4)."""
     _log("P2-A: navigate to Surveys + create survey")
-    app_url = f"{GHL_APP_ORIGIN_DEFAULT}/v2/location/{location_id}/dashboard"
 
-    # Step 1: back to dashboard
-    _open(session, app_url)
+    # Step 1: land on the dashboard IN-APP. The token-seeded session is already on
+    # the dashboard (inject-ghl-auth.sh --pre-open activates via $router.push); a
+    # full `open` here would re-run the SPA boot gate and bounce the seed to the
+    # login form (2026-07 live-run root cause). Assert we are logged in, then
+    # SPA-route — NEVER a full open/reload.
+    _assert_logged_in(session)
+    _router_push(session, f"/v2/location/{location_id}/dashboard",
+                 expect_contains="/dashboard")
     _wait(session, "Dashboard")
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-dashboard"))
@@ -2906,6 +3141,151 @@ def _selftest() -> int:
                     errors.append("--task-json location_id not threaded into plan")
                 if len(plan_cli.get("conditional_logic", [])) != 1:
                     errors.append("--task-json branching rule count wrong")
+
+        # ── Area-5.1: branch-convergence primitive ───────────────────────────
+        conv_fields = [
+            {"type": "radio", "label": "Style", "key": "style",
+             "options": ["A", "B", "C"], "required": True, "slide_name": "Pick"},
+            {"type": "multiline", "label": "A1", "key": "a1",
+             "required": True, "slide_name": "BranchA"},
+            {"type": "multiline", "label": "B1", "key": "b1",
+             "required": True, "slide_name": "BranchB"},
+            {"type": "multiline", "label": "C1", "key": "c1",
+             "required": True, "slide_name": "BranchC"},
+            {"type": "multiline", "label": "Shared1", "key": "s1",
+             "required": True, "slide_name": "Shared"},
+            {"type": "multiline", "label": "Shared2", "key": "s2",
+             "required": False, "slide_name": "Shared"},
+        ]
+        conv_slides = [
+            {"name": "Pick", "fields": ["style"]},
+            {"name": "BranchA", "fields": ["a1"]},
+            {"name": "BranchB", "fields": ["b1"]},
+            {"name": "BranchC", "fields": ["c1"]},
+            {"name": "Shared", "fields": ["s1", "s2"]},
+        ]
+        conv_router = [
+            {"if_field": "style", "if_value": "A", "then_slide": "BranchA"},
+            {"if_field": "style", "if_value": "B", "then_slide": "BranchB"},
+            {"if_field": "style", "if_value": "C", "then_slide": "BranchC"},
+        ]
+        conv_task = {
+            "survey_name": "Conv", "title": "Conv", "location_id": "LOC",
+            "field_creation": "browser",
+            "survey_fields": conv_fields, "slides": conv_slides,
+            "conditional_logic": conv_router,
+            "converge_slide": "Shared",
+        }
+
+        # 19. converge_slide derives one jump per branch, each owned by that
+        #     branch's slide and targeting the shared converge slide (P6 - Shared).
+        fields_c = _resolve_fields(conv_task)
+        slides_c = _plan_slides(conv_task, fields_c)
+        plan_c = _build_survey_plan(conv_task, fields_c)
+        cl_rules = plan_c.get("conditional_logic", [])
+        routers = [r for r in cl_rules if r.get("kind") != "converge"]
+        converges = [r for r in cl_rules if r.get("kind") == "converge"]
+        if len(routers) != 3:
+            errors.append(f"convergence: expected 3 router rules, got {len(routers)}")
+        if len(converges) != 3:
+            errors.append(
+                f"convergence: expected 3 convergence rules, got {len(converges)}")
+        else:
+            owners = sorted(r.get("owner_slide_label") for r in converges)
+            if owners != ["P3 - BranchA", "P4 - BranchB", "P5 - BranchC"]:
+                errors.append(f"convergence: wrong owner slides {owners!r}")
+            if any(r.get("then_slide") != "P6 - Shared" for r in converges):
+                errors.append("convergence: every branch jump must target 'P6 - Shared'")
+            # each convergence jump conditions on the router field, not a stray one
+            if any(r.get("if_field") != "Style" for r in converges):
+                errors.append("convergence: jump must condition on the router field")
+
+        # 20. Topology is valid AND the click list wires the jumps on the branch
+        #     slides (navigate P3/P4/P5, THEN 'P6 - Shared').
+        topo_c = _validate_topology(
+            conv_task, fields_c, slides_c, _resolve_conditional_rules(conv_task))
+        if topo_c:
+            errors.append(f"convergence: valid survey must have no topology errors: {topo_c}")
+        norm_c = _normalize_conditional_logic(
+            _resolve_conditional_rules(conv_task), fields_c, slides_c)[0]
+        cl_c = _emit_click_list(fields_c, "F", "S", "Acme", "camp", "Hi", "LOC",
+                                slides=slides_c, rules=norm_c)
+        g_targets = {s["target"] for s in cl_c["steps"] if s["phase"] == "P2-G"}
+        for need in ("P2 - Pick", "P3 - BranchA", "P4 - BranchB", "P5 - BranchC",
+                     "P6 - Shared"):
+            if need not in g_targets:
+                errors.append(f"convergence click list missing P2-G target {need!r}")
+
+        # 21. Path simulation: a respondent who picks ONE style visits only that
+        #     branch + the shared tail + capture, never a sibling branch, and
+        #     REACHES the capture slide (i.e. can submit).
+        def _simulate(chosen: str) -> List[int]:
+            answers = {_norm("Style"): chosen}
+            by_idx = {s["index"]: s for s in slides_c}
+            # rules grouped by owner index, in declared order
+            owner_rules: dict = {}
+            for r in norm_c:
+                oi = r.get("owner_slide_index")
+                owner_rules.setdefault(oi, []).append(r)
+            first_q = min(s["index"] for s in slides_c if s.get("type") == "question")
+            visited: List[int] = []
+            cur = first_q
+            guard = 0
+            while cur in by_idx and guard < 50:
+                guard += 1
+                visited.append(cur)
+                if by_idx[cur].get("type") == "capture":
+                    break
+                nxt = None
+                for r in owner_rules.get(cur, []):
+                    fld = _norm(r.get("if_field", ""))
+                    if answers.get(fld) == r.get("if_value"):
+                        tgt = _make_slide_resolver(slides_c)(r.get("then_slide"))
+                        if tgt is not None:
+                            nxt = tgt["index"]
+                            break
+                cur = nxt if nxt is not None else cur + 1
+            return visited
+
+        branch_slide = {"A": 3, "B": 4, "C": 5}
+        capture_idx = next(s["index"] for s in slides_c if s.get("type") == "capture")
+        for choice, own in branch_slide.items():
+            path = _simulate(choice)
+            siblings = [v for k, v in branch_slide.items() if k != choice]
+            if own not in path:
+                errors.append(f"convergence sim[{choice}]: chosen branch P{own} not visited")
+            if any(sib in path for sib in siblings):
+                errors.append(
+                    f"convergence sim[{choice}]: visited a sibling branch {path!r}")
+            if 6 not in path:  # P6 - Shared (converge)
+                errors.append(f"convergence sim[{choice}]: never reached shared slide")
+            if capture_idx not in path:
+                errors.append(
+                    f"convergence sim[{choice}]: never reached capture — cannot submit")
+
+        # 22. Backward compat: the SAME survey without converge_slide derives NO
+        #     convergence jumps (byte-identical to pre-Area-5.1 behaviour).
+        conv_task_nc = dict(conv_task)
+        conv_task_nc.pop("converge_slide")
+        plan_nc = _build_survey_plan(conv_task_nc, _resolve_fields(conv_task_nc))
+        if len(plan_nc.get("conditional_logic", [])) != 3:
+            errors.append(
+                "backward-compat: no converge_slide must yield only the 3 router rules, "
+                f"got {len(plan_nc.get('conditional_logic', []))}")
+        if any(r.get("kind") == "converge" for r in plan_nc.get("conditional_logic", [])):
+            errors.append("backward-compat: no converge_slide must derive no convergence")
+
+        # 23. Dangling converge_slide → preflight P4:topology_valid HARD STOP.
+        pf_conv = _run_preflight(dict(conv_task, converge_slide="No Such Slide"), tmp)
+        if pf_conv["pass"]:
+            errors.append("dangling converge_slide must fail preflight (topology)")
+
+        # 24. Fall-through guard fires when a non-adjacent branch has NO jump:
+        #     validate the router-only rule set against a converge target and
+        #     confirm the guard reports the unsubmittable branch(es).
+        topo_ft = _validate_topology(conv_task, fields_c, slides_c, list(conv_router))
+        if not any("falls through" in e for e in topo_ft):
+            errors.append("fall-through guard must flag a branch with no convergence jump")
 
     if errors:
         for e in errors:
