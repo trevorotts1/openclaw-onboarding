@@ -201,18 +201,35 @@ print(d['session'])
   tmp_out_dir="$(mktemp -d "${LOCKDIR}/ps-batch-XXXXXX" 2>/dev/null || mktemp -d)"
   # The tmp_out_dir is cleaned up by the EXIT trap (or on normal exit below).
 
-  mapfile -t page_specs < <(python3 -c "
+  # bash-3.2-safe array read (macOS's real /bin/bash is 3.2 and has NO
+  # `mapfile`/`readarray` builtin — those are bash 4.0+ only). A prior version
+  # of this line used `mapfile -t` here, which dies with "mapfile: command not
+  # found" under a box's stock /bin/bash even though the shebang above is
+  # `#!/usr/bin/env bash` — PATH resolution can still land on /bin/bash on any
+  # box with no Homebrew/newer bash ahead of it in PATH (verified live:
+  # `/bin/bash -c 'mapfile -t x < <(printf "a\n")'` -> "mapfile: command not
+  # found" on stock macOS bash 3.2.57). Parse to a captured STRING first (so
+  # the python exit code is checkable directly, unlike inside a process
+  # substitution), then split it into the array with a `while read -r` loop —
+  # portable back to bash 3.1, runs identically on Mac and VPS.
+  local _ps_parsed
+  _ps_parsed="$(python3 -c "
 import base64, json, sys
 d = json.load(open(sys.argv[1]))
 for p in d.get('pages', []):
     pid = p['page_id']
     js_b64 = base64.b64encode(p['js'].encode()).decode()
     print('%s:%s' % (pid, js_b64))
-" "$spec_file" 2>/dev/null) || {
+" "$spec_file" 2>/dev/null)"
+  if [ $? -ne 0 ]; then
     echo "FAIL: could not parse pages from spec $spec_file" >&2
     rm -rf "$tmp_out_dir" 2>/dev/null || true
     exit 1
-  }
+  fi
+  page_specs=()
+  while IFS= read -r _ps_line; do
+    [ -n "$_ps_line" ] && page_specs+=("$_ps_line")
+  done <<< "$_ps_parsed"
 
   if [ "${#page_specs[@]}" -eq 0 ]; then
     echo "WARN: batch spec has no pages; nothing to do." >&2
