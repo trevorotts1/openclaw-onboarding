@@ -133,11 +133,26 @@
     "route_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET"
   },
 
+  "provisioning_branches_note": "SUPERSEDES the old blanket 'auto-push is REJECTED' (Trevor 2026-07-10). Snapshot provisioning now has TWO branches, chosen by tenancy: SAME-AGENCY (the client's Convert and Flow location is a sub-account under BlackCEO's agency, companyId DAD7unnJpNUFc36952Xp) = AUTOMATED push; CROSS-AGENCY (client owns their OWN agency) = share link + manual import. See authorized_mechanisms and rejected_mechanisms below; both are wired into provision-anthology-client.sh step 7.5 and driven by the n8n 'Snapshot Provisioner' workflow (POST /webhook/provision-snapshot).",
+
+  "authorized_mechanisms": [
+    {
+      "mechanism": "same-agency agency -> subaccount snapshot push (PUT /locations/{id} with snapshot.override, companyId DAD7)",
+      "decision": "AUTHORIZED (Trevor 2026-07-10)",
+      "reason": "When the client's Convert and Flow location IS a sub-account under BlackCEO's agency (companyId DAD7unnJpNUFc36952Xp), the agency PIT (locations.write scope) CAN push the snapshot directly into it. This is the automated path: the n8n Snapshot Provisioner receives POST /webhook/provision-snapshot from provision-anthology-client.sh step 7.5a, PUTs the snapshot with override, polls snapshot-status to completed, honors a ~15-20 min asset-materialization settle, then notifies. Genuine per-asset completion is still gated BOX-SIDE by anthology_snapshot.py verify-imported using the client's OWN PIT (the agency PIT is scope-denied on sub-account resource reads)."
+    },
+    {
+      "mechanism": "cross-agency snapshot share link (POST /snapshots/share/link)",
+      "decision": "AUTHORIZED (cross-agency completion path)",
+      "reason": "When the client owns their OWN Convert and Flow agency, the pipeline creates a snapshot share link and the client imports it manually (Settings -> Snapshots -> Import). n8n sends an action-needed note only (never 'installed'); box-side verify remains the completion authority. This is the OLD doctrine, unchanged."
+    }
+  ],
+
   "rejected_mechanisms": [
     {
-      "mechanism": "agency -> subaccount API auto-push (push_snapshot_to_subaccounts)",
-      "decision": "REJECTED -- not built",
-      "reason": "This fleet's topology is EACH-CLIENT-OWNS-THEIR-OWN-GHL: a client's Convert and Flow location is owned by the client under their own agency, not a subaccount of a BlackCEO agency. GoHighLevel snapshot PUSH/LOAD across agency boundaries into a location the operator does not own under their agency is almost certainly impossible (and would require agency-level ownership the operator does not have over a client-owned location). The ONLY realistic path is the MANUAL IMPORT of the exported snapshot into the client's own location (operator-run, Settings -> Snapshots -> Import), followed by the per-client custom-value fill + verify built here. If a future fleet topology ever nests client locations under a BlackCEO agency, revisit."
+      "mechanism": "cross-agency agency -> subaccount API auto-push (push_snapshot_to_subaccounts into a client-OWNED agency)",
+      "decision": "REJECTED -- impossible across an agency boundary",
+      "reason": "A snapshot PUSH/LOAD across an agency boundary -- into a location the operator does NOT own under its agency -- remains impossible (it would require agency-level ownership the operator does not have over a client-owned location). For client-owned agencies the ONLY path is the share link (see authorized_mechanisms) + the client's MANUAL import, followed by the per-client custom-value fill + verify built here. NOTE (Trevor 2026-07-10): the SAME-agency push -- into a DAD7 sub-account the operator DOES own -- is NOT this rejected mechanism; it is AUTHORIZED and automated (see authorized_mechanisms). This rejected guard now scopes ONLY the cross-agency case, and qc-snapshot-contract.sh still asserts it stands."
     }
   ]
 }

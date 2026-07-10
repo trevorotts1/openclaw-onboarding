@@ -50,12 +50,13 @@
 #      gateway config (hooks.mappings + hooks.token) via `openclaw config`,
 #      idempotently (dedup by mapping id; sibling /hooks routes preserved) and
 #      VERIFIED by reading it back — a merge that does not take is a real error.
-#   7.5 ANTHOLOGY SNAPSHOT (import verify + custom-value fill + version stamp). The
-#      Convert and Flow snapshot is CUT ONCE from the operator's OWN template location
-#      and IMPORTED per client (MANUAL, Settings -> Snapshots -> Import/Load) into the
-#      client's OWN location — there is NO agency->subaccount auto-push (each client
-#      owns their own GHL; that push is REJECTED, see the snapshot contract). After the
-#      operator's manual import, this step (anthology_snapshot.py) VERIFIES the import
+#   7.5 ANTHOLOGY SNAPSHOT (push/import + verify + custom-value fill + version stamp).
+#      The Convert and Flow snapshot is CUT ONCE from the operator's OWN template
+#      location, then provisioned per client by ONE of two branches (Trevor 2026-07-10):
+#      SAME-AGENCY (DAD7 sub-account) = AUTOMATED push via the n8n Snapshot Provisioner
+#      webhook; CROSS-AGENCY (client owns their own agency) = share link / MANUAL import
+#      (Settings -> Snapshots -> Import/Load) — a cross-agency API push stays REJECTED.
+#      Then this step (anthology_snapshot.py) VERIFIES the import/push
 #      landed (the standard pipeline exists BY NAME with all 9 stages + all 28 custom
 #      fields exist BY KEY; a missing pipeline STOPs AF-AE-SNAPSHOT-PIPELINE-MISSING),
 #      FILLS the four per-client location custom VALUES the snapshot ships as REPLACE-ME
@@ -836,24 +837,56 @@ report_intake_hook_state() {
 }
 
 # --------------------------------------------------------------------------
-# STEP 7.5 — ANTHOLOGY SNAPSHOT: verify the operator's MANUAL import landed, FILL
-# the four per-client location custom VALUES the snapshot ships as REPLACE-ME
-# placeholders, and STAMP the snapshot-version marker. Runs AFTER step 7 so the
-# intake route + hook secret already exist. The snapshot is imported by the
-# operator (each client owns their own Convert and Flow; there is NO agency ->
-# subaccount auto-push — that mechanism is REJECTED in the snapshot contract). The
-# hook-secret Authorization custom value is resolved BY LABEL and NEVER printed.
+# STEP 7.5 — ANTHOLOGY SNAPSHOT. Two provisioning branches (Trevor's 2026-07-10
+# order, which SUPERSEDES the old "agency->subaccount auto-push is REJECTED" blanket):
+#   - SAME-AGENCY (the client's Convert and Flow location is a sub-account under
+#     BlackCEO's agency, companyId DAD7): AUTOMATED push via the n8n Snapshot
+#     Provisioner webhook (STEP 7.5a below) — best-effort + NON-BLOCKING.
+#   - CROSS-AGENCY (the client owns their OWN Convert and Flow agency): share link /
+#     MANUAL import (the OLD doctrine, unchanged) — a cross-agency API push into a
+#     location the operator does not own under its agency remains impossible/REJECTED.
+# Either branch, the box-side VERIFY below (anthology_snapshot.py verify-imported, run
+# with the client's OWN PIT) stays the genuine-completion gate; then FILL the four
+# per-client custom VALUES and STAMP the snapshot-version marker. Runs AFTER step 7 so
+# the intake route + hook secret already exist. The hook-secret Authorization custom
+# value is resolved BY LABEL and NEVER printed.
 # --------------------------------------------------------------------------
 step_snapshot() {
-    note "STEP 7.5/10 — Anthology snapshot: verify MANUAL import + fill per-client custom values + stamp version"
+    note "STEP 7.5/10 — Anthology snapshot: request automated push (same-agency) or manual import (cross-agency), then verify + fill custom values + stamp version"
     local snap="$SCRIPTS/anthology_snapshot.py"
     if [ ! -f "$snap" ]; then
         note "  anthology_snapshot.py not present yet — HELD"
         set_crc 127; echo "$EX_HELD"; return
     fi
-    note "  OPERATOR: if not already done, IMPORT the Anthology snapshot into THIS client's OWN Convert and Flow"
-    note "           location (Settings -> Snapshots -> Import/Load). Guide: references/anthology-snapshot-guide.md"
-    note "           (each client owns their own GHL; there is NO cross-agency push — that path is REJECTED)"
+
+    # 7.5a — AUTOMATED PUSH (same-agency). Fire the n8n Snapshot Provisioner webhook via
+    #   the shared helper. Best-effort + NON-BLOCKING: the verify gate below is the real
+    #   completion check. The helper resolves PROVISION_SNAPSHOT_WEBHOOK_URL +
+    #   PROVISION_SNAPSHOT_TOKEN BY LABEL (never printed); if unconfigured/unreachable it
+    #   prints the manual-import fallback so onboarding is never worse than the manual path.
+    local fire="$SKILLS_ROOT/shared-utils/fire-provision-snapshot.sh"
+    local loc_id="${LOCATION_ID_OVERRIDE:-${CONVERT_AND_FLOW_LOCATION_ID:-}}"
+    local cslug="${PROVISION_CLIENT_SLUG:-${PUBLIC_HOSTNAME%%.*}}"; [ -n "$cslug" ] || cslug="$DEPT_SLUG"
+    if [ "$MODE" != "dryrun" ] && [ -f "$fire" ] && [ -n "$loc_id" ]; then
+        mkdir -p /tmp/anthology-provision 2>/dev/null || true
+        bash "$fire" \
+            --engine anthology \
+            --location-id "$loc_id" \
+            --client-slug "$cslug" \
+            --client-name "${PRODUCER_NAME:-}" \
+            --client-email "${PRODUCER_EMAIL:-}" \
+            --tenancy same_agency \
+            --requested-by "provision-anthology-client.sh" \
+            --ledger-file "/tmp/anthology-provision/${cslug}.json" || true
+    elif [ "$MODE" != "dryrun" ]; then
+        note "  automated push skipped (fire helper missing or location id unresolved) — use MANUAL import (7.5b)"
+    fi
+
+    # 7.5b — MANUAL IMPORT fallback (cross-agency client-owned account, or the automated
+    #   push above could not fire). The verify below still gates genuine completion.
+    note "  OPERATOR (fallback): if the automated push did not fire, or this client owns their OWN"
+    note "           Convert and Flow agency (cross-agency), IMPORT the Anthology snapshot into the"
+    note "           client's location (Settings -> Snapshots -> Import/Load). Guide: references/anthology-snapshot-guide.md"
     if [ "$MODE" = "dryrun" ]; then
         local n; n="$(run_collab py "$snap" plan)"
         echo "$n"; return

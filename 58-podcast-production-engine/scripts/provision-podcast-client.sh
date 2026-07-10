@@ -229,6 +229,46 @@ SLUG_REF="$(printf '%s' "$SLUG" | tr '-' '_')"
 log "provision: slug=$SLUG dash=$DASH_HOST tz=$CLIENT_TZ dry_run=$DRY_RUN"
 
 # --------------------------------------------------------------------------- #
+# STEP 0 (snapshot): request the AUTOMATED snapshot push into the client's Convert
+# and Flow sub-account, BEFORE the box-side STEP 0 credential/field gate
+# (ghl_credential_gate.py full, SKILL.md ~line 193) is attempted — that gate
+# hard-stops until the 28 podcast custom fields exist, so the snapshot MUST be in the
+# sub-account first. Mirrors 59-anthology-engine step 7.5. Best-effort + NON-BLOCKING;
+# the box-side STEP 0 gate remains the genuine-completion check. FAIL-CLOSED until
+# Trevor cuts the podcast golden snapshot and sets PODCAST_SNAPSHOT_ID in n8n (the
+# webhook returns 409 and this step records the manual fallback — never worse than manual).
+# The shared token is resolved BY LABEL inside the helper and is NEVER printed.
+# --------------------------------------------------------------------------- #
+provision_snapshot() {
+  local fire; fire="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." 2>/dev/null && pwd)/shared-utils/fire-provision-snapshot.sh"
+  local loc_id="${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCATION_ID:-}}"   # canonical label, legacy alias
+  local cemail="${EMAILS_RAW%%,*}"                                  # first client email
+  if [ "$DRY_RUN" = "1" ]; then
+    ledger_step "snapshot" "DRY-RUN" "would fire provision-snapshot webhook (engine=podcast; fail-closed until PODCAST_SNAPSHOT_ID set in n8n)"
+    return 0
+  fi
+  if [ -z "$loc_id" ]; then
+    ledger_step "snapshot" "PENDING" "GOHIGHLEVEL_LOCATION_ID not set here; fire the snapshot webhook (engine=podcast) on the box before STEP 0"
+    return 0
+  fi
+  if [ ! -f "$fire" ]; then
+    ledger_step "snapshot" "PENDING" "shared-utils/fire-provision-snapshot.sh not present in this build; wire the snapshot push before STEP 0"
+    return 0
+  fi
+  bash "$fire" \
+    --engine podcast \
+    --location-id "$loc_id" \
+    --client-slug "$SLUG" \
+    --client-name "${PROVISION_CLIENT_NAME:-$SLUG}" \
+    --client-email "$cemail" \
+    --tenancy same_agency \
+    --requested-by "provision-podcast-client.sh" \
+    --ledger-file "$LEDGER" || true
+  ledger_step "snapshot" "OK" "provision-snapshot webhook fired (engine=podcast); box-side STEP 0 gate confirms genuine completion (fail-closed until PODCAST_SNAPSHOT_ID is set)"
+}
+provision_snapshot
+
+# --------------------------------------------------------------------------- #
 # Zone resolution by NAME (the CLOUDFLARE_ZONE_ID trap guard)
 # --------------------------------------------------------------------------- #
 ZRESP="$(cf "$API/zones?name=${ZONE_NAME}")"
