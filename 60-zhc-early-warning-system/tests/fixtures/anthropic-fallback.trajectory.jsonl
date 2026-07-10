@@ -1,0 +1,3 @@
+{"ts":"2026-07-10T12:00:00Z","runId":"run-0001","sessionId":"sess-aaaa1111","provider":"openrouter","modelId":"glm-5.2"}
+{"ts":"2026-07-10T12:05:00Z","runId":"run-0002","sessionId":"sess-aaaa1111","provider":"openrouter","modelId":"glm-5.2"}
+{"ts":"2026-07-10T12:10:00Z","runId":"run-0003","sessionId":"sess-aaaa1111","provider":"openai","modelId":"gpt-paid"}

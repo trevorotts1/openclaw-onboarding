@@ -1,0 +1,49 @@
+{
+  "_comment": "SYNTHETIC test fixture for the Skill 60 EWS sentinel test suite. No client data. cap-raise: identical to baseline-clean.json EXCEPT agents.defaults.subagents.maxConcurrent is raised 16 -> 64 with NO matching baseline_stamps approval. Drives the S4 unstamped-cap-raise P1 case (config/monitored-keys.json: subagents.maxConcurrent, direction=raise, severity=P1). See tests/fixtures/README.md and tests/drills/D-S4.md.",
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "glm-5.2",
+        "fallbacks": ["minimax-m3:cloud", "deepseek-v4"]
+      },
+      "models": {
+        "glm-5.2": { "provider": "openrouter" },
+        "minimax-m3:cloud": { "provider": "ollama-cloud" }
+      },
+      "maxConcurrent": 16,
+      "subagents": {
+        "model": {
+          "primary": "glm-5.2",
+          "fallbacks": ["minimax-m3:cloud"]
+        },
+        "maxConcurrent": 64,
+        "maxChildrenPerAgent": 8,
+        "maxSpawnDepth": 3
+      },
+      "compaction": {
+        "mode": "memoryFlush",
+        "memoryFlush": {
+          "softThresholdTokens": 20000
+        }
+      },
+      "heartbeat": {
+        "every": "@daily",
+        "model": "minimax-m3"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "accounts": {
+        "default": {
+          "allowFrom": ["11111111"],
+          "dmPolicy": "allowlist",
+          "groupPolicy": "closed"
+        }
+      }
+    }
+  },
+  "cron": [
+    { "name": "ews-tick", "schedule": "*/15 * * * *", "delivery": "silent" }
+  ]
+}
