@@ -3,17 +3,21 @@
 
 WHAT THIS IS (SPEC 3.4 row 9; SPEC 10.1; PRD 3.7 / 3.13; ENGINE-MANIFEST L9):
   A stateless, direct-REST adapter over the Google Drive v3 and Docs v1 APIs.
-  It authenticates with the operator's EXISTING service account exactly the way
-  clawd/google-api.js does (service-account JWT, RS256, domain-wide delegation,
+  It authenticates with the BlackCEO-owned delivery service account exactly the
+  way clawd/google-api.js does (service-account JWT, RS256, domain-wide delegation,
   sub = the impersonated user under the GOOGLE_IMPERSONATE_USER label, full Drive
   scope + the Documents scope). It calls the REST endpoints DIRECTLY -- Skill 14
   is PATTERN REFERENCE ONLY and google-api.js exposes no create/permissions/
   delete actions, so those are re-implemented here (verified live at W0.6).
 
-  NOTHING new is provisioned in Google: no new service account, no new share
-  primitive beyond per-document anyone-with-link VIEW, and NO new Drive root.
-  The delivery tree lives under the operator's EXISTING anyone-can-read root
-  (config key delivery.drive_root_folder). drive-tree-provision.py owns the
+  The delivery root is PER CLIENT: BlackCEO provisions ONE Google Shared Drive per
+  client inside BlackCEO's own Workspace, and this box points at its OWN Shared-Drive
+  root, resolved per box from GOOGLE_DRIVE_ROOT_FOLDER (config key
+  delivery.drive_root_folder is a per-box slot, never one shared operator root -- no
+  client tree co-mingles with another's). The adapter NEVER creates a NEW Drive root
+  (BlackCEO provisions the Shared Drive out of band; load_root_folder_id refuses an
+  unresolved slot). The delivery tree lives under that per-client root, and
+  drive-tree-provision.py owns the
   idempotent Producer/Anthology/Participant folder tree; THIS module owns:
     - create a Google Doc inside a participant folder + insert its text
     - land a cover PNG (or any media) inside a participant folder
@@ -544,11 +548,25 @@ def write_and_verify(write_fn, verify_fn, what):
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
-def load_root_folder_id(explicit=None):
-    """Resolve the EXISTING delivery root id: explicit arg > env > engine config.
+def _is_unresolved_slot(value):
+    """True if a config value is still an unresolved provisioning slot rather than a
+    real id (e.g. "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>", "<CLIENT_...>"). Such a value is
+    the committed per-box TEMPLATE placeholder and must NEVER be used as a live root --
+    a box that never resolved it must fail loudly, not deliver into a bogus id."""
+    if not value:
+        return True
+    v = str(value).strip()
+    return v.startswith("<") or "LABEL:" in v
 
-    Never invents a root. The root is only ever verified (files_get), never
-    created (SPEC 10.1 / PRD 3.7)."""
+
+def load_root_folder_id(explicit=None):
+    """Resolve the PER-CLIENT delivery root id: explicit arg > env > engine config.
+
+    The root is the per-client BlackCEO-hosted Shared Drive supplied per box via
+    GOOGLE_DRIVE_ROOT_FOLDER. Never invents a root: it is only ever verified
+    (files_get), never created. An unresolved template slot in engine config is
+    IGNORED (a box that never set the env fails loudly rather than delivering into a
+    placeholder)."""
     if explicit:
         return explicit
     env = os.environ.get(ROOT_FOLDER_ENV)
@@ -560,13 +578,14 @@ def load_root_folder_id(explicit=None):
             try:
                 data = json.loads(cfg.read_text(encoding="utf-8"))
                 root = data.get("delivery", {}).get("drive_root_folder")
-                if root:
+                if root and not _is_unresolved_slot(root):
                     return root
             except Exception:
                 continue
     raise ValidationError(
-        "no delivery root id resolvable (pass --root-folder-id, set %s, or "
-        "populate delivery.drive_root_folder in engine config)." % ROOT_FOLDER_ENV)
+        "no delivery root id resolvable (pass --root-folder-id, or set the per-client "
+        "%s to this box's BlackCEO-hosted Shared-Drive root; the committed template "
+        "slot is never used as a live root)." % ROOT_FOLDER_ENV)
 
 
 def _credential_status():
@@ -848,21 +867,49 @@ def self_test():
     except ValidationError:
         empty_refused = True
     assert empty_refused
-    # config root resolution: explicit wins; env fallback works
+    # unresolved-slot classifier
+    assert _is_unresolved_slot("<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>") is True
+    assert _is_unresolved_slot("<CLIENT_DRIVE_ROOT>") is True
+    assert _is_unresolved_slot("") is True
+    assert _is_unresolved_slot("0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7") is False
+    # config root resolution: explicit wins; the PER-CLIENT env value is returned as-is
     assert load_root_folder_id("EXPLICIT_ID") == "EXPLICIT_ID"
-    os.environ[ROOT_FOLDER_ENV] = "ENV_ROOT_ID"
+    _saved_root = os.environ.get(ROOT_FOLDER_ENV)
+    os.environ[ROOT_FOLDER_ENV] = "0ACLIENT_PER_BOX_SHARED_DRIVE_ID"
     try:
-        assert load_root_folder_id() == "ENV_ROOT_ID"
+        assert load_root_folder_id() == "0ACLIENT_PER_BOX_SHARED_DRIVE_ID", \
+            "the per-client GOOGLE_DRIVE_ROOT_FOLDER value must be returned verbatim"
     finally:
-        del os.environ[ROOT_FOLDER_ENV]
-    # the committed template still carries the operator's EXISTING root id
+        if _saved_root is None:
+            os.environ.pop(ROOT_FOLDER_ENV, None)
+        else:
+            os.environ[ROOT_FOLDER_ENV] = _saved_root
+    # the committed template pins NO single operator root: it carries a per-box slot
+    # resolved from GOOGLE_DRIVE_ROOT_FOLDER, and an unresolved slot is refused so a
+    # box that never set the env fails loudly instead of delivering into a placeholder.
     tmpl = CONFIG_DIR / "engine-config.template.json"
     if tmpl.is_file():
         cfg = json.loads(tmpl.read_text(encoding="utf-8"))
-        assert cfg["delivery"]["drive_root_folder"] == "1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw", \
-            "delivery root drifted from the operator's existing shared root"
+        root_cfg = cfg["delivery"]["drive_root_folder"]
+        assert _is_unresolved_slot(root_cfg), \
+            "template delivery root must be a per-box slot (no hard-pinned operator root)"
+        # With no arg and no env, the slot is IGNORED -> loud ValidationError, never
+        # a bogus placeholder root. (Live engine-config.json overrides the template.)
+        if not (CONFIG_DIR / "engine-config.json").is_file():
+            _saved_root2 = os.environ.get(ROOT_FOLDER_ENV)
+            os.environ.pop(ROOT_FOLDER_ENV, None)
+            try:
+                slot_refused = False
+                try:
+                    load_root_folder_id()
+                except ValidationError:
+                    slot_refused = True
+                assert slot_refused, "an unresolved template slot must not resolve as a root"
+            finally:
+                if _saved_root2 is not None:
+                    os.environ[ROOT_FOLDER_ENV] = _saved_root2
     print("drive_adapter self-test: OK (auth assembly, escaping, read-back guard, "
-          "root resolution, exit-code contract)")
+          "per-client root resolution + slot refusal, exit-code contract)")
     return EX_OK
 
 

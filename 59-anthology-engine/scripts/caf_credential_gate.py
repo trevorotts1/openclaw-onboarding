@@ -60,6 +60,20 @@ provision-anthology-client.sh):
      concern. This is basename-scoped only -- a real leak under any other filename in
      the scanned set still trips it (see the self-test's adversarial case).
 
+  5. PER-CLIENT GOOGLE DELIVERY PRESENCE (opt-in via --require-delivery; provisioning
+     turns it ON). Confirms the three delivery levers (MASTERDOC floor #10) are SET on
+     this box: GOOGLE_SA_KEY_FILE (the BlackCEO-owned service-account key PATH -- the
+     file must exist; its CONTENTS are never read or printed), GOOGLE_IMPERSONATE_USER,
+     and the PER-CLIENT GOOGLE_DRIVE_ROOT_FOLDER (present AND not an unresolved template
+     slot). A missing one exits 2 (MISSING_LABEL) so a box without the SA key or its own
+     Shared-Drive root FAILS provisioning LOUDLY instead of silently no-op'ing delivery.
+     This is a PRESENCE gate ONLY and is DELIBERATELY EXCLUDED from the anti-commingling
+     fingerprint (3): unlike the client's OWN Convert and Flow keys, the delivery service
+     account and impersonated Workspace user are BlackCEO-owned and SHARED across clients
+     BY DESIGN (BlackCEO hosts one Shared Drive per client), so they must never be read as
+     a commingling violation. Only the per-client root is client-specific, and it is a
+     Drive folder id, not a secret.
+
 EXIT CODES (SPEC 3.4 row 26; the manifest house convention for the edge cases):
   0  all required labels resolve, pairing proven, fingerprint clean, no inline exposure
      (an idempotent re-run of a clean box is the same 0)
@@ -141,6 +155,20 @@ INFORMATIONAL_FAMILIES = (
     ("anthology_intake_hook_secret", ("ANTHOLOGY_INTAKE_HOOK_SECRET",)),
     ("anthology_gate_token_secret", ("ANTHOLOGY_GATE_TOKEN_SECRET",)),
     ("search_tool_key_optional", ("PERPLEXITY_API_KEY", "PPLX_API_KEY")),
+)
+
+# The PER-CLIENT Google delivery credential trio (MASTERDOC floor #10). Gated for
+# PRESENCE per box when --require-delivery is set, and DELIBERATELY EXCLUDED from the
+# anti-commingling fingerprint: the delivery service account and impersonated Workspace
+# user are BlackCEO-owned and SHARED across clients BY DESIGN (BlackCEO hosts one Shared
+# Drive per client), so they must never be read as a commingling violation. Only the
+# per-client root (GOOGLE_DRIVE_ROOT_FOLDER) is client-specific, and it is a Drive folder
+# id, not a secret. This trio is a SET / NOT-SET presence gate only, never a fingerprint
+# input.
+GOOGLE_DELIVERY_FAMILIES = (
+    ("google_sa_key_file", ("GOOGLE_SA_KEY_FILE",)),
+    ("google_impersonate_user", ("GOOGLE_IMPERSONATE_USER",)),
+    ("google_drive_root_folder", ("GOOGLE_DRIVE_ROOT_FOLDER",)),
 )
 
 # ---------------------------------------------------------------------------
@@ -522,6 +550,57 @@ def pairing_proof(resolutions_by_family):
 
 
 # ---------------------------------------------------------------------------
+# PER-CLIENT GOOGLE DELIVERY PRESENCE (MASTERDOC floor #10). Confirm-SET only; never a
+# value, never a commingle input. A missing lever exits 2 so a box without the SA key or
+# its own Shared-Drive root FAILS provisioning loudly instead of silently no-op'ing.
+# ---------------------------------------------------------------------------
+def _is_unresolved_slot(value):
+    """True if a resolved value is still an unresolved provisioning slot
+    (e.g. "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>", "<CLIENT_...>") rather than a real id.
+    Such a value is the committed per-box TEMPLATE placeholder and is treated as NOT
+    SET so a box that never resolved its per-client root fails loudly."""
+    if not value:
+        return True
+    v = str(value).strip()
+    return v.startswith("<") or "LABEL:" in v
+
+
+def google_delivery_presence(sources):
+    """Confirm the three PER-CLIENT Google delivery levers are usable on this box:
+    GOOGLE_SA_KEY_FILE (the FILE must exist; its CONTENTS are never read or printed),
+    GOOGLE_IMPERSONATE_USER, and the per-client GOOGLE_DRIVE_ROOT_FOLDER (present AND not
+    an unresolved template slot). Returns (report, missing). PRESENCE ONLY -- never a
+    value, never a fingerprint input (these creds are BlackCEO-owned and shared by
+    design)."""
+    report = {}
+    missing = []
+    for fam, aliases in GOOGLE_DELIVERY_FAMILIES:
+        res = resolve_label(fam, aliases, sources)
+        present = res.present
+        entry = {"required": True, "label": res.label, "source": res.source,
+                 "presence": _mask(res.value)}
+        if fam == "google_sa_key_file" and present:
+            # Confirm the key FILE exists and is readable; NEVER read its contents.
+            try:
+                file_present = bool(res.value) and Path(res.value).expanduser().is_file()
+            except OSError:
+                file_present = False
+            entry["file_present"] = file_present
+            if not file_present:
+                present = False
+                entry["note"] = "label SET but the key file is absent/unreadable"
+        if fam == "google_drive_root_folder" and present and _is_unresolved_slot(res.value):
+            present = False
+            entry["note"] = ("unresolved template slot -- the per-client Shared-Drive "
+                             "root was never set on this box")
+        entry["present"] = present
+        if not present:
+            missing.append(fam)
+        report[fam] = entry
+    return report, missing
+
+
+# ---------------------------------------------------------------------------
 # THE INLINE-EXPOSURE SCAN. Forbid the legacy literal Authorization header / inline key
 # class (Part C item 16). Reports file:line and a reason class, never the token.
 # ---------------------------------------------------------------------------
@@ -592,7 +671,8 @@ def scan_inline_credentials(paths, skip_dirs=None):
 # (exit_code, report). Injectable environ / stores / scan_paths make it self-testable.
 # ---------------------------------------------------------------------------
 def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
-         do_scan=True, include_informational=False, expected=None, deny_fps=None):
+         do_scan=True, include_informational=False, expected=None, deny_fps=None,
+         require_delivery=False):
     environ = os.environ if environ is None else environ
     if store_paths is None:
         store_paths = resolve_stores(extended=extended_stores)
@@ -620,6 +700,12 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
     missing = [fam for fam, _a in REQUIRED_FAMILIES
                if not resolutions_by_family[fam].present]
 
+    # PER-CLIENT Google delivery presence (opt-in; provisioning turns it ON). PRESENCE
+    # ONLY, and EXCLUDED from the commingle fingerprint below (BlackCEO-owned, shared).
+    delivery_report, missing_delivery = ({}, [])
+    if require_delivery:
+        delivery_report, missing_delivery = google_delivery_presence(sources)
+
     pairing = pairing_proof(resolutions_by_family)
 
     # Anti-commingling over the resolved CLIENT Convert and Flow credentials.
@@ -642,7 +728,7 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         inline = {"scanned": True, "clean": not findings, "findings": findings,
                   "targets": [str(t) for t in targets]}
 
-    # Exit precedence: 4 (violation) > 2 (missing) > 0.
+    # Exit precedence: 4 (violation) > 2 (missing, incl. delivery) > 0.
     if not fp_verdict["clean"] or not inline["clean"]:
         exit_code = EX_VIOLATION
         if not inline["clean"] and fp_verdict["clean"]:
@@ -651,7 +737,7 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
             verdict = "COMMINGLE_AND_INLINE_EXPOSURE"
         else:
             verdict = "COMMINGLE"
-    elif missing:
+    elif missing or missing_delivery:
         exit_code = EX_MISSING
         verdict = "MISSING_LABEL"
     else:
@@ -668,6 +754,8 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         "pairing": pairing,
         "fingerprint": fp_verdict,
         "inline_scan": inline,
+        "delivery_gated": require_delivery,
+        "delivery": {"resolutions": delivery_report, "missing": missing_delivery},
         "verdict": verdict,
         "exit_code": exit_code,
     }
@@ -705,6 +793,21 @@ def render_human(report, show_fingerprints=False):
             lines.append("    ! %s:%d -- %s" % (f["file"], f["line"], f["reason"]))
     else:
         lines.append("  inline-exposure scan: skipped (--no-scan)")
+    dlv = report.get("delivery") or {}
+    if report.get("delivery_gated"):
+        dmiss = dlv.get("missing") or []
+        lines.append("  google delivery (per-client Shared Drive): %s"
+                     % ("PRESENT" if not dmiss else "MISSING %s" % ", ".join(dmiss)))
+        for fam, r in (dlv.get("resolutions") or {}).items():
+            src = (" via %s in %s" % (r["label"], r["source"])) if r.get("present") else ""
+            extra = ""
+            if "file_present" in r:
+                extra += " file_present=%s" % r["file_present"]
+            if "note" in r:
+                extra += " -- %s" % r["note"]
+            lines.append("    - %-26s %s%s%s" % (fam, r["presence"], src, extra))
+    else:
+        lines.append("  google delivery: not gated (pass --require-delivery to enforce)")
     if show_fingerprints:
         lines.append("  [fingerprints omitted from report payload by doctrine; "
                      "presence + length only]")
@@ -921,6 +1024,78 @@ def self_test():
     else:
         print("  [13] real-file regression check: scan-no-secrets.sh absent, skipped")
 
+    # 14. PER-CLIENT delivery presence PASS (opt-in): all three levers set, the SA key
+    #     FILE exists. Confirm-SET only -- neither the path nor the file contents leak.
+    with tempfile.TemporaryDirectory() as td:
+        sa = Path(td) / "blackceo-delivery-sa.json"
+        sa.write_text('{"client_email":"svc","private_key":"NEVER_READ_HERE"}')
+        denv = {"CONVERT_AND_FLOW_PIT": real_pit,
+                "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                "GOOGLE_SA_KEY_FILE": str(sa),
+                "GOOGLE_IMPERSONATE_USER": "delivery@blackceo.example",
+                "GOOGLE_DRIVE_ROOT_FOLDER": "0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7"}
+        code, rep = gate(environ=denv, store_paths=[], do_scan=False, require_delivery=True)
+        assert code == EX_OK and rep["verdict"] == "PASS", rep
+        assert rep["delivery_gated"] is True and rep["delivery"]["missing"] == [], rep
+        assert rep["delivery"]["resolutions"]["google_sa_key_file"]["file_present"] is True, rep
+        blob = json.dumps(rep)
+        assert str(sa) not in blob, "the SA key PATH leaked into the report (confirm-SET only)"
+        assert "NEVER_READ_HERE" not in blob, "SA key file CONTENTS leaked into the report"
+        print("  [14] per-client delivery presence PASS (all 3 levers, SA file exists): OK")
+
+    # 15. PER-CLIENT delivery MISSING: the gate is OPT-IN (the CnF pair alone still
+    #     PASSes with delivery ungated), and each dropped lever -> exit 2 (LOUD STOP).
+    base = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
+    code, _ = gate(environ=base, store_paths=[], do_scan=False, require_delivery=False)
+    assert code == EX_OK, "delivery must be opt-in (no --require-delivery -> not gated)"
+    with tempfile.TemporaryDirectory() as td:
+        sa = Path(td) / "sa.json"; sa.write_text("{}")
+        full = dict(base, **{"GOOGLE_SA_KEY_FILE": str(sa),
+                             "GOOGLE_IMPERSONATE_USER": "d@blackceo.example",
+                             "GOOGLE_DRIVE_ROOT_FOLDER": "0ARootId1234567890abcDEF"})
+        for drop, fam in (("GOOGLE_SA_KEY_FILE", "google_sa_key_file"),
+                          ("GOOGLE_IMPERSONATE_USER", "google_impersonate_user"),
+                          ("GOOGLE_DRIVE_ROOT_FOLDER", "google_drive_root_folder")):
+            env = {k: v for k, v in full.items() if k != drop}
+            code, rep = gate(environ=env, store_paths=[], do_scan=False, require_delivery=True)
+            assert code == EX_MISSING and rep["verdict"] == "MISSING_LABEL", (drop, rep)
+            assert fam in rep["delivery"]["missing"], (drop, rep)
+        print("  [15] per-client delivery MISSING (each lever) -> exit 2; opt-in confirmed: OK")
+
+    # 16. Edge: an unresolved template SLOT for the root reads as NOT SET (a box that
+    #     never resolved its per-client root fails loud), and a SA label pointing at a
+    #     MISSING file is not usable.
+    with tempfile.TemporaryDirectory() as td:
+        sa = Path(td) / "sa.json"; sa.write_text("{}")
+        env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+               "GOOGLE_SA_KEY_FILE": str(sa), "GOOGLE_IMPERSONATE_USER": "d@blackceo.example",
+               "GOOGLE_DRIVE_ROOT_FOLDER": "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>"}
+        code, rep = gate(environ=env, store_paths=[], do_scan=False, require_delivery=True)
+        assert code == EX_MISSING and "google_drive_root_folder" in rep["delivery"]["missing"], rep
+        assert "slot" in rep["delivery"]["resolutions"]["google_drive_root_folder"].get("note", ""), rep
+        env2 = dict(env, **{"GOOGLE_SA_KEY_FILE": str(Path(td) / "absent.json"),
+                            "GOOGLE_DRIVE_ROOT_FOLDER": "0ARealRootId1234567890abc"})
+        code, rep = gate(environ=env2, store_paths=[], do_scan=False, require_delivery=True)
+        assert code == EX_MISSING and "google_sa_key_file" in rep["delivery"]["missing"], rep
+        assert rep["delivery"]["resolutions"]["google_sa_key_file"]["file_present"] is False, rep
+        print("  [16] unresolved-slot root + SA-file-absent both read NOT SET -> exit 2: OK")
+
+    # 17. The delivery trio is EXCLUDED from the anti-commingling fingerprint: the SA key
+    #     and impersonated user are BlackCEO-owned and shared across clients BY DESIGN, so
+    #     an operator-namespaced COPY of the same delivery values must NOT trip
+    #     AF-AE-COMMINGLE (only the client's OWN Convert and Flow keys are fingerprinted).
+    with tempfile.TemporaryDirectory() as td:
+        sa = Path(td) / "sa.json"; sa.write_text("{}")
+        env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+               "GOOGLE_SA_KEY_FILE": str(sa), "GOOGLE_IMPERSONATE_USER": "d@blackceo.example",
+               "GOOGLE_DRIVE_ROOT_FOLDER": "0ARealRootId1234567890abc",
+               "OPERATOR_GOOGLE_SA_KEY_FILE": str(sa),
+               "OPERATOR_GOOGLE_IMPERSONATE_USER": "d@blackceo.example"}
+        code, rep = gate(environ=env, store_paths=[], do_scan=False, require_delivery=True)
+        assert code == EX_OK and rep["verdict"] == "PASS", rep
+        assert rep["fingerprint"]["clean"], "delivery creds must never enter the commingle fingerprint"
+        print("  [17] delivery trio excluded from commingle (shared-by-design) -> PASS: OK")
+
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
 
@@ -961,6 +1136,11 @@ def main(argv=None):
                          "scripts/ and config/ dirs)")
     ap.add_argument("--no-scan", action="store_true",
                     help="skip the inline-exposure scan")
+    ap.add_argument("--require-delivery", action="store_true",
+                    help="also gate the PER-CLIENT Google delivery levers for PRESENCE "
+                         "(GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + "
+                         "GOOGLE_DRIVE_ROOT_FOLDER); a missing one exits 2. SET/NOT SET "
+                         "only; the SA key contents are never read or printed")
     ap.add_argument("--expect-location", metavar="VALUE",
                     help="expected client Location ID (hashed immediately; never stored "
                          "or printed) -- a resolved Location that differs is commingling")
@@ -988,6 +1168,7 @@ def main(argv=None):
             include_informational=args.all,
             expected=_parse_expected(args),
             deny_fps=args.deny_fp,
+            require_delivery=args.require_delivery,
         )
 
         if args.json:

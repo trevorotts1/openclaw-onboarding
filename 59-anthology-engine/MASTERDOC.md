@@ -44,11 +44,21 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
    strongest NON-Anthropic model, from the client's own keys, never the operator's.
    No Anthropic-family id, no operator key, no key taken through intake. Enforced by
    `model_router.py` deny patterns and `guard-no-anthropic-runtime.py`.
-10. DELIVERY REUSE: Google delivery uses the operator's EXISTING service account and
-    the EXISTING anyone-can-read shared root (folder id in
-    `config/engine-config.template.json`); NOTHING new is provisioned in Google, and
-    `drive-tree-provision.py` never creates a new root. Per-document sharing is
-    anyone-with-link VIEW only.
+10. PER-CLIENT DELIVERY ROOT (BlackCEO hosts one Shared Drive per client). Google
+    delivery uses the BlackCEO-owned service account (label `GOOGLE_SA_KEY_FILE`)
+    impersonating the BlackCEO Workspace user (`GOOGLE_IMPERSONATE_USER`), and lands
+    every deliverable under a PER-CLIENT delivery root: BlackCEO provisions ONE Google
+    Shared Drive per client inside BlackCEO's own Workspace, and each client box points
+    at its OWN Shared-Drive root, resolved per box from `GOOGLE_DRIVE_ROOT_FOLDER` (never
+    one shared operator root, so no client's tree ever co-mingles with another's).
+    BlackCEO provisions the per-client Shared Drive out of band; the engine VERIFIES the
+    supplied root and NEVER creates a NEW Drive root. Per-document sharing is EDIT on the
+    co-author's OWN Doc (friction-free pull-back) and VIEW on PDFs/images; the root itself
+    is never anyone-can-read. Enforced by `caf_credential_gate.py` (the delivery-credential
+    presence gate: SA key + impersonate user + root are ALL required per box, a missing one
+    STOPS provisioning), `drive_adapter.load_root_folder_id` (resolves the per-box root and
+    refuses an unresolved template slot), and `drive-tree-provision.py` verify_root (never
+    creates a root).
 11. AUTO-PROVISIONED PIPELINE: onboarding auto-provisions the standard Anthology
     pipeline in the CLIENT's OWN Convert and Flow account through the CLIENT's OWN
     private integration token; binding a pre-existing pipeline is an explicit
