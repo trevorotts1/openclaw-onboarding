@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v19.16.0"
+ONBOARDING_VERSION="v19.16.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2011,15 +2011,22 @@ discover_all_credentials() {
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
     CRED_LIST="$CRED_LIST|ELEVENLABS_API_KEY:ElevenLabs"
-    # v10.13.10: Podbean client_id + client_secret are SHARED (operator's OAuth
-    # app — same for every client), injected via OPENCLAW_PODBEAN_CLIENT_ID +
-    # OPENCLAW_PODBEAN_CLIENT_SECRET env vars at install time. Discovery still
-    # checks if they're present in the client's openclaw.json (post-injection)
-    # so we know the injection worked, but they're labeled as shared.
-    CRED_LIST="$CRED_LIST|PODBEAN_CLIENT_ID:Podbean App ID (shared)"
-    CRED_LIST="$CRED_LIST|PODBEAN_CLIENT_SECRET:Podbean App Secret (shared)"
-    # PODBEAN_PODCAST_ID is per-client — the client's specific podcast destination
-    CRED_LIST="$CRED_LIST|PODBEAN_PODCAST_ID:Podbean Podcast/Channel ID (per-client)"
+    # v19.16.1: Podbean publishing goes through BlackCEO's n8n credential BROKER.
+    # A client box holds ONLY the broker pair (PODBEAN_BROKER_WEBHOOK_URL +
+    # PODBEAN_BROKER_TOKEN) plus the per-client Podbean Channel ID (podcast_id).
+    # The Podbean OAuth app client_id/client_secret are BlackCEO's SINGLE shared
+    # app: they live ONLY inside the n8n broker, are NEVER asked from the client,
+    # and are NEVER required or discovered on a client box (the local
+    # client_credentials mint is an operator-OWN-box fallback resolved directly by
+    # podbean_publish.sh, not a prerequisite). So discovery checks the broker pair
+    # + Channel ID here — NOT client_id/secret (which would falsely report
+    # "missing" on every broker-mode box).
+    CRED_LIST="$CRED_LIST|PODBEAN_BROKER_WEBHOOK_URL:Podbean n8n broker webhook URL (broker mode)"
+    CRED_LIST="$CRED_LIST|PODBEAN_BROKER_TOKEN:Podbean n8n broker shared token (broker mode)"
+    # PODBEAN_PODCAST_ID is the per-client Podbean Channel ID — the ONLY Podbean
+    # value the client supplies (it selects their show under BlackCEO's host
+    # account) and it is not a secret.
+    CRED_LIST="$CRED_LIST|PODBEAN_PODCAST_ID:Podbean Channel ID (podcast_id, per-client)"
     CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
     CRED_LIST="$CRED_LIST|BRAVE_API_KEY:Brave Search"
     CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"
