@@ -747,16 +747,62 @@ class S9Assembly:
         return _run_writer(subcmd_args, self.state_dir, db=self.db)
 
     def _default_gate_b(self, manuscript_path, order, contributors):
-        """Assembly-scope Gate B (SPEC 5 S9 step 6). Fail-soft when the W1.17
-        checker is not yet on the branch -> held (the durable ledger keeps the
-        cursor at zero cost)."""
+        """Assembly-scope Gate B (SPEC 5 S9 step 6). Shells the W1.17 Tier-1
+        checker (qc-tier1-anthology.py) in assembly mode over the compiled
+        manuscript.
+
+        CONTRACT: qc-tier1 is ENVELOPE-DRIVEN -- it reads a deliverable envelope
+        on --envelope/stdin and honours --mode/--kind/--artifact/--json; it does
+        NOT accept --anthology-id/--manuscript (passing those is an argparse error,
+        rc 2, which is why Gate B previously failed AFTER a correct compile and
+        blocked delivery end-to-end). So we build the assembly envelope it
+        understands and pipe it on stdin. --mode assembly makes qc-tier1 add its
+        assembly proofs on top of the whole-manuscript content invariants:
+          A1 every approved chapter present exactly once and byte-identical to its
+             frozen sha256 (chapters[]);
+          A2 the compiled order matches curation (curated_order);
+          A3 the editor introduction references only real contributors;
+          A5 front and back matter present (derived from the manuscript).
+        checks=[5,6] scopes the base content battery to the two whole-manuscript
+        deterministic invariants (zero em dash, zero leakage) -- the per-chapter
+        checks (word band, title lock, ...) were already enforced at each piece's
+        own Gate B, mirroring qc-tier1's own assembly self-test envelope.
+
+        Fail-soft when the checker is not yet on the branch -> held (the durable
+        ledger keeps the cursor at zero cost). Returns (rc, parsed): rc 0 pass;
+        nonzero (2 bad invocation / 4 one or more checks failed) -> a QC attempt."""
         if not QC_TIER1.exists():
             raise CollaboratorUnwired("Gate B checker not yet wired: %s" % QC_TIER1)
-        argv = [sys.executable or "python3", str(QC_TIER1), "--mode", "assembly",
-                "--anthology-id", self.anthology_id, "--json"]
-        if manuscript_path:
-            argv += ["--manuscript", str(manuscript_path)]
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+        # The frozen chapter bodies, read through the SAME chapter_source the
+        # compile used, in the confirmed running order: contact_id/key + per-chapter
+        # frozen sha256 feed A1, the position feeds A2, the roster feeds A3.
+        chapters = []
+        curated = []
+        for i, mk in enumerate(order or []):
+            if self._chapter_source is None:
+                break
+            body_bytes, source_sha = self._chapter_source(mk)
+            body_bytes = body_bytes if isinstance(body_bytes, (bytes, bytearray)) else \
+                (str(body_bytes or "").encode("utf-8"))
+            sha = (source_sha or sha256_hex(body_bytes)).strip().lower()
+            chapters.append({"key": str(mk), "text": bytes(body_bytes).decode("utf-8"),
+                             "sha256": sha, "order": i + 1})
+            curated.append(str(mk))
+        roster = [{"first_name": (c.get("first_name") or ""),
+                   "last_name": (c.get("last_name") or "")}
+                  for c in (contributors or []) if isinstance(c, dict)]
+        envelope = {
+            "kind": "manuscript",
+            "manuscript_path": str(manuscript_path) if manuscript_path else None,
+            "chapters": chapters,
+            "curated_order": curated,
+            "contributors": roster,
+            "checks": [5, 6],
+        }
+        argv = [sys.executable or "python3", str(QC_TIER1),
+                "--mode", "assembly", "--json"]
+        proc = subprocess.run(argv, input=json.dumps(envelope, ensure_ascii=False),
+                              capture_output=True, text=True, timeout=300)
         parsed = None
         if (proc.stdout or "").strip():
             try:

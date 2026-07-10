@@ -20,14 +20,23 @@ compile + sha byte-identity re-proof. The ONLY test double is the model router
 chapter bodies are written where the runner's chapter_source reads them
 (state/runs/s5/<safe>/working/chapter.md) and torn down afterwards.
 
-NOTE (separate, pre-existing, out-of-scope defect observed while writing this
-test): the runner's assembly Gate B call shells qc-tier1-anthology.py with
---anthology-id/--manuscript, args that script's argparse does not accept, so Gate
-B (which runs AFTER compile) exits 2 and the runner's overall return code is
-non-zero. That is unrelated to the confirm_order/curate defect under test and is
-NOT asserted here; these tests assert the DURABLE orchestration evidence the
-confirm_order bug corrupts -- the persisted ledger state and the compiled
-manuscript bytes -- both of which are established at/by compile, before Gate B.
+GATE B (now FIXED, and proven here): the runner's assembly Gate B call used to
+shell qc-tier1-anthology.py with --anthology-id/--manuscript, args that script's
+envelope-driven argparse does not accept, so Gate B (which runs AFTER compile)
+exited 2 and blocked delivery end-to-end even on a correct manuscript.
+_default_gate_b now builds the assembly ENVELOPE qc-tier1 understands and pipes it
+on stdin (--mode assembly). test_runner_confirm_order_passes_gate_b_end_to_end
+drives a COMPLETE final edition (producer inputs -> editor intro + front/back
+matter) and proves Gate B PASSES and the runner returns EX_OK end-to-end (the sole
+extra boundary mocked beyond the LLM router is the S8 delivery step, which needs a
+live client CAF/GHL PIT that no hermetic test can carry);
+test_gate_b_rejects_incomplete_final_edition proves Gate B still FAILS a genuinely
+incomplete manuscript. The three confirm_order/curate tests below deliberately
+compile a matter-LESS working edition (no producer inputs), so they assert the
+DURABLE orchestration evidence the confirm_order bug corrupts -- the persisted
+ledger state and the compiled manuscript bytes, established at/by compile, before
+Gate B -- and do not assert the runner rc (a matter-less edition intentionally
+fails Gate B's front/back-matter completeness check A5).
 
 Run: python3 -m pytest 59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py -q
  or: python3 59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py
@@ -363,6 +372,152 @@ def test_runner_arm_pass_without_confirm_does_not_emit_finale():
             assert logic.extract_finale_block(ms) is None, "finale leaked into an unconfirmed edition"
             assert logic.extract_transition_blocks(ms) == [], \
                 "transitions leaked into an unconfirmed edition"
+
+
+# --------------------------------------------------------------------------- #
+# GATE B: prove the wiring fix. A COMPLETE final edition (producer inputs -> editor
+# intro + front/back matter) passes assembly Gate B and the runner returns EX_OK
+# end-to-end; an incomplete edition still fails Gate B.
+# --------------------------------------------------------------------------- #
+# Leak-free (check 6) matter/intro the fake ae-02/ae-04 return. The front matter
+# carries the markers Gate B's A5 completeness proof looks for ("copyright",
+# "table of contents"); the back matter carries "acknowledgments".
+FRONT_MATTER = ("<!-- FRONT MATTER -->\n# The Test Collection\n\nCopyright 2026 Owner.\n"
+                "Table of Contents\n\n1. Rise\n2. Fall Forward\n3. Begin Again\n"
+                "<!-- END FRONT MATTER -->")
+BACK_MATTER = ("<!-- BACK MATTER -->\n## Acknowledgments\n\nWith gratitude to every "
+               "voice in this collection.\n<!-- END BACK MATTER -->")
+EDITOR_INTRO = ("<!-- EDITORS INTRO -->\nThese are the voices of Ada Vaughn, Ben Reyes, "
+                "and Cyd Okafor, gathered into one arc of resilience.\n<!-- END EDITORS INTRO -->")
+
+
+def _make_final_router(order, seen):
+    """_make_router plus the ae-02 editor introduction and ae-04 front/back matter a
+    COMPLETE final edition needs (the base router raises on those steps because its
+    scenarios supply no producer_inputs)."""
+    base = _make_router(order, seen)
+
+    def _router(tier, messages, context, run_dir=None, model_map_path=None):
+        step = context["step"]
+        if step == "s9_editor_intro":
+            seen.append(step)
+            return {"text": EDITOR_INTRO, "model_used": "glm-x", "tier": tier,
+                    "provider": "p", "usage": {}}
+        if step == "s9_front_back_matter":
+            seen.append(step)
+            return {"text": FRONT_MATTER + "\n" + BACK_MATTER, "model_used": "glm-x",
+                    "tier": tier, "provider": "p", "usage": {}}
+        return base(tier, messages, context, run_dir=run_dir, model_map_path=model_map_path)
+    return _router
+
+
+def _gate_b_chapter_source(pk):
+    """Read a frozen body exactly where the runner's own chapter_source reads it, so a
+    test can re-run assembly Gate B over the REAL compiled manuscript out-of-band."""
+    p = SKILL_DIR / "state" / "runs" / "s5" / _safe(pk) / "working" / "chapter.md"
+    data = p.read_bytes()
+    return data, hashlib.sha256(data).hexdigest()
+
+
+def _drive_final(state_dir, run_dir, router):
+    """Like _drive, but also stubs the ONE post-Gate-B external boundary the LLM mock
+    does not already cover: the S8 delivery step (stage_s8_deliver.py needs a live
+    client CAF/GHL PIT no hermetic test can carry). Gate B itself runs for REAL, so an
+    EX_OK runner return proves the run passed THROUGH a green Gate B."""
+    orig_step = runner._step
+
+    def _step_stub(i, rel, argv, timeout=180, input_text=None):
+        if any(str(a).endswith("stage_s8_deliver.py") for a in argv):
+            return runner.EX_OK, None
+        return orig_step(i, rel, argv, timeout=timeout, input_text=input_text)
+    runner._step = _step_stub
+    try:
+        return _drive(state_dir, run_dir, router)
+    finally:
+        runner._step = orig_step
+
+
+def _confirm_order_board(state_dir, run_dir):
+    p = subprocess.run(
+        [PY, str(GATE), "decide", "--state-dir", str(state_dir), "--json",
+         "--door", "board", "--action", "confirm_order", "--subject-key", AID,
+         "--producer-id", PID, "--order", json.dumps(CONFIRMED),
+         "--opener", CONFIRMED[0], "--closer", CONFIRMED[-1],
+         "--run-dir", str(run_dir)], capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, "confirm_order rc=%d :: %s" % (p.returncode, p.stderr)
+
+
+def _gate_b_over_compiled(state_dir, run_dir, ms_path):
+    contributors = [{"participant_key": pk, "first_name": NAMES[pk][0],
+                     "last_name": NAMES[pk][1]} for pk in CONFIRMED]
+    eng = logic.S9Assembly(AID, state_dir=str(state_dir), run_dir=str(run_dir),
+                           chapter_source=_gate_b_chapter_source)
+    return eng.assembly_gate_b(ms_path, CONFIRMED, contributors)
+
+
+def test_runner_confirm_order_passes_gate_b_end_to_end():
+    """The delivery blocker is fixed: on a COMPLETE final edition the runner's assembly
+    Gate B RUNS and PASSES (previously it shelled qc-tier1 with --anthology-id/
+    --manuscript, an argparse error -> rc 2 that blocked every delivery), and the
+    runner returns EX_OK end-to-end. Only the S8 delivery boundary is stubbed; Gate B
+    runs for real."""
+    with _Sandbox() as sb:
+        _seed_ready(sb.state_dir)
+        (sb.run_dir / "request.json").write_text(json.dumps({
+            "producer_id": PID, "confirm_name": NAME,
+            "producer_inputs": {"voice": "warm, plainspoken",
+                                "why": "to honor these stories"},
+            "copyright_year": 2026}), encoding="utf-8")
+        _confirm_order_board(sb.state_dir, sb.run_dir)
+
+        seen = []
+        rc = _drive_final(sb.state_dir, sb.run_dir, _make_final_router(CONFIRMED, seen))
+
+        # the COMPLETE final edition was written (no re-curate) and compiled.
+        assert "s9_order_curation" not in seen
+        assert {"s9_editor_intro", "s9_front_back_matter"} <= set(seen)
+        assert _anth(sb.state_dir)["assembly_state"] == "compiled"
+        ms_path = sb.run_dir / "working" / "manuscript.md"
+        ms = ms_path.read_text(encoding="utf-8")
+        assert logic.extract_finale_block(ms) is not None
+
+        # (A) the runner returned SUCCESS end-to-end THROUGH the real Gate B.
+        assert rc == runner.EX_OK, \
+            "runner did not return EX_OK end-to-end through Gate B (rc=%r)" % rc
+
+        # (B) direct proof Gate B itself passes over the REAL compiled bytes: the
+        # argparse wiring bug is gone and every assembly proof is green.
+        gate = _gate_b_over_compiled(sb.state_dir, sb.run_dir, ms_path)
+        assert gate["passed"] is True and gate["rc"] == 0, \
+            "assembly Gate B did not pass a correct manuscript: %r" % gate
+        statuses = {c["id"]: c["status"] for c in (gate["report"] or {}).get("checks", [])}
+        assert statuses.get(101) == "PASS", statuses   # A1 frozen chapters
+        assert statuses.get(102) == "PASS", statuses   # A2 order matches curation
+        assert statuses.get(105) == "PASS", statuses   # A5 front/back matter present
+
+
+def test_gate_b_rejects_incomplete_final_edition():
+    """Gate B is no rubber stamp: a matter-LESS edition (no producer inputs -> no
+    front/back matter) FAILS assembly Gate B on the completeness proof (A5), so a
+    broken final edition can never reach delivery."""
+    with _Sandbox() as sb:
+        _seed_ready(sb.state_dir)
+        (sb.run_dir / "request.json").write_text(
+            json.dumps({"producer_id": PID, "confirm_name": NAME}), encoding="utf-8")
+        _confirm_order_board(sb.state_dir, sb.run_dir)
+
+        seen = []
+        # matter-less: _drive runs the real runner; Gate B fails at WIRING[4], before S8.
+        _drive(sb.state_dir, sb.run_dir, _make_router(CONFIRMED, seen))
+
+        ms_path = sb.run_dir / "working" / "manuscript.md"
+        assert ms_path.is_file(), "the runner did not compile a manuscript"
+        gate = _gate_b_over_compiled(sb.state_dir, sb.run_dir, ms_path)
+        assert gate["passed"] is False and gate["rc"] != 0, \
+            "Gate B wrongly passed an incomplete manuscript: %r" % gate
+        codes = {c.get("code") for c in (gate["report"] or {}).get("checks", [])}
+        assert "AF-AE-S9-MATTER" in codes, \
+            "expected the front/back-matter completeness failure, got %r" % codes
 
 
 # --------------------------------------------------------------------------- #
