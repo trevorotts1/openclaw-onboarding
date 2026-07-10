@@ -1,12 +1,16 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-08T15:15:18Z",
-  "file_count": 102,
+  "generated_at": "2026-07-10T11:58:16Z",
+  "file_count": 103,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "42c206cbc893b9b7ab3ad8c21fe4c6b86eca4e65d51c9777f50bf9b7b6e1ae64",
-      "bytes": 26940
+      "sha256": "0104c9147110156b14c8aea4032fc47abdec7dcc83a989e35b0343971800da93",
+      "bytes": 28278
+    },
+    "PRESENTATION-MASTER-DOCTRINE.md": {
+      "sha256": "47844e7724b1258103127ad091431db471ac35b310bcb888ee153e6aaa924141",
+      "bytes": 13052
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",

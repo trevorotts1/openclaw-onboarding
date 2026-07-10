@@ -1,8 +1,24 @@
 # CLIENT WEBINAR DECK SOP — DETERMINISTIC PIPELINE
 **Standard Operating Procedure — Branded Webinar / Slide Deck, End-to-End**
-**Version 2.0 — 2026-06-16 (deterministic-pipeline rewrite)**
+**Version 2.1 — 2026-07-10 (two-layer reconciliation)**
 **Audience:** the Presentations builder ("Slate") and any sub-agent that builds a deck.
 **Owner role:** Director of Presentations (authority); QC Specialist (gate).
+
+> **THIS SOP IS LAYER B OF ONE PIPELINE — READ THE DOCTRINE INDEX FIRST.** This document
+> governs the *deterministic render + delivery* half of the process. It is **not** the whole
+> process. Before a `slides.json` is written, the department runs **LAYER A — the authoring
+> pipeline** (intake → priority shift → arc → research → copy → copy-QC → typography →
+> **rich prompt authoring (9,000–18,000-char per-slide prompt files)** → prompt-QC → speech),
+> governed by `PIPELINE-MANIFEST.json` and the role library and served one enforced step at a
+> time by `run_signature_deck.py --next`. This SOP (**LAYER B**) is how the render is invoked
+> once Layer A's artifacts exist. The two layers are ONE pipeline, not two products or two
+> choices — `build_deck.py`'s preflight requires the full Layer-A artifact set, which is why
+> starting here without it fails closed. The single reconciled doctrine index is
+> **`universal-sops/PRESENTATION-MASTER-DOCTRINE.md`** — read it first; it also carries the
+> crosswalk that resolves every legacy "master SOP Section N" citation. **Note on the prompt
+> contract:** the retired claim that "the script composes the KIE prompt mechanically" is
+> superseded — `build_deck.py` loads pre-authored rich prompt files **verbatim** (Layer A
+> authors them; Layer B consumes them).
 
 > **THE ONE WAY A DECK IS BUILT.** This SOP is DETERMINISTIC. The builder writes a single
 > `slides.json` file and runs `scripts/build_deck.py`. The script — not the builder —

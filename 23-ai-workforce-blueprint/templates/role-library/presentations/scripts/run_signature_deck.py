@@ -72,9 +72,20 @@ SHIFT-LEFT QC SEND-BACK LOOPS (v15.0.0)
 USAGE
     python3 run_signature_deck.py --run-dir DIR --slides slides.json --out out.pptx
         [--plan]            # print the resolved phase plan + preconditions, do not run
+        [--next]            # print ONLY the single next required phase (turn-gate), read-only
         [--phase PHASE_ID]  # advance to / dispatch a single phase (checks preconditions)
         [--platform vps|mac]
         [--adhoc]           # owner-authorized + logged escape (refused without the record)
+
+THE PHASE TURN-GATE (--next). The RUNNER — not prose — is the agent's interface to
+"what is next." `--next` reads PIPELINE-MANIFEST.json + the on-disk attestation
+ledger and emits ONE payload describing ONLY the single next required phase (its
+owning role, artifact contract, SOP refs, and the exact attest command). It
+deliberately refuses to describe anything further ahead. The orchestrating loop is:
+`--next` -> do exactly that one phase -> `--phase <ID>` (verify + attest) -> `--next`.
+Because attestation is order-enforced (check_phase_preconditions, AF-PHASE-SKIPPED)
+the agent physically cannot run the process out of the order the runner serves it.
+Canonical doctrine home: universal-sops/PRESENTATION-MASTER-DOCTRINE.md.
 
 This is a SCRIPT (not a manifest role/phase). sync_check.py does not require a
 symbol for it; AF-PHASE-SKIPPED is enforced_by:runner with py_symbol:null.
@@ -844,6 +855,90 @@ def print_plan(run_dir: Path, phases: list) -> None:
 
 
 # ---------------------------------------------------------------------------
+# --next PHASE TURN-GATE (the runner is the agent's interface to "what is next")
+# ---------------------------------------------------------------------------
+def _next_required_phase(run_dir: Path, phases: list):
+    """Return (phase_dict, k, N) for the FIRST phase in ascending `order` that is
+    NEITHER attested NOR covered by a logged owner-authorized skip; or (None, N, N)
+    when every phase is attested / skip-approved. This is the same ordered set the
+    precondition gate walks, so the phase --next names is exactly the phase the next
+    --phase call is allowed to attest."""
+    attested = _attested_phase_ids(run_dir)
+    approvals = set(load_skip_approvals(run_dir).keys())
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    total = len(ordered)
+    for i, ph in enumerate(ordered):
+        pid = ph["id"]
+        if pid in attested or pid in approvals:
+            continue
+        return ph, i + 1, total
+    return None, total, total
+
+
+def emit_next(run_dir: Path, phases: list) -> None:
+    """--next PHASE TURN-GATE. Emits ONE JSON payload for ONLY the single next
+    required phase — its id/order/owning role, the artifact contract
+    (produces_artifact path + the manifest's required_brief_categories 'keys' + a
+    flag for whether a substance verifier runs at attest time), the SOP refs, the
+    gate codes, and the EXACT attest command to run next. It DELIBERATELY does not
+    reveal any phase further ahead: the process is served one step at a time so the
+    orchestrating agent cannot 'go off the laid-out process'. Read-only (no run
+    work, no nonce needed); use --plan for the full phase list."""
+    runner_rel = "run_signature_deck.py"
+    ph, k, total = _next_required_phase(run_dir, phases)
+    if ph is None:
+        print(json.dumps({
+            "schema": "phase_turn_gate/v1",
+            "run_dir": str(run_dir),
+            "next_phase": None,
+            "status": "all_phases_complete",
+            "attested_of_total": [total, total],
+            "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+            "message": ("Every manifest phase is attested (or covered by a logged "
+                        "owner-authorized skip). There is no next phase to serve; the "
+                        "governed pipeline is complete."),
+        }, indent=2))
+        return
+
+    pid = ph["id"]
+    needs_out = pid == "P4-RENDER"
+    attest_cmd = (
+        f"python3 {runner_rel} --run-dir {run_dir} --slides <slides.json>"
+        + (" --out <out.pptx>" if needs_out else "")
+        + f" --phase {pid}"
+    )
+    payload = {
+        "schema": "phase_turn_gate/v1",
+        "run_dir": str(run_dir),
+        "position": {"step": k, "of": total},
+        "next_phase": {
+            "id": pid,
+            "order": ph.get("order"),
+            "name": ph.get("name", pid),
+            "owning_role": ph.get("owning_role", ""),
+            "artifact_contract": {
+                "produces_artifact": ph.get("produces_artifact", ""),
+                "required_brief_categories": ph.get("required_brief_categories", []),
+                "has_substance_verifier": pid in _GOVERNED_VERIFIER_PHASES,
+            },
+            "sop_refs": ph.get("sop_refs", []),
+            "gate_codes": ph.get("gate_codes", []),
+            "client_report": ph.get("client_report"),
+            "attest_command": attest_cmd,
+        },
+        "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+        "instruction": (
+            "Do EXACTLY this one phase: produce its produces_artifact per the cited "
+            "sop_refs, then run the attest_command to verify + attest it. Then run "
+            "--next again for the following step. This runner will not reveal any "
+            "phase further ahead, and will refuse (AF-PHASE-SKIPPED) to attest out of "
+            "order — the process is served one step at a time."
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+
+
+# ---------------------------------------------------------------------------
 # adhoc authorization (owner-authorized + logged; refused without the record)
 # ---------------------------------------------------------------------------
 def assert_adhoc_authorized(run_dir: Path) -> None:
@@ -1363,6 +1458,9 @@ def main():
     ap.add_argument("--phase", help="dispatch/advance a single phase id (checks preconditions)")
     ap.add_argument("--platform", choices=["vps", "mac"], default=None)
     ap.add_argument("--plan", action="store_true", help="print the phase plan and exit")
+    ap.add_argument("--next", dest="want_next", action="store_true",
+                    help="print ONLY the single next required phase (turn-gate) as one "
+                         "JSON payload and exit; read-only, no nonce needed")
     ap.add_argument("--adhoc", action="store_true",
                     help="owner-authorized + logged escape (refused without the record)")
     args = ap.parse_args()
@@ -1378,6 +1476,13 @@ def main():
     # --plan inspect is allowed without the front-door marker (read-only, no run work).
     if args.plan:
         print_plan(run_dir, phases)
+        sys.exit(0)
+
+    # --next PHASE TURN-GATE: the runner (not prose) is the agent's interface to
+    # "what is next." Read-only — emits ONLY the single next required phase and does
+    # no run work, so (like --plan) it is exempt from the front-door nonce handshake.
+    if args.want_next:
+        emit_next(run_dir, phases)
         sys.exit(0)
 
     # FRONT-DOOR NONCE HANDSHAKE (CONTRACT #8): run_signature_deck.py MUST be invoked

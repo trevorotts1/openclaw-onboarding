@@ -2,7 +2,12 @@
 
 **Cluster:** Slide-Craft Rules (the single most important deliverable)
 **Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the forensic failures.
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Layer B — render/delivery).
+**Doctrine index (read first):** universal-sops/PRESENTATION-MASTER-DOCTRINE.md — the one
+reconciled process (Layer A authoring pipeline + Layer B deterministic render), the canonical
+doctrine home rule (universal-sops/ is canonical; this dept copy is a generated mirror), and
+the crosswalk that resolves every legacy "master SOP Section N" citation. This ruleset is the
+Layer-A/QC auto-fail doctrine; the live gate wiring is mapped below.
 **How to use:** every rule below is an AUTO-FAIL. Auto-fails are checked FIRST, before any 1-to-10 scoring, exactly like the existing AF-C / AF-P / AF-I tables in the QC role. A triggered auto-fail forces FAIL on the affected slide (or the whole DECK where marked) regardless of any average. The QC report records the triggered code, the slide, and the failure message verbatim.
 **Status:** Reference ruleset, RECONCILED with the live gate. This document is the authored slide-craft auto-fail doctrine; the named codes below (AF-HOOK, AF-AUD, AF-OBI, AF-DEN, AF-PLACEHOLDER) are the doctrine's own taxonomy. In the live qc-specialist-presentations.md these protections are ALREADY WIRED under the repo's existing code namespace (the FIX-1 through FIX-8 overhaul). Use the reconciliation map below to find each rule's live equivalent. Do NOT re-add a parallel AF-HOOK/AF-AUD/AF-OBI/AF-DEN namespace to the QC role; that work is done.
 

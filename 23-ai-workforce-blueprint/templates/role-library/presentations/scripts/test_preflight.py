@@ -2583,6 +2583,94 @@ def test_runner_attestation_seen_by_preconditions():
     return fails
 
 
+def test_runner_next_turn_gate():
+    """FOUNDATION (--next phase turn-gate). The runner — not prose — is the agent's
+    interface to what is next. Proves, directly against emit_next's phase selector:
+      (a) an empty ledger => the FIRST manifest phase (lowest order) is served;
+      (b) after that phase is attested, --next advances to the NEXT unattested phase;
+      (c) an owner-authorized skip of the next phase is treated as satisfied (skipped);
+      (d) every phase attested => next_phase is None (all_phases_complete);
+      (e) the served phase carries an attest_command naming that exact --phase id;
+      (f) --next NEVER selects an out-of-order phase (it returns the lowest-order
+          unattested phase, i.e. exactly the phase the precondition gate would allow)."""
+    import importlib
+    rsd = importlib.import_module("run_signature_deck")
+    fails = []
+    phases = rsd.load_manifest()["phases"]
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    first_id = ordered[0]["id"]
+    second_id = ordered[1]["id"]
+
+    rd = Path(tempfile.mkdtemp(prefix="deck_next_gate_"))
+    (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+
+    # (a) empty ledger => first phase.
+    ph, k, N = rsd._next_required_phase(rd, phases)
+    if ph is None or ph["id"] != first_id or k != 1 or N != len(ordered):
+        fails.append(f"NEXT-GATE (a): empty ledger should serve {first_id!r} step 1/{len(ordered)}, "
+                     f"got {ph and ph['id']!r} step {k}/{N}")
+
+    # (b) attest the first phase => --next advances to the second.
+    rsd.attest_phase(rd, first_id, ordered[0].get("owning_role", ""), "artifact_present",
+                     "no-artifact-spec")
+    ph2, k2, _ = rsd._next_required_phase(rd, phases)
+    if ph2 is None or ph2["id"] != second_id or k2 != 2:
+        fails.append(f"NEXT-GATE (b): after attesting {first_id!r}, next should be {second_id!r} "
+                     f"step 2, got {ph2 and ph2['id']!r} step {k2}")
+
+    # (c) an owner-authorized skip of the second phase => it is treated as satisfied.
+    (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": second_id, "owner_approved": True,
+                        "approved_by": "owner", "reason": "not applicable to this deck",
+                        "timestamp": "2026-07-10T12:00:00Z", "owner_msg_id": "42"}]}))
+    ph3, _, _ = rsd._next_required_phase(rd, phases)
+    if ph3 is not None and ph3["id"] == second_id:
+        fails.append(f"NEXT-GATE (c): an owner-authorized skip of {second_id!r} should be treated "
+                     f"as satisfied, but --next still served it")
+
+    # (d) every phase attested => next_phase is None.
+    rd2 = Path(tempfile.mkdtemp(prefix="deck_next_done_"))
+    (rd2 / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    atts = [{"phase_id": p["id"], "artifact_sha": "x"} for p in phases]
+    (rd2 / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": atts}))
+    phN, _, _ = rsd._next_required_phase(rd2, phases)
+    if phN is not None:
+        fails.append(f"NEXT-GATE (d): a fully-attested ledger should serve no next phase, "
+                     f"got {phN['id']!r}")
+
+    # (e) the served phase's attest_command names that exact --phase id (via emit_next JSON).
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rsd.emit_next(rd2, phases)  # all complete -> should be all_phases_complete
+    done_payload = json.loads(buf.getvalue())
+    if done_payload.get("status") != "all_phases_complete" or done_payload.get("next_phase") is not None:
+        fails.append(f"NEXT-GATE (e): all-complete emit_next should report all_phases_complete/None, "
+                     f"got status={done_payload.get('status')!r}")
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    served = json.loads(buf2.getvalue()).get("next_phase") or {}
+    cmd = served.get("attest_command", "")
+    if not served.get("id") or f"--phase {served.get('id')}" not in cmd:
+        fails.append(f"NEXT-GATE (e2): served phase's attest_command must name '--phase "
+                     f"{served.get('id')}', got {cmd!r}")
+
+    # (f) out-of-order safety: the served phase is always the LOWEST-order unattested/
+    #     un-skip-approved phase (exactly what the precondition gate permits).
+    attested_ids = {first_id}
+    skip_ids = {second_id}
+    expected = next(p["id"] for p in ordered if p["id"] not in attested_ids and p["id"] not in skip_ids)
+    if served.get("id") != expected:
+        fails.append(f"NEXT-GATE (f): --next must serve the lowest-order pending phase "
+                     f"{expected!r}, got {served.get('id')!r}")
+
+    print(f"RUNNER --next TURN-GATE       -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_chk_no_overlay():
     """5C AF-OVERLAY-DELIVERED: a present pptx_text_overlays.json FAILS; a run with no
     overlay file + no delivered PPTX PASSES."""
@@ -4233,6 +4321,9 @@ def main():
     # v16.1.5 (Defect 1) — a phase attested via the RUNNER's own attest path is SEEN by
     # the shared precondition gate (no false AF-PHASE-SKIPPED); a genuine skip STILL trips.
     failures += test_runner_attestation_seen_by_preconditions()
+    # FOUNDATION — the --next phase turn-gate serves ONLY the single next required phase,
+    # advances on attestation, honors owner-authorized skips, and never picks out-of-order.
+    failures += test_runner_next_turn_gate()
 
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
