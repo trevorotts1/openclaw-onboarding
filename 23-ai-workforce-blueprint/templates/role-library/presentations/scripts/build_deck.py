@@ -327,6 +327,40 @@ PROMPT_CHAR_TARGET_HIGH = 18000  # v15.0.0: SOP authoring-target HIGH end raised
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
 
+# ---------------------------------------------------------------------------
+# AF-COPY-BAND — per-slide COPY character-count FLOOR and CEILING (spec item 7 /
+# §8.2). Reconciles the 3-way bullet-count conflict (slide-copywriter.md:187 said
+# "5 bullets, 7 words each"; qc-specialist-presentations.md c4 said "3 bullets max
+# or 30 words max"; slide-image-creator.md:229,759 renders "max 5 words") DOWN to
+# one enforced rule, and adds the missing MINIMUM (previously no floor existed
+# anywhere for headline/subhead/slide-total — only prose ceilings that no code
+# ever checked). Characters, not words: deterministic, locale-stable, and directly
+# enforceable on slides.json copy[] without an LLM judgment call.
+#
+# copy[] positional semantics (slides.schema.json): index 0 = HEADLINE,
+# index 1 = SUBHEAD (optional), index 2 = KICKER / third block (optional),
+# index 3+ = BULLETS (max COPY_BULLET_MAX_COUNT).
+#
+# Because QC_FOREIGN_SIGNATURES (below) bans QC *reports* that carry a
+# word-count rubric, this band is enforced ONLY as a first-party preflight
+# check (_chk_copy_density, like AF-P1) — never as a QC-report criterion — so
+# there is no collision with that ban.
+# ---------------------------------------------------------------------------
+COPY_HEADLINE_CHAR_FLOOR = 12        # ~2 words -- kills one-word non-headlines
+COPY_HEADLINE_CHAR_CEILING = 60      # ~9 words -- preserves the historical 9-word ceiling
+COPY_SUBHEAD_CHAR_FLOOR = 20         # ~4 words -- only applied when a subhead is present
+COPY_SUBHEAD_CHAR_CEILING = 110      # ~18 words -- preserves the historical 18-word ceiling
+COPY_KICKER_CHAR_CEILING = 40        # kicker/third block: absent OR <= 40 chars, no floor
+COPY_BULLET_CHAR_FLOOR = 8           # ~1-2 words
+COPY_BULLET_CHAR_CEILING = 30        # ~5 words -- resolves the 5-vs-7-word conflict DOWN to
+                                      # the image-render reality (slide-image-creator.md's
+                                      # "max 5 words" is what actually bakes into the PNG)
+COPY_BULLET_MAX_COUNT = 3            # resolves the 3-vs-5-bullet conflict DOWN (qc-specialist wins)
+COPY_SLIDE_TOTAL_CHAR_FLOOR = 40     # kills the "empty slide, one orphan word" failure
+COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves historical ceiling
+COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
+                                        # hook line alone is allowed to be short
+
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
@@ -3005,6 +3039,151 @@ def _load_slide_copy_map(run_dir: Path, slides_path: Optional[Path] = None) -> d
             if out:
                 return out
     return {}
+
+
+def _load_slide_arc_tags(run_dir: Path) -> dict:
+    """Return {ordinal: lowercase tag/section/beat blob} from arc_allocation.json.
+    Used ONLY to identify the HOOK / section-banner slide-total-floor exemption for
+    _chk_copy_density (spec §8.2 item 1: "pure-typography HOOK slides floor drops
+    to 12; section-banner slides likewise"). Returns {} when no arc_allocation.json
+    can be read — the gate then applies the standard (non-exempt) floor to every
+    slide, which is the safe default (never a silent pass)."""
+    arc = None
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if p.exists():
+            arc = p
+            break
+    if arc is None:
+        return {}
+    obj = _read_json(arc)
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return {}
+    slots = obj if isinstance(obj, list) else (
+        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    out = {}
+    if not isinstance(slots, list):
+        return {}
+    for s in slots:
+        if not isinstance(s, dict):
+            continue
+        ordinal = s.get("slide")
+        if not isinstance(ordinal, int):
+            continue
+        tokens = []
+        for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+            v = s.get(k)
+            if isinstance(v, str):
+                tokens.append(v.lower())
+        tags = s.get("tags")
+        if isinstance(tags, list):
+            tokens += [str(t).lower() for t in tags]
+        out[ordinal] = " ".join(tokens)
+    return out
+
+
+def _is_hook_or_banner_slide(tag_blob: str) -> bool:
+    if not tag_blob:
+        return False
+    markers = ("hook", "section-banner", "section_banner", "sectionbanner", "banner")
+    return any(m in tag_blob for m in markers)
+
+
+def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-COPY-BAND (preflight, fail-loud) -- per-slide COPY character-count FLOOR
+    and CEILING, code-enforced. See the COPY_* band constants above for the exact
+    numbers and their provenance (spec item 7 / §8.2): this is the first-ever
+    code-enforced minimum for headline/subhead/slide-total, and it reconciles the
+    old 3-way bullet-count conflict (5-bullets-7-words vs 3-bullets-30-words vs
+    render-reality 5-words) into ONE rule instead of three incompatible ones.
+
+    Reads the ACTUAL slides.json the renderer will render (slides_path, H3 -- the
+    same positional-file convention _chk_rich_prompts/_chk_coverage use) so the
+    band is enforced against the exact file that gets rendered, not a different
+    canonical slides.json that might disagree. Defers ("" / pass) when slides.json
+    cannot be found or parsed -- _chk_slides_copy / _chk_arc / schema validation own
+    that absence; this gate only judges copy[] CONTENT once it exists.
+
+    Because QC_FOREIGN_SIGNATURES bans QC *reports* that carry a word-count
+    rubric, this is a FIRST-PARTY preflight check (like AF-P1) that counts
+    CHARACTERS deterministically in code -- never a QC-report criterion -- so
+    there is no collision with that ban.
+
+    Returns "" when every slide's copy[] clears every band, else a fatal
+    AF-COPY-BAND message naming slide + field + count + band for every offender."""
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # no slides.json yet -- _chk_slides_copy/_chk_arc own the absence
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
+    if not copy_map:
+        return ""  # slides.json unreadable/empty -- upstream checks own that failure
+    arc_tags = _load_slide_arc_tags(run_dir)
+    offenders = []
+    for ordinal in range(1, n + 1):
+        copy_val = copy_map.get(ordinal)
+        if not isinstance(copy_val, list) or not copy_val:
+            continue  # missing/malformed copy -- schema validation / AF-P1 own this
+        fields = [str(c) if c is not None else "" for c in copy_val]
+        headline = fields[0]
+        subhead = fields[1] if len(fields) > 1 else None
+        kicker = fields[2] if len(fields) > 2 else None
+        bullets = fields[3:]
+
+        hlen = len(headline)
+        if not (COPY_HEADLINE_CHAR_FLOOR <= hlen <= COPY_HEADLINE_CHAR_CEILING):
+            offenders.append(
+                f"slide {ordinal:02d} HEADLINE: {hlen} chars, outside "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING} band")
+
+        if subhead:
+            slen = len(subhead)
+            if not (COPY_SUBHEAD_CHAR_FLOOR <= slen <= COPY_SUBHEAD_CHAR_CEILING):
+                offenders.append(
+                    f"slide {ordinal:02d} SUBHEAD: {slen} chars, outside "
+                    f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} band")
+
+        if kicker:
+            klen = len(kicker)
+            if klen > COPY_KICKER_CHAR_CEILING:
+                offenders.append(
+                    f"slide {ordinal:02d} KICKER: {klen} chars, over the "
+                    f"{COPY_KICKER_CHAR_CEILING}-char ceiling")
+
+        real_bullets = [b for b in bullets if b]
+        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+            offenders.append(
+                f"slide {ordinal:02d} BULLETS: {len(real_bullets)} bullets, over the "
+                f"{COPY_BULLET_MAX_COUNT}-bullet max (AF-COPY-BAND reconciles the historical "
+                f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)")
+        for bi, b in enumerate(real_bullets, start=1):
+            blen = len(b)
+            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+                offenders.append(
+                    f"slide {ordinal:02d} BULLET {bi}: {blen} chars, outside "
+                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band")
+
+        total = sum(len(f) for f in fields)
+        tag_blob = arc_tags.get(ordinal, "")
+        exempt = _is_hook_or_banner_slide(tag_blob)
+        floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
+        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+            offenders.append(
+                f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
+                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
+                + (" (hook/section-banner exemption applied)" if exempt else ""))
+
+    if offenders:
+        return ("AF-COPY-BAND: per-slide copy character-count floor/ceiling FAILED for "
+                f"{len(offenders)} field(s). Bands: HEADLINE "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING}, SUBHEAD "
+                f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} (if present), KICKER "
+                f"<= {COPY_KICKER_CHAR_CEILING} (if present), BULLETS <= {COPY_BULLET_MAX_COUNT} "
+                f"each {COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL "
+                f"{COPY_SLIDE_TOTAL_CHAR_FLOOR}-{COPY_SLIDE_TOTAL_CHAR_CEILING} "
+                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides). "
+                "Offenders: " + "; ".join(offenders))
+    return ""
 
 
 def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) -> list:
@@ -6462,6 +6641,23 @@ PREFLIGHT_REQUIRED = [
      "slide copy authored per doctrine (hook recurs across the deck, 3-4 band, 10 components)",
      "Phase 4 — Slide Copywriter SOP",
      _chk_slides_copy),
+    # AF-COPY-BAND — per-slide COPY character-count FLOOR and CEILING (spec item 7 /
+    # §8.2). The first-ever code-enforced minimum for headline/subhead/slide-total,
+    # and the single reconciled rule for the old 3-way bullet-count conflict
+    # (5-bullets-7-words vs 3-bullets-30-words vs render-reality 5-words). Run-dir-
+    # scoped (None sentinel) so it reads the ACTUAL positional slides.json (H3).
+    # Deliberately a first-party preflight check, NOT a QC-report criterion, so it
+    # never collides with the QC_FOREIGN_SIGNATURES word-count-rubric ban.
+    (None,
+     f"copy character-count band — HEADLINE {COPY_HEADLINE_CHAR_FLOOR}-"
+     f"{COPY_HEADLINE_CHAR_CEILING}, SUBHEAD {COPY_SUBHEAD_CHAR_FLOOR}-"
+     f"{COPY_SUBHEAD_CHAR_CEILING} (if present), KICKER <= {COPY_KICKER_CHAR_CEILING} "
+     f"(if present), BULLETS <= {COPY_BULLET_MAX_COUNT} each {COPY_BULLET_CHAR_FLOOR}-"
+     f"{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL {COPY_SLIDE_TOTAL_CHAR_FLOOR}-"
+     f"{COPY_SLIDE_TOTAL_CHAR_CEILING} (AF-COPY-BAND)",
+     "Phase 4 — Slide Copywriter SOP / qc-specialist-presentations.md c4 "
+     "(AF-COPY-BAND)",
+     _chk_copy_density),
     # G1 — WRITING-half INTELLIGENCE engines (Story villain-before-hero, Emotional
     # felt-stakes-before-offer, Hook copy refrain, Recap) + narrative harmony, fired at
     # COPY-QC (the EARLIEST phase, BEFORE any image prompt is authored — shift-left).

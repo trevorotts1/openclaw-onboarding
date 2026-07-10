@@ -305,7 +305,11 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         deck_slides = [
             {"slide": i,
              "scene": f"Editorial office scene {i}, documentary photography.",
-             "copy": [f"Northwind Co", f"Converting beat {i}"]}
+             # AF-COPY-BAND (build_deck.py COPY_* bands): headline "Northwind Co" is
+             # 12 chars (exactly the 12-char floor); the subhead is sized to clear
+             # the 20-110 char subhead band and keep the 40-180 char slide-total
+             # band in range for every i in this fixture's range.
+             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]}
             for i in range(1, _floor_slides + 1)
         ]
         (root / "slides.json").write_text(json.dumps(deck_slides))
@@ -507,9 +511,10 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             json.dumps(_img_qc_base))
         # speech_qc_report.json intentionally ABSENT here -> AF-SPEECH-QC defers (pre-delivery).
         # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM), one per slide.
-        # Each slide's copy is ["Northwind Co", "Converting beat {i}"] (from deck_slides
-        # above). RICH_PROMPT contains "Northwind Co" verbatim; we append the slide-specific
-        # "Converting beat {i}" copy block so the verbatim-words-baked check (AF-P-VERBATIM)
+        # Each slide's copy is ["Northwind Co", "Converting beat {i} into repeatable
+        # revenue"] (from deck_slides above — the AF-COPY-BAND-compliant subhead).
+        # RICH_PROMPT contains "Northwind Co" verbatim; we append the slide-specific
+        # subhead copy block so the verbatim-words-baked check (AF-P-VERBATIM)
         # passes for every slide when the CLI threads slides.json into _collect_prompt_problems.
         if rich_prompts:
             for i in range(1, _floor_slides + 1):
@@ -518,8 +523,8 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
                 else:
                     copy_block = (
                         f"\nHEADLINE VERBATIM SLIDE {i}: The slide subhead reads exactly: "
-                        f"'Converting beat {i}'. Render this exact string letter-for-letter "
-                        f"with zero modification, spelled correctly.\n"
+                        f"'Converting beat {i} into repeatable revenue'. Render this exact "
+                        f"string letter-for-letter with zero modification, spelled correctly.\n"
                     )
                     text = RICH_PROMPT + copy_block
                 (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
@@ -3111,6 +3116,17 @@ def emit_af_coverage():
     # AF-SPEECH-SHORT — speech below target x 120 wpm FAILS _chk_speech_length.
     rd = _speech_run_dir(30, 3500)
     record("AF-SPEECH-SHORT", build_deck._chk_speech_length(rd))
+
+    # AF-COPY-BAND — a slide with a 1-char headline (under the 12-char floor) and
+    # 4 bullets (over the 3-bullet max) FAILS _chk_copy_density.
+    cb_root = Path(tempfile.mkdtemp(prefix="deck_copy_band_test_"))
+    (cb_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (cb_root / "working" / "copy" / "slides.json").write_text(json.dumps([
+        {"slide": 1, "scene": "x",
+         "copy": ["H", "A subhead that is comfortably long enough to clear the floor",
+                  "kicker", "one", "two", "three", "four"]},
+    ]))
+    record("AF-COPY-BAND", build_deck._chk_copy_density(cb_root))
 
     # AF-QC-INDEPENDENCE — a self-graded copy QC report FAILS _chk_copy_qc.
     p = _qc_report_path({"gate": "Phase 1Q", "average": 9.1,

@@ -447,11 +447,16 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
 8. If any slide scores below 7.0 OR overall weighted_average < 8.5 OR any auto-fail triggered: fail. Write `pass: false`. Send revision_instructions to the Slide Copywriter.
 9. Increment `loop_count` in the report. If loop_count reaches 4 without a pass: escalate to the Director with the specific persistent failures.
 
-**The 17 Copy QC Criteria (c1-c17):**
+**The 24 Copy QC Criteria (c1-c24):** (c1-c17 were the original scored set; c18-c24
+were long cited elsewhere in this file and in slide-copywriter.md — SOP-PITCH-02,
+SOP-PITCH-06, and qc-specialist-presentations-sops.md AF-VALIDATOR all named c18/c20/
+c21/c22 as if formally defined — but the enumeration itself only ever went to c17.
+This is the one-time fix: c18-c24 are formally defined below, closing the dangling
+reference.)
 1. **(NOT SCORED -- now an auto-fail battery.)** The hook is no longer scored by count. It is governed entirely by the AF-HOOK auto-fails (ceiling of 4 dedicated slides, anti-footer, anti-duplicate, anti-mutation, dedicated-slide-must-exist). Do NOT score a hook-frequency criterion; checking AF-HOOK is mandatory and vetoes before scoring. (Replaces the old "hook appears >= 7 times" criterion that produced the 40-slide stamping.)
-2. (double-weight) Every headline is 9 words or fewer. Count is exact.
-3. Every subhead is 18 words or fewer.
-4. Body copy is 3 bullets max or 30 words max per slide.
+2. (double-weight) Every headline is 9 words or fewer. Count is exact. Backstopped in code as AF-COPY-BAND (build_deck.py `_chk_copy_density`, HEADLINE 12-60 char band — the FIRST code-enforced minimum; a one-word non-headline now fails deterministically, not just on QC judgment).
+3. Every subhead is 18 words or fewer. Backstopped in code as AF-COPY-BAND (SUBHEAD 20-110 char band, applied only when a subhead is present).
+4. Body copy is 3 bullets max, ~5 words per bullet, or 30 words max per slide. Code-enforced at preflight as AF-COPY-BAND (build_deck.py `_chk_copy_density`; full bands: HEADLINE 12-60, SUBHEAD 20-110, KICKER <=40, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 chars, 12-180 on hook/section-banner-exempt slides) — this is the ONE reconciled bullet rule; the retired "5 bullets, 7 words" figure (formerly slide-copywriter.md) and the render-reality "5 words" figure (slide-image-creator.md) both collapse into this single enforced rule.
 5. (double-weight) Slides are one big idea each. No slide tries to do two things. Backstopped by the AF-OBI auto-fail battery (block count, two-ideas, value trio, pain list).
 6. Presentation arc is complete: hook / problem / solution / proof / offer / price / close.
 7. (double-weight) No em dashes anywhere in any field.
@@ -479,6 +484,13 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
     - At least one callback is present in the offer section explicitly referencing the ANCHOR.
     - FINAL price sits below all ladder rungs (strictly less than DROP3 in drop mode).
     - Every adjacent price beat is at least 8 slides apart, the anchor sits near the one-third mark, a promises beat precedes the anchor, an itemized value-stack slide precedes Drop 1, the Wall of Wins sits 4-6 slides before the offer, and a 4-7 slide re-pitch block follows FINAL. (These are the AF-DEN-1/2/4/5/6/7 deck-level auto-fails; a failure there fails this gate.)
+18. **Validator / "who says so" external proof present.** The validator slide(s) carry at least 3 distinct EXTERNAL third-party references (named publications, named institutions, named peer-reviewed studies) — self-referential copy ("Who Agrees With Us?", "families who lived it") does NOT count. Backstopped by AF-VALIDATOR (qc-specialist-presentations-sops.md).
+19. **Wall-of-Wins framing.** The wall presents REAL named client results (>= 4 named clients with city + result number + aggregate band + a "these are your peers" line), NOT a future-paced "Watch What Changes" about the buyer's own outcome; the future-paced anti-pattern fails and rebuilds.
+20. **Guarantee presence and specificity.** A guarantee is present (offer SOP 9.8) AND its copy is more than a bare refund-template phrase ("30-day money back") — it carries a client-specific felt frame. A guarantee whose copy is ONLY the generic refund phrase fails.
+21. **Scarcity presence, no fabrication.** Scarcity/urgency framing is present (offer SOP 9.8 + SOP-PITCH-01 rule 7) and never fabricated (a false countdown, a fake limited-slot claim, or an invented deadline is a Devil's-Advocate BLOCKING failure).
+22. **Short-term fix vs long-term identity contrast (master rule 19, required component 8; slide-copywriter.md item 17).** An explicit contrast beat names the SHORT-TERM FIX the audience keeps chasing against the LONG-TERM IDENTITY the offer actually delivers, walking the audience to self-recognition. At least one such slide is required; its absence fails. (SOP-PITCH-02's "c18-c22 named-component presence gates" reference covers this criterion together with c18-c21 above — all five are named-component presence checks for the offer's required elements.)
+23. **Re-pitch present (FIX-7).** A 4-7 slide recap + value-gap + promise + guarantee + objection-kill + reset-urgency block exists AFTER the FINAL price reveal and before the hook-reprise close. A deck whose price is revealed and then simply ends FAILS; route a revision instruction to the Slide Copywriter / Offer Price Strategist.
+24. **Close density / Wall-of-Wins spacing (FIX-8).** The post-Wall close is never thinner than ~8 slides on a 45+ slide deck and the Wall of Wins does NOT sit within 2 slides of the final CTA; auto-flag a too-thin close.
 
 **Outputs:**
 - working/qc/copy_qc_report.json

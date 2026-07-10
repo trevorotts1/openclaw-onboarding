@@ -161,6 +161,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-OBI-4 | 1Q | slide | full value trio on one slide | three parallel named values co-present |
 | AF-OBI-5 | 1Q | slide | bulleted pain list | 2+ distinct pains as list items |
 | AF-OBI-6 | 5 | slide | comparison table > 2 rows | rendered contrast-row count > 2 |
+| AF-COPY-BAND | 4/preflight | slide | copy[] field outside its char band (HEADLINE 12-60, SUBHEAD 20-110, KICKER <=40, BULLET 8-30 x<=3, SLIDE TOTAL 40-180 / 12-180 hook-exempt) | deterministic char-count of each slides.json copy[] field, code-enforced in build_deck.py `_chk_copy_density` (reconciles the historical 5-bullets-7-words / 3-bullets-30-words / render-reality-5-words conflict and adds the previously-missing floor) |
 | AF-DEN-1 | 1Q/6 | DECK | price beats < 8 slides apart | gap between adjacent LADDER tags |
 | AF-DEN-2 | 1Q/6 | DECK | anchor outside 25-45% depth | anchor position / total |
 | AF-DEN-3 | 1Q/6 | DECK | DROP with no BUILDUP before it | slide before each DROP not tagged BUILDUP |
