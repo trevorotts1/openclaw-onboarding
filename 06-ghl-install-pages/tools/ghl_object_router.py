@@ -430,6 +430,45 @@ def route(object_type: str) -> ObjectRoute:
 
 
 # ---------------------------------------------------------------------------
+# Route-aware asymmetry (F4 — CF1010 fix: Cloudflare 1010 false-403)
+# ---------------------------------------------------------------------------
+def is_builder_origin_route(rail: str) -> bool:
+    """Identify builder-origin routes (backend.leadconnectorhq.com).
+
+    builder-origin routes MUST NEVER use bare HTTP transport — they are
+    in-browser eval ONLY (REST_IN_BROWSER). Attempting to wire a bare
+    REST runner for REST_IN_BROWSER is a configuration error.
+
+    F4 doctrine: "builder-origin routes are in-browser-eval-only
+    (never wire autosave into a bare transport)."
+    """
+    return rail == Rail.REST_IN_BROWSER
+
+
+def is_services_route(rail: str) -> bool:
+    """Identify services.* routes (services.leadconnectorhq.com).
+
+    services.* routes MUST always send a real browser User-Agent.
+    A 403 on services.* should be retried once with the UA set before
+    being classified as an authorization failure.
+
+    F4 doctrine: "services.* calls always send a real browser UA;
+    any 403 on services.* is first re-tried once with the UA set
+    before being classified as an authorization failure."
+    """
+    return rail == Rail.REST_SERVICES
+
+
+def rail_requires_browser_context(rail: str) -> bool:
+    """Check if this rail REQUIRES a browser/seeded eval context.
+
+    If True, a bare HTTPS runner is not valid for this rail.
+    This is the structural enforcement of F4.
+    """
+    return rail in (Rail.REST_IN_BROWSER, Rail.BROWSER, Rail.SKILL44_BUILD)
+
+
+# ---------------------------------------------------------------------------
 # Tier disclosure (Skill 36 Rule 7) — mandatory on every operation
 # ---------------------------------------------------------------------------
 def tier_disclosure(step: RailStep, context_note: str = "") -> str:
@@ -719,6 +758,12 @@ def execute_write(
                                board_note=BOARD_NOTE[Action.SNAPSHOT_RETRY_THEN_STOP])
 
             if action == Action.TOKEN_CONTEXT_CHECK:
+                # F4 + F9: services.* 403 should be retried once with User-Agent
+                # before being classified as a token-context mismatch (CF1010 fix).
+                # This handles the Cloudflare 1010 false-403 for bare clients.
+                if is_services_route(step.rail) and attempts <= 2:
+                    log(f"services.* 403 on attempt {attempts} — retrying with User-Agent (F4)")
+                    continue
                 # F9: a 403 is a token-context mismatch FIRST. If the NEXT rail
                 # uses a different token context, try it; else STOP (don't guess).
                 idx = obj.rails.index(step)
@@ -930,6 +975,22 @@ def _selftest() -> int:
     md = matrix_as_dict()
     if "custom_field" not in md["objects"]:
         errors.append("matrix_as_dict missing custom_field")
+    # 15. Route-aware asymmetry (CF1010 fix).
+    if not is_builder_origin_route(Rail.REST_IN_BROWSER):
+        errors.append("is_builder_origin_route(REST_IN_BROWSER) should be True")
+    if is_builder_origin_route(Rail.REST_SERVICES):
+        errors.append("is_builder_origin_route(REST_SERVICES) should be False")
+    if not is_services_route(Rail.REST_SERVICES):
+        errors.append("is_services_route(REST_SERVICES) should be True")
+    if is_services_route(Rail.REST_IN_BROWSER):
+        errors.append("is_services_route(REST_IN_BROWSER) should be False")
+    if not rail_requires_browser_context(Rail.REST_IN_BROWSER):
+        errors.append("rail_requires_browser_context(REST_IN_BROWSER) should be True")
+    if not rail_requires_browser_context(Rail.BROWSER):
+        errors.append("rail_requires_browser_context(BROWSER) should be True")
+    if rail_requires_browser_context(Rail.REST_SERVICES):
+        errors.append("rail_requires_browser_context(REST_SERVICES) should be False")
+
 
     if errors:
         for e in errors:
@@ -956,6 +1017,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="Print the ordered rail plan for one object type.")
     p.add_argument("--list", action="store_true",
                    help="List known object types.")
+    p.add_argument("--route-analysis", metavar="RAIL",
+                   help="Analyze a rail for route-aware properties (F4 asymmetry).")
     args = p.parse_args(argv)
 
     if args.selftest:
@@ -981,6 +1044,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             "rails": [
                 {**asdict(s), "disclosure": tier_disclosure(s)} for s in r.rails
             ],
+        }
+        print(json.dumps(out, indent=2))
+        return 0
+    if args.route_analysis:
+        rail = args.route_analysis
+        out = {
+            "rail": rail,
+            "is_builder_origin": is_builder_origin_route(rail),
+            "is_services": is_services_route(rail),
+            "requires_browser_context": rail_requires_browser_context(rail),
         }
         print(json.dumps(out, indent=2))
         return 0
