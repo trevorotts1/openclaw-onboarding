@@ -12,6 +12,12 @@ WHAT THIS IS (and is NOT):
   * It NEVER writes the domain ledger directly. Every state change shells the
     sole writer anthology_state.py (SPEC 7.4). Reads (which gate is open) come from
     the local SQLite mirror READ-ONLY (SPEC 7.2), exactly as intake_router.py reads.
+  * On a COMMITTED board-door PRODUCER approve it stamps the stage's standard §3
+    release slug (anthology-release-*) on the participant's contact by shelling
+    caf_delivery.py add-tag (the sole tag writer). That contact_tag is the ONLY
+    thing Layer 4 writes to the client on an approve, and it is what fires the §3
+    W3-W10 notification workflow (email + SMS). The stamp is FAIL-SOFT (SPEC 7.2):
+    a Convert and Flow blip never unwinds the committed gate decision.
   * It mints and verifies a NEW single-purpose token/PIN per open gate:
     HMAC-SHA256 over (participant_key, gate id, expiry), keyed by the per-client
     secret resolved BY LABEL under ANTHOLOGY_GATE_TOKEN_SECRET (live process env
@@ -67,6 +73,7 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 SCRIPTS = SKILL_DIR / "scripts"
 STATE_WRITER = SCRIPTS / "anthology_state.py"       # the SOLE ledger writer (SPEC 7.4)
 NUDGE_SEND = SCRIPTS / "nudge_send.py"              # sibling W1.15 file
+CAF_DELIVERY = SCRIPTS / "caf_delivery.py"          # the SOLE contact-tag writer (§3 release bus)
 DEFAULT_CONFIG = SKILL_DIR / "config" / "engine-config.json"          # resolved per box
 TEMPLATE_CONFIG = SKILL_DIR / "config" / "engine-config.template.json"
 
@@ -135,6 +142,60 @@ ACTION_DECISION = {
 
 # door name -> the sole-writer 'door' provenance value (APPROVAL_DOORS).
 DOOR_VALUE = {"token": "nudge_link", "board": "dashboard"}
+
+# --------------------------------------------------------------------------- #
+# THE RELEASE-TAG BUS (SPEC §3: the board-approve -> tag -> notification wiring).
+# When a PRODUCER approves at a producer gate through the BOARD door and the
+# decision COMMITS, the engine stamps that stage's standard §3 release slug onto
+# the participant's Convert and Flow contact (via caf_delivery.py add-tag, the sole
+# tag writer, which does its own byte read-back + idempotency + tenant guard). That
+# contact_tag is the ONE thing Layer 4 writes to the client on an approve, and it
+# is exactly what fires the §3 W3-W10 notification workflow (email + SMS carrying
+# the PDF-view + Doc-edit links). Keyed by PRODUCER gate id, never hardcoded per
+# stage elsewhere:
+#   * s1/s2/s4 producer gates exist today (avatar / tone / outline).
+#   * s5/s6/s7 producer gates are engine-gated follow-ons the cover + assembly
+#     build units add; their slugs are wired here in advance so the bus lights up
+#     with no re-plumbing the moment the gate appears in GATE_BY_CURSOR.
+#   * Assembly gates (s9_ready / s9_producer) key on an anthology_id, not a single
+#     contact, so they never fire this per-contact bus (the assembly cockpit stamps
+#     anthology-delivered on every contact itself).
+#   * S3 title-select and S8 final are stage-runner-fired (the runner calls
+#     `caf_delivery add-tag` directly), NOT producer-approve gates, so they are
+#     intentionally absent from this gate-approve map.
+# --------------------------------------------------------------------------- #
+GATE_RELEASE_SLUG = {
+    "s1_producer": "anthology-release-avatar",
+    "s2_producer": "anthology-release-tone",
+    "s4_producer": "anthology-release-outline",
+    "s5_producer": "anthology-release-chapter",   # engine-gated follow-on (producer chapter gate)
+    "s6_producer": "anthology-release-rewrite",    # engine-gated follow-on (producer rewrite gate)
+    "s7_producer": "anthology-release-cover",       # engine-gated follow-on (producer cover gate)
+}
+
+# The engine action that means "producer approves = release to the client" (SPEC
+# 11.26). Holds / excludes / escalations / selects / participant approvals never
+# release; approve_as_is is a participant action and is filtered by the door_kind
+# gate below regardless.
+_RELEASE_ACTIONS = frozenset({"approve"})
+
+
+def release_slug_for(spec, action, door, committed):
+    """PURE decision (no network, no state): the §3 release slug to stamp, or None.
+    A release is stamped IFF the decision COMMITTED, came through the BOARD door
+    (producer session; the token door is the participant and never releases), the
+    action is an approve, and the open gate is a PRODUCER gate carrying a §3 release
+    slug. Everything else -- holds, excludes, escalations, title-select, participant
+    approvals, the token door, and the assembly gates -- returns None."""
+    if spec is None or not committed:
+        return None
+    if door != "board":
+        return None
+    if action not in _RELEASE_ACTIONS:
+        return None
+    if spec.door_kind != "producer":
+        return None
+    return GATE_RELEASE_SLUG.get(spec.gate_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -515,6 +576,41 @@ def _fire_nudge(template, subject_key, gate_id, gate_link, state_dir, config_pat
         return None
 
 
+def _fire_release_tag(slug, subject_key, cfg, registry_location=None):
+    """Stamp the §3 release slug on the participant's Convert and Flow contact by
+    shelling caf_delivery.py add-tag (the SOLE tag writer: its own byte read-back +
+    idempotency + tenant guard). FAIL-SOFT, exactly like a nudge -- a Convert and
+    Flow blip must NEVER block or unwind a committed gate decision (SPEC 7.2); the
+    tag is idempotent so a held/failed stamp is safely re-fired by the daily tick or
+    the operator. The contact id is the participant_key's contact half (KEYING LAW:
+    contact_id::anthology_id). Returns (status, detail) where status is one of
+    'stamped' | 'held' | 'skipped' | 'failed_nonfatal' | 'disabled'."""
+    if ((cfg.get("gates") or {}).get("release_tag_on_approve")) is False:
+        return "disabled", "release_tag_on_approve is false in config"
+    if KEY_DELIM not in subject_key:
+        return "skipped", "subject is not a participant_key; no single contact to tag"
+    contact_id = subject_key.split(KEY_DELIM, 1)[0]
+    if not contact_id:
+        return "skipped", "empty contact id"
+    if not CAF_DELIVERY.exists():
+        return "skipped", "caf_delivery.py not present on this box"
+    argv = [sys.executable or "python3", str(CAF_DELIVERY), "add-tag",
+            "--contact-id", contact_id, "--slug", slug]
+    if registry_location:
+        argv += ["--registry-location", registry_location]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return "failed_nonfatal", "add-tag not run: %s" % type(exc).__name__
+    if proc.returncode == 0:
+        return "stamped", slug
+    detail = ((proc.stderr or "").strip() or (proc.stdout or "").strip())[:200]
+    # caf_delivery exit 3 (EX_UNREACHABLE) == unreachable / scope held: retryable.
+    if proc.returncode == 3:
+        return "held", detail or "add-tag held (unreachable/scope)"
+    return "failed_nonfatal", detail or ("add-tag rc=%d" % proc.returncode)
+
+
 def _gate_link(cfg, kind, subject_key, gate_id, token=None):
     """Build the deep link a nudge points at. Participant gates land on the token
     page; producer/assembly gates land on the board card. Bases come from config
@@ -791,6 +887,22 @@ def cmd_decide(args):
             if rc_uncommitted(out):
                 store.release(nonce)
             store.close()
+
+    # --- 8. RELEASE-TAG BUS: on a COMMITTED board-door PRODUCER approve, stamp the
+    #        stage's §3 release slug on the participant's contact (SPEC §3). FAIL-SOFT
+    #        -- a Convert and Flow blip never unwinds the already-committed decision;
+    #        the tag is idempotent and re-fireable. The stamp status is surfaced to
+    #        the operator (board) so a held/failed release can be re-fired.
+    if out and out.get("committed") and not getattr(args, "no_release_tag", False):
+        slug = release_slug_for(spec, args.action, args.door, True)
+        if slug:
+            r_status, r_detail = _fire_release_tag(
+                slug, args.subject_key, cfg,
+                registry_location=getattr(args, "registry_location", None))
+            out["release_tag"] = {"slug": slug, "status": r_status, "detail": r_detail}
+            if r_status in ("held", "failed_nonfatal"):
+                sys.stderr.write("[gate_engine] release-tag %s: %s (%s)\n"
+                                 % (r_status, slug, r_detail))
     return _emit(out, args.json), rc
 
 
@@ -928,9 +1040,39 @@ def self_test():
     assert _gate_link({}, "participant", pk, "s5_participant", token="TOK").startswith("/p/gate?t=")
     assert _gate_link({}, "producer", pk, "s2_producer").startswith("/board?card=")
 
+    # RELEASE-TAG BUS (SPEC §3): the slug map + the pure release decision.
+    # every PRODUCER gate that exists today carries a §3 release slug.
+    for _cursor, g in GATE_BY_CURSOR.items():
+        if g.door_kind == "producer":
+            assert g.gate_id in GATE_RELEASE_SLUG, (g.gate_id, "producer gate missing a release slug")
+    # the exact §3 slugs for the three live producer gates.
+    assert GATE_RELEASE_SLUG["s1_producer"] == "anthology-release-avatar"
+    assert GATE_RELEASE_SLUG["s2_producer"] == "anthology-release-tone"
+    assert GATE_RELEASE_SLUG["s4_producer"] == "anthology-release-outline"
+    # every slug is the exact §3 shape (anthology-release-*).
+    assert all(s.startswith("anthology-release-") for s in GATE_RELEASE_SLUG.values())
+    # THE decision: a committed board-door producer approve -> the correct slug.
+    s1 = GATE_BY_CURSOR["s1_gate"]
+    assert release_slug_for(s1, "approve", "board", True) == "anthology-release-avatar"
+    assert release_slug_for(GATE_BY_CURSOR["s2_gate"], "approve", "board", True) == "anthology-release-tone"
+    assert release_slug_for(GATE_BY_CURSOR["s4_gate_producer"], "approve", "board", True) == "anthology-release-outline"
+    # NOT a release: token door, uncommitted, a non-approve action, or a participant gate.
+    assert release_slug_for(s1, "approve", "token", True) is None      # token door never releases
+    assert release_slug_for(s1, "approve", "board", False) is None     # uncommitted
+    assert release_slug_for(s1, "hold", "board", True) is None         # hold is not a release
+    assert release_slug_for(s1, "exclude", "board", True) is None
+    assert release_slug_for(GATE_BY_CURSOR["s5_gate"], "approve_as_is", "board", True) is None  # participant chapter approve
+    assert release_slug_for(GATE_BY_CURSOR["s3_gate"], "select", "board", True) is None         # participant title-select
+    assert release_slug_for(GATE_BY_CURSOR["s4_gate_participant"], "approve", "board", True) is None  # participant gate
+    # assembly gates key on an anthology_id, not a contact -> no per-contact release.
+    _s9r = GateSpec("s9_ready", "producer", "producer", ("ready_to_assemble",))
+    _s9p = GateSpec("s9_producer", "producer", "producer", ("sign_off",))
+    assert release_slug_for(_s9r, "ready_to_assemble", "board", True) is None
+    assert release_slug_for(_s9p, "sign_off", "board", True) is None
+
     print("gate_engine self-test: OK "
           "(token mint/verify + refusals, PIN, chapter gate == 2 actions, "
-          "door map, exit-code map)")
+          "door map, exit-code map, §3 release-tag bus)")
     return EX_OK
 
 
@@ -946,6 +1088,11 @@ def plan():
     print("assembly (state -> gate): not_ready|armed -> s9_ready ; compiled -> s9_producer")
     print("doors        : token(nudge_link) + board(dashboard); participant gates take")
     print("               both, producer/assembly gates take board only")
+    print("release bus  : committed BOARD-door producer approve -> stamp §3 slug via")
+    print("               caf_delivery add-tag (fail-soft, idempotent); slugs:")
+    for gid, slug in GATE_RELEASE_SLUG.items():
+        live = "" if gid in {g.gate_id for g in GATE_BY_CURSOR.values()} else "  (engine-gated follow-on)"
+        print("                 %-14s -> %s%s" % (gid, slug, live))
     print("exit codes   : 0 recorded ; 2 refusal (token/guard) ; 3 gate not open ; 1 error")
     return EX_OK
 
@@ -1006,6 +1153,12 @@ def _build_parser():
     sp.add_argument("--producer-id", dest="producer_id",
                     help="own-producer id (required for the s9 gates)")
     sp.add_argument("--idempotency-key", dest="idempotency_key")
+    sp.add_argument("--registry-location", dest="registry_location",
+                    help="the anthology's Convert and Flow location binding; forwarded "
+                         "to the release-tag stamp for the tenant guard (optional)")
+    sp.add_argument("--no-release-tag", dest="no_release_tag", action="store_true",
+                    help="record the decision but do NOT stamp the §3 release tag "
+                         "(dry-run / re-record without re-notifying the client)")
     common(sp)
     return ap
 
