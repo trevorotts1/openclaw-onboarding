@@ -1,0 +1,51 @@
+# Presentation Intake mini-app — Cloudflare Worker (API)
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ DOMAIN CHOICE IS FLAGGED, NOT GUESSED.                                    │
+# │ The production hosting domain is the OPERATOR's Cloudflare zone. Every    │
+# │ placeholder below is written as <PLACEHOLDER> on purpose — fill them in   │
+# │ at deploy time. See DEPLOY.md and the ledger's DOMAIN FLAG. Do not commit │
+# │ a real zone/account id to the repo.                                       │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# Deploy (once):
+#   1. Create the D1 database:
+#        npx wrangler d1 create presentation_intake
+#      Copy the returned database_id into [[d1_databases]] below.
+#   2. Apply the schema:
+#        npx wrangler d1 execute presentation_intake --remote --file=schema.sql
+#   3. Set the box→worker auth secret (random 32+ chars; the SAME value goes on
+#      the box as INTAKE_ADMIN_TOKEN for the bridge):
+#        npx wrangler secret put INTAKE_ADMIN_TOKEN
+#   4. Deploy:
+#        npx wrangler deploy
+#   5. Deploy the UI to Pages (serves everything that is NOT /api/*):
+#        npx wrangler pages deploy ../pages --project-name presentation-intake
+#   6. Verify:
+#        curl https://intake.<PLACEHOLDER_FLEET_DOMAIN>/healthz
+
+name               = "presentation-intake"
+main               = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"
+
+# Route the API under /api/* on the intake host. The Pages project serves the
+# UI for every other path (/s/<token>, /). Fill in the operator's zone.
+routes = [
+  { pattern = "intake.<PLACEHOLDER_FLEET_DOMAIN>/api/*", zone_name = "<PLACEHOLDER_FLEET_DOMAIN>" }
+]
+
+# D1 binding. Fill database_id from `wrangler d1 create presentation_intake`.
+[[d1_databases]]
+binding       = "DB"
+database_name = "presentation_intake"
+database_id   = "<PLACEHOLDER_D1_DATABASE_ID>"
+
+[observability]
+enabled = true
+
+# Secrets (NEVER in this file — set via `wrangler secret put`; see DEPLOY.md):
+#   INTAKE_ADMIN_TOKEN  -- box→worker bearer for POST /api/sessions (session mint).
+#                          The same value lives on the box as env INTAKE_ADMIN_TOKEN
+#                          for intake_bridge.py. Capability tokens gate everything
+#                          else, so no client-facing endpoint needs a secret.
