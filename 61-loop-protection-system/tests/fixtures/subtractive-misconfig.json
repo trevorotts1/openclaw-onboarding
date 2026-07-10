@@ -1,0 +1,5 @@
+{
+  "_note": "LP-A1 compaction subtractive misconfig: softThresholdTokens is SUBTRACTIVE, so 900000 under a 128000 window forces a compaction attempt every turn (effective ceiling <= 0).",
+  "_contextWindow": 128000,
+  "agents": { "defaults": { "compaction": { "memoryFlush": { "softThresholdTokens": 900000 } } } }
+}

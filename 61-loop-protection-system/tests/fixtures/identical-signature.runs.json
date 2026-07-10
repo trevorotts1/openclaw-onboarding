@@ -1,0 +1,7 @@
+[
+  {"unit": "session:main", "error_class": "ContextTooLarge", "tool_sequence": [], "target": "session:main", "loop_class": "LP-A1"},
+  {"unit": "session:main", "error_class": "ContextTooLarge", "tool_sequence": [], "target": "session:main", "loop_class": "LP-A1"},
+  {"unit": "session:main", "error_class": "ContextTooLarge", "tool_sequence": [], "target": "session:main", "loop_class": "LP-A1"},
+  {"unit": "session:main", "error_class": "ContextTooLarge", "tool_sequence": [], "target": "session:main", "loop_class": "LP-A1"},
+  {"unit": "session:main", "error_class": "ContextTooLarge", "tool_sequence": [], "target": "session:main", "loop_class": "LP-A1"}
+]

@@ -1,0 +1,3 @@
+{"window": "02:00-03:00", "paid_tokens": 500000, "local_tokens": 0, "initiated_sessions": 0, "idle_consecutive": 1}
+{"window": "03:00-04:00", "paid_tokens": 480000, "local_tokens": 0, "initiated_sessions": 0, "idle_consecutive": 2}
+{"window": "09:00-10:00", "paid_tokens": 500000, "local_tokens": 20000, "initiated_sessions": 4, "idle_consecutive": 0}

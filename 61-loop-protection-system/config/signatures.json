@@ -1,0 +1,49 @@
+{
+  "_comment": "Signature DATA the watchdog classifies against (spec Section 2 taxonomy + Section 9.3). This is the part that rots at the speed new loop classes appear (6 signatures in May -> F1-F13 in June -> ~19 classes in July), so it is updated ONLY through the repo + sanctioned rollout - never hand-edited on a box. NO secret values live here; the anthropic-family entries are DENY DATA, and secret detection is delegated to scan-no-secrets.sh by version pin.",
+  "version": 1,
+  "loop_families": {
+    "A": "AGENT-TURN LOOPS (a model call inside the loop - the token burners)",
+    "B": "PROCESS / SUPERVISOR LOOPS (restart storms; churn + outage, no model call)",
+    "C": "CHANNEL / DELIVERY LOOPS",
+    "D": "TASK / PROGRESS LOOPS (stalls that look healthy)"
+  },
+  "loop_classes": [
+    {"id": "LP-A1", "family": "A", "f_taxonomy": "F14", "name": "compaction misconfig loop", "detector": "D3", "tier_default": 2},
+    {"id": "LP-A2", "family": "A", "f_taxonomy": "F1", "name": "heartbeat / idle furnace", "detector": "D2", "tier_default": 2},
+    {"id": "LP-A3", "family": "A", "f_taxonomy": "F12-adjacent", "name": "embedding-provider self-loop", "detector": "D3", "tier_default": 3},
+    {"id": "LP-A4", "family": "A", "f_taxonomy": "F3", "name": "auto-redispatch misfire", "detector": "D3", "tier_default": 2},
+    {"id": "LP-A5", "family": "A", "f_taxonomy": "F9-adjacent", "name": "provider 429 / failover retry storm", "detector": "D3", "tier_default": 2},
+    {"id": "LP-A6", "family": "A", "f_taxonomy": "F3", "name": "context-bloat zero-tool-call loop", "detector": "D2", "tier_default": 1},
+    {"id": "LP-A7", "family": "A", "f_taxonomy": "F2", "name": "memory dreaming / re-embedding storm", "detector": "D2", "tier_default": 2},
+    {"id": "LP-B1", "family": "B", "f_taxonomy": "F5", "name": "supervisor boot-crash restart storm", "detector": "D1", "tier_default": 1},
+    {"id": "LP-B2", "family": "B", "f_taxonomy": "F4", "name": "watchdog kill-spawn loop", "detector": "D1", "tier_default": 1},
+    {"id": "LP-B3", "family": "B", "f_taxonomy": "F5-adjacent", "name": "gateway deferral deadlock / orphan handoff", "detector": "D4", "tier_default": 1},
+    {"id": "LP-B4", "family": "B", "f_taxonomy": "F6", "name": "cron/session SIGTERM respawn loop", "detector": "D1", "tier_default": 2},
+    {"id": "LP-B5", "family": "B", "f_taxonomy": "F13-adjacent", "name": "invalid-config engine freeze", "detector": "D4", "tier_default": 1},
+    {"id": "LP-C1", "family": "C", "f_taxonomy": "F7-adjacent", "name": "telegram offset corruption / duplicate pollers", "detector": "D4", "tier_default": 1},
+    {"id": "LP-C2", "family": "C", "f_taxonomy": "F10", "name": "announce-mode cron spam", "detector": "D4", "tier_default": 2},
+    {"id": "LP-D1", "family": "D", "f_taxonomy": "F10", "name": "empty-prompt no-op cron", "detector": "D4", "tier_default": 3},
+    {"id": "LP-D2", "family": "D", "f_taxonomy": "F3", "name": "stale-gate false-fail loop", "detector": "D3", "tier_default": 2},
+    {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1}
+  ],
+  "secret_shapes": {
+    "detector": "scan-no-secrets.sh",
+    "class_pin": "provider_sk|caf_pit|google_api|aws_akid|slack_token|github_pat|private_key|jwt|bearer_literal",
+    "note": "The secret-CLASS detector is reused verbatim. This pin records which classes the watchdog expects; a class version bump rides the repo, never a box-local edit. The VALUE is never stored, printed, or reproduced."
+  },
+  "anthropic_family_deny_prefixes": [
+    "claude-",
+    "anthropic/",
+    "us.anthropic."
+  ],
+  "anthropic_family_deny_note": "The watchdog makes ZERO model calls, so this rule is satisfied vacuously at runtime AND enforced statically over every shipped file by guard-no-anthropic-runtime.py. These are deny-list prefixes, never runtime ids; client skills never use Anthropic models.",
+  "paid_tier_markers": {
+    "suffix_deny": [":cloud"],
+    "metered_provider_slugs": ["openrouter", "openai", "fish_audio", "kie"],
+    "note": "D2 treats a model/provider carrying one of these markers in an idle window as paid-idle burn. A :cloud suffix on a heartbeat model is the classic idle-burn furnace (LP-A2)."
+  },
+  "process_manager_fields": {
+    "allowed_pm2_fields": ["name", "pm_id", "pid", "status", "restart_time"],
+    "note": "pm2 jlist is filtered to name/status/pid/restarts ONLY, NEVER an env dump - a fleet review leaked live credential VALUES exactly that way, and the standing rule forbids it (spec Section 3, D1)."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_note": "LP-C1 telegram offset corruption fixture: stored lastUpdateId advanced PAST the oldest pending update (a restart race). The healer rewinds stored_offset to oldest_pending_id - 1.",
+  "stored_offset": 100450,
+  "oldest_pending_update_id": 100400,
+  "expected_rewind_to": 100399
+}
