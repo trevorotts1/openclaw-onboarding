@@ -18,8 +18,10 @@
 #   R2  archive the Anthology board cards (mc_board.py; FAIL-SOFT per SPEC 11.2,
 #         board unreachability never blocks the churn).
 #   R3  revoke Drive shares and hand back fresh view links (drive_adapter.py
-#         revoke-share; under the anyone-can-read delivery root, TRUE revocation
-#         moves the file out of the public subtree -- surfaced, not guessed).
+#         revoke-share; under the per-client BlackCEO-hosted Shared-Drive root the
+#         direct per-document grant is deleted -- that IS the revocation. LEGACY
+#         fallback: under an anyone-can-read root, TRUE revocation moves the file out
+#         of the public subtree -- surfaced, not guessed).
 #   R4  disable the intake webhook route (remove ONLY the anthology-intake
 #         mapping from the gateway hooks config; the box-wide hooks surface and
 #         every other integration are left intact -- shared-box safe).
@@ -67,8 +69,8 @@
 #   --base-url URL       gateway base for the route probe (default
 #                        http://127.0.0.1:18789).
 #   --out-dir DIR        export-bundle destination (default: <state>/churn-export).
-#   --private-dest-folder-id ID  private Drive destination for true unlink from
-#                        the anyone-can-read delivery root.
+#   --private-dest-folder-id ID  private Drive destination for a true unlink from a
+#                        LEGACY anyone-can-read delivery root.
 #   --cron-inventory P   JSON array of cron entries for the fallback R8 scan
 #                        (else `openclaw cron list` is consulted when present).
 #   --allow-cron-delete  permit removing the anthology daily tick (churn needs it).
@@ -550,7 +552,8 @@ def do_plan():
             if step in ("R7", "R8") else ""
         print("  %s  %s%s" % (step, STEP_TITLE[step], enforced))
     print("\nR7 and R8 gate the exit code; R2 (board) is fail-soft; R3 (Drive) "
-          "under an anyone-can-read root needs a private destination to TRULY "
+          "deletes the direct per-document grant under the per-client Shared-Drive "
+          "root; a LEGACY anyone-can-read root needs a private destination to TRULY "
           "revoke. --live requires a matching --confirm-name and refuses root.")
     return 0
 
@@ -946,7 +949,7 @@ def do_live(dry):
                         % (len(share_targets),
                            "" if PRIVATE_DEST else
                            " (NOTE: no --private-dest-folder-id; inherited public "
-                           "access under the anyone-can-read root can only be "
+                           "access under a LEGACY anyone-can-read root can only be "
                            "reported, not deleted, at the file level)")))
     else:
         revoked_ok = 0

@@ -70,10 +70,12 @@ human notes go to stderr):
         permission back; prints the link.
   drive_adapter.py revoke-share --file-id ID [--permission-id ID]
         [--unlink-from-root-id PUBLIC_ANCESTOR --to-folder-id PRIVATE_DEST]
-        delete DIRECT anyone permission(s). NOTE: because the delivery root is
-        anyone-can-read, per-file anyone access is INHERITED and cannot be deleted
-        at the file level; true revocation MOVES the file out of the public root
-        (pass --unlink-from-root-id + --to-folder-id). Reports remaining access.
+        delete the DIRECT per-document permission(s). Under the per-client
+        Shared-Drive root (floor #10; NEVER anyone-can-read, per-document sharing)
+        that deletion IS the revocation. LEGACY fallback -- under an anyone-can-read
+        root, inherited anyone access cannot be deleted at the file level, so true
+        revocation MOVES the file out of the public root (pass --unlink-from-root-id
+        + --to-folder-id). Reports remaining access.
   drive_adapter.py move --file-id ID [--add-parent-id ID] [--remove-parent-id ID]
         relocate a file/folder (the real revocation primitive under a public root).
   drive_adapter.py export-bundle --folder-id ID [--out PATH]
@@ -159,7 +161,7 @@ def _load_sa():
     path = os.environ.get(SA_KEY_ENV)
     if not path:
         raise DependencyError(
-            "%s NOT SET; the operator's existing service-account key is "
+            "%s NOT SET; the BlackCEO-owned delivery service-account key is "
             "required (no value is created here)." % SA_KEY_ENV)
     p = Path(path)
     if not p.is_file():
@@ -504,9 +506,11 @@ def list_permissions(token, file_id):
 def _perm_is_inherited(perm):
     """True iff this permission is INHERITED from an ancestor folder.
 
-    Under an anyone-can-read delivery ROOT (the operator's existing topology) the
-    anyone/reader grant is inherited by every descendant and CANNOT be deleted at
-    the file level (Drive returns 403). Detected via permissionDetails[].inherited."""
+    Under the per-client Shared-Drive root (floor #10) the root is NOT anyone-can-read
+    and sharing is per-document, so nothing is inherited. This classifier is the
+    LEGACY safeguard for an anyone-can-read root topology, where an inherited
+    anyone/reader grant CANNOT be deleted at the file level (Drive returns 403).
+    Detected via permissionDetails[].inherited."""
     for d in perm.get("permissionDetails", []) or []:
         if d.get("inherited"):
             return True
@@ -516,8 +520,10 @@ def _perm_is_inherited(perm):
 def move_file(token, file_id, add_parent=None, remove_parent=None):
     """Relocate a file/folder: add and/or remove a parent (files.update).
 
-    This is the ONLY way to truly revoke INHERITED public access under an
-    anyone-can-read root: move the item OUT of the public subtree into a private
+    Under the per-client Shared-Drive root (floor #10) revocation is deleting the
+    direct per-document grant, so this move is not needed. It is the LEGACY-fallback
+    primitive: the ONLY way to truly revoke INHERITED public access under an
+    anyone-can-read root is to move the item OUT of the public subtree into a private
     folder. Returns the updated file dict (id, parents)."""
     from urllib.parse import quote
     params = ["supportsAllDrives=true", "fields=id,name,parents"]
@@ -788,15 +794,16 @@ def do_pull_doc_text(doc_id, out=None):
 
 def do_revoke_share(file_id, permission_id=None, unlink_from_root_id=None,
                     to_folder_id=None):
-    """Revoke public view access to a file.
+    """Revoke public access to a file.
 
-    Two mechanisms, because the operator's delivery ROOT is anyone-can-read:
-      1. DIRECT anyone permissions (grants made ON the file itself) are deleted --
-         this works and is what a private-root topology needs.
-      2. INHERITED anyone access (from the anyone-can-read root) CANNOT be deleted
-         at the file level (Drive returns 403). The ONLY true revocation is to
-         MOVE the file OUT of the public subtree: pass --unlink-from-root-id (the
-         public ancestor to drop) and --to-folder-id (a private destination).
+    Two mechanisms:
+      1. DIRECT permissions (grants made ON the file itself) are deleted -- under the
+         per-client Shared-Drive root (floor #10; NOT anyone-can-read, per-document
+         sharing) this deletion IS the revocation.
+      2. LEGACY fallback for an anyone-can-read root: INHERITED anyone access CANNOT
+         be deleted at the file level (Drive returns 403). The ONLY true revocation
+         is to MOVE the file OUT of the public subtree: pass --unlink-from-root-id
+         (the public ancestor to drop) and --to-folder-id (a private destination).
     The result reports honestly whether any anyone access REMAINS."""
     token = mint_token()
     removed = []
@@ -940,7 +947,7 @@ def self_test():
     assert _guess_mime("x.jpeg") == "image/jpeg"
     assert _guess_mime("m.pdf") == "application/pdf"
     assert _guess_mime("blob.bin") == "application/octet-stream"
-    # inherited-permission classifier (the anyone-can-read root topology)
+    # inherited-permission classifier (the LEGACY anyone-can-read root topology)
     assert _perm_is_inherited({"permissionDetails": [{"inherited": True}]}) is True
     assert _perm_is_inherited({"permissionDetails": [{"inherited": False}]}) is False
     assert _perm_is_inherited({"type": "anyone"}) is False

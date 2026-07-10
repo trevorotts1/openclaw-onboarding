@@ -144,6 +144,23 @@ ACTION_DECISION = {
 DOOR_VALUE = {"token": "nudge_link", "board": "dashboard"}
 
 # --------------------------------------------------------------------------- #
+# ASSEMBLY ORDERING board actions (U9 assembly-finale / CC assembly cockpit, unit
+# U13). These are BOARD-DOOR, own-producer, ANTHOLOGY-subject actions that act
+# during the S9 ordering window (assembly_state ready_confirmed|proposed|adjusted)
+# -- the window where resolve_open_gate surfaces NO single GateSpec (the s9_ready
+# gate closed on the arm and the s9_producer gate opens only at 'compiled'). They
+# persist the producer's finalized running order through the SOLE writer
+# (anthology_state assembly-set-order), and confirm_order ADDITIONALLY flags the S9
+# runner (request.confirm_order) so its next pass writes U9's inter-chapter
+# transitions + Grand Finale. adjust_order persists WITHOUT arming the finale (free
+# reordering); confirm_order is the ONE that triggers the finale.
+ASSEMBLY_ORDER_ACTIONS = ("adjust_order", "confirm_order")
+FINALE_TRIGGER_ACTION = "confirm_order"
+# the assembly_state values in which an order may be (re)persisted (SPEC 7.3 tail;
+# anthology_state ASSEMBLY_EDGES ready_confirmed/proposed -> proposed/adjusted).
+ORDER_WINDOW_STATES = ("ready_confirmed", "proposed", "adjusted")
+
+# --------------------------------------------------------------------------- #
 # THE RELEASE-TAG BUS (SPEC §3: the board-approve -> tag -> notification wiring).
 # When a PRODUCER approves at a producer gate through the BOARD door and the
 # decision COMMITS, the engine stamps that stage's standard §3 release slug onto
@@ -633,23 +650,174 @@ def _idem_key(*parts):
 # --------------------------------------------------------------------------- #
 # COMMANDS
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# ASSEMBLY status enrichment + order-confirmation (U9 assembly-finale / CC
+# assembly cockpit, unit U13). cmd_status surfaces assembly_state + readiness +
+# ordering under the EXACT keys the CC assembly-cockpit parser reads (see
+# 59->CC assembly-cockpit-logic.ts parseAssemblyStatus/parseReadiness/
+# parseOrdering); confirm_order/adjust_order persist the producer's order through
+# the SOLE writer and (confirm_order) flag the S9 runner's finale write.
+# --------------------------------------------------------------------------- #
+def _import_s9_logic():
+    """Lazily import the U9 assembly-logic module (pure stdlib at import time; the
+    model router is imported only inside a routing call, never at module import) so
+    gate_engine REUSES build_ordering_view as the single source of the cockpit
+    ordering shape rather than re-deriving it."""
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    import stage_s9_assembly_logic  # noqa: E402
+    return stage_s9_assembly_logic
+
+
+def _safe_run_key(key):
+    """The SAME run-dir key sanitizer stage_s9_assembly.py uses, so gate_engine
+    resolves the IDENTICAL <skill>/state/runs/s9/<safe> path the runner reads."""
+    return "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
+
+
+def _s9_run_dir(anthology_id, run_dir_override=None):
+    if run_dir_override:
+        return Path(run_dir_override).expanduser()
+    return SKILL_DIR / "state" / "runs" / "s9" / _safe_run_key(anthology_id)
+
+
+def _loads_json_list(raw):
+    """Parse --order (a JSON array string, or a passthrough list). Junk -> []."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    try:
+        val = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return list(val) if isinstance(val, list) else []
+
+
+def _assembly_readiness(anthology_id, state_dir):
+    """The AUTHORITATIVE S9 readiness report (anthology_state assembly-readiness-
+    report; READ-ONLY -- no second writer). Returns the readiness dict (envelope
+    keys stripped; the shape parseReadiness consumes) or None if unavailable."""
+    try:
+        rc, parsed, _err = _run_state_writer(
+            ["assembly-readiness-report", "--anthology-id", anthology_id], state_dir)
+    except GateHeld:
+        return None
+    if rc == EX_OK and isinstance(parsed, dict):
+        return {k: v for k, v in parsed.items()
+                if k not in ("ok", "action", "read_only")}
+    return None
+
+
+def _chapters_meta_from_bundle(anthology_id, state_dir):
+    """Ledger chapter facts (locked title + contributor name) for the ordering
+    FALLBACK, from the read-only export bundle. word_count/tone are not ledger
+    columns (they ride the ae-01 cockpit_view), so the fallback leaves them null --
+    parseSlot accepts null for both."""
+    try:
+        rc, parsed, _err = _run_state_writer(
+            ["export-bundle", "--anthology-id", anthology_id], state_dir)
+    except GateHeld:
+        return []
+    if rc != EX_OK or not isinstance(parsed, dict):
+        return []
+    meta = []
+    for m in (parsed.get("participants") or []):
+        if not isinstance(m, dict):
+            continue
+        meta.append({
+            "participant_key": m.get("participant_key"),
+            "chapter_title": m.get("title_locked"),
+            "title_locked": m.get("title_locked"),
+            "first_name": m.get("first_name"),
+            "last_name": m.get("last_name"),
+        })
+    return meta
+
+
+def _read_cockpit_view_file(anthology_id, run_dir_override=None):
+    """The DESIGNED cockpit ordering read path: the durable order_proposal.json the
+    S9 runner persists from build_ordering_view (order + per-slot rationale). Returns
+    the parsed view (already the CC ordering shape) or None if absent/unreadable."""
+    p = _s9_run_dir(anthology_id, run_dir_override) / "working" / "order_proposal.json"
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    if isinstance(data, dict) and (data.get("slots") is not None
+                                   or data.get("order") is not None):
+        return data
+    return None
+
+
+def _assembly_ordering(anthology_id, row, state_dir, run_dir_override=None):
+    """The U9 ordering view for the CC cockpit -- build_ordering_view's shape:
+    {order, slots[{position, participant_key, chapter_title, contributor_name,
+    word_count, tone, rationale}], overall_rationale}. Prefers the persisted cockpit
+    view (carries the ae-01 rationale); else derives a minimal view from the ledger
+    chapter_order + chapter facts; else None (no order yet -> the cockpit's honest
+    'pending' state)."""
+    view = _read_cockpit_view_file(anthology_id, run_dir_override)
+    if view is not None:
+        return view
+    order = _loads_json_list(row.get("chapter_order"))
+    if not order:
+        return None
+    try:
+        logic = _import_s9_logic()
+        return logic.build_ordering_view(
+            order, [], "", _chapters_meta_from_bundle(anthology_id, state_dir))
+    except Exception:  # noqa: BLE001 -- ordering is best-effort enrichment
+        return None
+
+
+def _enrich_assembly_status(base, anthology_id, row, spec, state_dir, run_dir_override):
+    """Add assembly_state + readiness + ordering (and, in the ordering window, the
+    board order actions) to a status payload for an ANTHOLOGY subject, under the
+    EXACT keys the CC assembly-cockpit parser reads. Participant subjects untouched."""
+    st = row.get("assembly_state")
+    base["assembly_state"] = st
+    readiness = _assembly_readiness(anthology_id, state_dir)
+    if readiness is not None:
+        base["readiness"] = readiness
+    ordering = _assembly_ordering(anthology_id, row, state_dir, run_dir_override)
+    if ordering is not None:
+        base["ordering"] = ordering
+    # In the ordering window resolve_open_gate surfaces NO GateSpec; advertise the
+    # board-door order actions so the cockpit knows confirm/adjust are available.
+    if spec is None and st in ORDER_WINDOW_STATES:
+        base["actor"] = "producer"
+        base["doors"] = ["board"]
+        base["actions"] = list(ASSEMBLY_ORDER_ACTIONS)
+
+
 def cmd_status(args):
     """Read-only: report the open gate for a subject and the actions its doors may
-    present. This is the gate state machine surfaced for the token page / board to
-    render. No token needed; never writes."""
-    resolved = resolve_open_gate(args.subject_key, resolve_state_dir(args))
+    present (the gate state machine surfaced for the token page / board to render).
+    For an ANTHOLOGY (assembly) subject it ALSO surfaces assembly_state + readiness
+    + ordering (U9 cockpit_view) under the keys the CC assembly cockpit consumes.
+    No token needed; never writes."""
+    state_dir = resolve_state_dir(args)
+    resolved = resolve_open_gate(args.subject_key, state_dir)
     if resolved is None:
         return _emit({"ok": False, "action": "status", "subject_key": args.subject_key,
                       "open_gate": None, "reason": "unknown_subject"}, args.json), EX_GATE
-    kind, _row, spec = resolved
+    kind, row, spec = resolved
     if spec is None:
-        return _emit({"ok": True, "action": "status", "subject_key": args.subject_key,
-                      "open_gate": None,
-                      "note": "subject present but not at an open gate"}, args.json), EX_OK
-    doors = ["token", "board"] if spec.door_kind == "participant" else ["board"]
-    return _emit({"ok": True, "action": "status", "subject_key": args.subject_key,
-                  "kind": kind, "open_gate": spec.gate_id, "actor": spec.actor,
-                  "doors": doors, "actions": list(spec.actions)}, args.json), EX_OK
+        base = {"ok": True, "action": "status", "subject_key": args.subject_key,
+                "kind": kind, "open_gate": None,
+                "note": "subject present but not at an open gate"}
+    else:
+        doors = ["token", "board"] if spec.door_kind == "participant" else ["board"]
+        base = {"ok": True, "action": "status", "subject_key": args.subject_key,
+                "kind": kind, "open_gate": spec.gate_id, "actor": spec.actor,
+                "doors": doors, "actions": list(spec.actions)}
+    if kind == "anthology" and row is not None:
+        _enrich_assembly_status(base, args.subject_key, row, spec, state_dir,
+                                getattr(args, "run_dir", None))
+    return _emit(base, args.json), EX_OK
 
 
 def cmd_mint(args):
@@ -780,6 +948,14 @@ def cmd_decide(args):
         return _emit({"ok": False, "action": "decide", "reason": "unknown_door",
                       "note": "door must be token or board"}, args.json), EX_REFUSE
 
+    # ASSEMBLY ORDER board actions (confirm_order / adjust_order) take their OWN
+    # path: they act during the ordering window where resolve_open_gate surfaces no
+    # single GateSpec, they carry order/opener/closer (not a token/PIN), and they
+    # persist through assembly-set-order (the sole writer) rather than record-
+    # approval. The both-door rule is preserved: board-door + own-producer only.
+    if args.action in ASSEMBLY_ORDER_ACTIONS:
+        return _decide_assembly_order(args, cfg, state_dir)
+
     def refuse(reason, code=None, extra=None, rc=EX_REFUSE):
         out = {"ok": False, "action": "decide", "subject_key": args.subject_key,
                "reason": reason}
@@ -904,6 +1080,134 @@ def cmd_decide(args):
                 sys.stderr.write("[gate_engine] release-tag %s: %s (%s)\n"
                                  % (r_status, slug, r_detail))
     return _emit(out, args.json), rc
+
+
+def _flag_runner_confirm_order(anthology_id, order, opener, closer, producer_id,
+                               run_dir_override=None):
+    """Set the S9 runner's request.confirm_order so its NEXT invocation writes U9's
+    inter-chapter transitions + Grand Finale (stage_s9_assembly.py reads
+    request.get('confirm_order') to gate the final edition). This is the runner's
+    per-call CONTROL file, NOT the domain ledger -- the order itself was persisted by
+    the sole writer above -- so it is NO second ledger writer. Existing request.json
+    fields (an arm's producer_id / confirm_name / producer_inputs) are PRESERVED so
+    the runner still has the typed-name confirmation it needs. Returns (ok, detail)."""
+    try:
+        run_dir = _s9_run_dir(anthology_id, run_dir_override)
+        req_path = run_dir / "request.json"
+        data = {}
+        if req_path.is_file():
+            try:
+                loaded = json.loads(req_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    data = loaded
+            except (ValueError, OSError):
+                data = {}
+        data["confirm_order"] = True
+        data["order"] = list(order)
+        if opener:
+            data["opener"] = opener
+        if closer:
+            data["closer"] = closer
+        if producer_id:
+            data["producer_id"] = producer_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        req_path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+        return True, str(req_path)
+    except OSError as exc:
+        return False, "could not write request.json: %s" % type(exc).__name__
+
+
+def _decide_assembly_order(args, cfg, state_dir):
+    """The producer's 'Confirm the finalized set & order' (confirm_order) and the
+    free-reorder 'adjust_order' board actions. PERSISTS the producer's running order
+    through the SOLE writer (anthology_state assembly-set-order --state adjusted) and,
+    for confirm_order, sets the S9 runner's request.confirm_order so its next pass
+    writes U9's inter-chapter transitions + Grand Finale. Board-door + own-producer
+    only. Exit-code map is byte-consistent with the both-door endpoint: 0 recorded,
+    2 guard/validation refusal, 3 gate-not-open."""
+    finale = args.action == FINALE_TRIGGER_ACTION
+
+    def refuse(reason, extra=None, rc=EX_REFUSE):
+        out = {"ok": False, "action": "decide", "subject_key": args.subject_key,
+               "requested": args.action, "reason": reason, "committed": False}
+        if extra:
+            out.update(extra)
+        return _emit(out, args.json), rc
+
+    # board-door only (producer/assembly actions never ride the participant token).
+    if args.door != "board":
+        return refuse("door_not_allowed_for_gate",
+                      {"note": "confirm_order/adjust_order are board-door only"})
+    # the subject is an anthology_id (KEYING LAW: a participant_key contains '::').
+    if KEY_DELIM in args.subject_key:
+        return refuse("not_an_assembly_subject",
+                      {"note": "order actions act on an anthology_id, not a participant"})
+    order = _loads_json_list(getattr(args, "order", None))
+    if not order:
+        return refuse("missing_fields", {"fields": ["order"]})
+    if len(order) != len(set(order)):
+        return refuse("order_has_duplicates")
+    # opener/closer, when supplied, must be consistent with the order sequence.
+    if args.opener and order[0] != args.opener:
+        return refuse("opener_not_first", {"opener": args.opener, "order_head": order[0]})
+    if args.closer and order[-1] != args.closer:
+        return refuse("closer_not_last", {"closer": args.closer, "order_tail": order[-1]})
+    # resolve the anthology (read-only) for own-producer auth + the state window.
+    resolved = resolve_open_gate(args.subject_key, state_dir)
+    if resolved is None or resolved[1] is None or resolved[0] != "anthology":
+        return refuse("unknown_subject", rc=EX_GATE)
+    row = resolved[1]
+    # own-producer auth (mirrors the s9 gates' _require_producer; the CC route sets
+    # --producer-id from the Cf-Access session, never a client-supplied body field).
+    if not args.producer_id:
+        return refuse("missing_fields", {"fields": ["producer_id"]})
+    if str(args.producer_id) != str(row.get("producer_id") or ""):
+        return refuse("not_owning_producer",
+                      {"note": "order actions are own-producer only"})
+    # the ordering window: an order may be (re)persisted ONLY while assembly is
+    # ready_confirmed/proposed/adjusted. Before it there is no armed order; after
+    # compile the edition is closed. Either is 'gate not open' (exit 3).
+    st = row.get("assembly_state")
+    if st not in ORDER_WINDOW_STATES:
+        return refuse("gate_not_open",
+                      {"assembly_state": st,
+                       "note": "confirm the order only during the armed->compiled "
+                               "ordering window (ready_confirmed/proposed/adjusted)"},
+                      rc=EX_GATE)
+    # PERSIST through the SOLE writer (assembly-set-order --state adjusted). The
+    # writer re-validates the order is a permutation of the staged, approved, frozen
+    # set and is the ONLY code path that writes chapter_order.
+    sub = ["assembly-set-order", "--anthology-id", args.subject_key,
+           "--order", json.dumps(order), "--state", "adjusted"]
+    try:
+        rc, parsed, stderr = _run_state_writer(sub, state_dir)
+    except GateHeld as exc:
+        return refuse("sole_writer_held", {"detail": str(exc)}, rc=EX_GATE)
+    if rc == 5:                       # writer VALIDATION: not a permutation of the set
+        return refuse("order_not_a_permutation",
+                      {"detail": (parsed or {}).get("error") or stderr})
+    if rc not in (EX_OK, 4):          # 2 illegal transition / 3 unknown / anything else
+        return refuse("gate_not_open",
+                      {"writer_rc": rc, "detail": (parsed or {}).get("error") or stderr},
+                      rc=EX_GATE)
+    out = {"ok": True, "action": "decide", "subject_key": args.subject_key,
+           "door": DOOR_VALUE[args.door], "decision": args.action, "committed": True,
+           "assembly_state": (parsed or {}).get("assembly_state", "adjusted"),
+           "order_len": (parsed or {}).get("order_len", len(order))}
+    if rc == 4:
+        out["base_queued"] = True
+        out["note"] = "base unreachable; order write queued to the local mirror"
+    # confirm_order ALSO flags the S9 runner to write the final edition (U9 finale).
+    if finale:
+        flagged, detail = _flag_runner_confirm_order(
+            args.subject_key, order, args.opener, args.closer, args.producer_id,
+            getattr(args, "run_dir", None))
+        out["confirm_order"] = {"flagged": flagged, "detail": detail}
+        if not flagged:
+            sys.stderr.write("[gate_engine] confirm_order: order persisted but the "
+                             "runner request flag could not be set: %s\n" % detail)
+    return _emit(out, args.json), EX_OK
 
 
 def rc_uncommitted(out):
@@ -1070,9 +1374,63 @@ def self_test():
     assert release_slug_for(_s9r, "ready_to_assemble", "board", True) is None
     assert release_slug_for(_s9p, "sign_off", "board", True) is None
 
+    # --- ASSEMBLY ORDER actions (U9 assembly-finale / CC assembly cockpit) ------
+    assert ASSEMBLY_ORDER_ACTIONS == ("adjust_order", "confirm_order")
+    assert FINALE_TRIGGER_ACTION == "confirm_order"
+    assert ORDER_WINDOW_STATES == ("ready_confirmed", "proposed", "adjusted")
+    # --order parsing: a JSON array string, a passthrough list, junk -> [].
+    assert _loads_json_list('["a::x","b::x"]') == ["a::x", "b::x"]
+    assert _loads_json_list(["a", "b"]) == ["a", "b"]
+    assert _loads_json_list("not json") == [] and _loads_json_list(None) == []
+    assert _loads_json_list('{"x":1}') == []      # a non-array JSON value is not an order
+    # the run-dir key sanitizer matches the runner's (so request.json paths line up).
+    assert _safe_run_key("ANTH::a b/c") == "ANTH__a_b_c"
+    assert str(_s9_run_dir("ANTHx")).endswith("state/runs/s9/ANTHx")
+    assert str(_s9_run_dir("ANTHx", "/tmp/rd")) == "/tmp/rd"
+    # a persisted cockpit view file is read back verbatim as the ordering view.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        _rd = Path(_td) / "run"
+        (_rd / "working").mkdir(parents=True)
+        _view = {"order": ["a::x", "b::x"],
+                 "slots": [{"position": 1, "participant_key": "a::x",
+                            "chapter_title": "Rise", "rationale": "opener"}],
+                 "overall_rationale": "opener/closer"}
+        (_rd / "working" / "order_proposal.json").write_text(
+            json.dumps(_view), encoding="utf-8")
+        got = _read_cockpit_view_file("ANY", run_dir_override=str(_rd))
+        assert got and got["order"] == ["a::x", "b::x"] and got["slots"][0]["rationale"] == "opener"
+        # absent file -> None (the cockpit's honest 'pending' ordering)
+        assert _read_cockpit_view_file("ANY", run_dir_override=str(Path(_td) / "nope")) is None
+    # confirm_order flags the runner's request.confirm_order, PRESERVING arm fields.
+    with _tf.TemporaryDirectory() as _td:
+        _rd = Path(_td) / "run"
+        _rd.mkdir()
+        (_rd / "request.json").write_text(
+            json.dumps({"producer_id": "prodX", "confirm_name": "The Book",
+                        "producer_inputs": {"why": "kept"}}), encoding="utf-8")
+        ok_flag, _detail = _flag_runner_confirm_order(
+            "ANTHx", ["a::x", "b::x"], "a::x", "b::x", "prodX", run_dir_override=str(_rd))
+        assert ok_flag, _detail
+        _req = json.loads((_rd / "request.json").read_text(encoding="utf-8"))
+        assert _req["confirm_order"] is True
+        assert _req["order"] == ["a::x", "b::x"]
+        assert _req["opener"] == "a::x" and _req["closer"] == "b::x"
+        # arm context PRESERVED, never clobbered (the runner still has confirm_name)
+        assert _req["confirm_name"] == "The Book"
+        assert _req["producer_inputs"] == {"why": "kept"}
+    # a fresh run dir (no prior request.json) is created with just flag + order.
+    with _tf.TemporaryDirectory() as _td:
+        _rd = Path(_td) / "fresh"
+        ok2, _ = _flag_runner_confirm_order("ANTHy", ["p::y"], None, None, "prodY",
+                                            run_dir_override=str(_rd))
+        assert ok2 and (_rd / "request.json").is_file()
+        _req2 = json.loads((_rd / "request.json").read_text(encoding="utf-8"))
+        assert _req2["confirm_order"] is True and "opener" not in _req2
+
     print("gate_engine self-test: OK "
           "(token mint/verify + refusals, PIN, chapter gate == 2 actions, "
-          "door map, exit-code map, §3 release-tag bus)")
+          "door map, exit-code map, §3 release-tag bus, U9 order-confirm flag)")
     return EX_OK
 
 
@@ -1116,6 +1474,9 @@ def _build_parser():
 
     sp = sub.add_parser("status", help="report the open gate for a subject (read-only)")
     sp.add_argument("--subject-key", dest="subject_key", required=True)
+    sp.add_argument("--run-dir", dest="run_dir",
+                    help="optional S9 run dir override for the cockpit ordering read "
+                         "(default: <skill>/state/runs/s9/<anthology_id>)")
     common(sp)
 
     sp = sub.add_parser("mint", help="mint a scoped token+PIN for the open participant gate")
@@ -1151,7 +1512,20 @@ def _build_parser():
     sp.add_argument("--confirm-name", dest="confirm_name",
                     help="typed anthology-name for the s9_ready trigger")
     sp.add_argument("--producer-id", dest="producer_id",
-                    help="own-producer id (required for the s9 gates)")
+                    help="own-producer id (required for the s9 gates and the "
+                         "confirm_order/adjust_order order actions)")
+    sp.add_argument("--order",
+                    help="JSON array of participant_keys in the producer's finalized "
+                         "running order (confirm_order/adjust_order)")
+    sp.add_argument("--opener",
+                    help="the OPENER participant_key (must equal order[0]); "
+                         "optional metadata for confirm_order/adjust_order")
+    sp.add_argument("--closer",
+                    help="the last co-author participant_key (must equal order[-1]); "
+                         "optional metadata for confirm_order/adjust_order")
+    sp.add_argument("--run-dir", dest="run_dir",
+                    help="optional S9 run dir override for the confirm_order finale "
+                         "flag (default: <skill>/state/runs/s9/<anthology_id>)")
     sp.add_argument("--idempotency-key", dest="idempotency_key")
     sp.add_argument("--registry-location", dest="registry_location",
                     help="the anthology's Convert and Flow location binding; forwarded "

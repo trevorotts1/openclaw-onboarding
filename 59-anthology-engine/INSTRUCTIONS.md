@@ -22,7 +22,8 @@ CALLS Skill 54 and owns the intake, ledger, delivery, and Command Center surface
    `config/field-map.json` (a missing field STOPS setup with an operator surface),
    AUTO-PROVISION the standard Anthology pipeline through the CLIENT's OWN private
    integration token, register the forms, provision the Drive producer root under
-   the EXISTING shared root, bootstrap the ledger, generate the webhook route and
+   the per-client BlackCEO-hosted Shared-Drive root (resolved per box from
+   `GOOGLE_DRIVE_ROOT_FOLDER`), bootstrap the ledger, generate the webhook route and
    its secret, seed the Anthology department, register the ONE daily cron tick, run
    the T1 to T9 intake proofs, fire one smoke test.
 
