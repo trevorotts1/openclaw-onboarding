@@ -202,8 +202,12 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
     folder_id = (participant or {}).get("drive_folder_id")
     doc_url = None
     if folder_id and content_file and content_file.is_file():
+        # The deliverable Google Doc is shared anyone-with-link EDIT (writer), NOT
+        # view-only: Trevor's law (LOCKED #4) so the co-author edits their own Doc in
+        # place and the engine pulls the edits back (confirm-then-pull, U7). The paired
+        # premium PDF (rendered below) remains the view-only artifact.
         argv = [py, str(_resolve(rel)), "create-doc", "--name", "%s-%s" % (contact_id, deliverable),
-                "--parent-folder-id", folder_id, "--text-file", str(content_file), "--share-view"]
+                "--parent-folder-id", folder_id, "--text-file", str(content_file), "--share-edit"]
         rc, created = _step(0, rel, argv)
         if rc != EX_OK:
             return rc, None

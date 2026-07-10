@@ -10,14 +10,22 @@ WHAT THIS IS (SPEC 3.4 row 9; SPEC 10.1; PRD 3.7 / 3.13; ENGINE-MANIFEST L9):
   is PATTERN REFERENCE ONLY and google-api.js exposes no create/permissions/
   delete actions, so those are re-implemented here (verified live at W0.6).
 
-  NOTHING new is provisioned in Google: no new service account, no new share
-  primitive beyond per-document anyone-with-link VIEW, and NO new Drive root.
-  The delivery tree lives under the operator's EXISTING anyone-can-read root
-  (config key delivery.drive_root_folder). drive-tree-provision.py owns the
-  idempotent Producer/Anthology/Participant folder tree; THIS module owns:
+  NOTHING new is provisioned in Google: no new service account and NO new Drive
+  root. WHOSE Google account / service account / Drive root is used is UNCHANGED.
+  The share primitives are per-document anyone-with-link VIEW (reader) for PDFs
+  and covers, PLUS per-document anyone-with-link EDIT (writer) for DELIVERABLE
+  Docs -- Trevor's law (LOCKED #4) deliberately overrides the engine's view-only
+  floor for the editable Docs the co-author edits and the engine then pulls back
+  (confirm-then-pull). The delivery tree lives under the operator's EXISTING
+  anyone-can-read root (config key delivery.drive_root_folder).
+  drive-tree-provision.py owns the idempotent Producer/Anthology/Participant
+  folder tree; THIS module owns:
     - create a Google Doc inside a participant folder + insert its text
     - land a cover PNG (or any media) inside a participant folder
-    - per-document anyone-with-link VIEW-only share (revocation-preserving)
+    - per-document anyone-with-link VIEW (reader) OR EDIT (writer) share
+      (revocation-preserving); EDIT is deliverable-Docs only, per Trevor's law
+    - pull the CURRENT plain-text body back out of a Doc (pull_doc_text) -- the
+      confirm-then-pull read-back the engine freezes and revalidates
     - revoke a share and hand back a fresh view link (revoke script path)
     - the per-anthology Drive export bundle (recursive folder manifest)
   Every external WRITE is followed by a byte-for-byte READ-BACK in the SAME job
@@ -41,14 +49,21 @@ human notes go to stderr):
   drive_adapter.py probe [--file-id ID]
         read-only reachability probe (files.get on the root or the given id).
   drive_adapter.py create-doc --name NAME --parent-folder-id ID
-        [--text-file PATH | --text STR] [--share-view]
+        [--text-file PATH | --text STR] [--share-view | --share-edit]
         create a Google Doc in the participant folder, insert text, read it back,
-        optionally share view-only; prints {doc_id, doc_url, permission_id, ...}.
+        optionally share it VIEW-only (--share-view) or anyone-with-link EDIT
+        (--share-edit; Trevor's law for DELIVERABLE Docs); prints
+        {doc_id, doc_url, share_mode, permission_id, ...}.
   drive_adapter.py upload --name NAME --parent-folder-id ID --file PATH
-        [--mime TYPE] [--share-view]
+        [--mime TYPE] [--share-view | --share-edit]
         land a binary (e.g. the S7 cover PNG) in the participant folder.
-  drive_adapter.py share --file-id ID
-        anyone-with-link VIEW-only; reads the permission back; prints the link.
+  drive_adapter.py pull-doc-text --doc-id ID [--out PATH]
+        export the CURRENT plain-text body of a Doc (the confirm-then-pull
+        read-back). Prints {byte_len, sha256, text|out}; the engine freezes these
+        exact bytes and revalidates them with qc-tier1-anthology.py --mode pullback.
+  drive_adapter.py share --file-id ID [--edit]
+        anyone-with-link VIEW-only (default) or EDIT (--edit); reads the
+        permission back; prints the link.
   drive_adapter.py revoke-share --file-id ID [--permission-id ID]
         [--unlink-from-root-id PUBLIC_ANCESTOR --to-folder-id PRIVATE_DEST]
         delete DIRECT anyone permission(s). NOTE: because the delivery root is
@@ -64,6 +79,7 @@ human notes go to stderr):
 """
 import argparse
 import base64
+import hashlib
 import http.client
 import json
 import os
@@ -456,6 +472,23 @@ def share_view_only(token, file_id):
     return _json_api("POST", GOOGLE_API_HOST, path, token, body)
 
 
+def share_edit(token, file_id):
+    """Grant anyone-with-link EDIT (writer, link-only). Returns the permission.
+
+    Trevor's law (LOCKED #4): a DELIVERABLE Google Doc is shared anyone-with-link
+    EDIT so the co-author edits their own Doc in place and the engine pulls the
+    edits back (confirm-then-pull). This deliberately overrides the engine's
+    view-only floor for deliverable Docs ONLY. It changes only the share ROLE on
+    the document; it does NOT change WHOSE Google account, service account, or
+    Drive root owns the file. The identical body shape as share_view_only, but
+    role=writer."""
+    from urllib.parse import quote
+    path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
+            "&fields=id,type,role,allowFileDiscovery" % quote(file_id, safe=""))
+    body = {"role": "writer", "type": "anyone", "allowFileDiscovery": False}
+    return _json_api("POST", GOOGLE_API_HOST, path, token, body)
+
+
 def list_permissions(token, file_id):
     from urllib.parse import quote
     path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
@@ -580,9 +613,11 @@ def _credential_status():
 # ---------------------------------------------------------------------------
 # High-level flows used by the CLI subcommands
 # ---------------------------------------------------------------------------
-def deliver_doc(name, parent_folder_id, text=None, share=False):
+def deliver_doc(name, parent_folder_id, text=None, share_mode=None):
     """Create a Doc in the participant folder, insert text (read back), optionally
-    share view-only (read back). Returns a machine-readable result dict."""
+    share it (read back). `share_mode` is 'view', 'edit', or None:
+    a DELIVERABLE Doc uses 'edit' (Trevor's law) so the co-author edits in place
+    and the engine pulls it back. Returns a machine-readable result dict."""
     token = mint_token()
     doc = create_doc(token, name, parent_folder_id)
     doc_id = doc["id"]
@@ -593,28 +628,25 @@ def deliver_doc(name, parent_folder_id, text=None, share=False):
             lambda _r: docs_read_text(token, doc_id).rstrip("\n") == text.rstrip("\n"),
             "Docs insertText")
 
-    permission_id = None
-    view_shared = False
-    if share:
-        perm = write_and_verify(
-            lambda: share_view_only(token, doc_id),
-            lambda r: _verify_anyone_reader(token, doc_id, r),
-            "anyone-with-link view share")
-        permission_id = perm.get("id")
-        view_shared = True
+    permission_id, mode_applied = _apply_share(token, doc_id, share_mode)
 
     meta = files_get(token, doc_id, fields="id,name,webViewLink")
     return {
         "ok": True, "action": "create-doc", "doc_id": doc_id,
         "name": meta.get("name", name), "doc_url": meta.get("webViewLink"),
-        "view_shared": view_shared, "permission_id": permission_id,
+        "share_mode": mode_applied,
+        "view_shared": mode_applied == "view",
+        "edit_shared": mode_applied == "edit",
+        "permission_id": permission_id,
         "verified": True,
     }
 
 
-def deliver_media(name, parent_folder_id, local_path, mime=None, share=False):
+def deliver_media(name, parent_folder_id, local_path, mime=None, share_mode=None):
     """Land a binary (S7 cover PNG) in the participant folder, read back, optionally
-    share view-only. Returns a machine-readable result dict."""
+    share it. `share_mode` is 'view', 'edit', or None. Cover images stay 'view'
+    (an image is not a deliverable Doc: nothing is pulled back from it and the
+    co-author only picks a favorite). Returns a machine-readable result dict."""
     token = mint_token()
     up = upload_media(token, name, parent_folder_id, local_path, mime)
     file_id = up["id"]
@@ -624,22 +656,17 @@ def deliver_media(name, parent_folder_id, local_path, mime=None, share=False):
         lambda _r: _verify_parent(token, file_id, parent_folder_id),
         "media upload parent check")
 
-    permission_id = None
-    view_shared = False
-    if share:
-        perm = write_and_verify(
-            lambda: share_view_only(token, file_id),
-            lambda r: _verify_anyone_reader(token, file_id, r),
-            "anyone-with-link view share")
-        permission_id = perm.get("id")
-        view_shared = True
+    permission_id, mode_applied = _apply_share(token, file_id, share_mode)
 
     meta = files_get(token, file_id, fields="id,name,webViewLink,webContentLink")
     return {
         "ok": True, "action": "upload", "file_id": file_id,
         "name": meta.get("name", name), "drive_url": meta.get("webViewLink"),
         "download_url": meta.get("webContentLink"),
-        "view_shared": view_shared, "permission_id": permission_id,
+        "share_mode": mode_applied,
+        "view_shared": mode_applied == "view",
+        "edit_shared": mode_applied == "edit",
+        "permission_id": permission_id,
         "verified": True,
     }
 
@@ -653,23 +680,91 @@ def _verify_anyone_reader(token, file_id, created_perm):
     return False
 
 
+def _verify_anyone_writer(token, file_id, created_perm):
+    """True iff the file now carries an anyone/writer/link-only permission."""
+    for perm in list_permissions(token, file_id):
+        if perm.get("type") == "anyone" and perm.get("role") == "writer" \
+                and perm.get("allowFileDiscovery") in (False, None):
+            return True
+    return False
+
+
+def _apply_share(token, file_id, share_mode):
+    """Apply an anyone-with-link share of `share_mode`, byte-checked read-back.
+
+      'view'   -> reader (the engine's original floor; PDFs and cover images).
+      'edit'   -> writer (anyone-with-link EDIT; Trevor's law for DELIVERABLE
+                  Docs so the co-author edits their own Doc and the engine pulls
+                  it back).
+      None/''  -> no share.
+
+    Returns (permission_id, mode_applied). An unknown mode is refused (exit 2)."""
+    if not share_mode:
+        return None, None
+    if share_mode == "view":
+        perm = write_and_verify(
+            lambda: share_view_only(token, file_id),
+            lambda r: _verify_anyone_reader(token, file_id, r),
+            "anyone-with-link view share")
+        return perm.get("id"), "view"
+    if share_mode == "edit":
+        perm = write_and_verify(
+            lambda: share_edit(token, file_id),
+            lambda r: _verify_anyone_writer(token, file_id, r),
+            "anyone-with-link edit share")
+        return perm.get("id"), "edit"
+    raise ValidationError(
+        "unknown share mode %r (expected 'view', 'edit', or none)" % share_mode)
+
+
 def _verify_parent(token, file_id, parent_id):
     meta = files_get(token, file_id, fields="id,parents,trashed")
     return (not meta.get("trashed", False)) and parent_id in (meta.get("parents") or [])
 
 
-def do_share(file_id):
+def do_share(file_id, share_mode="view"):
     token = mint_token()
-    perm = write_and_verify(
-        lambda: share_view_only(token, file_id),
-        lambda r: _verify_anyone_reader(token, file_id, r),
-        "anyone-with-link view share")
+    permission_id, mode_applied = _apply_share(token, file_id, share_mode)
     meta = files_get(token, file_id, fields="id,name,webViewLink")
     return {
         "ok": True, "action": "share", "file_id": file_id,
-        "permission_id": perm.get("id"), "view_url": meta.get("webViewLink"),
+        "share_mode": mode_applied,
+        "permission_id": permission_id, "view_url": meta.get("webViewLink"),
         "verified": True,
     }
+
+
+def pull_doc_text(doc_id):
+    """Return the CURRENT plain-text body of a Google Doc.
+
+    This is the confirm-then-pull read-back: the moment a co-author confirms,
+    the engine calls this to lift whatever they typed into their shared editable
+    Doc, verbatim, and freezes it as the new stage artifact. Wraps docs_read_text
+    over a freshly minted token; byte-exactness is proven in self_test with the
+    Docs API mocked. WHOSE account is impersonated is unchanged (mint_token)."""
+    token = mint_token()
+    return docs_read_text(token, doc_id)
+
+
+def do_pull_doc_text(doc_id, out=None):
+    """CLI flow for pull_doc_text: pull the Doc body and report it byte-exactly.
+
+    The result carries a sha256 + byte length so the stage runner can FREEZE the
+    exact bytes it then revalidates with qc-tier1-anthology.py --mode pullback
+    (word band, title-lock presence, story anchors -- advisory, never blocking)."""
+    text = pull_doc_text(doc_id)
+    raw = text.encode("utf-8")
+    result = {
+        "ok": True, "action": "pull-doc-text", "doc_id": doc_id,
+        "byte_len": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+        "verified": True,
+    }
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+        result["out"] = str(out)
+    else:
+        result["text"] = text
+    return result
 
 
 def do_revoke_share(file_id, permission_id=None, unlink_from_root_id=None,
@@ -861,8 +956,87 @@ def self_test():
         cfg = json.loads(tmpl.read_text(encoding="utf-8"))
         assert cfg["delivery"]["drive_root_folder"] == "1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw", \
             "delivery root drifted from the operator's existing shared root"
+
+    # -- U7: editable-Doc EDIT share + pull_doc_text read-back (Docs API MOCKED) --
+    # anyone/writer classifier: only an anyone+writer+link-only perm satisfies EDIT.
+    _saved = {k: globals().get(k) for k in
+              ("list_permissions", "_json_api", "mint_token",
+               "share_view_only", "share_edit",
+               "_verify_anyone_reader", "_verify_anyone_writer")}
+    try:
+        globals()["list_permissions"] = lambda *_a, **_k: [
+            {"type": "anyone", "role": "writer", "allowFileDiscovery": False}]
+        assert _verify_anyone_writer("t", "f", None) is True
+        assert _verify_anyone_reader("t", "f", None) is False
+        globals()["list_permissions"] = lambda *_a, **_k: [
+            {"type": "anyone", "role": "reader", "allowFileDiscovery": False}]
+        assert _verify_anyone_writer("t", "f", None) is False
+        assert _verify_anyone_reader("t", "f", None) is True
+
+        # share_edit posts an anyone/writer body (captured; no network).
+        captured = {}
+
+        def _cap(method, host, path, token, body=None, expect=(200,)):
+            captured["body"] = body
+            return {"id": "perm-w", "type": "anyone", "role": "writer",
+                    "allowFileDiscovery": False}
+        globals()["_json_api"] = _cap
+        perm = share_edit("tok", "docid")
+        assert captured["body"] == {"role": "writer", "type": "anyone",
+                                    "allowFileDiscovery": False}, captured
+        assert perm["role"] == "writer"
+
+        # _apply_share dispatches view/edit and refuses an unknown mode (exit 2).
+        globals()["share_view_only"] = lambda *_a, **_k: {"id": "pv"}
+        globals()["share_edit"] = lambda *_a, **_k: {"id": "pe"}
+        globals()["_verify_anyone_reader"] = lambda *_a, **_k: True
+        globals()["_verify_anyone_writer"] = lambda *_a, **_k: True
+        assert _apply_share("t", "f", None) == (None, None)
+        assert _apply_share("t", "f", "view") == ("pv", "view")
+        assert _apply_share("t", "f", "edit") == ("pe", "edit")
+        bad_mode = False
+        try:
+            _apply_share("t", "f", "sideways")
+        except ValidationError:
+            bad_mode = True
+        assert bad_mode, "an unknown share mode must be refused (ValidationError -> exit 2)"
+
+        # pull_doc_text read-back is BYTE-EXACT with the Docs API MOCKED (acceptance).
+        doc_fixture = {"body": {"content": [
+            {"paragraph": {"elements": [
+                {"textRun": {"content": "The Weight of the Keys\n"}},
+                {"textRun": {"content": "My client's own edited line."}}]}},
+            {"paragraph": {"elements": [
+                {"textRun": {"content": "\nA second paragraph, verbatim.\n"}}]}},
+            {"sectionBreak": {}},  # a non-paragraph element is ignored
+        ]}}
+        expected_body = ("The Weight of the Keys\nMy client's own edited line."
+                         "\nA second paragraph, verbatim.\n")
+        globals()["_json_api"] = lambda *_a, **_k: doc_fixture
+        globals()["mint_token"] = lambda scope=FULL_SCOPE: "FAKE_TOKEN"
+        assert docs_read_text("FAKE_TOKEN", "DOCID") == expected_body, \
+            "docs_read_text must return the Doc body byte-for-byte"
+        res = do_pull_doc_text("DOCID")
+        assert res["text"] == expected_body, repr(res.get("text"))
+        assert res["byte_len"] == len(expected_body.encode("utf-8"))
+        assert res["sha256"] == hashlib.sha256(expected_body.encode("utf-8")).hexdigest()
+        # --out writes the exact bytes and omits the inline text.
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile("w", suffix=".txt", delete=False) as _fh:
+            _outp = _fh.name
+        try:
+            res2 = do_pull_doc_text("DOCID", out=_outp)
+            assert "text" not in res2 and res2["out"] == _outp
+            assert Path(_outp).read_text(encoding="utf-8") == expected_body
+        finally:
+            os.unlink(_outp)
+    finally:
+        for k, v in _saved.items():
+            if v is not None:
+                globals()[k] = v
+
     print("drive_adapter self-test: OK (auth assembly, escaping, read-back guard, "
-          "root resolution, exit-code contract)")
+          "root resolution, exit-code contract, EDIT share, pull_doc_text byte-exact)")
     return EX_OK
 
 
@@ -890,18 +1064,32 @@ def build_parser():
     g = cd.add_mutually_exclusive_group()
     g.add_argument("--text", help="inline body text to insert")
     g.add_argument("--text-file", help="path to a UTF-8 file whose content is inserted")
-    cd.add_argument("--share-view", action="store_true",
-                    help="also grant anyone-with-link VIEW-only")
+    sgd = cd.add_mutually_exclusive_group()
+    sgd.add_argument("--share-view", action="store_true",
+                     help="also grant anyone-with-link VIEW-only (reader)")
+    sgd.add_argument("--share-edit", action="store_true",
+                     help="grant anyone-with-link EDIT (writer); Trevor's law for DELIVERABLE Docs")
 
     up = sub.add_parser("upload", help="land a binary (e.g. the cover PNG) in a folder")
     up.add_argument("--name", required=True)
     up.add_argument("--parent-folder-id", required=True)
     up.add_argument("--file", required=True, help="local path to the binary")
     up.add_argument("--mime", help="MIME type (guessed from the name if omitted)")
-    up.add_argument("--share-view", action="store_true")
+    sgu = up.add_mutually_exclusive_group()
+    sgu.add_argument("--share-view", action="store_true",
+                     help="also grant anyone-with-link VIEW-only (reader)")
+    sgu.add_argument("--share-edit", action="store_true",
+                     help="grant anyone-with-link EDIT (writer)")
 
-    sh = sub.add_parser("share", help="anyone-with-link VIEW-only share")
+    pd = sub.add_parser("pull-doc-text",
+                        help="export the CURRENT plain-text body of a Doc (confirm-then-pull read-back)")
+    pd.add_argument("--doc-id", required=True)
+    pd.add_argument("--out", help="write the pulled text to this path (else returned inline)")
+
+    sh = sub.add_parser("share", help="anyone-with-link VIEW (default) or EDIT (--edit) share")
     sh.add_argument("--file-id", required=True)
+    sh.add_argument("--edit", action="store_true",
+                    help="grant anyone-with-link EDIT (writer) instead of VIEW")
 
     rv = sub.add_parser("revoke-share", help="remove the anyone-with-link permission(s)")
     rv.add_argument("--file-id", required=True)
@@ -937,14 +1125,19 @@ def dispatch(args):
             if not tf.is_file():
                 raise ValidationError("--text-file not found: %s" % args.text_file)
             text = tf.read_text(encoding="utf-8")
-        _out(deliver_doc(args.name, args.parent_folder_id, text=text, share=args.share_view))
+        mode = "edit" if args.share_edit else ("view" if args.share_view else None)
+        _out(deliver_doc(args.name, args.parent_folder_id, text=text, share_mode=mode))
         return EX_OK
     if cmd == "upload":
+        mode = "edit" if args.share_edit else ("view" if args.share_view else None)
         _out(deliver_media(args.name, args.parent_folder_id, args.file,
-                           mime=args.mime, share=args.share_view))
+                           mime=args.mime, share_mode=mode))
+        return EX_OK
+    if cmd == "pull-doc-text":
+        _out(do_pull_doc_text(args.doc_id, args.out))
         return EX_OK
     if cmd == "share":
-        _out(do_share(args.file_id))
+        _out(do_share(args.file_id, share_mode="edit" if args.edit else "view"))
         return EX_OK
     if cmd == "revoke-share":
         _out(do_revoke_share(args.file_id, args.permission_id,

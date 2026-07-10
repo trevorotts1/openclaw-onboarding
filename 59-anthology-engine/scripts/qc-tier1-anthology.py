@@ -43,6 +43,16 @@ chapter order matches the curated order; the editor introduction references only
 contributors; contributor bios match ledger identities; front and back matter complete; one
 continuous 14-point-floor PDF.
 
+PULL-BACK MODE (--mode pullback; the confirm-then-pull core, SPEC 2 step 5 / Gap G12): when a
+co-author CONFIRMS at a review stage, the engine PULLS the current text of their editable
+Google Doc (drive_adapter.py pull-doc-text), freezes it, and re-runs ONLY the deterministic
+CONTENT invariants over the PULLED bytes -- word band (1), title-lock PRESENCE (2), and story
+anchors (3), whichever are in scope for the kind. This is ADVISORY: the client's edits are law
+for content (Trevor D3). A violated invariant becomes a PRODUCER board note; it NEVER blocks
+the co-author and NEVER returns a failing exit code. The title LOCK still binds the title
+FIELDS in the ledger (immutable); pull-back only observes whether the locked title still
+appears in the client's prose and reports it -- it does not enforce against the prose.
+
 INPUT: a self-describing ENVELOPE (JSON on --envelope or stdin). The stage runner assembles
 it from the ledger and the produced artifacts; this script depends on NO sibling schema, so
 it is testable in isolation and cannot silently pass a check it could not evaluate. Checks
@@ -52,9 +62,9 @@ check that is IN SCOPE for the kind FAILS closed if its required context is miss
 never passes a check it could not run.
 
 Exit codes (SPEC 3.4 row 14; house: 1 unexpected error):
-  0  all in-scope checks pass
+  0  all in-scope checks pass  (in --mode pullback: ALWAYS 0 -- a client edit never blocks)
   2  bad invocation (unparseable envelope, unknown kind, missing artifact)
-  4  one or more failures (the full list is emitted)
+  4  one or more failures (the full list is emitted)  [piece / assembly modes only]
 """
 from __future__ import annotations
 
@@ -281,6 +291,37 @@ class Verdict:
                 line = "  %-4s %2d %-20s %s" % (c.status, c.id, c.name, c.detail)
                 (sys.stdout if c.status != FAIL else sys.stderr).write(line + "\n")
         return EX_OK if self.passed else EX_FAIL
+
+    def emit_pullback(self, as_json: bool) -> int:
+        """Emit a NON-BLOCKING pull-back verdict. Any FAIL is surfaced as a
+        PRODUCER board note; the co-author is NEVER blocked, so this ALWAYS
+        returns EX_OK (SPEC 2 step 5 / Gap G12 / Trevor D3)."""
+        notes = [c.to_dict() for c in self.checks if c.status == FAIL]
+        payload = {
+            "prover": "qc-tier1-anthology",
+            "mode": "pullback",
+            "kind": self.kind,
+            "advisory": True,
+            "blocking": False,
+            "clean": not notes,
+            "producer_notes": notes,
+            "checks": [c.to_dict() for c in self.checks],
+        }
+        if as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            head = "CLEAN" if not notes else "PRODUCER-NOTE"
+            print("[%s] qc-tier1-anthology  mode=pullback kind=%s  "
+                  "(%d check(s), %d producer note(s); NON-BLOCKING)"
+                  % (head, self.kind, len(self.checks), len(notes)))
+            for c in self.checks:
+                line = "  %-4s %2d %-20s %s" % (c.status, c.id, c.name, c.detail)
+                sys.stdout.write(line + "\n")
+            if notes:
+                sys.stdout.write(
+                    "  -> the client's edits are accepted as law for content; the note(s) "
+                    "above go to the PRODUCER's board, they do NOT block the co-author.\n")
+        return EX_OK
 
 
 # ---------------------------------------------------------------------------
@@ -913,6 +954,51 @@ def run_tier1(env: dict, mode: str = "piece") -> Verdict:
     return verdict
 
 
+# ---------------------------------------------------------------------------
+# Pull-back revalidation (confirm-then-pull core; SPEC 2 step 5 / Gap G12).
+# Re-run only the deterministic CONTENT invariants over the PULLED, client-edited
+# text: word band (1), title-lock PRESENCE (2), story anchors (3) -- whichever
+# apply to the kind. Advisory-only: violations become PRODUCER board notes via
+# Verdict.emit_pullback and NEVER block the co-author (see that method).
+# ---------------------------------------------------------------------------
+PULLBACK_BASE = (1, 2, 3)
+
+
+def run_pullback(env: dict) -> Verdict:
+    kind = env.get("kind")
+    if kind not in KNOWN_KINDS:
+        raise BadInvocation("unknown kind %r (known: %s)"
+                            % (kind, ", ".join(sorted(KNOWN_KINDS))))
+    env = dict(env)
+    env["kind"] = kind
+    text = _artifact_text(env)
+
+    verdict = Verdict("pullback", kind)
+
+    # Which content invariants to observe: explicit override, else the base
+    # invariants that are actually in scope for this kind.
+    requested = env.get("checks")
+    if requested:
+        ids = [int(x) for x in requested]
+    else:
+        ids = [c for c in PULLBACK_BASE if c in DEFAULT_CHECKS[kind]]
+
+    for cid in ids:
+        fn = CHECK_FUNCS.get(cid)
+        if fn is None:
+            verdict.add(CheckOutcome(cid, "UNKNOWN", SKIP, "no such Tier-1 check"))
+            continue
+        try:
+            verdict.add(fn(env, text))
+        except BadInvocation:
+            raise
+        except Exception as exc:  # a crashing check becomes a note, never a block
+            verdict.add(CheckOutcome(cid, CHECK_NAMES.get(cid, "CHECK"), FAIL,
+                                     "check raised %s: %s" % (type(exc).__name__, exc), _code(cid)))
+
+    return verdict
+
+
 def _read_envelope(args) -> dict:
     if args.envelope:
         raw = Path(args.envelope).read_text(encoding="utf-8")
@@ -941,7 +1027,7 @@ def main(argv=None) -> int:
     ap.add_argument("--envelope", help="path to the deliverable envelope JSON (else stdin)")
     ap.add_argument("--artifact", help="override envelope artifact_path")
     ap.add_argument("--kind", help="override envelope kind (%s)" % ", ".join(sorted(KNOWN_KINDS)))
-    ap.add_argument("--mode", choices=["piece", "assembly"], default="piece")
+    ap.add_argument("--mode", choices=["piece", "assembly", "pullback"], default="piece")
     ap.add_argument("--json", action="store_true", help="emit the structured verdict as JSON")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
@@ -950,13 +1036,18 @@ def main(argv=None) -> int:
         return self_test()
     try:
         env = _read_envelope(args)
-        verdict = run_tier1(env, mode=args.mode)
+        if args.mode == "pullback":
+            verdict = run_pullback(env)
+        else:
+            verdict = run_tier1(env, mode=args.mode)
     except BadInvocation as exc:
         sys.stderr.write("[qc-tier1] bad invocation: %s\n" % exc)
         return EX_BAD
     except Exception as exc:
         sys.stderr.write("[qc-tier1] unexpected error: %s\n" % exc)
         return EX_ERR
+    if args.mode == "pullback":
+        return verdict.emit_pullback(args.json)
     return verdict.emit(args.json)
 
 
@@ -1135,6 +1226,58 @@ def self_test() -> int:
     vs = run_tier1(strayintro, mode="assembly")
     checks.append(("assembly catches a fabricated intro name",
                    any(c.id == 103 and c.status == FAIL for c in vs.checks)))
+
+    # PULL-BACK mode (U7 confirm-then-pull core): a client's edits to their Doc are
+    # revalidated but NEVER block them; violations become PRODUCER board notes.
+    _pull_base = {
+        "kind": "chapter",
+        "title": {"title": "The Weight of the Keys",
+                  "subtitle": "What a Locked Door Taught Me About Letting Go"},
+        "intake": {"personal_stories": ["the blue Igloo cooler",
+                                        "the padlock the bank sent by certified mail"]},
+        "chapter_word_min": 20, "chapter_word_max": 4000,
+    }
+    # clean pull: title present, stories present, band ok -> zero producer notes.
+    pv_clean = run_pullback(dict(_pull_base, artifact_text=_CLEAN_CHAPTER))
+    checks.append(("pullback: default selection is exactly the content invariants [1,2,3]",
+                   [c.id for c in pv_clean.checks] == [1, 2, 3]))
+    checks.append(("pullback: a clean pulled chapter yields zero producer notes",
+                   len(pv_clean.failures) == 0))
+    # a client edit that drops the title AND a story: both surface as notes.
+    pulled_broken = (_CLEAN_CHAPTER
+                     .replace("The Weight of the Keys", "Untitled Draft")
+                     .replace("the blue Igloo cooler", "a cooler"))
+    pv_broken = run_pullback(dict(_pull_base, artifact_text=pulled_broken))
+    checks.append(("pullback: dropped title-lock presence surfaces a producer note (2)",
+                   any(c.id == 2 and c.status == FAIL for c in pv_broken.checks)))
+    checks.append(("pullback: dropped story anchor surfaces a producer note (3)",
+                   any(c.id == 3 and c.status == FAIL for c in pv_broken.checks)))
+    # the cardinal guarantee: emit ALWAYS returns EX_OK, even with notes (no block).
+    import io as _io
+    import contextlib as _cl
+    _buf = _io.StringIO()
+    with _cl.redirect_stdout(_buf):
+        _rc_pb = pv_broken.emit_pullback(as_json=True)
+    checks.append(("pullback: emit ALWAYS returns EX_OK even with notes (never blocks the client)",
+                   _rc_pb == EX_OK))
+    _payload = json.loads(_buf.getvalue())
+    checks.append(("pullback: JSON marks advisory=true, blocking=false, and carries producer_notes",
+                   _payload.get("advisory") is True and _payload.get("blocking") is False
+                   and len(_payload.get("producer_notes", [])) >= 2))
+    # a client's own shrink below the word band is a note, not a block.
+    pv_thin = run_pullback({"kind": "chapter", "artifact_text": "Too short.",
+                            "chapter_word_min": 2000, "chapter_word_max": 3500,
+                            "checks": [1]})
+    _thin_flagged = any(c.id == 1 and c.status == FAIL for c in pv_thin.checks)
+    with _cl.redirect_stdout(_io.StringIO()):
+        _thin_rc = pv_thin.emit_pullback(as_json=True)
+    checks.append(("pullback: a client shrinking below the word band is a note (1), not a block",
+                   _thin_flagged and _thin_rc == EX_OK))
+    # pull-back is kind-aware: a tone pull observes only the word band.
+    tone_pull = run_pullback({"kind": "tone", "artifact_text": "word " * 4000,
+                              "tone_word_floor": 3000})
+    checks.append(("pullback: tone pull observes only the word band [1]",
+                   [c.id for c in tone_pull.checks] == [1]))
 
     # real-data smoke: the golden working chapter.
     gchap = _GOLDEN / "chapter.md"
