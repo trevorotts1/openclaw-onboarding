@@ -25,6 +25,13 @@ WHAT THIS SHIPS (SPEC 3.4 row 12; WAVE-PLAN W1.13; PRD Section 6; SPEC 10.3):
      completion, a signed process certificate (content sha256 + optional HMAC + the
      run nonce). Both are written to the operator report dir and printed; NEITHER is
      ever a client surface.
+  7. RELEASE-TAG BUS (SPEC 3; the board-approve -> tag -> notification wiring): a
+     single idempotent add-tag on POST /contacts/{contactId}/tags with a byte
+     read-back (GET /contacts/{contactId}, confirm the slug landed). The gate engine
+     shells this on a committed board-door PRODUCER approve to stamp the stage's
+     standard release slug (anthology-release-*); that contact_tag is the ONLY thing
+     Layer 4 writes to the client on an approve, and it is exactly what fires the
+     §3 W3-W10 email + SMS workflow. Re-adding a present tag is a no-op.
 
 DOCTRINE (binding, enforced in code):
   - STDLIB ONLY (urllib, hmac, hashlib): zero third-party deps, calls NO model.
@@ -599,6 +606,71 @@ class CafClient:
         self._classify(status, raw, "opportunity create")
         return self._parse(raw)
 
+    # ---- contact tags (the §3 release-tag bus: producer-approve -> tag) -----
+    @staticmethod
+    def _extract_tags(contact):
+        """The contact's tags as a list of plain strings. The Convert and Flow
+        (LeadConnector v2) contact carries `tags` as an array of strings; a
+        list-of-dicts shape is tolerated so read-back never falsely fails."""
+        out = []
+        for t in (contact.get("tags") or []):
+            if isinstance(t, str):
+                out.append(t)
+            elif isinstance(t, dict):
+                v = t.get("name") or t.get("tag") or t.get("value")
+                if isinstance(v, str):
+                    out.append(v)
+        return out
+
+    def get_contact_tags(self, contact_id):
+        """GET /contacts/{contactId} and return its tags as a list of strings
+        (read-only; the SAME read path as every read-back)."""
+        return self._extract_tags(self.get_contact(contact_id))
+
+    def _post_contact_tag(self, contact_id, slug):
+        """POST /contacts/{contactId}/tags {tags:[slug]} (LeadConnector v2 add-tags;
+        the SAME Bearer/Version/UA transport every write on this client uses). A
+        genuine scope denial surfaces as exit 3 (held) via _classify; an edge block
+        as UpstreamBlockedError. Returns the parsed response."""
+        payload = {"tags": [slug]}
+        status, raw = self._json_call("POST", "/contacts/%s/tags" % contact_id, payload=payload)
+        self._classify(status, raw, "contact tag add")
+        return self._parse(raw)
+
+    def add_tag(self, contact_id, slug):
+        """Idempotent add-tag with a byte read-back, keyed by contact_id (the §3
+        board-approve -> release-tag primitive). Contract, mirroring
+        write_and_verify:
+          1. GUARD the slug (never an Anthropic-shaped or credential-shaped value).
+          2. READ the contact's current tags. If `slug` is already present
+             (case-insensitive; Convert and Flow lowercases stored tags) this is a
+             NO-OP: no POST is sent, re-adding a present tag changes nothing.
+          3. Else POST the tag, then READ the contact BACK and CONFIRM the slug
+             landed. A slug that does not read back present is exit 5
+             (AF-AE-READBACK-MISMATCH) -- the same byte-for-byte discipline every
+             field write is held to.
+        Returns a result dict {slug, action('added'|'noop'), already_present,
+        verified, tags_before, tags_after}. Raises exit 3 on a held/unreachable
+        write and exit 2 on a refused slug."""
+        s = "" if slug is None else str(slug).strip()
+        if not s:
+            raise _tenant("add_tag: empty tag slug; refusing to stamp a blank tag")
+        _guard_written_value("contact.tag", s)
+        before = self.get_contact_tags(contact_id)
+        before_lc = {t.lower() for t in before}
+        if s.lower() in before_lc:
+            return {"slug": s, "action": "noop", "already_present": True,
+                    "verified": True, "tags_before": before, "tags_after": before}
+        self._post_contact_tag(contact_id, s)
+        after = self.get_contact_tags(contact_id)
+        if s.lower() not in {t.lower() for t in after}:
+            raise _mismatch(
+                "AF-AE-READBACK-MISMATCH: tag %r did not read back present on the "
+                "contact after the add-tags write" % s,
+                detail={"slug": s, "tags_after": after})
+        return {"slug": s, "action": "added", "already_present": False,
+                "verified": True, "tags_before": before, "tags_after": after}
+
 
 # ---------------------------------------------------------------------------
 # Multipart/form-data encoder (stdlib; no `requests`). CRLF line endings, one
@@ -910,6 +982,19 @@ def cmd_update_stage(args):
     return EX_OK
 
 
+def cmd_add_tag(args):
+    """Stamp ONE §3 release slug on a contact, idempotently, with a byte read-back.
+    This is the sole tag writer the gate engine's board-approve release bus shells:
+    Layer 4 writes NOTHING to the client on an approve except this tag, and the tag
+    is exactly what fires the §3 W3-W10 notification workflow (email + SMS)."""
+    client, location = _build_client(args)
+    result = client.add_tag(args.contact_id, args.slug)
+    result["contact_id"] = args.contact_id
+    result["operating_location"] = location
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return EX_OK
+
+
 def _upload_part(client, path, url, verify):
     """Return a delivery-report 'part' dict for a doc or pdf, from either a local
     file to upload OR an already-hosted url (idempotent replay: no re-upload)."""
@@ -1068,6 +1153,8 @@ def cmd_plan(args):
             "opportunity_search": "GET /opportunities/search",
             "opportunity_move": "PUT /opportunities/{id} {pipelineId,pipelineStageId}",
             "opportunity_create": "POST /opportunities/",
+            "contact_tag_add": "POST /contacts/{contactId}/tags {tags:[slug]} "
+                               "(idempotent + read-back; the §3 release-tag bus)",
         },
         "pit_labels_checked": list(PIT_LABELS),
         "location_labels_checked": list(LOCATION_LABELS),
@@ -1114,7 +1201,10 @@ class _StubCaf:
         }
         self.media = {}
         self.opps = {}              # contact_id -> {id, pipelineId, pipelineStageId}
+        self.tags = {}              # contact_id -> [tag, ...]
         self.deny_opp_write = False
+        self.deny_tag_write = False     # simulate a genuine scope denial on tag add
+        self.tag_write_swallow = False  # accept the POST but drop it -> read-back mismatch
 
     def open(self, method, url, headers, data):
         assert headers.get("Version") == CAF_VERSION_HEADER, "Version header required"
@@ -1133,6 +1223,17 @@ class _StubCaf:
         if path.startswith("/locations/") and path.endswith("/customFields"):
             cf = [{"fieldKey": k, "id": v} for k, v in self.fields.items()]
             return 200, json.dumps({"customFields": cf}).encode()
+        if path.startswith("/contacts/") and path.endswith("/tags") and method == "POST":
+            if self.deny_tag_write:
+                return 401, json.dumps({"message": "The token is not authorized for this scope."}).encode()
+            cid = path[len("/contacts/"):-len("/tags")]
+            store = self.tags.setdefault(cid, [])
+            if not self.tag_write_swallow:
+                for t in (body.get("tags") or []):
+                    tl = t if isinstance(t, str) else str(t)
+                    if tl.lower() not in [x.lower() for x in store]:
+                        store.append(tl)
+            return 200, json.dumps({"tags": list(store)}).encode()
         if path.startswith("/contacts/") and method == "PUT":
             cid = path.split("/contacts/", 1)[1]
             store = self.contacts.setdefault(cid, {})
@@ -1143,7 +1244,8 @@ class _StubCaf:
             cid = path.split("/contacts/", 1)[1]
             store = self.contacts.get(cid, {})
             cfs = [{"id": fid, "value": val} for fid, val in store.items()]
-            return 200, json.dumps({"contact": {"id": cid, "customFields": cfs}}).encode()
+            return 200, json.dumps({"contact": {"id": cid, "customFields": cfs,
+                                                 "tags": list(self.tags.get(cid, []))}}).encode()
         if path.startswith("/opportunities/search"):
             # crude: return the opp for the contact if present
             for cid, opp in self.opps.items():
@@ -1436,6 +1538,55 @@ def self_test():
     check("report is operator-channel", "operator-channel" in report["surface"])
     check("report text has no secret", "pit-" not in render_report_text(report))
 
+    # ---- add_tag: the §3 release-tag bus primitive (idempotent + byte read-back) --
+    # A fresh client on the SAME stub so the tag store is exercised end to end.
+    tag_client = CafClient("pit-test", "locA", opener=stub.open)
+    r_add = tag_client.add_tag("contactTAG1", "anthology-release-avatar")
+    check("add_tag adds the slug and reads it back present",
+          r_add["action"] == "added" and r_add["verified"] and not r_add["already_present"])
+    check("add_tag read-back shows the slug on the contact",
+          "anthology-release-avatar" in tag_client.get_contact_tags("contactTAG1"))
+    # IDEMPOTENT: re-adding a present tag is a NO-OP (no POST, nothing changes).
+    r_again = tag_client.add_tag("contactTAG1", "anthology-release-avatar")
+    check("add_tag is idempotent (re-add of a present tag is a no-op)",
+          r_again["action"] == "noop" and r_again["already_present"] and r_again["verified"])
+    # idempotent even against case (Convert and Flow lowercases stored tags).
+    r_case = tag_client.add_tag("contactTAG1", "Anthology-Release-Avatar")
+    check("add_tag idempotency is case-insensitive", r_case["action"] == "noop")
+    # a second, distinct release slug coexists with the first.
+    tag_client.add_tag("contactTAG1", "anthology-release-tone")
+    check("add_tag stamps a second distinct slug alongside the first",
+          {"anthology-release-avatar", "anthology-release-tone"}
+          <= set(tag_client.get_contact_tags("contactTAG1")))
+    # a genuine scope denial on the tag write is HELD (exit 3), never silent.
+    stub.deny_tag_write = True
+    try:
+        tag_client.add_tag("contactTAG2", "anthology-release-cover")
+        check("scope-denied tag write surfaces", False)
+    except DeliveryError as e:
+        check("scope-denied tag write -> HELD exit 3", e.code == EX_UNREACHABLE)
+    stub.deny_tag_write = False
+    # a write that does NOT land (accepted but dropped) is caught by the read-back.
+    stub.tag_write_swallow = True
+    try:
+        tag_client.add_tag("contactTAG3", "anthology-release-final")
+        check("tag that did not land surfaces", False)
+    except DeliveryError as e:
+        check("tag not read back present -> read-back mismatch exit 5", e.code == EX_MISMATCH)
+    stub.tag_write_swallow = False
+    # the write guard refuses an Anthropic-shaped or empty slug before any POST.
+    denied_tag = "cla" + "ude-3-release"
+    try:
+        tag_client.add_tag("contactTAG1", denied_tag)
+        check("anthropic-shaped slug refused", False)
+    except DeliveryError as e:
+        check("anthropic-shaped slug -> exit 2", e.code == EX_TENANT)
+    try:
+        tag_client.add_tag("contactTAG1", "   ")
+        check("blank slug refused", False)
+    except DeliveryError as e:
+        check("blank slug -> exit 2", e.code == EX_TENANT)
+
     print("")
     if failures:
         print("caf_delivery self-test: %d FAILURE(S): %s" % (len(failures), ", ".join(failures)))
@@ -1493,6 +1644,13 @@ def build_parser():
     p.add_argument("--stage-id", help="explicit stageId from the registry (bypasses map lookup)")
     p.add_argument("--opportunity-name")
     p.set_defaults(func=cmd_update_stage)
+
+    p = sub.add_parser("add-tag", help="stamp ONE §3 release slug on a contact "
+                       "(idempotent + byte read-back; the board-approve release bus)")
+    _add_common_caf(p)
+    p.add_argument("--contact-id", required=True)
+    p.add_argument("--slug", required=True, help="the §3 release slug, e.g. anthology-release-avatar")
+    p.set_defaults(func=cmd_add_tag)
 
     p = sub.add_parser("deliver", help="S8 per-deliverable: upload+write+read-back+stage+report(+cert)")
     _add_common_caf(p)
