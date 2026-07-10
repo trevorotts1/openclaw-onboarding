@@ -13,8 +13,9 @@
 #   1  caf_credential_gate.py resolves every PRD Section 14 credential by label
 #      across all three client env stores (live process env first), with the
 #      pairing proof and the anti-commingling fingerprint (SET / NOT SET only).
-#   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 8
-#      Doc/PDF pairs + 3 control fields = 19 keys); a MISSING field STOPS setup
+#   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 10
+#      Doc/PDF pairs incl. the 2 chapter-rewrite-preservation pairs + 3 control
+#      fields = 23 keys, all LARGE_TEXT); a MISSING field STOPS setup
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
@@ -1184,7 +1185,7 @@ print_plan() {
     cat >&2 <<PLAN
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
   1/10  credential gate            caf_credential_gate.py (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint)
-  2/10  custom fields              anthology_registry.py provision-fields (19 keys; missing -> STOP; key mismatch -> exit 5)
+  2/10  custom fields              anthology_registry.py provision-fields (23 keys, LARGE_TEXT; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked

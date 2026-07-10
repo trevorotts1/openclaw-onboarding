@@ -353,9 +353,10 @@ def _stop(out, title: str, lines) -> None:
 # ---------------------------------------------------------------------------
 def provision_fields(client, field_map_path: Path, location_id: str, *,
                      dry_run: bool = False, out=None, jsonout=None):
-    """py_symbol: verify_fields. Create-or-verify all 19 PRD Section 6 fields,
-    exact-match verify each server fieldKey, and persist into field-map.json.
-    Returns an exit code."""
+    """py_symbol: verify_fields. Create-or-verify all 23 PRD Section 6 fields
+    (the 19 base keys + the 4 chapter-rewrite-preservation keys, Gap G10; all
+    LARGE_TEXT, Gap G11), exact-match verify each server fieldKey, and persist into
+    field-map.json. Returns an exit code."""
     out = out or sys.stderr
     fm = load_field_map(field_map_path)
     inventory = fm.get("provisioning", {}).get("fields")
@@ -390,7 +391,11 @@ def provision_fields(client, field_map_path: Path, location_id: str, *,
     for item in inventory:
         intended = item["intended_key"]
         cname = item["create_name"]
-        dtype = item.get("data_type", "TEXT")
+        # Default LARGE_TEXT (PRD Gap G11): live Convert and Flow provisions every
+        # anthology free-text field as LARGE_TEXT, and the multi-line law requires it.
+        # Every inventory row carries an explicit data_type; this default only bites a
+        # malformed row, and it must match reality (LARGE_TEXT), never the old TEXT.
+        dtype = item.get("data_type", "LARGE_TEXT")
         # Contract sanity: the create_name must derive back to the intended key.
         if derive_field_key(cname) != intended:
             mismatches.append((intended, "create_name %r does not derive to the intended key" % cname))
@@ -758,7 +763,7 @@ def plan(field_map_path: Path, *, out=None) -> int:
     for i in inv:
         mark = "RESOLVED" if (i.get("field_key") and i.get("field_id")) else "pending"
         out.write("    [%-8s] %s  (create name %s, %s)\n"
-                  % (mark, i["intended_key"], i["create_name"], i.get("data_type", "TEXT")))
+                  % (mark, i["intended_key"], i["create_name"], i.get("data_type", "LARGE_TEXT")))
     out.write("  PIT labels checked (in order): %s\n" % ", ".join(PIT_LABELS))
     out.write("  Location labels checked (in order): %s\n" % ", ".join(LOCATION_LABELS))
     return EX_OK
@@ -865,15 +870,24 @@ def self_test() -> int:
     assert create_name_of("contact.anthology_avatar_doc_url") == "anthology_avatar_doc_url"
     assert derive_field_key("anthology_avatar_doc_url") == "contact.anthology_avatar_doc_url"
 
-    # -- inventory integrity: 19 keys, each derives cleanly -----------------
+    # -- inventory integrity: 23 keys, each derives cleanly, all LARGE_TEXT -----
     fm0 = load_field_map(FIELD_MAP_PATH)
     inv = fm0["provisioning"]["fields"]
-    assert len(inv) == 19, "expected 19 fields, got %d" % len(inv)
+    assert len(inv) == 23, "expected 23 fields (19 base + 4 G10 rewrite), got %d" % len(inv)
     keys = {i["intended_key"] for i in inv}
-    assert len(keys) == 19, "duplicate intended_key in inventory"
+    assert len(keys) == 23, "duplicate intended_key in inventory"
     for i in inv:
         assert derive_field_key(i["create_name"]) == i["intended_key"], i["intended_key"]
         assert i["field_key"] is None and i["field_id"] is None, "template must ship resolved=null"
+        # Gap G11: every free-text key is declared LARGE_TEXT (matches live), not TEXT.
+        assert i["data_type"] == "LARGE_TEXT", \
+            "%s must declare LARGE_TEXT (G11), got %s" % (i["intended_key"], i.get("data_type"))
+    # Gap G10: the four rewrite-preservation keys are present and distinct from the base
+    # chapter pair, so a rewrite can never overwrite the original.
+    for slot in ("rewrite1_doc_url", "rewrite1_pdf_url", "rewrite2_doc_url", "rewrite2_pdf_url"):
+        assert ("contact.anthology_chapter_%s" % slot) in keys, "G10 missing %s" % slot
+    assert "contact.anthology_chapter_doc_url" in keys and \
+           "contact.anthology_chapter_rewrite1_doc_url" in keys, "G10 base + rewrite1 both present"
     # every PRD Section 6 deliverable + control key is represented
     contract_keys = set()
     for pair in fm0["deliverable_fields"].values():
@@ -889,6 +903,14 @@ def self_test() -> int:
     fm1 = load_field_map(p1)
     assert all(i["field_key"] == i["intended_key"] and i["field_id"] for i in fm1["provisioning"]["fields"])
     assert verify_fields_resolved(p1, out=dev) == EX_OK
+    # Gap G11: create-or-verify on a FRESH location yields LARGE_TEXT for every field,
+    # matching live (no TEXT ever created). All 23 keys are created on the empty box.
+    assert len(caf.fields) == 23, "fresh location should hold all 23 created fields, got %d" % len(caf.fields)
+    created_types = {f["dataType"] for f in caf.fields.values()}
+    assert created_types == {"LARGE_TEXT"}, \
+        "fresh-location create must be LARGE_TEXT (G11), got %s" % created_types
+    # and the persisted map records the same LARGE_TEXT on every stamped row
+    assert all(i["data_type"] == "LARGE_TEXT" for i in fm1["provisioning"]["fields"])
     # idempotent re-run: fields now exist -> verified-by-key, still OK
     rc = provision_fields(caf, p1, "loc_test_QcDX", out=dev)
     assert rc == EX_OK, "idempotent provision_fields rc=%s" % rc
@@ -1046,7 +1068,7 @@ def self_test() -> int:
     assert bind_anthology(regp, p6, anthology_id="", location_id="", out=dev) == EX_MISMATCH
 
     print("anthology_registry self-test: OK "
-          "(derivation, 19-field inventory, create/verify/persist, exact-match STOP, "
+          "(derivation, 23-field inventory, create/verify/persist, exact-match STOP, "
           "scope STOP, dry-run, pipeline find-and-bind + UI-create STOP + idempotent, "
           "probe-scope read feasibility, browser-UA + scope-vs-Cloudflare discrimination, "
           "binding round-trip)")
@@ -1070,7 +1092,7 @@ def main(argv=None):
     for name, help_ in [
         ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no create)"),
         ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it (UI-only; no auto-create)"),
-        ("provision-fields", "create-or-verify the 19 PRD Section 6 fields; persist server fieldKey + id"),
+        ("provision-fields", "create-or-verify the 23 PRD Section 6 fields (LARGE_TEXT); persist server fieldKey + id"),
         ("provision-all", "provision-pipeline then provision-fields (stops on first STOP)"),
         ("verify-fields", "READ-ONLY: assert field-map.json is fully resolved and exact-match"),
         ("bind", "bind an anthology_id to a pipeline, stage map, forms, and Drive folder"),
