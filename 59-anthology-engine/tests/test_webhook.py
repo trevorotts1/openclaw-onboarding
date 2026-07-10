@@ -376,5 +376,153 @@ def test_intake_router_self_test_proves_ledger_effect():
     assert r.returncode == 0, "intake_router.py --self-test failed:\n%s\n%s" % (r.stdout, r.stderr)
 
 
+# --------------------------------------------------------------------------
+# Gateway-schema validation of the MERGED intake hook config (W5.3 canary fix).
+#
+# The route-template is a PROVISIONING template, NOT a gateway-valid config: it
+# carries top-level provisioning metadata and *_note documentation keys. What the
+# gateway actually receives is what provision-anthology-client.sh MERGES and writes:
+# the `hooks` object with all *_note keys STRIPPED (strip_notes) and the anthology
+# mapping overlaid. The gateway hooks/mapping/transform schemas are zod .strict()
+# (JSON-Schema additionalProperties:false), and hooks.token is a plain string(): an
+# object SecretRef and any unknown key are REJECTED. These tests prove the merged
+# output satisfies that contract, and that the UNSTRIPPED template would NOT.
+#
+# Authoritative allowed-key sets vendored from the installed gateway's own schema
+# (`openclaw config schema`, OpenClaw 2026.6.11 — the W0.4-pinned target). The live
+# `openclaw config validate` belt-and-suspenders check runs when the CLI is present.
+# --------------------------------------------------------------------------
+HOOKS_ALLOWED_KEYS = {
+    "enabled", "path", "token", "defaultSessionKey", "allowRequestSessionKey",
+    "allowedSessionKeyPrefixes", "allowedAgentIds", "maxBodyBytes", "presets",
+    "transformsDir", "mappings", "gmail", "internal",
+}
+MAPPING_ALLOWED_KEYS = {
+    "id", "match", "action", "wakeMode", "name", "agentId", "sessionKey",
+    "messageTemplate", "textTemplate", "deliver", "allowUnsafeExternalContent",
+    "channel", "to", "model", "thinking", "timeoutSeconds", "transform",
+}
+TRANSFORM_ALLOWED_KEYS = {"module", "export"}
+ACTION_ENUM = {"wake", "agent"}
+WAKEMODE_ENUM = {"now", "next-heartbeat"}
+
+
+def _strip_notes(obj):
+    """Recursively drop every *_note documentation key -- the exact transform
+    provision-anthology-client.sh applies before writing to the live gateway."""
+    if isinstance(obj, dict):
+        return {k: _strip_notes(v) for k, v in obj.items()
+                if not (isinstance(k, str) and k.endswith("_note"))}
+    if isinstance(obj, list):
+        return [_strip_notes(v) for v in obj]
+    return obj
+
+
+def _merged_hooks_from_template():
+    """Reproduce the provisioner's merge: start from a representative live hooks
+    object (a coexisting sibling route + a different token), overlay the resolved
+    anthology-intake mapping, set the token + allowedAgentIds, and strip *_note keys."""
+    route = load(ROUTE_TPL)
+    rh = _strip_notes(route["hooks"])
+    intake = next(m for m in rh["mappings"] if m["id"] == "anthology-intake")
+    # Per-box slot resolution (the provisioner resolves <CLIENT_*> placeholders).
+    if intake.get("agentId") == "<CLIENT_ANTHOLOGY_AGENT_ID>":
+        intake["agentId"] = "main"
+    if intake.get("sessionKey") == "<CLIENT_ANTHOLOGY_SESSION_KEY>":
+        intake["sessionKey"] = "anthology:intake"
+    cur = {
+        "enabled": True, "path": "/hooks", "token": "${SOME_OTHER_HOOK_SECRET}",
+        "allowedAgentIds": ["ghl-agent"],
+        "mappings": [{"id": "ghl-inbound", "match": {"path": "ghl-inbound"},
+                      "action": "agent"}],
+    }
+    merged = dict(cur)
+    merged["enabled"] = True
+    merged["token"] = rh["token"]
+    merged["allowedAgentIds"] = ["ghl-agent", "main"]
+    kept = [m for m in cur["mappings"] if m["id"] != "anthology-intake"]
+    kept.append(intake)
+    merged["mappings"] = kept
+    return merged
+
+
+def _assert_conforms(hooks):
+    """Faithful additionalProperties:false + type/enum check against the vendored
+    2026.6.11 hooks schema. Returns None on success; raises AssertionError otherwise."""
+    assert set(hooks) <= HOOKS_ALLOWED_KEYS, \
+        "unrecognized hooks-level key(s): %s" % (set(hooks) - HOOKS_ALLOWED_KEYS)
+    tok = hooks.get("token")
+    assert isinstance(tok, str), "hooks.token must be a plain string, not %r" % type(tok)
+    for m in hooks.get("mappings", []):
+        assert set(m) <= MAPPING_ALLOWED_KEYS, \
+            "unrecognized mapping key(s) in %s: %s" % (
+                m.get("id"), set(m) - MAPPING_ALLOWED_KEYS)
+        if "action" in m:
+            assert m["action"] in ACTION_ENUM, "bad action %r" % m["action"]
+        if "wakeMode" in m:
+            assert m["wakeMode"] in WAKEMODE_ENUM, "bad wakeMode %r" % m["wakeMode"]
+        tr = m.get("transform")
+        if tr is not None:
+            assert set(tr) <= TRANSFORM_ALLOWED_KEYS, \
+                "unrecognized transform key(s): %s" % (set(tr) - TRANSFORM_ALLOWED_KEYS)
+            assert "module" in tr, "transform.module is required"
+            assert str(tr["module"]).endswith((".mjs", ".js", ".cjs")), \
+                "transform.module must be Node-loadable, not %r" % tr["module"]
+
+
+def test_merged_intake_config_conforms_to_gateway_schema():
+    """The MERGED hooks config (notes stripped, mapping overlaid) satisfies the real
+    2026.6.11 hooks schema: token is a plain env-template string, and every hooks /
+    mapping / transform key is in the .strict() allowlist (zero unrecognized keys)."""
+    merged = _merged_hooks_from_template()
+    _assert_conforms(merged)
+    intake = next(m for m in merged["mappings"] if m["id"] == "anthology-intake")
+    assert re.fullmatch(r"\$\{[A-Z][A-Z0-9_]*\}", merged["token"])
+    assert merged["token"] == "${%s}" % LABEL
+    # The coexisting sibling route is preserved (idempotent overlay, not a clobber).
+    assert any(m["id"] == "ghl-inbound" for m in merged["mappings"])
+    assert intake["match"]["path"] == "anthology-intake"
+
+
+def test_unstripped_template_would_be_rejected_proving_strip_is_load_bearing():
+    """Negative control: the RAW template hooks (with *_note keys) violate the strict
+    schema -- so strip_notes is genuinely load-bearing, not cosmetic."""
+    raw = load(ROUTE_TPL)["hooks"]
+    with pytest.raises(AssertionError):
+        _assert_conforms(raw)
+
+
+def test_object_secretref_token_would_be_rejected():
+    """Negative control: a SecretRef OBJECT token (the original W5.3 defect) violates
+    the schema (hooks.token must be a plain string)."""
+    merged = _merged_hooks_from_template()
+    merged["token"] = {"source": "env", "provider": "default", "id": LABEL}
+    with pytest.raises(AssertionError):
+        _assert_conforms(merged)
+
+
+def test_merged_config_validates_against_live_gateway_cli_when_present(tmp_path):
+    """Authoritative belt-and-suspenders: validate the merged config with the gateway's
+    OWN `openclaw config validate`, ISOLATED to a throwaway config dir (never the live
+    gateway config). Skips when the CLI is absent (as the node tests skip without node)."""
+    if not _have("openclaw"):
+        pytest.skip("openclaw CLI not on PATH")
+    merged = _merged_hooks_from_template()
+    cfg = tmp_path / "openclaw.json"
+    cfg.write_text(json.dumps({"hooks": merged}), encoding="utf-8")
+    env = dict(os.environ, OPENCLAW_HOME=str(tmp_path), OPENCLAW_STATE_DIR=str(tmp_path),
+               OPENCLAW_CONFIG_PATH=str(cfg), OPENCLAW_SKIP_UPDATE_CHECK="1")
+    r = subprocess.run(["openclaw", "config", "validate"],
+                       capture_output=True, text=True, timeout=120, env=env)
+    assert r.returncode == 0, \
+        "gateway rejected the merged intake config:\n%s\n%s" % (r.stdout, r.stderr)
+    # A SecretRef-OBJECT token must be rejected by the same validator (defect A proof).
+    bad = dict(merged, token={"source": "env", "provider": "default", "id": LABEL})
+    cfg.write_text(json.dumps({"hooks": bad}), encoding="utf-8")
+    r2 = subprocess.run(["openclaw", "config", "validate"],
+                        capture_output=True, text=True, timeout=120, env=env)
+    assert r2.returncode != 0, "gateway wrongly accepted a SecretRef-object token"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

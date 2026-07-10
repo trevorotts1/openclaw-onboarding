@@ -854,6 +854,26 @@ step9_verify_webhook() {
     note "STEP 9/10 — verify-webhook-t1-t9.sh (structure now; the live T1..T9 battery runs on the W5.3 canary)"
     local script="$SCRIPTS/verify-webhook-t1-t9.sh"
     if [ ! -f "$script" ]; then note "  verify-webhook-t1-t9.sh not present — HELD"; echo "$EX_HELD"; return; fi
+    # CANARY confirm-SET (W5.3): before the LIVE battery can fire, the gateway must be
+    # able to resolve hooks.token=${ANTHOLOGY_INTAKE_HOOK_SECRET} from its env, or every
+    # authenticated intake POST 401s (the gateway's own config-validate flags an unset
+    # label as "feature unavailable"). Under --require-live, gate on the secret via
+    # caf_credential_gate.py --require-anthology-hook-secret so a route that cannot
+    # authenticate is HELD (export the step-7 0600 secret into the client env store),
+    # never falsely reported green. The value is never printed (SET / NOT SET only).
+    if [ "$REQUIRE_LIVE" = "1" ]; then
+        local gate="$SCRIPTS/caf_credential_gate.py"
+        if [ -f "$gate" ]; then
+            local gout grc
+            gout="$(python3 "$gate" --require-anthology-hook-secret --no-scan 2>&1)"; grc=$?
+            printf '%s\n' "$gout" >&2
+            if [ "$grc" != "0" ]; then
+                note "  confirm-SET FAILED — ANTHOLOGY_INTAKE_HOOK_SECRET not resolvable in any env store; export the step-7 0600 secret into the client env store before firing the route"
+                set_crc "$grc"; echo "$EX_HELD"; return
+            fi
+            note "  confirm-SET — ANTHOLOGY_INTAKE_HOOK_SECRET resolvable; the intake route can authenticate"
+        fi
+    fi
     local args=(--dry-run)
     [ "$REQUIRE_LIVE" = "1" ] && args=(--require-live)
     bash "$script" "${args[@]}" >&2; local rc=$?
@@ -1659,6 +1679,33 @@ PY
     n="$(ANTHOLOGY_OC_ROOT="$wtmp2/.openclaw" wire_department_runtime 2>/dev/null)"
     [ "$n" = "$EX_HELD" ] || { echo "  FAIL wire CC-absent: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
 
+    # ---- unit 15: step9 CANARY confirm-SET gates the intake hook secret ----
+    # Under --require-live, step9 must CONFIRM ANTHOLOGY_INTAKE_HOOK_SECRET is resolvable
+    # before the live T1..T9 battery — else the gateway cannot authenticate the intake
+    # route (hooks.token=${ANTHOLOGY_INTAKE_HOOK_SECRET}) and every POST 401s. Prove:
+    # unset -> HELD (never falsely green); set -> proceeds to the battery -> OK. Hermetic
+    # stubs stand in for the gate + verifier (no live gateway, no operator config).
+    local s15="$tmp/s15"; mkdir -p "$s15"
+    # A gate stub honoring the real contract: --require-anthology-hook-secret makes the
+    # intake secret REQUIRED -> exit 2 when the env label is unset, exit 0 when set.
+    cat > "$s15/caf_credential_gate.py" <<'PY'
+import os, sys
+if "--require-anthology-hook-secret" in sys.argv and not os.environ.get("ANTHOLOGY_INTAKE_HOOK_SECRET"):
+    sys.stderr.write("verdict=MISSING_LABEL exit=2  anthology_intake_hook_secret [REQUIRED] NOT SET\n")
+    sys.exit(2)
+sys.stderr.write("verdict=PASS exit=0\n"); sys.exit(0)
+PY
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$s15/verify-webhook-t1-t9.sh"; chmod +x "$s15/verify-webhook-t1-t9.sh"
+    SCRIPTS="$s15"; MODE="live"; REQUIRE_LIVE=1
+    local _s15_saved="${ANTHOLOGY_INTAKE_HOOK_SECRET:-}"
+    unset ANTHOLOGY_INTAKE_HOOK_SECRET
+    n="$(step9_verify_webhook 2>/dev/null)"
+    [ "$n" = "$EX_HELD" ] || { echo "  FAIL unit15 confirm-SET unset: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
+    n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="synthINTAKEsecretUNIT15" step9_verify_webhook 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL unit15 confirm-SET set: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    [ -n "$_s15_saved" ] && export ANTHOLOGY_INTAKE_HOOK_SECRET="$_s15_saved"
+    REQUIRE_LIVE=0; SCRIPTS="$save_scripts"
+
     # ---- unit 11: no Anthropic identifier / no client PII in this file -----
     # Deny-pattern shapes assembled from fragments so no banned literal lives here.
     local _a="anthro""pic" _c="clau""de-"
@@ -1667,7 +1714,7 @@ PY
     fi
 
     if [ "$fails" -eq 0 ]; then
-        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure)" >&2
+        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure, step9 canary confirm-SET of ANTHOLOGY_INTAKE_HOOK_SECRET: unset->HELD / set->OK)" >&2
         return "$EX_OK"
     fi
     echo "[$PROG] SELF-TEST FAIL — $fails check(s) failed" >&2

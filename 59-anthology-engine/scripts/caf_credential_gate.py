@@ -672,17 +672,32 @@ def scan_inline_credentials(paths, skip_dirs=None):
 # ---------------------------------------------------------------------------
 def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
          do_scan=True, include_informational=False, expected=None, deny_fps=None,
-         require_delivery=False):
+         require_delivery=False, require_families=None):
     environ = os.environ if environ is None else environ
     if store_paths is None:
         store_paths = resolve_stores(extended=extended_stores)
 
     sources, checked = build_env_view(environ, store_paths)
 
-    # Resolve required + (optionally) informational families.
+    # The base required set is the Convert and Flow PIT+Location pair. The canary /
+    # verify path may PROMOTE a box-generated Anthology secret (created at provision
+    # step 7, e.g. anthology_intake_hook_secret) into the required set via
+    # require_families -- those secrets are NOT required for the INITIAL credential
+    # gate (they do not exist until step 7 generates them), only for the confirm-SET
+    # before the intake route can fire: the gateway resolves hooks.token =
+    # ${ANTHOLOGY_INTAKE_HOOK_SECRET} from the env at load, so an unset secret leaves
+    # the hook "unavailable" (the gateway's own config-validate warning). Promotion is
+    # opt-in so the default gate stays non-regressive on a fresh box.
+    require_families = set(require_families or ())
+    promoted = [(fam, aliases) for fam, aliases in INFORMATIONAL_FAMILIES
+                if fam in require_families]
+    promoted_keys = {fam for fam, _a in promoted}
+    active_required = list(REQUIRED_FAMILIES) + promoted
+
+    # Resolve the required set (base + promoted) then the remaining informational.
     resolutions_by_family = {}
     resolution_report = {}
-    for fam, aliases in REQUIRED_FAMILIES:
+    for fam, aliases in active_required:
         res = resolve_label(fam, aliases, sources)
         resolutions_by_family[fam] = res
         resolution_report[fam] = {
@@ -690,14 +705,16 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
             "source": res.source, "presence": _mask(res.value)}
     if include_informational:
         for fam, aliases in INFORMATIONAL_FAMILIES:
+            if fam in promoted_keys:
+                continue                        # already resolved as required above
             res = resolve_label(fam, aliases, sources)
             resolutions_by_family[fam] = res
             resolution_report[fam] = {
                 "required": False, "present": res.present, "label": res.label,
                 "source": res.source, "presence": _mask(res.value)}
 
-    # Required-label check (exit 2 candidate).
-    missing = [fam for fam, _a in REQUIRED_FAMILIES
+    # Required-label check (exit 2 candidate) -- the base pair AND any promoted secret.
+    missing = [fam for fam, _a in active_required
                if not resolutions_by_family[fam].present]
 
     # PER-CLIENT Google delivery presence (opt-in; provisioning turns it ON). PRESENCE
@@ -749,7 +766,7 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         "generated_at": now_utc(),
         "stores_checked": checked,
         "resolutions": resolution_report,
-        "required": [fam for fam, _a in REQUIRED_FAMILIES],
+        "required": [fam for fam, _a in active_required],
         "missing": missing,
         "pairing": pairing,
         "fingerprint": fp_verdict,
@@ -1096,6 +1113,28 @@ def self_test():
         assert rep["fingerprint"]["clean"], "delivery creds must never enter the commingle fingerprint"
         print("  [17] delivery trio excluded from commingle (shared-by-design) -> PASS: OK")
 
+    # 18. Opt-in require: --require-anthology-hook-secret promotes the box-generated
+    #     intake secret into the required set. The base CnF pair stays present so ONLY
+    #     the promoted secret drives the verdict: UNSET -> exit 2 MISSING; SET -> exit 0.
+    #     WITHOUT the flag the same unset secret must NOT gate (informational only), so a
+    #     fresh box (secret generated later at provision step 7) is never falsely blocked.
+    base_env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
+    code, rep = gate(environ=base_env, store_paths=[], do_scan=False,
+                     require_families={"anthology_intake_hook_secret"})
+    assert code == EX_MISSING and "anthology_intake_hook_secret" in rep["missing"], rep
+    assert rep["resolutions"]["anthology_intake_hook_secret"]["required"] is True, rep
+    gen_secret = "synthGENERATEDintakeSecretUNIT14"
+    code2, rep2 = gate(
+        environ=dict(base_env, ANTHOLOGY_INTAKE_HOOK_SECRET=gen_secret),
+        store_paths=[], do_scan=False,
+        require_families={"anthology_intake_hook_secret"})
+    assert code2 == EX_OK and rep2["verdict"] == "PASS", rep2
+    assert gen_secret not in json.dumps(rep2), "the confirmed secret value leaked into the report"
+    code3, _ = gate(environ=base_env, store_paths=[], do_scan=False)
+    assert code3 == EX_OK, "an unset box-generated secret must NOT gate the DEFAULT credential gate"
+    print("  [18] --require-anthology-hook-secret: unset->exit2, set->exit0, "
+          "default-ungated (no value leak): OK")
+
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
 
@@ -1152,6 +1191,12 @@ def main(argv=None):
                     help="operator/other-client fingerprint to refuse (repeatable)")
     ap.add_argument("--show-fingerprints", action="store_true",
                     help="operator-debug note (fingerprints stay out of the payload)")
+    ap.add_argument("--require-anthology-hook-secret", action="store_true",
+                    help="promote the box-generated ANTHOLOGY_INTAKE_HOOK_SECRET into the "
+                         "REQUIRED set so the gate FAILS (exit 2) when it is not SET -- the "
+                         "canary confirm-SET before the intake webhook route fires (the "
+                         "gateway resolves hooks.token=${ANTHOLOGY_INTAKE_HOOK_SECRET} from "
+                         "this label at load). Reports SET / NOT SET only; never the value.")
     ap.add_argument("--self-test", action="store_true",
                     help="force every failure mode and exit")
     args = ap.parse_args(argv)
@@ -1169,6 +1214,8 @@ def main(argv=None):
             expected=_parse_expected(args),
             deny_fps=args.deny_fp,
             require_delivery=args.require_delivery,
+            require_families=({"anthology_intake_hook_secret"}
+                              if args.require_anthology_hook_secret else None),
         )
 
         if args.json:
