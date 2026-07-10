@@ -163,6 +163,67 @@ def fires_per_day_bound(schedule):
 
 
 # --------------------------------------------------------------------------- #
+# compaction arithmetic (S3) - softThresholdTokens is SUBTRACTIVE
+# --------------------------------------------------------------------------- #
+_SOFT_THRESHOLD_PATH = "agents.defaults.compaction.memoryFlush.softThresholdTokens"
+
+
+def soft_threshold(config):
+    v = dotpath_get(config, _SOFT_THRESHOLD_PATH)
+    if v is MISSING:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return v  # non-numeric -> caller flags it broken
+
+
+def context_window_hint(config):
+    """The context window for the effective-ceiling arithmetic. A fixture/box may
+    carry a top-level `_contextWindow` hint; otherwise None (unknown, per the
+    verification ledger the per-model window source is a canary item)."""
+    for key in ("_contextWindow", "contextWindow"):
+        v = config.get(key) if isinstance(config, dict) else None
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    return None
+
+
+def subtractive_broken(config, context_window=None):
+    """S3 broken-config check: effective ceiling = contextWindow - softThresholdTokens
+    (SUBTRACTIVE). Returns (broken: bool, effective_ceiling or None, reason). A box in
+    this state WILL die with 'Context too large' no matter what - the only S3 case that
+    alerts the OPERATOR (D5). A non-numeric or negative threshold is broken regardless
+    of whether the window is known."""
+    st = soft_threshold(config)
+    if st is None:
+        return (False, None, "no softThresholdTokens configured")
+    if not isinstance(st, int):
+        return (True, None, "softThresholdTokens is non-numeric")
+    if st < 0:
+        return (True, None, "softThresholdTokens is negative")
+    cw = context_window if context_window is not None else context_window_hint(config)
+    if cw is None:
+        # window unknown: cannot compute the ceiling, so cannot prove broken here.
+        return (False, None, "context window unknown (cannot compute ceiling)")
+    ceiling = cw - st
+    if ceiling <= 0 or st >= cw:
+        return (True, ceiling, "effective ceiling <= 0 (softThresholdTokens >= contextWindow)")
+    return (False, ceiling, "ok")
+
+
+def validate_config_sanity(config):
+    """Pre-write validation used by revert: the JSON is already a dict here; assert
+    the monitored arithmetic is sane before a restored file is written. Returns
+    (ok: bool, reasons: list)."""
+    reasons = []
+    broken, _, why = subtractive_broken(config)
+    if broken:
+        reasons.append("compaction subtractive misconfig: %s" % why)
+    return (not reasons, reasons)
+
+
+# --------------------------------------------------------------------------- #
 # model-id extraction (S1/S2 allowlist)
 # --------------------------------------------------------------------------- #
 def extract_model_ids(config) -> list:
@@ -312,6 +373,22 @@ def self_test():
     rc = revert_command_for("20260101T000000")
     assert "revert --to 20260101T000000" in rc
     print("  revert-command case: PASS")
+
+    # S3 subtractive arithmetic
+    ok_cfg = dict(cfg); ok_cfg["_contextWindow"] = 128000
+    broken, ceil, _ = subtractive_broken(ok_cfg)
+    assert not broken and ceil == 108000
+    bad_cfg = json.loads(json.dumps(ok_cfg))
+    bad_cfg["agents"]["defaults"]["compaction"] = {"memoryFlush": {"softThresholdTokens": 900000}}
+    b2, c2, _ = subtractive_broken(bad_cfg)
+    assert b2 and c2 is not None and c2 <= 0
+    okv, reasons = validate_config_sanity(bad_cfg)
+    assert not okv and reasons
+    # window unknown -> cannot prove broken (returns not-broken with a reason)
+    unk = json.loads(json.dumps(bad_cfg)); unk.pop("_contextWindow", None)
+    b3, _, _ = subtractive_broken(unk)
+    assert not b3
+    print("  subtractive case: PASS (ceiling arithmetic; broken when threshold>=window)")
 
     print("[ews_common] self-test: PASS")
     return 0
