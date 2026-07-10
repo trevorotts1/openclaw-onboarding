@@ -38,8 +38,8 @@
     }
   },
   "registry_defaults": {
-    "auto_provision_pipeline": true,
-    "pipeline_binding_note": "Onboarding AUTO-PROVISIONS the standard Anthology pipeline in the CLIENT's own Convert and Flow account through the CLIENT's OWN private integration token; binding to a pre-existing pipeline is an explicit override, never the default.",
+    "pipeline_find_and_bind": true,
+    "pipeline_binding_note": "GoHighLevel exposes no API to create a pipeline -- pipelines are UI-only. The standard Anthology pipeline must pre-exist in the CLIENT's own Convert and Flow account (shipped in the snapshot, or hand-built once in the UI); onboarding FINDS it BY EXACT NAME and BINDS to it through the CLIENT's OWN private integration token, STOPPING setup with AF-AE-PIPELINE-UI-CREATE if it is absent. Binding to a different pre-existing pipeline via an explicit override is never the default.",
     "caf_pit_label": "CONVERT_AND_FLOW_PIT",
     "caf_location_label": "CONVERT_AND_FLOW_LOCATION_ID",
     "caf_stage_map": "per-anthology; drives the per-gate Convert and Flow pipeline-stage update; NEVER hardcoded",

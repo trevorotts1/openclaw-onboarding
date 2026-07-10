@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 59 — ANTHOLOGY ENGINE :: anthology_registry.py
-# PER-ANTHOLOGY BINDINGS + CONVERT AND FLOW AUTO-PROVISIONING (SPEC 3.4 row 3;
+# PER-ANTHOLOGY BINDINGS + CONVERT AND FLOW PIPELINE FIND-AND-BIND (SPEC 3.4 row 3;
 # PRD Gap 9; W0.5.json surface 5). Manifest exit-code line: "0; 2 unknown
 # anthology or binding; 5 validation" — refined below with the house 1/3 codes.
 # -----------------------------------------------------------------------------
@@ -298,6 +298,29 @@ class CafClient:
         out = self._request("POST", "/locations/%s/customFields" % urllib.parse.quote(location_id, safe=""),
                             body=body)
         return out.get("customField") or out
+
+    # ---- location custom VALUES ------------------------------------------
+    # The snapshot's OWN plumbing (NOT read by the engine python): the tag ->
+    # notification GHL workflow consumes these (webhook URL + Authorization
+    # header + producer name/email). GET-check then create-only-missing / update
+    # is the idempotent fill path used by anthology_snapshot.py. A custom VALUE
+    # value CAN legitimately be a real token (the client owns the location and
+    # GHL sends it as the Authorization header) -- but it is written into the
+    # request BODY only, never echoed to any surface.
+    def list_custom_values(self, location_id: str):
+        out = self._request("GET", "/locations/%s/customValues" % urllib.parse.quote(location_id, safe=""))
+        return out.get("customValues") or []
+
+    def create_custom_value(self, location_id: str, name: str, value: str):
+        out = self._request("POST", "/locations/%s/customValues" % urllib.parse.quote(location_id, safe=""),
+                            body={"name": name, "value": value})
+        return out.get("customValue") or out
+
+    def update_custom_value(self, location_id: str, cv_id: str, name: str, value: str):
+        out = self._request("PUT", "/locations/%s/customValues/%s"
+                            % (urllib.parse.quote(location_id, safe=""), urllib.parse.quote(cv_id, safe="")),
+                            body={"name": name, "value": value})
+        return out.get("customValue") or out
 
 
 # ---------------------------------------------------------------------------
@@ -1107,7 +1130,7 @@ def self_test() -> int:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="anthology_registry.py",
-        description="Convert and Flow auto-provisioning + per-anthology bindings (Skill 59).")
+        description="Convert and Flow pipeline find-and-bind + per-anthology bindings (Skill 59).")
     ap.add_argument("--field-map", default=str(FIELD_MAP_PATH),
                     help="path to field-map.json (default: the skill's config copy)")
     ap.add_argument("--registry", default="", help="path to the per-box registry.json (default: state dir)")

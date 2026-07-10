@@ -76,11 +76,13 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
     stubbed not faked: until they are brokered, those ops still require the operator's OWN
     box (local SA), and a client box in broker mode flags them loudly (exit 3). The n8n
     workflow asset ships at `config/n8n/anthology-drive-broker.workflow.json`.
-11. AUTO-PROVISIONED PIPELINE: onboarding auto-provisions the standard Anthology
-    pipeline in the CLIENT's OWN Convert and Flow account through the CLIENT's OWN
-    private integration token; binding a pre-existing pipeline is an explicit
-    override, never the default. The per-gate pipeline-stage update fires at EVERY
-    gate from the registry stage map, never hardcoded.
+11. PIPELINE FIND-AND-BIND: GoHighLevel exposes no API to create a pipeline --
+    pipelines are UI-only. The standard Anthology pipeline must pre-exist in the
+    CLIENT's OWN Convert and Flow account (shipped in the snapshot, or hand-built
+    once in the UI); onboarding FINDS it BY EXACT NAME through the CLIENT's OWN
+    private integration token and BINDS to it, STOPPING setup with
+    AF-AE-PIPELINE-UI-CREATE if it is absent. The per-gate pipeline-stage update
+    fires at EVERY gate from the registry stage map, never hardcoded.
 12. THE PRODUCER TRIGGER: S9 assembly fires ONLY on the producer's explicit
     ready-to-assemble trigger, from the Assembly card or the readiness nudge (both
     doors, one endpoint). Guards, enforced by the writer's legal-transition matrix

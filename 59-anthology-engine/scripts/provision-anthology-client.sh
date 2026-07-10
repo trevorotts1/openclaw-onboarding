@@ -50,6 +50,22 @@
 #      gateway config (hooks.mappings + hooks.token) via `openclaw config`,
 #      idempotently (dedup by mapping id; sibling /hooks routes preserved) and
 #      VERIFIED by reading it back — a merge that does not take is a real error.
+#   7.5 ANTHOLOGY SNAPSHOT (import verify + custom-value fill + version stamp). The
+#      Convert and Flow snapshot is CUT ONCE from the operator's OWN template location
+#      and IMPORTED per client (MANUAL, Settings -> Snapshots -> Import/Load) into the
+#      client's OWN location — there is NO agency->subaccount auto-push (each client
+#      owns their own GHL; that push is REJECTED, see the snapshot contract). After the
+#      operator's manual import, this step (anthology_snapshot.py) VERIFIES the import
+#      landed (the standard pipeline exists BY NAME with all 9 stages + all 28 custom
+#      fields exist BY KEY; a missing pipeline STOPs AF-AE-SNAPSHOT-PIPELINE-MISSING),
+#      FILLS the four per-client location custom VALUES the snapshot ships as REPLACE-ME
+#      placeholders (anthology_webhook_url from --public-hostname + the intake route,
+#      anthology_hook_secret resolved BY LABEL from ANTHOLOGY_INTAKE_HOOK_SECRET and
+#      NEVER printed, producer, producer_email) — IDEMPOTENTLY (GET-check then
+#      create-only-missing / update-in-place) — and STAMPS the snapshot-version marker
+#      $STATE_DIR/snapshot-version.json. Runs AFTER step 7 so the intake route + secret
+#      exist; an unresolved secret leaves that ONE placeholder unfilled with a note
+#      (HELD under --require-live), never a false green. See references/anthology-snapshot-guide.md.
 #   8  register EXACTLY the ONE daily tick in the cron inventory — no heartbeat,
 #      ever (guard-cron-inventory.py proves it).
 #   9  run verify-webhook-t1-t9.sh (structure now; the live T1..T9 battery is
@@ -82,8 +98,14 @@
 #                              route merge) is a hard HOLD (exit 3), not a
 #                              surfaced deferral.
 #   --producer NAME            producer (box-owner) display name for the Drive
-#                              producer folder (step 5) and the department head.
+#                              producer folder (step 5), the department head, and the
+#                              snapshot `producer` custom value (step 7.5).
 #   --producer-id ID           producer id for the ledger (step 6).
+#   --producer-email EMAIL     producer email for the snapshot `producer_email`
+#                              custom value (step 7.5); operator config, not client PII.
+#   --public-hostname HOST     the box's public hostname used to build the snapshot
+#                              `anthology_webhook_url` custom value
+#                              (https://HOST/hooks/anthology-intake); never a secret.
 #   --location-id ID           override the Convert and Flow Location id.
 #   --department-slug SLUG     Command Center department slug (default anthology).
 #   --daily-tick-schedule CRON cron schedule for the one daily tick (default 0 8 * * *).
@@ -123,6 +145,8 @@ REQUIRE_LIVE=0
 JSONOUT=0
 PRODUCER_NAME=""
 PRODUCER_ID=""
+PRODUCER_EMAIL=""
+PUBLIC_HOSTNAME=""
 LOCATION_ID_OVERRIDE=""
 DEPT_SLUG="anthology"
 DEPT_NAME="Anthology"
@@ -147,6 +171,8 @@ while [ $# -gt 0 ]; do
         --require-live)         REQUIRE_LIVE=1; shift ;;
         --producer)             PRODUCER_NAME="${2:-}"; shift 2 ;;
         --producer-id)          PRODUCER_ID="${2:-}"; shift 2 ;;
+        --producer-email)       PRODUCER_EMAIL="${2:-}"; shift 2 ;;
+        --public-hostname)      PUBLIC_HOSTNAME="${2:-}"; shift 2 ;;
         --location-id)          LOCATION_ID_OVERRIDE="${2:-}"; shift 2 ;;
         --department-slug)      DEPT_SLUG="${2:-}"; shift 2 ;;
         --department-name)      DEPT_NAME="${2:-}"; shift 2 ;;
@@ -391,7 +417,7 @@ step1_credentials() {
 }
 
 step2_fields() {
-    note "STEP 2/10 — create-or-verify the 19 Section 6 custom fields (8 Doc/PDF pairs + 3 control)"
+    note "STEP 2/10 — create-or-verify the 28 Section 6 custom fields (10 Doc/PDF pairs incl. 2 G10 rewrite pairs + 3 control + 5 U8 cover-style; 27 LARGE_TEXT + 1 SINGLE_OPTIONS cover choice)"
     local n; n="$(run_collab py "$SCRIPTS/anthology_registry.py" provision-fields $(dry_flag) \
         ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
     echo "$n"
@@ -809,6 +835,52 @@ report_intake_hook_state() {
     note "  ANTHOLOGY_GATE_TOKEN_SECRET  = $(label_state ANTHOLOGY_GATE_TOKEN_SECRET) (env); value never printed"
 }
 
+# --------------------------------------------------------------------------
+# STEP 7.5 — ANTHOLOGY SNAPSHOT: verify the operator's MANUAL import landed, FILL
+# the four per-client location custom VALUES the snapshot ships as REPLACE-ME
+# placeholders, and STAMP the snapshot-version marker. Runs AFTER step 7 so the
+# intake route + hook secret already exist. The snapshot is imported by the
+# operator (each client owns their own Convert and Flow; there is NO agency ->
+# subaccount auto-push — that mechanism is REJECTED in the snapshot contract). The
+# hook-secret Authorization custom value is resolved BY LABEL and NEVER printed.
+# --------------------------------------------------------------------------
+step_snapshot() {
+    note "STEP 7.5/10 — Anthology snapshot: verify MANUAL import + fill per-client custom values + stamp version"
+    local snap="$SCRIPTS/anthology_snapshot.py"
+    if [ ! -f "$snap" ]; then
+        note "  anthology_snapshot.py not present yet — HELD"
+        set_crc 127; echo "$EX_HELD"; return
+    fi
+    note "  OPERATOR: if not already done, IMPORT the Anthology snapshot into THIS client's OWN Convert and Flow"
+    note "           location (Settings -> Snapshots -> Import/Load). Guide: references/anthology-snapshot-guide.md"
+    note "           (each client owns their own GHL; there is NO cross-agency push — that path is REJECTED)"
+    if [ "$MODE" = "dryrun" ]; then
+        local n; n="$(run_collab py "$snap" plan)"
+        echo "$n"; return
+    fi
+    # 1) VERIFY the import landed: the UI/snapshot-only pipeline exists BY NAME with
+    #    all 9 stages + all 28 contract custom fields exist BY KEY (read-only).
+    local n; n="$(run_collab py "$snap" verify-imported \
+        ${LOCATION_ID_OVERRIDE:+--location-id "$LOCATION_ID_OVERRIDE"})"
+    if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
+    # 2) FILL the four per-client custom VALUES, idempotently (GET-check + create-or-
+    #    update). Never inline a secret; the hook-secret is resolved BY LABEL inside
+    #    anthology_snapshot.py and is NEVER printed. Under --require-live an unresolved
+    #    secret HOLDs (the Authorization-header custom value stays a placeholder).
+    local -a fargs=(provision-custom-values)
+    [ -n "$LOCATION_ID_OVERRIDE" ] && fargs+=(--location-id "$LOCATION_ID_OVERRIDE")
+    [ -n "$PRODUCER_NAME" ]        && fargs+=(--producer "$PRODUCER_NAME")
+    [ -n "$PRODUCER_EMAIL" ]       && fargs+=(--producer-email "$PRODUCER_EMAIL")
+    [ -n "$PUBLIC_HOSTNAME" ]      && fargs+=(--public-hostname "$PUBLIC_HOSTNAME")
+    [ "$REQUIRE_LIVE" = "1" ]      && fargs+=(--require-live)
+    n="$(run_collab py "$snap" "${fargs[@]}")"
+    if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
+    # 3) STAMP the snapshot-version marker so the box records which snapshot it was
+    #    provisioned from.
+    n="$(run_collab py "$snap" stamp-version ${STATE_DIR_OVERRIDE:+--state-dir "$STATE_DIR_OVERRIDE"})"
+    echo "$n"
+}
+
 step8_cron() {
     note "STEP 8/10 — register EXACTLY the ONE daily tick (no heartbeat, ever)"
     local cmd="$DAILY_TICK_CMD"
@@ -1149,6 +1221,7 @@ STEP_LABELS=(
     "5/10 — Drive producer root"
     "6/10 — ledger + mirror bootstrap"
     "7/10 — webhook route + secret"
+    "7.5 — Anthology snapshot (import verify + custom-value fill + version stamp)"
     "8/10 — one daily tick"
     "9/10 — verify-webhook T1..T9"
     "10/10 — smoke test"
@@ -1163,6 +1236,7 @@ STEP_AF=(
     "Drive root unreachable -> exit 2; API unreachable -> HELD 3"
     "ledger bootstrap error"
     "secret gen / route materialization error; gateway deferral (HELD 3 only under --require-live)"
+    "AF-AE-SNAPSHOT-PIPELINE-MISSING (snapshot pipeline absent on the live location -> exit 2; import the snapshot) / AF-AE-SNAPSHOT-FIELD-MISSING (a contract field absent -> exit 2); AF-AE-SNAPSHOT-CV-SCOPE (customValues scope denied -> exit 2); a stage-name gap -> 5; API unreachable -> HELD 3; hook-secret label NOT SET leaves the Authorization custom value unfilled (HELD 3 only under --require-live)"
     "cron inventory write error; no live backend under --require-live -> HELD 3"
     "verify-webhook failing test id -> exit 4; battery held under --require-live -> 3"
     "provider unreachable or unfunded -> exit 4 (alert path)"
@@ -1170,13 +1244,14 @@ STEP_AF=(
 STEP_REMEDIATION=(
     "Set the client's OWN PRD Section 14 labels in the env store, INCLUDING the three per-client delivery levers GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root); if commingling: replace any operator/shared/other-client Convert-and-Flow credential with the named client's own"
     "Grant the client PIT custom-field WRITE scope; a field that must pre-exist but is absent and cannot be created STOPS setup; a fieldKey mismatch STOPS setup"
-    "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; create the standard pipeline once in the Convert and Flow UI (pipelines are UI-only, there is no API create endpoint) or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
+    "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; the standard pipeline is provided by IMPORTING the Anthology snapshot (references/anthology-snapshot-guide.md) into the client's OWN location (Settings -> Snapshots -> Import/Load) — pipelines are UI-only, there is no API create endpoint — or create it once in the Convert and Flow UI, or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
     "Install Skill 32 command-center-setup so the Anthology department can be seeded and read back"
     "Install the OpenClaw gateway + Command Center (Skill 32) so openclaw.json exists; then re-run so the dept-<slug> agent runtime (agents.list[] + ~/.openclaw/agents/dept-<slug>/) is materialized"
     "Free space / permissions for the state dir; re-run"
     "Confirm this client's per-client BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER) is reachable via the BlackCEO service account (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
     "Ensure the state dir secrets subdir is writable (0600); export any generated secret into the client env store"
+    "IMPORT the Anthology snapshot (references/anthology-snapshot-guide.md) into THIS client's OWN Convert and Flow location (Settings -> Snapshots -> Import/Load) so the pipeline + 28 fields + the 4 REPLACE-ME custom values + the tag->notification workflow exist; grant the client PIT the customValues + opportunities scopes; export ANTHOLOGY_INTAKE_HOOK_SECRET into the client env store so the Authorization-header custom value can be filled; re-run"
     "Provide a live cron backend (openclaw cron) or accept the declarative inventory; re-run"
     "Register the gateway route and secret; then re-run verify-webhook-t1-t9.sh (the live battery runs on the canary)"
     "Fund the client's OWN provider accounts (Ollama Cloud / OpenRouter / Gemini / Minimax / Kie.ai); re-run the smoke test"
@@ -1205,7 +1280,7 @@ run_pipeline() {
 
     local -a fns=(step1_credentials step2_fields step3_pipeline seed_department \
                   wire_department_runtime step4_forms \
-                  step5_drive step6_ledger step7_webhook step8_cron step9_verify_webhook step10_smoke)
+                  step5_drive step6_ledger step7_webhook step_snapshot step8_cron step9_verify_webhook step10_smoke)
     local i n
     for i in "${!fns[@]}"; do
         printf '0' > "$RC_FILE"        # reset before each step
@@ -1250,6 +1325,7 @@ print_plan() {
   5/10  Drive producer root        drive-tree-provision.py verify-root (per-client Shared-Drive root from GOOGLE_DRIVE_ROOT_FOLDER) + provision --producer; never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
+  7.5   Anthology snapshot         anthology_snapshot.py: verify the operator's MANUAL snapshot import landed (pipeline BY NAME + 9 stages + 28 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fill the 4 REPLACE-ME location custom values idempotently (webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + stamp snapshot-version.json. NO agency->subaccount push (REJECTED; each client owns their own GHL)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver
   9/10  verify-webhook T1..T9      verify-webhook-t1-t9.sh (structure now; live battery observed on the W5.3 canary)
   10/10 smoke test                 anthology-smoke-test.py run --max-spend-cents 1 (balance endpoints only)

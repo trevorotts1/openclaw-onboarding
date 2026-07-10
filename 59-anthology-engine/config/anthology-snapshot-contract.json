@@ -1,0 +1,143 @@
+{
+  "$schema_note": "MACHINE-CHECKED SNAPSHOT CONTRACT for the Anthology Engine (Skill 59) Convert and Flow (GoHighLevel / LeadConnector v2) snapshot. This is the fixture that pins WHAT the exported GHL snapshot must contain so onboarding is a ONE-IMPORT step (mirrors Skill 38's references/snapshot-inbound-workflow-fixture.json + qc-23-key-bodies.sh). It is cross-checked by scripts/qc-snapshot-contract.sh against the SINGLE SOURCE OF TRUTH config/field-map.json (pipeline + the 28 custom fields) and against config/engine-config.template.json (the intake route path + credential labels): if the engine's expected pipeline name, stage names, or field keys/types drift from this fixture, the CI drift gate FAILS before the stale snapshot can ship. The fixture NEVER carries a real token or a real hook URL -- every per-client value is a clearly-labeled REPLACE-ME placeholder, filled per install by scripts/anthology_snapshot.py provision-custom-values (the same never-a-real-token rule as Skill 38). The client-facing platform name is Convert and Flow everywhere; nothing Anthropic appears in this file.",
+  "contract": "anthology-engine-snapshot-contract",
+  "schema_version": 1,
+  "snapshot_version": "anthology-engine-snapshot-20260710",
+  "snapshot_version_note": "Date-stamped name the operator gives the exported snapshot (Settings -> Snapshots -> Create Snapshot). Bump it whenever the pipeline/fields/tags/forms/workflows below change and the snapshot is re-cut. scripts/anthology_snapshot.py stamp-version writes this string into the per-box marker $STATE_DIR/snapshot-version.json so a box records which snapshot it was provisioned from.",
+
+  "source_template_location": {
+    "$note": "The snapshot is CUT ONCE from the operator's OWN Anthology template Convert and Flow location, NEVER from a client account. This is operator infrastructure config (an operator-owned template location id, not client PII and not a secret -- it carries no provider-key prefix). See references/anthology-snapshot-guide.md for the full cut-and-import runbook.",
+    "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+    "platform": "Convert and Flow (white-label of a LeadConnector v2 instance: services.leadconnectorhq.com, Version 2021-07-28)"
+  },
+
+  "keying_law": {"law": "contact_id", "never": "email"},
+
+  "credential_labels": {
+    "$note": "Mirror of config/engine-config.template.json; the drift gate asserts these equal the engine-config labels so scripts/anthology_snapshot.py (which resolves the client PIT + location + hook secret BY LABEL, never by value) can never drift from the engine's own label contract.",
+    "caf_pit_label": "CONVERT_AND_FLOW_PIT",
+    "caf_location_label": "CONVERT_AND_FLOW_LOCATION_ID",
+    "intake_hook_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET"
+  },
+
+  "pipeline": {
+    "$note": "GoHighLevel / Convert and Flow exposes NO public v2 API to CREATE a pipeline -- pipelines are UI-only. The snapshot MUST pre-create this pipeline with the EXACT name and the EXACT stage names below; onboarding (provision-anthology-client.sh step 3) then FINDS it BY NAME and BINDS it through the client's OWN PIT. Both the name and every stage name are load-bearing; they must byte-equal config/field-map.json pipeline.standard_pipeline_name + standard_stages (drift gate assertion).",
+    "name": "Anthology Engine",
+    "stages": [
+      {"position": 0, "name": "Intake"},
+      {"position": 1, "name": "Avatar"},
+      {"position": 2, "name": "Tone"},
+      {"position": 3, "name": "Title"},
+      {"position": 4, "name": "Outline"},
+      {"position": 5, "name": "Chapter"},
+      {"position": 6, "name": "Cover"},
+      {"position": 7, "name": "Delivered"},
+      {"position": 8, "name": "Assembled"}
+    ]
+  },
+
+  "custom_fields": {
+    "$note": "The 28 CONTACT custom fields the snapshot must carry (model=contact), byte-identical to config/field-map.json provisioning.fields. 27 are LARGE_TEXT free-text keys; exactly 1 is SINGLE_OPTIONS (the U8 cover choice, whose picklist options are the four cover-style NAMES). fieldKey derivation law: the API derives fieldKey = 'contact.' + <create_name>; the snapshot's field NAMEs must be exactly the create_name values so the derived keys land byte-equal. onboarding step 2 (anthology_registry.py provision-fields) is create-or-verify + idempotent: it verifies each key by name and creates only the missing ones, so a snapshot that already carries all 28 makes step 2 a verify-only no-op.",
+    "total_keys": 28,
+    "free_text_data_type": "LARGE_TEXT",
+    "fields": [
+      {"intended_key": "contact.anthology_avatar_doc_url", "create_name": "anthology_avatar_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_avatar_pdf_url", "create_name": "anthology_avatar_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_tone_doc_url", "create_name": "anthology_tone_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_tone_pdf_url", "create_name": "anthology_tone_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_titles_doc_url", "create_name": "anthology_titles_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_titles_pdf_url", "create_name": "anthology_titles_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_blurb_doc_url", "create_name": "anthology_blurb_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_blurb_pdf_url", "create_name": "anthology_blurb_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_outline_doc_url", "create_name": "anthology_outline_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_outline_pdf_url", "create_name": "anthology_outline_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_doc_url", "create_name": "anthology_chapter_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_pdf_url", "create_name": "anthology_chapter_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_rewrite1_doc_url", "create_name": "anthology_chapter_rewrite1_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_rewrite1_pdf_url", "create_name": "anthology_chapter_rewrite1_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_rewrite2_doc_url", "create_name": "anthology_chapter_rewrite2_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_chapter_rewrite2_pdf_url", "create_name": "anthology_chapter_rewrite2_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_image_url", "create_name": "anthology_cover_image_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_drive_url", "create_name": "anthology_cover_drive_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_sample1_url", "create_name": "anthology_cover_sample1_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_sample2_url", "create_name": "anthology_cover_sample2_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_sample3_url", "create_name": "anthology_cover_sample3_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_sample4_url", "create_name": "anthology_cover_sample4_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_cover_choice", "create_name": "anthology_cover_choice", "data_type": "SINGLE_OPTIONS", "options": ["Signature", "Bold Editorial", "Fine Art", "Pure Type"]},
+      {"intended_key": "contact.anthology_manuscript_doc_url", "create_name": "anthology_manuscript_doc_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_manuscript_pdf_url", "create_name": "anthology_manuscript_pdf_url", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_active_id", "create_name": "anthology_active_id", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_stage", "create_name": "anthology_stage", "data_type": "LARGE_TEXT"},
+      {"intended_key": "contact.anthology_rewrite_count", "create_name": "anthology_rewrite_count", "data_type": "LARGE_TEXT"}
+    ]
+  },
+
+  "location_custom_values": {
+    "$note": "The engine's PYTHON code reads ZERO location custom-values (every dynamic value it reads/writes is a contact custom field or a contact tag). These 4 custom-values are the SNAPSHOT'S OWN plumbing: they are consumed by the snapshot's tag->notification GHL workflow below (its Custom Webhook action fires the client's intake hook, its email/SMS templates greet the producer), exactly as Skill 38's snapshot carries openclaw_hook_url / openclaw_hooks_bearer. The snapshot ships them as REPLACE-ME placeholders (never a real value); scripts/anthology_snapshot.py provision-custom-values fills them per install, idempotently (GET-check, create-only-missing else update). engine_reads_custom_values is therefore false, but the SNAPSHOT still requires them so the notification automation works in the client account.",
+    "engine_reads_custom_values": false,
+    "consumed_by": "the snapshot's tag->notification GHL workflow (NOT the engine python)",
+    "required": [
+      {"key": "anthology_webhook_url", "name": "Anthology Webhook Url", "merge_field": "{{ custom_values.anthology_webhook_url }}", "placeholder": "REPLACE-ME with https://<PUBLIC_HOSTNAME>/hooks/anthology-intake", "secret": false, "fill_source": "the client's real intake hook URL (route_path /hooks/anthology-intake on the box's public hostname)"},
+      {"key": "anthology_hook_secret", "name": "Anthology Hook Secret", "merge_field": "{{ custom_values.anthology_hook_secret }}", "placeholder": "REPLACE-ME with Bearer <ANTHOLOGY_INTAKE_HOOK_SECRET>", "secret": true, "never_a_real_token": true, "fill_source": "the Authorization header value the GHL workflow sends to the client's hook; resolved BY LABEL from ANTHOLOGY_INTAKE_HOOK_SECRET and written into the client's OWN GHL account; the value is NEVER printed to any operator surface"},
+      {"key": "producer", "name": "Producer", "merge_field": "{{ custom_values.producer }}", "placeholder": "REPLACE-ME with the producer (box owner) display name", "secret": false, "fill_source": "--producer (mirrors provision-anthology-client.sh --producer)"},
+      {"key": "producer_email", "name": "Producer Email", "merge_field": "{{ custom_values.producer_email }}", "placeholder": "REPLACE-ME with the producer email", "secret": false, "fill_source": "--producer-email"}
+    ]
+  },
+
+  "tags": {
+    "$note": "The release-tag bus (namespace anthology-release-* plus anthology-delivered). Tags are NOT provisioned by the API -- GHL creates a tag on first add-tags call (caf_delivery.py CafClient.add_tag), so the engine works whether or not the snapshot pre-declares them. Seeding all 8 slugs in the snapshot is recommended for cleanliness AND so the tag->notification workflow can pre-bind its trigger. status: LIVE = the producer gate exists today and the slug fires; WIRED-AHEAD = slug defined, producer gate not yet in GATE_BY_CURSOR; DOCTRINE = named in code comments/self-test only, not yet shelled.",
+    "seed_recommended": true,
+    "slugs": [
+      {"slug": "anthology-release-avatar", "producer_gate": "s1_producer", "status": "LIVE"},
+      {"slug": "anthology-release-tone", "producer_gate": "s2_producer", "status": "LIVE"},
+      {"slug": "anthology-release-outline", "producer_gate": "s4_producer", "status": "LIVE"},
+      {"slug": "anthology-release-chapter", "producer_gate": "s5_producer", "status": "WIRED-AHEAD"},
+      {"slug": "anthology-release-rewrite", "producer_gate": "s6_producer", "status": "WIRED-AHEAD"},
+      {"slug": "anthology-release-cover", "producer_gate": "s7_producer", "status": "WIRED-AHEAD"},
+      {"slug": "anthology-release-final", "producer_gate": "S8 final", "status": "DOCTRINE"},
+      {"slug": "anthology-delivered", "producer_gate": "S9 assembly cockpit", "status": "DOCTRINE"}
+    ]
+  },
+
+  "forms": {
+    "$note": "The provisioner does NOT auto-create forms; forms are UI/snapshot-created like the pipeline. Every form carries the universal hidden-field contract (contact_id, anthology_id, stage), re-stamped on gate re-entry. The query param on the minted intake link is EXACTLY anthology_id, never anthology_active_id.",
+    "universal_hidden_fields": ["contact_id", "anthology_id", "stage"],
+    "required": [
+      {"role": "universal-author-intake", "required": true, "hidden_fields": ["contact_id", "anthology_id", "stage"], "note": "The intake front door. The minted link is <forms_base_url>/widget/form/<universal_intake_form_id>?anthology_id=<minted>, built by anthology_book.py with a fleet-default hosted-form domain + a single universal author-intake form id baked in."}
+    ],
+    "contract_bound_per_anthology": [
+      {"stage": "s3", "role": "title-subtitle-selection", "required": false, "hidden_fields": ["contact_id", "anthology_id", "stage"]},
+      {"stage": "s4", "role": "outline-approval", "required": false, "hidden_fields": ["contact_id", "anthology_id", "stage"]},
+      {"stage": "s5", "role": "chapter-approve-or-rewrite", "required": false, "hidden_fields": ["contact_id", "anthology_id", "stage"]}
+    ]
+  },
+
+  "workflows": {
+    "$note": "The single biggest thing a real snapshot must ADD beyond field/pipeline/form parity: the tag-triggered notification automation. The engine emits anthology-release-* tags but the GHL automation that turns a release tag into the client-facing email + SMS is NOT shipped in the repo (scan-no-json-exports.sh bans workflow JSON exports; the only n8n asset present is the unrelated Drive credential broker). This block is a CONTRACT DESCRIPTION (trigger + ordered actions), deliberately NOT an n8n/GHL workflow JSON export (no connections/pinData node graph), so it documents what the operator builds ONCE in the template location before cutting the snapshot without tripping the export-leak scanner.",
+    "tag_to_notification": {
+      "purpose": "When an anthology-release-* tag lands on a contact, greet the producer/participant and (optionally) call the box's intake hook.",
+      "trigger": {"type": "contact-tag-added", "tag_slugs_live": ["anthology-release-avatar", "anthology-release-tone", "anthology-release-outline"], "tag_slugs_wired_ahead": ["anthology-release-chapter", "anthology-release-rewrite", "anthology-release-cover"]},
+      "actions": [
+        {"type": "custom-webhook", "method": "POST", "url_merge_field": "{{ custom_values.anthology_webhook_url }}", "authorization_header_merge_field": "{{ custom_values.anthology_hook_secret }}", "content_type": "application/json", "note": "URL + Authorization are REPLACE-ME custom values, never inlined tokens (Skill 38 never-a-real-token rule)."},
+        {"type": "send-email", "from_name_merge_field": "{{ custom_values.producer }}", "reply_to_merge_field": "{{ custom_values.producer_email }}", "note": "producer-branded release notice"},
+        {"type": "send-sms", "note": "optional; ships DISABLED as an example, enabled per client need"}
+      ],
+      "ships_disabled": true,
+      "ships_disabled_note": "Like Skill 38's lifecycle tag automations, the notification workflow ships DISABLED so the operator enables only what the client needs; the 3 LIVE slug triggers are enabled first, the 3 wired-ahead slugs when those gates ship."
+    }
+  },
+
+  "intake": {
+    "$note": "Cross-checked against config/engine-config.template.json intake.route_path + intake.route_secret_label so the snapshot's webhook custom value points at the same route the box's gateway actually serves.",
+    "route_path": "/hooks/anthology-intake",
+    "route_secret_label": "ANTHOLOGY_INTAKE_HOOK_SECRET"
+  },
+
+  "rejected_mechanisms": [
+    {
+      "mechanism": "agency -> subaccount API auto-push (push_snapshot_to_subaccounts)",
+      "decision": "REJECTED -- not built",
+      "reason": "This fleet's topology is EACH-CLIENT-OWNS-THEIR-OWN-GHL: a client's Convert and Flow location is owned by the client under their own agency, not a subaccount of a BlackCEO agency. GoHighLevel snapshot PUSH/LOAD across agency boundaries into a location the operator does not own under their agency is almost certainly impossible (and would require agency-level ownership the operator does not have over a client-owned location). The ONLY realistic path is the MANUAL IMPORT of the exported snapshot into the client's own location (operator-run, Settings -> Snapshots -> Import), followed by the per-client custom-value fill + verify built here. If a future fleet topology ever nests client locations under a BlackCEO agency, revisit."
+    }
+  ]
+}
