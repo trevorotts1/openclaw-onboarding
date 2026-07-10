@@ -128,6 +128,34 @@ else
   bad "prove_sp_intake.py missing at $PROVER"
 fi
 
+# ---- (G) AF-INTAKE-BATCH now has a REAL runtime implementation, not just spec prose ----
+echo "--- AF-INTAKE-BATCH: real scanner exists and self-tests green ---"
+TRACE_CHECK="$SKILL51/scripts/intake_trace_check.py"
+if [ -f "$TRACE_CHECK" ]; then
+  if OUT="$("$PY" "$TRACE_CHECK" --self-test 2>&1)"; then
+    ok "intake_trace_check.py --self-test PASS (AF-INTAKE-BATCH scanner is real, not just a spec-file assertion)"
+  else
+    bad "intake_trace_check.py --self-test FAILED"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+else
+  bad "intake_trace_check.py missing at $TRACE_CHECK (AF-INTAKE-BATCH still has no runtime implementation)"
+fi
+
+# ---- (H) SIGNATURE mode has a REAL turn-gate: deck-intake-driver.py --signature --selftest ----
+echo "--- SIGNATURE mode: --signature --next/--answer real turn-gate self-tests green ---"
+DRIVER="$ROOT/23-ai-workforce-blueprint/scripts/deck-intake-driver.py"
+if [ -f "$DRIVER" ]; then
+  if OUT="$("$PY" "$DRIVER" --signature --selftest 2>&1)"; then
+    ok "deck-intake-driver.py --signature --selftest PASS (signature mode is a real one-question-per-turn gate)"
+  else
+    bad "deck-intake-driver.py --signature --selftest FAILED"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+else
+  bad "deck-intake-driver.py missing at $DRIVER"
+fi
+
 # ---- (F) client-facing WORDING never regresses to the banned quick-questions phrasing ----
 # PR-440 remainder: the one-question-at-a-time doctrine must reach the CLIENT-FACING copy,
 # not only the guard/record layers. These two phrases are BANNED and must appear NOWHERE in
