@@ -2,8 +2,18 @@
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
   "version": "1.2.0",
-  "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order, PLUS (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" — every client question now flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here. The first question (order 0) captures deck_type (standard webinar vs Trevor Otts signature_presentation, Skill 51); on signature_presentation the driver switches to SIGNATURE mode and emits the SACRED 8 Questions + frame-selection question as ONE block per 51-signature-presentation/intake/sp-8-questions.json — the standard per-turn capture below still runs first. Conditional questions (e.g. VIP follow-ups, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block the driver evaluates against an already-recorded answer; unmet conditions are auto-skipped (never surfaced, never block --complete).",
+  "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here. ONE CANONICAL TYPE-PICKER (order 0, id 'presentation_type') replaces the old binary deck_type question and is the single answer that decides all four legacy axis fields (deck_type, creation_mode, presentation_mode, audience_mode) — see 'legacy_field_mapping' below; the ONE place that mapping table is applied in code is derive_legacy_fields() in deck-intake-driver.py. On presentation_type=='signature' the driver asks ONE conditional follow-up ('signature_source', order 0.5) then switches to SIGNATURE mode and emits the SACRED 8 Questions + frame-selection question as ONE block per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B (scratch vs augment) is NEVER asked here — it stays derived from whether source assets exist, per director-of-presentations.md SOP 9.3. The picker (+ its conditional follow-up) runs BEFORE the standard one-question-per-turn capture below. ALSO (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" now lives here as real driver questions — every client question flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. Two conditional-skip schemas coexist and are applied by ONE reconciled pass (deck-intake-driver.py:auto_skip_all_conditionals): the type-picker follow-ups (recipient_name/signature_source) carry a `conditional_on` {id,equals} block, and the migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block; unmet conditions are auto-skipped (never surfaced, never block --complete).",
+  "legacy_field_mapping": {
+    "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
+    "from_scratch": {"deck_type": "webinar", "creation_mode": "from_scratch", "presentation_mode": "general", "audience_mode": "STANDARD"},
+    "content_personal": {"deck_type": "webinar", "creation_mode": "content_personal", "presentation_mode": "one-person", "audience_mode": "PERSONAL", "requires": ["recipient_name", "extracted_substance"]},
+    "content_general": {"deck_type": "webinar", "creation_mode": "content_general", "presentation_mode": "general", "audience_mode": "GENERAL", "requires": ["extracted_substance"]},
+    "signature": {"deck_type": "signature_presentation", "creation_mode": "from_scratch", "presentation_mode": "general", "audience_mode": "STANDARD", "note": "creation_mode defaults to from_scratch; overridden to content_personal/content_general by the signature_source follow-up when the client is converting existing material into the signature talk. Never left unset (AF-MODE-UNSET)."}
+  },
   "storeTarget": {
+    "PRESENTATION_TYPE": "pre_presentation_capture.PRESENTATION_TYPE",
+    "SIGNATURE_SOURCE": "pre_presentation_capture.SIGNATURE_SOURCE",
+    "RECIPIENT_NAME": "pre_presentation_capture.RECIPIENT_NAME",
     "DECK_TYPE": "pre_presentation_capture.DECK_TYPE",
     "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
     "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
@@ -49,22 +59,56 @@
   },
   "questions": [
     {
-      "id": "deck_type",
+      "id": "presentation_type",
       "section": "deck-intake",
       "order": 0,
-      "prompt": "Which kind of deck do you want -- a standard webinar/slide deck, or a Trevor Otts SIGNATURE PRESENTATION (the SACRED 4-phase, 100+-slide signature talk)?",
-      "help": "Standard = the proven webinar arc (hook, story, teach, proof, offer ladder, close), Mode-A capped at 90 slides. Signature Presentation = the Trevor Otts 4-phase methodology (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch, >= 100 slides) taught through a chosen frame (The Rulebook / The Vault / The Quest / The Original). Default if no preference: standard webinar deck.",
+      "prompt": "What kind of presentation is this? (1) From scratch -- we brainstorm and build it new. (2) From your content -- personal: turn something you already have (deck/video/transcript) into a presentation for ONE specific person. (3) From your content -- general: turn existing content into a presentation for a room/mass audience. (4) Signature Presentation -- the 4-phase, 100+-slide signature talk (The Rulebook / The Vault / The Quest / The Original).",
+      "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. Default if no preference: from_scratch.",
       "kind": "enum",
-      "storeOn": "DECK_TYPE",
-      "allowed_values": ["webinar", "signature_presentation"],
+      "storeOn": "PRESENTATION_TYPE",
+      "allowed_values": ["from_scratch", "content_personal", "content_general", "signature"],
       "value_labels": {
-        "webinar": "Standard webinar / slide deck",
-        "signature_presentation": "Trevor Otts Signature Presentation"
+        "from_scratch": "From scratch -- brainstorm and build new",
+        "content_personal": "From your content -- personal (one specific recipient)",
+        "content_general": "From your content -- general (room/mass audience)",
+        "signature": "Signature Presentation (4-phase, 100+ slides)"
       },
       "required": true,
       "block_gate": false,
-      "default": "webinar",
-      "resolverHint": "Default if owner says 'no preference' or does not answer: 'webinar' (mark deck_type_defaulted:true). On 'signature_presentation': set deck_type:signature_presentation in working/copy/intake.json and route to the Signature Presentation Architect / brainstorming-buddy-presentations SIGNATURE mode, which then emits the SACRED 8 Questions + the frame-selection question as ONE message block per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. This branch question runs BEFORE the standard one-question-per-turn capture below; on 'webinar' every question below behaves exactly as today."
+      "default": "from_scratch",
+      "resolverHint": "Default if owner says 'no preference' or does not answer: 'from_scratch' (mark presentation_type_defaulted:true). The driver derives deck_type, creation_mode, presentation_mode, and audience_mode from this ONE answer via derive_legacy_fields() (deck-intake-driver.py) the moment it is validated -- never ask those four as separate questions. 'content_personal' additionally requires recipient_name (asked immediately after, order 0.3) and extracted_substance before build (per _chk_mode); 'content_general' requires extracted_substance. 'signature': the driver asks ONE conditional follow-up ('signature_source', order 0.5: is this built from existing content?), sets deck_type:signature_presentation in working/copy/intake.json, and routes to the Signature Presentation Architect / brainstorming-buddy-presentations SIGNATURE mode, which then emits the SACRED 8 Questions + the frame-selection question as ONE message block per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B is NEVER asked -- it stays derived from whether source assets exist (director-of-presentations.md SOP 9.3). This question runs BEFORE the standard one-question-per-turn capture below; every question below behaves exactly as today regardless of presentation_type."
+    },
+    {
+      "id": "recipient_name",
+      "section": "deck-intake",
+      "order": 0.3,
+      "prompt": "Who is this presentation for -- what is their name?",
+      "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types.",
+      "kind": "text",
+      "storeOn": "RECIPIENT_NAME",
+      "required": true,
+      "block_gate": false,
+      "conditional_on": {"id": "presentation_type", "equals": "content_personal"},
+      "resolverHint": "Ask only when presentation_type=='content_personal'. If the owner cannot name a single recipient, flag recipient_name_uncaptured:true and confirm with the operator before build -- PERSONAL is the named mode and _chk_intake blocks an empty recipient_name."
+    },
+    {
+      "id": "signature_source",
+      "section": "deck-intake",
+      "order": 0.5,
+      "prompt": "Is this Signature Presentation built from existing content you already have (a deck, video, or transcript), or are we building it from scratch with you?",
+      "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types.",
+      "kind": "enum",
+      "storeOn": "SIGNATURE_SOURCE",
+      "allowed_values": ["from_scratch", "existing_content"],
+      "value_labels": {
+        "from_scratch": "Building it from scratch with you",
+        "existing_content": "Converting existing content I already have"
+      },
+      "required": true,
+      "block_gate": false,
+      "default": "from_scratch",
+      "conditional_on": {"id": "presentation_type", "equals": "signature"},
+      "resolverHint": "Ask only when presentation_type=='signature'. Default if unanswered: from_scratch. On 'existing_content': the driver asks the SAME content_personal-vs-content_general follow-up implicitly via the normal signature 8-Questions flow; until that is known, creation_mode is set to content_general (the safer default -- never left unset per AF-MODE-UNSET) and corrected once the signature intake clarifies the audience. On 'from_scratch': creation_mode stays from_scratch (the signature default)."
     },
     {
       "id": "representation_mix",
