@@ -287,8 +287,14 @@ class CafClient:
         out = self._request("GET", "/locations/%s/customFields" % urllib.parse.quote(location_id, safe=""))
         return out.get("customFields") or []
 
-    def create_custom_field(self, location_id: str, name: str, data_type: str):
+    def create_custom_field(self, location_id: str, name: str, data_type: str, options=None):
         body = {"name": name, "dataType": data_type, "model": "contact"}
+        # SINGLE_OPTIONS (and the sibling picklist types) require their options on
+        # create -- e.g. the U8 anthology_cover_choice field, whose four options are
+        # the named cover-style names the client picks from in the universal-review
+        # dropdown. TEXT/LARGE_TEXT fields carry none.
+        if options and data_type in ("SINGLE_OPTIONS", "MULTIPLE_OPTIONS", "RADIO", "CHECKBOX"):
+            body["options"] = list(options)
         out = self._request("POST", "/locations/%s/customFields" % urllib.parse.quote(location_id, safe=""),
                             body=body)
         return out.get("customField") or out
@@ -353,7 +359,8 @@ def _stop(out, title: str, lines) -> None:
 # ---------------------------------------------------------------------------
 def provision_fields(client, field_map_path: Path, location_id: str, *,
                      dry_run: bool = False, out=None, jsonout=None):
-    """py_symbol: verify_fields. Create-or-verify all 19 PRD Section 6 fields,
+    """py_symbol: verify_fields. Create-or-verify all 24 fields (19 PRD Section 6
+    link/control keys + 5 U8 cover-style keys),
     exact-match verify each server fieldKey, and persist into field-map.json.
     Returns an exit code."""
     out = out or sys.stderr
@@ -410,7 +417,7 @@ def provision_fields(client, field_map_path: Path, location_id: str, *,
             continue
 
         try:
-            resp = client.create_custom_field(location_id, cname, dtype)
+            resp = client.create_custom_field(location_id, cname, dtype, options=item.get("options"))
         except ScopeDenied:
             _stop(out, "The Convert and Flow token lacks custom-field WRITE scope.",
                   ["Location marker: %s" % masked,
@@ -456,7 +463,7 @@ def provision_fields(client, field_map_path: Path, location_id: str, *,
             jsonout.write("\n")
         return EX_MISMATCH
 
-    # All 19 resolved. Stamp in place.
+    # All 24 resolved. Stamp in place.
     save_field_map(field_map_path, fm)
     out.write("[provision-fields] OK (marker %s): %d newly created, %d verified-by-key, %d total resolved. "
               "field-map.json stamped.\n" % (masked, len(created), len(verified), len(verified) + len(created)))
@@ -820,14 +827,14 @@ class _FakeCaf:
         return [dict(fieldKey=k, **{kk: vv for kk, vv in v.items() if kk != "fieldKey"})
                 for k, v in self.fields.items()]
 
-    def create_custom_field(self, location_id, name, data_type):
+    def create_custom_field(self, location_id, name, data_type, options=None):
         if not self.field_write:
             raise ScopeDenied("no custom-field write")
         self._n += 1
         fk = self.key_mangler(name) if self.key_mangler else derive_field_key(name)
         fid = "fld_fake_%d" % self._n
-        self.fields[fk] = {"id": fid, "name": name, "dataType": data_type}
-        return {"fieldKey": fk, "id": fid, "name": name, "dataType": data_type}
+        self.fields[fk] = {"id": fid, "name": name, "dataType": data_type, "options": options}
+        return {"fieldKey": fk, "id": fid, "name": name, "dataType": data_type, "options": options}
 
     def list_pipelines(self, location_id):
         if not self.pipeline_read:
@@ -865,21 +872,30 @@ def self_test() -> int:
     assert create_name_of("contact.anthology_avatar_doc_url") == "anthology_avatar_doc_url"
     assert derive_field_key("anthology_avatar_doc_url") == "contact.anthology_avatar_doc_url"
 
-    # -- inventory integrity: 19 keys, each derives cleanly -----------------
+    # -- inventory integrity: 24 keys, each derives cleanly -----------------
+    #    (19 PRD Section 6 link/control keys + 5 U8 cover-style keys)
     fm0 = load_field_map(FIELD_MAP_PATH)
     inv = fm0["provisioning"]["fields"]
-    assert len(inv) == 19, "expected 19 fields, got %d" % len(inv)
+    assert len(inv) == 24, "expected 24 fields, got %d" % len(inv)
     keys = {i["intended_key"] for i in inv}
-    assert len(keys) == 19, "duplicate intended_key in inventory"
+    assert len(keys) == 24, "duplicate intended_key in inventory"
     for i in inv:
         assert derive_field_key(i["create_name"]) == i["intended_key"], i["intended_key"]
         assert i["field_key"] is None and i["field_id"] is None, "template must ship resolved=null"
-    # every PRD Section 6 deliverable + control key is represented
+    # exactly one SINGLE_OPTIONS field (the U8 cover choice), and it ships its options
+    single_opts = [i for i in inv if i.get("data_type") == "SINGLE_OPTIONS"]
+    assert len(single_opts) == 1 and single_opts[0]["intended_key"] == "contact.anthology_cover_choice"
+    assert single_opts[0].get("options"), "the SINGLE_OPTIONS choice field must ship its picklist options"
+    # every PRD Section 6 deliverable + control key AND the U8 cover-style keys are represented
     contract_keys = set()
     for pair in fm0["deliverable_fields"].values():
         contract_keys.update(pair.values())
     contract_keys.update(fm0["control_fields"].values())
-    assert contract_keys == keys, "inventory drifted from the deliverable/control contract"
+    csf0 = fm0.get("cover_style_fields") or {}
+    contract_keys.update((csf0.get("sample_url_fields") or {}).values())
+    if csf0.get("choice_field"):
+        contract_keys.add(csf0["choice_field"])
+    assert contract_keys == keys, "inventory drifted from the deliverable/control/cover-style contract"
 
     # -- fields: happy path create-or-verify + persist ----------------------
     p1 = _tmp_field_map()
@@ -1046,7 +1062,8 @@ def self_test() -> int:
     assert bind_anthology(regp, p6, anthology_id="", location_id="", out=dev) == EX_MISMATCH
 
     print("anthology_registry self-test: OK "
-          "(derivation, 19-field inventory, create/verify/persist, exact-match STOP, "
+          "(derivation, 24-field inventory incl. 5 U8 cover-style + SINGLE_OPTIONS options, "
+          "create/verify/persist, exact-match STOP, "
           "scope STOP, dry-run, pipeline find-and-bind + UI-create STOP + idempotent, "
           "probe-scope read feasibility, browser-UA + scope-vs-Cloudflare discrimination, "
           "binding round-trip)")
@@ -1070,7 +1087,7 @@ def main(argv=None):
     for name, help_ in [
         ("probe-scope", "verify the token can READ pipelines on the location (pipelines are UI-only; no create)"),
         ("provision-pipeline", "find the standard Anthology pipeline BY NAME and bind it (UI-only; no auto-create)"),
-        ("provision-fields", "create-or-verify the 19 PRD Section 6 fields; persist server fieldKey + id"),
+        ("provision-fields", "create-or-verify the 24 fields (19 PRD Section 6 + 5 U8 cover-style); persist server fieldKey + id"),
         ("provision-all", "provision-pipeline then provision-fields (stops on first STOP)"),
         ("verify-fields", "READ-ONLY: assert field-map.json is fully resolved and exact-match"),
         ("bind", "bind an anthology_id to a pipeline, stage map, forms, and Drive folder"),
