@@ -125,12 +125,14 @@ try:  # singleton pooled browser session
 except Exception:  # noqa: BLE001
     browser_manager = None  # type: ignore
 
-try:  # rate limiter + keepalive (reused from dispatcher when present)
+try:  # rate limiter + keepalive + F5(b) pre-phase re-mint (reused from dispatcher when present)
     from v2_dispatcher import RateGovernor as _RealRateGovernor  # type: ignore
     from v2_dispatcher import SessionKeepalive as _RealKeepalive  # type: ignore
+    from v2_dispatcher import remint_if_stale as _real_remint_if_stale  # type: ignore
 except Exception:  # noqa: BLE001
     _RealRateGovernor = None  # type: ignore
     _RealKeepalive = None  # type: ignore
+    _real_remint_if_stale = None  # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -800,6 +802,31 @@ def _snapshot(session: str, timeout: int = 20) -> str:
     return (_ab(session, "snapshot", "-i", timeout=timeout).stdout or "")
 
 
+def _pre_phase_check(session: str, keepalive: Any) -> None:
+    """F5 uniform keepalive + pre-phase re-mint (mirrors ghl_survey_builder.py's
+    helper of the same name — SKILL-6-BULLETPROOF-SPEC-v1 F5). Call once per
+    click-list phase transition (never per-step — that would be wasteful
+    subprocess overhead for a check that only ever matters on a ~30-45min
+    cadence). Both actions are eval-only per D7 — NEVER a navigate/reload:
+      1. keepalive.due() — harmless no-op ping so the session never idles out.
+      2. remint_if_stale() — F5(b): proactively re-mint the id_token if it is
+         already older than the 45min threshold, ahead of a mid-phase 401.
+    A no-op (no keepalive instance, no remint helper available) is safe —
+    this only ever ADDS resilience, never gates the build.
+    """
+    if keepalive is not None:
+        try:
+            if keepalive.due():
+                _ab(session, "eval", "true", timeout=5)  # harmless keepalive ping
+        except Exception:  # noqa: BLE001
+            pass
+    if _real_remint_if_stale is not None:
+        try:
+            _real_remint_if_stale(session)
+        except Exception:  # noqa: BLE001 — proactive remint is never allowed to abort a phase
+            pass
+
+
 def _screenshot(session: str, path: str) -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1176,10 +1203,23 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
     f6_done = [False]   # place ALL pre-created custom fields on the first F6 step
     keep_defaults = set(plan.get("default_fields_keep", []))
 
+    # F5 uniform keepalive + pre-phase re-mint (SKILL-6-BULLETPROOF-SPEC-v1 F5):
+    # the survey builder already threads this through every Part-2 phase; the
+    # form builder's click-list walk had the import but never wired it in (a
+    # confirmed gap — see build ledger). Fire the check once per PHASE
+    # TRANSITION (F1→F2→...→F13), not per click-list step, so a long form build
+    # never crosses the ~60min id_token window uncovered.
+    _keepalive = _RealKeepalive() if _RealKeepalive is not None else None
+    _last_phase: List[Optional[str]] = [None]
+
     for step in click_list["steps"]:
         phase, action, target = step["phase"], step["action"], (step["target"] or "")
         tgt = target.strip()
         tag = f"{phase}:{action}:{tgt[:36]}"
+
+        if phase != _last_phase[0]:
+            _pre_phase_check(session, _keepalive)
+            _last_phase[0] = phase
 
         # F1 — navigate to the Forms list (collapse nav+Sites+Forms → one router.push;
         # 'Sites' left-rail is conf 5 / unreliable, so we never click it).

@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import tempfile
 import time
 from typing import Any, Callable
 
@@ -668,6 +670,93 @@ class SessionKeepalive:
         if now - self._last >= self.interval_s:
             self._last = now
             return True
+        return False
+
+
+# ── F5(b) — pre-phase token-age re-mint (SKILL-6-BULLETPROOF-SPEC-v1) ─────────
+# SessionKeepalive above is a scheduler for a HARMLESS eval-only ping so the
+# browser session does not idle out. This is a DIFFERENT, complementary gap it
+# does NOT close: the Firebase id_token itself is short-lived (~60min) and
+# inject-ghl-auth.sh's own recovery is REACTIVE — it re-mints only after a
+# 401/user_not_logged_in-class failure already happened mid-phase. TokenAgeGate
+# + remint_if_stale give every builder a PROACTIVE check to run before starting
+# a multi-minute phase: if the token is already older than the threshold,
+# re-mint + re-seed BEFORE the phase, not after it 401s partway through.
+TOKEN_PRE_PHASE_REMINT_THRESHOLD_S = 45 * 60  # gates.json token_pre_phase_remint.threshold_minutes
+
+
+class TokenAgeGate:
+    """Pure decision logic — no subprocess/browser calls here, so this is
+    trivially unit-testable without a real session. ``age_s < 0`` means "unknown
+    age" (no stamp found, or the read failed) and is ALWAYS treated as stale:
+    fail toward a re-mint, never toward trusting an unconfirmed session."""
+
+    def __init__(self, threshold_s: float = TOKEN_PRE_PHASE_REMINT_THRESHOLD_S) -> None:
+        self.threshold_s = float(threshold_s)
+
+    def is_stale(self, age_s: float) -> bool:
+        return age_s < 0 or age_s >= self.threshold_s
+
+
+def read_auth_age_s(session: str, tools_dir: "str | None" = None) -> float:
+    """Shell out to browser_manager.sh's ``auth-age`` verb for the live token
+    age (seconds since the last confirmed seed). Returns -1.0 (== unknown/stale)
+    on ANY failure (missing script, timeout, non-numeric output) — this function
+    never raises; callers always get a decidable age."""
+    tools_dir = tools_dir or _TOOLS_DIR
+    script = os.path.join(tools_dir, "browser_manager.sh")
+    try:
+        out = subprocess.run(
+            ["bash", script, "auth-age", "--", session],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        return float(out.stdout.strip())
+    except Exception:  # noqa: BLE001 — any failure reads as "unknown" (stale)
+        return -1.0
+
+
+def remint_if_stale(
+    session: str,
+    tools_dir: "str | None" = None,
+    gate: "TokenAgeGate | None" = None,
+    age_reader: "Callable[[str, str], float]" = read_auth_age_s,
+) -> bool:
+    """Pre-phase re-mint (F5-b). Builders call this once before every
+    multi-minute Part-2-style phase. Re-mints + re-seeds the SAME token-only
+    session (never a navigate/reload — same eval-only cookie/IndexedDB write
+    inject-ghl-auth.sh already uses) ONLY when the token is stale. Returns True
+    iff a re-mint actually ran and reported success; this is INFORMATIONAL
+    ONLY — callers do not gate the phase on it. A failed proactive re-mint is
+    not fatal on its own: the phase still runs, and any resulting 401 falls
+    through to inject-ghl-auth.sh's own bounded reactive retry (F5's other
+    half), so a transient failure here never blocks a build that would
+    otherwise have succeeded.
+    """
+    tools_dir = tools_dir or _TOOLS_DIR
+    gate = gate or TokenAgeGate()
+    age = age_reader(session, tools_dir)
+    if not gate.is_stale(age):
+        return False
+
+    seed_dir = tempfile.mkdtemp(prefix="ghl-prephase-remint-")
+    seed_out = os.path.join(seed_dir, "ghl-auth-seed.json")
+    seed_script = os.path.join(tools_dir, "seed-ghl-auth.py")
+    inject_script = os.path.join(tools_dir, "inject-ghl-auth.sh")
+    try:
+        mint = subprocess.run(
+            [sys.executable, seed_script, "--print-seed", "--out", seed_out],
+            check=False, timeout=30, capture_output=True, text=True,
+        )
+        if mint.returncode != 0:
+            return False
+        env = dict(os.environ)
+        env["GHL_INJECT_KEEP_SESSION"] = "1"  # seed-then-drive: do NOT close the session we're mid-build on
+        seed = subprocess.run(
+            ["bash", inject_script, session, seed_out, "--pre-open"],
+            check=False, timeout=60, env=env, capture_output=True, text=True,
+        )
+        return seed.returncode == 0
+    except Exception:  # noqa: BLE001 — never let a proactive remint abort the phase
         return False
 
 

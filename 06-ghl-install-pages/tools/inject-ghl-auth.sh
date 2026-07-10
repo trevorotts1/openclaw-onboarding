@@ -685,6 +685,14 @@ if ! _seed_and_activate_once "$CURRENT_SEED_FILE"; then
   fi
 fi
 
+# F5-b (SKILL-6-BULLETPROOF-SPEC-v1): stamp the auth-age clock on EVERY confirmed
+# seed+activate — the initial attempt above OR the one bounded 401 re-mint. This
+# is what lets a long build's pre-phase check (browser_manager.sh bm_auth_is_stale
+# / v2_dispatcher.py remint_if_stale) proactively re-mint ahead of the ~60min
+# expiry instead of always waiting for a reactive 401. Best-effort only — a stamp
+# failure never fails the (already-successful) seed.
+bm_record_auth_seeded "$SESSION" 2>/dev/null || true
+
 echo "$INJECT_RESULT"
 echo "$ACTIVATE_RESULT"
 

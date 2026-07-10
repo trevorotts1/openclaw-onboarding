@@ -485,6 +485,12 @@
       "interval_minutes": 30,
       "action": "no-op (e.g. AB --session <s> eval 'true') — NEVER open/navigate/reload",
       "implemented_in": "tools/v2_dispatcher.py SessionKeepalive"
+    },
+    "token_pre_phase_remint": {
+      "_doc": "F5(b) SKILL-6-BULLETPROOF-SPEC-v1 — the PROACTIVE half of token-expiry recovery. inject-ghl-auth.sh's ONE bounded re-mint is REACTIVE (fires only after a 401/user_not_logged_in-class failure). This gate is checked BEFORE every multi-minute build phase: if the seeded id_token (stamped by browser_manager.sh bm_record_auth_seeded on every successful seed) is older than threshold_minutes, proactively re-mint (seed-ghl-auth.py --print-seed) and re-stage the token BEFORE the phase starts, rather than waiting for a 401 mid-phase. NEVER a navigate/open/reload — same eval-only token-id write inject-ghl-auth.sh already uses. A failed proactive re-mint is NOT fatal on its own; the phase still runs and any resulting 401 falls through to inject-ghl-auth.sh's own bounded retry.",
+      "threshold_minutes": 45,
+      "action": "re-mint + re-seed via seed-ghl-auth.py --print-seed + inject-ghl-auth.sh <session> <seed> --pre-open (GHL_INJECT_KEEP_SESSION=1) — NEVER open/navigate/reload",
+      "implemented_in": "tools/browser_manager.sh bm_record_auth_seeded/bm_auth_age_s/bm_auth_is_stale + tools/v2_dispatcher.py TokenAgeGate/remint_if_stale"
     }
   },
 
