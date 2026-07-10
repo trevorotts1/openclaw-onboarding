@@ -81,7 +81,24 @@ human notes go to stderr):
   drive_adapter.py export-bundle --folder-id ID [--out PATH]
         recursive Drive manifest for one anthology folder (the Drive half of the
         SPEC 10.1 export bundle; anthology_state.py emits the ledger half).
+  drive_adapter.py provision-book-tree --client-key K --producer-email E
+        --book-title T [--co-author C] [--root-folder-id ID]
+        create the per-client/producer/book folder tree + producer editor share and
+        print the created folder ids. SELECTS the n8n CREDENTIAL BROKER when it is
+        configured (Trevor's Google creds live ONLY in n8n; a client box holds no
+        Google key -- only the broker webhook URL + a low-privilege token), else
+        falls back to the LOCAL service account (the operator's OWN box).
+  drive_adapter.py broker-status
+        report whether the n8n Drive broker is configured (SET/NOT-SET only) and
+        which actions are implemented vs pending.
   drive_adapter.py --self-test        offline coherence checks (no network).
+
+n8n CREDENTIAL BROKER (fleet delivery model): the PRIVILEGED folder-tree creation +
+share ops POST to an n8n webhook that holds Trevor's Google service-account key,
+which never leaves n8n. A client box holds ONLY N8N_DRIVE_WEBHOOK_URL +
+N8N_DRIVE_WEBHOOK_TOKEN; a compromised client box cannot leak Google creds because
+they were never there. Per-Doc broker actions (create_doc, upload_pdf,
+share_doc_edit, pull_doc_text) are designed extension points, stubbed not faked.
 """
 import argparse
 import base64
@@ -116,6 +133,16 @@ OAUTH_HOST = "oauth2.googleapis.com"
 SA_KEY_ENV = "GOOGLE_SA_KEY_FILE"
 IMPERSONATE_ENV = "GOOGLE_IMPERSONATE_USER"
 ROOT_FOLDER_ENV = "GOOGLE_DRIVE_ROOT_FOLDER"
+
+# n8n Drive CREDENTIAL BROKER (fleet delivery model). A client box holds NO Google
+# key -- only the broker webhook URL (not a secret) + a low-privilege shared token
+# (a secret, reported SET/NOT-SET by label only). The privileged folder-tree +
+# share ops POST to n8n, which holds Trevor's Google creds that never leave n8n.
+N8N_WEBHOOK_URL_ENV = "N8N_DRIVE_WEBHOOK_URL"
+N8N_WEBHOOK_TOKEN_ENV = "N8N_DRIVE_WEBHOOK_TOKEN"
+BROKER_TOKEN_HEADER = "X-Anthology-Broker-Token"
+# Per-Doc broker actions are DESIGNED extension points, stubbed not faked (below).
+BROKER_STUB_ACTIONS = ("create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text")
 
 EX_OK, EX_ERR, EX_VALIDATION, EX_DEP, EX_READBACK = 0, 1, 2, 3, 5
 
@@ -495,6 +522,22 @@ def share_edit(token, file_id):
     return _json_api("POST", GOOGLE_API_HOST, path, token, body)
 
 
+def share_user_role(token, file_id, email, role="writer", notify=False):
+    """Grant a NAMED USER (emailAddress) a `role` on a file/folder.
+
+    role='writer' = editor, role='reader' = viewer. Used by the LOCAL-SA fallback
+    of provision_book_tree to make the producer an EDITOR on the book folder
+    (Trevor's access model). The n8n broker performs the identical named-user share
+    server-side, so the client box never needs the Google key. Returns the
+    permission dict; the producer's address is passed to Google but never printed."""
+    from urllib.parse import quote
+    path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
+            "&sendNotificationEmail=%s&fields=id,type,role"
+            % (quote(file_id, safe=""), "true" if notify else "false"))
+    body = {"role": role, "type": "user", "emailAddress": email}
+    return _json_api("POST", GOOGLE_API_HOST, path, token, body)
+
+
 def list_permissions(token, file_id):
     from urllib.parse import quote
     path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
@@ -632,6 +675,220 @@ def _credential_status():
     return {
         SA_KEY_ENV: "SET" if os.environ.get(SA_KEY_ENV) else "NOT SET",
         IMPERSONATE_ENV: "SET" if os.environ.get(IMPERSONATE_ENV) else "NOT SET",
+    }
+
+
+# ---------------------------------------------------------------------------
+# n8n DRIVE CREDENTIAL BROKER (fleet delivery model).
+#
+# Trevor's Google service-account key lives ONLY inside n8n (his n8n VPS). A client
+# box holds NO Google key -- only the broker webhook URL + a low-privilege shared
+# token. The PRIVILEGED folder-tree creation + share are POSTed to the n8n webhook
+# (action create_book_tree); n8n uses Trevor's creds (which never leave n8n) to
+# create the per-client/producer/book tree under BlackCEO's Anthology root, set the
+# shares, and return the created folder ids. A compromised client box cannot leak
+# Google creds because they were never there.
+#
+# SELECTION: if the broker is configured (URL + token both resolve), the privileged
+# ops route through it; else they fall back to the local SA. The ONLY box that
+# legitimately holds the SA key is the operator's OWN box (never a client box).
+# ---------------------------------------------------------------------------
+def _broker_webhook_url():
+    """Resolve the n8n Drive-broker webhook URL (NOT a secret): env first, then
+    engine config delivery.drive_broker.webhook_url. Returns the URL or None; an
+    unresolved template slot is ignored so a box that never set it stays SA-mode."""
+    url = os.environ.get(N8N_WEBHOOK_URL_ENV)
+    if url and not _is_unresolved_slot(url):
+        return url
+    for name in ("engine-config.json", "engine-config.template.json"):
+        cfg = CONFIG_DIR / name
+        if cfg.is_file():
+            try:
+                data = json.loads(cfg.read_text(encoding="utf-8"))
+                broker = (data.get("delivery", {}) or {}).get("drive_broker", {}) or {}
+                u = broker.get("webhook_url")
+                if u and not _is_unresolved_slot(u):
+                    return u
+            except Exception:
+                continue
+    return None
+
+
+def _broker_token():
+    """Resolve the low-privilege broker webhook token from N8N_DRIVE_WEBHOOK_TOKEN.
+    SECRET: held in memory only, NEVER printed (reported SET/NOT-SET by label)."""
+    tok = os.environ.get(N8N_WEBHOOK_TOKEN_ENV)
+    return tok if tok and not _is_unresolved_slot(tok) else None
+
+
+def broker_configured():
+    """True iff BOTH the broker webhook URL AND its token resolve on this box.
+
+    When True, the privileged folder-tree + share ops route through the n8n
+    credential broker (Trevor's Google creds live ONLY in n8n) instead of the local
+    SA. When False, the box falls back to the local SA (the operator's own box)."""
+    return bool(_broker_webhook_url() and _broker_token())
+
+
+def _broker_credential_status():
+    """SET / NOT-SET report for the broker levers -- never a value."""
+    return {
+        N8N_WEBHOOK_URL_ENV: "SET" if _broker_webhook_url() else "NOT SET",
+        N8N_WEBHOOK_TOKEN_ENV: "SET" if _broker_token() else "NOT SET",
+    }
+
+
+def _broker_post(action, payload):
+    """POST one action to the n8n Drive credential broker; return the parsed JSON.
+
+    The low-privilege webhook token authenticates the call in a header and is NEVER
+    printed. The broker URL MUST be https so the token never travels in cleartext.
+    Google credentials never touch this box. n8n commonly wraps a single response
+    item in a one-element list, which is unwrapped here."""
+    from urllib.parse import urlsplit
+    url = _broker_webhook_url()
+    token = _broker_token()
+    if not url:
+        raise DependencyError(
+            "%s NOT SET; the n8n Drive-broker webhook URL is required." % N8N_WEBHOOK_URL_ENV)
+    if not token:
+        raise DependencyError(
+            "%s NOT SET; the n8n Drive-broker webhook token is required "
+            "(value referenced by label only, never printed)." % N8N_WEBHOOK_TOKEN_ENV)
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.netloc:
+        raise ValidationError(
+            "%s must be an https:// URL (the broker token must never travel in "
+            "cleartext)." % N8N_WEBHOOK_URL_ENV)
+    path = parts.path or "/"
+    if parts.query:
+        path += "?" + parts.query
+    body = dict(payload)
+    body["action"] = action
+    headers = {"Content-Type": "application/json", BROKER_TOKEN_HEADER: token}
+    status, raw = _https("POST", parts.netloc, path, headers,
+                         json.dumps(body).encode("utf-8"))
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except Exception:
+        parsed = None
+    if isinstance(parsed, list):
+        parsed = parsed[0] if parsed else {}
+    detail = ""
+    if isinstance(parsed, dict):
+        detail = str(parsed.get("error") or parsed.get("message") or "")[:180]
+    if status in (401, 403):
+        raise DependencyError(
+            "n8n Drive broker rejected the webhook token (HTTP %s); check %s. %s"
+            % (status, N8N_WEBHOOK_TOKEN_ENV, detail))
+    if status == 404:
+        raise DependencyError(
+            "n8n Drive broker webhook not found (HTTP 404); check %s and that the "
+            "workflow is active. %s" % (N8N_WEBHOOK_URL_ENV, detail))
+    if status not in (200, 201):
+        raise DependencyError("n8n Drive broker returned HTTP %s. %s" % (status, detail))
+    if not isinstance(parsed, dict):
+        raise DependencyError("n8n Drive broker returned a non-JSON body.")
+    if parsed.get("ok") is False:
+        raise DependencyError(
+            "n8n Drive broker reported failure for action %r: %s"
+            % (action, detail or parsed.get("error")))
+    return parsed
+
+
+def broker_create_book_tree(client_key, producer_email, book_title, co_author=None):
+    """Route the PRIVILEGED per-book folder-tree creation + shares to the n8n
+    credential broker (action create_book_tree).
+
+    Trevor's Google service-account key NEVER lands on this box: n8n holds it,
+    creates the per-client/producer/book folder tree under BlackCEO's Anthology
+    root, sets the shares (producer = editor on the book folder; PDFs view;
+    co-author per-Doc EDIT handled at doc time), and returns the created folder ids.
+    Returns a normalized dict:
+      {ok, via, root_folder_id, client_folder_id, producer_folder_id,
+       book_folder_id, ...}."""
+    if not client_key or not str(client_key).strip():
+        raise ValidationError("client_key is required for create_book_tree.")
+    if not producer_email or not str(producer_email).strip():
+        raise ValidationError("producer_email is required for create_book_tree.")
+    if not book_title or not str(book_title).strip():
+        raise ValidationError("book_title is required for create_book_tree.")
+    payload = {
+        "client_key": str(client_key).strip(),
+        "producer_email": str(producer_email).strip(),
+        "book_title": str(book_title).strip(),
+    }
+    if co_author:
+        payload["co_author"] = str(co_author).strip()
+    result = _broker_post("create_book_tree", payload)
+    for key in ("book_folder_id", "producer_folder_id"):
+        if not result.get(key):
+            raise DependencyError(
+                "n8n Drive broker create_book_tree response is missing %r "
+                "(the broker must return the created folder ids)." % key)
+    result.setdefault("ok", True)
+    result.setdefault("action", "create_book_tree")
+    # drive_adapter is authoritative on WHICH path served this call, regardless of any
+    # informational marker the workflow returned -> stamp the broker path unconditionally.
+    result["via"] = "n8n_broker"
+    return result
+
+
+def broker_stub(action):
+    """Raise a clear 'not yet implemented via the broker' error for a per-Doc op.
+
+    The per-Doc broker actions (create_doc, upload_pdf, share_doc_edit,
+    pull_doc_text) are DESIGNED extension points, deliberately NOT faked. On the
+    operator's own box these ops run via the local SA; a pure client box cannot yet
+    perform them through the broker -- that is the remaining work for full per-Doc
+    coverage (see MASTERDOC floor #10)."""
+    if action not in BROKER_STUB_ACTIONS:
+        raise ValidationError("unknown broker action %r" % action)
+    raise DependencyError(
+        "n8n Drive broker action %r is a designed extension point that is NOT yet "
+        "implemented; the operator's own box performs it via the local service "
+        "account. Full per-Doc broker coverage is pending." % action)
+
+
+def provision_book_tree(client_key, producer_email, book_title, co_author=None,
+                        root_folder_id=None):
+    """Create the per-client/producer/book Drive folder tree + set the producer
+    editor share, returning the created folder ids.
+
+    SELECTION: if the n8n broker is configured (URL + token), the privileged
+    creation + share are POSTed to n8n (Trevor's Google creds live ONLY in n8n).
+    Otherwise this falls back to the LOCAL service account -- the ONLY box that
+    legitimately holds the SA key is the operator's OWN box.
+
+    Returns a dict with via ('n8n_broker' | 'local_sa') and the folder ids."""
+    if broker_configured():
+        return broker_create_book_tree(client_key, producer_email, book_title,
+                                       co_author=co_author)
+    # -- local-SA fallback (operator's own box) --
+    if not client_key or not str(client_key).strip():
+        raise ValidationError("client_key is required.")
+    if not producer_email or not str(producer_email).strip():
+        raise ValidationError("producer_email is required.")
+    if not book_title or not str(book_title).strip():
+        raise ValidationError("book_title is required.")
+    root_id = load_root_folder_id(root_folder_id)
+    token = mint_token()
+    client_folder, _ = get_or_create_folder(token, root_id, str(client_key).strip())
+    producer_folder, _ = get_or_create_folder(token, client_folder["id"],
+                                              str(producer_email).strip())
+    book_folder, _ = get_or_create_folder(token, producer_folder["id"],
+                                          str(book_title).strip())
+    # producer = editor on the book folder (Trevor's access model)
+    share_user_role(token, book_folder["id"], str(producer_email).strip(),
+                    role="writer", notify=False)
+    return {
+        "ok": True, "action": "create_book_tree", "via": "local_sa",
+        "root_folder_id": root_id,
+        "client_folder_id": client_folder["id"],
+        "producer_folder_id": producer_folder["id"],
+        "book_folder_id": book_folder["id"],
+        "producer_editor_shared": True,
+        "credentials": _credential_status(),
     }
 
 
@@ -1089,9 +1346,86 @@ def self_test():
             if v is not None:
                 globals()[k] = v
 
+    # -- n8n Drive credential broker (HTTP MOCKED; no network) --
+    _bsaved = {k: globals().get(k) for k in ("_broker_post", "mint_token")}
+    _benv = {k: os.environ.get(k) for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV)}
+    try:
+        for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV):
+            os.environ.pop(k, None)
+        # the URL alone must NOT enable the broker (both levers required).
+        os.environ[N8N_WEBHOOK_URL_ENV] = "https://main.example/webhook/anthology-drive"
+        assert broker_configured() is False, "URL alone must not enable the broker"
+        os.environ[N8N_WEBHOOK_TOKEN_ENV] = "unit-broker-token"
+        assert broker_configured() is True, "URL + token must enable the broker"
+        assert _broker_credential_status()[N8N_WEBHOOK_TOKEN_ENV] == "SET"
+        assert _broker_credential_status()[N8N_WEBHOOK_TOKEN_ENV] != "unit-broker-token"
+
+        # broker_create_book_tree POSTs action=create_book_tree with the right
+        # payload and maps the returned folder ids (the create_book_tree contract).
+        captured = {}
+
+        def _fake_post(action, payload):
+            captured["action"] = action
+            captured["payload"] = dict(payload)
+            return {"ok": True, "root_folder_id": "ROOT", "client_folder_id": "CID",
+                    "producer_folder_id": "PID", "book_folder_id": "BID"}
+        globals()["_broker_post"] = _fake_post
+        res = broker_create_book_tree("clientA", "producer@x.example",
+                                      "The Weight of the Keys", co_author="co@x.example")
+        assert captured["action"] == "create_book_tree", captured
+        assert captured["payload"] == {"client_key": "clientA",
+                                       "producer_email": "producer@x.example",
+                                       "book_title": "The Weight of the Keys",
+                                       "co_author": "co@x.example"}, captured
+        assert res["book_folder_id"] == "BID" and res["producer_folder_id"] == "PID"
+        assert res["via"] == "n8n_broker"
+
+        # provision_book_tree SELECTS the broker when configured (no SA touched).
+        globals()["mint_token"] = lambda scope=FULL_SCOPE: (_ for _ in ()).throw(
+            AssertionError("mint_token (local SA) must NOT be called in broker mode"))
+        sel = provision_book_tree("clientA", "producer@x.example", "Bk")
+        assert sel["book_folder_id"] == "BID" and sel.get("via") == "n8n_broker"
+
+        # a broker response missing folder ids fails loudly (never a silent no-op).
+        globals()["_broker_post"] = lambda a, p: {"ok": True}
+        missing_ids = False
+        try:
+            broker_create_book_tree("c", "p@x.example", "b")
+        except DependencyError:
+            missing_ids = True
+        assert missing_ids, "a broker response without folder ids must raise"
+
+        # per-Doc broker actions are STUBBED (flagged, not faked).
+        for a in BROKER_STUB_ACTIONS:
+            stubbed = False
+            try:
+                broker_stub(a)
+            except DependencyError:
+                stubbed = True
+            assert stubbed, "broker per-Doc action %r must be a flagged stub" % a
+
+        # _broker_post refuses a non-https URL (token must never travel cleartext).
+        globals()["_broker_post"] = _bsaved["_broker_post"]
+        os.environ[N8N_WEBHOOK_URL_ENV] = "http://insecure.example/webhook/x"
+        cleartext_refused = False
+        try:
+            _broker_post("create_book_tree", {})
+        except ValidationError:
+            cleartext_refused = True
+        assert cleartext_refused, "the broker must refuse a non-https webhook URL"
+    finally:
+        for k, v in _bsaved.items():
+            if v is not None:
+                globals()[k] = v
+        for k, v in _benv.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
     print("drive_adapter self-test: OK (auth assembly, escaping, read-back guard, "
           "per-client root resolution + slot refusal, exit-code contract, EDIT share, "
-          "pull_doc_text byte-exact)")
+          "pull_doc_text byte-exact, n8n broker select + payload + https-only)")
     return EX_OK
 
 
@@ -1163,6 +1497,20 @@ def build_parser():
     eb.add_argument("--folder-id", required=True)
     eb.add_argument("--out", help="write the manifest JSON to this path")
 
+    pbt = sub.add_parser(
+        "provision-book-tree",
+        help="create the client/producer/book folder tree + producer editor share "
+             "(n8n broker if configured, else local SA)")
+    pbt.add_argument("--client-key", required=True)
+    pbt.add_argument("--producer-email", required=True)
+    pbt.add_argument("--book-title", required=True)
+    pbt.add_argument("--co-author", help="optional co-author (per-Doc EDIT handled at doc time)")
+    pbt.add_argument("--root-folder-id", help="override the local-SA root (ignored in broker mode)")
+
+    sub.add_parser(
+        "broker-status",
+        help="report whether the n8n Drive broker is configured (SET/NOT-SET only)")
+
     return p
 
 
@@ -1206,6 +1554,17 @@ def dispatch(args):
         return EX_OK
     if cmd == "export-bundle":
         _out(do_export_bundle(args.folder_id, args.out))
+        return EX_OK
+    if cmd == "provision-book-tree":
+        _out(provision_book_tree(args.client_key, args.producer_email, args.book_title,
+                                 co_author=args.co_author, root_folder_id=args.root_folder_id))
+        return EX_OK
+    if cmd == "broker-status":
+        _out({"ok": True, "action": "broker-status",
+              "broker_configured": broker_configured(),
+              "broker": _broker_credential_status(),
+              "implemented_actions": ["create_book_tree"],
+              "stub_actions": list(BROKER_STUB_ACTIONS)})
         return EX_OK
     raise ValidationError("no subcommand given; run with -h for usage.")
 

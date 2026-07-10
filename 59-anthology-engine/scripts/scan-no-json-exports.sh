@@ -106,6 +106,19 @@ is_self() {
     return 1
 }
 
+# The engine's OWN sanctioned n8n workflow assets (config/n8n/*.workflow.json) are a
+# DELIBERATE product deliverable -- the Anthology Drive CREDENTIAL BROKER that keeps
+# Trevor's Google creds inside n8n -- NOT one of the nine retired legacy exports. They
+# are exempt from struct_n8n by their exact sanctioned path + suffix; a legacy export
+# never lives at this exact path/suffix, and its CONTENT is still covered by
+# scan-no-secrets.sh and guard-no-anthropic-runtime.py. Nothing else is exempted.
+is_sanctioned_n8n() {
+    case "$1" in
+        */config/n8n/*.workflow.json) return 0 ;;
+    esac
+    return 1
+}
+
 enumerate() {
     local root="$1" out="$2"; : > "$out"
     if [ "$OPT_SCOPE" = "changed" ]; then
@@ -169,8 +182,10 @@ run_scan() {
                 elif grep -qF '[UNCHANGED]' "$f" 2>/dev/null; then record "$f" "prompt_csv"; fi ;;
         esac
 
-        # struct_n8n: n8n node marker AND "connections"
-        if grep -IqE 'n8n-nodes-base\.|@n8n/n8n-nodes-|"pinData"' "$f" 2>/dev/null \
+        # struct_n8n: n8n node marker AND "connections" (except the engine's OWN
+        # sanctioned config/n8n/*.workflow.json broker asset -- see is_sanctioned_n8n)
+        if ! is_sanctioned_n8n "$f" \
+           && grep -IqE 'n8n-nodes-base\.|@n8n/n8n-nodes-|"pinData"' "$f" 2>/dev/null \
            && grep -Iq '"connections"' "$f" 2>/dev/null; then
             record "$f" "struct_n8n"
         fi
@@ -240,12 +255,28 @@ self_test() {
 JSON
     local out rc
     out="$(run_scan "$td/dirty" 2>&1)"; rc=$?
+    if ! { [ $rc -eq $EX_VIOLATION ] && printf '%s' "$out" | grep -q 'struct_n8n'; }; then
+        OPT_SCOPE="$save_scope"; EXPORTS_REF_DIR="$save_ref"
+        echo "$TAG self-test FAIL: planted export not detected (exit $rc)" >&2
+        return $EX_ERR
+    fi
+    echo "  detect case: PASS (exit 4, struct_n8n on a renamed export)"
+
+    # SANCTIONED: the engine's OWN config/n8n/*.workflow.json broker asset (real n8n
+    # shape) must NOT flag, while a legacy-shaped file OUTSIDE that path still does.
+    mkdir -p "$td/sanctioned/config/n8n"
+    cat > "$td/sanctioned/config/n8n/anthology-drive-broker.workflow.json" <<'JSON'
+{ "name": "Anthology Drive Broker",
+  "nodes": [ { "type": "n8n-nodes-base.webhook", "parameters": {} } ],
+  "connections": {}, "pinData": {} }
+JSON
+    out="$(run_scan "$td/sanctioned" 2>&1)"; rc=$?
     OPT_SCOPE="$save_scope"; EXPORTS_REF_DIR="$save_ref"
-    if [ $rc -eq $EX_VIOLATION ] && printf '%s' "$out" | grep -q 'struct_n8n'; then
-        echo "  detect case: PASS (exit 4, struct_n8n on a renamed export)"
+    if [ $rc -eq $EX_CLEAN ]; then
+        echo "  sanctioned case: PASS (exit 0, config/n8n/*.workflow.json exempt)"
         echo "$TAG self-test: PASS"; return $EX_CLEAN
     fi
-    echo "$TAG self-test FAIL: planted export not detected (exit $rc)" >&2
+    echo "$TAG self-test FAIL: sanctioned broker workflow was flagged (exit $rc): $out" >&2
     return $EX_ERR
 }
 

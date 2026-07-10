@@ -171,6 +171,17 @@ GOOGLE_DELIVERY_FAMILIES = (
     ("google_drive_root_folder", ("GOOGLE_DRIVE_ROOT_FOLDER",)),
 )
 
+# The n8n Drive CREDENTIAL BROKER pair (fleet delivery model). On a client box the
+# broker pair REPLACES the SA trio above: Trevor's Google service-account key lives
+# ONLY inside n8n, and the box holds NO Google key -- only the broker webhook URL
+# (not a secret) and a low-privilege shared token (a secret; SET/NOT-SET only, never
+# a value, never a fingerprint input). Delivery presence is satisfied by EITHER the
+# broker pair (a client box) OR the SA trio (the operator's own box), enforced below.
+N8N_DRIVE_BROKER_FAMILIES = (
+    ("n8n_drive_webhook_url", ("N8N_DRIVE_WEBHOOK_URL",)),
+    ("n8n_drive_webhook_token", ("N8N_DRIVE_WEBHOOK_TOKEN",)),
+)
+
 # ---------------------------------------------------------------------------
 # The three client env stores (SPEC/PRD: "all three client env stores, live process
 # env first"). The headline three are the stores fleet agents most often miss; the
@@ -566,12 +577,49 @@ def _is_unresolved_slot(value):
 
 
 def google_delivery_presence(sources):
-    """Confirm the three PER-CLIENT Google delivery levers are usable on this box:
-    GOOGLE_SA_KEY_FILE (the FILE must exist; its CONTENTS are never read or printed),
-    GOOGLE_IMPERSONATE_USER, and the per-client GOOGLE_DRIVE_ROOT_FOLDER (present AND not
-    an unresolved template slot). Returns (report, missing). PRESENCE ONLY -- never a
-    value, never a fingerprint input (these creds are BlackCEO-owned and shared by
-    design)."""
+    """Confirm this box can deliver to Google Drive, by EITHER of two modes:
+
+      n8n_broker (fleet client box): the broker pair (N8N_DRIVE_WEBHOOK_URL +
+        N8N_DRIVE_WEBHOOK_TOKEN) is SET. The box holds NO Google key -- Trevor's
+        service account lives ONLY in n8n. Both broker levers are REQUIRED (a
+        half-configured broker fails loudly); the SA trio is INFORMATIONAL.
+      local_sa (the operator's own box): no broker configured, so the three SA
+        levers are REQUIRED -- GOOGLE_SA_KEY_FILE (the FILE must exist; its CONTENTS
+        are never read or printed), GOOGLE_IMPERSONATE_USER, and the per-client
+        GOOGLE_DRIVE_ROOT_FOLDER (present AND not an unresolved template slot).
+
+    Returns (report, missing, mode). PRESENCE ONLY -- never a value, never a
+    fingerprint input (the SA creds are BlackCEO-owned and shared by design; the
+    broker token is a low-privilege shared secret)."""
+    # 1) Is the n8n Drive broker present on this box? (any lever seen -> broker mode)
+    broker = {}
+    broker_present = {}
+    for fam, aliases in N8N_DRIVE_BROKER_FAMILIES:
+        res = resolve_label(fam, aliases, sources)
+        present = res.present and not _is_unresolved_slot(res.value)
+        broker_present[fam] = present
+        broker[fam] = {"label": res.label, "source": res.source,
+                       "presence": _mask(res.value), "present": present}
+    any_broker = any(broker_present.values())
+
+    if any_broker:
+        # BROKER MODE. Both broker levers required; SA trio informational only.
+        report = {}
+        missing = []
+        for fam, _aliases in N8N_DRIVE_BROKER_FAMILIES:
+            entry = dict(broker[fam]); entry["required"] = True
+            report[fam] = entry
+            if not entry["present"]:
+                missing.append(fam)
+        for fam, aliases in GOOGLE_DELIVERY_FAMILIES:
+            res = resolve_label(fam, aliases, sources)
+            report[fam] = {"required": False, "label": res.label, "source": res.source,
+                           "presence": _mask(res.value), "present": res.present,
+                           "note": "not required in n8n-broker mode (Google creds live "
+                                   "ONLY in n8n; this box holds no Google key)"}
+        return report, missing, "n8n_broker"
+
+    # 2) LOCAL-SA MODE (the operator's own box). The three SA levers are required.
     report = {}
     missing = []
     for fam, aliases in GOOGLE_DELIVERY_FAMILIES:
@@ -597,7 +645,13 @@ def google_delivery_presence(sources):
         if not present:
             missing.append(fam)
         report[fam] = entry
-    return report, missing
+    # Note the broker pair's absence so the operator surface shows WHY SA is required.
+    for fam, _aliases in N8N_DRIVE_BROKER_FAMILIES:
+        report[fam] = {"required": False, "label": broker[fam]["label"],
+                       "source": broker[fam]["source"], "presence": broker[fam]["presence"],
+                       "present": False,
+                       "note": "n8n broker not configured on this box -> local-SA mode"}
+    return report, missing, "local_sa"
 
 
 # ---------------------------------------------------------------------------
@@ -719,9 +773,9 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
 
     # PER-CLIENT Google delivery presence (opt-in; provisioning turns it ON). PRESENCE
     # ONLY, and EXCLUDED from the commingle fingerprint below (BlackCEO-owned, shared).
-    delivery_report, missing_delivery = ({}, [])
+    delivery_report, missing_delivery, delivery_mode = ({}, [], None)
     if require_delivery:
-        delivery_report, missing_delivery = google_delivery_presence(sources)
+        delivery_report, missing_delivery, delivery_mode = google_delivery_presence(sources)
 
     pairing = pairing_proof(resolutions_by_family)
 
@@ -772,7 +826,8 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         "fingerprint": fp_verdict,
         "inline_scan": inline,
         "delivery_gated": require_delivery,
-        "delivery": {"resolutions": delivery_report, "missing": missing_delivery},
+        "delivery": {"resolutions": delivery_report, "missing": missing_delivery,
+                     "mode": delivery_mode},
         "verdict": verdict,
         "exit_code": exit_code,
     }
@@ -1134,6 +1189,30 @@ def self_test():
     assert code3 == EX_OK, "an unset box-generated secret must NOT gate the DEFAULT credential gate"
     print("  [18] --require-anthology-hook-secret: unset->exit2, set->exit0, "
           "default-ungated (no value leak): OK")
+
+    # 19. n8n Drive CREDENTIAL BROKER mode (fleet client box): the broker pair
+    #     REPLACES the SA trio. With the broker configured, delivery PASSES with NO
+    #     Google key on the box (Trevor's creds live ONLY in n8n); a half-configured
+    #     broker fails loudly; and the low-privilege token VALUE never leaks.
+    brk = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+           "N8N_DRIVE_WEBHOOK_URL": "https://main.blackceoautomations.com/webhook/anthology-drive",
+           "N8N_DRIVE_WEBHOOK_TOKEN": "lowPrivBrokerTokenUNIT19"}
+    code, rep = gate(environ=brk, store_paths=[], do_scan=False, require_delivery=True)
+    assert code == EX_OK and rep["verdict"] == "PASS", rep
+    assert rep["delivery"]["mode"] == "n8n_broker", rep
+    assert rep["delivery"]["missing"] == [], rep
+    assert rep["delivery"]["resolutions"]["n8n_drive_webhook_token"]["present"] is True, rep
+    # no Google SA key present on the box, yet delivery is satisfied (broker holds it)
+    assert rep["delivery"]["resolutions"]["google_sa_key_file"]["required"] is False, rep
+    assert rep["fingerprint"]["clean"], "the broker token must never enter the commingle fingerprint"
+    assert "lowPrivBrokerTokenUNIT19" not in json.dumps(rep), "the broker token value leaked into the report"
+    # half-configured broker (token missing) -> exit 2 LOUD STOP (never a silent no-op)
+    half = {k: v for k, v in brk.items() if k != "N8N_DRIVE_WEBHOOK_TOKEN"}
+    code, rep = gate(environ=half, store_paths=[], do_scan=False, require_delivery=True)
+    assert code == EX_MISSING and "n8n_drive_webhook_token" in rep["delivery"]["missing"], rep
+    assert rep["delivery"]["mode"] == "n8n_broker", rep
+    print("  [19] n8n broker mode: broker pair replaces SA trio (PASS, no key on box, "
+          "no token leak); half-configured -> exit 2: OK")
 
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
