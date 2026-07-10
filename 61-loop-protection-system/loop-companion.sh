@@ -10,9 +10,12 @@
 #   install [...]             idempotent install / upgrade (host-level, refuses root)
 #   verify                    the failable drill battery
 #   troubleshoot              the "the healer itself is looping" decision tree
-#   fix <finding-id>          operator-commanded execution of a prepared kill card
-#   approve <finding-id>      approve a Tier-2 proposal, then execute it
-#   park <unit> / unpark <unit>   park/unpark a supervised unit
+#   fix <finding-id>          operator-commanded kill card by finding id: the config-
+#                             free process-park (LF-6) applies for real; a config-
+#                             touching class is PREPARED (command + revert), applied on-box
+#   approve <finding-id>      approve a Tier-2 proposal (prepares its on-box command + revert)
+#   park <unit> / unpark <unit>|--finding <id>   park / unpark a supervised unit
+#                             (`unpark --finding <id>` is the emitted one-line revert)
 #   arm / disarm              leave / re-enter DRY_RUN observe-only (spec 6.1)
 #   escalate                  push unacked P1s to Rescue Rangers
 #   --self-test               run EVERY script's --self-test (the aggregate gate)
@@ -29,7 +32,7 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 6
 fi
 
-usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 py() { python3 "$SCRIPTS/$1" "${@:2}"; }
 
 aggregate_self_test() {
@@ -62,10 +65,11 @@ case "$CMD" in
     verify)       bash "$SELF_DIR/verify.sh" "$@" ;;
     arm)          py loop_ledger.py arm "$@" ;;
     disarm)       py loop_ledger.py disarm "$@" ;;
-    park)         py loop_breaker.py "$@" 2>/dev/null || { echo "$TAG park <unit>: use the companion status to confirm" >&2; exit 2; } ;;
-    unpark)       py loop_breaker.py "$@" 2>/dev/null || { echo "$TAG unpark <unit>" >&2; exit 2; } ;;
+    park)         py loop_breaker.py park "$@" ;;
+    unpark)       py loop_breaker.py unpark "$@" ;;
     escalate)     py loop_escalate.py "$@" ;;
-    fix|approve)  echo "$TAG '$CMD' executes a prepared kill card by finding-id; requires an armed box + the finding's prepared plan (see status)." ;;
+    fix)          py loop_killcards.py fix "$@" ;;
+    approve)      py loop_killcards.py approve "$@" ;;
     --self-test)  aggregate_self_test ;;
     -h|--help|"") usage ;;
     *) echo "$TAG unknown command: $CMD" >&2; usage >&2; exit 2 ;;

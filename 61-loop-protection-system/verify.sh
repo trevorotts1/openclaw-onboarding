@@ -9,7 +9,11 @@
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN,
-# D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN).
+# D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT).
+# D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
+# breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
+# the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
+# reverted in one line does not ship).
 #
 # EXIT: 0 verified, 4 drift/failure.
 # =============================================================================
@@ -43,7 +47,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -175,6 +179,51 @@ with tempfile.TemporaryDirectory() as td:
     led.close()
     check("D-DRYRUN armed=false plans, filesystem byte-identical",
           res["status"] == "planned" and before == after)
+
+# D-ARMED-PARK: an ARMED tick over the restart-storm fixture actually PARKS the unit
+# and TRIPS the process breaker in ONE tick - the RESPOND flagship, exercised through
+# the WHOLE tick pipeline (not the isolated BR.process_breaker_trips predicate). The
+# old empty-executors watchdog ESCALATED here instead of parking; this drill fails if
+# that regresses. A quiet unit is never parked.
+import loop_watchdog as W
+with tempfile.TemporaryDirectory() as td:
+    led = Ledger(os.path.join(td, "loop-protection"))
+    raw = load("restart-storm.jlist.json")
+    units = [dict(C.filter_pm2_record(r), delta=C.filter_pm2_record(r)["restarts"]) for r in raw]
+    ev = {"units": units, "windows": [], "runs": [], "crons": [], "wedge": {}}
+    def _dead_tx(url, body):  # no network in a drill
+        raise OSError("offline drill")
+    summary = W.tick(ev, led, armed=True, escalate_transport=_dead_tx, box="box-example")
+    parked = [r["unit"] for r in led.parked_units()]
+    tripped = [(r["unit"], r["breaker"]) for r in led.tripped_breakers()]
+    check("D-ARMED-PARK armed tick parks cc-app AND trips the process breaker (full tick, not the predicate)",
+          summary["applied"] >= 1 and "cc-app" in parked
+          and ("cc-app", "process") in tripped and "gateway" not in parked)
+    led.close()
+
+# D-REVERT: the operator's ONE-LINE revert actually reverts. Record a real finding,
+# `fix` it (LF-6 parks the unit for real), then run the EMITTED one-line revert
+# (loop-companion.sh unpark --finding <id>) through the REAL companion entry and prove
+# the unit is UNPARKED. This exercises revert_command_for + the companion + the new
+# loop_breaker/loop_killcards CLIs end to end (spec 4.2).
+import subprocess
+with tempfile.TemporaryDirectory() as td:
+    sd = os.path.join(td, "loop-protection")
+    led = Ledger(sd)
+    fid = led.record_finding("LP-B1", "P1", unit="cc-app", detail="[DRILL] restart storm", tier=1)
+    led.close()
+    companion = os.path.join(os.environ["SKILL_DIR"], "loop-companion.sh")
+    denv = dict(os.environ, LOOP_STATE_DIR=sd)
+    fixp = subprocess.run(["bash", companion, "fix", str(fid)], capture_output=True, text=True, env=denv)
+    led = Ledger(sd); parked_after_fix = [r["unit"] for r in led.parked_units()]; led.close()
+    emitted = C.revert_command_for(fid)
+    shape_ok = ("loop-companion.sh unpark --finding %d" % fid) in emitted
+    revp = subprocess.run(["bash", companion, "unpark", "--finding", str(fid)],
+                          capture_output=True, text=True, env=denv)
+    led = Ledger(sd); parked_after_revert = [r["unit"] for r in led.parked_units()]; led.close()
+    check("D-REVERT fix parks; the emitted `unpark --finding <id>` one-line revert unparks it",
+          fixp.returncode == 0 and "cc-app" in parked_after_fix
+          and shape_ok and revp.returncode == 0 and "cc-app" not in parked_after_revert)
 
 os.environ.pop("LOOP_ALLOW_ROOT", None)
 if fails:

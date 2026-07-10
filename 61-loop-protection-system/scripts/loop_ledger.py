@@ -303,6 +303,13 @@ class Ledger:
             q += " LIMIT %d" % int(limit)
         return [dict(r) for r in self.conn.execute(q).fetchall()]
 
+    def get_finding(self, finding_id):
+        """One finding by id (read-only). The finding->unit lookup the operator
+        one-line revert (`unpark --finding <id>`) and `fix <id>` both stand on."""
+        row = self.conn.execute(
+            "SELECT * FROM findings WHERE finding_id=?", (finding_id,)).fetchone()
+        return dict(row) if row else None
+
     def unacked_p1_older_than(self, minutes):
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         out = []

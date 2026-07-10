@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -32,6 +33,9 @@ if str(_HERE) not in sys.path:
 
 import loop_common as C  # noqa: E402
 from loop_ledger import Ledger  # noqa: E402
+
+# Exit contract mirrors the ledger CLI: 0 OK, 2 usage, 3 not-found / predicate false.
+EX_OK, EX_USAGE, EX_FALSE = 0, 2, 3
 
 
 def load_breakers():
@@ -151,10 +155,80 @@ def self_test():
     return 0
 
 
-if __name__ == "__main__":
+# --------------------------------------------------------------------------- #
+# CLI (operator park / unpark - the one-line revert the whole skill stands on).
+# Exit contract mirrors the ledger: 0 OK, 2 usage, 3 not-found/false.
+# --------------------------------------------------------------------------- #
+def _resolve_unit(ledger, unit, finding_id):
+    """Resolve the target unit: an explicit <unit> wins; otherwise look the finding
+    up in the ledger and take ITS unit. This is the finding->unit lookup the operator
+    revert (`unpark --finding <id>`) needs and previously lacked. Returns (unit, err)."""
+    if unit:
+        return unit, None
+    if finding_id is not None:
+        f = ledger.get_finding(finding_id)
+        if not f:
+            return None, "finding %s not found in the ledger" % finding_id
+        if not f.get("unit"):
+            return None, "finding %s carries no unit to act on" % finding_id
+        return f["unit"], None
+    return None, "a <unit> or --finding <id> is required"
+
+
+def _cli(argv=None):
     ap = argparse.ArgumentParser(description="Loop Protection circuit breakers.")
-    ap.add_argument("--self-test", action="store_true")
-    a = ap.parse_args()
+    ap.add_argument("--self-test", action="store_true",
+                    help="run the deterministic self-test and exit")
+    ap.add_argument("--state-dir",
+                    help="override the ledger state dir (default $LOOP_STATE_DIR)")
+    sub = ap.add_subparsers(dest="cmd")
+    for name, helptext in (
+            ("park", "park a supervised unit (visible-red; no auto-respawn)"),
+            ("unpark", "clear park+trip on a unit (the operator one-line revert)")):
+        sp = sub.add_parser(name, help=helptext)
+        sp.add_argument("unit", nargs="?", help="the unit name")
+        sp.add_argument("--finding", type=int,
+                        help="resolve the unit from a ledger finding id")
+    sub.add_parser("status", help="list parked units + tripped breakers (read-only)")
+
+    a = ap.parse_args(argv)
     if a.self_test:
-        raise SystemExit(self_test())
-    ap.print_help()
+        return self_test()
+    if not a.cmd:
+        ap.print_help()
+        return EX_OK
+
+    state_dir = Path(a.state_dir) if getattr(a, "state_dir", None) else None
+    ledger = Ledger(state_dir)
+    try:
+        if a.cmd == "status":
+            print(json.dumps({"parked_units": [r["unit"] for r in ledger.parked_units()],
+                              "tripped_breakers": [[r["unit"], r["breaker"]]
+                                                   for r in ledger.tripped_breakers()]},
+                             sort_keys=True))
+            return EX_OK
+        unit, err = _resolve_unit(ledger, getattr(a, "unit", None),
+                                  getattr(a, "finding", None))
+        if err:
+            sys.stderr.write("REFUSED [loop_breaker]: %s\n" % err)
+            return EX_FALSE if a.finding is not None else EX_USAGE
+        if a.cmd == "park":
+            park(unit, ledger)
+            print(json.dumps({"ok": True, "action": "park", "unit": unit,
+                              "revert": "loop-companion.sh unpark %s" % unit},
+                             sort_keys=True))
+            return EX_OK
+        # unpark: the operator revert. Clears every parked/tripped row for the unit
+        # and (when driven by --finding) marks the finding resolved.
+        cleared = unpark(unit, ledger)
+        if a.finding is not None:
+            ledger.set_finding_state(a.finding, "resolved")
+        print(json.dumps({"ok": True, "action": "unpark", "unit": unit,
+                          "cleared": cleared}, sort_keys=True))
+        return EX_OK
+    finally:
+        ledger.close()
+
+
+if __name__ == "__main__":
+    sys.exit(_cli())

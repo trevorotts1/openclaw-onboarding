@@ -113,8 +113,22 @@ without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (nine drills; the D-ESCALATE drill injects a failing transport, so no external
-API is ever touched).
+proof (eleven drills; the D-ESCALATE drill injects a failing transport, so no external
+API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
+**D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
+is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
+revert (`unpark --finding <id>`) and asserts it unparks.
+
+**What the operator commands actually do.** `park <unit>` / `unpark <unit>` and the
+emitted revert `unpark --finding <id>` (finding→unit resolved from the ledger) are
+real, tested, and reversible. `fix <finding-id>` executes the **config-free**
+process-unit park (LF-6) for real against the ledger — the one act that touches no
+client config — and records its one-line revert. Every **config-touching** Tier-1 class
+(LF-1/2/4/5/7) and every Tier-2 config-shape change (LF-8) is **prepared** by
+`fix`/`approve` (the exact command + one-line revert) and applied **ON-BOX** via the
+maintenance path (`docker exec -u node` on VPS), **never auto-applied off-box**. This is
+a deliberate, honest scope: the unattended tick and the off-box `fix` never mutate
+client config; only a supervised process gets parked automatically.
 
 ## Who operates it (the architecture answer, spec Section 8)
 

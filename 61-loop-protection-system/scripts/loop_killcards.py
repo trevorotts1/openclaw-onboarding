@@ -217,6 +217,58 @@ def apply(plan_dict, ledger, armed, executors, verify_failed_last=False):
     return {"status": "refused", "detail": r.get("reason"), "escalate": False}
 
 
+# --------------------------------------------------------------------------- #
+# Operator-commanded execution of a prepared kill card by finding id (spec 9.1).
+# An explicit `fix`/`approve` IS the operator's word for THIS finding, so the one
+# config-FREE, deterministic act - the process-unit park (LF-6) - executes for real
+# against the ledger. Every config-touching class (LF-1/2/4/5/7) and every Tier-2
+# config-shape change is PREPARED here (exact command + one-line revert) and applied
+# ON-BOX via the maintenance path, NEVER auto-applied off-box: an honest hand-off,
+# not a stub that claims success.
+# --------------------------------------------------------------------------- #
+def run_fix(ledger, finding_id, box="box", approve=False):
+    """Execute (LF-6) or prepare (everything else) the kill card for a finding.
+    Returns (result_dict, exit_code) with the ledger exit contract (0/2/3)."""
+    f = ledger.get_finding(finding_id)
+    if not f:
+        return {"ok": False, "reason": "finding %s not found in the ledger" % finding_id}, 3
+    kc = plan({"loop_class": f.get("loop_class"), "finding_id": finding_id}, box=box)
+    kc["unit"] = f.get("unit")
+    fc = kc.get("fix_class")
+    tier = kc.get("tier")
+    if approve and tier != 2:
+        return {"ok": False, "action": "reject",
+                "reason": "approve is for a Tier-2 proposal; finding %s is tier %s"
+                          % (finding_id, tier), "prepared": kc}, 2
+    # config-FREE, deterministic act: park the crash-looping process unit (LF-6).
+    if fc == "LF-6":
+        unit = f.get("unit")
+        if not unit:
+            return {"ok": False, "reason": "finding %s carries no unit to park" % finding_id}, 2
+        r = lf6_park_process(unit, ledger, dry_run=False)
+        applied = bool(r.get("applied"))
+        ledger.record_fix(finding_id, fc, unit=unit, what=kc.get("what"),
+                          verify_outcome="applied" if applied else "refused",
+                          revert_cmd=kc.get("revert_cmd"), dry_run=False)
+        ledger.set_finding_state(finding_id, "fixed" if applied else "escalated")
+        return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
+                "applied": applied, "detail": r.get("reason"),
+                "revert_cmd": kc.get("revert_cmd")}, 0
+    # no Tier-1 kill card at all -> propose-and-hold (Rescue Rangers).
+    if fc is None:
+        return {"ok": False, "action": "hold", "fix_class": None, "tier": tier,
+                "reason": "no Tier-1 kill card for %s; propose-and-hold -> escalate to "
+                          "Rescue Rangers" % f.get("loop_class"),
+                "prepared": kc, "revert_cmd": kc.get("revert_cmd")}, 0
+    # config-touching Tier-1 / Tier-2: PREPARE the exact command + revert; apply ON-BOX.
+    verb = "approved-tier2" if approve else "prepared"
+    return {"ok": True, "action": verb, "fix_class": fc, "tier": tier, "unit": f.get("unit"),
+            "reason": "%s: fix class %s touches box config; apply ON-BOX via the maintenance "
+                      "path (docker exec -u node on VPS), never auto-applied off-box. The exact "
+                      "command + one-line revert are prepared below." % (verb, fc),
+            "prepared": kc, "revert_cmd": kc.get("revert_cmd")}, 0
+
+
 def self_test():
     import tempfile
     print("[loop_killcards] self-test: plan, LF-1 lock, LF-4 cron, DRY_RUN byte-identical, healer breaker")
@@ -287,14 +339,76 @@ def self_test():
         led.close()
         print("  apply case: PASS (DRY_RUN plans; healer breaker escalates >3/24h & verify-fail)")
 
+        # run_fix: `fix <id>` on an LP-B1 finding PARKS the unit for real (config-free
+        # LF-6) and records a one-line revert; a config-touching class is PREPARED, not
+        # applied; a Tier-3 class holds. This is the operator `fix`/`approve` path.
+        led = Ledger(Path(td) / "loop-protection-fix")
+        fid = led.record_finding("LP-B1", "P1", unit="cc-app", detail="storm", tier=1)
+        res, rc = run_fix(led, fid)
+        assert rc == 0 and res["ok"] and res["fix_class"] == "LF-6"
+        assert any(r["unit"] == "cc-app" for r in led.parked_units())
+        assert any(r["unit"] == "cc-app" and r["breaker"] == "process"
+                   for r in led.tripped_breakers())
+        assert "unpark --finding %d" % fid in res["revert_cmd"]
+        assert led.get_finding(fid)["state"] == "fixed"
+        cid = led.record_finding("LP-A4", "P1", unit="resume", detail="cron", tier=1)
+        cres, crc = run_fix(led, cid)   # LF-4 is config-touching -> prepared, not applied
+        assert crc == 0 and cres["action"] == "prepared" and cres["fix_class"] == "LF-4"
+        hid = led.record_finding("LP-D1", "P2", unit="x", detail="hold", tier=3)
+        hres, _ = run_fix(led, hid)     # no Tier-1 kill card -> hold
+        assert hres["action"] == "hold" and hres["fix_class"] is None
+        miss, mrc = run_fix(led, 999999)  # unknown finding -> not found (rc 3)
+        assert mrc == 3 and miss["ok"] is False
+        led.close()
+        print("  run_fix case: PASS (LF-6 parks for real+revertible; config prepared; hold; not-found=3)")
+
     print("[loop_killcards] self-test: PASS")
     return 0
 
 
-if __name__ == "__main__":
+# --------------------------------------------------------------------------- #
+# CLI: operator `fix` / `approve` / `plan` by finding id (routed via loop-companion.sh).
+# --------------------------------------------------------------------------- #
+def _cli(argv=None):
     ap = argparse.ArgumentParser(description="Loop Protection kill cards.")
     ap.add_argument("--self-test", action="store_true")
-    a = ap.parse_args()
+    ap.add_argument("--state-dir",
+                    help="override the ledger state dir (default $LOOP_STATE_DIR)")
+    sub = ap.add_subparsers(dest="cmd")
+    for name, helptext in (
+            ("fix", "operator-commanded execution of a prepared kill card by finding id"),
+            ("approve", "approve a Tier-2 proposal by finding id (prepares the on-box command)"),
+            ("plan", "print the prepared kill card for a finding id (read-only)")):
+        sp = sub.add_parser(name, help=helptext)
+        sp.add_argument("finding_id", type=int, help="the ledger finding id")
+
+    a = ap.parse_args(argv)
     if a.self_test:
-        raise SystemExit(self_test())
-    ap.print_help()
+        return self_test()
+    if not a.cmd:
+        ap.print_help()
+        return 0
+
+    from loop_ledger import Ledger  # local import keeps self-test path import-light
+    state_dir = Path(a.state_dir) if getattr(a, "state_dir", None) else None
+    ledger = Ledger(state_dir)
+    try:
+        box = ledger.get_meta("box", "box")
+        if a.cmd == "plan":
+            f = ledger.get_finding(a.finding_id)
+            if not f:
+                sys.stderr.write("REFUSED [loop_killcards]: finding %s not found\n" % a.finding_id)
+                return 3
+            kc = plan({"loop_class": f.get("loop_class"), "finding_id": a.finding_id}, box=box)
+            kc["unit"] = f.get("unit")
+            print(json.dumps(kc, sort_keys=True))
+            return 0
+        result, rc = run_fix(ledger, a.finding_id, box=box, approve=(a.cmd == "approve"))
+        print(json.dumps(result, sort_keys=True))
+        return rc
+    finally:
+        ledger.close()
+
+
+if __name__ == "__main__":
+    sys.exit(_cli())

@@ -88,13 +88,24 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
         kc = KC.plan({"loop_class": f["loop_class"], "finding_id": fid}, box=box)
         kc["unit"] = f.get("unit")
         # Route by tier. Tier-1 auto-applies ONLY when armed; else it plans. Tier 2/3
-        # never auto-apply. No executors are wired in the generic tick (the concrete
-        # LF executor is bound by the companion `fix`/`approve` path against real
-        # paths) - so an armed Tier-1 here records the PLAN + a prepared kill card and
-        # leaves the mechanical mutation to the approved `fix` command. This keeps the
-        # unattended tick from touching client config without an explicit fix step,
-        # while still parking process units via the breaker (the one safe in-tick act).
-        result = KC.apply(kc, led, armed=armed, executors={}, verify_failed_last=False)
+        # never auto-apply. The ONE safe in-tick mechanical act is parking a crash-
+        # looping PROCESS unit via the process breaker (LF-6: STOP + park, visible-red,
+        # never respawns) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
+        # finding, which is exactly a process-breaker trip: >=10/tick or >=40/day) parks
+        # in-tick; a WARN plans only. Every config-touching kill card (LF-1/2/4/5/7)
+        # stays plan-only in the unattended tick and is applied SOLELY by an explicit
+        # operator `fix`, so the tick never touches client config unattended. DRY_RUN =>
+        # LF-6 plans (mutates nothing - the D-DRYRUN invariant); armed => LF-6 trips the
+        # process breaker + parks the unit. Escalation stays an ADD-ON (the P1 operator
+        # alert below, plus Tier-3 / healer-breaker escalation) - never a substitute for
+        # the park (the old empty-executors bug ESCALATED instead of parking).
+        in_tick_executors = {}
+        if f.get("severity") == "P1" and kc.get("fix_class") == "LF-6" and f.get("unit"):
+            _park_unit = f["unit"]
+            in_tick_executors["LF-6"] = (
+                lambda dry_run, _u=_park_unit: KC.lf6_park_process(_u, led, dry_run=dry_run))
+        result = KC.apply(kc, led, armed=armed, executors=in_tick_executors,
+                          verify_failed_last=False)
         if result["status"] == "applied":
             summary["applied"] += 1
             led.record_fix(fid, kc.get("fix_class"), unit=f.get("unit"),
