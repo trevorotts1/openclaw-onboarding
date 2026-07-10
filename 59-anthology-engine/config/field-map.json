@@ -19,6 +19,22 @@
   },
   "cover_field_semantics": "For the cover deliverable the pair is not a Doc/PDF pair: doc_url carries the Convert and Flow media-storage image link (contact.anthology_cover_image_url) and pdf_url carries the Drive link (contact.anthology_cover_drive_url), per PRD Section 6.",
 
+  "cover_style_fields": {
+    "$note": "U8 (B8): the cover is delivered as a SET of four distinctly-styled portrait covers (the named styles + their prompt directives are config-pinned in scripts/cover_render.py COVER_STYLES, exactly one strictly typography-driven). S7 renders/uploads all four to media storage + Drive and stamps each style's displayable media-storage image link into its sample_url field (slot 1..4). The producer approves the SET (no down-select); the client picks ONE via the universal-review 'cover' SINGLE_OPTIONS dropdown (choice_field, offering choice_options by NAME). That pick copies the chosen style's media link + Drive link into the EXISTING cover fields named in target_cover_fields, which then flow to S8 exactly as the single cover did before. This block carries FIELD KEYS only; the style names here MUST byte-equal scripts/cover_render.py STYLE_NAMES in order (coherence self-tested).",
+    "sample_url_fields": {
+      "1": "contact.anthology_cover_sample1_url",
+      "2": "contact.anthology_cover_sample2_url",
+      "3": "contact.anthology_cover_sample3_url",
+      "4": "contact.anthology_cover_sample4_url"
+    },
+    "choice_field": "contact.anthology_cover_choice",
+    "choice_options": ["Signature", "Bold Editorial", "Fine Art", "Pure Type"],
+    "target_cover_fields": {
+      "image": "contact.anthology_cover_image_url",
+      "drive": "contact.anthology_cover_drive_url"
+    }
+  },
+
   "artifact_type_aliases": {
     "$note": "Bridges the ledger's ARTIFACT_TYPES vocabulary (scripts/anthology_state.py) to this file's deliverable_fields vocabulary above. The two were named independently and drifted (SESSION-LOG.md resume-checkpoint drift #2): the ledger names a chapter rewrite 'rewrite' (a new VERSION of the same chapter deliverable, never its own field pair) and names the assembled book 'anthology_manuscript' (this file's pair is 'manuscript'). caf_delivery.py's FieldMap.deliverable_for_artifact_type() is the ONE translation point and is called by every S8/S9 collaborator BEFORE it names a --deliverable to caf_delivery.py; an artifact_type absent from this map is a hard refusal (AF-AE-VOCAB-DRIFT), never a guess. Keys MUST equal scripts/anthology_state.py ARTIFACT_TYPES exactly (self-tested); values MUST each be a key of deliverable_fields above (self-tested).",
     "avatar": "avatar",
@@ -37,7 +53,7 @@
     "stage":         "contact.anthology_stage",
     "rewrite_count": "contact.anthology_rewrite_count"
   },
-  "provisioning_rule": "All eight deliverable Doc/PDF field pairs (16 keys) plus the three control fields (19 keys total) are created-or-verified per client at setup by exact key. A missing field STOPS setup with an operator surface; runtime NEVER silently creates a field.",
+  "provisioning_rule": "All eight deliverable Doc/PDF field pairs (16 keys) plus the three control fields plus the five U8 cover-style fields (four LARGE_TEXT sample-url fields + one SINGLE_OPTIONS choice field) are created-or-verified per client at setup by exact key (24 keys total). A missing field STOPS setup with an operator surface; runtime NEVER silently creates a field.",
   "readback_rule": "Every write is read back byte-for-byte in the same job; a mismatch is AF-AE-READBACK-MISMATCH (caf_delivery.py exit 5).",
 
   "field_key_derivation_law": {
@@ -51,8 +67,8 @@
 
   "provisioning": {
     "$note": "The machine inventory the provisioner iterates. Every element carries the immutable CONTRACT (intended_key, create_name, data_type, deliverable, slot) plus RESOLVED slots that are NULL in this committed template and are filled per box, in place, by anthology_registry.py provision-fields as the node user. The committed template MUST ship with every resolved slot null: no client-specific field id, no location value, no timestamp is ever committed. On a client box the installed copy of this file carries the resolved values; the repo copy stays a pure template.",
-    "data_type_choice": "TEXT for all nineteen keys. TEXT was byte-for-byte verified at Wave 0 (80 chars incl. unicode, spaces, pipe, ampersand, percent-encoding; sha256 sent == sha256 read-back). LARGE_TEXT is the sanctioned fallback ONLY if a provider link ever exceeds the TEXT ceiling; changing a live field's dataType is a provisioning decision, never a silent runtime act.",
-    "total_keys": 19,
+    "data_type_choice": "TEXT for the original nineteen link/control keys. TEXT was byte-for-byte verified at Wave 0 (80 chars incl. unicode, spaces, pipe, ampersand, percent-encoding; sha256 sent == sha256 read-back). LARGE_TEXT is the sanctioned fallback ONLY if a provider link ever exceeds the TEXT ceiling; changing a live field's dataType is a provisioning decision, never a silent runtime act. The five U8 cover-style keys are provisioned as: the four anthology_cover_sample{1..4}_url fields as LARGE_TEXT (they carry a full media-storage/Drive link, matching the multi-line law) and anthology_cover_choice as SINGLE_OPTIONS whose picklist options are the four style NAMES (created from this inventory row's options; the client picks exactly one in the universal-review cover dropdown).",
+    "total_keys": 24,
     "fields": [
       {"intended_key": "contact.anthology_avatar_doc_url",     "create_name": "anthology_avatar_doc_url",     "data_type": "TEXT", "deliverable": "avatar",     "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_avatar_pdf_url",     "create_name": "anthology_avatar_pdf_url",     "data_type": "TEXT", "deliverable": "avatar",     "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
@@ -68,6 +84,11 @@
       {"intended_key": "contact.anthology_chapter_pdf_url",    "create_name": "anthology_chapter_pdf_url",    "data_type": "TEXT", "deliverable": "chapter",    "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_cover_image_url",    "create_name": "anthology_cover_image_url",    "data_type": "TEXT", "deliverable": "cover",      "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_cover_drive_url",    "create_name": "anthology_cover_drive_url",    "data_type": "TEXT", "deliverable": "cover",      "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_sample1_url",  "create_name": "anthology_cover_sample1_url",  "data_type": "LARGE_TEXT", "deliverable": "cover_style", "slot": "sample1", "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_sample2_url",  "create_name": "anthology_cover_sample2_url",  "data_type": "LARGE_TEXT", "deliverable": "cover_style", "slot": "sample2", "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_sample3_url",  "create_name": "anthology_cover_sample3_url",  "data_type": "LARGE_TEXT", "deliverable": "cover_style", "slot": "sample3", "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_sample4_url",  "create_name": "anthology_cover_sample4_url",  "data_type": "LARGE_TEXT", "deliverable": "cover_style", "slot": "sample4", "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
+      {"intended_key": "contact.anthology_cover_choice",       "create_name": "anthology_cover_choice",       "data_type": "SINGLE_OPTIONS", "deliverable": "cover_style", "slot": "choice", "options": ["Signature", "Bold Editorial", "Fine Art", "Pure Type"], "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_manuscript_doc_url", "create_name": "anthology_manuscript_doc_url", "data_type": "TEXT", "deliverable": "manuscript", "slot": "doc_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_manuscript_pdf_url", "create_name": "anthology_manuscript_pdf_url", "data_type": "TEXT", "deliverable": "manuscript", "slot": "pdf_url",       "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},
       {"intended_key": "contact.anthology_active_id",          "create_name": "anthology_active_id",          "data_type": "TEXT", "deliverable": "control",    "slot": "active_id",     "field_key": null, "field_id": null, "verified_at": null, "location_masked": null},

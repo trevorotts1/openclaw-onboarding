@@ -120,6 +120,90 @@ COVER_ASPECT = "2:3"                     # portrait; the pinned cover ratio
 COVER_WIDTH, COVER_HEIGHT = 1024, 1536   # W0.6 measured portrait geometry
 OUTPUT_FORMAT = "png"
 
+# --------------------------------------------------------------------------- #
+# The four config-pinned NAMED cover styles (U8 / B8). ALL FOUR render on the
+# SAME image model + the SAME portrait 2:3 endpoint this adapter already uses;
+# the ONLY thing that differs per style is a STYLE DIRECTION appended to the
+# aw-11 base cover prompt (apply_style). Exactly ONE style -- "Pure Type" -- is
+# STRICTLY typography-driven: no pictorial imagery at all. The ORDER is
+# authoritative and maps 1:1 to config/field-map.json cover_style_fields:
+# COVER_STYLES[i].slot == sample_url_fields[str(slot)], and STYLE_NAMES (in this
+# order) == choice_options (the SINGLE_OPTIONS picklist the client picks from).
+# The client receives all four and picks their favourite; the producer approves
+# the SET (no down-select). Never rename a style without re-stamping field-map's
+# choice_options + slot mapping -- the coherence is self-tested.
+# --------------------------------------------------------------------------- #
+COVER_STYLES = (
+    {
+        "key": "signature",
+        "name": "Signature",
+        "slot": 1,
+        "typography_only": False,
+        "directive": (
+            "Render the flagship, market-ready book cover: a single strong focal "
+            "image or conceptual symbol executed with photographic/illustrative "
+            "polish, a disciplined 2-3 colour palette, premium foil-quality finish, "
+            "and a confident typographic hierarchy. This is the bestseller-shelf "
+            "default -- balanced, iconic, and instantly legible at thumbnail."
+        ),
+    },
+    {
+        "key": "bold_editorial",
+        "name": "Bold Editorial",
+        "slot": 2,
+        "typography_only": False,
+        "directive": (
+            "Render a bold magazine-editorial cover: an OVERSIZED, dominant "
+            "sans-serif title that fills the composition, aggressive high-contrast "
+            "colour blocking, a strict grid, and at most one restrained graphic "
+            "accent. Punchy, contemporary, and unmistakably loud on a shelf -- "
+            "typography leads, imagery is secondary and minimal."
+        ),
+    },
+    {
+        "key": "fine_art",
+        "name": "Fine Art",
+        "slot": 3,
+        "typography_only": False,
+        "directive": (
+            "Render a painterly, literary fine-art cover: textured, gallery-quality "
+            "artwork with a sophisticated muted palette, layered metaphorical "
+            "imagery, generous contemplative negative space, and an elegant serif "
+            "title set with refined tracking. Understated, timeless, and premium."
+        ),
+    },
+    {
+        "key": "pure_type",
+        "name": "Pure Type",
+        "slot": 4,
+        "typography_only": True,
+        "directive": (
+            "Render a strictly TYPE-DRIVEN cover: the design is built ENTIRELY from "
+            "the locked title, subtitle, and author byline as expressive editorial "
+            "typography on a solid or subtly-toned colour field. Dramatic scale and "
+            "weight contrast, deliberate kerning and alignment, and commanding "
+            "negative space carry the whole cover."
+        ),
+    },
+)
+STYLE_NAMES = tuple(s["name"] for s in COVER_STYLES)
+STYLE_KEYS = tuple(s["key"] for s in COVER_STYLES)
+
+STYLE_BLOCK_HEADER = "=== COVER STYLE DIRECTION (render this exact cover in the named style) ==="
+
+# The strict no-imagery constraint appended ONLY for the typography-only style so
+# the render can never fall back to a photographic/illustrative composition.
+TYPE_ONLY_CONSTRAINT = (
+    "STRICT TYPOGRAPHY-ONLY COVER: this cover contains NO photographic, "
+    "illustrative, pictorial, or figurative imagery of ANY kind -- no people, "
+    "objects, scenes, subject-textures, or decorative illustration. Compose the "
+    "ENTIRE cover from TYPOGRAPHY and flat colour alone. Keep it portrait 2:3 and "
+    "thumbnail-legible; the locked title, subtitle, and byline are reproduced "
+    "faithfully and carry the whole design."
+)
+
+STYLE_SET_CONTRACT = "anthology-engine-cover-style-set-render"
+
 # Kie result-CDN allowlist (Skill 46 box-kv-poller KIE_RESULT_HOSTS; W0.6
 # observed tempfile.aiquickdraw.com serving a live cover result).
 KIE_RESULT_HOSTS = (
@@ -379,6 +463,38 @@ def build_create_body(prompt, model=COVER_MODEL, aspect=COVER_ASPECT,
     return body
 
 
+# --------------------------------------------------------------------------- #
+# Named cover styles (U8): specialize the aw-11 BASE prompt into a per-style
+# prompt. Pure + deterministic + network-free (the differentiation is ALL in the
+# prompt; the model, endpoint, and portrait geometry are identical for all four).
+# --------------------------------------------------------------------------- #
+def _coerce_style(style):
+    """Accept a style dict (from COVER_STYLES), a style key ('pure_type'), or a
+    style name ('Pure Type'); return the canonical style dict. Raise ValueError on
+    an unknown selector."""
+    if isinstance(style, dict):
+        return style
+    if isinstance(style, str):
+        s = style.strip().lower()
+        for st in COVER_STYLES:
+            if st["key"].lower() == s or st["name"].lower() == s:
+                return st
+    raise ValueError("unknown cover style %r (known: %s)"
+                     % (style, ", ".join("%s/%s" % (st["key"], st["name"]) for st in COVER_STYLES)))
+
+
+def apply_style(base_prompt, style):
+    """Return the aw-11 BASE cover prompt specialized into ONE named style. Same
+    image model, same portrait 2:3 geometry; only the appended STYLE DIRECTION (and,
+    for the typography-only style, the strict no-imagery constraint) differs."""
+    st = _coerce_style(style)
+    parts = [(base_prompt or "").rstrip(), "", STYLE_BLOCK_HEADER,
+             "STYLE NAME: %s" % st["name"], st["directive"]]
+    if st.get("typography_only"):
+        parts += ["", TYPE_ONLY_CONSTRAINT]
+    return "\n".join(parts)
+
+
 def _extract_result_urls(data: dict):
     """Pull image URLs out of a recordInfo 'success' payload. data.resultJson is
     a JSON string (W0.6) -> resultUrls[]; also tolerate images[].url and
@@ -524,7 +640,7 @@ def _download_and_verify(urls, out_png: Path, timeout):
 # --------------------------------------------------------------------------- #
 def render(prompt, out_png: Path, participant_key="",
            base_url=None, key_labels=DEFAULT_KEY_LABELS, model=COVER_MODEL,
-           aspect=COVER_ASPECT, resolution=None,
+           aspect=COVER_ASPECT, resolution=None, style=None,
            poll_interval_s=DEFAULT_POLL_INTERVAL_S,
            poll_ceiling_s=DEFAULT_POLL_CEILING_S,
            poll_backoff_max_s=DEFAULT_POLL_BACKOFF_MAX_S,
@@ -541,6 +657,7 @@ def render(prompt, out_png: Path, participant_key="",
         "participant_key": participant_key,
         "model": model,
         "aspect_ratio": aspect,
+        "style": None,
         "target_dimensions": {"width": COVER_WIDTH, "height": COVER_HEIGHT, "portrait": True},
         "link_fields": link_fields,
         "local_png_path": str(out_png),
@@ -573,6 +690,22 @@ def render(prompt, out_png: Path, participant_key="",
         manifest["status"] = "refused"
         manifest["held_reason"] = "literal_key_in_prompt"
         return EX_REFUSE, manifest
+
+    # --- Named style (U8): specialize the base prompt. Same model + portrait
+    #     geometry; ONLY the appended STYLE DIRECTION differs. Unknown -> refuse.
+    style_dict = None
+    if style is not None:
+        try:
+            style_dict = _coerce_style(style)
+        except ValueError as exc:
+            _log("REFUSE: %s" % exc)
+            manifest["status"] = "refused"
+            manifest["held_reason"] = "unknown_style"
+            return EX_REFUSE, manifest
+        manifest["style"] = {"key": style_dict["key"], "name": style_dict["name"],
+                             "slot": style_dict.get("slot"),
+                             "typography_only": bool(style_dict.get("typography_only"))}
+    effective_prompt = apply_style(prompt, style_dict) if style_dict else prompt
 
     # --- Idempotent no-op: a completed render already on disk (SPEC 2.2).
     prior = _read_state(out_png)
@@ -613,7 +746,7 @@ def render(prompt, out_png: Path, participant_key="",
             task_id = prior["task_id"]
             _log("resuming in-flight task from render-state (no re-submit)")
         if not task_id:
-            body = build_create_body(prompt, model=model, aspect=aspect, resolution=resolution)
+            body = build_create_body(effective_prompt, model=model, aspect=aspect, resolution=resolution)
             _write_state(out_png, {"status": "submitting", "task_id": None,
                                    "participant_key": participant_key,
                                    "aspect_ratio": aspect, "model": model,
@@ -661,6 +794,55 @@ def render(prompt, out_png: Path, participant_key="",
 
 
 # --------------------------------------------------------------------------- #
+# render_style_set() (U8): render the aw-11 base prompt in ALL FOUR named styles.
+# A thin, ordered loop over render() -- each style renders on the SAME model +
+# portrait endpoint into its OWN out path. It RENDERS ONLY; upload to media
+# storage + Drive and the sample-field writes are the S7 stage runner's job.
+# `render_fn` is injectable so the offline self-test drives the loop with ZERO
+# network and ZERO spend.
+# --------------------------------------------------------------------------- #
+def _style_out_png(out_dir: Path, style) -> Path:
+    return Path(out_dir) / ("cover-%s.png" % style["key"])
+
+
+def render_style_set(base_prompt, out_dir, participant_key="", styles=COVER_STYLES,
+                     render_fn=None, **render_kwargs):
+    """Render `base_prompt` in each of the four named styles. Returns
+    (overall_code, set_manifest). overall_code is EX_OK only when ALL styles
+    landed; otherwise it is the FIRST non-OK style code (a held/refused style does
+    not abort the others -- the whole set is attempted so one hold does not hide a
+    second problem). Never prints a secret."""
+    rf = render_fn or render
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    entries = []
+    overall = EX_OK
+    for style in styles:
+        st = _coerce_style(style)
+        out_png = _style_out_png(out_dir, st)
+        code, manifest = rf(base_prompt, out_png, participant_key=participant_key,
+                            style=st, **render_kwargs)
+        if overall == EX_OK and code != EX_OK:
+            overall = code
+        entries.append({
+            "key": st["key"], "name": st["name"], "slot": st.get("slot"),
+            "typography_only": bool(st.get("typography_only")),
+            "out_png": str(out_png), "code": code,
+            "status": manifest.get("status"), "held_reason": manifest.get("held_reason"),
+            "source_url": manifest.get("source_url"), "manifest": manifest,
+        })
+    set_manifest = {
+        "contract": STYLE_SET_CONTRACT,
+        "schema_version": 1,
+        "participant_key": participant_key,
+        "style_count": len(entries),
+        "all_rendered": overall == EX_OK,
+        "styles": entries,
+    }
+    return overall, set_manifest
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 def _load_prompt(args) -> str:
@@ -702,8 +884,44 @@ def cmd_plan() -> int:
     print("  result CDN hosts : %s" % ", ".join(KIE_RESULT_HOSTS))
     print("  link fields NAMED: image=%s ; drive=%s"
           % (lf["cover_image_field"], lf["cover_drive_field"]))
+    print("  named styles (U8): %s" % ", ".join(
+        "%s%s" % (s["name"], " [type-only]" if s.get("typography_only") else "") for s in COVER_STYLES))
     print("  exit codes       : 0 PNG landed | 2 refuse | 3 held | 1 error")
     return EX_OK
+
+
+def cmd_list_styles() -> int:
+    """Print the four config-pinned named styles (slot order = choice-picklist +
+    sample-field order). Offline, no network."""
+    print("cover_render named cover styles (U8 / B8) -- slot order is authoritative:")
+    for s in COVER_STYLES:
+        print("  %d. %-14s (%s)%s" % (s["slot"], s["name"], s["key"],
+                                      "  [STRICTLY TYPOGRAPHY-DRIVEN]" if s.get("typography_only") else ""))
+        print("       %s" % s["directive"])
+    return EX_OK
+
+
+def cmd_style_set(args) -> int:
+    """Render the base prompt in ALL FOUR named styles into --out-dir. Writes
+    cover-<key>.png per style + a set manifest to --result-out (or stdout). Live
+    (spends per style); the offline path is --self-test / --list-styles."""
+    prompt = _load_prompt(args)
+    if not prompt.strip():
+        _log("REFUSE: empty prompt for the style set")
+        return EX_REFUSE
+    overall, setman = render_style_set(
+        prompt, Path(args.out_dir).expanduser(), participant_key=args.participant_key,
+        base_url=args.base_url, key_labels=tuple(args.key_labels), model=args.model,
+        aspect=args.aspect, resolution=args.resolution,
+        poll_interval_s=args.poll_interval, poll_ceiling_s=args.poll_ceiling,
+        create_timeout_s=args.create_timeout, download_timeout_s=args.download_timeout)
+    if args.result_out:
+        rp = Path(args.result_out).expanduser()
+        rp.parent.mkdir(parents=True, exist_ok=True)
+        rp.write_text(json.dumps(setman, indent=2), encoding="utf-8")
+    else:
+        print(json.dumps(setman, indent=2))
+    return overall
 
 
 def cmd_dry_run(args) -> int:
@@ -795,8 +1013,92 @@ def self_test() -> int:
     assert lf["cover_image_field"] and lf["cover_drive_field"]
     assert lf["cover_image_field"] != lf["cover_drive_field"]
 
+    # --- U8: four config-pinned NAMED cover styles ------------------------------
+    assert len(COVER_STYLES) == 4, "expected exactly 4 named cover styles"
+    assert len(set(STYLE_KEYS)) == 4 and len(set(STYLE_NAMES)) == 4, "style keys/names must be distinct"
+    assert tuple(s["slot"] for s in COVER_STYLES) == (1, 2, 3, 4), "slots must be 1..4 in order"
+    type_only = [s for s in COVER_STYLES if s.get("typography_only")]
+    assert len(type_only) == 1, "exactly one style must be strictly typography-driven"
+    assert type_only[0]["name"] == "Pure Type"
+
+    # _coerce_style accepts a dict, a key, or a name (case-insensitive); refuses junk.
+    assert _coerce_style("pure_type")["name"] == "Pure Type"
+    assert _coerce_style("Bold Editorial")["key"] == "bold_editorial"
+    assert _coerce_style(COVER_STYLES[0]) is COVER_STYLES[0]
+    try:
+        _coerce_style("no_such_style")
+        assert False, "unknown style must raise"
+    except ValueError:
+        pass
+
+    # apply_style appends the style direction; the type-only style adds the strict
+    # no-imagery constraint and every specialization differs from every other.
+    base = "A portrait book cover for LEAD BOLD, byline JANE DOE."
+    specialized = {s["key"]: apply_style(base, s) for s in COVER_STYLES}
+    for key, text in specialized.items():
+        st = _coerce_style(key)
+        assert base.rstrip() in text and STYLE_BLOCK_HEADER in text
+        assert st["name"] in text
+    assert TYPE_ONLY_CONSTRAINT in specialized["pure_type"]
+    assert "TYPOGRAPHY-ONLY" in specialized["pure_type"]
+    for key in ("signature", "bold_editorial", "fine_art"):
+        assert TYPE_ONLY_CONSTRAINT not in specialized[key], "%s must not carry the type-only clause" % key
+    assert len(set(specialized.values())) == 4, "all four specialized prompts must differ"
+
+    # render() with a style stamps the manifest and refuses an unknown style
+    # WITHOUT any network (the credential HELD path is reached only for a valid
+    # style once guards pass -- proving style resolution precedes the paid call).
+    import tempfile as _tf
+    _d = Path(_tf.mkdtemp(prefix="cover-style-selftest-"))
+    code, man = render("draw a cover", _d / "x.png", style="totally_unknown", key_labels=("__AE_NO_KEY__",))
+    assert code == EX_REFUSE and man["held_reason"] == "unknown_style"
+    code, man = render("draw a cover", _d / "y.png", style="pure_type", key_labels=("__AE_NO_KEY__",))
+    assert code == EX_HELD and man["held_reason"] == HELD_CREDENTIAL_NOT_SET
+    assert man["style"] and man["style"]["key"] == "pure_type" and man["style"]["typography_only"] is True
+
+    # render_style_set loops ALL FOUR via an injected stub render_fn (ZERO network,
+    # ZERO spend): distinct out paths, one entry per style, and each style's
+    # specialized prompt is what the render actually received.
+    seen = {}
+
+    def _stub_render(prompt, out_png, participant_key="", style=None, **kw):
+        st = _coerce_style(style)
+        seen[st["key"]] = apply_style(prompt, st)
+        m = {"status": "rendered", "held_reason": None,
+             "source_url": "https://tempfile.aiquickdraw.com/%s.png" % st["key"],
+             "style": {"key": st["key"], "name": st["name"]}}
+        return EX_OK, m
+
+    overall, setman = render_style_set(base, _d / "set", participant_key="c1::a1",
+                                       render_fn=_stub_render)
+    assert overall == EX_OK and setman["all_rendered"] is True
+    assert setman["style_count"] == 4 and len(setman["styles"]) == 4
+    assert [e["slot"] for e in setman["styles"]] == [1, 2, 3, 4]
+    assert len({e["out_png"] for e in setman["styles"]}) == 4
+    assert seen and seen == specialized, "stub must receive each style's specialized prompt"
+    # a held style does not abort the set; overall reflects the first non-OK code
+    overall2, _ = render_style_set(base, _d / "set2",
+                                   render_fn=lambda *a, **k: (EX_HELD, {"status": "held", "held_reason": HELD_CREDIT_OUT}))
+    assert overall2 == EX_HELD
+
+    # --- U8 coherence: field-map cover_style_fields agrees with COVER_STYLES ----
+    try:
+        fm = json.loads(FIELD_MAP_PATH.read_text(encoding="utf-8"))
+        csf = fm.get("cover_style_fields") or {}
+        assert list(csf.get("choice_options") or []) == list(STYLE_NAMES), \
+            "field-map choice_options must equal STYLE_NAMES in order"
+        suf = csf.get("sample_url_fields") or {}
+        for s in COVER_STYLES:
+            assert suf.get(str(s["slot"])), "missing sample_url_field for slot %s" % s["slot"]
+        assert len(set(suf.values())) == 4, "sample_url_fields must be four distinct keys"
+        assert csf.get("choice_field") and csf.get("target_cover_fields", {}).get("image") \
+            and csf.get("target_cover_fields", {}).get("drive")
+    except FileNotFoundError:
+        pass  # committed template always ships alongside; skip only if absent
+
     print("cover_render self-test: OK "
-          "(portrait override, PNG read-back, Kie body/parse, allowlist, link fields)")
+          "(portrait override, PNG read-back, Kie body/parse, allowlist, link fields, "
+          "4 named styles + 1 type-only, apply_style, render_style_set, field-map coherence)")
     return EX_OK
 
 
@@ -807,7 +1109,12 @@ def main(argv=None) -> int:
     ap.add_argument("--prompt", help="the aw-11 image prompt text")
     ap.add_argument("--prompt-file", help="path to the aw-11 prompt (raw text or a JSON object with a 'prompt' field)")
     ap.add_argument("--out", help="local target path for the rendered cover PNG")
+    ap.add_argument("--out-dir", help="output directory for --style-set (writes cover-<key>.png per style)")
     ap.add_argument("--result-out", help="path to write the JSON result manifest for downstream collaborators")
+    ap.add_argument("--style", help="render ONE named style (key or name): %s" % ", ".join(STYLE_KEYS))
+    ap.add_argument("--style-set", action="store_true",
+                    help="render ALL FOUR named styles into --out-dir (U8 cover set)")
+    ap.add_argument("--list-styles", action="store_true", help="print the four named cover styles and exit")
     ap.add_argument("--aspect", default=COVER_ASPECT, help="aspect ratio (portrait only; default 2:3)")
     ap.add_argument("--model", default=COVER_MODEL, help="Kie image model (default %s)" % COVER_MODEL)
     ap.add_argument("--resolution", default=None, help="optional Kie resolution (omit for the W0.6 default 1024x1536)")
@@ -831,8 +1138,14 @@ def main(argv=None) -> int:
             return self_test()
         if args.plan:
             return cmd_plan()
+        if args.list_styles:
+            return cmd_list_styles()
         if args.dry_run:
             return cmd_dry_run(args)
+        if args.style_set:
+            if not args.out_dir:
+                ap.error("--out-dir is required with --style-set (per-style cover-<key>.png land here)")
+            return cmd_style_set(args)
 
         if not args.out:
             ap.error("--out is required to render (the local target path for the cover PNG)")
@@ -841,7 +1154,7 @@ def main(argv=None) -> int:
         code, manifest = render(
             prompt, Path(args.out).expanduser(), participant_key=args.participant_key,
             base_url=args.base_url, key_labels=tuple(args.key_labels), model=args.model,
-            aspect=args.aspect, resolution=args.resolution,
+            aspect=args.aspect, resolution=args.resolution, style=args.style,
             poll_interval_s=args.poll_interval, poll_ceiling_s=args.poll_ceiling,
             create_timeout_s=args.create_timeout, download_timeout_s=args.download_timeout)
 
