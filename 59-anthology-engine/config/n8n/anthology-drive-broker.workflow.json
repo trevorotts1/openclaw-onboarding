@@ -1,0 +1,384 @@
+{
+  "name": "Anthology Drive Broker",
+  "nodes": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Webhook anthology-drive",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-1200, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "anthology-drive",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Authorize & Dispatch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1000, 0],
+      "parameters": {
+        "jsCode": "// Anthology Drive Broker -- authorize, validate, dispatch.\n// Trevor's Google service-account credential lives ONLY inside this n8n\n// instance and never leaves it. The client box holds only the webhook URL +\n// a low-privilege shared token (validated HERE, in the workflow).\nconst EXPECTED = $env.ANTHOLOGY_DRIVE_BROKER_TOKEN || '';\nconst ROOT = $env.ANTHOLOGY_DRIVE_ROOT_FOLDER || '';\nconst item = $input.first();\nconst j = (item && item.json) ? item.json : {};\nconst body = j.body || {};\nconst headers = j.headers || {};\nconst presented = headers['x-anthology-broker-token'] || headers['X-Anthology-Broker-Token'] || body.token || '';\n\nfunction reject(code, error, extra) {\n  return [{ json: { authorized: false, is_book_tree: false, http_code: code,\n    response: Object.assign({ ok: false, error: error }, extra || {}) } }];\n}\n\nif (!EXPECTED) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_BROKER_TOKEN not set in n8n' });\nif (!presented || presented !== EXPECTED) return reject(401, 'unauthorized');\n\nconst action = (body.action || '').toString();\nif (!action) return reject(400, 'missing_action');\n\nconst IMPLEMENTED = 'create_book_tree';\nconst STUBS = ['create_doc', 'upload_pdf', 'share_doc_edit', 'pull_doc_text'];\nif (action !== IMPLEMENTED) {\n  const known = STUBS.indexOf(action) !== -1;\n  return [{ json: { authorized: true, is_book_tree: false, action: action, http_code: 501,\n    response: { ok: false, error: known ? 'not_implemented' : 'unknown_action', action: action,\n      note: known\n        ? 'Designed broker extension point, not yet implemented. The operator canary box performs this op via the local service account; a client box cannot yet do it through the broker. See 59-anthology-engine MASTERDOC floor #10.'\n        : 'Unknown action.' } } }];\n}\n\nif (!ROOT) return reject(500, 'broker_misconfigured', { detail: 'ANTHOLOGY_DRIVE_ROOT_FOLDER not set in n8n' });\nconst client_key = (body.client_key || '').toString().trim();\nconst producer_email = (body.producer_email || '').toString().trim();\nconst book_title = (body.book_title || '').toString().trim();\nconst co_author = (body.co_author || '').toString().trim();\nconst missing = [];\nif (!client_key) missing.push('client_key');\nif (!producer_email) missing.push('producer_email');\nif (!book_title) missing.push('book_title');\nif (missing.length) return reject(400, 'missing_fields', { missing: missing });\n\nconst qesc = (s) => s.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\");\nreturn [{ json: {\n  authorized: true, is_book_tree: true, action: action, http_code: 200,\n  root_folder_id: ROOT,\n  client_key: client_key, producer_email: producer_email, book_title: book_title, co_author: co_author,\n  client_folder_name: client_key, producer_folder_name: producer_email, book_folder_name: book_title,\n  q_client: qesc(client_key), q_producer: qesc(producer_email), q_book: qesc(book_title)\n} }];"
+      }
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-800, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-authorized",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Is create_book_tree?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-600, -100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-booktree",
+              "leftValue": "={{ $json.is_book_tree }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Respond Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [-380, 220],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response) }}",
+        "options": { "responseCode": "={{ $json.http_code }}" }
+      }
+    },
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "List Client Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-380, -100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent(\"'\" + $json.root_folder_id + \"' in parents and name = '\" + $json.q_client + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\") }}&fields=files(id,name)&orderBy=createdTime&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Client Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-180, -100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-client-exists",
+              "leftValue": "={{ $json.files && $json.files.length > 0 }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Create Client Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [20, 40],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Authorize & Dispatch').item.json.client_folder_name, mimeType: 'application/vnd.google-apps.folder', parents: [$('Authorize & Dispatch').item.json.root_folder_id] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Client Resolved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, -100],
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst id = j.id || (j.files && j.files[0] && j.files[0].id) || '';\nif (!id) throw new Error('client folder id could not be resolved');\nreturn [{ json: { folderId: id, level: 'client' } }];"
+      }
+    },
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "List Producer Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [440, -100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent(\"'\" + $json.folderId + \"' in parents and name = '\" + $('Authorize & Dispatch').item.json.q_producer + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\") }}&fields=files(id,name)&orderBy=createdTime&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "name": "Producer Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [640, -100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-producer-exists",
+              "leftValue": "={{ $json.files && $json.files.length > 0 }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "name": "Create Producer Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [840, 40],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Authorize & Dispatch').item.json.producer_folder_name, mimeType: 'application/vnd.google-apps.folder', parents: [$('Client Resolved').item.json.folderId] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "name": "Producer Resolved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, -100],
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst id = j.id || (j.files && j.files[0] && j.files[0].id) || '';\nif (!id) throw new Error('producer folder id could not be resolved');\nreturn [{ json: { folderId: id, level: 'producer' } }];"
+      }
+    },
+    {
+      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "name": "List Book Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1260, -100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files?q={{ encodeURIComponent(\"'\" + $json.folderId + \"' in parents and name = '\" + $('Authorize & Dispatch').item.json.q_book + \"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false\") }}&fields=files(id,name)&orderBy=createdTime&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "name": "Book Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1460, -100],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-book-exists",
+              "leftValue": "={{ $json.files && $json.files.length > 0 }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+      "name": "Create Book Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1660, 40],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Authorize & Dispatch').item.json.book_folder_name, mimeType: 'application/vnd.google-apps.folder', parents: [$('Producer Resolved').item.json.folderId] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2",
+      "name": "Book Resolved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, -100],
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst id = j.id || (j.files && j.files[0] && j.files[0].id) || '';\nif (!id) throw new Error('book folder id could not be resolved');\nreturn [{ json: { folderId: id, level: 'book' } }];"
+      }
+    },
+    {
+      "id": "c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3",
+      "name": "Share Book To Producer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [2080, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Book Resolved').item.json.folderId }}/permissions?sendNotificationEmail=false&supportsAllDrives=true&fields=id,role,type",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ role: 'writer', type: 'user', emailAddress: $('Authorize & Dispatch').item.json.producer_email }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID", "name": "BlackCEO Anthology Drive (connect me)" }
+      }
+    },
+    {
+      "id": "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2280, -100],
+      "parameters": {
+        "jsCode": "const a = $('Authorize & Dispatch').item.json;\nreturn [{ json: {\n  ok: true, action: 'create_book_tree', via: 'n8n_broker',\n  client_key: a.client_key, producer_email: a.producer_email, book_title: a.book_title,\n  root_folder_id: a.root_folder_id,\n  client_folder_id: $('Client Resolved').item.json.folderId,\n  producer_folder_id: $('Producer Resolved').item.json.folderId,\n  book_folder_id: $('Book Resolved').item.json.folderId,\n  producer_editor_shared: true\n} }];"
+      }
+    },
+    {
+      "id": "e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [2480, -100],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook anthology-drive": { "main": [[{ "node": "Authorize & Dispatch", "type": "main", "index": 0 }]] },
+    "Authorize & Dispatch": { "main": [[{ "node": "Authorized?", "type": "main", "index": 0 }]] },
+    "Authorized?": {
+      "main": [
+        [{ "node": "Is create_book_tree?", "type": "main", "index": 0 }],
+        [{ "node": "Respond Rejected", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is create_book_tree?": {
+      "main": [
+        [{ "node": "List Client Folder", "type": "main", "index": 0 }],
+        [{ "node": "Respond Rejected", "type": "main", "index": 0 }]
+      ]
+    },
+    "List Client Folder": { "main": [[{ "node": "Client Exists?", "type": "main", "index": 0 }]] },
+    "Client Exists?": {
+      "main": [
+        [{ "node": "Client Resolved", "type": "main", "index": 0 }],
+        [{ "node": "Create Client Folder", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Client Folder": { "main": [[{ "node": "Client Resolved", "type": "main", "index": 0 }]] },
+    "Client Resolved": { "main": [[{ "node": "List Producer Folder", "type": "main", "index": 0 }]] },
+    "List Producer Folder": { "main": [[{ "node": "Producer Exists?", "type": "main", "index": 0 }]] },
+    "Producer Exists?": {
+      "main": [
+        [{ "node": "Producer Resolved", "type": "main", "index": 0 }],
+        [{ "node": "Create Producer Folder", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Producer Folder": { "main": [[{ "node": "Producer Resolved", "type": "main", "index": 0 }]] },
+    "Producer Resolved": { "main": [[{ "node": "List Book Folder", "type": "main", "index": 0 }]] },
+    "List Book Folder": { "main": [[{ "node": "Book Exists?", "type": "main", "index": 0 }]] },
+    "Book Exists?": {
+      "main": [
+        [{ "node": "Book Resolved", "type": "main", "index": 0 }],
+        [{ "node": "Create Book Folder", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Book Folder": { "main": [[{ "node": "Book Resolved", "type": "main", "index": 0 }]] },
+    "Book Resolved": { "main": [[{ "node": "Share Book To Producer", "type": "main", "index": 0 }]] },
+    "Share Book To Producer": { "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]] },
+    "Build Response": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

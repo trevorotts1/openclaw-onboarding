@@ -141,6 +141,18 @@ def plan():
     return EX_OK
 
 
+def _doc_url_from_created(created):
+    """Pull the live Google Doc link out of drive_adapter.deliver_doc()'s result.
+
+    drive_adapter.py's create-doc path (deliver_doc) returns the shareable link
+    under the key "doc_url" (its files_get webViewLink) and the file id under
+    "doc_id" -- NOT a top-level webViewLink/link/id. Read the real key first; the
+    legacy guesses stay only as harmless fallbacks so a future shape change never
+    silently ships a None link in the completion email/SMS."""
+    return (created.get("doc_url") or created.get("webViewLink")
+            or created.get("link"))
+
+
 def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=None):
     """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
     `deliverable` is the ledger ARTIFACT_TYPES value the caller just authored
@@ -166,15 +178,41 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
     py = sys.executable or "python3"
     rundir = _run_dir_for(pkey, run_dir)
 
+    # G10 rewrite preservation: a rewrite lands in its OWN pair (rewrite1/rewrite2),
+    # never the base chapter pair, so the ORIGINAL (and any earlier rewrite) survives
+    # in the producer's Convert and Flow view. The slot is the participant's
+    # rewrite_count at delivery time -- incremented exactly once at the
+    # s5_participant/request_rewrite gate BEFORE this stage runs (1 for the first
+    # editors' rewrite, 2 for the second) -- read here from the sole ledger, never
+    # guessed. A wrong slot would overwrite a preserved version, so an out-of-range
+    # count is a hard refusal, not a fallback.
+    rewrite_number = None
+    if deliverable == "rewrite":
+        _, part_rc, _ = _run([py, str(_resolve("scripts/anthology_state.py")), "--json",
+                             "get-participant", "--participant-key", pkey])
+        raw_count = (part_rc or {}).get("rewrite_count")
+        try:
+            rewrite_number = int(raw_count)
+        except (TypeError, ValueError):
+            rewrite_number = None
+        if rewrite_number not in (1, 2):
+            sys.stderr.write("[stage_%s] rewrite delivery needs a rewrite_count of 1 or 2 "
+                             "(got %r); the s5 rewrite gate owns that increment. Refusing to "
+                             "guess a preservation slot.\n" % (STAGE, raw_count))
+            return EX_PROVER, None
+        sys.stderr.write("[stage_%s] rewrite #%d -> preservation slot rewrite%d (base chapter "
+                         "left intact)\n" % (STAGE, rewrite_number, rewrite_number))
+
     # deliverable_for_artifact_type() (drift #2's fix) is exercised BEFORE any
     # call into caf_delivery.py, per SESSION-LOG.md: import in-process (no
     # subprocess side effects; mirrors the sibling cross-check convention in
-    # intake_router.py/mc_board.py).
+    # intake_router.py/mc_board.py). For a rewrite it routes by rewrite_number to
+    # rewrite1/rewrite2 (G10); for every other type the static alias applies.
     sys.path.insert(0, str(SCRIPTS))
     import caf_delivery as _caf  # noqa: E402
     fm = _caf.FieldMap.load()
     try:
-        caf_deliverable = fm.deliverable_for_artifact_type(deliverable)
+        caf_deliverable = fm.deliverable_for_artifact_type(deliverable, rewrite_number=rewrite_number)
     except _caf.DeliveryError as exc:
         sys.stderr.write("[stage_%s] %s\n" % (STAGE, exc))
         return EX_PROVER, None
@@ -190,13 +228,16 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
     folder_id = (participant or {}).get("drive_folder_id")
     doc_url = None
     if folder_id and content_file and content_file.is_file():
+        # The deliverable Google Doc is shared anyone-with-link EDIT (writer), NOT
+        # view-only: Trevor's law (LOCKED #4) so the co-author edits their own Doc in
+        # place and the engine pulls the edits back (confirm-then-pull, U7). The paired
+        # premium PDF (rendered below) remains the view-only artifact.
         argv = [py, str(_resolve(rel)), "create-doc", "--name", "%s-%s" % (contact_id, deliverable),
-                "--parent-folder-id", folder_id, "--text-file", str(content_file), "--share-view"]
+                "--parent-folder-id", folder_id, "--text-file", str(content_file), "--share-edit"]
         rc, created = _step(0, rel, argv)
         if rc != EX_OK:
             return rc, None
-        created = created or {}
-        doc_url = created.get("webViewLink") or created.get("link") or created.get("id")
+        doc_url = _doc_url_from_created(created or {})
     else:
         sys.stderr.write("[stage_%s] 1/%d %s: skipped (no drive_folder_id yet, or no "
                          "working/%s content to package)\n" % (STAGE, len(WIRING), rel, working_name))
@@ -239,6 +280,11 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
     argv = [py, str(_resolve(rel)), "deliver", "--contact-id", contact_id,
            "--anthology-id", anthology_id, "--participant-key", pkey,
            "--deliverable", caf_deliverable]
+    if rewrite_number is not None:
+        # Surface the rewrite counter into Convert and Flow's own control field so the
+        # W8 release email can show "editors' rewrites used: N of 2" (read back like
+        # every other write).
+        argv += ["--rewrite-count", str(rewrite_number)]
     if doc_url:
         argv += ["--doc-url", doc_url]
     if pdf_path and pdf_path.is_file():
@@ -303,7 +349,15 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
 
     result = {"delivered": True, "type": deliverable, "doc_url": doc_url,
              "pdf_url": None, "report": delivered.get("report"),
-             "certificate": delivered.get("certificate")}
+             "certificate": delivered.get("certificate"),
+             "caf_deliverable": caf_deliverable}
+    if rewrite_number is not None:
+        # G10: surface the rewrite counter + the preservation slot the rewrite landed
+        # in (rewrite1/rewrite2), so the caller (S6) and the operator can see the count.
+        result["rewrite_number"] = rewrite_number
+        result["rewrite_slot"] = caf_deliverable
+        result["rewrite_budget"] = _caf.FieldMap.REWRITE_BUDGET
+        result["rewrites_remaining"] = max(0, _caf.FieldMap.REWRITE_BUDGET - rewrite_number)
     return EX_OK, result
 
 
@@ -318,6 +372,17 @@ def self_test():
     assert isinstance(WIRING, list) and WIRING, "WIRING must be a non-empty ordered list"
     for rel, role in WIRING:
         assert isinstance(rel, str) and rel and isinstance(role, str) and role
+    # doc-url resolution reads drive_adapter.deliver_doc()'s REAL return shape
+    # (drive_adapter.py: keys "doc_url"/"doc_id", never top-level webViewLink/id).
+    # The pre-fix expression guessed webViewLink/link/id -- none exist on that
+    # dict -- so it shipped None; the helper must read the live "doc_url".
+    _real = "https://docs.google.com/document/d/DOCID_x/edit"
+    assert _doc_url_from_created({
+        "ok": True, "action": "create-doc", "doc_id": "DOCID_x",
+        "doc_url": _real, "view_shared": True, "permission_id": "p1",
+        "verified": True}) == _real, "must read the live link from deliver_doc's doc_url"
+    assert _doc_url_from_created({}) is None
+    assert _doc_url_from_created({"webViewLink": _real}) == _real  # legacy fallback honored
     print("stage_%s self-test: OK (exit-code map + wiring contract coherent)" % STAGE)
     return EX_OK
 

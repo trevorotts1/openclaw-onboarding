@@ -3,21 +3,33 @@
 
 WHAT THIS IS (SPEC 3.4 row 9; SPEC 10.1; PRD 3.7 / 3.13; ENGINE-MANIFEST L9):
   A stateless, direct-REST adapter over the Google Drive v3 and Docs v1 APIs.
-  It authenticates with the operator's EXISTING service account exactly the way
-  clawd/google-api.js does (service-account JWT, RS256, domain-wide delegation,
+  It authenticates with the BlackCEO-owned delivery service account exactly the
+  way clawd/google-api.js does (service-account JWT, RS256, domain-wide delegation,
   sub = the impersonated user under the GOOGLE_IMPERSONATE_USER label, full Drive
   scope + the Documents scope). It calls the REST endpoints DIRECTLY -- Skill 14
   is PATTERN REFERENCE ONLY and google-api.js exposes no create/permissions/
   delete actions, so those are re-implemented here (verified live at W0.6).
 
-  NOTHING new is provisioned in Google: no new service account, no new share
-  primitive beyond per-document anyone-with-link VIEW, and NO new Drive root.
-  The delivery tree lives under the operator's EXISTING anyone-can-read root
-  (config key delivery.drive_root_folder). drive-tree-provision.py owns the
+  The share primitives are per-document anyone-with-link VIEW (reader) for PDFs
+  and covers, PLUS per-document anyone-with-link EDIT (writer) for DELIVERABLE
+  Docs -- Trevor's law (LOCKED #4) deliberately overrides the engine's view-only
+  floor for the editable Docs the co-author edits and the engine then pulls back
+  (confirm-then-pull).
+  The delivery root is PER CLIENT (U19, superseding the earlier single operator root):
+  BlackCEO provisions ONE Google Shared Drive per client inside BlackCEO's own
+  Workspace, and this box points at its OWN Shared-Drive root, resolved per box from
+  GOOGLE_DRIVE_ROOT_FOLDER (config key delivery.drive_root_folder is a per-box slot,
+  never one shared operator root -- no client tree co-mingles with another's). The
+  adapter NEVER creates a NEW Drive root nor a new service account (BlackCEO provisions
+  the Shared Drive out of band; load_root_folder_id refuses an unresolved slot). The
+  delivery tree lives under that per-client root, and drive-tree-provision.py owns the
   idempotent Producer/Anthology/Participant folder tree; THIS module owns:
     - create a Google Doc inside a participant folder + insert its text
     - land a cover PNG (or any media) inside a participant folder
-    - per-document anyone-with-link VIEW-only share (revocation-preserving)
+    - per-document anyone-with-link VIEW (reader) OR EDIT (writer) share
+      (revocation-preserving); EDIT is deliverable-Docs only, per Trevor's law
+    - pull the CURRENT plain-text body back out of a Doc (pull_doc_text) -- the
+      confirm-then-pull read-back the engine freezes and revalidates
     - revoke a share and hand back a fresh view link (revoke script path)
     - the per-anthology Drive export bundle (recursive folder manifest)
   Every external WRITE is followed by a byte-for-byte READ-BACK in the SAME job
@@ -41,29 +53,56 @@ human notes go to stderr):
   drive_adapter.py probe [--file-id ID]
         read-only reachability probe (files.get on the root or the given id).
   drive_adapter.py create-doc --name NAME --parent-folder-id ID
-        [--text-file PATH | --text STR] [--share-view]
+        [--text-file PATH | --text STR] [--share-view | --share-edit]
         create a Google Doc in the participant folder, insert text, read it back,
-        optionally share view-only; prints {doc_id, doc_url, permission_id, ...}.
+        optionally share it VIEW-only (--share-view) or anyone-with-link EDIT
+        (--share-edit; Trevor's law for DELIVERABLE Docs); prints
+        {doc_id, doc_url, share_mode, permission_id, ...}.
   drive_adapter.py upload --name NAME --parent-folder-id ID --file PATH
-        [--mime TYPE] [--share-view]
+        [--mime TYPE] [--share-view | --share-edit]
         land a binary (e.g. the S7 cover PNG) in the participant folder.
-  drive_adapter.py share --file-id ID
-        anyone-with-link VIEW-only; reads the permission back; prints the link.
+  drive_adapter.py pull-doc-text --doc-id ID [--out PATH]
+        export the CURRENT plain-text body of a Doc (the confirm-then-pull
+        read-back). Prints {byte_len, sha256, text|out}; the engine freezes these
+        exact bytes and revalidates them with qc-tier1-anthology.py --mode pullback.
+  drive_adapter.py share --file-id ID [--edit]
+        anyone-with-link VIEW-only (default) or EDIT (--edit); reads the
+        permission back; prints the link.
   drive_adapter.py revoke-share --file-id ID [--permission-id ID]
         [--unlink-from-root-id PUBLIC_ANCESTOR --to-folder-id PRIVATE_DEST]
-        delete DIRECT anyone permission(s). NOTE: because the delivery root is
-        anyone-can-read, per-file anyone access is INHERITED and cannot be deleted
-        at the file level; true revocation MOVES the file out of the public root
-        (pass --unlink-from-root-id + --to-folder-id). Reports remaining access.
+        delete the DIRECT per-document permission(s). Under the per-client
+        Shared-Drive root (floor #10; NEVER anyone-can-read, per-document sharing)
+        that deletion IS the revocation. LEGACY fallback -- under an anyone-can-read
+        root, inherited anyone access cannot be deleted at the file level, so true
+        revocation MOVES the file out of the public root (pass --unlink-from-root-id
+        + --to-folder-id). Reports remaining access.
   drive_adapter.py move --file-id ID [--add-parent-id ID] [--remove-parent-id ID]
         relocate a file/folder (the real revocation primitive under a public root).
   drive_adapter.py export-bundle --folder-id ID [--out PATH]
         recursive Drive manifest for one anthology folder (the Drive half of the
         SPEC 10.1 export bundle; anthology_state.py emits the ledger half).
+  drive_adapter.py provision-book-tree --client-key K --producer-email E
+        --book-title T [--co-author C] [--root-folder-id ID]
+        create the per-client/producer/book folder tree + producer editor share and
+        print the created folder ids. SELECTS the n8n CREDENTIAL BROKER when it is
+        configured (Trevor's Google creds live ONLY in n8n; a client box holds no
+        Google key -- only the broker webhook URL + a low-privilege token), else
+        falls back to the LOCAL service account (the operator's OWN box).
+  drive_adapter.py broker-status
+        report whether the n8n Drive broker is configured (SET/NOT-SET only) and
+        which actions are implemented vs pending.
   drive_adapter.py --self-test        offline coherence checks (no network).
+
+n8n CREDENTIAL BROKER (fleet delivery model): the PRIVILEGED folder-tree creation +
+share ops POST to an n8n webhook that holds Trevor's Google service-account key,
+which never leaves n8n. A client box holds ONLY N8N_DRIVE_WEBHOOK_URL +
+N8N_DRIVE_WEBHOOK_TOKEN; a compromised client box cannot leak Google creds because
+they were never there. Per-Doc broker actions (create_doc, upload_pdf,
+share_doc_edit, pull_doc_text) are designed extension points, stubbed not faked.
 """
 import argparse
 import base64
+import hashlib
 import http.client
 import json
 import os
@@ -94,6 +133,16 @@ OAUTH_HOST = "oauth2.googleapis.com"
 SA_KEY_ENV = "GOOGLE_SA_KEY_FILE"
 IMPERSONATE_ENV = "GOOGLE_IMPERSONATE_USER"
 ROOT_FOLDER_ENV = "GOOGLE_DRIVE_ROOT_FOLDER"
+
+# n8n Drive CREDENTIAL BROKER (fleet delivery model). A client box holds NO Google
+# key -- only the broker webhook URL (not a secret) + a low-privilege shared token
+# (a secret, reported SET/NOT-SET by label only). The privileged folder-tree +
+# share ops POST to n8n, which holds Trevor's Google creds that never leave n8n.
+N8N_WEBHOOK_URL_ENV = "N8N_DRIVE_WEBHOOK_URL"
+N8N_WEBHOOK_TOKEN_ENV = "N8N_DRIVE_WEBHOOK_TOKEN"
+BROKER_TOKEN_HEADER = "X-Anthology-Broker-Token"
+# Per-Doc broker actions are DESIGNED extension points, stubbed not faked (below).
+BROKER_STUB_ACTIONS = ("create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text")
 
 EX_OK, EX_ERR, EX_VALIDATION, EX_DEP, EX_READBACK = 0, 1, 2, 3, 5
 
@@ -139,7 +188,7 @@ def _load_sa():
     path = os.environ.get(SA_KEY_ENV)
     if not path:
         raise DependencyError(
-            "%s NOT SET; the operator's existing service-account key is "
+            "%s NOT SET; the BlackCEO-owned delivery service-account key is "
             "required (no value is created here)." % SA_KEY_ENV)
     p = Path(path)
     if not p.is_file():
@@ -456,6 +505,39 @@ def share_view_only(token, file_id):
     return _json_api("POST", GOOGLE_API_HOST, path, token, body)
 
 
+def share_edit(token, file_id):
+    """Grant anyone-with-link EDIT (writer, link-only). Returns the permission.
+
+    Trevor's law (LOCKED #4): a DELIVERABLE Google Doc is shared anyone-with-link
+    EDIT so the co-author edits their own Doc in place and the engine pulls the
+    edits back (confirm-then-pull). This deliberately overrides the engine's
+    view-only floor for deliverable Docs ONLY. It changes only the share ROLE on
+    the document; it does NOT change WHOSE Google account, service account, or
+    Drive root owns the file. The identical body shape as share_view_only, but
+    role=writer."""
+    from urllib.parse import quote
+    path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
+            "&fields=id,type,role,allowFileDiscovery" % quote(file_id, safe=""))
+    body = {"role": "writer", "type": "anyone", "allowFileDiscovery": False}
+    return _json_api("POST", GOOGLE_API_HOST, path, token, body)
+
+
+def share_user_role(token, file_id, email, role="writer", notify=False):
+    """Grant a NAMED USER (emailAddress) a `role` on a file/folder.
+
+    role='writer' = editor, role='reader' = viewer. Used by the LOCAL-SA fallback
+    of provision_book_tree to make the producer an EDITOR on the book folder
+    (Trevor's access model). The n8n broker performs the identical named-user share
+    server-side, so the client box never needs the Google key. Returns the
+    permission dict; the producer's address is passed to Google but never printed."""
+    from urllib.parse import quote
+    path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
+            "&sendNotificationEmail=%s&fields=id,type,role"
+            % (quote(file_id, safe=""), "true" if notify else "false"))
+    body = {"role": role, "type": "user", "emailAddress": email}
+    return _json_api("POST", GOOGLE_API_HOST, path, token, body)
+
+
 def list_permissions(token, file_id):
     from urllib.parse import quote
     path = ("/drive/v3/files/%s/permissions?supportsAllDrives=true"
@@ -467,9 +549,11 @@ def list_permissions(token, file_id):
 def _perm_is_inherited(perm):
     """True iff this permission is INHERITED from an ancestor folder.
 
-    Under an anyone-can-read delivery ROOT (the operator's existing topology) the
-    anyone/reader grant is inherited by every descendant and CANNOT be deleted at
-    the file level (Drive returns 403). Detected via permissionDetails[].inherited."""
+    Under the per-client Shared-Drive root (floor #10) the root is NOT anyone-can-read
+    and sharing is per-document, so nothing is inherited. This classifier is the
+    LEGACY safeguard for an anyone-can-read root topology, where an inherited
+    anyone/reader grant CANNOT be deleted at the file level (Drive returns 403).
+    Detected via permissionDetails[].inherited."""
     for d in perm.get("permissionDetails", []) or []:
         if d.get("inherited"):
             return True
@@ -479,8 +563,10 @@ def _perm_is_inherited(perm):
 def move_file(token, file_id, add_parent=None, remove_parent=None):
     """Relocate a file/folder: add and/or remove a parent (files.update).
 
-    This is the ONLY way to truly revoke INHERITED public access under an
-    anyone-can-read root: move the item OUT of the public subtree into a private
+    Under the per-client Shared-Drive root (floor #10) revocation is deleting the
+    direct per-document grant, so this move is not needed. It is the LEGACY-fallback
+    primitive: the ONLY way to truly revoke INHERITED public access under an
+    anyone-can-read root is to move the item OUT of the public subtree into a private
     folder. Returns the updated file dict (id, parents)."""
     from urllib.parse import quote
     params = ["supportsAllDrives=true", "fields=id,name,parents"]
@@ -544,11 +630,25 @@ def write_and_verify(write_fn, verify_fn, what):
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
-def load_root_folder_id(explicit=None):
-    """Resolve the EXISTING delivery root id: explicit arg > env > engine config.
+def _is_unresolved_slot(value):
+    """True if a config value is still an unresolved provisioning slot rather than a
+    real id (e.g. "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>", "<CLIENT_...>"). Such a value is
+    the committed per-box TEMPLATE placeholder and must NEVER be used as a live root --
+    a box that never resolved it must fail loudly, not deliver into a bogus id."""
+    if not value:
+        return True
+    v = str(value).strip()
+    return v.startswith("<") or "LABEL:" in v
 
-    Never invents a root. The root is only ever verified (files_get), never
-    created (SPEC 10.1 / PRD 3.7)."""
+
+def load_root_folder_id(explicit=None):
+    """Resolve the PER-CLIENT delivery root id: explicit arg > env > engine config.
+
+    The root is the per-client BlackCEO-hosted Shared Drive supplied per box via
+    GOOGLE_DRIVE_ROOT_FOLDER. Never invents a root: it is only ever verified
+    (files_get), never created. An unresolved template slot in engine config is
+    IGNORED (a box that never set the env fails loudly rather than delivering into a
+    placeholder)."""
     if explicit:
         return explicit
     env = os.environ.get(ROOT_FOLDER_ENV)
@@ -560,13 +660,14 @@ def load_root_folder_id(explicit=None):
             try:
                 data = json.loads(cfg.read_text(encoding="utf-8"))
                 root = data.get("delivery", {}).get("drive_root_folder")
-                if root:
+                if root and not _is_unresolved_slot(root):
                     return root
             except Exception:
                 continue
     raise ValidationError(
-        "no delivery root id resolvable (pass --root-folder-id, set %s, or "
-        "populate delivery.drive_root_folder in engine config)." % ROOT_FOLDER_ENV)
+        "no delivery root id resolvable (pass --root-folder-id, or set the per-client "
+        "%s to this box's BlackCEO-hosted Shared-Drive root; the committed template "
+        "slot is never used as a live root)." % ROOT_FOLDER_ENV)
 
 
 def _credential_status():
@@ -578,11 +679,227 @@ def _credential_status():
 
 
 # ---------------------------------------------------------------------------
+# n8n DRIVE CREDENTIAL BROKER (fleet delivery model).
+#
+# Trevor's Google service-account key lives ONLY inside n8n (his n8n VPS). A client
+# box holds NO Google key -- only the broker webhook URL + a low-privilege shared
+# token. The PRIVILEGED folder-tree creation + share are POSTed to the n8n webhook
+# (action create_book_tree); n8n uses Trevor's creds (which never leave n8n) to
+# create the per-client/producer/book tree under BlackCEO's Anthology root, set the
+# shares, and return the created folder ids. A compromised client box cannot leak
+# Google creds because they were never there.
+#
+# SELECTION: if the broker is configured (URL + token both resolve), the privileged
+# ops route through it; else they fall back to the local SA. The ONLY box that
+# legitimately holds the SA key is the operator's OWN box (never a client box).
+# ---------------------------------------------------------------------------
+def _broker_webhook_url():
+    """Resolve the n8n Drive-broker webhook URL (NOT a secret): env first, then
+    engine config delivery.drive_broker.webhook_url. Returns the URL or None; an
+    unresolved template slot is ignored so a box that never set it stays SA-mode."""
+    url = os.environ.get(N8N_WEBHOOK_URL_ENV)
+    if url and not _is_unresolved_slot(url):
+        return url
+    for name in ("engine-config.json", "engine-config.template.json"):
+        cfg = CONFIG_DIR / name
+        if cfg.is_file():
+            try:
+                data = json.loads(cfg.read_text(encoding="utf-8"))
+                broker = (data.get("delivery", {}) or {}).get("drive_broker", {}) or {}
+                u = broker.get("webhook_url")
+                if u and not _is_unresolved_slot(u):
+                    return u
+            except Exception:
+                continue
+    return None
+
+
+def _broker_token():
+    """Resolve the low-privilege broker webhook token from N8N_DRIVE_WEBHOOK_TOKEN.
+    SECRET: held in memory only, NEVER printed (reported SET/NOT-SET by label)."""
+    tok = os.environ.get(N8N_WEBHOOK_TOKEN_ENV)
+    return tok if tok and not _is_unresolved_slot(tok) else None
+
+
+def broker_configured():
+    """True iff BOTH the broker webhook URL AND its token resolve on this box.
+
+    When True, the privileged folder-tree + share ops route through the n8n
+    credential broker (Trevor's Google creds live ONLY in n8n) instead of the local
+    SA. When False, the box falls back to the local SA (the operator's own box)."""
+    return bool(_broker_webhook_url() and _broker_token())
+
+
+def _broker_credential_status():
+    """SET / NOT-SET report for the broker levers -- never a value."""
+    return {
+        N8N_WEBHOOK_URL_ENV: "SET" if _broker_webhook_url() else "NOT SET",
+        N8N_WEBHOOK_TOKEN_ENV: "SET" if _broker_token() else "NOT SET",
+    }
+
+
+def _broker_post(action, payload):
+    """POST one action to the n8n Drive credential broker; return the parsed JSON.
+
+    The low-privilege webhook token authenticates the call in a header and is NEVER
+    printed. The broker URL MUST be https so the token never travels in cleartext.
+    Google credentials never touch this box. n8n commonly wraps a single response
+    item in a one-element list, which is unwrapped here."""
+    from urllib.parse import urlsplit
+    url = _broker_webhook_url()
+    token = _broker_token()
+    if not url:
+        raise DependencyError(
+            "%s NOT SET; the n8n Drive-broker webhook URL is required." % N8N_WEBHOOK_URL_ENV)
+    if not token:
+        raise DependencyError(
+            "%s NOT SET; the n8n Drive-broker webhook token is required "
+            "(value referenced by label only, never printed)." % N8N_WEBHOOK_TOKEN_ENV)
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.netloc:
+        raise ValidationError(
+            "%s must be an https:// URL (the broker token must never travel in "
+            "cleartext)." % N8N_WEBHOOK_URL_ENV)
+    path = parts.path or "/"
+    if parts.query:
+        path += "?" + parts.query
+    body = dict(payload)
+    body["action"] = action
+    headers = {"Content-Type": "application/json", BROKER_TOKEN_HEADER: token}
+    status, raw = _https("POST", parts.netloc, path, headers,
+                         json.dumps(body).encode("utf-8"))
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except Exception:
+        parsed = None
+    if isinstance(parsed, list):
+        parsed = parsed[0] if parsed else {}
+    detail = ""
+    if isinstance(parsed, dict):
+        detail = str(parsed.get("error") or parsed.get("message") or "")[:180]
+    if status in (401, 403):
+        raise DependencyError(
+            "n8n Drive broker rejected the webhook token (HTTP %s); check %s. %s"
+            % (status, N8N_WEBHOOK_TOKEN_ENV, detail))
+    if status == 404:
+        raise DependencyError(
+            "n8n Drive broker webhook not found (HTTP 404); check %s and that the "
+            "workflow is active. %s" % (N8N_WEBHOOK_URL_ENV, detail))
+    if status not in (200, 201):
+        raise DependencyError("n8n Drive broker returned HTTP %s. %s" % (status, detail))
+    if not isinstance(parsed, dict):
+        raise DependencyError("n8n Drive broker returned a non-JSON body.")
+    if parsed.get("ok") is False:
+        raise DependencyError(
+            "n8n Drive broker reported failure for action %r: %s"
+            % (action, detail or parsed.get("error")))
+    return parsed
+
+
+def broker_create_book_tree(client_key, producer_email, book_title, co_author=None):
+    """Route the PRIVILEGED per-book folder-tree creation + shares to the n8n
+    credential broker (action create_book_tree).
+
+    Trevor's Google service-account key NEVER lands on this box: n8n holds it,
+    creates the per-client/producer/book folder tree under BlackCEO's Anthology
+    root, sets the shares (producer = editor on the book folder; PDFs view;
+    co-author per-Doc EDIT handled at doc time), and returns the created folder ids.
+    Returns a normalized dict:
+      {ok, via, root_folder_id, client_folder_id, producer_folder_id,
+       book_folder_id, ...}."""
+    if not client_key or not str(client_key).strip():
+        raise ValidationError("client_key is required for create_book_tree.")
+    if not producer_email or not str(producer_email).strip():
+        raise ValidationError("producer_email is required for create_book_tree.")
+    if not book_title or not str(book_title).strip():
+        raise ValidationError("book_title is required for create_book_tree.")
+    payload = {
+        "client_key": str(client_key).strip(),
+        "producer_email": str(producer_email).strip(),
+        "book_title": str(book_title).strip(),
+    }
+    if co_author:
+        payload["co_author"] = str(co_author).strip()
+    result = _broker_post("create_book_tree", payload)
+    for key in ("book_folder_id", "producer_folder_id"):
+        if not result.get(key):
+            raise DependencyError(
+                "n8n Drive broker create_book_tree response is missing %r "
+                "(the broker must return the created folder ids)." % key)
+    result.setdefault("ok", True)
+    result.setdefault("action", "create_book_tree")
+    # drive_adapter is authoritative on WHICH path served this call, regardless of any
+    # informational marker the workflow returned -> stamp the broker path unconditionally.
+    result["via"] = "n8n_broker"
+    return result
+
+
+def broker_stub(action):
+    """Raise a clear 'not yet implemented via the broker' error for a per-Doc op.
+
+    The per-Doc broker actions (create_doc, upload_pdf, share_doc_edit,
+    pull_doc_text) are DESIGNED extension points, deliberately NOT faked. On the
+    operator's own box these ops run via the local SA; a pure client box cannot yet
+    perform them through the broker -- that is the remaining work for full per-Doc
+    coverage (see MASTERDOC floor #10)."""
+    if action not in BROKER_STUB_ACTIONS:
+        raise ValidationError("unknown broker action %r" % action)
+    raise DependencyError(
+        "n8n Drive broker action %r is a designed extension point that is NOT yet "
+        "implemented; the operator's own box performs it via the local service "
+        "account. Full per-Doc broker coverage is pending." % action)
+
+
+def provision_book_tree(client_key, producer_email, book_title, co_author=None,
+                        root_folder_id=None):
+    """Create the per-client/producer/book Drive folder tree + set the producer
+    editor share, returning the created folder ids.
+
+    SELECTION: if the n8n broker is configured (URL + token), the privileged
+    creation + share are POSTed to n8n (Trevor's Google creds live ONLY in n8n).
+    Otherwise this falls back to the LOCAL service account -- the ONLY box that
+    legitimately holds the SA key is the operator's OWN box.
+
+    Returns a dict with via ('n8n_broker' | 'local_sa') and the folder ids."""
+    if broker_configured():
+        return broker_create_book_tree(client_key, producer_email, book_title,
+                                       co_author=co_author)
+    # -- local-SA fallback (operator's own box) --
+    if not client_key or not str(client_key).strip():
+        raise ValidationError("client_key is required.")
+    if not producer_email or not str(producer_email).strip():
+        raise ValidationError("producer_email is required.")
+    if not book_title or not str(book_title).strip():
+        raise ValidationError("book_title is required.")
+    root_id = load_root_folder_id(root_folder_id)
+    token = mint_token()
+    client_folder, _ = get_or_create_folder(token, root_id, str(client_key).strip())
+    producer_folder, _ = get_or_create_folder(token, client_folder["id"],
+                                              str(producer_email).strip())
+    book_folder, _ = get_or_create_folder(token, producer_folder["id"],
+                                          str(book_title).strip())
+    # producer = editor on the book folder (Trevor's access model)
+    share_user_role(token, book_folder["id"], str(producer_email).strip(),
+                    role="writer", notify=False)
+    return {
+        "ok": True, "action": "create_book_tree", "via": "local_sa",
+        "root_folder_id": root_id,
+        "client_folder_id": client_folder["id"],
+        "producer_folder_id": producer_folder["id"],
+        "book_folder_id": book_folder["id"],
+        "producer_editor_shared": True,
+        "credentials": _credential_status(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # High-level flows used by the CLI subcommands
 # ---------------------------------------------------------------------------
-def deliver_doc(name, parent_folder_id, text=None, share=False):
+def deliver_doc(name, parent_folder_id, text=None, share_mode=None):
     """Create a Doc in the participant folder, insert text (read back), optionally
-    share view-only (read back). Returns a machine-readable result dict."""
+    share it (read back). `share_mode` is 'view', 'edit', or None:
+    a DELIVERABLE Doc uses 'edit' (Trevor's law) so the co-author edits in place
+    and the engine pulls it back. Returns a machine-readable result dict."""
     token = mint_token()
     doc = create_doc(token, name, parent_folder_id)
     doc_id = doc["id"]
@@ -593,28 +910,25 @@ def deliver_doc(name, parent_folder_id, text=None, share=False):
             lambda _r: docs_read_text(token, doc_id).rstrip("\n") == text.rstrip("\n"),
             "Docs insertText")
 
-    permission_id = None
-    view_shared = False
-    if share:
-        perm = write_and_verify(
-            lambda: share_view_only(token, doc_id),
-            lambda r: _verify_anyone_reader(token, doc_id, r),
-            "anyone-with-link view share")
-        permission_id = perm.get("id")
-        view_shared = True
+    permission_id, mode_applied = _apply_share(token, doc_id, share_mode)
 
     meta = files_get(token, doc_id, fields="id,name,webViewLink")
     return {
         "ok": True, "action": "create-doc", "doc_id": doc_id,
         "name": meta.get("name", name), "doc_url": meta.get("webViewLink"),
-        "view_shared": view_shared, "permission_id": permission_id,
+        "share_mode": mode_applied,
+        "view_shared": mode_applied == "view",
+        "edit_shared": mode_applied == "edit",
+        "permission_id": permission_id,
         "verified": True,
     }
 
 
-def deliver_media(name, parent_folder_id, local_path, mime=None, share=False):
+def deliver_media(name, parent_folder_id, local_path, mime=None, share_mode=None):
     """Land a binary (S7 cover PNG) in the participant folder, read back, optionally
-    share view-only. Returns a machine-readable result dict."""
+    share it. `share_mode` is 'view', 'edit', or None. Cover images stay 'view'
+    (an image is not a deliverable Doc: nothing is pulled back from it and the
+    co-author only picks a favorite). Returns a machine-readable result dict."""
     token = mint_token()
     up = upload_media(token, name, parent_folder_id, local_path, mime)
     file_id = up["id"]
@@ -624,22 +938,17 @@ def deliver_media(name, parent_folder_id, local_path, mime=None, share=False):
         lambda _r: _verify_parent(token, file_id, parent_folder_id),
         "media upload parent check")
 
-    permission_id = None
-    view_shared = False
-    if share:
-        perm = write_and_verify(
-            lambda: share_view_only(token, file_id),
-            lambda r: _verify_anyone_reader(token, file_id, r),
-            "anyone-with-link view share")
-        permission_id = perm.get("id")
-        view_shared = True
+    permission_id, mode_applied = _apply_share(token, file_id, share_mode)
 
     meta = files_get(token, file_id, fields="id,name,webViewLink,webContentLink")
     return {
         "ok": True, "action": "upload", "file_id": file_id,
         "name": meta.get("name", name), "drive_url": meta.get("webViewLink"),
         "download_url": meta.get("webContentLink"),
-        "view_shared": view_shared, "permission_id": permission_id,
+        "share_mode": mode_applied,
+        "view_shared": mode_applied == "view",
+        "edit_shared": mode_applied == "edit",
+        "permission_id": permission_id,
         "verified": True,
     }
 
@@ -653,36 +962,105 @@ def _verify_anyone_reader(token, file_id, created_perm):
     return False
 
 
+def _verify_anyone_writer(token, file_id, created_perm):
+    """True iff the file now carries an anyone/writer/link-only permission."""
+    for perm in list_permissions(token, file_id):
+        if perm.get("type") == "anyone" and perm.get("role") == "writer" \
+                and perm.get("allowFileDiscovery") in (False, None):
+            return True
+    return False
+
+
+def _apply_share(token, file_id, share_mode):
+    """Apply an anyone-with-link share of `share_mode`, byte-checked read-back.
+
+      'view'   -> reader (the engine's original floor; PDFs and cover images).
+      'edit'   -> writer (anyone-with-link EDIT; Trevor's law for DELIVERABLE
+                  Docs so the co-author edits their own Doc and the engine pulls
+                  it back).
+      None/''  -> no share.
+
+    Returns (permission_id, mode_applied). An unknown mode is refused (exit 2)."""
+    if not share_mode:
+        return None, None
+    if share_mode == "view":
+        perm = write_and_verify(
+            lambda: share_view_only(token, file_id),
+            lambda r: _verify_anyone_reader(token, file_id, r),
+            "anyone-with-link view share")
+        return perm.get("id"), "view"
+    if share_mode == "edit":
+        perm = write_and_verify(
+            lambda: share_edit(token, file_id),
+            lambda r: _verify_anyone_writer(token, file_id, r),
+            "anyone-with-link edit share")
+        return perm.get("id"), "edit"
+    raise ValidationError(
+        "unknown share mode %r (expected 'view', 'edit', or none)" % share_mode)
+
+
 def _verify_parent(token, file_id, parent_id):
     meta = files_get(token, file_id, fields="id,parents,trashed")
     return (not meta.get("trashed", False)) and parent_id in (meta.get("parents") or [])
 
 
-def do_share(file_id):
+def do_share(file_id, share_mode="view"):
     token = mint_token()
-    perm = write_and_verify(
-        lambda: share_view_only(token, file_id),
-        lambda r: _verify_anyone_reader(token, file_id, r),
-        "anyone-with-link view share")
+    permission_id, mode_applied = _apply_share(token, file_id, share_mode)
     meta = files_get(token, file_id, fields="id,name,webViewLink")
     return {
         "ok": True, "action": "share", "file_id": file_id,
-        "permission_id": perm.get("id"), "view_url": meta.get("webViewLink"),
+        "share_mode": mode_applied,
+        "permission_id": permission_id, "view_url": meta.get("webViewLink"),
         "verified": True,
     }
 
 
+def pull_doc_text(doc_id):
+    """Return the CURRENT plain-text body of a Google Doc.
+
+    This is the confirm-then-pull read-back: the moment a co-author confirms,
+    the engine calls this to lift whatever they typed into their shared editable
+    Doc, verbatim, and freezes it as the new stage artifact. Wraps docs_read_text
+    over a freshly minted token; byte-exactness is proven in self_test with the
+    Docs API mocked. WHOSE account is impersonated is unchanged (mint_token)."""
+    token = mint_token()
+    return docs_read_text(token, doc_id)
+
+
+def do_pull_doc_text(doc_id, out=None):
+    """CLI flow for pull_doc_text: pull the Doc body and report it byte-exactly.
+
+    The result carries a sha256 + byte length so the stage runner can FREEZE the
+    exact bytes it then revalidates with qc-tier1-anthology.py --mode pullback
+    (word band, title-lock presence, story anchors -- advisory, never blocking)."""
+    text = pull_doc_text(doc_id)
+    raw = text.encode("utf-8")
+    result = {
+        "ok": True, "action": "pull-doc-text", "doc_id": doc_id,
+        "byte_len": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+        "verified": True,
+    }
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+        result["out"] = str(out)
+    else:
+        result["text"] = text
+    return result
+
+
 def do_revoke_share(file_id, permission_id=None, unlink_from_root_id=None,
                     to_folder_id=None):
-    """Revoke public view access to a file.
+    """Revoke public access to a file.
 
-    Two mechanisms, because the operator's delivery ROOT is anyone-can-read:
-      1. DIRECT anyone permissions (grants made ON the file itself) are deleted --
-         this works and is what a private-root topology needs.
-      2. INHERITED anyone access (from the anyone-can-read root) CANNOT be deleted
-         at the file level (Drive returns 403). The ONLY true revocation is to
-         MOVE the file OUT of the public subtree: pass --unlink-from-root-id (the
-         public ancestor to drop) and --to-folder-id (a private destination).
+    Two mechanisms:
+      1. DIRECT permissions (grants made ON the file itself) are deleted -- under the
+         per-client Shared-Drive root (floor #10; NOT anyone-can-read, per-document
+         sharing) this deletion IS the revocation.
+      2. LEGACY fallback for an anyone-can-read root: INHERITED anyone access CANNOT
+         be deleted at the file level (Drive returns 403). The ONLY true revocation
+         is to MOVE the file OUT of the public subtree: pass --unlink-from-root-id
+         (the public ancestor to drop) and --to-folder-id (a private destination).
     The result reports honestly whether any anyone access REMAINS."""
     token = mint_token()
     removed = []
@@ -826,7 +1204,7 @@ def self_test():
     assert _guess_mime("x.jpeg") == "image/jpeg"
     assert _guess_mime("m.pdf") == "application/pdf"
     assert _guess_mime("blob.bin") == "application/octet-stream"
-    # inherited-permission classifier (the anyone-can-read root topology)
+    # inherited-permission classifier (the LEGACY anyone-can-read root topology)
     assert _perm_is_inherited({"permissionDetails": [{"inherited": True}]}) is True
     assert _perm_is_inherited({"permissionDetails": [{"inherited": False}]}) is False
     assert _perm_is_inherited({"type": "anyone"}) is False
@@ -848,21 +1226,206 @@ def self_test():
     except ValidationError:
         empty_refused = True
     assert empty_refused
-    # config root resolution: explicit wins; env fallback works
+    # unresolved-slot classifier
+    assert _is_unresolved_slot("<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>") is True
+    assert _is_unresolved_slot("<CLIENT_DRIVE_ROOT>") is True
+    assert _is_unresolved_slot("") is True
+    assert _is_unresolved_slot("0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7") is False
+    # config root resolution: explicit wins; the PER-CLIENT env value is returned as-is
     assert load_root_folder_id("EXPLICIT_ID") == "EXPLICIT_ID"
-    os.environ[ROOT_FOLDER_ENV] = "ENV_ROOT_ID"
+    _saved_root = os.environ.get(ROOT_FOLDER_ENV)
+    os.environ[ROOT_FOLDER_ENV] = "0ACLIENT_PER_BOX_SHARED_DRIVE_ID"
     try:
-        assert load_root_folder_id() == "ENV_ROOT_ID"
+        assert load_root_folder_id() == "0ACLIENT_PER_BOX_SHARED_DRIVE_ID", \
+            "the per-client GOOGLE_DRIVE_ROOT_FOLDER value must be returned verbatim"
     finally:
-        del os.environ[ROOT_FOLDER_ENV]
-    # the committed template still carries the operator's EXISTING root id
+        if _saved_root is None:
+            os.environ.pop(ROOT_FOLDER_ENV, None)
+        else:
+            os.environ[ROOT_FOLDER_ENV] = _saved_root
+    # the committed template pins NO single operator root: it carries a per-box slot
+    # resolved from GOOGLE_DRIVE_ROOT_FOLDER, and an unresolved slot is refused so a
+    # box that never set the env fails loudly instead of delivering into a placeholder.
     tmpl = CONFIG_DIR / "engine-config.template.json"
     if tmpl.is_file():
         cfg = json.loads(tmpl.read_text(encoding="utf-8"))
-        assert cfg["delivery"]["drive_root_folder"] == "1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw", \
-            "delivery root drifted from the operator's existing shared root"
+        root_cfg = cfg["delivery"]["drive_root_folder"]
+        assert _is_unresolved_slot(root_cfg), \
+            "template delivery root must be a per-box slot (no hard-pinned operator root)"
+        # With no arg and no env, the slot is IGNORED -> loud ValidationError, never
+        # a bogus placeholder root. (Live engine-config.json overrides the template.)
+        if not (CONFIG_DIR / "engine-config.json").is_file():
+            _saved_root2 = os.environ.get(ROOT_FOLDER_ENV)
+            os.environ.pop(ROOT_FOLDER_ENV, None)
+            try:
+                slot_refused = False
+                try:
+                    load_root_folder_id()
+                except ValidationError:
+                    slot_refused = True
+                assert slot_refused, "an unresolved template slot must not resolve as a root"
+            finally:
+                if _saved_root2 is not None:
+                    os.environ[ROOT_FOLDER_ENV] = _saved_root2
+
+    # -- U7: editable-Doc EDIT share + pull_doc_text read-back (Docs API MOCKED) --
+    # anyone/writer classifier: only an anyone+writer+link-only perm satisfies EDIT.
+    _saved = {k: globals().get(k) for k in
+              ("list_permissions", "_json_api", "mint_token",
+               "share_view_only", "share_edit",
+               "_verify_anyone_reader", "_verify_anyone_writer")}
+    try:
+        globals()["list_permissions"] = lambda *_a, **_k: [
+            {"type": "anyone", "role": "writer", "allowFileDiscovery": False}]
+        assert _verify_anyone_writer("t", "f", None) is True
+        assert _verify_anyone_reader("t", "f", None) is False
+        globals()["list_permissions"] = lambda *_a, **_k: [
+            {"type": "anyone", "role": "reader", "allowFileDiscovery": False}]
+        assert _verify_anyone_writer("t", "f", None) is False
+        assert _verify_anyone_reader("t", "f", None) is True
+
+        # share_edit posts an anyone/writer body (captured; no network).
+        captured = {}
+
+        def _cap(method, host, path, token, body=None, expect=(200,)):
+            captured["body"] = body
+            return {"id": "perm-w", "type": "anyone", "role": "writer",
+                    "allowFileDiscovery": False}
+        globals()["_json_api"] = _cap
+        perm = share_edit("tok", "docid")
+        assert captured["body"] == {"role": "writer", "type": "anyone",
+                                    "allowFileDiscovery": False}, captured
+        assert perm["role"] == "writer"
+
+        # _apply_share dispatches view/edit and refuses an unknown mode (exit 2).
+        globals()["share_view_only"] = lambda *_a, **_k: {"id": "pv"}
+        globals()["share_edit"] = lambda *_a, **_k: {"id": "pe"}
+        globals()["_verify_anyone_reader"] = lambda *_a, **_k: True
+        globals()["_verify_anyone_writer"] = lambda *_a, **_k: True
+        assert _apply_share("t", "f", None) == (None, None)
+        assert _apply_share("t", "f", "view") == ("pv", "view")
+        assert _apply_share("t", "f", "edit") == ("pe", "edit")
+        bad_mode = False
+        try:
+            _apply_share("t", "f", "sideways")
+        except ValidationError:
+            bad_mode = True
+        assert bad_mode, "an unknown share mode must be refused (ValidationError -> exit 2)"
+
+        # pull_doc_text read-back is BYTE-EXACT with the Docs API MOCKED (acceptance).
+        doc_fixture = {"body": {"content": [
+            {"paragraph": {"elements": [
+                {"textRun": {"content": "The Weight of the Keys\n"}},
+                {"textRun": {"content": "My client's own edited line."}}]}},
+            {"paragraph": {"elements": [
+                {"textRun": {"content": "\nA second paragraph, verbatim.\n"}}]}},
+            {"sectionBreak": {}},  # a non-paragraph element is ignored
+        ]}}
+        expected_body = ("The Weight of the Keys\nMy client's own edited line."
+                         "\nA second paragraph, verbatim.\n")
+        globals()["_json_api"] = lambda *_a, **_k: doc_fixture
+        globals()["mint_token"] = lambda scope=FULL_SCOPE: "FAKE_TOKEN"
+        assert docs_read_text("FAKE_TOKEN", "DOCID") == expected_body, \
+            "docs_read_text must return the Doc body byte-for-byte"
+        res = do_pull_doc_text("DOCID")
+        assert res["text"] == expected_body, repr(res.get("text"))
+        assert res["byte_len"] == len(expected_body.encode("utf-8"))
+        assert res["sha256"] == hashlib.sha256(expected_body.encode("utf-8")).hexdigest()
+        # --out writes the exact bytes and omits the inline text.
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile("w", suffix=".txt", delete=False) as _fh:
+            _outp = _fh.name
+        try:
+            res2 = do_pull_doc_text("DOCID", out=_outp)
+            assert "text" not in res2 and res2["out"] == _outp
+            assert Path(_outp).read_text(encoding="utf-8") == expected_body
+        finally:
+            os.unlink(_outp)
+    finally:
+        for k, v in _saved.items():
+            if v is not None:
+                globals()[k] = v
+
+    # -- n8n Drive credential broker (HTTP MOCKED; no network) --
+    _bsaved = {k: globals().get(k) for k in ("_broker_post", "mint_token")}
+    _benv = {k: os.environ.get(k) for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV)}
+    try:
+        for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV):
+            os.environ.pop(k, None)
+        # the URL alone must NOT enable the broker (both levers required).
+        os.environ[N8N_WEBHOOK_URL_ENV] = "https://main.example/webhook/anthology-drive"
+        assert broker_configured() is False, "URL alone must not enable the broker"
+        os.environ[N8N_WEBHOOK_TOKEN_ENV] = "unit-broker-token"
+        assert broker_configured() is True, "URL + token must enable the broker"
+        assert _broker_credential_status()[N8N_WEBHOOK_TOKEN_ENV] == "SET"
+        assert _broker_credential_status()[N8N_WEBHOOK_TOKEN_ENV] != "unit-broker-token"
+
+        # broker_create_book_tree POSTs action=create_book_tree with the right
+        # payload and maps the returned folder ids (the create_book_tree contract).
+        captured = {}
+
+        def _fake_post(action, payload):
+            captured["action"] = action
+            captured["payload"] = dict(payload)
+            return {"ok": True, "root_folder_id": "ROOT", "client_folder_id": "CID",
+                    "producer_folder_id": "PID", "book_folder_id": "BID"}
+        globals()["_broker_post"] = _fake_post
+        res = broker_create_book_tree("clientA", "producer@x.example",
+                                      "The Weight of the Keys", co_author="co@x.example")
+        assert captured["action"] == "create_book_tree", captured
+        assert captured["payload"] == {"client_key": "clientA",
+                                       "producer_email": "producer@x.example",
+                                       "book_title": "The Weight of the Keys",
+                                       "co_author": "co@x.example"}, captured
+        assert res["book_folder_id"] == "BID" and res["producer_folder_id"] == "PID"
+        assert res["via"] == "n8n_broker"
+
+        # provision_book_tree SELECTS the broker when configured (no SA touched).
+        globals()["mint_token"] = lambda scope=FULL_SCOPE: (_ for _ in ()).throw(
+            AssertionError("mint_token (local SA) must NOT be called in broker mode"))
+        sel = provision_book_tree("clientA", "producer@x.example", "Bk")
+        assert sel["book_folder_id"] == "BID" and sel.get("via") == "n8n_broker"
+
+        # a broker response missing folder ids fails loudly (never a silent no-op).
+        globals()["_broker_post"] = lambda a, p: {"ok": True}
+        missing_ids = False
+        try:
+            broker_create_book_tree("c", "p@x.example", "b")
+        except DependencyError:
+            missing_ids = True
+        assert missing_ids, "a broker response without folder ids must raise"
+
+        # per-Doc broker actions are STUBBED (flagged, not faked).
+        for a in BROKER_STUB_ACTIONS:
+            stubbed = False
+            try:
+                broker_stub(a)
+            except DependencyError:
+                stubbed = True
+            assert stubbed, "broker per-Doc action %r must be a flagged stub" % a
+
+        # _broker_post refuses a non-https URL (token must never travel cleartext).
+        globals()["_broker_post"] = _bsaved["_broker_post"]
+        os.environ[N8N_WEBHOOK_URL_ENV] = "http://insecure.example/webhook/x"
+        cleartext_refused = False
+        try:
+            _broker_post("create_book_tree", {})
+        except ValidationError:
+            cleartext_refused = True
+        assert cleartext_refused, "the broker must refuse a non-https webhook URL"
+    finally:
+        for k, v in _bsaved.items():
+            if v is not None:
+                globals()[k] = v
+        for k, v in _benv.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
     print("drive_adapter self-test: OK (auth assembly, escaping, read-back guard, "
-          "root resolution, exit-code contract)")
+          "per-client root resolution + slot refusal, exit-code contract, EDIT share, "
+          "pull_doc_text byte-exact, n8n broker select + payload + https-only)")
     return EX_OK
 
 
@@ -890,18 +1453,32 @@ def build_parser():
     g = cd.add_mutually_exclusive_group()
     g.add_argument("--text", help="inline body text to insert")
     g.add_argument("--text-file", help="path to a UTF-8 file whose content is inserted")
-    cd.add_argument("--share-view", action="store_true",
-                    help="also grant anyone-with-link VIEW-only")
+    sgd = cd.add_mutually_exclusive_group()
+    sgd.add_argument("--share-view", action="store_true",
+                     help="also grant anyone-with-link VIEW-only (reader)")
+    sgd.add_argument("--share-edit", action="store_true",
+                     help="grant anyone-with-link EDIT (writer); Trevor's law for DELIVERABLE Docs")
 
     up = sub.add_parser("upload", help="land a binary (e.g. the cover PNG) in a folder")
     up.add_argument("--name", required=True)
     up.add_argument("--parent-folder-id", required=True)
     up.add_argument("--file", required=True, help="local path to the binary")
     up.add_argument("--mime", help="MIME type (guessed from the name if omitted)")
-    up.add_argument("--share-view", action="store_true")
+    sgu = up.add_mutually_exclusive_group()
+    sgu.add_argument("--share-view", action="store_true",
+                     help="also grant anyone-with-link VIEW-only (reader)")
+    sgu.add_argument("--share-edit", action="store_true",
+                     help="grant anyone-with-link EDIT (writer)")
 
-    sh = sub.add_parser("share", help="anyone-with-link VIEW-only share")
+    pd = sub.add_parser("pull-doc-text",
+                        help="export the CURRENT plain-text body of a Doc (confirm-then-pull read-back)")
+    pd.add_argument("--doc-id", required=True)
+    pd.add_argument("--out", help="write the pulled text to this path (else returned inline)")
+
+    sh = sub.add_parser("share", help="anyone-with-link VIEW (default) or EDIT (--edit) share")
     sh.add_argument("--file-id", required=True)
+    sh.add_argument("--edit", action="store_true",
+                    help="grant anyone-with-link EDIT (writer) instead of VIEW")
 
     rv = sub.add_parser("revoke-share", help="remove the anyone-with-link permission(s)")
     rv.add_argument("--file-id", required=True)
@@ -920,6 +1497,20 @@ def build_parser():
     eb.add_argument("--folder-id", required=True)
     eb.add_argument("--out", help="write the manifest JSON to this path")
 
+    pbt = sub.add_parser(
+        "provision-book-tree",
+        help="create the client/producer/book folder tree + producer editor share "
+             "(n8n broker if configured, else local SA)")
+    pbt.add_argument("--client-key", required=True)
+    pbt.add_argument("--producer-email", required=True)
+    pbt.add_argument("--book-title", required=True)
+    pbt.add_argument("--co-author", help="optional co-author (per-Doc EDIT handled at doc time)")
+    pbt.add_argument("--root-folder-id", help="override the local-SA root (ignored in broker mode)")
+
+    sub.add_parser(
+        "broker-status",
+        help="report whether the n8n Drive broker is configured (SET/NOT-SET only)")
+
     return p
 
 
@@ -937,14 +1528,19 @@ def dispatch(args):
             if not tf.is_file():
                 raise ValidationError("--text-file not found: %s" % args.text_file)
             text = tf.read_text(encoding="utf-8")
-        _out(deliver_doc(args.name, args.parent_folder_id, text=text, share=args.share_view))
+        mode = "edit" if args.share_edit else ("view" if args.share_view else None)
+        _out(deliver_doc(args.name, args.parent_folder_id, text=text, share_mode=mode))
         return EX_OK
     if cmd == "upload":
+        mode = "edit" if args.share_edit else ("view" if args.share_view else None)
         _out(deliver_media(args.name, args.parent_folder_id, args.file,
-                           mime=args.mime, share=args.share_view))
+                           mime=args.mime, share_mode=mode))
+        return EX_OK
+    if cmd == "pull-doc-text":
+        _out(do_pull_doc_text(args.doc_id, args.out))
         return EX_OK
     if cmd == "share":
-        _out(do_share(args.file_id))
+        _out(do_share(args.file_id, share_mode="edit" if args.edit else "view"))
         return EX_OK
     if cmd == "revoke-share":
         _out(do_revoke_share(args.file_id, args.permission_id,
@@ -958,6 +1554,17 @@ def dispatch(args):
         return EX_OK
     if cmd == "export-bundle":
         _out(do_export_bundle(args.folder_id, args.out))
+        return EX_OK
+    if cmd == "provision-book-tree":
+        _out(provision_book_tree(args.client_key, args.producer_email, args.book_title,
+                                 co_author=args.co_author, root_folder_id=args.root_folder_id))
+        return EX_OK
+    if cmd == "broker-status":
+        _out({"ok": True, "action": "broker-status",
+              "broker_configured": broker_configured(),
+              "broker": _broker_credential_status(),
+              "implemented_actions": ["create_book_tree"],
+              "stub_actions": list(BROKER_STUB_ACTIONS)})
         return EX_OK
     raise ValidationError("no subcommand given; run with -h for usage.")
 

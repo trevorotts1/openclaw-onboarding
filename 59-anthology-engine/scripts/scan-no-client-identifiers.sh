@@ -20,8 +20,10 @@
 #
 # DOCTRINE: a matched email / phone / client token is PII and is NEVER printed.
 # Findings report file:line and the CLASS only. Output is operator/CI-facing.
-# The operator-owned Drive root id is allowed. The denylist file is never
-# committed and its contents are never echoed. The four scanners self-exclude.
+# A Google Drive folder / Shared-Drive root id is per-CLIENT delivery CONFIG (not an
+# email/phone, so it never matches a PII class); no single operator root id is pinned
+# (per-client Shared-Drive model). The denylist file is never committed and its
+# contents are never echoed. The four scanners self-exclude.
 #
 # ALLOWED DOMAINS (never client PII): example.com/org/net, test, localhost,
 # invalid, *.local, and infra/fleet: github.com, gitlab.com, google.com,
@@ -41,7 +43,6 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ENGINE_DIR="$(cd "$SELF_DIR/.." && pwd)"
 TAG="[scan-no-client-identifiers]"
 SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh scan-skill53-untouched.sh"
-ALLOW_DRIVE_ROOT="1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw"
 
 SELFTEST_TMP=""
 _cleanup_selftest() { [ -n "${SELFTEST_TMP:-}" ] && rm -rf "$SELFTEST_TMP"; return 0; }
@@ -100,7 +101,8 @@ is_self() {
 # is this matched LINE allowed? $1=line $2=class
 is_allowlisted() {
     local line="$1" class="$2"
-    case "$line" in *"$ALLOW_DRIVE_ROOT"*) return 0 ;; esac
+    # No single operator Drive root id is pinned (per-client Shared-Drive model); a
+    # Drive folder id is not an email/phone, so it never matches a PII class anyway.
     if printf '%s' "$line" | grep -qiE '(<[A-Za-z0-9_.@-]+>|\{\{|placeholder|example|redacted|xxxx|dummy|sample|noreply|no-reply)'; then
         return 0
     fi

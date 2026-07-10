@@ -80,6 +80,29 @@ so the render stage can pass it straight through:
 `aspect_ratio` is authoritative and is always `"2:3"`; the render stage honours it
 and never substitutes a landscape ratio.
 
+## Cover style set (rendered downstream — write a BASE prompt, not one style)
+
+You author ONE base cover prompt. The engine (`stage_s7_cover.py`) then renders it
+in **four distinctly-styled portrait covers** — the config-pinned named styles in
+`cover_render.py` `COVER_STYLES` — on the SAME image model and the SAME portrait 2:3
+endpoint, appending a per-style **style direction** to your base prompt for each. The
+client receives all four and picks their favourite; the producer approves the set.
+The four styles are:
+
+- **Signature** — the flagship, market-ready cover (a strong focal image, premium finish).
+- **Bold Editorial** — magazine-editorial: an oversized dominant title, aggressive colour blocking.
+- **Fine Art** — painterly, literary, textured artwork with a muted sophisticated palette.
+- **Pure Type** — **strictly typography-driven**: NO pictorial imagery at all; the whole
+  cover is built from the locked title, subtitle, and byline as expressive typography on
+  a colour field.
+
+Because your base prompt is specialized four ways, keep its **core** strong and
+style-neutral: lead with the genre, mood, subject cues, and the byte-exact locked
+title/subtitle/byline, and describe a compelling central concept and palette WITHOUT
+over-committing to a single medium — the style direction supplies the medium (photographic,
+editorial, painterly, or type-only). Never bake a widescreen/landscape or a single fixed
+art style into the base; the four styles and the portrait 2:3 geometry are the engine's.
+
 ## Render target (wired downstream, not in this prompt)
 
 The emitted prompt is rendered on the CLIENT's own Kie.ai account with model

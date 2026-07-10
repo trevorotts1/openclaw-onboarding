@@ -12,9 +12,16 @@
 # with an operator surface, exactly as the manifest row-30 contract demands):
 #   1  caf_credential_gate.py resolves every PRD Section 14 credential by label
 #      across all three client env stores (live process env first), with the
-#      pairing proof and the anti-commingling fingerprint (SET / NOT SET only).
-#   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 8
-#      Doc/PDF pairs + 3 control fields = 19 keys); a MISSING field STOPS setup
+#      pairing proof and the anti-commingling fingerprint (SET / NOT SET only). Run
+#      with --require-delivery so the three PER-CLIENT Google delivery levers
+#      (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER) are
+#      also gated for PRESENCE: a box missing the SA key or its OWN Shared-Drive root
+#      FAILS here (exit 2) instead of silently no-op'ing delivery. The delivery creds
+#      are BlackCEO-owned/shared by design and are excluded from the commingle check.
+#   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 10
+#      Doc/PDF pairs incl. the 2 chapter-rewrite-preservation pairs + 3 control
+#      fields + 5 U8 cover-style fields = 28 keys, all LARGE_TEXT except the
+#      SINGLE_OPTIONS cover choice); a MISSING field STOPS setup
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
@@ -31,8 +38,9 @@
 #   4  register the universal + per-stage forms with their hidden-field and
 #      re-stamp contract (contact_id, anthology_id, stage; keying by contact_id,
 #      never email); concrete Convert and Flow form ids are bound per anthology.
-#   5  provision the Drive producer root under the operator's EXISTING shared
-#      root; NEVER create a new root (drive-tree-provision.py).
+#   5  provision the Drive producer root under this client's OWN per-client
+#      BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER; one Shared Drive
+#      per client); NEVER create a NEW root (drive-tree-provision.py).
 #   6  bootstrap the ledger base + local mirror schemas (anthology_state.py).
 #   7  generate the webhook route and its secret (label ANTHOLOGY_INTAKE_HOOK_
 #      SECRET; also the gate-token secret ANTHOLOGY_GATE_TOKEN_SECRET) — the
@@ -206,11 +214,13 @@ label_state() {
 }
 
 report_labels() {
-    local labels=(CONVERT_AND_FLOW_PIT CONVERT_AND_FLOW_LOCATION_ID GOOGLE_IMPERSONATE_USER \
+    local labels=(CONVERT_AND_FLOW_PIT CONVERT_AND_FLOW_LOCATION_ID \
+                  GOOGLE_SA_KEY_FILE GOOGLE_IMPERSONATE_USER GOOGLE_DRIVE_ROOT_FOLDER \
                   ANTHOLOGY_INTAKE_HOOK_SECRET ANTHOLOGY_GATE_TOKEN_SECRET)
     note "credential label states (LIVE process env only; values never printed):"
     local l
     for l in "${labels[@]}"; do note "  $l = $(label_state "$l")"; done
+    note "  (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER are the three per-client delivery levers, gated for PRESENCE by step 1)"
     note "  (ANTHOLOGY_INTAKE_HOOK_SECRET / ANTHOLOGY_GATE_TOKEN_SECRET are GENERATED at step 7 when NOT SET)"
 }
 
@@ -356,7 +366,11 @@ step1_credentials() {
         set_crc 127
         echo "$EX_HELD"; return
     fi
-    local -a gargs=()
+    # --require-delivery: also gate the three PER-CLIENT Google delivery levers for
+    # PRESENCE (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER)
+    # so a box missing the SA key or its OWN Shared-Drive root FAILS here (exit 2) instead
+    # of silently no-op'ing delivery at step 5. SET/NOT SET only; SA key never read/printed.
+    local -a gargs=(--require-delivery)
     if [ -n "${CONVERT_AND_FLOW_LOCATION_ID:-}" ]; then
         gargs+=(--expect-location "$CONVERT_AND_FLOW_LOCATION_ID")
     fi
@@ -437,13 +451,37 @@ JSON
     fi
 }
 
+# Whether the n8n Drive CREDENTIAL BROKER is configured on this box (fleet client
+# box). drive_adapter.py broker-status prints JSON; parse the boolean directly (its
+# stdout, unlike run_collab, is captured here). No Google key is read.
+drive_broker_configured() {
+    [ -f "$SCRIPTS/drive_adapter.py" ] || return 1
+    python3 "$SCRIPTS/drive_adapter.py" broker-status 2>/dev/null \
+        | python3 -c 'import sys,json;
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if d.get("broker_configured") else 1)' 2>/dev/null
+}
+
 step5_drive() {
-    note "STEP 5/10 — provision the Drive producer root under the EXISTING shared root (never a new root)"
+    note "STEP 5/10 — provision the client's Drive delivery root (n8n credential broker if configured; else the local per-client BlackCEO-hosted Shared-Drive root via the BlackCEO SA)"
     if [ "$MODE" = "dryrun" ]; then
-        note "  (dry-run) would verify the EXISTING root reachability and get-or-create the Producer folder; no network"
+        note "  (dry-run) would detect the broker; in broker mode nothing is verified here (per-book trees mint via n8n at book bind); in local-SA mode would verify the per-client Shared-Drive root and get-or-create the Producer folder; no network"
         echo "$EX_OK"; return
     fi
-    # Verify the configured EXISTING root first (never creates one).
+    # FLEET BROKER MODE: this box holds NO Google key. Trevor's Google creds live ONLY
+    # in n8n. Per-book folder trees are minted through the broker (create_book_tree) at
+    # book bind, so there is no local SA root to verify and no Producer folder to create
+    # here. A compromised client box cannot leak Google creds because they were never here.
+    if drive_broker_configured; then
+        note "  n8n Drive broker CONFIGURED: Google creds live ONLY in n8n; this box holds no Google SA key."
+        note "  Per-book folder trees are minted via the broker (drive-tree-provision.py create-book-tree) at book bind; nothing to verify locally."
+        echo "$EX_OK"; return
+    fi
+    # LOCAL-SA MODE (the operator's OWN box, which legitimately holds the SA key).
+    # Verify the configured per-client root first (resolved from GOOGLE_DRIVE_ROOT_FOLDER; never creates one).
     local n; n="$(run_collab py "$SCRIPTS/drive-tree-provision.py" verify-root)"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
     if [ -z "$PRODUCER_NAME" ]; then
@@ -840,6 +878,26 @@ step9_verify_webhook() {
     note "STEP 9/10 — verify-webhook-t1-t9.sh (structure now; the live T1..T9 battery runs on the W5.3 canary)"
     local script="$SCRIPTS/verify-webhook-t1-t9.sh"
     if [ ! -f "$script" ]; then note "  verify-webhook-t1-t9.sh not present — HELD"; echo "$EX_HELD"; return; fi
+    # CANARY confirm-SET (W5.3): before the LIVE battery can fire, the gateway must be
+    # able to resolve hooks.token=${ANTHOLOGY_INTAKE_HOOK_SECRET} from its env, or every
+    # authenticated intake POST 401s (the gateway's own config-validate flags an unset
+    # label as "feature unavailable"). Under --require-live, gate on the secret via
+    # caf_credential_gate.py --require-anthology-hook-secret so a route that cannot
+    # authenticate is HELD (export the step-7 0600 secret into the client env store),
+    # never falsely reported green. The value is never printed (SET / NOT SET only).
+    if [ "$REQUIRE_LIVE" = "1" ]; then
+        local gate="$SCRIPTS/caf_credential_gate.py"
+        if [ -f "$gate" ]; then
+            local gout grc
+            gout="$(python3 "$gate" --require-anthology-hook-secret --no-scan 2>&1)"; grc=$?
+            printf '%s\n' "$gout" >&2
+            if [ "$grc" != "0" ]; then
+                note "  confirm-SET FAILED — ANTHOLOGY_INTAKE_HOOK_SECRET not resolvable in any env store; export the step-7 0600 secret into the client env store before firing the route"
+                set_crc "$grc"; echo "$EX_HELD"; return
+            fi
+            note "  confirm-SET — ANTHOLOGY_INTAKE_HOOK_SECRET resolvable; the intake route can authenticate"
+        fi
+    fi
     local args=(--dry-run)
     [ "$REQUIRE_LIVE" = "1" ] && args=(--require-live)
     bash "$script" "${args[@]}" >&2; local rc=$?
@@ -1096,7 +1154,7 @@ STEP_LABELS=(
     "10/10 — smoke test"
 )
 STEP_AF=(
-    "AF (credential): missing label -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
+    "AF (credential): missing label (incl. a per-client Google delivery lever: SA key / impersonate / Shared-Drive root) -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
     "AF-AE-FIELD-MISSING (exit 2) / AF-AE-FIELD-KEY-MISMATCH (exit 5)"
     "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only -> exit 2); API unreachable or edge-block -> HELD 3"
     "department seed / read-back (Command Center unavailable -> HELD 3; read-back mismatch -> 5)"
@@ -1110,13 +1168,13 @@ STEP_AF=(
     "provider unreachable or unfunded -> exit 4 (alert path)"
 )
 STEP_REMEDIATION=(
-    "Set the client's OWN PRD Section 14 labels in the env store; if commingling: replace any operator/shared/other-client credential with the named client's own"
+    "Set the client's OWN PRD Section 14 labels in the env store, INCLUDING the three per-client delivery levers GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root); if commingling: replace any operator/shared/other-client Convert-and-Flow credential with the named client's own"
     "Grant the client PIT custom-field WRITE scope; a field that must pre-exist but is absent and cannot be created STOPS setup; a fieldKey mismatch STOPS setup"
     "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; create the standard pipeline once in the Convert and Flow UI (pipelines are UI-only, there is no API create endpoint) or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
     "Install Skill 32 command-center-setup so the Anthology department can be seeded and read back"
     "Install the OpenClaw gateway + Command Center (Skill 32) so openclaw.json exists; then re-run so the dept-<slug> agent runtime (agents.list[] + ~/.openclaw/agents/dept-<slug>/) is materialized"
     "Free space / permissions for the state dir; re-run"
-    "Confirm the EXISTING shared Drive root is reachable via the operator service account (GOOGLE_IMPERSONATE_USER); never provision a new root"
+    "Confirm this client's per-client BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER) is reachable via the BlackCEO service account (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
     "Ensure the state dir secrets subdir is writable (0600); export any generated secret into the client env store"
     "Provide a live cron backend (openclaw cron) or accept the declarative inventory; re-run"
@@ -1183,13 +1241,13 @@ PY
 print_plan() {
     cat >&2 <<PLAN
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
-  1/10  credential gate            caf_credential_gate.py (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint)
-  2/10  custom fields              anthology_registry.py provision-fields (19 keys; missing -> STOP; key mismatch -> exit 5)
+  1/10  credential gate            caf_credential_gate.py --require-delivery (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint; PLUS the per-client Google delivery levers SA-key + impersonate + Shared-Drive root gated for presence)
+  2/10  custom fields              anthology_registry.py provision-fields (28 keys: LARGE_TEXT + 1 SINGLE_OPTIONS cover choice; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked
   4/10  form contract              forms-manifest.json (hidden fields contact_id/anthology_id/stage; re-stamp; per-anthology bind)
-  5/10  Drive producer root        drive-tree-provision.py verify-root (+ provision --producer); never a new root
+  5/10  Drive producer root        drive-tree-provision.py verify-root (per-client Shared-Drive root from GOOGLE_DRIVE_ROOT_FOLDER) + provision --producer; never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver
@@ -1645,6 +1703,33 @@ PY
     n="$(ANTHOLOGY_OC_ROOT="$wtmp2/.openclaw" wire_department_runtime 2>/dev/null)"
     [ "$n" = "$EX_HELD" ] || { echo "  FAIL wire CC-absent: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
 
+    # ---- unit 15: step9 CANARY confirm-SET gates the intake hook secret ----
+    # Under --require-live, step9 must CONFIRM ANTHOLOGY_INTAKE_HOOK_SECRET is resolvable
+    # before the live T1..T9 battery — else the gateway cannot authenticate the intake
+    # route (hooks.token=${ANTHOLOGY_INTAKE_HOOK_SECRET}) and every POST 401s. Prove:
+    # unset -> HELD (never falsely green); set -> proceeds to the battery -> OK. Hermetic
+    # stubs stand in for the gate + verifier (no live gateway, no operator config).
+    local s15="$tmp/s15"; mkdir -p "$s15"
+    # A gate stub honoring the real contract: --require-anthology-hook-secret makes the
+    # intake secret REQUIRED -> exit 2 when the env label is unset, exit 0 when set.
+    cat > "$s15/caf_credential_gate.py" <<'PY'
+import os, sys
+if "--require-anthology-hook-secret" in sys.argv and not os.environ.get("ANTHOLOGY_INTAKE_HOOK_SECRET"):
+    sys.stderr.write("verdict=MISSING_LABEL exit=2  anthology_intake_hook_secret [REQUIRED] NOT SET\n")
+    sys.exit(2)
+sys.stderr.write("verdict=PASS exit=0\n"); sys.exit(0)
+PY
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$s15/verify-webhook-t1-t9.sh"; chmod +x "$s15/verify-webhook-t1-t9.sh"
+    SCRIPTS="$s15"; MODE="live"; REQUIRE_LIVE=1
+    local _s15_saved="${ANTHOLOGY_INTAKE_HOOK_SECRET:-}"
+    unset ANTHOLOGY_INTAKE_HOOK_SECRET
+    n="$(step9_verify_webhook 2>/dev/null)"
+    [ "$n" = "$EX_HELD" ] || { echo "  FAIL unit15 confirm-SET unset: expected $EX_HELD got $n" >&2; fails=$((fails+1)); }
+    n="$(ANTHOLOGY_INTAKE_HOOK_SECRET="synthINTAKEsecretUNIT15" step9_verify_webhook 2>/dev/null)"
+    [ "$n" = "$EX_OK" ] || { echo "  FAIL unit15 confirm-SET set: expected $EX_OK got $n" >&2; fails=$((fails+1)); }
+    [ -n "$_s15_saved" ] && export ANTHOLOGY_INTAKE_HOOK_SECRET="$_s15_saved"
+    REQUIRE_LIVE=0; SCRIPTS="$save_scripts"
+
     # ---- unit 11: no Anthropic identifier / no client PII in this file -----
     # Deny-pattern shapes assembled from fragments so no banned literal lives here.
     local _a="anthro""pic" _c="clau""de-"
@@ -1653,7 +1738,7 @@ PY
     fi
 
     if [ "$fails" -eq 0 ]; then
-        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure)" >&2
+        echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure, step9 canary confirm-SET of ANTHOLOGY_INTAKE_HOOK_SECRET: unset->HELD / set->OK)" >&2
         return "$EX_OK"
     fi
     echo "[$PROG] SELF-TEST FAIL — $fails check(s) failed" >&2

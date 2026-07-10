@@ -44,11 +44,38 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
    strongest NON-Anthropic model, from the client's own keys, never the operator's.
    No Anthropic-family id, no operator key, no key taken through intake. Enforced by
    `model_router.py` deny patterns and `guard-no-anthropic-runtime.py`.
-10. DELIVERY REUSE: Google delivery uses the operator's EXISTING service account and
-    the EXISTING anyone-can-read shared root (folder id in
-    `config/engine-config.template.json`); NOTHING new is provisioned in Google, and
-    `drive-tree-provision.py` never creates a new root. Per-document sharing is
-    anyone-with-link VIEW only.
+10. PER-CLIENT DELIVERY ROOT (BlackCEO hosts one Shared Drive per client). Google
+    delivery uses the BlackCEO-owned service account (label `GOOGLE_SA_KEY_FILE`)
+    impersonating the BlackCEO Workspace user (`GOOGLE_IMPERSONATE_USER`), and lands
+    every deliverable under a PER-CLIENT delivery root: BlackCEO provisions ONE Google
+    Shared Drive per client inside BlackCEO's own Workspace, and each client box points
+    at its OWN Shared-Drive root, resolved per box from `GOOGLE_DRIVE_ROOT_FOLDER` (never
+    one shared operator root, so no client's tree ever co-mingles with another's).
+    BlackCEO provisions the per-client Shared Drive out of band; the engine VERIFIES the
+    supplied root and NEVER creates a NEW Drive root. Per-document sharing is EDIT on the
+    co-author's OWN Doc (friction-free pull-back) and VIEW on PDFs/images; the root itself
+    is never anyone-can-read. Enforced by `caf_credential_gate.py` (the delivery-credential
+    presence gate), `drive_adapter.load_root_folder_id` (resolves the per-box root and
+    refuses an unresolved template slot), and `drive-tree-provision.py` verify_root (never
+    creates a root).
+
+    FLEET UPDATE -- the n8n CREDENTIAL BROKER (client boxes hold NO Google key). The
+    fleet Drive model is now the n8n credential broker: Trevor's Google service-account
+    key lives ONLY inside n8n (his n8n VPS). A client box holds NO Google key -- only the
+    broker webhook URL plus a low-privilege shared token (`N8N_DRIVE_WEBHOOK_TOKEN`). The
+    PRIVILEGED per-book folder-tree creation + producer editor share are POSTed to n8n
+    (action `create_book_tree`) via `drive_adapter.provision_book_tree`, which uses the
+    folder ids n8n returns; a compromised client box cannot leak Google creds because they
+    were never there. The U19 SA-key-on-box path (SA key + impersonate user + per-client
+    root) remains ONLY for the operator's OWN box, which legitimately holds the SA key.
+    Selection is per box: broker if configured (`drive_adapter.broker_configured`), else
+    local SA. `caf_credential_gate.py` enforces EITHER the broker pair OR the SA trio per
+    box (a half-configured broker, or a mode missing its levers, STOPS provisioning, exit
+    2). The per-Doc broker actions (`create_doc`, `upload_pdf`, `share_doc_edit`,
+    `pull_doc_text`) and the per-participant runtime tree are DESIGNED extension points,
+    stubbed not faked: until they are brokered, those ops still require the operator's OWN
+    box (local SA), and a client box in broker mode flags them loudly (exit 3). The n8n
+    workflow asset ships at `config/n8n/anthology-drive-broker.workflow.json`.
 11. AUTO-PROVISIONED PIPELINE: onboarding auto-provisions the standard Anthology
     pipeline in the CLIENT's OWN Convert and Flow account through the CLIENT's OWN
     private integration token; binding a pre-existing pipeline is an explicit

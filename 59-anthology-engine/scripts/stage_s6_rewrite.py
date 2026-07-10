@@ -37,13 +37,19 @@ LAYER1_ENTRY = REPO_ROOT / "54-anthology-writer" / "anthology-entry.sh"
 
 EX_OK, EX_ERR, EX_PROVER, EX_HELD, EX_SLOT = 0, 1, 2, 3, 5
 
+# SPEC S6 participant rewrite budget (mirrors anthology_state.REWRITE_BUDGET and
+# caf_delivery.FieldMap.REWRITE_BUDGET). The hard 'no 3rd rewrite' refusal is
+# enforced at the s5 request_rewrite gate; this is used only to surface the count.
+REWRITE_BUDGET = 2
+
 # Ordered collaborators: (path relative to skill or repo root, role). Per SPEC S6.
 WIRING = [
-    ("scripts/anthology_state.py", "load the current chapter and chapter_updates; confirm rewrite_count < 2"),
-    ("scripts/qc-strike-gate.py", "owns rewrite_count (max 2 with S5 gate re-entry); at budget the gate offers Approve as-is or producer escalation"),
+    ("scripts/anthology_state.py", "load the current chapter and chapter_updates; read the rewrite_count (this rewrite's 1-based number, incremented once at the s5 request_rewrite gate)"),
+    ("scripts/qc-strike-gate.py", "surface the rewrite budget (max 2, S5 gate re-entry): count 1 leaves one rewrite; count 2 is the final, budget-exhausting rewrite. The hard 'no 3rd rewrite' refusal is owned by anthology_state at request time, not here"),
     ("54-anthology-writer/anthology-entry.sh", "Layer 1 authoring core (Skill 54): the Thornfield rewrite pin aw-10 inside the 2,000 to 3,500 band, title lock held"),
     ("scripts/qc-tier1-anthology.py", "the same chapter Tier 1 provers over the rewritten draft"),
     ("scripts/judge_harness.py", "the Tier 2 rubric on the JUDGE tier"),
+    ("scripts/stage_s8_deliver.py", "deliver the rewritten chapter into its OWN preservation pair (rewrite1 for the first rewrite, rewrite2 for the second) so the base chapter + any earlier rewrite stay INTACT (PRD Gap G10); byte-for-byte read-back"),
     ("scripts/anthology_state.py", "record the new chapter VERSION and RE-ENTER the s5_gate"),
     ("scripts/mc_board.py", "mirror the participant card to review as the rewrite RE-ENTERS the s5_gate cursor (SPEC 11.2, W4.3); FAIL-SOFT, never blocks the pipeline"),
 ]
@@ -88,7 +94,10 @@ def _step(i, rel, argv, timeout=180):
         sys.stderr.write("[stage_%s] %s exited %d -> classified %d%s\n"
                          % (STAGE, rel, rc, classified,
                             (" :: %s" % err[-300:]) if err else ""))
-    return classified, parsed
+    # raw child rc is returned alongside the classified code so the rewrite-gate
+    # step can tell a legal budget-exhausting rewrite (child exit 4) apart from a
+    # real gate error (child exit 2/3), which classify_child_rc collapses together.
+    return classified, parsed, rc
 
 
 def _resolve(rel):
@@ -130,10 +139,12 @@ def plan():
 def _invoke_wiring(key, run_dir=None):
     """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
     Unlike S1-S5, S6 has no NEW gate to open: the rewrite RE-ENTERS the existing
-    s5_gate (a cursor write, not a fresh mint+nudge), so every declared
-    collaborator runs synchronously in this one call. classify_child_rc's
-    numeric contract is unchanged; every step short-circuits on anything but
-    EX_OK."""
+    s5_gate (a cursor write, not a fresh mint+nudge). It DOES deliver: the
+    rewritten chapter lands in its own preservation pair (rewrite1/rewrite2), never
+    the base chapter pair, so the original survives (PRD Gap G10). classify_child_rc's
+    numeric contract is unchanged; every step short-circuits on anything but EX_OK,
+    EXCEPT the rewrite-gate, whose budget-exhausting exit 4 is a LEGAL final-rewrite
+    state (see below)."""
     pending = [rel for rel, _ in WIRING if _resolve(rel) is None]
     if pending:
         sys.stderr.write("[stage_%s] PENDING-WIRING: collaborator(s) not yet present: %s\n"
@@ -149,28 +160,49 @@ def _invoke_wiring(key, run_dir=None):
     py = sys.executable or "python3"
     rundir = _run_dir_for(pkey, run_dir)
 
-    # 1. anthology_state.py -- load the current chapter and chapter_updates.
+    # 1. anthology_state.py -- load the current chapter and chapter_updates; read
+    #    the rewrite_count (this rewrite's 1-based number).
     rel, _ = WIRING[0]
-    rc, _ = _step(0, rel, [py, str(_resolve(rel)), "--json",
-                          "get-participant", "--participant-key", pkey])
+    rc, participant, _ = _step(0, rel, [py, str(_resolve(rel)), "--json",
+                                       "get-participant", "--participant-key", pkey])
     if rc != EX_OK:
         return rc
+    rewrite_number = None
+    try:
+        rewrite_number = int((participant or {}).get("rewrite_count"))
+    except (TypeError, ValueError):
+        rewrite_number = None
 
-    # 2. qc-strike-gate.py -- confirm rewrite_count < 2 (READ-ONLY budget report;
-    #    exhausted -> exit 4 -> EX_PROVER, offering Approve-as-is/escalate).
+    # 2. qc-strike-gate.py -- surface the rewrite budget. The increment is owned by
+    #    anthology_state at the s5_participant/request_rewrite gate (the sole, hard
+    #    'no 3rd rewrite' enforcer), so by the time S6 runs the count is already 1 or
+    #    2. The gate reports budget REMAINING: exit 0 while a rewrite is still left
+    #    (count 1), exit 4 (EX_EXHAUSTED) when THIS is the last one (count 2). BOTH
+    #    are legal authoring states -- exit 4 here does NOT block the second rewrite;
+    #    it only means no further rewrite may be requested after this. Only a real
+    #    gate error (child exit 2 validation / 3 held) stops us.
     rel, _ = WIRING[1]
-    rc, _ = _step(1, rel, [py, str(_resolve(rel)), "--json",
-                          "rewrite-gate", "--participant-key", pkey])
-    if rc != EX_OK:
+    rc, gate_dec, raw = _step(1, rel, [py, str(_resolve(rel)), "--json",
+                                      "rewrite-gate", "--participant-key", pkey])
+    if raw not in (0, 4):          # 0 = budget remains, 4 = final (budget-exhausting) rewrite
         return rc
+    if rewrite_number is None:
+        try:
+            rewrite_number = int((gate_dec or {}).get("rewrite_count"))
+        except (TypeError, ValueError):
+            rewrite_number = None
+    remaining = (gate_dec or {}).get("remaining")
+    sys.stderr.write("[stage_%s] rewrite #%s of %s (rewrites remaining after this: %s); the "
+                     "rewritten chapter will be preserved in slot rewrite%s.\n"
+                     % (STAGE, rewrite_number, REWRITE_BUDGET, remaining, rewrite_number))
 
     # 3. 54-anthology-writer/anthology-entry.sh -- the Thornfield rewrite pin
     #    aw-10 inside the 2,000-3,500 band, title lock held; rewrites
     #    working/chapter.md in place (the run dir's chapter_updates carries the
     #    participant's notes forward from the ledger read in step 1).
     rel, _ = WIRING[2]
-    rc, _ = _step(2, rel, ["bash", str(_resolve(rel)), "--run-dir", str(rundir),
-                          "--upto", "P5-CHAPTER-AUTHOR"])
+    rc, _, _ = _step(2, rel, ["bash", str(_resolve(rel)), "--run-dir", str(rundir),
+                             "--upto", "P5-CHAPTER-AUTHOR"])
     if rc != EX_OK:
         return rc
 
@@ -181,7 +213,7 @@ def _invoke_wiring(key, run_dir=None):
     envelope = Path(rundir) / "envelope.json"
     envelope.write_text(json.dumps({"kind": "rewrite", "artifact_path": str(chapter_path)},
                                    ensure_ascii=False), encoding="utf-8")
-    rc, _ = _step(3, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
+    rc, _, _ = _step(3, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
     if rc != EX_OK:
         return rc
 
@@ -192,26 +224,44 @@ def _invoke_wiring(key, run_dir=None):
         "kind": "chapter", "deliverable_path": str(chapter_path),
         "participant_key": pkey, "anthology_id": anthology_id,
     }, ensure_ascii=False), encoding="utf-8")
-    rc, _ = _step(4, rel, [py, str(_resolve(rel)), "judge",
-                          "--envelope", str(judge_envelope), "--json"])
+    rc, _, _ = _step(4, rel, [py, str(_resolve(rel)), "judge",
+                             "--envelope", str(judge_envelope), "--json"])
     if rc != EX_OK:
         return rc
 
-    # 6. anthology_state.py -- record the new chapter VERSION and RE-ENTER s5_gate.
+    # 6. stage_s8_deliver.py -- deliver the rewrite into rewrite1/rewrite2 (G10).
+    #    S8 re-reads the ledger rewrite_count itself and routes the slot; passing
+    #    --deliverable rewrite (never rewrite1/rewrite2 directly) keeps the slot
+    #    decision in one place and the base chapter pair untouched. The same rundir
+    #    is threaded so working/chapter.md (the just-rewritten draft) is packaged.
     rel, _ = WIRING[5]
-    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "--json", "record-artifact",
-                          "--participant-key", pkey, "--type", "rewrite"])
+    rc, delivered, _ = _step(5, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
+                                     "--run-dir", str(rundir), "--deliverable", "rewrite", "--json"])
     if rc != EX_OK:
         return rc
-    rc, _ = _step(5, rel, [py, str(_resolve(rel)), "--json", "advance-stage",
-                          "--participant-key", pkey, "--to", "s5_gate"])
+    delivered = delivered or {}
+    if delivered.get("rewrite_slot"):
+        sys.stderr.write("[stage_%s] rewrite delivered to %s (base chapter left intact).\n"
+                         % (STAGE, delivered["rewrite_slot"]))
+
+    # 7. anthology_state.py -- record the new chapter VERSION and RE-ENTER s5_gate.
+    rel, _ = WIRING[6]
+    art_argv = [py, str(_resolve(rel)), "--json", "record-artifact",
+               "--participant-key", pkey, "--type", "rewrite"]
+    if delivered.get("doc_url"):
+        art_argv += ["--doc-url", delivered["doc_url"]]
+    rc, _, _ = _step(6, rel, art_argv)
+    if rc != EX_OK:
+        return rc
+    rc, _, _ = _step(6, rel, [py, str(_resolve(rel)), "--json", "advance-stage",
+                             "--participant-key", pkey, "--to", "s5_gate"])
     if rc != EX_OK:
         return rc
 
-    # 7. mc_board.py -- mirror the participant card to review as the rewrite
+    # 8. mc_board.py -- mirror the participant card to review as the rewrite
     #    RE-ENTERS s5_gate (W4.3); FAIL-SOFT.
-    rel, _ = WIRING[6]
-    rc, _ = _step(6, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
+    rel, _ = WIRING[7]
+    rc, _, _ = _step(7, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
         return rc
 

@@ -42,7 +42,7 @@ EX_OK, EX_ERR, EX_PROVER, EX_HELD, EX_SLOT = 0, 1, 2, 3, 5
 WIRING = [
     ("scripts/intake_router.py", "deterministic S0: route-secret check, hidden-field validation, tenant check, dedup no-op, exceptions capture, under-2-second acknowledge, detached stage spawn"),
     ("scripts/anthology_state.py", "upsert-participant on the composite key contact_id::anthology_id, or confirm the cursor"),
-    ("scripts/drive-tree-provision.py", "idempotent Producer/Anthology/Participant tree under the EXISTING shared root, on first sight only"),
+    ("scripts/drive-tree-provision.py", "idempotent Producer/Anthology/Participant tree under the per-client BlackCEO-hosted Shared-Drive root (resolved per box from GOOGLE_DRIVE_ROOT_FOLDER), on first sight only"),
     ("scripts/mc_board.py", "ingest ONE participant card to POST /api/tasks/ingest (HMAC + Bearer, fail-soft: a dark board never blocks the pipeline)"),
 ]
 

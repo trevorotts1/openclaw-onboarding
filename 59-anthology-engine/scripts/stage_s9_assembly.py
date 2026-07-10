@@ -80,6 +80,27 @@ def _load_request(run_dir):
         return {}
 
 
+def _confirmed_order(request, bundle):
+    """The producer's CONFIRMED running order for a confirm_order pass. Prefer the
+    order the board "Confirm the finalized set & order" action wrote into
+    request.json (gate_engine._flag_runner_confirm_order stamps request['order']);
+    fall back to the ledger's chapter_order, which the SOLE writer persisted in the
+    'adjusted' state when that same action committed the order. Returns a list of
+    participant_key strings (empty if neither source carries an order)."""
+    order = request.get("order")
+    if isinstance(order, list) and order:
+        return [str(k) for k in order]
+    raw = (bundle.get("anthology") or {}).get("chapter_order")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if isinstance(raw, list) and raw:
+        return [str(k) for k in raw]
+    return []
+
+
 def _run(argv, timeout=180, input_text=None):
     try:
         proc = subprocess.run(argv, input=input_text, capture_output=True,
@@ -275,9 +296,50 @@ def _invoke_wiring(key, run_dir=None):
     #    refuses the introduction rather than inventing one (AF-AE-S9-FABRICATION).
     rel, _ = WIRING[2]
     sys.stderr.write("[stage_%s] %d/%d %s\n" % (STAGE, 3, len(WIRING), rel))
+    transitions = None
+    finale = None
+    confirm_order = bool(request.get("confirm_order"))
     try:
-        proposal = eng.curate_order(chapters)
-        order = proposal["order"]
+        if confirm_order:
+            # U9(a)+(b): the producer has already CONFIRMED the finalized set & order
+            # via the board "Confirm the finalized set & order" action. gate_engine's
+            # confirm_order persisted THAT order through the SOLE writer
+            # (assembly-set-order --state adjusted) AND stamped request['order']. This
+            # pass therefore USES the confirmed order verbatim and MUST NOT re-curate:
+            # curate_order re-persists via assembly-set-order --state proposed, an
+            # ILLEGAL adjusted->proposed transition (anthology_state ASSEMBLY_EDGES has
+            # no such edge) that would fail the pass before any transition or finale is
+            # written -- and it would also discard the producer's CONFIRMED order in
+            # favour of a freshly re-derived one. The legal adjusted->compiled edge is
+            # taken later by compile_manuscript (WIRING[3]).
+            order = _confirmed_order(request, bundle)
+            if not order:
+                raise logic.CurationInvalid(
+                    "confirm_order pass carries no confirmed order (neither "
+                    "request['order'] nor the ledger's chapter_order is set)")
+            ok, detail = logic.validate_order_permutation(
+                order, [c["participant_key"] for c in chapters])
+            if not ok:
+                raise logic.CurationInvalid(
+                    "the producer's confirmed order is not a permutation of the "
+                    "frozen approved set: %s" % detail)
+            sys.stderr.write("[stage_%s] confirm_order pass: using the producer's CONFIRMED "
+                             "order (%d chapter(s)); NOT re-curating (the sole writer already "
+                             "persisted chapter_order in the 'adjusted' state).\n"
+                             % (STAGE, len(order)))
+        else:
+            proposal = eng.curate_order(chapters)
+            order = proposal["order"]
+            # U9(c): the ordering + one-line-per-slot rationale the CC assembly cockpit
+            # renders is on proposal["cockpit_view"]; persist it for the cockpit read
+            # path (a durable file the dashboard loads; the ledger keeps chapter_order).
+            try:
+                (Path(rundir) / "working" / "order_proposal.json").write_text(
+                    json.dumps(proposal.get("cockpit_view") or {}, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+            except OSError as exc:
+                sys.stderr.write("[stage_%s] non-fatal: could not persist the cockpit ordering "
+                                 "view (%s); the ledger still holds chapter_order.\n" % (STAGE, exc))
         bios_out = eng.bios(contributors, order)
         bios_by_key = {b["participant_key"]: json.dumps(b, ensure_ascii=False)
                       for b in bios_out["bios"]}
@@ -285,6 +347,25 @@ def _invoke_wiring(key, run_dir=None):
         intro_markdown = ""
         front_matter = ""
         back_matter = ""
+        # U9(a)+(b): the producer's "Confirm the finalized set & order" is the
+        # trigger that authorizes the FINAL edition: the N-1 inter-chapter
+        # transitions and the brand-new Grand Finale are written ONLY after the
+        # set is finalized, approved, and ordered. Without that confirmation this
+        # call still curates/compiles a working manuscript, but no transitions or
+        # finale are inserted (final-edition-only, per the assembly directive).
+        if confirm_order:
+            chapters_meta = [{
+                "participant_key": pk,
+                "chapter_title": members_by_key.get(pk, {}).get("title_locked"),
+                "first_name": members_by_key.get(pk, {}).get("first_name"),
+                "last_name": members_by_key.get(pk, {}).get("last_name"),
+                "one_line_summary": members_by_key.get(pk, {}).get("one_line_summary") or "",
+            } for pk in order]
+            transitions = eng.write_transitions(order, chapters_meta)
+            finale = eng.write_finale(order, chapters_meta, producer.get("display_name"))
+            sys.stderr.write("[stage_%s] final edition: %d inter-chapter transition(s) + "
+                             "Grand Finale %r written (producer confirmed the set & order).\n"
+                             % (STAGE, len(transitions), finale.get("finale_title")))
         if producer_inputs:
             intro_out = eng.editor_intro(producer_inputs, contributors,
                                          producer.get("display_name"), order)
@@ -319,7 +400,8 @@ def _invoke_wiring(key, run_dir=None):
     manuscript_path = Path(rundir) / "working" / "manuscript.md"
     try:
         compiled = eng.compile_manuscript(order, frozen_shas, front_matter, intro_markdown,
-                                          bios_by_key, back_matter, out_path=manuscript_path)
+                                          bios_by_key, back_matter, transitions=transitions,
+                                          finale=finale, out_path=manuscript_path)
     except logic.S9Error as exc:
         sys.stderr.write("[stage_%s] %d/%d %s: %s\n" % (STAGE, 4, len(WIRING), rel, exc))
         return classify_child_rc(getattr(exc, "exit_code", logic.EX_ERR))

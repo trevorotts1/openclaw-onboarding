@@ -193,10 +193,14 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
-    # 5. stage_s8_deliver.py -- deliver the Tone Doc + PDF.
+    # 5. stage_s8_deliver.py -- deliver the Tone Doc + PDF. --gate s2 moves the
+    #    Convert and Flow opportunity to the mapped pipeline stage (Tone) from the
+    #    registry caf_stage_map (never hardcoded); scope-denied stays HELD (exit
+    #    3), never fatal (B6 / SPEC 7.6).
     rel, _ = WIRING[4]
     rc, delivered = _step(4, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
-                                  "--run-dir", str(rundir), "--deliverable", "tone", "--json"])
+                                  "--run-dir", str(rundir), "--deliverable", "tone",
+                                  "--gate", "s2", "--json"])
     if rc != EX_OK:
         return rc
     delivered = delivered or {}
