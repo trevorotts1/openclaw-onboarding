@@ -105,7 +105,7 @@ def selftest() -> int:
         std = build_payload("RUNTEST", "standard", _load(sp), None)
         n = len(std["questions"])
         assert n >= 8, f"standard payload too small: {n}"
-        assert std["questions"][0]["id"] == "deck_type", "first standard question must be deck_type"
+        assert std["questions"][0]["id"] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
         assert all("prompt" in q and q["prompt"] for q in std["questions"]), "every question needs a prompt"
         print(f"[selftest] standard OK: {n} questions")
     else:

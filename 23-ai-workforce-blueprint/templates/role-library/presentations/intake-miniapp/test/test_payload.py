@@ -82,7 +82,10 @@ class TestPayload(unittest.TestCase):
             self.skipTest(f"canonical standard JSON not found at {std}")
         std_spec = json.loads(std.read_text(encoding="utf-8"))
         payload = bqp.build_payload("RUNREAL", "standard", std_spec, None)
-        self.assertEqual(payload["questions"][0]["id"], "deck_type")
+        # Order-0 canonical question is the type-picker (`presentation_type`),
+        # which replaced the old binary `deck_type` question in the typepicker
+        # unit — it derives deck_type/creation_mode/presentation_mode/audience_mode.
+        self.assertEqual(payload["questions"][0]["id"], "presentation_type")
         self.assertGreaterEqual(len(payload["questions"]), 8)
         if sig.is_file():
             sig_spec = json.loads(sig.read_text(encoding="utf-8"))
