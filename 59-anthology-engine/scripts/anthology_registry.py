@@ -299,6 +299,29 @@ class CafClient:
                             body=body)
         return out.get("customField") or out
 
+    # ---- location custom VALUES ------------------------------------------
+    # The snapshot's OWN plumbing (NOT read by the engine python): the tag ->
+    # notification GHL workflow consumes these (webhook URL + Authorization
+    # header + producer name/email). GET-check then create-only-missing / update
+    # is the idempotent fill path used by anthology_snapshot.py. A custom VALUE
+    # value CAN legitimately be a real token (the client owns the location and
+    # GHL sends it as the Authorization header) -- but it is written into the
+    # request BODY only, never echoed to any surface.
+    def list_custom_values(self, location_id: str):
+        out = self._request("GET", "/locations/%s/customValues" % urllib.parse.quote(location_id, safe=""))
+        return out.get("customValues") or []
+
+    def create_custom_value(self, location_id: str, name: str, value: str):
+        out = self._request("POST", "/locations/%s/customValues" % urllib.parse.quote(location_id, safe=""),
+                            body={"name": name, "value": value})
+        return out.get("customValue") or out
+
+    def update_custom_value(self, location_id: str, cv_id: str, name: str, value: str):
+        out = self._request("PUT", "/locations/%s/customValues/%s"
+                            % (urllib.parse.quote(location_id, safe=""), urllib.parse.quote(cv_id, safe="")),
+                            body={"name": name, "value": value})
+        return out.get("customValue") or out
+
 
 # ---------------------------------------------------------------------------
 # fieldKey derivation law (verified at W0.5). The API DERIVES the fieldKey; it is
