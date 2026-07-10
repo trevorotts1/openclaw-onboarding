@@ -93,7 +93,9 @@ When a cross-department handoff occurs at a full-funnel pipeline P-boundary (P0�
 
 The board handoff event is emitted by the completing stage agent immediately after its task status changes to `done` or `APPROVED`. Format:
 
-```json
+```
+POST {COMMAND_CENTER_URL}/api/tasks/{parent_task_id}/events
+Authorization: Bearer $MC_API_TOKEN
 {
   "event_type": "board_handoff",
   "from_dept": "<completing department slug>",
@@ -105,6 +107,13 @@ The board handoff event is emitted by the completing stage agent immediately aft
 }
 ```
 
-This event is posted to `POST {COMMAND_CENTER_URL}/api/tasks/{parent_task_id}/events` and bumps `last_progress_at` on the parent epic. The orchestrator listens for it via the SSE stream (`/api/events`) to trigger the depends_on gate check for the next stage.
+This bumps `last_progress_at` on the parent epic. The orchestrator listens for it via the SSE stream (`/api/events`) to trigger the depends_on gate check for the next stage.
+
+> **Write-back auth (required).** The POST above MUST send `Authorization: Bearer
+> $MC_API_TOKEN` — the Command Center is fail-closed and rejects an unauthenticated
+> write-back with **401 Unauthorized**, so the board handoff event is silently lost
+> and the downstream `depends_on` gate never fires. `$MC_API_TOKEN` is provisioned
+> into the agent's runtime environment; do NOT use `$OPENCLAW_GATEWAY_TOKEN` (gateway
+> bridge token — it 401s this API).
 
 **The board handoff event does NOT replace the CC message.** Both are emitted. The CC message is for human-readable activity logging; the board event is for the orchestrator's gate check and stale-detection reset.

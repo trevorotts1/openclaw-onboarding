@@ -126,17 +126,29 @@ Use the EXACT `outputPath` from the script's summary (the `.pptx`). Do not regis
 anything the script did not produce.
 ```
 POST {missionControlUrl}/api/tasks/{task.id}/deliverables
+Authorization: Bearer $MC_API_TOKEN
 {"deliverable_type": "artifact", "title": "presentation.pptx", "path": "<outputPath from summary>"}
 ```
 
 ### Step 4 — Log completion and advance status
 ```
 POST {missionControlUrl}/api/tasks/{task.id}/activities
+Authorization: Bearer $MC_API_TOKEN
 {"activity_type": "completed", "message": "Built {N}-slide deck via build_deck.py: {title}. Output: {outputPath}. KIE task IDs: {kieTaskIds}"}
 
 PATCH {missionControlUrl}/api/tasks/{task.id}
+Authorization: Bearer $MC_API_TOKEN
 {"status": "review"}
 ```
+
+> **Write-back auth (required).** Every call in Steps 3–4 MUST send the header
+> `Authorization: Bearer $MC_API_TOKEN` — the Command Center is fail-closed and rejects an
+> unauthenticated write-back with **401 Unauthorized**, which leaves your finished deck stuck
+> `in_progress` until it is swept to `blocked`. `$MC_API_TOKEN` is provisioned into this agent's
+> runtime environment; do NOT use `$OPENCLAW_GATEWAY_TOKEN` (that is the gateway bridge token and
+> 401s this API). The CANONICAL, preferred path is the automatic `cc_board.py` postflight (see
+> `TOOLS.md` → "Mission Control … handled automatically"), which already signs the bearer for you;
+> hand-craft these calls only as a fallback when the automatic postflight did not run.
 
 ### Step 5 — Reply
 Reply with exactly (ONLY if `build_deck.py` exited 0):

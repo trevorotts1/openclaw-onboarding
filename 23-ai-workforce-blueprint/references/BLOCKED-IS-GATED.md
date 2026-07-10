@@ -23,6 +23,14 @@
 | Worker agents | NEVER. Workers call POST /api/tasks/{id}/return-to-orchestrator with a structured handback instead. |
 | Human operators (UI drag-drop) | The drag-into-Blocked path opens a required-fields modal; the drop is blocked if the three fields are not filled. The UI enforces the same contract as the API. |
 
+> **Write-back auth (required).** Both API calls in the table above MUST send the
+> header `Authorization: Bearer $MC_API_TOKEN` — the Command Center is fail-closed
+> and rejects an unauthenticated write-back with **401 Unauthorized**, so the
+> blocked-status PATCH or the return-to-orchestrator handback is silently rejected
+> and the card never leaves its current state. `$MC_API_TOKEN` is provisioned into
+> the calling agent's runtime environment; do NOT use `$OPENCLAW_GATEWAY_TOKEN`
+> (gateway bridge token — it 401s this API).
+
 ---
 
 ## The Four Qualifying Human-Only Categories

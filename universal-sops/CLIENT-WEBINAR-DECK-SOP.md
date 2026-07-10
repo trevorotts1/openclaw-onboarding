@@ -291,18 +291,29 @@ Register the EXACT `outputPath` from the script's summary (the `.pptx`) so the K
 gets the REAL artifact and QC runs on it:
 ```
 POST {missionControlUrl}/api/tasks/{task.id}/deliverables
+Authorization: Bearer $MC_API_TOKEN
 {"deliverable_type": "artifact", "title": "presentation.pptx", "path": "<outputPath from build_deck.py summary>"}
 ```
 Then log completion and advance status:
 ```
 POST {missionControlUrl}/api/tasks/{task.id}/activities
+Authorization: Bearer $MC_API_TOKEN
 {"activity_type": "completed", "message": "Built {N}-slide deck via build_deck.py: {title}. Output: {outputPath}. KIE task IDs: {kieTaskIds}"}
 
 PATCH {missionControlUrl}/api/tasks/{task.id}
+Authorization: Bearer $MC_API_TOKEN
 {"status": "review"}
 ```
 Register NOTHING that the script did not produce. The path you register MUST equal the
 `outputPath` the script printed.
+
+> **Write-back auth (required).** Every POST/PATCH above MUST send the header
+> `Authorization: Bearer $MC_API_TOKEN`. The Command Center is fail-closed: an unauthenticated
+> write-back is rejected **401 Unauthorized**, so the finished deck never advances to `review`
+> and freezes `in_progress` until it is swept to `blocked`. `$MC_API_TOKEN` is provisioned into
+> the agent's runtime environment; do NOT use `$OPENCLAW_GATEWAY_TOKEN` (gateway bridge token —
+> it 401s this API). Preferred: let the automatic `cc_board.py` postflight register + advance the
+> card (it signs the bearer for you); hand-craft these calls only as a fallback.
 
 ---
 
