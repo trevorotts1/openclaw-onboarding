@@ -60,7 +60,8 @@ echo "evidence: $EVIDENCE"
 # not: a saved seoMeta that is PRESENT-BUT-INVALID is a hard build miss (HALT);
 # missing seoMeta/media-folder receipts WARN (older evidence may predate them).
 SEO_MEDIA_FAIL=0
-SEO_PREGATE="$(EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - <<'PY'
+_seo_out="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/seo-pregate.$$.out")"
+EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - > "$_seo_out" 2>&1 <<'PY'
 import json, os, sys, glob
 sys.path.insert(0, os.environ["TOOLS"])
 root = os.environ["EVIDENCE"]
@@ -162,7 +163,8 @@ else:
           "WARN no media-folder receipt / image manifest found in evidence — "
           "§3 folder discipline not demonstrated (no images promised)")
 PY
-)"
+SEO_PREGATE="$(cat "$_seo_out")"
+rm -f "$_seo_out" 2>/dev/null || true
 echo "$SEO_PREGATE"
 case "$SEO_PREGATE" in *FAIL*) SEO_MEDIA_FAIL=1 ;; esac
 
