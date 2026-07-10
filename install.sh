@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v19.15.0"
+ONBOARDING_VERSION="v19.16.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1013,6 +1013,10 @@ PYEOF
 # (chmod 600) + openclaw.json env.vars block.
 #
 # Operator setup (one-time, in ~/.zshrc on operator's Mac):
+#   # PREFERRED for client boxes — the n8n Podbean broker (no app secret on the box):
+#   export OPENCLAW_PODBEAN_BROKER_URL="https://main.blackceoautomations.com/webhook/podbean-broker"
+#   export OPENCLAW_PODBEAN_BROKER_TOKEN="..."   # the PODBEAN_BROKER_TOKEN set inside n8n
+#   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean app):
 #   export OPENCLAW_PODBEAN_CLIENT_ID="..."
 #   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
@@ -1062,13 +1066,33 @@ json.dump(d, open(p, 'w'), indent=2)
 PYEOF
     }
 
-    # Podbean shared OAuth app credentials
+    # Podbean credential BROKER pair (PREFERRED for client boxes): inject only the
+    # broker webhook URL + a low-privilege shared token. BlackCEO's Podbean app
+    # client_id/client_secret then stay INSIDE n8n and never land on a client box.
+    # The engine (58-podcast-production-engine/scripts/podbean_publish.sh) runs in
+    # broker mode whenever both of these resolve. The client still supplies only
+    # their Podbean Channel ID. See 58-podcast-production-engine/config/n8n/README.md.
+    if [ -n "${OPENCLAW_PODBEAN_BROKER_URL:-}" ] && [ -n "${OPENCLAW_PODBEAN_BROKER_TOKEN:-}" ]; then
+        _shared_write_env "PODBEAN_BROKER_WEBHOOK_URL" "$OPENCLAW_PODBEAN_BROKER_URL"
+        _shared_write_env "PODBEAN_BROKER_TOKEN" "$OPENCLAW_PODBEAN_BROKER_TOKEN"
+        _shared_write_ocjson "PODBEAN_BROKER_WEBHOOK_URL" "$OPENCLAW_PODBEAN_BROKER_URL"
+        _shared_write_ocjson "PODBEAN_BROKER_TOKEN" "$OPENCLAW_PODBEAN_BROKER_TOKEN"
+        success "Podbean broker pair injected from operator env (no Podbean app secret on this box; chmod 600)"
+        injected_count=$((injected_count + 2))
+    elif [ -n "${OPENCLAW_PODBEAN_BROKER_URL:-}" ] || [ -n "${OPENCLAW_PODBEAN_BROKER_TOKEN:-}" ]; then
+        warn "Only one of OPENCLAW_PODBEAN_BROKER_URL / OPENCLAW_PODBEAN_BROKER_TOKEN set — both required. Skipping Podbean broker injection."
+    fi
+
+    # Podbean shared OAuth app credentials — operator OWN box / legacy fallback ONLY.
+    # For client boxes prefer the broker pair above so BlackCEO's app secret never
+    # lands on a client box. These are BlackCEO's single shared app (one Podbean
+    # account hosts every client show), never the client's, and never asked from the client.
     if [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] && [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         _shared_write_env "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
         _shared_write_env "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
         _shared_write_ocjson "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
         _shared_write_ocjson "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
-        success "Podbean shared OAuth app credentials injected from operator env (chmod 600)"
+        success "Podbean shared OAuth app credentials injected from operator env (operator/legacy fallback; chmod 600)"
         injected_count=$((injected_count + 2))
     elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
@@ -1159,7 +1183,7 @@ PYEOF
     if [ "$injected_count" -gt 0 ]; then
         note "Shared operator secrets: $injected_count value(s) written to $OC_SECRETS_ENV"
     else
-        note "Shared operator secrets: none in env. Set OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET in ~/.zshrc to inject."
+        note "Shared operator secrets: none in env. For client boxes set OPENCLAW_PODBEAN_BROKER_URL + OPENCLAW_PODBEAN_BROKER_TOKEN in ~/.zshrc (preferred; keeps the Podbean app secret in n8n). OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET are the operator/legacy fallback only."
     fi
 }
 

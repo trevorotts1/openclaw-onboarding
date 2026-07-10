@@ -273,11 +273,19 @@ episodes; create-once, reuse-forever, case-insensitive matching); HEAD-verify ev
 public URL. Runtime never depends on folder creation succeeding mid-episode; it only looks up
 folders that setup ensured.
 
-STEP 15, PUBLISH TO PODBEAN. status `publishing`. OAuth client_credentials with the client's
-OWN client_id, client_secret, and podcast_id; episode number is count plus one; the title
-convention appends "Inspired by" plus the speaker's name; uploadAuthorize then PUT for audio
-and image; create the episode (status publish, or draft or scheduled when the release date is
-future); capture the permalink. Idempotent: if the ledger already holds a permalink, skip.
+STEP 15, PUBLISH TO PODBEAN. status `publishing`. Publishing uses BlackCEO's SINGLE Podbean
+OAuth app (client_id and client_secret). The operator HOSTS every client's show under his ONE
+Podbean account, so those app credentials are NEVER the client's, are NEVER asked from the
+client, and NEVER need to sit on the client box: at runtime they are injected by the operator's
+n8n Podbean credential broker (config/n8n/podbean-broker.workflow.json), which mints a
+short-lived access token SCOPED to the client's channel (Podbean multiplePodcastsToken). The ONE
+Podbean value the client supplies is their Podbean Channel ID (podcast_id) - it selects which
+show under the host account is theirs and is not a secret. Flow: obtain a channel-scoped token
+from the broker (falling back to a local client_credentials mint only on the operator's own box);
+episode number is count plus one; the title convention appends "Inspired by" plus the speaker's
+name; uploadAuthorize then PUT for audio and image; create the episode (status publish, or draft
+or scheduled when the release date is future); capture the permalink. Idempotent: if the ledger
+already holds a permalink, skip.
 
 STEP 16, LINK BACK. status `publishing`. Write the title, description, Episode Package link, and
 Speech Script link (and the book_teaser link when that field exists) in ONE batch, then write
@@ -413,17 +421,25 @@ Binding on this document and on everything the skill ever produces:
 
 ## Per-client credentials (labels and locations only, never values)
 
-All are the NAMED CLIENT's OWN accounts; no operator, shared, agency, or other-client
-credential ever substitutes. Verification is always SET or NOT SET plus a behavior probe; a
-value is never printed, echoed, grepped, or pasted.
+These are the NAMED CLIENT's OWN accounts (the ONE exception is the Podbean OAuth app, which is
+BlackCEO's single shared app brokered via n8n - see the Podbean row); no operator, shared,
+agency, or other-client credential ever substitutes for the per-client ones. Verification is
+always SET or NOT SET plus a behavior probe; a value is never printed, echoed, grepped, or pasted.
 
 - Fish Audio API key and voice reference_id: client env stores (live process env first) and the
   Fish Audio skill config.
 - Kie.ai API key: client env stores and the kie.ai skill config.
 - Convert and Flow private integration token (prefix pit-) and Location ID: client env stores
   via the shared alias resolver; the Location ID must equal the webhook payload's location_id.
-- Podbean client_id, client_secret, podcast_id: client env stores; podcast_id confirmed at
-  onboarding if absent.
+- Podbean: the ONLY per-client Podbean value is the Podbean Channel ID (podcast_id) - the
+  client's show under BlackCEO's host account, captured at onboarding, never a secret, never
+  guessed by the mapper. The Podbean OAuth app client_id and client_secret are BlackCEO's SINGLE
+  shared app, NOT the client's: they live only inside the operator's n8n Podbean broker
+  (config/n8n/podbean-broker.workflow.json), are injected at runtime, and are NEVER asked from
+  the client. Broker mode (fleet default): the client box holds only PODBEAN_BROKER_WEBHOOK_URL +
+  PODBEAN_BROKER_TOKEN + the Channel ID - no Podbean secret ever lands on it. Local fallback
+  (operator's OWN box only): PODBEAN_CLIENT_ID + PODBEAN_CLIENT_SECRET resolve from the operator
+  env. Selection is per box: broker if the webhook URL and broker token both resolve, else local.
 - Ollama Cloud API key or OpenRouter API key: client env (the ollama-cloud provider needs a
   baseUrl, not an apiKey slotting).
 - PODCAST_INTAKE_HOOK_SECRET and PODCAST_DASHBOARD_TOKEN: generated at provisioning, stored in

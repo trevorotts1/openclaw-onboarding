@@ -2,7 +2,20 @@
 #
 # podbean_publish.sh
 # Podcast Production Engine, Step 15: publish one produced episode to the
-# client OWN Podbean channel and capture the permalink.
+# client's Podbean channel (their show under BlackCEO's single host account)
+# and capture the permalink.
+#
+# CREDENTIAL MODEL (read this first): BlackCEO HOSTS every client's show under
+# his ONE Podbean account, so the Podbean OAuth app client_id/client_secret are
+# BlackCEO's SINGLE shared app - never the client's, never asked from the client.
+# The ONLY per-client Podbean value is the Channel ID (PODBEAN_PODCAST_ID), which
+# selects the show and is not a secret. Two modes, selected per box:
+#   BROKER (fleet default): PODBEAN_BROKER_WEBHOOK_URL + PODBEAN_BROKER_TOKEN are
+#     set; this box holds NO Podbean app secret. The n8n Podbean credential broker
+#     (config/n8n/podbean-broker.workflow.json) mints a Channel-scoped access token
+#     server-side and returns it. Nothing to leak here.
+#   LOCAL (operator's OWN box fallback only): PODBEAN_CLIENT_ID + PODBEAN_CLIENT_SECRET
+#     resolve from the operator env and this script mints the token directly.
 #
 # Design references:
 #   PRD.md Section 5, Step 15 (canonical 18-step pipeline)
@@ -18,9 +31,12 @@
 # What this script does (and only this):
 #   1. Idempotency guard. If the job ledger already holds a permalink, skip
 #      the whole publish and re-emit the existing permalink.
-#   2. OAuth 2.0 client_credentials against the client OWN Podbean app.
-#   3. Isolation check: confirm the target podcast_id belongs to the client
-#      own account (never commingle, never publish to another channel).
+#   2. Obtain a Channel-scoped OAuth access token: from the n8n Podbean broker
+#      (broker mode, BlackCEO's shared app stays in n8n) or, on the operator's
+#      own box only, via a local client_credentials mint.
+#   3. Isolation check (local mode): confirm the target podcast_id belongs to the
+#      host account (never commingle, never publish to another channel). In broker
+#      mode the broker mints a token already scoped to the requested Channel ID.
 #   4. Episode number = existing episode count + 1.
 #   5. Authorize and upload the mastered MP3 (and the finalized cover) via
 #      files/uploadAuthorize plus a presigned PUT.
@@ -75,6 +91,7 @@ redact() {
   local s="$1"
   [ -n "${PODBEAN_CLIENT_ID:-}" ]     && s="${s//${PODBEAN_CLIENT_ID}/[REDACTED_CLIENT_ID]}"
   [ -n "${PODBEAN_CLIENT_SECRET:-}" ] && s="${s//${PODBEAN_CLIENT_SECRET}/[REDACTED_CLIENT_SECRET]}"
+  [ -n "${PODBEAN_BROKER_TOKEN:-}" ]  && s="${s//${PODBEAN_BROKER_TOKEN}/[REDACTED_BROKER_TOKEN]}"
   [ -n "${ACCESS_TOKEN:-}" ]          && s="${s//${ACCESS_TOKEN}/[REDACTED_TOKEN]}"
   printf '%s' "$s"
 }
@@ -84,10 +101,18 @@ usage() {
   cat >&2 <<'USAGE'
 Usage: podbean_publish.sh --audio <mp3> --title <base title> [options]
 
-Required environment (client OWN Podbean app; values are never printed):
-  PODBEAN_CLIENT_ID       Podbean app client id
-  PODBEAN_CLIENT_SECRET   Podbean app client secret
-  PODBEAN_PODCAST_ID      the client OWN Podbean channel id (podcast_id)
+Required environment (values are never printed):
+  PODBEAN_PODCAST_ID      the client's Podbean Channel ID (podcast_id) - the ONLY
+                          per-client Podbean value; selects the show under
+                          BlackCEO's single host account; not a secret. Required
+                          in BOTH modes.
+  Then EITHER broker mode (fleet default; no Podbean secret on this box):
+  PODBEAN_BROKER_WEBHOOK_URL  n8n Podbean broker webhook (e.g.
+                          https://main.blackceoautomations.com/webhook/podbean-broker)
+  PODBEAN_BROKER_TOKEN    low-privilege shared token for the broker (X-Podbean-Broker-Token)
+  OR local mode (operator's OWN box fallback only - BlackCEO's SINGLE shared app):
+  PODBEAN_CLIENT_ID       BlackCEO shared Podbean app client id
+  PODBEAN_CLIENT_SECRET   BlackCEO shared Podbean app client secret
 
 Required arguments:
   --audio <path>          mastered MP3 to publish (must exist)
@@ -255,6 +280,44 @@ http_request() {
   done
 }
 
+# ---------------------------------------------------------- n8n Podbean broker --
+# Broker mode keeps BlackCEO's SINGLE Podbean app (client_id/secret) inside n8n.
+# This box holds only the broker webhook URL, a low-privilege shared token, and
+# the client's Channel ID. The broker mints a Podbean access token already SCOPED
+# to that Channel ID and returns it; no Podbean app secret is ever on this box.
+#
+# The shared token goes in a curl config (a printf builtin via process
+# substitution), never in argv (no ps exposure) and never on disk - mirroring the
+# secret-handling contract used for basic auth above. The request body carries
+# only the action and the Channel ID (not secrets) so it may ride in argv.
+broker_cfg_lines() {
+  printf 'request = "POST"\n'
+  printf 'url = "%s"\n' "$PODBEAN_BROKER_WEBHOOK_URL"
+  printf 'silent\n'
+  printf 'show-error\n'
+  printf 'location\n'
+  printf 'max-time = %s\n' "$CURL_MAX_TIME"
+  printf 'header = "Content-Type: application/json"\n'
+  printf 'header = "X-Podbean-Broker-Token: %s"\n' "$PODBEAN_BROKER_TOKEN"
+}
+
+# broker_mint_token: POST {action:"mint_token", podcast_id:<Channel ID>} to the
+# broker. Sets RESP_BODY and RESP_CODE. Returns non-zero only after RETRIES.
+broker_mint_token() {
+  local body attempt=1 out
+  body="$(printf '{"action":"mint_token","podcast_id":"%s"}' "$PODBEAN_PODCAST_ID")"
+  while :; do
+    out="$(curl -K <(broker_cfg_lines) --data "$body" -w $'\n%{http_code}' 2>/dev/null || true)"
+    RESP_CODE="${out##*$'\n'}"
+    RESP_BODY="${out%$'\n'*}"
+    if [[ "$RESP_CODE" =~ ^2[0-9][0-9]$ ]]; then return 0; fi
+    if [ "$attempt" -ge "$RETRIES" ]; then return 1; fi
+    log "podbean broker attempt ${attempt} returned HTTP ${RESP_CODE:-000}; backing off"
+    sleep "$(( attempt * attempt ))"
+    attempt=$(( attempt + 1 ))
+  done
+}
+
 # ------------------------------------------------------------- argument parse --
 AUDIO=""; TITLE=""; COVER=""; SPEAKER=""; DESCRIPTION=""
 RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
@@ -326,9 +389,20 @@ if [ -n "$COVER" ] && [ ! -f "$COVER" ]; then die "cover file not found: $COVER"
 case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, premium, or private" ;; esac
 
 # Credentials are checked for presence only; values are never printed.
-: "${PODBEAN_CLIENT_ID:?PODBEAN_CLIENT_ID is NOT SET (client OWN Podbean client id)}"
-: "${PODBEAN_CLIENT_SECRET:?PODBEAN_CLIENT_SECRET is NOT SET (client OWN Podbean client secret)}"
-: "${PODBEAN_PODCAST_ID:?PODBEAN_PODCAST_ID is NOT SET (client OWN Podbean channel / podcast_id)}"
+# The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.
+: "${PODBEAN_PODCAST_ID:?PODBEAN_PODCAST_ID is NOT SET (the client Podbean Channel ID / podcast_id)}"
+
+# Mode selection (per box). BROKER if the n8n Podbean broker webhook URL and its
+# shared token both resolve (fleet default; BlackCEO's app client_id/secret stay
+# inside n8n and never touch this box). Otherwise LOCAL client_credentials, which
+# is the operator's OWN box fallback and needs the shared app client_id/secret.
+BROKER_MODE=0
+if [ -n "${PODBEAN_BROKER_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_BROKER_TOKEN:-}" ]; then
+  BROKER_MODE=1
+else
+  : "${PODBEAN_CLIENT_ID:?PODBEAN_CLIENT_ID is NOT SET. Configure the n8n Podbean broker (PODBEAN_BROKER_WEBHOOK_URL + PODBEAN_BROKER_TOKEN) on this box, or - on the operator OWN box only - set the BlackCEO shared Podbean app client id.}"
+  : "${PODBEAN_CLIENT_SECRET:?PODBEAN_CLIENT_SECRET is NOT SET (the BlackCEO shared Podbean app secret; operator OWN box only - prefer the n8n broker so no secret sits on a client box).}"
+fi
 
 # ------------------------------------------------------ title and publish plan --
 # Title convention: append "Inspired by <speaker>" once, only when a speaker is
@@ -377,44 +451,58 @@ fi
 
 # --------------------------------------------------------------- OAuth 2.0 ----
 ACCESS_TOKEN=""
-log "requesting client_credentials access token from the client's own Podbean app"
-USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/token" \
-  --data-urlencode "grant_type=client_credentials" \
-  || die "oauth token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
-ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
-[ -n "$ACCESS_TOKEN" ] || die "oauth response carried no access_token (HTTP ${RESP_CODE}): $(redact "$RESP_BODY")"
-RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
-log "access token acquired (value not shown)"
+if [ "$BROKER_MODE" = "1" ]; then
+  # Broker mode: BlackCEO's single Podbean app lives only inside n8n. Ask the
+  # broker for a token already SCOPED to this client's Channel ID. No Podbean app
+  # secret is present on this box; the isolation guard lives in the broker (it
+  # only mints tokens for channels on the host account).
+  log "requesting a Channel-scoped Podbean token from the n8n broker (app credentials never leave n8n)"
+  broker_mint_token || die "podbean broker token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  broker_ok="$(printf '%s' "$RESP_BODY" | json_field ok)"
+  ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
+  RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
+  [ -n "$ACCESS_TOKEN" ] || die "podbean broker returned no access_token (ok=${broker_ok:-unknown}); check PODBEAN_BROKER_TOKEN and that the broker workflow is active"
+  log "Channel-scoped access token acquired from broker (value not shown)"
+else
+  log "requesting a client_credentials access token from BlackCEO's shared Podbean app (local fallback, operator box only)"
+  USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/token" \
+    --data-urlencode "grant_type=client_credentials" \
+    || die "oauth token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
+  [ -n "$ACCESS_TOKEN" ] || die "oauth response carried no access_token (HTTP ${RESP_CODE}): $(redact "$RESP_BODY")"
+  RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
+  log "access token acquired (value not shown)"
 
-# ---------------------------------------------- isolation: own channel only ---
-# Confirm the configured podcast_id belongs to this account. This is the anti
-# commingling guard: refuse to publish to any channel that is not the client channel.
-if http_request GET "$PODBEAN_API/podcasts?access_token=${ACCESS_TOKEN}&offset=0&limit=100"; then
-  account_ids="$(printf '%s' "$RESP_BODY" | podcast_ids)"
-  RESP_BODY=""
-  if [ -n "$account_ids" ]; then
-    if ! printf '%s\n' "$account_ids" | grep -qxF "$PODBEAN_PODCAST_ID"; then
-      die "configured PODBEAN_PODCAST_ID is not present on this Podbean account; refusing to publish (isolation guard)"
-    fi
-    # More than one podcast on the account: obtain a token scoped to the target.
-    if [ "$(printf '%s\n' "$account_ids" | grep -c .)" -gt 1 ]; then
-      log "account hosts multiple podcasts; requesting a token scoped to the target channel"
-      if USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/multiplePodcastsToken" \
-           --data-urlencode "grant_type=client_credentials" \
-           --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"; then
-        scoped="$(printf '%s' "$RESP_BODY" | scoped_token "$PODBEAN_PODCAST_ID")"
-        RESP_BODY=""
-        if [ -n "$scoped" ]; then
-          ACCESS_TOKEN="$scoped"
-          log "scoped token acquired for target channel (value not shown)"
+  # ---------------------------------------------- isolation: own channel only ---
+  # Confirm the configured podcast_id belongs to this account. This is the anti
+  # commingling guard: refuse to publish to any channel that is not the target channel.
+  if http_request GET "$PODBEAN_API/podcasts?access_token=${ACCESS_TOKEN}&offset=0&limit=100"; then
+    account_ids="$(printf '%s' "$RESP_BODY" | podcast_ids)"
+    RESP_BODY=""
+    if [ -n "$account_ids" ]; then
+      if ! printf '%s\n' "$account_ids" | grep -qxF "$PODBEAN_PODCAST_ID"; then
+        die "configured PODBEAN_PODCAST_ID is not present on this Podbean account; refusing to publish (isolation guard)"
+      fi
+      # More than one podcast on the account: obtain a token scoped to the target.
+      if [ "$(printf '%s\n' "$account_ids" | grep -c .)" -gt 1 ]; then
+        log "account hosts multiple podcasts; requesting a token scoped to the target channel"
+        if USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/multiplePodcastsToken" \
+             --data-urlencode "grant_type=client_credentials" \
+             --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"; then
+          scoped="$(printf '%s' "$RESP_BODY" | scoped_token "$PODBEAN_PODCAST_ID")"
+          RESP_BODY=""
+          if [ -n "$scoped" ]; then
+            ACCESS_TOKEN="$scoped"
+            log "scoped token acquired for target channel (value not shown)"
+          fi
+        else
+          log "warning: multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}); continuing with the base token"
         fi
-      else
-        log "warning: multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}); continuing with the base token"
       fi
     fi
+  else
+    log "warning: could not list podcasts (HTTP ${RESP_CODE:-000}); continuing (single-podcast apps are already scoped)"
   fi
-else
-  log "warning: could not list podcasts (HTTP ${RESP_CODE:-000}); continuing (single-podcast apps are already scoped)"
 fi
 
 # ------------------------------------------------------- episode numbering ----
@@ -465,7 +553,7 @@ if [ -n "$COVER" ]; then
 fi
 
 # ---------------------------------------------------------- create episode ----
-log "creating episode ${EPISODE_NUMBER} on the client own channel"
+log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
   --data-urlencode "title=${FINAL_TITLE}"
   --data-urlencode "content=${DESCRIPTION}"
