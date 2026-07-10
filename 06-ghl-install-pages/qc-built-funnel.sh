@@ -169,6 +169,22 @@ case "$SEO_PREGATE" in *FAIL*) SEO_MEDIA_FAIL=1 ;; esac
 python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
 [ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
+
+# ── U9 §7.2 — emit the QC verdict onto the Command Center card (FAIL-SOFT, opt-in).
+# When CC_TASK_ID is exported, post the FAB-QC score to the card so the CC QC sweep
+# reads ONE source (no re-scoring drift). The numeric 0-10 'score' is read from a
+# read-only --json re-score of the same evidence; the PASS/FAIL verdict comes from
+# rc (which folds in the SEO/media hard-miss, not just the weighted mean). Any
+# failure here is swallowed — the build reads THIS script's exit code, not the post.
+if [ -n "${CC_TASK_ID:-}" ] && [ -f "$SKILL_DIR/tools/cc_board.py" ]; then
+  _qc_json="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/fabqc.$$.json")"
+  python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --json >"$_qc_json" 2>/dev/null || true
+  _qc_pass=0; [ $rc -eq 0 ] && _qc_pass=1
+  python3 "$SKILL_DIR/tools/cc_board.py" --emit-qc --task-id "$CC_TASK_ID" \
+    --gate "qc-built-funnel" --passed "$_qc_pass" --scorecard "$_qc_json" >/dev/null 2>&1 || true
+  rm -f "$_qc_json" 2>/dev/null || true
+fi
+
 if [ $rc -eq 0 ]; then
   echo "✓ FAB-QC PASS (>= 8.5) — funnel build is done"
 else

@@ -4,6 +4,45 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [Unreleased] - 2026-07-10 - Command Center / Kanban tightenings (Skill-6 Bulletproof U9 §7)
+
+Branch **skill6-bulletproof-build-cckanban** (off skill6-bulletproof-build). Unit **U9**
+of the Skill-6 Browser-Control Bulletproof spec. Tightens how every browser build reports
+to the Command Center board — one card through `review`, QC scores emitted into the card
+payload, machine-parsable failure taxonomy, and lock-wait visibility. All additive and
+FAIL-SOFT (a board outage never blocks a build); no existing public call signature changed.
+
+- **§7.1 Multiple deliverables per build.** `cc_board.BuildPhaseDriver` gains
+  `deliverable(url, meta)` (non-terminal, repeatable — register a preview URL, an embed
+  snippet path, a survey/community URL) and `review()` (the single terminal move to
+  `review`). `artifact()` is retained unchanged as the one-shot `deliverable()+review()`
+  convenience so existing callers (survey builder) are byte-compatible.
+- **§7.2 QC score emission into the card.** New `cc_board.post_qc_score(task_id, score,
+  gate, passed, scorecard_path)` posts a `completed` activity `QC: <score>/10 — <gate>
+  [PASS|FAIL]` with the score/gate/verdict/scorecard-path in the activity **metadata** — the
+  single source the CC QC sweep reads to promote `review → done` (no re-scoring drift).
+  `BuildPhaseDriver.qc(...)` is the driver-level shortcut (allowed AFTER `review()`, since QC
+  runs on the review column). `qc-built-form.sh` and `qc-built-funnel.sh` now emit their
+  verdict to the card when `CC_TASK_ID` is exported (opt-in, fail-soft): the render gate maps
+  PASS→10.0 / FAIL→0.0; the funnel gate reads the real 0–10 `score` from a read-only FAB
+  re-score and takes the PASS/FAIL from the composite exit code. New `cc_board.py --emit-qc`
+  CLI backs both gates.
+- **§7.3 Failure taxonomy on the card.** `BuildPhaseDriver.fail(reason=...)` prefixes the
+  `blocked`/`backlog` note with one of `AUTH-STOP | SELECTOR-MISS | RATE-LIMIT |
+  TOKEN-CONTEXT | PARKED | VERIFY-FAIL` (new `_CC_BLOCK_REASONS`) and attaches a
+  `block_reason` metadata field, so the board is queryable for fleet-wide failure patterns. A
+  reason outside the taxonomy is logged and the note posted un-prefixed (never a fabricated
+  category).
+- **§7.4 Queue visibility.** New `cc_board.post_queue_wait(task_id, holder_session)` (and
+  `BuildPhaseDriver.queued(...)`) parks a card at `pending_dispatch` naming the session that
+  holds the box-wide browser singleton lock, so a wait is visible, not mysterious.
+- **Tests.** New `tests/test_cc_u9_tightenings.py` (recorder-based, zero network) asserts the
+  exact wire payloads for all four tightenings; `cc_board.py --u9-selftest` mirrors it as a
+  dependency-free rung folded into `--selftest`. `_CC_BLOCK_REASONS` and the `done`-hard-block
+  are drift-guarded. Producer/consumer contract unchanged: CC ≥ v4.52.0 (now v5.0.0).
+
+---
+
 ## [v17.0.35] - 2026-07-05 - copy-fidelity gate flipped opt-in → opt-out + FAB-QC fires on engine-routed builds (FIX-COPY-02, T-w1-copy-fidelity)
 
 Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**. The two "real" copy gates were no-ops
