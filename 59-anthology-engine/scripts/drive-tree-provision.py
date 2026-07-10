@@ -3,13 +3,15 @@
 
 WHAT THIS IS (SPEC 3.4 row 10; SPEC 10.1; PRD 3.7; ENGINE-MANIFEST L10):
   Idempotent get-or-create of the delivery folder tree
-        <EXISTING ROOT> / Producer / Anthology / Participant
-  under the operator's EXISTING anyone-can-read root (config key
-  delivery.drive_root_folder = 1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw). Invoked by
-  S0 intake "on first sight" of a participant, and by provision-anthology-client.sh
-  for the producer root. It VERIFIES the configured root at preflight (files.get)
-  and NEVER creates a new root -- if the root is unreachable it STOPS (exit 2),
-  it does not invent one.
+        <PER-CLIENT ROOT> / Producer / Anthology / Participant
+  under this client's OWN BlackCEO-hosted Shared-Drive root, resolved per box from
+  GOOGLE_DRIVE_ROOT_FOLDER (config key delivery.drive_root_folder is a per-box slot;
+  BlackCEO provisions ONE Shared Drive per client, never one shared operator root).
+  Invoked by S0 intake "on first sight" of a participant, and by
+  provision-anthology-client.sh for the producer root. It VERIFIES the configured
+  per-client root at preflight (files.get, supportsAllDrives) and NEVER creates a NEW
+  root -- if the root is unreachable it STOPS (exit 2), it does not invent one
+  (BlackCEO provisions the per-client Shared Drive out of band).
 
   Idempotency: each level is get-or-created by exact name via drive_adapter's
   find_child_folder (deterministic earliest-createdTime pick), so a re-run of the
@@ -58,8 +60,11 @@ class RootUnreachable(Exception):
 
 
 def verify_root(token, root_id):
-    """Preflight: the configured root must exist and be a live folder. Returns its
-    metadata dict. Raises RootUnreachable (exit 2) rather than ever creating one."""
+    """Preflight: the configured PER-CLIENT root must exist and be a live folder.
+    Returns its metadata dict. Raises RootUnreachable (exit 2) rather than ever
+    creating one. Accepts the per-client root supplied via GOOGLE_DRIVE_ROOT_FOLDER
+    (arg > env > config) -- a BlackCEO-hosted Shared-Drive root is fully supported
+    (files_get sets supportsAllDrives and a Shared Drive resolves as a folder)."""
     try:
         meta = da.files_get(token, root_id,
                             fields="id,name,mimeType,trashed,capabilities")

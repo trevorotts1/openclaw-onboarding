@@ -26,8 +26,12 @@
 #   * A matched secret VALUE is NEVER printed. Findings report file:line and the
 #     matched CLASS only. Output is operator/CI-facing (operator-verbose is fine;
 #     "move in silence" is a CLIENT-facing rule) and never carries a value.
-#   * The operator-OWNED, anyone-can-read Drive ROOT id
-#     1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw is ALLOWED and never flagged.
+#   * A Google Drive folder / Shared-Drive root id is PER-CLIENT delivery CONFIG
+#     (BlackCEO hosts one Shared Drive per client; the id is resolved per box from
+#     the GOOGLE_DRIVE_ROOT_FOLDER label), neither a secret nor client PII. No single
+#     operator root id is pinned here (per-client Shared-Drive model, 2026-07-09): a
+#     bare Drive-id shape carries none of the provider-key prefixes below, so it never
+#     matches a secret class in the first place.
 #   * Values referenced BY LABEL (env var / os.getenv / process.env / ${VAR}) or
 #     written as placeholders (<...>, {{...}}, XXXX, REDACTED, EXAMPLE, ...) are
 #     allowed; only a hardcoded literal VALUE fails.
@@ -56,7 +60,6 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ENGINE_DIR="$(cd "$SELF_DIR/.." && pwd)"
 
 TAG="[scan-no-secrets]"
-ALLOW_DRIVE_ROOT="1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw"
 
 SELFTEST_TMP=""
 _cleanup_selftest() { [ -n "${SELFTEST_TMP:-}" ] && rm -rf "$SELFTEST_TMP"; return 0; }
@@ -145,8 +148,9 @@ _has_lowentropy_run() {
 # $3 = the class pattern (to extract the matched token), $4 = ci flag
 is_allowlisted() {
     local line="$1" class="$2" pattern="$3" ci="$4"
-    # the operator-owned anyone-can-read Drive root id is explicitly allowed
-    case "$line" in *"$ALLOW_DRIVE_ROOT"*) return 0 ;; esac
+    # NOTE: no single operator Drive root id is pinned (per-client Shared-Drive model).
+    # A bare Google Drive folder id carries no provider-key prefix, so it never matches
+    # a secret class here in the first place -- nothing to allowlist.
     # explicit placeholder / synthetic markers anywhere on the line
     if printf '%s' "$line" | grep -qiE '(<[A-Za-z0-9_.-]+>|\{\{|\}\}|%[A-Za-z0-9_]+%|xxxx|redacted|placeholder|changeme|your[-_]?(api[-_]?)?key|dummy|example|sample|fake[-_]?|synthetic|not[-_]?a[-_]?real|unit[-_]?test|no[-_]?secret)'; then
         return 0
@@ -298,12 +302,14 @@ self_test() {
     SELFTEST_TMP="$td"
     local save_scope="$OPT_SCOPE"; OPT_SCOPE="root"; OPT_ALL_FILES=1
 
-    # CLEAN dir: a label reference, a placeholder, and the allowed Drive root id
+    # CLEAN dir: a label reference, a placeholder, and a PER-CLIENT Drive root id
+    # (a Shared-Drive id literal carries no provider-key prefix, so it is never a
+    # secret -- proves the per-client model needs no operator-id pin to stay clean).
     mkdir -p "$td/clean"
     {
         echo 'api_key = os.getenv("PROVIDER_API_KEY")   # by label only'
         echo 'authorization = "Bearer <TOKEN_PLACEHOLDER>"'
-        echo "drive_root = \"$ALLOW_DRIVE_ROOT\"   # operator-owned, allowed"
+        echo 'drive_root_folder = "0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7"   # per-client Shared Drive id, delivery config'
     } > "$td/clean/config.py"
     OPT_STRICT=1
     if run_scan "$td/clean" >/dev/null 2>&1; then

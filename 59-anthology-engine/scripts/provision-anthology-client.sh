@@ -12,10 +12,16 @@
 # with an operator surface, exactly as the manifest row-30 contract demands):
 #   1  caf_credential_gate.py resolves every PRD Section 14 credential by label
 #      across all three client env stores (live process env first), with the
-#      pairing proof and the anti-commingling fingerprint (SET / NOT SET only).
+#      pairing proof and the anti-commingling fingerprint (SET / NOT SET only). Run
+#      with --require-delivery so the three PER-CLIENT Google delivery levers
+#      (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER) are
+#      also gated for PRESENCE: a box missing the SA key or its OWN Shared-Drive root
+#      FAILS here (exit 2) instead of silently no-op'ing delivery. The delivery creds
+#      are BlackCEO-owned/shared by design and are excluded from the commingle check.
 #   2  create-or-verify the PRD Section 6 custom fields by EXACT key (the 10
 #      Doc/PDF pairs incl. the 2 chapter-rewrite-preservation pairs + 3 control
-#      fields = 23 keys, all LARGE_TEXT); a MISSING field STOPS setup
+#      fields + 5 U8 cover-style fields = 28 keys, all LARGE_TEXT except the
+#      SINGLE_OPTIONS cover choice); a MISSING field STOPS setup
 #      with an operator surface (AF-AE-FIELD-MISSING) — never a silent runtime
 #      create; a server fieldKey that does not byte-equal its intended key is
 #      AF-AE-FIELD-KEY-MISMATCH.  (anthology_registry.py provision-fields)
@@ -32,8 +38,9 @@
 #   4  register the universal + per-stage forms with their hidden-field and
 #      re-stamp contract (contact_id, anthology_id, stage; keying by contact_id,
 #      never email); concrete Convert and Flow form ids are bound per anthology.
-#   5  provision the Drive producer root under the operator's EXISTING shared
-#      root; NEVER create a new root (drive-tree-provision.py).
+#   5  provision the Drive producer root under this client's OWN per-client
+#      BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER; one Shared Drive
+#      per client); NEVER create a NEW root (drive-tree-provision.py).
 #   6  bootstrap the ledger base + local mirror schemas (anthology_state.py).
 #   7  generate the webhook route and its secret (label ANTHOLOGY_INTAKE_HOOK_
 #      SECRET; also the gate-token secret ANTHOLOGY_GATE_TOKEN_SECRET) — the
@@ -207,11 +214,13 @@ label_state() {
 }
 
 report_labels() {
-    local labels=(CONVERT_AND_FLOW_PIT CONVERT_AND_FLOW_LOCATION_ID GOOGLE_IMPERSONATE_USER \
+    local labels=(CONVERT_AND_FLOW_PIT CONVERT_AND_FLOW_LOCATION_ID \
+                  GOOGLE_SA_KEY_FILE GOOGLE_IMPERSONATE_USER GOOGLE_DRIVE_ROOT_FOLDER \
                   ANTHOLOGY_INTAKE_HOOK_SECRET ANTHOLOGY_GATE_TOKEN_SECRET)
     note "credential label states (LIVE process env only; values never printed):"
     local l
     for l in "${labels[@]}"; do note "  $l = $(label_state "$l")"; done
+    note "  (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER are the three per-client delivery levers, gated for PRESENCE by step 1)"
     note "  (ANTHOLOGY_INTAKE_HOOK_SECRET / ANTHOLOGY_GATE_TOKEN_SECRET are GENERATED at step 7 when NOT SET)"
 }
 
@@ -357,7 +366,11 @@ step1_credentials() {
         set_crc 127
         echo "$EX_HELD"; return
     fi
-    local -a gargs=()
+    # --require-delivery: also gate the three PER-CLIENT Google delivery levers for
+    # PRESENCE (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER)
+    # so a box missing the SA key or its OWN Shared-Drive root FAILS here (exit 2) instead
+    # of silently no-op'ing delivery at step 5. SET/NOT SET only; SA key never read/printed.
+    local -a gargs=(--require-delivery)
     if [ -n "${CONVERT_AND_FLOW_LOCATION_ID:-}" ]; then
         gargs+=(--expect-location "$CONVERT_AND_FLOW_LOCATION_ID")
     fi
@@ -439,12 +452,12 @@ JSON
 }
 
 step5_drive() {
-    note "STEP 5/10 — provision the Drive producer root under the EXISTING shared root (never a new root)"
+    note "STEP 5/10 — provision the Drive producer root under this client's per-client BlackCEO-hosted Shared-Drive root (never a new root)"
     if [ "$MODE" = "dryrun" ]; then
-        note "  (dry-run) would verify the EXISTING root reachability and get-or-create the Producer folder; no network"
+        note "  (dry-run) would verify the per-client Shared-Drive root reachability and get-or-create the Producer folder; no network"
         echo "$EX_OK"; return
     fi
-    # Verify the configured EXISTING root first (never creates one).
+    # Verify the configured per-client root first (resolved from GOOGLE_DRIVE_ROOT_FOLDER; never creates one).
     local n; n="$(run_collab py "$SCRIPTS/drive-tree-provision.py" verify-root)"
     if [ "$n" != "$EX_OK" ]; then echo "$n"; return; fi
     if [ -z "$PRODUCER_NAME" ]; then
@@ -1097,7 +1110,7 @@ STEP_LABELS=(
     "10/10 — smoke test"
 )
 STEP_AF=(
-    "AF (credential): missing label -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
+    "AF (credential): missing label (incl. a per-client Google delivery lever: SA key / impersonate / Shared-Drive root) -> exit 2; commingling AF-AE-COMMINGLE -> exit 4; gate not yet wired -> HELD 3"
     "AF-AE-FIELD-MISSING (exit 2) / AF-AE-FIELD-KEY-MISMATCH (exit 5)"
     "AF-AE-PIT-SCOPE (token cannot read pipelines -> exit 2) / AF-AE-PIPELINE-UI-CREATE (standard pipeline absent; UI-only -> exit 2); API unreachable or edge-block -> HELD 3"
     "department seed / read-back (Command Center unavailable -> HELD 3; read-back mismatch -> 5)"
@@ -1111,13 +1124,13 @@ STEP_AF=(
     "provider unreachable or unfunded -> exit 4 (alert path)"
 )
 STEP_REMEDIATION=(
-    "Set the client's OWN PRD Section 14 labels in the env store; if commingling: replace any operator/shared/other-client credential with the named client's own"
+    "Set the client's OWN PRD Section 14 labels in the env store, INCLUDING the three per-client delivery levers GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER + GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root); if commingling: replace any operator/shared/other-client Convert-and-Flow credential with the named client's own"
     "Grant the client PIT custom-field WRITE scope; a field that must pre-exist but is absent and cannot be created STOPS setup; a fieldKey mismatch STOPS setup"
     "Grant the client's OWN location-scoped token the opportunities scope so it can read pipelines; create the standard pipeline once in the Convert and Flow UI (pipelines are UI-only, there is no API create endpoint) or bind a pre-existing pipeline with --pipeline-id; never a silent fallback"
     "Install Skill 32 command-center-setup so the Anthology department can be seeded and read back"
     "Install the OpenClaw gateway + Command Center (Skill 32) so openclaw.json exists; then re-run so the dept-<slug> agent runtime (agents.list[] + ~/.openclaw/agents/dept-<slug>/) is materialized"
     "Free space / permissions for the state dir; re-run"
-    "Confirm the EXISTING shared Drive root is reachable via the operator service account (GOOGLE_IMPERSONATE_USER); never provision a new root"
+    "Confirm this client's per-client BlackCEO-hosted Shared-Drive root (GOOGLE_DRIVE_ROOT_FOLDER) is reachable via the BlackCEO service account (GOOGLE_SA_KEY_FILE + GOOGLE_IMPERSONATE_USER); never provision a new root"
     "Confirm the state dir is writable by the node user; re-run"
     "Ensure the state dir secrets subdir is writable (0600); export any generated secret into the client env store"
     "Provide a live cron backend (openclaw cron) or accept the declarative inventory; re-run"
@@ -1184,13 +1197,13 @@ PY
 print_plan() {
     cat >&2 <<PLAN
 [$PROG] SPEC 13.1 provisioning plan (idempotent; config writes as the node user):
-  1/10  credential gate            caf_credential_gate.py (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint)
-  2/10  custom fields              anthology_registry.py provision-fields (23 keys, LARGE_TEXT; missing -> STOP; key mismatch -> exit 5)
+  1/10  credential gate            caf_credential_gate.py --require-delivery (all 3 env stores, live-process-first; SET/NOT SET; commingling fingerprint; PLUS the per-client Google delivery levers SA-key + impersonate + Shared-Drive root gated for presence)
+  2/10  custom fields              anthology_registry.py provision-fields (28 keys: LARGE_TEXT + 1 SINGLE_OPTIONS cover choice; missing -> STOP; key mismatch -> exit 5)
   3/10  pipeline bind (UI-only)     anthology_registry.py probe-scope (READ pipelines; AF-AE-PIT-SCOPE) then provision-pipeline (find BY NAME + bind; absent -> AF-AE-PIPELINE-UI-CREATE)
   3.5   department seeding         32-command-center-setup/add-department.sh --slug anthology (idempotent; read-back = already_exists)
   3.6   department runtime wiring  materialize the OpenClaw agent runtime for the dept (openclaw.json agents.list[] dept-anthology + ~/.openclaw/agents/dept-anthology/); read-back verified; resolves the CC dispatch no_specialist_runtime block that sticks board cards in Blocked
   4/10  form contract              forms-manifest.json (hidden fields contact_id/anthology_id/stage; re-stamp; per-anthology bind)
-  5/10  Drive producer root        drive-tree-provision.py verify-root (+ provision --producer); never a new root
+  5/10  Drive producer root        drive-tree-provision.py verify-root (per-client Shared-Drive root from GOOGLE_DRIVE_ROOT_FOLDER) + provision --producer; never a new root
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
   8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver

@@ -17,8 +17,8 @@
     "keying": "contact_id plus anthology_id composite; never email; unroutable submissions land in the exceptions queue with the raw payload and a typed reason"
   },
   "delivery": {
-    "drive_root_folder": "1gVdZ3_cx7Sv7VAfARL_LsGh5IcVB6iZw",
-    "drive_root_note": "The operator's EXISTING anyone-can-read delivery root (PRD 3.7). drive-tree-provision.py verifies reachability at preflight and NEVER creates a new root. Tree below it: Producer, then Anthology, then Participant. Per-document sharing is anyone-with-link VIEW only.",
+    "drive_root_folder": "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>",
+    "drive_root_note": "The PER-CLIENT delivery root: BlackCEO provisions ONE Google Shared Drive per client inside BlackCEO's own Workspace, and this box points at its OWN Shared-Drive root, resolved per box from the GOOGLE_DRIVE_ROOT_FOLDER label (never one shared operator root, so no client tree co-mingles with another's). drive_adapter.load_root_folder_id resolves arg > GOOGLE_DRIVE_ROOT_FOLDER env > this slot, and REFUSES an unresolved slot so a box that never set the label fails loudly. drive-tree-provision.py verifies the root at preflight and NEVER creates a new root (BlackCEO provisions the Shared Drive out of band). Tree below it: Producer, then Anthology, then Participant. Per-document sharing is EDIT on the co-author's own Doc and VIEW on PDFs/images; the root itself is never anyone-can-read.",
     "google_impersonate_user_label": "GOOGLE_IMPERSONATE_USER",
     "google_scope": "https://www.googleapis.com/auth/drive",
     "pdf_font_floor_pt": 14,
@@ -74,8 +74,11 @@
       "ANTHOLOGY_GATE_TOKEN_SECRET",
       "CONVERT_AND_FLOW_PIT",
       "CONVERT_AND_FLOW_LOCATION_ID",
-      "GOOGLE_IMPERSONATE_USER"
+      "GOOGLE_SA_KEY_FILE",
+      "GOOGLE_IMPERSONATE_USER",
+      "GOOGLE_DRIVE_ROOT_FOLDER"
     ],
+    "required_note": "GOOGLE_SA_KEY_FILE (the BlackCEO-owned delivery service-account key path), GOOGLE_IMPERSONATE_USER (the BlackCEO Workspace user the SA impersonates), and GOOGLE_DRIVE_ROOT_FOLDER (this client's OWN BlackCEO-hosted Shared-Drive root) are the three delivery levers. All three are gated per box by caf_credential_gate.py: a box missing any one FAILS provisioning loudly (exit 2) instead of silently no-op'ing delivery. Confirmed SET or NOT SET by label only; the SA key contents are never read or printed.",
     "provider_chain": [
       "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>",
       "<CLIENT_OPENROUTER_KEY_LABEL>",
