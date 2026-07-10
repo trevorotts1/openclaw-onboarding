@@ -191,6 +191,26 @@ else:
 sys.exit(0 if ok else 1)
 PY
 rc=$?
+
+# ── U9 §7.2 — emit the QC verdict onto the Command Center card (FAIL-SOFT, opt-in).
+# When CC_TASK_ID is exported (the card this build owns), post the render-gate score
+# to the card so the CC QC sweep reads ONE source. The render gate is mechanical
+# (pass/fail), so it maps PASS→10.0 / FAIL→0.0; rc 2 (inconclusive) posts nothing.
+# Any failure here is swallowed — the build reads THIS script's exit code, not the post.
+if [ -n "${CC_TASK_ID:-}" ] && [ -f "$TOOLS/cc_board.py" ]; then
+  _qc_score=""; _qc_pass=""
+  case "$rc" in
+    0) _qc_score="10.0"; _qc_pass="1" ;;
+    1) _qc_score="0.0";  _qc_pass="0" ;;
+  esac
+  if [ -n "$_qc_pass" ]; then
+    _qc_card="$EVIDENCE/routing/form-built.json"
+    python3 "$TOOLS/cc_board.py" --emit-qc --task-id "$CC_TASK_ID" \
+      --gate "qc-built-form" --score "$_qc_score" --passed "$_qc_pass" \
+      --scorecard "$_qc_card" >/dev/null 2>&1 || true
+  fi
+fi
+
 if [ $rc -eq 0 ]; then
   echo "✓ render gate PASS — HTTP 200 + zhc_ marker in RENDERED DOM; form build is done"
 elif [ $rc -eq 2 ]; then

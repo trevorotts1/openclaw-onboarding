@@ -60,7 +60,8 @@ echo "evidence: $EVIDENCE"
 # not: a saved seoMeta that is PRESENT-BUT-INVALID is a hard build miss (HALT);
 # missing seoMeta/media-folder receipts WARN (older evidence may predate them).
 SEO_MEDIA_FAIL=0
-SEO_PREGATE="$(EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - <<'PY'
+_seo_out="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/seo-pregate.$$.out")"
+EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - > "$_seo_out" 2>&1 <<'PY'
 import json, os, sys, glob
 sys.path.insert(0, os.environ["TOOLS"])
 root = os.environ["EVIDENCE"]
@@ -162,13 +163,30 @@ else:
           "WARN no media-folder receipt / image manifest found in evidence — "
           "§3 folder discipline not demonstrated (no images promised)")
 PY
-)"
+SEO_PREGATE="$(cat "$_seo_out")"
+rm -f "$_seo_out" 2>/dev/null || true
 echo "$SEO_PREGATE"
 case "$SEO_PREGATE" in *FAIL*) SEO_MEDIA_FAIL=1 ;; esac
 
 python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
 [ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
+
+# ── U9 §7.2 — emit the QC verdict onto the Command Center card (FAIL-SOFT, opt-in).
+# When CC_TASK_ID is exported, post the FAB-QC score to the card so the CC QC sweep
+# reads ONE source (no re-scoring drift). The numeric 0-10 'score' is read from a
+# read-only --json re-score of the same evidence; the PASS/FAIL verdict comes from
+# rc (which folds in the SEO/media hard-miss, not just the weighted mean). Any
+# failure here is swallowed — the build reads THIS script's exit code, not the post.
+if [ -n "${CC_TASK_ID:-}" ] && [ -f "$SKILL_DIR/tools/cc_board.py" ]; then
+  _qc_json="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/fabqc.$$.json")"
+  python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --json >"$_qc_json" 2>/dev/null || true
+  _qc_pass=0; [ $rc -eq 0 ] && _qc_pass=1
+  python3 "$SKILL_DIR/tools/cc_board.py" --emit-qc --task-id "$CC_TASK_ID" \
+    --gate "qc-built-funnel" --passed "$_qc_pass" --scorecard "$_qc_json" >/dev/null 2>&1 || true
+  rm -f "$_qc_json" 2>/dev/null || true
+fi
+
 if [ $rc -eq 0 ]; then
   echo "✓ FAB-QC PASS (>= 8.5) — funnel build is done"
 else

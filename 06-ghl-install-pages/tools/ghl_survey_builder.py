@@ -3,8 +3,15 @@
 
 Implements ``build_survey(task, evidence_root)`` as a v2_dispatcher-injected
 builder that:
-  1. Creates a Contact custom-field folder and the survey's custom fields via the
-     app shell (Part 1 — PRD §5.B.1 / canonical Part 1 transcript).
+  1. FIELD DEPENDENCIES (F1 grocery-shopping rule): by default (``field_creation
+     ='api'``) the survey's custom fields are REUSED from Skill-44 API pre-creation
+     — the builder GETs the location's existing keys (``caf locations custom-fields``,
+     LOCATION PIT), confirms every field exists, and binds map-only in Part 2. It
+     creates NOTHING in the browser. ``field_creation='map_only'`` forbids any
+     create; ``field_creation='browser'`` is the LEGACY in-browser Part-1 create,
+     retained ONLY as an explicit no-PIT fallback (never the default). Engine-owned
+     keys use ``key_policy='verbatim'`` (byte-for-byte, must pre-exist); agent keys
+     use ``key_policy='zhc'`` (idempotent ``zhc_<slug>`` create).
   2. Assembles the survey in ``survey-builder-v2`` — welcome slide, Add Object
      Fields (answers bind to {{contact.<key>}}), conditional-logic jump-to rules,
      required-field toggles, Quick-Add contact-capture slide with plain T&C
@@ -97,8 +104,9 @@ if _TOOLS_DIR not in sys.path:
 import ghl_builder  # noqa: E402  — browser_cmd + headless_guard
 import browser_manager  # noqa: E402  — browser_session context manager
 
-# Rate governor + session keepalive live in v2_dispatcher (reused, not reinvented)
-from v2_dispatcher import RateGovernor, SessionKeepalive  # noqa: E402
+# Rate governor + session keepalive + F5(b) pre-phase token re-mint live in
+# v2_dispatcher (reused, not reinvented)
+from v2_dispatcher import RateGovernor, SessionKeepalive, remint_if_stale  # noqa: E402
 
 try:
     import cc_board as _cc_board  # noqa: E402 — best-effort board producer
@@ -118,7 +126,29 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.0.0"
+SURVEY_BUILDER_VERSION = "v1.1.0"
+
+# ── Field-creation posture (F1 fix — grocery-shopping rule) ────────────────
+# The survey rail MUST reuse API-pre-created custom fields (map-only via the
+# Add Object Fields tab), NOT create fields in the browser. Three modes:
+#   "api"      — DEFAULT. GET existing custom fields; missing ones are created
+#                out-of-band by Skill 44 (``caf`` LOCATION PIT — same contract
+#                as ghl_form_builder). Part 2 drags the read-back keys only.
+#   "map_only" — every field MUST already exist (zero creates). Any planned
+#                create is a hard STOP. Used when an engine (Podcast/Anthology)
+#                owns the fields and the survey must bind verbatim keys.
+#   "browser"  — LEGACY in-browser Part-1 create. Explicit operator-selected
+#                fallback for boxes with no PIT ONLY. Never the default.
+FIELD_CREATION_MODES = ("api", "map_only", "browser")
+DEFAULT_FIELD_CREATION = "api"
+
+# Machine key prefix for AGENT-created custom fields (F2 — matches form builder).
+ZHC_KEY_PREFIX = "zhc_"
+# Field-key policy per the F2 field-key contract:
+#   "zhc"      — agent may idempotently create ``zhc_<snake_slug>`` keys.
+#   "verbatim" — the key is engine-owned and MUST already exist; create REFUSED.
+KEY_POLICIES = ("zhc", "verbatim")
+DEFAULT_KEY_POLICY = "zhc"
 
 # GoHighLevel real domains (from PRD §5.B / transcripts)
 GHL_APP_ORIGIN_DEFAULT = os.environ.get(
@@ -459,6 +489,26 @@ def _snapshot(session: str) -> str:
     return result.stdout or ""
 
 
+def _pre_phase_check(session: str, keepalive: "SessionKeepalive") -> None:
+    """F5 uniform keepalive + pre-phase re-mint — call once before EVERY
+    multi-minute Part-2 phase (never navigate/reload; both actions below are
+    eval-only per D7/F5 doctrine):
+      1. keepalive.due() — a harmless no-op eval ping every 30min so the
+         session never idles out mid-build.
+      2. remint_if_stale() — F5(b): if the seeded id_token is already older
+         than the 45min threshold, proactively re-mint + re-seed BEFORE the
+         phase starts rather than waiting for a mid-phase 401. Best-effort:
+         a failure here never aborts the phase (inject-ghl-auth.sh's own
+         bounded reactive re-mint remains the backstop on an actual 401).
+    """
+    if keepalive.due():
+        _eval(session, "true", timeout=5)  # harmless keepalive ping
+    try:
+        remint_if_stale(session)
+    except Exception:  # noqa: BLE001 — proactive remint is never allowed to abort a phase
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Idempotency
 # ---------------------------------------------------------------------------
@@ -517,8 +567,31 @@ def _run_preflight(task: dict, evidence_root: str) -> dict:
     chk("P5:no_duplicate", True,
         "resolve_install_target will raise InstallTargetError on ambiguous duplicates")
 
-    # P6 — custom-field plan (create vs reuse decision recorded in field map)
-    chk("P6:field_plan", True, "field action (create|reuse) set per field in field map")
+    # P6 — custom-field plan (F1/F2): api/map_only reuse API-pre-created fields.
+    mode = _resolve_field_creation_mode(task)
+    checks.append({"check": "P6:field_creation_mode", "pass": True,
+                   "detail": f"field_creation={mode!r} (default {DEFAULT_FIELD_CREATION!r})"})
+    if mode in ("api", "map_only"):
+        _fields = _resolve_fields(task)
+        _dep = plan_survey_dependencies(
+            _fields, task, existing_field_keys=task.get("existing_field_keys")
+        )
+        # Confirmed-missing verbatim (engine-owned) keys are a HARD STOP.
+        chk("P6:verbatim_keys_present", not _dep["blocked"],
+            "missing verbatim keys: "
+            + ", ".join(m.get("key", m.get("label", "?")) for m in _dep["missing_verbatim_keys"])
+            if _dep["blocked"] else "all verbatim keys accounted for (or GET deferred to live)")
+        # map_only forbids ANY create (all fields must pre-exist).
+        if mode == "map_only":
+            creates = [s["field_key"] for s in _dep["custom_fields"] if s["action"] == "create"]
+            chk("P6:map_only_no_creates", not creates,
+                f"map_only requires zero creates; would create: {creates}"
+                if creates else "no creates required")
+    else:
+        # browser mode: legacy in-browser create — explicit no-PIT fallback only.
+        checks.append({"check": "P6:field_plan", "pass": True,
+                       "detail": "field_creation='browser' — LEGACY in-browser create "
+                                 "(no-PIT fallback ONLY, not the default rail)"})
 
     # P7 — agent-browser version pin (warn only; logged)
     try:
@@ -632,19 +705,191 @@ def _auto_key(label: str) -> str:
     return key
 
 
+# ---------------------------------------------------------------------------
+# F2 — field-key contract (zhc vs verbatim)
+# ---------------------------------------------------------------------------
+
+def _slug(text: str) -> str:
+    """snake_slug (lowercase, no spaces/specials, ≤48) — matches ghl_form_builder."""
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", (text or "").lower().strip()).strip("_")[:48]
+
+
+def _resolve_field_key(field: dict) -> tuple[str, str]:
+    """Return ``(field_key, key_policy)`` for one survey field per the F2 contract.
+
+    ``key_policy: "verbatim"`` → the key is engine-owned; it is used EXACTLY as
+    supplied (``field['key']``/``field['field_key']``) — never zhc-prefixed, never
+    slugged — and MUST already exist on the location (create is REFUSED).
+    ``key_policy: "zhc"`` (default) → the agent may idempotently create a
+    ``zhc_<snake_slug>`` key derived from an explicit key or, failing that, the
+    label. Idempotent: never double-prefixes.
+    """
+    policy = str(field.get("key_policy") or DEFAULT_KEY_POLICY).lower()
+    if policy not in KEY_POLICIES:
+        policy = DEFAULT_KEY_POLICY
+    explicit = (field.get("key") or field.get("field_key") or "").strip()
+    if policy == "verbatim":
+        # Preserve byte-for-byte (including double underscores, e.g.
+        # podcast_survey__additional_info). No slugging, no prefix.
+        return explicit, "verbatim"
+    base = explicit or field.get("label", "")
+    slug = _slug(base)
+    if not slug:
+        slug = "field"
+    if not slug.startswith(ZHC_KEY_PREFIX):
+        slug = f"{ZHC_KEY_PREFIX}{slug}"
+    return slug, "zhc"
+
+
+def _caf_list_field_keys(location_id: str, timeout: int = 30) -> Optional[List[str]]:
+    """Best-effort LIVE read-back of existing custom-field keys via Skill 44 ``caf``.
+
+    GET-first idempotency probe (LOCATION PIT). Returns the list of existing
+    custom-field keys, or ``None`` when the ``caf`` rail is unavailable / errors
+    (the caller then falls back to task-provided ``existing_field_keys`` and, if
+    it still cannot confirm a key, STOPS — it NEVER drags an unconfirmed field).
+
+    Fully guarded: never raises, never mutates GHL state (read-only listing).
+    """
+    cmd = ["caf", "locations", "custom-fields", "--json"]
+    if location_id:
+        cmd += ["--location-id", location_id]
+    try:
+        cp = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        _log(f"_caf_list_field_keys: caf unavailable ({exc}) — GET-first probe skipped")
+        return None
+    if cp.returncode != 0:
+        _log(f"_caf_list_field_keys: caf exit {cp.returncode}: {(cp.stderr or '')[:160]}")
+        return None
+    try:
+        data = json.loads(cp.stdout or "[]")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"_caf_list_field_keys: JSON parse failed ({exc})")
+        return None
+    # Tolerant extraction — caf may return a bare list or {customFields:[...]}.
+    rows = data.get("customFields", data) if isinstance(data, dict) else data
+    keys: List[str] = []
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            k = r.get("fieldKey") or r.get("key") or r.get("name") or ""
+            # GHL fieldKey is often "contact.zhc_foo" — keep the tail token too.
+            if isinstance(k, str) and k:
+                keys.append(k)
+                if "." in k:
+                    keys.append(k.rsplit(".", 1)[-1])
+    _log(f"_caf_list_field_keys: {len(keys)} existing keys read from location {location_id!r}")
+    return keys
+
+
+def plan_survey_dependencies(
+    fields: List[dict],
+    task: dict,
+    existing_field_keys: Optional[List[str]] = None,
+) -> dict:
+    """Build the Skill-44 dependency plan for a survey's custom fields (F1/F2).
+
+    Identical in shape+intent to ``ghl_form_builder.plan_dependencies`` so the
+    survey rail obeys the same grocery-shopping rule the form rail already does:
+    GET existing custom fields → REUSE any matching key → CREATE only the missing
+    ``zhc_`` remainder (out-of-band via ``caf`` LOCATION PIT) → read back → the
+    browser then only DRAGS pre-created keys via Add Object Fields.
+
+    ``action`` per field:
+      • ``reuse``          — key already exists on the location.
+      • ``create``         — missing ``zhc`` key; Skill 44 creates it (api mode).
+      • ``REFUSED``        — missing ``verbatim`` (engine-owned) key AFTER a GET;
+                             hard-block, listed in ``missing_verbatim_keys``.
+      • ``verify_required``— ``verbatim`` key, but no GET has been performed yet
+                             (``existing_field_keys`` is None) — the live path
+                             MUST GET-and-confirm before it may bind the field.
+    """
+    live_get_done = existing_field_keys is not None
+    existing = [k.lower() for k in (existing_field_keys or [])]
+
+    specs: List[dict] = []
+    missing_verbatim: List[dict] = []
+    for f in fields:
+        key, policy = _resolve_field_key(f)
+        label = f.get("label", "")
+        exists = key.lower() in existing if key else False
+        if policy == "verbatim":
+            if not key:
+                action = "REFUSED"
+                missing_verbatim.append(
+                    {"label": label, "reason": "key_policy=verbatim but no key supplied"}
+                )
+            elif not live_get_done:
+                action = "verify_required"
+            elif exists:
+                action = "reuse"
+            else:
+                action = "REFUSED"
+                missing_verbatim.append({"label": label, "key": key,
+                                         "reason": "verbatim key not present on location"})
+        else:  # zhc
+            action = "reuse" if exists else "create"
+        specs.append({
+            "field_key": key,
+            "custom_field_name": key,
+            "label": label,
+            "data_type": f.get("type", "single_line"),
+            "options": [o.strip() for o in f.get("options", []) if str(o).strip()],
+            "merge_token": f"{{{{contact.{key}}}}}" if key else "",
+            "key_policy": policy,
+            "action": action,
+        })
+
+    return {
+        "schema_version": "1.0",
+        "generated_at": _ts(),
+        "owner_skill": "44-convert-and-flow-operator",
+        "cli": "caf (PIT-authenticated, LOCATION PIT)",
+        "folder": task.get("folder_name", "Sample Survey"),
+        "idempotency": {
+            "live_get_done": live_get_done,
+            "live_get_required": not live_get_done,
+            "probe_cmd": "caf locations custom-fields --json",
+            "rule": "GET existing custom fields; REUSE any matching key; only "
+                    "CREATE the missing zhc_ remainder. verbatim keys are never "
+                    "created — they MUST pre-exist. Never duplicate.",
+        },
+        "custom_fields": specs,
+        "blocked": bool(missing_verbatim),
+        "missing_verbatim_keys": missing_verbatim,
+        "note": "Skill 44 creates/looks-up these on the location BEFORE the browser "
+                "build. Part 2 then only DRAGS pre-created keys via Add Object "
+                "Fields. In-browser custom-field creation is DISALLOWED except in "
+                "explicit field_creation='browser' fallback mode.",
+    }
+
+
+def _resolve_field_creation_mode(task: dict) -> str:
+    """Resolve + validate the field-creation posture (default 'api')."""
+    mode = str(task.get("field_creation") or DEFAULT_FIELD_CREATION).lower()
+    if mode not in FIELD_CREATION_MODES:
+        _log(f"unknown field_creation={mode!r} — defaulting to {DEFAULT_FIELD_CREATION!r}")
+        mode = DEFAULT_FIELD_CREATION
+    return mode
+
+
 def _build_field_map(fields: List[dict], folder_name: str) -> dict:
     """Build routing/survey-field-map.json."""
     custom_entries: List[dict] = []
     for f in fields:
-        key = f.get("key") or _auto_key(f["label"])
+        key, policy = _resolve_field_key(f)
         custom_entries.append({
             "slide_name": f["slide_name"],
             "field_label": f["label"],
             "field_type": f["type"],
             "field_key": key,
-            "merge_token": f"{{{{contact.{key}}}}}",
+            "key_policy": policy,  # 'zhc' (create-able) or 'verbatim' (must pre-exist)
+            "merge_token": f"{{{{contact.{key}}}}}" if key else "",
             "folder": folder_name,
-            "action": f.get("action", "create"),  # 'create' or 'reuse'
+            "action": f.get("action", "create"),  # refined by plan_survey_dependencies
             "required": f.get("required", False),
             "options": [o.strip() for o in f.get("options", [])],
         })
@@ -968,14 +1213,37 @@ def _p2_pull_object_fields(
     fields: List[dict],
     evidence_root: str,
     shot_n: List[int],
+    dep_custom_fields: Optional[List[dict]] = None,
 ) -> None:
-    """Phase E: Add Object Fields — drag each custom field onto its slide.
+    """Phase E: Add Object Fields — drag each PRE-CREATED custom field onto its slide.
 
     Uses the ``Add Object Fields`` tab (NOT Quick Add). Each dragged field writes
     its answer directly to ``{{contact.<key>}}``.
+
+    F1 CONTRACT: ``dep_custom_fields`` is the GET-confirmed read-back key list from
+    ``plan_survey_dependencies``. When supplied, this method binds ONLY those
+    confirmed keys — it never assumes a field was "just created" in the browser.
+    A field whose key is not confirmed present (action not reuse/create) is a
+    STOP-and-report, never a silent in-browser create.
     """
     _log(f"P2-E: Add Object Fields from folder {folder_name!r}")
     folder_upper = folder_name.upper()
+
+    # F1 guard: bind only GET-confirmed keys.
+    confirmed_by_label = {}
+    if dep_custom_fields:
+        for s in dep_custom_fields:
+            if s.get("action") in ("reuse", "create") and s.get("field_key"):
+                confirmed_by_label[s.get("label", "")] = s["field_key"]
+        unconfirmed = [
+            s.get("label") for s in dep_custom_fields
+            if s.get("action") not in ("reuse", "create")
+        ]
+        if unconfirmed:
+            raise RuntimeError(
+                "P2-E refuses to bind unconfirmed custom field(s) "
+                f"(no read-back key): {unconfirmed}. Pre-create via Skill 44 first."
+            )
 
     # Navigate to Slide 2 (first question slide)
     _click(session, "Slide 2")
@@ -1243,8 +1511,15 @@ def _emit_click_list(
     campaign: str,
     welcome_copy: str,
     location_id: str,
+    field_creation: str = DEFAULT_FIELD_CREATION,
 ) -> dict:
-    """Build the full ordered click sequence for operator review (dry-run output)."""
+    """Build the full ordered click sequence for operator review (dry-run output).
+
+    F1: in ``api``/``map_only`` mode, Part 1 is NOT an in-browser click sequence —
+    the custom fields are pre-created via Skill 44 (see survey-dependency-plan.json)
+    and the browser only DRAGS them in Phase E. Legacy in-browser field-create
+    clicks are emitted ONLY in the explicit ``browser`` fallback mode.
+    """
     steps: List[dict] = []
     n = 0
 
@@ -1257,32 +1532,39 @@ def _emit_click_list(
     app_url = f"{GHL_APP_ORIGIN_DEFAULT}/v2/location/{location_id}/dashboard"
 
     # ── Part 1 ───────────────────────────────────────────────────────────────
-    add("P1", "navigate", app_url, "Open app shell")
-    add("P1", "click", "Settings", "Far-left nav, pinned bottom")
-    add("P1", "click", "Custom Fields", "Settings submenu")
-    add("P1", "confirm", "Object = Contact", "Combobox default")
-    add("P1", "click", "Create folder", "Opens Create folder dialog")
-    add("P1", "fill+click", f"Folder name = {folder_name!r} → Create",
-        "Dialog Create button")
-    add("P1", "click", "Folders", "Tab switch")
-    add("P1", "click", folder_name,
-        "Blue link; URL must contain parentId=<FOLDER_ID>&object=contact")
-    add("P1", "click", "Add custom field", "First field — centered CTA")
+    if field_creation != "browser":
+        add("P1", "skip",
+            "custom fields pre-created via Skill 44 (caf, LOCATION PIT)",
+            "F1 grocery-shopping rule: GET existing → create missing zhc_ keys "
+            "out-of-band → read back. See routing/survey-dependency-plan.json. "
+            "Browser creates NO fields; Phase E drags the read-back keys.")
+    else:
+        add("P1", "navigate", app_url, "Open app shell (LEGACY browser create — no-PIT fallback)")
+        add("P1", "click", "Settings", "Far-left nav, pinned bottom")
+        add("P1", "click", "Custom Fields", "Settings submenu")
+        add("P1", "confirm", "Object = Contact", "Combobox default")
+        add("P1", "click", "Create folder", "Opens Create folder dialog")
+        add("P1", "fill+click", f"Folder name = {folder_name!r} → Create",
+            "Dialog Create button")
+        add("P1", "click", "Folders", "Tab switch")
+        add("P1", "click", folder_name,
+            "Blue link; URL must contain parentId=<FOLDER_ID>&object=contact")
+        add("P1", "click", "Add custom field", "First field — centered CTA")
 
-    for fi, f in enumerate(fields):
-        tl = _FIELD_TYPE_LABELS.get(f["type"], f["type"])
-        add("P1", "select", f"Field type → {tl}", f"Field {fi + 1}: {f['label'][:40]!r}")
-        add("P1", "fill", f"Enter name = {f['label'].strip()!r}", "Char counter must be >0")
-        for opt in f.get("options", []):
-            add("P1", "click+type", f"Add option → {opt.strip()!r}",
-                "Trim leading/trailing spaces on every option")
-        if f["type"] == "file_upload":
-            for ft in f.get("file_types", ["PDF", "DOCX/DOC", "JPG/JPEG", "PNG"]):
-                add("P1", "check", ft, "File type checkbox")
-        add("P1", "click", "Create custom field",
-            "Enabled only when name + ≥1 option/format valid — wait for solid blue")
-        if fi < len(fields) - 1:
-            add("P1", "click", "Create field", "Blue + upper-right; reopens modal")
+        for fi, f in enumerate(fields):
+            tl = _FIELD_TYPE_LABELS.get(f["type"], f["type"])
+            add("P1", "select", f"Field type → {tl}", f"Field {fi + 1}: {f['label'][:40]!r}")
+            add("P1", "fill", f"Enter name = {f['label'].strip()!r}", "Char counter must be >0")
+            for opt in f.get("options", []):
+                add("P1", "click+type", f"Add option → {opt.strip()!r}",
+                    "Trim leading/trailing spaces on every option")
+            if f["type"] == "file_upload":
+                for ft in f.get("file_types", ["PDF", "DOCX/DOC", "JPG/JPEG", "PNG"]):
+                    add("P1", "check", ft, "File type checkbox")
+            add("P1", "click", "Create custom field",
+                "Enabled only when name + ≥1 option/format valid — wait for solid blue")
+            if fi < len(fields) - 1:
+                add("P1", "click", "Create field", "Blue + upper-right; reopens modal")
 
     # ── Part 2 ───────────────────────────────────────────────────────────────
     add("P2-A", "navigate", app_url, "Dashboard (fresh navigation)")
@@ -1353,12 +1635,17 @@ def _emit_click_list(
     return {
         "schema_version": "1.0",
         "generated_at": _ts(),
+        "field_creation": field_creation,
         "total_steps": n,
         "dry_run": True,
         "note": (
             "Operator review: verify every step before flipping --no-dry-run. "
             "Transcript is canonical (PRD §5.B.1–2). "
-            "Google-Doc detours in the recording are recorder noise — ignore them."
+            "Google-Doc detours in the recording are recorder noise — ignore them. "
+            f"field_creation={field_creation}: custom fields "
+            + ("pre-created via Skill 44 (map-only bind in Phase E)."
+               if field_creation != "browser"
+               else "created in-browser (LEGACY no-PIT fallback).")
         ),
         "steps": steps,
     }
@@ -1436,6 +1723,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
         )
     )
     fields = _resolve_fields(task)
+    field_creation = _resolve_field_creation_mode(task)
 
     # Total step count for progress messages
     total_steps = _PART1_BASE_STEPS + len(fields) + _PART2_PHASES + 2  # preflight + plan
@@ -1484,20 +1772,33 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     _write_json(field_map_path, field_map)
     _log(f"Field map: {field_map_path}")
 
+    # ── Step 3.5: Skill-44 dependency plan (F1/F2 — grocery-shopping rule) ─────
+    # api/map_only reuse API-pre-created custom fields; browser mode keeps the
+    # legacy in-browser create as an explicit no-PIT fallback.
+    dep_plan = plan_survey_dependencies(
+        fields, task, existing_field_keys=task.get("existing_field_keys")
+    )
+    dep_plan["field_creation_mode"] = field_creation
+    dep_plan_path = os.path.join(evidence_root, "routing", "survey-dependency-plan.json")
+    _write_json(dep_plan_path, dep_plan)
+    _log(f"Dependency plan ({field_creation}): {dep_plan_path} "
+         f"[blocked={dep_plan['blocked']}]")
+
     # ── Dry-run: emit click list and return ───────────────────────────────────
     if dry_run:
         click_list = _emit_click_list(
             fields, folder_name, survey_name,
             business_name, campaign, welcome_copy, location_id,
+            field_creation=field_creation,
         )
         click_list_path = os.path.join(evidence_root, "routing", "survey-click-list.json")
         _write_json(click_list_path, click_list)
         _log(f"[dry-run] Click list ({click_list['total_steps']} steps): {click_list_path}")
         _board_activity(
             board_task_id, "updated",
-            f"[dry-run] Plan + field-map + click list written "
-            f"({click_list['total_steps']} steps). No browser execution. "
-            "Flip --no-dry-run after operator review.",
+            f"[dry-run] Plan + field-map + dependency-plan + click list written "
+            f"({click_list['total_steps']} steps, field_creation={field_creation}). "
+            "No browser execution. Flip --no-dry-run after operator review.",
         )
         duration = time.monotonic() - started
         return {
@@ -1506,13 +1807,86 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             "duration_s": duration,
             "survey_url": "",
             "field_map": field_map,
+            "dependency_plan": dep_plan,
+            "field_creation": field_creation,
             "preflight": preflight,
             "plan_path": plan_path,
             "field_map_path": field_map_path,
+            "dependency_plan_path": dep_plan_path,
             "click_list_path": click_list_path,
             "shots": [],
             "dry_run": True,
         }
+
+    # ── F1/F2 LIVE gate: reuse API-pre-created custom fields (map-only) ────────
+    # In api/map_only mode the browser NEVER creates a field. Before touching the
+    # builder we GET the location's existing keys (Skill-44 caf, LOCATION PIT) and
+    # confirm EVERY field to be bound already exists. An unconfirmed field is a
+    # STOP-and-report (never a silent in-browser create) — Part 2 consumes only
+    # the read-back key list.
+    if field_creation in ("api", "map_only"):
+        existing_keys = task.get("existing_field_keys")
+        if existing_keys is None:
+            existing_keys = _caf_list_field_keys(location_id)
+        dep_plan = plan_survey_dependencies(
+            fields, task, existing_field_keys=existing_keys
+        )
+        dep_plan["field_creation_mode"] = field_creation
+        _write_json(dep_plan_path, dep_plan)
+
+        # Any field not confirmed present on the location blocks the live bind.
+        # api: 'create' fields must have been pre-created by Skill 44 already —
+        #      if the live GET still shows them missing, STOP (run caf first).
+        # map_only: 'create' is forbidden outright.
+        unconfirmed = [
+            s for s in dep_plan["custom_fields"]
+            if s["action"] in ("REFUSED", "verify_required", "create")
+        ]
+        if existing_keys is None:
+            # Could not GET at all — cannot prove any field exists. Refuse to guess.
+            stop = ("field_creation=%s requires a Skill-44 GET of existing custom "
+                    "fields, but `caf locations custom-fields` was unavailable and "
+                    "no task['existing_field_keys'] was supplied. Cannot confirm "
+                    "fields exist — refusing to bind. Provide existing_field_keys "
+                    "or fix the caf rail, or use field_creation='browser'." % field_creation)
+            _log(f"F1 LIVE STOP: {stop}")
+            _board_move(board_task_id, "blocked", note=f"TOKEN-CONTEXT: {stop}")
+            _board_activity(board_task_id, "completed", f"Build BLOCKED (field reuse): {stop}")
+            return {
+                "pages": [], "location_gate_ok": bool(location_id),
+                "duration_s": time.monotonic() - started,
+                "survey_url": "", "field_map": field_map,
+                "dependency_plan": dep_plan, "field_creation": field_creation,
+                "preflight": preflight, "plan_path": plan_path,
+                "field_map_path": field_map_path,
+                "dependency_plan_path": dep_plan_path, "shots": [],
+                "error": stop,
+            }
+        if unconfirmed:
+            missing = [s["field_key"] or s["label"] for s in unconfirmed]
+            caf_hint = "; ".join(
+                f"caf locations create-custom-field --location-id {location_id} "
+                f"--key {s['field_key']} --name {s['label']!r}"
+                for s in unconfirmed if s["action"] == "create"
+            )
+            stop = (f"{len(unconfirmed)} custom field(s) not present on location "
+                    f"{location_id!r}: {missing}. Pre-create them via Skill 44 first "
+                    f"(grocery-shopping rule). {caf_hint}")
+            _log(f"F1 LIVE STOP: {stop}")
+            _board_move(board_task_id, "blocked", note=f"AUTH-STOP: field reuse — {stop}")
+            _board_activity(board_task_id, "completed", f"Build BLOCKED (field reuse): {stop}")
+            return {
+                "pages": [], "location_gate_ok": bool(location_id),
+                "duration_s": time.monotonic() - started,
+                "survey_url": "", "field_map": field_map,
+                "dependency_plan": dep_plan, "field_creation": field_creation,
+                "preflight": preflight, "plan_path": plan_path,
+                "field_map_path": field_map_path,
+                "dependency_plan_path": dep_plan_path, "shots": [],
+                "error": stop,
+            }
+        _log(f"F1 LIVE: all {len(dep_plan['custom_fields'])} fields confirmed present "
+             "on location — proceeding map-only (no in-browser field creation).")
 
     # ── Live browser execution ────────────────────────────────────────────────
     survey_url = ""
@@ -1530,43 +1904,58 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
             _log(f"Browser session: {session!r}")
 
-            # ── Part 1: custom-field folder ───────────────────────────────────
+            # ── Part 1: custom-field folder + fields ──────────────────────────
+            # F1 FIX: in api/map_only mode Part 1 is REPLACED by the Skill-44
+            # dependency plan (fields already GET-confirmed above); the browser
+            # creates NOTHING. Legacy in-browser create runs ONLY in the explicit
+            # no-PIT 'browser' fallback mode.
             step_n = 4
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 1 — create folder {folder_name!r}")
-            _p1_create_folder(
-                session, location_id, folder_name, gov, evidence_root, shot_n
-            )
-
-            # ── Part 1: custom fields ─────────────────────────────────────────
-            for fi, field in enumerate(fields):
-                step_n += 1
+            if field_creation != "browser":
                 _board_activity(
                     board_task_id, "updated",
-                    f"Step {step_n}/{total_steps}: Part 1 — field {fi + 1}/{len(fields)}: "
-                    f"{field['label'][:40]!r}",
+                    f"Step {step_n}/{total_steps}: Part 1 SKIPPED "
+                    f"(field_creation={field_creation}) — "
+                    f"{len(fields)} custom field(s) reused from Skill-44 "
+                    "pre-creation; no in-browser field creation.",
                 )
-                _p1_create_field(
-                    session, field, is_first=(fi == 0),
-                    gov=gov, evidence_root=evidence_root,
-                    shot_n=shot_n, field_index=fi + 1,
+            else:
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 1 (LEGACY browser create) — "
+                                f"folder {folder_name!r}")
+                _p1_create_folder(
+                    session, location_id, folder_name, gov, evidence_root, shot_n
                 )
-                if keepalive.due():
-                    _eval(session, "true", timeout=5)  # harmless keepalive ping
+                for fi, field in enumerate(fields):
+                    step_n += 1
+                    _board_activity(
+                        board_task_id, "updated",
+                        f"Step {step_n}/{total_steps}: Part 1 — field {fi + 1}/{len(fields)}: "
+                        f"{field['label'][:40]!r}",
+                    )
+                    _p1_create_field(
+                        session, field, is_first=(fi == 0),
+                        gov=gov, evidence_root=evidence_root,
+                        shot_n=shot_n, field_index=fi + 1,
+                    )
+                    if keepalive.due():
+                        _eval(session, "true", timeout=5)  # harmless keepalive ping
 
             # ── Part 2: Phase A — create survey ──────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase A — create survey")
             _p2_navigate_create(session, location_id, evidence_root, shot_n)
 
             # ── Part 2: Phase B — rename survey ──────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase B — rename survey")
             _p2_rename_survey(session, survey_name, evidence_root, shot_n)
 
             # ── Part 2: Phase C — add slides ──────────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             num_extra = len(fields) + 1  # question slides + capture
             _board_activity(
@@ -1577,27 +1966,34 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             _p2_add_slides(session, num_extra, evidence_root, shot_n)
 
             # ── Part 2: Phase D — welcome slide ───────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase D — welcome slide (Text element)")
             _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n)
 
             # ── Part 2: Phase E — pull custom fields ──────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(
                 board_task_id, "updated",
                 f"Step {step_n}/{total_steps}: Part 2 Phase E — Add Object Fields "
                 f"from folder {folder_name!r}",
             )
-            _p2_pull_object_fields(session, folder_name, fields, evidence_root, shot_n)
+            _p2_pull_object_fields(
+                session, folder_name, fields, evidence_root, shot_n,
+                dep_custom_fields=dep_plan.get("custom_fields", []),
+            )
 
             # ── Part 2: Phase F — rename question slides ──────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
             _p2_rename_question_slides(session, fields, gov, evidence_root, shot_n)
 
             # ── Part 2: Phase G — conditional logic ───────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
@@ -1607,6 +2003,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
 
             # ── Part 2: Phase H — required toggles ───────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             required_count = sum(1 for f in fields if f.get("required"))
             _board_activity(
@@ -1617,6 +2014,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             _p2_required_toggles(session, fields, evidence_root, shot_n)
 
             # ── Part 2: Phase J — capture slide + T&C ────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(
                 board_task_id, "updated",
@@ -1629,6 +2027,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
 
             # ── Part 2: Phase K — save + get URL ─────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase K — save + capture URL")
@@ -1816,6 +2215,85 @@ def _selftest() -> int:
         if " " in key or "?" in key or "(" in key:
             errors.append(f"_auto_key produced a dirty key: {key!r}")
 
+        # 9. F2 field-key contract — zhc default prefixes; verbatim preserved
+        k_zhc, p_zhc = _resolve_field_key({"label": "Business Stage"})
+        if p_zhc != "zhc" or not k_zhc.startswith("zhc_"):
+            errors.append(f"zhc key policy wrong: {(k_zhc, p_zhc)!r}")
+        k_vb, p_vb = _resolve_field_key(
+            {"label": "Extra", "key": "podcast_survey__additional_info",
+             "key_policy": "verbatim"})
+        if p_vb != "verbatim" or k_vb != "podcast_survey__additional_info":
+            errors.append(f"verbatim key not preserved byte-for-byte: {(k_vb, p_vb)!r}")
+        # zhc must NOT double-prefix
+        k_dbl, _ = _resolve_field_key({"key": "zhc_already", "key_policy": "zhc"})
+        if k_dbl != "zhc_already":
+            errors.append(f"zhc double-prefixed: {k_dbl!r}")
+
+        # 10. F1 dependency plan — GET-first idempotency (reuse vs create)
+        dep = plan_survey_dependencies(
+            [{"label": "Fav Color", "type": "single_line"}],  # zhc → key zhc_fav_color
+            {"folder_name": "F"},
+            existing_field_keys=["zhc_fav_color"],
+        )
+        c = dep["custom_fields"][0]
+        if c["action"] != "reuse":
+            errors.append(f"idempotency: existing zhc_fav_color should be reuse, got {c['action']!r}")
+        dep2 = plan_survey_dependencies(
+            [{"label": "New One", "type": "single_line"}],
+            {"folder_name": "F"}, existing_field_keys=[])
+        if dep2["custom_fields"][0]["action"] != "create":
+            errors.append("idempotency: unseen zhc key should be create")
+
+        # 11. F2 verbatim-missing → plan blocked + listed (loud failure)
+        depv = plan_survey_dependencies(
+            [{"label": "Engine Field", "key": "engine__key", "key_policy": "verbatim",
+              "type": "single_line"}],
+            {"folder_name": "F"}, existing_field_keys=["some_other_key"])
+        if not depv["blocked"] or not depv["missing_verbatim_keys"]:
+            errors.append("verbatim-missing plan should be blocked + list missing keys")
+        # verbatim WITH no GET yet → verify_required (not silently created)
+        depvr = plan_survey_dependencies(
+            [{"label": "Engine Field", "key": "engine__key", "key_policy": "verbatim",
+              "type": "single_line"}],
+            {"folder_name": "F"}, existing_field_keys=None)
+        if depvr["custom_fields"][0]["action"] != "verify_required":
+            errors.append("verbatim without GET should be verify_required")
+
+        # 12. Default posture is 'api' and the dry-run dependency plan is emitted
+        with tempfile.TemporaryDirectory() as tmp3:
+            res_api = build_survey(
+                {"survey_name": "S", "title": "S", "folder_name": "F",
+                 "location_id": "LOC", "brief": {"s": 1}}, tmp3, dry_run=True)
+            if res_api.get("field_creation") != "api":
+                errors.append("default field_creation should be 'api'")
+            if "dependency_plan" not in res_api or "dependency_plan_path" not in res_api:
+                errors.append("dry-run must emit the dependency plan")
+            # api-mode click list must NOT contain in-browser field-create clicks
+            cl_api = _emit_click_list(REFERENCE_FIELDS, "F", "S", "Acme", "camp",
+                                      "Hi", "LOC", field_creation="api")
+            blob_api = json.dumps(cl_api).lower()
+            if "create custom field" in blob_api or "add custom field" in blob_api:
+                errors.append("api-mode click list must not create fields in-browser")
+            if not any(s["phase"] == "P1" and s["action"] == "skip"
+                       for s in cl_api["steps"]):
+                errors.append("api-mode click list must mark Part 1 as skipped (Skill 44)")
+            # browser-mode click list MUST still contain the legacy create path
+            cl_br = _emit_click_list(REFERENCE_FIELDS, "F", "S", "Acme", "camp",
+                                     "Hi", "LOC", field_creation="browser")
+            if "create custom field" not in json.dumps(cl_br).lower():
+                errors.append("browser-mode click list must retain legacy create path")
+
+        # 13. map_only preflight hard-stops when a create would be required
+        pf = _run_preflight(
+            {"survey_name": "S", "title": "S", "location_id": "LOC",
+             "field_creation": "map_only",
+             "survey_fields": [{"label": "New Field", "type": "single_line",
+                                "slide_name": "S1"}],
+             "existing_field_keys": []},
+            tmp)
+        if pf["pass"]:
+            errors.append("map_only with a would-be create should fail preflight")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -1881,6 +2359,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--campaign", default="our campaign",
         help="Campaign text for T&C consent copy.",
     )
+    parser.add_argument(
+        "--field-creation", default=DEFAULT_FIELD_CREATION,
+        choices=list(FIELD_CREATION_MODES),
+        help=(
+            "Custom-field posture (F1 grocery-shopping rule). "
+            "'api' (default): reuse API-pre-created fields, missing created by "
+            "Skill 44. 'map_only': all fields MUST pre-exist (zero creates). "
+            "'browser': LEGACY in-browser create (no-PIT fallback ONLY)."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -1894,6 +2382,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "location_id": args.location_id,
         "business_name": args.business_name,
         "campaign": args.campaign,
+        "field_creation": args.field_creation,
         "brief": {"source": "cli"},
     }
 

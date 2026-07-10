@@ -40,7 +40,7 @@ import re
 import signal
 import subprocess
 import sys
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
 BROWSER_MANAGER_PY_VERSION = "v19.10.0"
@@ -348,3 +348,70 @@ def assert_session_active(caller: str = "browser command") -> None:
             "`with browser_manager.browser_session(slug) as session:` so every "
             "plan is bracketed by ONE canonical session + a guaranteed teardown."
         )
+
+
+# ── ENVIRONMENT MATRIX (spec §4) — VPS-vs-Mac detection, Python side ──────────
+# Mirrors ``_bm_durable_root()`` in browser_manager.sh EXACTLY: VPS's
+# ``/data/.openclaw`` checked FIRST (survives a reboot; PARK markers, receipts
+# and other durable state live there), else the Mac's ``~/.openclaw``, else ""
+# (a bare CI/dev checkout with no onboarded root — callers fall back to an
+# ephemeral dir, same contract as the shell side's PARK_DIR fallback).
+#
+# WHY THIS EXISTS: browser_manager.sh has owned this detection since D7/D14,
+# but browser_manager.py (the emitter-only Python mirror) had NO equivalent —
+# any new Python-only tool (the community/course builders planned in §5, or a
+# future receipt writer) that needed to know "am I on the VPS or the Mac" had
+# no sanctioned primitive and would have hand-rolled its own check, risking
+# drift from the shell gateway's canonical detection. This closes that gap
+# additively — it does not change any existing browser_manager.py behavior.
+#
+# ``isdir`` is INJECTABLE (defaults to ``os.path.isdir``) so tests can prove
+# both branches (VPS-present, VPS-absent-Mac-present, neither) hermetically
+# without creating a real ``/data`` directory, which requires root.
+_VPS_DURABLE_ROOT = "/data/.openclaw"
+
+
+def durable_root(
+    env: Optional[dict] = None,
+    isdir: Optional[Callable[[str], bool]] = None,
+) -> str:
+    """Return the box's durable OpenClaw root, VPS-first.
+
+    Mirrors ``_bm_durable_root()`` (browser_manager.sh) bit-for-bit:
+      1. ``/data/.openclaw`` if it is a directory (VPS/Docker convention).
+      2. ``$HOME/.openclaw`` if it is a directory (real Mac / Mac mini).
+      3. ``""`` — no onboarded root (CI / a bare dev checkout); callers must
+         fall back to an ephemeral dir, same as ``PARK_DIR`` does on the shell
+         side.
+    Never raises; never touches the network; does no I/O beyond the two
+    ``isdir`` probes.
+    """
+    env = env if env is not None else os.environ
+    _isdir = isdir if isdir is not None else os.path.isdir
+    if _isdir(_VPS_DURABLE_ROOT):
+        return _VPS_DURABLE_ROOT
+    home = env.get("HOME", "")
+    if home:
+        mac_root = os.path.join(home, ".openclaw")
+        if _isdir(mac_root):
+            return mac_root
+    return ""
+
+
+def is_vps(env: Optional[dict] = None, isdir: Optional[Callable[[str], bool]] = None) -> bool:
+    """True iff ``durable_root()`` resolved the VPS convention
+    (``/data/.openclaw``), false for Mac or the no-onboarded-root case."""
+    return durable_root(env, isdir) == _VPS_DURABLE_ROOT
+
+
+def supervisor(env: Optional[dict] = None) -> str:
+    """Best-effort name of the process supervisor for this box — informational
+    only (docs/diagnostics), NEVER used to branch behavior inside a build: the
+    skill's browser/build logic is identical on both sides of the matrix by
+    design (spec §4 adaptation contract item 5). Mac mini boxes run the MCP
+    server + hourly reaper under ``launchd``; VPS/Docker boxes run under
+    ``pm2`` (in-container process manager) or ``systemd`` depending on the
+    box's provisioning. Detected via ``sys.platform`` — 'darwin' -> launchd,
+    anything else -> 'pm2-or-systemd' (Skill 6 does not itself need to
+    disambiguate pm2 vs systemd; it never restarts a supervised service)."""
+    return "launchd" if sys.platform == "darwin" else "pm2-or-systemd"

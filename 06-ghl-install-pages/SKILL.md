@@ -221,13 +221,29 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
     happens. **Done-skip fix** — `move_task()` HARD-BLOCKS any direct call to
     move a card to `done`; the only path to `done` is the Command Center's own
     QC gate promoting a card from `review` on a passing score. The new
-    `BuildPhaseDriver` class sequences the whole lifecycle (`start` →
-    `step` → `artifact` → `review`, or `fail` → `backlog`/`blocked`) for any
-    future caller; `ghl_survey_builder.py`'s own fail-soft board wrappers
+    `BuildPhaseDriver` class sequences the whole lifecycle (`queued` → `start` →
+    `step` → `deliverable`(×N) → `review` → `qc`, or `fail` → `backlog`/`blocked`)
+    for any future caller; `ghl_survey_builder.py`'s own fail-soft board wrappers
     already call `move_task`/`post_activity`/`register_deliverable` directly
     (via a `getattr` guard) for its survey build flow. Every board call is
     fail-soft (never raises, never blocks the build) so a build proceeds even
     against an older `cc_board.py`.
+    **U9 §7 tightenings** (Skill-6 Bulletproof) — all additive/backward-compatible:
+    (§7.1) `BuildPhaseDriver.deliverable(url, meta)` registers each artifact
+    (preview URL, embed snippet, survey/community URL) without moving the card, and
+    `review()` is the single terminal move to `review`; `artifact()` stays the
+    one-shot `deliverable()+review()` convenience. (§7.2) `post_qc_score(task_id,
+    score, gate, passed, scorecard_path)` (and `BuildPhaseDriver.qc(...)`) emits
+    `QC: <score>/10 — <gate> [PASS|FAIL]` as a `completed` activity with the
+    score/gate/verdict/scorecard-path in the metadata — the single source the CC QC
+    sweep reads; `qc-built-form.sh` / `qc-built-funnel.sh` post it when `CC_TASK_ID`
+    is set (opt-in, via `cc_board.py --emit-qc`). (§7.3) `fail(reason=…)` prefixes
+    the blocked/backlog note with one of `AUTH-STOP | SELECTOR-MISS | RATE-LIMIT |
+    TOKEN-CONTEXT | PARKED | VERIFY-FAIL` (`_CC_BLOCK_REASONS`) plus a `block_reason`
+    metadata field, so the board is queryable for fleet-wide failure patterns.
+    (§7.4) `post_queue_wait(task_id, holder_session)` / `BuildPhaseDriver.queued(…)`
+    parks a card at `pending_dispatch` naming the session holding the browser
+    singleton lock, making a lock-wait visible.
 15. **Form creation — `tools/ghl_form_builder.py`** — Browser-controlled form
     pipeline with a strict TWO-LAYER split: a SMART reasoning layer decides WHAT
     form to build and pre-creates every CUSTOM FIELD + TAG through the GHL-API

@@ -93,6 +93,21 @@ _CC_STATUS_VALUES = (
 # Valid activity_type values (src/lib/validation.ts:31-37).
 _CC_ACTIVITY_TYPES = ("spawned", "updated", "completed", "file_created", "status_changed")
 
+# U9 §7.3 — Failure taxonomy. A build that lands on 'blocked' (or 'backlog' with a
+# known cause) tags the transition note with ONE of these machine-parsable prefixes
+# so the board is queryable for fleet-wide failure PATTERNS (an individual failure
+# becomes fleet learning). Kept in lockstep with the spec's taxonomy set; a reason
+# outside this tuple is logged and the note is posted un-prefixed (fail-soft, never
+# a fabricated category).
+_CC_BLOCK_REASONS = (
+    "AUTH-STOP",       # revoked/expired token, sign-in/2FA screen appeared (F15)
+    "SELECTOR-MISS",   # a locked anchor was not found in the live DOM (F3)
+    "RATE-LIMIT",      # 429 / daily-quota floor hit (F8)
+    "TOKEN-CONTEXT",   # 403 classified as a token-context mismatch (F9)
+    "PARKED",          # circuit breaker opened → box PARK marker (browser_manager)
+    "VERIFY-FAIL",     # sealed verifier / render_check did not PASS (F6)
+)
+
 # Dispatcher state -> CC board status (Area-6 board status updater). The
 # v2_dispatcher state machine (backlog -> dispatched -> building -> verified |
 # FAILED) maps onto the Kanban columns so a running build no longer sits at
@@ -508,6 +523,142 @@ def post_activity(
 
 
 # ---------------------------------------------------------------------------
+# U9 §7.2 — QC score emission. The per-build QC gate (qc-built-*.sh) emits its
+# PASS/FAIL + numeric score INTO the card so the CC QC sweep reads ONE source (no
+# re-scoring drift): the score rides in the activity metadata AND is human-visible
+# in the message. This is the "emit QC scores into CC payloads" tightening.
+# ---------------------------------------------------------------------------
+def _normalize_qc_score(score) -> Optional[float]:
+    """Coerce a score to a float clamped to [0, 10]. Returns None when the input is
+    absent or non-numeric (a score-less QC emission is valid — passed-only)."""
+    if score is None or (isinstance(score, str) and not score.strip()):
+        return None
+    try:
+        val = float(score)
+    except (TypeError, ValueError):
+        return None
+    if val != val:  # NaN
+        return None
+    return max(0.0, min(10.0, val))
+
+
+def post_qc_score(
+    task_id: str,
+    score,
+    gate: str,
+    *,
+    passed: Optional[bool] = None,
+    scorecard_path: Optional[str] = None,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Emit a QC verdict onto the card as a ``completed`` activity.
+
+    Message:  ``QC: <score>/10 — <gate>[ [PASS|FAIL]]`` (score omitted when None).
+    Metadata: ``{qc_score, qc_gate, qc_passed, scorecard_path}`` — the machine-
+    parsable record the CC QC sweep reads to promote review → done from the SAME
+    scorecard the gate scored (single source, no drift).
+
+    FAIL-SOFT: never raises; a False return never blocks the build.
+
+    Args:
+        task_id:        CC task UUID returned by ingest_task.
+        score:          0–10 numeric (int/float/str); clamped. None => passed-only.
+        gate:           Gate label, e.g. 'qc-built-form' / 'qc-built-funnel'.
+        passed:         Explicit PASS/FAIL. Defaults from score >= 8.5 when a score
+                        is given and passed is not supplied.
+        scorecard_path: Path to the scorecard the gate wrote (attached, not read).
+        note:           Optional extra human-readable text appended to the message.
+        env:            Override os.environ (for testing).
+
+    Returns:
+        True on 2xx, False on any failure.
+    """
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("post_qc_score skipped — empty task_id.")
+        return False
+
+    gate_label = (gate or "").strip() or "qc"
+    val = _normalize_qc_score(score)
+
+    # Default the pass verdict from the score when not stated (8.5 is the standing
+    # fleet threshold; runQCOnReview PASS >= 8.5).
+    verdict = passed
+    if verdict is None and val is not None:
+        verdict = val >= 8.5
+
+    if val is not None:
+        message = f"QC: {val:.1f}/10 — {gate_label}"
+    else:
+        message = f"QC: {gate_label}"
+    if verdict is not None:
+        message += f" [{'PASS' if verdict else 'FAIL'}]"
+    if note and note.strip():
+        message += f" — {note.strip()}"
+
+    metadata: dict = {"qc_gate": gate_label}
+    if val is not None:
+        metadata["qc_score"] = val
+    if verdict is not None:
+        metadata["qc_passed"] = bool(verdict)
+    sc = (scorecard_path or "").strip()
+    if sc:
+        metadata["scorecard_path"] = sc
+
+    return post_activity(tid, "completed", message, metadata=metadata, env=env)
+
+
+# ---------------------------------------------------------------------------
+# U9 §7.4 — Queue visibility. When the box-wide browser lock is held by another
+# run, the waiting build parks its card at 'pending_dispatch' with the HOLDER's
+# session name, so a wait is visible on the board, not mysterious.
+# ---------------------------------------------------------------------------
+def post_queue_wait(
+    task_id: str,
+    holder_session: str,
+    *,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Park the card at ``pending_dispatch`` naming the lock holder.
+
+    Moves the card to ``pending_dispatch`` (a valid CC status) and posts a
+    ``status_changed`` activity whose metadata carries ``holder_session`` so the
+    board shows WHO holds the singleton browser lock.
+
+    FAIL-SOFT: never raises; a False return never blocks the build.
+
+    Args:
+        task_id:        CC task UUID returned by ingest_task.
+        holder_session: Canonical browser session name currently holding the lock
+                        (e.g. 'ghl-skill6-<loc>'). Empty => generic wait note.
+        note:           Optional extra human-readable text.
+        env:            Override os.environ (for testing).
+
+    Returns:
+        True when either the status move or the activity post succeeds, else False.
+    """
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("post_queue_wait skipped — empty task_id.")
+        return False
+
+    holder = (holder_session or "").strip()
+    detail = f"queued — browser lock held by {holder}" if holder else "queued — waiting for browser lock"
+    if note and note.strip():
+        detail += f"; {note.strip()}"
+
+    ok_move = move_task(tid, "pending_dispatch", note=detail, env=env)
+    ok_act = post_activity(
+        tid, "status_changed", detail,
+        metadata={"holder_session": holder} if holder else None,
+        env=env,
+    )
+    return ok_move or ok_act
+
+
+# ---------------------------------------------------------------------------
 # PUBLIC API — move_task transitions the Kanban card (HMAC-signed like ingest).
 # ---------------------------------------------------------------------------
 def move_task(
@@ -674,13 +825,19 @@ def register_deliverable(
 class BuildPhaseDriver:
     """Phase-driver that sequences board moves across a Skill-6 build run.
 
-    The driver enforces the end-to-end Kanban flow from PRD §6.2 / WIRING-MAP §4:
+    The driver enforces the end-to-end Kanban flow from PRD §6.2 / WIRING-MAP §4,
+    with the U9 §7 tightenings folded in:
 
+        on queue  → queued(holder_session)      → 'pending_dispatch' (lock wait; §7.4)
         on start  → move_task('in_progress') + post_activity('status_changed')
         per step  → post_activity('updated', 'Step k/N: ...')
-        on finish → register_deliverable(url) + move_task('review') + post_activity('completed')
-        on fail   → move_task('backlog')  [retryable]
-                    move_task('blocked')  [human sign-off required]
+        per artifact → deliverable(url, meta)    register each, card stays put (§7.1)
+        on finish → review()                     → 'review' + post_activity('completed')
+        on QC     → qc(score, gate)              → 'completed' QC activity w/ score (§7.2)
+        on fail   → fail(reason=...)             'backlog'|'blocked' w/ taxonomy prefix (§7.3)
+
+    artifact(url) remains a one-shot convenience = deliverable(url) + review() for
+    single-deliverable builds (backward-compatible with existing callers).
 
     "Terminate at REVIEW, never at done":
         move_task('done') is hard-blocked inside move_task() — this class also
@@ -712,6 +869,7 @@ class BuildPhaseDriver:
         self._env = env   # None → use os.environ inside each helper
         self._started = False
         self._finished = False
+        self._deliverables = 0   # U9: count registered deliverables (multi-artifact builds)
 
     # ------------------------------------------------------------------
     def start(self, note: str = "Build started") -> bool:
@@ -778,11 +936,96 @@ class BuildPhaseDriver:
         return ok1 or ok2 or ok3
 
     # ------------------------------------------------------------------
-    def fail(self, *, human_required: bool = False) -> bool:
+    def deliverable(
+        self,
+        url: str,
+        meta: Optional[dict] = None,
+        note: str = "",
+    ) -> bool:
+        """Register ONE built artifact WITHOUT moving the card (U9 §7.1).
+
+        A single build often produces several deliverables (preview URL, embed
+        snippet path, survey/community URL). Call deliverable() once per artifact,
+        then review() ONCE to move the card to review. Non-terminal, repeatable.
+
+        Auto-starts the driver; no-ops after finish().
+        """
+        if not self._task_id:
+            return False
+        if not self._started:
+            self.start()
+        if self._finished:
+            return False
+        ok = register_deliverable(self._task_id, url, meta=meta, env=self._env)
+        if ok:
+            self._deliverables += 1
+        if note and note.strip():
+            post_activity(self._task_id, "file_created", note.strip(), env=self._env)
+        return ok
+
+    # ------------------------------------------------------------------
+    def review(self, note: str = "Artifact(s) ready — moved to review for QC") -> bool:
+        """Terminal move to 'review' after one or more deliverable() calls (U9 §7.1).
+
+        NEVER 'done' — the CC QC gate is the sole promoter from review → done.
+        Marks the phase finished so subsequent calls are no-ops.
+        """
+        if not self._task_id:
+            return False
+        if not self._started:
+            self.start()
+        if self._finished:
+            return False
+        self._finished = True
+        ok1 = move_task(self._task_id, "review", note=note, env=self._env)
+        ok2 = post_activity(self._task_id, "completed", note, env=self._env)
+        return ok1 or ok2
+
+    # ------------------------------------------------------------------
+    def qc(
+        self,
+        score,
+        gate: str,
+        *,
+        passed: Optional[bool] = None,
+        scorecard_path: Optional[str] = None,
+        note: str = "",
+    ) -> bool:
+        """Emit the per-build QC verdict onto the card (U9 §7.2).
+
+        Deliberately NOT gated on _finished: QC runs while the card sits at
+        'review', i.e. after artifact()/review(). Delegates to post_qc_score().
+        """
+        if not self._task_id:
+            return False
+        return post_qc_score(
+            self._task_id, score, gate,
+            passed=passed, scorecard_path=scorecard_path, note=note, env=self._env,
+        )
+
+    # ------------------------------------------------------------------
+    def queued(self, holder_session: str, note: str = "") -> bool:
+        """Park the card at 'pending_dispatch' naming the lock holder (U9 §7.4).
+
+        Called BEFORE start() while waiting on the box-wide browser lock, so a
+        wait is visible on the board. Not gated on _started/_finished.
+        """
+        if not self._task_id:
+            return False
+        return post_queue_wait(self._task_id, holder_session, note=note, env=self._env)
+
+    # ------------------------------------------------------------------
+    def fail(self, *, human_required: bool = False, reason: Optional[str] = None) -> bool:
         """Signal build failure.
 
         human_required=False → move_task('backlog')   retryable by QC sweep.
         human_required=True  → move_task('blocked')   human sign-off required.
+
+        reason (U9 §7.3): one of _CC_BLOCK_REASONS
+        (AUTH-STOP|SELECTOR-MISS|RATE-LIMIT|TOKEN-CONTEXT|PARKED|VERIFY-FAIL).
+        When given, the transition note is PREFIXED with '<REASON>: ' so the board
+        is queryable for fleet-wide failure patterns. A reason outside the taxonomy
+        is logged and the note is posted un-prefixed (never a fabricated category).
 
         Marks the phase finished so subsequent calls are no-ops.
         """
@@ -790,13 +1033,27 @@ class BuildPhaseDriver:
             return False
         self._finished = True
         target = "blocked" if human_required else "backlog"
-        note = (
+        base_note = (
             "Build failed — human sign-off required; moved to blocked."
             if human_required
             else "Build failed — retryable; moved back to backlog."
         )
+        prefix = ""
+        if reason:
+            r = str(reason).strip().upper()
+            if r in _CC_BLOCK_REASONS:
+                prefix = f"{r}: "
+            else:
+                _log(
+                    f"fail() reason {reason!r} not in taxonomy "
+                    f"({', '.join(_CC_BLOCK_REASONS)}); note posted un-prefixed."
+                )
+        note = f"{prefix}{base_note}"
+        meta = {"block_reason": prefix[:-2]} if prefix else None
         ok1 = move_task(self._task_id, target, note=note, env=self._env)
-        ok2 = post_activity(self._task_id, "status_changed", note, env=self._env)
+        ok2 = post_activity(
+            self._task_id, "status_changed", note, metadata=meta, env=self._env
+        )
         return ok1 or ok2
 
 
@@ -1174,6 +1431,162 @@ def _phase_driver_selftest() -> int:
     return 0
 
 
+def _u9_selftest() -> int:
+    """U9 §7 tightenings self-test — no network. Returns 0 on pass.
+
+    Covers: QC-score normalization + emission payload, failure taxonomy prefix,
+    queue-visibility pending_dispatch move, and multi-deliverable driver flow."""
+    errors: list[str] = []
+    base_env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+
+    # 1. Score normalization: clamp, coerce, reject non-numeric/None/NaN.
+    cases = [
+        (8.5, 8.5), (10, 10.0), ("9.2", 9.2), (0, 0.0),
+        (11, 10.0), (-3, 0.0), ("", None), (None, None), ("abc", None),
+        (float("nan"), None),
+    ]
+    for raw, want in cases:
+        got = _normalize_qc_score(raw)
+        if want is None:
+            if got is not None:
+                errors.append(f"_normalize_qc_score({raw!r}) should be None, got {got!r}")
+        elif got != want:
+            errors.append(f"_normalize_qc_score({raw!r}) => {got!r}, expected {want!r}")
+
+    # 2. post_qc_score builds the right activity payload (capture via post_activity).
+    captured = {}
+
+    def _fake_activity(task_id, activity_type, message, metadata=None, *, env=None):
+        captured["task_id"] = task_id
+        captured["type"] = activity_type
+        captured["message"] = message
+        captured["metadata"] = metadata or {}
+        return True
+
+    orig_activity = globals()["post_activity"]
+    globals()["post_activity"] = _fake_activity
+    try:
+        # a) explicit score + gate → derives PASS at >= 8.5, score in metadata.
+        post_qc_score("t1", 8.5, "qc-built-form", scorecard_path="/e/sc.json", env=base_env)
+        if captured.get("type") != "completed":
+            errors.append("post_qc_score must post a 'completed' activity")
+        if "QC: 8.5/10 — qc-built-form" not in captured.get("message", ""):
+            errors.append(f"QC message shape wrong: {captured.get('message')!r}")
+        if "[PASS]" not in captured.get("message", ""):
+            errors.append("score 8.5 should derive [PASS] (>= 8.5 threshold)")
+        md = captured.get("metadata", {})
+        if md.get("qc_score") != 8.5 or md.get("qc_gate") != "qc-built-form":
+            errors.append(f"QC metadata missing score/gate: {md!r}")
+        if md.get("qc_passed") is not True:
+            errors.append("QC metadata qc_passed should be True at 8.5")
+        if md.get("scorecard_path") != "/e/sc.json":
+            errors.append("QC metadata must attach scorecard_path")
+
+        # b) sub-threshold score derives FAIL.
+        post_qc_score("t1", 7.0, "qc-built-funnel", env=base_env)
+        if "[FAIL]" not in captured.get("message", ""):
+            errors.append("score 7.0 should derive [FAIL] (< 8.5)")
+
+        # c) score-less, explicit passed=True → passed-only message, no qc_score key.
+        post_qc_score("t1", None, "render-gate", passed=True, env=base_env)
+        if "QC: render-gate [PASS]" not in captured.get("message", ""):
+            errors.append(f"score-less QC message wrong: {captured.get('message')!r}")
+        if "qc_score" in captured.get("metadata", {}):
+            errors.append("score-less QC must omit qc_score from metadata")
+
+        # d) empty task_id → False, no post.
+        if post_qc_score("", 9.0, "g", env=base_env) is not False:
+            errors.append("post_qc_score(empty task_id) should return False")
+    finally:
+        globals()["post_activity"] = orig_activity
+
+    # 3. Failure taxonomy: valid reason prefixes the note; invalid is dropped.
+    moves = []
+    acts = []
+
+    def _fake_move(task_id, status, note=None, *, env=None):
+        moves.append({"status": status, "note": note})
+        return True
+
+    def _fake_act2(task_id, activity_type, message, metadata=None, *, env=None):
+        acts.append({"type": activity_type, "message": message, "metadata": metadata})
+        return True
+
+    orig_move = globals()["move_task"]
+    orig_act = globals()["post_activity"]
+    globals()["move_task"] = _fake_move
+    globals()["post_activity"] = _fake_act2
+    try:
+        d = BuildPhaseDriver("tk", env=base_env)
+        d.fail(human_required=True, reason="selector-miss")  # case-insensitive
+        if not moves or moves[-1]["status"] != "blocked":
+            errors.append("fail(human_required=True) must move to 'blocked'")
+        if not moves or not str(moves[-1]["note"]).startswith("SELECTOR-MISS: "):
+            errors.append(f"fail reason must prefix note: {moves[-1]['note']!r}")
+        if not acts or (acts[-1]["metadata"] or {}).get("block_reason") != "SELECTOR-MISS":
+            errors.append("fail must attach block_reason metadata")
+
+        moves.clear(); acts.clear()
+        d2 = BuildPhaseDriver("tk2", env=base_env)
+        d2.fail(reason="not-a-real-reason")  # invalid → un-prefixed, still fail-soft
+        if not moves or moves[-1]["status"] != "backlog":
+            errors.append("fail() default target must be 'backlog'")
+        if moves and str(moves[-1]["note"]).split(":")[0] in _CC_BLOCK_REASONS:
+            errors.append("an invalid reason must NOT produce a taxonomy prefix")
+
+        # 4. Queue visibility → pending_dispatch naming the holder.
+        moves.clear(); acts.clear()
+        post_queue_wait("tk3", "ghl-skill6-LOC123", env=base_env)
+        if not moves or moves[-1]["status"] != "pending_dispatch":
+            errors.append("post_queue_wait must move to 'pending_dispatch'")
+        if not moves or "ghl-skill6-LOC123" not in str(moves[-1]["note"]):
+            errors.append("post_queue_wait note must name the lock holder")
+        if not acts or (acts[-1]["metadata"] or {}).get("holder_session") != "ghl-skill6-LOC123":
+            errors.append("post_queue_wait must carry holder_session metadata")
+
+        # 5. Multi-deliverable flow: deliverable() is non-terminal, review() terminates.
+        moves.clear(); acts.clear()
+        reg_calls = []
+        orig_reg = globals()["register_deliverable"]
+        globals()["register_deliverable"] = (
+            lambda tid, url, meta=None, *, env=None: (reg_calls.append(url) or True)
+        )
+        try:
+            dm = BuildPhaseDriver("tk4", env=base_env)
+            dm.deliverable("https://x/preview", meta={"type": "preview_url"})
+            dm.deliverable("https://x/embed", meta={"type": "embed_snippet"})
+            if len(reg_calls) != 2:
+                errors.append(f"two deliverable() calls should register 2, got {len(reg_calls)}")
+            if dm._finished:
+                errors.append("deliverable() must NOT finish the phase")
+            rc_review = dm.review()
+            if not rc_review or not dm._finished:
+                errors.append("review() must move to 'review' and finish the phase")
+            if not moves or moves[-1]["status"] != "review":
+                errors.append("review() must post 'review' status")
+            if dm.deliverable("https://x/late") is not False:
+                errors.append("deliverable() after review() must be a no-op (False)")
+        finally:
+            globals()["register_deliverable"] = orig_reg
+    finally:
+        globals()["move_task"] = orig_move
+        globals()["post_activity"] = orig_act
+
+    # 6. Taxonomy tuple is exactly the spec set (guards drift).
+    if set(_CC_BLOCK_REASONS) != {
+        "AUTH-STOP", "SELECTOR-MISS", "RATE-LIMIT", "TOKEN-CONTEXT", "PARKED", "VERIFY-FAIL"
+    }:
+        errors.append(f"_CC_BLOCK_REASONS drifted from spec taxonomy: {_CC_BLOCK_REASONS}")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[u9-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[u9-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
 def _demo(env: Optional[dict] = None) -> int:
     """Live demo — POST a test task to the board and print the result."""
     cfg = board_config(env)
@@ -1209,8 +1622,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Skill-6 Command Center board producer")
-    parser.add_argument("--selftest", action="store_true", help="Run ALL unit tests — ingest + status (no network)")
+    parser.add_argument("--selftest", action="store_true", help="Run ALL unit tests — ingest + status + U9 (no network)")
     parser.add_argument("--status-selftest", action="store_true", help="Run update_status unit tests only (no network)")
+    parser.add_argument("--u9-selftest", action="store_true", help="Run U9 §7 tightenings unit tests only (no network)")
     parser.add_argument("--demo", action="store_true", help="POST a live demo card to the board")
     parser.add_argument("--title", default="", help="Task title for --demo override")
     parser.add_argument(
@@ -1219,6 +1633,15 @@ if __name__ == "__main__":
         choices=["funnel", "website"],
         help="Job type for --demo",
     )
+    # U9 §7.2 — QC-score emission entry point used by qc-built-*.sh gates (fail-soft).
+    parser.add_argument("--emit-qc", action="store_true",
+                        help="Emit a QC verdict onto a card (post_qc_score). Requires --task-id + --gate.")
+    parser.add_argument("--task-id", default="", help="CC task UUID (with --emit-qc)")
+    parser.add_argument("--gate", default="", help="QC gate label, e.g. qc-built-form (with --emit-qc)")
+    parser.add_argument("--score", default="", help="0-10 numeric QC score (with --emit-qc); omit for passed-only")
+    parser.add_argument("--passed", default="", help="'1'/'0'/'true'/'false' explicit PASS/FAIL (with --emit-qc)")
+    parser.add_argument("--scorecard", default="", help="Path to the scorecard JSON (with --emit-qc). If --score is "
+                                                        "omitted, a numeric 'score' key is read from this file.")
     args = parser.parse_args()
 
     if args.selftest:
@@ -1226,9 +1649,46 @@ if __name__ == "__main__":
         rc_status = _status_selftest()
         rc_activity = _activity_selftest()
         rc_phase = _phase_driver_selftest()
-        sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0 and rc_phase == 0) else 1)
+        rc_u9 = _u9_selftest()
+        sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0
+                       and rc_phase == 0 and rc_u9 == 0) else 1)
     elif args.status_selftest:
         sys.exit(_status_selftest())
+    elif args.u9_selftest:
+        sys.exit(_u9_selftest())
+    elif args.emit_qc:
+        # Fail-soft QC emission for the shell gates. Never a build-blocker: any
+        # problem prints to stderr and exits 0 so a QC gate's own exit code (the
+        # real verdict) is what the build reads.
+        _tid = args.task_id.strip()
+        _gate = args.gate.strip()
+        if not _tid or not _gate:
+            _log("--emit-qc requires --task-id and --gate; skipped (no-op).")
+            sys.exit(0)
+        _score = args.score.strip() or None
+        # When no explicit --score, try to read a numeric 'score' from the scorecard.
+        if _score is None and args.scorecard.strip():
+            try:
+                with open(args.scorecard.strip()) as _fh:
+                    _sc = json.load(_fh)
+                if isinstance(_sc, dict):
+                    for _k in ("score", "score_10", "overall_score", "weighted_score", "final_score"):
+                        if _k in _sc and _normalize_qc_score(_sc[_k]) is not None:
+                            _score = _sc[_k]
+                            break
+            except (OSError, ValueError) as _exc:
+                _log(f"--emit-qc could not read score from {args.scorecard!r} ({_exc}); passed-only.")
+        _passed = None
+        _pv = args.passed.strip().lower()
+        if _pv in ("1", "true", "yes", "pass"):
+            _passed = True
+        elif _pv in ("0", "false", "no", "fail"):
+            _passed = False
+        ok = post_qc_score(_tid, _score, _gate, passed=_passed,
+                           scorecard_path=(args.scorecard.strip() or None))
+        _log(f"--emit-qc {'posted' if ok else 'not posted (fail-soft)'} "
+             f"task={_tid} gate={_gate} score={_score}.")
+        sys.exit(0)
     elif args.demo:
         sys.exit(_demo())
     else:
