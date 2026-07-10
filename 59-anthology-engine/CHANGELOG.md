@@ -1,6 +1,12 @@
 # Anthology Engine (Skill 59) -- Changelog
 
-## Unreleased (2026-07-09) -- U9: S9 assembly transitions + brand-new Grand Finale + ordering data
+## Unreleased (2026-07-09)
+
+Integration branch consolidating the Anthology Engine feature units (U5, U6, U7, U8,
+U9, U10, U19, U20, U21) under one Unreleased heading. Version intentionally left
+unbumped (see skill-version.txt / SKILL.md) until the release cut.
+
+### U9: S9 assembly transitions + brand-new Grand Finale + ordering data
 
 Adds the three assembly-finale pieces the current engine did not do. All LLM calls
 mocked in tests; no live model, no ledger schema change (the sole writer is untouched).
@@ -35,6 +41,46 @@ Changed:
   so a leaked ae-05/ae-06 tag is caught in deliverables too (33-check self-test green).
 - `ENGINE-MANIFEST.json`: registered the two new pins; S9 row records the two new
   provers and persona `ae-01..06`.
+
+### U10 / B4: chapter-rewrite preservation + LARGE_TEXT alignment (Gaps G10, G11)
+
+Rewrite-preservation build. A chapter rewrite no longer overwrites the base chapter
+fields; the original and every rewrite now coexist in Convert and Flow. The field-map
+also stops lying about the field dataType. Repo-only; no live GHL write.
+
+Changed:
+- `config/field-map.json`: added two rewrite-preservation deliverable pairs,
+  `rewrite1` (`contact.anthology_chapter_rewrite1_doc_url` / `_pdf_url`) and `rewrite2`
+  (`..._rewrite2_doc_url` / `_pdf_url`), plus their four provisioning rows (G10). The
+  base `chapter` pair keeps the original; a rewrite lands in its own pair. Flipped every
+  free-text key from `TEXT` to `LARGE_TEXT` (19 -> 23 keys) to match live and the
+  every-text-field-is-multi-line law (G11). `total_keys` 19 -> 23. SINGLE_OPTIONS fields
+  (review decision, cover choice) are deliberately not in this map.
+- `scripts/caf_delivery.py`: `FieldMap.deliverable_for_rewrite(n)` + a `rewrite_number`
+  arg on `deliverable_for_artifact_type()`; a `rewrite` artifact now routes to
+  `rewrite1`/`rewrite2` by the participant's rewrite_count and REFUSES a slot-less or
+  out-of-budget rewrite, so the base chapter is never overwritten. Self-test updated.
+- `scripts/stage_s8_deliver.py`: reads the ledger rewrite_count and routes the rewrite
+  to its preservation slot; writes it with byte-for-byte read-back; surfaces the count +
+  `contact.anthology_rewrite_count` control field.
+- `scripts/stage_s6_rewrite.py`: now delivers the rewrite (via S8) into rewrite1/rewrite2;
+  the strike-gate step's budget-exhausting exit 4 is treated as the *legal final rewrite*
+  at authoring time (previously it wrongly blocked the second rewrite). The hard
+  "no third rewrite" refusal remains owned by `anthology_state` at the request gate.
+- `scripts/anthology_registry.py`: create-default dataType `TEXT` -> `LARGE_TEXT`;
+  self-test asserts the 23-key inventory and that a fresh location provisions LARGE_TEXT.
+- `scripts/provision-anthology-client.sh`: operator surfaces say 23 keys / LARGE_TEXT.
+- `tests/test_rewrite_preservation.py` (new): mock-GHL proof that the original survives
+  both rewrites with read-back, a fresh location provisions LARGE_TEXT, and a third
+  rewrite is refused by the real ledger with the count surfaced.
+
+### Integration note (field-map key count)
+
+U10 above describes its isolated delta (19 -> 23 keys). Merged with U8's cover-style
+block, the field-map now carries **28** provisioning keys: 19 base + 4 G10 rewrite +
+5 U8 cover-style (four `anthology_cover_sample{1..4}_url` LARGE_TEXT + one
+`anthology_cover_choice` SINGLE_OPTIONS). The cover-choice SINGLE_OPTIONS field IS in
+the provisioning inventory (U8); the universal-review decision field remains out of it.
 
 ## 0.1.1 (2026-07-08) -- intake-transform comment scrub (guard-prompt-pins)
 

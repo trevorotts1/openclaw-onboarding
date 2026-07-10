@@ -359,11 +359,52 @@ class FieldMap:
                           % (name, ", ".join(sorted(self.deliverables))))
         return pair.get("doc_url"), pair.get("pdf_url")
 
-    def deliverable_for_artifact_type(self, artifact_type):
+    # PRD Gap G10: the two rewrite-preservation slots. A rewrite NEVER overwrites the
+    # base chapter pair; the Nth editors' rewrite lands in its own pair so the original
+    # (and any earlier rewrite) survives in the producer's Convert and Flow view.
+    REWRITE_BUDGET = 2
+
+    def deliverable_for_rewrite(self, rewrite_number):
+        """Map a 1-based rewrite number (the participant's rewrite_count at delivery
+        time: 1 for the first editors' rewrite, 2 for the second) to its preservation
+        deliverable name ('rewrite1' / 'rewrite2'). Refuses (exit 2) anything outside
+        1..REWRITE_BUDGET -- a silent third rewrite is illegal (SPEC S6), and slot 0
+        would mean 'no rewrite requested'. Also refuses if field-map.json does not
+        carry the pair (should never happen post-G10; a loud STOP beats a bad write)."""
+        try:
+            n = int(rewrite_number)
+        except (TypeError, ValueError):
+            raise _tenant("rewrite_number must be an integer in 1..%d, got %r (AF-AE-REWRITE-SLOT)"
+                          % (self.REWRITE_BUDGET, rewrite_number))
+        if not (1 <= n <= self.REWRITE_BUDGET):
+            raise _tenant("rewrite_number %d is outside the 1..%d rewrite budget (SPEC S6): a "
+                          "third rewrite is refused and slot 0 means no rewrite was requested "
+                          "(AF-AE-REWRITE-SLOT)" % (n, self.REWRITE_BUDGET))
+        name = "rewrite%d" % n
+        if name not in self.deliverables:
+            raise _tenant("rewrite slot %r missing from field-map.json deliverable_fields "
+                          "(G10 rewrite-preservation fields not provisioned) (AF-AE-VOCAB-DRIFT)"
+                          % name)
+        return name
+
+    def deliverable_for_artifact_type(self, artifact_type, rewrite_number=None):
         """Translate a ledger ARTIFACT_TYPES value (scripts/anthology_state.py) to
         this file's deliverable name. Every S8/S9 call into this module MUST run its
         artifact_type through this BEFORE naming a --deliverable (SESSION-LOG.md
-        drift #2). Refuses (exit 2) on an unmapped type -- never guesses."""
+        drift #2). Refuses (exit 2) on an unmapped type -- never guesses.
+
+        PRD Gap G10 rewrite exception: 'rewrite' does NOT resolve through the static
+        alias (which records only the content/render FAMILY, 'chapter'). A rewrite
+        MUST name which preservation slot it lands in, so the caller passes
+        rewrite_number (the participant's rewrite_count: 1 or 2) and this returns
+        'rewrite1'/'rewrite2'. Calling it for 'rewrite' WITHOUT a rewrite_number is a
+        hard refusal -- never a silent overwrite of the base chapter pair."""
+        if artifact_type == "rewrite":
+            if rewrite_number is None:
+                raise _tenant("a 'rewrite' artifact must name its preservation slot via "
+                              "rewrite_number (1 or 2); routing it to the base chapter pair "
+                              "would destroy the original (PRD Gap G10) (AF-AE-REWRITE-SLOT)")
+            return self.deliverable_for_rewrite(rewrite_number)
         name = self.artifact_type_aliases.get(artifact_type)
         if not name:
             raise _tenant("no deliverable mapping for artifact_type %r (AF-AE-VOCAB-DRIFT); "
@@ -1395,7 +1436,8 @@ def self_test():
     if DEFAULT_FIELD_MAP.exists():
         fm = FieldMap.load(DEFAULT_FIELD_MAP)
         keys = fm.all_keys()
-        check("field-map has 19 keys (16 deliverable + 3 control)", len(keys) == 19)
+        check("field-map has 23 keys (20 deliverable + 3 control; G10 adds rewrite1/rewrite2)",
+              len(keys) == 23)
         check("field-map avatar keys exact",
               fm.deliverable_keys("avatar") == ("contact.anthology_avatar_doc_url",
                                                 "contact.anthology_avatar_pdf_url"))
@@ -1419,8 +1461,6 @@ def self_test():
               set(fm.artifact_type_aliases.values()) <= set(fm.deliverables))
         check("deliverable_for_artifact_type: chapter -> chapter",
               fm.deliverable_for_artifact_type("chapter") == "chapter")
-        check("deliverable_for_artifact_type: rewrite -> chapter (drift #2 fix)",
-              fm.deliverable_for_artifact_type("rewrite") == "chapter")
         check("deliverable_for_artifact_type: anthology_manuscript -> manuscript (drift #2 fix)",
               fm.deliverable_for_artifact_type("anthology_manuscript") == "manuscript")
         try:
@@ -1428,6 +1468,41 @@ def self_test():
             check("deliverable_for_artifact_type refuses an unknown artifact_type", False)
         except DeliveryError as e:
             check("deliverable_for_artifact_type unknown type exit 2", e.code == EX_TENANT)
+
+        # ---- G10 rewrite preservation: rewrite routes to its OWN slot, never chapter --
+        check("G10 rewrite1/rewrite2 pairs exist in field-map",
+              "rewrite1" in fm.deliverables and "rewrite2" in fm.deliverables)
+        check("G10 deliverable_for_artifact_type('rewrite', 1) -> rewrite1",
+              fm.deliverable_for_artifact_type("rewrite", rewrite_number=1) == "rewrite1")
+        check("G10 deliverable_for_artifact_type('rewrite', 2) -> rewrite2",
+              fm.deliverable_for_artifact_type("rewrite", rewrite_number=2) == "rewrite2")
+        check("G10 deliverable_for_rewrite('1') coerces str -> rewrite1",
+              fm.deliverable_for_rewrite("1") == "rewrite1")
+        # a rewrite MUST name its slot -- a slot-less rewrite would overwrite the base
+        try:
+            fm.deliverable_for_artifact_type("rewrite")
+            check("G10 rewrite without a slot is refused (never overwrites base chapter)", False)
+        except DeliveryError as e:
+            check("G10 rewrite without a slot exit 2", e.code == EX_TENANT)
+        # a third rewrite slot is refused (SPEC S6 budget 2)
+        for bad in (0, 3):
+            try:
+                fm.deliverable_for_rewrite(bad)
+                check("G10 rewrite slot %d refused (budget 2)" % bad, False)
+            except DeliveryError as e:
+                check("G10 rewrite slot %d exit 2" % bad, e.code == EX_TENANT)
+        # the rewrite slots are DISJOINT from the base chapter pair -> writing one
+        # cannot touch the original.
+        base = set(fm.deliverable_keys("chapter"))
+        r1 = set(fm.deliverable_keys("rewrite1"))
+        r2 = set(fm.deliverable_keys("rewrite2"))
+        check("G10 rewrite slots disjoint from base chapter + each other",
+              not (base & r1) and not (base & r2) and not (r1 & r2))
+        check("G10 all rewrite-preservation keys are the PRD Section 4 keys",
+              r1 == {"contact.anthology_chapter_rewrite1_doc_url",
+                     "contact.anthology_chapter_rewrite1_pdf_url"} and
+              r2 == {"contact.anthology_chapter_rewrite2_doc_url",
+                     "contact.anthology_chapter_rewrite2_pdf_url"})
 
         # ---- drift #1: ids resolve from the registry-stamped field-map, not live --
         # Build a throwaway field-map carrying ONE resolved (registry-stamped) id,
