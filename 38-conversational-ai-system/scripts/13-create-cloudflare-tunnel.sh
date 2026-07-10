@@ -90,12 +90,60 @@ TUNNEL_TOKEN="$(cf "$API/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/t
 [[ -n "$TUNNEL_TOKEN" ]] || { echo "could not fetch connector token" >&2; exit 6; }
 echo "connector token retrieved (redacted; length=${#TUNNEL_TOKEN})" >&2
 
-# ---- E. Set ingress ----------------------------------------------------------
+# ---- E. Set ingress (GET -> MERGE -> PUT; never a full-replace) ---------------
+# ROOT-CAUSE FIX (wrong-port / CF 1303 on the Command Center): the fleet runs ONE
+# tunnel per box carrying multiple ingress hostnames on a SINGLE ingress array
+# (CC dashboard -> :4000, this gateway host -> :18789, podcast -> :4010). CF's PUT
+# /configurations REPLACES the whole array. The previous full-replace here PUT
+# only [{PUBLIC_HOSTNAME -> :18789}, {404}], which — whenever this box's gateway
+# host shares the tunnel that also serves the Command Center — DELETED the CC's
+# "<client>.zerohumanworkforce.com -> http://localhost:4000" rule. That produced
+# CF 1303 (no route) for the CC link, or a 502 if a still-routed host got
+# re-pointed at :18789. We now GET the current config and MERGE: keep every
+# existing hostname rule, (re)write only OUR host, keep exactly one catch-all
+# last. Then a fail-loud guard refuses to PUT any config that would leave a CC
+# hostname on a non-:4000 port.
+CUR_CFG="$(cf "$API/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations")"
+[ "$(printf '%s' "$CUR_CFG" | jq -r '.success // false')" = "true" ] \
+  || { echo "could not read current tunnel ingress (GET /configurations failed)" >&2; exit 7; }
+
+# Merge OUR host -> gateway port, preserving all sibling rules and a single 404 last.
+PUT_BODY="$(printf '%s' "$CUR_CFG" | jq \
+  --arg host "$PUBLIC_HOSTNAME" --arg svc "http://localhost:$GATEWAY_PORT" '
+  (.result.config // .config // {}) as $cfg
+  | ($cfg.ingress // []) as $ing
+  | ($ing | map(select(has("hostname") and (.hostname != $host)))) as $hosts
+  | {config: ($cfg | .ingress = (
+        $hosts + [{hostname:$host, service:$svc}] + [{service:"http_status:404"}]
+      ))}')"
+
+# GUARD: never PUT a config in which a Command Center dashboard host points
+# anywhere other than :4000. A CC dashboard host is a "<slug>.zerohumanworkforce.com"
+# host that is NOT a known sibling service host (the gateway "…-hooks" on :18789 or
+# the podcast "…-podcast" board on :4010) — slugs may themselves contain hyphens, so
+# we identify CC hosts by EXCLUDING the sibling suffixes, not by a hyphen pattern.
+# If the GET returned such a CC rule, the merge preserves it; if some prior clobber
+# already broke it, we refuse to compound the damage and tell the operator to repair.
+CC_PORT_EXPECTED="4000"
+CC_DRIFT="$(printf '%s' "$PUT_BODY" | jq -r --arg p "$CC_PORT_EXPECTED" '
+  (.config.ingress // [])
+  | map(select(.hostname != null))
+  | map(select(.hostname | endswith(".zerohumanworkforce.com")))
+  | map(select(.hostname | (endswith("-hooks.zerohumanworkforce.com")
+                            or endswith("-podcast.zerohumanworkforce.com")) | not))
+  | map(select((.service // "") | test(":" + $p + "$") | not))
+  | map(.hostname + " -> " + (.service // "")) | join("; ")')"
+if [ -n "$CC_DRIFT" ]; then
+  echo "CC-INGRESS-GUARD FAIL: refusing to PUT — a Command Center host would be on a non-:${CC_PORT_EXPECTED} port: $CC_DRIFT" >&2
+  echo "  The CC public link would 502 / CF-1303. Repair the CC ingress (-> http://localhost:${CC_PORT_EXPECTED}) before re-running." >&2
+  exit 7
+fi
+
 cf -X PUT "$API/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
   -H "Content-Type: application/json" \
-  --data "{\"config\":{\"ingress\":[{\"hostname\":\"$PUBLIC_HOSTNAME\",\"service\":\"http://localhost:$GATEWAY_PORT\"},{\"service\":\"http_status:404\"}]}}" \
+  --data "$PUT_BODY" \
   | jq -r '.success' | grep -q true || { echo "ingress PUT failed" >&2; exit 7; }
-echo "ingress configured: $PUBLIC_HOSTNAME → http://localhost:$GATEWAY_PORT" >&2
+echo "ingress configured (merged): $PUBLIC_HOSTNAME → http://localhost:$GATEWAY_PORT (sibling rules preserved)" >&2
 
 # ---- F. CNAME with PROD-clobber guard ----------------------------------------
 EXISTING="$(cf "$API/zones/$ZONE_ID/dns_records?name=$PUBLIC_HOSTNAME" | jq -r '.result[0] // empty')"
