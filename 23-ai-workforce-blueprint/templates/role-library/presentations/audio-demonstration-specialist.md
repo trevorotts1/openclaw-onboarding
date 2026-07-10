@@ -59,7 +59,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 ### When an Audio Demo Task Arrives
 
 1. Confirm WANT_AUDIO_DEMO = true in intake.json / brief.json and DELIVERABLE_SET includes audio. If not, do not run.
-2. Confirm the Presenters Speech (ROLE-20) has passed its QC and exists at working/presenter-speech/presenters_speech.md. The demo is built from the QC-passed speech.
+2. Confirm the Presenters Speech (ROLE-20) has passed its QC and exists at working/presenter-speech/PRESENTERS-SPEECH.md. The demo is built from the QC-passed speech.
 3. Read the chosen demo voice / persona from the brief (WANT_AUDIO_DEMO carries a voice/persona). Pull the TTS keys (FISH_AUDIO, ELEVENLABS) from the client env stores; confirm presence before synthesis.
 4. Run SOP 9.1: tag the script with expression tags by engine (S2 brackets / EL v3 tags / S1 parens), max 2 tags per line, pairing a physical and an emotional tag.
 5. Run SOP 9.2: chunk the speech and synthesize per chunk through the fallback chain (loud-fail and fall through on any leg error).
@@ -106,7 +106,7 @@ RE-VERIFY against live docs: the Fish Audio API (endpoint, model ids, tag syntax
 
 ## 8. Tools You Use
 
-- working/presenter-speech/presenters_speech.md (read: the QC-passed source script)
+- working/presenter-speech/PRESENTERS-SPEECH.md (read: the QC-passed source script)
 - working/copy/hook_package.json (read: the hook beats to emphasize)
 - working/copy/price_ladder.json (read: the drops to energize)
 - Fish Audio API (`POST https://api.fish.audio/v1/tts`, Bearer, model s2-pro, mp3 up to 192 kbps; keys from client env stores FISH_AUDIO)
@@ -128,7 +128,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** After the Presenters Speech passes QC and WANT_AUDIO_DEMO = true.
 
 **Inputs:**
-- working/presenter-speech/presenters_speech.md (the QC-passed script)
+- working/presenter-speech/PRESENTERS-SPEECH.md (the QC-passed script)
 - working/copy/hook_package.json (the hook beats)
 - working/copy/price_ladder.json (the drops)
 - the chosen demo voice / persona from the brief
@@ -294,7 +294,7 @@ The Delivery Concierge has returned a verified-delivery confirmation. Self-repor
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- Presenters Speech Writer (ROLE-20) -- the QC-passed presenters_speech.md (your source script)
+- Presenters Speech Writer (ROLE-20) -- the QC-passed PRESENTERS-SPEECH.md (your source script)
 - Hook Strategist (ROLE-15) -- the hook beats to emphasize
 - Offer and Price Strategist (ROLE-07) -- the drops to energize
 - Director of Presentations -- the dispatch (only when WANT_AUDIO_DEMO = true and DELIVERABLE_SET includes audio)

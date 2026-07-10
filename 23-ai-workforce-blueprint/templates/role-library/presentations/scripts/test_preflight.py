@@ -305,7 +305,11 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         deck_slides = [
             {"slide": i,
              "scene": f"Editorial office scene {i}, documentary photography.",
-             "copy": [f"Northwind Co", f"Converting beat {i}"]}
+             # AF-COPY-BAND (build_deck.py COPY_* bands): headline "Northwind Co" is
+             # 12 chars (exactly the 12-char floor); the subhead is sized to clear
+             # the 20-110 char subhead band and keep the 40-180 char slide-total
+             # band in range for every i in this fixture's range.
+             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]}
             for i in range(1, _floor_slides + 1)
         ]
         (root / "slides.json").write_text(json.dumps(deck_slides))
@@ -507,9 +511,10 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             json.dumps(_img_qc_base))
         # speech_qc_report.json intentionally ABSENT here -> AF-SPEECH-QC defers (pre-delivery).
         # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM), one per slide.
-        # Each slide's copy is ["Northwind Co", "Converting beat {i}"] (from deck_slides
-        # above). RICH_PROMPT contains "Northwind Co" verbatim; we append the slide-specific
-        # "Converting beat {i}" copy block so the verbatim-words-baked check (AF-P-VERBATIM)
+        # Each slide's copy is ["Northwind Co", "Converting beat {i} into repeatable
+        # revenue"] (from deck_slides above — the AF-COPY-BAND-compliant subhead).
+        # RICH_PROMPT contains "Northwind Co" verbatim; we append the slide-specific
+        # subhead copy block so the verbatim-words-baked check (AF-P-VERBATIM)
         # passes for every slide when the CLI threads slides.json into _collect_prompt_problems.
         if rich_prompts:
             for i in range(1, _floor_slides + 1):
@@ -518,8 +523,8 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
                 else:
                     copy_block = (
                         f"\nHEADLINE VERBATIM SLIDE {i}: The slide subhead reads exactly: "
-                        f"'Converting beat {i}'. Render this exact string letter-for-letter "
-                        f"with zero modification, spelled correctly.\n"
+                        f"'Converting beat {i} into repeatable revenue'. Render this exact "
+                        f"string letter-for-letter with zero modification, spelled correctly.\n"
                     )
                     text = RICH_PROMPT + copy_block
                 (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
@@ -2583,6 +2588,94 @@ def test_runner_attestation_seen_by_preconditions():
     return fails
 
 
+def test_runner_next_turn_gate():
+    """FOUNDATION (--next phase turn-gate). The runner — not prose — is the agent's
+    interface to what is next. Proves, directly against emit_next's phase selector:
+      (a) an empty ledger => the FIRST manifest phase (lowest order) is served;
+      (b) after that phase is attested, --next advances to the NEXT unattested phase;
+      (c) an owner-authorized skip of the next phase is treated as satisfied (skipped);
+      (d) every phase attested => next_phase is None (all_phases_complete);
+      (e) the served phase carries an attest_command naming that exact --phase id;
+      (f) --next NEVER selects an out-of-order phase (it returns the lowest-order
+          unattested phase, i.e. exactly the phase the precondition gate would allow)."""
+    import importlib
+    rsd = importlib.import_module("run_signature_deck")
+    fails = []
+    phases = rsd.load_manifest()["phases"]
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    first_id = ordered[0]["id"]
+    second_id = ordered[1]["id"]
+
+    rd = Path(tempfile.mkdtemp(prefix="deck_next_gate_"))
+    (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+
+    # (a) empty ledger => first phase.
+    ph, k, N = rsd._next_required_phase(rd, phases)
+    if ph is None or ph["id"] != first_id or k != 1 or N != len(ordered):
+        fails.append(f"NEXT-GATE (a): empty ledger should serve {first_id!r} step 1/{len(ordered)}, "
+                     f"got {ph and ph['id']!r} step {k}/{N}")
+
+    # (b) attest the first phase => --next advances to the second.
+    rsd.attest_phase(rd, first_id, ordered[0].get("owning_role", ""), "artifact_present",
+                     "no-artifact-spec")
+    ph2, k2, _ = rsd._next_required_phase(rd, phases)
+    if ph2 is None or ph2["id"] != second_id or k2 != 2:
+        fails.append(f"NEXT-GATE (b): after attesting {first_id!r}, next should be {second_id!r} "
+                     f"step 2, got {ph2 and ph2['id']!r} step {k2}")
+
+    # (c) an owner-authorized skip of the second phase => it is treated as satisfied.
+    (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": second_id, "owner_approved": True,
+                        "approved_by": "owner", "reason": "not applicable to this deck",
+                        "timestamp": "2026-07-10T12:00:00Z", "owner_msg_id": "42"}]}))
+    ph3, _, _ = rsd._next_required_phase(rd, phases)
+    if ph3 is not None and ph3["id"] == second_id:
+        fails.append(f"NEXT-GATE (c): an owner-authorized skip of {second_id!r} should be treated "
+                     f"as satisfied, but --next still served it")
+
+    # (d) every phase attested => next_phase is None.
+    rd2 = Path(tempfile.mkdtemp(prefix="deck_next_done_"))
+    (rd2 / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    atts = [{"phase_id": p["id"], "artifact_sha": "x"} for p in phases]
+    (rd2 / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": atts}))
+    phN, _, _ = rsd._next_required_phase(rd2, phases)
+    if phN is not None:
+        fails.append(f"NEXT-GATE (d): a fully-attested ledger should serve no next phase, "
+                     f"got {phN['id']!r}")
+
+    # (e) the served phase's attest_command names that exact --phase id (via emit_next JSON).
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rsd.emit_next(rd2, phases)  # all complete -> should be all_phases_complete
+    done_payload = json.loads(buf.getvalue())
+    if done_payload.get("status") != "all_phases_complete" or done_payload.get("next_phase") is not None:
+        fails.append(f"NEXT-GATE (e): all-complete emit_next should report all_phases_complete/None, "
+                     f"got status={done_payload.get('status')!r}")
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    served = json.loads(buf2.getvalue()).get("next_phase") or {}
+    cmd = served.get("attest_command", "")
+    if not served.get("id") or f"--phase {served.get('id')}" not in cmd:
+        fails.append(f"NEXT-GATE (e2): served phase's attest_command must name '--phase "
+                     f"{served.get('id')}', got {cmd!r}")
+
+    # (f) out-of-order safety: the served phase is always the LOWEST-order unattested/
+    #     un-skip-approved phase (exactly what the precondition gate permits).
+    attested_ids = {first_id}
+    skip_ids = {second_id}
+    expected = next(p["id"] for p in ordered if p["id"] not in attested_ids and p["id"] not in skip_ids)
+    if served.get("id") != expected:
+        fails.append(f"NEXT-GATE (f): --next must serve the lowest-order pending phase "
+                     f"{expected!r}, got {served.get('id')!r}")
+
+    print(f"RUNNER --next TURN-GATE       -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_chk_no_overlay():
     """5C AF-OVERLAY-DELIVERED: a present pptx_text_overlays.json FAILS; a run with no
     overlay file + no delivered PPTX PASSES."""
@@ -2593,6 +2686,136 @@ def test_chk_no_overlay():
     if build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=False)):
         fails.append("OVERLAY: clean run (no overlay file) should PASS but failed")
     print(f"NO-OVERLAY (5C)              -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+# ---------------------------------------------------------------------------
+# P9.5-NOTES-SYNC / AF-EMPTY-NOTES-PANE — the notes-pane reorder fix. Builds a
+# REAL .pptx (via build_deck.assemble_pptx, python-pptx end to end, not a magic-byte
+# stub) with a small solid-color PNG per slide, so _chk_notes_pane and
+# notes_sync_pass exercise the actual OOXML notes part.
+# ---------------------------------------------------------------------------
+
+def _tiny_png(path: Path, color=(20, 40, 60)) -> None:
+    """Write a minimal real PNG (python-pptx needs real image dimensions)."""
+    try:
+        from PIL import Image as _PilImage
+        _PilImage.new("RGB", (64, 36), color).save(str(path))
+    except ImportError:
+        # PIL absent: raw 1x1 PNG (still openable by python-pptx's Pillow dep in
+        # most environments; if this environment lacks Pillow entirely the whole
+        # PPTX-building test suite is already degraded, not just this one).
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0"
+            b"\x00\x00\x03\x01\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82")
+
+
+def _notes_pane_bundle(n_slides: int = 3, speech_chunks=None) -> tuple:
+    """Build a real bundle dir with an assembled <slug>-FINAL.pptx (n_slides slides)
+    and, when speech_chunks is given, injects those notes via assemble_pptx exactly
+    as P8-ASSEMBLE does. Returns (bundle_dir, run_dir, slug, pptx_path)."""
+    import tempfile
+    bundle_dir = Path(tempfile.mkdtemp(prefix="deck_notespane_bundle_"))
+    run_dir = Path(tempfile.mkdtemp(prefix="deck_notespane_run_"))
+    (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    slug = "test-deck"
+    renders_dir = bundle_dir / "_renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    rendered = []
+    for i in range(1, n_slides + 1):
+        p = renders_dir / f"slide-{i:02d}.png"
+        _tiny_png(p)
+        rendered.append({"slide": i, "file": str(p)})
+    pptx_path = bundle_dir / f"{slug}-FINAL.pptx"
+    build_deck.assemble_pptx(rendered, pptx_path, logo_path=None,
+                             speech_chunks=speech_chunks)
+    return bundle_dir, run_dir, slug, pptx_path
+
+
+def test_chk_notes_pane():
+    """AF-EMPTY-NOTES-PANE: a delivered .pptx with no notes on any slide FAILS; the
+    same deck re-assembled WITH speech chunks injected PASSES; a bundle dir with no
+    .pptx at all defers to AF-BUNDLE-COMPLETE (passes here, nothing to inspect)."""
+    fails = []
+
+    # (a) empty notes panes -> FAIL, naming the empty slides.
+    bundle_dir, run_dir, slug, pptx_path = _notes_pane_bundle(n_slides=3)
+    r = build_deck._chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=None)
+    if not r or "AF-EMPTY-NOTES-PANE" not in r:
+        fails.append(f"NOTES-PANE-A: empty notes panes should FAIL, got {r!r}")
+
+    # (b) every slide carries a real spoken chunk -> PASS.
+    chunks = {1: "Welcome, this is slide one, word for word.",
+              2: "Here is slide two's full spoken script.",
+              3: "And the close, slide three, word for word."}
+    bundle_dir2, run_dir2, slug2, pptx_path2 = _notes_pane_bundle(n_slides=3,
+                                                                   speech_chunks=chunks)
+    r2 = build_deck._chk_notes_pane(bundle_dir2, run_dir=run_dir2, slides_path=None)
+    if r2:
+        fails.append(f"NOTES-PANE-B: fully-noted deck should PASS, got {r2!r}")
+
+    # (c) no .pptx in bundle_dir at all -> defers (AF-BUNDLE-COMPLETE's job, not ours).
+    import tempfile
+    empty_bundle = Path(tempfile.mkdtemp(prefix="deck_notespane_empty_"))
+    r3 = build_deck._chk_notes_pane(empty_bundle, run_dir=None, slides_path=None)
+    if r3:
+        fails.append(f"NOTES-PANE-C: no pptx present should defer (pass), got {r3!r}")
+
+    print(f"NOTES-PANE (AF-EMPTY-NOTES-PANE) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_notes_sync_pass():
+    """notes_sync_pass (P9.5-NOTES-SYNC): reopens an assembled-but-empty .pptx and
+    injects notes from a real PRESENTERS-SPEECH.md on disk. Idempotent: running it
+    twice produces the same notes (overwrite, never append/duplicate)."""
+    fails = []
+    bundle_dir, run_dir, slug, pptx_path = _notes_pane_bundle(n_slides=2)
+
+    speech_dir = run_dir / "working" / "presenter-speech"
+    speech_dir.mkdir(parents=True, exist_ok=True)
+    (speech_dir / "PRESENTERS-SPEECH.md").write_text(
+        "## Slide 1 -- Welcome\n"
+        "Welcome everyone, thanks for joining today's session.\n"
+        "---\n"
+        "## Slide 2 -- The Close\n"
+        "That is everything -- let's get you started right now.\n"
+        "---\n"
+    )
+
+    result = build_deck.notes_sync_pass(pptx_path, run_dir, bundle_dir)
+    if result.get("status") != "synced":
+        fails.append(f"NOTES-SYNC-A: expected status=synced, got {result!r}")
+    if result.get("slides_with_notes") != 2:
+        fails.append(f"NOTES-SYNC-A: expected 2 slides noted, got {result!r}")
+
+    # AF-EMPTY-NOTES-PANE must now PASS on the re-synced deck.
+    r = build_deck._chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=None)
+    if r:
+        fails.append(f"NOTES-SYNC-B: post-sync deck should clear AF-EMPTY-NOTES-PANE, "
+                     f"got {r!r}")
+
+    # Idempotency: run again — same slide count noted, no duplication/append.
+    result2 = build_deck.notes_sync_pass(pptx_path, run_dir, bundle_dir)
+    if result2.get("slides_with_notes") != 2:
+        fails.append(f"NOTES-SYNC-C (idempotent re-run): expected 2, got {result2!r}")
+    from pptx import Presentation
+    prs = Presentation(str(pptx_path))
+    note1 = prs.slides[0].notes_slide.notes_text_frame.text
+    if note1.count("Welcome everyone") != 1:
+        fails.append(f"NOTES-SYNC-C: re-run should OVERWRITE not append, got note "
+                     f"text {note1!r}")
+
+    # No-speech case: a fresh assembled deck with no speech on disk -> status
+    # 'no_speech', non-fatal, notes pane left untouched (still empty).
+    bundle_dir3, run_dir3, slug3, pptx_path3 = _notes_pane_bundle(n_slides=1)
+    result3 = build_deck.notes_sync_pass(pptx_path3, run_dir3, bundle_dir3)
+    if result3.get("status") != "no_speech":
+        fails.append(f"NOTES-SYNC-D: no speech on disk should report no_speech, "
+                     f"got {result3!r}")
+
+    print(f"NOTES-SYNC (P9.5-NOTES-SYNC) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -3024,6 +3247,17 @@ def emit_af_coverage():
     rd = _speech_run_dir(30, 3500)
     record("AF-SPEECH-SHORT", build_deck._chk_speech_length(rd))
 
+    # AF-COPY-BAND — a slide with a 1-char headline (under the 12-char floor) and
+    # 4 bullets (over the 3-bullet max) FAILS _chk_copy_density.
+    cb_root = Path(tempfile.mkdtemp(prefix="deck_copy_band_test_"))
+    (cb_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (cb_root / "working" / "copy" / "slides.json").write_text(json.dumps([
+        {"slide": 1, "scene": "x",
+         "copy": ["H", "A subhead that is comfortably long enough to clear the floor",
+                  "kicker", "one", "two", "three", "four"]},
+    ]))
+    record("AF-COPY-BAND", build_deck._chk_copy_density(cb_root))
+
     # AF-QC-INDEPENDENCE — a self-graded copy QC report FAILS _chk_copy_qc.
     p = _qc_report_path({"gate": "Phase 1Q", "average": 9.1,
                          "triggered_autofails": [], "pass": True})  # no provenance
@@ -3187,6 +3421,14 @@ def emit_af_coverage():
     # native-overlay path) FAILS _chk_no_overlay.
     record("AF-OVERLAY-DELIVERED",
            build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=True)))
+
+    # AF-EMPTY-NOTES-PANE (P9.5-NOTES-SYNC reorder) — an assembled deck with no
+    # speech chunks injected (empty notes panes on every content slide) FAILS
+    # _chk_notes_pane.
+    _np_bundle_dir, _np_run_dir, _np_slug, _np_pptx = _notes_pane_bundle(n_slides=2)
+    record("AF-EMPTY-NOTES-PANE",
+           build_deck._chk_notes_pane(_np_bundle_dir, run_dir=_np_run_dir,
+                                      slides_path=None))
 
     # AF-PHASE-SKIPPED (3C) — dispatching a phase before a prior phase is attested
     # (and with no owner-authorized skip record) FAILS check_phase_preconditions. An
@@ -4233,9 +4475,17 @@ def main():
     # v16.1.5 (Defect 1) — a phase attested via the RUNNER's own attest path is SEEN by
     # the shared precondition gate (no false AF-PHASE-SKIPPED); a genuine skip STILL trips.
     failures += test_runner_attestation_seen_by_preconditions()
+    # FOUNDATION — the --next phase turn-gate serves ONLY the single next required phase,
+    # advances on attestation, honors owner-authorized skips, and never picks out-of-order.
+    failures += test_runner_next_turn_gate()
 
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
+
+    # Notes-pane reorder (P9.5-NOTES-SYNC / AF-EMPTY-NOTES-PANE) — the gate fires on
+    # an empty notes pane and clears once notes_sync_pass() re-injects real notes.
+    failures += test_chk_notes_pane()
+    failures += test_notes_sync_pass()
 
     # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).

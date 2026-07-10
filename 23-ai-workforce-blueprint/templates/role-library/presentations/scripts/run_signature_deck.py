@@ -72,9 +72,20 @@ SHIFT-LEFT QC SEND-BACK LOOPS (v15.0.0)
 USAGE
     python3 run_signature_deck.py --run-dir DIR --slides slides.json --out out.pptx
         [--plan]            # print the resolved phase plan + preconditions, do not run
+        [--next]            # print ONLY the single next required phase (turn-gate), read-only
         [--phase PHASE_ID]  # advance to / dispatch a single phase (checks preconditions)
         [--platform vps|mac]
         [--adhoc]           # owner-authorized + logged escape (refused without the record)
+
+THE PHASE TURN-GATE (--next). The RUNNER — not prose — is the agent's interface to
+"what is next." `--next` reads PIPELINE-MANIFEST.json + the on-disk attestation
+ledger and emits ONE payload describing ONLY the single next required phase (its
+owning role, artifact contract, SOP refs, and the exact attest command). It
+deliberately refuses to describe anything further ahead. The orchestrating loop is:
+`--next` -> do exactly that one phase -> `--phase <ID>` (verify + attest) -> `--next`.
+Because attestation is order-enforced (check_phase_preconditions, AF-PHASE-SKIPPED)
+the agent physically cannot run the process out of the order the runner serves it.
+Canonical doctrine home: universal-sops/PRESENTATION-MASTER-DOCTRINE.md.
 
 This is a SCRIPT (not a manifest role/phase). sync_check.py does not require a
 symbol for it; AF-PHASE-SKIPPED is enforced_by:runner with py_symbol:null.
@@ -122,8 +133,8 @@ _GOVERNED_VERIFIER_PHASES = frozenset({
     "P-CONVERTER", "P-0.5-RESEARCH", "P0A-INTAKE", "P0B-PRIORITY", "P3-ARC",
     "P-3.5-RESEARCH-MAP", "P4-COPY", "P1Q-COPY-QC", "PF-DESIGN", "P-TYPO-QC",
     "P4-PROMPT", "P-PROMPT-QC", "P-STYLE-PREVIEW", "P4-RENDER", "P-IMAGE-QC",
-    "P-SHIFT-QC", "P8-ASSEMBLE", "P9-SPEECH", "P-SPEECH-QC", "P9-DELIVER",
-    "P-SP-INTAKE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
+    "P-SHIFT-QC", "P8-ASSEMBLE", "P9-SPEECH", "P-SPEECH-QC", "P9.5-NOTES-SYNC",
+    "P9-DELIVER", "P-SP-INTAKE", "P-SP-STRUCTURE", "P-SP-P3-HYGIENE",
 })
 if _pv is not None:
     try:
@@ -170,6 +181,14 @@ PROMPT_QC_MAX_ATTEMPTS = max(1, int(os.environ.get("PROMPT_QC_MAX_ATTEMPTS", "4"
 COPY_QC_PHASE_ID = "P1Q-COPY-QC"     # manifest order 4.2 — BEFORE any prompt authored
 PROMPT_QC_PHASE_ID = "P-PROMPT-QC"   # manifest order 4.8 — BEFORE any render
 ASSEMBLE_PHASE_ID = "P8-ASSEMBLE"    # manifest order 8 — deck-harmony checkpoint fires first
+# P9.5-NOTES-SYNC (manifest order 8.7) — fires AFTER P9-SPEECH/P-SPEECH-QC and BEFORE
+# P9-DELIVER. Reopens the already-assembled .pptx and re-injects per-slide speaker
+# notes from the now QC-passed presenter speech (build_deck.notes_sync_pass). This is
+# the code fix for the documented root cause: assembly (P8) precedes the speech
+# (P9), so the notes pane is empty at assembly time on a normal linear run. The
+# postflight AF-EMPTY-NOTES-PANE gate (build_deck._chk_notes_pane) is what turns an
+# un-synced deck into a hard delivery failure; this phase is what fixes it in time.
+NOTES_SYNC_PHASE_ID = "P9.5-NOTES-SYNC"
 
 # Exit codes for the loops (distinct from guard=5, balance=4, render=3, skip=2).
 EXIT_QC_ROUTEBACK = 6   # routeback written; downstream phase BLOCKED pending re-author
@@ -844,6 +863,90 @@ def print_plan(run_dir: Path, phases: list) -> None:
 
 
 # ---------------------------------------------------------------------------
+# --next PHASE TURN-GATE (the runner is the agent's interface to "what is next")
+# ---------------------------------------------------------------------------
+def _next_required_phase(run_dir: Path, phases: list):
+    """Return (phase_dict, k, N) for the FIRST phase in ascending `order` that is
+    NEITHER attested NOR covered by a logged owner-authorized skip; or (None, N, N)
+    when every phase is attested / skip-approved. This is the same ordered set the
+    precondition gate walks, so the phase --next names is exactly the phase the next
+    --phase call is allowed to attest."""
+    attested = _attested_phase_ids(run_dir)
+    approvals = set(load_skip_approvals(run_dir).keys())
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    total = len(ordered)
+    for i, ph in enumerate(ordered):
+        pid = ph["id"]
+        if pid in attested or pid in approvals:
+            continue
+        return ph, i + 1, total
+    return None, total, total
+
+
+def emit_next(run_dir: Path, phases: list) -> None:
+    """--next PHASE TURN-GATE. Emits ONE JSON payload for ONLY the single next
+    required phase — its id/order/owning role, the artifact contract
+    (produces_artifact path + the manifest's required_brief_categories 'keys' + a
+    flag for whether a substance verifier runs at attest time), the SOP refs, the
+    gate codes, and the EXACT attest command to run next. It DELIBERATELY does not
+    reveal any phase further ahead: the process is served one step at a time so the
+    orchestrating agent cannot 'go off the laid-out process'. Read-only (no run
+    work, no nonce needed); use --plan for the full phase list."""
+    runner_rel = "run_signature_deck.py"
+    ph, k, total = _next_required_phase(run_dir, phases)
+    if ph is None:
+        print(json.dumps({
+            "schema": "phase_turn_gate/v1",
+            "run_dir": str(run_dir),
+            "next_phase": None,
+            "status": "all_phases_complete",
+            "attested_of_total": [total, total],
+            "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+            "message": ("Every manifest phase is attested (or covered by a logged "
+                        "owner-authorized skip). There is no next phase to serve; the "
+                        "governed pipeline is complete."),
+        }, indent=2))
+        return
+
+    pid = ph["id"]
+    needs_out = pid == "P4-RENDER"
+    attest_cmd = (
+        f"python3 {runner_rel} --run-dir {run_dir} --slides <slides.json>"
+        + (" --out <out.pptx>" if needs_out else "")
+        + f" --phase {pid}"
+    )
+    payload = {
+        "schema": "phase_turn_gate/v1",
+        "run_dir": str(run_dir),
+        "position": {"step": k, "of": total},
+        "next_phase": {
+            "id": pid,
+            "order": ph.get("order"),
+            "name": ph.get("name", pid),
+            "owning_role": ph.get("owning_role", ""),
+            "artifact_contract": {
+                "produces_artifact": ph.get("produces_artifact", ""),
+                "required_brief_categories": ph.get("required_brief_categories", []),
+                "has_substance_verifier": pid in _GOVERNED_VERIFIER_PHASES,
+            },
+            "sop_refs": ph.get("sop_refs", []),
+            "gate_codes": ph.get("gate_codes", []),
+            "client_report": ph.get("client_report"),
+            "attest_command": attest_cmd,
+        },
+        "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+        "instruction": (
+            "Do EXACTLY this one phase: produce its produces_artifact per the cited "
+            "sop_refs, then run the attest_command to verify + attest it. Then run "
+            "--next again for the following step. This runner will not reveal any "
+            "phase further ahead, and will refuse (AF-PHASE-SKIPPED) to attest out of "
+            "order — the process is served one step at a time."
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+
+
+# ---------------------------------------------------------------------------
 # adhoc authorization (owner-authorized + logged; refused without the record)
 # ---------------------------------------------------------------------------
 def assert_adhoc_authorized(run_dir: Path) -> None:
@@ -1272,13 +1375,15 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 # Command Center board — TERMINAL delivery close (FAIL-SOFT). Ownership note:
 # build_deck.py runs the RENDER phase and drives the card's in-run motion — the
 # P4-RENDER START (backlog->in_progress) and the P4/P8 render/assemble PROGRESS
-# ACTIVITY posts — but it CANNOT close the card: the terminal close is a task-level
-# status='done' whose process_certificate_sha the CC presentations no-skip done-gate
-# REQUIRES, and that certificate does not exist until prove-deck.py mints
-# delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json here in the P9-DELIVER phase. So the
-# RUNNER owns the terminal close and fires it right after prove-deck PASS. The move
-# receipt (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to,
-# so the render-phase activities and this close land on one consistent ledger.
+# ACTIVITY posts — but it CANNOT close the card: the terminal producer close is a
+# task-level status='review' that carries the process_certificate_sha (the ticket
+# INTO review) + the real per-gate QC scores, and that certificate does not exist
+# until prove-deck.py mints delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json here in the
+# P9-DELIVER phase. So the RUNNER owns the terminal close and fires it right after
+# prove-deck PASS. The producer NEVER self-closes to 'done' — the CC-side QC scorer /
+# Devil's-Advocate gate promotes 'review'->'done'. The move receipt
+# (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to, so the
+# render-phase activities and this close land on one consistent ledger.
 # ---------------------------------------------------------------------------
 def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
     """FIX-PRES-08(a): ensure the deck's Command Center card exists at Phase-0,
@@ -1307,12 +1412,19 @@ def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
 def _board_close_delivery(run_dir) -> None:
     """Fire the TERMINAL Command Center card close for a delivered deck, FAIL-SOFT.
 
+    The producer STOPS at 'review': the presentations pipeline never self-closes to
+    'done'. Promotion 'review'->'done' is the CC-side QC scorer / Devil's-Advocate
+    gate's job — the same interlock every sibling department respects. This close
+    hands the card to that reviewer with (a) the real per-gate QC scores posted as
+    activities and folded into the review note + a structured qc_scores key, and
+    (b) the PROCESS-CERTIFICATE sha as the ticket INTO review.
+
     Precondition: called ONLY after prove-deck.py has minted the run's
-    PROCESS-CERTIFICATE, so cc_board.patch_phase(status='done') can read and attach
-    its process_certificate_sha (satisfying the CC presentations done-gate). The
-    task_id is recovered from working/checkpoints/process_manifest.json (stamped at
-    run-begin by build_deck's ingest). A disabled board or a missing id is a clean
-    no-op. NEVER raises — the board is a view, never a gate."""
+    PROCESS-CERTIFICATE, so cc_board.patch_phase(status='review') can read and attach
+    its process_certificate_sha. The task_id is recovered from
+    working/checkpoints/process_manifest.json (stamped at run-begin by build_deck's
+    ingest). A disabled board or a missing id is a clean no-op. NEVER raises — the
+    board is a view, never a gate."""
     try:
         import cc_board
         tid = None
@@ -1324,8 +1436,12 @@ def _board_close_delivery(run_dir) -> None:
             tid = None
         if not tid:
             return
-        cc_board.patch_phase(run_dir, tid, DELIVERY_PHASE_ID, "done",
-                             note="bundle complete — deck delivered")
+        # Per-gate QC grades onto the activity feed FIRST (so they precede the
+        # status move in the timeline), then the terminal producer close to 'review'.
+        cc_board.post_qc_activities(run_dir, tid)
+        cc_board.patch_phase(run_dir, tid, DELIVERY_PHASE_ID, "review",
+                             note="bundle complete — deck delivered; awaiting CC QC "
+                                  "scorer / Devil's-Advocate promotion to done")
     except Exception as exc:  # noqa: BLE001 — the board is a view, never a gate
         print(f"[cc_board] terminal delivery close raised ({exc}) — run continues; "
               "the board update is best-effort.", file=sys.stderr, flush=True)
@@ -1363,6 +1479,9 @@ def main():
     ap.add_argument("--phase", help="dispatch/advance a single phase id (checks preconditions)")
     ap.add_argument("--platform", choices=["vps", "mac"], default=None)
     ap.add_argument("--plan", action="store_true", help="print the phase plan and exit")
+    ap.add_argument("--next", dest="want_next", action="store_true",
+                    help="print ONLY the single next required phase (turn-gate) as one "
+                         "JSON payload and exit; read-only, no nonce needed")
     ap.add_argument("--adhoc", action="store_true",
                     help="owner-authorized + logged escape (refused without the record)")
     args = ap.parse_args()
@@ -1378,6 +1497,13 @@ def main():
     # --plan inspect is allowed without the front-door marker (read-only, no run work).
     if args.plan:
         print_plan(run_dir, phases)
+        sys.exit(0)
+
+    # --next PHASE TURN-GATE: the runner (not prose) is the agent's interface to
+    # "what is next." Read-only — emits ONLY the single next required phase and does
+    # no run work, so (like --plan) it is exempt from the front-door nonce handshake.
+    if args.want_next:
+        emit_next(run_dir, phases)
         sys.exit(0)
 
     # FRONT-DOOR NONCE HANDSHAKE (CONTRACT #8): run_signature_deck.py MUST be invoked
@@ -1461,9 +1587,10 @@ def main():
             if rc != 0:
                 sys.exit(rc)
 
-        # The render phase is the only one this runner dispatches into build_deck.py;
-        # all other phases are produced by their owning department role/agent, and the
-        # runner records their attestation once their produces_artifact is present.
+        # The render phase and P9.5-NOTES-SYNC are the two phases this runner
+        # dispatches into build_deck.py as a subprocess; all other phases are
+        # produced by their owning department role/agent, and the runner records
+        # their attestation once their produces_artifact is present.
         if args.phase == "P4-RENDER":
             if not args.out:
                 print("FATAL: --out is required to dispatch the render phase.",
@@ -1473,6 +1600,45 @@ def main():
                                   platform=args.platform, adhoc=args.adhoc)
             if rc == 0:
                 # FIX 4b: emit AF-PHASE-REPORT-DONE after successful render subprocess.
+                emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+            sys.exit(rc)
+        # P9.5-NOTES-SYNC: reorder the notes-pane injection to AFTER the speech has
+        # been written and QC-passed (P9-SPEECH + P-SPEECH-QC attested — the
+        # ordinary precondition gate above already enforces that before this branch
+        # is reached). Reopens the assembled .pptx and re-injects per-slide notes.
+        if args.phase == NOTES_SYNC_PHASE_ID:
+            if not args.out:
+                print("FATAL: --out is required to dispatch P9.5-NOTES-SYNC.",
+                      file=sys.stderr)
+                sys.exit(2)
+            rc = _dispatch_notes_sync(run_dir, slides_path, Path(args.out).resolve(),
+                                      adhoc=args.adhoc)
+            if rc == 0:
+                # FIX 5d parity: run the substance verifier (same governed-phase
+                # contract as the generic artifact-present branch below) before
+                # attesting. Explicit attestation is needed here (unlike P4-RENDER)
+                # because build_deck.py's --notes-sync writes notes_sync.json, not a
+                # process_manifest.json "phases" record with the render special-case.
+                if _pv is not None:
+                    _ns_ok, _ns_reasons = _pv.verify(args.phase, run_dir)
+                elif args.phase in _GOVERNED_VERIFIER_PHASES and not _degraded_verifiers_allowed(run_dir):
+                    _ns_ok, _ns_reasons = False, [
+                        "phase_verifiers.py missing beside the runner — P9.5-NOTES-SYNC "
+                        "cannot attest without its substance verifier."]
+                else:
+                    _ns_ok, _ns_reasons = True, ["phase_verifiers unavailable — degraded pass"]
+                if not _ns_ok:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print(f"FATAL: substance verifier failed for phase {args.phase!r}:",
+                          file=sys.stderr)
+                    for _r in _ns_reasons:
+                        print("  - " + str(_r), file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_QC_ROUTEBACK)
+                _sha = _compute_artifact_sha(run_dir, "working/checkpoints/notes_sync.json")
+                attest_phase(run_dir, args.phase, "pptx-assembly-specialist",
+                            "artifact_present", artifact_sha=_sha,
+                            substance_verified=True)
                 emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
             sys.exit(rc)
         # PRE-DELIVERY GUARD: the delivery phase may not be attested until the WHOLE
@@ -1583,10 +1749,12 @@ def main():
 
             # BOARD (terminal close): prove-deck just minted the run's
             # PROCESS-CERTIFICATE, so this is the ONLY correct moment to close the CC
-            # card — a task-level status='done' whose process_certificate_sha cc_board
-            # reads from that freshly-minted cert (satisfying the presentations no-skip
-            # done-gate). build_deck ran the RENDER phase before any cert existed and
-            # therefore never emits this close. FAIL-SOFT: never raises, never blocks.
+            # card — a task-level status='review' whose process_certificate_sha cc_board
+            # reads from that freshly-minted cert (the ticket INTO review) plus the real
+            # per-gate QC scores. The producer STOPS at review; the CC QC scorer /
+            # Devil's-Advocate gate promotes to done. build_deck ran the RENDER phase
+            # before any cert existed and therefore never emits this close. FAIL-SOFT:
+            # never raises, never blocks.
             _board_close_delivery(run_dir)
 
         # Non-render phase: verify the artifact landed + run substance verifier +
@@ -1705,6 +1873,31 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
         # build_deck.py appends its own render record; the attestation reader counts it.
         print("=== RENDER phase complete — build_deck.py render record attested ===",
               flush=True)
+    return proc.returncode
+
+
+def _dispatch_notes_sync(run_dir: Path, slides_path: Path, out_path: Path,
+                         adhoc: bool = False) -> int:
+    """Dispatch P9.5-NOTES-SYNC by invoking build_deck.py --notes-sync as a
+    SUBPROCESS. Reopens the already-assembled bundle .pptx (located from out_path's
+    deck-slug stem, same convention _resolve_bundle_dir/assemble use) and re-injects
+    per-slide speaker notes now that the presenter speech exists and (per the
+    ordinary phase-precondition gate) has already passed P-SPEECH-QC. Returns the
+    subprocess return code. No pre-render guard here — this phase only rewrites the
+    notes pane of an already-assembled deck; it renders nothing and calls kie.ai
+    for nothing."""
+    # Same (slides_path, out_path, --run-dir) shape as _dispatch_render, and
+    # deliberately NO --out override here: build_deck.py's default bundle-dir
+    # resolution (slug-from-out_path.stem) must land on the SAME bundle dir the
+    # render dispatch used, so P9.5-NOTES-SYNC re-opens the deck P8-ASSEMBLE wrote.
+    cmd = [sys.executable, str(HERE / "build_deck.py"), str(slides_path), str(out_path),
+           "--notes-sync", "--run-dir", str(run_dir)]
+    if adhoc:
+        cmd += ["--adhoc-no-process"]
+    print(f"=== DISPATCH P9.5-NOTES-SYNC (subprocess): {' '.join(cmd)} ===", flush=True)
+    proc = subprocess.run(cmd)
+    if proc.returncode == 0:
+        print("=== P9.5-NOTES-SYNC complete — notes_sync.json written ===", flush=True)
     return proc.returncode
 
 

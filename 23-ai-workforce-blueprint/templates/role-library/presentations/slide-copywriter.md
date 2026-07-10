@@ -184,7 +184,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Headline: 9 words maximum. Count every word including articles and prepositions. Target 4 to 7.
    - Subhead (sub-copy): 18 words maximum. One line.
    - Maximum 3 text blocks per slide (headline + sub-copy + one supporting element such as a stat, label, or CTA chip). The supporting line stays short.
-   - Bullet slides: maximum 5 bullets, 7 words per bullet. Bullets only when the idea is genuinely a list (stack components, "this is for you if", recap), never as a substitute for choosing the one big idea.
+   - Bullet slides: maximum 3 bullets, ~5 words per bullet (AF-COPY-BAND hard char band: each bullet 8-30 chars, code-enforced in build_deck.py `_chk_copy_density`; this reconciles the old "5 bullets/7 words" figure DOWN to match both QC criterion c4 and the Slide Image Creator's actual render reality). Bullets only when the idea is genuinely a list (stack components, "this is for you if", recap), never as a substitute for choosing the one big idea.
    - Value stack slides: maximum 6 line items, each `Name + $X value`, 7 words per name. Split across two slides if the stack runs longer.
    - No em dashes anywhere in any field. Use a comma or parenthesis instead.
    - No fabricated proof: if a slide calls for a testimonial and none is in the proof inventory, write `[TESTIMONIAL PENDING -- client must supply]` as a placeholder. Never invent a quote or a number.

@@ -15,6 +15,20 @@ CLI:
                        have validated answers or logged circled-back skips; sets
                        intake_ledger.json status="complete" on success
   --selftest           run offline self-test in a temp dir; exits 0 on pass
+  --signature --next / --signature --answer ID TEXT
+                       SAME blocked/validated turn-gate as --next/--answer, but
+                       walked over sp-8-questions.json (choice question, then
+                       q1..q8, then the frame question) into a SEPARATE ledger
+                       (working/interview/sp_intake_ledger.json). Emits exactly
+                       ONE question per --next call and BLOCKS on the active
+                       question until answered -- no batch payload on this path.
+                       The final answer auto-assembles working/copy/sp_intake.json
+                       and runs prove_sp_intake.py (AF-SP-8Q-SPLIT) against it.
+  --signature (no --next/--answer)
+                       legacy PLAN/inspection mode: emits the full intake plan
+                       (all 8 Questions + frame question) as one JSON payload
+                       for an agent to run one turn at a time itself; --record
+                       assembles + proves a pre-gathered answers file directly.
 
 Dependency-free: stdlib only (json, os, pathlib, datetime, argparse, sys, tempfile, time).
 """
@@ -36,6 +50,12 @@ QUESTIONS_FILE_NAME = "deck-intake-questions.json"
 LEDGER_REL = pathlib.Path("working") / "interview" / "intake_ledger.json"
 ANSWERS_REL = pathlib.Path("working") / "interview" / "answers"
 
+# SIGNATURE mode turn-gate uses a SEPARATE ledger/answers area so a run that
+# offers both a standard pre-presentation capture and a signature deck never
+# cross-contaminates entries between the two question sets.
+SP_LEDGER_REL = pathlib.Path("working") / "interview" / "sp_intake_ledger.json"
+SP_ANSWERS_REL = pathlib.Path("working") / "interview" / "sp_answers"
+
 
 def find_questions_file(run_dir: pathlib.Path) -> pathlib.Path:
     """Locate deck-intake-questions.json: beside this script, or in the intake/ dir."""
@@ -56,8 +76,8 @@ def find_questions_file(run_dir: pathlib.Path) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 # Ledger I/O
 # ---------------------------------------------------------------------------
-def load_ledger(run_dir: pathlib.Path) -> dict:
-    lp = run_dir / LEDGER_REL
+def load_ledger(run_dir: pathlib.Path, ledger_rel: pathlib.Path = LEDGER_REL) -> dict:
+    lp = run_dir / ledger_rel
     if lp.exists():
         try:
             with open(lp) as f:
@@ -73,8 +93,8 @@ def load_ledger(run_dir: pathlib.Path) -> dict:
     }
 
 
-def save_ledger(run_dir: pathlib.Path, ledger: dict) -> None:
-    lp = run_dir / LEDGER_REL
+def save_ledger(run_dir: pathlib.Path, ledger: dict, ledger_rel: pathlib.Path = LEDGER_REL) -> None:
+    lp = run_dir / ledger_rel
     lp.parent.mkdir(parents=True, exist_ok=True)
     with open(lp, "w") as f:
         json.dump(ledger, f, indent=2)
@@ -83,22 +103,22 @@ def save_ledger(run_dir: pathlib.Path, ledger: dict) -> None:
 # ---------------------------------------------------------------------------
 # Answer file I/O
 # ---------------------------------------------------------------------------
-def answer_path(run_dir: pathlib.Path, qid: str) -> pathlib.Path:
-    return run_dir / ANSWERS_REL / f"{qid}.txt"
+def answer_path(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> pathlib.Path:
+    return run_dir / answers_rel / f"{qid}.txt"
 
 
-def answer_exists(run_dir: pathlib.Path, qid: str) -> bool:
-    p = answer_path(run_dir, qid)
+def answer_exists(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> bool:
+    p = answer_path(run_dir, qid, answers_rel)
     return p.exists() and p.stat().st_size > 0
 
 
-def read_answer_file(run_dir: pathlib.Path, qid: str) -> str:
-    with open(answer_path(run_dir, qid)) as f:
+def read_answer_file(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> str:
+    with open(answer_path(run_dir, qid, answers_rel)) as f:
         return f.read().strip()
 
 
-def write_answer_file(run_dir: pathlib.Path, qid: str, text: str) -> None:
-    p = answer_path(run_dir, qid)
+def write_answer_file(run_dir: pathlib.Path, qid: str, text: str, answers_rel: pathlib.Path = ANSWERS_REL) -> None:
+    p = answer_path(run_dir, qid, answers_rel)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         f.write(text)
@@ -110,6 +130,84 @@ def write_answer_file(run_dir: pathlib.Path, qid: str, text: str) -> None:
 def ordered_questions(qdata: dict) -> list:
     """Return questions sorted by order field (ascending)."""
     return sorted(qdata["questions"], key=lambda q: q.get("order", 999))
+
+
+# ---------------------------------------------------------------------------
+# ask_if conditional questions (question-bank migration)
+#
+# A migrated prose question that only applies in some branches (e.g. D2/D3's
+# "ask only if DELIVERABLE_SET includes '+audio'"/"...a speech is in scope",
+# VIP follow-ups, PRICE_ANCHOR only on a price-drop) carries an `ask_if`
+# block: {"question_id": <id of the gating question>, and one of
+# "truthy"/"equals"/"contains"/"in"}. Resolved against the ANSWER already
+# recorded for that gating question id. If the gating question has not been
+# answered yet, the conditional question is left pending (neither asked nor
+# auto-skipped) until it is.
+# ---------------------------------------------------------------------------
+def _ask_if_satisfied(cond: dict, ledger: dict) -> Optional[bool]:
+    """Returns True/False once resolvable, or None if the gating answer isn't
+    recorded yet (caller should treat None as 'not yet decidable')."""
+    ref_id = cond.get("question_id")
+    entry = ledger.get("entries", {}).get(ref_id, {})
+    if not entry.get("validated"):
+        return None
+    val = str(entry.get("answer") or "").strip().lower()
+    if "truthy" in cond:
+        is_truthy = val in ("yes", "true", "y", "1") or (val not in ("", "no", "false", "n", "0") and bool(val))
+        return is_truthy == bool(cond["truthy"])
+    if "equals" in cond:
+        return val == str(cond["equals"]).strip().lower()
+    if "contains" in cond:
+        return str(cond["contains"]).strip().lower() in val
+    if "contains_any" in cond:
+        return any(str(x).strip().lower() in val for x in cond["contains_any"])
+    if "in" in cond:
+        return val in [str(x).strip().lower() for x in cond["in"]]
+    return True
+
+
+def auto_skip_unmet_conditions(qdata: dict, ledger: dict) -> bool:
+    """Housekeeping pass: for every not-yet-asked/validated question carrying
+    an ask_if whose gating answer is ALREADY recorded and evaluates False,
+    mark it validated+skipped so it never blocks --next or --complete.
+    Returns True if the ledger was mutated (caller should save)."""
+    entries = ledger.setdefault("entries", {})
+    mutated = False
+    for q in ordered_questions(qdata):
+        cond = q.get("ask_if")
+        if not cond:
+            continue
+        e = entries.get(q["id"], {})
+        if e.get("validated") or e.get("asked_at"):
+            continue
+        satisfied = _ask_if_satisfied(cond, ledger)
+        if satisfied is False:
+            entries.setdefault(q["id"], {})
+            entries[q["id"]]["validated"] = True
+            entries[q["id"]]["validated_at"] = _now()
+            entries[q["id"]]["answer"] = None
+            entries[q["id"]]["skipped_ask_if"] = True
+            mutated = True
+    return mutated
+
+
+def auto_skip_all_conditionals(qdata: dict, ledger: dict) -> bool:
+    """Unified conditional-skip pass (integration reconciliation of the
+    typepicker + intakegate units). Covers BOTH conditional schemas in the
+    merged question set:
+      * `conditional_on` {id, equals} — typepicker's recipient_name /
+        signature_source, gated on presentation_type.
+      * `ask_if` {question, truthy|equals|contains|contains_any|in} — the
+        migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a
+        price-drop, WANT_AUDIO_DEMO/TARGET_WPM, ...).
+    No question carries both fields, so the two passes are disjoint and
+    idempotent. Returns True if the ledger was mutated (caller should save).
+    This is now the ONE entry point every command uses for conditional skips."""
+    before = json.dumps(ledger.get("entries", {}), sort_keys=True, default=str)
+    auto_skip_conditionals(qdata, ledger)
+    mutated_ask_if = auto_skip_unmet_conditions(qdata, ledger)
+    after = json.dumps(ledger.get("entries", {}), sort_keys=True, default=str)
+    return mutated_ask_if or (before != after)
 
 
 def find_active_question(qdata: dict, ledger: dict) -> Optional[dict]:
@@ -144,6 +242,176 @@ def find_next_any(qdata: dict, ledger: dict) -> Optional[dict]:
 
 def _now() -> str:
     return datetime.datetime.now().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Conditional questions (recipient_name / signature_source hang off the
+# canonical presentation_type type-picker and must never be asked, and never
+# block --next/--complete, when their controlling condition is not met).
+# ---------------------------------------------------------------------------
+def _condition_met(question: dict, ledger: dict) -> Optional[bool]:
+    """True/False once the controlling question is validated; None if the
+    controlling question is not yet answered (order guarantees it comes first,
+    so callers should simply not surface this question yet)."""
+    cond = question.get("conditional_on")
+    if not cond:
+        return True
+    ctrl_entry = ledger.get("entries", {}).get(cond.get("id"), {})
+    if not ctrl_entry.get("validated"):
+        return None
+    ctrl_value = ctrl_entry.get("normalized", ctrl_entry.get("answer"))
+    return ctrl_value == cond.get("equals")
+
+
+def auto_skip_conditionals(qdata: dict, ledger: dict) -> None:
+    """Mark every conditional question whose controlling answer is already
+    known and does NOT match as validated+skipped, so it is never asked and
+    never blocks --complete (e.g. recipient_name when presentation_type !=
+    content_personal, signature_source when presentation_type != signature)."""
+    entries = ledger.setdefault("entries", {})
+    for q in ordered_questions(qdata):
+        qid = q["id"]
+        if entries.get(qid, {}).get("validated"):
+            continue
+        if _condition_met(q, ledger) is False:
+            entries.setdefault(qid, {})
+            entries[qid]["validated"] = True
+            entries[qid]["validated_at"] = _now()
+            entries[qid]["skipped"] = True
+            entries[qid]["answer"] = "(not applicable)"
+
+
+# ---------------------------------------------------------------------------
+# THE mapping table — one canonical presentation_type answer derives all four
+# legacy axis fields (deck_type, creation_mode, presentation_mode,
+# audience_mode). Mirrors 'legacy_field_mapping' in deck-intake-questions.json;
+# this function is the ONE place the mapping is applied in code — do not
+# re-derive it elsewhere. Director Mode A/B is intentionally absent: it stays
+# derived from whether source assets exist (director-of-presentations.md
+# SOP 9.3) and is never asked at intake.
+# ---------------------------------------------------------------------------
+LEGACY_FIELD_MAPPING = {
+    "from_scratch": {
+        "deck_type": "webinar", "creation_mode": "from_scratch",
+        "presentation_mode": "general", "audience_mode": "STANDARD",
+    },
+    "content_personal": {
+        "deck_type": "webinar", "creation_mode": "content_personal",
+        "presentation_mode": "one-person", "audience_mode": "PERSONAL",
+    },
+    "content_general": {
+        "deck_type": "webinar", "creation_mode": "content_general",
+        "presentation_mode": "general", "audience_mode": "GENERAL",
+    },
+    "signature": {
+        "deck_type": "signature_presentation", "creation_mode": "from_scratch",
+        "presentation_mode": "general", "audience_mode": "STANDARD",
+    },
+}
+PRESENTATION_TYPES = tuple(LEGACY_FIELD_MAPPING.keys())
+
+
+def derive_legacy_fields(presentation_type: str, signature_source: Optional[str] = None) -> dict:
+    """Derive deck_type / creation_mode / presentation_mode / audience_mode
+    from the ONE canonical presentation_type answer (the type-picker).
+
+    signature_source only applies when presentation_type == 'signature': on
+    'existing_content' it overrides creation_mode to content_general so a
+    signature run converting existing material never satisfies _chk_mode with
+    an unset creation_mode (AF-MODE-UNSET is closed here — the field is always
+    written explicitly, never left unset)."""
+    base = LEGACY_FIELD_MAPPING.get(presentation_type)
+    if base is None:
+        raise ValueError(
+            f"Unknown presentation_type: {presentation_type!r}. "
+            f"Must be one of {PRESENTATION_TYPES}."
+        )
+    out = dict(base)
+    out["presentation_type"] = presentation_type
+    if presentation_type == "signature" and signature_source == "existing_content":
+        out["creation_mode"] = "content_general"
+    return out
+
+
+def _normalize_enum_value(text: str, question: dict) -> str:
+    """Best-effort match of a free-text enum answer to one of the question's
+    allowed_values: exact match, case/punctuation-insensitive match, keyword
+    containment against the value or its value_labels entry, else the
+    question's declared default. Never raises and never returns a string
+    outside allowed_values (or the raw default) — downstream mapping tables
+    never see an out-of-band presentation_type."""
+    allowed = question.get("allowed_values") or []
+    if not allowed:
+        return (text or "").strip()
+    stripped = (text or "").strip()
+    if stripped in allowed:
+        return stripped
+    normalized = stripped.lower().replace("-", "_").replace(" ", "_")
+    for val in allowed:
+        if normalized == val.lower():
+            return val
+    labels = question.get("value_labels", {})
+    lowered_free = stripped.lower()
+    for val in allowed:
+        if val.lower() in lowered_free:
+            return val
+        label = str(labels.get(val, "")).lower()
+        if label and (label in lowered_free or lowered_free in label):
+            return val
+    return question.get("default", allowed[0])
+
+
+# ---------------------------------------------------------------------------
+# working/copy/intake.json — the file build_deck.py's _chk_mode / _chk_intake /
+# prove_sp_routing actually read. The type-picker's derived legacy fields are
+# merged here the moment presentation_type (and, for signature runs,
+# signature_source) is validated, and again defensively at --complete.
+# ---------------------------------------------------------------------------
+INTAKE_JSON_REL = pathlib.Path("working") / "copy" / "intake.json"
+
+
+def merge_intake_json(run_dir: pathlib.Path, updates: dict) -> pathlib.Path:
+    """Merge `updates` into working/copy/intake.json, creating it (and parents)
+    if absent. Existing keys not present in `updates` are preserved."""
+    p = run_dir / INTAKE_JSON_REL
+    p.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if p.exists():
+        try:
+            existing = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+    existing.update(updates)
+    p.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    return p
+
+
+def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str) -> None:
+    """After presentation_type or signature_source is recorded, (re)compute the
+    derived legacy fields and merge them into working/copy/intake.json. No-op
+    (and never raises) if presentation_type has not been validated yet or
+    run_dir is unavailable (e.g. --answer called without a real run dir)."""
+    if qid not in ("presentation_type", "signature_source", "recipient_name"):
+        return
+    if run_dir is None:
+        return
+    entries = ledger.get("entries", {})
+    pt_entry = entries.get("presentation_type", {})
+    if not pt_entry.get("validated"):
+        return
+    presentation_type = pt_entry.get("normalized", pt_entry.get("answer"))
+    sig_entry = entries.get("signature_source", {})
+    signature_source = sig_entry.get("normalized") if sig_entry.get("validated") else None
+    try:
+        derived = derive_legacy_fields(presentation_type, signature_source)
+    except ValueError:
+        return
+    updates = dict(derived)
+    if qid == "recipient_name" or entries.get("recipient_name", {}).get("validated"):
+        rn = entries.get("recipient_name", {})
+        if rn.get("validated") and not rn.get("skipped"):
+            updates["recipient_name"] = rn.get("answer")
+    merge_intake_json(run_dir, updates)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +452,57 @@ def validate_answer(text: str, question: dict) -> tuple[bool, str]:
         return False, "Answer is too brief. Please elaborate."
 
     return True, ""
+
+
+def sp_validate_answer(text: str, question: dict) -> Tuple[bool, str]:
+    """Signature-mode-only validator: adds a real enum check on top of
+    validate_answer's base rules, scoped to the sp turn-gate so it can never
+    change behavior for the standard deck-intake-questions.json flow (whose
+    'enum' questions, e.g. deck_type, intentionally accept free text today)."""
+    valid, reason = validate_answer(text, question)
+    if not valid:
+        return valid, reason
+    if question.get("kind") != "enum":
+        return True, ""
+    allowed = [str(v).strip().lower() for v in (question.get("allowed_values") or [])]
+    if not allowed:
+        return True, ""
+    labels = question.get("value_labels") or {}
+    lowered = (text or "").strip().lower()
+    label_lookup = {str(v).strip().lower(): k for k, v in labels.items()}
+    letter_lookup = {chr(ord("a") + i): v for i, v in enumerate(allowed)}
+    matched = (
+        lowered in allowed
+        or lowered in label_lookup
+        or lowered.strip("(). ") in letter_lookup
+    )
+    if not matched:
+        return False, f"Please choose one of: {', '.join(question.get('allowed_values') or [])}."
+    return True, ""
+
+
+def canonicalize_enum_answer(text: str, question: dict) -> str:
+    """Map a free-typed enum answer ('A', 'the rulebook', 'rulebook') to its
+    canonical allowed_value. Falls back to the raw stripped text when the
+    question has no allowed_values or no match is found (validate_answer
+    already rejected genuinely unmatched enum answers before this is called)."""
+    stripped = (text or "").strip()
+    allowed = [str(v).strip() for v in (question.get("allowed_values") or [])]
+    if not allowed:
+        return stripped
+    lowered = stripped.lower()
+    for v in allowed:
+        if v.lower() == lowered:
+            return v
+    labels = question.get("value_labels") or {}
+    for k, v in labels.items():
+        if str(v).strip().lower() == lowered and k in allowed:
+            return k
+    letter = lowered.strip("(). ")
+    idx = ord(letter) - ord("a") if len(letter) == 1 and letter.isalpha() else -1
+    if 0 <= idx < len(allowed):
+        return allowed[idx]
+    return stripped
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +553,14 @@ def check_budget(qdata: dict, ledger: dict) -> dict:
 # ---------------------------------------------------------------------------
 def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     """--next: return exactly one question; block if active question has no answer yet."""
+    # Auto-skip any conditional question whose gating answer is already on
+    # record and evaluates false — covers BOTH the type-picker conditionals
+    # (recipient_name/signature_source via `conditional_on`) and the migrated
+    # question-bank follow-ups (TARGET_WPM/VIP/PRICE_ANCHOR via `ask_if`) so
+    # they never surface as a turn or block --complete.
+    if auto_skip_all_conditionals(qdata, ledger):
+        save_ledger(run_dir, ledger)
+
     # Check budget first
     bstatus = check_budget(qdata, ledger)
     if not bstatus["budget_ok"]:
@@ -271,8 +598,12 @@ def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
             if valid:
                 entries.setdefault(qid, {})
                 entries[qid]["answer"] = answer_text
+                if active.get("kind") == "enum":
+                    entries[qid]["normalized"] = _normalize_enum_value(answer_text, active)
                 entries[qid]["validated"] = True
                 entries[qid]["validated_at"] = _now()
+                auto_skip_all_conditionals(qdata, ledger)
+                _apply_type_picker_derivation(run_dir, ledger, qid)
             else:
                 # File exists but content is invalid: re-ask same question
                 entries.setdefault(qid, {})
@@ -341,11 +672,15 @@ def cmd_answer(run_dir: pathlib.Path, qdata: dict, ledger: dict, qid: str, text:
         # Write to answer file
         write_answer_file(run_dir, qid, text)
         entries[qid]["answer"] = text
+        if question.get("kind") == "enum":
+            entries[qid]["normalized"] = _normalize_enum_value(text, question)
         entries[qid]["validated"] = True
         entries[qid]["validated_at"] = _now()
         if not entries[qid].get("asked_at"):
             # Mark as asked if it wasn't already (direct --answer without --next)
             entries[qid]["asked_at"] = _now()
+        auto_skip_all_conditionals(qdata, ledger)
+        _apply_type_picker_derivation(run_dir, ledger, qid)
         save_ledger(run_dir, ledger)
         print(json.dumps({
             "status": "accepted",
@@ -390,9 +725,13 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     (representation_uncaptured, grounded_content_provisional, etc.) — they do not
     block --complete.
 
-    On success: sets intake_ledger.json status="complete".
+    On success: sets intake_ledger.json status="complete". Also re-applies the
+    type-picker's legacy-field derivation to working/copy/intake.json as a
+    defensive final write, so a signature run's creation_mode is never left
+    unset (AF-MODE-UNSET) even if an earlier per-answer merge was bypassed.
     On failure: exits nonzero and prints which ids are blocking.
     """
+    auto_skip_all_conditionals(qdata, ledger)
     entries = ledger.get("entries", {})
     blocking = []
 
@@ -417,6 +756,12 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
             "blocking_ids": blocking,
         }))
         sys.exit(1)
+
+    # Defensive final re-apply of the type-picker derivation (covers callers
+    # that wrote ledger entries directly instead of going through --answer/
+    # --next, e.g. test fixtures or a resumed/edited ledger).
+    if entries.get("presentation_type", {}).get("validated"):
+        _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
 
     # Mark complete
     ledger["status"] = "complete"
@@ -516,8 +861,13 @@ def cmd_selftest() -> None:
         print(f"[selftest] Test 4 PASS: --answer accepted valid text for '{first_id}'")
 
         # --- Test 5: --answer rejects empty text ---
-        # Pick the next question id
-        next_qs = [q for q in ordered_questions(qdata) if q["id"] != first_id]
+        # Pick the next NOT-YET-VALIDATED question id (skips first_id and any
+        # conditional question the type-picker answer already auto-skipped,
+        # e.g. recipient_name/signature_source when presentation_type defaulted
+        # to from_scratch).
+        next_qs = [q for q in ordered_questions(qdata)
+                   if q["id"] != first_id
+                   and not ledger.get("entries", {}).get(q["id"], {}).get("validated")]
         if next_qs:
             second_id = next_qs[0]["id"]
             # First ask it via --next
@@ -601,6 +951,120 @@ def cmd_selftest() -> None:
         assert ledger["status"] == "complete", "Ledger status should be 'complete'"
         assert ledger.get("complete") is True, "Ledger complete flag should be True"
         print("[selftest] Test 8 PASS: --complete succeeds when all block_gate questions answered")
+
+        # --- Test 9: the type-picker derives all four legacy fields correctly ---
+        for ptype, want in LEGACY_FIELD_MAPPING.items():
+            got = derive_legacy_fields(ptype)
+            for k, v in want.items():
+                assert got[k] == v, f"derive_legacy_fields({ptype!r})[{k!r}] = {got[k]!r}, want {v!r}"
+            assert got["presentation_type"] == ptype
+        sig_existing = derive_legacy_fields("signature", "existing_content")
+        assert sig_existing["creation_mode"] == "content_general", (
+            "signature + existing_content should override creation_mode to content_general "
+            f"(AF-MODE-UNSET must never be left unset), got {sig_existing['creation_mode']!r}"
+        )
+        sig_scratch = derive_legacy_fields("signature", "from_scratch")
+        assert sig_scratch["creation_mode"] == "from_scratch"
+        print("[selftest] Test 9 PASS: derive_legacy_fields covers all 4 presentation_type "
+              "values + the signature_source override, creation_mode never unset")
+
+        # --- Test 10: presentation_type=content_personal asks recipient_name and
+        #     skips signature_source; the derived fields land in working/copy/intake.json ---
+        with tempfile.TemporaryDirectory() as tmpdir2:
+            run_dir2 = pathlib.Path(tmpdir2)
+            ledger2 = load_ledger(run_dir2)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_next(run_dir2, qdata, ledger2)
+                except SystemExit:
+                    pass
+            ledger2 = load_ledger(run_dir2)
+            parsed = json.loads(buf.getvalue().strip())
+            assert parsed["id"] == "presentation_type", (
+                f"first question should be 'presentation_type' (order 0), got {parsed['id']!r}"
+            )
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_answer(run_dir2, qdata, ledger2, "presentation_type", "content_personal")
+                except SystemExit:
+                    pass
+            ledger2 = load_ledger(run_dir2)
+            assert ledger2["entries"]["presentation_type"]["normalized"] == "content_personal"
+            assert ledger2["entries"].get("signature_source", {}).get("skipped") is True, (
+                "signature_source must be auto-skipped when presentation_type != signature"
+            )
+            assert "recipient_name" not in ledger2["entries"] or not ledger2["entries"]["recipient_name"].get("skipped"), (
+                "recipient_name must NOT be auto-skipped when presentation_type == content_personal"
+            )
+            intake_path2 = run_dir2 / INTAKE_JSON_REL
+            assert intake_path2.exists(), "working/copy/intake.json should be written after presentation_type is answered"
+            intake2 = json.loads(intake_path2.read_text())
+            assert intake2["deck_type"] == "webinar"
+            assert intake2["creation_mode"] == "content_personal"
+            assert intake2["presentation_mode"] == "one-person"
+            assert intake2["audience_mode"] == "PERSONAL"
+            # Now answer recipient_name and confirm it lands in intake.json too.
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_answer(run_dir2, qdata, ledger2, "recipient_name", "Jordan Ellis")
+                except SystemExit:
+                    pass
+            ledger2 = load_ledger(run_dir2)
+            intake2 = json.loads(intake_path2.read_text())
+            assert intake2.get("recipient_name") == "Jordan Ellis"
+            print("[selftest] Test 10 PASS: content_personal asks recipient_name, skips "
+                  "signature_source, and derived legacy fields + recipient_name land in "
+                  "working/copy/intake.json")
+
+        # --- Test 11: presentation_type=signature asks signature_source, skips
+        #     recipient_name, and existing_content overrides creation_mode ---
+        with tempfile.TemporaryDirectory() as tmpdir3:
+            run_dir3 = pathlib.Path(tmpdir3)
+            ledger3 = load_ledger(run_dir3)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_next(run_dir3, qdata, ledger3)
+                except SystemExit:
+                    pass
+            ledger3 = load_ledger(run_dir3)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_answer(run_dir3, qdata, ledger3, "presentation_type", "signature")
+                except SystemExit:
+                    pass
+            ledger3 = load_ledger(run_dir3)
+            assert ledger3["entries"].get("recipient_name", {}).get("skipped") is True, (
+                "recipient_name must be auto-skipped when presentation_type == signature"
+            )
+            assert not ledger3["entries"].get("signature_source", {}).get("skipped"), (
+                "signature_source must NOT be auto-skipped when presentation_type == signature"
+            )
+            intake_path3 = run_dir3 / INTAKE_JSON_REL
+            intake3 = json.loads(intake_path3.read_text())
+            assert intake3["deck_type"] == "signature_presentation"
+            assert intake3["creation_mode"] == "from_scratch", (
+                "signature defaults creation_mode to from_scratch until signature_source says otherwise"
+            )
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                try:
+                    cmd_answer(run_dir3, qdata, ledger3, "signature_source", "existing_content")
+                except SystemExit:
+                    pass
+            ledger3 = load_ledger(run_dir3)
+            intake3 = json.loads(intake_path3.read_text())
+            assert intake3["creation_mode"] == "content_general", (
+                "signature_source=existing_content must override creation_mode to "
+                f"content_general (never left unset), got {intake3['creation_mode']!r}"
+            )
+            print("[selftest] Test 11 PASS: signature asks signature_source, skips "
+                  "recipient_name, and existing_content overrides creation_mode "
+                  "(AF-MODE-UNSET never triggers)")
 
     # Signature-mode coverage runs through the SAME --selftest entrypoint so any
     # CI / verify path that exercises the driver also exercises the SP one-block
@@ -734,6 +1198,218 @@ def build_signature_block(spec: dict, block_msg_id: str) -> dict:
         ),
         "questions": questions,
         "frame_selection_question": frame_q,
+    }
+
+
+def sp_ordered_questions(spec: dict) -> list:
+    """Build the FULL sp question set as a flat, order-sorted list the SAME
+    ledger/blocked machinery (find_active_question/find_next_question) can
+    walk: the choice-first interview question, then q1..q8, then the frame-
+    selection question. This is what makes signature mode a REAL turn-gate
+    instead of a one-shot batch payload."""
+    cc = ((spec.get("delivery") or {}).get("conversation_contract")) or {}
+    choices = cc.get("interview_choices") or ["quick", "in-depth"]
+    choice_q = {
+        "id": "interview_choice",
+        "order": 0,
+        "prompt": cc.get("choice_question") or (
+            "Would you like a QUICK interview or a more IN-DEPTH one? "
+            "Either way we go one question at a time."
+        ),
+        "kind": "enum",
+        "allowed_values": list(choices),
+        "required": True,
+        "block_gate": True,
+    }
+    body = [dict(q) for q in (spec.get("questions") or [])]
+    for q in body:
+        q.setdefault("required", True)
+        q.setdefault("block_gate", True)
+        q.setdefault("kind", "text")
+    frame_q = dict(spec.get("frame_selection_question") or {})
+    if frame_q:
+        frame_q.setdefault("order", len(body) + 1)
+        frame_q.setdefault("required", True)
+        frame_q.setdefault("block_gate", True)
+        frame_q.setdefault("kind", "enum")
+    return sorted([choice_q] + body + ([frame_q] if frame_q else []), key=lambda q: q.get("order", 999))
+
+
+def cmd_sp_next(run_dir: pathlib.Path, spec: dict, ledger: dict) -> None:
+    """--signature --next: the SAME blocked/validated ledger machinery as the
+    standard flow (cmd_next), walked over sp_ordered_questions(spec) — choice
+    question first, then q1..q8, then the frame question. Dumping >=2 of these
+    in one turn is impossible through this entrypoint: --next returns exactly
+    ONE question and blocks on the active one until it is answered."""
+    qdata = {"questions": sp_ordered_questions(spec)}
+    active = find_active_question(qdata, ledger)
+    if active:
+        qid = active["id"]
+        if not answer_exists(run_dir, qid, SP_ANSWERS_REL):
+            print(json.dumps({
+                "status": "blocked",
+                "current_question_id": qid,
+                "message": (
+                    f"Waiting for answer to '{qid}'. Call --signature --answer {qid} '<text>' "
+                    f"to record and validate the answer, then call --signature --next again."
+                ),
+                "question": active,
+            }))
+            sys.exit(0)
+        else:
+            answer_text = read_answer_file(run_dir, qid, SP_ANSWERS_REL)
+            valid, reason = sp_validate_answer(answer_text, active)
+            entries = ledger.setdefault("entries", {})
+            if valid:
+                entries.setdefault(qid, {})
+                entries[qid]["answer"] = canonicalize_enum_answer(answer_text, active) if active.get("kind") == "enum" else answer_text
+                entries[qid]["validated"] = True
+                entries[qid]["validated_at"] = _now()
+            else:
+                entries.setdefault(qid, {})
+                entries[qid].setdefault("wander_count", 0)
+                entries[qid]["wander_count"] += 1
+                entries[qid]["last_wander_at"] = _now()
+                save_ledger(run_dir, ledger, SP_LEDGER_REL)
+                print(json.dumps({
+                    "status": "re_ask",
+                    "current_question_id": qid,
+                    "reason": reason,
+                    "message": f"Answer for '{qid}' did not pass validation: {reason}. Re-asking the same question.",
+                    "question": active,
+                }))
+                sys.exit(0)
+            save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    nxt = find_next_question(qdata, ledger)
+    if nxt is None:
+        # All sp questions (choice + q1..q8 + frame) validated: auto-assemble
+        # the atomic record and run the AF-SP-8Q-SPLIT prover. This is the
+        # "on the final --answer the driver assembles + proves" contract.
+        result = _sp_finalize(run_dir, spec, ledger)
+        print(json.dumps(result))
+        sys.exit(0 if result.get("passed") else 2)
+
+    entries = ledger.setdefault("entries", {})
+    entries.setdefault(nxt["id"], {})
+    entries[nxt["id"]]["asked_at"] = _now()
+    ledger["turns"] = ledger.get("turns", 0) + 1
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    print(json.dumps({
+        "status": "question",
+        "id": nxt["id"],
+        "prompt": nxt["prompt"],
+        "help": nxt.get("help", ""),
+        "kind": nxt.get("kind", "text"),
+        "required": nxt.get("required", True),
+        "block_gate": nxt.get("block_gate", True),
+        "allowed_values": nxt.get("allowed_values"),
+        "turn": ledger["turns"],
+        "question": nxt,
+    }))
+    sys.exit(0)
+
+
+def cmd_sp_answer(run_dir: pathlib.Path, spec: dict, ledger: dict, qid: str, text: str) -> None:
+    """--signature --answer ID TEXT: validate + record one sp answer. Mirrors
+    cmd_answer exactly, over the sp question set."""
+    qdata = {"questions": sp_ordered_questions(spec)}
+    question = next((q for q in qdata["questions"] if q["id"] == qid), None)
+    if question is None:
+        print(json.dumps({
+            "status": "error",
+            "message": f"Unknown signature question id '{qid}'. Valid ids: {[q['id'] for q in qdata['questions']]}",
+        }))
+        sys.exit(1)
+
+    valid, reason = sp_validate_answer(text, question)
+    entries = ledger.setdefault("entries", {})
+    entries.setdefault(qid, {})
+
+    if not valid:
+        entries[qid].setdefault("wander_count", 0)
+        entries[qid]["wander_count"] += 1
+        entries[qid]["last_wander_at"] = _now()
+        save_ledger(run_dir, ledger, SP_LEDGER_REL)
+        print(json.dumps({
+            "status": "rejected",
+            "id": qid,
+            "reason": reason,
+            "message": f"Answer for '{qid}' was rejected: {reason}. Please re-answer.",
+            "question": question,
+        }))
+        sys.exit(0)
+
+    stored = canonicalize_enum_answer(text, question) if question.get("kind") == "enum" else text
+    write_answer_file(run_dir, qid, text, SP_ANSWERS_REL)
+    entries[qid]["answer"] = stored
+    entries[qid]["validated"] = True
+    entries[qid]["validated_at"] = _now()
+    if not entries[qid].get("asked_at"):
+        entries[qid]["asked_at"] = _now()
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+
+    # If that was the LAST outstanding question, auto-finalize (assemble +
+    # prove) right here so a caller that only ever calls --answer (never
+    # --next again after the final answer) still gets the record committed.
+    remaining = find_next_any(qdata, ledger)
+    if remaining is None:
+        result = _sp_finalize(run_dir, spec, ledger)
+        result["status"] = "accepted_and_finalized" if result.get("passed") else "accepted_but_finalize_failed"
+        print(json.dumps(result))
+        sys.exit(0 if result.get("passed") else 2)
+
+    print(json.dumps({
+        "status": "accepted",
+        "id": qid,
+        "message": f"Answer for '{qid}' recorded and validated.",
+    }))
+    sys.exit(0)
+
+
+def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
+    """Assemble the ledger's validated answers into the runtime intake record
+    and run prove_sp_intake.py (AF-SP-8Q-SPLIT) against it — the RECORD-layer
+    commit that closes out a turn-gated signature interview. Marks the sp
+    ledger complete on a passing prove."""
+    entries = ledger.get("entries", {})
+    answers_record = {
+        "answers": {
+            qid: entries.get(qid, {}).get("answer")
+            for qid in SP_REQUIRED_QUESTIONS
+        },
+        "signature_frame": entries.get("frame_selection", {}).get("answer"),
+        "offer_token_ledger": [entries.get("q7", {}).get("answer")] if entries.get("q7", {}).get("answer") else [],
+        "interview_choice": entries.get("interview_choice", {}).get("answer"),
+    }
+    block_msg_id = _sp_block_msg_id()
+    intake = assemble_sp_intake(answers_record, block_msg_id)
+    out_path = run_dir / "working" / "copy" / "sp_intake.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    rc, prover_out = _run_sp_prover(out_path)
+    passed = rc == 0
+    if passed:
+        ledger["status"] = "complete"
+        ledger["completed_at"] = _now()
+        ledger["complete"] = True
+    save_ledger(run_dir, ledger, SP_LEDGER_REL)
+    return {
+        "status": "signature_intake_verified" if passed else "signature_intake_rejected",
+        "passed": passed,
+        "prover_rc": rc,
+        "gate": "AF-SP-8Q-SPLIT (prove_sp_intake.py)",
+        "intake_path": str(out_path),
+        "signature_frame": intake.get("signature_frame"),
+        "prover_output": prover_out.strip(),
+        "message": (
+            "Signature intake gathered one question at a time and committed as ONE atomic "
+            "record; verified by prove_sp_intake.py."
+            if passed else
+            "Signature intake record assembled but FAILED prove_sp_intake.py — see prover_output."
+        ),
     }
 
 
@@ -937,6 +1613,80 @@ def signature_selftest() -> bool:
     print(f"[sig-selftest] Test 4 {'PASS' if step4 else 'FAIL'}: MISSING-q7 record -> prover exit {rc} "
           f"(want 2, AF-SP-8Q-MISSING present={('AF-SP-8Q-MISSING' in out)})")
 
+    # (5) the REAL turn-gate: walk --signature --next / --answer one question
+    # at a time end-to-end in a temp run dir and confirm (a) --next never
+    # returns more than one question per call, (b) it BLOCKS when the active
+    # question has no answer yet, and (c) the final answer auto-finalizes
+    # (assembles + proves) exactly like a passing --record call.
+    import io
+    from contextlib import redirect_stdout
+
+    def _call(fn, *a):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            try:
+                fn(*a)
+            except SystemExit:
+                pass
+        return json.loads(buf.getvalue().strip())
+
+    answers = {
+        "interview_choice": "quick",
+        "q1": "The Signature Talk", "q2": "yes, propose two alternates",
+        "q3": "the overlooked mid-career expert who feels unseen",
+        "q4": "left a secure post to build the practice; a first-in-family milestone",
+        "q5": "The 5-Step Signature Method", "q6": "no, the working title is fine",
+        "q7": "The Signature Intensive", "q8": "keep the tone warm and direct",
+        "frame_selection": "rulebook",
+    }
+    with tempfile.TemporaryDirectory() as td:
+        run_dir = pathlib.Path(td)
+        sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+        seen_ids = []
+        never_blocked_wrongly = True
+        rounds = 0
+        finalized = None
+        while rounds < 30:
+            rounds += 1
+            out = _call(cmd_sp_next, run_dir, spec, sp_ledger)
+            sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+            if out["status"] in ("signature_intake_verified", "signature_intake_rejected"):
+                finalized = out
+                break
+            if out["status"] == "blocked":
+                # Immediately answer the blocked question — proves the
+                # active question truly gated further advance.
+                qid = out["current_question_id"]
+                ans = _call(cmd_sp_answer, run_dir, spec, sp_ledger, qid, answers.get(qid, "a fine answer"))
+                sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+                if ans["status"] in ("accepted_and_finalized",):
+                    finalized = ans
+                    break
+                continue
+            if out["status"] == "question":
+                qid = out["id"]
+                if qid in seen_ids:
+                    never_blocked_wrongly = False
+                seen_ids.append(qid)
+                # answer it directly, then loop back to --next (proves --next
+                # will BLOCK if we hadn't done this)
+                ans = _call(cmd_sp_answer, run_dir, spec, sp_ledger, qid, answers.get(qid, "a fine answer"))
+                sp_ledger = load_ledger(run_dir, SP_LEDGER_REL)
+                if ans["status"] in ("accepted_and_finalized",):
+                    finalized = ans
+                    break
+                continue
+        step5 = (
+            finalized is not None
+            and finalized.get("passed") is True
+            and never_blocked_wrongly
+            and len(set(seen_ids)) >= 9  # choice + 8 + frame, minus whichever finalized inline
+        )
+        ok = ok and step5
+        print(f"[sig-selftest] Test 5 {'PASS' if step5 else 'FAIL'}: --signature --next/--answer "
+              f"real turn-gate walked {len(seen_ids)} distinct questions one at a time, "
+              f"finalized={finalized is not None and finalized.get('passed')}")
+
     print(f"[deck-intake-driver] --signature --selftest: {'ALL PASS' if ok else 'FAILED'}")
     return ok
 
@@ -987,6 +1737,28 @@ def main() -> None:
     if args.signature:
         if args.selftest:
             sys.exit(0 if signature_selftest() else 1)
+        if args.next or args.answer:
+            # --signature --next / --signature --answer: the REAL turn-gate.
+            # Runs the SAME blocked/validated ledger machinery as the standard
+            # flow, over sp-8-questions.json (choice question first, q1..q8,
+            # then the frame question) — no batch payload on this path.
+            if not args.run_dir:
+                parser.error("--run-dir DIR is required for --signature --next/--answer")
+            sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+            if not sp_run_dir.exists():
+                print(json.dumps({"status": "error", "message": f"--run-dir not found: {sp_run_dir}"}))
+                sys.exit(1)
+            try:
+                sp_spec = json.loads(find_sp_spec(args.sp_spec).read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+                print(json.dumps({"status": "error", "message": f"cannot load SP spec: {exc}"}))
+                sys.exit(3)
+            sp_ledger = load_ledger(sp_run_dir, SP_LEDGER_REL)
+            if args.next:
+                cmd_sp_next(sp_run_dir, sp_spec, sp_ledger)
+            else:
+                cmd_sp_answer(sp_run_dir, sp_spec, sp_ledger, args.answer[0], args.answer[1])
+            return  # both exit internally
         cmd_signature(args)
         return  # cmd_signature exits internally
 

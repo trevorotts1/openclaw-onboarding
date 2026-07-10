@@ -327,6 +327,40 @@ PROMPT_CHAR_TARGET_HIGH = 18000  # v15.0.0: SOP authoring-target HIGH end raised
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
 
+# ---------------------------------------------------------------------------
+# AF-COPY-BAND — per-slide COPY character-count FLOOR and CEILING (spec item 7 /
+# §8.2). Reconciles the 3-way bullet-count conflict (slide-copywriter.md:187 said
+# "5 bullets, 7 words each"; qc-specialist-presentations.md c4 said "3 bullets max
+# or 30 words max"; slide-image-creator.md:229,759 renders "max 5 words") DOWN to
+# one enforced rule, and adds the missing MINIMUM (previously no floor existed
+# anywhere for headline/subhead/slide-total — only prose ceilings that no code
+# ever checked). Characters, not words: deterministic, locale-stable, and directly
+# enforceable on slides.json copy[] without an LLM judgment call.
+#
+# copy[] positional semantics (slides.schema.json): index 0 = HEADLINE,
+# index 1 = SUBHEAD (optional), index 2 = KICKER / third block (optional),
+# index 3+ = BULLETS (max COPY_BULLET_MAX_COUNT).
+#
+# Because QC_FOREIGN_SIGNATURES (below) bans QC *reports* that carry a
+# word-count rubric, this band is enforced ONLY as a first-party preflight
+# check (_chk_copy_density, like AF-P1) — never as a QC-report criterion — so
+# there is no collision with that ban.
+# ---------------------------------------------------------------------------
+COPY_HEADLINE_CHAR_FLOOR = 12        # ~2 words -- kills one-word non-headlines
+COPY_HEADLINE_CHAR_CEILING = 60      # ~9 words -- preserves the historical 9-word ceiling
+COPY_SUBHEAD_CHAR_FLOOR = 20         # ~4 words -- only applied when a subhead is present
+COPY_SUBHEAD_CHAR_CEILING = 110      # ~18 words -- preserves the historical 18-word ceiling
+COPY_KICKER_CHAR_CEILING = 40        # kicker/third block: absent OR <= 40 chars, no floor
+COPY_BULLET_CHAR_FLOOR = 8           # ~1-2 words
+COPY_BULLET_CHAR_CEILING = 30        # ~5 words -- resolves the 5-vs-7-word conflict DOWN to
+                                      # the image-render reality (slide-image-creator.md's
+                                      # "max 5 words" is what actually bakes into the PNG)
+COPY_BULLET_MAX_COUNT = 3            # resolves the 3-vs-5-bullet conflict DOWN (qc-specialist wins)
+COPY_SLIDE_TOTAL_CHAR_FLOOR = 40     # kills the "empty slide, one orphan word" failure
+COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves historical ceiling
+COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
+                                        # hook line alone is allowed to be short
+
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
@@ -1195,7 +1229,97 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
         raise RuntimeError(f"NETWORK ERROR reaching {url}: {exc}. KIE is unreachable.") from exc
 
 
+def _import_prompt_gate():
+    """Import the shared prompt_gate module that ships beside build_deck.py (the ONE
+    image-prompt gate every path uses). Tries a normal import first (scripts/ is on
+    sys.path when build_deck runs / is imported), then a path-based load from this file's
+    own directory. Returns the module or None (callers degrade gracefully). Mirrors
+    _import_intelligence_engines_check."""
+    try:
+        import importlib
+        return importlib.import_module("prompt_gate")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "prompt_gate",
+                str(Path(__file__).resolve().parent / "prompt_gate.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _ensure_english_pin(prompt: str) -> str:
+    """Make the mandatory English/Latin anti-garble pin REAL on the render payload. The
+    ENGLISH_PIN constant was historically defined and appended NOWHERE (dead code); this
+    appends it (belt-and-braces) if the authored rich prompt does not already carry it, so
+    every createTask the canonical renderer submits pins the copy to correctly-spelled
+    Latin-alphabet text. Prefers the shared prompt_gate helper (single source of truth);
+    falls back to a local append if the module is unavailable, so the pin is ALWAYS on the
+    payload. Never appends past the 20,000-char GPT-Image-2 API ceiling."""
+    pg = _import_prompt_gate()
+    if pg is not None:
+        try:
+            return pg.ensure_english_pin(prompt)
+        except Exception:  # noqa: BLE001 — never let the pin helper break a render
+            pass
+    norm = lambda s: re.sub(r"\s+", " ", s).strip().lower()  # noqa: E731
+    if norm(ENGLISH_PIN) in norm(prompt):
+        return prompt
+    candidate = prompt.rstrip() + "\n\n" + ENGLISH_PIN
+    return candidate if len(candidate) <= 20000 else prompt
+
+
+def _record_ocr_readback(out_path: Path, readback: dict) -> None:
+    """Write the OCR text-readback provenance record beside the slide PNG (best-effort,
+    never raises). Mirrors the AF-IMAGE-QC-VISION provenance pattern: on a box WITHOUT an
+    OCR engine the absence is visible in the record rather than silently skipped."""
+    try:
+        sidecar = out_path.with_suffix(".ocr.json")
+        sidecar.write_text(json.dumps(readback, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _verify_aspect_and_readback(out_path: Path, slide: dict, ordinal: int) -> None:
+    """POST-DOWNLOAD image verification, run after verify_png inside render_slide's per-slide
+    attempt loop so a failure retries against SLIDE_MAX_ATTEMPTS:
+      * ASPECT/2K — the canonical renderer always requests the 16:9 / 2K pin; a response
+        whose shape/size does not match is stretched/distorted by assemble_pptx, so refuse
+        it (raises -> retry) instead of shipping a distorted slide.
+      * OCR TEXT-READBACK — a deterministic garbled-text catch (optional engine;
+        provenance-recorded when absent). When the engine RAN and the rendered text does not
+        match the slide's approved copy, re-render (retry). This converts garbled baked text
+        from an LLM-honesty check into code.
+    No-op (PNG magic already verified by verify_png) when the shared gate is unavailable."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return
+    label = f"slide-{ordinal:02d}"
+    # Aspect/resolution: build_deck always renders the pinned 16:9 / 2K. Raises on mismatch.
+    pg.verify_aspect_ratio(out_path, slide_id=label)
+    # OCR readback (optional engine; provenance-recorded). Compare the baked text to the
+    # slide's approved copy strings.
+    readback = pg.ocr_readback(out_path, slide.get("copy"), slide_id=label)
+    _record_ocr_readback(out_path, readback)
+    if readback.get("checked") and readback.get("matched") is False:
+        raise RuntimeError(
+            f"slide {ordinal}: OCR readback — rendered text does not match the approved "
+            f"copy (unreadable/garbled: {readback.get('misses')}). Re-rendering this slide."
+        )
+
+
 def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> str:
+    # Make the English/Latin anti-garble pin REAL: append it (belt-and-braces) if the
+    # authored rich prompt does not already carry it. Before this, ENGLISH_PIN was a dead
+    # constant — defined and appended nowhere — so the #1 defense against garbled/CJK baked
+    # text never rode on the payload.
+    prompt = _ensure_english_pin(prompt)
+
     # OFFICIAL-LOGO mode = IMAGE-TO-IMAGE: pass the real logo URL as input_urls so
     # KIE (gpt-image-2-image-to-image) composites the ACTUAL logo into the slide
     # (the verified technique). No logo_url -> plain text-to-image.
@@ -1363,6 +1487,11 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    success resultUrls[0]={result_url}", flush=True)
             download_unauthenticated(result_url, out_path)
             verify_png(out_path)
+            # POST-DOWNLOAD aspect/2K verification + OCR text-readback (shared prompt_gate).
+            # A non-16:9 / sub-2K response, or rendered text that does not match the approved
+            # copy, raises here and retries against SLIDE_MAX_ATTEMPTS rather than shipping a
+            # distorted or garbled slide.
+            _verify_aspect_and_readback(out_path, slide, ordinal)
             size = out_path.stat().st_size
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
@@ -1472,8 +1601,10 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 
     Search order (first hit wins): the working-dir locations the speech roles write
     to, then the delivered bundle copy. Filenames use the standardized possessive
-    plural PRESENTERS-SPEECH.md (canonical); the legacy singular PRESENTER-SPEECH.md
-    and the speech.md scratch name are also accepted."""
+    plural PRESENTERS-SPEECH.md (canonical); the legacy singular PRESENTER-SPEECH.md,
+    the speech.md scratch name, and the presenters_speech.md snake_case variant
+    (audio-demonstration-specialist.md's legacy reference name) are also accepted —
+    legacy tolerance, so no producer's output silently never reaches the notes pane."""
     candidates = [
         run_dir / "working/presenter-speech/speech.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
@@ -1482,6 +1613,9 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
         run_dir / "working/delivery/PRESENTER-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTER-SPEECH.md",
         bundle_dir / "PRESENTER-SPEECH.md",
+        run_dir / "working/presenter-speech/presenters_speech.md",
+        run_dir / "working/delivery/presenters_speech.md",
+        bundle_dir / "presenters_speech.md",
     ]
     for path in candidates:
         try:
@@ -1564,6 +1698,186 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out_path))
+
+
+# ---------------------------------------------------------------------------
+# P9.5-NOTES-SYNC — reorder notes-pane assembly to AFTER the speech is finalized.
+#
+# ROOT CAUSE (spec §9.1): assemble_pptx() runs at P8-ASSEMBLE, but the presenter
+# speech (PRESENTERS-SPEECH.md) is a P9-SPEECH / P-SPEECH-QC artifact. On a normal
+# linear run the notes pane is injected BEFORE the speech exists, so it ships
+# empty. Fix: REORDER (do not rewrite) — a small idempotent pass that reopens the
+# already-assembled .pptx after the speech has been written AND QC-passed, and
+# re-runs the same discover_speech_chunks()/notes injection this time with the
+# real word-for-word script on disk. This is the "P9.5-NOTES-SYNC" phase
+# (PIPELINE-MANIFEST.json order 8.7, between P-SPEECH-QC and P9-DELIVER).
+# ---------------------------------------------------------------------------
+
+def notes_sync_pass(bundle_pptx: Path, run_dir: Path, bundle_dir: Path) -> dict:
+    """P9.5-NOTES-SYNC: reopen the assembled .pptx and inject the FULL word-for-word
+    presenter speech into every slide's notes pane, now that the speech is (expected
+    to be) present and QC-passed. IDEMPOTENT — this OVERWRITES the notes text frame
+    on every matched slide each time it runs; it never appends or duplicates, and
+    running it twice on the same inputs produces the same output.
+
+    Returns a small JSON-able result dict:
+      {"status": "synced"|"no_speech"|"error", "slides_total": N,
+       "slides_with_notes": N, "speech_source": "<path or None>",
+       "reason": "<human string>"}
+    NEVER raises — a notes-sync problem must never take down a build that already
+    has a valid assembled deck; the AF-EMPTY-NOTES-PANE postflight gate is what
+    turns an unsynced deck into a hard failure, not this pass."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": "python-pptx is not installed (pip install python-pptx)."}
+
+    if not bundle_pptx.is_file():
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": f"assembled PPTX not found at {bundle_pptx}; run assembly "
+                          f"(P8-ASSEMBLE) before P9.5-NOTES-SYNC."}
+
+    speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
+    if not speech_chunks:
+        return {"status": "no_speech", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": "no presenter speech found (or it parsed to zero chunks); "
+                          "the notes pane is left as-is. This is non-fatal here — the "
+                          "AF-EMPTY-NOTES-PANE postflight gate is what fails the run "
+                          "if notes are still empty at delivery."}
+
+    try:
+        prs = Presentation(str(bundle_pptx))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "slides_total": 0, "slides_with_notes": 0,
+                "speech_source": None,
+                "reason": f"could not open {bundle_pptx} with python-pptx: {exc}"}
+
+    slides_total = len(prs.slides)
+    slides_with_notes = 0
+    for idx, slide in enumerate(prs.slides, start=1):
+        spoken = speech_chunks.get(idx)
+        if spoken:
+            # Overwrite (never append) so re-running this pass is idempotent.
+            slide.notes_slide.notes_text_frame.text = spoken
+            slides_with_notes += 1
+
+    try:
+        prs.save(str(bundle_pptx))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "slides_total": slides_total,
+                "slides_with_notes": slides_with_notes, "speech_source": None,
+                "reason": f"could not save {bundle_pptx} after notes injection: {exc}"}
+
+    print(f"=== P9.5-NOTES-SYNC: injected notes for {slides_with_notes}/{slides_total} "
+          f"slide(s) into {bundle_pptx} from the QC-passed presenter speech ===",
+          flush=True)
+    return {"status": "synced", "slides_total": slides_total,
+            "slides_with_notes": slides_with_notes, "speech_source": "found",
+            "reason": ""}
+
+
+# Env-overridable, comma-separated, case-insensitive slide-tag substrings that
+# exempt a slide from AF-EMPTY-NOTES-PANE (structural/divider slides carry no
+# spoken content of their own — the spec's "section-banner slides, configurable").
+NOTES_PANE_EXEMPT_TAG_DEFAULT = "banner,divider,section,transition,intermission"
+
+
+def _notes_pane_exempt_tags() -> set:
+    raw = os.environ.get("NOTES_PANE_EXEMPT_TAGS", NOTES_PANE_EXEMPT_TAG_DEFAULT)
+    return {t.strip().lower() for t in raw.split(",") if t.strip()}
+
+
+def _notes_pane_exempt_slide_numbers(slides_path: Optional[Path]) -> set:
+    """Read slides.json (if available) and return the set of 1-based slide numbers
+    tagged as structural/divider — exempt from the AF-EMPTY-NOTES-PANE requirement.
+    Best-effort: any parse problem yields an empty exemption set (fail toward MORE
+    checking, never less)."""
+    if slides_path is None:
+        return set()
+    try:
+        slides = json.loads(Path(slides_path).read_text())
+    except Exception:  # noqa: BLE001
+        return set()
+    if not isinstance(slides, list):
+        return set()
+    exempt_tags = _notes_pane_exempt_tags()
+    exempt = set()
+    for i, s in enumerate(slides, start=1):
+        if not isinstance(s, dict):
+            continue
+        tokens = []
+        for k in ("arc_section", "section", "beat", "tag", "type", "role", "kind"):
+            v = s.get(k)
+            if isinstance(v, str):
+                tokens.append(v.lower())
+        tags = s.get("tags")
+        if isinstance(tags, list):
+            tokens += [str(t).lower() for t in tags]
+        blob = " ".join(tokens)
+        if any(tag in blob for tag in exempt_tags):
+            exempt.add(i)
+    return exempt
+
+
+def _chk_notes_pane(bundle_dir: Path, run_dir: Optional[Path] = None,
+                    slides_path: Optional[Path] = None) -> str:
+    """AF-EMPTY-NOTES-PANE (delivery/closeout gate, D11 in the Master Ruleset).
+    Opens the delivered *.pptx in bundle_dir and reads
+    slide.notes_slide.notes_text_frame.text for every slide; any audience-facing
+    CONTENT slide with an empty notes pane is a hard fail (structural/divider
+    slides are exempt per _notes_pane_exempt_slide_numbers). Returns "" on pass, or
+    a fatal AF-EMPTY-NOTES-PANE message naming the empty slide numbers.
+
+    This is the code implementation of the autofail that previously existed only
+    on paper (sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md:578-582) — closing
+    the exact gap the notes-pane reorder (P9.5-NOTES-SYNC) exists to prevent: a
+    deck assembled before the speech existed, never re-synced, shipping silent."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return ("AF-EMPTY-NOTES-PANE: python-pptx is not installed, so the notes "
+                "pane cannot be verified. Install python-pptx before delivery.")
+
+    pptx_candidates = [p for p in sorted(Path(bundle_dir).glob("*.pptx"))
+                       if not p.name.startswith("~$")]
+    if not pptx_candidates:
+        # No delivered PPTX here yet — another gate (AF-BUNDLE-COMPLETE) owns the
+        # "missing deliverable" failure; this gate has nothing to inspect.
+        return ""
+
+    exempt = _notes_pane_exempt_slide_numbers(slides_path)
+    empty_slides = []
+    for pptx_path in pptx_candidates:
+        try:
+            prs = Presentation(str(pptx_path))
+        except Exception:  # noqa: BLE001
+            # A file python-pptx cannot open is NOT a valid deck to scan here — the
+            # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) and
+            # the C2 content-type check own malformed/decoy .pptx files. Defer rather
+            # than false-fail AF-EMPTY-NOTES-PANE (mirrors _delivered_pptx_native_text).
+            continue
+        for idx, slide in enumerate(prs.slides, start=1):
+            if idx in exempt:
+                continue
+            has_notes_part = slide.has_notes_slide
+            text = (slide.notes_slide.notes_text_frame.text.strip()
+                    if has_notes_part else "")
+            if not text:
+                empty_slides.append((pptx_path.name, idx))
+
+    if empty_slides:
+        listing = "; ".join(f"{fname} slide {n}" for fname, n in empty_slides[:20])
+        more = f" (+{len(empty_slides) - 20} more)" if len(empty_slides) > 20 else ""
+        return (f"AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty "
+                f"notes panes on content slides: {listing}{more}. Re-assemble with "
+                f"the presenter speech present so per-slide notes are injected "
+                f"(build_deck.py auto-injection at P8-ASSEMBLE, re-synced at "
+                f"P9.5-NOTES-SYNC / notes_sync_pass()), then re-verify.")
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -2910,6 +3224,151 @@ def _load_slide_copy_map(run_dir: Path, slides_path: Optional[Path] = None) -> d
             if out:
                 return out
     return {}
+
+
+def _load_slide_arc_tags(run_dir: Path) -> dict:
+    """Return {ordinal: lowercase tag/section/beat blob} from arc_allocation.json.
+    Used ONLY to identify the HOOK / section-banner slide-total-floor exemption for
+    _chk_copy_density (spec §8.2 item 1: "pure-typography HOOK slides floor drops
+    to 12; section-banner slides likewise"). Returns {} when no arc_allocation.json
+    can be read — the gate then applies the standard (non-exempt) floor to every
+    slide, which is the safe default (never a silent pass)."""
+    arc = None
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if p.exists():
+            arc = p
+            break
+    if arc is None:
+        return {}
+    obj = _read_json(arc)
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return {}
+    slots = obj if isinstance(obj, list) else (
+        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    out = {}
+    if not isinstance(slots, list):
+        return {}
+    for s in slots:
+        if not isinstance(s, dict):
+            continue
+        ordinal = s.get("slide")
+        if not isinstance(ordinal, int):
+            continue
+        tokens = []
+        for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+            v = s.get(k)
+            if isinstance(v, str):
+                tokens.append(v.lower())
+        tags = s.get("tags")
+        if isinstance(tags, list):
+            tokens += [str(t).lower() for t in tags]
+        out[ordinal] = " ".join(tokens)
+    return out
+
+
+def _is_hook_or_banner_slide(tag_blob: str) -> bool:
+    if not tag_blob:
+        return False
+    markers = ("hook", "section-banner", "section_banner", "sectionbanner", "banner")
+    return any(m in tag_blob for m in markers)
+
+
+def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-COPY-BAND (preflight, fail-loud) -- per-slide COPY character-count FLOOR
+    and CEILING, code-enforced. See the COPY_* band constants above for the exact
+    numbers and their provenance (spec item 7 / §8.2): this is the first-ever
+    code-enforced minimum for headline/subhead/slide-total, and it reconciles the
+    old 3-way bullet-count conflict (5-bullets-7-words vs 3-bullets-30-words vs
+    render-reality 5-words) into ONE rule instead of three incompatible ones.
+
+    Reads the ACTUAL slides.json the renderer will render (slides_path, H3 -- the
+    same positional-file convention _chk_rich_prompts/_chk_coverage use) so the
+    band is enforced against the exact file that gets rendered, not a different
+    canonical slides.json that might disagree. Defers ("" / pass) when slides.json
+    cannot be found or parsed -- _chk_slides_copy / _chk_arc / schema validation own
+    that absence; this gate only judges copy[] CONTENT once it exists.
+
+    Because QC_FOREIGN_SIGNATURES bans QC *reports* that carry a word-count
+    rubric, this is a FIRST-PARTY preflight check (like AF-P1) that counts
+    CHARACTERS deterministically in code -- never a QC-report criterion -- so
+    there is no collision with that ban.
+
+    Returns "" when every slide's copy[] clears every band, else a fatal
+    AF-COPY-BAND message naming slide + field + count + band for every offender."""
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # no slides.json yet -- _chk_slides_copy/_chk_arc own the absence
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
+    if not copy_map:
+        return ""  # slides.json unreadable/empty -- upstream checks own that failure
+    arc_tags = _load_slide_arc_tags(run_dir)
+    offenders = []
+    for ordinal in range(1, n + 1):
+        copy_val = copy_map.get(ordinal)
+        if not isinstance(copy_val, list) or not copy_val:
+            continue  # missing/malformed copy -- schema validation / AF-P1 own this
+        fields = [str(c) if c is not None else "" for c in copy_val]
+        headline = fields[0]
+        subhead = fields[1] if len(fields) > 1 else None
+        kicker = fields[2] if len(fields) > 2 else None
+        bullets = fields[3:]
+
+        hlen = len(headline)
+        if not (COPY_HEADLINE_CHAR_FLOOR <= hlen <= COPY_HEADLINE_CHAR_CEILING):
+            offenders.append(
+                f"slide {ordinal:02d} HEADLINE: {hlen} chars, outside "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING} band")
+
+        if subhead:
+            slen = len(subhead)
+            if not (COPY_SUBHEAD_CHAR_FLOOR <= slen <= COPY_SUBHEAD_CHAR_CEILING):
+                offenders.append(
+                    f"slide {ordinal:02d} SUBHEAD: {slen} chars, outside "
+                    f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} band")
+
+        if kicker:
+            klen = len(kicker)
+            if klen > COPY_KICKER_CHAR_CEILING:
+                offenders.append(
+                    f"slide {ordinal:02d} KICKER: {klen} chars, over the "
+                    f"{COPY_KICKER_CHAR_CEILING}-char ceiling")
+
+        real_bullets = [b for b in bullets if b]
+        if len(real_bullets) > COPY_BULLET_MAX_COUNT:
+            offenders.append(
+                f"slide {ordinal:02d} BULLETS: {len(real_bullets)} bullets, over the "
+                f"{COPY_BULLET_MAX_COUNT}-bullet max (AF-COPY-BAND reconciles the historical "
+                f"3-vs-5-bullet / 7-vs-5-word conflict DOWN to this one enforced rule)")
+        for bi, b in enumerate(real_bullets, start=1):
+            blen = len(b)
+            if not (COPY_BULLET_CHAR_FLOOR <= blen <= COPY_BULLET_CHAR_CEILING):
+                offenders.append(
+                    f"slide {ordinal:02d} BULLET {bi}: {blen} chars, outside "
+                    f"{COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING} band")
+
+        total = sum(len(f) for f in fields)
+        tag_blob = arc_tags.get(ordinal, "")
+        exempt = _is_hook_or_banner_slide(tag_blob)
+        floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
+        if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
+            offenders.append(
+                f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
+                f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
+                + (" (hook/section-banner exemption applied)" if exempt else ""))
+
+    if offenders:
+        return ("AF-COPY-BAND: per-slide copy character-count floor/ceiling FAILED for "
+                f"{len(offenders)} field(s). Bands: HEADLINE "
+                f"{COPY_HEADLINE_CHAR_FLOOR}-{COPY_HEADLINE_CHAR_CEILING}, SUBHEAD "
+                f"{COPY_SUBHEAD_CHAR_FLOOR}-{COPY_SUBHEAD_CHAR_CEILING} (if present), KICKER "
+                f"<= {COPY_KICKER_CHAR_CEILING} (if present), BULLETS <= {COPY_BULLET_MAX_COUNT} "
+                f"each {COPY_BULLET_CHAR_FLOOR}-{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL "
+                f"{COPY_SLIDE_TOTAL_CHAR_FLOOR}-{COPY_SLIDE_TOTAL_CHAR_CEILING} "
+                f"({COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR} floor for hook/section-banner slides). "
+                "Offenders: " + "; ".join(offenders))
+    return ""
 
 
 def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) -> list:
@@ -6367,6 +6826,23 @@ PREFLIGHT_REQUIRED = [
      "slide copy authored per doctrine (hook recurs across the deck, 3-4 band, 10 components)",
      "Phase 4 — Slide Copywriter SOP",
      _chk_slides_copy),
+    # AF-COPY-BAND — per-slide COPY character-count FLOOR and CEILING (spec item 7 /
+    # §8.2). The first-ever code-enforced minimum for headline/subhead/slide-total,
+    # and the single reconciled rule for the old 3-way bullet-count conflict
+    # (5-bullets-7-words vs 3-bullets-30-words vs render-reality 5-words). Run-dir-
+    # scoped (None sentinel) so it reads the ACTUAL positional slides.json (H3).
+    # Deliberately a first-party preflight check, NOT a QC-report criterion, so it
+    # never collides with the QC_FOREIGN_SIGNATURES word-count-rubric ban.
+    (None,
+     f"copy character-count band — HEADLINE {COPY_HEADLINE_CHAR_FLOOR}-"
+     f"{COPY_HEADLINE_CHAR_CEILING}, SUBHEAD {COPY_SUBHEAD_CHAR_FLOOR}-"
+     f"{COPY_SUBHEAD_CHAR_CEILING} (if present), KICKER <= {COPY_KICKER_CHAR_CEILING} "
+     f"(if present), BULLETS <= {COPY_BULLET_MAX_COUNT} each {COPY_BULLET_CHAR_FLOOR}-"
+     f"{COPY_BULLET_CHAR_CEILING}, SLIDE TOTAL {COPY_SLIDE_TOTAL_CHAR_FLOOR}-"
+     f"{COPY_SLIDE_TOTAL_CHAR_CEILING} (AF-COPY-BAND)",
+     "Phase 4 — Slide Copywriter SOP / qc-specialist-presentations.md c4 "
+     "(AF-COPY-BAND)",
+     _chk_copy_density),
     # G1 — WRITING-half INTELLIGENCE engines (Story villain-before-hero, Emotional
     # felt-stakes-before-offer, Hook copy refrain, Recap) + narrative harmony, fired at
     # COPY-QC (the EARLIEST phase, BEFORE any image prompt is authored — shift-left).
@@ -7827,6 +8303,22 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                   error=overlay_reason)
 
+    # --- AF-EMPTY-NOTES-PANE sub-check (P9.5-NOTES-SYNC reorder) ---
+    # Previously documented (SOP-SLIDE-00:578-582) but never code-enforced. At
+    # closeout — AFTER notes_sync_pass() has had the chance to re-inject notes from
+    # the now-QC-passed speech — re-open the delivered PPTX and refuse to ship any
+    # audience-facing content slide with an empty notes pane.
+    notes_pane_reason = _chk_notes_pane(bundle_dir, run_dir=run_dir, slides_path=slides_path)
+    if notes_pane_reason:
+        missing_or_short.append((
+            "deck_pptx",
+            _expand_filename("deck.pptx", deck_slug),
+            "per-slide speaker notes present (AF-EMPTY-NOTES-PANE; notes injected "
+            "from the QC-passed presenter speech)",
+            0, 0, "EMPTY_NOTES_PANE"))
+        update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                  error=notes_pane_reason)
+
     # --- FIX-2: CANONICAL-RENDER-PATH sub-check (AF-CANONICAL-RENDER-BYPASS /
     # AF-LOCAL-CANVAS) — at closeout, re-prove no hand-rolled renderer/assembler in
     # the run dir produced (part of) the deck. The canonical render path is
@@ -8141,16 +8633,18 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
 #   P4-RENDER START     -> STATUS  backlog -> in_progress   (_board_patch_phase)
 #   P4-RENDER complete  -> ACTIVITY progress post           (_board_post_activity)
 #   P8-ASSEMBLE complete-> ACTIVITY progress post           (_board_post_activity)
-#   run-end (bundle OK) -> STATUS  -> done + process_certificate_sha, but ONLY when
-#                          the PROCESS-CERTIFICATE already exists on disk
+#   run-end (bundle OK) -> STATUS  -> review + process_certificate_sha + QC scores,
+#                          but ONLY when the PROCESS-CERTIFICATE already exists on disk
 #                          (_process_certificate_present guard); otherwise the close
 #                          is DEFERRED to the runner (run_signature_deck.py) which
 #                          fires it right after prove-deck mints the cert.
 #
 # Mid-run phase progress is an ACTIVITY, NOT a task-level status change: a mid-run
-# status='done' 422s the presentations cert done-gate (the PROCESS-CERTIFICATE is
-# minted at delivery, not mid-run) and would wrongly close a non-presentation card.
-# The COMPLETED deck closes with status='done' (there is NO 'delivered' status in
+# terminal status 422s the presentations cert gate (the PROCESS-CERTIFICATE is
+# minted at delivery, not mid-run) and would wrongly move a non-presentation card.
+# The COMPLETED deck's producer close is status='review' — the pipeline STOPS at
+# review and the CC-side QC scorer / Devil's-Advocate gate promotes review->done
+# (the interlock every sibling department respects; there is NO 'delivered' status in
 # the CC UpdateTaskSchema enum — "delivered" belongs in the note only). build_deck
 # runs the RENDER phase BEFORE the cert exists, so in the normal runner flow the
 # terminal close is the RUNNER's job; build_deck only closes here in a standalone
@@ -8253,6 +8747,7 @@ def main():
     skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
                                     # publish sub-check (never via a persisted status).
     sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
+    notes_sync_mode = False  # P9.5-NOTES-SYNC (8.7): re-inject notes post-speech-QC.
     style_spec_arg = None
     positional = []
     i = 0
@@ -8262,6 +8757,8 @@ def main():
             adhoc = True
         elif tok == "--sample":
             sample_mode = True
+        elif tok == "--notes-sync":
+            notes_sync_mode = True
         elif tok == "--style-spec":
             i += 1
             if i >= len(argv):
@@ -8359,6 +8856,56 @@ def main():
         _api_key = "" if adhoc else load_api_key()
         _spec = Path(style_spec_arg) if style_spec_arg else None
         sys.exit(run_style_preview_samples(_sp, _run_dir, _spec, _api_key, logo_url=_logo_url))
+
+    # P9.5-NOTES-SYNC (order 8.7) --notes-sync mode: reopen the already-assembled
+    # bundle .pptx and re-inject per-slide speaker notes now that the presenter
+    # speech exists and has passed P-SPEECH-QC. Fires AFTER P8-ASSEMBLE / P9-SPEECH /
+    # P-SPEECH-QC and BEFORE P9-DELIVER (run_signature_deck.py dispatches this the
+    # same way it dispatches P4-RENDER). Writes
+    # working/checkpoints/notes_sync.json as the phase's produces_artifact so the
+    # runner can attest it. Idempotent — safe to re-run.
+    if notes_sync_mode:
+        if len(positional) not in (2, 3):
+            print("Usage: python3 build_deck.py <slides.json> <out.pptx> "
+                  "--notes-sync --run-dir DIR [--out BUNDLE_DIR]", file=sys.stderr)
+            sys.exit(2)
+        _ns_slides_path = Path(positional[0])
+        _ns_out_path = Path(positional[1])
+        if not _ns_slides_path.exists():
+            print(f"FATAL: slides.json not found: {_ns_slides_path}", file=sys.stderr)
+            sys.exit(2)
+        _ns_deck_slug = _ns_out_path.stem or "deck"
+        _ns_bundle_dir = _resolve_bundle_dir(out_dir_arg, _ns_out_path)
+        _ns_run_dir = find_run_dir(run_dir_arg, _ns_slides_path, _ns_out_path.parent)
+        _ns_bundle_pptx = _ns_bundle_dir / f"{_ns_deck_slug}-FINAL.pptx"
+        if not _ns_bundle_pptx.is_file():
+            # Fall back to out.pptx itself when it already lives in the bundle dir
+            # under a non-"-FINAL" name (e.g. a direct/adhoc invocation).
+            if _ns_out_path.is_file():
+                _ns_bundle_pptx = _ns_out_path
+            else:
+                print(f"FATAL: no assembled PPTX found at {_ns_bundle_pptx} or "
+                      f"{_ns_out_path}; run P8-ASSEMBLE (the normal render) before "
+                      f"P9.5-NOTES-SYNC.", file=sys.stderr)
+                sys.exit(2)
+        _ns_result = notes_sync_pass(_ns_bundle_pptx, _ns_run_dir, _ns_bundle_dir)
+        _ns_ckpt_dir = _ns_run_dir / "working" / "checkpoints"
+        _ns_ckpt_dir.mkdir(parents=True, exist_ok=True)
+        _ns_record_path = _ns_ckpt_dir / "notes_sync.json"
+        _ns_record = dict(_ns_result)
+        _ns_record["bundle_pptx"] = str(_ns_bundle_pptx)
+        _ns_record["timestamp"] = (timestamp_arg or time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                                    or time.strftime("%Y-%m-%dT%H:%M:%S"))
+        try:
+            _ns_record_path.write_text(json.dumps(_ns_record, indent=2))
+        except OSError as exc:
+            print(f"WARNING: notes-sync succeeded but could not write "
+                  f"{_ns_record_path}: {exc}", file=sys.stderr, flush=True)
+        print(json.dumps(_ns_record, indent=2))
+        # "no_speech" is NON-FATAL (the speech may still be mid-write on a re-run of
+        # this phase before the send-back loop settles) — AF-EMPTY-NOTES-PANE at
+        # postflight is the hard gate, this pass only exits non-zero on a real error.
+        sys.exit(1 if _ns_result.get("status") == "error" else 0)
 
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
@@ -8715,20 +9262,22 @@ def main():
                          run_dir=run_dir, slides_path=slides_path)
 
     # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
-    # The completed deck closes with the TERMINAL status 'done' (there is NO
-    # 'delivered' status in the CC UpdateTaskSchema enum — "delivered" goes in the note
-    # only), and that close carries the process_certificate_sha the presentations
-    # no-skip done-gate REQUIRES. In the RUNNER flow build_deck runs the RENDER phase
-    # BEFORE prove-deck mints the cert, so the cert is ABSENT here and the terminal
-    # close is DEFERRED to the runner (run_signature_deck.py fires it right after
-    # prove-deck). Emitting a terminal 'done' without the cert would 422 the done-gate,
-    # so the guard prevents a doomed premature close. In a standalone full build where
-    # the cert is already present, close here. Fail-soft either way — a board problem
-    # never changes this run's exit code.
+    # The producer STOPS at the TERMINAL status 'review' (there is NO 'delivered'
+    # status in the CC UpdateTaskSchema enum — "delivered" goes in the note only): the
+    # presentations pipeline never self-closes to 'done'. Promotion 'review'->'done' is
+    # the CC-side QC scorer / Devil's-Advocate gate's job, the interlock every sibling
+    # department respects. This close carries the process_certificate_sha (the ticket
+    # INTO review) + the real per-gate QC scores. In the RUNNER flow build_deck runs the
+    # RENDER phase BEFORE prove-deck mints the cert, so the cert is ABSENT here and the
+    # terminal close is DEFERRED to the runner (run_signature_deck.py fires it right
+    # after prove-deck). The guard prevents a doomed premature close before the cert
+    # exists. In a standalone full build where the cert is already present, close here.
+    # Fail-soft either way — a board problem never changes this run's exit code.
     if not adhoc:
         if _process_certificate_present(run_dir):
-            _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "done",
-                               note="bundle complete — deck delivered")
+            _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "review",
+                               note="bundle complete — deck delivered; awaiting CC QC "
+                                    "scorer / Devil's-Advocate promotion to done")
             # Lightweight VISIBILITY gate: a completed run should have recorded >= 1
             # SUCCESSFUL board advance. This only DIAGNOSES (never blocks) — a disabled
             # board legitimately records none; the detail is on disk in cc-board.json.
@@ -8743,8 +9292,9 @@ def main():
                 pass
         else:
             print("[cc_board] P9-DELIVER terminal close DEFERRED — no PROCESS-CERTIFICATE "
-                  "on disk yet; the runner closes the card with status='done'+cert after "
-                  "prove-deck mints it. Render-phase progress is already on the board.",
+                  "on disk yet; the runner closes the card to status='review'+cert+QC "
+                  "scores after prove-deck mints it (CC QC scorer / Devil's-Advocate then "
+                  "promotes review->done). Render-phase progress is already on the board.",
                   file=sys.stderr, flush=True)
     sys.exit(0)
 

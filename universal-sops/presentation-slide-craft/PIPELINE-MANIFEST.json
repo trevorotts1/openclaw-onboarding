@@ -1,5 +1,5 @@
 {
-  "manifest_version": 23,
+  "manifest_version": 24,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -516,13 +516,21 @@
       ],
       "produces_artifact": "working/copy/slides_copy.md",
       "gate_codes": [
-        "AF-OBI-6"
+        "AF-OBI-6",
+        "AF-COPY-BAND"
       ],
       "preflight": {
         "required": true,
         "checker": "_chk_slides_copy",
         "label": "slide copy authored per doctrine (hook >=7x, 10 components)"
       },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_copy_density",
+          "label": "copy character-count band per slides.json copy[] field (HEADLINE 12-60, SUBHEAD 20-110 if present, KICKER <=40 if present, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 / 12-180 hook-exempt; AF-COPY-BAND). Reconciles the historical 3-way bullet-count conflict and adds the previously-missing floor."
+        }
+      ],
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
@@ -751,6 +759,24 @@
       }
     },
     {
+      "id": "P9.5-NOTES-SYNC",
+      "order": 8.7,
+      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/notes_sync.json",
+      "gate_codes": [
+        "AF-EMPTY-NOTES-PANE"
+      ],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      }
+    },
+    {
       "id": "P9-DELIVER",
       "order": 9,
       "name": "Delivery Interlock + Postflight Completeness Gate",
@@ -949,6 +975,15 @@
       "trigger": "presenter speech word count below target_talk_minutes x 120 wpm floor",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_speech_length"
+    },
+    {
+      "code": "AF-EMPTY-NOTES-PANE",
+      "stage": "8.7",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the final .pptx ships with empty notes panes on content slides (per-slide speaker notes not injected) \u2014 fixed by reordering notes assembly to P9.5-NOTES-SYNC (AFTER the speech is finalized and QC-passed), then re-verified here at postflight",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_notes_pane"
     },
     {
       "code": "AF-DELIVER",
@@ -1156,6 +1191,15 @@
       "trigger": "comparison table > 2 rows",
       "enforced_by": "qc_check",
       "py_symbol": null
+    },
+    {
+      "code": "AF-COPY-BAND",
+      "stage": "4/preflight",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slides.json copy[] field is outside its char band (HEADLINE 12-60, SUBHEAD 20-110 if present, KICKER <=40 if present, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 / 12-180 hook-or-section-banner-exempt)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_copy_density"
     },
     {
       "code": "AF-DEN-1",

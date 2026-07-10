@@ -2,7 +2,12 @@
 
 **Cluster:** Slide-Craft Rules (the single most important deliverable)
 **Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the forensic failures.
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Layer B — render/delivery).
+**Doctrine index (read first):** universal-sops/PRESENTATION-MASTER-DOCTRINE.md — the one
+reconciled process (Layer A authoring pipeline + Layer B deterministic render), the canonical
+doctrine home rule (universal-sops/ is canonical; this dept copy is a generated mirror), and
+the crosswalk that resolves every legacy "master SOP Section N" citation. This ruleset is the
+Layer-A/QC auto-fail doctrine; the live gate wiring is mapped below.
 **How to use:** every rule below is an AUTO-FAIL. Auto-fails are checked FIRST, before any 1-to-10 scoring, exactly like the existing AF-C / AF-P / AF-I tables in the QC role. A triggered auto-fail forces FAIL on the affected slide (or the whole DECK where marked) regardless of any average. The QC report records the triggered code, the slide, and the failure message verbatim.
 **Status:** Reference ruleset, RECONCILED with the live gate. This document is the authored slide-craft auto-fail doctrine; the named codes below (AF-HOOK, AF-AUD, AF-OBI, AF-DEN, AF-PLACEHOLDER) are the doctrine's own taxonomy. In the live qc-specialist-presentations.md these protections are ALREADY WIRED under the repo's existing code namespace (the FIX-1 through FIX-8 overhaul). Use the reconciliation map below to find each rule's live equivalent. Do NOT re-add a parallel AF-HOOK/AF-AUD/AF-OBI/AF-DEN namespace to the QC role; that work is done.
 
@@ -156,6 +161,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-OBI-4 | 1Q | slide | full value trio on one slide | three parallel named values co-present |
 | AF-OBI-5 | 1Q | slide | bulleted pain list | 2+ distinct pains as list items |
 | AF-OBI-6 | 5 | slide | comparison table > 2 rows | rendered contrast-row count > 2 |
+| AF-COPY-BAND | 4/preflight | slide | copy[] field outside its char band (HEADLINE 12-60, SUBHEAD 20-110, KICKER <=40, BULLET 8-30 x<=3, SLIDE TOTAL 40-180 / 12-180 hook-exempt) | deterministic char-count of each slides.json copy[] field, code-enforced in build_deck.py `_chk_copy_density` (reconciles the historical 5-bullets-7-words / 3-bullets-30-words / render-reality-5-words conflict and adds the previously-missing floor) |
 | AF-DEN-1 | 1Q/6 | DECK | price beats < 8 slides apart | gap between adjacent LADDER tags |
 | AF-DEN-2 | 1Q/6 | DECK | anchor outside 25-45% depth | anchor position / total |
 | AF-DEN-3 | 1Q/6 | DECK | DROP with no BUILDUP before it | slide before each DROP not tagged BUILDUP |
@@ -572,8 +578,9 @@ These codes wire the nine Intelligence Engines (SOP-ENGINE-00) and their require
 
 ### AF-EMPTY-NOTES-PANE -- per-slide speaker notes in the notes pane (package-level, closeout)
 **Doctrine (pptx-assembly-specialist-sops.md SOP 9.1, D11):** the shipped `.pptx` carries each content slide's talking points in its native NOTES pane so the file is self-coaching. Enforced at CLOSEOUT (after the Phase-9 speech exists), not at the Phase-4 render (where an absent speech is non-fatal).
-**Detection:** open the final `.pptx`; read `slide.notes_slide.notes_text_frame.text` per slide; any audience-facing content slide with an empty notes pane = fail (structural/divider slides exempt).
-**Failure message:** `AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty notes panes on content slides. Re-assemble with the presenter speech present so per-slide notes are injected (build_deck.py auto-injection), then re-verify.`
+**CODE-ENFORCED (build_deck.py `_chk_notes_pane`, wired into `run_postflight_gate`; PIPELINE-MANIFEST.json phase `P9.5-NOTES-SYNC`, order 8.7).** The reorder that closes this gap: `assemble_pptx()` still runs at P8-ASSEMBLE (where the speech is usually still absent — non-fatal there by design), but a NEW phase, `P9.5-NOTES-SYNC`, fires AFTER `P9-SPEECH`/`P-SPEECH-QC` are attested and BEFORE `P9-DELIVER`: it reopens the assembled `.pptx` and re-runs `discover_speech_chunks()` (now guaranteed to find the QC-passed speech) via `build_deck.notes_sync_pass()`, overwriting every slide's notes pane (idempotent — safe to re-run). `_chk_notes_pane` is then the final gate at postflight: it opens the delivered `.pptx` and hard-fails if any content slide's notes pane is still empty.
+**Detection:** open the final `.pptx`; read `slide.notes_slide.notes_text_frame.text` per slide; any audience-facing content slide with an empty notes pane = fail. Structural/divider slides are exempt via `NOTES_PANE_EXEMPT_TAGS` (env-overridable, default `banner,divider,section,transition,intermission`) matched against each slide's `slides.json` tag-like fields.
+**Failure message:** `AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty notes panes on content slides. Re-assemble with the presenter speech present so per-slide notes are injected (build_deck.py auto-injection at P8-ASSEMBLE, re-synced at P9.5-NOTES-SYNC), then re-verify.`
 
 ---
 

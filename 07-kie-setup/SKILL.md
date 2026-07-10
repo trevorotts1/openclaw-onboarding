@@ -98,8 +98,14 @@ Think of KIE.ai as a universal remote control for AI media generation.
 - **For slide decks larger than 5 slides:** use Skill 46 (kie-callback-relay)
   instead of polling each image sequentially. Submit the full batch first,
   then wait for results in parallel via the Worker KV endpoint.
-- **Nano Banana Pro is the default image model** for this workspace. Never
-  use DALL-E 3. Always use KIE.ai with Nano Banana Pro unless told otherwise.
+- **Nano Banana Pro is the default for GENERAL, standalone image work** in this
+  workspace. Never use DALL-E 3. Always use KIE.ai. **Department pipelines OVERRIDE
+  this default and pin their own model — never substitute models inside a department
+  run.** In particular the **Presentations department is GPT-Image-2 ONLY**
+  (`gpt-image-2-text-to-image`, or `gpt-image-2-image-to-image` when a real logo/reference
+  rides `input_urls`), per its model manifest; using Nano Banana Pro inside a deck build
+  is a model-sovereignty auto-fail (AF-MODEL-SOVEREIGNTY). For any department run, use the
+  model that department pins, not this general default.
 - **The API key goes in** ~/clawd/secrets/.env as KIE_API_KEY. It is also
   used as a Bearer token in the Authorization header of every API call.
 - **Always run the self-test** after setup: create a simple image, poll for
