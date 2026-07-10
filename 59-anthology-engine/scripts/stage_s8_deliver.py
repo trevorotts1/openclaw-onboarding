@@ -141,6 +141,18 @@ def plan():
     return EX_OK
 
 
+def _doc_url_from_created(created):
+    """Pull the live Google Doc link out of drive_adapter.deliver_doc()'s result.
+
+    drive_adapter.py's create-doc path (deliver_doc) returns the shareable link
+    under the key "doc_url" (its files_get webViewLink) and the file id under
+    "doc_id" -- NOT a top-level webViewLink/link/id. Read the real key first; the
+    legacy guesses stay only as harmless fallbacks so a future shape change never
+    silently ships a None link in the completion email/SMS."""
+    return (created.get("doc_url") or created.get("webViewLink")
+            or created.get("link"))
+
+
 def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=None):
     """W4.0: the concrete argv chain per collaborator, in WIRING order (fixed).
     `deliverable` is the ledger ARTIFACT_TYPES value the caller just authored
@@ -195,8 +207,7 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
         rc, created = _step(0, rel, argv)
         if rc != EX_OK:
             return rc, None
-        created = created or {}
-        doc_url = created.get("webViewLink") or created.get("link") or created.get("id")
+        doc_url = _doc_url_from_created(created or {})
     else:
         sys.stderr.write("[stage_%s] 1/%d %s: skipped (no drive_folder_id yet, or no "
                          "working/%s content to package)\n" % (STAGE, len(WIRING), rel, working_name))
@@ -318,6 +329,17 @@ def self_test():
     assert isinstance(WIRING, list) and WIRING, "WIRING must be a non-empty ordered list"
     for rel, role in WIRING:
         assert isinstance(rel, str) and rel and isinstance(role, str) and role
+    # doc-url resolution reads drive_adapter.deliver_doc()'s REAL return shape
+    # (drive_adapter.py: keys "doc_url"/"doc_id", never top-level webViewLink/id).
+    # The pre-fix expression guessed webViewLink/link/id -- none exist on that
+    # dict -- so it shipped None; the helper must read the live "doc_url".
+    _real = "https://docs.google.com/document/d/DOCID_x/edit"
+    assert _doc_url_from_created({
+        "ok": True, "action": "create-doc", "doc_id": "DOCID_x",
+        "doc_url": _real, "view_shared": True, "permission_id": "p1",
+        "verified": True}) == _real, "must read the live link from deliver_doc's doc_url"
+    assert _doc_url_from_created({}) is None
+    assert _doc_url_from_created({"webViewLink": _real}) == _real  # legacy fallback honored
     print("stage_%s self-test: OK (exit-code map + wiring contract coherent)" % STAGE)
     return EX_OK
 
