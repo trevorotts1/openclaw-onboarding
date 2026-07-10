@@ -41,6 +41,59 @@ echo "TUNNEL_TOKEN=$TOKEN"
 echo "SUBDOMAIN=${CLIENT}.zerohumanworkforce.com"
 ```
 
+## v5 fix — MERGE, don't full-replace (shared-tunnel wrong-port / CF 1303) — HELD FOR OPERATOR GO
+
+**Symptom:** on several boxes the Command Center public link 502s, and some throw
+Cloudflare **1303 "no route to your origin"**. The dashboard is up locally on
+`:4000`, but the tunnel's ingress for `<client>.zerohumanworkforce.com` either has
+no rule (→ 1303) or points at the wrong localhost port (→ 502).
+
+**Root cause:** the v4 curl above does a **full-replace** PUT — it sets the tunnel
+ingress to `[{<client> → :4000}, {404}]` and nothing else. On the fleet's
+one-tunnel-per-box model, that single tunnel also carries sibling hostnames — the
+OpenClaw gateway (`…-hooks → 127.0.0.1:18789`) and the podcast board
+(`…-podcast → localhost:4010`). Because CF's PUT `/configurations` **replaces the
+entire ingress array**, whichever writer runs *last* wins and silently deletes the
+others' rules:
+- The gateway tunnel writer (Skill-38 `13-create-cloudflare-tunnel.sh`, now fixed to
+  merge) full-replacing → drops the CC's `:4000` rule → CC goes **1303**, or a
+  still-routed host now maps to `:18789` → CC **502s** (the "wrong localhost port").
+- This v4 workflow full-replacing → drops the gateway/podcast rules the other way.
+
+**Fix (v5):** GET the current config, MERGE the CC host at the authoritative
+`:4000`, keep every other hostname rule, keep exactly one `http_status:404` last —
+then PUT. Same shape as the podcast provisioner (Skill-58) and
+`shared-utils/cc-tunnel-ingress.sh`. Replace the single v4 curl with:
+
+```bash
+# v5 — MERGE ingress (preserve sibling hostname rules; CC host authoritative on :4000)
+CUR=$(curl -sS "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${TUNNEL_ID}/configurations" \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+PUT_BODY=$(printf '%s' "$CUR" | python3 -c '
+import json,sys,os
+cur=json.load(sys.stdin); host=os.environ["CLIENT"]+".zerohumanworkforce.com"
+cfg=((cur.get("result") or {}).get("config") or {})
+ing=[r for r in (cfg.get("ingress") or []) if r.get("hostname") and r["hostname"]!=host]
+ing=[r for r in ing if r.get("hostname")]                    # keep sibling host rules
+ing.append({"hostname":host,"service":"http://localhost:4000"})  # CC host -> authoritative :4000
+ing.append({"service":"http_status:404"})                    # exactly one catch-all, last
+print(json.dumps({"config":dict(cfg,ingress=ing)}))')
+# GUARD: refuse to PUT if the CC host is not on :4000 (fail loud, do not clobber)
+echo "$PUT_BODY" | python3 -c '
+import json,sys,os
+host=os.environ["CLIENT"]+".zerohumanworkforce.com"
+ing=json.load(sys.stdin)["config"]["ingress"]
+m=[r for r in ing if r.get("hostname")==host]
+assert m and m[0]["service"]=="http://localhost:4000", "CC ingress not on :4000 — refusing to PUT"'
+curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${TUNNEL_ID}/configurations" \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" \
+  -d "$PUT_BODY" > /dev/null
+```
+
+**This is a repo/doc change only — NOT yet applied to the live n8n workflow.** The
+live workflow (`i0P3OWCEsXZxVo0N`) still runs v4 full-replace until the operator
+elects to roll v5 with the rotation playbook below.
+
 ## Backfill for tunnels created under v3 (one-time, on main.blackceoautomations.com)
 
 ```bash

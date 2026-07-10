@@ -77,14 +77,49 @@ pm2 save >/dev/null
 
 echo "[4/5] Waiting for tunnel to come online..."
 sleep 15
+# CC dashboard's authoritative local port. Single source of truth:
+# shared-utils/cc-tunnel-ingress.sh (CC_INGRESS_PORT) and run-full-install.sh
+# (DASHBOARD_PORT=4000). tests/unit/cc-tunnel-ingress-guard.test.sh asserts this
+# literal stays equal to the lib's CC_INGRESS_PORT so the two can never drift.
+CC_INGRESS_PORT="${CC_INGRESS_PORT:-4000}"
+LOCAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${CC_INGRESS_PORT}" 2>/dev/null || echo "000")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")
+# Retry/backoff the PUBLIC probe before trusting a bad code: cloudflared commonly
+# returns 502/1033 for the first several seconds after `tunnel run` while the
+# edge connection is still warming up, and a single probe here would false-flag
+# that transient blip as the wrong-port/no-route condition and hard-fail
+# provisioning. Only keep treating it as wrong-port if it is STILL failing after
+# retrying — a persistent 1303/502/etc still falls through to the exit-7 branch
+# below unchanged.
+if echo "$LOCAL_CODE" | grep -qE '^(200|301|302|307|404)$' && echo "$HTTP_CODE" | grep -qE '^(502|1033|1303|530|503)$'; then
+  for _wdelay in 4 4 4; do
+    echo "[4/5] public probe returned $HTTP_CODE (possible warm-up blip); retrying in ${_wdelay}s..." >&2
+    sleep "$_wdelay"
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")
+    echo "$HTTP_CODE" | grep -qE '^(502|1033|1303|530|503)$' || break
+  done
+fi
 
 echo "[5/5] Result"
 echo "Subdomain: https://$SUBDOMAIN"
-echo "HTTP: $HTTP_CODE"
+echo "Local CC (http://localhost:${CC_INGRESS_PORT}): $LOCAL_CODE"
+echo "Public HTTP: $HTTP_CODE"
 
 if [ "$HTTP_CODE" = "200" ]; then
   echo "SUCCESS: Command Center is live"
+elif echo "$LOCAL_CODE" | grep -qE '^(200|301|302|307|404)$' && echo "$HTTP_CODE" | grep -qE '^(502|1033|1303|530|503)$'; then
+  # The dashboard IS up locally on :4000 but the public URL fails at the edge.
+  # This is the wrong-port / no-route signature: the tunnel's ingress for this
+  # host was clobbered by a full-replace PUT from a sibling service sharing the
+  # box's tunnel (gateway :18789 / podcast :4010) so it now points at the wrong
+  # localhost port or has no rule at all. Fail LOUD — do NOT report a soft warning.
+  echo "ERROR: TUNNEL INGRESS WRONG-PORT / NO-ROUTE detected." >&2
+  echo "  The Command Center is UP locally (:${CC_INGRESS_PORT} returned $LOCAL_CODE) but the public link returns $HTTP_CODE." >&2
+  echo "  Cause: this box's tunnel ingress for ${SUBDOMAIN} is not routing to http://localhost:${CC_INGRESS_PORT}" >&2
+  echo "         (a full-replace ingress PUT from a sibling service on the shared tunnel dropped/repointed the CC rule)." >&2
+  echo "  Operator repair: PUT the CC host back to http://localhost:${CC_INGRESS_PORT} via GET->merge->PUT" >&2
+  echo "                   (see n8n-workflows/command-center-register-v4.md and shared-utils/cc-tunnel-ingress.sh)." >&2
+  exit 7
 else
-  echo "WARNING: URL not live yet. Check: pm2 status cloudflare-tunnel"
+  echo "WARNING: URL not live yet (local=$LOCAL_CODE public=$HTTP_CODE). Check: pm2 status cloudflare-tunnel" >&2
 fi
