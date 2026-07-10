@@ -78,9 +78,17 @@ PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
       -> task_id str | None
   patch_phase(run_dir, task_id, phase_id, status, note="") -> bool
-      # task-level STATUS change; on status='done' auto-attaches the cert sha.
-  post_activity(run_dir, task_id, phase_id, note, activity_type="updated") -> bool
-      # mid-run phase PROGRESS via the /activities endpoint (NOT a status change).
+      # task-level STATUS change. The producer's TERMINAL close is status='review'
+      # (never a self-closed 'done'); on 'review'/'done' it auto-attaches the cert
+      # sha, and on 'review' it also folds the real per-gate QC scores into the note
+      # + a structured qc_scores key (retried without the key on a strict-server 422).
+  post_activity(run_dir, task_id, phase_id, note, activity_type="updated",
+                scores=None) -> bool
+      # mid-run phase PROGRESS via the /activities endpoint (NOT a status change);
+      # optional per-gate `scores` fold into the message + a structured scores key.
+  post_qc_activities(run_dir, task_id) -> int
+      # post one QC-grade activity per graded gate (from collect_qc_summary).
+  collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
   stamp_task_id(run_dir, task_id) -> bool
   count_successful_advances(run_dir) -> int
   assert_min_one_advance(run_dir) -> bool
@@ -309,6 +317,136 @@ def assert_min_one_advance(run_dir) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# QC SCORE SUMMARY — read the five per-phase QC reports the render engine writes
+# to working/qc/*.json and distil the real grades into a compact, board-ready
+# summary. This is the DATA behind the CC QC-scorer / Devil's-Advocate promotion
+# from 'review' -> 'done': the producer stops at 'review' and hands the actual
+# per-gate scores (average / pass / autofail count) to the board so the reviewer
+# sees WHY the deck is review-ready, not just a phase breadcrumb + a cert hash.
+# Field names match the render engine's own QC-report schema (build_deck.py's
+# _chk_copy_qc / _qc_report_gate): {gate, average|average_score, pass,
+# triggered_autofails|autofails_triggered}. Every function here is FAIL-SOFT —
+# it never raises; an unreadable/absent report is simply omitted from the summary.
+# ---------------------------------------------------------------------------
+_QC_REPORTS = (
+    ("copy_qc_report.json", "Copy-QC"),
+    ("prompt_qc_report.json", "Prompt-QC"),
+    ("image_qc_report.json", "Image-QC"),
+    ("typography_qc_report.json", "Typography-QC"),
+    ("speech_qc_report.json", "Speech-QC"),
+)
+
+
+def _extract_qc_gate(report: str, obj: dict) -> Optional[dict]:
+    """Distil one QC report dict into {report, gate, average, pass, autofails_count}.
+    Returns None when `obj` is not a governed grade (not a dict). Mirrors the
+    render engine's own field tolerance (average|average_score,
+    triggered_autofails|autofails_triggered). Never raises."""
+    if not isinstance(obj, dict):
+        return None
+    avg = obj.get("average", obj.get("average_score"))
+    try:
+        avg_val = round(float(avg), 2) if avg is not None else None
+    except (TypeError, ValueError):
+        avg_val = None
+    triggered = obj.get("triggered_autofails") or obj.get("autofails_triggered") or []
+    autofails_count = len(triggered) if isinstance(triggered, (list, tuple)) else 0
+    gate = str(obj.get("gate", "")).strip() or None
+    return {
+        "report": report,
+        "gate": gate,
+        "average": avg_val,
+        "pass": obj.get("pass") is True,
+        "autofails_count": autofails_count,
+    }
+
+
+def collect_qc_summary(run_dir) -> dict:
+    """Read the per-phase QC reports at <run_dir>/working/qc/*.json and return a
+    compact score summary for the Command Center. FAIL-SOFT: never raises; returns
+    {"gates": [], ...} when run_dir is falsy or no report is readable.
+
+    Shape:
+      {
+        "gates": [{report, gate, average, pass, autofails_count}, ...],
+        "gates_graded":   int,          # reports actually found + parsed
+        "overall_pass":   bool,         # every graded gate pass:true AND 0 autofails
+        "min_average":    float | None, # lowest numeric average across graded gates
+        "autofails_total": int,
+      }"""
+    summary = {
+        "gates": [],
+        "gates_graded": 0,
+        "overall_pass": False,
+        "min_average": None,
+        "autofails_total": 0,
+    }
+    if run_dir is None:
+        return summary
+    qc_dir = Path(run_dir) / "working" / "qc"
+    if not qc_dir.is_dir():
+        return summary
+    gates = []
+    averages = []
+    autofails_total = 0
+    all_pass = True
+    for fname, _label in _QC_REPORTS:
+        path = qc_dir / fname
+        if not path.is_file():
+            continue
+        try:
+            obj = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        gate = _extract_qc_gate(fname, obj)
+        if gate is None:
+            continue
+        gates.append(gate)
+        if gate["average"] is not None:
+            averages.append(gate["average"])
+        autofails_total += gate["autofails_count"]
+        if not gate["pass"] or gate["autofails_count"] > 0:
+            all_pass = False
+    summary["gates"] = gates
+    summary["gates_graded"] = len(gates)
+    summary["autofails_total"] = autofails_total
+    summary["min_average"] = min(averages) if averages else None
+    # overall_pass is only meaningful once at least one gate was graded.
+    summary["overall_pass"] = bool(gates) and all_pass
+    return summary
+
+
+def qc_summary_note(summary: dict) -> str:
+    """One compact, human/DA-readable line for the CC note/activity message, e.g.
+    'QC copy=9.1 prompt=9.3 image=8.7 typo=9.0 speech=8.9 | min=8.7 autofails=0'.
+    Returns '' when nothing was graded. Never raises — a summary field surface
+    that ALWAYS lands (the note is an accepted CC field) even if a strict server
+    rejects the structured qc_scores key."""
+    if not isinstance(summary, dict):
+        return ""
+    gates = summary.get("gates") or []
+    if not gates:
+        return ""
+    _short = {
+        "copy_qc_report.json": "copy",
+        "prompt_qc_report.json": "prompt",
+        "image_qc_report.json": "image",
+        "typography_qc_report.json": "typo",
+        "speech_qc_report.json": "speech",
+    }
+    parts = []
+    for g in gates:
+        if not isinstance(g, dict):
+            continue
+        label = _short.get(g.get("report"), g.get("report") or "gate")
+        avg = g.get("average")
+        mark = "" if g.get("pass") else "!"
+        parts.append(f"{label}={avg if avg is not None else '?'}{mark}")
+    tail = f"min={summary.get('min_average')} autofails={summary.get('autofails_total', 0)}"
+    return f"QC {' '.join(parts)} | {tail}".strip()
+
+
+# ---------------------------------------------------------------------------
 # CREATE — POST /api/tasks/ingest (idempotent on idempotency_key server-side)
 # ---------------------------------------------------------------------------
 def ingest_deck_task(
@@ -403,14 +541,21 @@ def patch_phase(
     """PATCH the CC task card to a task-level STATUS at a phase boundary.
 
     Use this for real status transitions only: the P4-RENDER START
-    (backlog->in_progress) and the TERMINAL close of a completed deck
-    (status='done'). Mid-run phase PROGRESS must go through post_activity()
-    instead — a mid-run status='done' 422s the presentations cert done-gate.
+    (backlog->in_progress) and the TERMINAL producer close of a completed deck
+    (status='review'). Mid-run phase PROGRESS must go through post_activity()
+    instead — a mid-run terminal status 422s the presentations cert gate.
 
-    On status 'done': automatically reads delivery/*-FINAL/PROCESS-CERTIFICATE.json
-    (the sha prove-deck.py minted) and includes it as process_certificate_sha in the
-    PATCH body, satisfying the CC presentations no-skip done-gate. The word
-    "delivered" is NOT a status — pass it in `note`, never as `status`.
+    The producer STOPS at 'review': promotion 'review'->'done' is the CC-side QC
+    scorer / Devil's-Advocate gate's job (the interlock every sibling department
+    respects), never a producer self-close.
+
+    On the terminal transitions ('review' and 'done'): automatically reads
+    delivery/*-FINAL/PROCESS-CERTIFICATE.json (the sha prove-deck.py minted) and
+    includes it as process_certificate_sha in the PATCH body — the cert is the
+    ticket INTO review and the sha the no-skip done-gate reads on promotion. On
+    'review' it ALSO folds the real per-gate QC scores (collect_qc_summary) into the
+    note and a structured `qc_scores` key so the reviewer sees why the deck passed.
+    The word "delivered" is NOT a status — pass it in `note`, never as `status`.
 
     Every attempt (disabled board, missing id, transport error, non-200, 200) is
     recorded to the movement receipt (working/checkpoints/cc-board.json) so a failed
@@ -434,24 +579,57 @@ def patch_phase(
         })
         return False
 
+    # Build the note FIRST so a QC-summary line is folded in before the payload is
+    # assembled — the note is a guaranteed-accepted CC field, so it is the summary's
+    # ALWAYS-lands home even if a strict server rejects the structured qc_scores key.
+    note_text = note or ""
+
+    # TERMINAL PRODUCER CLOSE -> 'review': the presentations pipeline stops at
+    # 'review' and hands promotion to 'done' to the CC-side QC scorer / Devil's-
+    # Advocate gate (the same interlock every sibling department respects). Attach
+    # the REAL per-gate QC scores so the reviewer sees WHY the deck is review-ready.
+    qc_scores = None
+    if status == "review" and run_dir is not None:
+        qc_scores = collect_qc_summary(run_dir)
+        _line = qc_summary_note(qc_scores)
+        if _line:
+            note_text = f"{note_text} — {_line}" if note_text else _line
+
     payload: dict = {
         "phase_id": phase_id,
         "status": status,
     }
-    if note:
-        payload["note"] = note
+    if note_text:
+        payload["note"] = note_text
 
-    # On the terminal 'done' close: attach the process certificate SHA if
-    # prove-deck.py has written the PROCESS-CERTIFICATE.json (Fix 2a / Fix 2b).
-    if status == "done" and run_dir is not None:
+    # The PROCESS-CERTIFICATE is the ticket INTO 'review' AND the sha the CC
+    # presentations no-skip done-gate reads on the eventual 'done' — so attach it on
+    # BOTH terminal transitions once prove-deck.py has minted it (Fix 2a / Fix 2b).
+    if status in ("review", "done") and run_dir is not None:
         cert_sha = _read_certificate_sha(run_dir)
         if cert_sha:
             payload["process_certificate_sha"] = cert_sha
             _log(f"patch_phase attaching process_certificate_sha={cert_sha[:16]}...")
 
+    # Structured QC scores for a lenient CC server (machine-readable promotion
+    # input). OPTIONAL enrichment key: if a strict server rejects it, we retry once
+    # WITHOUT it so the status transition itself never strands (the human-readable
+    # summary already rode in on `note`).
+    if qc_scores and qc_scores.get("gates_graded"):
+        payload["qc_scores"] = qc_scores
+
     url = f"{cfg['base_url']}/api/tasks/{task_id}"
     try:
         st, body = _request("PATCH", url, payload, cfg)
+        # DEFENSIVE FALLBACK: a 400/422 schema rejection while the optional
+        # qc_scores enrichment key is present -> strip it and retry ONCE with the
+        # core payload. Protects the review transition against an unknown-key-strict
+        # CC server; the note still carries the summary either way.
+        if st in (400, 422) and "qc_scores" in payload:
+            _log(f"patch_phase {phase_id}->{status} HTTP {st} with qc_scores present "
+                 "— retrying once without the structured enrichment key.")
+            core = {k: v for k, v in payload.items() if k != "qc_scores"}
+            st, body = _request("PATCH", url, core, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"patch_phase {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
         _record_movement(run_dir, {
@@ -475,12 +653,24 @@ def patch_phase(
     return False
 
 
+def _activity_score_tail(gate: dict) -> str:
+    """Compact per-gate score tail for a QC activity message, e.g.
+    'avg=9.1 pass=true autofails=0'. '' for a non-dict. Never raises."""
+    if not isinstance(gate, dict):
+        return ""
+    avg = gate.get("average")
+    return (f"avg={avg if avg is not None else '?'} "
+            f"pass={str(gate.get('pass') is True).lower()} "
+            f"autofails={gate.get('autofails_count', 0)}").strip()
+
+
 def post_activity(
     run_dir,
     task_id: str,
     phase_id: str,
     note: str,
     activity_type: str = "updated",
+    scores: Optional[dict] = None,
     env: Optional[dict] = None,
 ) -> bool:
     """POST a mid-run phase-PROGRESS activity to /api/tasks/{task_id}/activities.
@@ -515,10 +705,24 @@ def post_activity(
 
     message = (f"[{phase_id}] {note}".strip() if note else f"[{phase_id}]")
     payload: dict = {"activity_type": activity_type, "message": message}
+    # OPTIONAL structured QC scores on a per-gate QC activity: fold a compact score
+    # tail into the (always-accepted) message AND attach the structured `scores` key
+    # for a lenient CC. A strict server that 422s the unknown key gets a one-shot
+    # retry without it — the message tail still carries the numbers.
+    if scores:
+        _tail = _activity_score_tail(scores)
+        if _tail:
+            payload["message"] = f"{message} {_tail}".strip()
+        payload["scores"] = scores
 
     url = f"{cfg['base_url']}/api/tasks/{task_id}/activities"
     try:
         st, body = _request("POST", url, payload, cfg)
+        if st in (400, 422) and "scores" in payload:
+            _log(f"post_activity {phase_id} HTTP {st} with scores present — retrying "
+                 "once without the structured enrichment key.")
+            core = {k: v for k, v in payload.items() if k != "scores"}
+            st, body = _request("POST", url, core, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"post_activity {phase_id} failed ({type(exc).__name__}: {exc}).")
         _record_movement(run_dir, {
@@ -540,6 +744,31 @@ def post_activity(
 
     _log(f"post_activity {phase_id} non-OK (HTTP {st}): {body}.")
     return False
+
+
+def post_qc_activities(run_dir, task_id: str, env: Optional[dict] = None) -> int:
+    """Post ONE phase-progress activity per graded QC gate, each carrying the real
+    {gate, average, pass, autofails_count} (via post_activity's `scores`). The board's
+    activity feed then shows every QC phase's ACTUAL grade — not just a phase
+    breadcrumb + a cert hash. Reads the reports through collect_qc_summary.
+
+    Intended to fire at the terminal close (right before the 'review' PATCH) so all
+    five reports already exist on disk. FAIL-SOFT: returns the number of activities
+    that posted OK (0 on a disabled board / no reports / any failure); never raises —
+    the board is a view, never a gate."""
+    posted = 0
+    try:
+        summary = collect_qc_summary(run_dir)
+        for gate in summary.get("gates", []):
+            if not isinstance(gate, dict):
+                continue
+            phase_label = gate.get("gate") or gate.get("report") or "QC"
+            if post_activity(run_dir, task_id, f"QC:{phase_label}",
+                             "governed QC grade", scores=gate, env=env):
+                posted += 1
+    except Exception as exc:  # noqa: BLE001 — the board is a view, never a gate
+        _log(f"post_qc_activities raised ({exc}) — non-fatal.")
+    return posted
 
 
 def _read_certificate_sha(run_dir) -> Optional[str]:

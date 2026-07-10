@@ -123,6 +123,31 @@ ENV = {
     "WEBHOOK_SECRET": "shh-secret",
 }
 
+# The five per-phase QC reports the render engine writes to working/qc/*.json.
+_QC_FILES = {
+    "copy_qc_report.json": "Phase 1Q",
+    "prompt_qc_report.json": "Phase Prompt-QC",
+    "image_qc_report.json": "Phase Image-QC",
+    "typography_qc_report.json": "Phase Typography-QC",
+    "speech_qc_report.json": "Phase Speech-QC",
+}
+
+
+def _seed_qc_reports(run_dir, averages=None, passing=True, autofails=None):
+    """Write the five governed QC reports under run_dir/working/qc/ using the engine's
+    own field schema (gate / average / pass / triggered_autofails)."""
+    averages = averages or {}
+    autofails = autofails or {}
+    qc = Path(run_dir) / "working" / "qc"
+    qc.mkdir(parents=True, exist_ok=True)
+    for fname, gate in _QC_FILES.items():
+        (qc / fname).write_text(json.dumps({
+            "gate": gate,
+            "average": averages.get(fname, 9.0),
+            "pass": passing,
+            "triggered_autofails": autofails.get(fname, []),
+        }))
+
 
 class FailSoftTest(unittest.TestCase):
     def test_no_url_ingest_is_noop_but_stamps_attempted(self):
@@ -266,9 +291,11 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertFalse(cc_board.assert_min_one_advance(rd))
 
     def test_terminal_done_attaches_process_certificate(self):
-        # The terminal close of a completed deck: status='done' + the minted
-        # PROCESS-CERTIFICATE sha (read from delivery/*-FINAL/). 'done' is a valid
-        # status, so the mock accepts it (200) and the advance is recorded OK.
+        # 'done' cert-attach mechanics are STILL supported (the CC-side promotion of a
+        # reviewed deck, and reconcile replays, both PATCH 'done' with the cert). The
+        # PRODUCER no longer self-closes 'done' (it stops at 'review', see below) — this
+        # test pins that a 'done' PATCH attaches the minted PROCESS-CERTIFICATE sha.
+        # 'done' is a valid status, so the mock accepts it (200), advance recorded OK.
         with tempfile.TemporaryDirectory() as d:
             rd = Path(d)
             cert_dir = rd / "delivery" / "mydeck-FINAL"
@@ -284,6 +311,118 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertEqual(body["process_certificate_sha"], "abc123def456")
             self.assertIn("delivered", body["note"])
             self.assertTrue(cc_board.assert_min_one_advance(rd))
+
+    def test_terminal_review_attaches_cert_and_qc_scores(self):
+        # The PRODUCER close is status='review' (never a self-closed 'done'): it carries
+        # the PROCESS-CERTIFICATE sha (ticket INTO review) AND the real per-gate QC
+        # scores — both a human-readable summary in the note and a structured qc_scores
+        # key. 'review' is a valid status, so the mock accepts it (200).
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            cert_dir = rd / "delivery" / "mydeck-FINAL"
+            cert_dir.mkdir(parents=True)
+            (cert_dir / "PROCESS-CERTIFICATE.json").write_text(
+                json.dumps({"certificate_sha": "cafebabe0001"}))
+            _seed_qc_reports(rd, averages={"image_qc_report.json": 8.7})
+            self.rec.queue(200, {"task": {"status": "review"}})
+            ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "review",
+                                      note="bundle complete — deck delivered", env=ENV)
+            self.assertTrue(ok)
+            body = json.loads(self.rec.requests[-1]["body"])
+            self.assertEqual(body["status"], "review")
+            self.assertEqual(body["process_certificate_sha"], "cafebabe0001")
+            # Structured scores present for a lenient CC server.
+            self.assertEqual(body["qc_scores"]["gates_graded"], 5)
+            self.assertTrue(body["qc_scores"]["overall_pass"])
+            self.assertEqual(body["qc_scores"]["min_average"], 8.7)
+            # Human/DA-readable summary folded into the (always-accepted) note.
+            self.assertIn("QC", body["note"])
+            self.assertIn("min=8.7", body["note"])
+            self.assertTrue(cc_board.assert_min_one_advance(rd))
+
+    def test_review_strict_server_strips_qc_scores_and_still_transitions(self):
+        # DEFENSIVE FALLBACK: an unknown-key-strict CC server 422s the PATCH while the
+        # optional qc_scores key is present. patch_phase must retry ONCE without it so
+        # the status transition to 'review' still lands (the note keeps the summary).
+        class _StrictRec:
+            def __init__(self):
+                self.requests = []
+
+            def __call__(self, req, timeout=None):
+                body = req.data.decode("utf-8") if req.data else ""
+                self.requests.append(body)
+                parsed = json.loads(body) if body else {}
+                if "qc_scores" in parsed:
+                    raise urllib.error.HTTPError(
+                        req.full_url, 422, "Unrecognized key", {},
+                        io.BytesIO(b'{"error":"Unrecognized key: qc_scores"}'))
+                return _FakeResp(200, {"task": {"status": "review"}})
+
+        strict = _StrictRec()
+        orig = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = strict
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                rd = Path(d)
+                cert_dir = rd / "delivery" / "mydeck-FINAL"
+                cert_dir.mkdir(parents=True)
+                (cert_dir / "PROCESS-CERTIFICATE.json").write_text(
+                    json.dumps({"certificate_sha": "deadbeef0002"}))
+                _seed_qc_reports(rd)
+                ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "review",
+                                          note="bundle complete", env=ENV)
+                self.assertTrue(ok, "review transition must survive the strict-server 422")
+                # Two attempts: first WITH qc_scores (422), retry WITHOUT it (200).
+                self.assertEqual(len(strict.requests), 2)
+                self.assertIn("qc_scores", json.loads(strict.requests[0]))
+                retry = json.loads(strict.requests[1])
+                self.assertNotIn("qc_scores", retry)
+                self.assertEqual(retry["status"], "review")
+                self.assertEqual(retry["process_certificate_sha"], "deadbeef0002")
+                self.assertIn("QC", retry["note"])  # summary still rode in on the note
+                self.assertTrue(cc_board.assert_min_one_advance(rd))
+        finally:
+            cc_board.urllib.request.urlopen = orig
+
+    def test_collect_qc_summary_reads_governed_reports(self):
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            _seed_qc_reports(rd, averages={"copy_qc_report.json": 9.4,
+                                           "prompt_qc_report.json": 8.6})
+            summary = cc_board.collect_qc_summary(rd)
+            self.assertEqual(summary["gates_graded"], 5)
+            self.assertTrue(summary["overall_pass"])
+            self.assertEqual(summary["min_average"], 8.6)
+            self.assertEqual(summary["autofails_total"], 0)
+            # An empty run dir yields a clean empty summary (never raises).
+        with tempfile.TemporaryDirectory() as d2:
+            empty = cc_board.collect_qc_summary(Path(d2))
+            self.assertEqual(empty["gates_graded"], 0)
+            self.assertFalse(empty["overall_pass"])
+            self.assertIsNone(empty["min_average"])
+        self.assertEqual(cc_board.collect_qc_summary(None)["gates_graded"], 0)
+
+    def test_collect_qc_summary_flags_autofail_as_not_pass(self):
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            _seed_qc_reports(rd, autofails={"image_qc_report.json": ["AF-I1"]})
+            summary = cc_board.collect_qc_summary(rd)
+            self.assertEqual(summary["autofails_total"], 1)
+            self.assertFalse(summary["overall_pass"])
+
+    def test_post_qc_activities_posts_one_per_gate_with_scores(self):
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            _seed_qc_reports(rd, averages={"speech_qc_report.json": 8.8})
+            for _ in range(5):
+                self.rec.queue(201, {"id": "act", "activity_type": "updated"})
+            posted = cc_board.post_qc_activities(rd, "task-xyz", env=ENV)
+            self.assertEqual(posted, 5)
+            # Each activity carries the structured scores key + a numeric tail.
+            last = json.loads(self.rec.requests[-1]["body"])
+            self.assertIn("scores", last)
+            self.assertIn("avg=", last["message"])
+            self.assertIn("autofails=", last["message"])
 
     def test_post_activity_uses_activities_endpoint(self):
         # Mid-run phase progress is an ACTIVITY (POST /activities), never a status
