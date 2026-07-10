@@ -92,6 +92,8 @@ PINS = {
     "editors_intro": "ae-02-editor-introduction.md",
     "bios": "ae-03-contributor-bio.md",
     "front_back_matter": "ae-04-front-back-matter.md",
+    "transition": "ae-05-inter-chapter-transition.md",   # U9: one bridge per seam
+    "grand_finale": "ae-06-grand-finale.md",             # U9: the brand-new finale
 }
 
 TIER_HEAVY = "HEAVY-WRITER"   # curation, intro, matter, bios (SPEC 8.1)
@@ -101,10 +103,56 @@ TIER_LONGCTX = "LONGCTX"      # optional whole-manuscript compile review
 AF_SLOT = "AF-AE-SLOT-UNRESOLVED"
 AF_FROZEN = "AF-AE-S9-FROZEN"
 AF_FABRICATION = "AF-AE-S9-FABRICATION"
+AF_TRANSITION = "AF-AE-S9-TRANSITION"   # U9: a seam bridge fails its craft contract
+AF_FINALE = "AF-AE-S9-FINALE"           # U9: the Grand Finale fails its contract
 
 _SLOT_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\s*\}\}")
 
 MANUSCRIPT_ARTIFACT_TYPE = "anthology_manuscript"
+ORDER_PROPOSAL_ARTIFACT_TYPE = "anthology_order_proposal"  # U9(c): CC cockpit read
+
+# --------------------------------------------------------------------------- #
+# U9 assembly-finale constants. The transitions and the Grand Finale are
+# INSERTIONS in the COMPILED manuscript ONLY -- the frozen chapter bodies stay
+# byte-untouched. Each insertion is wrapped in an HTML-comment sentinel so the
+# provers can extract it deterministically while the layout engine renders it as
+# nothing (comments do not paint), keeping the delivered book clean.
+# --------------------------------------------------------------------------- #
+TRANSITION_WORD_MIN = 150         # Trevor: 150-300 word editor-voice bridge
+TRANSITION_WORD_MAX = 300
+FONT_POINT_FLOOR = 14             # Trevor FINAL: 14pt premium floor (no sub-14)
+
+# Em-dash family, byte-identical to qc-tier1-anthology._EMDASH_CHARS
+# (U+2014 em dash, U+2015 horizontal bar). "no em-dashes" is a hard rule.
+_EMDASH_CHARS = ("—", "―")
+
+# One transition sentinel per seam, 1-based; one finale sentinel.
+_TRANSITION_OPEN = "<!-- TRANSITION %d -->"
+_TRANSITION_CLOSE = "<!-- END TRANSITION %d -->"
+_TRANSITION_BLOCK_RE = re.compile(
+    r"<!--\s*TRANSITION\s+(\d+)\s*-->(.*?)<!--\s*END\s+TRANSITION\s+\1\s*-->",
+    re.DOTALL)
+_FINALE_OPEN = "<!-- GRAND FINALE -->"
+_FINALE_CLOSE = "<!-- END GRAND FINALE -->"
+_FINALE_BLOCK_RE = re.compile(
+    r"<!--\s*GRAND FINALE\s*-->(.*?)<!--\s*END GRAND FINALE\s*-->", re.DOTALL)
+
+# The single sentinel the ae-05 pin wraps its bridge in (stripped on insertion).
+_AE05_SENTINEL = "TRANSITION"
+
+# Canonical action-steps signals the finale must close on ("what do you do now?
+# where do you go from here?"). The ae-06 pin emits the heading verbatim; the
+# prover accepts any of these so a producer-adjusted heading still passes.
+_ACTION_STEP_SIGNALS = (
+    "where do you go from here", "where you go from here", "what do you do now",
+    "action step", "action-step", "next step", "from here", "your next move",
+)
+
+# A sub-14 inline font directive is a floor violation at the text layer; the
+# rendered-glyph floor stays delegated to guard-font-floor.py (SPEC 3.4 row 14).
+_FONT_SIZE_RE = re.compile(
+    r"(?:font-size\s*:\s*|size\s*=\s*[\"']?)?(\d+(?:\.\d+)?)\s*(pt|px)\b",
+    re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- #
@@ -138,6 +186,14 @@ class FrozenChapterMismatch(S9Error):
         super().__init__("%s: chapter %r is not byte-identical to its frozen "
                          "artifact (expected sha256 %s, got %s)"
                          % (AF_FROZEN, participant_key, expected, actual))
+
+
+class TransitionInvalid(S9Error):
+    exit_code = EX_PROVER  # a seam bridge failed its craft contract (AF-AE-S9-TRANSITION)
+
+
+class FinaleInvalid(S9Error):
+    exit_code = EX_PROVER  # the Grand Finale failed its contract (AF-AE-S9-FINALE)
 
 
 class ProducerInputsMissing(S9Error):
@@ -304,6 +360,299 @@ def split_sentinel(text, name):
     if i < 0 or j < 0 or j < i:
         return None
     return text[i + len(open_s):j].strip()
+
+
+# --------------------------------------------------------------------------- #
+# U9 pure helpers -- the two provers' deterministic backbone (no I/O, no network)
+# --------------------------------------------------------------------------- #
+def count_em_dashes(text):
+    """The em-dash-family count (U+2014, U+2015). 'no em-dashes' means zero."""
+    if not text:
+        return 0
+    return sum(text.count(ch) for ch in _EMDASH_CHARS)
+
+
+def count_words(text):
+    """Whitespace word count, sentinels/markup stripped, for the 150-300 band."""
+    if not text:
+        return 0
+    stripped = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+    return len(stripped.split())
+
+
+def _norm_title(s):
+    """Normalize a title for a robust verbatim-reference test: collapse internal
+    whitespace and casefold. The pin still requires the title VERBATIM; this
+    normalization only forgives incidental whitespace/case in the prover."""
+    return re.sub(r"\s+", " ", (s or "").strip()).casefold()
+
+
+def references_title(text, title):
+    """True iff `title` appears in `text` (whitespace/case-normalized)."""
+    t = _norm_title(title)
+    if not t:
+        return False
+    return t in _norm_title(text)
+
+
+def min_font_pt(text):
+    """Smallest inline font size (pt or px) named in `text`, or None if the text
+    carries no inline sizing at all (the common, clean Markdown case). A sub-floor
+    value here is a text-layer floor violation; the rendered-glyph floor stays
+    delegated to guard-font-floor.py."""
+    smallest = None
+    for m in _FONT_SIZE_RE.finditer(text or ""):
+        val = float(m.group(1))   # the regex guarantees a numeric group
+        smallest = val if smallest is None else min(smallest, val)
+    return smallest
+
+
+def font_floor_ok(text, floor=FONT_POINT_FLOOR):
+    """No inline sizing (None) passes; any inline size must be >= the floor."""
+    smallest = min_font_pt(text)
+    return (smallest is None) or (smallest >= floor)
+
+
+def extract_transition_blocks(manuscript):
+    """Return the ordered list of (seam_index:int, bridge_text:str) sentinel blocks
+    the compiler inserted, sorted by seam index."""
+    found = [(int(m.group(1)), m.group(2).strip())
+             for m in _TRANSITION_BLOCK_RE.finditer(manuscript or "")]
+    found.sort(key=lambda p: p[0])
+    return found
+
+
+def extract_finale_block(manuscript):
+    """Return the single Grand Finale sentinel block text, or None if absent."""
+    matches = _FINALE_BLOCK_RE.findall(manuscript or "")
+    if len(matches) != 1:
+        return None
+    return matches[0].strip()
+
+
+def _first_heading_title(block):
+    """The text of the leading `# ` heading of a finale block, or '' if none."""
+    for line in (block or "").splitlines():
+        s = line.strip()
+        if s.startswith("# "):
+            return s[2:].strip()
+        if s:
+            break
+    return ""
+
+
+def has_action_steps_section(block):
+    """True iff a heading in `block` matches an action-steps signal."""
+    for line in (block or "").splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            head = s.lstrip("#").strip().casefold()
+            if any(sig in head for sig in _ACTION_STEP_SIGNALS):
+                return True
+    return False
+
+
+def prove_transitions(manuscript, order, chapter_titles, frozen_bodies=None,
+                      word_min=TRANSITION_WORD_MIN, word_max=TRANSITION_WORD_MAX):
+    """PROVER (a): the compiled manuscript carries EXACTLY N-1 inter-chapter
+    transitions; each seam k names the NEXT chapter's LOCKED title; zero em-dashes
+    across every bridge; each bridge sits inside the 150-300 word band; and (when
+    `frozen_bodies` is supplied) every frozen chapter body is byte-identical --
+    present verbatim, unchanged by the insertions. `order` is the participant_key
+    running order; `chapter_titles` maps participant_key -> locked title.
+    Returns a report dict with ok + a per-seam breakdown; never raises."""
+    n = len(order)
+    expected = max(n - 1, 0)
+    blocks = extract_transition_blocks(manuscript)
+    issues = []
+    seams = []
+    if len(blocks) != expected:
+        issues.append("expected %d transition(s) for %d chapters, found %d"
+                      % (expected, n, len(blocks)))
+    total_em = 0
+    for seam_index, bridge in blocks:
+        # seam k (1-based) sits between order[k-1] and order[k]; it must name the
+        # NEXT chapter (order[k], 0-based) by that chapter's LOCKED title. Indexing
+        # by the seam number itself (not the loop position) stays correct even if a
+        # seam block were missing or out of order.
+        next_key = order[seam_index] if 0 < seam_index < n else None
+        next_title = chapter_titles.get(next_key) if next_key else None
+        em = count_em_dashes(bridge)
+        total_em += em
+        wc = count_words(bridge)
+        refs = bool(next_title) and references_title(bridge, next_title)
+        band_ok = word_min <= wc <= word_max
+        seam_issues = []
+        if not refs:
+            seam_issues.append("does not name the next locked title %r" % next_title)
+        if em:
+            seam_issues.append("%d em-dash(es)" % em)
+        if not band_ok:
+            seam_issues.append("word count %d outside %d-%d" % (wc, word_min, word_max))
+        seams.append({"seam": seam_index, "next_key": next_key, "next_title": next_title,
+                      "references_next_title": refs, "word_count": wc,
+                      "em_dashes": em, "band_ok": band_ok, "issues": seam_issues})
+        issues.extend("seam %d: %s" % (seam_index, s) for s in seam_issues)
+
+    # Byte-diff: prove no frozen chapter changed (each frozen body present verbatim).
+    frozen_unchanged = None
+    if frozen_bodies:
+        frozen_unchanged = True
+        for key in order:
+            body = frozen_bodies.get(key)
+            if body is None:
+                continue
+            body_text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+            if body_text not in (manuscript or ""):
+                frozen_unchanged = False
+                issues.append("frozen chapter %r is not byte-identical in the "
+                              "compiled manuscript (an insertion edited it)" % key)
+
+    ok = (len(blocks) == expected and not issues)
+    return {
+        "ok": ok, "transition_count": len(blocks), "expected": expected,
+        "chapters": n, "total_em_dashes": total_em,
+        "frozen_unchanged": frozen_unchanged, "seams": seams, "issues": issues,
+        "autofail": None if ok else AF_TRANSITION,
+    }
+
+
+def prove_finale(manuscript, chapter_titles, order=None,
+                 font_floor=FONT_POINT_FLOOR, word_min=None):
+    """PROVER (b): the compiled manuscript carries EXACTLY ONE titled Grand Finale
+    that has its own title, references EVERY included chapter at least once (by its
+    locked title), ends with an action-steps section, holds the 14-point floor, and
+    contains zero em-dashes. `chapter_titles` maps participant_key -> locked title;
+    `order` (optional) restricts the referenced set to the included chapters.
+    Returns a report dict with ok + the breakdown; never raises."""
+    issues = []
+    block = extract_finale_block(manuscript)
+    if block is None:
+        return {"ok": False, "present": False,
+                "issues": ["no single Grand Finale block found"],
+                "autofail": AF_FINALE}
+    title = _first_heading_title(block)
+    if not title:
+        issues.append("the Grand Finale has no own title (leading '# ' heading)")
+
+    keys = list(order) if order else list(chapter_titles.keys())
+    missing = []
+    referenced = []
+    for key in keys:
+        t = chapter_titles.get(key)
+        if t and references_title(block, t):
+            referenced.append(key)
+        else:
+            missing.append(key)
+    if missing:
+        issues.append("finale does not reference chapter(s): %s"
+                      % ", ".join(str(k) for k in missing))
+
+    action_ok = has_action_steps_section(block)
+    if not action_ok:
+        issues.append("finale has no action-steps section "
+                      "('Where Do You Go From Here' / next steps)")
+
+    em = count_em_dashes(block)
+    if em:
+        issues.append("%d em-dash(es) in the finale" % em)
+
+    floor_ok = font_floor_ok(block, font_floor)
+    if not floor_ok:
+        issues.append("finale names an inline font below the %dpt floor (smallest %s)"
+                      % (font_floor, min_font_pt(block)))
+
+    wc = count_words(block)
+    if word_min is not None and wc < word_min:
+        issues.append("finale word count %d below floor %d" % (wc, word_min))
+
+    ok = not issues
+    return {
+        "ok": ok, "present": True, "finale_title": title,
+        "chapters_expected": len(keys), "chapters_referenced": len(referenced),
+        "missing_references": missing, "action_steps_present": action_ok,
+        "em_dashes": em, "font_floor_ok": floor_ok, "word_count": wc,
+        "issues": issues, "autofail": None if ok else AF_FINALE,
+    }
+
+
+def build_ordering_view(order, position_rationale, overall_rationale, chapters_meta):
+    """U9(c): assemble the CC assembly-cockpit ordering view -- the proposed order
+    with a ONE-LINE rationale per slot, enriched from each chapter's ledger facts
+    (title, contributor, word count, tone). `position_rationale` is ae-01's
+    [{position, participant_key, reason}]; `chapters_meta` is the ledger chapter
+    facts keyed or listed by participant_key. Returns the slot table the cockpit
+    renders; it is a pure projection (no I/O)."""
+    meta_by_key = {}
+    for c in (chapters_meta or []):
+        if isinstance(c, dict) and c.get("participant_key"):
+            meta_by_key[c["participant_key"]] = c
+    reason_by_key = {}
+    for r in (position_rationale or []):
+        if isinstance(r, dict) and r.get("participant_key"):
+            reason_by_key[r["participant_key"]] = r.get("reason", "")
+    slots = []
+    for i, key in enumerate(order or [], start=1):
+        m = meta_by_key.get(key, {})
+        slots.append({
+            "position": i,
+            "participant_key": key,
+            "chapter_title": m.get("chapter_title") or m.get("title_locked") or "",
+            "contributor_name": m.get("contributor_name")
+                or (" ".join(x for x in (m.get("first_name"), m.get("last_name")) if x).strip()),
+            "word_count": m.get("word_count"),
+            "tone": m.get("tone"),
+            "rationale": (reason_by_key.get(key) or "").strip(),
+        })
+    return {
+        "order": list(order or []),
+        "slots": slots,
+        "overall_rationale": (overall_rationale or "").strip(),
+    }
+
+
+def _normalize_transitions(transitions, order):
+    """Accept the many shapes write_transitions/callers may pass and return a
+    dict seam_index(1-based) -> bridge_text. Shapes:
+      * None                                   -> {}
+      * ["bridge1", "bridge2", ...]            -> {1: b1, 2: b2, ...}
+      * [{"bridge_markdown": ..., "seam": k}]  -> keyed by seam (or list order)
+      * {1: "bridge", ...} / {"1": "bridge"}   -> coerced int keys
+    A single-sentinel <!-- TRANSITION --> wrapper (the ae-05 output) is unwrapped."""
+    def _unwrap(text):
+        inner = split_sentinel(text, _AE05_SENTINEL)
+        return inner if inner is not None else (text or "").strip()
+
+    out = {}
+    if not transitions:
+        return out
+    if isinstance(transitions, dict):
+        for k, v in transitions.items():
+            try:
+                out[int(k)] = _unwrap(v if isinstance(v, str) else v.get("bridge_markdown", ""))
+            except (TypeError, ValueError):
+                continue
+        return out
+    for i, item in enumerate(transitions, start=1):
+        if isinstance(item, str):
+            out[i] = _unwrap(item)
+        elif isinstance(item, dict):
+            seam = item.get("seam", i)
+            out[int(seam)] = _unwrap(item.get("bridge_markdown", ""))
+    return out
+
+
+def _normalize_finale(finale):
+    """Return (finale_title, finale_body_markdown) from write_finale's output or a
+    plain string. A dict carries {finale_title, finale_markdown}; a string is used
+    verbatim as the body (assumed to already carry its own heading)."""
+    if not finale:
+        return None, None
+    if isinstance(finale, str):
+        return None, finale.strip()
+    title = (finale.get("finale_title") or "").strip()
+    body = (finale.get("finale_markdown") or "").strip()
+    return (title or None), body
 
 
 # --------------------------------------------------------------------------- #
@@ -501,6 +850,12 @@ class S9Assembly:
             raise S9Error("assembly-set-order refused (rc %s): %s" % (rc, err))
         proposal["_persisted_state"] = (parsed or {}).get("assembly_state", persist_state)
         proposal["_model_used"] = reply.get("model_used")
+        # U9(c): expose the order + per-slot rationale for the CC assembly cockpit
+        # (build_ordering_view is the exposed primitive; the `ordering` CLI and the
+        # runner's cockpit-view persistence call it too).
+        proposal["cockpit_view"] = build_ordering_view(
+            order, proposal.get("position_rationale"),
+            proposal.get("overall_rationale"), chapters)
         return proposal
 
     def set_order(self, order, persist_state="adjusted"):
@@ -588,9 +943,137 @@ class S9Assembly:
                                   % (sorted(got), sorted(want)))
         return {"bios": bios, "model_used": reply.get("model_used")}
 
+    # -- U9(a): inter-chapter transitions (ae-05), one bridge per seam ------
+    def write_transitions(self, order, chapters_meta):
+        """Write the N-1 editors' bridges, one per seam of the confirmed running
+        order. Each bridge (150-300 words, editor voice, zero em-dashes) names the
+        NEXT chapter by its LOCKED title. `chapters_meta` maps/lists per
+        participant_key: chapter_title (the locked title), contributor_name, and
+        one_line_summary. Returns a list of {seam, from_key, to_key, to_title,
+        bridge_markdown, model_used}. Fail-closed: a bridge that misses its craft
+        contract raises TransitionInvalid (never ship a broken seam)."""
+        meta = self._meta_by_key(chapters_meta)
+        n = len(order)
+        transitions = []
+        for pos in range(n - 1):
+            from_key, to_key = order[pos], order[pos + 1]
+            from_m, to_m = meta.get(from_key, {}), meta.get(to_key, {})
+            to_title = self._chapter_title(to_m)
+            if not to_title:
+                raise TransitionInvalid(
+                    "%s: seam %d has no LOCKED title for the next chapter %r "
+                    "(a transition cannot name an unlocked title)"
+                    % (AF_TRANSITION, pos + 1, to_key))
+            slots = {
+                "anthology_name": self._anth_name(),
+                "anthology_theme": self._anth_theme(),
+                "from_title": self._chapter_title(from_m),
+                "from_contributor": self._contributor_name(from_m),
+                "to_title": to_title,
+                "to_contributor": self._contributor_name(to_m),
+                "to_one_line_summary": to_m.get("one_line_summary", ""),
+                "seam_index": pos + 1,
+                "seam_total": n - 1,
+            }
+            composed = self._compose("transition", slots)
+            reply = self._route(TIER_HEAVY, [{"role": "user", "content": composed}],
+                                {"anthology_id": self.anthology_id,
+                                 "step": "s9_transition_%d" % (pos + 1)})
+            bridge = split_sentinel(reply["text"], _AE05_SENTINEL) or reply["text"].strip()
+            # per-seam craft gate (the prover re-proves over the compiled book)
+            em = count_em_dashes(bridge)
+            wc = count_words(bridge)
+            if not references_title(bridge, to_title):
+                raise TransitionInvalid(
+                    "%s: seam %d bridge does not name the next locked title %r"
+                    % (AF_TRANSITION, pos + 1, to_title))
+            if em:
+                raise TransitionInvalid("%s: seam %d bridge has %d em-dash(es)"
+                                        % (AF_TRANSITION, pos + 1, em))
+            if not (TRANSITION_WORD_MIN <= wc <= TRANSITION_WORD_MAX):
+                raise TransitionInvalid(
+                    "%s: seam %d bridge is %d words, outside the %d-%d band"
+                    % (AF_TRANSITION, pos + 1, wc, TRANSITION_WORD_MIN, TRANSITION_WORD_MAX))
+            transitions.append({
+                "seam": pos + 1, "from_key": from_key, "to_key": to_key,
+                "to_title": to_title, "bridge_markdown": bridge,
+                "word_count": wc, "model_used": reply.get("model_used"),
+            })
+        return transitions
+
+    # -- U9(b): the brand-new Grand Finale chapter (ae-06) -------------------
+    def write_finale(self, order, chapters_meta, producer_display_name=None):
+        """Write the BRAND-NEW Grand Finale chapter -- its own title, transitioned
+        in from the last co-author, referencing every included chapter at least
+        once, closing on an action-steps section, 14pt floor, zero em-dashes.
+        Written ONLY after the set is finalized+approved+ordered (the caller gates
+        this on the producer's 'Confirm the finalized set & order'). Returns
+        {finale_title, finale_markdown, model_used}. Fail-closed: a finale that
+        misses its contract raises FinaleInvalid."""
+        if not order:
+            raise FinaleInvalid("%s: cannot write a finale over an empty order"
+                                % AF_FINALE)
+        meta = self._meta_by_key(chapters_meta)
+        last_key = order[-1]
+        last_m = meta.get(last_key, {})
+        chapters_json = [{
+            "chapter_title": self._chapter_title(meta.get(k, {})),
+            "contributor_name": self._contributor_name(meta.get(k, {})),
+            "one_line_summary": meta.get(k, {}).get("one_line_summary", ""),
+        } for k in order]
+        slots = {
+            "anthology_name": self._anth_name(),
+            "anthology_theme": self._anth_theme(),
+            "last_chapter_title": self._chapter_title(last_m),
+            "last_contributor": self._contributor_name(last_m),
+            "producer_display_name": producer_display_name or "",
+            "chapters_json": json.dumps(chapters_json, ensure_ascii=False),
+        }
+        composed = self._compose("grand_finale", slots)
+        reply = self._route(TIER_HEAVY, [{"role": "user", "content": composed}],
+                            {"anthology_id": self.anthology_id, "step": "s9_grand_finale"})
+        parsed = _extract_json_object(reply["text"])
+        title = (parsed.get("finale_title") or "").strip()
+        body = (parsed.get("finale_markdown") or "").strip()
+        if not title:
+            raise FinaleInvalid("%s: the Grand Finale has no own title" % AF_FINALE)
+        if not body:
+            raise FinaleInvalid("%s: the Grand Finale body is empty" % AF_FINALE)
+        # Prove the finale over its titled body BEFORE it enters the manuscript.
+        titles = {k: self._chapter_title(meta.get(k, {})) for k in order}
+        preview = "%s\n# %s\n\n%s\n%s" % (_FINALE_OPEN, title, body, _FINALE_CLOSE)
+        report = prove_finale(preview, titles, order=order)
+        if not report["ok"]:
+            raise FinaleInvalid("%s: %s" % (AF_FINALE, "; ".join(report["issues"])))
+        return {"finale_title": title, "finale_markdown": body,
+                "model_used": reply.get("model_used")}
+
+    # -- chapter-metadata accessors (ledger facts, never invented) ----------
+    @staticmethod
+    def _meta_by_key(chapters_meta):
+        if isinstance(chapters_meta, dict):
+            return chapters_meta
+        out = {}
+        for c in (chapters_meta or []):
+            if isinstance(c, dict) and c.get("participant_key"):
+                out[c["participant_key"]] = c
+        return out
+
+    @staticmethod
+    def _chapter_title(m):
+        return (m.get("chapter_title") or m.get("title_locked") or "").strip()
+
+    @staticmethod
+    def _contributor_name(m):
+        n = m.get("contributor_name")
+        if n:
+            return n
+        return " ".join(x for x in (m.get("first_name"), m.get("last_name")) if x).strip()
+
     # -- compile from FROZEN approved chapters (sha256 byte-identical) -------
     def compile_manuscript(self, order, frozen_shas, front_matter, intro,
-                           bios_by_key, back_matter, out_path=None):
+                           bios_by_key, back_matter, transitions=None, finale=None,
+                           out_path=None):
         """Assemble the manuscript DETERMINISTICALLY from the frozen approved
         chapter bodies, in curated order, wrapped by the generated matter. The
         LLM never touches a chapter body, so each chapter stays byte-identical to
@@ -602,17 +1085,29 @@ class S9Assembly:
         byte-identity and moves assembly_state to compiled. The compile TIER
         (LONGCTX whole-manuscript when configured, else chunked HEAVY-WRITER)
         governs an optional continuity review that produces producer-facing
-        notes ONLY; it can never mutate a chapter."""
+        notes ONLY; it can never mutate a chapter.
+
+        U9: `transitions` (the N-1 editors' bridges from write_transitions) and
+        `finale` (the brand-new titled Grand Finale from write_finale) are
+        INSERTIONS in this compiled edition ONLY. Each bridge is dropped into the
+        gap AFTER its chapter (never inside one) and the finale is appended after
+        the last co-author chapter, each wrapped in an HTML-comment sentinel the
+        provers read and the layout engine renders as nothing. Insertions are
+        never edits: the frozen chapter bytes are appended verbatim and stay
+        byte-identical, which prove_transitions re-proves by byte-diff."""
         if self._chapter_source is None:
             raise CollaboratorUnwired("chapter_source port not wired (reuse-path / "
                                       "drive_adapter reader supplies frozen bodies)")
+        bridges = _normalize_transitions(transitions, order)
+        finale_title, finale_body = _normalize_finale(finale)
         segments = []
         verify_pairs = []
         if front_matter:
             segments.append(front_matter)
         if intro:
             segments.append(intro)
-        for mk in order:
+        n = len(order)
+        for i, mk in enumerate(order):
             body_bytes, source_sha = self._chapter_source(mk)
             recomputed = sha256_hex(body_bytes)
             expected = frozen_shas.get(mk)
@@ -624,6 +1119,18 @@ class S9Assembly:
                          else str(body_bytes))
             segments.append(body_text)
             verify_pairs.append("%s=%s" % (mk, expected))
+            # U9(a): the seam bridge sits in the gap AFTER this chapter (1-based
+            # seam index), for every seam except after the last chapter.
+            seam = i + 1
+            if seam < n and seam in bridges and bridges[seam]:
+                segments.append("%s\n%s\n%s"
+                                % (_TRANSITION_OPEN % seam, bridges[seam],
+                                   _TRANSITION_CLOSE % seam))
+        # U9(b): the brand-new Grand Finale chapter, after the last co-author.
+        if finale_body:
+            titled = ("# %s\n\n%s" % (finale_title, finale_body) if finale_title
+                      else finale_body)
+            segments.append("%s\n%s\n%s" % (_FINALE_OPEN, titled, _FINALE_CLOSE))
         # contributor bios, in curated order, then back matter
         if bios_by_key:
             bio_block = "\n\n".join(bios_by_key[mk] for mk in order if mk in bios_by_key)
@@ -657,6 +1164,10 @@ class S9Assembly:
             "compile_tier": compile_tier,
             "longctx_used": bool(self._longctx),
             "chapter_count": len(order),
+            "transition_count": sum(1 for s in range(1, n)
+                                    if s in bridges and bridges[s]),
+            "finale_present": bool(finale_body),
+            "finale_title": finale_title,
             "continuity_notes": continuity_notes,
             "assembly_state": (parsed or {}).get("assembly_state", "compiled"),
             "out_path": str(out_path) if out_path else None,
@@ -805,8 +1316,18 @@ def main(argv=None):
     f.add_argument("--door", default="dashboard", choices=["dashboard", "nudge_link"])
     f.add_argument("--notes")
 
-    sub.add_parser("curate", help="ae-01 order curation (chapters JSON on stdin)")
+    sub.add_parser("curate", help="ae-01 order curation + cockpit view (chapters JSON on stdin)")
     sub.add_parser("bios", help="ae-03 contributor bios (contributors JSON on stdin)")
+    sub.add_parser("transitions", help="ae-05 inter-chapter transitions "
+                                       "({order, chapters_meta} JSON on stdin)")
+    fin = sub.add_parser("finale", help="ae-06 brand-new Grand Finale "
+                                        "({order, chapters_meta, producer_display_name} on stdin)")
+    fin.add_argument("--producer-display-name", dest="producer_display_name")
+    sub.add_parser("ordering", help="U9(c) cockpit ordering view "
+                                    "({chapters, proposal} JSON on stdin)")
+    sub.add_parser("prove", help="run BOTH assembly provers over a manuscript envelope "
+                                 "({manuscript, order, chapter_titles[, frozen_bodies]} on stdin); "
+                                 "exit 0 pass, 2 prover-fail")
 
     so = sub.add_parser("sign-off", help="s9_producer final sign-off (closes it)")
     so.add_argument("--producer-id", required=True)
@@ -820,7 +1341,27 @@ def main(argv=None):
             return plan()
         if not args.cmd:
             ap.error("a subcommand is required (readiness | fire | curate | bios | "
-                     "sign-off), or use --plan / --self-test")
+                     "transitions | finale | ordering | prove | sign-off), or use "
+                     "--plan / --self-test")
+        # `prove` and `ordering` are PURE (no ledger/network); they need no anthology_id.
+        if args.cmd == "prove":
+            env = _read_stdin_json()
+            order = env.get("order") or []
+            titles = env.get("chapter_titles") or {}
+            frozen = env.get("frozen_bodies")
+            tp = prove_transitions(env.get("manuscript", ""), order, titles, frozen_bodies=frozen)
+            fp = prove_finale(env.get("manuscript", ""), titles, order=order)
+            report = {"transitions": tp, "finale": fp, "ok": bool(tp["ok"] and fp["ok"])}
+            _print(report, args.json)
+            return EX_OK if report["ok"] else EX_PROVER
+        if args.cmd == "ordering":
+            env = _read_stdin_json()
+            proposal = env.get("proposal") or {}
+            _print(build_ordering_view(proposal.get("order"),
+                                       proposal.get("position_rationale"),
+                                       proposal.get("overall_rationale"),
+                                       env.get("chapters") or []), args.json)
+            return EX_OK
         if not args.anthology_id:
             ap.error("--anthology-id is required for %r" % args.cmd)
 
@@ -843,6 +1384,20 @@ def main(argv=None):
             payload = _read_stdin_json()
             out = eng.bios(payload.get("contributors", []),
                            payload.get("chapter_order", []))
+            _print(out, args.json)
+            return EX_OK
+        if args.cmd == "transitions":
+            payload = _read_stdin_json()
+            out = eng.write_transitions(payload.get("order", []),
+                                        payload.get("chapters_meta", []))
+            _print(out, args.json)
+            return EX_OK
+        if args.cmd == "finale":
+            payload = _read_stdin_json()
+            out = eng.write_finale(payload.get("order", []),
+                                   payload.get("chapters_meta", []),
+                                   producer_display_name=(args.producer_display_name
+                                                          or payload.get("producer_display_name")))
             _print(out, args.json)
             return EX_OK
         if args.cmd == "sign-off":
@@ -1075,6 +1630,194 @@ def self_test():
         check("compile_rejects_tampered", False)
     except FrozenChapterMismatch:
         check("compile_rejects_tampered", True)
+
+    # ======================================================================= #
+    # U9: inter-chapter transitions + brand-new Grand Finale + ordering view
+    # ======================================================================= #
+    def _mk_bridge(next_title, target=200):
+        """A deterministic 200-word editor bridge naming `next_title` verbatim,
+        with zero em-dashes (mirrors an in-band ae-05 reply body)."""
+        words = "We pause at the seam between two finished voices.".split()
+        words += ("The next chapter is titled %s and it carries our theme "
+                  "onward with fresh conviction." % next_title).split()
+        while len(words) < target:
+            words += "The reader turns the page with intention and an open heart.".split()
+        return " ".join(words[:target]) + "."
+
+    u9_order = ["cA::x", "cB::x", "cC::x"]
+    u9_titles = {"cA::x": "Rise", "cB::x": "Fall Forward", "cC::x": "Begin Again"}
+    u9_meta = [
+        {"participant_key": "cA::x", "chapter_title": "Rise", "contributor_name": "Ada",
+         "one_line_summary": "a first climb", "word_count": 3000, "tone": "warm"},
+        {"participant_key": "cB::x", "chapter_title": "Fall Forward", "contributor_name": "Ben",
+         "one_line_summary": "a stumble that teaches", "word_count": 2100, "tone": "wry"},
+        {"participant_key": "cC::x", "chapter_title": "Begin Again", "contributor_name": "Cyd",
+         "one_line_summary": "a fresh start", "word_count": 2600, "tone": "hopeful"},
+    ]
+    b_a, b_b, b_c = b"# Rise\n\nbody A\n", b"# Fall\n\nbody B\n", b"# Begin\n\nbody C\n"
+    u9_bodies = {"cA::x": b_a, "cB::x": b_b, "cC::x": b_c}
+    u9_frozen = {k: sha256_hex(v) for k, v in u9_bodies.items()}
+
+    def _u9_writer(subcmd_args):
+        if subcmd_args[0] == "assembly-advance":
+            return (0, {"assembly_state": "compiled"}, "")
+        return (0, {}, "")
+
+    # -- write_transitions: N-1 bridges, each naming the NEXT locked title -----
+    def trans_router(tier, messages, context, run_dir=None, model_map_path=None):
+        assert tier == TIER_HEAVY
+        seam = int(context["step"].rsplit("_", 1)[1])   # s9_transition_<seam>
+        to_title = u9_titles[u9_order[seam]]            # seam k names order[k]
+        # ae-05 wraps its single bridge in the <!-- TRANSITION --> sentinel pair.
+        return {"text": "<!-- TRANSITION -->\n%s\n<!-- END TRANSITION -->" % _mk_bridge(to_title),
+                "model_used": "glm-x", "tier": tier, "provider": "p", "usage": {}}
+
+    engT = S9Assembly("anthA", db=":memory:", router=trans_router,
+                      state_writer=_u9_writer, chapter_source=lambda mk: (u9_bodies[mk], u9_frozen[mk]),
+                      longctx_available=False)
+    engT._anth_cache = {"name": "The Collection", "theme": "resilience", "min_chapters": 2}
+    u9_transitions = engT.write_transitions(u9_order, u9_meta)
+    check("u9_transitions_count", len(u9_transitions) == len(u9_order) - 1)
+    check("u9_transitions_name_next_title",
+          references_title(u9_transitions[0]["bridge_markdown"], "Fall Forward")
+          and references_title(u9_transitions[1]["bridge_markdown"], "Begin Again"))
+    check("u9_transitions_no_emdash",
+          all(count_em_dashes(t["bridge_markdown"]) == 0 for t in u9_transitions))
+    check("u9_transitions_in_band",
+          all(TRANSITION_WORD_MIN <= t["word_count"] <= TRANSITION_WORD_MAX
+              for t in u9_transitions))
+
+    # -- write_finale: own title, references every chapter, action steps -------
+    def _mk_finale_body():
+        lines = ["This collection gathered every voice into one arc of resilience."]
+        for k in u9_order:
+            lines.append("In %s, the reader meets a turning point that echoes the theme."
+                         % u9_titles[k])
+        lines.append("")
+        lines.append("## Where Do You Go From Here")
+        lines.append("")
+        lines.append("1. Begin the practice today.")
+        lines.append("2. Share your own story with one person.")
+        lines.append("3. Return to these pages when the road turns.")
+        return "\n".join(lines)
+
+    def finale_router(tier, messages, context, run_dir=None, model_map_path=None):
+        assert tier == TIER_HEAVY and context["step"] == "s9_grand_finale"
+        return {"text": json.dumps({"finale_title": "The Bridge We Built Together",
+                                    "finale_markdown": _mk_finale_body()}),
+                "model_used": "glm-x", "tier": tier, "provider": "p", "usage": {}}
+
+    engF = S9Assembly("anthA", db=":memory:", router=finale_router,
+                      state_writer=_u9_writer, chapter_source=lambda mk: (u9_bodies[mk], u9_frozen[mk]),
+                      longctx_available=False)
+    engF._anth_cache = {"name": "The Collection", "theme": "resilience", "min_chapters": 2}
+    u9_finale = engF.write_finale(u9_order, u9_meta, producer_display_name="P")
+    check("u9_finale_has_title", u9_finale["finale_title"] == "The Bridge We Built Together")
+
+    # -- compile with transitions + finale, then run BOTH provers --------------
+    engC = S9Assembly("anthA", db=":memory:", router=_never_call_router,
+                      state_writer=_u9_writer, chapter_source=lambda mk: (u9_bodies[mk], u9_frozen[mk]),
+                      longctx_available=False)
+    engC._anth_cache = {"name": "The Collection", "theme": "resilience", "min_chapters": 2}
+    compiled = engC.compile_manuscript(u9_order, u9_frozen, "FRONT", "INTRO",
+                                       {k: "bio %s" % u9_titles[k] for k in u9_order}, "BACK",
+                                       transitions=u9_transitions, finale=u9_finale)
+    ms = compiled["manuscript"]
+    check("u9_compile_reports_counts",
+          compiled["transition_count"] == 2 and compiled["finale_present"])
+
+    # PROVER (a): transitions
+    tp = prove_transitions(ms, u9_order, u9_titles, frozen_bodies=u9_bodies)
+    check("u9_prove_transitions_pass",
+          tp["ok"] and tp["transition_count"] == 2 and tp["expected"] == 2
+          and tp["frozen_unchanged"] is True and tp["total_em_dashes"] == 0)
+    # each frozen chapter byte-identical (present verbatim) in the compiled book
+    check("u9_frozen_bodies_verbatim",
+          all(b.decode() in ms for b in u9_bodies.values()))
+
+    # PROVER (b): finale
+    fp = prove_finale(ms, u9_titles, order=u9_order)
+    check("u9_prove_finale_pass",
+          fp["ok"] and fp["present"] and fp["action_steps_present"]
+          and fp["chapters_referenced"] == 3 and fp["em_dashes"] == 0
+          and fp["font_floor_ok"] and fp["finale_title"] == "The Bridge We Built Together")
+
+    # -- prover NEGATIVES (each must be caught) --------------------------------
+    # wrong transition count (drop a seam)
+    ms_missing = _TRANSITION_BLOCK_RE.sub("", ms, count=1)
+    check("u9_prove_transitions_catches_missing",
+          not prove_transitions(ms_missing, u9_order, u9_titles)["ok"])
+    # a transition that fails to name the next title
+    ms_badref = ms.replace("Begin Again", "Some Other Title")
+    tp_bad = prove_transitions(ms_badref, u9_order, u9_titles, frozen_bodies=u9_bodies)
+    check("u9_prove_transitions_catches_bad_ref", not tp_bad["ok"])
+    # an em-dash injected into a bridge
+    ms_emdash = ms.replace("We pause at the seam", "We pause — at the seam", 1)
+    check("u9_prove_transitions_catches_emdash",
+          prove_transitions(ms_emdash, u9_order, u9_titles)["total_em_dashes"] > 0
+          and not prove_transitions(ms_emdash, u9_order, u9_titles)["ok"])
+    # a frozen chapter edited inside the compiled manuscript (byte-diff catches it)
+    ms_tampered = ms.replace("body B", "body B TAMPERED")
+    check("u9_prove_transitions_byte_diff_catches_tamper",
+          prove_transitions(ms_tampered, u9_order, u9_titles, frozen_bodies=u9_bodies
+                            )["frozen_unchanged"] is False)
+    # finale missing a chapter reference
+    ms_finale_missing = ms.replace("In Begin Again, the reader meets a turning point that echoes the theme.", "")
+    check("u9_prove_finale_catches_missing_ref",
+          not prove_finale(ms_finale_missing, u9_titles, order=u9_order)["ok"])
+    # finale without an action-steps section
+    ms_no_action = ms.replace("## Where Do You Go From Here", "## Afterthoughts")
+    check("u9_prove_finale_catches_no_action_steps",
+          not prove_finale(ms_no_action, u9_titles, order=u9_order)["action_steps_present"])
+    # finale with a sub-14pt font directive
+    ms_small_font = ms.replace("1. Begin the practice today.",
+                               "<span style=\"font-size: 11pt\">1. Begin the practice today.</span>")
+    check("u9_prove_finale_catches_sub14_font",
+          not prove_finale(ms_small_font, u9_titles, order=u9_order)["font_floor_ok"])
+    # finale absent entirely
+    check("u9_prove_finale_catches_absent",
+          not prove_finale("no finale here", u9_titles, order=u9_order)["ok"])
+
+    # -- write_transitions FAIL-CLOSED on a missing locked title ---------------
+    engTX = S9Assembly("anthA", db=":memory:", router=trans_router,
+                       state_writer=_u9_writer, longctx_available=False)
+    engTX._anth_cache = {"name": "X", "theme": "t", "min_chapters": 2}
+    try:
+        engTX.write_transitions(u9_order, [{"participant_key": "cA::x", "chapter_title": "Rise"},
+                                           {"participant_key": "cB::x"},  # no locked title
+                                           {"participant_key": "cC::x", "chapter_title": "Begin Again"}])
+        check("u9_transitions_failclosed_no_title", False)
+    except TransitionInvalid:
+        check("u9_transitions_failclosed_no_title", True)
+
+    # -- write_finale FAIL-CLOSED when the reply drops a chapter reference ------
+    def bad_finale_router(tier, messages, context, run_dir=None, model_map_path=None):
+        return {"text": json.dumps({"finale_title": "T",
+                                    "finale_markdown": "Only Rise is named here.\n\n"
+                                    "## Where Do You Go From Here\n\n1. Go."}),
+                "model_used": "m", "tier": tier, "provider": "p", "usage": {}}
+    engFX = S9Assembly("anthA", db=":memory:", router=bad_finale_router,
+                       state_writer=_u9_writer, longctx_available=False)
+    engFX._anth_cache = {"name": "X", "theme": "t", "min_chapters": 2}
+    try:
+        engFX.write_finale(u9_order, u9_meta)
+        check("u9_finale_failclosed_missing_ref", False)
+    except FinaleInvalid:
+        check("u9_finale_failclosed_missing_ref", True)
+
+    # -- U9(c): ordering cockpit view (order + one-line rationale per slot) -----
+    ov = build_ordering_view(
+        u9_order,
+        [{"position": 1, "participant_key": "cA::x", "reason": "strong opener"},
+         {"position": 2, "participant_key": "cB::x", "reason": "tonal reset"},
+         {"position": 3, "participant_key": "cC::x", "reason": "resonant close"}],
+        "opener/closer with a wry middle", u9_meta)
+    check("u9_ordering_view_slots",
+          [s["position"] for s in ov["slots"]] == [1, 2, 3]
+          and ov["slots"][0]["rationale"] == "strong opener"
+          and ov["slots"][0]["chapter_title"] == "Rise"
+          and ov["slots"][2]["rationale"] == "resonant close"
+          and ov["overall_rationale"] == "opener/closer with a wry middle")
 
     # ---- REAL-WRITER E2E: record_manuscript_artifact against a seeded ledger
     # This is the author-designated deliver-handoff surface (SPEC 4 S9 step 8):

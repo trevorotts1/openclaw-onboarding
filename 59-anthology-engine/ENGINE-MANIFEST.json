@@ -35,7 +35,7 @@
     {"id": "S6", "name": "CHAPTER REWRITE", "runner": "scripts/stage_s6_rewrite.py", "tier": "HEAVY-WRITER", "produces_artifact": "new chapter VERSION; re-enters the S5 gate", "gate": "re-enters s5_participant", "provers": ["prove_aw_chapter.py", "judge_harness.py", "qc-strike-gate.py (rewrite budget 2)"], "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"},
     {"id": "S7", "name": "COVER IMAGE", "runner": "scripts/stage_s7_cover.py", "tier": "HEAVY-WRITER (prompt) + IMAGE (render)", "produces_artifact": "cover PNG in the participant Drive folder; both link fields", "gate": "none", "provers": ["cover_render callback verify"], "persona": "the Senior Book-Cover Design Specialist (aw-11)"},
     {"id": "S8", "name": "PACKAGE AND DELIVER", "runner": "scripts/stage_s8_deliver.py", "tier": "none (deterministic)", "produces_artifact": "every deliverable as Google Doc + 14pt-floor PDF; Convert and Flow media + exact-key field writes; control fields; signed certificate", "gate": "card to review (QC scorer owns review to done)", "provers": ["guard-font-floor.py", "caf_delivery read-back"], "persona": "none (anthology-producer-orchestrator)"},
-    {"id": "S9", "name": "ANTHOLOGY ASSEMBLY", "runner": "scripts/stage_s9_assembly.py", "tier": "LONGCTX or HEAVY-WRITER", "produces_artifact": "full manuscript Doc plus PDF; manuscript fields", "gate": "s9_ready (arm and fire, all PRD 3.11 guards) then s9_producer (sign-off)", "provers": ["qc-tier1-anthology.py --mode assembly", "frozen-chapter sha256 byte-identity"], "persona": "the Anthology Editor voice (ae-01..04), subordinate to producer inputs"}
+    {"id": "S9", "name": "ANTHOLOGY ASSEMBLY", "runner": "scripts/stage_s9_assembly.py", "tier": "LONGCTX or HEAVY-WRITER", "produces_artifact": "full manuscript Doc plus PDF (producer-ordered, N-1 inter-chapter transitions plus a brand-new titled Grand Finale); manuscript fields", "gate": "s9_ready (arm and fire, all PRD 3.11 guards) then producer 'Confirm the finalized set & order' (triggers the Grand Finale write) then s9_producer (sign-off)", "provers": ["qc-tier1-anthology.py --mode assembly", "frozen-chapter sha256 byte-identity", "prove_transitions (each seam names the next locked title, zero em dashes, frozen chapters byte-unchanged)", "prove_finale (references every chapter, action-steps section, 14pt floor, zero em dashes)"], "persona": "the Anthology Editor voice (ae-01..06), subordinate to producer inputs"}
   ],
 
   "gate_table": {
@@ -50,11 +50,13 @@
   },
 
   "engine_owned_prompt_pins": {
-    "$note": "The engine OWNS only the S9 assembly and routing prompts. Authored by W1.18; sha256 pins STAMPED by the Wave-1 integrator (each recomputed from the on-disk asset and matched byte-for-byte). Every authoring prompt (aa-01..03, tone 04..08, aw-06..12) lives in Skill 54 / Skill 52 / the tone core and is proven by guard-prompt-pins.py.",
+    "$note": "The engine OWNS only the S9 assembly and routing prompts. Authored by W1.18 (ae-01..04) and U9 (ae-05 inter-chapter transition, ae-06 grand finale); sha256 pins STAMPED from the on-disk asset and matched byte-for-byte. Every authoring prompt (aa-01..03, tone 04..08, aw-06..12) lives in Skill 54 / Skill 52 / the tone core and is proven by guard-prompt-pins.py.",
     "assets/prompts/ae-01-order-curation.md": "2e12ad8db5bb8563c8fed38442c9fb823140796a707eaccef97d71db4ca1e25b",
     "assets/prompts/ae-02-editor-introduction.md": "78b65803311f6548a3845d1db4fc63249fa5cc229a55c00ebb9e65c4ec8bfdc6",
     "assets/prompts/ae-03-contributor-bio.md": "5c0600d75d2db74d25f0f401757fa471adc7d17fdd4b630032411f664b99a6e5",
-    "assets/prompts/ae-04-front-back-matter.md": "46a77c5c86cb5f3a9dedc159e82253dc0171bd576919bd6391af306ff8130b0d"
+    "assets/prompts/ae-04-front-back-matter.md": "46a77c5c86cb5f3a9dedc159e82253dc0171bd576919bd6391af306ff8130b0d",
+    "assets/prompts/ae-05-inter-chapter-transition.md": "df4c3fa04b42dd132671f63ba7f95cf9c40e25f5d8a896178557cced84bdbe6b",
+    "assets/prompts/ae-06-grand-finale.md": "da10e35106c617b4798d834a9dac7507b779706c2663ebf33ad7877acb467306"
   },
 
   "field_map_ref": "config/field-map.json",

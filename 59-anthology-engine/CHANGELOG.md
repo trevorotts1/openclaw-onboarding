@@ -1,5 +1,41 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+## Unreleased (2026-07-09) -- U9: S9 assembly transitions + brand-new Grand Finale + ordering data
+
+Adds the three assembly-finale pieces the current engine did not do. All LLM calls
+mocked in tests; no live model, no ledger schema change (the sole writer is untouched).
+
+Added:
+- `assets/prompts/ae-05-inter-chapter-transition.md`: the editors' 150-300 word
+  bridge for one seam, naming the NEXT chapter's LOCKED title verbatim, zero
+  em-dashes, "editors" never "AI". Pinned in ENGINE-MANIFEST.json.
+- `assets/prompts/ae-06-grand-finale.md`: a BRAND-NEW closing chapter with its own
+  title, transitioned in from the last co-author, referencing every included
+  chapter, ending with a `## Where Do You Go From Here` action-steps section,
+  14-point floor, zero em-dashes, "editors" never "AI". Pinned in ENGINE-MANIFEST.json.
+- `scripts/stage_s9_assembly_logic.py`: `write_transitions` (N-1 bridges, one per
+  seam) and `write_finale` (the Grand Finale, written only after the set is
+  finalized/approved/ordered); `compile_manuscript` now interleaves the bridges and
+  appends the finale as sentinel-wrapped INSERTIONS in the compiled edition only,
+  leaving every frozen chapter byte-untouched. Two provers: `prove_transitions`
+  (exactly N-1 seams, each names the next locked title, zero em-dashes, byte-diff
+  proves no frozen chapter changed) and `prove_finale` (references every chapter,
+  action-steps section, 14pt floor, zero em-dashes). `build_ordering_view` /
+  `ordering_view` expose the proposed order + a one-line rationale per slot for the
+  Command Center assembly cockpit (U9c). New CLI subcommands: `transitions`,
+  `finale`, `ordering`, and a standalone dual `prove`.
+- `tests/test_s9_assembly_transitions_finale.py`: 17 hermetic tests exercising both
+  provers end-to-end (mocked router) plus their negative (fail-catch) paths.
+
+Changed:
+- `scripts/stage_s9_assembly.py`: on the producer's "Confirm the finalized set &
+  order" (request `confirm_order`), writes the transitions + Grand Finale and passes
+  them to `compile_manuscript`; persists the cockpit ordering view to the run dir.
+- `scripts/qc-tier1-anthology.py`: widened the stage-tag leak detector to `ae-0[1-6]`
+  so a leaked ae-05/ae-06 tag is caught in deliverables too (33-check self-test green).
+- `ENGINE-MANIFEST.json`: registered the two new pins; S9 row records the two new
+  provers and persona `ae-01..06`.
+
 ## 0.1.1 (2026-07-08) -- intake-transform comment scrub (guard-prompt-pins)
 
 Patch fix, no runtime behavior change.

@@ -209,7 +209,7 @@ _LEAK_TERMS_RE = re.compile(
     r"<\|im_start\|>|<\|im_end\|>|"
     r"stage label|reasoning_effort|temperature\s*[:=]\s*0"
     r")")
-_STAGE_TAG_RE = re.compile(r"(?i)\b(aa-0[1-9]|aw-0[6-9]|aw-1[0-2]|ae-0[1-4])\b")
+_STAGE_TAG_RE = re.compile(r"(?i)\b(aa-0[1-9]|aw-0[6-9]|aw-1[0-2]|ae-0[1-6])\b")
 _UNCHANGED_RE = re.compile(r"\[UNCHANGED\]")
 _CODEFENCE_ANY_RE = re.compile(r"```")
 
