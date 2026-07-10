@@ -188,10 +188,14 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
-    # 4. stage_s8_deliver.py -- deliver the Titles Doc + PDF.
+    # 4. stage_s8_deliver.py -- deliver the Titles Doc + PDF. --gate s3 moves the
+    #    Convert and Flow opportunity to the mapped pipeline stage (Title) from the
+    #    registry caf_stage_map (never hardcoded); scope-denied stays HELD (exit
+    #    3), never fatal (B6 / SPEC 7.6).
     rel, _ = WIRING[3]
     rc, delivered = _step(3, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
-                                  "--run-dir", str(rundir), "--deliverable", "titles", "--json"])
+                                  "--run-dir", str(rundir), "--deliverable", "titles",
+                                  "--gate", "s3", "--json"])
     if rc != EX_OK:
         return rc
     delivered = delivered or {}

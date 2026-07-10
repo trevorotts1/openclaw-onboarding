@@ -189,11 +189,17 @@ def _invoke_wiring(key, run_dir=None):
         if rc != EX_OK:
             return rc
 
-    # 4. stage_s8_deliver.py -- deliver the Blurb and Outline Docs + PDFs.
+    # 4. stage_s8_deliver.py -- deliver the Blurb and Outline Docs + PDFs. --gate
+    #    s4 moves the Convert and Flow opportunity to the mapped pipeline stage
+    #    (Outline) from the registry caf_stage_map (never hardcoded); both
+    #    deliverables in this stage share engine gate s4, so a second move is an
+    #    idempotent re-move to the same stage; scope-denied stays HELD (exit 3),
+    #    never fatal (B6 / SPEC 7.6).
     rel, _ = WIRING[3]
     for kind in ("blurb", "outline"):
         rc, delivered = _step(3, rel, [py, str(_resolve(rel)), "--participant-key", pkey,
-                                      "--run-dir", str(rundir), "--deliverable", kind, "--json"])
+                                      "--run-dir", str(rundir), "--deliverable", kind,
+                                      "--gate", "s4", "--json"])
         if rc != EX_OK:
             return rc
         delivered = delivered or {}
