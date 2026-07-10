@@ -80,6 +80,27 @@ USAGE
     # CLI:
     python3 ghl_survey_builder.py --dry-run --location-id LOC123
     python3 ghl_survey_builder.py --selftest
+
+    # Task-driven survey (fields + branching + slide layout from a payload):
+    python3 ghl_survey_builder.py --dry-run --task-json /path/to/task.json
+
+TASK-DRIVEN TOPOLOGY (Area 5 fix)
+---------------------------------
+The survey's shape comes from the TASK payload, never a hardcoded demo:
+  task['survey_fields']      — list of field dicts (overrides REFERENCE_FIELDS).
+  task['conditional_logic']  — list of {if_field, if_value, then_slide} jump-to
+                               rules (overrides the CONDITIONAL_LOGIC_RULES demo).
+                               ``if_field`` matches a field by label or key;
+                               ``then_slide`` matches a slide by its "Pn - Name"
+                               label, bare name, "Pn"/index, or "Slide n".
+  task['slides']             — optional per-branch slide layout: an ordered list
+                               of {name, fields:[<label|key>, …]} where a slide
+                               may carry ONE OR MORE fields and branches may
+                               target ANY slide. Omit for the default one-field-
+                               per-slide linear layout (fully backward compatible).
+Every ``if_field`` and ``then_slide`` is validated against the resolved field and
+slide sets during preflight (P4 family) — a dangling reference is a HARD STOP
+BEFORE any browser action, never a mid-build failure.
 """
 
 from __future__ import annotations
@@ -126,7 +147,7 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.1.0"
+SURVEY_BUILDER_VERSION = "v1.2.0"
 
 # ── Field-creation posture (F1 fix — grocery-shopping rule) ────────────────
 # The survey rail MUST reuse API-pre-created custom fields (map-only via the
@@ -225,7 +246,12 @@ REFERENCE_FIELDS: List[dict] = [
     },
 ]
 
-# Conditional logic rules (PRD §5.B.2 Phase G; Pn- prefix is stable)
+# Conditional logic rules — DOCUMENTED DEMO/FALLBACK ONLY (PRD §5.B.2 Phase G;
+# Pn- prefix is stable). A real build supplies ``task['conditional_logic']``,
+# which OVERRIDES this constant entirely (see ``_resolve_conditional_rules``).
+# This 2-rule "attended events" survey is retained purely as the reference
+# example and the no-task fallback; it is NEVER the source of branching when a
+# task payload provides its own rules.
 CONDITIONAL_LOGIC_RULES: List[dict] = [
     {
         "if_field": "Have you attended one of our events before?",
@@ -563,6 +589,19 @@ def _run_preflight(task: dict, evidence_root: str) -> dict:
     has_spec = bool(task.get("survey_fields") or task.get("brief") or task.get("title"))
     chk("P4:spec_present", has_spec, "survey_fields or brief or title key present")
 
+    # P4 — topology validity (Area-5): the task-driven slide layout and branching
+    # references must ALL resolve. A dangling if_field / then_slide, an unknown
+    # field in a custom slide, a duplicate placement, or an orphan field is a HARD
+    # STOP here — BEFORE any browser action, never a mid-build failure.
+    _fields_pf = _resolve_fields(task)
+    _slides_pf = _plan_slides(task, _fields_pf)
+    _rules_pf = _resolve_conditional_rules(task)
+    _topo_errs = _validate_topology(task, _fields_pf, _slides_pf, _rules_pf)
+    chk("P4:topology_valid", not _topo_errs,
+        "; ".join(_topo_errs) if _topo_errs
+        else f"{len(_slides_pf)} slides + {len(_rules_pf)} branch rule(s); "
+             "all field + slide references resolve")
+
     # P5 — duplicate-survey check (delegated to ghl_method if available)
     chk("P5:no_duplicate", True,
         "resolve_install_target will raise InstallTargetError on ambiguous duplicates")
@@ -632,39 +671,142 @@ def _resolve_fields(task: dict) -> List[dict]:
     return [dict(f) for f in REFERENCE_FIELDS]
 
 
-def _build_survey_plan(task: dict, fields: List[dict]) -> dict:
-    """Build the routing/survey-plan.json structure (THINK output)."""
-    folder_name = task.get("folder_name", "Sample Survey")
-    survey_name = task.get("survey_name", task.get("title", "New Survey"))
-    location_id = (
-        task.get("location_id")
-        or task.get("GHL_LOCATION_ID")
-        or os.environ.get("GHL_LOCATION_ID", "")
-    )
+def _resolve_conditional_rules(task: dict) -> List[dict]:
+    """Return branching rules from the TASK payload, else the demo fallback.
+
+    Area-5 fix: branching is TASK-DRIVEN. ``task['conditional_logic']`` (a list of
+    ``{if_field, if_value, then_slide}`` dicts) OVERRIDES the CONDITIONAL_LOGIC_RULES
+    module constant ENTIRELY. The constant is only the documented demo / no-task
+    fallback — never the branching source once a task supplies its own rules. A
+    task may pass an EMPTY list to build a survey with NO conditional logic.
+    """
+    raw = task.get("conditional_logic")
+    if isinstance(raw, list):
+        return [dict(r) for r in raw]
+    return [dict(r) for r in CONDITIONAL_LOGIC_RULES]
+
+
+def _norm(s: Any) -> str:
+    """Case/space-insensitive normaliser used for reference matching."""
+    return str(s or "").strip().lower()
+
+
+def _match_field(ref: Any, fields: List[dict]) -> Optional[dict]:
+    """Resolve a field reference (label, explicit key, or resolved field_key) to
+    its field dict. Case-insensitive on label; exact on key. None if unmatched."""
+    if ref is None:
+        return None
+    ref_s = str(ref).strip()
+    ref_l = ref_s.lower()
+    for f in fields:
+        if _norm(f.get("label", "")) == ref_l:
+            return f
+        explicit = str(f.get("key") or f.get("field_key") or "").strip()
+        if explicit and explicit == ref_s:
+            return f
+        try:
+            fk, _pol = _resolve_field_key(f)
+        except Exception:  # noqa: BLE001
+            fk = ""
+        if fk and (fk == ref_s or fk.lower() == ref_l):
+            return f
+    return None
+
+
+def _slide_target_label(slide: dict) -> str:
+    """Canonical GHL jump-to / navigation label for a question or capture slide:
+    ``P{index} - {name}`` (the "Pn -" prefix GHL auto-assigns by position)."""
+    return f"P{slide['index']} - {slide['name']}"
+
+
+def _plan_slides(task: dict, fields: List[dict]) -> List[dict]:
+    """Build the ordered slide model (THINK layer): welcome + question slide(s) +
+    contact-capture. TASK-DRIVEN and per-branch capable.
+
+    Default (no ``task['slides']``): one question slide per field, in order —
+    byte-for-byte backward compatible with every existing caller.
+
+    Custom (``task['slides']`` present): each entry is ``{name, fields:[ref…]}``
+    (a bare list of refs, or ``{slide_name, field_labels}``, are also accepted).
+    A slide may carry ONE OR MORE fields and branches may target any slide.
+    Unresolved refs are recorded under a private ``_unresolved`` key so
+    ``_validate_topology`` can HARD-STOP preflight; this builder never raises.
+    """
+    copy_persona = task.get("copy_persona") or {}
     business_name = task.get("business_name", "[BUSINESS NAME]")
     campaign = task.get("campaign", "our campaign")
-    copy_persona = task.get("copy_persona") or {}
 
-    slides: List[dict] = [
-        {
-            "index": 1,
-            "name": "Welcome Slide",
-            "type": "welcome",
-            "element": "Text",
-            "copy_persona_label": copy_persona.get("label", ""),
-        }
-    ]
-    for i, f in enumerate(fields, start=2):
-        slides.append({
-            "index": i,
-            "name": f["slide_name"],
-            "type": "question",
-            "field_label": f["label"],
-            "field_type": f["type"],
-            "required": f.get("required", True),
-        })
+    slides: List[dict] = [{
+        "index": 1,
+        "name": "Welcome Slide",
+        "type": "welcome",
+        "element": "Text",
+        "copy_persona_label": copy_persona.get("label", ""),
+    }]
+
+    layout = task.get("slides")
+    idx = 2
+    if isinstance(layout, list) and layout:
+        for entry in layout:
+            # Accept {name, fields}, {slide_name, field_labels}, or a bare list.
+            if isinstance(entry, dict):
+                name = entry.get("name") or entry.get("slide_name") or f"Slide {idx}"
+                refs = entry.get("fields")
+                if refs is None:
+                    refs = entry.get("field_labels", [])
+            elif isinstance(entry, (list, tuple)):
+                name = f"Slide {idx}"
+                refs = list(entry)
+            else:
+                name = str(entry)
+                refs = [entry]
+            resolved: List[dict] = []
+            unresolved: List[str] = []
+            for r in (refs or []):
+                mf = _match_field(r, fields)
+                if mf is None:
+                    unresolved.append(str(r))
+                else:
+                    resolved.append(mf)
+            slide = {
+                "index": idx,
+                "name": name,
+                "type": "question",
+                "field_labels": [f.get("label", "") for f in resolved],
+                "field_types": [f.get("type", "") for f in resolved],
+                "fields": [
+                    {"label": f.get("label", ""), "type": f.get("type", ""),
+                     "required": bool(f.get("required", True))}
+                    for f in resolved
+                ],
+                "required": any(f.get("required", True) for f in resolved),
+                # back-compat singular mirrors (first field on the slide)
+                "field_label": resolved[0].get("label", "") if resolved else "",
+                "field_type": resolved[0].get("type", "") if resolved else "",
+            }
+            if unresolved:
+                slide["_unresolved"] = unresolved
+            slides.append(slide)
+            idx += 1
+    else:
+        # Default linear layout: one field per slide.
+        for f in fields:
+            slides.append({
+                "index": idx,
+                "name": f.get("slide_name", ""),
+                "type": "question",
+                "field_labels": [f.get("label", "")],
+                "field_types": [f.get("type", "")],
+                "fields": [{"label": f.get("label", ""), "type": f.get("type", ""),
+                            "required": bool(f.get("required", True))}],
+                "required": bool(f.get("required", True)),
+                "field_label": f.get("label", ""),
+                "field_type": f.get("type", ""),
+            })
+            idx += 1
+
     slides.append({
-        "index": len(fields) + 2,
+        "index": idx,
         "name": "Contact Capture",
         "type": "capture",
         "elements": ["First Name", "Last Name", "Email", "Phone", "T & C"],
@@ -673,17 +815,209 @@ def _build_survey_plan(task: dict, fields: List[dict]) -> dict:
         "campaign": campaign,
         "note": "T & C is plain marketing-consent checkbox — NOT A2P/10DLC",
     })
+    return slides
 
+
+def _normalize_conditional_logic(
+    rules: List[dict], fields: List[dict], slides: List[dict]
+) -> tuple[List[dict], List[str]]:
+    """Resolve + validate branching rules against the planned fields and slides.
+
+    Returns ``(normalized_rules, errors)``. Each normalized rule carries the
+    canonical ``if_field`` label, the canonical ``then_slide`` target label
+    (``P{n} - {name}``), and the OWNER slide that hosts the ``if_field``
+    (``owner_slide_index`` / ``owner_slide_label``) — so Phase G navigates to the
+    RIGHT slide instead of a hardcoded "Slide 2". ``errors`` lists every unknown
+    ``if_field`` and every dangling ``then_slide``.
+    """
+    import re as _re
+    errors: List[str] = []
+
+    # Jump-to targets: question + capture slides are addressable.
+    target_slides = [s for s in slides if s.get("type") in ("question", "capture")]
+    by_target_label = {_slide_target_label(s).lower(): s for s in target_slides}
+    by_name: dict = {}
+    for s in target_slides:
+        by_name.setdefault(_norm(s.get("name", "")), s)
+    by_index = {s["index"]: s for s in slides}
+
+    # field label -> owner (first question slide that lists the label)
+    owner_by_label: dict = {}
+    for s in slides:
+        if s.get("type") != "question":
+            continue
+        for lbl in s.get("field_labels", []):
+            owner_by_label.setdefault(_norm(lbl), s)
+
+    def resolve_then(ref: Any) -> Optional[dict]:
+        if ref is None:
+            return None
+        ref_s = str(ref).strip()
+        ref_l = ref_s.lower()
+        if ref_l in by_target_label:
+            return by_target_label[ref_l]
+        if ref_l in by_name:
+            return by_name[ref_l]
+        m = _re.match(r"^(?:p|slide)\s*(\d+)$", ref_l) or _re.match(r"^(\d+)$", ref_l)
+        if m:
+            n = int(m.group(1))
+            tgt = by_index.get(n)
+            if tgt is not None and tgt.get("type") in ("question", "capture"):
+                return tgt
+        return None
+
+    normalized: List[dict] = []
+    for i, rule in enumerate(rules, start=1):
+        if not isinstance(rule, dict):
+            errors.append(f"conditional rule {i}: not an object")
+            continue
+        if_field_ref = rule.get("if_field")
+        mf = _match_field(if_field_ref, fields)
+        owner: Optional[dict] = None
+        if mf is None:
+            errors.append(
+                f"conditional rule {i}: unknown if_field {if_field_ref!r} "
+                "(no matching survey field)"
+            )
+        else:
+            owner = owner_by_label.get(_norm(mf.get("label", "")))
+            if owner is None:
+                errors.append(
+                    f"conditional rule {i}: if_field {mf.get('label')!r} is not "
+                    "placed on any survey slide"
+                )
+        then_ref = rule.get("then_slide")
+        target = resolve_then(then_ref)
+        if target is None:
+            errors.append(
+                f"conditional rule {i}: dangling then_slide {then_ref!r} "
+                "(no matching slide in the planned survey)"
+            )
+        nrule = dict(rule)
+        if mf is not None:
+            nrule["if_field"] = mf.get("label", if_field_ref)
+        if owner is not None:
+            nrule["owner_slide_index"] = owner["index"]
+            nrule["owner_slide_label"] = _slide_target_label(owner)
+        if target is not None:
+            nrule["then_slide"] = _slide_target_label(target)
+        normalized.append(nrule)
+
+    return normalized, errors
+
+
+def _group_rules_by_owner_slide(rules: List[dict]) -> List[tuple]:
+    """Group NORMALIZED branching rules by their owner slide (the slide that
+    hosts each rule's ``if_field``), preserving first-seen order.
+
+    Returns ``[(owner_slide_label, [rule, …]), …]`` so a multi-branch survey
+    wires each rule on the RIGHT slide (never a hardcoded "Slide 2"). The owner
+    label falls back to the first question slide ("Slide 2") only when a rule
+    carries no owner metadata (defensive; valid topology always resolves it).
+    """
+    groups: List[list] = []          # [ [owner_label, [rule, …]], … ]
+    order: dict = {}
+    for rule in rules:
+        owner_label = (
+            rule.get("owner_slide_label")
+            or (f"Slide {rule['owner_slide_index']}"
+                if rule.get("owner_slide_index") else None)
+            or "Slide 2"  # last-resort fallback (first question slide)
+        )
+        if owner_label not in order:
+            order[owner_label] = len(groups)
+            groups.append([owner_label, []])
+        groups[order[owner_label]][1].append(rule)
+    return [(lbl, grp) for lbl, grp in groups]
+
+
+def _validate_topology(
+    task: dict, fields: List[dict], slides: List[dict], rules: List[dict]
+) -> List[str]:
+    """Collect every structural error in the planned survey topology:
+      • a custom slide layout referencing an unknown field,
+      • a field placed on more than one slide,
+      • a survey field not placed on any slide (orphan; custom layout only),
+      • an unknown ``if_field`` or a dangling ``then_slide`` in the branching.
+    Returns [] when sound. Consumed by preflight P4 as a HARD STOP so a dangling
+    reference aborts BEFORE any browser action.
+    """
+    errors: List[str] = []
+    question_slides = [s for s in slides if s.get("type") == "question"]
+
+    # (1) unresolved field references inside a custom layout
+    for s in question_slides:
+        if s.get("_unresolved"):
+            errors.append(
+                f"slide {s['index']} ({s.get('name', '?')!r}) references unknown "
+                f"field(s): {s['_unresolved']}"
+            )
+
+    # (2)/(3) placement coverage — only when a custom layout is supplied
+    layout_given = isinstance(task.get("slides"), list) and bool(task.get("slides"))
+    if layout_given:
+        placed: dict = {}
+        for s in question_slides:
+            for lbl in s.get("field_labels", []):
+                placed[_norm(lbl)] = placed.get(_norm(lbl), 0) + 1
+        for lbl, cnt in placed.items():
+            if cnt > 1:
+                errors.append(
+                    f"field {lbl!r} is placed on {cnt} slides (must be exactly one)"
+                )
+        for f in fields:
+            if _norm(f.get("label", "")) not in placed:
+                errors.append(
+                    f"survey field {f.get('label', '?')!r} is not placed on any "
+                    "slide (orphan) — add it to task['slides']"
+                )
+
+    # (4) branching references
+    _norm_rules, rule_errors = _normalize_conditional_logic(rules, fields, slides)
+    errors.extend(rule_errors)
+    return errors
+
+
+def _build_survey_plan(task: dict, fields: List[dict]) -> dict:
+    """Build the routing/survey-plan.json structure (THINK output).
+
+    TASK-DRIVEN: the slide layout comes from ``_plan_slides`` (per-branch capable,
+    default linear) and the branching from ``_resolve_conditional_rules`` +
+    ``_normalize_conditional_logic`` — NEVER the hardcoded demo constant once the
+    task supplies its own. The plan reflects the real survey definition, not the
+    2-rule reference demo.
+    """
+    folder_name = task.get("folder_name", "Sample Survey")
+    survey_name = task.get("survey_name", task.get("title", "New Survey"))
+    location_id = (
+        task.get("location_id")
+        or task.get("GHL_LOCATION_ID")
+        or os.environ.get("GHL_LOCATION_ID", "")
+    )
+
+    slides = _plan_slides(task, fields)
+    raw_rules = _resolve_conditional_rules(task)
+    norm_rules, _rule_errors = _normalize_conditional_logic(raw_rules, fields, slides)
+
+    # Strip private planning keys before serialization.
+    clean_slides = [{k: v for k, v in s.items() if not k.startswith("_")}
+                    for s in slides]
+
+    layout_given = isinstance(task.get("slides"), list) and bool(task.get("slides"))
     return {
         "schema_version": "1.0",
         "generated_at": _ts(),
         "survey_name": survey_name,
         "folder_name": folder_name,
         "location_id": location_id,
-        "total_slides": len(slides),
-        "slides": slides,
+        "total_slides": len(clean_slides),
+        "slides": clean_slides,
         "fields": fields,
-        "conditional_logic": CONDITIONAL_LOGIC_RULES,
+        "conditional_logic": norm_rules,
+        "conditional_logic_source": (
+            "task" if isinstance(task.get("conditional_logic"), list) else "reference-demo"
+        ),
+        "layout_source": "task" if layout_given else "linear-default",
         "model_ladders": {
             "think": THINK_LADDER,
             "execute": EXECUTE_LADDER,
@@ -1214,6 +1548,7 @@ def _p2_pull_object_fields(
     evidence_root: str,
     shot_n: List[int],
     dep_custom_fields: Optional[List[dict]] = None,
+    slides: Optional[List[dict]] = None,
 ) -> None:
     """Phase E: Add Object Fields — drag each PRE-CREATED custom field onto its slide.
 
@@ -1245,8 +1580,28 @@ def _p2_pull_object_fields(
                 f"(no read-back key): {unconfirmed}. Pre-create via Skill 44 first."
             )
 
-    # Navigate to Slide 2 (first question slide)
-    _click(session, "Slide 2")
+    # Build the ordered (field, target-slide) drag plan from the planned slide
+    # model (Area-5). Default (no custom layout / slides=None): one field per
+    # slide starting at Slide 2 — byte-identical to the legacy linear behavior.
+    # Custom layout: a slide may host >1 field and each field drags onto its
+    # OWNER slide (per-branch capable, not one-field-per-slide).
+    by_label = {f.get("label", ""): f for f in fields}
+    q_slides = [s for s in (slides or []) if s.get("type") == "question"]
+    drag_plan: List[tuple] = []  # (field_dict, slide_label)
+    if q_slides:
+        for s in q_slides:
+            slide_label = f"Slide {s['index']}"
+            for lbl in s.get("field_labels", []):
+                f = by_label.get(lbl)
+                if f is not None:
+                    drag_plan.append((f, slide_label))
+    else:
+        drag_plan = [(f, f"Slide {i + 2}") for i, f in enumerate(fields)]
+
+    first_slide_label = drag_plan[0][1] if drag_plan else "Slide 2"
+
+    # Navigate to the first question slide
+    _click(session, first_slide_label)
 
     # Open Add Elements
     _click(session, "Add Elements")
@@ -1265,11 +1620,10 @@ def _p2_pull_object_fields(
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-e-folder-expanded"))
 
-    # Drag each field onto its target slide
-    for i, f in enumerate(fields):
+    # Drag each field onto its owner slide
+    for i, (f, target_slide) in enumerate(drag_plan):
         label_prefix = f["label"][:28]
-        target_slide = f"Slide {i + 2}"
-        _log(f"  Dragging field {i + 1}/{len(fields)}: {label_prefix!r} → {target_slide}")
+        _log(f"  Dragging field {i + 1}/{len(drag_plan)}: {label_prefix!r} → {target_slide}")
 
         # Use Search by Name for fast, reliable location (PRD §5.B.2 Phase E)
         _fill(session, "Search by Name", f["label"][:20])
@@ -1289,15 +1643,22 @@ def _p2_rename_question_slides(
     gov: RateGovernor,
     evidence_root: str,
     shot_n: List[int],
+    slides: Optional[List[dict]] = None,
 ) -> None:
     """Phase F: rename each question slide via gear → Slide Name (short names).
 
+    TASK-DRIVEN (Area-5): one rename per PLANNED question slide (a slide may host
+    several fields, so renames are per-slide, not per-field). Default layout
+    (``slides=None``) keeps the legacy one-field-per-slide naming byte-identical.
     Followed by an intermediate save (transcript steps 86–87).
     """
     _log("P2-F: rename question slides")
-    for i, f in enumerate(fields):
-        slide_n = i + 2
-        short_name = f["slide_name"]
+    q_slides = [s for s in (slides or []) if s.get("type") == "question"]
+    if q_slides:
+        renames = [(s["index"], s["name"]) for s in q_slides]
+    else:
+        renames = [(i + 2, f["slide_name"]) for i, f in enumerate(fields)]
+    for slide_n, short_name in renames:
         _log(f"  Slide {slide_n} → {short_name!r}")
         _click(session, f"Slide {slide_n}")
         _run_cmd(session, "click", "gear", timeout=10)
@@ -1322,55 +1683,72 @@ def _p2_conditional_logic(
     evidence_root: str,
     shot_n: List[int],
 ) -> None:
-    """Phase G: wire Jump-To conditional logic on the first question slide.
+    """Phase G: wire Jump-To conditional logic — TASK-DRIVEN, per OWNER slide.
 
-    The per-field conditional-logic control is DEPRECATED; the canonical path is
-    the amber ``Open Conditional Logic`` link on the field panel.
-    Two rules (one save each): Yes → P2, No → P4. Rules run top-down.
+    ``rules`` are the NORMALIZED task rules; each carries ``owner_slide_label``
+    (the slide that hosts ``if_field``) and a canonical ``then_slide`` target. The
+    per-field conditional-logic control is DEPRECATED; the canonical path is the
+    amber ``Open Conditional Logic`` link on the field panel. Rules are GROUPED by
+    owner slide so a multi-branch survey wires each rule on the RIGHT slide
+    (never a hardcoded "Slide 2"); one save per rule; rules run top-down.
     """
-    _log("P2-G: conditional logic")
+    _log(f"P2-G: conditional logic ({len(rules)} rule(s))")
+    if not rules:
+        _log("  no conditional rules — Phase G skipped")
+        return
 
-    # Navigate to the first question slide (Slide 2)
-    _click(session, "Slide 2")
-    shot_n[0] += 1
-    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-g-first-slide"))
+    # Group rules by owner slide (the slide that hosts each rule's if_field).
+    groups = _group_rules_by_owner_slide(rules)
 
-    # Open Conditions modal via the amber link on the field panel
-    _click(session, "Open Conditional Logic")
-    _wait(session, "Jump To")
-    shot_n[0] += 1
-    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-g-conditions-modal"))
+    global_ri = 0
+    for gi, (owner_label, grp) in enumerate(groups, start=1):
+        _log(f"  owner slide {owner_label!r}: {len(grp)} rule(s)")
 
-    for ri, rule in enumerate(rules):
-        _log(f"  Rule {ri + 1}/{len(rules)}: IF {rule['if_field'][:30]!r} "
-             f"= {rule['if_value']!r} THEN {rule['then_slide']!r}")
-
-        # Add Jump To card
-        _click(session, "Jump To")
-        _wait(session, "Select field")
-
-        # Set condition type = Field
-        _click(session, "Field")
-
-        # Pick the IF field (may be truncated — use partial match)
-        _click(session, rule["if_field"][:28])
-
-        # Operator defaults to "Is Equal To" — no change needed
-
-        # Set value
-        _click(session, rule["if_value"])
-
-        # Set THEN target slide (Pn- prefix is stable)
-        _click(session, rule["then_slide"])
-
-        # Save this condition (one save per rule, RateGovernor spaced)
-        gov.before("save")
-        _click(session, "Save")
-        # Modal stays open after save; wait for Jump To card to re-appear
-        _wait(session, "Jump To", timeout=15)
+        # Navigate to the OWNER slide (the one that hosts if_field)
+        _click(session, owner_label)
         shot_n[0] += 1
         _screenshot(session, _shot_path(evidence_root, shot_n[0],
-                                        f"p2-g-rule{ri + 1:02d}-saved"))
+                                        f"p2-g-slide{gi:02d}"))
+
+        # Open Conditions modal via the amber link on the field panel
+        _click(session, "Open Conditional Logic")
+        _wait(session, "Jump To")
+        shot_n[0] += 1
+        _screenshot(session, _shot_path(evidence_root, shot_n[0],
+                                        f"p2-g-conditions-modal{gi:02d}"))
+
+        for rule in grp:
+            global_ri += 1
+            _log(f"  Rule {global_ri}/{len(rules)}: "
+                 f"IF {str(rule.get('if_field', ''))[:30]!r} "
+                 f"= {rule.get('if_value')!r} THEN {rule.get('then_slide')!r}")
+
+            # Add Jump To card
+            _click(session, "Jump To")
+            _wait(session, "Select field")
+
+            # Set condition type = Field
+            _click(session, "Field")
+
+            # Pick the IF field (may be truncated — use partial match)
+            _click(session, str(rule.get("if_field", ""))[:28])
+
+            # Operator defaults to "Is Equal To" — no change needed
+
+            # Set value
+            _click(session, rule.get("if_value", ""))
+
+            # Set THEN target slide (Pn- prefix is stable)
+            _click(session, rule.get("then_slide", ""))
+
+            # Save this condition (one save per rule, RateGovernor spaced)
+            gov.before("save")
+            _click(session, "Save")
+            # Modal stays open after save; wait for Jump To card to re-appear
+            _wait(session, "Jump To", timeout=15)
+            shot_n[0] += 1
+            _screenshot(session, _shot_path(evidence_root, shot_n[0],
+                                            f"p2-g-rule{global_ri:02d}-saved"))
 
 
 def _p2_required_toggles(
@@ -1378,27 +1756,57 @@ def _p2_required_toggles(
     fields: List[dict],
     evidence_root: str,
     shot_n: List[int],
+    slides: Optional[List[dict]] = None,
 ) -> None:
-    """Phase H: tick Required checkbox on each required question slide.
+    """Phase H: tick Required checkbox on each required question field.
 
-    Confirmation: the field label gains a trailing ``*``.
+    TASK-DRIVEN (Area-5): iterates the PLANNED question slides and toggles every
+    required field. When a slide hosts >1 field, the field's own panel is focused
+    (click its label) before ticking Required, so the right field is marked.
+    Default layout (``slides=None``) is byte-identical to the legacy per-field
+    sweep. Confirmation: the field label gains a trailing ``*``.
     """
     _log("P2-H: required toggles")
-    for i, f in enumerate(fields):
-        if not f.get("required"):
-            continue
-        slide_n = i + 2
-        short = f["slide_name"]
-        _log(f"  P{slide_n} - {short}: marking required")
-        # Navigate via the Pn- slide label
-        _click(session, f"P{slide_n} - {short}")
-        # Click Required checkbox (right panel, left of Hidden)
-        _click(session, "Required")
-        # Verify trailing * on the question label
-        _wait(session, "*", timeout=10)
-        shot_n[0] += 1
-        _screenshot(session, _shot_path(evidence_root, shot_n[0],
-                                        f"p2-h-required-{i + 1:02d}"))
+    q_slides = [s for s in (slides or []) if s.get("type") == "question"]
+    n = 0
+    if q_slides:
+        for s in q_slides:
+            slide_fields = s.get("fields", [])
+            multi = len(slide_fields) > 1
+            slide_label = f"P{s['index']} - {s['name']}"
+            for ff in slide_fields:
+                if not ff.get("required"):
+                    continue
+                n += 1
+                _log(f"  {slide_label}: marking {ff.get('label', '')[:30]!r} required")
+                # Navigate via the Pn- slide label
+                _click(session, slide_label)
+                # On a multi-field slide, focus the specific field's panel first
+                if multi:
+                    _click(session, ff.get("label", "")[:28])
+                # Click Required checkbox (right panel, left of Hidden)
+                _click(session, "Required")
+                # Verify trailing * on the question label
+                _wait(session, "*", timeout=10)
+                shot_n[0] += 1
+                _screenshot(session, _shot_path(evidence_root, shot_n[0],
+                                                f"p2-h-required-{n:02d}"))
+    else:
+        for i, f in enumerate(fields):
+            if not f.get("required"):
+                continue
+            slide_n = i + 2
+            short = f["slide_name"]
+            _log(f"  P{slide_n} - {short}: marking required")
+            # Navigate via the Pn- slide label
+            _click(session, f"P{slide_n} - {short}")
+            # Click Required checkbox (right panel, left of Hidden)
+            _click(session, "Required")
+            # Verify trailing * on the question label
+            _wait(session, "*", timeout=10)
+            shot_n[0] += 1
+            _screenshot(session, _shot_path(evidence_root, shot_n[0],
+                                            f"p2-h-required-{i + 1:02d}"))
 
 
 def _p2_capture_slide(
@@ -1408,14 +1816,20 @@ def _p2_capture_slide(
     num_fields: int,
     evidence_root: str,
     shot_n: List[int],
+    capture_slide_n: Optional[int] = None,
 ) -> None:
     """Phase J: Quick-Add contact-capture slide + T&C consent checkbox.
 
     Adds: First Name, Last Name, Email (required), Phone (required),
     T & C (plain marketing-consent checkbox — NOT A2P/10DLC).
     Edits the [BUSINESS NAME] placeholder in the T&C consent copy.
+
+    TASK-DRIVEN (Area-5): ``capture_slide_n`` is the PLANNED capture-slide index
+    (1 welcome + question slides + 1 capture). Falls back to ``num_fields + 2``
+    (the legacy one-field-per-slide assumption) only when not supplied.
     """
-    capture_slide_n = num_fields + 2  # 1 welcome + n fields + capture
+    if capture_slide_n is None:
+        capture_slide_n = num_fields + 2  # 1 welcome + n fields + capture
     _log(f"P2-J: Quick Add capture slide (Slide {capture_slide_n}) + T&C")
 
     # Navigate to the capture slide
@@ -1512,6 +1926,8 @@ def _emit_click_list(
     welcome_copy: str,
     location_id: str,
     field_creation: str = DEFAULT_FIELD_CREATION,
+    slides: Optional[List[dict]] = None,
+    rules: Optional[List[dict]] = None,
 ) -> dict:
     """Build the full ordered click sequence for operator review (dry-run output).
 
@@ -1519,7 +1935,29 @@ def _emit_click_list(
     the custom fields are pre-created via Skill 44 (see survey-dependency-plan.json)
     and the browser only DRAGS them in Phase E. Legacy in-browser field-create
     clicks are emitted ONLY in the explicit ``browser`` fallback mode.
+
+    TASK-DRIVEN (Area-5): the Part-2 layout comes from the PLANNED ``slides`` and
+    the NORMALIZED branching ``rules`` — a slide may carry >1 field and branches
+    target any owner slide. When ``slides``/``rules`` are omitted this reproduces
+    the linear default layout and the documented demo/fallback rules (resolved via
+    ``_resolve_conditional_rules``); the CONDITIONAL_LOGIC_RULES constant is NEVER
+    referenced directly here.
     """
+    # Derive the slide model + normalized branching if the caller did not supply
+    # them (keeps every legacy call site — and the linear default — working).
+    if slides is None:
+        slides = _plan_slides({}, fields)
+    if rules is None:
+        rules = _normalize_conditional_logic(
+            _resolve_conditional_rules({}), fields, slides
+        )[0]
+    q_slides = [s for s in slides if s.get("type") == "question"]
+    capture_slide = next((s for s in slides if s.get("type") == "capture"), None)
+    capture_index = capture_slide["index"] if capture_slide else len(fields) + 2
+    num_extra = len(q_slides) + 1  # question slides + 1 capture
+    first_q_label = f"Slide {q_slides[0]['index']}" if q_slides else "Slide 2"
+    by_label = {f.get("label", ""): f for f in fields}
+
     steps: List[dict] = []
     n = 0
 
@@ -1575,7 +2013,6 @@ def _emit_click_list(
     add("P2-B", "dblclick", "Survey 0", "Enter inline title edit")
     add("P2-B", "fill", survey_name, "New survey name")
     add("P2-B", "click", "Slide 1", "Commit title (click canvas)")
-    num_extra = len(fields) + 1  # 6 question slides + 1 capture
     for i in range(num_extra):
         add("P2-C", "click", "Add Slide",
             f"→ Slide {i + 2}; total slides = {1 + num_extra}")
@@ -1588,35 +2025,55 @@ def _emit_click_list(
     add("P2-D", "click", "inter", "Font (optional styling)")
     add("P2-D", "click", "Paragraph", "Style (optional)")
     add("P2-D", "gear+fill", "Slide Name = Welcome Slide", "Rename via slide gear")
-    add("P2-E", "click", "Slide 2", "First question slide for Add Object Fields")
+    add("P2-E", "click", first_q_label, "First question slide for Add Object Fields")
     add("P2-E", "click", "Add Elements", "Opens drawer")
     add("P2-E", "click", "Add Object Fields",
         "Tab — NOT Quick Add. Object dropdown must read Contact")
     add("P2-E", "click", f"{folder_name.upper()} (n)",
         "Expand folder group; (n) = field count, volatile — match on name only")
-    for fi, f in enumerate(fields):
-        add("P2-E", "fill+drag",
-            f"Search by Name = {f['label'][:20]!r} → drag to Slide {fi + 2}",
-            "Object field binds answer to {{contact.<key>}}")
-    for fi, f in enumerate(fields):
+    # Drag each field onto its OWNER slide (per-branch capable, not one-per-slide)
+    for s in q_slides:
+        for lbl in s.get("field_labels", []):
+            f = by_label.get(lbl)
+            if f is None:
+                continue
+            add("P2-E", "fill+drag",
+                f"Search by Name = {f['label'][:20]!r} → drag to Slide {s['index']}",
+                "Object field binds answer to {{contact.<key>}}")
+    for s in q_slides:
         add("P2-F", "gear+fill",
-            f"Slide {fi + 2} → Slide Name = {f['slide_name']!r}", "Short name")
+            f"Slide {s['index']} → Slide Name = {s['name']!r}", "Short name")
     add("P2-F", "click+confirm", "Save → Yes", "Interim save (transcript steps 86–87)")
-    add("P2-G", "click", "Open Conditional Logic",
-        "Amber link on first-question field panel — per-field dropdown is deprecated")
-    for ri, rule in enumerate(CONDITIONAL_LOGIC_RULES):
-        add("P2-G", "click", "Jump To", f"Rule {ri + 1}")
-        add("P2-G", "select", f"Field → {rule['if_field'][:30]!r}", "IF field")
-        add("P2-G", "select", rule["if_value"], "IF value (Is Equal To default)")
-        add("P2-G", "select", rule["then_slide"], "THEN slide (Pn- prefix stable)")
-        add("P2-G", "click", "Save",
-            "One save per rule; rules run top-down; modal stays open")
-    for fi, f in enumerate(fields):
-        if f.get("required"):
-            add("P2-H", "check",
-                f"P{fi + 2} - {f['slide_name']} → Required",
-                "Right panel, left of Hidden; trailing * confirms")
-    add("P2-J", "click", f"Slide {len(fields) + 2}", "Contact capture slide")
+    # Conditional logic — TASK-DRIVEN, grouped by owner slide (never a hardcoded
+    # "Slide 2"). Empty rules → no branching wired.
+    if rules:
+        global_ri = 0
+        for owner_label, grp in _group_rules_by_owner_slide(rules):
+            add("P2-G", "click", owner_label,
+                "Navigate to the OWNER slide (the one that hosts if_field)")
+            add("P2-G", "click", "Open Conditional Logic",
+                "Amber link on the field panel — per-field dropdown is deprecated")
+            for rule in grp:
+                global_ri += 1
+                add("P2-G", "click", "Jump To", f"Rule {global_ri}")
+                add("P2-G", "select",
+                    f"Field → {str(rule.get('if_field', ''))[:30]!r}", "IF field")
+                add("P2-G", "select", rule.get("if_value", ""),
+                    "IF value (Is Equal To default)")
+                add("P2-G", "select", rule.get("then_slide", ""),
+                    "THEN slide (Pn- prefix stable)")
+                add("P2-G", "click", "Save",
+                    "One save per rule; rules run top-down; modal stays open")
+    else:
+        add("P2-G", "skip", "no conditional logic",
+            "task supplied no branching rules (conditional_logic: [])")
+    for s in q_slides:
+        for ff in s.get("fields", []):
+            if ff.get("required"):
+                add("P2-H", "check",
+                    f"P{s['index']} - {s['name']} → Required",
+                    "Right panel, left of Hidden; trailing * confirms")
+    add("P2-J", "click", f"Slide {capture_index}", "Contact capture slide")
     add("P2-J", "click", "Add Elements → Quick Add", "Switch to Quick Add tab")
     for tile in ("First Name", "Last Name", "Email", "Phone"):
         add("P2-J", "click", tile, "Native contact field")
@@ -1725,6 +2182,21 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     fields = _resolve_fields(task)
     field_creation = _resolve_field_creation_mode(task)
 
+    # Task-driven slide model + normalized branching (Area-5). Preflight
+    # (P4:topology_valid) already proved every reference resolves; these drive
+    # the LIVE phases (E/F/G/H/J) and the dry-run click list — never the demo
+    # constant once the task supplies its own rules/layout.
+    slides_model = _plan_slides(task, fields)
+    norm_rules = _normalize_conditional_logic(
+        _resolve_conditional_rules(task), fields, slides_model
+    )[0]
+    q_slides = [s for s in slides_model if s.get("type") == "question"]
+    capture_slide = next(
+        (s for s in slides_model if s.get("type") == "capture"), None
+    )
+    capture_slide_n = capture_slide["index"] if capture_slide else len(fields) + 2
+    num_extra = len(q_slides) + 1  # question slides + 1 capture
+
     # Total step count for progress messages
     total_steps = _PART1_BASE_STEPS + len(fields) + _PART2_PHASES + 2  # preflight + plan
 
@@ -1790,6 +2262,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             fields, folder_name, survey_name,
             business_name, campaign, welcome_copy, location_id,
             field_creation=field_creation,
+            slides=slides_model, rules=norm_rules,
         )
         click_list_path = os.path.join(evidence_root, "routing", "survey-click-list.json")
         _write_json(click_list_path, click_list)
@@ -1957,7 +2430,6 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             # ── Part 2: Phase C — add slides ──────────────────────────────────
             _pre_phase_check(session, keepalive)
             step_n += 1
-            num_extra = len(fields) + 1  # question slides + capture
             _board_activity(
                 board_task_id, "updated",
                 f"Step {step_n}/{total_steps}: Part 2 Phase C — add {num_extra} slides "
@@ -1983,6 +2455,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             _p2_pull_object_fields(
                 session, folder_name, fields, evidence_root, shot_n,
                 dep_custom_fields=dep_plan.get("custom_fields", []),
+                slides=slides_model,
             )
 
             # ── Part 2: Phase F — rename question slides ──────────────────────
@@ -1990,16 +2463,18 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
-            _p2_rename_question_slides(session, fields, gov, evidence_root, shot_n)
+            _p2_rename_question_slides(
+                session, fields, gov, evidence_root, shot_n, slides=slides_model
+            )
 
             # ── Part 2: Phase G — conditional logic ───────────────────────────
             _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
-                            f"({len(CONDITIONAL_LOGIC_RULES)} rules)")
+                            f"({len(norm_rules)} rule(s))")
             _p2_conditional_logic(
-                session, CONDITIONAL_LOGIC_RULES, gov, evidence_root, shot_n
+                session, norm_rules, gov, evidence_root, shot_n
             )
 
             # ── Part 2: Phase H — required toggles ───────────────────────────
@@ -2011,7 +2486,9 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                 f"Step {step_n}/{total_steps}: Part 2 Phase H — required toggles "
                 f"({required_count} fields)",
             )
-            _p2_required_toggles(session, fields, evidence_root, shot_n)
+            _p2_required_toggles(
+                session, fields, evidence_root, shot_n, slides=slides_model
+            )
 
             # ── Part 2: Phase J — capture slide + T&C ────────────────────────
             _pre_phase_check(session, keepalive)
@@ -2023,7 +2500,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
             _p2_capture_slide(
                 session, business_name, campaign, len(fields),
-                evidence_root, shot_n,
+                evidence_root, shot_n, capture_slide_n=capture_slide_n,
             )
 
             # ── Part 2: Phase K — save + get URL ─────────────────────────────
@@ -2294,6 +2771,142 @@ def _selftest() -> int:
         if pf["pass"]:
             errors.append("map_only with a would-be create should fail preflight")
 
+        # ── Area-5: task-driven branching + per-branch slide layout ──────────
+        branch_fields = [
+            {"type": "radio", "label": "Q1", "options": ["A", "B"],
+             "required": True, "slide_name": "S1"},
+            {"type": "radio", "label": "Q2", "options": ["X", "Y"],
+             "required": True, "slide_name": "S2"},
+            {"type": "multiline", "label": "Q3", "options": [],
+             "required": False, "slide_name": "S3"},
+        ]
+
+        # 14. Task conditional_logic OVERRIDES the demo constant and lands
+        #     normalized in the plan (canonical if_field, owner slide, Pn- target).
+        task_branch = {
+            "survey_name": "Branch", "title": "Branch",
+            "folder_name": "F", "location_id": "LOC",
+            "survey_fields": branch_fields,
+            "conditional_logic": [
+                {"if_field": "Q1", "if_value": "A", "then_slide": "S2"},
+                {"if_field": "Q1", "if_value": "B", "then_slide": "S3"},
+            ],
+        }
+        plan_b = _build_survey_plan(task_branch, _resolve_fields(task_branch))
+        if plan_b.get("conditional_logic_source") != "task":
+            errors.append("task conditional_logic must set conditional_logic_source=task")
+        if len(plan_b.get("conditional_logic", [])) != 2:
+            errors.append(
+                f"task branching count wrong: {len(plan_b.get('conditional_logic', []))}")
+        else:
+            r0, r1 = plan_b["conditional_logic"]
+            if r0.get("if_field") != "Q1":
+                errors.append(f"rule0 if_field not canonical: {r0.get('if_field')!r}")
+            if r0.get("owner_slide_index") != 2:
+                errors.append(
+                    f"rule0 owner_slide_index should be 2, got {r0.get('owner_slide_index')!r}")
+            if r0.get("then_slide") != "P3 - S2":
+                errors.append(f"rule0 then_slide should be 'P3 - S2', got {r0.get('then_slide')!r}")
+            if r1.get("then_slide") != "P4 - S3":
+                errors.append(f"rule1 then_slide should be 'P4 - S3', got {r1.get('then_slide')!r}")
+        if "attended one of our events" in json.dumps(plan_b.get("conditional_logic", [])):
+            errors.append("task branching leaked the demo constant (if_field)")
+
+        # 15. Dangling if_field → preflight P4:topology_valid HARD STOP.
+        pf_badfield = _run_preflight({
+            "survey_name": "B", "title": "B", "location_id": "LOC",
+            "field_creation": "browser", "survey_fields": branch_fields,
+            "conditional_logic": [
+                {"if_field": "NoSuchField", "if_value": "A", "then_slide": "S2"},
+            ],
+        }, tmp)
+        if pf_badfield["pass"]:
+            errors.append("dangling if_field must fail preflight (topology)")
+        if not any(c["check"] == "P4:topology_valid" and not c["pass"]
+                   for c in pf_badfield["checks"]):
+            errors.append("dangling if_field should fail P4:topology_valid specifically")
+
+        # 16. Dangling then_slide → preflight HARD STOP (zero browser commands).
+        pf_badslide = _run_preflight({
+            "survey_name": "B", "title": "B", "location_id": "LOC",
+            "field_creation": "browser", "survey_fields": branch_fields,
+            "conditional_logic": [
+                {"if_field": "Q1", "if_value": "A", "then_slide": "P99 - Nowhere"},
+            ],
+        }, tmp)
+        if pf_badslide["pass"]:
+            errors.append("dangling then_slide must fail preflight (topology)")
+
+        # 17. Multi-field slide layout emits the RIGHT click-list: two fields
+        #     drag onto one owner slide, branch targets the correct slide.
+        task_multi = {
+            "survey_fields": branch_fields,
+            "slides": [
+                {"name": "Combo", "fields": ["Q1", "Q2"]},
+                {"name": "Solo", "fields": ["Q3"]},
+            ],
+            "conditional_logic": [
+                {"if_field": "Q1", "if_value": "A", "then_slide": "Solo"},
+            ],
+        }
+        fields_m = _resolve_fields(task_multi)
+        slides_m = _plan_slides(task_multi, fields_m)
+        topo_m = _validate_topology(
+            task_multi, fields_m, slides_m, _resolve_conditional_rules(task_multi))
+        if topo_m:
+            errors.append(f"valid multi-field layout must have no topology errors: {topo_m}")
+        rules_m = _normalize_conditional_logic(
+            _resolve_conditional_rules(task_multi), fields_m, slides_m)[0]
+        cl_m = _emit_click_list(fields_m, "F", "S", "Acme", "camp", "Hi", "LOC",
+                                slides=slides_m, rules=rules_m)
+        drag_steps = [s for s in cl_m["steps"]
+                      if s["phase"] == "P2-E" and s["action"] == "fill+drag"]
+        if len(drag_steps) != 3:
+            errors.append(f"multi-field drag count should be 3, got {len(drag_steps)}")
+        elif not ("drag to Slide 2" in drag_steps[0]["target"]
+                  and "drag to Slide 2" in drag_steps[1]["target"]
+                  and "drag to Slide 3" in drag_steps[2]["target"]):
+            errors.append("multi-field drags must target Slide 2, Slide 2, Slide 3 in order")
+        if not any(s["phase"] == "P2-J" and s["target"] == "Slide 4" for s in cl_m["steps"]):
+            errors.append("multi-field capture slide should be Slide 4")
+        if not any(s["phase"] == "P2-G" and s["target"] == "P2 - Combo" for s in cl_m["steps"]):
+            errors.append("multi-field branch must navigate owner slide 'P2 - Combo'")
+        if not any(s["phase"] == "P2-G" and s["target"] == "P3 - Solo" for s in cl_m["steps"]):
+            errors.append("multi-field branch THEN target should be 'P3 - Solo'")
+
+        # 18. CLI --task-json round-trip: payload drives the written plan.
+        with tempfile.TemporaryDirectory() as tmp2:
+            payload_path = os.path.join(tmp2, "task.json")
+            with open(payload_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "survey_name": "CLI Branch", "location_id": "LOC_CLI",
+                    "field_creation": "browser", "survey_fields": branch_fields,
+                    "conditional_logic": [
+                        {"if_field": "Q1", "if_value": "A", "then_slide": "S2"},
+                    ],
+                }, fh)
+            ev_root = os.path.join(tmp2, "ev")
+            import contextlib as _ctx
+            import io as _io
+            _buf = _io.StringIO()
+            with _ctx.redirect_stdout(_buf):
+                rc_cli = main(["--dry-run", "--task-json", payload_path,
+                               "--evidence-root", ev_root])
+            if rc_cli != 0:
+                errors.append(f"--task-json round-trip rc should be 0, got {rc_cli}")
+            plan_cli_path = os.path.join(ev_root, "routing", "survey-plan.json")
+            if not os.path.exists(plan_cli_path):
+                errors.append("--task-json did not write survey-plan.json")
+            else:
+                with open(plan_cli_path, "r", encoding="utf-8") as fh:
+                    plan_cli = json.load(fh)
+                if plan_cli.get("conditional_logic_source") != "task":
+                    errors.append("--task-json plan must be task-sourced branching")
+                if plan_cli.get("location_id") != "LOC_CLI":
+                    errors.append("--task-json location_id not threaded into plan")
+                if len(plan_cli.get("conditional_logic", [])) != 1:
+                    errors.append("--task-json branching rule count wrong")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
@@ -2369,6 +2982,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             "'browser': LEGACY in-browser create (no-PIT fallback ONLY)."
         ),
     )
+    parser.add_argument(
+        "--task-json", metavar="FILE", default=None,
+        help=(
+            "Path to a JSON task payload (survey_fields + conditional_logic + "
+            "slides + copy_persona + business_name + campaign + welcome_copy…). "
+            "Merged OVER the CLI flags — any key the payload defines wins, flags "
+            "fill the rest. This is how a task-driven, multi-branch survey is "
+            "built from the CLI (Area-5)."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -2385,6 +3008,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         "field_creation": args.field_creation,
         "brief": {"source": "cli"},
     }
+
+    # --task-json layers a full task payload OVER the flag-built base (payload
+    # keys win; flags supply anything the payload omits). This threads
+    # survey_fields + conditional_logic + slides from the CLI (Area-5).
+    if args.task_json:
+        try:
+            with open(args.task_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"--task-json: could not read {args.task_json!r}: {exc}",
+                  file=sys.stderr)
+            return 2
+        if not isinstance(payload, dict):
+            print("--task-json must contain a JSON object (task payload)",
+                  file=sys.stderr)
+            return 2
+        task.update(payload)
 
     result = build_survey(task, args.evidence_root, dry_run=args.dry_run)
     print(json.dumps(result, indent=2, default=str))
