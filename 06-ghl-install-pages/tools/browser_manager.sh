@@ -43,6 +43,8 @@
 #   bash browser_manager.sh run-detached -- <cmd...>
 #   bash browser_manager.sh teardown
 #   bash browser_manager.sh session-name
+#   bash browser_manager.sh auth-age [-- <session>]    # F5-b: seconds since last seed (-1=unknown)
+#   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
 BROWSER_MANAGER_VERSION="v19.6.0"
@@ -93,6 +95,7 @@ AB_SAVE_CONCURRENCY="${AB_SAVE_CONCURRENCY:-5}"  # parallel eval fan-out cap [1,
 AB_BREAKER_WINDOW="${AB_BREAKER_WINDOW:-7200}"   # rolling window (s)
 AB_BREAKER_MAX="${AB_BREAKER_MAX:-6}"        # opens-without-pass before trip
 AB_MAX_OPENS_PER_HOUR="${AB_MAX_OPENS_PER_HOUR:-12}"  # advisory upper bound
+AB_AUTH_REMINT_THRESHOLD_S="${AB_AUTH_REMINT_THRESHOLD_S:-2700}"  # 45min — F5(b)/gates.json token_pre_phase_remint.threshold_minutes
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 # LOCK + LEASES are EPHEMERAL by design — a lock or lease that survived a reboot
@@ -248,6 +251,51 @@ _bm_write_lease() {
   printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s}\n' \
     "$session" "$$" "$(_bm_now)" "$AB_SESSION_TTL" "$(_bm_box_id)" "$_BM_OVERRIDE" \
     > "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
+}
+
+# ── AUTH-AGE STAMP (F5-b, SKILL-6-BULLETPROOF-SPEC-v1) ────────────────────────
+# The reactive 401-recovery (inject-ghl-auth.sh's ONE bounded re-mint) already
+# exists. This is the PROACTIVE half: a durable, per-session stamp of "when was
+# this session's id_token last (re-)minted", so a long build can check the
+# token's AGE before starting a multi-minute phase and re-mint ahead of the
+# ~60min expiry instead of waiting for a 401. Lives alongside the lease (same
+# LOCKDIR, same lifetime) — NOT the durable PARK_DIR (an auth stamp has no
+# business surviving a reboot; a fresh session always re-seeds+re-stamps).
+_bm_auth_stamp_file() {
+  local session="${1:-$(bm_session_name)}"
+  printf '%s' "$LOCKDIR/leases/${session}.auth-seeded-at"
+}
+
+# bm_record_auth_seeded [session] — called by inject-ghl-auth.sh immediately
+# after EVERY confirmed seed+activate (the initial seed AND the bounded 401
+# re-mint), so the age clock always reflects the token actually in the browser.
+bm_record_auth_seeded() {
+  local session="${1:-$(bm_session_name)}"
+  printf '%s' "$(_bm_now)" > "$(_bm_auth_stamp_file "$session")" 2>/dev/null || true
+}
+
+# bm_auth_age_s [session] — seconds since the last recorded seed. Prints -1
+# (unknown) when no stamp exists yet — callers MUST treat -1 as stale (fail
+# TOWARD a re-mint, never toward trusting an unconfirmed session).
+bm_auth_age_s() {
+  local session="${1:-$(bm_session_name)}" f stamp
+  f="$(_bm_auth_stamp_file "$session")"
+  if [ ! -f "$f" ]; then
+    printf '%s' "-1"
+    return 0
+  fi
+  stamp="$(cat "$f" 2>/dev/null || echo 0)"
+  case "$stamp" in ''|*[!0-9]*) printf '%s' "-1"; return 0 ;; esac
+  printf '%s' "$(( $(_bm_now) - stamp ))"
+}
+
+# bm_auth_is_stale [session] — true (exit 0) iff the token is older than
+# AB_AUTH_REMINT_THRESHOLD_S (default 2700s/45min) OR its age is unknown.
+bm_auth_is_stale() {
+  local session="${1:-$(bm_session_name)}" age
+  age="$(bm_auth_age_s "$session")"
+  if [ "$age" -lt 0 ] 2>/dev/null; then return 0; fi
+  [ "$age" -ge "$AB_AUTH_REMINT_THRESHOLD_S" ]
 }
 
 # ── POOL CEILING (Approach 1 graft) — never exceed AB_MAX_SESSIONS open ───────
@@ -414,6 +462,11 @@ _bm_teardown() {
     command "$AB_BIN" --headed false close --session "$_BM_SESSION" 2>/dev/null || true
     command "$AB_BIN" --headed false state clear "$_BM_SESSION" 2>/dev/null || true
     rm -f "$LOCKDIR/leases/${_BM_SESSION}.lease" 2>/dev/null || true
+    # Clear the auth-age stamp too — the session's real IndexedDB/cookies just got
+    # wiped by `state clear`, so a stale stamp must never let a FUTURE session
+    # skip re-seeding. (inject-ghl-auth.sh always re-seeds+re-stamps at the start
+    # of a session regardless; this is hygiene, not a correctness dependency.)
+    rm -f "$(_bm_auth_stamp_file "$_BM_SESSION")" 2>/dev/null || true
   fi
   _BM_LOCK_HELD=0
 }
@@ -489,6 +542,23 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
     session-name)
       bm_session_name; echo
       ;;
+    auth-age)
+      # bash browser_manager.sh auth-age [-- <session>]  — prints seconds since
+      # the last recorded seed (-1 = unknown/never seeded). No lock/open needed —
+      # pure stamp-file read (F5-b pre-phase check callers use this to decide).
+      [ "${1:-}" = "--" ] && shift
+      bm_auth_age_s "${1:-}"; echo
+      ;;
+    auth-stale)
+      # bash browser_manager.sh auth-stale [-- <session>] — exit 0 iff stale
+      # (>= AB_AUTH_REMINT_THRESHOLD_S or unknown), exit 1 iff fresh.
+      [ "${1:-}" = "--" ] && shift
+      if bm_auth_is_stale "${1:-}"; then
+        echo "STALE"; exit 0
+      else
+        echo "FRESH"; exit 1
+      fi
+      ;;
     ensure)
       bm_ensure || exit $?    # B1 gate refusal (75/76) must NOT print "ENSURED"
       echo "ENSURED: session=$(bm_session_name) lock=held ttl=${AB_SESSION_TTL}s — teardown trap installed."
@@ -515,7 +585,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "TORN-DOWN: session=$(bm_session_name)"
       ;;
     *)
-      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name} [-- args...]" >&2
+      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale} [-- args...]" >&2
       exit 64
       ;;
   esac

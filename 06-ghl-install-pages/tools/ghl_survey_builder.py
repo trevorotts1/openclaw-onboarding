@@ -104,8 +104,9 @@ if _TOOLS_DIR not in sys.path:
 import ghl_builder  # noqa: E402  — browser_cmd + headless_guard
 import browser_manager  # noqa: E402  — browser_session context manager
 
-# Rate governor + session keepalive live in v2_dispatcher (reused, not reinvented)
-from v2_dispatcher import RateGovernor, SessionKeepalive  # noqa: E402
+# Rate governor + session keepalive + F5(b) pre-phase token re-mint live in
+# v2_dispatcher (reused, not reinvented)
+from v2_dispatcher import RateGovernor, SessionKeepalive, remint_if_stale  # noqa: E402
 
 try:
     import cc_board as _cc_board  # noqa: E402 — best-effort board producer
@@ -486,6 +487,26 @@ def _snapshot(session: str) -> str:
     """Get the current accessibility snapshot (-i mode)."""
     result = _run_cmd(session, "snapshot", "-i", timeout=20)
     return result.stdout or ""
+
+
+def _pre_phase_check(session: str, keepalive: "SessionKeepalive") -> None:
+    """F5 uniform keepalive + pre-phase re-mint — call once before EVERY
+    multi-minute Part-2 phase (never navigate/reload; both actions below are
+    eval-only per D7/F5 doctrine):
+      1. keepalive.due() — a harmless no-op eval ping every 30min so the
+         session never idles out mid-build.
+      2. remint_if_stale() — F5(b): if the seeded id_token is already older
+         than the 45min threshold, proactively re-mint + re-seed BEFORE the
+         phase starts rather than waiting for a mid-phase 401. Best-effort:
+         a failure here never aborts the phase (inject-ghl-auth.sh's own
+         bounded reactive re-mint remains the backstop on an actual 401).
+    """
+    if keepalive.due():
+        _eval(session, "true", timeout=5)  # harmless keepalive ping
+    try:
+        remint_if_stale(session)
+    except Exception:  # noqa: BLE001 — proactive remint is never allowed to abort a phase
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -1920,18 +1941,21 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                         _eval(session, "true", timeout=5)  # harmless keepalive ping
 
             # ── Part 2: Phase A — create survey ──────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase A — create survey")
             _p2_navigate_create(session, location_id, evidence_root, shot_n)
 
             # ── Part 2: Phase B — rename survey ──────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase B — rename survey")
             _p2_rename_survey(session, survey_name, evidence_root, shot_n)
 
             # ── Part 2: Phase C — add slides ──────────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             num_extra = len(fields) + 1  # question slides + capture
             _board_activity(
@@ -1942,12 +1966,14 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             _p2_add_slides(session, num_extra, evidence_root, shot_n)
 
             # ── Part 2: Phase D — welcome slide ───────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase D — welcome slide (Text element)")
             _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n)
 
             # ── Part 2: Phase E — pull custom fields ──────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(
                 board_task_id, "updated",
@@ -1960,12 +1986,14 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
 
             # ── Part 2: Phase F — rename question slides ──────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
             _p2_rename_question_slides(session, fields, gov, evidence_root, shot_n)
 
             # ── Part 2: Phase G — conditional logic ───────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
@@ -1975,6 +2003,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
 
             # ── Part 2: Phase H — required toggles ───────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             required_count = sum(1 for f in fields if f.get("required"))
             _board_activity(
@@ -1985,6 +2014,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             _p2_required_toggles(session, fields, evidence_root, shot_n)
 
             # ── Part 2: Phase J — capture slide + T&C ────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(
                 board_task_id, "updated",
@@ -1997,6 +2027,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             )
 
             # ── Part 2: Phase K — save + get URL ─────────────────────────────
+            _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase K — save + capture URL")
