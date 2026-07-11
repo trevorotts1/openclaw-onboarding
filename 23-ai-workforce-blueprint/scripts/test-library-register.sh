@@ -16,6 +16,13 @@
 #   7. unregistered dept-level SOP     -> FAIL (rc 7)
 #   8. unregistered persona            -> FAIL (rc 7)
 #   9. --apply heals an unregistered role then --check passes (round-trip)
+#   10. C9: stale sop_count (index says 0, disk has embedded SOPs) -> FAIL (rc 7),
+#       then --apply heals it to the real count -> --check PASSES (round-trip)
+#   11. C9: a BRAND-NEW role with 3 embedded '### SOP' headings gets sop_count=3
+#       (not the historical hardcoded 0) the moment --apply registers it, even
+#       WITHOUT the hash-content-manifest chain (--no-hash)
+#   12. C9: EMBEDDED_SOP_FLOOR is identical in hash-content-manifest.py and
+#       qc-completeness.sh (the two canonical-count owners must never drift)
 #
 # BASH harness; the gate itself is Python (no claude-/anthropic strings).
 
@@ -181,6 +188,104 @@ rc="$(run_check "$sb")"
 [ "$rc" -eq 0 ] && pass "--apply heals an unregistered role then --check PASSES (rc 0)" \
                 || die "round-trip --apply then --check should PASS (rc 0), got $rc"
 rm -rf "$sb"
+
+# ── 10. C9: stale sop_count (index says 0, disk has real embedded SOPs) ──────
+# Pick a role that genuinely embeds "### SOP" content, corrupt its stored
+# sop_count/sop_min back to the historical hardcoded 0/0, and prove --check
+# BITES (the exact C9 bug: index misreports SOP linkage vs disk). Then
+# --apply must heal it to the real count and --check must pass again.
+sb="$(make_sandbox)"
+read -r SOPDEPT SOPSLUG SOPPATH <<<"$(python3 - "$sb" <<'PY'
+import json, sys, re
+sb = sys.argv[1]
+idx_path = f"{sb}/skill/templates/role-library/_index.json"
+idx = json.load(open(idx_path))
+skill = f"{sb}/skill"
+for r in idx["roles"]:
+    try:
+        text = open(f"{skill}/{r['path']}", encoding="utf-8").read()
+    except OSError:
+        continue
+    if len(re.findall(r"^###\s*SOP\b", text, re.MULTILINE)) >= 2:
+        print(r["dept"], r["slug"], r["path"])
+        break
+PY
+)"
+if [ -n "${SOPSLUG:-}" ]; then
+  python3 - "$sb" "$SOPDEPT" "$SOPSLUG" <<'PY'
+import json, sys
+sb, dept, slug = sys.argv[1], sys.argv[2], sys.argv[3]
+p = f"{sb}/skill/templates/role-library/_index.json"
+d = json.load(open(p))
+for r in d["roles"]:
+    if r["dept"] == dept and r["slug"] == slug:
+        r["sop_count"] = 0
+        r["sop_min"] = 0
+        break
+json.dump(d, open(p, "w"), indent=2)
+PY
+  rc="$(run_check "$sb")"
+  [ "$rc" -eq 7 ] && pass "stale sop_count=0 on a role with real embedded SOPs FAILS (rc 7)" \
+                  || die "stale sop_count should FAIL --check (rc 7), got $rc"
+  # heal via --apply (full chain, so hash-content-manifest also re-stamps it)
+  ( cd "$sb" && python3 "skill/scripts/$GATE" \
+      --index "skill/templates/role-library/_index.json" --apply ) >/dev/null 2>&1
+  rc="$(run_check "$sb")"
+  [ "$rc" -eq 0 ] && pass "--apply heals stale sop_count then --check PASSES (rc 0)" \
+                  || die "round-trip sop_count heal should PASS (rc 0), got $rc"
+  # and the healed value is the REAL disk count, not another placeholder
+  python3 - "$sb" "$SOPDEPT" "$SOPSLUG" "$SOPPATH" <<'PY'
+import json, sys, re
+sb, dept, slug, path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+d = json.load(open(f"{sb}/skill/templates/role-library/_index.json"))
+r = next(x for x in d["roles"] if x["dept"] == dept and x["slug"] == slug)
+text = open(f"{sb}/skill/{path}", encoding="utf-8").read()
+expected = len(re.findall(r"^###\s*SOP\b", text, re.MULTILINE))
+sys.exit(0 if (r["sop_count"] == expected and expected >= 2 and r["sop_min"] == 1) else 1)
+PY
+  if [ $? -eq 0 ]; then
+    pass "healed sop_count equals a fresh recount of the role's own embedded SOP headings"
+  else
+    die "healed sop_count must equal the real disk count, not a placeholder"
+  fi
+else
+  echo "  ! no role with >=2 embedded '### SOP' headings found — skipping stale-sop_count fixture"
+fi
+rm -rf "$sb"
+
+# ── 11. C9: a BRAND-NEW role gets a REAL sop_count immediately, even under
+#     --no-hash (proves _derive_role_meta computes it directly, not only via
+#     the chained hash-content-manifest restamp) ─────────────────────────────
+sb="$(make_sandbox)"
+printf '# Fixture Role With SOPs\n\n**Role type:** specialist\n\n## 9. Standard Operating Procedures\n\n### SOP 9.1 -- First\nbody\n\n### SOP 9.2 -- Second\nbody\n\n### SOP 9.3 -- Third\nbody\n' \
+  > "$sb/skill/$LIB/$DEPT/zzz-fixture-new-role-with-sops.md"
+( cd "$sb" && python3 "skill/scripts/$GATE" \
+    --index "skill/templates/role-library/_index.json" --apply --no-hash ) >/dev/null 2>&1
+python3 - "$sb" <<'PY'
+import json, sys
+sb = sys.argv[1]
+d = json.load(open(f"{sb}/skill/templates/role-library/_index.json"))
+r = next((x for x in d["roles"] if x["slug"] == "zzz-fixture-new-role-with-sops"), None)
+sys.exit(0 if (r is not None and r.get("sop_count") == 3 and r.get("sop_min") == 1) else 1)
+PY
+if [ $? -eq 0 ]; then
+  pass "brand-new role gets sop_count=3 (real count) immediately, even under --no-hash"
+else
+  die "brand-new role should get a REAL sop_count on first registration (--no-hash), not 0"
+fi
+rm -rf "$sb"
+
+# ── 12. C9: EMBEDDED_SOP_FLOOR must never drift between the two canonical
+#     owners (hash-content-manifest.py and qc-completeness.sh's live-workspace
+#     gate) — a silent renumber in either file would desynchronize what the
+#     library index reports vs what the build-completeness gate enforces.
+HCM_FLOOR="$(grep -m1 '^EMBEDDED_SOP_FLOOR = ' "$SCRIPT_DIR/hash-content-manifest.py" | sed -E 's/.*= *([0-9]+).*/\1/')"
+QC_FLOOR="$(grep -m1 'EMBEDDED_SOP_FLOOR = ' "$SCRIPT_DIR/qc-completeness.sh" | sed -E 's/.*= *([0-9]+).*/\1/')"
+if [ -n "$HCM_FLOOR" ] && [ -n "$QC_FLOOR" ] && [ "$HCM_FLOOR" = "$QC_FLOOR" ]; then
+  pass "EMBEDDED_SOP_FLOOR agrees between hash-content-manifest.py and qc-completeness.sh ($HCM_FLOOR)"
+else
+  die "EMBEDDED_SOP_FLOOR drifted: hash-content-manifest.py=$HCM_FLOOR vs qc-completeness.sh=$QC_FLOOR"
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then
