@@ -116,6 +116,38 @@ fi
 SKILLS_DIR="$OC_ROOT/skills"
 STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 
+# ---------------------------------------------------------------------------
+# DURABLE TOMBSTONE support (fix/industry-gate-and-idempotent-crons, live-VPS
+# finding, 2026-07-11): `openclaw cron list --json` was observed on a live box
+# returning ONLY enabled jobs (16 of 31 actual rows) — a DISABLED cron is
+# invisible to _cron_present() below, so the next install.sh/update-skills.sh
+# run (which calls this script) silently RESURRECTS it. A durable, file-based
+# tombstone (shared-utils/cron-lib.sh::oc_cron_tombstoned/oc_cron_tombstone,
+# mirroring this file's own BOX_PARK_MARKER pattern above) makes a deliberate
+# disable/removal survive re-registration regardless of what `cron list --json`
+# does or doesn't expose. Sourced ONLY for the tombstone helpers — this file's
+# OWN `_cron_present` below (the proven v13.0.2 reference implementation) is
+# otherwise left as-is, per "do not regress it," but is ALSO hardened with the
+# same best-effort full-visibility flag detection cron-lib.sh uses. Fails OPEN
+# (never tombstoned) if the shared lib can't be found — never blocks
+# registration outright over a missing helper file.
+_CRON_LIB_TOMBSTONE=""
+for _cand in \
+  "$(dirname "${BASH_SOURCE[0]:-$0}")/../shared-utils/cron-lib.sh" \
+  "$SKILLS_DIR/shared-utils/cron-lib.sh" \
+  "/data/.openclaw/skills/shared-utils/cron-lib.sh"; do
+  if [[ -f "$_cand" ]]; then
+    _CRON_LIB_TOMBSTONE="$_cand"
+    break
+  fi
+done
+if [[ -n "$_CRON_LIB_TOMBSTONE" ]]; then
+  # shellcheck source=/dev/null
+  source "$_CRON_LIB_TOMBSTONE"
+fi
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+command -v oc_cron_list_json_flags >/dev/null 2>&1 || oc_cron_list_json_flags() { return 1; }
+
 # v14.1.5 — DURABLE PARK marker (the SAME file the Skill-23 resume cron
 # resume-workforce-build.sh and the agent-browser circuit-breaker
 # 06-ghl-install-pages/tools/browser_manager.sh read/write). If present, this
@@ -155,8 +187,18 @@ _log() { echo "[ensure-pipeline-crons] $*"; }
 # ---------------------------------------------------------------------------
 _cron_present() {
   local name="$1"
+  local -a _extra_flags=()
+  local _detected
+  # Best-effort full-visibility flag (fix/industry-gate-and-idempotent-crons,
+  # live-VPS finding): only used if `cron list --help` ITSELF advertises one —
+  # never assumed. See shared-utils/cron-lib.sh header for the full rationale;
+  # oc_cron_list_json_flags is a no-op (returns 1) if that lib wasn't found.
+  if _detected="$(oc_cron_list_json_flags 2>/dev/null)" && [[ -n "$_detected" ]]; then
+    # shellcheck disable=SC2206
+    _extra_flags=( $_detected )
+  fi
   local raw
-  raw=$(openclaw cron list --json 2>/dev/null) || raw=""
+  raw=$(openclaw cron list --json ${_extra_flags[@]+"${_extra_flags[@]}"} 2>/dev/null) || raw=""
 
   # Strategy 1: jq exact match
   if [[ -n "$raw" ]] && command -v jq >/dev/null 2>&1; then
@@ -369,6 +411,10 @@ _find_health_script() {
 # registrar so it works on both the 2026.5.x and 2026.6.x CLI lines.
 _ensure_health_cron() {
   local name="$1" schedule="$2" script_name="$3"
+  if oc_cron_tombstoned "$name"; then
+    _log "SKIP $name — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove $name"
+    return 0
+  fi
   if _cron_present "$name"; then
     _log "OK  $name cron already present"
     return 0
@@ -496,6 +542,10 @@ _ensure_workforce_build_resume() {
     _log "SKIP workforce-build-resume — build is PARKED ($BOX_PARK_MARKER). NOT re-registering (would resurrect the furnace an operator parked). Un-park: scripts/unpark-build.sh."
     return 0
   fi
+  if oc_cron_tombstoned "workforce-build-resume"; then
+    _log "SKIP workforce-build-resume — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
+    return 0
+  fi
   if _cron_present "workforce-build-resume"; then
     _log "OK  workforce-build-resume cron already present"
     return 0
@@ -548,6 +598,10 @@ _ensure_interview_nudge() {
       return 0
     fi
   fi
+  if oc_cron_tombstoned "interview-nudge"; then
+    _log "SKIP interview-nudge — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove interview-nudge"
+    return 0
+  fi
   if _cron_present "interview-nudge"; then
     _log "OK  interview-nudge cron already present"
     return 0
@@ -577,6 +631,10 @@ _ensure_closeout_watchdog() {
       return 0
     fi
   fi
+  if oc_cron_tombstoned "closeout-readiness-watchdog"; then
+    _log "SKIP closeout-readiness-watchdog — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
+    return 0
+  fi
   if _cron_present "closeout-readiness-watchdog"; then
     _log "OK  closeout-readiness-watchdog cron already present"
     return 0
@@ -601,6 +659,10 @@ _ensure_closeout_watchdog() {
 #    cron script regardless of owner-chat resolution. This is the fix that makes
 #    closeout fire even on boxes where Step 13's message-mode cron was skipped.
 _ensure_closeout_resume() {
+  if oc_cron_tombstoned "closeout-resume"; then
+    _log "SKIP closeout-resume — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-resume"
+    return 0
+  fi
   if _cron_present "closeout-resume"; then
     _log "OK  closeout-resume cron already present"
     return 0
@@ -626,6 +688,10 @@ _ensure_closeout_resume() {
 #    AND via direct invocation is safe. No Telegram owner chat is needed here —
 #    the check script resolves the client chat itself.
 _ensure_ghl_token_liveness() {
+  if oc_cron_tombstoned "ghl-token-liveness"; then
+    _log "SKIP ghl-token-liveness — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove ghl-token-liveness"
+    return 0
+  fi
   if _cron_present "ghl-token-liveness"; then
     _log "OK  ghl-token-liveness cron already present"
     return 0

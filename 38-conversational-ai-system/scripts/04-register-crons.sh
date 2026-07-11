@@ -50,6 +50,9 @@ else
       ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
     ' >/dev/null 2>&1
   }
+  # No shared lib -> no durable-tombstone dir resolution either. Fail OPEN
+  # (never tombstoned) rather than block ALL registration on a missing lib.
+  oc_cron_tombstoned() { return 1; }
 fi
 
 # Resolve the batch model the Model Wizard (15-configure-hooks-mappings.sh) saved to
@@ -136,6 +139,14 @@ _assert_cron_silent() {
 # Args: <name> <cron-expr> <message>
 register_cron() {
   local name="$1" cron_expr="$2" message="$3"
+  # DURABLE TOMBSTONE (fix/industry-gate-and-idempotent-crons, live-VPS
+  # finding): never resurrect a cron deliberately removed via
+  # scripts/tombstone-cron.sh, regardless of whether `cron list --json`
+  # exposes disabled jobs on this CLI build — see cron-lib.sh header.
+  if oc_cron_tombstoned "$name"; then
+    echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
+    return 0
+  fi
   if oc_cron_present "$name"; then
     echo "cron $name already registered — skipping" >&2
     return 0
@@ -163,6 +174,10 @@ _cli_supports_command() {
 }
 register_command_cron() {
   local name="$1" cron_expr="$2" script="$3"
+  if oc_cron_tombstoned "$name"; then
+    echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
+    return 0
+  fi
   if oc_cron_present "$name"; then
     echo "cron $name already registered — skipping" >&2
     return 0

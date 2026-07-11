@@ -2270,8 +2270,16 @@ PYEOF
     fi
     return 1
   }
+  # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons,
+  # live-VPS finding): fail OPEN (never tombstoned) if shared-utils/cron-lib.sh
+  # wasn't found above — never block registration outright over a missing
+  # helper file. The real oc_cron_tombstoned (durable file-marker check) is
+  # used automatically when the shared lib IS found.
+  command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
 
-  if command -v openclaw >/dev/null 2>&1; then
+  if command -v openclaw >/dev/null 2>&1 && oc_cron_tombstoned "weekly-onboarding-update"; then
+    echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
+  elif command -v openclaw >/dev/null 2>&1; then
     # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
     # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
     # weekly-onboarding-update cron wired with --announce --channel telegram

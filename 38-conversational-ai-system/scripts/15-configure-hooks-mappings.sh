@@ -326,8 +326,13 @@ command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
   fi
   return 1
 }
+# DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
+# finding): fail OPEN (never tombstoned) if the shared lib wasn't found above.
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
 if command -v openclaw >/dev/null 2>&1; then
-  if oc_cron_present "system-health-heartbeat"; then
+  if oc_cron_tombstoned "system-health-heartbeat"; then
+    echo "cron system-health-heartbeat is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove system-health-heartbeat" >&2
+  elif oc_cron_present "system-health-heartbeat"; then
     echo "cron system-health-heartbeat already registered — skipping" >&2
   else
     # SILENCE DOCTRINE (FIX-XC-08b): 2026.6.8+ `cron add` fallback-delivers the

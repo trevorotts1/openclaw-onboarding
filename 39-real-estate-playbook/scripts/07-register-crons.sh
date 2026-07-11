@@ -148,6 +148,16 @@ _add_cron() { # <name> <cron-expr> <message>
 
 for i in "${!CRON_NAMES[@]}"; do
   name="${CRON_NAMES[$i]}"
+  # DURABLE TOMBSTONE (2026-07-11 live-VPS finding): a cron an operator/tool
+  # deliberately disabled/removed via scripts/tombstone-cron.sh must NEVER be
+  # resurrected here — checked BEFORE the presence check because a disabled
+  # job may be genuinely invisible to `cron list --json` on this CLI build
+  # (see shared-utils/cron-lib.sh header). This is the guarantee that holds
+  # regardless of what the CLI does or doesn't expose.
+  if oc_cron_tombstoned "$name"; then
+    echo "$P cron '$name' is TOMBSTONED (deliberately removed) — skipping, NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove '$name'"
+    continue
+  fi
   # JSON exact-name match (truncation-safe) — see cron-lib.sh header for why a
   # text-table grep here re-introduces the 6x-duplicate bug on long names.
   if oc_cron_present "$name"; then

@@ -210,6 +210,12 @@ PYEOF
     fi
     return 1
 }
+# DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
+# finding): if shared-utils/cron-lib.sh wasn't found above, oc_cron_tombstoned
+# is undefined — fail OPEN (never tombstoned) rather than block registration
+# outright over a missing helper file. When the shared lib IS found, its real
+# oc_cron_tombstoned (durable file-marker check) is used instead.
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -5685,6 +5691,10 @@ install_workforce_resume_cron() {
         return 0
     fi
 
+    if oc_cron_tombstoned "workforce-build-resume"; then
+        warn "workforce-build-resume is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
+        return 0
+    fi
     if oc_cron_present "workforce-build-resume"; then
         success "Workforce-build resume cron already installed"
         return 0
@@ -5774,6 +5784,10 @@ step "Step 13.4: Installing watchdog-onboarding-loop cron (PRD-2.13, 10-min chea
 install_watchdog_loop_cron() {
     if ! command -v openclaw >/dev/null 2>&1; then
         warn "openclaw CLI not on PATH — skipping watchdog-onboarding-loop cron. Re-run update-skills.sh later."
+        return 0
+    fi
+    if oc_cron_tombstoned "watchdog-onboarding-loop"; then
+        warn "watchdog-onboarding-loop is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove watchdog-onboarding-loop"
         return 0
     fi
     if oc_cron_present "watchdog-onboarding-loop"; then
@@ -5959,6 +5973,10 @@ install_closeout_watchdog_cron() {
         return 0
     fi
 
+    if oc_cron_tombstoned "closeout-readiness-watchdog"; then
+        warn "closeout-readiness-watchdog is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
+        return 0
+    fi
     if oc_cron_present "closeout-readiness-watchdog"; then
         success "closeout-readiness-watchdog cron already installed"
         return 0
