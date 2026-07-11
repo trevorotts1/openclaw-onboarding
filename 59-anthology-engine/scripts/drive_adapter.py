@@ -90,15 +90,23 @@ human notes go to stderr):
         falls back to the LOCAL service account (the operator's OWN box).
   drive_adapter.py broker-status
         report whether the n8n Drive broker is configured (SET/NOT-SET only) and
-        which actions are implemented vs pending.
+        which actions the adapter speaks.
+  drive_adapter.py broker-preflight [--json]
+        in broker mode, probe the live broker's capabilities and print (exit 0) or
+        HOLD (exit 3) naming any REQUIRED action the broker does not yet implement --
+        so an under-provisioned broker fails at provisioning, not mid-run at S7/S8.
+        In local-SA mode it is a clean pass (the local SA performs the per-Doc ops).
   drive_adapter.py --self-test        offline coherence checks (no network).
 
 n8n CREDENTIAL BROKER (fleet delivery model): the PRIVILEGED folder-tree creation +
 share ops POST to an n8n webhook that holds Trevor's Google service-account key,
 which never leaves n8n. A client box holds ONLY N8N_DRIVE_WEBHOOK_URL +
 N8N_DRIVE_WEBHOOK_TOKEN; a compromised client box cannot leak Google creds because
-they were never there. Per-Doc broker actions (create_doc, upload_pdf,
-share_doc_edit, pull_doc_text) are designed extension points, stubbed not faked.
+they were never there. The per-Doc broker actions (create_doc, upload_pdf,
+share_doc_edit, pull_doc_text) AND the per-participant tree (create_participant_tree)
+are IMPLEMENTED through the n8n route template, so the whole S0..S8 Drive path runs on
+a pure client box through the broker; broker-preflight probes the broker's capabilities
+and HOLDs provisioning early (by name) on any missing action.
 """
 import argparse
 import base64
@@ -141,8 +149,22 @@ ROOT_FOLDER_ENV = "GOOGLE_DRIVE_ROOT_FOLDER"
 N8N_WEBHOOK_URL_ENV = "N8N_DRIVE_WEBHOOK_URL"
 N8N_WEBHOOK_TOKEN_ENV = "N8N_DRIVE_WEBHOOK_TOKEN"
 BROKER_TOKEN_HEADER = "X-Anthology-Broker-Token"
-# Per-Doc broker actions are DESIGNED extension points, stubbed not faked (below).
-BROKER_STUB_ACTIONS = ("create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text")
+# Per-Doc broker actions (create a Doc + insert text, upload a PDF/cover binary, share a
+# Doc VIEW/EDIT, pull a Doc's text back). These are IMPLEMENTED through the n8n route
+# template (config/n8n/anthology-drive-broker.workflow.json), so a pure client box that
+# holds NO Google key performs the per-Doc S7/S8 delivery ops through the broker -- not
+# just the operator's own box. The high-level flows (deliver_doc / deliver_media /
+# do_share / pull_doc_text) route to the broker whenever broker_configured().
+BROKER_DOC_ACTIONS = ("create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text")
+# The per-participant runtime folder tree (Root/Producer/Anthology/Participant) that S0
+# intake mints "on first sight" is brokered under this action (drive-tree-provision.py).
+BROKER_PARTICIPANT_ACTION = "create_participant_tree"
+# The full action set a broker must expose for a pure client box to run the engine
+# end-to-end (per-book tree + S0 per-participant tree + the per-Doc S7/S8 ops). The
+# broker-preflight probe HOLDs provisioning early, BY NAME, on any that are missing so
+# an under-provisioned broker fails at GATE 1 rather than dead-ending mid-run at S7/S8.
+BROKER_REQUIRED_ACTIONS = (
+    ("create_book_tree", BROKER_PARTICIPANT_ACTION) + BROKER_DOC_ACTIONS)
 
 EX_OK, EX_ERR, EX_VALIDATION, EX_DEP, EX_READBACK = 0, 1, 2, 3, 5
 
@@ -738,13 +760,16 @@ def _broker_credential_status():
     }
 
 
-def _broker_post(action, payload):
-    """POST one action to the n8n Drive credential broker; return the parsed JSON.
+def _broker_request(action, payload):
+    """Low-level POST of one action to the n8n Drive broker; return (status, parsed).
 
-    The low-privilege webhook token authenticates the call in a header and is NEVER
-    printed. The broker URL MUST be https so the token never travels in cleartext.
-    Google credentials never touch this box. n8n commonly wraps a single response
-    item in a one-element list, which is unwrapped here."""
+    This does NOT raise on an application-level failure (401/404/501/{ok:false}) so a
+    caller that must CLASSIFY the response -- the capabilities / probe preflight -- can
+    read the status and body without a try/except. It raises only for transport / config
+    problems: the URL or token is unresolved, the URL is not https (the token must never
+    travel in cleartext), the host is unreachable, or the body is not JSON. The
+    low-privilege webhook token authenticates the call in a header and is NEVER printed.
+    n8n commonly wraps a single response item in a one-element list, unwrapped here."""
     from urllib.parse import urlsplit
     url = _broker_webhook_url()
     token = _broker_token()
@@ -774,9 +799,17 @@ def _broker_post(action, payload):
         parsed = None
     if isinstance(parsed, list):
         parsed = parsed[0] if parsed else {}
-    detail = ""
-    if isinstance(parsed, dict):
-        detail = str(parsed.get("error") or parsed.get("message") or "")[:180]
+    if not isinstance(parsed, dict):
+        raise DependencyError("n8n Drive broker returned a non-JSON body.")
+    return status, parsed
+
+
+def _broker_post(action, payload):
+    """POST one action to the n8n Drive credential broker; return the parsed JSON dict
+    on success, else raise the right typed error (so callers get a deterministic exit
+    code). Wraps _broker_request with the fail-loud status/ok classification."""
+    status, parsed = _broker_request(action, payload)
+    detail = str(parsed.get("error") or parsed.get("message") or "")[:180]
     if status in (401, 403):
         raise DependencyError(
             "n8n Drive broker rejected the webhook token (HTTP %s); check %s. %s"
@@ -785,10 +818,14 @@ def _broker_post(action, payload):
         raise DependencyError(
             "n8n Drive broker webhook not found (HTTP 404); check %s and that the "
             "workflow is active. %s" % (N8N_WEBHOOK_URL_ENV, detail))
+    if status == 501 or parsed.get("error") == "not_implemented":
+        raise DependencyError(
+            "n8n Drive broker action %r is not implemented on the deployed workflow "
+            "(HTTP %s); import/activate the current "
+            "config/n8n/anthology-drive-broker.workflow.json. %s"
+            % (action, status, detail))
     if status not in (200, 201):
         raise DependencyError("n8n Drive broker returned HTTP %s. %s" % (status, detail))
-    if not isinstance(parsed, dict):
-        raise DependencyError("n8n Drive broker returned a non-JSON body.")
     if parsed.get("ok") is False:
         raise DependencyError(
             "n8n Drive broker reported failure for action %r: %s"
@@ -834,20 +871,240 @@ def broker_create_book_tree(client_key, producer_email, book_title, co_author=No
     return result
 
 
-def broker_stub(action):
-    """Raise a clear 'not yet implemented via the broker' error for a per-Doc op.
+# ---------------------------------------------------------------------------
+# Per-Doc broker actions (create_doc, upload_pdf, share_doc_edit, pull_doc_text) and
+# the per-participant tree (create_participant_tree). These route the S0..S8 Drive ops
+# through the n8n webhook so a pure client box -- which holds NO Google key -- performs
+# them WITHOUT ever touching the Google service account. The broker (n8n) does the
+# privileged Google write server-side and returns ids/links; every response is
+# normalized to the SAME shape the local-SA flow returns so the stage runners consume
+# either path identically. The engine SELECTS these whenever broker_configured().
+# ---------------------------------------------------------------------------
+def _norm_share_mode(share_mode):
+    if share_mode in (None, ""):
+        return None
+    if share_mode in ("view", "edit"):
+        return share_mode
+    raise ValidationError(
+        "unknown share mode %r (expected 'view', 'edit', or none)" % share_mode)
 
-    The per-Doc broker actions (create_doc, upload_pdf, share_doc_edit,
-    pull_doc_text) are DESIGNED extension points, deliberately NOT faked. On the
-    operator's own box these ops run via the local SA; a pure client box cannot yet
-    perform them through the broker -- that is the remaining work for full per-Doc
-    coverage (see MASTERDOC floor #10)."""
-    if action not in BROKER_STUB_ACTIONS:
-        raise ValidationError("unknown broker action %r" % action)
-    raise DependencyError(
-        "n8n Drive broker action %r is a designed extension point that is NOT yet "
-        "implemented; the operator's own box performs it via the local service "
-        "account. Full per-Doc broker coverage is pending." % action)
+
+def broker_create_doc(name, parent_folder_id, text=None, share_mode=None):
+    """Broker create_doc: create a Google Doc in `parent_folder_id`, insert `text`,
+    optionally share it, and return the SAME dict deliver_doc()'s local-SA path returns.
+    n8n performs the create + insert + read-back + share with Trevor's Google creds (which
+    never leave n8n) and returns the doc id + link + permission id."""
+    if not name or not str(name).strip():
+        raise ValidationError("create_doc: a Doc name is required.")
+    if not parent_folder_id or not str(parent_folder_id).strip():
+        raise ValidationError("create_doc: a parent folder id is required.")
+    mode = _norm_share_mode(share_mode)
+    payload = {"parent_folder_id": str(parent_folder_id).strip(),
+               "name": str(name).strip(), "text": text or ""}
+    if mode:
+        payload["share_mode"] = mode
+    r = _broker_post("create_doc", payload)
+    doc_id = r.get("doc_id")
+    if not doc_id:
+        raise DependencyError(
+            "n8n Drive broker create_doc response is missing 'doc_id' (the broker must "
+            "return the created Doc id).")
+    applied = r.get("share_mode") if "share_mode" in r else mode
+    return {
+        "ok": True, "action": "create-doc", "via": "n8n_broker", "doc_id": doc_id,
+        "name": r.get("name", name), "doc_url": r.get("doc_url") or r.get("webViewLink"),
+        "share_mode": applied,
+        "view_shared": applied == "view", "edit_shared": applied == "edit",
+        "permission_id": r.get("permission_id"), "verified": True,
+    }
+
+
+def broker_upload_media(name, parent_folder_id, local_path, mime=None, share_mode=None):
+    """Broker upload_pdf: land a binary (the S7 cover PNG, or a rendered PDF) in
+    `parent_folder_id` via the broker. The bytes are base64-encoded on this box and the
+    broker uploads them into the folder with Trevor's Google creds. Returns the SAME dict
+    deliver_media()'s local-SA path returns (the action key stays 'upload_pdf' -- the
+    broker's binary-landing action -- while any media type is supported)."""
+    if not parent_folder_id or not str(parent_folder_id).strip():
+        raise ValidationError("upload_pdf: a parent folder id is required.")
+    p = Path(local_path)
+    if not p.is_file():
+        raise ValidationError("upload source not found: %s" % local_path)
+    if mime is None:
+        mime = _guess_mime(p.name)
+    mode = _norm_share_mode(share_mode)
+    content_b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+    payload = {"parent_folder_id": str(parent_folder_id).strip(),
+               "name": str(name).strip() if name else p.name,
+               "content_b64": content_b64, "mime": mime}
+    if mode:
+        payload["share_mode"] = mode
+    r = _broker_post("upload_pdf", payload)
+    file_id = r.get("file_id")
+    if not file_id:
+        raise DependencyError(
+            "n8n Drive broker upload_pdf response is missing 'file_id' (the broker must "
+            "return the uploaded file id).")
+    applied = r.get("share_mode") if "share_mode" in r else mode
+    return {
+        "ok": True, "action": "upload", "via": "n8n_broker", "file_id": file_id,
+        "name": r.get("name", name), "drive_url": r.get("drive_url") or r.get("webViewLink"),
+        "download_url": r.get("download_url") or r.get("webContentLink"),
+        "share_mode": applied,
+        "view_shared": applied == "view", "edit_shared": applied == "edit",
+        "permission_id": r.get("permission_id"), "verified": True,
+    }
+
+
+def broker_share(file_id, share_mode):
+    """Broker share_doc_edit: grant anyone-with-link VIEW or EDIT on `file_id` through the
+    broker. Returns the SAME dict do_share()'s local-SA path returns."""
+    if not file_id or not str(file_id).strip():
+        raise ValidationError("share_doc_edit: a file id is required.")
+    mode = _norm_share_mode(share_mode)
+    if not mode:
+        raise ValidationError("share_doc_edit: a share mode ('view' or 'edit') is required.")
+    r = _broker_post("share_doc_edit", {"file_id": str(file_id).strip(), "share_mode": mode})
+    applied = r.get("share_mode") if "share_mode" in r else mode
+    return {
+        "ok": True, "action": "share", "via": "n8n_broker", "file_id": file_id,
+        "share_mode": applied, "permission_id": r.get("permission_id"),
+        "view_url": r.get("view_url") or r.get("webViewLink"), "verified": True,
+    }
+
+
+def broker_pull_doc_text(doc_id):
+    """Broker pull_doc_text: return the CURRENT plain-text body of a Google Doc (the
+    confirm-then-pull read-back) through the broker. Returns the text string; the caller
+    (do_pull_doc_text) freezes the exact bytes + sha256 client-side, so the read-back
+    contract is preserved regardless of which path served it."""
+    if not doc_id or not str(doc_id).strip():
+        raise ValidationError("pull_doc_text: a doc id is required.")
+    r = _broker_post("pull_doc_text", {"doc_id": str(doc_id).strip()})
+    if "text" not in r:
+        raise DependencyError(
+            "n8n Drive broker pull_doc_text response is missing 'text' (the broker must "
+            "return the Doc body verbatim).")
+    return r["text"] or ""
+
+
+def broker_provision_participant_tree(producer, anthology=None, participant=None):
+    """Broker create_participant_tree: idempotent get-or-create of
+    Root/Producer[/Anthology[/Participant]] through the broker (the S0 'on first sight'
+    runtime tree). Returns the SAME dict drive-tree-provision.provision() returns so the
+    S0 caller caches folder ids onto the ledger rows identically in either mode."""
+    if not producer or not str(producer).strip():
+        raise ValidationError("create_participant_tree: --producer is required.")
+    if participant and not anthology:
+        raise ValidationError(
+            "create_participant_tree: --participant requires --anthology (tree is top-down).")
+    payload = {"producer": str(producer).strip()}
+    if anthology:
+        payload["anthology"] = str(anthology).strip()
+    if participant:
+        payload["participant"] = str(participant).strip()
+    r = _broker_post("create_participant_tree", payload)
+    prod_id = r.get("producer_folder_id")
+    if not prod_id:
+        raise DependencyError(
+            "n8n Drive broker create_participant_tree response is missing "
+            "'producer_folder_id' (the broker must return the created folder ids).")
+    result = {
+        "ok": True, "action": "provision", "via": "n8n_broker",
+        "root": {"id": r.get("root_folder_id"), "name": r.get("root_folder_name"),
+                 "existing": True, "created": False},
+        "producer": {"id": prod_id, "name": producer,
+                     "created": bool(r.get("producer_created"))},
+    }
+    deepest = prod_id
+    if anthology:
+        anth_id = r.get("anthology_folder_id")
+        if not anth_id:
+            raise DependencyError(
+                "n8n Drive broker create_participant_tree omitted 'anthology_folder_id'.")
+        result["anthology"] = {"id": anth_id, "name": anthology,
+                               "created": bool(r.get("anthology_created"))}
+        deepest = anth_id
+        if participant:
+            part_id = r.get("participant_folder_id")
+            if not part_id:
+                raise DependencyError(
+                    "n8n Drive broker create_participant_tree omitted "
+                    "'participant_folder_id'.")
+            result["participant"] = {"id": part_id, "name": participant,
+                                     "created": bool(r.get("participant_created"))}
+            result["participant_folder_id"] = part_id
+            deepest = part_id
+    result["deepest_folder_id"] = deepest
+    return result
+
+
+def broker_capabilities():
+    """Ask the broker which actions it implements (action `capabilities`). Returns the
+    implemented-action list, or None if the deployed workflow predates the capabilities
+    probe (an old create_book_tree-only broker) -- in which case the caller falls back to
+    a per-action probe. Never raises on an application-level status; transport/config
+    problems still raise via _broker_request."""
+    status, parsed = _broker_request("capabilities", {})
+    if status in (200, 201) and isinstance(parsed.get("implemented_actions"), list):
+        return [str(a) for a in parsed["implemented_actions"]]
+    return None
+
+
+def broker_preflight():
+    """SHORT E9 fix -- probe the broker for the REQUIRED per-Doc/tree action set and
+    report exactly which (if any) are MISSING, so provisioning HOLDs early by name
+    instead of dead-ending mid-run at S7/S8 on a client box whose broker is not the
+    current version.
+
+    In local-SA mode this is a clean pass (the local SA performs every op). In broker
+    mode it asks `capabilities`; if the broker predates that probe it falls back to a
+    side-effect-free `probe:true` request per action. Returns a machine dict:
+      {ok, mode, broker_configured, capabilities, required_actions, missing_actions, ...}."""
+    if not broker_configured():
+        return {"ok": True, "mode": "local_sa", "broker_configured": False,
+                "required_actions": list(BROKER_REQUIRED_ACTIONS), "missing_actions": [],
+                "note": "no n8n Drive broker on this box; the local service account "
+                        "performs the per-Doc/tree ops (operator's own box)."}
+    required = list(BROKER_REQUIRED_ACTIONS)
+    try:
+        status, parsed = _broker_request("capabilities", {})
+    except (DependencyError, ValidationError) as exc:
+        return {"ok": False, "mode": "n8n_broker", "broker_configured": True,
+                "required_actions": required, "missing_actions": required,
+                "error": "%s: %s" % (type(exc).__name__, exc),
+                "broker": _broker_credential_status()}
+    if status in (401, 403):
+        return {"ok": False, "mode": "n8n_broker", "broker_configured": True,
+                "auth_failed": True, "required_actions": required,
+                "missing_actions": required,
+                "detail": "the broker rejected the webhook token (check %s)."
+                          % N8N_WEBHOOK_TOKEN_ENV,
+                "broker": _broker_credential_status()}
+    caps = None
+    if status in (200, 201) and isinstance(parsed.get("implemented_actions"), list):
+        caps = [str(a) for a in parsed["implemented_actions"]]
+    if caps is not None:
+        missing = [a for a in required if a not in caps]
+    else:
+        # Old broker (no capabilities action): probe each action side-effect-free.
+        missing = []
+        for a in required:
+            try:
+                st, pj = _broker_request(a, {"probe": True})
+            except (DependencyError, ValidationError):
+                missing.append(a)
+                continue
+            implemented = (
+                st in (200, 201)
+                and pj.get("ok") is not False
+                and pj.get("implemented") is not False
+                and pj.get("error") not in ("not_implemented", "unknown_action"))
+            if not implemented:
+                missing.append(a)
+    return {"ok": not missing, "mode": "n8n_broker", "broker_configured": True,
+            "capabilities": caps, "required_actions": required,
+            "missing_actions": missing, "broker": _broker_credential_status()}
 
 
 def provision_book_tree(client_key, producer_email, book_title, co_author=None,
@@ -899,7 +1156,12 @@ def deliver_doc(name, parent_folder_id, text=None, share_mode=None):
     """Create a Doc in the participant folder, insert text (read back), optionally
     share it (read back). `share_mode` is 'view', 'edit', or None:
     a DELIVERABLE Doc uses 'edit' (Trevor's law) so the co-author edits in place
-    and the engine pulls it back. Returns a machine-readable result dict."""
+    and the engine pulls it back. Returns a machine-readable result dict.
+
+    SELECTION: on a client box the n8n broker performs this with Trevor's Google creds
+    (which never leave n8n); the operator's own box falls back to the local SA."""
+    if broker_configured():
+        return broker_create_doc(name, parent_folder_id, text=text, share_mode=share_mode)
     token = mint_token()
     doc = create_doc(token, name, parent_folder_id)
     doc_id = doc["id"]
@@ -928,7 +1190,13 @@ def deliver_media(name, parent_folder_id, local_path, mime=None, share_mode=None
     """Land a binary (S7 cover PNG) in the participant folder, read back, optionally
     share it. `share_mode` is 'view', 'edit', or None. Cover images stay 'view'
     (an image is not a deliverable Doc: nothing is pulled back from it and the
-    co-author only picks a favorite). Returns a machine-readable result dict."""
+    co-author only picks a favorite). Returns a machine-readable result dict.
+
+    SELECTION: on a client box the n8n broker lands the bytes (base64-relayed) with
+    Trevor's Google creds; the operator's own box falls back to the local SA."""
+    if broker_configured():
+        return broker_upload_media(name, parent_folder_id, local_path, mime=mime,
+                                   share_mode=share_mode)
     token = mint_token()
     up = upload_media(token, name, parent_folder_id, local_path, mime)
     file_id = up["id"]
@@ -1005,6 +1273,9 @@ def _verify_parent(token, file_id, parent_id):
 
 
 def do_share(file_id, share_mode="view"):
+    # On a client box the broker performs the share; the operator's box uses the local SA.
+    if broker_configured():
+        return broker_share(file_id, share_mode)
     token = mint_token()
     permission_id, mode_applied = _apply_share(token, file_id, share_mode)
     meta = files_get(token, file_id, fields="id,name,webViewLink")
@@ -1023,7 +1294,12 @@ def pull_doc_text(doc_id):
     the engine calls this to lift whatever they typed into their shared editable
     Doc, verbatim, and freezes it as the new stage artifact. Wraps docs_read_text
     over a freshly minted token; byte-exactness is proven in self_test with the
-    Docs API mocked. WHOSE account is impersonated is unchanged (mint_token)."""
+    Docs API mocked. WHOSE account is impersonated is unchanged (mint_token).
+
+    SELECTION: on a client box the broker returns the Doc body; the operator's own box
+    reads it via the local SA. Either way do_pull_doc_text freezes the exact bytes."""
+    if broker_configured():
+        return broker_pull_doc_text(doc_id)
     token = mint_token()
     return docs_read_text(token, doc_id)
 
@@ -1273,8 +1549,11 @@ def self_test():
     _saved = {k: globals().get(k) for k in
               ("list_permissions", "_json_api", "mint_token",
                "share_view_only", "share_edit",
-               "_verify_anyone_reader", "_verify_anyone_writer")}
+               "_verify_anyone_reader", "_verify_anyone_writer", "broker_configured")}
     try:
+        # This block exercises the LOCAL-SA path deterministically, independent of any
+        # ambient N8N_DRIVE_* env on the test box.
+        globals()["broker_configured"] = lambda: False
         globals()["list_permissions"] = lambda *_a, **_k: [
             {"type": "anyone", "role": "writer", "allowFileDiscovery": False}]
         assert _verify_anyone_writer("t", "f", None) is True
@@ -1347,7 +1626,7 @@ def self_test():
                 globals()[k] = v
 
     # -- n8n Drive credential broker (HTTP MOCKED; no network) --
-    _bsaved = {k: globals().get(k) for k in ("_broker_post", "mint_token")}
+    _bsaved = {k: globals().get(k) for k in ("_broker_post", "_broker_request", "mint_token")}
     _benv = {k: os.environ.get(k) for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV)}
     try:
         for k in (N8N_WEBHOOK_URL_ENV, N8N_WEBHOOK_TOKEN_ENV):
@@ -1395,17 +1674,77 @@ def self_test():
             missing_ids = True
         assert missing_ids, "a broker response without folder ids must raise"
 
-        # per-Doc broker actions are STUBBED (flagged, not faked).
-        for a in BROKER_STUB_ACTIONS:
-            stubbed = False
+        # per-Doc broker actions are IMPLEMENTED (routed, normalized, not faked).
+        # create_doc: POSTs the right action+payload and returns deliver_doc's shape.
+        globals()["_broker_post"] = lambda a, p: (
+            captured.update({"action": a, "payload": dict(p)})
+            or {"ok": True, "doc_id": "DOC1", "doc_url": "https://docs/DOC1",
+                "share_mode": "edit", "permission_id": "PW"})
+        d = broker_create_doc("client-DOC", "PARENT", text="body", share_mode="edit")
+        assert captured["action"] == "create_doc"
+        assert captured["payload"] == {"parent_folder_id": "PARENT",
+                                       "name": "client-DOC", "text": "body",
+                                       "share_mode": "edit"}, captured
+        assert d["doc_id"] == "DOC1" and d["doc_url"] == "https://docs/DOC1"
+        assert d["via"] == "n8n_broker" and d["edit_shared"] is True and d["verified"] is True
+        # share_doc_edit
+        globals()["_broker_post"] = lambda a, p: (
+            captured.update({"action": a, "payload": dict(p)})
+            or {"ok": True, "share_mode": "view", "permission_id": "PV",
+                "view_url": "https://drive/F1"})
+        s = broker_share("F1", "view")
+        assert captured["action"] == "share_doc_edit" and s["view_url"] == "https://drive/F1"
+        assert s["share_mode"] == "view" and s["via"] == "n8n_broker"
+        # pull_doc_text returns the Doc body verbatim (the caller freezes bytes).
+        globals()["_broker_post"] = lambda a, p: (
+            captured.update({"action": a, "payload": dict(p)})
+            or {"ok": True, "text": "Verbatim body.\n"})
+        assert broker_pull_doc_text("DOCX") == "Verbatim body.\n"
+        assert captured["action"] == "pull_doc_text" and captured["payload"] == {"doc_id": "DOCX"}
+        # a per-Doc response missing its id/text fails loudly (never a silent no-op).
+        globals()["_broker_post"] = lambda a, p: {"ok": True}
+        for fn in (lambda: broker_create_doc("n", "p"),
+                   lambda: broker_pull_doc_text("d")):
+            raised = False
             try:
-                broker_stub(a)
+                fn()
             except DependencyError:
-                stubbed = True
-            assert stubbed, "broker per-Doc action %r must be a flagged stub" % a
+                raised = True
+            assert raised, "a per-Doc broker response missing its id/text must raise"
+        # deliver_doc SELECTS the broker when configured (the local SA is never minted).
+        globals()["_broker_post"] = lambda a, p: {
+            "ok": True, "doc_id": "DOC2", "doc_url": "u", "share_mode": p.get("share_mode")}
+        dd = deliver_doc("nm", "par", text="t", share_mode="edit")
+        assert dd["doc_id"] == "DOC2" and dd["via"] == "n8n_broker"
+
+        # broker-preflight: a capabilities list that covers every REQUIRED action passes;
+        # a short one HOLDs and names EXACTLY the missing actions.
+        globals()["_broker_request"] = lambda a, p: (
+            200, {"ok": True, "implemented_actions": list(BROKER_REQUIRED_ACTIONS)})
+        pf = broker_preflight()
+        assert pf["ok"] is True and pf["missing_actions"] == [], pf
+        globals()["_broker_request"] = lambda a, p: (
+            200, {"ok": True, "implemented_actions": ["create_book_tree"]})
+        pf2 = broker_preflight()
+        assert pf2["ok"] is False, pf2
+        assert set(pf2["missing_actions"]) == set(BROKER_DOC_ACTIONS) | {BROKER_PARTICIPANT_ACTION}, pf2
+        # an old broker with NO capabilities action -> per-action probe fallback: a 501
+        # not_implemented marks that action missing.
+        def _probe_req(a, p):
+            if a == "capabilities":
+                return 501, {"ok": False, "error": "unknown_action"}
+            if a in BROKER_DOC_ACTIONS or a == BROKER_PARTICIPANT_ACTION:
+                return 501, {"ok": False, "error": "not_implemented"}
+            return 200, {"ok": True, "implemented": True}
+        globals()["_broker_request"] = _probe_req
+        pf3 = broker_preflight()
+        assert pf3["ok"] is False and "create_book_tree" not in pf3["missing_actions"], pf3
+        assert set(pf3["missing_actions"]) == set(BROKER_DOC_ACTIONS) | {BROKER_PARTICIPANT_ACTION}, pf3
 
         # _broker_post refuses a non-https URL (token must never travel cleartext).
+        # Restore the REAL _broker_post + _broker_request so the https guard runs.
         globals()["_broker_post"] = _bsaved["_broker_post"]
+        globals()["_broker_request"] = _bsaved["_broker_request"]
         os.environ[N8N_WEBHOOK_URL_ENV] = "http://insecure.example/webhook/x"
         cleartext_refused = False
         try:
@@ -1425,7 +1764,9 @@ def self_test():
 
     print("drive_adapter self-test: OK (auth assembly, escaping, read-back guard, "
           "per-client root resolution + slot refusal, exit-code contract, EDIT share, "
-          "pull_doc_text byte-exact, n8n broker select + payload + https-only)")
+          "pull_doc_text byte-exact, n8n broker select + payload + https-only, "
+          "per-Doc broker create_doc/share/pull + deliver_doc select, "
+          "broker-preflight capability/probe HOLD-by-name)")
     return EX_OK
 
 
@@ -1511,6 +1852,12 @@ def build_parser():
         "broker-status",
         help="report whether the n8n Drive broker is configured (SET/NOT-SET only)")
 
+    bp = sub.add_parser(
+        "broker-preflight",
+        help="probe the broker's capabilities; HOLD (exit 3) naming any REQUIRED "
+             "per-Doc/tree action it does not yet implement (local-SA mode: clean pass)")
+    bp.add_argument("--json", action="store_true", help="(default) JSON output")
+
     return p
 
 
@@ -1563,9 +1910,15 @@ def dispatch(args):
         _out({"ok": True, "action": "broker-status",
               "broker_configured": broker_configured(),
               "broker": _broker_credential_status(),
-              "implemented_actions": ["create_book_tree"],
-              "stub_actions": list(BROKER_STUB_ACTIONS)})
+              "implemented_actions": list(BROKER_REQUIRED_ACTIONS),
+              "per_doc_actions": list(BROKER_DOC_ACTIONS)})
         return EX_OK
+    if cmd == "broker-preflight":
+        pf = broker_preflight()
+        _out(pf)
+        # A missing/under-provisioned broker is a HELD dependency (exit 3) so the caller
+        # STOPS provisioning early instead of dead-ending mid-run at S7/S8.
+        return EX_OK if pf.get("ok") else EX_DEP
     raise ValidationError("no subcommand given; run with -h for usage.")
 
 
