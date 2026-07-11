@@ -788,8 +788,19 @@ fi
 #   rc=3 (AF-WORKSPACE-SHELL: a dept is SHELL/PARTIAL)       -> HARD FAIL.
 #   rc=5 (AF-PHANTOM-DEPT-TREE: one canonical dept materialized
 #         twice as sibling dirs, or a '.bak' dept tree on disk) -> HARD FAIL (C5).
+#   rc=6 (AF-BOARD-JOIN-DRIFT: chosen != provisioned != displayed — the C-series
+#         JOIN. A department the client PAID FOR with no Command Center column is a
+#         department they CANNOT SEE; a ghost column has no tree behind it)
+#                                                             -> HARD FAIL (C7).
 #   rc=4 (no workspace / not built yet)                       -> warn (CHECK 1.1 owns it).
 #   rc=2 (gate could not run)                                 -> warn.
+#
+# EVERY non-zero rc the delegate can return MUST have an explicit arm below. A WARN
+# does NOT change this script's exit code (see the FAIL==0 -> exit 0 at the bottom),
+# so any drift class that falls through to the `*)` catch-all is FAIL-OPEN: the box
+# prints "ALL CHECKS PASSED" while a proven defect sits on it, mislabeled as an
+# infrastructure error. When qc-assert-workspace-departments-built.sh grows a new
+# rc, it gets an arm HERE in the same change — that is the contract.
 echo
 blue "── CHECK X.11: Workspace department materialization ──"
 WORKSPACE_SHELL_SCRIPT=""
@@ -827,12 +838,40 @@ if [[ -n "$WORKSPACE_SHELL_SCRIPT" ]]; then
           *"COLLISION:"*|*"PHANTOM BACKUP DIR:"*) red "$_wsline" ;;
         esac
       done <<< "$WORKSPACE_SHELL_OUT" ;;
+    6)
+      red "  ✗ X.11 AF-BOARD-JOIN-DRIFT — the departments the client CHOSE, the departments PROVISIONED on disk, and the departments DISPLAYED on their Command Center board do not agree"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.11|Board-join drift (chosen != provisioned != displayed) — a department the client paid for may have NO board column (they cannot see it), or a ghost column has no tree behind it|Run: python3 23-ai-workforce-blueprint/scripts/prove-board-join.py --json   # the full six-class diff, then: python3 32-command-center-setup/scripts/seed-workspaces.py   # re-seed the board from the chosen list")
+      # surface the drift-class lines (the six classes + the named departments)
+      while IFS= read -r _wsline; do
+        case "$_wsline" in
+          *"CHOSEN_NOT_PROVISIONED"*|*"PROVISIONED_NOT_CHOSEN"*|\
+          *"CHOSEN_NOT_DISPLAYED"*|*"DISPLAYED_NOT_CHOSEN"*|\
+          *"PROVISIONED_NOT_DISPLAYED"*|*"DISPLAYED_NOT_PROVISIONED"*|\
+          *"CANNOT VOUCH"*) red "$_wsline" ;;
+        esac
+      done <<< "$WORKSPACE_SHELL_OUT" ;;
     4)
       yellow "  ⚠ X.11 No materialized workspace found yet (workforce not built — see CHECK 1.1)"; WARN=$((WARN+1))
       WARNINGS+=("X.11|No workspace departments dir resolved (workforce not built yet)|Run Skill 23 build; this becomes a hard-fail once a workspace exists") ;;
     *)
-      yellow "  ⚠ X.11 Workspace-shell gate could not run (rc=$WORKSPACE_SHELL_RC)"; WARN=$((WARN+1))
-      WARNINGS+=("X.11|Workspace-shell gate could not run (rc=$WORKSPACE_SHELL_RC)|Ensure department-floor.py + python3 are present; re-run scripts/qc-assert-workspace-departments-built.sh") ;;
+      # FAIL-CLOSED CATCH-ALL: an UNKNOWN non-zero rc is a gate this consumer has not
+      # been taught. It must never be downgraded to a WARN — a WARN does not change
+      # the exit code, so an untaught drift class would print "ALL CHECKS PASSED".
+      # Only rc=0 is a pass; everything unrecognised and non-zero HARD-FAILS.
+      if [[ "$WORKSPACE_SHELL_RC" -eq 2 ]]; then
+        yellow "  ⚠ X.11 Workspace gate could not run (rc=2)"; WARN=$((WARN+1))
+        WARNINGS+=("X.11|Workspace gate could not run (rc=2)|Ensure department-floor.py + prove-board-join.py + python3 are present; re-run scripts/qc-assert-workspace-departments-built.sh")
+      else
+        red "  ✗ X.11 Workspace gate returned an UNRECOGNISED non-zero rc=$WORKSPACE_SHELL_RC — refusing to pass on an unknown verdict"
+        FAIL=$((FAIL+1))
+        FAILURES+=("X.11|Unrecognised workspace-gate rc=$WORKSPACE_SHELL_RC (this consumer has not been taught this drift class)|Run: bash scripts/qc-assert-workspace-departments-built.sh to see the verdict, and add an explicit arm for rc=$WORKSPACE_SHELL_RC to CHECK X.11 in scripts/qc-system-integrity.sh")
+        while IFS= read -r _wsline; do
+          case "$_wsline" in
+            *"INVARIANT VIOLATED"*|*"AF-"*) red "$_wsline" ;;
+          esac
+        done <<< "$WORKSPACE_SHELL_OUT"
+      fi ;;
   esac
 else
   yellow "  ⚠ X.11 qc-assert-workspace-departments-built.sh not found — skipping workspace-shell check"

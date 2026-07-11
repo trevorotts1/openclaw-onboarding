@@ -336,8 +336,27 @@ else:
               f"reconciliation to write the artifact; the workspace checks below still ran.",
               file=sys.stderr)
     else:
-        _jrc = _jmod.main(["--company-dir", str(_company_dir),
-                           "--departments-dir", str(departments_dir)])
+        # COMPANY SCOPING (multi-company boxes): the DISPLAY layer must be read for
+        # THIS company only. One mission-control.db can hold several companies'
+        # `workspaces` rows; joining this company's tree against ALL of them
+        # manufactures FALSE drift (every other company's department shows up as
+        # DISPLAYED_NOT_CHOSEN / DISPLAYED_NOT_PROVISIONED) — and because
+        # lib-onboarding-state.sh maps any non-zero rc from this gate to "not
+        # materialized" (feeding oc_overall_goal_check AND the watchdog kill
+        # condition), that false drift would block "done" forever on a healthy box.
+        # The resolver lives in prove-board-join.py (ONE source of truth, shared with
+        # CI and with a bare operator run) and returns None on a single-company board,
+        # where no filter is needed and none is applied.
+        _jargs = ["--company-dir", str(_company_dir),
+                  "--departments-dir", str(departments_dir)]
+        try:
+            _cslug = _jmod.resolve_company_slug_from_db(
+                _company_dir, _jmod.resolve_db(None))
+        except Exception:  # noqa: BLE001 — resolution is best-effort; main() re-resolves
+            _cslug = None
+        if _cslug:
+            _jargs += ["--company-slug", _cslug]
+        _jrc = _jmod.main(_jargs)
         if _jrc == _jmod.RC_NOT_APPLICABLE:
             print("AF-BOARD-JOIN-DRIFT: CHECK SKIPPED — no Command Center board exists on "
                   "this box yet (no mission-control.db / no workspaces table), so no "
