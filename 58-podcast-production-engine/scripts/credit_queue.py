@@ -439,30 +439,72 @@ def operator_stdout_alert(
     print(line, file=sys.stderr)
 
 
+# alert-dedup.py exposes {raise, recover, flush-digest, status}; its `raise`
+# subcommand takes --failure-class and --severity (status|decision|digest) ONLY.
+# The historical `notify --class/--affected` invocation never existed there, so
+# argparse killed it with exit 2 and every credit-out founder alert was spooled
+# but silently never delivered. Map the two failure classes this hook raises
+# onto real severities (furnace design Section 8):
+#   queue_aged_out            -> digest  batched item, flushed once per day
+#   insufficient_credits (default) -> status  6h window collapses N held jobs into
+#                                ONE alert; --queued-count carries the count.
+_DIGEST_FAILURE_CLASSES = frozenset({"queue_aged_out"})
+
+
+def build_dedup_raise_argv(
+    alert_cmd: list[str],
+    client_id: str,
+    service: str,
+    failure_class: str,
+    message: str,
+    affected: int,
+) -> list[str]:
+    """Pure builder for the alert-dedup.py `raise` invocation this hook emits.
+
+    Side-effect free so the contract test can drive it against the REAL
+    alert-dedup.py and prove the subcommand/severity are ones the script
+    actually accepts (exit 0), not the dead `notify`/`--class` that exited 2 and
+    dropped every founder alert on the floor.
+    """
+    if failure_class in _DIGEST_FAILURE_CLASSES:
+        severity = "digest"
+        count_args: list[str] = []
+    else:
+        severity = "status"
+        count_args = ["--queued-count", str(affected)]
+    return (
+        list(alert_cmd)
+        + [
+            "raise",
+            "--client",
+            client_id,
+            "--service",
+            service,
+            "--failure-class",
+            failure_class,
+            "--severity",
+            severity,
+            "--message",
+            redact(message),
+        ]
+        + count_args
+    )
+
+
 def make_alert_dedup_hook(alert_cmd: list[str]) -> AlertHook:
     """Route founder alerts through alert-dedup.py (furnace Guardrail 7).
 
     alert-dedup.py owns keying (client + service + failure_class), the 6-hour
     window, the storm cap, and the gateway-only Telegram path. This hook only
-    hands it the key and payload; it never sends Telegram itself.
+    hands it the key and payload via the real `raise` subcommand; it never sends
+    Telegram itself.
     """
 
     def _hook(client_id, service, failure_class, message, affected):
         subprocess.run(
-            list(alert_cmd)
-            + [
-                "notify",
-                "--client",
-                client_id,
-                "--service",
-                service,
-                "--failure-class",
-                failure_class,
-                "--affected",
-                str(affected),
-                "--message",
-                redact(message),
-            ],
+            build_dedup_raise_argv(
+                alert_cmd, client_id, service, failure_class, message, affected
+            ),
             check=False,
         )
 

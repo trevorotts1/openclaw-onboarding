@@ -407,11 +407,66 @@ def self_meter(state_dir, client, probe_count, config_path):
 # ---------------------------------------------------------------------------
 # Alert routing (sole founder path is alert-dedup; we enqueue, never send)
 # ---------------------------------------------------------------------------
+# Map this script's alert vocabulary onto alert-dedup.py's REAL contract.
+# alert-dedup.py exposes subcommands {raise, recover, flush-digest, status} and,
+# for `raise`, severities (status, decision, digest) ONLY. The historical
+# `notify` subcommand and the 'canary'/'recovery' severities never existed
+# there, so those invocations died at argparse (exit 2, "invalid choice") and
+# every founder alert -- overspend, new_fail, recovered, aged-out digest, and
+# any future stale-job notice -- was spooled but NEVER pushed to the gateway.
+# This table restores live delivery while the spool stays the source of truth:
+#   status   -> raise  --severity status    service outage; 6h window + storm cap
+#   digest   -> raise  --severity digest    aged-out/batched; daily flush
+#   canary   -> raise  --severity decision  overspend safety alert; always-send
+#   recovery -> recover                     service restored; one note, clears key
+_ALERT_SEVERITY_MAP = {
+    "status": ("raise", "status"),
+    "digest": ("raise", "digest"),
+    "canary": ("raise", "decision"),
+    "decision": ("raise", "decision"),
+    "recovery": ("recover", None),
+    "recover": ("recover", None),
+}
+
+
+def _dedup_argv(python_exe, dedup_path, state_dir, client, service,
+                failure_class, severity, message, episodes=None, dry_run=False):
+    """Build the exact alert-dedup.py argv for one founder alert.
+
+    Pure and side-effect free so the contract test can assert the invocation is
+    one alert-dedup.py actually accepts (a real subcommand + severity, never the
+    dead `notify`/`--class`) and drive it against the REAL script. Always pins
+    --state-dir to the caller's engine state dir so alert dedup state is
+    per-client and never leaks into the shared default dir."""
+    subcommand, mapped_sev = _ALERT_SEVERITY_MAP.get(severity, ("raise", "status"))
+    eps = list(episodes or [])
+    argv = [python_exe, dedup_path, subcommand,
+            "--state-dir", state_dir,
+            "--client", client, "--service", service,
+            "--failure-class", failure_class,
+            "--message", message]
+    if subcommand == "raise":
+        argv += ["--severity", mapped_sev]
+        if mapped_sev == "decision" and not eps:
+            # decision-class dedups per episode and alert-dedup.py requires an
+            # --episode; a client-wide safety alert (overspend) has none, so key
+            # it by its failure class -> one always-send alert per event.
+            eps = [failure_class]
+        for ep in eps:
+            argv += ["--episode", ep]
+    if dry_run:
+        argv += ["--dry-run"]
+    return argv
+
+
 def route_alert(state_dir, client, service, failure_class, severity, message,
-                episodes=None):
+                episodes=None, dry_run=False):
     """Enqueue a founder notice. Durable spool is the source of truth; if
-    alert-dedup is present it is invoked best-effort. This NEVER sends a chat
-    message and NEVER goes around the gateway."""
+    alert-dedup is present it is invoked best-effort so the alert also delivers
+    live. This NEVER sends a chat message and NEVER goes around the gateway.
+
+    Returns the alert-dedup subprocess result (or None when the script is absent
+    or the invocation could not run) so callers/tests can observe delivery."""
     alert = {
         "at": _now_iso(),
         "client": client,
@@ -430,18 +485,26 @@ def route_alert(state_dir, client, service, failure_class, severity, message,
         _eprint("smoke-test: could not spool alert (%s)" % exc)
 
     dedup = os.path.join(_script_dir(), "alert-dedup.py")
-    if os.path.exists(dedup):
-        cmd = [sys.executable, dedup, "notify",
-               "--client", client, "--service", service,
-               "--class", failure_class, "--severity", severity,
-               "--message", message]
-        for ep in (episodes or []):
-            cmd += ["--episode", ep]
-        try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        except Exception as exc:  # pragma: no cover
-            _eprint("smoke-test: alert-dedup invocation failed (%s); alert is "
-                    "spooled for its next drain" % exc)
+    if not os.path.exists(dedup):
+        return None
+    cmd = _dedup_argv(sys.executable, dedup, state_dir, client, service,
+                      failure_class, severity, message,
+                      episodes=episodes, dry_run=dry_run)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except Exception as exc:  # pragma: no cover
+        _eprint("smoke-test: alert-dedup invocation failed (%s); alert is "
+                "spooled for its next drain" % exc)
+        return None
+    if proc.returncode != 0:
+        # Delivery could not complete (e.g. no founder target configured, or the
+        # gateway rejected the send). The alert is already spooled, so the next
+        # drain retries it; surface the code rather than swallow it silently.
+        tail = (proc.stderr or "").strip().splitlines()
+        _eprint("smoke-test: alert-dedup rc=%d for %s/%s; alert stays spooled%s"
+                % (proc.returncode, service, failure_class,
+                   (" (%s)" % tail[-1]) if tail else ""))
+    return proc
 
 
 # ---------------------------------------------------------------------------
