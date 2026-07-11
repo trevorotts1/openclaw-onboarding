@@ -435,6 +435,46 @@ else
   fi
 fi
 
+# ---- C4: compute the effective gate verdict ONCE (mirrors the final exit-code
+# logic below) so the false-done guard and the state write can hard-require it ----
+if [ "$ZHE_STATUS" = "failed" ] && [ "${ZHE_ENFORCE:-1}" = "1" ]; then
+  GATE_RC=9
+elif [ "$BOUNDARY_STATUS" != "done" ]; then
+  GATE_RC=7
+elif [ "$TRIO_STATUS" != "done" ]; then
+  GATE_RC=6
+elif [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
+  GATE_RC=0
+elif [ "$ROLE_STATUS" != "done" ] && [ "$SOP_STATUS" != "done" ]; then
+  GATE_RC=4
+elif [ "$ROLE_STATUS" != "done" ]; then
+  GATE_RC=2
+else
+  GATE_RC=3
+fi
+
+# ---- C4 FALSE-DONE GUARD: hard-require gate rc=0 before a closeout stamp is honored ----
+# The incident this closes: buildCompletedAt was stamped while sopLibraryStatus=failed,
+# so the closeout ran over an incomplete role/SOP library. This gate is the authority
+# that runs in EVERY path (build-workforce.py, the resume cron, manual). When the gate
+# does NOT pass (GATE_RC != 0) yet buildCompletedAt is ALREADY set, that is a FALSE
+# DONE — block the closeout (closeoutStatus=blocked-libraries-incomplete, the exact
+# shape run-closeout.sh writes) so the closeout cannot proceed over a failed library
+# gate. Guarded on buildCompletedAt being present, so a normal in-flight build (no
+# stamp yet) is never touched and no ping loop is created; guarded off terminal
+# closeout states (done|sent) so a genuinely-finished closeout is never re-blocked.
+FALSE_DONE_BLOCK=0
+if [ -f "$STATE_FILE" ] && [ "$GATE_RC" != "0" ]; then
+  _BC_AT="$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")"
+  _CO_ST="$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")"
+  if [ -n "$_BC_AT" ] && [ "$_CO_ST" != "done" ] && [ "$_CO_ST" != "sent" ]; then
+    FALSE_DONE_BLOCK=1
+    echo "[verify-library-gate] FALSE-DONE GUARD: buildCompletedAt=$_BC_AT is set but the" \
+         "role/SOP library gate FAILS (rc=$GATE_RC: ${FAIL_REASON:-incomplete}). Blocking closeout" \
+         "(closeoutStatus=blocked-libraries-incomplete) until the gate passes rc=0." >&2
+  fi
+fi
+
 # ---- write the gate fields into the state file (atomic), if it exists ----
 if [ -f "$STATE_FILE" ]; then
   TMP="$(mktemp)"
@@ -445,6 +485,8 @@ if [ -f "$STATE_FILE" ]; then
     --arg trio "$TRIO_STATUS" \
     --arg boundary "$BOUNDARY_STATUS" \
     --arg zhe "$ZHE_STATUS" \
+    --arg blockcloseout "$FALSE_DONE_BLOCK" \
+    --arg gaterc "$GATE_RC" \
     --argjson fail "$FAIL_JSON" \
     --argjson perdept "$(printf '%s' "$GATE_JSON" | jq '.per_dept')" \
     '
@@ -454,6 +496,11 @@ if [ -f "$STATE_FILE" ]; then
       | .sopAuthoringBoundaryStatus = $boundary
       | .zheStatus = $zhe
       | .libraryFailureReason = $fail
+      | (if $blockcloseout == "1"
+           then (.closeoutStatus = "blocked-libraries-incomplete"
+                 | .closeoutBlockReason = ("verify-library-gate rc=" + $gaterc
+                     + " (role/SOP library gate not passing while buildCompletedAt is set)"))
+           else . end)
       | .departments = ((.departments // []) | map(
           . as $d
           | (($d.slug // $d.dept_id // $d.id // $d.name // "") | tostring) as $key
@@ -494,23 +541,11 @@ if [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
   fi
 fi
 
-# ---- exit code = the gate verdict ----
+# ---- exit code = the gate verdict (computed once above as GATE_RC) ----
 # ZHE acceptance failure (rc 9) takes priority over ALL other verdicts, and blocks
 # BY DEFAULT (ZHE_ENFORCE unset behaves as =1; see the ZHE GATE block above). The
-# explicit ZHE_ENFORCE=0 escape hatch downgrades it to non-blocking.
-# Otherwise boundary failure (rc 7) takes priority.
-if [ "$ZHE_STATUS" = "failed" ] && [ "${ZHE_ENFORCE:-1}" = "1" ]; then
-  exit 9
-elif [ "$BOUNDARY_STATUS" != "done" ]; then
-  exit 7
-elif [ "$TRIO_STATUS" != "done" ]; then
-  exit 6
-elif [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
-  exit 0
-elif [ "$ROLE_STATUS" != "done" ] && [ "$SOP_STATUS" != "done" ]; then
-  exit 4
-elif [ "$ROLE_STATUS" != "done" ]; then
-  exit 2
-else
-  exit 3
-fi
+# explicit ZHE_ENFORCE=0 escape hatch downgrades it to non-blocking. Otherwise
+# boundary failure (rc 7) takes priority, then trio (rc 6), then role/SOP (2/3/4),
+# then rc 0. build-workforce.py HARD-REQUIRES this rc=0 before signalling a complete
+# workforce (C4), so a failing gate can never be stamped as done.
+exit "$GATE_RC"

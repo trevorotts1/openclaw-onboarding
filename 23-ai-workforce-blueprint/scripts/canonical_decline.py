@@ -22,8 +22,14 @@ to the LARGER floor. Accepted forms:
      — all four fields required (the shape record-dept-decision.sh writes).
   2. canonicalReconciliation.ownerDeclineConfirmed == true + decisions[cid]=="no"
      (bare string honored under the block-level owner gate, backward-compat).
-  3. canonicalReconciliation.ownerDeclineConfirmed == true + declinedDepartments[]
-     (flat list honored under the block-level owner gate).
+  3. declinedDepartments[] DICT entry with a per-entry provenance TRIPLE
+     {id, decidedBy, decidedAt} — read from BOTH the canonicalReconciliation
+     block AND the build-state top level. Each dict self-attributes its decline,
+     so a complete triple is honored WITHOUT the block-level ownerDeclineConfirmed
+     flag (the finalize-directive shape). A dict missing any of id/decidedBy/
+     decidedAt is REJECTED and its dept STAYS in the floor (fail-safe).
+  4. canonicalReconciliation.ownerDeclineConfirmed == true + declinedDepartments[]
+     BARE STRING entries (flat list honored under the block-level owner gate).
 
 ALL ids returned by this module are NORMALIZED via norm() so every caller
 compares in the SAME normalized space.
@@ -130,23 +136,72 @@ def analyze(build_state, quiet=False):
                         f"Decline IGNORED — dept stays in floor (fail-safe). "
                         f"Set ownerDeclineConfirmed=true or use object-form provenance.")
 
-    flat_list = bs.get("declinedDepartments", []) or []
-    if flat_list:
-        if owner_confirmed:
-            for cid in flat_list:
-                ncid = norm(cid)
+    # declinedDepartments[] appears in the wild at TWO build-state levels and must
+    # be read from BOTH — reading only the top level silently ignored the whole
+    # finalize-directive decline set (the C1 silent-ignore bug):
+    #   * canonicalReconciliation.declinedDepartments — the finalize-directive shape:
+    #       a list of DICT entries {id, name, reason, decidedBy, decidedAt}.
+    #   * declinedDepartments (build-state top level) — the legacy flat form.
+    flat_sources = []
+    recon_flat = recon.get("declinedDepartments", []) if isinstance(recon, dict) else []
+    if isinstance(recon_flat, list):
+        flat_sources.extend(recon_flat)
+    top_flat = bs.get("declinedDepartments", [])
+    if isinstance(top_flat, list):
+        flat_sources.extend(top_flat)
+
+    for entry in flat_sources:
+        if isinstance(entry, dict):
+            # DICT entry — the finalize directive attributes EACH decline in place.
+            # A complete per-entry provenance TRIPLE (id + decidedBy + decidedAt,
+            # all non-empty) honors the decline WITHOUT the block-level
+            # ownerDeclineConfirmed flag. A malformed dict (any of the three
+            # missing/empty) is REJECTED and the dept STAYS in the floor — a bad
+            # entry must never shrink the mandatory floor (fail-safe).
+            eid = str(entry.get("id", "")).strip()
+            has_triple = (
+                bool(eid)
+                and bool(str(entry.get("decidedBy", "")).strip())
+                and bool(str(entry.get("decidedAt", "")).strip())
+            )
+            if has_triple:
+                ncid = norm(eid)
                 declined.add(ncid)
                 decided.setdefault(ncid, "no")
+            elif owner_confirmed and eid:
+                # Backward-compat: the block-level owner gate still honors an
+                # id-bearing dict entry even without the per-entry triple.
+                ncid = norm(eid)
+                declined.add(ncid)
+                decided.setdefault(ncid, "no")
+            else:
+                rejections.append({"id": eid or "<no-id>",
+                                   "reason": "declinedDepartments[] dict entry missing provenance "
+                                             "triple (need id/decidedBy/decidedAt) and no ownerDeclineConfirmed"})
+                _warn(
+                    f"[DECLINE REJECTED] declinedDepartments[] dict entry '{eid or '<no-id>'}' is "
+                    f"missing its per-entry provenance triple (id/decidedBy/decidedAt) and "
+                    f"ownerDeclineConfirmed is not true. Decline IGNORED — dept stays in floor "
+                    f"(fail-safe). Provide id+decidedBy+decidedAt to honor this decline.")
         else:
-            for cid in flat_list:
-                rejections.append({"id": str(cid).strip(),
-                                   "reason": "declinedDepartments[] without ownerDeclineConfirmed"})
-            _warn(
-                f"[DECLINE REJECTED] declinedDepartments[] has {len(flat_list)} entr(ies) "
-                f"but canonicalReconciliation.ownerDeclineConfirmed is not true. "
-                f"ALL entries IGNORED — depts stay in floor (fail-safe). "
-                f"Set ownerDeclineConfirmed=true on the canonicalReconciliation block "
-                f"to honor a flat decline list.")
+            # BARE STRING entry — stays gated on the block-level owner flag exactly
+            # as before (a fabricated flat string list must not silently shrink the
+            # floor). Honored only under ownerDeclineConfirmed=true.
+            sval = str(entry).strip()
+            if not sval:
+                continue
+            if owner_confirmed:
+                ncid = norm(sval)
+                declined.add(ncid)
+                decided.setdefault(ncid, "no")
+            else:
+                rejections.append({"id": sval,
+                                   "reason": "declinedDepartments[] bare string without ownerDeclineConfirmed"})
+                _warn(
+                    f"[DECLINE REJECTED] declinedDepartments[] bare string '{sval}' without "
+                    f"ownerDeclineConfirmed=true. Decline IGNORED — dept stays in floor (fail-safe). "
+                    f"Use a dict entry with id+decidedBy+decidedAt provenance, or set "
+                    f"ownerDeclineConfirmed=true.")
 
     return {
         "decided": decided,
