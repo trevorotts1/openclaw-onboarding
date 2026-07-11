@@ -16,19 +16,31 @@ CLI:
                        intake_ledger.json status="complete" on success
   --selftest           run offline self-test in a temp dir; exits 0 on pass
   --signature --next / --signature --answer ID TEXT
-                       SAME blocked/validated turn-gate as --next/--answer, but
-                       walked over sp-8-questions.json (choice question, then
-                       q1..q8, then the frame question) into a SEPARATE ledger
-                       (working/interview/sp_intake_ledger.json). Emits exactly
-                       ONE question per --next call and BLOCKS on the active
-                       question until answered -- no batch payload on this path.
-                       The final answer auto-assembles working/copy/sp_intake.json
-                       and runs prove_sp_intake.py (AF-SP-8Q-SPLIT) against it.
-  --signature (no --next/--answer)
-                       legacy PLAN/inspection mode: emits the full intake plan
-                       (all 8 Questions + frame question) as one JSON payload
-                       for an agent to run one turn at a time itself; --record
-                       assembles + proves a pre-gathered answers file directly.
+                       THE REQUIRED turn-gate: SAME blocked/validated machinery
+                       as --next/--answer, but walked over sp-8-questions.json
+                       (choice question, then q1..q8, then the frame question)
+                       into a SEPARATE ledger (working/interview/sp_intake_ledger
+                       .json). Emits exactly ONE question per --next call and
+                       BLOCKS on the active question until answered -- no batch
+                       payload on this path. The final answer auto-assembles
+                       working/copy/sp_intake.json and runs prove_sp_intake.py
+                       (AF-SP-8Q-SPLIT) against it.
+  --signature --plan   read-only DRY-RUN / inspection mode ONLY: emits the full
+                       intake plan (all 8 Questions + frame question) as one
+                       JSON payload for offline review. Never use this to
+                       conduct the interview -- it is not a turn-gate.
+  --signature --record FILE
+                       assembles + proves a pre-gathered answers file directly
+                       (used by --plan-mode dry runs and by tooling that already
+                       gathered the answers through the turn-gate above).
+  --signature (bare -- no --next/--answer/--record/--plan/--selftest)
+                       E5 fix: the bare form NO LONGER emits the full intake
+                       payload (that was an unenforced escape hatch around the
+                       one-question-per-turn gate -- an agent could call it and
+                       receive all 9 questions to "self-pace"). It now prints a
+                       {"status": "use_turn_gate", "next_command": ...} pointer
+                       at the REAL turn-gate (--signature --next) and exits 0.
+                       Use --plan for the explicit, clearly-labeled dry-run.
 
 Dependency-free: stdlib only (json, os, pathlib, datetime, argparse, sys, tempfile, time).
 """
@@ -1539,10 +1551,47 @@ def _run_sp_prover(intake_path: pathlib.Path) -> Tuple[int, str]:
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
+def cmd_signature_pointer(args) -> None:
+    """--signature called bare (no --next/--answer/--record/--plan/--selftest).
+
+    E5 fix (the turn-gated signature path was OPTIONAL): the bare form used to
+    fall through to the full intake-plan payload (all 8 Questions + frame
+    question in ONE JSON block) — a caller never forced through --next/--answer
+    could dump the whole question set and "self-pace" the interview, silently
+    defeating the one-question-per-turn enforcement the REAL turn-gate provides.
+    The bare form now REFUSES to leak that payload: it prints a machine-readable
+    pointer at the mandatory turn-gate entrypoint and exits 0 (this is guidance,
+    not a hard failure — a caller that only had the old contract should not get
+    a cryptic error). --plan remains the explicit, clearly-labeled dry-run/
+    inspection escape hatch for anyone who genuinely needs to see the full
+    question set offline (never to conduct the interview)."""
+    run_dir_hint = args.run_dir or "<RUN_DIR>"
+    payload = {
+        "status": "use_turn_gate",
+        "message": (
+            "Bare --signature no longer emits the full question payload. The "
+            "Signature Presentation intake MUST be driven ONE question at a time "
+            "through the real turn-gate: --signature --next / --signature --answer "
+            "ID TEXT. The final validated answer auto-finalizes (assembles the "
+            "atomic record at working/copy/sp_intake.json and runs "
+            "prove_sp_intake.py against it). Use --signature --plan ONLY for a "
+            "read-only dry-run inspection of the full question set — never to "
+            "conduct the interview."
+        ),
+        "next_command": f"deck-intake-driver.py --signature --next --run-dir {run_dir_hint}",
+        "dry_run_inspection_command": "deck-intake-driver.py --signature --plan",
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
 def cmd_signature(args) -> None:
-    """--signature: emit the intake plan — the choice-first, one-question-at-a-time
-    conversation contract + the 8 Questions + frame question (default) — or, with
-    --record, assemble the answers into one atomic record and verify it."""
+    """--signature --plan: emit the intake plan — the choice-first, one-question-
+    at-a-time conversation contract + the 8 Questions + frame question — as a
+    read-only dry-run payload; or, with --record, assemble a pre-gathered
+    answers file into one atomic record and verify it. This function is ONLY
+    reached when --plan or --record is set (see main()) — the bare-call escape
+    hatch is handled by cmd_signature_pointer() instead (E5 fix)."""
     run_dir = pathlib.Path(args.run_dir).expanduser().resolve() if args.run_dir else None
 
     try:
@@ -1592,8 +1641,10 @@ def cmd_signature(args) -> None:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         sys.exit(0 if passed else 2)
 
-    # --- default: emit the intake PLAN (choice-first conversation contract + the
-    #     8 Questions + frame question) for the agent to run ONE question at a time ---
+    # --- --plan (or any other non-bare arrival here): emit the intake PLAN
+    #     (choice-first conversation contract + the 8 Questions + frame question)
+    #     as a READ-ONLY dry-run payload. This is inspection tooling, not a turn-
+    #     gate -- an agent conducting the actual interview must use --next/--answer.
     block = build_signature_block(spec, block_msg_id)
     if run_dir is not None:
         marker = run_dir / "working" / "interview" / "sp_intake_block.json"
@@ -1623,16 +1674,51 @@ def signature_selftest() -> bool:
 
     ok = True
 
-    # (1) emitted block shape.
-    block = build_signature_block(spec, _sp_block_msg_id())
+    # Hoisted above Test 5 (which also needs it): call a sys.exit()-driven cmd_*
+    # function, capture its printed JSON, and return the parsed payload.
+    import io
+    from contextlib import redirect_stdout
+
+    def _call(fn, *a):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            try:
+                fn(*a)
+            except SystemExit:
+                pass
+        return json.loads(buf.getvalue().strip())
+
+    # (1) --signature --plan emits the full read-only dry-run block (q1..q8 +
+    # frame question, one_block record-commit mode). This is the EXPLICIT,
+    # clearly-labeled escape hatch for offline inspection — it must still work.
+    plan_args = argparse.Namespace(run_dir=None, record=None, plan=True, sp_spec=None)
+    block = _call(cmd_signature, plan_args)
     q_ids = {q.get("id") for q in block.get("questions", []) if isinstance(q, dict)}
     have_8 = all(q in q_ids for q in SP_REQUIRED_QUESTIONS)
     have_frame_q = bool(block.get("frame_selection_question"))
     one_block = block.get("delivery", {}).get("mode") == "one_block"
     step1 = have_8 and have_frame_q and one_block
     ok = ok and step1
-    print(f"[sig-selftest] Test 1 {'PASS' if step1 else 'FAIL'}: block carries q1..q8 "
-          f"({sorted(q_ids)}) + frame question ({have_frame_q}), one_block={one_block}")
+    print(f"[sig-selftest] Test 1 {'PASS' if step1 else 'FAIL'}: --signature --plan block carries "
+          f"q1..q8 ({sorted(q_ids)}) + frame question ({have_frame_q}), one_block={one_block}")
+
+    # (1b) E5 FIX — bare --signature (no --next/--answer/--record/--plan) must NOT
+    # leak that same payload. It must point at the REQUIRED turn-gate instead.
+    # Before this fix, a bare call fell through to the exact same full-payload
+    # block as Test 1 above — an unenforced escape hatch around the one-question-
+    # per-turn gate. This regression-guards that the escape hatch stays closed.
+    bare_args = argparse.Namespace(run_dir=None, record=None, plan=False, sp_spec=None)
+    bare = _call(cmd_signature_pointer, bare_args)
+    step1b = (
+        bare.get("status") == "use_turn_gate"
+        and "questions" not in bare
+        and "frame_selection_question" not in bare
+        and "--signature --next" in (bare.get("next_command") or "")
+    )
+    ok = ok and step1b
+    print(f"[sig-selftest] Test 1b {'PASS' if step1b else 'FAIL'}: bare --signature (no --plan) "
+          f"does NOT leak the full question payload -- status={bare.get('status')!r}, "
+          f"next_command={bare.get('next_command')!r}")
 
     prover = find_sp_prover()
     if prover is None:
@@ -1687,19 +1773,8 @@ def signature_selftest() -> bool:
     # at a time end-to-end in a temp run dir and confirm (a) --next never
     # returns more than one question per call, (b) it BLOCKS when the active
     # question has no answer yet, and (c) the final answer auto-finalizes
-    # (assembles + proves) exactly like a passing --record call.
-    import io
-    from contextlib import redirect_stdout
-
-    def _call(fn, *a):
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            try:
-                fn(*a)
-            except SystemExit:
-                pass
-        return json.loads(buf.getvalue().strip())
-
+    # (assembles + proves) exactly like a passing --record call. (_call is
+    # defined once, above, ahead of Test 1b — reused here.)
     answers = {
         "interview_choice": "quick",
         "q1": "The Signature Talk", "q2": "yes, propose two alternates",
@@ -1782,11 +1857,20 @@ def main() -> None:
     parser.add_argument("--selftest", action="store_true",
                         help="Run offline self-test in a temp directory")
     parser.add_argument("--signature", action="store_true",
-                        help="Signature Presentation intake (Skill 51): emit the intake plan "
-                             "— the choice-first (quick vs in-depth), one-question-at-a-time "
-                             "conversation contract + the 8 Questions + frame question (default); "
-                             "or with --record assemble the answers into ONE atomic record and "
-                             "verify it via the AF-SP-8Q-SPLIT prover")
+                        help="Signature Presentation intake (Skill 51). REQUIRED usage is the "
+                             "turn-gate: --signature --next / --signature --answer ID TEXT — "
+                             "one question per call, blocked until answered, final answer "
+                             "auto-finalizes. --signature --plan is a read-only dry-run that "
+                             "emits the full intake plan for inspection ONLY. --signature "
+                             "--record FILE assembles a pre-gathered answers file into ONE "
+                             "atomic record and verifies it via the AF-SP-8Q-SPLIT prover. A "
+                             "BARE --signature call (no --next/--answer/--record/--plan) no "
+                             "longer emits the payload — it prints a pointer at --next (E5 fix).")
+    parser.add_argument("--plan", action="store_true",
+                        help="(signature mode) read-only DRY-RUN: emit the FULL intake plan "
+                             "(all 8 Questions + frame question) as one JSON payload for "
+                             "offline inspection. Never use this to conduct the interview — "
+                             "the interview MUST run through --signature --next/--answer.")
     parser.add_argument("--record", metavar="FILE",
                         help="(signature mode) JSON answers file (q1..q8 + signature_frame + "
                              "offer_token_ledger); assembles working/copy/sp_intake.json and "
@@ -1829,8 +1913,16 @@ def main() -> None:
             else:
                 cmd_sp_answer(sp_run_dir, sp_spec, sp_ledger, args.answer[0], args.answer[1])
             return  # both exit internally
-        cmd_signature(args)
-        return  # cmd_signature exits internally
+        if args.plan or args.record:
+            # --signature --plan (read-only dry-run) or --signature --record FILE
+            # (assemble a pre-gathered answers file). Both are explicit, named
+            # escape hatches from the turn-gate — never the bare-call default.
+            cmd_signature(args)
+            return  # cmd_signature exits internally
+        # E5 fix: bare --signature (no --next/--answer/--record/--plan) MUST NOT
+        # leak the full question payload — point at the required turn-gate instead.
+        cmd_signature_pointer(args)
+        return  # cmd_signature_pointer exits internally
 
     # All other commands require --run-dir
     if not args.run_dir:

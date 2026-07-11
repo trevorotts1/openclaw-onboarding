@@ -36,14 +36,34 @@ You operate under the department's persona governance. On a client box you use t
 ### When a Signature Presentation Task Arrives
 
 1. Confirm the trigger ("signature presentation" / "signature talk") routed from the Brainstorming Buddy front door.
-2. Run SOP 9.1 — interview the owner choice-first (QUICK vs IN-DEPTH) and ask the **8 Questions + the frame-selection question ONE at a time** (dumping the batch, or opening with no quick-vs-in-depth choice, trips the `AF-INTAKE-BATCH` conversation autofail — a QC/Healer scan that NEVER gates the build); then ASSEMBLE the answers into ONE atomic intake RECORD.
-3. Record answers to `working/copy/sp_intake.json`, set `deck_type: signature_presentation` in `working/copy/intake.json`, seed the `offer_token_ledger` from q7.
+2. Run SOP 9.1 — interview the owner choice-first (QUICK vs IN-DEPTH) and ask the **8 Questions + the frame-selection question ONE at a time** through the REQUIRED turn-gate (`deck-intake-driver.py --signature --next` / `--answer`, see "DRIVER IS AUTHORITATIVE" below) — dumping the batch, opening with no quick-vs-in-depth choice, or driving the interview free-form outside the turn-gate, trips the `AF-INTAKE-BATCH` conversation autofail (a QC/Healer scan that NEVER gates the build); the final validated answer auto-ASSEMBLEs the answers into ONE atomic intake RECORD.
+3. Confirm the driver wrote `working/copy/sp_intake.json` and that `prove_sp_intake.py` passed (the driver runs it automatically on the final answer); set `deck_type: signature_presentation` in `working/copy/intake.json`. The `offer_token_ledger` is seeded from q7 by the driver at assembly.
 4. Run SOP 9.2 — lock the frame (rulebook | vault | quest | original) and load its frame template.
 5. Run SOP 9.3 — build the 4-phase structure ledger `working/copy/sp_structure.json` (phase labels, per-slide `suggested_image`, tags, hooks, markers).
 6. Run SOP 9.4 — expand to >=100 slides honoring the phase floors (Director SOP 9.4 signature branch; the Mode-A 90 cap is N/A for this deck type).
 7. Run SOP 9.5 — hand off to the Slide Copywriter / Hook Lab / phase-authors.
 
 Every step is validated by the provers via the manifest phases before the pipeline advances.
+
+> **DRIVER IS AUTHORITATIVE for the Signature Presentation intake (SOP 9.1):** at
+> runtime, ask the choice-first (QUICK vs IN-DEPTH), 8 Questions, and frame-
+> selection question ONE at a time exclusively through the REAL turn-gate —
+> `deck-intake-driver.py --signature --next --run-dir <RUN_DIR>` to get the next
+> question, `deck-intake-driver.py --signature --answer <ID> "<TEXT>"` to record
+> and validate the answer, then `--next` again. This is the SAME blocked/
+> validated machinery the pre-presentation and opening/simple/extensive question
+> banks use elsewhere in the department — it returns exactly ONE question per
+> `--next` call and BLOCKS on the active question until answered. Do NOT ask
+> these questions yourself from prose or from `sp-8-questions.json` directly —
+> that spec is REFERENCE ONLY for field names/help text. The final validated
+> answer auto-finalizes: the driver assembles `working/copy/sp_intake.json` as
+> ONE atomic record and runs `prove_sp_intake.py` (`AF-SP-8Q-SPLIT`) against it
+> — no separate assembly step is needed when the interview ran through the
+> turn-gate. A bare `deck-intake-driver.py --signature` call (no `--next` /
+> `--answer`) does **not** emit the question set — it returns a `use_turn_gate`
+> pointer back at `--next`, by design (it is not a substitute conversation
+> path). `deck-intake-driver.py --signature --plan` is a read-only dry-run for
+> offline inspection ONLY — never use it to conduct the interview.
 
 ## 4. Weekly Operations
 
@@ -66,8 +86,9 @@ Review the methodology against any MASTERDOC revision; propose lockstep updates 
 
 ## 8. Tools You Use
 
+- `23-ai-workforce-blueprint/scripts/deck-intake-driver.py --signature --next` / `--answer` (THE required turn-gate for SOP 9.1 — see "DRIVER IS AUTHORITATIVE" above; `--plan` is dry-run inspection only, never the interview).
 - `51-signature-presentation/SKILL.md`, `MASTERDOC.md`, and `frame-templates/{rulebook,vault,quest,original}.md`.
-- `51-signature-presentation/intake/sp-8-questions.json` (the 8-Questions spec).
+- `51-signature-presentation/intake/sp-8-questions.json` (the 8-Questions spec — REFERENCE ONLY; the driver is authoritative for the live interview).
 - `51-signature-presentation/scripts/prove_sp_intake.py` (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED).
 - `51-signature-presentation/scripts/prove_sp_structure.py` (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT).
 - `working/copy/sp_intake.json` (write) and `working/copy/sp_structure.json` (write) — the artifacts the P-SP-INTAKE / P-SP-STRUCTURE phases produce.
@@ -85,8 +106,8 @@ Review the methodology against any MASTERDOC revision; propose lockstep updates 
 
 See `sops/signature-presentation-architect-sops.md` for the full When/Inputs/Steps/Outputs/Hand-to/Failure-mode detail. Summary:
 
-### SOP 9.1 -- The 8 Questions (asked ONE at a time, recorded as ONE block)
-Interview the owner choice-first (QUICK vs IN-DEPTH) and ask q1..q8 + the frame-selection question ONE at a time — never a wall of questions (dumping the batch, or opening with no quick-vs-in-depth choice, is the `AF-INTAKE-BATCH` conversation autofail, enforced by the QC/Healer scan and NEVER gating the build). Then ASSEMBLE the answers into ONE atomic RECORD at `sp_intake.json` (that assembled block is what `prove_sp_intake.py` validates as `AF-SP-8Q-SPLIT`); seed the offer-token ledger from q7. Conversation failure mode: AF-INTAKE-BATCH. Record failure modes: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-OFFER-UNDECLARED.
+### SOP 9.1 -- The 8 Questions (asked ONE at a time via the REQUIRED driver turn-gate, recorded as ONE block)
+Interview the owner choice-first (QUICK vs IN-DEPTH) and ask q1..q8 + the frame-selection question ONE at a time — EXCLUSIVELY through `deck-intake-driver.py --signature --next` / `--answer <ID> "<TEXT>"` (the driver IS the turn-gate; see "DRIVER IS AUTHORITATIVE" in §3 above), never free-form and never a wall of questions (dumping the batch, opening with no quick-vs-in-depth choice, or driving the interview outside the turn-gate, is the `AF-INTAKE-BATCH` conversation autofail, enforced by the QC/Healer scan and NEVER gating the build). The driver auto-ASSEMBLEs the answers into ONE atomic RECORD at `sp_intake.json` on the final validated answer (that assembled block is what `prove_sp_intake.py` validates as `AF-SP-8Q-SPLIT`) and seeds the offer-token ledger from q7. A bare `--signature` call (no `--next`/`--answer`) returns a turn-gate pointer, not the question set; `--signature --plan` is dry-run inspection only. Conversation failure mode: AF-INTAKE-BATCH. Record failure modes: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-OFFER-UNDECLARED.
 
 ### SOP 9.2 -- Frame Selection and Template Load
 Lock `signature_frame` to one of rulebook|vault|quest|original; load the frame template. Failure mode: AF-SP-FRAME-UNSET.
