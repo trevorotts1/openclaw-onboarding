@@ -24,6 +24,20 @@ Supported surface (only what the registrars under test actually call):
   cron add --help          -> advertises every flag above (feature-detect)
   cron list                -> TRUNCATING text table (name col only)
   cron list --json         -> {"jobs": [...]}  (full names, never truncated)
+  cron list --help         -> advertises `--agent`/`--json` only by default —
+      matching docs.openclaw.ai/cli/cron, which documents NO disabled-job
+      visibility flag. Set $FAKE_OC_ADVERTISE_STATUS_FLAG=1 to ALSO advertise
+      `--status <mode>`, simulating a hypothetical future CLI that supports
+      one (used to test the best-effort feature-detection layer works WHEN a
+      flag exists, without this fixture ever claiming one exists by default).
+  A job may carry "hidden": true (simulating the live-VPS finding that
+      `cron list --json` returned only ENABLED jobs — 16 of 31 rows on one
+      box). By default, `cron list --json` (and the text table) EXCLUDE
+      hidden jobs entirely. They are INCLUDED only if the request passes
+      `--status <anything>` / `--all` / `--include-disabled` /
+      `--show-disabled` (mirrors oc_cron_list_json_flags' candidate list) —
+      and even then ONLY if $FAKE_OC_ADVERTISE_STATUS_FLAG=1 (a flag the CLI
+      never advertised cannot be feature-detected, by design).
   message send --channel telegram -t ID -m MSG
       -> succeeds unless $FAKE_OC_MESSAGE_FAIL is set, in which case it prints
          that string to stderr and exits 1 (used by the rate-limit-backoff test).
@@ -119,12 +133,37 @@ def cmd_cron_add(rest):
     return 0
 
 
+LIST_HELP_BASE = "--agent <id>  --json\n"
+LIST_HELP_WITH_STATUS = "--agent <id>  --json  --status <mode>\n"
+
+STATUS_FLAG_CANDIDATES = ("--all", "--include-disabled", "--show-disabled", "--status")
+
+
+def _wants_full_visibility(rest):
+    return any(c in rest for c in STATUS_FLAG_CANDIDATES)
+
+
 def cmd_cron_list(rest):
+    if "--help" in rest:
+        advertise_status = os.environ.get("FAKE_OC_ADVERTISE_STATUS_FLAG", "") == "1"
+        sys.stdout.write(LIST_HELP_WITH_STATUS if advertise_status else LIST_HELP_BASE)
+        return 0
+
     jobs = load_jobs()
+    # Simulate the live-VPS finding: a "hidden" (disabled) job is excluded
+    # from the default listing. It is included ONLY when the caller passed a
+    # full-visibility flag AND the CLI was configured (env) to actually honor
+    # one — a flag never advertised in --help cannot be feature-detected, so
+    # passing it here with FAKE_OC_ADVERTISE_STATUS_FLAG unset still hides it
+    # (a real CLI wouldn't magically start honoring an unadvertised flag either).
+    advertise_status = os.environ.get("FAKE_OC_ADVERTISE_STATUS_FLAG", "") == "1"
+    reveal_hidden = advertise_status and _wants_full_visibility(rest)
+    visible_jobs = [j for j in jobs if reveal_hidden or not j.get("hidden")]
+
     if "--json" in rest:
-        sys.stdout.write(json.dumps({"jobs": jobs}) + "\n")
+        sys.stdout.write(json.dumps({"jobs": visible_jobs}) + "\n")
     else:
-        for j in jobs:
+        for j in visible_jobs:
             # Mirrors the real CLI's truncating text table: name col first,
             # then id, then kind — a grep for the FULL (untruncated) name of
             # anything > 22 chars can never match this row.
