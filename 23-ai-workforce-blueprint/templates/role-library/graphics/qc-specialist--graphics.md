@@ -65,7 +65,7 @@ When a persona is present, this file is subordinate to it.
 
 ### Throughout the day
 - Process QC submissions in priority order as they arrive; target response time: under 60 minutes for standard assets, under 20 minutes for urgent
-- For each asset: run the full QC checklist (SOP 10.1), log results, issue PASS/REVISE/REJECT decision with specific, actionable feedback
+- For every AI-generated external asset: run SOP-GIP-02 (mandatory vision pass + AF-G auto-fail battery + average >= 8.5 gate; write `<job>/qc/image_qc_report.json` + `<job>/qc/vision_qc_log.json`). For non-generated assets: run the full QC checklist (SOP 10.1). Either way log results and issue PASS/REVISE/REJECT with specific, actionable feedback. 100% coverage for external generated assets — the 10% sampling rule survives ONLY for internal drafts.
 - When rejecting: always cite the specific standard that was violated, show a screenshot or annotation of the issue, and suggest the fix path (which SOP the specialist should follow to correct it)
 - Track rejection patterns in the QC log: if one specialist has a 40%+ rejection rate today, flag to Chief Design Officer for potential coaching intervention
 - Maintain the QC standards knowledge base: if a new type of error appears that is not covered by current checklists, draft an addition to the QC checklist and submit to Chief Design Officer for approval

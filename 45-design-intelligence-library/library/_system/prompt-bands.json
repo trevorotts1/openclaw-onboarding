@@ -1,0 +1,43 @@
+{
+  "_comment": "Graphics Image Protocol (GIP) prompt bands. MIN is a HARD floor (AF-GIP-PROMPT-FLOOR): a prompt under its band floor is NOT submitted. MAX mirrors MODEL-SPECS tier caps (AF-DIU-PROMPT-CAP). Bands are per asset class x tier, because graphics surfaces differ (a photoreal draft is not a text-bearing ad). Numbers are operator-ratifiable (see CROSS-TOPIC open question 5); rationale cited inline. Enforced by 45-design-intelligence-library/scripts/diu_validator.py prompt-band and SOP-GIP-01.",
+  "version": 1,
+  "bands": {
+    "text_bearing_long": {
+      "tier": "LONG",
+      "min": 5000,
+      "max": 18000,
+      "min_distinct_words": 150,
+      "text_bearing": true,
+      "applies_to": ["ad creative", "book cover", "magazine cover", "banner with copy", "social post graphic with baked text", "infographic", "email hero with copy"],
+      "endpoints": ["gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "nano-banana-2"],
+      "_rationale": "Skill 49/56 already prove 5,000-19,000-char image prompts under fail-closed provers (social-media how-to:232-233); GPT-Image 2 is strongest on long structured prompts (MODEL-SPECS section 4); 18,000 keeps the presentations-standard 2,000-char safety margin under the 20,000 API cap."
+    },
+    "visual_long": {
+      "tier": "LONG",
+      "min": 2500,
+      "max": 18000,
+      "min_distinct_words": 120,
+      "text_bearing": false,
+      "applies_to": ["photoreal scene", "brand imagery without baked text", "thumbnail without text"],
+      "endpoints": ["gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "nano-banana-2"]
+    },
+    "medium": {
+      "tier": "MEDIUM",
+      "min": 800,
+      "max": 2800,
+      "min_distinct_words": 60,
+      "text_bearing": false,
+      "endpoints": ["seedream/4.5-text-to-image", "seedream/4.5-edit", "ideogram/v3-text-to-image", "wan/2-7-image"],
+      "_rationale": "Seedream hard-fails silently above 3,000 (MODEL-SPECS:14; SOP-DIU-615:77); 2,800 is the existing MEDIUM cap."
+    },
+    "short_draft": {
+      "tier": "SHORT",
+      "min": 200,
+      "max": 500,
+      "min_distinct_words": 25,
+      "text_bearing": false,
+      "client_deliverable": false,
+      "_rationale": "SHORT exists for drafts/ideation only; a SHORT-tier output is NEVER a client deliverable."
+    }
+  }
+}
