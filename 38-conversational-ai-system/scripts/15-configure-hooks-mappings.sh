@@ -298,11 +298,41 @@ fi
 # CRON REGISTRATION (2026-05-29): the legacy `cron.jobs` JSON config block does NOT
 # validate on 2026.5.27 (writing it makes `openclaw config validate` FAIL). Register
 # crons through the gateway cron store via `openclaw cron add` (see
-# references/GHL-INBOUND-AND-PLAYBOOKS.md §13). Idempotency is by name via
-# `openclaw cron list`. If the CLI is absent, we skip (non-fatal) rather than write an
-# invalid config block.
+# references/GHL-INBOUND-AND-PLAYBOOKS.md §13). Idempotency is by an EXACT JSON
+# name-match (see IDEMPOTENCY note below) — NEVER a text-table grep. If the CLI
+# is absent, we skip (non-fatal) rather than write an invalid config block.
+#
+# IDEMPOTENCY (fix/industry-gate-and-idempotent-crons, 2026-07-11 — BUG FIX):
+# "system-health-heartbeat" is 23 chars — over the ~22-char threshold at which
+# `openclaw cron list`'s text table truncates names — so a text-grep presence
+# gate here false-negatives and re-adds a duplicate on every re-run (same
+# defect confirmed + fixed in this skill's own 04-register-crons.sh). Sourcing
+# oc_cron_present() from shared-utils/cron-lib.sh, with an inline fallback.
+command -v oc_cron_present >/dev/null 2>&1 || {
+  _lib_cron_present_15="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/shared-utils/cron-lib.sh"
+  if [ -f "$_lib_cron_present_15" ]; then
+    # shellcheck source=/dev/null
+    . "$_lib_cron_present_15"
+  fi
+}
+command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
+  local _name="$1" _raw
+  _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
+  if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+    printf '%s' "$_raw" | jq -e --arg n "$_name" '
+      ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
+    ' >/dev/null 2>&1
+    return $?
+  fi
+  return 1
+}
+# DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
+# finding): fail OPEN (never tombstoned) if the shared lib wasn't found above.
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
 if command -v openclaw >/dev/null 2>&1; then
-  if openclaw cron list 2>/dev/null | grep -q "system-health-heartbeat"; then
+  if oc_cron_tombstoned "system-health-heartbeat"; then
+    echo "cron system-health-heartbeat is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove system-health-heartbeat" >&2
+  elif oc_cron_present "system-health-heartbeat"; then
     echo "cron system-health-heartbeat already registered — skipping" >&2
   else
     # SILENCE DOCTRINE (FIX-XC-08b): 2026.6.8+ `cron add` fallback-delivers the

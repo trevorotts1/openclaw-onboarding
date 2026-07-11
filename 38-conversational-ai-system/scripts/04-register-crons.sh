@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 04-register-crons.sh
 # Registers the recurring OpenClaw cron jobs for the Conversational AI System.
-# Idempotent: each job is gated by name via `openclaw cron list`.
+# Idempotent: each job is gated by name via an exact JSON match (see IDEMPOTENCY
+# note below) — NEVER a text-table grep.
 # Playbook v5.14 — Step 9 + Step 3.5H.
 #
 # CRON REGISTRATION (2026-05-29): the legacy `cron.jobs` JSON config block does NOT
@@ -9,10 +10,50 @@
 # the gateway never runs the jobs. Crons MUST be registered through the gateway cron
 # store via the `openclaw cron add` CLI (see references/GHL-INBOUND-AND-PLAYBOOKS.md §13).
 # This script no longer touches openclaw.json at all.
+#
+# IDEMPOTENCY (fix/industry-gate-and-idempotent-crons, 2026-07-11 — BUG FIX): this
+# script used to guard every add with `openclaw cron list | grep -q "$name"` — a
+# TEXT-TABLE match. `cron list`'s text table truncates names longer than ~22 chars
+# (appends "..."). Four of this file's cron names exceed that
+# (conversation-log-summarizer=27, proactive-suggestions-scan=26,
+# analytics-weekly-digest=23, system-health-heartbeat=23), so the guard could
+# false-negative on a truncated row and re-add a duplicate on every re-run. Replaced
+# with oc_cron_present() (shared-utils/cron-lib.sh) — the same exact JSON name-match
+# fix scripts/ensure-pipeline-crons.sh already shipped (v13.0.2) for its own crons.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
+
+# ---- JSON-idempotency helper (oc_cron_present) -----------------------------
+_CRON_LIB=""
+for _cand in \
+  "$SCRIPT_DIR/../../shared-utils/cron-lib.sh" \
+  "$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/shared-utils/cron-lib.sh" \
+  "${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/cron-lib.sh" \
+  "/data/.openclaw/skills/shared-utils/cron-lib.sh"; do
+  if [ -f "$_cand" ]; then
+    _CRON_LIB="$_cand"
+    break
+  fi
+done
+if [ -n "$_CRON_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_CRON_LIB"
+else
+  echo "WARN: shared-utils/cron-lib.sh not found — falling back to an inline exact-JSON-match (no text-table grep)." >&2
+  oc_cron_present() {
+    local name="$1" raw
+    raw=$(openclaw cron list --json 2>/dev/null) || raw=""
+    [ -n "$raw" ] && command -v jq >/dev/null 2>&1 || return 1
+    printf '%s' "$raw" | jq -e --arg n "$name" '
+      ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
+    ' >/dev/null 2>&1
+  }
+  # No shared lib -> no durable-tombstone dir resolution either. Fail OPEN
+  # (never tombstoned) rather than block ALL registration on a missing lib.
+  oc_cron_tombstoned() { return 1; }
+fi
 
 # Resolve the batch model the Model Wizard (15-configure-hooks-mappings.sh) saved to
 # the secrets env file, falling back to env, then to a sane default. (Crons run on the
@@ -82,8 +123,8 @@ _add_agent_cron() {
 # passed --no-deliver at add time; this cross-checks via `cron list`.
 _assert_cron_silent() {
   local name="$1" js
-  if ! openclaw cron list 2>/dev/null | grep -q "$name"; then
-    echo "WARN: cron '$name' not visible in 'openclaw cron list' after add — verify manually." >&2
+  if ! oc_cron_present "$name"; then
+    echo "WARN: cron '$name' not visible in 'openclaw cron list --json' after add — verify manually." >&2
     return 0
   fi
   js="$(openclaw cron list --json 2>/dev/null || true)"
@@ -98,7 +139,15 @@ _assert_cron_silent() {
 # Args: <name> <cron-expr> <message>
 register_cron() {
   local name="$1" cron_expr="$2" message="$3"
-  if openclaw cron list 2>/dev/null | grep -q "$name"; then
+  # DURABLE TOMBSTONE (fix/industry-gate-and-idempotent-crons, live-VPS
+  # finding): never resurrect a cron deliberately removed via
+  # scripts/tombstone-cron.sh, regardless of whether `cron list --json`
+  # exposes disabled jobs on this CLI build — see cron-lib.sh header.
+  if oc_cron_tombstoned "$name"; then
+    echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
+    return 0
+  fi
+  if oc_cron_present "$name"; then
     echo "cron $name already registered — skipping" >&2
     return 0
   fi
@@ -125,7 +174,11 @@ _cli_supports_command() {
 }
 register_command_cron() {
   local name="$1" cron_expr="$2" script="$3"
-  if openclaw cron list 2>/dev/null | grep -q "$name"; then
+  if oc_cron_tombstoned "$name"; then
+    echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
+    return 0
+  fi
+  if oc_cron_present "$name"; then
     echo "cron $name already registered — skipping" >&2
     return 0
   fi

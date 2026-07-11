@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v19.46.0"
+ONBOARDING_VERSION="v19.47.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -169,6 +169,53 @@ command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
     openclaw cron create "${_base[@]}" --message "$_prompt" --no-deliver >/dev/null 2>&1 && return 0
     return 1
 }
+
+# ── JSON-exact cron presence check (fix/industry-gate-and-idempotent-crons). ───
+# `openclaw cron list`'s TEXT TABLE truncates names longer than ~22 chars, so a
+# positive-presence check via `grep -qi "<name>"` against that table
+# false-negatives on a longer name and re-registers a duplicate on every re-run
+# (the confirmed root cause of the Skill 39 / Skill 38 6x-duplicate incident —
+# see shared-utils/cron-lib.sh). Several of install.sh's OWN cron names exceed
+# that threshold too (workforce-build-resume=23, watchdog-onboarding-loop=25,
+# closeout-readiness-watchdog=28), so this helper is sourced/defined here once
+# and reused by every Step-13.x installer below instead of each re-doing its own
+# (buggy) text-table grep.
+_lib_cron_present_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh"
+if [ -f "$_lib_cron_present_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_cron_present_self"
+fi
+command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
+    local _name="$1" _raw
+    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
+    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+        printf '%s' "$_raw" | jq -e --arg n "$_name" '
+          ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
+        ' >/dev/null 2>&1
+        return $?
+    fi
+    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+        OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
+import json, os, sys
+name = sys.argv[1]
+raw = os.environ.get("OC_CRON_RAW", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
+PYEOF
+        return $?
+    fi
+    return 1
+}
+# DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
+# finding): if shared-utils/cron-lib.sh wasn't found above, oc_cron_tombstoned
+# is undefined — fail OPEN (never tombstoned) rather than block registration
+# outright over a missing helper file. When the shared lib IS found, its real
+# oc_cron_tombstoned (durable file-marker check) is used instead.
+command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -3596,7 +3643,15 @@ REASSERT_EOF
             warn "openclaw CLI not on PATH — skipping presentation-deps re-assert cron. Re-run update-skills.sh later."
             return 0
         fi
-        if openclaw cron list 2>/dev/null | grep -qi "reassert-presentation-deps"; then
+        if oc_cron_tombstoned "reassert-presentation-deps"; then
+            warn "reassert-presentation-deps is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove reassert-presentation-deps"
+            return 0
+        fi
+        # JSON-exact presence check (fix/industry-gate-and-idempotent-crons
+        # sweep): "reassert-presentation-deps" is 26 chars — over the ~22-char
+        # threshold at which `openclaw cron list`'s text table truncates names
+        # — the same defect that caused the Skill 39/38 6x-duplicate incident.
+        if oc_cron_present "reassert-presentation-deps"; then
             success "Presentation-deps re-assert cron already installed — skipping"
             return 0
         fi
@@ -5644,53 +5699,59 @@ install_workforce_resume_cron() {
         return 0
     fi
 
-    if openclaw cron list 2>/dev/null | grep -qi "workforce-build-resume"; then
+    if oc_cron_tombstoned "workforce-build-resume"; then
+        warn "workforce-build-resume is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
+        return 0
+    fi
+    if oc_cron_present "workforce-build-resume"; then
         success "Workforce-build resume cron already installed"
         return 0
     fi
 
-    local RESUME_PROMPT_FILE="$SKILLS_DIR/23-ai-workforce-blueprint/resume-prompt.txt"
-    if [ ! -f "$RESUME_PROMPT_FILE" ]; then
-        warn "resume-prompt.txt not found at $RESUME_PROMPT_FILE — cron install skipped (older skill bundle?)"
+    local RESUME_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+    if [ ! -f "$RESUME_SCRIPT" ]; then
+        warn "resume-workforce-build.sh not found at $RESUME_SCRIPT — cron install skipped (older skill bundle?)"
         return 0
     fi
-    local RESUME_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
-    [ -f "$RESUME_SCRIPT" ] && chmod +x "$RESUME_SCRIPT" 2>/dev/null || true
+    chmod +x "$RESUME_SCRIPT" 2>/dev/null || true
 
-    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
-    # workforce-build-resume is a MAINTENANCE self-ping (resume a half-built
-    # workforce). The old form wired `--channel telegram --to $TG_TARGET`, so the
-    # scheduler AUTO-DELIVERED the raw resume prompt into the CLIENT chat every
-    # 15 min whenever the build state was dirty — internal operator/build traffic
-    # the owner was never meant to see.
-    #
-    # FIX: register it as a SILENT main-session agent-message cron (--agent
-    # <main> --session-target main --light-context, NO --channel/--to/--announce).
-    # The resume runs in the agent's OWN context (log-only); the agent surfaces
-    # owner-facing progress ONLY through its own deliberate `message send`. This
-    # also REMOVES the old no-owner-chat strand entirely — a silent cron needs no
-    # owner target at all, so the historical operator-ID guard / "box stranded"
-    # branch is gone.
+    # ── CHEAP COMMAND-MODE (fix/industry-gate-and-idempotent-crons, Fix C) ────
+    # workforce-build-resume used to be a SILENT main-session AGENT-MESSAGE cron
+    # (the full resume-prompt.txt fed as the system-event payload) — every */15
+    # fire spun up a COMPLETE LLM turn just to reach resume-workforce-build.sh's
+    # own "nothing to resume" verdict (the diagnosed no-op furnace). That script
+    # is ALREADY a cheap, token-free check on its own (plain bash + jq); it
+    # escalates to an actual agent turn — via `openclaw message send`, the SAME
+    # self-ping mechanism closeout-resume already uses — ONLY when there is
+    # genuinely pending/stale work. So this now registers the CRON ITSELF in
+    # command mode (`bash resume-workforce-build.sh`), mirroring
+    # scripts/ensure-pipeline-crons.sh::_ensure_workforce_build_resume and the
+    # already-correct closeout-resume pattern. Falls back to a SHORT
+    # run-the-script agent-message cron (NOT the old full resume-prompt.txt) on a
+    # CLI without --command support.
     local CHANNEL_AGENT="main"
     if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
         CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
     fi
 
-    local PROMPT_CONTENT
-    PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
+    local _wbr_help _wbr_has_command=0
+    _wbr_help="$(openclaw cron add --help 2>&1 || true)"
+    printf '%s' "$_wbr_help" | grep -qE '^[[:space:]]*--command[[:space:]<]' && _wbr_has_command=1
 
-    # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe the
-    # CLI and emit `--session main --system-event` (2026.6.11+) or
-    # `--session-target main --message` (older CLIs). */15, --light-context.
-    if _oc_cron_silent_main "workforce-build-resume" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$PROMPT_CONTENT" --light-context; then
-        success "Workforce-build resume cron installed — every 15 min, SILENT main-session (no client auto-announce); fires only when build state is dirty"
+    if [ "$_wbr_has_command" -eq 1 ] && openclaw cron add --name "workforce-build-resume" \
+         --cron "*/15 * * * *" --command "bash $RESUME_SCRIPT" >/dev/null 2>&1; then
+        success "Workforce-build resume cron installed — every 15 min, COMMAND mode (zero LLM tokens per tick; an agent turn dispatches only when the script finds real work)"
         return 0
     fi
 
-    warn "Workforce-build resume cron creation failed. Manual install (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name workforce-build-resume --agent $CHANNEL_AGENT \\"
-    warn "    --cron '*/15 * * * *' --tz America/New_York \\"
-    warn "    --session main --system-event \"\$(cat $RESUME_PROMPT_FILE)\"   # older CLIs: --session-target main --message"
+    local _wbr_msg="[PIPELINE-CRON workforce-build-resume] Run this exact shell command now and report only on failure: bash $RESUME_SCRIPT"
+    if _oc_cron_silent_main "workforce-build-resume" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$_wbr_msg" --light-context; then
+        success "Workforce-build resume cron installed — every 15 min, SILENT main-session agent-message fallback (older CLI, no --command support; short run-the-script message, not the old full resume-prompt.txt payload)"
+        return 0
+    fi
+
+    warn "Workforce-build resume cron creation failed. Manual install (COMMAND mode preferred):"
+    warn "  openclaw cron add --name workforce-build-resume --cron '*/15 * * * *' --command 'bash $RESUME_SCRIPT'"
     return 0
 }
 
@@ -5733,7 +5794,11 @@ install_watchdog_loop_cron() {
         warn "openclaw CLI not on PATH — skipping watchdog-onboarding-loop cron. Re-run update-skills.sh later."
         return 0
     fi
-    if openclaw cron list 2>/dev/null | grep -qi "watchdog-onboarding-loop"; then
+    if oc_cron_tombstoned "watchdog-onboarding-loop"; then
+        warn "watchdog-onboarding-loop is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove watchdog-onboarding-loop"
+        return 0
+    fi
+    if oc_cron_present "watchdog-onboarding-loop"; then
         success "watchdog-onboarding-loop cron already installed"
         return 0
     fi
@@ -5916,7 +5981,11 @@ install_closeout_watchdog_cron() {
         return 0
     fi
 
-    if openclaw cron list 2>/dev/null | grep -qi "closeout-readiness-watchdog"; then
+    if oc_cron_tombstoned "closeout-readiness-watchdog"; then
+        warn "closeout-readiness-watchdog is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
+        return 0
+    fi
+    if oc_cron_present "closeout-readiness-watchdog"; then
         success "closeout-readiness-watchdog cron already installed"
         return 0
     fi

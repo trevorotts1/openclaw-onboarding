@@ -9,15 +9,54 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+P="[skill 39][prereq]"
+
+# ---- Section E — INDUSTRY GATE (FAIL CLOSED) -------------------------------
+# Skill 39 is the real-estate vertical. It must NEVER install/wire on a box
+# whose captured industry is not real estate — unknown/absent industry means
+# do NOT proceed (fail closed). This runs FIRST (before the other prereq
+# checks below) so a non-real-estate box short-circuits without needing Skill
+# 38 / jq / curl to even be present. See shared-utils/industry-gate.sh for the
+# full gate-key + fail-closed contract (root cause: fix/industry-gate-and-idempotent-crons).
+#
+# exit 2 is RESERVED for this "industry mismatch — skip skill" outcome, kept
+# distinct from exit 1 (a genuine missing hard prerequisite below).
+_GATE_LIB=""
+for _cand in \
+  "$SKILL_ROOT/../shared-utils/industry-gate.sh" \
+  "$(cd "$SKILL_ROOT/.." 2>/dev/null && pwd)/shared-utils/industry-gate.sh" \
+  "${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/industry-gate.sh" \
+  "/data/.openclaw/skills/shared-utils/industry-gate.sh"; do
+  if [ -f "$_cand" ]; then
+    _GATE_LIB="$_cand"
+    break
+  fi
+done
+if [ -z "$_GATE_LIB" ]; then
+  echo "$P BLOCKED: shared-utils/industry-gate.sh not found — cannot verify this box's industry."
+  echo "$P    FAIL CLOSED: refusing to proceed without the industry gate (absence is never permission)."
+  exit 2
+fi
+# shellcheck source=/dev/null
+. "$_GATE_LIB"
+if oc_is_real_estate_industry; then
+  echo "$P OK — Section E industry gate PASS ($OC_INDUSTRY_GATE_REASON)"
+else
+  echo "$P NOT-REAL-ESTATE: this box's captured industry is not real estate ($OC_INDUSTRY_GATE_REASON)."
+  echo "$P    Skill 39 (real-estate playbook + its pipeline crons) is SKIPPED on this box. FAIL CLOSED — unknown/absent industry never installs the RE vertical."
+  exit 2
+fi
+
 OS="$(uname -s)"
 case "$OS" in
   Darwin) DEFAULT_SKILLS_DIR="$HOME/.openclaw/skills"; DEFAULT_MFD="$HOME/Downloads" ;;
   Linux)  DEFAULT_SKILLS_DIR="/data/.openclaw/skills"; DEFAULT_MFD="/data" ;;
-  *) echo "Unsupported OS: $OS"; exit 2 ;;
+  *) echo "$P BLOCKED: Unsupported OS: $OS"; exit 1 ;;
 esac
 SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-$DEFAULT_SKILLS_DIR}"
 MFD="${MASTER_FILES_DIR:-$DEFAULT_MFD}"
-P="[skill 39][prereq]"
 FAIL=0
 
 # ---- A. Skill 38 must be installed (Skill 39 is the RE vertical on top) ----

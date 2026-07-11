@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v19.46.0"
+ONBOARDING_VERSION="v19.47.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v19.46.0 - safe_json_edit
+# v19.47.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2231,7 +2231,55 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   # Existing clients on pre-v9.2.0 won't have it; running the updater
   # backfills it.
   # ----------------------------------------------------------
-  if command -v openclaw >/dev/null 2>&1; then
+  # JSON-exact cron presence check (fix/industry-gate-and-idempotent-crons):
+  # `weekly-onboarding-update` is 24 chars — over the ~22-char threshold at
+  # which `openclaw cron list`'s TEXT TABLE truncates names — so a text-grep
+  # presence gate here false-negatives and re-adds a duplicate on every update
+  # run (the same defect confirmed in Skill 39 / Skill 38's own registrars; see
+  # shared-utils/cron-lib.sh). Sourced with an inline fallback so this update
+  # pass never depends on a specific working directory.
+  command -v oc_cron_present >/dev/null 2>&1 || {
+    _lib_cron_present_uskl="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh"
+    if [ -f "$_lib_cron_present_uskl" ]; then
+      # shellcheck source=/dev/null
+      source "$_lib_cron_present_uskl"
+    fi
+  }
+  command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
+    local _name="$1" _raw
+    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
+    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+      printf '%s' "$_raw" | jq -e --arg n "$_name" '
+        ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
+      ' >/dev/null 2>&1
+      return $?
+    fi
+    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+      OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
+import json, os, sys
+name = sys.argv[1]
+raw = os.environ.get("OC_CRON_RAW", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
+PYEOF
+      return $?
+    fi
+    return 1
+  }
+  # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons,
+  # live-VPS finding): fail OPEN (never tombstoned) if shared-utils/cron-lib.sh
+  # wasn't found above — never block registration outright over a missing
+  # helper file. The real oc_cron_tombstoned (durable file-marker check) is
+  # used automatically when the shared lib IS found.
+  command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+
+  if command -v openclaw >/dev/null 2>&1 && oc_cron_tombstoned "weekly-onboarding-update"; then
+    echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
+  elif command -v openclaw >/dev/null 2>&1; then
     # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
     # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
     # weekly-onboarding-update cron wired with --announce --channel telegram
@@ -2241,7 +2289,7 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     # skip leaves the leaking cron in place.  Fix: detect old delivery wiring
     # via openclaw cron list --json and delete the stale entry so the creation
     # block below always lands the SILENT main-session form.
-    if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
+    if oc_cron_present "weekly-onboarding-update"; then
       _CRON_HAS_OLD_WIRING=false
       if command -v python3 >/dev/null 2>&1; then
         _OC_RAW_JSON=$(openclaw cron list --json 2>/dev/null) || _OC_RAW_JSON=""
@@ -2274,7 +2322,7 @@ PYEOF
       fi
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
-    if ! openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
+    if ! oc_cron_present "weekly-onboarding-update"; then
       # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
       # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
       # owner-facing announcement. The old form registered it
