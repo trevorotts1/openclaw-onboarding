@@ -27,6 +27,19 @@ through. Verified OFFLINE against `agent-browser find --help` / `click --help` /
 real GHL community/course canvas ACCEPTS these calls is a **Phase B live proof**
 (the anchors are still `capture-pending`; this module makes the code READY).
 
+FALLBACK-CHAIN WALKING (Phase D fix — the KEY empty-account fix): `click`/`fill` now
+accept an optional ordered `fallbacks` list (the JSON anchor's `fallbacks` array) and,
+if the PRIMARY anchor misses, walk each fallback IN ORDER until one resolves — mirroring
+`ghl_selector_canary.resolve_anchor` (which walked fallbacks but was never wired into the
+live builders). This is what lets an EMPTY sub-account's onboarding control resolve: the
+LOCKed primary `getByRole('button',{name:'Create Group'})` matches only a POPULATED
+account's list header; on a fresh account GHL renders "Create a Community", which the
+already-present regex fallback `getByRole('button',{name:/Create|Add|New.*(Group|Community)/})`
+matches via a native `.click()`. Only EXECUTABLE fallbacks are tried — a fallback that is
+a Playwright `getBy*` form or an `@ref`. The JSON fallback arrays ALSO carry PROSE
+capture-recipes ("textbox in the add-channel dialog", "native DOM .click() on 'X'"): those
+are NOT selectors and are SKIPPED, never guessed as CSS (D8 — never invent a selector).
+
 QUOTING (load-bearing): `ghl_form_builder._ab(session, *args)` builds one command
 STRING via `ghl_builder.browser_cmd(*args)` (a plain space-join, NO quoting) and then
 `shlex.split()`s it back into argv. So a multi-word value passed raw
@@ -135,6 +148,23 @@ def parse_anchor(anchor: str, kind: str = "") -> Dict[str, Any]:
 def needs_native(descriptor: Dict[str, Any]) -> bool:
     """A regex name/text can't be expressed as `find --name <plain>` → resolve natively."""
     return bool(descriptor.get("name_regex") or descriptor.get("text_regex"))
+
+
+# Real, drivable locator strategies (a Playwright getBy* form or an @ref). A JSON
+# fallback that parses to any of these is EXECUTABLE; anything else (a bare prose
+# capture-recipe like "textbox in the add-channel dialog") parses to 'css' and is a
+# recipe, NOT a selector — the fallback walker SKIPS it (D8: never guess/invent CSS).
+_EXECUTABLE_STRATEGIES = ("role", "text", "placeholder", "label", "alt", "title", "testid", "ref")
+
+
+def is_executable_anchor(candidate: str) -> bool:
+    """True iff `candidate` is a drivable Playwright getBy* form or an @ref. Parsed WITHOUT
+    a `kind` hint on purpose: a fallback must be a real locator on its own, so a bare prose
+    string is never promoted to text/placeholder and blind-clicked. Used by the fallback
+    walker to distinguish executable fallbacks from documented capture-recipes."""
+    if not isinstance(candidate, str) or not candidate.strip():
+        return False
+    return parse_anchor(candidate, "")["strategy"] in _EXECUTABLE_STRATEGIES
 
 
 def to_find_args(descriptor: Dict[str, Any], action: str = "click",
@@ -268,11 +298,11 @@ class AbExecutor:
         ok = res.startswith("CLICKED")
         return {"ok": ok, "path": "native", "detail": res, "descriptor": descriptor}
 
-    # -- public API -----------------------------------------------------------
-    def click(self, session: str, anchor: str, *, kind: str = "", mode: str = "auto",
-              timeout: int = 15) -> Dict[str, Any]:
-        """Resolve + click. mode: 'auto' (find, then native fallback on a find miss),
-        'find' (find only), 'native' (Naive-UI submit / ref-less tile — eval .click())."""
+    # -- single-anchor resolution (primary or one fallback) -------------------
+    def _click_single(self, session: str, anchor: str, *, kind: str = "", mode: str = "auto",
+                      timeout: int = 15) -> Dict[str, Any]:
+        """Resolve + click ONE anchor. mode: 'auto' (find, then native fallback on a find
+        miss), 'find' (find only), 'native' (Naive-UI submit / ref-less tile — eval .click())."""
         d = parse_anchor(anchor, kind)
         if d["strategy"] == "ref":
             cp = self._run_ab(session, "click", d["value"], timeout=timeout)
@@ -291,8 +321,8 @@ class AbExecutor:
             return self._native_click(session, d, timeout)
         return {"ok": False, "path": "find", "args": args, "descriptor": d}
 
-    def fill(self, session: str, anchor: str, value: str, *, kind: str = "",
-             timeout: int = 15) -> Dict[str, Any]:
+    def _fill_single(self, session: str, anchor: str, value: str, *, kind: str = "",
+                     timeout: int = 15) -> Dict[str, Any]:
         d = parse_anchor(anchor, kind)
         if d["strategy"] in ("ref", "css") and not needs_native(d):
             cp = self._run_ab(session, "fill", d["value"] or anchor, value, timeout=timeout)
@@ -307,6 +337,68 @@ class AbExecutor:
         # native reactive-set fallback
         res = (self._ev(session, native_fill_js(d, value), timeout=timeout) or "").strip()
         return {"ok": res == "FILLED", "path": "native", "detail": res, "descriptor": d}
+
+    # -- public API — primary then the JSON fallback chain --------------------
+    def click(self, session: str, anchor: str, *, kind: str = "", mode: str = "auto",
+              timeout: int = 15, fallbacks: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Resolve + click the PRIMARY, then walk the ordered `fallbacks` (JSON anchor's
+        `fallbacks` array) IN ORDER until one resolves — mirroring
+        ghl_selector_canary.resolve_anchor. The first hit wins; later candidates are never
+        tried once one succeeds. Only EXECUTABLE fallbacks (Playwright getBy* / @ref) are
+        driven — prose capture-recipes are skipped (D8, never guessed as CSS). Returns the
+        winning single-anchor result stamped with `candidate`, `via_fallback`, and the full
+        `chain_tried` (each candidate + its outcome) for an honest STOP report."""
+        res = self._click_single(session, anchor, kind=kind, mode=mode, timeout=timeout)
+        tried = [{"candidate": anchor, "ok": bool(res.get("ok")), "path": res.get("path")}]
+        if res.get("ok"):
+            res["candidate"] = anchor
+            res["via_fallback"] = False
+            res["chain_tried"] = tried
+            return res
+        for fb in (fallbacks or []):
+            if not is_executable_anchor(fb):
+                tried.append({"candidate": fb, "ok": False, "path": "skipped-recipe"})
+                continue
+            self._log(f"primary miss for {anchor!r} — trying fallback {fb!r}")
+            r = self._click_single(session, fb, kind="", mode=mode, timeout=timeout)
+            tried.append({"candidate": fb, "ok": bool(r.get("ok")), "path": r.get("path")})
+            if r.get("ok"):
+                r["candidate"] = fb
+                r["via_fallback"] = True
+                r["chain_tried"] = tried
+                return r
+        res["candidate"] = anchor
+        res["via_fallback"] = False
+        res["chain_tried"] = tried
+        return res
+
+    def fill(self, session: str, anchor: str, value: str, *, kind: str = "",
+             timeout: int = 15, fallbacks: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Resolve + fill the PRIMARY, then walk executable `fallbacks` IN ORDER (same
+        contract as `click`). Prose recipes are skipped."""
+        res = self._fill_single(session, anchor, value, kind=kind, timeout=timeout)
+        tried = [{"candidate": anchor, "ok": bool(res.get("ok")), "path": res.get("path")}]
+        if res.get("ok"):
+            res["candidate"] = anchor
+            res["via_fallback"] = False
+            res["chain_tried"] = tried
+            return res
+        for fb in (fallbacks or []):
+            if not is_executable_anchor(fb):
+                tried.append({"candidate": fb, "ok": False, "path": "skipped-recipe"})
+                continue
+            self._log(f"primary fill miss for {anchor!r} — trying fallback {fb!r}")
+            r = self._fill_single(session, fb, value, kind="", timeout=timeout)
+            tried.append({"candidate": fb, "ok": bool(r.get("ok")), "path": r.get("path")})
+            if r.get("ok"):
+                r["candidate"] = fb
+                r["via_fallback"] = True
+                r["chain_tried"] = tried
+                return r
+        res["candidate"] = anchor
+        res["via_fallback"] = False
+        res["chain_tried"] = tried
+        return res
 
     def wait_text(self, session: str, text: str, *, timeout: int = 20) -> Any:
         """Wait for `text` — value shlex-quoted so a multi-word name is ONE argv token
@@ -401,13 +493,60 @@ def _selftest() -> int:  # noqa: C901
     if ("wait", "--", shlex.quote("ZHC Founders Circle")) not in calls:
         errors.append("wait_text did not quote the multi-word value")
 
+    # 9. is_executable_anchor: getBy*/@ref are drivable; prose recipes are NOT
+    if not (is_executable_anchor("getByRole('button', { name: 'X' })")
+            and is_executable_anchor("getByRole('button', { name: /Create/ })")
+            and is_executable_anchor("getByText('Create Group')")
+            and is_executable_anchor("@e5")):
+        errors.append("is_executable_anchor rejected a real getBy*/@ref form")
+    if (is_executable_anchor("textbox in the add-channel dialog")
+            or is_executable_anchor("native DOM .click() on 'Create Group'")
+            or is_executable_anchor("")):
+        errors.append("is_executable_anchor accepted a prose recipe / empty string")
+
+    # 10. FALLBACK-CHAIN WALK (the empty-account fix): primary 'Create Group' MISSES on a
+    #     fresh sub-account; the regex fallback matches the empty-state 'Create a Community'
+    #     via a native .click(). Prose fallbacks are skipped (never blind-clicked).
+    def ab_all_miss(session, *args, timeout=15):
+        return subprocess.CompletedProcess(list(args), 1, "", "Element not found")
+
+    def ev_regex_only(session, js, timeout=15):
+        # native click: only the REGEX form (empty-state) resolves; the plain-name primary misses.
+        # The regex fallback embeds its source (`Create|Add`) in the JS; the plain 'Create Group'
+        # primary does not — that is the honest discriminator (every native_click_js references
+        # `new RegExp` in a ternary, so match on the regex SOURCE, not the ternary).
+        return "CLICKED:Create a Community" if "Create|Add" in js else "NOTFOUND"
+
+    exw = AbExecutor(ab=ab_all_miss, ev=ev_regex_only)
+    rw = exw.click("s", "getByRole('button', { name: 'Create Group' })",
+                   fallbacks=["getByRole('button', { name: /Create|Add|New.*(Group|Community)/ })",
+                              "getByText('Create Group')"])
+    if not (rw.get("ok") and rw.get("via_fallback") and "Create a Community" in (rw.get("detail") or "")):
+        errors.append(f"fallback-walk did not resolve the empty-state control: {rw}")
+
+    calls2: List[tuple] = []
+
+    def ab_capture_miss(session, *args, timeout=15):
+        calls2.append(args)
+        return subprocess.CompletedProcess(list(args), 1, "", "not found")
+
+    exp = AbExecutor(ab=ab_capture_miss, ev=lambda s, j, timeout=15: "NOTFOUND")
+    rp = exp.click("s", "getByRole('button', { name: 'X' })",
+                   fallbacks=["textbox in the add-channel dialog", "native DOM .click() on 'X'"])
+    if rp.get("ok"):
+        errors.append("prose-only fallbacks should not resolve a click")
+    if not any(c.get("path") == "skipped-recipe" for c in rp.get("chain_tried", [])):
+        errors.append("prose fallback was not recorded as skipped-recipe")
+    if any(a and a[0] == "click" and "textbox" in " ".join(a) for a in calls2):
+        errors.append("prose fallback was blind-clicked as CSS (D8 violation)")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
         print(f"\n[selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
         return 1
     print("[selftest] PASS — anchor parse + find-arg build + quoting round-trip + native "
-          "click/fill + executor modes (no network / no browser)")
+          "click/fill + executor modes + fallback-chain walk (no network / no browser)")
     return 0
 
 

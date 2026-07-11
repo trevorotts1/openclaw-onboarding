@@ -204,7 +204,11 @@ def _ex_click(session: str, sels: dict, dotted: str, *, native: Optional[bool] =
               required: bool = True, timeout: int = 15) -> dict:
     """Resolve a Playwright anchor (D8 gate) and click via the 0.27.0 executor. `native`
     forces the eval .click() path (Naive-UI submits); None reads the node's `exec` hint.
-    Raises StopAndReport if the executor cannot resolve+click (never brute-forces)."""
+    The node's JSON `fallbacks` chain is walked after the primary (empty-account fix): the
+    executor tries the LOCKed primary, then each executable fallback (find + native + the
+    regex fallbacks) in order — so an EMPTY sub-account's "Create a Community"/"Create Course"
+    empty-state control resolves via the already-present regex fallback. Raises StopAndReport
+    only when the primary AND every executable fallback miss (never brute-forces)."""
     a = anchor(sels, dotted, required=required)
     if not a:
         return {"ok": False, "path": "skipped", "reason": "optional capture-pending"}
@@ -212,12 +216,14 @@ def _ex_click(session: str, sels: dict, dotted: str, *, native: Optional[bool] =
     if native is None:
         native = node.get("exec") == "native"
     res = _exec().click(session, a, kind=node.get("kind", ""),
-                        mode=("native" if native else "auto"), timeout=timeout)
+                        mode=("native" if native else "auto"),
+                        fallbacks=node.get("fallbacks"), timeout=timeout)
     if not res.get("ok"):
         raise StopAndReport(
             f"click:{dotted}",
-            f"agent-browser 0.27.0 could not resolve+click {a!r} "
-            f"(path={res.get('path')}, detail={res.get('detail')}). STOP — no brute-force.")
+            f"agent-browser 0.27.0 could not resolve+click {a!r} nor any executable fallback "
+            f"(path={res.get('path')}, detail={res.get('detail')}, "
+            f"chain={res.get('chain_tried')}). STOP — no brute-force.")
     return res
 
 
@@ -227,11 +233,13 @@ def _ex_fill(session: str, sels: dict, dotted: str, value: str, *,
     if not a:
         return {"ok": False, "path": "skipped", "reason": "optional capture-pending"}
     node = _target(sels, dotted)
-    res = _exec().fill(session, a, value, kind=node.get("kind", ""), timeout=timeout)
+    res = _exec().fill(session, a, value, kind=node.get("kind", ""),
+                       fallbacks=node.get("fallbacks"), timeout=timeout)
     if not res.get("ok"):
         raise StopAndReport(
             f"fill:{dotted}",
-            f"agent-browser 0.27.0 could not resolve+fill {a!r} (path={res.get('path')}). STOP.")
+            f"agent-browser 0.27.0 could not resolve+fill {a!r} nor any executable fallback "
+            f"(path={res.get('path')}, chain={res.get('chain_tried')}). STOP.")
     return res
 
 

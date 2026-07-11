@@ -329,3 +329,145 @@ def test_still_no_locked_inarea_targets():
                    "course.create_modal.product_type",
                    "course.outline.lesson_body_editor"):
         assert cb._target(sels, dotted)["status"] == "capture-pending", f"{dotted} still pending"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE D — fallback-chain walking (the EMPTY-account fix) + empty-list course cleanup
+# ═══════════════════════════════════════════════════════════════════════════
+def test_is_executable_anchor_distinguishes_selectors_from_recipes():
+    """Only a real Playwright getBy*/@ref fallback is drivable; prose capture-recipes are
+    skipped (D8: never guess a prose string as CSS)."""
+    assert abx.is_executable_anchor("getByRole('button', { name: 'X' })") is True
+    assert abx.is_executable_anchor("getByRole('button', { name: /Create|Add/ })") is True
+    assert abx.is_executable_anchor("getByText('Create Group')") is True
+    assert abx.is_executable_anchor("getByPlaceholder('Group Name')") is True
+    assert abx.is_executable_anchor("@e7") is True
+    assert abx.is_executable_anchor("textbox in the add-channel dialog") is False
+    assert abx.is_executable_anchor("native DOM .click() on 'Create Group'") is False
+    assert abx.is_executable_anchor("") is False
+
+
+def test_executor_click_walks_fallback_regex_native():
+    """THE empty-account fix: the LOCKed primary 'Create Group' (populated-account list header)
+    MISSES on a fresh sub-account; the already-present regex fallback matches the empty-state
+    'Create a Community' via a native .click(). First hit wins; via_fallback is flagged."""
+    def ab_all_miss(s, *args, timeout=15):
+        return subprocess.CompletedProcess(list(args), 1, "", "Element not found")
+
+    seen = []
+
+    def ev(s, js, timeout=15):
+        seen.append(js)
+        # only the regex fallback (source 'Create|Add' embedded) matches the empty-state control
+        return "CLICKED:Create a Community" if "Create|Add" in js else "NOTFOUND"
+
+    ex = abx.AbExecutor(ab=ab_all_miss, ev=ev)
+    r = ex.click("s", "getByRole('button', { name: 'Create Group' })",
+                 fallbacks=["getByRole('button', { name: /Create|Add|New.*(Group|Community)/ })",
+                            "getByText('Create Group')"])
+    assert r["ok"] is True
+    assert r["via_fallback"] is True
+    assert "Create a Community" in (r.get("detail") or "")
+    # the winning candidate is the regex fallback, not the primary
+    assert "/Create|Add|New" in r["candidate"]
+
+
+def test_executor_click_first_hit_wins_no_later_candidate_tried():
+    """Once a candidate resolves, later fallbacks are never tried (mirror resolve_anchor)."""
+    def ab(s, *args, timeout=15):        # primary find SUCCEEDS
+        return subprocess.CompletedProcess(list(args), 0, "✓ Done", "")
+
+    ex = abx.AbExecutor(ab=ab, ev=lambda s, j, timeout=15: "CLICKED:x")
+    r = ex.click("s", "getByRole('button', { name: 'Create Group' })",
+                 fallbacks=["getByText('SHOULD-NOT-TRY')"])
+    assert r["ok"] and r["via_fallback"] is False
+    assert len(r["chain_tried"]) == 1        # only the primary was tried
+
+
+def test_executor_click_skips_prose_recipe_fallbacks():
+    """Prose fallbacks are capture-recipes, not selectors — never blind-clicked as CSS."""
+    calls = []
+
+    def ab(s, *args, timeout=15):
+        calls.append(args)
+        return subprocess.CompletedProcess(list(args), 1, "", "not found")   # everything misses
+
+    ex = abx.AbExecutor(ab=ab, ev=lambda s, j, timeout=15: "NOTFOUND")
+    r = ex.click("s", "getByRole('button', { name: 'X' })",
+                 fallbacks=["textbox in the add-channel dialog", "native DOM .click() on 'X'"])
+    assert r["ok"] is False
+    assert any(c.get("path") == "skipped-recipe" for c in r["chain_tried"])
+    assert not any(a and a[0] == "click" and "textbox" in " ".join(a) for a in calls)
+
+
+def test_executor_fill_walks_executable_fallback():
+    """fill walks the same executable chain: primary placeholder misses, a getBy* fallback fills."""
+    def ab(s, *args, timeout=15):
+        # the primary 'Group Name' find MISSES; the fallback placeholder find SUCCEEDS
+        if "Group Name" in " ".join(str(a) for a in args):
+            return subprocess.CompletedProcess(list(args), 1, "", "not found")
+        return subprocess.CompletedProcess(list(args), 0, "✓ Done", "")
+
+    ex = abx.AbExecutor(ab=ab, ev=lambda s, j, timeout=15: "NOTFOUND")
+    r = ex.fill("s", "getByPlaceholder('Group Name')", "Acme",
+                fallbacks=["getByPlaceholder('Community Name')"])
+    assert r["ok"] is True and r["via_fallback"] is True
+
+
+def test_ex_click_walks_json_fallbacks_for_empty_state():
+    """Integration: cb._ex_click passes the create_group_button JSON fallbacks to the executor,
+    so the empty-state 'Create a Community' regex fallback fires when the LOCKed 'Create Group'
+    primary misses — the exact Phase C failure, now fixed."""
+    sels = cb.load_selectors()
+
+    def ab(s, *args, timeout=15, stdin=None):
+        return subprocess.CompletedProcess(list(args), 1, "", "Element not found")   # find misses
+
+    def ev(s, js, timeout=15):
+        return "CLICKED:Create a Community" if "Create|Add" in js else "NOTFOUND"
+
+    with patched_cb(ab=ab, eval_fn=ev):
+        res = cb._ex_click("s", sels, "community.list_page.create_group_button")
+    assert res["ok"] is True
+    assert res["via_fallback"] is True
+
+
+def test_ex_click_still_stops_when_primary_and_all_fallbacks_miss():
+    """The D8 STOP still fires when the primary AND every executable fallback miss — the
+    fallback walk widens resolution, it never removes the honest STOP."""
+    sels = cb.load_selectors()
+
+    def ab(s, *args, timeout=15, stdin=None):
+        return subprocess.CompletedProcess(list(args), 1, "", "not found")
+
+    with patched_cb(ab=ab, eval_fn=lambda s, j, timeout=15: "NOTFOUND"):
+        with pytest.raises(cb.StopAndReport):
+            cb._ex_click("s", sels, "community.list_page.create_group_button")
+
+
+# ── fix 2: empty-list course cleanup fallback (Search Courses box absent) ─────
+def test_delete_course_empty_list_nothing_to_delete_when_search_absent():
+    """On a near-empty sub-account the 'Search Courses' box is absent AND the scratch course
+    isn't in the list (never created) → list-scan fallback reports 0 residue, nothing to delete
+    (no false STOP). This is the Phase C course-cleanup STOP, now fixed."""
+    calls = []
+    ab = _fake_ab_factory(calls, miss_placeholder=True)      # the search-box fill MISSES
+    with patched_cb(snapshot="", eval_fn=lambda s, j, timeout=20: "", ab=ab):
+        cl = course._delete_course("s", cb.load_selectors(),
+                                   {"course_name": "ZHC Empty", "slug": "zhc-empty"})
+    assert cl["cleanup_primitive"] == "delete"
+    assert cl["deleted"] is True
+    assert cl["residue_in_list"] is False
+    assert "nothing to delete" in cl.get("note", "")
+
+
+def test_delete_course_list_scan_proceeds_when_present_but_search_absent():
+    """Search box absent BUT the scratch course IS present → the list-scan fallback still
+    proceeds to the card-scoped kebab (card-scoped by EXACT NAME remains the real guard)."""
+    calls = []
+    ab = _fake_ab_factory(calls, miss_placeholder=True)      # search fill misses
+    with patched_cb(snapshot="ZHC Present course card", eval_fn=lambda s, j, timeout=20: "", ab=ab):
+        cl = course._delete_course("s", cb.load_selectors(),
+                                   {"course_name": "ZHC Present", "slug": "zhc-present"})
+    assert cl["cleanup_primitive"] == "delete"
+    assert "stop" in cl                     # reached the (card-scoped) kebab, which can't resolve here

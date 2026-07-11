@@ -296,13 +296,32 @@ def _delete_course(session: str, sels: dict, plan: dict, location_id: str = "") 
     """TRUE 0-residue delete (fix d) — SAFETY-CRITICAL on a POPULATED account: SEARCH-NARROW
     to isolate the scratch course, then click ITS OWN card kebab (card-scoped), 'Delete', TYPE
     the literal CONFIRM guard token into the type-to-proceed box, then Confirm. NEVER a blind
-    first-'More actions' (that would hit a REAL member course). Phase B live-proven 0-residue."""
+    first-'More actions' (that would hit a REAL member course). Phase B live-proven 0-residue.
+
+    EMPTY-LIST fallback (Phase D fix 2 — mirror the community list-scan): the 'Search Courses'
+    box may be ABSENT on a near-empty sub-account (the first-client scenario). When the search
+    fill can't resolve, fall back to a list-scan: if the scratch course is NOT in the list it
+    was never created / already gone (0 residue, nothing to delete); if it IS present, proceed
+    to the card-scoped kebab. The kebab is card-scoped BY EXACT NAME either way, so a real
+    member course can never be hit — the search box is an EXTRA isolation, not the guard."""
     name = plan["course_name"]
     try:
         if location_id:
             _nav_to_list(session, location_id, sels, "course.routes.courses_list", "Create New")
-        _ex_fill(session, sels, "course.list_page.search_box", name, required=False)  # isolate
-        _ex_wait_text(session, name[:18], timeout=10)
+        # search-narrow (safety on a POPULATED list); tolerate an absent box on a near-empty one.
+        searched = False
+        try:
+            r = _ex_fill(session, sels, "course.list_page.search_box", name, required=False)
+            if r.get("ok"):
+                searched = True
+                _ex_wait_text(session, name[:18], timeout=10)
+        except StopAndReport:
+            searched = False                     # box absent (near-empty account) → list-scan
+        if not searched and not _list_has(session, name, plan["slug"]):
+            return {"cleanup_primitive": "delete", "deleted": True, "residue_in_list": False,
+                    "safety": "list-scan (Search Courses box absent)",
+                    "note": "course not present in the list — never created / already gone "
+                            "(0 residue, nothing to delete)"}
         if not _scoped_card_kebab(session, name):
             raise StopAndReport("delete.kebab",
                                 f"could not open the {name!r} card kebab (card-scoped) — "
@@ -315,7 +334,8 @@ def _delete_course(session: str, sels: dict, plan: dict, location_id: str = "") 
         _ex_wait_text(session, "Create New", timeout=12)
         residue = _list_has(session, name, plan["slug"])
         return {"cleanup_primitive": "delete", "deleted": not residue, "residue_in_list": residue,
-                "safety": "search-narrowed + card-scoped + type-CONFIRM"}
+                "safety": ("search-narrowed + card-scoped + type-CONFIRM" if searched
+                           else "list-scan + card-scoped + type-CONFIRM")}
     except StopAndReport as sr:
         return {"cleanup_primitive": "delete", "deleted": False,
                 "residue_in_list": True, "stop": str(sr)}
