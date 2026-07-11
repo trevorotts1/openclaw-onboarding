@@ -1,3 +1,14 @@
+## [v19.40.0]  -  2026-07-11  -  feat(fleet-standards): per-turn token-burn family — toolSearch directory mode + reserved ollama prompt-caching slot + core-bootstrap size guard
+
+Merges `feat/toolsearch-directory-default` off fresh origin/main (v19.39.0) as the serial onboarding writer. Judge 9.0. Scoped to `FLEET-STANDARDS.md` + `scripts/apply-fleet-standards.sh` (no skill dirs → no G3 obligation). No client names, no secret values, no Anthropic runtime identifiers in the diff.
+
+- **On-demand MCP tool loading (`tools.toolSearch.mode="directory"`) becomes a fleet standard.** The fleet was paying "schema-every-turn": every OpenClaw / plugin / MCP tool's full JSON schema was injected into context on EVERY turn. Most acute on the GHL community MCP (~hundreds of tools), which `update-skills.sh wire_ghl_mcp` re-registers on every pass. Directory mode compacts the standing catalog behind a searchable names+descriptions index that the model hydrates on demand — so re-registration can never reintroduce the full-schema cost. Client-provided run tools stay directly visible; only the standing catalog is compacted.
+- **Reserved (NO-OP) slot for ollama prompt caching — deliberately does not guess.** Prompt caching is the MEASURED dominant per-turn burn (`cacheRead=0` fleet-wide), but the config key is not yet verified, so the slot is reserved and inert until the verified key lands. It writes nothing. This is the correct fail-closed posture: no invented config keys.
+- **Core-bootstrap SIZE GUARD (warn-only, ~150K target).** Flags oversized compiled AGENTS/MEMORY/TOOLS/SOUL/IDENTITY bootstraps that are re-billed every turn. Never edits content — it only warns.
+- **Safe to re-run.** The enforcement is idempotent and override-preserving: `deep_merge()` recurses into an existing `toolSearch` block and enforces ONLY `mode`, leaving per-box tuning (`codeTimeoutMs` / `searchDefaultLimit` / `maxSearchLimit`) untouched. An `openclaw config validate` gate is the backstop + auto-rollback if a gateway version ever rejects the key.
+- **Gates green (raw, this QC).** `bash -n scripts/apply-fleet-standards.sh` OK; all 3 embedded python heredocs (PRESDETECT_PY / PYBT / SKILLINS_PY) compile; `tests/unit/both-paths-zhe-delivery.test.sh` PASS (all dimensions deliver on both paths).
+- **Version roll** — repo rolled v19.39.0 -> v19.40.0 via `scripts/bump-version.sh` (all 11 markers in lockstep). Annotated tag `v19.40.0` cut on the release commit.
+
 ## [v19.39.0]  -  2026-07-11  -  feat(06/skill6): Phase-B live-proof — community/course/channel builders driven LIVE, selector anchors LOCKed (Skill 6)
 
 Merges `skill6-community-course-live-ready` off fresh origin/main (v19.38.0) as the serial onboarding writer. Judge 9.0. Scoped to `06-ghl-install-pages` (community + course builders, live selector map, 2 test files). No client names, no secret values, no Anthropic runtime identifiers in the diff.
