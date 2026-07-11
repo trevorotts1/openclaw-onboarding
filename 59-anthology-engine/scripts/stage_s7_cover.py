@@ -403,11 +403,15 @@ def _invoke_wiring(key, run_dir=None):
     (working / COVER_SET_FILENAME).write_text(json.dumps(pick_manifest, indent=2), encoding="utf-8")
 
     # 8. mc_board.py -- mirror the participant card (the cover SET is ready for the
-    #    producer to approve and send); FAIL-SOFT.
+    #    producer to approve and send). FAIL-SOFT (A1): a board outage or refusal on
+    #    this mirror NEVER holds the stage (the cover set is staged + fields written);
+    #    the daily reconcile tick re-syncs any card the board missed.
     rel, _ = WIRING[6]
     rc, _ = _step(6, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
-        return rc
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, stage "
+                         "complete; the daily reconcile tick re-syncs the card.\n"
+                         % (STAGE, rc))
 
     # HOLD at s7_cover: the producer approves the SET (no down-select) and the client
     # picks ONE style in the universal-review cover dropdown; --apply-pick advances S8.
@@ -524,11 +528,17 @@ def _invoke_apply_pick(key, choice, run_dir=None):
     if rc != EX_OK:
         return rc
 
-    # 5. mc_board.py -- mirror to the s8_deliver cursor; FAIL-SOFT.
+    # 5. mc_board.py -- mirror to the s8_deliver cursor. FAIL-SOFT (A1): a board
+    #    outage or refusal here NEVER holds the pick (the cursor already advanced to
+    #    s8_deliver), and critically it must NOT suppress the S8 hand-off below -- the
+    #    delivery sweep has to proceed even when the board is dark. The daily reconcile
+    #    tick re-syncs any card the board missed.
     mc_rel, _ = WIRING[6]
     rc, _ = _step(6, mc_rel, [py, str(_resolve(mc_rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
-        return rc
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, continuing "
+                         "to the S8 hand-off; the daily reconcile tick re-syncs the card.\n"
+                         % (STAGE, rc))
 
     # 6. hand off the completion sweep to S8 (as the single cover did at S0->S1).
     _spawn_next(py, "stage_s8_deliver.py", pkey, rundir)

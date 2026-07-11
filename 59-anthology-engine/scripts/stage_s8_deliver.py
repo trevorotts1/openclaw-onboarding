@@ -341,11 +341,17 @@ def _invoke_wiring(key, run_dir=None, deliverable=None, final=False, gate_hint=N
         return rc, None
 
     # 7. mc_board.py -- at participant completion the signed process certificate
-    #    is recorded and the card moves to review (never done).
+    #    is recorded and the card moves to review (never done). FAIL-SOFT (A1): this
+    #    TERMINAL board mirror is a pure projection; a board outage or refusal here
+    #    NEVER holds the delivery (the deliverable is already delivered, recorded, and
+    #    the completion nudge sent). The daily reconcile tick re-syncs any card the
+    #    board missed.
     rel, _ = WIRING[6]
     rc, _ = _step(6, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
-        return rc, None
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, delivery "
+                         "complete; the daily reconcile tick re-syncs the card.\n"
+                         % (STAGE, rc))
 
     result = {"delivered": True, "type": deliverable, "doc_url": doc_url,
              "pdf_url": None, "report": delivered.get("report"),

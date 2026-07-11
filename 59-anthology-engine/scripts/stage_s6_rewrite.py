@@ -262,11 +262,16 @@ def _invoke_wiring(key, run_dir=None):
         return rc
 
     # 8. mc_board.py -- mirror the participant card to review as the rewrite
-    #    RE-ENTERS s5_gate (W4.3); FAIL-SOFT.
+    #    RE-ENTERS s5_gate (W4.3). FAIL-SOFT (A1): this TERMINAL board mirror is a
+    #    pure projection; a board outage or refusal here NEVER holds the stage (the
+    #    rewrite is delivered and the cursor re-entered s5_gate already). The daily
+    #    reconcile tick re-syncs any card the board missed.
     rel, _ = WIRING[7]
     rc, _, _ = _step(7, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
-        return rc
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, stage "
+                         "complete; the daily reconcile tick re-syncs the card.\n"
+                         % (STAGE, rc))
 
     return EX_OK
 

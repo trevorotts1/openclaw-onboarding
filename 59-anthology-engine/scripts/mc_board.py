@@ -13,6 +13,12 @@ WHAT THIS IS (and is NOT):
     rejection, or a schema hiccup NEVER blocks the pipeline. The ledger remains
     the truth; the card reconciles on the daily tick. Every board outcome -- even
     "unreachable" -- returns exit 0 so a stage runner is never held on the board.
+    The `reconcile` subcommand IS that daily tick: it re-projects EVERY ledger
+    subject (every participant chapter card + every anthology Assembly card) onto
+    its board card, fail-soft per subject, so a card a stage's fail-soft swallow
+    missed (a board outage mid-stage, or an S0 that held at Drive after the card
+    was created) is recovered. It is also the one-time backfill for a board that
+    fell behind. Idempotency keys make every re-post a safe dedupe.
   * It reuses Skill 32's EXISTING auth pair, never a new one: HMAC-SHA256 over the
     exact request bytes in `x-webhook-signature` (keyed by the WEBHOOK_SECRET
     label) PLUS `Authorization: Bearer <MC_API_TOKEN>` (the middleware external
@@ -352,6 +358,49 @@ def _read_participant_keys(anthology_id, state_dir):
             pass
 
 
+def _read_all_participant_keys(state_dir):
+    """Read EVERY participant_key across ALL anthologies -- the daily reconcile's
+    participant sweep. Returns a list, or [] when the mirror is unavailable. Never
+    writes; fail-soft on any sqlite error. Mirrors _read_participant_keys but
+    unscoped (no anthology filter)."""
+    con = _mirror_ro(state_dir)
+    if con is None:
+        return []
+    try:
+        rows = con.execute("SELECT participant_key FROM participants "
+                           "ORDER BY participant_key").fetchall()
+        return [r["participant_key"] for r in rows]
+    except sqlite3.Error as exc:
+        _warn("mirror read (all participants) failed (%s); continuing fail-soft" % exc)
+        return []
+    finally:
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
+
+
+def _read_all_anthology_ids(state_dir):
+    """Read EVERY anthology_id -- the daily reconcile's Assembly-card sweep. Returns
+    a list, or [] when the mirror is unavailable. Never writes; fail-soft on any
+    sqlite error."""
+    con = _mirror_ro(state_dir)
+    if con is None:
+        return []
+    try:
+        rows = con.execute("SELECT anthology_id FROM anthologies "
+                           "ORDER BY anthology_id").fetchall()
+        return [r["anthology_id"] for r in rows]
+    except sqlite3.Error as exc:
+        _warn("mirror read (all anthologies) failed (%s); continuing fail-soft" % exc)
+        return []
+    finally:
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
+
+
 def _read_subject(subject_key, state_dir):
     """Read the ledger row a card projects. Returns (kind, row_dict) where kind is
     'participant' or 'anthology', or (kind, None) when the subject is unknown, or
@@ -635,6 +684,79 @@ def cmd_sync(args):
            "state": state_field, "target_status": target, "task_id": task_id,
            "ingest": ingest_outcome, "move": move_outcome, "moved": moved,
            "failsoft": not moved}, args.json)
+    return EX_OK
+
+
+def _sync_one(subject_key, kind, row, bcfg, timeout):
+    """Best-effort projection of ONE subject's card (ingest + move), factored out of
+    cmd_sync so the daily reconcile can iterate every subject. FAIL-SOFT: returns an
+    outcome string, never raises for a board condition. Mirrors _archive_one's shape.
+      unknown_subject  -- no ledger row to project
+      not_mirrored     -- the current state is not a mirrored card status (a no-op)
+      unresolved:<why> -- the card could not be created/resolved (board declined/down)
+      deferred:<why>   -- the card exists but the move was declined/deferred
+      synced           -- the card is created/resolved AND moved to its target status
+    """
+    if kind is None or row is None:
+        return "unknown_subject"
+    target = _target_status(kind, row)
+    if target is None:
+        return "not_mirrored"
+    card = build_card(kind, subject_key, row, bcfg)
+    task_id, ingest_outcome = post_ingest(card, bcfg, timeout)
+    if task_id is None:
+        return "unresolved:%s" % ingest_outcome
+    state_field = row.get("stage_cursor") if kind == "participant" else row.get("assembly_state")
+    note = "%s=%s" % ("stage_cursor" if kind == "participant" else "assembly_state", state_field)
+    moved, move_outcome = post_status(task_id, target, note, bcfg, timeout)
+    return "synced" if moved else "deferred:%s" % move_outcome
+
+
+def _reconcile_bucket(outcome):
+    """Classify a _sync_one outcome into a reconcile tally bucket."""
+    if outcome == "synced":
+        return "synced"
+    if outcome.startswith(("deferred", "unresolved")):
+        return "deferred"
+    if outcome == "not_mirrored":
+        return "not_mirrored"
+    if outcome == "unknown_subject":
+        return "unknown"
+    return "error"
+
+
+def cmd_reconcile(args):
+    """DAILY-TICK reconcile (SPEC 11.2 safety net): project EVERY ledger subject onto
+    its board card so any card a fail-soft swallow missed (a board outage during a
+    stage, or an S0 that held at Drive before the card was mirrored) is recovered.
+    Iterates every anthology (Assembly card) + every participant (chapter card), runs
+    the idempotent ingest+move per subject, FAIL-SOFT per subject (one bad subject
+    never aborts the sweep), and ALWAYS exits 0. Idempotency keys make every re-post a
+    safe dedupe. This is the tick the SPEC promised ('the card reconciles on the daily
+    tick') and the one-time backfill mechanism for a board that fell behind."""
+    bcfg = BoardConfig(_load_config(args.config))
+    state_dir = resolve_state_dir(args)
+    anth_ids = _read_all_anthology_ids(state_dir)
+    part_keys = _read_all_participant_keys(state_dir)
+    outcomes = {}
+    counts = {"synced": 0, "deferred": 0, "not_mirrored": 0, "unknown": 0, "error": 0}
+    # Assembly cards first, then participant cards (mirrors the archive sweep order).
+    for skey in list(anth_ids) + list(part_keys):
+        _kind, row = _read_subject(skey, state_dir)
+        try:
+            outcome = _sync_one(skey, _kind, row, bcfg, args.timeout)
+        except Exception as exc:  # noqa: BLE001 one bad subject never aborts the sweep
+            _warn("reconcile subject failed (%s); continuing fail-soft" % exc.__class__.__name__)
+            outcome = "error"
+        outcomes[skey] = outcome
+        counts[_reconcile_bucket(outcome)] += 1
+    total = len(anth_ids) + len(part_keys)
+    result = {"ok": True, "action": "reconcile", "subjects": total,
+              "anthologies": len(anth_ids), "participants": len(part_keys),
+              "counts": counts, "failsoft": (counts["deferred"] + counts["error"]) > 0}
+    if getattr(args, "verbose", False):
+        result["outcomes"] = outcomes
+    _emit(result, args.json)
     return EX_OK
 
 
@@ -973,13 +1095,59 @@ def self_test():
         # archive stays exit 0 even with the board down (fail-soft revocation).
         _TRANSPORT = _down_transport
         assert cmd_archive(_AR()) == EX_OK
+
+        # -- RECONCILE (daily tick): sweeps EVERY subject, fail-soft per subject ----
+        # The unscoped reads see every ledger subject (1 participant + 1 anthology).
+        assert set(_read_all_participant_keys(tmp)) == {pk}
+        assert set(_read_all_anthology_ids(tmp)) == {aid}
+
+        class _RC:  # reconcile args stand-in: no subject-key; it sweeps ALL subjects
+            state_dir = tmp
+            config = None
+            json = True
+            timeout = 5
+            verbose = True
+
+        recon_calls = {"ingest": 0, "status": 0}
+
+        def _reconcile_transport(url, body_bytes, headers, timeout):
+            if url.endswith(bcfg.ingest_path):
+                recon_calls["ingest"] += 1
+                return 201, {"task_id": "card_rc", "deduped": False}
+            recon_calls["status"] += 1
+            assert json.loads(body_bytes)["status"] != "done"   # never 'done'
+            return 200, {"id": "card_rc", "status": "review"}
+        _TRANSPORT = _reconcile_transport
+        assert cmd_reconcile(_RC()) == EX_OK
+        # both the Assembly card (compiled->review) and the participant (s5_gate->
+        # review) are re-projected: two ingests + two moves.
+        assert recon_calls["ingest"] == 2 and recon_calls["status"] == 2, recon_calls
+        # _sync_one classifies a successful projection as 'synced'.
+        assert _reconcile_bucket("synced") == "synced"
+        assert _reconcile_bucket("deferred:forbidden") == "deferred"
+        assert _reconcile_bucket("unresolved:unreachable") == "deferred"
+        assert _reconcile_bucket("unknown_subject") == "unknown"
+
+        # reconcile stays exit 0 even with the board down (fail-soft daily tick), and
+        # an empty ledger (mirror unavailable) is a clean zero-subject exit 0.
+        _TRANSPORT = _down_transport
+        assert cmd_reconcile(_RC()) == EX_OK
+
+        class _RCEMPTY:
+            state_dir = tempfile.mkdtemp(prefix="mcboard-empty-")  # no anthology_state.db
+            config = None
+            json = True
+            timeout = 5
+            verbose = False
+        assert cmd_reconcile(_RCEMPTY()) == EX_OK
     finally:
         _TRANSPORT = _urllib_transport
 
     print("mc_board self-test: OK (status maps never 'done', never-done guard, HMAC "
           "== CC scheme, header gating, ledger read+project, ingest success, "
           "two-anthology-one-contact distinct titles, board-down fail-soft, "
-          "auth/scope fail-soft, Assembly transitions, archive Assembly+participants fail-soft)")
+          "auth/scope fail-soft, Assembly transitions, archive Assembly+participants "
+          "fail-soft, reconcile sweeps every subject + empty/down fail-soft)")
     return EX_OK
 
 
@@ -1018,11 +1186,21 @@ def _build_parser():
     sp.add_argument("--config", help="path to the resolved engine-config.json")
     sp.add_argument("--timeout", type=int, default=10, help="per-request timeout seconds")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
+
+    sp = sub.add_parser("reconcile", help="daily-tick: project EVERY ledger subject "
+                        "onto its card (recover any card a fail-soft swallow missed)")
+    sp.add_argument("--state-dir", dest="state_dir",
+                    help="engine state dir (default: resolved like anthology_state)")
+    sp.add_argument("--config", help="path to the resolved engine-config.json")
+    sp.add_argument("--timeout", type=int, default=10, help="per-request timeout seconds")
+    sp.add_argument("--json", action="store_true", help="machine-readable output")
+    sp.add_argument("--verbose", action="store_true",
+                    help="include the per-subject outcome map in the output")
     return ap
 
 
 HANDLERS = {"sync": cmd_sync, "ensure": cmd_ensure, "status": cmd_status,
-            "archive": cmd_archive}
+            "archive": cmd_archive, "reconcile": cmd_reconcile}
 
 
 def main(argv=None):

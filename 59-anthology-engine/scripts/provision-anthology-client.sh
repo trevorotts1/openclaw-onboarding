@@ -68,7 +68,11 @@
 #      exist; an unresolved secret leaves that ONE placeholder unfilled with a note
 #      (HELD under --require-live), never a false green. See references/anthology-snapshot-guide.md.
 #   8  register EXACTLY the ONE daily tick in the cron inventory — no heartbeat,
-#      ever (guard-cron-inventory.py proves it).
+#      ever (guard-cron-inventory.py proves it). The tick runs the smoke test
+#      (funded-reachability probe + hold-queue aging) AND the board-mirror reconcile
+#      (mc_board.py reconcile, invoked by anthology-smoke-test.py run) so any board
+#      card a stage's fail-soft swallow missed is recovered daily (finding A2). It is
+#      registered --no-deliver (never spams chat, per the cron-announce-drift gotcha).
 #   9  run verify-webhook-t1-t9.sh (structure now; the live T1..T9 battery is
 #      executed and OBSERVED on the canary at W5.3).
 #   10 fire ONE smoke test — balance endpoints ONLY, total spend at or under one
@@ -111,7 +115,8 @@
 #   --department-slug SLUG     Command Center department slug (default anthology).
 #   --daily-tick-schedule CRON cron schedule for the one daily tick (default 0 8 * * *).
 #   --daily-tick-cmd CMD       override the daily-tick command (default: the
-#                              smoke-test run under this skill).
+#                              smoke-test run under this skill, which also performs
+#                              the board-mirror reconcile — mc_board.py reconcile).
 #   --skip-department          skip step-3.5 department seeding (CC seeded elsewhere).
 #   --skip-smoke               skip step 10.
 #   --state-dir DIR            override the engine state dir.
@@ -916,6 +921,11 @@ step_snapshot() {
 
 step8_cron() {
     note "STEP 8/10 — register EXACTLY the ONE daily tick (no heartbeat, ever)"
+    # The daily tick runs anthology-smoke-test.py run, which now performs BOTH the
+    # funded-reachability probe + hold-queue aging AND the board-mirror reconcile
+    # (mc_board.py reconcile) as its final step (finding A2). That reconcile re-projects
+    # every ledger subject onto its board card, so any card a stage's fail-soft swallow
+    # missed (a board outage mid-stage, or an S0 that held at Drive) is recovered daily.
     local cmd="$DAILY_TICK_CMD"
     [ -z "$cmd" ] && cmd="python3 $SCRIPTS/anthology-smoke-test.py run --max-spend-cents 1"
     if [ "$MODE" = "dryrun" ]; then
@@ -960,7 +970,7 @@ step8_cron() {
       "does": [
         "funded-reachability smoke probe (balance endpoints only, at or under one cent)",
         "hold-queue aging (resume from the exact cursor)",
-        "mirror reconcile",
+        "board-mirror reconcile (mc_board.py reconcile: re-project every ledger subject onto its board card so a card missed by a stage's fail-soft swallow recovers)",
         "7-day stuck-gate re-nudge policy (single deduped auto re-nudge)"
       ],
       "deliver": false,
@@ -1359,7 +1369,7 @@ print_plan() {
   6/10  ledger + mirror bootstrap  anthology_state.py bootstrap
   7/10  webhook route + secret     generate 0600 secret when NOT SET (never printed); materialize the resolved route (SecretRef by label) + MERGE it into the LIVE gateway hooks.mappings/hooks.token via openclaw config (idempotent; verify-after-write)
   7.5   Anthology snapshot         anthology_snapshot.py: verify the operator's MANUAL snapshot import landed (pipeline BY NAME + 9 stages + 28 fields BY KEY; AF-AE-SNAPSHOT-PIPELINE-MISSING if absent) + fill the 4 REPLACE-ME location custom values idempotently (webhook URL from --public-hostname + intake route; hook secret BY LABEL, never printed; producer; producer_email) + stamp snapshot-version.json. NO agency->subaccount push (REJECTED; each client owns their own GHL)
-  8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver
+  8/10  one daily tick             cron-inventory.json (exactly one; no_heartbeat) + idempotent openclaw cron add --no-deliver; the tick probes funded-reachability, ages the hold queue, AND reconciles the board mirror (mc_board.py reconcile) so a missed card recovers daily
   9/10  verify-webhook T1..T9      verify-webhook-t1-t9.sh (structure now; live battery observed on the W5.3 canary)
   10/10 smoke test                 anthology-smoke-test.py run --max-spend-cents 1 (balance endpoints only)
 Exit: 0 gate passed; nonzero STOPS setup with an operator surface (2 validation, 3 held, 4 violation, 5 read-back mismatch).
