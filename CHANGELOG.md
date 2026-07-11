@@ -1,3 +1,13 @@
+## [v19.43.0]  -  2026-07-11  -  fix(23, C5+C7): phantom duplicate department-tree gate + reconcile, and a durable chosen-departments artifact with a real reader (Skill 23)
+
+Merges `fable-fix/onb23-tail` (2 commits) off fresh origin/main (v19.42.0) as the serial onboarding writer. Wave-5 findings C5 + C7; independent adversarial judge **8.7**, re-proven here from raw output. Scoped to `23-ai-workforce-blueprint` + the workspace/system QC scripts. No client names, no secret values, no Anthropic runtime identifiers in the diff.
+
+- **C5 — phantom DUPLICATE department-tree materialization is now GATED, not silently tolerated.** A legacy tree could collide with the chosen department set and materialize a phantom duplicate; the gate now ENFORCES (QC X.11, rc=5) and `reconcile-legacy-tree.py` gained a real reconcile path instead of leaving the collision in place.
+- **C7 — the chosen department list is now a DURABLE artifact with a real reader.** Downstream consumers previously had no authoritative record of which departments the client actually chose (they re-derived it, which is exactly how a phantom tree survives). The chosen-list is now written as a durable artifact and `build-workforce.py` / `department-floor.py` read it authoritatively.
+- **Gates green (raw, this QC).** `test-phantom-dept-collision-gate.sh` -> **PASS=24 FAIL=0**. `test-chosen-departments-artifact.sh` -> **PASS=22 FAIL=0**. `qc-assert-repo-consistency.py` -> **PASS, 10 dimensions OK, 0 DRIFT**. `build-workforce.py` / `department-floor.py` / `reconcile-legacy-tree.py` all compile; `qc-assert-workspace-departments-built.sh` + `qc-system-integrity.sh` pass `bash -n`. Both new tests are CI-wired into `skill23-provisioning-tests.yml`.
+- **⚠️ OPERATOR-LIVE TAIL — NOT EXECUTED HERE (by design).** The code is merged, but running the legacy-tree RECONCILE against a live box is an operator-live step and was deliberately NOT run by the merge train. Boxes carrying a legacy/phantom tree still need that reconcile executed before the C5 gate will report clean on them.
+- **Version roll** — repo rolled v19.42.0 -> v19.43.0 via `scripts/bump-version.sh` (all 11 markers in lockstep). Annotated tag `v19.43.0` cut on the release commit.
+
 ## [v19.42.0]  -  2026-07-11  -  fix(51/23, E5): enforce the signature-presentation turn-gated intake — the optional signature path is now REQUIRED (Skills 51, 23)
 
 Merges `fable-fix/onb51-e5` off fresh origin/main (v19.41.0) as the serial onboarding writer. Wave-5 finding E5; independent adversarial judge **9.2**, re-proven here from raw output. Scoped to `23-ai-workforce-blueprint` (deck-intake-driver + the presentations role-library entry/SOP) + one unit test. No client names, no secret values, no Anthropic runtime identifiers in the diff.
