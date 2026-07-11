@@ -143,14 +143,50 @@ This extends the `lib-onboarding-state.sh` onboarding-honesty philosophy
 ("installed" is a VERIFIED claim, never a file-copy claim) to the workspace
 layer. See `AGENTS.md` N37.
 
+**A third state: DISPLAYED.** A department can be chosen, materialized on disk, and
+still be invisible to the client — because the Command Center board (the
+`workspaces` rows in `mission-control.db`) is a SEPARATE layer from the tree. The
+three layers must describe the SAME company:
+
+**`chosen` == `provisioned` == `displayed`** (`AF-BOARD-JOIN-DRIFT`, the C-series
+JOIN). A department the client PAID FOR that has no board column is a department
+they CANNOT SEE; a ghost column with no tree behind it can never resolve a runtime.
+The join is proved by
+`23-ai-workforce-blueprint/scripts/prove-board-join.py` (single source of truth for
+the join key, the archive-awareness — an ARCHIVED row is NOT displayed — the six
+drift classes, and the COMPANY SCOPING that keeps a multi-company box from
+producing false drift). It is **scoped to one `company_id`**: one
+`mission-control.db` can hold several companies' `workspaces` rows, and joining one
+company's tree against all of them would manufacture false drift.
+
 **Enforced (fail-closed) by** `scripts/qc-assert-workspace-departments-built.sh`
-(single source of truth) via `scripts/qc-system-integrity.sh` **CHECK X.11**
-(rc=3 = `AF-WORKSPACE-SHELL` hard-fail; rc=5 = `AF-PHANTOM-DEPT-TREE` hard-fail),
-the onboarding completion gate
-`lib-onboarding-state.sh` `oc_overall_goal_check()` (criterion iii
-`workspaceMaterialized`), the `scripts/watchdog-onboarding-loop.sh` kill
-condition, and CI (`.github/workflows/qc-static.yml` runs
-`scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh`).
+(single source of truth) via `scripts/qc-system-integrity.sh` **CHECK X.11**, whose
+exit codes are:
+
+| rc | class | verdict |
+|----|-------|---------|
+| 0 | — | every required dept FULL, no phantom trees, board join clean |
+| 3 | `AF-WORKSPACE-SHELL` | a required dept is SHELL / PARTIAL — **HARD FAIL** |
+| 5 | `AF-PHANTOM-DEPT-TREE` | one canonical dept materialized twice, or a `.bak` dept tree — **HARD FAIL** |
+| 6 | `AF-BOARD-JOIN-DRIFT` | chosen != provisioned != displayed (or the board cannot be vouched for) — **HARD FAIL** |
+| 4 | — | no workspace yet (not built) — warn; CHECK 1.1 owns it |
+| 2 | — | the gate could not run — warn |
+
+**Every non-zero rc MUST have an explicit arm in CHECK X.11.** A WARN does not
+change `qc-system-integrity.sh`'s exit code, so any rc that falls through to the
+catch-all would be FAIL-OPEN — the box would print "ALL CHECKS PASSED" while a
+proven defect sat on it. The catch-all is therefore fail-CLOSED: an unrecognised
+non-zero rc hard-fails. When the gate grows a new rc, it gets an arm here in the
+same change.
+
+Also enforced by the onboarding completion gate `lib-onboarding-state.sh`
+`oc_overall_goal_check()` (criterion iii `workspaceMaterialized` — which treats ANY
+non-zero rc from the gate as "not materialized"), the
+`scripts/watchdog-onboarding-loop.sh` kill condition, and CI
+(`.github/workflows/qc-static.yml` runs
+`scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh`;
+`.github/workflows/board-join-chain-guard.yml` runs
+`23-ai-workforce-blueprint/scripts/test-board-join-chain.sh`).
 
 ### 7. Repo consistency — one gate cross-checks floor / roster / library / SOP / persona
 
