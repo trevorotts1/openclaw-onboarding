@@ -84,6 +84,11 @@ _ex_click = _cb._ex_click
 _ex_fill = _cb._ex_fill
 _ex_wait_text = _cb._ex_wait_text
 _list_has = _cb._list_has
+_reactive_fill = _cb._reactive_fill
+_nav_to_list = _cb._nav_to_list
+_scoped_card_kebab = _cb._scoped_card_kebab
+_select_dropdown_option = _cb._select_dropdown_option
+_click_bottom_button = _cb._click_bottom_button
 
 try:
     import ghl_object_router as _router  # type: ignore
@@ -244,15 +249,19 @@ def _add_lesson(session: str, sels: dict, module: dict, lesson: dict,
     title = lesson["title"]
     if keep.due():
         _ab(session, "eval", "--stdin", timeout=10, stdin="true")     # keepalive (F5)
+    # Phase B live flow: '+ Add Content' -> 'Add Lesson' -> title (REACTIVE fill, else the
+    # submit stays DISABLED) -> REQUIRED 'Select Module' dropdown -> 'Create Lesson'.
+    _ex_click(session, sels, "course.outline.add_content")
     _ex_click(session, sels, "course.outline.add_lesson")
-    _ex_fill(session, sels, "course.outline.lesson_title_input", title)
-    if lesson["body"] or lesson["media_url"]:
-        # body/media go into the lesson editor; media as a CDN link/embed (never upload)
-        body = lesson["body"]
-        if lesson["media_url"]:
-            body = (body + f"\n[media]({lesson['media_url']})").strip()
-        _ex_fill(session, sels, "course.outline.lesson_body_editor", body, required=False)
+    if not _reactive_fill(session, "Enter lesson title", title):
+        _ex_fill(session, sels, "course.outline.lesson_title_input", title)   # find-fill fallback
+    _ex_click(session, sels, "course.outline.lesson_module_select")           # open 'Select Module'
+    if not _select_dropdown_option(session, module["title"]):
+        raise StopAndReport(f"M4.lesson-module:{title}",
+                            f"could not select the required module {module['title']!r} for "
+                            f"lesson {title!r} (Create Lesson stays disabled) — STOP.")
     gov.before_save()
+    _ex_click(session, sels, "course.outline.lesson_create_confirm")          # 'Create Lesson'
     _ex_wait_text(session, title, timeout=15)
     if not _list_has(session, title):                                  # fix b: list-scan read-back
         raise StopAndReport(f"M4.lesson:{title}",
@@ -283,20 +292,30 @@ def _capture_preview_url(session: str) -> str:
     return _eval(session, js, timeout=12) or ""
 
 
-def _delete_course(session: str, sels: dict, plan: dict) -> dict:
-    """Cleanup for a COURSE — a REAL delete (fix d). Unlike community groups, courses ARE
-    deletable: the row 'More actions' menu has a Delete path (live-observed 2026-07-10) and
-    Tier-2 ships delete_course/delete_course_* API tools. So the true 0-residue proof is
-    scoped HERE. Idempotency + residue check are list-scans (fix b — no search box needed)."""
+def _delete_course(session: str, sels: dict, plan: dict, location_id: str = "") -> dict:
+    """TRUE 0-residue delete (fix d) — SAFETY-CRITICAL on a POPULATED account: SEARCH-NARROW
+    to isolate the scratch course, then click ITS OWN card kebab (card-scoped), 'Delete', TYPE
+    the literal CONFIRM guard token into the type-to-proceed box, then Confirm. NEVER a blind
+    first-'More actions' (that would hit a REAL member course). Phase B live-proven 0-residue."""
+    name = plan["course_name"]
     try:
-        _ex_click(session, sels, "shared_rail.memberships_left_rail")
-        _ex_wait_text(session, "Memberships", timeout=15)
-        _ex_click(session, sels, "course.list_page.row_actions")           # 'More actions'
-        _ex_click(session, sels, "course.list_page.delete_menuitem")       # menu 'Delete'
-        _ex_click(session, sels, "course.list_page.delete_confirm")        # dialog confirm (native)
-        _ex_wait_text(session, "Create", timeout=12)
-        residue = _list_has(session, plan["course_name"], plan["slug"])
-        return {"cleanup_primitive": "delete", "deleted": not residue, "residue_in_list": residue}
+        if location_id:
+            _nav_to_list(session, location_id, sels, "course.routes.courses_list", "Create New")
+        _ex_fill(session, sels, "course.list_page.search_box", name, required=False)  # isolate
+        _ex_wait_text(session, name[:18], timeout=10)
+        if not _scoped_card_kebab(session, name):
+            raise StopAndReport("delete.kebab",
+                                f"could not open the {name!r} card kebab (card-scoped) — "
+                                "course NOT deleted (never blind-delete a real course).")
+        _ex_click(session, sels, "course.list_page.delete_menuitem")          # 'Delete'
+        if not _reactive_fill(session, "CONFIRM", "CONFIRM"):                  # type-to-proceed guard
+            raise StopAndReport("delete.confirm-type",
+                                "could not type the CONFIRM guard token — course NOT deleted.")
+        _ex_click(session, sels, "course.list_page.delete_confirm")           # 'Confirm'
+        _ex_wait_text(session, "Create New", timeout=12)
+        residue = _list_has(session, name, plan["slug"])
+        return {"cleanup_primitive": "delete", "deleted": not residue, "residue_in_list": residue,
+                "safety": "search-narrowed + card-scoped + type-CONFIRM"}
     except StopAndReport as sr:
         return {"cleanup_primitive": "delete", "deleted": False,
                 "residue_in_list": True, "stop": str(sr)}
@@ -416,7 +435,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         cleanup["attempted"] = True
         try:
             if course_id or plan["course_name"]:
-                cleanup.update(_delete_course(session, sels, plan))
+                cleanup.update(_delete_course(session, sels, plan, location_id))
             else:
                 cleanup["deleted"] = True
         except Exception as exc:  # noqa: BLE001
@@ -541,7 +560,7 @@ def _selftest() -> int:  # noqa: C901
     sels = load_selectors()
     raised = False
     try:
-        anchor(sels, "course.list_page.create_course_button")
+        anchor(sels, "course.outline.lesson_body_editor")
     except StopAndReport:
         raised = True
     if not raised:
@@ -578,7 +597,7 @@ def _selftest() -> int:  # noqa: C901
 
         def fake_eval(session, js, timeout=20):
             evals.append(js)
-            return "CLICKED:x" if ".click()" in js else ""
+            return "CLICKED:x" if ".click()" in js else "OK"
 
         orig_ab, orig_eval, orig_snap = _cb._ab, _cb._eval, _cb._snapshot
         try:

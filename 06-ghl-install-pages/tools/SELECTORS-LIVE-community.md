@@ -1,5 +1,15 @@
 # SELECTORS-LIVE — COMMUNITY / GROUP + CHANNELS builder (`ghl_community_builder.py`)
 
+> ## ✅ PHASE B — LIVE PROOF / LOCKED (2026-07-10)
+> A full LIVE run on the operator test location (operator-owned; location id masked — fleet-wide repo)
+> created a scratch object with the fixed `ghl_ab_executor.py`, recorded + read back every in-area
+> anchor, then cleaned it (course DELETED 0-residue; group DEACTIVATED). The in-area anchors are now
+> **status:locked** in `selectors-live-communities-courses.json` (`_phase_b_live_proof`). Real-flow
+> corrections vs. the earlier OBSERVED values are captured there. Still capture-pending (documented,
+> not-yet-needed): `create_page.privacy_switch` / `create_modal.product_type` / `outline.lesson_body_editor`.
+> The CAPTURE-PENDING prose below is retained as historical context.
+
+
 **Status:** ⚠️ **CAPTURE-PENDING** (NOT yet locked). The live selector-capture run
 for communities has **not** been fully performed — see §Block + §Live-capture below.
 Per **D8 (zero invented selectors)** this doc records what is VERIFIED for the shared
