@@ -39,11 +39,17 @@ LAYER1_ENTRY = REPO_ROOT / "54-anthology-writer" / "anthology-entry.sh"
 EX_OK, EX_ERR, EX_PROVER, EX_HELD, EX_SLOT = 0, 1, 2, 3, 5
 
 # Ordered collaborators: (path relative to skill or repo root, role). Per SPEC S0.
+# A1 ORDER LAW: the FAIL-SOFT board mirror (mc_board.py) is wired BEFORE the holdable
+# drive-tree-provision step. Drive provisioning legitimately HOLDS (exit 3, e.g. until
+# GOOGLE_IMPERSONATE_USER is set) and short-circuits the runner; if the card mirror sat
+# after it, a held Drive would suppress the participant's board card entirely (5 ledger
+# rows, 0 cards). Mirroring first -- and never propagating the mirror's exit code --
+# guarantees the producer's Gate Panel always has a card, even while S0 holds at Drive.
 WIRING = [
     ("scripts/intake_router.py", "deterministic S0: route-secret check, hidden-field validation, tenant check, dedup no-op, exceptions capture, under-2-second acknowledge, detached stage spawn"),
     ("scripts/anthology_state.py", "upsert-participant on the composite key contact_id::anthology_id, or confirm the cursor"),
+    ("scripts/mc_board.py", "ingest ONE participant card to POST /api/tasks/ingest (HMAC + Bearer, fail-soft: a dark board never blocks the pipeline) -- mirrored BEFORE the holdable Drive step so a held/dark Drive never suppresses the card"),
     ("scripts/drive-tree-provision.py", "idempotent Producer/Anthology/Participant tree under the per-client BlackCEO-hosted Shared-Drive root (resolved per box from GOOGLE_DRIVE_ROOT_FOLDER), on first sight only"),
-    ("scripts/mc_board.py", "ingest ONE participant card to POST /api/tasks/ingest (HMAC + Bearer, fail-soft: a dark board never blocks the pipeline)"),
 ]
 
 
@@ -211,6 +217,22 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
+    # 3. mc_board.py -- ingest ONE participant card (idempotent create/resolve).
+    #    CARD-BEFORE-DRIVE (A1): mirrored BEFORE the holdable Drive step, and FULLY
+    #    FAIL-SOFT -- the mirror's exit code is NEVER propagated into the stage
+    #    short-circuit. mc_board is fail-soft by construction (every board outcome is
+    #    exit 0); this guard additionally absorbs a mc_board wiring refusal (exit 2)
+    #    or an unexpected error so the documented "a dark board never blocks the
+    #    pipeline" contract holds at THIS call site too. The result: the producer's
+    #    Gate Panel always has a card, even while S0 legitimately holds at Drive.
+    rel, _ = WIRING[2]
+    argv = [py, str(_resolve(rel)), "ensure", "--subject-key", pkey, "--json"]
+    rc_board, _ = _step(2, rel, argv)
+    if rc_board != EX_OK:
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, the card "
+                         "reconciles on the daily tick; continuing (a dark board never "
+                         "blocks the pipeline).\n" % (STAGE, rc_board))
+
     # helper read (not a separate WIRING slot): resolve the anthology's producer_id
     # so the Drive tree below carries a real level-1 folder identity.
     producer_id = anthology_id
@@ -219,19 +241,14 @@ def _invoke_wiring(key, run_dir=None):
     if anth_parsed and anth_parsed.get("producer_id"):
         producer_id = anth_parsed["producer_id"]
 
-    # 3. drive-tree-provision.py -- idempotent Producer/Anthology/Participant tree,
-    #    on first sight only (get-or-create is a no-op on a re-run).
-    rel, _ = WIRING[2]
+    # 4. drive-tree-provision.py -- idempotent Producer/Anthology/Participant tree,
+    #    on first sight only (get-or-create is a no-op on a re-run). This is a HARD
+    #    dependency (the tree must exist before authoring), so it DOES short-circuit;
+    #    because the card was already mirrored above, a Drive hold leaves a visible
+    #    review/blocked card on the board rather than an invisible participant.
+    rel, _ = WIRING[3]
     argv = [py, str(_resolve(rel)), "provision", "--producer", producer_id,
             "--anthology", anthology_id, "--participant", contact_id, "--json"]
-    rc, _ = _step(2, rel, argv)
-    if rc != EX_OK:
-        return rc
-
-    # 4. mc_board.py -- ingest ONE participant card (idempotent create/resolve;
-    #    fail-soft: a dark board never blocks the pipeline).
-    rel, _ = WIRING[3]
-    argv = [py, str(_resolve(rel)), "ensure", "--subject-key", pkey, "--json"]
     rc, _ = _step(3, rel, argv)
     if rc != EX_OK:
         return rc
@@ -265,7 +282,15 @@ def self_test():
     assert isinstance(WIRING, list) and WIRING, "WIRING must be a non-empty ordered list"
     for rel, role in WIRING:
         assert isinstance(rel, str) and rel and isinstance(role, str) and role
-    print("stage_%s self-test: OK (exit-code map + wiring contract coherent)" % STAGE)
+    # A1 ORDER LAW: the fail-soft board mirror MUST be wired BEFORE the holdable
+    # drive-tree-provision step, so a held/dark Drive can never suppress the card.
+    _rels = [rel for rel, _ in WIRING]
+    assert "scripts/mc_board.py" in _rels and "scripts/drive-tree-provision.py" in _rels, \
+        "S0 must wire both the board mirror and drive-tree-provision"
+    assert _rels.index("scripts/mc_board.py") < _rels.index("scripts/drive-tree-provision.py"), \
+        "A1: mc_board.py (fail-soft card mirror) MUST precede drive-tree-provision.py (holdable)"
+    print("stage_%s self-test: OK (exit-code map + wiring contract coherent; "
+          "board mirror precedes the holdable Drive step)" % STAGE)
     return EX_OK
 
 

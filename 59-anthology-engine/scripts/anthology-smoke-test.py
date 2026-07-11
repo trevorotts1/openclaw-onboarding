@@ -457,6 +457,33 @@ def age_hold_queue(scripts_dir, environ=None, runner=None):
     return {"status": "error", "reason": "no known hold_queue.py age subcommand accepted"}
 
 
+def reconcile_board(scripts_dir, environ=None, runner=None):
+    """Board-mirror reconcile step of the daily tick (SPEC 11.2 safety net, finding
+    A2): shell `mc_board.py reconcile --json` so EVERY ledger subject (participant
+    chapter cards + anthology Assembly cards) is re-projected onto its board card and
+    any card a stage's fail-soft swallow missed (a board outage mid-stage, or an S0
+    that held at Drive) is recovered. mc_board is FAIL-SOFT by construction: it always
+    exits 0 even with the board down, so this step never fails the tick. Kept separate
+    from the funded-reachability probe so a probe failure never suppresses the
+    reconcile and vice versa."""
+    env = environ if environ is not None else os.environ
+    run = runner or _run_subprocess
+    mc = Path(scripts_dir) / "mc_board.py"
+    if not mc.exists():
+        return {"status": "skipped", "reason": "mc_board.py not present (W3.1 not yet integrated)"}
+    argv = [sys.executable, str(mc), "reconcile", "--json"]
+    state_dir = (env.get("ANTHOLOGY_STATE_DIR") or "").strip()
+    if state_dir:
+        argv += ["--state-dir", state_dir]
+    rc, err = run(argv)
+    if rc == 0:
+        return {"status": "reconciled", "exit": rc}
+    # mc_board.py is fail-soft (exit 0 on any board condition); a non-zero here is a
+    # local wiring refusal (2) or an unexpected error (1) -- surfaced, never fatal.
+    return {"status": "error", "exit": rc, "reason": "mc_board.py reconcile returned %s" % rc,
+            "detail": (err or "")[:200]}
+
+
 def _run_subprocess(argv):
     """Run a sibling script; return (exit_code, stderr_text). Fail-soft on any OSError."""
     try:
@@ -582,7 +609,7 @@ def assert_spend_ceiling(max_cents):
 
 def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
               age=True, do_alert=True, strict_hold=False, subprocess_runner=None,
-              max_spend_cents=1.0):
+              max_spend_cents=1.0, reconcile=True):
     environ = environ if environ is not None else os.environ
     opener = opener or _urllib_opener
     scripts_dir = scripts_dir or SCRIPTS_DIR
@@ -632,6 +659,13 @@ def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
             failures.append({"provider": "hold_queue", "result": R_ERROR,
                              "detail": aging.get("reason", "aging failed")})
 
+    # Board-mirror reconcile regardless of probe outcome (it is part of the daily
+    # tick, finding A2). mc_board is fail-soft, so this never changes the exit code;
+    # it recovers any board card a stage's fail-soft swallow missed.
+    reconciling = None
+    if reconcile:
+        reconciling = reconcile_board(scripts_dir, environ, subprocess_runner)
+
     # Alert on failure (fail-soft; one deduped founder alert through the gateway).
     alerting = None
     if failures and do_alert:
@@ -648,6 +682,7 @@ def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
         "providers": results,
         "failures": failures,
         "hold_queue_aging": aging,
+        "board_reconcile": reconciling,
         "alert": alerting,
     }
     return exit_code, report
@@ -677,6 +712,7 @@ def cmd_run(args):
         do_alert=not args.no_alert,
         strict_hold=args.strict_hold,
         max_spend_cents=args.max_spend_cents,
+        reconcile=not args.no_reconcile,
     )
     path = persist_report(report, args.report_dir)
     if path:
@@ -780,7 +816,7 @@ def self_test():
         "api.minimax.io": (200, b'{"base_resp":{"status_code":0},"total_remain":9}'),
         "api.kie.ai": (200, b'{"code":200,"data":50}'),
     })
-    rc, rep = run_smoke(opener=opener_ok, environ=env_full, age=False, do_alert=False)
+    rc, rep = run_smoke(opener=opener_ok, environ=env_full, age=False, do_alert=False, reconcile=False)
     check("all-funded exits 0", rc == EX_OK)
     check("all-funded no failures", rep["failures"] == [])
     check("report declares zero spend", rep["declared_spend_cents"] == 0.0)
@@ -793,13 +829,13 @@ def self_test():
         "api.minimax.io": (200, b'{"base_resp":{"status_code":0},"total_remain":9}'),
         "api.kie.ai": (402, b'{"code":402}'),
     })
-    rc2, rep2 = run_smoke(opener=opener_kie_broke, environ=env_full, age=False, do_alert=False)
+    rc2, rep2 = run_smoke(opener=opener_kie_broke, environ=env_full, age=False, do_alert=False, reconcile=False)
     check("kie unfunded exits 4", rc2 == EX_UNFUNDED)
     check("kie is the sole failure", [f["provider"] for f in rep2["failures"]] == ["kie"])
 
     # --- missing REQUIRED credential -> exit 4; missing OPTIONAL -> skipped -------
     env_missing = {"OPENROUTER_API_KEY": "x", "GOOGLE_API_KEY": "x", "KIE_API_KEY": "x"}  # no ollama, no minimax
-    rc3, rep3 = run_smoke(opener=opener_ok, environ=env_missing, age=False, do_alert=False)
+    rc3, rep3 = run_smoke(opener=opener_ok, environ=env_missing, age=False, do_alert=False, reconcile=False)
     provs = {r["provider"]: r["result"] for r in rep3["providers"]}
     check("missing required ollama fails", provs["ollama-cloud"] == R_NO_CREDENTIAL)
     check("missing optional minimax skipped", provs["minimax"] == R_SKIPPED)
@@ -808,7 +844,7 @@ def self_test():
 
     # --- transport failure (status None) -> unreachable -> exit 4 ----------------
     opener_down = _scripted_opener({}, (None, b""))
-    rc4, rep4 = run_smoke(opener=opener_down, environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False)
+    rc4, rep4 = run_smoke(opener=opener_down, environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False, reconcile=False)
     check("all-unreachable exits 4", rc4 == EX_UNFUNDED)
 
     # --- minimax region retry: primary 401 -> alternate host funded -> OK --------
@@ -824,6 +860,44 @@ def self_test():
     # --- hold-queue aging fail-soft when hold_queue.py absent --------------------
     aging = age_hold_queue("/nonexistent-scripts-dir", {}, runner=lambda a: (0, ""))
     check("aging skipped when hold_queue absent", aging["status"] == "skipped")
+
+    # --- board reconcile step (finding A2) ---------------------------------------
+    # absent mc_board.py -> skipped (fail-soft), never fatal.
+    rec_absent = reconcile_board("/nonexistent-scripts-dir", {}, runner=lambda a: (0, ""))
+    check("reconcile skipped when mc_board absent", rec_absent["status"] == "skipped")
+    # present + exit 0 -> reconciled; the real mc_board.py is a sibling of this file.
+    rec_calls = {"n": 0, "argv": None}
+
+    def _rec_runner(argv):
+        rec_calls["n"] += 1
+        rec_calls["argv"] = list(argv)
+        return 0, ""
+    rec_ok = reconcile_board(SCRIPTS_DIR, {}, runner=_rec_runner)
+    check("reconcile reconciled on exit 0", rec_ok["status"] == "reconciled")
+    check("reconcile shells mc_board.py reconcile --json",
+          rec_calls["argv"] is not None
+          and rec_calls["argv"][1].endswith("mc_board.py")
+          and "reconcile" in rec_calls["argv"] and "--json" in rec_calls["argv"])
+    # a non-zero mc_board (wiring refusal) is surfaced as error, never fatal.
+    rec_err = reconcile_board(SCRIPTS_DIR, {}, runner=lambda a: (2, "guard refusal"))
+    check("reconcile surfaces non-zero as error", rec_err["status"] == "error" and rec_err["exit"] == 2)
+    # ANTHOLOGY_STATE_DIR is threaded through to mc_board when set.
+    reconcile_board(SCRIPTS_DIR, {"ANTHOLOGY_STATE_DIR": "/tmp/x-state"}, runner=_rec_runner)
+    check("reconcile threads --state-dir when ANTHOLOGY_STATE_DIR set",
+          "--state-dir" in rec_calls["argv"] and "/tmp/x-state" in rec_calls["argv"])
+    # run_smoke wires the reconcile step into the daily tick (default on) + report.
+    rs_calls = {"reconcile": 0}
+
+    def _rs_runner(argv):
+        if len(argv) > 1 and str(argv[1]).endswith("mc_board.py"):
+            rs_calls["reconcile"] += 1
+        return 0, ""
+    _rc, _rep = run_smoke(opener=_scripted_opener({}, (200, b'{"models":[{"name":"m"}]}')),
+                          environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False,
+                          reconcile=True, subprocess_runner=_rs_runner)
+    check("run_smoke invokes the board reconcile step", rs_calls["reconcile"] == 1)
+    check("report carries the board_reconcile block",
+          _rep.get("board_reconcile") is not None and _rep["board_reconcile"]["status"] == "reconciled")
 
     # --- alert record is written on failure (fail-soft, no gateway present) ------
     import tempfile
@@ -864,9 +938,11 @@ def build_parser():
     sub = ap.add_subparsers(dest="cmd")
 
     p = sub.add_parser("run", help="probe every provider balance endpoint, age the hold queue, "
-                                   "alert on failure (the daily tick)")
+                                   "reconcile the board mirror, alert on failure (the daily tick)")
     p.add_argument("--report-dir", help="operator report directory (default: state dir/reports)")
     p.add_argument("--no-age", action="store_true", help="skip hold-queue aging (probe only)")
+    p.add_argument("--no-reconcile", action="store_true",
+                   help="skip the board-mirror reconcile (mc_board.py reconcile) step")
     p.add_argument("--no-alert", action="store_true", help="do not fire the founder alert on failure")
     p.add_argument("--strict-hold", action="store_true",
                    help="treat a hold_queue.py aging error as a smoke failure (default: fail-soft)")

@@ -283,13 +283,19 @@ def _invoke_wiring(key, run_dir=None):
     if rc != EX_OK:
         return rc
 
-    # 9. mc_board.py -- mirror the participant card to review at s1_gate (W4.3);
-    #    FAIL-SOFT, so a board-down never blocks the pipeline (classify_child_rc
-    #    still short-circuits on a genuine non-fail-soft refusal).
+    # 9. mc_board.py -- mirror the participant card to review at s1_gate (W4.3).
+    #    FAIL-SOFT (A1): the board is a pure projection of the ledger, so a board
+    #    outage or refusal on this TERMINAL mirror NEVER holds the stage -- the
+    #    substantive work (authoring, QC, delivery, artifact, cursor advance, gate
+    #    open + nudge) is already done and persisted. The daily reconcile tick
+    #    (mc_board.py reconcile) re-syncs any card the board missed. "A dark board
+    #    never blocks the pipeline."
     rel, _ = WIRING[8]
     rc, _ = _step(8, rel, [py, str(_resolve(rel)), "sync", "--subject-key", pkey, "--json"])
     if rc != EX_OK:
-        return rc
+        sys.stderr.write("[stage_%s] board mirror non-OK (rc=%d); FAIL-SOFT, stage "
+                         "complete; the daily reconcile tick re-syncs the card.\n"
+                         % (STAGE, rc))
 
     return EX_OK
 
