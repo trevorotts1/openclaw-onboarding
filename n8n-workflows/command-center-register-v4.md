@@ -41,7 +41,7 @@ echo "TUNNEL_TOKEN=$TOKEN"
 echo "SUBDOMAIN=${CLIENT}.zerohumanworkforce.com"
 ```
 
-## v5 fix — MERGE, don't full-replace (shared-tunnel wrong-port / CF 1303) — HELD FOR OPERATOR GO
+## v5 fix — MERGE, don't full-replace (shared-tunnel wrong-port / CF 1303) — DEPLOYED TO LIVE 2026-07-10
 
 **Symptom:** on several boxes the Command Center public link 502s, and some throw
 Cloudflare **1303 "no route to your origin"**. The dashboard is up locally on
@@ -90,9 +90,46 @@ curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCO
   -d "$PUT_BODY" > /dev/null
 ```
 
-**This is a repo/doc change only — NOT yet applied to the live n8n workflow.** The
-live workflow (`i0P3OWCEsXZxVo0N`) still runs v4 full-replace until the operator
-elects to roll v5 with the rotation playbook below.
+**APPLIED to the live n8n workflow on 2026-07-10 (operator GO).** Workflow
+`i0P3OWCEsXZxVo0N` ("BLACKCEO LIVE - Command Center Client Registration"), SSH node
+**"Create Tunnel + DNS + Token"**, now runs this GET→merge→guard→PUT block in place
+of the v4 full-replace PUT. Deployed via the n8n public REST API
+(`PUT /api/v1/workflows/i0P3OWCEsXZxVo0N`, `X-N8N-API-KEY`), workflow left `active`.
+
+Reversibility: pre-change backup of the full workflow JSON is at
+`~/Downloads/n8n-cc-register-backups/cc-register-i0P3OWCEsXZxVo0N-BEFORE-v4-<ts>.json`
+(Trevor's Mac). Restore with the same REST PUT to roll back to v4.
+
+Deploy notes / drift:
+- **Option B preserved.** The live workflow keeps the CF account ID + API token
+  inline (as `CF_ACCT` / `CF_TOK` shell vars set from the same inline literals the v4
+  curl used), so no server-side env vars are required. The `${CLOUDFLARE_ACCOUNT_ID}`
+  / `${CLOUDFLARE_API_TOKEN}` refs above are the Option-A form; the live node uses the
+  inline form.
+- **`CLIENT` not exported.** The live SSH command assigns `CLIENT=…` without
+  `export`, so the merge/guard python read the host via a per-command
+  `HOST="$HOST" python3 -c …` env prefix instead of `os.environ["CLIENT"]`.
+- **Guard is fail-closed.** The live block gates the PUT behind
+  `if … guard …; then curl -X PUT …; else echo "CC-INGRESS-GUARD FAIL … tunnel left
+  untouched"; fi`, so a failed GET or a non-:4000 CC rule results in NO PUT (never a
+  clobber), not just a printed warning.
+- **⚠ Token-extraction gotcha (for any future re-PUT of this node):** the Bearer token
+  is terminated by the closing `"` of the `-H "Authorization: Bearer <tok>"` arg. Match
+  it with `Bearer ([^"\s\\]+)` — a greedy `\S+` swallows the trailing quote and
+  produces a malformed `CF_TOK="…""` that breaks the command and fails CF auth.
+- **Live command has extra baked-in patches not shown in this doc's "complete v4 SSH
+  command"** (v13.1.5 idempotency `ALREADY_EXISTS`, PORT=4000 host `.env`, hardcoded
+  `ecosystem.config.cjs`, migration-034 transitional). Those were preserved verbatim;
+  only the single Cloudflare ingress step was swapped v4→v5.
+
+Verification (2026-07-10, read-only, no CF mutation): simulated the deployed v5 merge
+against the live shared `command-center` tunnel (3 sibling dashboards: trevor / smoke /
+acme-dental-c436, all `→ :4000`). Result: all 3 siblings preserved, CC host added on
+`:4000`, exactly one `http_status:404` last, zero rules dropped. Fleet-wide read-only
+CF audit: 50 active tunnels, 30 carry a real CC dashboard rule on `:4000`, 12 are
+shared (≥2 hostname rules) — i.e. the exact clobber-risk population v4 wiped and v5 now
+protects. Full pre-image snapshot of all 50 tunnel configs saved to
+`~/Downloads/n8n-cc-register-backups/cf-tunnels-snapshot-<ts>.json`.
 
 ## Backfill for tunnels created under v3 (one-time, on main.blackceoautomations.com)
 
