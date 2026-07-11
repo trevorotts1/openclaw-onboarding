@@ -79,10 +79,18 @@ _TIER_DEFAULT_PARAMS = {
     JUDGE_TIER: {"temperature": 0.0},
 }
 
-# Cost-ledger hard-ceiling exit codes (podcast-cost-ledger.py): any of these
-# means "do not spend" and becomes a BudgetCeilingBlock. EXIT_SOFT (2) is
-# advisory and allowed through.
-_LEDGER_HARD_CEILING_CODES = frozenset((10, 13, 14))
+# Cost-ledger exit codes (podcast-cost-ledger.py). Only two exits let a call
+# proceed: 0 (clean allow) and EXIT_SOFT (2, an advisory soft-ceiling warning).
+# Every OTHER exit means "do not spend". The named hard ceilings a kind=llm
+# precheck can reach are 10 (per_episode_cost_usd_hard), 11
+# (llm_tokens_per_episode_hard) and 13 (per_client_daily_cost_usd_hard); 15
+# (llm_max_output_tokens_per_call) is reachable only when an output-token
+# estimate is supplied. (14 is the per-client daily EPISODE-admission cap, only
+# ever returned by a kind=episode precheck -- never this llm path -- so it is not
+# listed here.) The router fails CLOSED: any unrecognized non-proceed exit also
+# holds the spend rather than billing blind.
+_LEDGER_PROCEED_CODES = frozenset((0, 2))
+_LEDGER_HARD_CEILING_CODES = frozenset((10, 11, 13, 15))
 
 # Default OpenAI-compatible chat path appended to a link base_url.
 _CHAT_PATH = "/chat/completions"
@@ -420,10 +428,17 @@ def default_pre_meter(context: dict, tier: str, model: str, est_prompt_tokens: i
     except Exception as exc:
         sys.stderr.write("[model_router] cost precheck failed: %s (warn)\n" % type(exc).__name__)
         return
+    if rc in _LEDGER_PROCEED_CODES:
+        return
     if rc in _LEDGER_HARD_CEILING_CODES:
         raise BudgetCeilingBlock(
             "podcast-cost-ledger.py blocked the call: a hard cost ceiling was "
             "reached before this %s turn billed (ledger exit %d)" % (tier, rc))
+    # Fail CLOSED on any other non-proceed exit: an unrecognized ledger refusal
+    # holds the spend rather than billing blind (never fail-open on the unknown).
+    raise BudgetCeilingBlock(
+        "podcast-cost-ledger.py returned an unrecognized non-proceed exit %d "
+        "before this %s turn billed; refusing to spend (fail-closed)" % (rc, tier))
 
 
 def default_post_meter(context: dict, tier: str, model: str, usage: dict) -> None:
@@ -472,7 +487,12 @@ def default_hold(context: dict, reason: str, tier: str) -> None:
 
 def default_alert(context: dict, tier: str, reason: str) -> None:
     """ONE deduped founder alert through the OpenClaw gateway (alert-dedup.py
-    notify, decision severity => always-send, per-episode dedup). Fail-soft."""
+    `raise`, decision severity => always-send, per-episode dedup). Fail-soft.
+
+    NOTE: the sole alert subcommand is `raise --failure-class <class>` -- the
+    engine's alert-dedup.py exposes {raise,recover,flush-digest,status} only;
+    there is no `notify`/`--class`, so those would exit 2 and the founder alert
+    would silently never reach the gateway."""
     cmd = _script_cmd("alert-dedup.py")
     if not cmd:
         sys.stderr.write("[model_router] alert-dedup.py absent; alert not sent (warn)\n")
@@ -483,13 +503,13 @@ def default_alert(context: dict, tier: str, reason: str) -> None:
     service = ctx.get("queue_service") or ("ollama_cloud" if tier == CONTENT_TIER else "openrouter")
     msg = ("Podcast engine: %s tier chain exhausted (%s). Job held at its cursor; "
            "it resumes when a provider in the chain is funded and reachable." % (tier, reason))
-    argv = cmd + ["notify", "--client", str(client), "--service", str(service),
-                  "--class", "insufficient_credits", "--severity", "decision",
+    argv = cmd + ["raise", "--client", str(client), "--service", str(service),
+                  "--failure-class", "insufficient_credits", "--severity", "decision",
                   "--episode", str(episode), "--message", msg]
     try:
         subprocess.call(argv, stdout=subprocess.DEVNULL)
     except Exception as exc:
-        sys.stderr.write("[model_router] alert-dedup.py notify failed: %s\n" % type(exc).__name__)
+        sys.stderr.write("[model_router] alert-dedup.py raise failed: %s\n" % type(exc).__name__)
 
 
 def default_substitution_log(context: dict, tier: str, from_priority: int,

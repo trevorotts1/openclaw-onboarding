@@ -176,6 +176,33 @@ class GateCliEndToEnd(unittest.TestCase):
             "SELECT count(*) FROM podcast_job_events WHERE note LIKE '%WAIVED%'").fetchone()[0]
         self.assertGreaterEqual(events, 1)
 
+    def test_cli_waiver_captures_operator_reason_in_audit(self):
+        # --force-waiver takes an OPTIONAL reason STRING; the reason must land in
+        # the audited waiver event (spec: `--force-waiver <reason>`).
+        self._ps("create", "--client-id", "c", "--location-id", "l", "--contact-id", "ct",
+                 "--mode", "interview_style_podcast", "--style", "vulnerable",
+                 "--payload-file", self.payload, "--job-key", "k")
+        jid = sqlite3.connect(self.db).execute(
+            "SELECT job_id FROM podcast_jobs").fetchone()[0]
+        for st in ("researching", "writing", "in_qc", "generating_art"):
+            self.assertEqual(self._ps("advance", "--job-id", jid, "--to", st).returncode, 0)
+        self._ps("output", "--job-id", jid, "--field", "cover_image_url", "--value", "https://x/c.png")
+        self.assertEqual(self._ps("advance", "--job-id", jid, "--to", "producing_audio").returncode, 0)
+        self.assertEqual(self._ps("advance", "--job-id", jid, "--to", "publishing").returncode, 0)
+
+        # gate blocks without a waiver ...
+        self.assertEqual(self._ps("advance", "--job-id", jid, "--to", "enrolling").returncode, 3)
+        # ... and waives WITH an operator reason string.
+        reason = "founder approved manual audio upload"
+        waived = self._ps("advance", "--job-id", jid, "--to", "enrolling", "--force-waiver", reason)
+        self.assertEqual(waived.returncode, 0, waived.stderr)
+
+        note = sqlite3.connect(self.db).execute(
+            "SELECT note FROM podcast_job_events WHERE note LIKE '%WAIVED%' "
+            "ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+        self.assertIn("reason:", note.lower())
+        self.assertIn(reason, note)
+
 
 if __name__ == "__main__":
     unittest.main()

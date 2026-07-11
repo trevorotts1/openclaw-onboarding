@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -213,6 +215,99 @@ class Substitution(unittest.TestCase):
             rec = json.loads(fh.readline())
         self.assertEqual(rec["used_priority"], 3)
         self.assertEqual(rec["model_used"], "moonshotai/kimi-k2.6")
+
+
+class RealSideChannelScripts(unittest.TestCase):
+    """Drive default_alert AND default_pre_meter against the engine's OWN shipped
+    scripts (alert-dedup.py, podcast-cost-ledger.py) -- NOT injected noop mocks.
+
+    A noop mock accepts any argv and any behaviour, which is exactly how (a) a
+    wrong alert subcommand/flag (`notify --class ...` -- the engine's alert-dedup
+    exposes only {raise,recover,flush-digest,status}, so `notify` exits 2 and the
+    founder alert silently never reaches the gateway) and (b) an omitted
+    hard-ceiling exit code (ledger exit 11 = llm_tokens_per_episode_hard) slip
+    past an 'all green' run. These tests exercise the real CLIs so both defects
+    fail loudly."""
+
+    def setUp(self):
+        self._state = tempfile.mkdtemp(prefix="podcast-real-sc-")
+        self._saved = os.environ.get("PODCAST_ENGINE_STATE_DIR")
+        os.environ["PODCAST_ENGINE_STATE_DIR"] = self._state
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop("PODCAST_ENGINE_STATE_DIR", None)
+        else:
+            os.environ["PODCAST_ENGINE_STATE_DIR"] = self._saved
+
+    @staticmethod
+    def _capture_argv(fn, *args, **kw):
+        """Call `fn`, intercepting the ONE subprocess.call it issues, and return
+        the exact argv it built (without running it)."""
+        captured = {}
+        real_call = MR.subprocess.call
+
+        def fake_call(argv, *a, **k):
+            captured["argv"] = list(argv)
+            return 0
+
+        MR.subprocess.call = fake_call
+        try:
+            fn(*args, **kw)
+        finally:
+            MR.subprocess.call = real_call
+        return captured.get("argv")
+
+    def test_default_alert_argv_accepted_by_real_alert_dedup(self):
+        argv = self._capture_argv(
+            MR.default_alert,
+            {"client": "unit-co", "episode_id": "ep-unit", "queue_service": "ollama_cloud"},
+            MR.CONTENT_TIER, "credit_out")
+        self.assertIsNotNone(argv, "default_alert must invoke alert-dedup.py")
+        self.assertTrue(str(argv[1]).endswith("alert-dedup.py"), argv)
+        self.assertEqual(argv[2], "raise",
+                         "the only alert subcommand is `raise` (not `notify`)")
+        # Run the REAL alert-dedup.py with default_alert's OWN argv (+ --dry-run so
+        # the gateway is never touched). A wrong subcommand/flag => argparse exit 2
+        # + 'invalid choice'/'unrecognized arguments' -- the silent-drop defect.
+        proc = subprocess.run(argv + ["--dry-run"], capture_output=True, text=True, timeout=30)
+        self.assertNotIn("invalid choice", proc.stderr.lower(), proc.stderr)
+        self.assertNotIn("unrecognized arguments", proc.stderr.lower(), proc.stderr)
+        self.assertEqual(proc.returncode, 0,
+                         "real alert-dedup.py rejected default_alert's argv:\n%s" % proc.stderr)
+
+    def test_default_pre_meter_blocks_on_real_ledger_hard_token_ceiling(self):
+        ctx = {"client": "unit-co", "episode_id": "ep-unit"}
+        # Under the shipped hard ceiling (llm_tokens_per_episode_hard=400000) a
+        # small estimate proceeds: the REAL ledger exits 0, so NO block.
+        MR.default_pre_meter(ctx, MR.CONTENT_TIER, "unit-model", 100)  # must NOT raise
+        # A 500k-token estimate crosses the per-episode token ceiling: the REAL
+        # ledger exits 11 -- the exact code the prior frozenset(10,13,14) omitted,
+        # which fail-open silently overspent. The router must now block.
+        with self.assertRaises(MR.BudgetCeilingBlock):
+            MR.default_pre_meter(ctx, MR.CONTENT_TIER, "unit-model", 500000)
+
+    def test_default_pre_meter_fails_closed_on_unrecognized_ledger_exit(self):
+        # A ledger that returns an unrecognized non-proceed code must NOT fail
+        # open: the router holds the spend rather than billing blind.
+        ctx = {"client": "unit-co", "episode_id": "ep-unit"}
+        real_call = MR.subprocess.call
+        MR.subprocess.call = lambda *a, **k: 99  # unknown refuse code
+        try:
+            with self.assertRaises(MR.BudgetCeilingBlock):
+                MR.default_pre_meter(ctx, MR.CONTENT_TIER, "unit-model", 100)
+        finally:
+            MR.subprocess.call = real_call
+
+    def test_default_pre_meter_proceeds_on_soft_ceiling_exit(self):
+        # EXIT_SOFT (2) is advisory: the call proceeds (no block).
+        ctx = {"client": "unit-co", "episode_id": "ep-unit"}
+        real_call = MR.subprocess.call
+        MR.subprocess.call = lambda *a, **k: 2
+        try:
+            MR.default_pre_meter(ctx, MR.CONTENT_TIER, "unit-model", 100)  # must NOT raise
+        finally:
+            MR.subprocess.call = real_call
 
 
 class ModuleSelfTest(unittest.TestCase):

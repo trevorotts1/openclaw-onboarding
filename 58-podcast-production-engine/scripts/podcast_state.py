@@ -906,7 +906,10 @@ def cmd_advance(conn, args):
     # Required-outputs gate (preset/mode-aware): a producing stage may not be left
     # until its deliverable artifact(s) are recorded, unless explicitly waived.
     preset = resolve_preset(conn, args.job_id, row["mode"])
-    waiver = bool(getattr(args, "force_waiver", False))
+    # --force-waiver takes an OPTIONAL reason string (nargs="?"): absent -> None
+    # (no waiver); bare -> the const sentinel; with a value -> the operator reason.
+    waiver_reason = getattr(args, "force_waiver", None)
+    waiver = waiver_reason is not None
     waived = (missing_required_outputs(row, row["status"], to_status, preset_flags(preset))
               if waiver else [])
     check_transition(row, to_status, preset=preset, waiver=waiver)
@@ -941,7 +944,8 @@ def cmd_advance(conn, args):
         # silent (operator-only note; no client-facing surface reads it).
         if waived:
             _append_event(conn, args.job_id, frm, to_status,
-                          "required-outputs WAIVED via --force-waiver: " + ", ".join(waived))
+                          "required-outputs WAIVED via --force-waiver [reason: %s]: %s"
+                          % (waiver_reason, ", ".join(waived)))
 
         if to_status == "complete":
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
@@ -1324,9 +1328,12 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--to", required=True, choices=sorted(STATUS_SET))
     a.add_argument("--note", default=None)
     a.add_argument("--cost-delta", dest="cost_delta", type=float, default=0.0)
-    a.add_argument("--force-waiver", dest="force_waiver", action="store_true",
-                   help="advance even if the stage's required outputs are unset; "
-                        "the waiver is recorded to the job event log (audited)")
+    a.add_argument("--force-waiver", dest="force_waiver", nargs="?",
+                   const="(no reason provided)", default=None, metavar="REASON",
+                   help="advance even if the stage's required outputs are unset, "
+                        "optionally with an operator REASON string "
+                        "(`--force-waiver \"<reason>\"`); the waiver and its reason "
+                        "are recorded to the job event log (audited)")
     a.set_defaults(func=cmd_advance)
 
     o = sub.add_parser("output", help="set an output column")

@@ -179,9 +179,9 @@ Legal transitions (the writer enforces this matrix; anything else raises):
   until that stage's deliverable artifact(s) are recorded, so no job can reach `complete` (or
   slip past publishing) with no stored audio and no Podbean permalink. The requirement set is
   resolved per job from its preset flags, so a document-only preset (Season-Strategy) and a
-  non-publishing preset (Episode Asset Pack) are never falsely blocked. `advance --force-waiver`
-  overrides the gate and writes an audit event to the job event log; nothing is ever waived
-  silently.
+  non-publishing preset (Episode Asset Pack) are never falsely blocked. `advance --force-waiver
+  "<reason>"` overrides the gate and writes an audit event -- including the operator's reason --
+  to the job event log; nothing is ever waived silently.
 - 60-day cap: queued_credit_out to failed with queue_state='aged_out', payload purged, founder
   notified.
 - Any stage to failed on an unrecoverable error after the engine's own retries.
@@ -191,7 +191,8 @@ Writer subcommands the pipeline calls (never bypassed):
     podcast_state.py create   --client-id --location-id --contact-id --mode --style \
                               --payload-file <json> [--show-name --host-name]
     podcast_state.py advance  --job-id --to <status> [--note ...] [--cost-delta 0.12] \
-                              [--force-waiver]   # override the required-outputs gate (audited)
+                              [--force-waiver "<reason>"]   # override the required-outputs gate;
+                                                            # optional operator reason, audited
     podcast_state.py output   --job-id --field <output_column> --value <url|text|number>
     podcast_state.py hold     --job-id --service <kie_ai|ollama_cloud|openrouter|fish_audio>
     podcast_state.py resume   --job-id
