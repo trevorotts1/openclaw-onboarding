@@ -169,6 +169,37 @@ else
   bad "deck-intake-driver.py missing at $DRIVER"
 fi
 
+# ---- (J) E5 REGRESSION GUARD: the SIGNATURE turn-gate is REQUIRED, not optional ----
+# Before this fix, a bare `--signature` call (no --next/--answer/--record) fell
+# through to the SAME full 8-Questions-plus-frame payload as the dry-run plan --
+# an unenforced escape hatch letting a caller bypass the one-question-per-turn
+# gate entirely. This asserts (a) the bare call no longer leaks that payload and
+# instead points at the required --next entrypoint, and (b) the explicit --plan
+# dry-run/inspection escape hatch still works (it is documented, not hidden).
+echo "--- SIGNATURE mode: bare --signature no longer leaks the full 8-question payload (E5) ---"
+if [ -f "$DRIVER" ]; then
+  BARE_OUT="$("$PY" "$DRIVER" --signature 2>&1)"
+  if printf '%s' "$BARE_OUT" | grep -q '"status": "use_turn_gate"' \
+     && printf '%s' "$BARE_OUT" | grep -q -- '--signature --next' \
+     && ! printf '%s' "$BARE_OUT" | grep -q '"questions"'; then
+    ok "bare --signature points at the turn-gate (--next) instead of dumping the question payload"
+  else
+    bad "bare --signature did not gate to the turn-gate pointer as expected"
+    printf '%s\n' "$BARE_OUT" | sed 's/^/         /' >&2
+  fi
+
+  PLAN_OUT="$("$PY" "$DRIVER" --signature --plan 2>&1)"
+  if printf '%s' "$PLAN_OUT" | grep -q '"questions"' \
+     && printf '%s' "$PLAN_OUT" | grep -q '"frame_selection_question"'; then
+    ok "--signature --plan still emits the full read-only dry-run payload (explicit escape hatch preserved)"
+  else
+    bad "--signature --plan no longer emits the full intake plan"
+    printf '%s\n' "$PLAN_OUT" | sed 's/^/         /' >&2
+  fi
+else
+  bad "deck-intake-driver.py missing at $DRIVER -- cannot regression-test E5"
+fi
+
 # ---- (I) AF-INTAKE-BATCH: the scanner does not autofail a COMPLIANT transcript ----
 # LIVE-CONFIRMED regression guard (E2): a one-question-per-turn transcript whose
 # frame_selection turn is asked VERBATIM, alone, was previously misdetected as a
