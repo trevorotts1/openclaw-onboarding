@@ -139,6 +139,42 @@ except Exception:  # noqa: BLE001
     _RealKeepalive = None  # type: ignore
     _real_remint_if_stale = None  # type: ignore
 
+# U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter. A HARD
+# import (not a soft one): resume and the run report are part of the CLI contract,
+# and silently degrading to "no checkpoints" would be exactly the kind of gate that
+# fails open. It ships in the same tools/ dir as this file — bootstrap the path so
+# an import from any cwd resolves it.
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_run_state  # noqa: E402
+from ghl_run_state import PhaseSpec  # noqa: E402
+
+
+# ── U8: the form builder's declared phase walk (the click list's own F1…F13) ────
+# ``resumable=False`` = ALWAYS re-executes on resume:
+#   * F1 — NAVIGATION to the Forms list. You cannot skip walking back in.
+#   * F13 — the render VERIFY. A gate a resume skips is not a gate; it re-runs.
+# F2 (create the form) IS resumable, and skipping it is the whole point: on resume
+# the walk routes STRAIGHT to the already-created form's builder URL instead of
+# creating a second, duplicate form.
+FORM_PHASES: List[PhaseSpec] = [
+    PhaseSpec("F1",  "navigate to Forms list",         resumable=False),
+    PhaseSpec("F2",  "create the form"),
+    PhaseSpec("F3",  "rename the form"),
+    PhaseSpec("F4",  "delete unwanted default fields"),
+    PhaseSpec("F5",  "place standard fields"),
+    PhaseSpec("F6",  "place pre-created custom fields"),
+    PhaseSpec("F7",  "field settings"),
+    PhaseSpec("F8",  "styling / options"),
+    PhaseSpec("F9",  "save"),
+    PhaseSpec("F10", "capture embed + share link"),
+    PhaseSpec("F11", "embed → page splice handoff"),
+    PhaseSpec("F12", "tag attachment handoff"),
+    PhaseSpec("F13", "render verify",                  resumable=False),
+]
+
 
 # ---------------------------------------------------------------------------
 # Module constants
@@ -2065,7 +2101,9 @@ def _place_object_field(session: str, field: dict, evidence_root: str,
 # ── the click-list walk (locked-anchor interpreter) ──────────────────────────
 def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: str,
                      shot_n: List[int], warnings: List[str], steps_done: List[str],
-                     walk_state: Optional[Dict[str, Any]] = None) -> dict:
+                     walk_state: Optional[Dict[str, Any]] = None,
+                     state: Optional["ghl_run_state.RunState"] = None,
+                     stop_after: str = "") -> dict:
     """Interpret each click-list step through the LOCKED anchors. Returns
     {form_id, form_url, embed_snippet, actual_title}. Raises StopAndReport on a
     REQUIRED miss.
@@ -2097,14 +2135,75 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
     _keepalive = _RealKeepalive() if _RealKeepalive is not None else None
     _last_phase: List[Optional[str]] = [None]
 
+    # ── U8: resume ──────────────────────────────────────────────────────────────
+    # A phase is skipped WHOLESALE (all of its click-list steps), never half-walked
+    # — a phase is the unit the ledger commits, so it is also the unit resume trusts.
+    skip_phases: set = set()
+    if state is not None:
+        skip_phases = {s.name for s in FORM_PHASES if state.should_skip(s.name)}
+        carried_id = state.carry_get("form_id") or ""
+        if "F2" in skip_phases and carried_id:
+            # The form already EXISTS. Re-walking F2 would create a SECOND one — the
+            # exact duplicate-object bug a naive "just start over" resume produces.
+            # Route straight into the existing form's builder instead.
+            form_id = carried_id
+            form_url = state.carry_get("form_url") or ""
+            embed = state.carry_get("embed_snippet") or ""
+            st["form_id"] = form_id
+            st["actual_title"] = state.carry_get("actual_title") or ""
+            _log(f"resume: form {form_id!r} already created — routing straight to its "
+                 f"builder (F2 create SKIPPED, no duplicate form)")
+            _router_push(session, _form_builder_route(loc, form_id),
+                         expect_contains="form-builder")
+            _screenshot(session, _shot(evidence_root, shot_n, "resume-reentered-form"))
+        elif "F2" in skip_phases and not carried_id:
+            # Ledger says the form was created but no id survived: resuming would
+            # build a duplicate. Fail closed rather than guess.
+            raise StopAndReport(
+                "F2",
+                "run state says the form was created but carries no form_id — refusing "
+                "to resume, because re-walking F2 would create a DUPLICATE form. "
+                "Start a fresh run (drop --resume) after deleting any orphan.",
+            )
+
+    def _commit_phase(name: Optional[str]) -> None:
+        """Commit a phase to the ledger the moment it is fully walked (not at the end
+        of the run) — a process killed at F7 must find F1…F6 already durable."""
+        if state is None or not name or name in skip_phases:
+            return
+        state.mark_done(name, {"steps": len([s for s in steps_done
+                                             if s.startswith(f"{name}:")])})
+        if name == "F2" and form_id:
+            state.carry_set("form_id", form_id)
+            state.carry_set("actual_title", st.get("actual_title", ""))
+        if name == "F10":
+            if form_url:
+                state.carry_set("form_url", form_url)
+            if embed:
+                state.carry_set("embed_snippet", embed)
+
     for step in click_list["steps"]:
         phase, action, target = step["phase"], step["action"], (step["target"] or "")
         tgt = target.strip()
         tag = f"{phase}:{action}:{tgt[:36]}"
 
         if phase != _last_phase[0]:
+            # Phase transition: the phase we are LEAVING is now complete.
+            _commit_phase(_last_phase[0])
+            if stop_after and _last_phase[0] == stop_after:
+                raise ghl_run_state.StopAfterPhase(stop_after)
+            if state is not None and phase in skip_phases:
+                _log(f"PHASE {phase}: SKIP — already completed in run {state.run_id}")
+                state.mark_skipped(phase)
+                _last_phase[0] = phase
+                continue
             _pre_phase_check(session, _keepalive)
+            if state is not None:
+                state.mark_running(phase)
             _last_phase[0] = phase
+
+        if phase in skip_phases:
+            continue
 
         # F1 — navigate to the Forms list (collapse nav+Sites+Forms → one router.push;
         # 'Sites' left-rail is conf 5 / unreliable, so we never click it).
@@ -2323,15 +2422,28 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
             steps_done.append(tag)
             continue
 
+    # The LAST phase gets no transition to commit it — commit it here.
+    _commit_phase(_last_phase[0])
+
     return {"form_id": form_id, "form_url": form_url, "embed_snippet": embed,
             "actual_title": st.get("actual_title", "")}
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
-                dep_plan: dict, preflight: dict, evidence_root: str, started: float) -> dict:
+                dep_plan: dict, preflight: dict, evidence_root: str, started: float,
+                state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Drive the live browser build end-to-end: seed → land → walk → capture embed →
     write build receipt → verify → CLEANUP (delete form + close session). Every
-    failure is a STOP-and-report; the created form is ALWAYS deleted in finally."""
+    failure is a STOP-and-report; the created form is ALWAYS deleted in finally.
+
+    RESUME + CLEANUP, and why they do not fight (U8): cleanup deletes the form on
+    every path that REACHES it, so a run that ends normally leaves nothing to
+    resume — and nothing that needs resuming. Resume exists for the runs that never
+    reach cleanup at all: SIGKILL, a dead box, a browser crash. Those leave a real
+    form behind, and `--resume <run_id>` re-enters THAT form instead of building a
+    second one. A ``--stop-after-phase`` stop deliberately skips cleanup for the
+    same reason: the half-built form must survive for the resume to find it.
+    """
     location_id = plan["location_id"]
     os.environ["GHL_LOCATION_ID"] = location_id      # canonical session-name consistency
     session = _canonical_session(location_id)
@@ -2342,6 +2454,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
     cleanup: Dict[str, Any] = {"attempted": False}
     form_id = ""
     stop: Optional[StopAndReport] = None
+    stopped_after: str = ""
+    stop_after: str = str(task.get("stop_after_phase", "") or "")
     # Mutable walk state (v18.1.5): form_id / actual_title recorded AT CAPTURE
     # TIME so cleanup still sees them when a LATER step raises StopAndReport —
     # the old locals-only flow claimed 'no form was created' after a mid-walk
@@ -2367,7 +2481,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         _screenshot(session, _shot(evidence_root, shot_n, "auth-landed"))
 
         walk = _walk_click_list(session, click_list, plan, evidence_root,
-                                shot_n, warnings, steps_done, walk_state)
+                                shot_n, warnings, steps_done, walk_state,
+                                state=state, stop_after=stop_after)
         form_id = walk["form_id"]
         form_url = walk["form_url"]
         embed = walk["embed_snippet"]
@@ -2407,6 +2522,13 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
                              "marker_in_rendered_dom": rec.get("marker_in_rendered_dom"),
                              "render_errors": rec.get("render_errors", [])}
 
+    except ghl_run_state.StopAfterPhase as sap:
+        # An OPERATOR-requested stop, not a failure. Cleanup is deliberately SKIPPED:
+        # deleting the half-built form here would delete the very thing --resume is
+        # meant to pick back up.
+        stopped_after = sap.phase
+        _log(f"STOPPED after phase {sap.phase!r} (--stop-after-phase) — form left in "
+             f"place for --resume; state committed.")
     except StopAndReport as sr:
         stop = sr
         _log(f"STOP-and-report @ {sr.step}: {sr.reason}")
@@ -2419,32 +2541,55 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         # actual title come from walk_state so a mid-walk STOP can no longer hide
         # a created form, and 'nothing to delete' is only ever CLAIMED after the
         # rendered Forms list positively shows zero rows for the intended name.
-        cleanup["attempted"] = True
-        try:
-            effective_form_id = walk_state.get("form_id") or form_id
-            actual_title = walk_state.get("actual_title", "")
-            if effective_form_id:
-                cleanup.update(_delete_form(session, location_id, effective_form_id,
-                                            plan["form_name"], actual_title=actual_title))
-                _screenshot(session, _shot(evidence_root, shot_n, "cleanup-deleted"))
-            else:
-                cleanup.update(_verify_no_residue(
-                    session, location_id, plan["form_name"],
-                    possible_unnamed_orphan=bool(
-                        walk_state.get("stopped_after_create_confirm"))))
-                _screenshot(session, _shot(evidence_root, shot_n, "cleanup-no-residue"))
-        except Exception as exc:  # noqa: BLE001
-            cleanup["deleted"] = False
-            cleanup["verified_gone"] = False
-            cleanup["error"] = f"{type(exc).__name__}: {exc}"
-            warnings.append(f"cleanup: delete/verify raised: {exc}")
-        finally:
+        #
+        # ONE exception (U8): a --stop-after-phase stop leaves the form ALIVE on
+        # purpose. Deleting it would destroy the object the operator explicitly
+        # stopped in order to inspect, and would leave --resume nothing to resume.
+        if stopped_after:
+            cleanup.update({
+                "attempted": False, "deleted": False, "verified_gone": False,
+                "skipped_reason": (f"--stop-after-phase {stopped_after}: form intentionally "
+                                   f"LEFT IN PLACE so --resume can re-enter it"),
+                "form_id": walk_state.get("form_id") or form_id,
+            })
+        else:
+            cleanup["attempted"] = True
             try:
-                _session_cm.__exit__(None, None, None)   # emit the teardown step
-            except Exception:  # noqa: BLE001
-                pass
-            _close_session(location_id)                  # REAL close of the seeded session
+                effective_form_id = walk_state.get("form_id") or form_id
+                actual_title = walk_state.get("actual_title", "")
+                if effective_form_id:
+                    cleanup.update(_delete_form(session, location_id, effective_form_id,
+                                                plan["form_name"], actual_title=actual_title))
+                    _screenshot(session, _shot(evidence_root, shot_n, "cleanup-deleted"))
+                else:
+                    cleanup.update(_verify_no_residue(
+                        session, location_id, plan["form_name"],
+                        possible_unnamed_orphan=bool(
+                            walk_state.get("stopped_after_create_confirm"))))
+                    _screenshot(session, _shot(evidence_root, shot_n, "cleanup-no-residue"))
+            except Exception as exc:  # noqa: BLE001
+                cleanup["deleted"] = False
+                cleanup["verified_gone"] = False
+                cleanup["error"] = f"{type(exc).__name__}: {exc}"
+                warnings.append(f"cleanup: delete/verify raised: {exc}")
+
+        try:
+            _session_cm.__exit__(None, None, None)   # emit the teardown step
+        except Exception:  # noqa: BLE001
+            pass
+        _close_session(location_id)                  # REAL close of the seeded session
         _write_json(os.path.join(evidence_root, "routing", "cleanup.json"), cleanup)
+
+    if stopped_after:
+        return {
+            "pages": [], "location_gate_ok": bool(location_id),
+            "duration_s": time.monotonic() - started,
+            "form_url": "", "form_id": walk_state.get("form_id") or form_id,
+            "embed_code": "", "stopped_after_phase": stopped_after,
+            "run_id": state.run_id if state is not None else "",
+            "warnings": warnings, "steps_done": steps_done,
+            "cleanup": cleanup, "preflight": preflight,
+        }
 
     duration = time.monotonic() - started
     if stop is not None:
@@ -2479,12 +2624,17 @@ def _ghl_verify_available() -> bool:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
-def build_form(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
+def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
+               state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Build a GHL (Convert and Flow) FORM via browser-control.
 
     THINK layer always runs (preflight + plan + dependency plan + field map +
     click list). LIVE browser execution runs only when dry_run=False AND the
     real skill modules (ghl_builder / browser_manager) are importable.
+
+    ``state`` (U8): a RunState turns the click-list walk's own F1…F13 phases into
+    resume points. ``None`` (the dispatcher / library callers) = no checkpointing,
+    and the walk behaves exactly as it always did.
     """
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
@@ -2542,7 +2692,7 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
     # in cleanup. In-iframe surfaces are snapshot-and-bound at runtime; a REQUIRED miss
     # is a STOP-and-report (no invented CSS, no brute-force).
     return _live_build(task, plan, click_list, fields, dep_plan, preflight,
-                       evidence_root, started)
+                       evidence_root, started, state=state)
 
 
 # ---------------------------------------------------------------------------
@@ -2867,10 +3017,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--form-name", default="New Form")
     p.add_argument("--location-id", default=os.environ.get("GHL_LOCATION_ID", ""))
     p.add_argument("--tags", default="", help="Comma-separated tag names (zhc_ auto-prefixed).")
+    # U8/U10 — identical flags on every Skill-6 builder.
+    ghl_run_state.add_run_state_args(p)
     args = p.parse_args(argv)
 
     if args.selftest:
         return _selftest()
+
+    started = time.monotonic()
+
+    try:
+        state = ghl_run_state.open_run_state(
+            args, "ghl_form_builder", FORM_PHASES,
+            argv=list(argv if argv is not None else sys.argv[1:]),
+        )
+    except (ghl_run_state.RunStateNotFound, ghl_run_state.RunStateCorrupt) as exc:
+        print(f"--resume: {exc}", file=sys.stderr)
+        return 2
+
+    resumed = bool(args.resume)
+    evidence_root = args.evidence_root
+    if resumed and state.evidence_root:
+        evidence_root = state.evidence_root
 
     task = {
         "id": "cli-form-run",
@@ -2879,8 +3047,62 @@ def main(argv: Optional[List[str]] = None) -> int:
         "form_fields": _reference_fields(),
         "tags": [t.strip() for t in args.tags.split(",") if t.strip()],
     }
-    result = build_form(task, args.evidence_root, dry_run=args.dry_run)
+
+    dry_run = args.dry_run
+    if resumed:
+        # A resume must rebuild the SAME form the dead run was building.
+        saved_task = state.carry_get("task")
+        if isinstance(saved_task, dict):
+            task = dict(saved_task)
+        saved_dry = state.carry_get("dry_run")
+        if saved_dry is not None:
+            dry_run = bool(saved_dry)
+    else:
+        state.carry_set("task", task)
+        state.carry_set("dry_run", bool(dry_run))
+
+    task["stop_after_phase"] = args.stop_after_phase
+
+    status = ghl_run_state.STATUS_OK
+    error = ""
+    result: Dict[str, Any] = {}
+    try:
+        result = build_form(task, evidence_root, dry_run=dry_run, state=state)
+    except ghl_run_state.StopAfterPhase as sap:
+        status = ghl_run_state.STATUS_STOPPED
+        result = {"stopped_after_phase": sap.phase, "run_id": state.run_id}
+    except Exception as exc:  # noqa: BLE001
+        status = ghl_run_state.STATUS_FAILED
+        error = f"{type(exc).__name__}: {exc}"
+        result = {"error": error}
+
+    if status == ghl_run_state.STATUS_OK:
+        if result.get("stopped_after_phase"):
+            status = ghl_run_state.STATUS_STOPPED
+        elif result.get("error"):
+            status = ghl_run_state.STATUS_FAILED
+            error = str(result["error"])
+    state.finish(status, error)
+
     print(json.dumps(result, indent=2, default=str))
+
+    # U10 — stderr, so the stdout JSON contract stays parseable.
+    ghl_run_state.emit_run_report(
+        builder="ghl_form_builder",
+        run_id=state.run_id,
+        status=status,
+        dry_run=bool(dry_run),
+        evidence_root=evidence_root,
+        duration_s=time.monotonic() - started,
+        script_path=__file__,
+        state=state,
+        state_root=args.state_root,
+        error=error,
+        extra_rows={"form_url": result.get("form_url") or "(none)"},
+    )
+
+    if status == ghl_run_state.STATUS_FAILED:
+        return 1
     return 0 if result.get("location_gate_ok", True) else 1
 
 
