@@ -1,0 +1,114 @@
+name: power-resilience-guard
+
+# Fails the build if the Mac provisioner regresses to shipping boxes that cannot
+# survive a power outage.
+#
+# THE INCIDENT: a fleet audit measured 0 of 11 client Macs surviving a power cut.
+# One box sat powered on, networked, both tunnels green, with its gateway DEAD
+# for 3 days 14 hours — it started the exact second a human logged in. The
+# installer laid login-gated LaunchAgents onto FileVault-locked boxes and
+# REPORTED SUCCESS. Nothing in CI asserted otherwise. That is how it shipped.
+#
+# This guard is the thing that would have caught it. It proves, on every push:
+#   - the FileVault gate FAILS CLOSED (rc 78) on a simulated FileVault-ON box
+#   - the gate is not silently bypassable
+#   - `pmset -a autorestart 1` is ACTUALLY issued (it was absent entirely)
+#   - a laptop is handled explicitly, not treated as a mini
+#   - cloudflared is resolved, never hardcoded to /opt/homebrew (dead on Intel)
+#   - tunnel tokens go to a mode-600 token-FILE, never a cleartext CLI arg
+#   - the 3 hand-rolled pm2 launchd names collapse into ONE
+#   - the gateway is not blindly converted to a LaunchDaemon on a GUI-coupled box
+#
+# The test is fully offline: every macOS system command (fdesetup, pmset,
+# defaults, ioreg, networksetup) is faked through the library's injectable seams,
+# so it runs on ubuntu-latest with no root and no live box.
+
+on:
+  push:
+    paths:
+      - platform/mac/power-resilience/**
+      - platform/mac/bootstrap.sh
+      - platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+      - 32-command-center-setup/scripts/setup-tunnel-daemon.sh
+      - scripts/fix-power-resilience.sh
+      - tests/unit/power-resilience-gate.test.sh
+      - .github/workflows/power-resilience-guard.yml
+  pull_request:
+    paths:
+      - platform/mac/power-resilience/**
+      - platform/mac/bootstrap.sh
+      - platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+      - 32-command-center-setup/scripts/setup-tunnel-daemon.sh
+      - scripts/fix-power-resilience.sh
+      - tests/unit/power-resilience-gate.test.sh
+      - .github/workflows/power-resilience-guard.yml
+
+jobs:
+  power-resilience-guard:
+    name: Power-outage survival regression guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check every script in the blast radius
+        run: |
+          for f in \
+            platform/mac/power-resilience/lib-power-resilience.sh \
+            platform/mac/bootstrap.sh \
+            platform/mac/tunnel-hardening/harden-mac-tunnel.sh \
+            32-command-center-setup/scripts/setup-tunnel-daemon.sh \
+            scripts/fix-power-resilience.sh \
+            tests/unit/power-resilience-gate.test.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: FileVault gate must FAIL CLOSED + pmset must be present
+        run: |
+          chmod +x tests/unit/power-resilience-gate.test.sh
+          bash tests/unit/power-resilience-gate.test.sh
+
+      - name: Meta-check — the test must actually be able to FAIL (no vacuous green)
+        run: |
+          # Reintroduce the EXACT shipped bug (the gate returns 0 instead of 78 on
+          # a FileVault-ON box) and prove the suite goes red. A test that cannot
+          # fail is not a test — and a green-but-vacuous suite is precisely how
+          # this defect reached 11 client boxes.
+          cp platform/mac/power-resilience/lib-power-resilience.sh /tmp/lib.orig
+          python3 - <<'PY'
+          p = "platform/mac/power-resilience/lib-power-resilience.sh"
+          s = open(p).read()
+          needle = '    return "$PR_EX_CONFIG"'
+          assert needle in s, "gate return not found — update this meta-check"
+          s = s.replace(needle, "    return 0  # MUTATED: fail-open", 1)
+          open(p, "w").write(s)
+          PY
+          if bash tests/unit/power-resilience-gate.test.sh >/dev/null 2>&1; then
+            echo "::error::VACUOUS TEST — the suite still passes with a fail-OPEN FileVault gate."
+            cp /tmp/lib.orig platform/mac/power-resilience/lib-power-resilience.sh
+            exit 1
+          fi
+          echo "OK: the suite correctly goes RED when the gate fails open."
+          cp /tmp/lib.orig platform/mac/power-resilience/lib-power-resilience.sh
+
+      - name: No cleartext tunnel token may be rendered into any plist
+        run: |
+          # The rendered plists must never carry a bare `--token <jwt>` (visible in
+          # `ps` to ANY local user) — only `--token-file`.
+          if grep -rnE '<string>--token</string>' \
+               32-command-center-setup/scripts/setup-tunnel-daemon.sh \
+               platform/mac/power-resilience/lib-power-resilience.sh; then
+            echo "::error::A plist template still passes a cleartext --token. Use --token-file (mode 600)."
+            exit 1
+          fi
+          echo "OK: no cleartext --token in any plist template."
+
+      - name: No hardcoded Homebrew path in a rendered plist (dead on Intel Macs)
+        run: |
+          if grep -rnE '<string>/opt/homebrew/bin/cloudflared</string>' \
+               32-command-center-setup/scripts/setup-tunnel-daemon.sh; then
+            echo "::error::cloudflared is hardcoded to /opt/homebrew — that path does not exist on an Intel Mac (exit 78 EX_CONFIG, forever). Resolve it with 'command -v cloudflared'."
+            exit 1
+          fi
+          echo "OK: cloudflared is resolved, not hardcoded."

@@ -1,5 +1,33 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.35 — 2026-07-11 — fix(cc): tunnel daemon survives a power outage — root LaunchDaemon + resolved cloudflared + token-file
+
+`scripts/setup-tunnel-daemon.sh` shipped three power-outage defects found in a
+fleet audit (0 of 11 client Macs survived a power cut):
+
+1. It installed the Command Center tunnel as a **user LaunchAgent**
+   (`~/Library/LaunchAgents`). A LaunchAgent lives in the `gui/<uid>` launchd
+   domain, which does not exist until a console login creates it —
+   `RunAtLoad`/`KeepAlive` are a red herring. A tunnel has no GUI dependency, so
+   it is now a **root LaunchDaemon** (system domain, starts at boot, no login).
+2. It **hardcoded `/opt/homebrew/bin/cloudflared`**, which does not exist on an
+   Intel Mac (Homebrew lives at `/usr/local` there). One fleet box exits 78
+   (`EX_CONFIG`) on every launch and has never once run. The binary is now
+   resolved with `command -v cloudflared`, with both Homebrew prefixes as
+   fallbacks.
+3. It referenced `~/.cloudflared/config-command-center.yml`, which is **missing
+   on at least 3 fleet boxes**. It now runs from the connector **token** (what
+   the registration webhook actually returns) — no config file to go missing.
+
+Plus a fleet-wide security fix: the tunnel token was in **cleartext** in a
+world-readable root plist and visible in `ps` to any local user. It now uses
+`--token-file` with mode 600 (the `com.cloudflare.ghl-inbound` pattern).
+
+Honest limit: a LaunchDaemon still does not run on a FileVault-ON Apple Silicon
+box (pre-boot unlock halt). The FileVault gate in
+`platform/mac/power-resilience/` is what makes this daemon meaningful. See that
+directory's README for the full analysis.
+
 ## v12.9.31 — 2026-07-07 — fix(cc): durable converge guards so a Command Center rebuild can never re-break the Kanban
 
 Root cause (proven on a client box): Phase 6 of `scripts/run-full-install.sh` pulled fresh
