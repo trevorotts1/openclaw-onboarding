@@ -130,9 +130,17 @@ except Exception:  # noqa: BLE001
 
 
 class _NoopGovernor:
-    def before_save(self) -> None: ...
-    def before_publish(self) -> None: ...
-    def on_429(self, retry_after: Optional[float] = None) -> None: ...
+    # Mirrors the v2_dispatcher.RateGovernor public API used by the builders
+    # (`before(action)`/`note_429()`/`due()`) — NOT the old before_save/on_429 names,
+    # which the REAL RateGovernor never had (that mismatch STOPPed the first live run).
+    def before(self, action: str = "save") -> float:
+        return 0.0
+
+    def note_429(self, retry_after: Optional[float] = None) -> float:
+        return 0.0
+
+    def due(self, now: Optional[float] = None) -> bool:
+        return False
 
 
 class _NoopKeepalive:
@@ -274,15 +282,79 @@ def _reactive_fill(session: str, placeholder: str, value: str, timeout: int = 12
     return bool(res) and "NOTFOUND" not in res
 
 
+# SPA in-app navigation via the GHL Vue $router.push (Phase D fix — the EMPTY-account
+# auth fix). inject-ghl-auth.sh's OWN doctrine (line 440): "seed + reload => login bounce;
+# seed + in-app router nav => logged in". A hard `agent-browser navigate` (full reload) to a
+# deep route LOGIN-BOUNCES a freshly-seeded session on a fresh/empty sub-account (the seed's
+# SPA auth does not survive a boot-time re-check on a cold account); an in-app router.push
+# preserves it. This mirrors inject-ghl-auth.sh's activation ($store/$router off
+# #app.__vue_app__) exactly. On the POPULATED account both worked (durable cookie); SPA-nav
+# works on BOTH, so it replaces the hard navigate as the primary path.
+_SPA_ROUTER_PUSH_JS_TMPL = (
+    "(async () => {"
+    "  const path = %s;"
+    "  const sleep = (ms) => new Promise(r => setTimeout(r, ms));"
+    "  let router = null, store = null;"
+    "  for (let w = 0; w < 20; w++) {"
+    "    const el = document.querySelector('#app');"
+    "    const gp = el && el.__vue_app__ && el.__vue_app__.config"
+    "        && el.__vue_app__.config.globalProperties;"
+    "    if (gp && gp.$router) { router = gp.$router; store = gp.$store; break; }"
+    "    await sleep(400);"
+    "  }"
+    "  if (!router) return 'NO_ROUTER';"
+    "  const base = path.split('?')[0];"
+    "  for (let attempt = 1; attempt <= 3; attempt++) {"
+    "    try { await router.push({ path: path }); } catch (e) {}"
+    "    await sleep(1200);"
+    "    const onLogin = !!document.querySelector('input[type=password]')"
+    "        || /\\/login(\\b|$)/.test(location.pathname) || /[?&]url=/.test(location.search);"
+    "    if (!onLogin && location.pathname.indexOf(base) !== -1) return 'OK:' + location.href;"
+    "    try { if (store) await store.dispatch('auth/get'); } catch (e) {}"
+    "    await sleep(600);"
+    "  }"
+    "  return 'BOUNCED:' + location.href;"
+    "})()"
+)
+
+
+def _spa_router_push(session: str, path: str) -> dict:
+    """In-app SPA navigation via GHL's Vue $router.push (NO full reload) so a freshly-seeded
+    session on an EMPTY sub-account does not login-bounce (inject-ghl-auth.sh doctrine).
+    Returns {ok, detail}; never raises."""
+    raw = (_eval(session, _SPA_ROUTER_PUSH_JS_TMPL % json.dumps(path), timeout=30) or "").strip()
+    return {"ok": raw.startswith("OK:"), "detail": raw}
+
+
 def _nav_to_list(session: str, location_id: str, sels: dict, dotted_route: str,
                  expect_text: str) -> None:
-    """C1/M1 nav (Phase B): the Memberships left-rail text is a non-navigating SPAN on some
-    accounts, so reach the LIST by navigating its route directly (proven: the LIST route
-    loads reliably; only the builder/editor route spins). Substitutes <LOCATION_ID>."""
+    """C1/M1 nav: reach the LIST via an in-app SPA $router.push (Phase D — preserves the
+    seeded auth on a fresh/empty account; a hard reload login-bounces it). Falls back to a
+    hard navigate only if the SPA router is not reachable (e.g. #app not mounted).
+    Substitutes <LOCATION_ID>."""
     route = anchor(sels, dotted_route)                       # locked route template
     path = route.replace("<LOCATION_ID>", location_id)
-    url = path if path.startswith("http") else f"{_APP_HOST}{path}"
-    _ab(session, "navigate", url, timeout=45)
+    if path.startswith("http"):
+        try:
+            from urllib.parse import urlparse
+            path = urlparse(path).path or path
+        except Exception:  # noqa: BLE001
+            pass
+    # If we are OFF the app origin (e.g. on the white-label portal after a create), return to
+    # the app dashboard first — the Vue $router only exists on app.convertandflow.com.
+    try:
+        cur = _eval(session, "location.href", timeout=8) or ""
+    except Exception:  # noqa: BLE001
+        cur = ""
+    if _APP_HOST not in cur:
+        _ab(session, "navigate", f"{_APP_HOST}/v2/location/{location_id}/dashboard", timeout=45)
+        _ex_wait_text(session, "Dashboard", timeout=15)
+    res = _spa_router_push(session, path)
+    if not res.get("ok"):
+        _log(f"SPA router.push to {path!r} not confirmed ({res.get('detail')}) — "
+             "hard-navigate fallback (populated-account durable-cookie path)")
+        url = path if path.startswith("http") else f"{_APP_HOST}{path}"
+        _ab(session, "navigate", url, timeout=45)
     _ex_wait_text(session, expect_text, timeout=25)
 
 
@@ -530,7 +602,7 @@ def _add_channel(session: str, sels: dict, ch: dict, evidence_root: str,
     if ch.get("description"):
         _ex_fill(session, sels, "community.group_nav.channel_description_input",
                  ch["description"], required=False)
-    gov.before_save()
+    gov.before("save")
     _ex_click(session, sels, "community.group_nav.channel_create_confirm")   # exec:native
     _ex_wait_text(session, name, timeout=15)
     if not _list_has(session, name):
@@ -607,6 +679,29 @@ def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
     return result
 
 
+_PORTAL_ONBOARDING_JS = (
+    "(() => {"
+    "  const url = location.href || '';"
+    "  const t = document.body ? (document.body.innerText || '') : '';"
+    "  const setpw = /set-password/i.test(url) "
+    "      || (/clientclub\\.net/i.test(url) && /\\/login/i.test(url))"
+    "      || /Set new password|Set Password/i.test(t);"
+    "  return setpw ? '1' : '';"
+    "})()"
+)
+
+
+def _detect_portal_onboarding(session: str) -> bool:
+    """Phase D live-observed: creating the FIRST community on a fresh sub-account creates the
+    group but redirects to the white-label portal SET-PASSWORD page (portal admin password not
+    set). Detect it so the builder records the onboarding gate honestly instead of falsely
+    reporting a channel/render pass. Never raises."""
+    try:
+        return bool((_eval(session, _PORTAL_ONBOARDING_JS, timeout=8) or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
                 evidence_root: str, started: float) -> dict:
     if not (_HAVE_FFB and getattr(_ffb, "browser_manager", None) is not None):
@@ -626,6 +721,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
     group_url = ""
     action = ""
     identity: Dict[str, Any] = {}
+    portal_gated = False
     stop: Optional[StopAndReport] = None
     cleanup: Dict[str, Any] = {"attempted": False}
 
@@ -654,37 +750,68 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             identity = _capture_group_identity(session, plan)
             action = "reused"
         else:
-            # C3 — create group on the create PAGE (all capture-pending → STOP until captured).
+            # C3 — create the group on the create PAGE. On an EMPTY sub-account the empty-state
+            # control is "Create a Community" (resolved via the regex fallback); the create page
+            # is identical (Group Name / Slug / description). REACTIVE-fill so the Naive-UI model
+            # binds, then submit the BOTTOM-most 'Create Group' (Phase D live: the submit sits
+            # below the fold; a top match is the page heading/back-nav; native .click()).
             _ex_click(session, sels, "community.list_page.create_group_button")
-            _ex_fill(session, sels, "community.create_page.name_input", plan["community_name"])
+            if not _reactive_fill(session, "Group Name", plan["community_name"]):
+                _ex_fill(session, sels, "community.create_page.name_input", plan["community_name"])
             if plan["description"]:
-                _ex_fill(session, sels, "community.create_page.description_input",
-                         plan["description"], required=False)
+                if not _reactive_fill(session, "Enter a brief description", plan["description"]):
+                    _ex_fill(session, sels, "community.create_page.description_input",
+                             plan["description"], required=False)
             if plan["privacy"] == "private":
                 _ex_click(session, sels, "community.create_page.privacy_switch", required=False)
-            gov.before_save()
-            _ex_click(session, sels, "community.create_page.create_confirm")   # exec:native submit
+            gov.before("save")
+            if not _click_bottom_button(session, "Create Group", min_y=200):    # BOTTOM submit
+                _ex_click(session, sels, "community.create_page.create_confirm")  # native anchor fallback
             _ex_wait_text(session, plan["community_name"][:18], timeout=25)
             identity = _capture_group_identity(session, plan)               # fix c: slug + portal host
             _screenshot(session, _shot(evidence_root, shot_n, "c3-created"))
             action = "created"
+            # FIRST-community PORTAL ONBOARDING (Phase D live-observed on an EMPTY account):
+            # creating the FIRST community creates the group but redirects to the white-label
+            # portal SET-PASSWORD page (the portal admin password is not set yet). The group
+            # EXISTS (deactivated in cleanup), but channel-add + anonymous render_check live on
+            # that portal and are gated on a one-time operator portal setup — NOT a builder bug.
+            portal_gated = _detect_portal_onboarding(session)
+            if portal_gated:
+                warnings.append(
+                    "C3: FIRST-community portal onboarding — the group was created but GHL "
+                    "redirected to the white-label portal set-password page (portal admin "
+                    "password not set). Channel-add + anonymous render_check are gated on a "
+                    "one-time operator portal setup. Group will be deactivated in cleanup.")
         group_id = identity.get("slug", "")            # groups are keyed by SLUG (fix c)
         group_url = identity.get("portal_url", "")
         steps_done.append(f"C3:{action}")
 
-        # community receipt (F6).
-        verify_block = _verify_community(session, plan, identity, evidence_root)   # fix e
+        # community receipt (F6). When the first-community portal onboarding gate is hit the
+        # render_check is deferred honestly (the portal is not set up — no anonymous 200).
+        if portal_gated:
+            verify_block = {"status": "deferred", "privacy": plan["privacy"],
+                            "slug": identity.get("slug", plan["slug"]),
+                            "requires_auth": plan["privacy"] == "private",
+                            "reason": "first-community portal onboarding gate (set-password) — "
+                                      "channel-add + anonymous render_check gated on portal setup"}
+        else:
+            verify_block = _verify_community(session, plan, identity, evidence_root)   # fix e
         _write_receipt(evidence_root, _receipt(
             "community", plan["slug"], action, response_id=group_id,
             request_shape={"name": plan["community_name"], "privacy": plan["privacy"],
                            "slug": identity.get("slug"), "portal_host": identity.get("portal_host")},
             verify=verify_block))
 
-        # C4 — channels (idempotent, per-channel receipt).
-        for ch in plan["channels"]:
+        # C4 — channels (idempotent, per-channel receipt). The +Add Channel control lives on
+        # the white-label portal; when the first-community onboarding gate is active it is not
+        # reachable yet, so channels are skipped (recorded, not faked).
+        for ch in (plan["channels"] if not portal_gated else []):
             rc = _add_channel(session, sels, ch, evidence_root, shot_n, gov, keep)
             _write_receipt(evidence_root, rc)
             steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
+        if portal_gated:
+            steps_done.append("C4:gated-portal-onboarding")
 
         _write_json(os.path.join(evidence_root, "routing", "community-built.json"), {
             "community_id": group_id, "community_slug": identity.get("slug", ""),

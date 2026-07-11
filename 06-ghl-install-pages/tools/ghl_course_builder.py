@@ -260,7 +260,7 @@ def _add_lesson(session: str, sels: dict, module: dict, lesson: dict,
         raise StopAndReport(f"M4.lesson-module:{title}",
                             f"could not select the required module {module['title']!r} for "
                             f"lesson {title!r} (Create Lesson stays disabled) — STOP.")
-    gov.before_save()
+    gov.before("save")
     _ex_click(session, sels, "course.outline.lesson_create_confirm")          # 'Create Lesson'
     _ex_wait_text(session, title, timeout=15)
     if not _list_has(session, title):                                  # fix b: list-scan read-back
@@ -371,10 +371,12 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         _write_json(os.path.join(evidence_root, "routing", "auth-receipt.json"),
                     {"landed": auth["landed"], "seeded_at": _ts()})
 
-        # M1 — Memberships nav (verified-shared-rail).
-        _ex_click(session, sels, "shared_rail.memberships_left_rail")
-        _ex_wait_text(session, "Memberships", timeout=20)
-        steps_done.append("M1:memberships")
+        # M1 — reach the Courses LIST via an in-app SPA router.push (Phase D fix): the
+        # "Memberships" left-rail text is a non-navigating SPAN on some accounts (a click
+        # does nothing → the list never loads), and a hard navigate login-bounces a
+        # freshly-seeded EMPTY account. _nav_to_list SPA-navigates (auth-preserving).
+        _nav_to_list(session, location_id, sels, "course.routes.courses_list", "Create")
+        steps_done.append("M1:courses-list")
 
         # M2 — LIST-SCAN idempotency (fix b): the search box is OPTIONAL, not required.
         existed = _list_has(session, plan["course_name"], plan["slug"])
@@ -383,10 +385,26 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             action = "reused"
         else:
             if not existed:
-                _ex_click(session, sels, "course.list_page.create_course_button")
+                # Phase B 3-step wizard (LOCKed): 'Create New' → 'Start from scratch' →
+                # title → 'Upload Thumbnail' → 'Set Up Pricing' → BOTTOM 'Create Course'.
+                _ex_click(session, sels, "course.list_page.create_course_button")   # 'Create New'
+                # 'Start from scratch' appears via the 'Create New' dropdown; the empty-state
+                # 'Create New Course' CTA may open the wizard directly → best-effort (no STOP).
+                try:
+                    _ex_click(session, sels, "course.list_page.create_source", timeout=8)
+                except StopAndReport:
+                    _log("course: 'Start from scratch' not present — wizard opened directly (empty-state CTA)")
                 _ex_fill(session, sels, "course.create_modal.name_input", plan["course_name"])
-                gov.before_save()
-                _ex_click(session, sels, "course.create_modal.create_confirm")   # exec:native
+                # advance the wizard (thumbnail + pricing are optional steps; best-effort).
+                for step in ("course.create_modal.next_thumbnail", "course.create_modal.next_pricing"):
+                    try:
+                        _ex_click(session, sels, step, timeout=8)
+                    except StopAndReport:
+                        _log(f"course: wizard step {step} not present — single-step create")
+                gov.before("save")
+                # the BOTTOM 'Create Course' finalizes (the TOP one is a back-nav); native .click().
+                if not _click_bottom_button(session, "Create Course"):
+                    _ex_click(session, sels, "course.create_modal.create_confirm")   # exec:native fallback
                 _ex_wait_text(session, plan["course_name"][:18], timeout=25)
             course_id = _capture_id_from_url(session)
             action = "created" if not existed else "resumed"
@@ -395,8 +413,12 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         # M4 — outline: modules → lessons (resumable, per-lesson receipt).
         for m in plan["modules"]:
             if not (resume and all(l["slug"] in done_lessons for l in m["lessons"])):
+                # Phase B (LOCKed): '+ Add Content' → 'Add Module' → 'Enter module name' →
+                # 'Create Module' (add_module is reached via add_content first).
+                _ex_click(session, sels, "course.outline.add_content")
                 _ex_click(session, sels, "course.outline.add_module")
                 _ex_fill(session, sels, "course.outline.module_title_input", m["title"])
+                _ex_click(session, sels, "course.outline.module_create_confirm")   # 'Create Module'
                 _ex_wait_text(session, m["title"][:18], timeout=15)
             for l in m["lessons"]:
                 if l["slug"] in done_lessons:
