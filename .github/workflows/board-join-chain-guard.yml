@@ -47,6 +47,7 @@ on:
       - "shared-utils/canonical_slug.py"
       - "shared-utils/resolve_db.py"
       - "scripts/qc-assert-workspace-departments-built.sh"
+      - "scripts/qc-system-integrity.sh"
       - ".github/workflows/board-join-chain-guard.yml"
   pull_request:
     branches: [main]
@@ -59,11 +60,12 @@ on:
       - "shared-utils/canonical_slug.py"
       - "shared-utils/resolve_db.py"
       - "scripts/qc-assert-workspace-departments-built.sh"
+      - "scripts/qc-system-integrity.sh"
       - ".github/workflows/board-join-chain-guard.yml"
 
 jobs:
   board-join-chain:
-    name: chosen == provisioned == displayed (13 assertions)
+    name: chosen == provisioned == displayed (58 assertions)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
