@@ -876,6 +876,33 @@ if [[ -f "$INFLIGHT_MARKER" ]]; then
   log "IN-FLIGHT: marker is ${_if_age}s old (>= ${_if_ttl}s TTL) — prior resume turn presumed finished/dead; proceeding with a fresh dispatch."
 fi
 
+# ---- v14.x: RATE-LIMIT / DISPATCH-ERROR BACKOFF (Fix C-iii, fix/industry-gate-and-idempotent-crons) ----
+# A dispatch failure below used to just log "resume dispatch FAILED" and let the
+# NEXT */15 fire retry at the SAME fixed interval — even if the failure was a
+# genuine gateway rate-limit / refusal (429, "context too large", overloaded,
+# quota). Retrying an active rate-limit at the fixed cadence just tightens the
+# retry loop instead of backing off (resume-prompt.txt's own Rule 8 already asks
+# agents to "back off ~2 hours" on a 429/timeout — this makes that mechanical
+# instead of only advisory prose). RATE_LIMIT_STATE_FILE holds
+# {consecutiveFailures, nextAllowedEpoch}: exponential backoff
+# (RATE_LIMIT_BASE_MINUTES * 2^failures, capped at RATE_LIMIT_MAX_MINUTES),
+# reset to zero on the next successful dispatch. Uses raw epoch seconds (no
+# `date -d`/`date -v` portability split needed between Linux/macOS).
+RATE_LIMIT_STATE_FILE="$OC_ROOT/workspace/.workforce-build-resume-ratelimit.json"
+RATE_LIMIT_BASE_MINUTES="${WORKFORCE_RESUME_RATELIMIT_BASE_MINUTES:-15}"
+RATE_LIMIT_MAX_MINUTES="${WORKFORCE_RESUME_RATELIMIT_MAX_MINUTES:-240}"
+_rl_now_epoch=$(date -u +%s)
+_rl_next_allowed_epoch=0
+if [[ -f "$RATE_LIMIT_STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+  _rl_next_allowed_epoch=$(jq -r '.nextAllowedEpoch // 0' "$RATE_LIMIT_STATE_FILE" 2>/dev/null)
+  case "$_rl_next_allowed_epoch" in ''|*[!0-9]*) _rl_next_allowed_epoch=0 ;; esac
+fi
+if [[ "$_rl_next_allowed_epoch" -gt "$_rl_now_epoch" ]]; then
+  _rl_wait_s=$(( _rl_next_allowed_epoch - _rl_now_epoch ))
+  log "RATE-LIMIT BACKOFF: a prior dispatch hit a rate-limit/error signal; next dispatch not allowed for another ${_rl_wait_s}s (widened interval, no attempt bump this fire). See $RATE_LIMIT_STATE_FILE."
+  exit 0
+fi
+
 # ---- bump attempt counter atomically ----
 tmp_state=$(mktemp)
 jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$tmp_state" && mv "$tmp_state" "$STATE_FILE"
@@ -962,16 +989,44 @@ else
 fi
 
 log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; comms_automation_dirty=$comms_automation_dirty comms_automation_status='$comms_automation_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
-if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
+_dispatch_out=$(openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>&1)
+_dispatch_rc=$?
+printf '%s\n' "$_dispatch_out" >> "$LOG_FILE"
+if [[ "$_dispatch_rc" -eq 0 ]]; then
   # A resume turn was actually triggered. Record it: bump the ABSOLUTE ping counter
   # (furnace ceiling) and stamp the in-flight overlap marker so the next */15 fire
   # cannot stack a second agentTurn until it TTL-expires or the agent clears it.
   _total_pings=$(( ${_total_pings:-0} + 1 ))
   echo "$_total_pings" > "$RUN_COUNT_FILE" 2>/dev/null || true
   date -u +%Y-%m-%dT%H:%M:%SZ > "$INFLIGHT_MARKER" 2>/dev/null || true
-  log "resume dispatch ok (total resume pings this build: $_total_pings/$MAX_TOTAL_RESUME_PINGS; in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m)"
+  # A successful dispatch clears any prior rate-limit backoff (fresh start).
+  rm -f "$RATE_LIMIT_STATE_FILE" 2>/dev/null || true
+  log "resume dispatch ok (total resume pings this build: $_total_pings/$MAX_TOTAL_RESUME_PINGS; in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m; rate-limit backoff cleared)"
 else
-  log "resume dispatch FAILED (non-fatal: in-process exec already fired above if closeout_dirty)"
+  log "resume dispatch FAILED rc=$_dispatch_rc (non-fatal: in-process exec already fired above if closeout_dirty)"
+  # RATE-LIMIT/ERROR BACKOFF: widen the next-allowed dispatch time (exponential,
+  # capped) instead of letting the next */15 fire retry at the same cadence.
+  case "$_dispatch_out" in
+    *"429"*|*"rate limit"*|*"Rate limit"*|*"Rate Limit"*|*"rate-limit"*|*"Rate-Limit"*|*"too many requests"*|*"Too Many Requests"*|*"context too large"*|*"Context too large"*|*"quota"*|*"Quota"*|*"overloaded"*|*"Overloaded"*|*"503"*|*"529"*)
+      _rl_prev=0
+      if [[ -f "$RATE_LIMIT_STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+        _rl_prev=$(jq -r '.consecutiveFailures // 0' "$RATE_LIMIT_STATE_FILE" 2>/dev/null)
+        case "$_rl_prev" in ''|*[!0-9]*) _rl_prev=0 ;; esac
+      fi
+      _rl_fail=$(( _rl_prev + 1 ))
+      _rl_shift=$_rl_fail
+      (( _rl_shift > 8 )) && _rl_shift=8   # cap the exponent (2^8 * base already exceeds the minutes cap)
+      _rl_minutes=$(( RATE_LIMIT_BASE_MINUTES * (1 << _rl_shift) ))
+      (( _rl_minutes > RATE_LIMIT_MAX_MINUTES )) && _rl_minutes=$RATE_LIMIT_MAX_MINUTES
+      _rl_next_epoch=$(( _rl_now_epoch + _rl_minutes * 60 ))
+      if command -v jq >/dev/null 2>&1; then
+        jq -n --argjson n "$_rl_fail" --argjson e "$_rl_next_epoch" --arg m "$_rl_minutes" \
+          '{consecutiveFailures:$n, nextAllowedEpoch:$e, backoffMinutes:($m|tonumber)}' \
+          > "$RATE_LIMIT_STATE_FILE" 2>/dev/null || true
+      fi
+      log "RATE-LIMIT/ERROR signal detected in dispatch output (consecutive=$_rl_fail) — WIDENING next dispatch to ${_rl_minutes}m out, NOT re-firing at the fixed */15 interval. State: $RATE_LIMIT_STATE_FILE"
+      ;;
+  esac
 fi
 
 exit 0
