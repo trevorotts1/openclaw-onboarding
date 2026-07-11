@@ -596,6 +596,27 @@ Once a rescue agent helps you, you MUST cooperate with the resolution protocol s
 
 ---
 
+## 🔴 n8n Anthology Drive Broker — standing rules (learned from the July 2026 outage)
+
+Per the TYP storage rule below: the full runbook lives at
+`59-anthology-engine/config/n8n/README.md` ("Operational standing rules for the n8n
+deployment") — this is the hyper-concise pointer. Three rules bind EVERY future touch of
+the `n8n-main` deployment (Recreate strategy, 1 replica — every pod recreation is an
+outage):
+
+1. **Batch env changes.** Never one `kubectl set env` call per variable — combine every
+   var into ONE call, or you pay one outage per variable instead of one total.
+2. **Digest pins only.** Never `image: n8nio/n8n:latest`, never `imagePullPolicy: Always`
+   on this deployment. Upgrades are deliberate digest bumps with a DB backup first.
+3. **`N8N_BLOCK_ENV_ACCESS_IN_NODE` defaults to `true` (blocking) in n8n v2.** Any
+   workflow whose Code nodes read `$env.*` needs it explicitly set `false` on the
+   deployment, and needs an end-to-end test at go-live — a successful `POST /activate`
+   is not proof the Code node can actually read its env.
+
+Source: `N8N-DRIVE-BROKER-FIX-SPEC.md` §6 (retired after this port).
+
+---
+
 ## Agent Operating Rules
 
 ### First Run
