@@ -743,6 +743,63 @@ def do_self_test(_args):
         f.endswith(".json") for f in os.listdir(ledger_dir))
     check("self-metered to the daily ledger", metered)
 
+    # Runtime model router (E6): its own hermetic battery must pass, and a denied
+    # id must be refused with exit 2 (deny-pattern refusal is never a fallback).
+    router = os.path.join(_script_dir(), "model_router.py")
+    if os.path.exists(router):
+        try:
+            rr = subprocess.run([sys.executable, router, "self-test"],
+                                capture_output=True, text=True, timeout=60)
+            check("model_router self-test passes", rr.returncode == 0)
+            dd = subprocess.run([sys.executable, router, "deny-check", "vendor-opus-preview"],
+                                capture_output=True, text=True, timeout=30)
+            check("model_router refuses a denied id (exit 2)", dd.returncode == 2)
+        except Exception as exc:
+            check("model_router self-test invocable (%s)" % exc, False)
+    else:
+        check("model_router.py present", False)
+
+    # Required-outputs gate (E7): a producing stage may not advance past a missing
+    # deliverable, and --force-waiver overrides it. Drive podcast_state.py against a
+    # throwaway DB entirely inside the self-test tmp dir (no network, no live DB).
+    pstate = os.path.join(_script_dir(), "podcast_state.py")
+    if os.path.exists(pstate):
+        gate_db = os.path.join(tmp, "gate.db")
+        payload = os.path.join(tmp, "gate-payload.json")
+        with open(payload, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"preset": "interview"}))
+        env = dict(os.environ)
+        env["PODCAST_DB_PATH"] = gate_db
+
+        def _ps(*a):
+            return subprocess.run([sys.executable, pstate, *a],
+                                  capture_output=True, text=True, timeout=30, env=env)
+
+        try:
+            _ps("create", "--client-id", "st", "--location-id", "l", "--contact-id", "ct",
+                "--mode", "interview_style_podcast", "--style", "vulnerable",
+                "--payload-file", payload, "--job-key", "gatek")
+            import sqlite3 as _sq
+            jid = _sq.connect(gate_db).execute(
+                "SELECT job_id FROM podcast_jobs").fetchone()[0]
+            for st in ("researching", "writing", "in_qc", "generating_art"):
+                _ps("advance", "--job-id", jid, "--to", st)
+            _ps("output", "--job-id", jid, "--field", "cover_image_url", "--value", "https://x/c.png")
+            _ps("advance", "--job-id", jid, "--to", "producing_audio")
+            _ps("advance", "--job-id", jid, "--to", "publishing")
+            blocked = _ps("advance", "--job-id", jid, "--to", "enrolling")
+            check("required-outputs gate blocks advance on a missing artifact (exit 3)",
+                  blocked.returncode == 3)
+            waived = _ps("advance", "--job-id", jid, "--to", "enrolling", "--force-waiver")
+            check("--force-waiver overrides the required-outputs gate", waived.returncode == 0)
+            waiver_events = _sq.connect(gate_db).execute(
+                "SELECT count(*) FROM podcast_job_events WHERE note LIKE '%WAIVED%'").fetchone()[0]
+            check("waived advance writes an audit event", waiver_events >= 1)
+        except Exception as exc:
+            check("required-outputs gate drivable (%s)" % exc, False)
+    else:
+        check("podcast_state.py present", False)
+
     total = len(passed) + len(failed)
     report = {
         "self_test": "podcast-smoke-test",

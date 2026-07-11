@@ -184,6 +184,13 @@ class TransitionError(Exception):
     """Raised on an illegal state transition. Exit code 3."""
 
 
+class MissingRequiredOutputError(TransitionError):
+    """Raised (exit code 3, a blocked transition) when a forward advance would
+    leave a producing stage whose required output artifact(s) were never set.
+    A stage may not advance on a missing deliverable; the only escapes are to
+    set the output first (via `output`) or to pass --force-waiver (audited)."""
+
+
 class WriterRefused(Exception):
     """Raised when the client is deactivated (active = 0). Exit code 4."""
 
@@ -462,7 +469,157 @@ def _forward_next(status: str) -> str | None:
     return None
 
 
-def check_transition(row: sqlite3.Row, to_status: str) -> None:
+# ---------------------------------------------------------------------------
+# Required-outputs gate (preset/mode-aware). A forward advance may not LEAVE a
+# producing stage until the artifact that stage exists to create has been
+# recorded, so a job can never reach 'complete' (or slip past publishing) with
+# no stored audio and no Podbean permalink. The requirement set is resolved per
+# job from its preset flags, so document-only presets (season_strategy) and
+# non-publishing presets (episode_asset_pack) are never falsely blocked.
+# ---------------------------------------------------------------------------
+
+# The four output-type presets and the mode -> default-preset derivation
+# (config/presets.json is authoritative; these mirror it so the gate is
+# self-contained and hermetic when the config is not on the path).
+PRESET_ENUM = ("interview", "solo", "season_strategy", "episode_asset_pack")
+MODE_DEFAULT_PRESET = {
+    "interview_style_podcast": "interview",
+    "personal_podcast_style": "solo",
+}
+
+# Fallback preset flag table (mirrors config/presets.json flags). Only the flags
+# the gate reads are load-bearing; config values win when the file is present.
+BUILTIN_PRESET_FLAGS = {
+    "interview": {"research_stage": True, "render_audio": True,
+                  "publish_podbean": True, "book_teaser": True, "store_media": True},
+    "solo": {"research_stage": True, "render_audio": True,
+             "publish_podbean": True, "book_teaser": False, "store_media": True},
+    "season_strategy": {"research_stage": True, "render_audio": False,
+                        "publish_podbean": False, "book_teaser": False, "store_media": False},
+    "episode_asset_pack": {"research_stage": False, "render_audio": False,
+                           "publish_podbean": False,
+                           "book_teaser": "conditional_interview_source",
+                           "store_media": True},
+}
+
+# (from_status, to_status) -> [(output_column, gate)]. A requirement applies only
+# when its GATE is satisfied by the job's preset flags, so the same map is correct
+# for every preset. Gates:
+#   produces_media  - any of render_audio/publish_podbean/store_media (a real
+#                     producing run, i.e. NOT the document-only season_strategy)
+#   store_media     - the stored media package is a deliverable of this preset
+#   publish_podbean - this preset publishes to Podbean (so a permalink is owed)
+#   book_teaser     - strictly True (the conditional string never HARD-requires it)
+REQUIRED_OUTPUTS_BY_TRANSITION = {
+    # Leaving art (Step 10 cover): the cover image must exist.
+    ("generating_art", "producing_audio"): [
+        ("cover_image_url", "produces_media"),
+    ],
+    # Leaving publishing (Steps 12-16: documents, media upload, Podbean, link-back):
+    # the stored audio and the Podbean permalink must exist.
+    ("publishing", "enrolling"): [
+        ("mp3_media_url", "store_media"),
+        ("episode_package_url", "store_media"),
+        ("podbean_permalink", "publish_podbean"),
+        ("book_teaser_url", "book_teaser"),
+    ],
+    # Terminal backstop: no job reaches 'complete' missing its core deliverables.
+    ("enrolling", "complete"): [
+        ("mp3_media_url", "store_media"),
+        ("episode_package_url", "store_media"),
+        ("podbean_permalink", "publish_podbean"),
+        ("cover_image_url", "produces_media"),
+        ("episode_title", "produces_media"),
+    ],
+}
+
+_PRESET_FLAGS_CACHE = None
+
+
+def _preset_flags_map() -> dict:
+    """config/presets.json flags (authoritative) merged over the builtin fallback.
+    Never raises; a missing/broken config quietly falls back to the builtin table."""
+    global _PRESET_FLAGS_CACHE
+    if _PRESET_FLAGS_CACHE is not None:
+        return _PRESET_FLAGS_CACHE
+    flags_map = {name: dict(fl) for name, fl in BUILTIN_PRESET_FLAGS.items()}
+    try:
+        skill_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cfg = os.path.join(skill_root, "config", "presets.json")
+        with open(cfg, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        for name, spec in (data.get("presets") or {}).items():
+            fl = spec.get("flags")
+            if isinstance(fl, dict):
+                flags_map[name] = fl
+    except Exception:
+        pass
+    _PRESET_FLAGS_CACHE = flags_map
+    return flags_map
+
+
+def preset_flags(preset: str | None) -> dict:
+    if not preset:
+        return {}
+    return _preset_flags_map().get(preset, {})
+
+
+def resolve_preset(conn: sqlite3.Connection | None, job_id: str, mode: str) -> str | None:
+    """Resolve a job's preset: an explicit, in-enum preset from the stored intake
+    payload wins; otherwise derive the default from the production mode. Never
+    raises (a producing mode always resolves to a full-deliverable default)."""
+    preset = None
+    if conn is not None:
+        try:
+            r = conn.execute(
+                "SELECT payload_json FROM podcast_job_payloads WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if r and r[0]:
+                payload = json.loads(r[0])
+                cand = payload.get("preset") if isinstance(payload, dict) else None
+                if cand in PRESET_ENUM:
+                    preset = cand
+        except Exception:
+            preset = None
+    if not preset:
+        preset = MODE_DEFAULT_PRESET.get(mode)
+    return preset
+
+
+def _gate_satisfied(gate: str, flags: dict) -> bool:
+    if gate == "produces_media":
+        return any(bool(flags.get(k)) for k in
+                   ("render_audio", "publish_podbean", "store_media"))
+    if gate in ("store_media", "publish_podbean", "render_audio"):
+        return flags.get(gate) is True
+    if gate == "book_teaser":
+        # Strict True only; a conditional string ("conditional_interview_source")
+        # is decided per-run and must never HARD-block the pipeline.
+        return flags.get("book_teaser") is True
+    return False
+
+
+def required_outputs_for(frm: str, to_status: str, flags: dict) -> list:
+    reqs = REQUIRED_OUTPUTS_BY_TRANSITION.get((frm, to_status), [])
+    return [col for (col, gate) in reqs if _gate_satisfied(gate, flags)]
+
+
+def missing_required_outputs(row: sqlite3.Row, frm: str, to_status: str,
+                             flags: dict) -> list:
+    """Output columns that this (frm -> to_status) transition requires for the
+    resolved preset but that are unset (NULL or empty) on the row."""
+    cols = set(row.keys())
+    missing = []
+    for col in required_outputs_for(frm, to_status, flags):
+        val = row[col] if col in cols else None
+        if val is None or (isinstance(val, str) and not val.strip()):
+            missing.append(col)
+    return missing
+
+
+def check_transition(row: sqlite3.Row, to_status: str, preset: str | None = None,
+                     waiver: bool = False) -> None:
     """Raise TransitionError if row.status -> to_status is not legal.
 
     Legal set (Section 5.2):
@@ -471,7 +628,12 @@ def check_transition(row: sqlite3.Row, to_status: str) -> None:
       - Any non-terminal stage -> queued_credit_out.
       - queued_credit_out -> resume_stage (via `resume`) or -> failed (aged out / fail).
       - Any stage -> failed on unrecoverable error.
-    """
+
+    A legal forward advance is ADDITIONALLY gated on the required-outputs map:
+    the producing stage being left must have recorded its deliverable artifact(s)
+    for the job's (preset-resolved) flags, unless `waiver` is set. `preset`
+    defaults to the mode default when omitted; hold/resume/fail/QC-loop
+    transitions never touch outputs (they take the early returns below)."""
     frm = row["status"]
 
     if to_status not in STATUS_SET:
@@ -514,6 +676,16 @@ def check_transition(row: sqlite3.Row, to_status: str) -> None:
 
     # Forward adjacency.
     if to_status == _forward_next(frm):
+        if preset is None:
+            preset = MODE_DEFAULT_PRESET.get(row["mode"])
+        missing = missing_required_outputs(row, frm, to_status, preset_flags(preset))
+        if missing and not waiver:
+            raise MissingRequiredOutputError(
+                f"cannot advance {frm} -> {to_status}: preset "
+                f"'{preset}' requires output(s) not yet recorded: {', '.join(missing)}. "
+                f"Set them with `output` first, or pass --force-waiver to override "
+                f"(the waiver is written to the job event log)."
+            )
         return
 
     raise TransitionError(f"illegal transition: {frm} -> {to_status}")
@@ -730,7 +902,14 @@ def cmd_advance(conn, args):
         raise UsageError("use `fail` to mark a job failed")
     if row["status"] == "queued_credit_out":
         raise UsageError("use `resume` to bring a held job back to its resume_stage")
-    check_transition(row, to_status)
+
+    # Required-outputs gate (preset/mode-aware): a producing stage may not be left
+    # until its deliverable artifact(s) are recorded, unless explicitly waived.
+    preset = resolve_preset(conn, args.job_id, row["mode"])
+    waiver = bool(getattr(args, "force_waiver", False))
+    waived = (missing_required_outputs(row, row["status"], to_status, preset_flags(preset))
+              if waiver else [])
+    check_transition(row, to_status, preset=preset, waiver=waiver)
 
     frm = row["status"]
     conn.execute("BEGIN IMMEDIATE")
@@ -757,6 +936,12 @@ def cmd_advance(conn, args):
             )
 
         _append_event(conn, args.job_id, frm, to_status, args.note, args.cost_delta)
+
+        # Audit trail for a required-outputs override so a waived advance is never
+        # silent (operator-only note; no client-facing surface reads it).
+        if waived:
+            _append_event(conn, args.job_id, frm, to_status,
+                          "required-outputs WAIVED via --force-waiver: " + ", ".join(waived))
 
         if to_status == "complete":
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
@@ -1139,6 +1324,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--to", required=True, choices=sorted(STATUS_SET))
     a.add_argument("--note", default=None)
     a.add_argument("--cost-delta", dest="cost_delta", type=float, default=0.0)
+    a.add_argument("--force-waiver", dest="force_waiver", action="store_true",
+                   help="advance even if the stage's required outputs are unset; "
+                        "the waiver is recorded to the job event log (audited)")
     a.set_defaults(func=cmd_advance)
 
     o = sub.add_parser("output", help="set an output column")

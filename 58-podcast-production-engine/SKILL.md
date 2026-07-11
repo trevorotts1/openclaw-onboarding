@@ -91,6 +91,25 @@ the writer tier. The writer never grades its own work as the deciding vote. A me
 refuses deny-pattern substitutions at runtime; a prior fleet defect shipped Anthropic to 23 of
 32 boxes and this guard exists to make that structurally impossible.
 
+`model_router.py` is the deterministic EXECUTOR of that policy: the single call site every
+runtime text turn flows through. It resolves the `content` or `qc_judge` tier from
+config/models.json to the client's own priority-ordered provider chain, resolves each lane's
+credential by ENV LABEL only (live process env first, reported SET or NOT SET, never a value),
+advances the chain on retryable failures (insufficient_credits, auth, rate_limit, timeout,
+refusal), meters every call through podcast-cost-ledger.py (a hard cost ceiling blocks the call
+before it bills), and on chain exhaustion holds the job durably through credit_queue.py with
+exactly ONE deduped founder alert through alert-dedup.py. It refuses at call time any resolved
+model, provider, or family that matches the deny_patterns (claude, anthropic, us.anthropic,
+opus, sonnet, haiku) or an Anthropic-family shape: a deny match is a HARD ERROR, never a silent
+fallback. Every non-primary lane that serves a turn is recorded as a substitution (spooled for
+the delivery report) so the model actually used is always named honestly.
+
+    model_router.py validate                  fail-closed check of config/models.json
+    model_router.py resolve <content|qc_judge> print a tier chain (SET/NOT SET only)
+    model_router.py deny-check <model-id>      exit 2 if the id is denied
+    model_router.py route                      JSON {tier,messages,context} on stdin
+    model_router.py self-test                  offline routing/deny/exhaustion battery
+
 ## Data plane doctrine (Tier 0 caf plus Tier 3 REST only)
 
 Sub-agents get NO Model Context Protocol injection. Therefore the two Model Context Protocol
@@ -156,6 +175,13 @@ Legal transitions (the writer enforces this matrix; anything else raises):
 - QC loop: in_qc to writing (targeted revision) up to three attempts, then in_qc to failed.
 - Any non-terminal stage to queued_credit_out; on credit restore, queued_credit_out to
   resume_stage with queue_state='resumed'.
+- Required-outputs gate: a forward advance that LEAVES a producing stage is refused (exit 3)
+  until that stage's deliverable artifact(s) are recorded, so no job can reach `complete` (or
+  slip past publishing) with no stored audio and no Podbean permalink. The requirement set is
+  resolved per job from its preset flags, so a document-only preset (Season-Strategy) and a
+  non-publishing preset (Episode Asset Pack) are never falsely blocked. `advance --force-waiver`
+  overrides the gate and writes an audit event to the job event log; nothing is ever waived
+  silently.
 - 60-day cap: queued_credit_out to failed with queue_state='aged_out', payload purged, founder
   notified.
 - Any stage to failed on an unrecoverable error after the engine's own retries.
@@ -164,7 +190,8 @@ Writer subcommands the pipeline calls (never bypassed):
 
     podcast_state.py create   --client-id --location-id --contact-id --mode --style \
                               --payload-file <json> [--show-name --host-name]
-    podcast_state.py advance  --job-id --to <status> [--note ...] [--cost-delta 0.12]
+    podcast_state.py advance  --job-id --to <status> [--note ...] [--cost-delta 0.12] \
+                              [--force-waiver]   # override the required-outputs gate (audited)
     podcast_state.py output   --job-id --field <output_column> --value <url|text|number>
     podcast_state.py hold     --job-id --service <kie_ai|ollama_cloud|openrouter|fish_audio>
     podcast_state.py resume   --job-id
