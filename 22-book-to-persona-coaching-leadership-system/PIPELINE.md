@@ -259,14 +259,19 @@ The `22-book-to-persona-coaching-leadership-system/persona-categories.json` in t
 # 3. Append the entry to persona-categories.json
 ```
 
-**Entry format** (matches existing schema):
+**Entry format** (matches existing schema — the last four fields are the v1.3
+additive duality-tag layer, see below; all four are OPTIONAL):
 ```json
 "<persona-key>": {
   "author": "Author Name",
   "book": "Book Title",
   "domain": ["tag1", "tag2"],
   "perspective": ["tag1"],
-  "custom": ["tag1", "tag2"]
+  "custom": ["tag1", "tag2"],
+  "audiences": ["tag1"],
+  "topics": ["tag1", "tag2"],
+  "voice_style": {"summary": "..."},
+  "usable_as": ["topic", "task"]
 }
 ```
 
@@ -276,6 +281,23 @@ The `22-book-to-persona-coaching-leadership-system/persona-categories.json` in t
 - Run `python3 -c "import sys; sys.path.insert(0,'shared-utils'); from detect_platform import get_openclaw_paths; p=get_openclaw_paths()['persona_categories']; import json; json.load(open(p)); print('OK:', p)"` to verify.
 
 **This step runs BEFORE the re-index step above, so that persona-categories.json is up to date when the indexer runs.**
+
+### Post-Categorization: Duality-Tag Enrichment (audiences / topics / voice_style / usable_as)
+
+**Why:** the Skill-23 voice-first AUDIENCE+TOPIC blend matcher (`23-ai-workforce-blueprint/scripts/persona_blend.py`) picks a job's VOICE by reasoning over the WHOLE catalog through exactly these four additive fields. Before this step existed, NOTHING in the pipeline ever wrote them for a newly-synthesized persona — only the one-time 2026-07-09 backfill (schema 1.2 → 1.3, all 99 personas, see `CHANGELOG.md`) carried them, which froze the matcher's candidate universe at those 99 personas forever. Every book built after that backfill was invisible to the blend matcher (fully usable in Coaching Mode / Task Mode, but never selectable as a blend voice or topic expert) until this step.
+
+**How it works (fully automated — no manual step required):**
+
+1. `_synthesis_system()` in `pipeline/orchestrator.py` dynamically appends the LIVE `audienceTags[]`/`topicTags[]` controlled vocabulary (read fresh from the canonical `persona-categories.json` at synthesis time) to the Phase-3 system prompt, so the model can propose duality tags **vocab-first** — chosen FROM the existing vocabulary, not invented. When the vocab is empty (a pre-enrichment 1.2 catalog, or the first-ever persona on a fresh box) this block is omitted and the model is instructed to leave `audiences`/`topics` empty.
+2. Per `agent-prompts/synthesis-agent-prompt.md`, the synthesis model appends an OPTIONAL `## Duality Tags` heading + fenced ` ```json ` object to `persona-blueprint.md`, after the 14 mandatory sections, carrying `audiences[]`, `topics[]`, `voice_style{summary(required), tone[], devices[], cadence, signature_moves[], avoid[]}`, and `usable_as[]`.
+3. `_append_persona_to_categories()` (Phase 6, same step as the domain/perspective write above) parses that block (`_parse_duality_tags_block`) and, when present, gates it (`_validate_duality_tags`) through the **same authoritative validator** the Skill-23 matcher enforces at read-time: `persona_blend.validate_catalog_tags`. One rulebook, imported directly (`23-ai-workforce-blueprint/scripts/persona_blend.py`) — never re-implemented, so the write-time gate can never drift from the read-time contract. A local structural fallback (list-shape + `usable_as` enum + `voice_style.summary` required) covers the rare case where skill 23 isn't installed alongside skill 22 on a given box.
+
+**Additive, never-to-zero contract (fail LOUD, never fail silent, never block core routing):**
+- **No block present** → NO-OP. The persona registers exactly as before this feature (domain/perspective/custom only) — not a failure, matches `persona_blend.validate_catalog_tags`'s own pre-enrichment semantics.
+- **Block present and well-formed** → `audiences`/`topics`/`voice_style`/`usable_as` are written onto the entry; a one-line confirmation is printed naming the counts.
+- **Block present but malformed** (bad JSON, an audience/topic tag that isn't already a vocab member, a non-enum `usable_as` value, a `voice_style` missing its required `summary`) → the gate REJECTS it: a loud diagnostic is printed naming every offending field, the folder is recorded in the module-level `_DUALITY_TAG_WRITE_FAILURES` list (`pipeline_had_duality_tag_failures()`), and the duality fields are **omitted** — never written half-valid. Core `domain`/`perspective` registration is completely unaffected (this failure mode is deliberately kept separate from `PHASE6_CATEGORIES_EXIT_CODE` / F1.4's auto-repair path, which governs the load-bearing routing fields, not this optional enrichment layer).
+
+**Publish path:** `pipeline/persona_fleet.py`'s `sync_categories` (used by `publish-personas-to-fleet.sh`) already carries these four fields through workspace→repo unchanged when present (v6.17.0), and preserves any repo-side enrichment a sync doesn't itself supply — so a publish run can never silently strip duality enrichment landed by this step.
 
 ---
 

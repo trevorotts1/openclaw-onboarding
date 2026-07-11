@@ -75,6 +75,24 @@ try:
 except ImportError:
     _PERSONA_RESOLVER_AVAILABLE = False
 
+# D6 fix (ONB22-DUALITY-TAGS): the v1.3 additive audiences[]/topics[]/
+# voice_style{}/usable_as[] duality-tag enrichment a newly-synthesized persona
+# MAY carry (see _validate_duality_tags below) is gated through the SAME
+# authoritative rulebook the Skill-23 voice-first AUDIENCE+TOPIC blend matcher
+# enforces at read-time (persona_blend.validate_catalog_tags) — one rulebook,
+# never two that can drift. Defensive/optional import: skill 22 must keep
+# working standalone on a box where skill 23 isn't (yet) installed; duality-tag
+# enrichment then degrades to a conservative structural-only check rather than
+# blocking the pipeline (see _validate_duality_tags's fallback branch).
+_SKILL23_SCRIPTS = Path(__file__).resolve().parents[2] / "23-ai-workforce-blueprint" / "scripts"
+if str(_SKILL23_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SKILL23_SCRIPTS))
+try:
+    import persona_blend as _persona_blend  # type: ignore
+    _PERSONA_BLEND_AVAILABLE = True
+except ImportError:
+    _PERSONA_BLEND_AVAILABLE = False
+
 # ─── PATHS ─────────────────────────────────────────────────────────────────────
 # v6.6.0: Unified canonical root.
 # VPS  → /data/.openclaw/master-files/coaching-personas
@@ -849,6 +867,159 @@ def _lint_persona_categories_write(data: dict, folder: str) -> None:
     )
 
 
+# ─── D6 fix (ONB22-DUALITY-TAGS): v1.3 duality-tag enrichment parse + gate ─────
+# BEFORE this fix, NOTHING in the pipeline ever wrote audiences[]/topics[]/
+# voice_style{}/usable_as[] for a newly-synthesized persona — only the one-time
+# 2026-07-09 backfill (v6.17.0, see CHANGELOG.md) carries them, so the Skill-23
+# blend matcher's candidate universe was frozen at those 99 personas forever
+# (persona_blend.match_audience_persona / match_topic_persona can only pick a
+# persona that carries these tags). The Phase-3 synthesis model MAY now emit an
+# OPTIONAL '## Duality Tags' block (agent-prompts/synthesis-agent-prompt.md,
+# whose system prompt is dynamically extended with the LIVE audienceTags[]/
+# topicTags[] vocab by _synthesis_system() below — vocab-first, so a proposed
+# tag is chosen FROM the existing controlled vocabulary rather than invented).
+#
+# This layer is strictly ADDITIVE and NEVER-TO-ZERO-safe for core registration:
+#   • absent block  -> NO-OP (matches persona_blend.py's own pre-enrichment
+#                      semantics; an entry with only domain/perspective/custom
+#                      stays perfectly valid).
+#   • malformed/rejected block -> reported LOUD (printed diagnostic + recorded
+#                      in _DUALITY_TAG_WRITE_FAILURES for introspection/tests)
+#                      and OMITTED — never written half-valid, and never blocks
+#                      the domain/perspective registration F1.4 guarantees.
+_DUALITY_BLOCK_RE = re.compile(
+    r"##\s*Duality\s+Tags.*?```json\s*(\{.*?\})\s*```",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Folders whose '## Duality Tags' block was present but rejected (malformed
+# JSON or failed the persona_blend.validate_catalog_tags gate) this run.
+# Informational only — deliberately does NOT feed PHASE6_CATEGORIES_EXIT_CODE;
+# enrichment failing must never orphan a persona from core domain/perspective
+# routing. Module level so the async batch gather aggregates across books
+# (mirrors _CATEGORIES_WRITE_FAILURES).
+_DUALITY_TAG_WRITE_FAILURES: list = []
+
+
+def pipeline_had_duality_tag_failures() -> bool:
+    """True iff any persona's '## Duality Tags' block was present but rejected
+    this run. Informational/test hook only — never changes the process exit
+    code (see module comment above _DUALITY_BLOCK_RE)."""
+    return bool(_DUALITY_TAG_WRITE_FAILURES)
+
+
+def _parse_duality_tags_block(blueprint_text: str):
+    """Extract the OPTIONAL v1.3 duality-tag block from a synthesized
+    persona-blueprint.md. Returns (parsed_dict_or_None, error_or_None):
+
+      (None, None)    — no '## Duality Tags' heading found (pre-enrichment /
+                         older prompt version) — NOT a failure.
+      (None, "<msg>") — heading present but the ```json {...}``` block is
+                         missing or not valid JSON — a real authoring defect,
+                         reported LOUD by the caller.
+      (dict, None)    — parsed; shape + vocab membership are validated
+                         separately by _validate_duality_tags.
+    """
+    if not blueprint_text or not re.search(r"##\s*Duality\s+Tags", blueprint_text, re.IGNORECASE):
+        return None, None
+    m = _DUALITY_BLOCK_RE.search(blueprint_text)
+    if not m:
+        return None, ("'## Duality Tags' heading present but no parseable "
+                      "```json { ... } ``` block follows it")
+    try:
+        parsed = json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        return None, f"'## Duality Tags' json block is not valid JSON: {e}"
+    if not isinstance(parsed, dict):
+        return None, "'## Duality Tags' json block must be a JSON object"
+    return parsed, None
+
+
+def _validate_duality_tags(folder: str, entry_with_duality: dict, data: dict) -> list:
+    """Gate a candidate duality-enriched entry through the SAME authoritative
+    validator the Skill-23 blend matcher's own catalog gate uses
+    (persona_blend.validate_catalog_tags) — one rulebook, reused, so the
+    write-time gate here can never drift from the read-time contract. Returns
+    a list of error strings (empty list = ok).
+
+    Falls back to a minimal structural check (list types + USABLE_AS_ENUM +
+    voice_style.summary required) when skill 23 isn't importable on this box
+    (defensive — skill 22 must still run standalone) — never silently accepts
+    a malformed block either way.
+    """
+    if _PERSONA_BLEND_AVAILABLE:
+        mini_catalog = {
+            "schemaVersion": "1.3",
+            "audienceTags": data.get("audienceTags", []) or [],
+            "topicTags": data.get("topicTags", []) or [],
+            "personas": {folder: entry_with_duality},
+        }
+        result = _persona_blend.validate_catalog_tags(mini_catalog)
+        return list(result.get("errors") or [])
+    # Fallback structural check (persona_blend not importable on this box).
+    errs = []
+    ua = entry_with_duality.get("usable_as")
+    if ua is not None:
+        if not isinstance(ua, list) or any(x not in ("audience", "topic", "task") for x in ua):
+            errs.append(f"{folder}: usable_as must be a list subset of "
+                        f"[audience, topic, task]")
+    for field in ("audiences", "topics"):
+        v = entry_with_duality.get(field)
+        if v is not None and not isinstance(v, list):
+            errs.append(f"{folder}: '{field}' must be a list")
+    vs = entry_with_duality.get("voice_style")
+    if vs is not None and (not isinstance(vs, dict) or not str(vs.get("summary", "")).strip()):
+        errs.append(f"{folder}: voice_style.summary is required and missing")
+    return errs
+
+
+def _register_duality_tags(folder: str, data: dict) -> None:
+    """Parse + gate the OPTIONAL '## Duality Tags' block out of folder's
+    persona-blueprint.md and, when well-formed, merge audiences[]/topics[]/
+    voice_style{}/usable_as[] into data["personas"][folder] IN PLACE. Call
+    AFTER the base entry (domain/perspective/custom/…) has been assigned and
+    BEFORE _lint_persona_categories_write / json.dump. Never raises — see the
+    module comment above _DUALITY_BLOCK_RE for the additive/never-to-zero
+    contract.
+    """
+    blueprint_path = PERSONAS_DIR / folder / "persona-blueprint.md"
+    blueprint_text = blueprint_path.read_text(errors="ignore") if blueprint_path.exists() else ""
+    parsed, err = _parse_duality_tags_block(blueprint_text)
+    if err:
+        print(f"[orchestrator] [PHASE 6 DUALITY-TAGS SKIPPED] {folder}: {err} "
+              f"— entry registered WITHOUT audience/topic enrichment (core "
+              f"domain/perspective routing unaffected).")
+        if folder not in _DUALITY_TAG_WRITE_FAILURES:
+            _DUALITY_TAG_WRITE_FAILURES.append(folder)
+        return
+    if not parsed:
+        return  # no block present — pre-enrichment NO-OP, not a failure.
+
+    candidate = dict(data["personas"][folder])
+    for f in ("audiences", "topics", "voice_style", "usable_as"):
+        if f in parsed:
+            candidate[f] = parsed[f]
+    gate_errors = _validate_duality_tags(folder, candidate, data)
+    if gate_errors:
+        print(f"[orchestrator] [PHASE 6 DUALITY-TAGS SKIPPED] {folder}: "
+              f"persona_blend.validate_catalog_tags rejected the block:")
+        for e in gate_errors:
+            print(f"    ✗ {e}")
+        print(f"[orchestrator] {folder} registered WITHOUT audience/topic "
+              f"enrichment (core domain/perspective routing unaffected).")
+        if folder not in _DUALITY_TAG_WRITE_FAILURES:
+            _DUALITY_TAG_WRITE_FAILURES.append(folder)
+        return
+
+    for f in ("audiences", "topics", "voice_style", "usable_as"):
+        if f in parsed:
+            data["personas"][folder][f] = parsed[f]
+    print(f"[orchestrator] {folder} enriched with duality tags "
+          f"(audiences={len(parsed.get('audiences') or [])}, "
+          f"topics={len(parsed.get('topics') or [])}, "
+          f"usable_as={parsed.get('usable_as')}).")
+
+
 def _append_persona_to_categories(book: dict, folder: str,
                                   appendix_status: str = None,
                                   domain_override: list = None,
@@ -967,6 +1138,13 @@ def _append_persona_to_categories(book: dict, folder: str,
         # re-classify. A workspace-only field (persona_fleet.py sync-categories
         # ships only the canonical seed fields, so it never leaks to the repo seed).
         data["personas"][folder]["needs_retag"] = True
+
+    # D6 fix (ONB22-DUALITY-TAGS): OPTIONAL v1.3 audiences[]/topics[]/
+    # voice_style{}/usable_as[] enrichment, parsed from the synthesis model's
+    # '## Duality Tags' block and gated through persona_blend.validate_catalog_tags.
+    # Additive + never-to-zero: absence or rejection never blocks the
+    # domain/perspective registration above (see _register_duality_tags docstring).
+    _register_duality_tags(folder, data)
 
     # P13-2: hard-fail schema-lint gate — raises PersonaCategoriesSchemaError
     # (naming the offending key) BEFORE any write if domain[]/perspective[]
@@ -1815,8 +1993,51 @@ def _get_prompt(filename: str) -> str:
 
 def _extraction_system() -> str:  return _get_prompt("extraction-agent-prompt.md")
 def _analysis_system()   -> str:  return _get_prompt("analysis-agent-prompt.md")
-def _synthesis_system()  -> str:  return _get_prompt("synthesis-agent-prompt.md")
 def _appendix_system()   -> str:  return _get_prompt("playbook-appendix-prompt.md")  # Phase 3b
+
+
+def _synthesis_system() -> str:
+    """Phase-3 synthesis system prompt, dynamically extended (D6 fix,
+    ONB22-DUALITY-TAGS) with the LIVE controlled audienceTags[]/topicTags[]
+    vocabulary read fresh from the canonical persona-categories.json.
+
+    WHY dynamic (not baked into the static template): persona_blend's
+    validate_catalog_tags rejects an audiences[]/topics[] tag that is not
+    already a member of the vocab when that vocab is non-empty — unlike
+    domain[]/perspective[], there is no auto-extend allowance (by design; see
+    persona_fleet.py _validate_entry). So the model can only land clean
+    'vocab-first' duality tags (per agent-prompts/synthesis-agent-prompt.md) if
+    it actually SEES the real vocab at synthesis time. Deliberately NOT cached
+    in _PROMPT_CACHE (that cache is keyed by static filename) — the vocab can
+    grow between books in a batch run; each call re-reads the small JSON file.
+
+    Absent file / empty vocab (a pre-enrichment 1.2 catalog, or first-ever run)
+    omits the vocab block entirely — the template's own instructions then tell
+    the model to leave audiences[]/topics[] empty rather than invent tags with
+    nothing to ground them, so schema-1.2 boxes behave exactly as before this
+    fix (matches persona_blend.py's own pre-enrichment NO-OP semantics).
+    """
+    template = _get_prompt("synthesis-agent-prompt.md")
+    try:
+        cat_path = _persona_categories_path()
+        if cat_path.exists():
+            cat = json.loads(cat_path.read_text())
+            aud = sorted(set(cat.get("audienceTags") or []))
+            top = sorted(set(cat.get("topicTags") or []))
+            if aud or top:
+                template = template + (
+                    "\n\n## Duality Tags — Current Controlled Vocabulary (LIVE, read-only)\n\n"
+                    "Choose `audiences[]` and `topics[]` for the Duality Tags block ONLY "
+                    "from the tags below (vocab-first — persona_blend.validate_catalog_tags "
+                    "rejects anything else; leave a list EMPTY rather than inventing a new "
+                    "tag not shown here):\n\n"
+                    f"audienceTags ({len(aud)}): {', '.join(aud)}\n\n"
+                    f"topicTags ({len(top)}): {', '.join(top)}\n"
+                )
+    except Exception:
+        # Best-effort — a vocab-injection failure must never block Phase 3 itself.
+        pass
+    return template
 
 # ─── PHASE 1 - EXTRACTION ─────────────────────────────────────────────────────
 async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dict) -> bool:

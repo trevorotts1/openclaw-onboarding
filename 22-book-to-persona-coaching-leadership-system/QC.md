@@ -289,6 +289,67 @@ If automated check is not available, manually verify:
 
 ---
 
+## SECTION 4D — Duality Tag Verification (Skill 23 Voice/Topic Blend Matcher enrichment)
+
+`audiences[]` / `topics[]` / `voice_style{}` / `usable_as[]` are the ADDITIVE
+v1.3 fields the Skill-23 voice-first AUDIENCE+TOPIC blend matcher
+(`persona_blend.py`) reasons over to pick a job's VOICE. They are **OPTIONAL**
+— a persona without them still passes Sections 1-4B in full and is fully
+usable in Coaching Mode / Task Mode — but their absence means this persona is
+invisible to that specific matcher. This section is WARN-level, not a HARD
+FAIL, unless noted otherwise below.
+
+### Automated Check
+
+```bash
+python3 - "$WORKSPACE/data/coaching-personas/persona-categories.json" "<persona-key>" << 'EOF'
+import json, sys
+cat_path, slug = sys.argv[1], sys.argv[2]
+data = json.load(open(cat_path))
+entry = data.get("personas", {}).get(slug)
+if entry is None:
+    print(f"DUALITY CHECK: '{slug}' is not a categories key at all — fix Section 4B/6 first.")
+    sys.exit(1)
+present = [f for f in ("audiences", "topics", "voice_style", "usable_as") if f in entry]
+if not present:
+    print(f"DUALITY CHECK: WARN — '{slug}' has no duality-tag enrichment "
+          f"(invisible to the Skill-23 blend matcher; not a HARD FAIL).")
+    sys.exit(0)
+sys.path.insert(0, "23-ai-workforce-blueprint/scripts")
+import persona_blend as pb
+mini = {"schemaVersion": "1.3",
+        "audienceTags": data.get("audienceTags", []),
+        "topicTags": data.get("topicTags", []),
+        "personas": {slug: entry}}
+result = pb.validate_catalog_tags(mini)
+if result["ok"]:
+    print(f"DUALITY CHECK PASSED — '{slug}' carries {present} and validates clean.")
+    sys.exit(0)
+print(f"DUALITY CHECK FAILED — '{slug}' carries {present} but failed validation:")
+for e in result["errors"]:
+    print("  -", e)
+sys.exit(1)
+EOF
+```
+
+**Expected result:** either "DUALITY CHECK PASSED" or the WARN line above. A
+"DUALITY CHECK FAILED" line naming validation errors is a **HARD FAIL** — it
+means a malformed block reached the categories file uncaught, which should be
+structurally impossible (`_register_duality_tags` in `orchestrator.py` gates
+every write through this exact validator before it ever touches disk); treat
+it as a pipeline regression, not an operator fix.
+
+### Manual Verification Checklist
+
+- [ ] `agent-prompts/synthesis-agent-prompt.md` contains a `## Duality Tags` section (structural — always checkable, independent of any one persona build)
+- [ ] `pipeline/orchestrator.py` defines `_parse_duality_tags_block`, `_validate_duality_tags`, and `_register_duality_tags`
+- [ ] For a freshly-built persona: either it carries `audiences`/`topics`/`voice_style`/`usable_as` that pass the automated check above, OR none of those fields are present (partial/malformed enrichment on disk is the one HARD FAIL condition in this section)
+- [ ] `usable_as` (when present) never includes `"audience"` unless `audiences[]` is genuinely non-empty — confirm this wasn't an unearned inference from keyword overlap alone
+
+**HARD FAIL:** a categories entry with SOME duality fields present but that fails `persona_blend.validate_catalog_tags` (a malformed write reached disk — the write-time gate is supposed to make this impossible). **WARN (not a fail):** a categories entry with NO duality fields at all — enrichment is optional.
+
+---
+
 ## SECTION 5 — Anti-Pattern Checks
 
 These are failure modes the skill is specifically designed to prevent. Verify none are present.
@@ -333,6 +394,11 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 - [ ] Confirmed: Agent uses `python3 ~/.openclaw/scripts/gemini-search.py` for semantic retrieval for retrieval
 - FAIL if agent attempts to read entire persona-blueprint.md files into context for routine tasks
 
+### Anti-Pattern 9: Fabricated Duality Tags
+**Check:** Does a persona's `## Duality Tags` block claim `usable_as: ["audience", ...]` (i.e., this persona's voice can stand in AS a customer/reader avatar) with no genuine basis — or an `audiences[]`/`topics[]` tag chosen because it merely LOOKED plausible rather than being an in-vocab match the synthesis model actually reasoned about?
+- [ ] Confirmed: `"audience"` only appears in `usable_as` when `audiences[]` is genuinely non-empty and the choice reflects real confidence, not a keyword-overlap guess (see synthesis-agent-prompt.md's Duality Tags section)
+- HARD FAIL if a categories entry claims audience-voice usability for a persona whose blueprint gives no real signal it could authentically speak as that audience
+
 ---
 
 ## SECTION 6 — Pass Criteria
@@ -364,10 +430,15 @@ To declare this skill **INSTALLED AND OPERATIONAL**, ALL of the following must b
 - [ ] Test 4D: Gemini Engine query returns relevant persona content
 - [ ] Test 4E: Persona Router correctly routes a marketing task to StoryBrand
 
+**Duality Tags (Section 4D — WARN-level, does not block PASS)**
+- [ ] `agent-prompts/synthesis-agent-prompt.md` has the `## Duality Tags` section wired (structural check)
+- [ ] No categories entry has a partial/malformed duality-tag write (the one HARD FAIL condition in Section 4D — should be structurally impossible per the write-time gate)
+
 **Anti-Patterns (Section 5)**
 - [ ] Zero HARD FAIL anti-patterns present
 - [ ] No generic advice substituting for methodology
 - [ ] No author impersonation in any mode
+- [ ] No fabricated/unearned duality-tag claims (Anti-Pattern 9)
 
 ---
 

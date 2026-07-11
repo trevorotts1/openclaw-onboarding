@@ -109,6 +109,81 @@ pipeline: Book Intelligence Pipeline v1.0
 
 Then write all 14 sections with `## Section N - Title` headers. Every section is mandatory. Do not skip any.
 
+## Duality Tags (Machine-Readable — Skill 23 Voice/Topic Blend Matcher)
+
+After the 14 sections, append ONE more block: a `## Duality Tags` heading
+followed by a single fenced ` ```json ` object. This is OPTIONAL machine
+metadata, not one of the 14 mandatory sections — but when you include it, it
+must be well-formed JSON or the pipeline will drop it and register the
+persona without this enrichment (the persona still ships; it just stays
+invisible to the two behaviors below).
+
+**Why this exists:** the Skill-23 voice-first AUDIENCE+TOPIC blend matcher
+(`persona_blend.py`) decides the VOICE for any content/communication job by
+blending an AUDIENCE persona (style-inspired, never impersonated) with a
+TOPIC persona (subject-matter expertise). It can only ever pick a persona
+that carries these tags. Without this block your persona is fully usable in
+Coaching Mode / Task Mode as before, but INVISIBLE to that specific matcher.
+
+**Fields:**
+
+- `audiences` (array of kebab-case strings) — who this persona's VOICE could
+  authentically stand in for as a reader/customer avatar (NOT the persona's
+  own biography — the audience the book's voice would be believable
+  speaking AS). **Leave this empty** unless you are genuinely confident the
+  voice could role-play as that audience; an empty list is the safe, honest
+  default for a task/topic-only expert.
+- `topics` (array of kebab-case strings) — the subject areas this persona has
+  genuine expertise in (used to match this persona as the TOPIC/expertise
+  voice for content jobs about these subjects). Most personas should have at
+  least a few of these — this is the field the matcher leans on most.
+- `voice_style` (object) — `summary` (REQUIRED, one sentence capturing tone +
+  cadence + what makes this voice recognizable) plus OPTIONAL `tone` (array),
+  `devices` (array — recurring rhetorical devices/analogies), `cadence`
+  (string), `signature_moves` (array), `avoid` (array — things this voice
+  would never say/do).
+- `usable_as` (array, subset of `["audience", "topic", "task"]`) — DEFAULT
+  when omitted is `["topic", "task"]`. Only include `"audience"` when
+  `audiences[]` is genuinely non-empty AND you are confident in that call —
+  serving as an audience voice is a deliberate, explicit decision, never an
+  inference from keyword overlap alone.
+
+**VOCAB-FIRST — read this before writing `audiences`/`topics`:** if a section
+below this one, titled "Duality Tags — Current Controlled Vocabulary", lists
+the current `audienceTags`/`topicTags`, choose ONLY from those lists — do not
+invent a new tag. The validation gate rejects any audience/topic tag that
+isn't already a member of that live vocabulary (unlike `domain`/`perspective`,
+these do NOT auto-extend). If no such vocabulary section is present below (an
+earlier pipeline schema, or the very first persona built on a fresh box),
+leave `audiences`/`topics` empty rather than inventing unvetted tags — the
+one-time curated backfill / a later fleet-wide enrichment pass is the correct
+place to introduce genuinely new tags into the controlled vocabulary.
+
+**Format** (note the 4-backtick fence below is just this instruction doc's way
+of showing you a fence-containing-a-fence — your actual output uses the
+normal 3-backtick ` ```json ` fence, exactly like every other code block in
+this prompt):
+
+````
+## Duality Tags (Machine-Readable)
+
+```json
+{
+  "audiences": ["small-business-owners", "solopreneurs"],
+  "topics": ["direct-response-marketing", "lead-generation"],
+  "voice_style": {
+    "summary": "Blunt, plain-spoken, pragmatic small-business voice, impatient with fluff.",
+    "tone": ["blunt", "pragmatic", "direct"],
+    "devices": ["sharp analogies", "forced specificity"],
+    "cadence": "Fast, punchy, get-to-the-point.",
+    "signature_moves": ["forces a specific niche", "demands a measurable offer"],
+    "avoid": ["vague target-market claims", "unmeasured brand-awareness advice"]
+  },
+  "usable_as": ["topic", "task"]
+}
+```
+````
+
 ## Rules
 - Every claim must trace back to extraction-notes.md or analysis-notes.md
 - Use the author's actual language and frameworks, not generic coaching advice
