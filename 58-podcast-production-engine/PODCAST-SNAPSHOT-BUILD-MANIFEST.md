@@ -263,3 +263,22 @@ These legacy features are NOT carried into v2 (leaner snapshot; recorded so noth
 Phase 0 preflight prove -> Phase 0.5 old-survey capture (HARD GATE) -> Phase 1 API objects (28 fields -> 6 values -> 2 tags) -> Phase 2 surveys via Skill 6 (Survey 1 then Survey 2, dry-run->live->QC each) -> Phase 3 workflows via Skill 44 (04, 06, 01, 02) -> Phase 4 independent QC + stamp `podcast_snapshot_version=v2.0.0` LAST -> Phase 5 snapshot from `CjxATjhv9Gt21qSqURIt`, verify 28 fields + 6 values + 2 surveys + 4 workflows + 2 tags ship inside it.
 
 Engine-side companion (NOT part of this GHL build): E1 = extend the webhook mapper's `survey_answer_keys_by_style` + fixtures with the real legacy Group 2 keys in style order (CI: barry_q1,barry_q6 ; Vul: brene_q1,brene_q6 ; Pro: dan_q1,dan_q2,dan_q7 ; Pas: jia_q1,jia_q6,jia_q7), the shared visual/smiq/additional read from their dedicated fields.
+
+---
+
+## SECTION J - WORKFLOW BUILD STATE (LIVE, verified 2026-07-10)
+
+All four required workflows exist in the TEMPLATE sub-account `CjxATjhv9Gt21qSqURIt`, each `status=published` with its trigger COMMITTED (non-null `triggersFilePath`) and `active=true`. Verified by live re-GET on the internal rail. Re-run the gate any time: `scripts/verify-podcast-ghl-workflows.py` (exit 0 = all four PASS).
+
+| WF | Live workflow id | Trigger type | Trigger condition | active | steps |
+|---|---|---|---|---|---|
+| 01-Podcast Intake Submitted (Interview) | `e008e027-3505-4fa2-87c0-a624357f53a6` | `survey_submission` | survey = `ExAPmAV3Llo0tREenfJy` (ZHC Podcast Intake - Interview Style) | true | 1 (webhook -> box) |
+| 02-Podcast Intake Submitted (Personal) | `55d7f054-757e-43c1-933a-0faf34c60f69` | `survey_submission` | survey = `vX5BuhxSeucMHrcKOwEn` (ZHC Podcast Intake - Personal Podcast) | true | 1 (webhook -> box) |
+| 04-Podcast is Completed | `912d7ac7-ff26-4a5e-810c-a0957d70dfb0` | `contact_changed` | `has-changed` on `contact.podcast_survey_episode_url` (field id `UQUZa9x80H4JWq52RbmI`) | true | 3 (tag, email, sms) |
+| 06-Podcast_Episode_Is_Ready | `91c0c5a4-3dcb-4a6e-b8e1-73d8b812148f` | `contact_tag` | tag added = `podcast episode is ready` | true | 2 (email, sms) |
+
+**Recreation mechanism (PROVEN, supported rail).** Workflows/triggers are built via the GHL INTERNAL API at `backend.leadconnectorhq.com` (Firebase-JWT `token-id` header, agency/owner refresh token) — the SAME rail Skill-44 `caf` uses. There is NO public create-workflow API; the public `/workflows/` endpoint is read-only and the agency PIT 403s on sub reads. Endpoints used: list `GET /workflow/{loc}/list`, read steps `GET /workflow/{loc}/{wf}`, read triggers `GET /workflow/{loc}/trigger?workflowId={wf}`, create trigger `POST /workflow/{loc}/trigger`, link trigger `PUT /workflow/{loc}/trigger/{tr}` (sets `targetActionId`), commit+activate `PUT /workflow/{loc}/{wf}`.
+
+**ACTIVATION MODEL (the subtlety that caused the original "inactive shell" failure).** A trigger is only live when BOTH are true: (a) it is committed into the workflow's trigger file, and (b) the workflow doc carries `status:"published"`. Committing is a `PUT /workflow/{loc}/{wf}` that includes `triggersChanged:true` + `oldTriggers`/`newTriggers` (the trigger objects, `active:true`) AND re-asserts `status:"published"` and the current `version` and the EXISTING `workflowData.templates`. Omitting `status` on that PUT silently demotes the workflow to draft and de-activates every trigger — so the commit PUT must always carry `status:"published"`. A bare `POST /workflow/{loc}/trigger` (or a `PUT /workflow/{loc}/trigger/{tr}` alone) creates the trigger row but leaves it `active:false` and uncommitted — this is exactly what shipped the first time.
+
+**PER-CLIENT / POST-SNAPSHOT CAVEAT (verify after each provision).** GHL snapshot imports frequently land workflows in DRAFT with triggers inactive in the destination sub-account. Provisioning edits 0 workflows by design (§B/§I), so after cutting the snapshot AND after each `provision-podcast-client.sh` run, re-run `scripts/verify-podcast-ghl-workflows.py --location <client-loc> --token-env <client-refresh-var>` and, if any workflow is draft/inactive, re-publish it (toggle Publish in the builder, or re-assert `status:"published"` via the commit PUT above). This gate is the fail-loud check the first build lacked.
