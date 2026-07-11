@@ -259,6 +259,8 @@ These legacy features are NOT carried into v2 (leaner snapshot; recorded so noth
 - Post-completion upsell SMS + links.
 - Engine swap already known: legacy ElevenLabs -> new Fish Audio/Kie.ai; legacy n8n webhook target -> new client-box Cloudflare tunnel. The stray make.com `{"black woman focused":"yes"}` node is legacy contamination and is NOT replicated.
 
+> **⚠️ OVERRIDE — 2026-07-10 (explicit operator directive).** The workflow-level §H exclusions above were RECREATED into the NEW sub-account `CjxATjhv9Gt21qSqURIt` per an explicit operator override of this section. The 8 recreated legacy workflows (the task named 9; the 9th, "SMIQ Tracker", is a **folder**, not a workflow — recreated as a folder) are: `01a Update FB audience`, `02 Fb Lead didn't complete`, `02a 2nd Fb interview`, `03 Podcast LeadForm Fb Ad`, `04a 2nd interview completed`, `05 Create Note SMIQ`, `07 2nd Podcast Survey v2.1`, `SMIQ Answer Tracker`. See **SECTION J-2** for live ids/status/triggers and the honest dependency-gap list. This override does NOT re-cut the snapshot: these land AFTER the v1 golden snapshot (`IEmFFkIngiskcfJk9MH6`) was cut, so they only ship once a **v2 snapshot re-cut** is taken from `CjxATjhv9Gt21qSqURIt`. The non-workflow §H exclusions (batch mode, extra custom values, upsell SMS, engine swaps) remain excluded — only the workflow objects were recreated.
+
 ## SECTION I - BUILD ORDER (serial, per spec Section 4)
 Phase 0 preflight prove -> Phase 0.5 old-survey capture (HARD GATE) -> Phase 1 API objects (28 fields -> 6 values -> 2 tags) -> Phase 2 surveys via Skill 6 (Survey 1 then Survey 2, dry-run->live->QC each) -> Phase 3 workflows via Skill 44 (04, 06, 01, 02) -> Phase 4 independent QC + stamp `podcast_snapshot_version=v2.0.0` LAST -> Phase 5 snapshot from `CjxATjhv9Gt21qSqURIt`, verify 28 fields + 6 values + 2 surveys + 4 workflows + 2 tags ship inside it.
 
@@ -282,3 +284,31 @@ All four required workflows exist in the TEMPLATE sub-account `CjxATjhv9Gt21qSqU
 **ACTIVATION MODEL (the subtlety that caused the original "inactive shell" failure).** A trigger is only live when BOTH are true: (a) it is committed into the workflow's trigger file, and (b) the workflow doc carries `status:"published"`. Committing is a `PUT /workflow/{loc}/{wf}` that includes `triggersChanged:true` + `oldTriggers`/`newTriggers` (the trigger objects, `active:true`) AND re-asserts `status:"published"` and the current `version` and the EXISTING `workflowData.templates`. Omitting `status` on that PUT silently demotes the workflow to draft and de-activates every trigger — so the commit PUT must always carry `status:"published"`. A bare `POST /workflow/{loc}/trigger` (or a `PUT /workflow/{loc}/trigger/{tr}` alone) creates the trigger row but leaves it `active:false` and uncommitted — this is exactly what shipped the first time.
 
 **PER-CLIENT / POST-SNAPSHOT CAVEAT (verify after each provision).** GHL snapshot imports frequently land workflows in DRAFT with triggers inactive in the destination sub-account. Provisioning edits 0 workflows by design (§B/§I), so after cutting the snapshot AND after each `provision-podcast-client.sh` run, re-run `scripts/verify-podcast-ghl-workflows.py --location <client-loc> --token-env <client-refresh-var>` and, if any workflow is draft/inactive, re-publish it (toggle Publish in the builder, or re-assert `status:"published"` via the commit PUT above). This gate is the fail-loud check the first build lacked.
+
+---
+
+## SECTION J-2 - LEGACY WORKFLOWS RECREATED (per §H override, LIVE, verified 2026-07-10)
+
+Recreated into `CjxATjhv9Gt21qSqURIt` via the same PROVEN internal rail + activation model as §J. Steps copied VERBATIM from OLD `w4A5LiurmAjBbvJOXmyz` (step ids preserved so `goto`/`parentKey`/`next` stay wired); only trigger survey/field ids and the SMIQ update-target field were remapped OLD→NEW. Two folders created in NEW: **`AI Podcast Survey`** (`bad049cd-ace0-46a4-bb7f-201fc1016473`) and **`SMIQ Tracker`** (`b5b63418-b30b-4f65-9f52-624d36e41cb1`). The original 4 (§J) were NOT touched. Live re-GET below.
+
+| Legacy WF | NEW live id | status | steps | trigger (NEW) | committed |
+|---|---|---|---|---|---|
+| 05-Create Note SMIQ | `bdf6c354-55b4-4913-8623-b0a73c385404` | published | 1 | `survey_submission` survey=`ExAPmAV3Llo0tREenfJy` (interview) — active | yes |
+| SMIQ Answer Tracker | `0795e466-cfe2-4f05-845a-7751927839d9` | published | 1 | `contact_changed` on `contact.smiq_answers` (`habMrKcRAKTFN8EZP2RT`) — active; step writes `contact.smiq_history` (`i08poncoJMo6abdET5nI`) | yes |
+| 04a-Podcast is Completed (2nd interview) | `f3776ba3-ad79-4d49-8f87-5ec47355e316` | published | 13 | `contact_changed` on `contact.podcast_survey_episode_url` (`UQUZa9x80H4JWq52RbmI`) — active | yes |
+| 07-2nd Podcast Interview/Survey v2.1 | `34c8c3cd-43f8-4b1e-9a61-cd1b2fd77de3` | published | 17 | 2× `survey_submission` survey=`vX5BuhxSeucMHrcKOwEn` (personal) — active | yes |
+| 03-Podcast LeadForm Fb Ad | `8abd4d30-ee3f-4e40-a60f-dfd6f3307da6` | published | 3 | **NONE** (FB Lead Form trigger — see gaps) | n/a |
+| 01a-Update FB audience | `5f6c90a9-6d41-4d71-b822-695b670da8dd` | draft | 1 | **NONE** (FB — see gaps) | n/a |
+| 02-Fb Lead didn't complete | `e8fc8a75-43bc-4f97-b951-3f446372f4ac` | published | 29 | **NONE** (FB Lead Form trigger — see gaps) | n/a |
+| 02a-2nd Fb interview | `49c56f90-50d3-47cb-97fc-7ab8b6cc7ac5` | draft | 29 | **NONE** (FB Lead Form trigger — see gaps) | n/a |
+
+`status`/`draft` mirror OLD exactly. The 4 FB workflows carry **NO trigger in OLD either** — OLD's own names say "MUST ADD TRIGGER FOR FB LEAD FORM AD"; their trigger arrays are `[]` live. No trigger was fabricated.
+
+**DEPENDENCY GAPS — what each recreated workflow needs to actually fire (honest, complete):**
+- **05 / SMIQ Answer Tracker / 04a** — FULLY FUNCTIONAL in NEW as-is (triggers + referenced fields all exist). NOTE: 04a fires on the SAME `podcast_survey_episode_url` change as the required §J `04`, so BOTH run on completion (faithful to OLD, which also had 04 + 04a); 04a uses the hyphenated tag `podcast-completed-survey-style` (≠ the canonical space tag `Podcast Completed Survey Style` in §C) and its `internal_notification` needs an assigned user to reach anyone.
+- **07** — trigger fires, but 3 step-level deps are dead/absent in NEW: (1) `facebook_add_to_custom_audience` needs a FB integration + audience (OLD `act_666564130483785` / `120225224137710367`); (2) two external webhooks — make.com `hook.us1.make.com/98jx8j883frnv18uw95vfskibbf2r0cl` and n8n `n8n.apptime.me/webhook/954f12b5-...` — are LEGACY external targets, NOT the new client-box Cloudflare tunnel, and are almost certainly dead; (3) `create_opportunity` references OLD pipeline `yOomdMVVZgM9x4oB2fvK` / stage — no such pipeline in NEW (§E pipeline is optional/unbuilt). Uses hyphenated tags `podcast-2nd-interview-survey-submitted`, `podcast-survey-submission-completed`.
+- **03** — needs: (a) a **FB Lead Form trigger** (none in OLD/NEW); (b) FB Conversion API config — OLD carries placeholder pixel `8787656` / token `2343243` ("MUST BE UPDATED"); (c) `create_opportunity` OLD pipeline `yOomdMVVZgM9x4oB2fvK` / stage `58c6add9-...` (absent in NEW). Applies tag `podcast-lead-from-fb-ad`.
+- **01a** — needs: a trigger (OLD intended "survey completed") + a FB Custom Audience integration (OLD `act_666564130483785` / audience `120225224137710367`). One step only.
+- **02 / 02a** — need: (a) a **FB Lead Form trigger**; (b) FB add/remove Custom Audience integration; (c) `create_opportunity` OLD pipeline (absent in NEW); (d) custom value `{{custom_values.podcast_survey_podcast_title}}` referenced in email copy (not among §B's 6 custom values). 29-step reminder ladders (wait/if_else/goto) recreated intact.
+
+**No fabrication:** FB integrations, FB Lead Forms, the OLD pipeline, and the external webhook targets were NOT connected or invented — the workflows are faithful recreations of OLD's structure, and the above is the exact connect-list for them to fire. Re-GET verify: `legacy-recreate/verify_final.py` (scratchpad) or list `GET /workflow/CjxATjhv9Gt21qSqURIt/list`.
