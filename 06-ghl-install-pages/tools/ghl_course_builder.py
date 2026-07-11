@@ -77,6 +77,13 @@ _write_receipt = _cb._write_receipt
 _governor = _cb._governor
 _keepalive = _cb._keepalive
 _capture_id_from_url = _cb._capture_id_from_url
+# shared agent-browser 0.27.0 executor wrappers + list-scan idempotency (fixes a/b),
+# owned by ghl_community_builder so both builders share ONE adapter. They read _cb's
+# module globals at CALL time, so a test that patches _cb._ab/_eval/_snapshot is honored.
+_ex_click = _cb._ex_click
+_ex_fill = _cb._ex_fill
+_ex_wait_text = _cb._ex_wait_text
+_list_has = _cb._list_has
 
 try:
     import ghl_object_router as _router  # type: ignore
@@ -237,19 +244,17 @@ def _add_lesson(session: str, sels: dict, module: dict, lesson: dict,
     title = lesson["title"]
     if keep.due():
         _ab(session, "eval", "--stdin", timeout=10, stdin="true")     # keepalive (F5)
-    _click(session, anchor(sels, "course.outline.add_lesson"))
-    _fill(session, anchor(sels, "course.outline.lesson_title_input"), title)
+    _ex_click(session, sels, "course.outline.add_lesson")
+    _ex_fill(session, sels, "course.outline.lesson_title_input", title)
     if lesson["body"] or lesson["media_url"]:
         # body/media go into the lesson editor; media as a CDN link/embed (never upload)
-        editor = anchor(sels, "course.outline.lesson_body_editor", required=False)
-        if editor:
-            body = lesson["body"]
-            if lesson["media_url"]:
-                body = (body + f"\n[media]({lesson['media_url']})").strip()
-            _fill(session, editor, body)
+        body = lesson["body"]
+        if lesson["media_url"]:
+            body = (body + f"\n[media]({lesson['media_url']})").strip()
+        _ex_fill(session, sels, "course.outline.lesson_body_editor", body, required=False)
     gov.before_save()
-    _wait_text(session, title, timeout=15)
-    if title not in _snapshot(session):
+    _ex_wait_text(session, title, timeout=15)
+    if not _list_has(session, title):                                  # fix b: list-scan read-back
         raise StopAndReport(f"M4.lesson:{title}",
                             f"added lesson {title!r} but it did not appear in the outline "
                             "(snapshot-and-bind miss). STOP — no brute-force.")
@@ -260,16 +265,15 @@ def _add_lesson(session: str, sels: dict, module: dict, lesson: dict,
 
 
 def _verify_outline(session: str, plan: dict) -> dict:
-    """Read-back: every module + lesson title present in the live outline snapshot."""
-    snap = _snapshot(session)
+    """Read-back: every module + lesson title present in the live outline (list-scan)."""
     missing: List[str] = []
     for m in plan["modules"]:
-        if m["title"] not in snap:
+        if not _list_has(session, m["title"]):
             missing.append(f"module:{m['title']}")
         for l in m["lessons"]:
-            if l["title"] not in snap:
+            if not _list_has(session, l["title"]):
                 missing.append(f"lesson:{l['title']}")
-    return {"outline_match": not missing, "missing": missing, "method": "snapshot"}
+    return {"outline_match": not missing, "missing": missing, "method": "list-scan"}
 
 
 def _capture_preview_url(session: str) -> str:
@@ -280,18 +284,22 @@ def _capture_preview_url(session: str) -> str:
 
 
 def _delete_course(session: str, sels: dict, plan: dict) -> dict:
+    """Cleanup for a COURSE — a REAL delete (fix d). Unlike community groups, courses ARE
+    deletable: the row 'More actions' menu has a Delete path (live-observed 2026-07-10) and
+    Tier-2 ships delete_course/delete_course_* API tools. So the true 0-residue proof is
+    scoped HERE. Idempotency + residue check are list-scans (fix b — no search box needed)."""
     try:
-        _click(session, anchor(sels, "shared_rail.memberships_left_rail"))
-        _wait_text(session, "Memberships", timeout=15)
-        _fill(session, anchor(sels, "course.list_page.search_box"), plan["course_name"])
-        _click(session, anchor(sels, "course.list_page.row_actions"))
-        _click(session, anchor(sels, "course.list_page.delete_menuitem"))
-        _ab(session, "click", "Delete", timeout=12)
-        _wait_text(session, "Create", timeout=12)
-        residue = plan["course_name"] in _snapshot(session)
-        return {"deleted": not residue, "residue_in_list": residue}
+        _ex_click(session, sels, "shared_rail.memberships_left_rail")
+        _ex_wait_text(session, "Memberships", timeout=15)
+        _ex_click(session, sels, "course.list_page.row_actions")           # 'More actions'
+        _ex_click(session, sels, "course.list_page.delete_menuitem")       # menu 'Delete'
+        _ex_click(session, sels, "course.list_page.delete_confirm")        # dialog confirm (native)
+        _ex_wait_text(session, "Create", timeout=12)
+        residue = _list_has(session, plan["course_name"], plan["slug"])
+        return {"cleanup_primitive": "delete", "deleted": not residue, "residue_in_list": residue}
     except StopAndReport as sr:
-        return {"deleted": False, "residue_in_list": True, "stop": str(sr)}
+        return {"cleanup_primitive": "delete", "deleted": False,
+                "residue_in_list": True, "stop": str(sr)}
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
@@ -325,23 +333,22 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
                     {"landed": auth["landed"], "seeded_at": _ts()})
 
         # M1 — Memberships nav (verified-shared-rail).
-        _click(session, anchor(sels, "shared_rail.memberships_left_rail"))
-        _wait_text(session, "Memberships", timeout=20)
+        _ex_click(session, sels, "shared_rail.memberships_left_rail")
+        _ex_wait_text(session, "Memberships", timeout=20)
         steps_done.append("M1:memberships")
 
-        # M2 — search-first idempotency.
-        _fill(session, anchor(sels, "course.list_page.search_box"), plan["course_name"])
-        existed = plan["course_name"] in _snapshot(session)
+        # M2 — LIST-SCAN idempotency (fix b): the search box is OPTIONAL, not required.
+        existed = _list_has(session, plan["course_name"], plan["slug"])
         if existed and not resume:
-            warnings.append("M2: a ZHC course of this name already exists — REUSED")
+            warnings.append("M2: a ZHC course of this name/slug already exists — REUSED")
             action = "reused"
         else:
             if not existed:
-                _click(session, anchor(sels, "course.list_page.create_course_button"))
-                _fill(session, anchor(sels, "course.create_modal.name_input"), plan["course_name"])
+                _ex_click(session, sels, "course.list_page.create_course_button")
+                _ex_fill(session, sels, "course.create_modal.name_input", plan["course_name"])
                 gov.before_save()
-                _click(session, anchor(sels, "course.create_modal.create_confirm"))
-                _wait_text(session, plan["course_name"][:18], timeout=25)
+                _ex_click(session, sels, "course.create_modal.create_confirm")   # exec:native
+                _ex_wait_text(session, plan["course_name"][:18], timeout=25)
             course_id = _capture_id_from_url(session)
             action = "created" if not existed else "resumed"
         steps_done.append(f"M3:{action}")
@@ -349,9 +356,9 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         # M4 — outline: modules → lessons (resumable, per-lesson receipt).
         for m in plan["modules"]:
             if not (resume and all(l["slug"] in done_lessons for l in m["lessons"])):
-                _click(session, anchor(sels, "course.outline.add_module"))
-                _fill(session, anchor(sels, "course.outline.module_title_input"), m["title"])
-                _wait_text(session, m["title"][:18], timeout=15)
+                _ex_click(session, sels, "course.outline.add_module")
+                _ex_fill(session, sels, "course.outline.module_title_input", m["title"])
+                _ex_wait_text(session, m["title"][:18], timeout=15)
             for l in m["lessons"]:
                 if l["slug"] in done_lessons:
                     steps_done.append(f"M4:resume-skip:{l['title'][:20]}")
@@ -388,7 +395,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 
         # M6 — publish gate (default DRAFT).
         if plan["publish"]:
-            _click(session, anchor(sels, "shared_rail.builder_save"))     # capture-pending → STOP
+            _ex_click(session, sels, "shared_rail.builder_save")     # capture-pending → STOP
             steps_done.append("M6:publish")
         else:
             steps_done.append("M6:draft")
@@ -540,7 +547,18 @@ def _selftest() -> int:  # noqa: C901
     if not raised:
         errors.append("capture-pending course anchor did NOT STOP (D8 gate broken)")
 
-    # mocked-browser lesson walk proves REAL code + resume skip
+    # cleanup reality (fix d): course = TRUE delete; community group = inactivate (no delete)
+    reality = sels.get("_cleanup_reality", {})
+    if reality.get("course", {}).get("primitive") != "delete" or \
+            not reality.get("course", {}).get("has_api_delete"):
+        errors.append("fix d: course cleanup reality should be true delete + API delete")
+    if reality.get("community_group", {}).get("primitive") != "inactivate" or \
+            reality.get("community_group", {}).get("has_ui_delete"):
+        errors.append("fix d: community_group cleanup reality should be inactivate / no delete")
+
+    # mocked-browser lesson walk proves REAL code routed through the executor (fix a) +
+    # resume skip. Reads/clicks funnel through _cb (shared wrappers + list-scan), so we
+    # patch _cb globals (ab/eval/snapshot) and this module's _screenshot.
     if _HAVE_FFB:
         import copy
         locked = copy.deepcopy(sels)
@@ -548,23 +566,25 @@ def _selftest() -> int:  # noqa: C901
             t["status"] = "locked"
         present = {"Welcome"}
         calls: List[tuple] = []
+        evals: List[str] = []
 
         def fake_ab(session, *args, timeout=30, stdin=None):
             calls.append(args)
             verb = args[0] if args else ""
             if verb == "wait" and len(args) >= 3:
-                present.add(args[2])
+                present.add(args[2].strip("'\""))
             snap = " ".join(sorted(present)) if verb == "snapshot" else ""
             return subprocess.CompletedProcess(args=list(args), returncode=0, stdout=snap, stderr="")
-        orig = _ffb._ab
+
+        def fake_eval(session, js, timeout=20):
+            evals.append(js)
+            return "CLICKED:x" if ".click()" in js else ""
+
+        orig_ab, orig_eval, orig_snap = _cb._ab, _cb._eval, _cb._snapshot
         try:
             _cb._ab = fake_ab
+            _cb._eval = fake_eval
             _cb._snapshot = lambda s, timeout=20: (fake_ab(s, "snapshot").stdout or "")
-            globals()["_ab"] = fake_ab
-            globals()["_snapshot"] = lambda s, timeout=20: (fake_ab(s, "snapshot").stdout or "")
-            globals()["_click"] = lambda s, t, timeout=15: fake_ab(s, "click", t)
-            globals()["_fill"] = lambda s, l, v, timeout=15: fake_ab(s, "fill", l, v)
-            globals()["_wait_text"] = lambda s, t, timeout=20: fake_ab(s, "wait", "--", t)
             globals()["_screenshot"] = lambda s, p: None
             with tempfile.TemporaryDirectory() as tmp2:
                 os.makedirs(os.path.join(tmp2, "shots"), exist_ok=True)
@@ -574,20 +594,14 @@ def _selftest() -> int:  # noqa: C901
                                  tmp2, [0], _cb._NoopGovernor(), _cb._NoopKeepalive())
                 if rc["action"] != "created":
                     errors.append(f"mocked lesson walk: expected created (got {rc['action']})")
-                if not any(c and c[0] == "click" for c in calls):
-                    errors.append("mocked lesson walk: no real click (skeleton?)")
+                if not any(c and c[0] == "find" for c in calls):
+                    errors.append("mocked lesson walk: no real `find` command (executor skeleton?)")
                 _write_receipt(tmp2, rc)
                 done = _resume_done_lessons(tmp2)
                 if "welcome-intro" not in done:
                     errors.append("resume: written lesson receipt not detected as done")
         finally:
-            _cb._ab = _ffb._ab
-            _cb._snapshot = _ffb._snapshot
-            globals()["_ab"] = _ffb._ab
-            globals()["_snapshot"] = _ffb._snapshot
-            globals()["_click"] = _ffb._click
-            globals()["_fill"] = _ffb._fill
-            globals()["_wait_text"] = _ffb._wait_text
+            _cb._ab, _cb._eval, _cb._snapshot = orig_ab, orig_eval, orig_snap
             globals()["_screenshot"] = _ffb._screenshot
 
     if _HAVE_ROUTER:

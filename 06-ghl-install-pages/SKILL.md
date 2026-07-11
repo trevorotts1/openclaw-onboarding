@@ -306,11 +306,27 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
      browser-routed**.
    - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
-   - `ghl_survey_builder.py` - two-part browser-controlled survey pipeline:
-     Part 1 creates GHL custom fields; Part 2 builds the survey, maps
-     Add-Object-Fields, wires conditional logic, enforces required fields, and
-     handles Quick Add + plain T&C blocks. Accepts `--dry-run` for structural
-     validation without GHL writes.
+   - `ghl_survey_builder.py` - two-part browser-controlled survey pipeline
+     (**v1.4.0**): Part 1 creates/reuses GHL custom fields; Part 2 builds the
+     survey, maps Add-Object-Fields, wires conditional logic + branch convergence,
+     enforces required fields, and handles Quick Add + plain T&C blocks. v1.4.0
+     adds the **NAV FIX** (`$router.push` to `survey-builder/main` + native
+     "Add survey" click via `ghl_ab_executor` — the dead left-rail "Sites" click is
+     gone), the **build-from-main convergence guard** (`P4:builder_convergence_capable`),
+     **smoke-test-first** (one tile-drag proven via the iframe snapshot delta before
+     a full run is trusted), and a **capture-gated REST fallback lane**
+     (`build_method='rest'`) that can NEVER blind-POST. Accepts `--dry-run` for
+     structural validation without GHL writes.
+   - `ghl_iframe_dragdrop.py` - **reusable cross-origin-iframe drag/drop + ref-less-
+     tab playbook** (tab click + coordinate-drag ladder), the generalized in-skill
+     version of the survey bring-up one-off. Any builder whose canvas is a
+     cross-origin iframe drives it through this. **Read
+     `TECHNIQUES-cross-origin-iframe-dragdrop.md` (skill root) FIRST** when a builder
+     canvas is an iframe. `--selftest` needs no network/browser.
+   - `ghl_survey_rest.py` - the survey builder's **capture-gated canvas-free write
+     lane**. Derives the save origin/path/verb from a RECORDED save-capture receipt
+     (`routing/survey-save-capture.json`) ONLY — the anti-blind-POST invariant; no
+     hardcoded save endpoint exists. Read/list paths + roundtrip diff. Offline.
    - `ghl_form_builder.py` - two-layer browser-controlled FORM builder. THINK
      layer emits `routing/form-plan.json`, `routing/form-dependency-plan.json`
      (the Skill-44 custom-field + tag handoff), and `routing/form-click-list.json`;
