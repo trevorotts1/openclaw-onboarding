@@ -16,14 +16,81 @@
 # which would spam the client's chat on every fire (silence-doctrine violation).
 # The silent-delivery flag (`--no-deliver`, falling back to `--best-effort-deliver`)
 # is FEATURE-DETECTED, with a no-optional-flag retry for older CLI shapes. After a
-# successful add each job is VERIFIED present via `openclaw cron list`.
+# successful add each job is VERIFIED present via the JSON exact-name match below.
+#
+# IDEMPOTENCY (fix/industry-gate-and-idempotent-crons, 2026-07-11 — BUG FIX):
+# the previous version guarded each add with a TEXT-TABLE `openclaw cron list |
+# grep -qF <name>` presence check. `cron list`'s text table truncates names
+# longer than ~22 chars (appends "..."); BOTH RE cron names exceed that
+# (re-open-house-followup-scan=27, re-post-close-anniversary=25), so the check
+# NEVER matched the truncated row and a fresh duplicate was added on every wire
+# run (6x incident). Replaced with oc_cron_present() (shared-utils/cron-lib.sh)
+# — an exact JSON `.name ==` match against `cron list --json`, the same fix
+# scripts/ensure-pipeline-crons.sh already shipped (v13.0.2) for its own crons.
+#
+# INDUSTRY GATE (FAIL CLOSED): registers NOTHING unless this box's captured
+# industry is real-estate (shared-utils/industry-gate.sh). Independent of the
+# gate in 00-verify-prerequisites.sh / wire.sh so a direct/manual invocation of
+# this registrar can never create RE crons on a non-RE box even if wire.sh is
+# bypassed.
 
 set -uo pipefail
 P="[skill 39][crons]"
 AGENT_ID="${ROUTING_AGENT_ID:-main}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ---- INDUSTRY GATE (FAIL CLOSED) -------------------------------------------
+_GATE_LIB=""
+for _cand in \
+  "$SKILL_ROOT/../shared-utils/industry-gate.sh" \
+  "$(cd "$SKILL_ROOT/.." 2>/dev/null && pwd)/shared-utils/industry-gate.sh" \
+  "${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/industry-gate.sh" \
+  "/data/.openclaw/skills/shared-utils/industry-gate.sh"; do
+  if [ -f "$_cand" ]; then
+    _GATE_LIB="$_cand"
+    break
+  fi
+done
+if [ -z "$_GATE_LIB" ]; then
+  echo "$P BLOCKED: shared-utils/industry-gate.sh not found — FAIL CLOSED: registering NOTHING (absence is never permission)."
+  exit 0
+fi
+# shellcheck source=/dev/null
+. "$_GATE_LIB"
+if ! oc_is_real_estate_industry; then
+  echo "$P SKIP — box industry is not real estate ($OC_INDUSTRY_GATE_REASON). Registering NOTHING (fail closed)."
+  exit 0
+fi
+echo "$P industry gate PASS ($OC_INDUSTRY_GATE_REASON) — proceeding to register RE crons"
+
+# ---- JSON-idempotency helper (oc_cron_present) -----------------------------
+_CRON_LIB=""
+for _cand in \
+  "$SKILL_ROOT/../shared-utils/cron-lib.sh" \
+  "$(cd "$SKILL_ROOT/.." 2>/dev/null && pwd)/shared-utils/cron-lib.sh" \
+  "${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/cron-lib.sh" \
+  "/data/.openclaw/skills/shared-utils/cron-lib.sh"; do
+  if [ -f "$_cand" ]; then
+    _CRON_LIB="$_cand"
+    break
+  fi
+done
+if [ -z "$_CRON_LIB" ]; then
+  echo "$P FATAL: shared-utils/cron-lib.sh not found — refusing to register crons without the truncation-safe idempotency check (would risk re-introducing the 6x-duplicate bug)."
+  exit 0
+fi
+# shellcheck source=/dev/null
+. "$_CRON_LIB"
+
 declare -a CRON_NAMES=( "re-open-house-followup-scan" "re-post-close-anniversary" )
-declare -a CRON_SCHED=( "0 18 * * *"                  "0 9 * * *" )
+# Minute jitter (Fix C, belt-and-suspenders): a deterministic 0-14 min offset
+# derived from hostname+name keeps the two distinct hours (18/09) but spreads
+# the exact minute across the fleet so many boxes don't all fire at :00.
+_JIT1="$(oc_cron_minute_jitter "${CRON_NAMES[0]}" 15)"
+_JIT2="$(oc_cron_minute_jitter "${CRON_NAMES[1]}" 15)"
+declare -a CRON_SCHED=( "${_JIT1} 18 * * *"           "${_JIT2} 9 * * *" )
 declare -a CRON_MSG=(
   "Skill 39 daily open-house follow-up sweep. Run protocols/open-house-automation-protocol.md: for every open-house registration captured in the last 7 days that has no logged follow-up yet, send the next timed follow-up step and append one open_house event to <MASTER_FILES_DIR>/real-estate-events.jsonl. Operator-only maintenance - no client-facing chatter beyond the scheduled follow-ups themselves; report back only on error."
   "Skill 39 daily post-close anniversary + sphere-reactivation scan. Identify closings that hit a monthly or annual milestone today, queue the care-first anniversary/sphere touch per protocols/open-house-automation-protocol.md, and append the corresponding events to <MASTER_FILES_DIR>/real-estate-events.jsonl. Operator-only maintenance; report back only on error."
@@ -79,19 +146,20 @@ _add_cron() { # <name> <cron-expr> <message>
   openclaw cron add --name "$name" --cron "$expr" --agent "$AGENT_ID" --message "$msg" >/dev/null 2>&1
 }
 
-EXISTING="$(openclaw cron list 2>/dev/null || true)"
 for i in "${!CRON_NAMES[@]}"; do
   name="${CRON_NAMES[$i]}"
-  if printf '%s' "$EXISTING" | grep -qF "$name"; then
+  # JSON exact-name match (truncation-safe) — see cron-lib.sh header for why a
+  # text-table grep here re-introduces the 6x-duplicate bug on long names.
+  if oc_cron_present "$name"; then
     echo "$P cron '$name' already registered — skipping"
     continue
   fi
   if _add_cron "$name" "${CRON_SCHED[$i]}" "${CRON_MSG[$i]}"; then
     # VERIFY the job is actually registered (payload present, not a phantom add).
-    if openclaw cron list 2>/dev/null | grep -qF "$name"; then
+    if oc_cron_present "$name"; then
       echo "$P registered + verified cron '$name' (${CRON_SCHED[$i]}) ${DELIVERY_FLAG:-<default-delivery>}"
     else
-      echo "$P WARN: '$name' add returned success but is NOT in 'cron list' — register manually:"
+      echo "$P WARN: '$name' add returned success but is NOT in 'cron list --json' — register manually:"
       echo "$P    $(manual_cmd "$i")"
     fi
   else
