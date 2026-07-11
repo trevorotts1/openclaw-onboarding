@@ -16,6 +16,11 @@
 #     5. _write_canonical_reconciliation() NEVER introduces a new "no" decision
 #        or declinedDepartments entry on its own (audit assurance).
 #     6. No closeout/finisher script in the repo writes a decline entry.
+#     7. (C1) The EXACT live finalize-directive shape — dict entries under
+#        canonicalReconciliation.declinedDepartments carrying a per-entry
+#        provenance TRIPLE {id, decidedBy, decidedAt} — is HONORED without the
+#        block-level ownerDeclineConfirmed flag, read from BOTH build-state levels,
+#        while a malformed dict (incomplete triple) is REJECTED (fail-safe).
 #
 # Exit 0 = all tests pass; non-zero = a test failed.
 set -uo pipefail
@@ -192,6 +197,70 @@ check("video" not in sel and "billing-finance" not in sel,
       "T5c: reconcile SKIPS declined 'video' + 'billing-finance' (dept NOT force-built)")
 check("marketing" in sel and "sales" in sel,
       "T5d: reconcile still builds the non-declined canonical floor (marketing, sales present)")
+
+# ── Test 6: EXACT LIVE SHAPE (C1) — per-entry-provenance dict declines under ────
+#            canonicalReconciliation.declinedDepartments, ownerDeclineConfirmed
+#            ABSENT and decisions=null. This is the finalize-directive shape found
+#            on the live box: three vertical-pack depts declined by an in-place
+#            {id, decidedBy, decidedAt} triple. Before the C1 fix the reader looked
+#            only at the build-state TOP level (missed the recon-level list) AND
+#            could not parse dict entries (norm(dict) garbage) AND gated on the
+#            unset ownerDeclineConfirmed flag — so ALL THREE declines were silently
+#            ignored and the depts were rebuilt. This asserts all three now land
+#            declined (in BOTH the builder and the floor reader, lockstep) WITHOUT
+#            ownerDeclineConfirmed, while a malformed dict (missing decidedAt) is
+#            still REJECTED (fail-safe — a bad entry never shrinks the floor).
+print("== T6: exact live shape — recon.declinedDepartments dict triples honored without ownerDeclineConfirmed ==")
+
+bs_live = {"canonicalReconciliation": {
+    "declinedDepartments": [
+        {"id": "listings", "name": "Listings Management",
+         "reason": "vertical pack; do not re-add",
+         "decidedBy": "owner (finalize directive)", "decidedAt": "2026-06-14T06:00:00Z"},
+        {"id": "scheduling-dispatch", "name": "Scheduling & Dispatch",
+         "reason": "vertical pack; do not re-add",
+         "decidedBy": "owner (finalize directive)", "decidedAt": "2026-06-14T06:00:00Z"},
+        {"id": "logistics-fulfillment", "name": "Logistics & Fulfillment",
+         "reason": "vertical pack; do not re-add",
+         "decidedBy": "owner (finalize directive)", "decidedAt": "2026-06-14T06:00:00Z"},
+    ],
+    # ownerDeclineConfirmed ABSENT (None) and decisions null — exactly as on the box.
+    "decisions": None,
+}}
+
+bw_live = bw._canonical_decline_set(bs_live)
+df_live = df.declined_set(bs_live)
+for _slug in ("listings", "scheduling-dispatch", "logistics-fulfillment"):
+    check(bw._decline_norm(_slug) in bw_live,
+          f"T6a: builder honors live dict-triple decline '{_slug}' (no ownerDeclineConfirmed)")
+    check(df._norm(_slug) in df_live,
+          f"T6b: floor reader honors live dict-triple decline '{_slug}' (lockstep)")
+check(bw_live == df_live,
+      f"T6c: builder and floor declined sets IDENTICAL on the live shape: {sorted(bw_live)}")
+
+# 6d: reconcile SKIPS the three declined vertical-pack depts (not force-built).
+bw._build_state_path = lambda: _state_path
+with open(_state_path, "w") as f:
+    json.dump(bs_live, f)
+sel_live = bw.reconcile_canonical_floor({}, {"industry": "coaching", "company_name": "Acme"}, {})
+check(all(s not in sel_live for s in ("listings", "scheduling-dispatch", "logistics-fulfillment")),
+      "T6d: reconcile SKIPS live-declined listings/scheduling-dispatch/logistics-fulfillment")
+
+# 6e: a malformed dict (missing decidedAt) is REJECTED — dept stays in floor.
+bs_malformed = {"canonicalReconciliation": {"declinedDepartments": [
+    {"id": "marketing", "decidedBy": "owner"},   # no decidedAt -> incomplete triple
+]}}
+declined_malformed = bw._canonical_decline_set(bs_malformed)
+check(bw._decline_norm("marketing") not in declined_malformed,
+      "T6e: malformed dict decline (missing decidedAt) REJECTED — 'marketing' stays in floor (fail-safe)")
+
+# 6f: top-level declinedDepartments dict triple is ALSO read (both levels).
+bs_toplevel = {"declinedDepartments": [
+    {"id": "audio", "decidedBy": "owner", "decidedAt": "2026-06-14T06:00:00Z"},
+]}
+declined_toplevel = bw._canonical_decline_set(bs_toplevel)
+check(bw._decline_norm("audio") in declined_toplevel,
+      "T6f: top-level declinedDepartments dict triple honored (both-levels read)")
 
 print()
 if fail:

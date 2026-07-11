@@ -3229,14 +3229,20 @@ def build_from_config(config):
     # NOT write buildCompletedAt / closeoutStatus=pending while this gate fails (rc != 0);
     # the resume cron fires a [LIBRARY-RESUME] self-ping until it passes.
     _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-library-gate.sh")
+    # C4: capture the gate rc so the terminal build-progress emit below can
+    # HARD-REQUIRE it. None = the gate could not run (missing / errored) — treated
+    # as "unknown, do not newly block" so a box without the gate is not stranded;
+    # a concrete non-zero rc (role/SOP/trio/boundary/zhe not done) BLOCKS the
+    # "complete" signal so no false "ready" is emitted over an unverified library.
+    _library_gate_rc = None
     if os.path.isfile(_gate_script):
         try:
-            _gate_rc = _subprocess.run(["bash", _gate_script], timeout=240).returncode
-            if _gate_rc == 0:
+            _library_gate_rc = _subprocess.run(["bash", _gate_script], timeout=240).returncode
+            if _library_gate_rc == 0:
                 print("[v10.15.8] LIBRARY GATE PASS - roleLibraryStatus=done AND sopLibraryStatus=done. "
                       "Workforce may proceed to closeout.", file=sys.stderr)
             else:
-                print(f"[v10.15.8] LIBRARY GATE FAIL (rc={_gate_rc}) - role library and/or SOP library "
+                print(f"[v10.15.8] LIBRARY GATE FAIL (rc={_library_gate_rc}) - role library and/or SOP library "
                       f"NOT populated. Do NOT write buildCompletedAt / closeoutStatus=pending. Re-run "
                       f"post-build-role-workspaces.py and/or populate-sops-from-manifest.py, then re-run "
                       f"verify-library-gate.sh until it exits 0. The resume cron will fire [LIBRARY-RESUME] "
@@ -3253,7 +3259,12 @@ def build_from_config(config):
     # falsely showing "ready" (honors the "no false done" doctrine).
     try:
         _all_done = all(d["status"] == "complete" for d in _progress_departments)
-        if _build_progress >= 100 and _all_done:
+        # C4 HARD-REQUIRE: never signal terminal "complete" while the library gate
+        # is DEFINITIVELY failing (role/SOP library not substantive). A concrete
+        # non-zero rc blocks; a None rc (gate missing/errored) preserves prior
+        # structural behaviour so a box without the gate is never stranded.
+        _library_gate_blocks = (_library_gate_rc is not None and _library_gate_rc != 0)
+        if _build_progress >= 100 and _all_done and not _library_gate_blocks:
             write_build_progress(
                 "complete", "Your AI workforce is ready ✓",
                 departments=_progress_departments,
