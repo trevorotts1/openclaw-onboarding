@@ -26,8 +26,8 @@ This guide walks you through activating your AI workforce as a live Command Cent
 > deploys the LOCKED CC shell FIRST, then gates the real workforce, in two blocks:
 > **BLOCK A** (Phase 1 prereqs → a **lock-assert** → Phase 6 dashboard deploy → Phase 6h
 > tunnel) brings up the locked `/interview` shell; **BLOCK B** (Phase 3/4/5 + Phase
-> 6b–6f seeding → Phase 7 verification → Phase 7z ZHE gate) runs only after the
-> interview-complete gate passes. The **lock-before-reachable** invariant is the safety
+> 6b–6g seeding + Phase 6i SOP V2 library ingestion → Phase 7 verification → Phase 7z
+> ZHE gate) runs only after the interview-complete gate passes. The **lock-before-reachable** invariant is the safety
 > guarantee: the lock-assert FAILS CLOSED if the build-state file (the middleware's only
 > lock source) is missing, and because a pre-closeout build has `interviewComplete=false`
 > / `buildCompletedAt` unset, the shell serves LOCKED (302 → `/interview`) from its first
@@ -557,19 +557,39 @@ If you operate a Hostinger Docker VPS, use the platform/vps variant of this scri
 - Unified repo (Mac + VPS): https://github.com/trevorotts1/openclaw-onboarding
 - VPS-specific docs: platform/vps/ in the same repo
 
-## Phase 6c: SOP V2 Library Ingestion (Agent Does This Automatically — v10.13.29+)
+## Phase 6i: SOP V2 Library Ingestion (Agent Does This Automatically)
 
-The agent runs the new library ingester to pull the canonical V2 SOP
-library asset from this repo's GitHub Release, apply migration 028,
-upsert 2,555 SOPs, and seed 19 platform-default template variables.
+> **Renumbered from "Phase 6c"** — that heading duplicated 6.5b's real Phase
+> 6c above (unrelated: dashboard department sync) AND documented this step
+> as automatic for several releases while `run-full-install.sh` never
+> actually called it (closes finding C2, "CC SOP library is a ghost" — a
+> fresh install shipped whatever the Command Center's own boot-time starter
+> seed happened to write instead of the real V2 library). The code phase is
+> named 6i because 6b-6h were already taken by unrelated steps by the time
+> this got wired in.
+
+`run-full-install.sh` PHASE 6i now runs this automatically (idempotent —
+safe to re-run on every install/resume/update, in both full and
+`--update-only` mode). It: (1) pulls the canonical V2 SOP library asset from
+this repo's GitHub Release, applies migration 028, upserts the SOP records,
+and seeds 19 platform-default template variables; (2) calls the Command
+Center's `converge(scope=sops)` route, which imports the on-disk role-library
+`how-to.md` files into the same `sops` table; (3) runs a fail-loud row-count
+gate (`scripts/assert-sop-library-populated.py`) so an install can never
+again silently claim success over an empty/near-empty SOP library. Manual
+invocation (e.g. to re-ingest a refreshed library on an existing client)
+still works the same way:
 
 ```bash
 cd ~/.openclaw/skills/32-command-center-setup
-./scripts/ingest-sop-library.sh "$CLIENT_SLUG" v10.13.29
+./scripts/ingest-sop-library.sh "$CLIENT_SLUG"
 ```
 
 Expected result: `sops total: 2555`, `v2 sops: 2448`, `v1 sops: 107`,
-`sop_dependencies: 19`, `client_template_vars: 19` for this client.
+`sop_dependencies: 19`, `client_template_vars: 19` for this client. A total
+that stays 0 (or the `sops` table doesn't exist) after this phase fails the
+install loud — see `run-full-install.sh` PHASE 6i and
+`scripts/assert-sop-library-populated.py`.
 
 ---
 
