@@ -228,7 +228,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N34 | **Provider Detection Protocol — a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime" — NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent — only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Use SONNET (never Haiku) for credential/provider checks. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
 | N35 | **AF-MODEL-SOVEREIGNTY — no task dispatches without a resolved, valid, modality-appropriate model.** A resolved model must be (a) non-null and NOT the `openrouter/free` literal nor any bare "free" default, (b) present in the client's available inventory, (c) not forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`). The authoritative PREFERENCE CASCADE is **Ollama Cloud → OpenRouter open-source → OpenRouter `google/gemini-3.5-flash` (explicit universal last resort)**; the final rung fires only when Tier 1 and Tier 2 both fail and credits are live — the old `*:free` wording is superseded; the free literal is still rejected by the gate as not a valid resolution. Precedence: **SOP pin > task selector > role override > dept default > needs_owner_input** (NEVER a silent free downgrade). **MiniMax M2 is BANNED fleet-wide**; the `execution` and `qc` roles use MiniMax M3 only; the generic "MiniMax" allowance in Tier 2 means M3 exclusively. A vision/image/video/audio task MUST get a model with that modality. Build-time: every department gets a real, modality-correct dept default (suitability map). Task-time: the selector classifies modality + difficulty and walks the cascade. Failures route to `needs_owner_input`, never a silent free fallback. | This file (N35 section) + `shared-utils/select_model.py` (`select_task_model` / `resolve_dept_default_model`) + `shared-utils/assert_model_sovereignty.py` + `shared-utils/{model-capabilities,dept-model-suitability}.json` | `tests/unit/model-selector.test.py` + `.github/workflows/model-selector-guard.yml` (CI gate) + `scripts/repair-model-sovereignty.sh` (fleet repair sweep). CC runtime half (resolver/dispatcher gate/migration 071/display) lands in `blackceo-command-center` — see N35 section. |
 | N36 | **BLOCKED MEANS HUMAN-ONLY: workers never park in Blocked; broken/stuck work returns to the orchestrator.** A task is `status:blocked` ONLY when a named human must perform a specific human-only action (decision, approval, credential/access, or payment) before work can proceed. EVERYTHING else keeps moving. Worker agents NEVER set status=blocked directly -- they call `POST /api/tasks/{id}/return-to-orchestrator` (requires `Authorization: Bearer $MC_API_TOKEN` -- the Command Center write-back API is fail-closed and 401s without it; never `$OPENCLAW_GATEWAY_TOKEN`, see BLOCKED-IS-GATED.md) with a structured handback `{task_id, problem, what_i_tried, what_i_think_it_needs, suggested_department?}`. The Master Orchestrator is the SOLE authority that writes status=blocked, and only after the four-way classifier in SOP-01 passes. After 3 re-route attempts (qc_reroute_attempts cap), the orchestrator escalates to the operator instead of looping. Extends N24 (no silent abandonment): the structured handback is the required replacement for a silent drop. | This file (N36 section) + `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md` + `23-ai-workforce-blueprint/references/BLOCKED-IS-GATED.md` | API gate in `src/app/api/tasks/[id]/route.ts` (400 on non-human blocked attempt) + `src/app/api/tasks/[id]/return-to-orchestrator/route.ts` (worker handback endpoint) + stale-task-sweep registered in scheduler.ts + ceo-delegation-sweep extended to sweep returned tasks |
-| N37 | **AF-WORKSPACE-SHELL — "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are TWO SEPARATE states; each is verified separately, and never reported as the other.** Copying the role-library TEMPLATE to disk (`/data/.openclaw/skills/.../role-library/<dept>/` — a SKILLS-tree path) is "TEMPLATE DEPLOYED." It does NOT make a client department. A client department is "WORKSPACE INSTANTIATED" only when its WORKSPACE dir (`workspace/zero-human-company/<company>/departments/<dept>/`) is MATERIALIZED: ≥1 numbered role subdir (`00-*`/`01-*`…) AND director `IDENTITY.md` AND `SOUL.md` AND ≥1 real SOP (`how-to.md` ≥3 KB or a substantive standalone `0[1-9]-*.md` ≥7 KB). A dept dir that is only `DREAMS.md` + `memory/` is a SHELL. NEVER report a client/department "done / installed / updated / airtight" without the workspace gate passing **with raw counts** (a template on disk can NEVER satisfy it; a dept-dir symlinked into the template tree is treated as not-materialized). Extends the `lib-onboarding-state.sh` onboarding-honesty philosophy to the workspace layer (N27). | This file (N37 section) + `FLEET-STANDARDS.md §6` + `scripts/qc-assert-workspace-departments-built.sh` (single source of truth; required set = `department-floor.py` floor) | `scripts/qc-system-integrity.sh` CHECK X.11 (rc=3 hard-fail) + `lib-onboarding-state.sh` `oc_overall_goal_check` criterion (iii) `workspaceMaterialized` (overall "done" blocked while any dept is a shell) + watchdog `oc_overall_goal_check` (kill condition) + CI `.github/workflows/qc-static.yml` (runs `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh` T8/T8b) |
+| N37 | **AF-WORKSPACE-SHELL — "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are TWO SEPARATE states; each is verified separately, and never reported as the other.** Copying the role-library TEMPLATE to disk (`/data/.openclaw/skills/.../role-library/<dept>/` — a SKILLS-tree path) is "TEMPLATE DEPLOYED." It does NOT make a client department. A client department is "WORKSPACE INSTANTIATED" only when its WORKSPACE dir (`workspace/zero-human-company/<company>/departments/<dept>/`) is MATERIALIZED: ≥1 numbered role subdir (`00-*`/`01-*`…) AND director `IDENTITY.md` AND `SOUL.md` AND ≥1 real SOP (`how-to.md` ≥3 KB or a substantive standalone `0[1-9]-*.md` ≥7 KB). A dept dir that is only `DREAMS.md` + `memory/` is a SHELL. NEVER report a client/department "done / installed / updated / airtight" without the workspace gate passing **with raw counts** (a template on disk can NEVER satisfy it; a dept-dir symlinked into the template tree is treated as not-materialized). Extends the `lib-onboarding-state.sh` onboarding-honesty philosophy to the workspace layer (N27). **AND THE CLIENT MUST BE ABLE TO SEE IT — `chosen == provisioned == displayed` (`AF-BOARD-JOIN-DRIFT`, the C-series JOIN).** A materialized tree is still not "done" if the department has no column on the client's Command Center board (the `workspaces` rows in `mission-control.db`): a department they PAID FOR that they CANNOT SEE. The three layers — what the client CHOSE (the C7 durable `departments.json` artifact / build-state record), what is PROVISIONED on disk, and what is DISPLAYED on the board — were each guarded internally and never JOINED, so all three could be internally perfect and describe three different companies. The join is `23-ai-workforce-blueprint/scripts/prove-board-join.py` (archive-aware: an ARCHIVED row is NOT displayed; and **scoped to ONE `company_id`** — one `mission-control.db` can hold several companies' rows, and joining one company's tree against all of them manufactures FALSE drift). **Every non-zero rc of the gate MUST have an explicit arm in CHECK X.11** — a WARN does not change `qc-system-integrity.sh`'s exit code, so an untaught rc is FAIL-OPEN ("ALL CHECKS PASSED" on a proven defect); the catch-all is fail-CLOSED and hard-fails an unrecognised rc. | This file (N37 section) + `FLEET-STANDARDS.md §6` + `scripts/qc-assert-workspace-departments-built.sh` (single source of truth; required set = `department-floor.py` floor) + `23-ai-workforce-blueprint/scripts/prove-board-join.py` (the JOIN) | `scripts/qc-system-integrity.sh` CHECK X.11 — **rc=3 `AF-WORKSPACE-SHELL` hard-fail; rc=5 `AF-PHANTOM-DEPT-TREE` hard-fail; rc=6 `AF-BOARD-JOIN-DRIFT` hard-fail** (chosen != provisioned != displayed); rc=4/rc=2 warn; any unrecognised non-zero rc hard-fails (fail-closed catch-all) + `lib-onboarding-state.sh` `oc_overall_goal_check` criterion (iii) `workspaceMaterialized` (overall "done" blocked while any dept is a shell OR the board join drifts — ANY non-zero rc = "not materialized") + watchdog `oc_overall_goal_check` (kill condition) + CI `.github/workflows/qc-static.yml` (runs `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh` T8/T8b) + CI `.github/workflows/board-join-chain-guard.yml` (runs `23-ai-workforce-blueprint/scripts/test-board-join-chain.sh`) |
 | N38 | **AF-REPO-CONSISTENCY — a department / role / SOP / persona may NEVER ship inconsistent across the SIX sources of truth.** The Skill 23 blueprint carries six independent lists that must agree: **FLOOR** (`department-naming-map.json` `.mandatory` + the 6 universal-primary verticals — 6 not 7 since naming-map v2.6.1 reclassified `listings` to real-estate-only; floor = 28), **ROSTERS** (`suggested-roles/*.md`), **ROLE LIBRARY** (`templates/role-library/_index.json`), **SOP SOURCE** (role-library copy path / Skill-42 PA library), **PERSONA DOMAINS** (`build-workforce.py` `dept_to_domains` x2 + `create_role_workspaces.py` `DEPT_DOMAIN_HINTS`), and **NO ORPHANS**. Six departments once shipped UNBUILDABLE because nothing cross-checked floor vs rosters; missing persona-domain keys silently routed 11 floor depts to the generic `['leadership']` pool. For EVERY floor dept: its roster must parse, every roster role must resolve a library/SOP template, the dept must dry-run-instantiate cleanly, every role must have a real SOP source, and the dept must have a NON-fallback persona-domain mapping in ALL THREE persona maps. When you ADD or RENAME a department/role/SOP/persona you MUST update floor + roster + library + SOP source + persona maps together (see `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md`). **PERSONA-SET COUNT TRIAD (7th assertion):** beyond persona-DOMAIN mappings, adding a coaching/leadership persona must keep the COUNT triad in lockstep — `blueprint dirs (22-…/personas/*) == persona-categories.json keys == INDEX-MANIFEST.persona_count == INDEX-MANIFEST.canonical_persona_count` — else a persona ships matchable-but-vector-less (in the SET, no embeddings) or the manifest is bumped with no blueprint. The propagation checklist (blueprint + SET + incremental index + manifest + qmd + re-wire) is `23-ai-workforce-blueprint/ADDING-PERSONAS.md`. | This file (N38 section) + `FLEET-STANDARDS.md §7` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` + `23-ai-workforce-blueprint/ADDING-PERSONAS.md` + `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (single source of truth; uses the SAME `parse_roster`/`library_lookup`/`evaluate_floor`/`is_canonical_dept` functions the build uses, plus the `_persona_set_triad_failures` count assertion) | `scripts/qc-system-integrity.sh` CHECK X.12 (rc=5 hard-fail) + build-start preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted repo) + CI `.github/workflows/qc-static.yml` (runs the gate + `23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`) + CI `.github/workflows/persona-set-asset-consistency-guard.yml` (PR-boundary triad guard) |
 
 | N39 | **NATIVE SKILL INVOCATION — skills are native department capabilities, not user-only features.** A specialist reaches for the OWNING skill from a client's plain-language intent; the client never has to name it or type its slash command. The ONE binding is `23-ai-workforce-blueprint/skill-department-map.json` (skill↔dept↔specialist↔intent↔craft-SOP); the doctrine is `universal-sops/native-skill-invocation.md`; the runtime handoff is the Command-Center ContextPack `matched_skills` (Layer A). Skill selection is **dept-scoped** (only the task's department's skills are offered — a marketing task never sees the video pipeline) and **fail-closed on paid calls** (Rule-Zero USD announce + budget cap still apply). Durable knowledge lives in each owning role's `how-to.md` §8 "Skills You Operate" block (Layer B); the front-door reflex `SKILL_INTENT_ROUTING_REFLEX_V1` routes intent→owning department (Layer C, injected by `apply-fleet-standards.sh`, alongside the strict presentation REFLEX 0). Pointer, not paste — full detail lives in the SOP + map, never a playbook dump here. | `<!-- NATIVE_SKILL_INVOCATION_V1 -->` marker (below) + `23-ai-workforce-blueprint/skill-department-map.json` + `universal-sops/native-skill-invocation.md` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` Scenario E | **MAP-CONSISTENCY** dimension of `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (structure + Layer-B blocks + Layer-C reflex coverage) + CONTENT-HASH gate (role skill-blocks re-stamped) + `scripts/check-skill-department-map.py` (standalone orphan check) + CI `.github/workflows/qc-static.yml` |
@@ -956,7 +956,7 @@ tier/source/modality display badges. The CC TypeScript reuses THIS repo's
 ---
 
 <!-- N37 -->
-## 🔴 N37 — AF-WORKSPACE-SHELL ("template deployed" is NOT "workspace instantiated")
+## 🔴 N37 — AF-WORKSPACE-SHELL ("template deployed" is NOT "workspace instantiated") + AF-BOARD-JOIN-DRIFT (chosen == provisioned == displayed)
 
 > A role-library TEMPLATE copied to the skills/ tree is a file copy. It is NOT a
 > built client department. Reporting one as the other was the false-"done" that
@@ -981,29 +981,72 @@ A workspace dept dir whose real path resolves into the skills/role-library/
 master-files template tree (the "point the workspace at the template" trick) is
 treated as **not materialized**.
 
-### The gate's single assertion (fail-closed)
+### The third state: DISPLAYED — `chosen == provisioned == displayed`
+
+A materialized tree is still NOT "done" if the client cannot SEE the department.
+The Command Center board (the `workspaces` rows in `mission-control.db`) is a
+SEPARATE layer from the tree, and the two were never joined. Three layers must
+describe the SAME company:
+
+1. **CHOSEN** — what the client picked (the C7 durable `<company>/departments.json`
+   artifact, or the build-state `canonicalReconciliation.chosenDepartments` record
+   scoped to that company dir).
+2. **PROVISIONED** — the department dirs materialized on disk.
+3. **DISPLAYED** — the live (non-archived) `workspaces` rows the client looks at.
+
+Each was guarded INTERNALLY and none of them proved the layers AGREE, so all three
+could be internally perfect and still describe three different companies: a
+department the client PAID FOR with no board column (they CANNOT SEE IT), a ghost
+column with no tree behind it, a phantom tree nobody chose. Drift →
+**AF-BOARD-JOIN-DRIFT** (exit 6).
+
+The join is `23-ai-workforce-blueprint/scripts/prove-board-join.py` (single source
+of truth for the join key, the six drift classes, the archive-awareness — an
+ARCHIVED row is NOT displayed — and the COMPANY SCOPING). It is **scoped to ONE
+`company_id`**: a single `mission-control.db` can hold several companies'
+`workspaces` rows, and joining one company's tree against ALL of them manufactures
+FALSE drift. On a board with 0 or 1 distinct `company_id` no filter is applied.
+
+### The gate's assertions (fail-closed)
 
 For EACH required department (required set = the `department-floor.py` floor —
 the same single source of truth that gates the on-disk dept COUNT), the WORKSPACE
 materialization must classify FULL. ANY required dept that is SHELL / PARTIAL /
-MISSING → **AF-WORKSPACE-SHELL** (exit 3). No workspace resolvable, or only a
-template tree resolvable → exit 4 (NOT a silent pass). Gate cannot run → exit 2.
-NEVER report a client/department done/installed/updated/airtight without this
-gate passing **with raw counts** printed per department.
+MISSING → **AF-WORKSPACE-SHELL** (exit 3). Board-join drift → **AF-BOARD-JOIN-DRIFT**
+(exit 6). No workspace resolvable, or only a template tree resolvable → exit 4 (NOT
+a silent pass). Gate cannot run → exit 2. NEVER report a client/department
+done/installed/updated/airtight without this gate passing **with raw counts**
+printed per department.
 
 ### Install points (this repo)
 
 - `scripts/qc-assert-workspace-departments-built.sh` — the gate (single source of
   truth; resolves the WORKSPACE departments dir via `department-floor.resolve_departments_dir`,
-  guards template paths via `_is_template_path`, classifies FULL/PARTIAL/SHELL with raw counts).
-- `scripts/qc-system-integrity.sh` — **CHECK X.11** (rc=3 `AF-WORKSPACE-SHELL` hard-fail;
-  rc=5 `AF-PHANTOM-DEPT-TREE` hard-fail — the same canonical dept materialized twice
-  as sibling dirs (`billing` + `billing-finance`), or a `.bak` tree carried as a
-  department; remediate with `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
-  --merge-duplicates [--apply]`; rc=4 warn = not built yet).
+  guards template paths via `_is_template_path`, classifies FULL/PARTIAL/SHELL with raw counts,
+  and delegates the board join to `prove-board-join.py`).
+- `scripts/qc-system-integrity.sh` — **CHECK X.11**. Full exit-code contract:
+
+  | rc | class | verdict |
+  |----|-------|---------|
+  | 0 | — | required depts FULL, no phantom trees, board join clean |
+  | 3 | `AF-WORKSPACE-SHELL` | a required dept is SHELL / PARTIAL — **HARD FAIL** |
+  | 5 | `AF-PHANTOM-DEPT-TREE` | the same canonical dept materialized twice as sibling dirs (`billing` + `billing-finance`), or a `.bak` tree carried as a department — **HARD FAIL**. Remediate: `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py --merge-duplicates [--apply]` |
+  | 6 | `AF-BOARD-JOIN-DRIFT` | chosen != provisioned != displayed, or the board cannot be vouched for — **HARD FAIL**. Remediate: `prove-board-join.py --json` for the six-class diff, then `32-command-center-setup/scripts/seed-workspaces.py` to re-seed |
+  | 4 | — | not built yet — warn (CHECK 1.1 owns it) |
+  | 2 | — | the gate could not run — warn |
+
+  **Every non-zero rc MUST have an explicit arm.** A WARN does NOT change
+  `qc-system-integrity.sh`'s exit code, so any rc that falls through to the
+  catch-all is **FAIL-OPEN** — the box prints "ALL CHECKS PASSED ✓" while a proven
+  defect sits on it, mislabeled as an infrastructure error. (That is exactly what
+  rc=6 did before it was taught here.) The catch-all is therefore fail-CLOSED: an
+  unrecognised non-zero rc HARD-FAILS. When the gate grows a new rc, it gets an arm
+  in CHECK X.11 **in the same change**.
 - `lib-onboarding-state.sh` — `oc_workspace_departments_materialized()` +
   `oc_overall_goal_check()` criterion (iii): overall "done" requires
   `workspaceMaterialized=true` (a hand-seeded `buildCompletedAt` is no longer sufficient).
+  It maps **ANY** non-zero rc from the gate to "not materialized" — which is why a
+  FALSE drift verdict is not cosmetic: it can block "done" indefinitely.
 - `scripts/watchdog-onboarding-loop.sh` — the watchdog kill condition runs
   `oc_overall_goal_check`, so it now refuses to self-remove while any dept is a shell.
 - `FLEET-STANDARDS.md §6` — the doctrine statement.
@@ -1013,6 +1056,13 @@ gate passing **with raw counts** printed per department.
 `.github/workflows/qc-static.yml` runs `scripts/test-workspace-departments-built.sh`
 (T1 shell FAILS, T2 full PASSES, T3 partial FAILS, T4 template tree never passes)
 and `scripts/test-watchdog-loop.sh` (T8 full-passes, T8b shell-blocks the overall gate).
+
+`.github/workflows/board-join-chain-guard.yml` runs
+`23-ai-workforce-blueprint/scripts/test-board-join-chain.sh` — the JOIN suite: the
+happy chain is non-vacuous (raw counts ≥5 on every layer), each of the six drift
+classes fails, an archived row is not "displayed", a multi-company board produces
+NO false drift, and CHECK X.11 exits NON-ZERO on real drift (the fail-open is
+closed).
 
 ---
 
