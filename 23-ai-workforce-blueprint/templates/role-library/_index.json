@@ -490,8 +490,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:d818c845f6986295da68c1810abd4d5e104d29825cc6f84f924b1fd2da1d8576",
-      "content_hashed_at": "2026-07-11T04:51:35.604765+00:00"
+      "content_sha": "sha256:7bcf1257808aa475727624147458e2352d8169239272f267dd1c3bc5bedc796e",
+      "content_hashed_at": "2026-07-11T05:20:31.743884+00:00"
     },
     "product-production": {
       "count": 4,
@@ -5303,10 +5303,10 @@
       "path": "templates/role-library/presentations/healer-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:d6b7b645c7a5c286447c27fa0cd797840f534bc78a3d5f3c26017e8896b017bf",
-      "render_sha": "sha256:187e57a9c76b3641b4ef0b2c7ce92e0163edbcf62e82a450bea1180c108222fd",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-07-11T04:51:35.604765+00:00"
+      "content_sha": "sha256:0ddb316ebdd87e55c95c3fc95f88e200e375bdf69ac9d9d1a51d2fdf70d093e8",
+      "render_sha": "sha256:916a72ed3874a5ae69d72157b247c8dd2c80d78604726487734ddfb431288323",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-07-11T05:20:31.743884+00:00"
     },
     {
       "slug": "hook-strategist",
@@ -7415,10 +7415,10 @@
       "path": "templates/role-library/presentations/qc-specialist-signature-presentations.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:4b3a7c0a0e593e69ae540264ce849494b78af2f7daa08c1eeeddcdd77faf5b5a",
-      "render_sha": "sha256:4b3a7c0a0e593e69ae540264ce849494b78af2f7daa08c1eeeddcdd77faf5b5a",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-07-11T04:51:35.604765+00:00"
+      "content_sha": "sha256:65edf5db5357a264c7f87798bd6b5b9960c0e4550d3d451418760604a4b05748",
+      "render_sha": "sha256:65edf5db5357a264c7f87798bd6b5b9960c0e4550d3d451418760604a4b05748",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-07-11T05:20:31.743884+00:00"
     },
     {
       "slug": "signature-presentation-architect",
@@ -8194,9 +8194,9 @@
       "slug": "SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION.md",
-      "content_sha": "sha256:eed2732ff91f43e09a527ddd70bf501f678b0f4313b10c8b0f740f45c3d2ad16",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-07-11T04:51:35.604765+00:00"
+      "content_sha": "sha256:7aca93bfe57e63f41c468a0dfca4cfb9c3436a34c8d622ab63fb499fb951ccc2",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-07-11T05:20:31.743884+00:00"
     },
     {
       "slug": "SOP-SIGPRES-02-PHASE-1-AVATAR-SECTION",

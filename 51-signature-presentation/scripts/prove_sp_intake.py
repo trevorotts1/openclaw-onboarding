@@ -8,12 +8,18 @@
 # NOT unlocked for slide authoring. A violation is sys.exit(2) with the named
 # AF-SP-* code. No network, no model judgement, no third-party imports.
 #
-# WHAT THIS ENFORCES — the SACRED 8-Questions-in-ONE-block intake gate
-# (Prime Directives 6 & 7 of the Signature Presentation MASTERDOC):
+# WHAT THIS ENFORCES — the SACRED 8-Questions RECORD gate (Prime Directives 6,
+# 7 & 8 of the Signature Presentation MASTERDOC, under Trevor's ruling that
+# one-question-at-a-time wins). This is a RECORD-LAYER gate ONLY. It says
+# NOTHING about how the questions were asked — the conversation is choice-first
+# and one question at a time (that is the REQUIRED behavior, scanned separately
+# by intake_trace_check.py / AF-INTAKE-BATCH). What this prover checks:
 #   * All 8 Questions (q1..q8) are present — especially q7 (the offer question).
 #   * The frame-selection question is present.
-#   * The 8 Questions AND the frame-selection question were delivered as ONE
-#     message block (asked_all_at_once, single block id, not one-per-turn).
+#   * The assembled intake ledger was COMMITTED AS ONE ATOMIC RECORD
+#     (record_committed_atomically, a single record-commit id). This is the
+#     record-integrity fact after the one-at-a-time conversation, NOT a licence
+#     to dump the 8 Questions at the owner.
 #   * A Signature frame is SET to one of: rulebook | vault | quest | original.
 #
 # It reads the intake JSON. By default it reads the section spec at
@@ -22,9 +28,19 @@
 # file's runtime_intake_contract, e.g. working/copy/sp_intake.json) when one is
 # passed as the positional argument. Both shapes resolve through one model.
 #
+# FIELD NAMES (v1.1 — the machine layer no longer teaches batching):
+#   record_committed_atomically  — the assembled ledger was written as ONE atomic
+#       commit (deprecated alias: asked_all_at_once — accepted for one release).
+#   record_commit_ids            — the id(s) of that atomic record commit; exactly
+#       one (deprecated alias: question_block_msg_id — accepted for one release).
+#   NOTE: one_question_per_turn is NO LONGER a record-layer signal — it describes
+#       the CONVERSATION (which IS one-per-turn) and is intentionally not checked.
+#
 # AUTOFAIL CODES (verbatim from the intake contract):
 #   AF-SP-8Q-MISSING   — any of q1..q8 missing or empty (Directive 6)
-#   AF-SP-8Q-SPLIT     — the 8 + frame question were not delivered as one block (Directive 7)
+#   AF-SP-8Q-SPLIT     — the assembled RECORD was not committed as ONE atomic
+#                        ledger write (record-only gate; the conversation stays
+#                        one question per turn)
 #   AF-SP-FRAME-UNSET  — signature_frame not one of the four allowed values
 #   AF-SP-TYPE-MISMATCH— deck_type != signature_presentation
 #   AF-SP-OFFER-UNDECLARED — q7's offer(s) not carried into the offer_token_ledger
@@ -91,21 +107,50 @@ def _answered(value):
 
 
 # ---- field resolvers (handle both the spec shape and a runtime record) ------
-def _resolve_asked_all_at_once(intake):
-    if "asked_all_at_once" in intake:
-        return intake.get("asked_all_at_once")
-    delivery = intake.get("delivery")
-    if isinstance(delivery, dict) and "asked_all_at_once" in delivery:
-        return delivery.get("asked_all_at_once")
-    return None
+# The RECORD-layer atomic-commit fact carries a canonical name plus a deprecated
+# alias, accepted for ONE release so a new prover validates an old record and an
+# old prover validates a new record during a fleet rollout (no ordering risk).
+_COMMITTED_KEYS = ("record_committed_atomically", "asked_all_at_once")
+_COMMIT_ID_KEYS = ("record_commit_ids", "question_block_msg_id")
 
 
-def _resolve_one_question_per_turn(intake):
-    if "one_question_per_turn" in intake:
-        return intake.get("one_question_per_turn")
+def _collect(intake, keys):
+    """All present values for `keys` across the top level AND a nested
+    `delivery` object (canonical name first, then the deprecated alias)."""
+    found = []
+    containers = [intake]
     delivery = intake.get("delivery")
-    if isinstance(delivery, dict) and "one_question_per_turn" in delivery:
-        return delivery.get("one_question_per_turn")
+    if isinstance(delivery, dict):
+        containers.append(delivery)
+    for container in containers:
+        for key in keys:
+            if key in container:
+                found.append(container[key])
+    return found
+
+
+def _resolve_record_committed(intake):
+    """True only when the assembled ledger was committed as ONE atomic record.
+    Fail-closed: if any present variant (canonical or the deprecated alias, top
+    level or under delivery) is not exactly True, the record is NOT atomic.
+    Returns None when neither field is present at all."""
+    vals = _collect(intake, _COMMITTED_KEYS)
+    if not vals:
+        return None
+    return all(v is True for v in vals)
+
+
+def _resolve_commit_ids(intake):
+    """The record-commit id value (canonical `record_commit_ids`, else the
+    deprecated alias `question_block_msg_id`). None when neither is present."""
+    for key in _COMMIT_ID_KEYS:
+        if key in intake:
+            return intake.get(key)
+    delivery = intake.get("delivery")
+    if isinstance(delivery, dict):
+        for key in _COMMIT_ID_KEYS:
+            if key in delivery:
+                return delivery.get(key)
     return None
 
 
@@ -173,33 +218,40 @@ def evaluate(intake):
     if deck_type is not None and deck_type != DECK_TYPE:
         failures.append((AF_TYPE, "deck_type is %r, expected %r" % (deck_type, DECK_TYPE)))
 
-    # --- ONE-block delivery gate (AF-SP-8Q-SPLIT) ---
-    asked_all_at_once = _resolve_asked_all_at_once(intake)
-    if asked_all_at_once is not True:
-        failures.append((AF_SPLIT, "asked_all_at_once is not true (got %r)" % (asked_all_at_once,)))
-
-    one_per_turn = _resolve_one_question_per_turn(intake)
-    if one_per_turn is True:
-        failures.append((AF_SPLIT, "one_question_per_turn is true — 8 Questions were split across turns"))
+    # --- ONE-atomic-record commit gate (AF-SP-8Q-SPLIT) — RECORD LAYER ONLY ---
+    # This gate checks ONLY that the assembled intake ledger was committed as ONE
+    # atomic record. It says NOTHING about conversation pacing: the conversation
+    # is one question at a time (the REQUIRED behavior, enforced separately by
+    # intake_trace_check.py / AF-INTAKE-BATCH). one_question_per_turn is NOT
+    # checked here — it describes the conversation, not the record commit.
+    record_committed = _resolve_record_committed(intake)
+    if record_committed is not True:
+        failures.append((AF_SPLIT,
+                         "the assembled intake RECORD was not committed as ONE atomic ledger write "
+                         "(record_committed_atomically is not true, got %r) — record-only gate; "
+                         "the conversation stays one question per turn" % (record_committed,)))
 
     mode = _resolve_mode(intake)
     if mode is not None and mode != "one_block":
-        failures.append((AF_SPLIT, "delivery.mode is %r, expected 'one_block'" % (mode,)))
+        failures.append((AF_SPLIT,
+                         "delivery.mode is %r, expected 'one_block' (the assembled RECORD's "
+                         "atomic-commit mode, NOT a batch of questions)" % (mode,)))
 
     fsq = intake.get("frame_selection_question")
     if isinstance(fsq, dict) and "asked_in_same_block" in fsq and fsq.get("asked_in_same_block") is not True:
-        failures.append((AF_SPLIT, "frame_selection_question.asked_in_same_block is not true"))
+        failures.append((AF_SPLIT, "frame_selection_question.asked_in_same_block is not true "
+                                   "(the frame answer must ride the same atomic record commit)"))
 
-    msg_ids = intake.get("question_block_msg_id")
-    if msg_ids is not None:
-        if isinstance(msg_ids, (list, tuple)):
-            real = [m for m in msg_ids if _nonempty_str(m)]
+    commit_ids = _resolve_commit_ids(intake)
+    if commit_ids is not None:
+        if isinstance(commit_ids, (list, tuple)):
+            real = [m for m in commit_ids if _nonempty_str(m)]
             if len(real) != 1:
                 failures.append(
-                    (AF_SPLIT, "question_block_msg_id must reference exactly ONE block, found %d" % len(real))
+                    (AF_SPLIT, "record_commit_ids must reference exactly ONE atomic record commit, found %d" % len(real))
                 )
-        elif not _nonempty_str(msg_ids):
-            failures.append((AF_SPLIT, "question_block_msg_id present but empty"))
+        elif not _nonempty_str(commit_ids):
+            failures.append((AF_SPLIT, "record_commit_ids present but empty"))
 
     # --- 8 Questions completeness (AF-SP-8Q-MISSING) ---
     missing = _missing_questions(intake)
@@ -266,10 +318,10 @@ def _emit(source, failures, as_json):
         }
         print(json.dumps(payload, indent=2))
         return
-    print("== Signature Presentation :: 8-Questions-in-ONE-block intake gate ==")
+    print("== Signature Presentation :: 8-Questions atomic-RECORD intake gate ==")
     print("source: %s" % source)
     if not failures:
-        print("RESULT: PASS — all 8 Questions + frame question delivered as ONE block; frame set.")
+        print("RESULT: PASS — all 8 Questions + frame question present, committed as ONE atomic record; frame set.")
         return
     print("RESULT: FAIL (fail-closed) — %d violation(s):" % len(failures))
     for code, msg in failures:
@@ -280,9 +332,11 @@ def _emit(source, failures, as_json):
 def _valid_runtime_fixture():
     return {
         "deck_type": DECK_TYPE,
+        "record_committed_atomically": True,
+        "record_commit_ids": "rec_0001",
+        # deprecated aliases, still emitted for one release (fleet-ordering safety)
         "asked_all_at_once": True,
-        "one_question_per_turn": False,
-        "question_block_msg_id": "blk_0001",
+        "question_block_msg_id": "rec_0001",
         "answers": {
             "q1": "The Sovereign Method",
             "q2": "no",
@@ -301,7 +355,7 @@ def _valid_runtime_fixture():
 def _valid_spec_fixture():
     return {
         "deck_type": DECK_TYPE,
-        "delivery": {"mode": "one_block", "asked_all_at_once": True, "one_question_per_turn": False},
+        "delivery": {"mode": "one_block", "record_committed_atomically": True, "asked_all_at_once": True},
         "questions": [{"id": q, "order": i + 1, "prompt": "Question %s prompt" % q} for i, q in enumerate(REQUIRED_QUESTIONS)],
         "frame_selection_question": {
             "asked_in_same_block": True,
@@ -341,17 +395,26 @@ def self_test():
 
     print("== self-test: VIOLATION fixtures (must FAIL / exit nonzero) ==")
 
-    # 1) split block — asked_all_at_once false
-    f = _valid_runtime_fixture(); f["asked_all_at_once"] = False
-    check_fail("split-not-oneshot", f, AF_SPLIT)
+    # 1) record not committed atomically — record_committed_atomically false
+    f = _valid_runtime_fixture(); f["record_committed_atomically"] = False
+    check_fail("record-not-atomic", f, AF_SPLIT)
 
-    # 2) split block — one_question_per_turn true
+    # 1b) the DEPRECATED alias alone still gates (old-record backward compat):
+    #     a record carrying only asked_all_at_once=False (no canonical field)
+    #     must still fail — this is exactly what a stale box's record looks like.
+    f = _valid_runtime_fixture()
+    del f["record_committed_atomically"]; f["asked_all_at_once"] = False
+    check_fail("record-alias-false", f, AF_SPLIT)
+
+    # 2) one_question_per_turn is NO LONGER a violation — it describes the
+    #    (correct) conversation, not the record. A record that carries it True
+    #    but is committed atomically must PASS: the record-only gate ignores it.
     f = _valid_runtime_fixture(); f["one_question_per_turn"] = True
-    check_fail("split-per-turn", f, AF_SPLIT)
+    check_pass("per-turn-ignored", f)
 
-    # 3) split block — more than one message block id
-    f = _valid_runtime_fixture(); f["question_block_msg_id"] = ["blk_a", "blk_b"]
-    check_fail("split-multi-block", f, AF_SPLIT)
+    # 3) split record — more than one atomic record-commit id
+    f = _valid_runtime_fixture(); f["record_commit_ids"] = ["rec_a", "rec_b"]
+    check_fail("split-multi-commit", f, AF_SPLIT)
 
     # 4) missing q7 (the OFFER question)
     f = _valid_runtime_fixture(); del f["answers"]["q7"]

@@ -115,6 +115,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - ROLE-12 Slide Submitter (receives failCode events from here)
 - The ZHC Bugs Department: bugs/bug-ticket-schema.json (the universal Bug Ticket intake; every defect is filed here first), the Bug Intake Clerk and Triage and Dedup Analyst (numbering, severity, dedup, routing), and the Bug Librarian (teaching links and knowledge-base capture)
 - Provider documentation and release channels (via research): Kie.ai docs, Ollama Cloud catalog, OpenRouter model list, GitHub release notes
+- `51-signature-presentation/scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner (SOP 9.13; advisory, NON-gating). Reads `<RUN_DIR>/working/interview/intake_transcript.json`.
 - git (every SOP patch is a commit with a changelog message)
 
 ---
@@ -246,6 +247,18 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:** 1. Identify every file changed by this heal (from the incident ledger). 2. Run the repo's documented embedding/index refresh for exactly those files (discover the existing pipeline; never build a second one). 3. Verify: run one retrieval query that previously surfaced the old content and confirm the NEW content returns. 4. Record refresh time and verification result in the ledger. 5. If no embedding pipeline exists for this deployment, note "n/a, no retrieval layer" once in the ledger and skip in future heals for this client.
 
 **Outputs:** refreshed index, verified retrieval, ledger entry. **Hand to:** SOP 9.7 (the heal may now close). **Failure mode:** retrieval still returns stale content after refresh: treat as its own P1 bug ticket against the embedding pipeline.
+
+---
+
+### SOP 9.13 -- Signature Intake Conversation-Trace Scan (AF-INTAKE-BATCH, advisory / NON-gating)
+
+**When to run:** On a signature-presentation intake incident, a batch-question complaint, or as a regression check after any change to the Skill-51 intake path (`deck-intake-driver.py --signature`, `sp-8-questions.json`, or the front-door role prompts). This detects a CONVERSATION-layer regression — the front-door agent dumping the 8 Questions as a batch instead of asking them one at a time (Trevor's ruling), or opening with no quick-vs-in-depth choice.
+
+**Why this SOP exists:** AF-INTAKE-BATCH is a CONVERSATION-quality autofail, not a build gate. It has a real deterministic scanner (`51-signature-presentation/scripts/intake_trace_check.py`) but no runtime consumer on its own — this SOP is that consumer for detection/regression, kept strictly advisory so it can never block a client's deck.
+
+**Steps:** 1. Obtain the intake transcript at `<RUN_DIR>/working/interview/intake_transcript.json` — the driver's turn-gate writes it mechanically (assistant question / owner answer per turn); if the interview was run free-form, export the conversation's assistant/owner turns to that same path as a JSON list of `{"role","text"}`. 2. Run `python3 51-signature-presentation/scripts/intake_trace_check.py <RUN_DIR>/working/interview/intake_transcript.json --json`. 3. On exit 0, record CLEAN. On exit 2 (AF-INTAKE-BATCH), file a Bug Ticket / operator advisory naming the offending turn and reason (BATCH-IN-TURN / BATCH-BY-QMARKS / NO-CHOICE-OPENER / BANNED-PHRASE); if the root cause is a role prompt or driver defect, route to SOP 9.4 (SOP surgery) and add a regression entry (SOP 9.8). 4. This scan is ADVISORY: it NEVER inspects, runs inside, or gates `build_deck.py` / `run_signature_deck.py`, and it never blocks delivery. Do NOT wire it into the standalone `qc-completeness.sh` (that path leaks to the client channel).
+
+**Outputs:** CLEAN record or an operator-filed AF-INTAKE-BATCH advisory + (if systemic) an SOP patch and regression entry. **Hand to:** SOP 9.7 (report). **Failure mode:** transcript absent and unexportable: note "no intake transcript available" in the ledger and skip — never fabricate a transcript, and never fail a build on its absence.
 
 ---
 
