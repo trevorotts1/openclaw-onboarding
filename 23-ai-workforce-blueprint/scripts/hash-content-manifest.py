@@ -311,6 +311,30 @@ def render_sha_of_text(text, role_name, dept_name, is_ceo):
     return f"sha256:{digest}", rendered
 
 
+# ─── EMBEDDED SOP LINKAGE (sop_count / sop_min) ───────────────────────────────
+# C9 fix (role-library index misreported SOP linkage): roles[].sop_count and
+# .sop_min were hardcoded to 0 at role-registration time
+# (register-library-additions.py._derive_role_meta) and NEVER revisited, so
+# the index silently claimed zero SOP linkage for every role even though most
+# roles embed real "### SOP 9.x" Section-9 content in their own how-to.md
+# (393/433 roles at the time of this fix). This is a raw STRUCTURAL count of a
+# role's OWN canonical text for LIBRARY-INDEX reporting — deliberately NOT the
+# substantive DMAIC/field-shape gate qc-completeness.sh applies to a LIVE
+# INSTANTIATED client workspace (different data model: this hashes the
+# dept-shared role-library template, not a client's rendered/numbered
+# workspace sops/ folder). EMBEDDED_SOP_FLOOR mirrors qc-completeness.sh's
+# own EMBEDDED_SOP_FLOOR constant (=1); test-library-register.sh's
+# consistency fixture cross-checks the two never drift apart.
+_EMBEDDED_SOP_HEADING_RE = re.compile(r"^###\s*SOP\b", re.MULTILINE)
+EMBEDDED_SOP_FLOOR = 1
+
+
+def count_embedded_sop_headings(text):
+    """Count '### SOP ...' headings in a role's canonical .md text — the
+    library-index-level embedded SOP linkage count (see module note above)."""
+    return len(_EMBEDDED_SOP_HEADING_RE.findall(text))
+
+
 def neutral_config_sha():
     """Stable sha of the NEUTRAL_CONFIG + NEUTRAL_DATE (for the manifest header)."""
     payload = json.dumps(
@@ -432,6 +456,7 @@ def stamp_manifest(data, do_render=True):
         "roles_hashed": 0, "roles_missing": [], "roles_bumped": 0,
         "sops_hashed": 0, "depts_hashed": 0, "personas_hashed": 0,
         "render_unavailable": 0, "token_leaks": [],
+        "roles_below_sop_floor": 0,
     }
 
     # ── roles[] ───────────────────────────────────────────────────────────────
@@ -477,6 +502,14 @@ def stamp_manifest(data, do_render=True):
         role["render_sha"] = rsha
         role["content_version"] = new_ver
         role["content_hashed_at"] = now_iso
+        # C9 fix: refresh SOP linkage from the SAME text already read for the
+        # content hash, for EVERY role (new or existing) on every stamp pass —
+        # this self-heals the historical hardcoded-0 ghost values and keeps
+        # sop_count/sop_min from drifting silently as role content changes.
+        role["sop_count"] = count_embedded_sop_headings(text)
+        role["sop_min"] = EMBEDDED_SOP_FLOOR
+        if role["sop_count"] < role["sop_min"]:
+            stats["roles_below_sop_floor"] += 1
         sha_by_slug[key] = new_sha
         sha_by_slug.setdefault(slug, new_sha)  # bare-slug alias for dept rollup
         stats["roles_hashed"] += 1
@@ -727,6 +760,7 @@ def main(argv=None):
     print(f"  dept-level sops:     {stats['sops_hashed']}")
     print(f"  personas hashed:     {stats['personas_hashed']}")
     print(f"  content_versions bumped (sha changed): {stats['roles_bumped']}")
+    print(f"  roles below embedded-SOP floor ({EMBEDDED_SOP_FLOOR}): {stats['roles_below_sop_floor']}")
     if stats["roles_missing"]:
         print(f"  WARNING: {len(stats['roles_missing'])} role path(s) not found on disk:")
         for m in stats["roles_missing"][:10]:

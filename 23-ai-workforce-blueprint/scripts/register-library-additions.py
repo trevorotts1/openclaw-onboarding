@@ -112,6 +112,35 @@ def _try_infer_class(slug, dept, role_type):
         return "CONVERSATIONAL", False
 
 
+# ─── SOP LINKAGE (C9 fix) ─────────────────────────────────────────────────────
+# Single source of truth for "how many embedded SOPs does this role's text
+# carry" lives in hash-content-manifest.py (the LAST stamper in the chain,
+# already reading every role's canonical text) — imported here, never
+# re-implemented, so the generator/--check backstop and the restamp chain can
+# never disagree on the count. Best-effort: a missing/broken sibling script
+# means "skip the sop-linkage stamp/check", never "silently report 0" (that
+# silent-0 was the original C9 bug).
+_SOP_COUNTER_FN = None
+_SOP_COUNTER_FLOOR = None
+_SOP_COUNTER_LOADED = False
+
+
+def _load_sop_counter():
+    global _SOP_COUNTER_FN, _SOP_COUNTER_FLOOR, _SOP_COUNTER_LOADED
+    if _SOP_COUNTER_LOADED:
+        return _SOP_COUNTER_FN, _SOP_COUNTER_FLOOR
+    _SOP_COUNTER_LOADED = True
+    hcm_path = _SCRIPT_DIR / "hash-content-manifest.py"
+    if hcm_path.is_file():
+        try:
+            hcm = _load_module("_hcm_for_sop_count", hcm_path)
+            _SOP_COUNTER_FN = hcm.count_embedded_sop_headings
+            _SOP_COUNTER_FLOOR = hcm.EMBEDDED_SOP_FLOOR
+        except Exception:
+            pass
+    return _SOP_COUNTER_FN, _SOP_COUNTER_FLOOR
+
+
 # ─── DISCOVERY ────────────────────────────────────────────────────────────────
 def _is_dept_dir(p: Path) -> bool:
     return p.is_dir() and p.name not in _NON_DEPT_DIRS and not p.name.startswith("_")
@@ -243,14 +272,20 @@ def _derive_role_meta(info):
             rt = "specialist"
     word_count = len(text.split()) if text else 0
     cap_class, vision = _try_infer_class(info["slug"], info["dept"], rt)
+    # C9 fix: sop_count/sop_min used to be hardcoded 0/0 regardless of the
+    # role's actual embedded SOP content — compute real values from the SAME
+    # text already read above. Falls back to 0/0 ONLY if the shared counter
+    # can't be loaded at all (hash-content-manifest.py missing/broken); the
+    # next restamp (which chains it unconditionally) fills in the real value.
+    count_fn, floor = _load_sop_counter()
     return {
         "slug": info["slug"],
         "dept": info["dept"],
         "title": title,
         "role_type": rt,
         "word_count": word_count,
-        "sop_count": 0,
-        "sop_min": 0,
+        "sop_count": count_fn(text) if count_fn else 0,
+        "sop_min": floor if floor is not None else 0,
         "path": info["path"],
         "capability_class": cap_class,
         "vision_flag": vision,
@@ -266,11 +301,13 @@ def reconcile(data, disk_roles):
     report = {
         "added_roles": [], "added_depts": [], "fixed_paths": [],
         "missing_files": [], "duplicate_residue": [], "triple_hyphen_orphans": [],
+        "sop_linkage_refreshed": [],
         "recount": {},
     }
     roles = data.setdefault("roles", [])
     depts = data.setdefault("departments", {})
     by_key = {(r.get("dept"), r.get("slug")): r for r in roles}
+    count_fn, sop_floor = _load_sop_counter()
 
     # 1. ADD any disk role missing from roles[]. Skip triple-hyphen orphans —
     #    they are never canonical; the gate flags them for removal instead.
@@ -291,6 +328,26 @@ def reconcile(data, disk_roles):
             if stored != info["path"] and not (_SKILL_DIR / stored).is_file():
                 existing["path"] = info["path"]
                 report["fixed_paths"].append(f"{stored} -> {info['path']}")
+            # C9 fix: refresh sop_count/sop_min for EXISTING entries too, not
+            # just brand-new ones — this is what self-heals the historical
+            # hardcoded-0 ghost values already sitting in the index for every
+            # previously-registered role (_derive_role_meta only runs once,
+            # at first registration, so without this an existing role's
+            # sop_count would never be revisited even as its content grows
+            # real embedded SOP sections).
+            if count_fn is not None:
+                try:
+                    fresh_text = info["abspath"].read_text(encoding="utf-8")
+                except OSError:
+                    fresh_text = ""
+                fresh_count = count_fn(fresh_text)
+                if existing.get("sop_count") != fresh_count or existing.get("sop_min") != sop_floor:
+                    report["sop_linkage_refreshed"].append(
+                        f"{info['dept']}/{info['slug']}: sop_count "
+                        f"{existing.get('sop_count')}->{fresh_count}, "
+                        f"sop_min {existing.get('sop_min')}->{sop_floor}")
+                existing["sop_count"] = fresh_count
+                existing["sop_min"] = sop_floor
 
     # 2. Detect duplicate-residue: a flat `<dept>/<slug>.md` sitting beside a
     #    canonical folder-form role of the same (dept, slug).
@@ -445,6 +502,36 @@ def check(data, disk_roles):
         if rel and not (_SKILL_DIR / rel).is_file():
             problems.append(f"DEAD PERSONA ENTRY: personas[] {rel} (file missing)")
 
+    # (g) C9 fix: reported SOP linkage matches disk reality — every registered
+    # role's stored sop_count/sop_min must equal a fresh recount of its OWN
+    # canonical text (the same count hash-content-manifest.py stamps). Catches
+    # the exact C9 symptom (hardcoded/stale sop_count=0 on a role that embeds
+    # real "### SOP" sections) as a hard --check failure, not a silent ghost.
+    count_fn, sop_floor = _load_sop_counter()
+    if count_fn is not None:
+        for key, info in sorted(disk_roles.items()):
+            r = by_key.get(key)
+            if r is None:
+                continue  # already reported as UNREGISTERED above
+            try:
+                role_text = info["abspath"].read_text(encoding="utf-8")
+            except OSError:
+                role_text = ""
+            fresh_count = count_fn(role_text)
+            stored_count = r.get("sop_count")
+            stored_min = r.get("sop_min")
+            if stored_count != fresh_count:
+                problems.append(
+                    f"SOP LINKAGE DRIFT: {r.get('dept')}/{r.get('slug')} "
+                    f"sop_count={stored_count} but disk has {fresh_count} "
+                    f"embedded '### SOP' heading(s) "
+                    f"(run register-library-additions.py --apply)")
+            if stored_min != sop_floor:
+                problems.append(
+                    f"SOP LINKAGE DRIFT: {r.get('dept')}/{r.get('slug')} "
+                    f"sop_min={stored_min}, expected {sop_floor} "
+                    f"(run register-library-additions.py --apply)")
+
     return (len(problems) == 0), problems
 
 
@@ -565,6 +652,12 @@ def main(argv=None):
         print(f"  healed stale paths:     {len(report['fixed_paths'])}")
         for p in report["fixed_paths"][:10]:
             print(f"      ~ {p}")
+    if report["sop_linkage_refreshed"]:
+        print(f"  sop_count/sop_min refreshed: {len(report['sop_linkage_refreshed'])}")
+        for p in report["sop_linkage_refreshed"][:10]:
+            print(f"      ~ {p}")
+        if len(report["sop_linkage_refreshed"]) > 10:
+            print(f"      … and {len(report['sop_linkage_refreshed']) - 10} more")
     print(f"  total_roles:            {report['recount']['total_roles']}")
     print(f"  total_departments:      {report['recount']['total_departments']}")
     if report["duplicate_residue"]:
