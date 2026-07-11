@@ -1,3 +1,12 @@
+## [v19.42.0]  -  2026-07-11  -  fix(51/23, E5): enforce the signature-presentation turn-gated intake — the optional signature path is now REQUIRED (Skills 51, 23)
+
+Merges `fable-fix/onb51-e5` off fresh origin/main (v19.41.0) as the serial onboarding writer. Wave-5 finding E5; independent adversarial judge **9.2**, re-proven here from raw output. Scoped to `23-ai-workforce-blueprint` (deck-intake-driver + the presentations role-library entry/SOP) + one unit test. No client names, no secret values, no Anthropic runtime identifiers in the diff.
+
+- **E5 — the turn-gated signature path in the presentation intake was OPTIONAL when it should be ENFORCED.** The signature-presentation intake could be satisfied without walking the turn-gated path, so a deck could be produced without the eight-questions / one-block / frame-selection discipline that E2/E3/E4 already enforce elsewhere. It is now REQUIRED, making the intake consistent with the rest of the gated family.
+- **Role-library restamp is legitimate, not churn.** The `_index.json` diff is dominated by 619 `content_hashed_at` re-stamps following the edits to `signature-presentation-architect.md` and `SOP-SIGPRES-01`. Verified by the content-manifest gate rather than assumed.
+- **Gates green (raw, this QC).** `tests/unit/presentation-intake-conversation.test.sh` -> **92 passed, 0 failed** (clean-main baseline was 90 passed — the 2 new assertions are the E5 enforcement). `hash-content-manifest.py --check` -> **PASS** (433 roles + 132 sops + 19 personas all carry content_sha/content_version; every stored sha matches the live file; no token leaks). `qc-assert-repo-consistency.py` -> **PASS, 10 dimensions OK, 0 DRIFT**. `deck-intake-driver.py` compiles.
+- **Version roll** — repo rolled v19.41.0 -> v19.42.0 via `scripts/bump-version.sh` (all 11 markers in lockstep). Annotated tag `v19.42.0` cut on the release commit.
+
 ## [v19.41.0]  -  2026-07-11  -  feat(06/skill6): cross-origin-iframe drag primitive + F4 remove-control TIERED acquisition + icon-pill rebuild (Skill 6)
 
 Merges `fix/skill6-ghl-form-iframe-drag` (13 commits) off fresh origin/main (v19.40.0) as the serial onboarding writer. Judge 9.0. Scoped to `06-ghl-install-pages`. No client names, no secret values, no Anthropic runtime identifiers in the diff.
