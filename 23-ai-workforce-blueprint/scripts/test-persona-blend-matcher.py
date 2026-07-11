@@ -38,8 +38,17 @@ Locks:
   T11 MULTI-AUDIENCE (asked) — with several unconfirmed ICP audiences no voice is
       pre-committed (neutral directive, write still gated, ASK lists all); a single
       onboarding ICP is still pre-proposed for confirmation.
+  T12 D8 — OPENCLAW_COMPANY_CONFIG ENV WIRING — detect_platform.get_openclaw_paths()
+      honors the OPENCLAW_COMPANY_CONFIG override end-to-end, through the REAL
+      (un-mocked) load_company_config() and resolve_audience(), so a client's
+      onboarding ICP (company.ideal_customer) actually reaches the matcher; unset,
+      it falls back to the company_dir-derived default with no stale leak.
 
 Each check pairs with a NO-WEAKENING probe proving it FAILS on injected drift.
+T12 is the one exception to the "everything mocked" header above — it loads a
+FRESH, un-mocked persona-selector-v2.py module (never pb._selector()'s cache,
+which T1-T11 monkeypatch load_company_config on) so the real detect_platform.py
+env-var wiring is what's actually exercised, not a stand-in for it.
 
 EXIT: 0 = all passed (incl. every NO-WEAKENING case); 1 otherwise.
 Usage: python3 test-persona-blend-matcher.py [REPO_ROOT]
@@ -47,7 +56,9 @@ Usage: python3 test-persona-blend-matcher.py [REPO_ROOT]
 import importlib.util
 import json
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
@@ -555,6 +566,92 @@ if (b11s["resolved_audience"]["source"] == "onboarding_icp"
 else:
     bad(f"single-ICP suppression regression: {b11s['voice']['audience_persona']} "
         f"source={b11s['resolved_audience']['source']}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section("T12  D8 — OPENCLAW_COMPANY_CONFIG WIRES ideal_customer TO THE MATCHER")
+
+
+def _fresh_selector_module():
+    """Load a PRISTINE persona-selector-v2.py copy, independent of pb._selector()'s
+    module-level cache (T1-T11 monkeypatch load_company_config on that cached
+    instance). This is what makes T12 a REAL end-to-end proof of the D8 fix rather
+    than another mock of it: get_openclaw_paths() and load_company_config() below
+    are the actual shipped functions, unmodified."""
+    return _load(SCRIPTS / "persona-selector-v2.py", "persona_selector_v2_d8_fresh")
+
+
+def _with_env(**overrides):
+    """Context-manager-free save/restore helper for os.environ (used twice below)."""
+    saved = {k: os.environ.get(k) for k in overrides}
+    for k, v in overrides.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    return saved
+
+
+def _restore_env(saved):
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
+_icp_dir = Path(tempfile.mkdtemp(prefix="d8-icp-"))
+_icp_fixture = _icp_dir / "company-config.json"
+_icp_fixture.write_text(json.dumps({
+    "schema_version": "2.0",
+    "company": {"ideal_customer": "D8 regression-lock ICP"},
+}))
+
+try:
+    _saved = _with_env(OPENCLAW_PLATFORM="mac", OPENCLAW_COMPANY_CONFIG=str(_icp_fixture))
+    try:
+        sel_fresh = _fresh_selector_module()
+        d8_paths = sel_fresh.get_openclaw_paths()
+        if str(d8_paths.get("company_config")) == str(_icp_fixture):
+            ok("get_openclaw_paths() honors the OPENCLAW_COMPANY_CONFIG override")
+        else:
+            bad(f"company_config not overridden: {d8_paths.get('company_config')}")
+
+        d8_cfg = sel_fresh.load_company_config(d8_paths)
+        d8_icp = (d8_cfg.get("company") or {}).get("ideal_customer", "")
+        if d8_icp == "D8 regression-lock ICP":
+            ok("load_company_config() (REAL, un-mocked) surfaces ideal_customer from OPENCLAW_COMPANY_CONFIG")
+        else:
+            bad(f"ideal_customer did not reach load_company_config: {d8_cfg}")
+
+        d8_audience = pb.resolve_audience({}, d8_cfg)
+        if (d8_audience.get("label") == "D8 regression-lock ICP"
+                and d8_audience.get("source") == "onboarding_icp"
+                and d8_audience.get("confirm_required") is True):
+            ok("resolve_audience() resolves the OPENCLAW_COMPANY_CONFIG-wired ICP end-to-end")
+        else:
+            bad(f"resolve_audience() did not resolve the env-wired ICP: {d8_audience}")
+    finally:
+        _restore_env(_saved)
+
+    # NO-WEAKENING: with OPENCLAW_COMPANY_CONFIG unset, the override must NOT leak —
+    # company_config must fall back to the company_dir-derived default, never keep
+    # pointing at the fixture from the block above (proves the override is read
+    # fresh every call, not cached/sticky across get_openclaw_paths() invocations).
+    _saved2 = _with_env(OPENCLAW_PLATFORM="mac", OPENCLAW_COMPANY_CONFIG=None)
+    try:
+        sel_fresh2 = _fresh_selector_module()
+        d8_paths2 = sel_fresh2.get_openclaw_paths()
+        if str(d8_paths2.get("company_config")) != str(_icp_fixture):
+            ok("NO-WEAKENING: company_config falls back to the derived path when "
+               "OPENCLAW_COMPANY_CONFIG is unset (no stale leak from a prior override)")
+        else:
+            bad(f"company_config still points at the D8 fixture with the override "
+                f"unset: {d8_paths2.get('company_config')}")
+    finally:
+        _restore_env(_saved2)
+finally:
+    shutil.rmtree(_icp_dir, ignore_errors=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

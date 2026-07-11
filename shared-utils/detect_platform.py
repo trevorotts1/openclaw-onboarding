@@ -42,6 +42,15 @@ def get_openclaw_paths() -> dict:
         VPS:  /data/openclaw-master-files/zero-human-company/<slug>/
     Nothing WRITES outside this root. Legacy roots are READ-ONLY (migration only).
 
+    OPENCLAW_COMPANY_CONFIG env var overrides the resolved company_config path
+    before any company_dir derivation (D8: same override pattern as
+    PERSONA_CATEGORIES_PATH / MASTER_FILES_DIR). This is the ONLY way ICP/
+    company keys (e.g. company.ideal_customer, read by
+    persona_blend.resolve_audience()) reach the persona matcher when no
+    on-disk company_dir has been built yet, or the config under test lives
+    outside the canonical company_root (CI, sandboxed persona-blend tests,
+    an operator pointing at a specific client's company-config.json).
+
     Returns a dict with these keys:
         root, platform, workspace, skills, secrets,
         master_files, company_root, company_dir,
@@ -154,6 +163,21 @@ def get_openclaw_paths() -> dict:
     company_dir = resolve_active_company_dir(company_root, extra_roots=legacy_company_roots)
     persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
 
+    # --- OPENCLAW_COMPANY_CONFIG override (D8) ---
+    # Points company_config directly at a company-config.json file, bypassing
+    # company_dir derivation. Read here (not left to callers) so every
+    # consumer of get_openclaw_paths() — persona-selector-v2.py's
+    # load_company_config(), persona_blend.py's resolve_audience(), Skill 23
+    # scripts, and CI/tests — sees the SAME company_config path from a single
+    # authority. Unset or blank: falls through to the company_dir-derived
+    # path below, exactly as before this override existed.
+    _env_company_config = os.environ.get("OPENCLAW_COMPANY_CONFIG", "").strip()
+    company_config = (
+        Path(_env_company_config) if _env_company_config
+        else (company_dir / "company-config.json") if company_dir
+        else (workspace / "company-config.json")
+    )
+
     # PRD 1.3: resolve dashboard DB through the single shared resolver.
     try:
         from resolve_db import find_dashboard_db
@@ -177,9 +201,7 @@ def get_openclaw_paths() -> dict:
         "departments_json": (
             company_dir / "departments.json"
         ) if company_dir else (workspace / "departments.json"),
-        "company_config": (
-            company_dir / "company-config.json"
-        ) if company_dir else (workspace / "company-config.json"),
+        "company_config": company_config,
         "org_chart": (
             company_dir / "ORG-CHART.md"
         ) if company_dir else (workspace / "ORG-CHART.md"),
@@ -375,5 +397,6 @@ if __name__ == "__main__":
     print(f"Master files:  {paths['master_files']}")
     print(f"Company root:  {paths['company_root']}")
     print(f"Company dir:   {paths['company_dir']}")
+    print(f"Company cfg:   {paths['company_config']}")
     print(f"Build state:   {paths['build_state']}")
     print(f"Dashboard DB:  {paths['dashboard_db']}")
