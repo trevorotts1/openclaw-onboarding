@@ -1,0 +1,75 @@
+name: runRetries ceiling guard
+
+# FLEET-FIX Area 3 / C.2–C.4 (AUD-24) — keeps the `agents.defaults.runRetries`
+# ceiling wiring honest.
+#
+# C.1 VERDICT (recorded): runRetries counts OUTER-RUN-LOOP RETRY ITERATIONS, not
+# tool cycles. ceiling = clamp(base + perProfile * profileCandidateCount, min, max),
+# resolved by resolveMaxRunRetryIterations() with 24 / 8 / 32 / 160.
+#
+# This guard fails the build if:
+#   - install.sh stops wiring runRetries at all (the original 0-hit defect), or
+#   - the seeder stops honouring SET-IF-ABSENT (an operator value gets clobbered), or
+#   - a box on a runtime WITHOUT the key stops reporting CEILING_NOT_SUPPORTED@<version>
+#     and silently writes the key anyway — which the runtime's STRICT schema rejects,
+#     taking the box's WHOLE config down (same failure class as the v11.3.1
+#     agents.defaults.tools.exec defect), or
+#   - the .refine(max >= min) guard regresses, which is how a naive set-if-absent
+#     fill turns a VALID operator config INVALID.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface in the run steps.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "scripts/wire-run-retries.sh"
+      - "tests/unit/run-retries-ceiling-wiring.test.sh"
+      - ".github/workflows/run-retries-ceiling-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "scripts/wire-run-retries.sh"
+      - "tests/unit/run-retries-ceiling-wiring.test.sh"
+      - ".github/workflows/run-retries-ceiling-guard.yml"
+
+jobs:
+  run-retries-ceiling-guard:
+    name: runRetries wired, set-if-absent, CEILING_NOT_SUPPORTED on old runtimes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "install.sh must actually wire runRetries (regression guard: was 0 hits)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          hits="$(grep -c 'runRetries' install.sh || true)"
+          echo "grep -c runRetries install.sh = $hits"
+          if [ "${hits:-0}" -eq 0 ]; then
+            echo "FAIL: install.sh no longer wires agents.defaults.runRetries (AUD-24 regression)."
+            exit 1
+          fi
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          bash -n scripts/wire-run-retries.sh
+
+      - name: runRetries ceiling wiring self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/run-retries-ceiling-wiring.test.sh
+          echo "run-retries-ceiling-guard: PASS — wired, set-if-absent honoured, CEILING_NOT_SUPPORTED reported, strict/refine hazards guarded."
