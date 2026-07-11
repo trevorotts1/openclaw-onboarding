@@ -1017,7 +1017,7 @@ main() {
     # install-ceo-intent-gate.sh + verify-routing.sh are persisted here (v16.2.19)
     # so the intent-gate wire + post-stamp verification below can resolve them after
     # the temp-clone cleanup, same as apply-routing-fix.sh / apply-fleet-standards.sh.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh; do
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh activate-loop-protection.sh loop-protection-canary.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
@@ -2454,6 +2454,26 @@ PYEOF
     bash "$_ENSURE_HB" 2>&1 || true
   else
     echo "  ℹ ensure-heartbeat-defaults.sh not in bundle — skipping"
+  fi
+
+  # ----------------------------------------------------------
+  # Loop / furnace protection activation (Skill 60 EWS + Skill 61 Loop
+  # Protection). Post-sync hook — the SAME shared helper install.sh calls, so the
+  # roll/update path activates identically (no copy-paste drift). Client-box
+  # activation is GATED HELD by default (61-loop-protection-system/config/
+  # rollout.json; env OPENCLAW_LOOP_PROTECTION_ROLLOUT overrides); it installs the
+  # 60-then-61 watchdogs (ews-tick + loop-tick crons + ledgers) in DRY_RUN
+  # observe-only ONLY when the fleet rollout gate is enabled, and NEVER arms.
+  # See GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2 §2.3 item 2. Best-effort.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Loop/furnace protection (Skill 60 + 61): activation gate (HELD by default; DRY_RUN, never arms)..."
+  _ACT_LOOP="$_PERSIST_SCRIPTS/activate-loop-protection.sh"
+  [ -f "$_ACT_LOOP" ] || _ACT_LOOP="$ONBOARDING_DIR/scripts/activate-loop-protection.sh"
+  if [ -f "$_ACT_LOOP" ]; then
+    bash "$_ACT_LOOP" --role client --skills-dir "$SKILLS_DIR" 2>&1 | tail -6 || true
+  else
+    echo "  ℹ activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)"
   fi
 
   # ----------------------------------------------------------

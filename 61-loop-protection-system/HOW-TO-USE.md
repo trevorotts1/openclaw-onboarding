@@ -14,6 +14,19 @@ reversible fixes only) or hands you a one-tap proposal - never bothering the cli
 
 ## First run on a box (canary first, then hold)
 
+The whole canary — install Skill 60 + 61, verify, burn in, arm — is wrapped in ONE
+idempotent operator script (run it on YOUR box only):
+
+       bash scripts/loop-protection-canary.sh install     # 60 then 61, DRY_RUN, never arms
+       bash scripts/loop-protection-canary.sh verify      # both failable drill batteries
+       bash scripts/loop-protection-canary.sh status       # armed?, burn-in days, findings
+       # ...let it observe for 7 days...
+       bash scripts/loop-protection-canary.sh arm --yes    # arm Tier-1 (refused before 7 days)
+       bash scripts/loop-protection-canary.sh disarm       # one-line revert
+       bash scripts/loop-protection-canary.sh runbook      # the full runbook
+
+The manual, per-skill equivalent is unchanged:
+
 1. Install (idempotent, refuses root; on VPS wrap in `docker exec -u node`):
 
        bash 61-loop-protection-system/loop-companion.sh install --role operator --box <name>
@@ -32,6 +45,22 @@ reversible fixes only) or hands you a one-tap proposal - never bothering the cli
 
    Tier-2 (heartbeat re-tier, compaction correction, announce-cron conversion) stays
    a proposal everywhere until you stamp it per box. Tier-3 always asks.
+
+## Fleet rollout (AFTER the canary passes — operator-timed, ONE batch)
+
+Skill 60 + 61 are WIRED into onboarding (`install.sh`) and the updater
+(`update-skills.sh`) via the shared `scripts/activate-loop-protection.sh`, but
+client-box activation is **HELD by default** — the wiring reads a fleet gate:
+
+- `61-loop-protection-system/config/rollout.json` → `fleet_rollout_enabled` (default **false**), or
+- env `OPENCLAW_LOOP_PROTECTION_ROLLOUT=1` (per-box / staged override).
+
+While HELD, a fresh onboarding or an update runs the activation step and it prints
+a HELD note and no-ops (no cron, no ledger). When you flip the gate to `true` in
+ONE commit (the batch rollout), every onboarding + update thereafter installs the
+60→61 watchdogs in **DRY_RUN observe-only** (never armed). Arming stays a separate,
+per-box, post-burn-in operator action. Verify `RESCUE_RANGERS_WEBHOOK_URL` per box
+during the roll (the 30-min unacked-P1 escalation path depends on it).
 
 ## Day to day
 
