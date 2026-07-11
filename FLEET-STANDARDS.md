@@ -289,6 +289,36 @@ fresh session / `/new`, not a lower threshold). The fleet standard is therefore 
 conservatively and per-box when genuinely needed. No aggressive cap is written by
 the fleet-standards apply.
 
+### 12. Docker VPS update-persistence verification is mandatory
+
+**Before updating ANY client box, determine Mac mini vs Docker VPS first — the
+update procedure is fundamentally different, and an update that doesn't survive
+a container restart is a FALSE COMPLETION, not a done task.** Full rule, the
+four-step procedure, and the traps to avoid: **`AGENTS.md` N40**. Summary:
+
+- Detect Docker before doing anything else (`[ -d /data ]` → VPS-Docker).
+- The env file lives at `/docker/<project>/.env` on the HOST — separate from
+  the container's live (frozen-at-creation) environment, and separate from
+  whatever `openclaw.json` stores as a literal value.
+- `docker compose restart` does **not** reload `env_file`; use
+  `docker compose up -d --force-recreate`. `pm2 resurrect` re-injects the OLD
+  env from `dump.pm2` on every boot unless you `pm2 restart all --update-env
+  && pm2 save` as the `node` user (never root — a root-owned config write
+  freezes the gateway).
+- **Proof standard:** print the version, restart the container, print the
+  version again, confirm it went up. No restart-verified before/after pair =
+  the update is not done.
+
+Root cause: a 2026-07 incident where an agent reported a client Docker VPS
+"upgraded" when the updater never ran and nothing verified the change would
+survive a restart.
+
+**Enforced:** manual verification only today — no automated gate yet. See the
+enforcement-opportunity note under `AGENTS.md` N40 for a cheap addition that
+was identified but not built (flagged for a follow-up branch, not this one).
+Related precedent: `KNOWN-ISSUES.md` issue #5 (the WhatsApp env-file /
+`openclaw.json` two-layer persistence bug — same class of failure).
+
 ## Source of Truth
 
 Configuration verified against:
@@ -323,4 +353,4 @@ present in `AGENTS.md`).
 
 ---
 
-Last verified: 2026-07-09 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0; §8 on-demand MCP tool loading `tools.toolSearch.mode="directory"` added — fleet-wide schema-every-turn token-burn fix; §9 prompt-caching RESERVED slot [awaiting verified key], §10 core-bootstrap size guard [warn-only ~150K], §11 conservative compaction-cap note added — per-turn token-burn-control family)
+Last verified: 2026-07-11 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0; §8 on-demand MCP tool loading `tools.toolSearch.mode="directory"` added — fleet-wide schema-every-turn token-burn fix; §9 prompt-caching RESERVED slot [awaiting verified key], §10 core-bootstrap size guard [warn-only ~150K], §11 conservative compaction-cap note added — per-turn token-burn-control family; §12 Docker VPS update-persistence verification added — cross-ref `AGENTS.md` N40)

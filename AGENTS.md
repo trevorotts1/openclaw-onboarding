@@ -232,8 +232,59 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N38 | **AF-REPO-CONSISTENCY — a department / role / SOP / persona may NEVER ship inconsistent across the SIX sources of truth.** The Skill 23 blueprint carries six independent lists that must agree: **FLOOR** (`department-naming-map.json` `.mandatory` + the 6 universal-primary verticals — 6 not 7 since naming-map v2.6.1 reclassified `listings` to real-estate-only; floor = 28), **ROSTERS** (`suggested-roles/*.md`), **ROLE LIBRARY** (`templates/role-library/_index.json`), **SOP SOURCE** (role-library copy path / Skill-42 PA library), **PERSONA DOMAINS** (`build-workforce.py` `dept_to_domains` x2 + `create_role_workspaces.py` `DEPT_DOMAIN_HINTS`), and **NO ORPHANS**. Six departments once shipped UNBUILDABLE because nothing cross-checked floor vs rosters; missing persona-domain keys silently routed 11 floor depts to the generic `['leadership']` pool. For EVERY floor dept: its roster must parse, every roster role must resolve a library/SOP template, the dept must dry-run-instantiate cleanly, every role must have a real SOP source, and the dept must have a NON-fallback persona-domain mapping in ALL THREE persona maps. When you ADD or RENAME a department/role/SOP/persona you MUST update floor + roster + library + SOP source + persona maps together (see `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md`). **PERSONA-SET COUNT TRIAD (7th assertion):** beyond persona-DOMAIN mappings, adding a coaching/leadership persona must keep the COUNT triad in lockstep — `blueprint dirs (22-…/personas/*) == persona-categories.json keys == INDEX-MANIFEST.persona_count == INDEX-MANIFEST.canonical_persona_count` — else a persona ships matchable-but-vector-less (in the SET, no embeddings) or the manifest is bumped with no blueprint. The propagation checklist (blueprint + SET + incremental index + manifest + qmd + re-wire) is `23-ai-workforce-blueprint/ADDING-PERSONAS.md`. | This file (N38 section) + `FLEET-STANDARDS.md §7` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` + `23-ai-workforce-blueprint/ADDING-PERSONAS.md` + `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (single source of truth; uses the SAME `parse_roster`/`library_lookup`/`evaluate_floor`/`is_canonical_dept` functions the build uses, plus the `_persona_set_triad_failures` count assertion) | `scripts/qc-system-integrity.sh` CHECK X.12 (rc=5 hard-fail) + build-start preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted repo) + CI `.github/workflows/qc-static.yml` (runs the gate + `23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`) + CI `.github/workflows/persona-set-asset-consistency-guard.yml` (PR-boundary triad guard) |
 
 | N39 | **NATIVE SKILL INVOCATION — skills are native department capabilities, not user-only features.** A specialist reaches for the OWNING skill from a client's plain-language intent; the client never has to name it or type its slash command. The ONE binding is `23-ai-workforce-blueprint/skill-department-map.json` (skill↔dept↔specialist↔intent↔craft-SOP); the doctrine is `universal-sops/native-skill-invocation.md`; the runtime handoff is the Command-Center ContextPack `matched_skills` (Layer A). Skill selection is **dept-scoped** (only the task's department's skills are offered — a marketing task never sees the video pipeline) and **fail-closed on paid calls** (Rule-Zero USD announce + budget cap still apply). Durable knowledge lives in each owning role's `how-to.md` §8 "Skills You Operate" block (Layer B); the front-door reflex `SKILL_INTENT_ROUTING_REFLEX_V1` routes intent→owning department (Layer C, injected by `apply-fleet-standards.sh`, alongside the strict presentation REFLEX 0). Pointer, not paste — full detail lives in the SOP + map, never a playbook dump here. | `<!-- NATIVE_SKILL_INVOCATION_V1 -->` marker (below) + `23-ai-workforce-blueprint/skill-department-map.json` + `universal-sops/native-skill-invocation.md` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` Scenario E | **MAP-CONSISTENCY** dimension of `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (structure + Layer-B blocks + Layer-C reflex coverage) + CONTENT-HASH gate (role skill-blocks re-stamped) + `scripts/check-skill-department-map.py` (standalone orphan check) + CI `.github/workflows/qc-static.yml` |
+| N40 | **DOCKER VPS UPDATE PERSISTENCE — an update that doesn't survive a container restart is a FALSE COMPLETION.** Before touching ANY client box, determine Mac mini vs Docker VPS FIRST — the procedure is fundamentally different, and getting it wrong produces an update that looks successful and silently evaporates on the next restart. On a Docker VPS: the env file lives at `/docker/<project>/.env` on the HOST (separate from `/docker/<project>/data/`, the bind-mount of the container's `/data`); the container's live environment is a FROZEN SNAPSHOT taken at creation — NOT the same as the `.env` file on disk; `openclaw.json` often stores values as LITERALS, not `${ENV}` references, so editing `.env` alone can change nothing; `docker compose restart` does NOT reload `env_file` (use `docker compose up -d --force-recreate`); `pm2 resurrect` runs at every container boot and `dump.pm2` re-injects the OLD env (after any env change: `pm2 restart all --update-env && pm2 save` as the `node` user, never root — a root-owned `openclaw.json` write causes `EACCES` and FREEZES the gateway). **THE PROOF STANDARD:** the update is NOT done until you print the version, restart the container, and re-check the version — confirming it went UP, not down. No restart test = NOT DONE. Root cause: 2026-07 incident — an agent reported a client's Docker VPS "upgraded" when the updater never ran and nothing verified the change would survive a restart. | This file (N40 section below) + `UPDATE-PLAYBOOK.md` STEP 4 / STEP 14 / STEP 15 + `FLEET-STANDARDS.md` §12 + `HEARTBEAT.md` POST-UPDATE QC LOOP + `KNOWN-ISSUES.md` issue #5 (Docker env-file / `openclaw.json` two-layer persistence precedent) | Manual verification only today — no automated gate blocks a "done" report without a restart-verified version pair. See the enforcement-opportunity note in the N40 section below (not implemented on this branch). |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
+
+---
+
+<!-- DOCKER_VPS_UPDATE_PERSISTENCE_V1 -->
+## 🔴 N40 — DOCKER VPS UPDATE PERSISTENCE (an update that doesn't survive a restart is a FALSE COMPLETION)
+
+**Before updating ANY client box from this repo, determine Mac mini vs Docker VPS FIRST.** The procedure is fundamentally different. Getting it wrong produces an update that *looks* successful and silently evaporates on the next container restart.
+
+**Root cause:** a 2026-07 incident — an agent reported a client's Docker VPS as "upgraded" to a new version. It was false: the updater never actually ran, and nothing verified the change would survive a container restart. **An update to a Docker VPS that does not persist across a container restart is a FALSE COMPLETION.** No exceptions, no "it should be fine."
+
+### Step 1 — CHECK whether OpenClaw is running in Docker
+
+Never assume a VPS is a plain Linux host. Detect Docker first — do not skip this because the box "is probably like the last one." The fleet's existing platform-detect convention (`update-skills.sh discover_skills_dir()`) tests `[ -d /data ]`: true → Docker VPS (active skills dir `/data/.openclaw/skills`), false → Mac/host (active skills dir `~/.openclaw/skills`). Use the same signal before touching anything else.
+
+### Step 2 — On a Docker VPS, know where things actually live
+
+- The environment file is in its own separate place: **`/docker/<project>/.env`** on the HOST — not inside the repo checkout, not reachable at that path from inside the container.
+- `/docker/<project>/data/` is the HOST bind-mount of the container's `/data` — same files, two paths. Editing one edits both; neither is "more real" than the other.
+- ⚠️ **The container's live environment is a FROZEN SNAPSHOT taken at container creation.** It is **NOT** the same as the `.env` file on disk right now. Confusing the two produces "green container, dead config" — the process reports healthy while still running on stale values.
+- ⚠️ **`openclaw.json` often stores values as LITERALS, not `${ENV}` references.** Editing `.env` alone can change **nothing** if the JSON already has the old value baked in as a literal string. Check the JSON, not just the env file.
+
+### Step 3 — Make the change actually persist
+
+- Writes must land on a **persisted volume**, never in the container's ephemeral layer — the ephemeral layer is wiped on restart.
+- ⚠️ **`docker compose restart` does NOT reload `env_file`** — it reuses the frozen container env from creation time. Use **`docker compose up -d --force-recreate`** whenever an env-file change must take effect.
+- ⚠️ **`pm2 resurrect` runs at EVERY container boot**, and `dump.pm2` re-injects the OLD env over whatever you just changed. After any env change: `pm2 restart all --update-env && pm2 save` — **as the `node` user** — or the change silently reverts on the next boot.
+- ⚠️ Write `openclaw.json` as the **`node` user, NEVER root**. A root-owned write causes `EACCES` on the next node-owned write attempt and **FREEZES the gateway**.
+
+### Step 4 — THE PROOF STANDARD (non-negotiable)
+
+**The update is NOT done until you RESTART THE CONTAINER and RE-CHECK the version.**
+
+1. Print the version BEFORE.
+2. Restart the container (`docker compose up -d --force-recreate` — not a plain restart — whenever any env or config value changed).
+3. Print the version AFTER.
+4. Confirm the version went **UP**, not down, and not unchanged.
+
+**No restart test = NOT DONE.** A version stamp that only survives until the next restart is a false completion — report it as staged / in-progress, never as complete.
+
+Two more traps this proof standard catches:
+- A stale `update-skills.sh` invocation can silently **DOWNGRADE** a box — the exact failure mode the script's own `discover_skills_dir()` comments warn about (updating a stale `~/Downloads` copy while the active dir sits untouched is a silent no-op).
+- A box may carry **MULTIPLE checkouts at different versions** (e.g. an old copy sitting next to the active one). Identify which checkout the running gateway actually loads from BEFORE reporting a version number — the checkout you happened to `cd` into is not always the active one.
+
+### Where this is enforced today
+
+Manual only — there is no automated gate that blocks a "done" report without a restart-verified before/after version pair. **Enforcement opportunity (not implemented on this branch):** `update-skills.sh` and/or the update-triggering flow could cheaply detect Docker (`[ -d /data ]`) and refuse to print a success/complete status for a Docker VPS run unless it captured a version BEFORE, performed a `docker compose up -d --force-recreate` (or equivalent), and captured a version AFTER showing an increase. Flagged for a follow-up branch — not built here.
+
+### Cross-references
+
+Full box-update procedure: **`UPDATE-PLAYBOOK.md`** STEP 4 (infrastructure check — platform detection), STEP 14 (post-update verification — restart-and-reverify requirement), STEP 15 (restart policy — Docker VPS exception). Fleet-wide standard: **`FLEET-STANDARDS.md` §12**. Sunday auto-update trigger: **`HEARTBEAT.md`** POST-UPDATE QC LOOP Step 4 (final report). Related precedent: **`KNOWN-ISSUES.md`** issue #5 (the WhatsApp env-file / `openclaw.json` two-layer persistence bug — same class of failure, different symptom). Credential-specific Docker env-checking discipline: N33 / N34 above.
 
 ---
 

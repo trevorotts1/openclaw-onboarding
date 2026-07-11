@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 6.1.1 | March 29, 2026
+# Version 6.2.0 | July 11, 2026 (added STEP 4 platform detection + STEP 14/STEP 15 Docker VPS restart-persistence verification — see AGENTS.md N40)
 
 **REQUIRED:** Read `TERMINOLOGY.md` in the repo root before proceeding. It defines GHL/Convert and Flow/GoHighLevel terminology and PIT rules.
 
@@ -60,6 +60,10 @@ Open CHANGELOG.md from the downloaded repo. Find your current version by reading
 
 ### STEP 4: INFRASTRUCTURE CHECK
 Before touching skills, make sure the infrastructure scripts and dependencies from install.sh are up to date. The direct-to-agent method does not run install.sh, so you must do these checks manually:
+
+**Platform detection — do this FIRST, before anything else in this step, before touching anything else on the box:**
+- Determine whether this box is a Mac mini (or other macOS/plain host) or a **Docker VPS**. Never assume a VPS is a plain Linux host — check. `[ -d /data ]` true → Docker VPS (active skills dir `/data/.openclaw/skills`); false → Mac/host (active skills dir `~/.openclaw/skills`).
+- If this is a Docker VPS: **read `AGENTS.md` N40 in full before proceeding.** Short version — an update on a Docker VPS is not "done" just because a script ran without error. It is only done once you have restarted the container and confirmed the version survived. N40 covers where the env file actually lives (`/docker/<project>/.env` on the HOST, separate from the container's frozen-at-creation runtime environment), why `openclaw.json` literals can make an env-file edit a no-op, why `docker compose restart` does not reload `env_file` (`docker compose up -d --force-recreate` does), the `pm2 resurrect` / `dump.pm2` trap, and the `node`-vs-root config-write trap. STEP 14 and STEP 15 below carry this playbook's Docker-specific verification and restart requirements.
 
 **4a. Gemini Engine scripts:**
 - Check if ~/.openclaw/scripts/gemini-indexer.py exists
@@ -265,6 +269,7 @@ The following items require confirmation before any changes. They are NOT blocke
 - If Skill 22 or 23 was updated, run the Gemini indexer to reindex personas
 - Verify each updated skill folder is complete (check for INSTALL.md, SKILL.md, QC.md at minimum)
 - Update the local version file to match the new version
+- **Docker VPS ONLY — restart-verified persistence, mandatory, not optional (`AGENTS.md` N40):** print the currently installed version, restart the container (`docker compose up -d --force-recreate` — a plain restart does NOT reload `env_file` and will not pick up env changes; if `pm2` is in play, `pm2 restart all --update-env && pm2 save` as the `node` user so `dump.pm2` doesn't re-inject the old env on the next boot), then print the version again and confirm it went UP. **Do not write "update complete" in the summary report below without this before/after version pair spanning an actual restart.** A version stamp that only survives until the next restart is a false completion — report it as staged/in-progress instead.
 - Write a summary report:
   - What was updated (list each skill and what changed)
   - What was skipped and why
@@ -273,9 +278,13 @@ The following items require confirmation before any changes. They are NOT blocke
   - What sensitive items were flagged and the decisions made
   - What conflicts were found and how they were resolved
   - Whether a gateway restart is recommended
+  - **On a Docker VPS:** the restart-verified before/after version pair from the bullet above (this is evidence, not a recommendation — include it)
 
 ### STEP 15: GATEWAY RESTART
-Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
+
+**Mac mini / host clients:** Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
+
+**Docker VPS clients — EXCEPTION, per `AGENTS.md` N40:** the restart-and-reverify described in STEP 14 is not optional client-facing courtesy — it is the verification step that proves the update actually took effect, and it is a required part of what "done" means on a Docker VPS. Perform it as routine maintenance (silent to the client, per this repo's "WE MOVE IN SILENCE" standard — the client is not asked for permission to restart the container any more than they are asked for permission for any other maintenance step). If you have not performed the restart-and-reverify, the correct status to report is "staged, not yet verified" — never "complete."
 
 ## STEP 16: SEND THE CLIENT A FRIENDLY UPDATE SUMMARY
 

@@ -105,6 +105,9 @@ If any skill has a FAILED QC check:
 - Do NOT silently skip failed skills. Always report them.
 
 ### Step 4: Final Report
+
+**Docker VPS gate — check this BEFORE sending "Update complete" (see `AGENTS.md` N40):** on a Docker VPS, do not send the "✅ Update complete" message below until you have printed the version, restarted the container (`docker compose up -d --force-recreate`), printed the version again, and confirmed it went up. A version that has not survived an actual restart is not confirmed — send a "staged, restart-verification pending" status instead, never "complete."
+
 After all skills pass QC (or after 5 retries), send the client a final summary:
 ```
 ✅ Update complete (v[old] → v[new])
@@ -121,6 +124,7 @@ Skills that could not be fixed:
 - [Skill Y]: BLOCKED (reason)
 
 A gateway restart is recommended for changes to take effect.
+[Docker VPS only: restart-verified — v[old] confirmed → v[new] confirmed after container restart.]
 ```
 
 ---
