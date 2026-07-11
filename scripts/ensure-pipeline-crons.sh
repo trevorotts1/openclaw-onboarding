@@ -173,11 +173,18 @@ _cron_present() {
   fi
 
   # Strategy 2: python3 exact match (no jq required)
+  #
+  # SC2259 FIX (fix/industry-gate-and-idempotent-crons): JSON is passed via an
+  # env var, not a pipe — `python3 -` already reads its OWN script text from
+  # stdin via the heredoc below, so a pipe feeding the SAME stdin is silently
+  # OVERRIDDEN (the heredoc wins) and `sys.stdin.read()` inside the script would
+  # see EOF, not the JSON — the exact same pattern already used two screens down
+  # in _reconcile_rows() (OC_CRON_RAW env var), applied here for consistency.
   if [[ -n "$raw" ]] && command -v python3 >/dev/null 2>&1; then
-    if printf '%s' "$raw" | python3 - "$name" 2>/dev/null <<'PYEOF'
-import json, sys
+    if OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
+import json, os, sys
 name = sys.argv[1]
-raw = sys.stdin.read()
+raw = os.environ.get("OC_CRON_RAW", "")
 try:
     data = json.loads(raw)
 except Exception:
@@ -494,23 +501,38 @@ _ensure_workforce_build_resume() {
     return 0
   fi
 
-  local prompt_file
-  prompt_file="$(_find_script 23-ai-workforce-blueprint resume-prompt.txt)" || true
-  if [[ -z "${prompt_file:-}" ]]; then
-    _log "SKIP workforce-build-resume — resume-prompt.txt not found (older skill bundle)"
+  # CHEAP COMMAND-MODE (fix/industry-gate-and-idempotent-crons, Fix C — v14.1.7+):
+  # this cron used to be a SILENT main-session AGENT-MESSAGE job (the full
+  # resume-prompt.txt fed as the system-event payload), so EVERY */15 fire spun
+  # up a complete LLM turn just to reach the shell guard's "nothing to resume"
+  # verdict — a token furnace on any box with no active build (the diagnosed
+  # no-op furnace: resume-workforce-build.sh's own gating logic then discovers
+  # "nothing to do" and exits, but the expensive turn was already spent).
+  #
+  # resume-workforce-build.sh is ALREADY a cheap, token-free check when run
+  # directly as plain bash: it reads build-state via jq and only in the case
+  # there is genuinely pending/stale work, an unmet library/comms/closeout gate,
+  # etc. does it escalate — via `openclaw message send`, the SAME self-ping
+  # mechanism closeout-resume already uses — to an actual agent turn. So
+  # registering the CRON ITSELF in command mode (`bash resume-workforce-build.sh`
+  # via _register_command_cron, mirroring the already-correct
+  # _ensure_closeout_resume above) makes the 15-min tick cost ZERO LLM tokens on
+  # every box with nothing to resume; an agent turn now dispatches ONLY when the
+  # script's own logic decides one is warranted. resume-workforce-build.sh's
+  # internal decision/dispatch logic is UNCHANGED by this — only WHO invokes it
+  # on the tick changes (cheap shell vs. an expensive agent turn).
+  local script
+  script="$(_find_script 23-ai-workforce-blueprint scripts/resume-workforce-build.sh)" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP workforce-build-resume — resume-workforce-build.sh not found (older skill bundle)"
     return 1
   fi
-
-  local prompt
-  prompt="$(cat "$prompt_file")"
-  # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew): probe the CLI
-  # and emit `--session main --system-event` (2026.6.11+) or
-  # `--session-target main --message` (older CLIs). */15 cadence, --light-context.
-  if _oc_cron_silent_main "workforce-build-resume" "main" "*/15 * * * *" "America/New_York" "$prompt" --light-context; then
-    _log "DONE workforce-build-resume cron registered (*/15, SILENT main-session — no client auto-announce)"
+  chmod +x "$script" 2>/dev/null || true
+  if _register_command_cron "workforce-build-resume" "*/15 * * * *" "$script"; then
+    _log "DONE workforce-build-resume cron registered (*/15, $(_cli_supports_command && echo 'command mode — zero LLM tokens per tick' || echo 'agent-message fallback (older CLI, no --command support) — short run-the-script message, not the old full resume-prompt.txt payload'))"
     return 0
   fi
-  _log "FAIL workforce-build-resume cron creation failed (openclaw cron create rc!=0)"
+  _log "FAIL workforce-build-resume cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
   return 1
 }
 
