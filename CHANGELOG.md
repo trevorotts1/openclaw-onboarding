@@ -1,3 +1,13 @@
+## [v19.39.0]  -  2026-07-11  -  feat(06/skill6): Phase-B live-proof — community/course/channel builders driven LIVE, selector anchors LOCKed (Skill 6)
+
+Merges `skill6-community-course-live-ready` off fresh origin/main (v19.38.0) as the serial onboarding writer. Judge 9.0. Scoped to `06-ghl-install-pages` (community + course builders, live selector map, 2 test files). No client names, no secret values, no Anthropic runtime identifiers in the diff.
+
+- **Community / course / channel creation is now LIVE-PROVEN, not selector-guessed.** `ghl_community_builder.py` (+153) and `ghl_course_builder.py` (+65) were driven against the real builder and the selector map `selectors-live-communities-courses.json` was rewritten from what actually resolved (+480/-201). The anchors that held are LOCKed so a future UI shuffle fails loud instead of silently binding the wrong control.
+- **Selector provenance is documented.** New `SELECTORS-LIVE-community.md` / `SELECTORS-LIVE-course.md` record which anchors were confirmed live and when — so the next drift is diffable rather than archaeological.
+- **Gates green (raw, this QC).** Targeted suite `test_community_course_builders.py` + `test_community_course_live_ready.py` -> **48 passed**, identical to the clean-main baseline (48 passed). FULL skill-06 suite post-merge -> **1188 passed, 15 skipped, 0 failed** (107s). Zero failures, so nothing to attribute against baseline.
+- **G3 reconciliation.** The branch changed `06-ghl-install-pages/` content WITHOUT bumping its `skill-version.txt` (would have failed CI gate G3). The release roll bumps it to v19.39.0 in the same push, satisfying the gate.
+- **Version roll** — repo rolled v19.38.0 -> v19.39.0 via `scripts/bump-version.sh` (all 11 markers in lockstep). Annotated tag `v19.39.0` cut on the release commit.
+
 ## [v19.38.0]  -  2026-07-11  -  fix(FDN-7 residual): mirror the persona-SET 5th member (embedded_persona_count) into qc-assert-repo-consistency.py (Skill 23)
 
 Lands the one piece the FDN-7 RELAND (PR #535, `f1c73bf7`) left behind. Serial onboarding writer, off fresh origin/main (v19.37.0). Judge 9.0. No client names, no secret values, no Anthropic runtime identifiers in the diff.
