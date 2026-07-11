@@ -3185,6 +3185,20 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
     fi
 done
 
+# LOOP / FURNACE PROTECTION activation helper + operator canary (Skill 60 EWS +
+# Skill 61 Loop Protection). Persisted to ~/.openclaw/scripts (or /data/...) so
+# the end-of-run activation step and the operator canary can resolve them after a
+# temp-clone cleanup, and so the updater's shared hook has one canonical copy (no
+# copy-paste drift). Neither ARMS a box; client activation is gated HELD by
+# default (61-loop-protection-system/config/rollout.json). See Topic 2 §2.3.
+for SCRIPT in activate-loop-protection.sh loop-protection-canary.sh; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        chmod +x "$SCRIPTS_DIR/$SCRIPT"
+        success "Installed loop-protection script: $SCRIPT"
+    fi
+done
+
 # SINGLETON POOLED BROWSER backstop: ensure ~/.agent-browser exists (mode 700),
 # make the Skill-06 gateway + reaper executable, then ONE-SHOT reap any
 # pre-existing orphan agent-browser sessions/descriptors on first contact (the
@@ -7756,6 +7770,28 @@ if [ -f "$_ENSURE_HB" ]; then
     bash "$_ENSURE_HB" 2>&1 | tee -a "$LOG_FILE" | tail -5
 else
     note "ensure-heartbeat-defaults.sh not in bundle — skipping (set manually: openclaw config set agents.defaults.heartbeat.every 6h)"
+fi
+
+# ----------------------------------------------------------
+# Loop / furnace protection activation (Skill 60 EWS + Skill 61 Loop Protection).
+# GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2. Runs the shared
+# activate-loop-protection.sh helper (the SAME one update-skills.sh calls — no
+# copy-paste drift). Client-box activation is GATED HELD by default per SKILL.md
+# law 8 (CANARY, THEN HOLD) + the 7-03 repo-only HOLD: the helper installs the
+# 60-then-61 per-box watchdogs (ews-tick + loop-tick crons + ledgers) in DRY_RUN
+# observe-only ONLY when the fleet rollout gate is enabled (rollout.json /
+# OPENCLAW_LOOP_PROTECTION_ROLLOUT); otherwise it prints a HELD note and no-ops.
+# It NEVER arms a box (Tier-1 arming is the operator canary's separate action).
+# Runs BEFORE the final gateway restart so any registered crons are picked up.
+# Best-effort — never aborts the install.
+# ----------------------------------------------------------
+note "Loop/furnace protection (Skill 60 + 61): running the activation gate (HELD by default; DRY_RUN, never arms)..."
+_ACT_LOOP="$ONBOARDING_DIR/scripts/activate-loop-protection.sh"
+[ -f "$_ACT_LOOP" ] || _ACT_LOOP="$SCRIPTS_DIR/activate-loop-protection.sh"
+if [ -f "$_ACT_LOOP" ]; then
+    bash "$_ACT_LOOP" --role client --skills-dir "$SKILLS_DIR" 2>&1 | tee -a "$LOG_FILE" | tail -6 || true
+else
+    note "activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)."
 fi
 
 fire_install_kickoff_triplet
