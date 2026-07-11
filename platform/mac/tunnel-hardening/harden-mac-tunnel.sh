@@ -92,13 +92,39 @@ else
   echo "--protocol http2 appended (args index $COUNT/$NEXT)."
 fi
 
-# ---- Layer D -- pmset AC no-sleep --------------------------------------------
-echo "--- Layer D: pmset AC no-sleep ---"
-echo "Current pmset -g (AC settings):"
-pmset -g | grep -E 'sleep|disablesleep' || true
-pmset -c sleep 0
-pmset -c disablesleep 1
-echo "AC sleep=0, disablesleep=1 applied."
+# ---- Layer D -- pmset: no-sleep AND POWER-OUTAGE RESTART ----------------------
+# WAS BROKEN: this layer set sleep/disablesleep but NEVER set `autorestart`.
+# `autorestart` defaults to 0 on macOS, so when mains power came back the Mac
+# JUST STAYED OFF. A fleet audit found it at 0 on 5 boxes; the 5 that had it set
+# got it by hand, inconsistently. A tunnel hardened against sleep on a Mac that
+# never powers back on is worthless. Added `autorestart 1` and `womp 1`.
+#
+# LAPTOPS: `autorestart` is largely meaningless on a battery-backed Mac (it does
+# not lose power when the mains does), and `sleep 0` on BATTERY would drain it
+# flat. So on a laptop we apply AC-only settings and say so, rather than
+# pretending it is a mini.
+echo "--- Layer D: pmset (no-sleep + power-outage restart) ---"
+echo "Current pmset -g:"
+pmset -g | grep -E 'autorestart|womp|sleep|disablesleep' || true
+
+if ioreg -rc AppleSmartBattery 2>/dev/null | grep -q AppleSmartBattery; then
+  echo "LAPTOP detected (internal battery). Applying AC-only power policy."
+  pmset -c sleep 0
+  pmset -c disksleep 0
+  pmset -c disablesleep 1
+  pmset -c autorestart 1 2>/dev/null || echo "  (autorestart unsupported here — expected on a laptop)"
+  pmset -c womp 1 2>/dev/null || echo "  (womp unsupported here — no wake-on-LAN interface)"
+  echo "WARNING: a laptop cannot be made fully outage-resilient. Keep it on AC." >&2
+  echo "         A client box should be a Mac mini." >&2
+else
+  echo "DESKTOP / Mac mini. Applying the non-negotiable power policy (-a = all sources)."
+  pmset -a autorestart 1
+  pmset -a sleep 0
+  pmset -a disksleep 0
+  pmset -a womp 1 2>/dev/null || echo "  (womp unsupported here — no wake-on-LAN interface)"
+  pmset -c disablesleep 1
+  echo "autorestart=1, sleep=0, disksleep=0, womp=1 applied."
+fi
 
 # ---- Reload the daemon -------------------------------------------------------
 echo "--- Reloading com.cloudflare.cloudflared daemon ---"
@@ -150,8 +176,13 @@ echo "2. KeepAlive + RunAtLoad:"
 $BUDDY -c "Print :KeepAlive" "$PLIST" || echo "(not set)"
 $BUDDY -c "Print :RunAtLoad" "$PLIST" || echo "(not set)"
 echo ""
-echo "3. pmset -g (confirm sleep=0):"
-pmset -g | grep -E 'sleep|disablesleep' || true
+echo "3. pmset -g (confirm autorestart=1 AND sleep=0):"
+pmset -g | grep -E 'autorestart|womp|sleep|disablesleep' || true
+_AR="$(pmset -g | awk '/^[[:space:]]*autorestart/{print $2; exit}')"
+if [ "${_AR:-0}" != "1" ]; then
+  echo "   WARNING: autorestart is '${_AR:-unset}', not 1. When mains power" >&2
+  echo "            returns this Mac will STAY OFF. (Expected on a laptop.)" >&2
+fi
 echo ""
 echo "4. Connector log tail (last 10 lines):"
 LOG_PATH="/Library/Logs/com.cloudflare.cloudflared.err.log"
