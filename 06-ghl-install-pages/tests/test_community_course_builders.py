@@ -76,24 +76,37 @@ def test_d8_gate_verified_returns_and_capture_pending_stops():
     sels = cb.load_selectors()
     # verified-shared-rail → returns the anchor
     assert cb.anchor(sels, "shared_rail.memberships_left_rail").startswith("getByText")
-    # capture-pending REQUIRED → STOP-and-report (never a guessed CSS)
+    # a Phase-B LOCKed anchor → returns the anchor
+    assert cb.anchor(sels, "community.list_page.create_group_button").startswith("getByRole")
+    # a STILL capture-pending REQUIRED → STOP-and-report (never a guessed CSS)
     with pytest.raises(cb.StopAndReport):
-        cb.anchor(sels, "community.list_page.create_group_button")
+        cb.anchor(sels, "community.create_page.privacy_switch")
     # capture-pending OPTIONAL → '' (soft skip)
-    assert cb.anchor(sels, "community.list_page.create_group_button", required=False) == ""
+    assert cb.anchor(sels, "community.create_page.privacy_switch", required=False) == ""
 
 
 def test_selector_map_has_no_locked_inarea_targets_yet():
-    """Guard: until the live capture runs, NO in-area community/course target may be
-    'locked' (that would mean an invented selector slipped in — D8 violation)."""
+    """Phase B (2026-07-10) LOCKed the in-area community/course anchors from a LIVE
+    create-then-clean run. Guard: every LOCKed target carries a real anchor, and the ONLY
+    remaining capture-pending in-area targets are the documented not-yet-captured set."""
     sels = cb.load_selectors()
+    pending = {"privacy_switch", "product_type", "lesson_body_editor",
+               "settings_nav", "status_toggle"}
+    locked_count = 0
     for top in ("community", "course"):
         for surface, targets in sels[top].items():
+            if not isinstance(targets, dict):
+                continue
             for tname, t in targets.items():
-                if isinstance(t, dict) and "status" in t:
-                    assert t["status"] == "capture-pending", (
-                        f"{top}.{surface}.{tname} is {t['status']} — must be capture-pending "
-                        "until a live capture LOCKs it")
+                if not (isinstance(t, dict) and "status" in t):
+                    continue
+                if t["status"] == "locked":
+                    assert t.get("anchor"), f"{top}.{surface}.{tname} locked but has no anchor"
+                    locked_count += 1
+                elif t["status"] == "capture-pending":
+                    assert tname in pending, (
+                        f"{top}.{surface}.{tname} unexpectedly capture-pending (Phase B LOCKed it?)")
+    assert locked_count >= 20, f"expected the Phase B LOCKed in-area set, got {locked_count}"
 
 
 # ── course THINK layer ────────────────────────────────────────────────────────

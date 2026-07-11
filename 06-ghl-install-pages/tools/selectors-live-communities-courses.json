@@ -1,36 +1,46 @@
 {
-  "_doc": "Machine-readable selector map for the Skill-6 COMMUNITY / COURSE / CHANNEL builders (F3b: code and doc cannot diverge; the builders load THIS file). Companion prose: SELECTORS-LIVE-community.md + SELECTORS-LIVE-course.md. Anchors are recorded in Playwright getBy* notation and translated to agent-browser 0.27.0 `find`/native-eval calls by ghl_ab_executor.py (fix a).",
+  "_doc": "Machine-readable selector map for the Skill-6 COMMUNITY / COURSE / CHANNEL builders (F3b: code and doc cannot diverge; the builders load THIS file). Companion prose: SELECTORS-LIVE-community.md + SELECTORS-LIVE-course.md. Anchors are recorded in Playwright getBy* notation and translated to agent-browser 0.27.0 `find`/native-eval calls by ghl_ab_executor.py (fix a). PHASE B (2026-07-10) LOCKed the in-area anchors from a full LIVE create-then-clean run on the operator test location (id masked).",
   "_status_legend": {
     "verified-shared-rail": "Confirmed live for forms/surveys on the SAME leadconnectorhq rail, or captured in references/form-click-map.md (global left rail). Cited; safe to act on.",
-    "capture-pending": "NOT yet LOCKed for this object. D8: NO invented CSS. A REQUIRED capture-pending anchor makes the live builder STOP-and-report until the live capture run (create scratch object -> walk -> record real anchor + conf -> DELETE/deactivate) flips it to 'locked'. An `observed` field records a value SEEN in the 2026-07-10 live-capture attempt (operator template location) but not yet LOCKed via the full capture procedure — Phase B locks it. Fallback-chain is a CAPTURE recipe, not a fact."
+    "locked": "LOCKed by a live capture run for THIS object (Phase B 2026-07-10): a scratch object was created, walked, every anchor recorded live + read back, then the object was cleaned (course deleted 0-residue; group deactivated). Safe to drive.",
+    "capture-pending": "NOT yet LOCKed. D8: NO invented CSS. A REQUIRED capture-pending anchor makes the live builder STOP-and-report until a live capture run flips it to 'locked'."
   },
   "_exec_legend": {
     "auto": "ghl_ab_executor: try `find <locator> <value> click [--name]`, native-eval .click() fallback on a find miss (default).",
-    "native": "ghl_ab_executor: go straight to a trusted DOM element.click() via eval. REQUIRED for GHL's Naive-UI submit buttons — proven live that `find ... click`/`click @ref` report Done but do NOT submit; only native .click() fires the create toast."
+    "native": "ghl_ab_executor: go straight to a trusted DOM element.click() via eval. REQUIRED for GHL's Naive-UI submit buttons \u2014 proven live that `find ... click`/`click @ref` report Done but do NOT submit; only native .click() fires the create toast.",
+    "scoped-native": "A card/row-scoped native eval (builder _scoped_* helpers): locate the object's OWN card by name/slug, then click a control WITHIN that card. REQUIRED on the POPULATED operator account so a global first-match click can never hit a real object (group deactivate + course delete)."
   },
-  "_capture_contract": "Flip a target to status:'locked' ONLY by a live capture run (create a scratch object, walk it, record the real anchor + confidence, DELETE-or-deactivate the object). See the 'capture_procedure' in each SELECTORS-LIVE-*.md.",
+  "_capture_contract": "Flip a target to status:'locked' ONLY by a live capture run (create a scratch object, walk it, record the real anchor + confidence, DELETE-or-deactivate the object). Phase B 2026-07-10 did this end-to-end.",
   "_pinned_agent_browser": "0.27.0",
+  "_phase_b_live_proof": {
+    "date": "2026-07-10",
+    "location": "operator test (an-operator-test-location, operator \u2014 operator-owned, NOT client/template)",
+    "account_shape": "POPULATED production account (real member groups + 35 real courses) \u2014 every destructive control MUST be object-scoped (scoped-native), never a global first-match.",
+    "community": "Created scratch group + channel via find/fill/native-submit; portal read-back (name in rendered DOM); deactivated via app-list card-scoped Status dropdown -> Inactive -> Confirm dialog. White-label portal; group keyed by SLUG.",
+    "course": "Created scratch course via the 3-STEP WIZARD (Create New dropdown -> Start from scratch -> title -> Upload Thumbnail -> Set Up Pricing -> bottom Create Course); added a Module (+ Add Content -> Add Module) and a Lesson (+ Add Content -> Add Lesson, requires a Module select); read-back; DELETED via search-narrow -> card-scoped kebab -> Delete -> type CONFIRM -> Confirm; re-GET proved 0 residue (35 Products, 0 query results).",
+    "nav_reality": "Memberships left-rail text is a non-navigating SPAN on this account; the builder reaches the list by navigating the LIST route directly (the LIST route loads fine; only the builder/editor route spins)."
+  },
   "_cleanup_reality": {
     "community_group": {
       "has_ui_delete": false,
       "has_api_delete": false,
       "primitive": "inactivate",
-      "evidence": "Live capture 2026-07-10: community GROUPS have NO UI delete (row chevron = login-as menu; portal group settings has Details/Subscriptions/Branding/Themes but no Delete/Danger Zone; only an Active<->Inactive status toggle). Tier-1 (36-tool) + Tier-2 (588-tool community MCP) lists have NO delete_community/delete_group/delete_channel — only validate_group_slug (which confirms SLUG keying). Literal 0-residue is IMPOSSIBLE for a group via any known rail; cleanup = set Inactive. NOT a fake delete.",
-      "phase_b": "capture the group-settings Active/Inactive toggle anchor to LOCK _deactivate_group."
+      "evidence": "PHASE B live: community GROUPS have NO delete. Cleanup = app communities-list card-scoped Status 'Active' dropdown -> 'Inactive' -> 'Deactivate Group' confirm dialog -> Confirm (toast 'Deactivated'). Portal group Settings dialog has Details/Subscriptions/Newsletter/Branding/Themes/Show-Hide-Tabs/Membership-Questions/Gamification \u2014 NO Delete/Danger Zone, NO status toggle (that lives on the APP list card). Tier-1/Tier-2 tool lists have NO delete_community/delete_group/delete_channel. Literal 0-residue is IMPOSSIBLE for a group; set Inactive. NOT a fake delete.",
+      "phase_b": "LOCKED: community.deactivate.* (card-scoped)."
     },
     "channel": {
       "has_ui_delete": "unknown-capture-pending",
       "has_api_delete": false,
       "primitive": "unknown-capture-pending",
-      "evidence": "No delete_channel on Tier 1/2. The live-capture attempt created a channel but did NOT locate a channel delete/remove control. Channel residue remains inside its (deactivated) group until a real remove primitive is captured.",
-      "phase_b": "capture the channel remove/delete control (if any) inside the group nav/settings."
+      "evidence": "No delete_channel on Tier 1/2. Phase B created a channel but did not locate a channel delete control. Channel residue remains inside its (deactivated) group.",
+      "phase_b": "capture the channel remove/delete control (if any)."
     },
     "course": {
       "has_ui_delete": true,
       "has_api_delete": true,
       "primitive": "delete",
-      "evidence": "Live capture 2026-07-10: each course row has a 'More actions' per-row menu (delete path). Tier-2 community MCP ships create_course/get_course/update_course AND delete_course, delete_course_category, delete_course_post, delete_course_offer, delete_course_product (verified in 36-ghl-mcp-setup/ghl-mcp-setup-full.md tool list). COURSES support true 0-residue delete -> the zero-residue proof is scoped to courses.",
-      "phase_b": "lock the row 'More actions' -> Delete anchors; OPTIONALLY verify the Tier-2 delete_course API is a real endpoint (GHL-LOOKUP-SOP warns community-MCP create/delete tools may be unverified shells) and, per spec §3, let ghl_object_router flip primary if it is real. Router edit is out of Phase-A scope (protected file)."
+      "evidence": "PHASE B live: each course card has a per-card kebab menu -> 'Delete' -> a type-to-proceed confirm dialog naming the exact course ('Are you sure you want to delete \"<name>\"?') requiring the literal text CONFIRM -> Confirm. Proven true 0-residue (35->36 on create, 36->35 on delete; search 0 results). Tier-2 also ships delete_course*. The delete MUST be search-narrowed + card-scoped so it can never hit a real course.",
+      "phase_b": "LOCKED: course.list_page.{row_actions,delete_menuitem,delete_confirm,delete_type_input} (scoped-native + type-CONFIRM)."
     }
   },
   "shared_rail": {
@@ -38,143 +48,209 @@
       "status": "verified-shared-rail",
       "kind": "get_text",
       "anchor": "getByText('Memberships')",
-      "fallbacks": ["getByRole('link', { name: 'Memberships' })", "left-rail StaticText 'Memberships' + coordinate"],
+      "fallbacks": [
+        "getByRole('link', { name: 'Memberships' })",
+        "navigate the list route directly (Phase B: the text node is a non-navigating SPAN on some accounts)"
+      ],
       "conf": 8.0,
-      "note": "Left-rail item is StaticText (like 'Sites') — role=link often absent; getByText is the reliable primary. Cited: references/form-click-map.md global-rail capture; spec §5."
+      "note": "Phase B: on the operator account the 'Memberships' text is a SPAN that does NOT navigate (the real nav link href=/memberships/client-portal/dashboard). The builders now reach the communities/courses LIST by navigating the list route directly (routes.*_list) \u2014 the LIST route loads reliably; only the builder/editor route spins."
     },
     "client_portal_dropdown": {
       "status": "verified-shared-rail",
       "kind": "get_text",
       "anchor": "getByText('Client Portal')",
-      "fallbacks": ["getByRole('button', { name: /Client Portal/ })"],
+      "fallbacks": [
+        "getByRole('button', { name: /Client Portal/ })"
+      ],
       "conf": 7.5,
-      "note": "Sites → Client Portal ▾ (spec §5, SELECTORS-LIVE-form.md §2). Communities/courses surface may live under Memberships OR Client Portal — capture confirms which."
+      "note": "Sites -> Client Portal (spec \u00a75)."
     },
     "builder_save": {
       "status": "capture-pending",
       "kind": "role_name",
       "anchor": "getByRole('button', { name: 'Save' })",
-      "fallbacks": ["getByText('Saved')", "icon-toolbar disk SVG path-d + order"],
+      "fallbacks": [
+        "getByText('Saved')",
+        "icon-toolbar disk SVG path-d + order"
+      ],
       "conf": 0,
-      "note": "Save is a role+name anchor of conf 9.5 IN THE FORM/SURVEY iframe. Whether the community/course editor is the SAME leadconnectorhq iframe is ASSUMED — capture confirms before trusting."
+      "note": "Publish/save inside the course/community editor \u2014 not exercised in Phase B (default DRAFT)."
     }
   },
   "community": {
     "_idempotency": {
       "method": "list-scan",
-      "note": "fix b: the communities list has NO search box (live-captured 2026-07-10) — enumerate the rendered group list and match by name/slug via ghl_community_builder._list_has. There is NO list_page.search_box target because none exists."
+      "note": "fix b: the communities list has NO search box \u2014 enumerate the rendered group list and match by name/slug via ghl_community_builder._list_has."
     },
     "_identity": {
       "method": "slug+portal_host",
-      "note": "fix c: after Create the SPA lands on https://<portal_host>/communities/groups/<slug>/home. Groups are keyed by SLUG (no opaque group id in the route; Tier-2 validate_group_slug confirms slug keying). ghl_community_builder._capture_group_identity reads this."
+      "note": "fix c: after Create the SPA lands on https://<portal_host>/communities/groups/<slug>/home. Groups keyed by SLUG (no opaque id). Phase B live: portal_host = white-label domain; slug auto-derived from the name."
     },
     "routes": {
       "communities_list": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "route",
         "anchor": "/v2/location/<LOCATION_ID>/memberships/communities/community-groups",
-        "observed": "2026-07-10: reached via Memberships sub-nav link 'Communities'; content is in the TOP document under app.convertandflow.com (NOT a cross-origin iframe; the only iframe is the chat widget).",
-        "fallbacks": ["reach via Memberships left-rail → 'Communities' sub-nav link (getByText)"],
-        "conf": 0,
-        "note": "Never deep-link the builder standalone (spins forever) — reach via SPA nav AFTER a Memberships nav."
+        "observed": "Phase B 2026-07-10: LIVE-navigated directly (loads reliably); content is in the TOP document under app.convertandflow.com (NOT an iframe).",
+        "fallbacks": [
+          "navigate the route directly (proven)",
+          "Memberships link href=/memberships/client-portal/dashboard then Communities sub-nav"
+        ],
+        "conf": 9.5,
+        "note": "The builder navigates HERE directly (C1) instead of clicking Memberships text (which does not navigate)."
       },
       "group_portal": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "route",
         "anchor": "https://<PORTAL_HOST>/communities/groups/<SLUG>/home",
-        "observed": "2026-07-10: post-create URL on the white-label community portal; group keyed by SLUG (e.g. zhc-capture-probe-c6); default channel 'Announcements'; tabs Discussion/Learning/Events/Leaderboard/Members/About.",
-        "fallbacks": ["read location.href after Create; derive host+slug"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: post-create URL on the white-label community portal; group keyed by SLUG; default channel 'Announcements'; tabs Discussion/Learning/Events/Leaderboard/Members/About.",
+        "fallbacks": [
+          "read location.href after Create; derive host+slug"
+        ],
+        "conf": 9.5
       }
     },
     "list_page": {
       "create_group_button": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "anchor": "getByRole('button', { name: 'Create Group' })",
-        "observed": "2026-07-10: button 'Create Group' on the list opens a FULL PAGE at /memberships/communities/create-group (NOT a modal).",
-        "fallbacks": ["getByRole('button', { name: /Create|Add|New.*(Group|Community)/ })", "getByText('Create Group')"],
-        "conf": 0,
-        "note": "Observed name confirmed live; kept capture-pending until the full create-then-deactivate capture LOCKs it (Phase B)."
+        "observed": "Phase B 2026-07-10: `find role button click --name 'Create Group'` opened a FULL PAGE /memberships/communities/create-group.",
+        "fallbacks": [
+          "getByRole('button', { name: /Create|Add|New.*(Group|Community)/ })",
+          "getByText('Create Group')"
+        ],
+        "conf": 9.5
       }
     },
     "create_page": {
       "name_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "anchor": "getByPlaceholder('Group Name')",
-        "observed": "2026-07-10: placeholder 'Group Name' on the create-group page.",
-        "fallbacks": ["getByRole('textbox') labeled Name on the create page"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: `find placeholder 'Group Name' fill` bound; slug auto-derived.",
+        "fallbacks": [
+          "create-page Name textbox"
+        ],
+        "conf": 9.5
       },
       "slug_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "anchor": "getByPlaceholder('Group Slug')",
-        "observed": "2026-07-10: auto-slug field placeholder 'Group Slug' (usually auto-filled from the name — the slug is the group identity key, fix c).",
-        "fallbacks": ["auto-derived from name; leave default unless a collision"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: auto-filled from the name (slug = group identity key).",
+        "fallbacks": [
+          "auto-derived; leave default unless a collision"
+        ],
+        "conf": 9.0
       },
       "description_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "anchor": "getByPlaceholder('Enter a brief description')",
-        "observed": "2026-07-10: description placeholder 'Enter a brief description'.",
-        "fallbacks": ["textarea on the create page"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: description textarea.",
+        "fallbacks": [
+          "textarea on the create page"
+        ],
+        "conf": 9.0
       },
       "privacy_switch": {
         "status": "capture-pending",
         "kind": "get_text",
         "anchor": "getByText('Private Group Radio Button')",
-        "observed": "2026-07-10: privacy is a switch on the create page (default checked = PUBLIC); settings radios 'Public Group Radio Button' / 'Private Group Radio Button'.",
-        "fallbacks": ["Public/Private radio or switch on the create page"],
+        "observed": "Phase B used a PUBLIC group (default) so the privacy switch was not exercised; still capture-pending.",
+        "fallbacks": [
+          "Public/Private radio or switch on the create page"
+        ],
         "conf": 0,
-        "note": "Default is PUBLIC; set Private explicitly when plan.privacy == private."
+        "note": "Default is PUBLIC; only touched when plan.privacy == private (required=false)."
       },
       "create_confirm": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "exec": "native",
         "anchor": "getByRole('button', { name: 'Create Group' })",
-        "observed": "2026-07-10: page-confirm button 'Create Group' is a Naive-UI submit — find/@ref click reported Done but did NOT submit; native element.click() fired the 'Group Created ... successfully' toast. exec:native REQUIRED.",
-        "fallbacks": ["native DOM .click() on the 'Create Group' submit"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: native element.click() on the 'Create Group' submit created the group (landed on the portal). find/@ref click do NOT submit. exec:native REQUIRED.",
+        "fallbacks": [
+          "native DOM .click() on the 'Create Group' submit"
+        ],
+        "conf": 9.0
       }
     },
     "group_nav": {
       "add_channel_control": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "anchor": "getByRole('button', { name: 'Add Channel' })",
-        "observed": "2026-07-10: button '+ Add Channel' in the group portal nav.",
-        "fallbacks": ["getByText('Add Channel')", "'+' next to the Channels header (SVG path-d + order)"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: button '+ Add Channel' (accessible name matches 'Add Channel').",
+        "fallbacks": [
+          "getByText('Add Channel')"
+        ],
+        "conf": 9.0
       },
       "channel_name_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "anchor": "getByPlaceholder('e.g Marketing Reports')",
-        "observed": "2026-07-10: channel name input placeholder 'e.g Marketing Reports'.",
-        "fallbacks": ["textbox in the add-channel dialog"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: channel name input.",
+        "fallbacks": [
+          "textbox in the add-channel dialog"
+        ],
+        "conf": 9.5
       },
       "channel_description_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "anchor": "getByPlaceholder('Enter Description')",
-        "observed": "2026-07-10: channel description placeholder 'Enter Description'.",
-        "fallbacks": ["textarea in the add-channel dialog"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: channel description textarea.",
+        "fallbacks": [
+          "textarea in the add-channel dialog"
+        ],
+        "conf": 9.0
       },
       "channel_create_confirm": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "exec": "native",
         "anchor": "getByRole('button', { name: 'CREATE CHANNEL' })",
-        "observed": "2026-07-10: channel confirm button 'CREATE CHANNEL' (Naive-UI submit — native .click() path like the group create).",
-        "fallbacks": ["native DOM .click() on 'CREATE CHANNEL'"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: native .click() on 'CREATE CHANNEL' created the channel (landed on the channel URL).",
+        "fallbacks": [
+          "native DOM .click() on 'CREATE CHANNEL'"
+        ],
+        "conf": 9.0
+      }
+    },
+    "deactivate": {
+      "_flow": "scoped-native: navigate communities list -> find the created group's CARD by name/slug -> click its Status 'Active' dropdown (card-scoped) -> click 'Inactive' option -> 'Deactivate Group' confirm dialog -> Confirm.",
+      "status_dropdown": {
+        "status": "locked",
+        "kind": "scoped-native",
+        "anchor": "card-scoped Status 'Active' dropdown on the group's own list card",
+        "observed": "Phase B 2026-07-10: each group card shows 'Status: Active'; clicking the card's OWN dropdown opens an 'Inactive' option. MUST be card-scoped (a global 'Active' would hit another group / the list filter).",
+        "fallbacks": [
+          "ghl_community_builder._scoped_status_dropdown"
+        ],
+        "conf": 9.0
+      },
+      "inactive_option": {
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('inactive')",
+        "observed": "Phase B 2026-07-10: the open dropdown's 'inactive' option; selecting it raises the confirm dialog.",
+        "fallbacks": [
+          "the 'Inactive' option in the open status dropdown"
+        ],
+        "conf": 9.0
+      },
+      "confirm": {
+        "status": "locked",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Confirm' })",
+        "observed": "Phase B 2026-07-10: 'Deactivate Group \u2014 Are you sure?' dialog; Confirm completed it (toast 'Deactivated', card Status=Inactive).",
+        "fallbacks": [
+          "Confirm in the Deactivate Group dialog"
+        ],
+        "conf": 9.0
       }
     },
     "group_settings": {
@@ -182,153 +258,279 @@
         "status": "capture-pending",
         "kind": "get_text",
         "anchor": "getByText('Settings')",
-        "fallbacks": ["group portal Settings tab/gear"],
+        "fallbacks": [
+          "portal group Settings dialog (Details/Branding/... \u2014 NO status toggle here)"
+        ],
         "conf": 0,
-        "note": "Cleanup path (fix d): community has NO delete — only Active<->Inactive. Reach the group Settings, then toggle status_toggle to Inactive."
+        "note": "SUPERSEDED by community.deactivate.* \u2014 Phase B proved the Active/Inactive toggle is NOT in the portal group Settings dialog; it is the app-list card Status dropdown. Left capture-pending; not used for cleanup."
       },
       "status_toggle": {
         "status": "capture-pending",
         "kind": "get_text",
         "anchor": "getByText('Active')",
-        "fallbacks": ["Active/Inactive status switch in group Settings"],
+        "fallbacks": [
+          "SUPERSEDED by community.deactivate.status_dropdown (card-scoped)"
+        ],
         "conf": 0,
-        "note": "The ONLY cleanup primitive for a group (no delete anywhere). Toggling to Inactive is the honest 'cleanup'; the group ROW/portal remains (documented residue)."
+        "note": "SUPERSEDED \u2014 see community.deactivate (a global getByText('Active') is UNSAFE on a populated list)."
       }
     }
   },
   "course": {
     "_idempotency": {
       "method": "list-scan",
-      "note": "fix b: search box no longer a hard dependency; the courses list DOES have a 'Search Courses' box (observed 2026-07-10) usable as an OPTIONAL narrowing step, but idempotency matches the rendered list by name/slug via ghl_community_builder._list_has."
+      "note": "fix b: idempotency = list-scan by name/slug. The 'Search Courses' box (list_page.search_box) IS present and is used to ISOLATE the scratch course before a card-scoped delete (safety)."
     },
     "_cleanup": {
       "primitive": "delete",
-      "note": "fix d: courses are deletable — row 'More actions' menu (UI, observed) and Tier-2 delete_course API. The 0-residue proof is scoped here."
+      "note": "fix d: courses ARE deletable (true 0-residue). MUST search-narrow + card-scope + type-CONFIRM so a real member course can never be hit."
     },
+    "_create_flow": "3-step WIZARD: list_page.create_course_button ('Create New' DROPDOWN) -> list_page.create_source ('Start from scratch') -> create_modal.name_input ('Enter course title') -> create_modal.next_thumbnail ('Upload Thumbnail') -> create_modal.next_pricing ('Set Up Pricing') -> create_modal.create_confirm (BOTTOM 'Create Course', native). The TOP 'Create Course' is a BACK-nav, not the submit.",
     "routes": {
       "courses_list": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "route",
         "anchor": "/v2/location/<LOCATION_ID>/memberships/courses/products-v2",
-        "observed": "2026-07-10: courses list route .../memberships/courses/products-v2.",
-        "fallbacks": ["reach via Memberships left-rail → Courses tab (getByText); never deep-link"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: LIVE-navigated directly (loads reliably).",
+        "fallbacks": [
+          "navigate the route directly (proven)"
+        ],
+        "conf": 9.5
       },
       "outline_builder": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "route",
-        "anchor": "/v2/location/<LOCATION_ID>/memberships/courses/<?>/<COURSE_ID>",
-        "fallbacks": ["capture COURSE_ID from location.href OR iframe .src after Create"],
-        "conf": 0
+        "anchor": "/v2/location/<LOCATION_ID>/memberships/courses/course-creator-studio",
+        "observed": "Phase B 2026-07-10: the course-creator-studio outline builder (reached after final Create Course).",
+        "fallbacks": [
+          "capture from location.href after Create"
+        ],
+        "conf": 9.0
       }
     },
     "list_page": {
       "search_box": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
         "required": false,
         "anchor": "getByPlaceholder('Search Courses')",
-        "observed": "2026-07-10: courses list search box placeholder 'Search Courses'.",
-        "fallbacks": ["list-header textbox"],
-        "conf": 0,
-        "note": "OPTIONAL narrowing only (fix b) — idempotency is list-scan; do not hard-require this."
+        "observed": "Phase B 2026-07-10: 'Search Courses' box; used to isolate the scratch course before delete.",
+        "fallbacks": [
+          "list-header textbox"
+        ],
+        "conf": 9.5
       },
       "create_course_button": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "anchor": "getByRole('button', { name: 'Create New' })",
-        "observed": "2026-07-10: create button 'Create New' on the courses list.",
-        "fallbacks": ["getByRole('button', { name: /Create|Add|New.*(Course|Product)/ })", "getByText('Create New')"],
-        "conf": 0
+        "observed": "Phase B 2026-07-10: 'Create New' is a DROPDOWN (options: 'Start from scratch', 'Import from Kajabi').",
+        "fallbacks": [
+          "getByText('Create New')"
+        ],
+        "conf": 9.5
+      },
+      "create_source": {
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('Start from scratch')",
+        "observed": "Phase B 2026-07-10: the 'Create New' menu option that opens the create wizard.",
+        "fallbacks": [
+          "'Start from scratch' in the Create New menu"
+        ],
+        "conf": 9.5
       },
       "row_actions": {
-        "status": "capture-pending",
-        "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'More actions' })",
-        "observed": "2026-07-10: each course row has a 'More actions' per-row menu (courses support delete, unlike groups).",
-        "fallbacks": ["row kebab/⋮ + menuitem"],
-        "conf": 0
+        "status": "locked",
+        "kind": "scoped-native",
+        "anchor": "card-scoped kebab (More actions) on the scratch course's own card (after search-narrow)",
+        "observed": "Phase B 2026-07-10: per-card kebab. MUST search-narrow first + card-scope (a blind first-'More actions' would hit a REAL course).",
+        "fallbacks": [
+          "ghl_course_builder._scoped_course_kebab (search-narrowed)"
+        ],
+        "conf": 9.0,
+        "note": "SAFETY-CRITICAL: never a global first-match."
       },
       "delete_menuitem": {
-        "status": "capture-pending",
-        "kind": "role_name",
-        "anchor": "getByRole('menuitem', { name: 'Delete' })",
-        "fallbacks": ["dialog-scoped Delete button"],
-        "conf": 0,
-        "note": "Courses ARE deletable (fix d) — this is a REAL 0-residue delete, unlike communities."
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('Delete')",
+        "observed": "Phase B 2026-07-10: kebab menu 'Delete' (after Manage Comments/Edit Details/Clone).",
+        "fallbacks": [
+          "'Delete' in the open card kebab menu"
+        ],
+        "conf": 9.0
+      },
+      "delete_type_input": {
+        "status": "locked",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('CONFIRM')",
+        "observed": "Phase B 2026-07-10: the delete dialog names the exact course and requires typing the literal 'CONFIRM' (reactive fill) to enable Confirm.",
+        "fallbacks": [
+          "the type-to-proceed input in the delete dialog"
+        ],
+        "conf": 9.0
       },
       "delete_confirm": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "exec": "native",
-        "anchor": "getByRole('button', { name: 'Delete' })",
-        "fallbacks": ["dialog-scoped confirm Delete (Naive-UI native .click())"],
-        "conf": 0,
-        "note": "confirm dialog after the row menu Delete → true 0-residue for courses (fix d)."
+        "anchor": "getByRole('button', { name: 'Confirm' })",
+        "observed": "Phase B 2026-07-10: 'Confirm' in the delete dialog completes a true 0-residue delete.",
+        "fallbacks": [
+          "dialog-scoped Confirm"
+        ],
+        "conf": 9.0,
+        "note": "confirm dialog after Delete + typing CONFIRM -> true 0-residue (fix d)."
       }
     },
     "create_modal": {
       "name_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Course name')",
-        "fallbacks": ["create-dialog Name textbox"],
-        "conf": 0
+        "anchor": "getByPlaceholder('Enter course title')",
+        "observed": "Phase B 2026-07-10: step-1 'Course Title' (NOT 'Course name').",
+        "fallbacks": [
+          "create-wizard step-1 Title textbox"
+        ],
+        "conf": 9.5
+      },
+      "next_thumbnail": {
+        "status": "locked",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Upload Thumbnail' })",
+        "observed": "Phase B 2026-07-10: step-1 Next button 'Upload Thumbnail' (advances to step 2).",
+        "fallbacks": [
+          "the bottom-right Next button on step 1"
+        ],
+        "conf": 9.0
+      },
+      "next_pricing": {
+        "status": "locked",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Set Up Pricing' })",
+        "observed": "Phase B 2026-07-10: step-2 Next button 'Set Up Pricing' (thumbnail optional).",
+        "fallbacks": [
+          "the bottom-right Next button on step 2"
+        ],
+        "conf": 9.0
       },
       "product_type": {
         "status": "capture-pending",
         "kind": "get_text",
         "anchor": "getByText('Course')",
-        "fallbacks": ["product-type picker (ASSUMED: courses use the Memberships Products model)"],
+        "observed": "Phase B 2026-07-10: NO product-type choice is presented in the wizard (not applicable).",
+        "fallbacks": [
+          "n/a \u2014 no type picker"
+        ],
         "conf": 0,
-        "note": "Whether a product-type choice is even presented is ASSUMED — capture."
+        "note": "Not applicable \u2014 the wizard has no product-type step."
       },
       "create_confirm": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "role_name",
         "exec": "native",
-        "anchor": "getByRole('button', { name: 'Create' })",
-        "fallbacks": ["native DOM .click() on the dialog primary button (Naive-UI submit)"],
-        "conf": 0
+        "anchor": "getByRole('button', { name: 'Create Course' })",
+        "observed": "Phase B 2026-07-10: step-3 (Pricing) BOTTOM 'Create Course' button (y>600) finalizes (toast 'Course Created!'). The TOP 'Create Course' is a BACK-nav \u2014 the builder targets the bottom-most via ghl_course_builder._click_final_create.",
+        "fallbacks": [
+          "the bottom-most 'Create Course' button (native .click())"
+        ],
+        "conf": 9.0
       }
     },
     "outline": {
-      "add_module": {
-        "status": "capture-pending",
+      "add_content": {
+        "status": "locked",
         "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Add Module' })",
-        "fallbacks": ["getByText('Add Category'|'Add Module'|'Add Section')", "'+' in the outline tree (SVG path-d + order)"],
-        "conf": 0,
-        "note": "GHL calls a module a 'Category' in some builds — capture the real label."
+        "anchor": "getByRole('button', { name: 'Add Content' })",
+        "observed": "Phase B 2026-07-10: '+ Add Content' opens a menu (Add Module / Add Sub-module / Add Lesson).",
+        "fallbacks": [
+          "getByText('Add Content')"
+        ],
+        "conf": 9.0
+      },
+      "add_module": {
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('Add Module')",
+        "observed": "Phase B 2026-07-10: '+ Add Content' menu -> 'Add Module' opens the module dialog.",
+        "fallbacks": [
+          "'Add Module' in the Add Content menu"
+        ],
+        "conf": 9.0,
+        "note": "Reached via outline.add_content first."
       },
       "module_title_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Module title')",
-        "fallbacks": ["inline title textbox on the new module row"],
-        "conf": 0
+        "anchor": "getByPlaceholder('Enter module name')",
+        "observed": "Phase B 2026-07-10: module dialog input (NOT 'Module title').",
+        "fallbacks": [
+          "inline module-name textbox"
+        ],
+        "conf": 9.5
+      },
+      "module_create_confirm": {
+        "status": "locked",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Create Module' })",
+        "observed": "Phase B 2026-07-10: 'Create Module' submits the module dialog (module appeared in outline).",
+        "fallbacks": [
+          "'Create Module' in the module dialog"
+        ],
+        "conf": 9.0
       },
       "add_lesson": {
-        "status": "capture-pending",
-        "kind": "role_name",
-        "anchor": "getByRole('button', { name: 'Add Lesson' })",
-        "fallbacks": ["getByText('Add Post'|'Add Lesson'|'Add Video')", "'+' inside a module"],
-        "conf": 0
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('Add Lesson')",
+        "observed": "Phase B 2026-07-10: '+ Add Content' menu -> 'Add Lesson' opens the lesson dialog.",
+        "fallbacks": [
+          "'Add Lesson' in the Add Content menu"
+        ],
+        "conf": 9.0,
+        "note": "Reached via outline.add_content first."
       },
       "lesson_title_input": {
-        "status": "capture-pending",
+        "status": "locked",
         "kind": "placeholder",
-        "anchor": "getByPlaceholder('Lesson title')",
-        "fallbacks": ["inline title textbox on the new lesson row"],
-        "conf": 0
+        "anchor": "getByPlaceholder('Enter lesson title')",
+        "observed": "Phase B 2026-07-10: lesson dialog Title (NOT 'Lesson title'); needs a reactive fill (value-set + input/change) to enable submit.",
+        "fallbacks": [
+          "inline lesson-title textbox"
+        ],
+        "conf": 9.5
+      },
+      "lesson_module_select": {
+        "status": "locked",
+        "kind": "get_text",
+        "anchor": "getByText('Select Module')",
+        "observed": "Phase B 2026-07-10: 'Create Lesson' stays DISABLED until a Module is chosen; open 'Select Module' and pick the module via full mouse events (mousedown+mouseup+click).",
+        "fallbacks": [
+          "ghl_course_builder._select_lesson_module"
+        ],
+        "conf": 9.0
+      },
+      "lesson_create_confirm": {
+        "status": "locked",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Create Lesson' })",
+        "observed": "Phase B 2026-07-10: 'Create Lesson' (enabled after title + module) adds the lesson to the outline.",
+        "fallbacks": [
+          "'Create Lesson' in the lesson dialog"
+        ],
+        "conf": 9.0
       },
       "lesson_body_editor": {
         "status": "capture-pending",
         "kind": "get_text",
         "anchor": "lesson rich-text / description editor",
-        "fallbacks": ["CodeMirror/RTE inside the lesson panel — set via .setValue() in-frame, never key-by-key"],
+        "observed": "Phase B did not populate lesson body (existence read-back was title-level); the RTE lives in the lesson editor opened after create.",
+        "fallbacks": [
+          "RTE inside the lesson panel \u2014 set via .setValue(); media as a CDN link, never key-by-key/upload"
+        ],
         "conf": 0,
-        "note": "Media is NEVER browser-uploaded — a ghl_media CDN URL is inserted as a link/embed (spec §5.2 content-law)."
+        "note": "Media is NEVER browser-uploaded \u2014 a ghl_media CDN URL is inserted as a link/embed (spec \u00a75.2)."
       }
     }
   }

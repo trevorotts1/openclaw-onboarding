@@ -242,6 +242,106 @@ def _ex_wait_text(session: str, text: str, *, timeout: int = 20):
 
 
 # ---------------------------------------------------------------------------
+# Phase B (2026-07-10) LIVE-verified helpers — shared by both builders.
+# ---------------------------------------------------------------------------
+_APP_HOST = "https://app.convertandflow.com"
+
+
+def _reactive_fill(session: str, placeholder: str, value: str, timeout: int = 12) -> bool:
+    """Set an input/textarea value + dispatch input/change so a Naive-UI (Vue) field BINDS.
+    Phase B live: some GHL fields (course lesson title, the delete type-to-proceed box)
+    accept a plain `fill` visually but do NOT bind to Vue's model, leaving the submit
+    DISABLED. This forces the reactive bind. Matches by placeholder (exact, then contains)."""
+    js = (
+        "(() => { const want=" + json.dumps(placeholder) + "; const val=" + json.dumps(value) + ";"
+        " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const all=Array.from(document.querySelectorAll('input,textarea'));"
+        " let el=all.find(e=>norm(e.placeholder)===want)||all.find(e=>norm(e.placeholder).includes(want));"
+        " if(!el) return 'NOTFOUND'; el.focus();"
+        " const proto = el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;"
+        " const setter=Object.getOwnPropertyDescriptor(proto,'value'); setter.set.call(el,val);"
+        " el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true}));"
+        " return 'FILLED'; })()")
+    res = (_eval(session, js, timeout=timeout) or "").strip()
+    return bool(res) and "NOTFOUND" not in res
+
+
+def _nav_to_list(session: str, location_id: str, sels: dict, dotted_route: str,
+                 expect_text: str) -> None:
+    """C1/M1 nav (Phase B): the Memberships left-rail text is a non-navigating SPAN on some
+    accounts, so reach the LIST by navigating its route directly (proven: the LIST route
+    loads reliably; only the builder/editor route spins). Substitutes <LOCATION_ID>."""
+    route = anchor(sels, dotted_route)                       # locked route template
+    path = route.replace("<LOCATION_ID>", location_id)
+    url = path if path.startswith("http") else f"{_APP_HOST}{path}"
+    _ab(session, "navigate", url, timeout=45)
+    _ex_wait_text(session, expect_text, timeout=25)
+
+
+def _scoped_status_dropdown(session: str, name: str) -> bool:
+    """Deactivate (fix d, card-scoped): click the group's OWN list-card Status 'Active'
+    dropdown so a global first-match can never hit a REAL group. Phase B live."""
+    js = (
+        "(() => { const want=" + json.dumps(name) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " let el=[...document.querySelectorAll('*')].find(e=>norm(e.textContent)===want && e.children.length===0);"
+        " if(!el) return 'NO_CARD'; let card=el;"
+        " for(let i=0;i<8&&card.parentElement;i++){card=card.parentElement;"
+        "   if(/Members/.test(card.textContent)&&/Status/.test(card.textContent)) break;}"
+        " const cand=[...card.querySelectorAll('*')].filter(e=>norm(e.textContent)==='Active' && e.children.length<=1);"
+        " const t=cand[cand.length-1]; if(!t) return 'NO_CTL'; t.click(); return 'OK'; })()")
+    return (_eval(session, js, timeout=12) or "").strip() == "OK"
+
+
+def _ok_scoped(res: str, *fails: str) -> bool:
+    """Success predicate for the scoped-native helpers: truthy and not a known NO_*/NOTFOUND
+    marker (so a mocked _eval returning 'OK'/'CLICKED:x'/'FILLED' all count as success, while
+    a real NO_CARD/NO_OPT/NOTFOUND fails)."""
+    res = (res or "").strip()
+    bad = {"", "NOTFOUND", "NO_CARD", "NO_CTL", "NO_KEBAB", "NO_OPT", "NO_ROW"} | set(fails)
+    return bool(res) and res not in bad
+
+
+def _scoped_card_kebab(session: str, name: str) -> bool:
+    """Course delete (fix d): after ISOLATING the scratch course by search, click ITS OWN
+    card kebab (More actions) so a real member course can NEVER be hit (card-scoped)."""
+    js = (
+        "(() => { const want=" + json.dumps(name) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " let el=[...document.querySelectorAll('*')].find(e=>norm(e.textContent)===want && e.children.length===0);"
+        " if(!el) return 'NO_CARD'; let card=el;"
+        " for(let i=0;i<7&&card.parentElement;i++){card=card.parentElement; if(/member/i.test(card.textContent)) break;}"
+        " const btns=[...card.querySelectorAll('button,[role=button]')];"
+        " let kebab=btns.find(b=>!norm(b.textContent) && b.querySelector('svg'))||btns[btns.length-1];"
+        " if(!kebab) return 'NO_KEBAB'; kebab.click(); return 'OK'; })()")
+    return _ok_scoped(_eval(session, js, timeout=12))
+
+
+def _select_dropdown_option(session: str, label: str) -> bool:
+    """Pick a Naive-UI select option by exact label via FULL mouse events (mousedown+mouseup+
+    click) — a plain click does not register (Phase B: Add-Lesson 'Select Module')."""
+    js = (
+        "(() => { const want=" + json.dumps(label) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const opts=[...document.querySelectorAll('.n-base-select-option,[role=option],[class*=select-option],div,li,span')];"
+        " let el=opts.find(e=>norm(e.textContent)===want && e.children.length<=1);"
+        " if(!el) return 'NO_OPT';"
+        " ['mousedown','mouseup','click'].forEach(t=>el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));"
+        " return 'OK'; })()")
+    return _ok_scoped(_eval(session, js, timeout=12))
+
+
+def _click_bottom_button(session: str, text: str, min_y: int = 600) -> bool:
+    """Click the BOTTOM-most button whose text contains `text` (Phase B: the create wizard's
+    final 'Create Course' at the page bottom vs. the same-labelled top back-nav)."""
+    js = (
+        "(() => { const want=" + json.dumps(text) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const cands=[...document.querySelectorAll('button,[role=button]')].filter(e=>norm(e.textContent).includes(want));"
+        " let pick=cands.map(e=>[e,e.getBoundingClientRect().y]).filter(p=>p[1]>" + str(min_y) + ").sort((a,b)=>b[1]-a[1])[0];"
+        " if(!pick) pick=cands.map(e=>[e,e.getBoundingClientRect().y]).sort((a,b)=>b[1]-a[1])[0];"
+        " if(!pick) return 'NOTFOUND'; if(pick[0].disabled) return 'DISABLED'; pick[0].click();"
+        " return 'CLICKED@'+Math.round(pick[1]); })()")
+    return (_eval(session, js, timeout=12) or "").strip().startswith("CLICKED")
+
+
+# ---------------------------------------------------------------------------
 # List-scan idempotency (fix b) — the communities list has NO search box
 # ---------------------------------------------------------------------------
 _LIST_SCAN_JS = (
@@ -462,33 +562,40 @@ def _write_receipt(evidence_root: str, receipt: dict) -> str:
     return path
 
 
-def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict) -> dict:
+def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
+                      location_id: str = "") -> dict:
     """Cleanup for a community GROUP (fix d) — HONEST: GHL has NO group delete.
 
-    Verified two ways: (1) live capture 2026-07-10 — the row chevron is a login-as menu,
-    and the portal group Settings has Details/Subscriptions/Branding/Themes but NO
-    Delete / Danger Zone; only an Active↔Inactive status toggle; (2) the Tier-1 (36) and
-    Tier-2 (588 community-MCP) tool lists have NO delete_community/delete_group/
-    delete_channel — only `validate_group_slug` (which confirms SLUG keying). So literal
-    0-residue is IMPOSSIBLE for a group on any known rail. The ONLY cleanup primitive is
-    to set the group Inactive; the group ROW/portal REMAINS as documented residue. This
-    is NOT a fake delete — the true 0-residue proof is scoped to COURSES (which ARE
-    deletable). The status-toggle anchor is capture-pending → Phase B locks it."""
+    PHASE B LIVE-verified flow (card-scoped so a global first-match can NEVER hit a REAL
+    group on a populated account): navigate the communities list -> click the group's OWN
+    card Status 'Active' dropdown -> click the 'inactive' option -> Confirm the 'Deactivate
+    Group' dialog. There is NO delete on any known rail (UI has only Active<->Inactive; the
+    toggle lives on the APP list card, NOT in the portal group Settings dialog; Tier-1/2
+    have no delete_*). Literal 0-residue is IMPOSSIBLE for a group; the group ROW/portal
+    REMAINS as documented residue. NOT a fake delete — the true 0-residue proof is COURSES."""
+    name = plan.get("community_name") or plan.get("slug", "")
     result: Dict[str, Any] = {
         "cleanup_primitive": "inactivate",
         "deleted": False,
         "inactivated": False,
-        "slug": identity.get("slug", plan["slug"]),
+        "slug": identity.get("slug", plan.get("slug", "")),
         "residue": "group remains (GHL has no group delete on any known rail); set Inactive",
     }
     try:
-        _ex_click(session, sels, "community.group_settings.settings_nav")
-        _ex_click(session, sels, "community.group_settings.status_toggle")
-        _ex_wait_text(session, "Inactive", timeout=12)
+        if location_id:
+            _nav_to_list(session, location_id, sels,
+                         "community.routes.communities_list", "Create Group")
+        if not _scoped_status_dropdown(session, name):
+            raise StopAndReport("C6.status",
+                                "could not open the group's OWN card Status dropdown "
+                                "(card-scoped deactivate) — group left Active (residue).")
+        _ex_click(session, sels, "community.deactivate.inactive_option")     # 'inactive'
+        _ex_click(session, sels, "community.deactivate.confirm")             # Deactivate dialog
+        _ex_wait_text(session, "Deactivated", timeout=12)
         result["inactivated"] = True
     except StopAndReport as sr:
         result["stop"] = str(sr)
-        result["residue"] += f" (deactivate toggle capture-pending — Phase B: {sr.reason[:80]})"
+        result["residue"] += f" (deactivate STOP — {sr.reason[:80]})"
     return result
 
 
@@ -525,11 +632,11 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         _write_json(os.path.join(evidence_root, "routing", "auth-receipt.json"),
                     {"landed": auth["landed"], "seeded_at": _ts()})
 
-        # C1 — Memberships nav → communities list (verified-shared-rail entry).
-        _ex_click(session, sels, "shared_rail.memberships_left_rail")
-        _ex_wait_text(session, "Memberships", timeout=20)
-        _screenshot(session, _shot(evidence_root, shot_n, "c1-memberships"))
-        steps_done.append("C1:memberships")
+        # C1 — reach the communities LIST by navigating its route directly (Phase B:
+        # the Memberships left-rail text is a non-navigating SPAN on some accounts).
+        _nav_to_list(session, location_id, sels, "community.routes.communities_list", "Create Group")
+        _screenshot(session, _shot(evidence_root, shot_n, "c1-communities-list"))
+        steps_done.append("C1:communities-list")
 
         # C2 — LIST-SCAN idempotency (fix b): the communities list has NO search box.
         existed = _list_has(session, plan["community_name"], plan["slug"])
@@ -588,7 +695,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             # Only touch a scratch group we CREATED (never deactivate a reused/existing
             # group; a STOP-and-report before create means nothing was made — no-op).
             if action == "created" and identity.get("slug"):
-                cleanup.update(_deactivate_group(session, sels, plan, identity))   # fix d
+                cleanup.update(_deactivate_group(session, sels, plan, identity, location_id))   # fix d
             else:
                 cleanup["deleted"] = True
                 cleanup["note"] = ("nothing to clean — no scratch group created "
@@ -817,12 +924,12 @@ def _selftest() -> int:  # noqa: C901
         errors.append("verified-shared-rail anchor not returned")
     raised = False
     try:
-        anchor(sels, "community.list_page.create_group_button")   # capture-pending
+        anchor(sels, "community.create_page.privacy_switch")   # still capture-pending
     except StopAndReport:
         raised = True
     if not raised:
         errors.append("capture-pending REQUIRED anchor did NOT STOP-and-report (D8 gate broken)")
-    if anchor(sels, "community.list_page.create_group_button", required=False) != "":
+    if anchor(sels, "community.create_page.privacy_switch", required=False) != "":
         errors.append("capture-pending optional anchor should return ''")
 
     # 6. mocked-browser walk proves the live path is REAL code routed through the

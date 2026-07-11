@@ -307,11 +307,25 @@ def test_verify_public_uses_derived_portal_url():
 # guard: nothing was LOCKed — all in-area targets stay capture-pending (D8)
 # ═══════════════════════════════════════════════════════════════════════════
 def test_still_no_locked_inarea_targets():
+    """Phase B (2026-07-10) LOCKed the in-area anchors from a LIVE create-then-clean run.
+    Guard the LOCKed core + the documented still-pending set (a regression that un-locks or
+    wrongly-locks trips this)."""
     sels = cb.load_selectors()
-    for top in ("community", "course"):
-        for surface, targets in sels[top].items():
-            if not isinstance(targets, dict):
-                continue
-            for tname, t in targets.items():
-                if isinstance(t, dict) and "status" in t:
-                    assert t["status"] == "capture-pending", f"{top}.{surface}.{tname} LOCKed early"
+    must_be_locked = [
+        "community.routes.communities_list", "community.list_page.create_group_button",
+        "community.create_page.name_input", "community.create_page.create_confirm",
+        "community.group_nav.add_channel_control", "community.group_nav.channel_create_confirm",
+        "community.deactivate.status_dropdown", "community.deactivate.confirm",
+        "course.routes.courses_list", "course.list_page.create_course_button",
+        "course.list_page.create_source", "course.list_page.delete_confirm",
+        "course.create_modal.name_input", "course.create_modal.create_confirm",
+        "course.outline.add_content", "course.outline.add_module",
+        "course.outline.module_create_confirm", "course.outline.add_lesson",
+        "course.outline.lesson_create_confirm",
+    ]
+    for dotted in must_be_locked:
+        assert cb._target(sels, dotted)["status"] == "locked", f"{dotted} should be LOCKed (Phase B)"
+    for dotted in ("community.create_page.privacy_switch",
+                   "course.create_modal.product_type",
+                   "course.outline.lesson_body_editor"):
+        assert cb._target(sels, dotted)["status"] == "capture-pending", f"{dotted} still pending"
