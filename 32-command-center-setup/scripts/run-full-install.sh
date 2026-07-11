@@ -294,6 +294,104 @@ cc_resolve_sovereign_model() {
   printf ''
 }
 
+# _cc_model_is_ollama_cloud — exit 0 when the id targets the client's Ollama
+# Cloud provider (the ONLY sanctioned QC-judge provider). Mirrors the CC
+# qc-scorer isOllamaCloudModel(): the registry form ollama-cloud/<m>, the legacy
+# ollama/<m>:cloud shape, and a bare <m>:cloud tag (the ':cloud' suffix is
+# authoritative). Case-insensitive.
+_cc_model_is_ollama_cloud() {
+  local m
+  m="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$m" ]] || return 1
+  case "$m" in
+    ollama-cloud/*) return 0 ;;
+  esac
+  [[ "$m" == *":cloud"* ]] && return 0
+  return 1
+}
+
+# _cc_model_is_reasoning_judge — exit 0 when the id is an ELIGIBLE QC judge:
+# a client-owned Ollama Cloud model (above) from a strong GENERAL-REASONING
+# family and NOT a code model. QC-08 operator decision (Trevor): the judge must
+# be a strong general reasoner — deepseek / glm / qwen3 / gpt-oss / mistral — and
+# NEVER a *-code / *-coder model (rejected outright), nor an embedding model.
+# Case-insensitive.
+_cc_model_is_reasoning_judge() {
+  local m
+  m="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  _cc_model_is_ollama_cloud "$m" || return 1
+  case "$m" in
+    *coder*|*-code*|*code-*|*:code*|*embed*) return 1 ;;   # never a code/embedding model
+  esac
+  case "$m" in
+    *deepseek*|*glm*|*qwen3*|*gpt-oss*|*mistral*|*ministral*|*mixtral*) return 0 ;;
+  esac
+  return 1
+}
+
+# _cc_normalize_judge_id — return the QC_JUDGE_MODEL value from a client model id,
+# PRESERVING the client's own naming (the ':cloud' tag) and stripping only a
+# leading provider prefix (ollama/ or ollama-cloud/). The CC qc-scorer accepts
+# the bare '<m>:cloud' form directly (isOllamaCloudModel matches ':cloud') and
+# sends it VERBATIM to the box's Ollama Cloud endpoint — so the judge uses the
+# SAME model naming the client's own agents already route through (whatever that
+# endpoint is). We deliberately do NOT rewrite '<m>:cloud' -> 'ollama-cloud/<m>':
+# that would strip the ':cloud' tag some endpoints require (verified on the
+# operator canary — the local Ollama proxy 404s on the bare id, 200s on <m>:cloud).
+_cc_normalize_judge_id() {
+  local id="${1:-}"
+  id="${id#ollama-cloud/}"
+  id="${id#ollama/}"
+  printf '%s' "$id"
+}
+
+# cc_resolve_judge_model — echo a client-owned Ollama Cloud GENERAL-REASONING
+# model id to use as the Command Center QC judge (QC-08), or empty when the
+# client has none eligible.
+#
+# ⛔ Sovereignty: the judge MUST be one of THIS client's OWN models — never a
+# hardcoded fleet default that could point at another client's key. Source is the
+# box's OWN openclaw.json (the same store cc_resolve_sovereign_model reads): the
+# ollama / ollama-cloud provider model lists plus the agent model
+# defaults/fallbacks. When the client has NO eligible general-reasoning cloud
+# model we return EMPTY and the caller leaves QC_JUDGE_MODEL UNSET (fail-closed is
+# correct — the CC scorer holds tasks for human review) and logs a clear "judge
+# not provisioned — needs a client model" line. We never guess or borrow.
+#
+# Family precedence (Trevor's decision): deepseek > glm > qwen3 > gpt-oss >
+# mistral/ministral. A *-code model is never eligible. An explicit per-client
+# operator override (CC_QC_JUDGE_MODEL) still must be a client-owned reasoning
+# cloud model.
+cc_resolve_judge_model() {
+  if [[ -n "${CC_QC_JUDGE_MODEL:-}" ]] && _cc_model_is_reasoning_judge "$CC_QC_JUDGE_MODEL"; then
+    _cc_normalize_judge_id "$CC_QC_JUDGE_MODEL"; return 0
+  fi
+  [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  local ids
+  ids="$(jq -r '
+    [ (.models.providers["ollama-cloud"].models[]?.id),
+      (.models.providers["ollama"].models[]?.id),
+      (.agents.defaults.model.primary?),
+      ((.agents.defaults.model.fallbacks? // [])[]),
+      ((.agents.list // []) | map(.model.primary?) | .[]),
+      ((.agents.list // []) | map(.model.fallbacks? // []) | add // [] | .[])
+    ] | map(select(type=="string" and . != "")) | unique | .[]
+  ' "$OC_CONFIG" 2>/dev/null)"
+  local fam id lid
+  for fam in deepseek glm qwen3 gpt-oss mistral ministral; do
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      _cc_model_is_reasoning_judge "$id" || continue
+      lid="$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]')"
+      case "$lid" in
+        *"$fam"*) _cc_normalize_judge_id "$id"; return 0 ;;
+      esac
+    done <<< "$ids"
+  done
+  printf ''
+}
+
 # cc_env_has_nonempty — exit 0 when KEY exists in the env file with a non-empty
 # value. (KEY is [A-Z_]+ here, so it carries no regex metacharacters.)
 cc_env_has_nonempty() {
@@ -443,6 +541,45 @@ cc_write_env_local() {
   fi
   log "INFO" "cc-env: SOVEREIGN_DEFAULT_MODEL ${sm_status}"
 
+  # ---- (3b) QC_JUDGE_MODEL — client-owned Ollama Cloud GENERAL-REASONING judge --
+  # QC-08 (operator decision): the Command Center quality-review JUDGE runs on the
+  # CLIENT's OWN Ollama Cloud model — NEVER an operator/shared paid key, and NEVER
+  # a *-code model. Root cause this fixes: with NO QC_JUDGE_MODEL (and no dept-QC-
+  # agent model column) the CC qc-scorer's resolveClientJudgeModel() returns null
+  # and every review fails CLOSED to heuristic 'no-key' — the task sits in `review`
+  # forever and the board silently completes NOTHING. We provision a general-
+  # reasoning judge from THIS box's own models so review can actually pass.
+  #
+  # JUDGE != WRITER design note: the CC scorer only enforces judge!=writer when the
+  # WRITER model is known (input.writerModel). Today every agents.model column is
+  # blank fleet-wide (verified on the operator canary: 0 of 290 agents carry a
+  # model), so writerModel is null and the equality guard is SKIPPED — therefore
+  # ANY eligible client-owned reasoning model is a safe judge. When agent models
+  # are later populated, cc_resolve_judge_model's family precedence still picks a
+  # deepseek/glm/qwen3 judge that will differ from a kimi/other writer in practice.
+  #
+  # Idempotent: an operator-set QC_JUDGE_MODEL is PRESERVED, never overwritten.
+  # NOTE (endpoint dependency, flagged separately): scoring ALSO requires the box's
+  # Ollama Cloud connector to reach a working endpoint with the client's key. On
+  # the operator canary the default https://ollama.com returned 401 for every
+  # stored key and the working sovereign path was the box's local Ollama proxy
+  # (OLLAMA_CLOUD_BASE_URL). Provisioning that endpoint is intentionally OUT OF
+  # SCOPE here (per-box; never guess another box's endpoint) — this block sets
+  # only the judge NAME, from the client's own models.
+  local jm_status judge_id
+  if cc_env_has_nonempty "$envf" QC_JUDGE_MODEL; then
+    jm_status="preserved(existing)"
+  else
+    judge_id="$(cc_resolve_judge_model)"
+    if [[ -n "$judge_id" ]]; then
+      cc_env_set_if_absent "$envf" QC_JUDGE_MODEL "$judge_id" >/dev/null \
+        && jm_status="set(${judge_id})"
+    else
+      jm_status="UNSET — judge not provisioned: this box's openclaw.json has no eligible client general-reasoning Ollama Cloud model (deepseek/glm/qwen3/gpt-oss/mistral, non-code). QC fail-closes to human review until one exists. (never guess/borrow a shared key)"
+    fi
+  fi
+  log "INFO" "cc-env: QC_JUDGE_MODEL ${jm_status}"
+
   # ---- (4) API-auth posture — never leave the middleware silently fail-closed --
   # Preserve any posture already chosen. Otherwise DEFAULT to provisioning real
   # secrets (secure — webhooks authenticate). A Cloudflare-Access box may opt into
@@ -467,6 +604,19 @@ cc_write_env_local() {
   # resolves and its task write-backs authenticate (else they 401 and finished
   # work freezes in_progress). Idempotent; preserves any existing agent value.
   cc_mirror_api_auth_to_agent_secrets "$envf"
+
+  # STALE-CHECKOUT POST-CONDITION (loud): a box running an OLD on-box installer
+  # (predating cc_mirror_api_auth_to_agent_secrets, Skill-32 v12.9.31) writes the
+  # token to CC .env.local but never mirrors it to $OC_ROOT/secrets/.env — the
+  # server is half-provisioned and dispatched dept agents 401 on write-back, so
+  # the board silently stalls. This installer HAS the mirror, but we still assert
+  # the post-condition so any future regression (or a bypassed mirror) screams
+  # instead of failing silently. If .env.local carries a token but the agent
+  # secrets env does not, say so LOUDLY and name the remedy.
+  if cc_env_has_nonempty "$envf" MC_API_TOKEN \
+     && ! cc_env_has_nonempty "$OC_ROOT/secrets/.env" MC_API_TOKEN; then
+    log "ERROR" "cc-env: POST-CONDITION FAILED — MC_API_TOKEN is in CC .env.local but was NOT mirrored to $OC_ROOT/secrets/.env. Dept-agent write-backs will 401 and finished tasks freeze in_progress. Likely a STALE on-box Skill-32 checkout: update Skill 32 to current (>= v12.9.31) and re-run this installer."
+  fi
 
   chmod 600 "$envf" 2>/dev/null || true
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterEnvLocalProvisioned = true' 2>/dev/null || true
