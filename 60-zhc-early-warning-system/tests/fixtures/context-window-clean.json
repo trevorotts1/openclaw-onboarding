@@ -1,0 +1,65 @@
+{
+  "_comment": "SYNTHETIC test fixture for the Skill 60 EWS sentinel test suite. No client data. context-window-clean: identical to baseline-clean.json PLUS the _contextWindow hint (128000) baseline-clean.json itself omits. softThresholdTokens stays sane (20000), so the effective ceiling (contextWindow - softThresholdTokens) is 108000 - a healthy, non-broken box. This is the config half of the D-CONTEXT-USAGE drill: paired with context-usage-86pct.trajectory.jsonl, it exercises _context_usage() computing a real usage_pct from live trajectory data (previously nothing did this - the 70%/85% branches of sig_s3 were dead code) and the two-lane delivery that usage_pct feeds. See tests/drills/D-CONTEXT-USAGE.md.",
+  "_contextWindow": 128000,
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "glm-5.2",
+        "fallbacks": [
+          "minimax-m3:cloud",
+          "deepseek-v4"
+        ]
+      },
+      "models": {
+        "glm-5.2": {
+          "provider": "openrouter"
+        },
+        "minimax-m3:cloud": {
+          "provider": "ollama-cloud"
+        }
+      },
+      "maxConcurrent": 16,
+      "subagents": {
+        "model": {
+          "primary": "glm-5.2",
+          "fallbacks": [
+            "minimax-m3:cloud"
+          ]
+        },
+        "maxConcurrent": 16,
+        "maxChildrenPerAgent": 8,
+        "maxSpawnDepth": 3
+      },
+      "compaction": {
+        "mode": "memoryFlush",
+        "memoryFlush": {
+          "softThresholdTokens": 20000
+        }
+      },
+      "heartbeat": {
+        "every": "@daily",
+        "model": "minimax-m3"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "accounts": {
+        "default": {
+          "allowFrom": [
+            "11111111"
+          ],
+          "dmPolicy": "allowlist",
+          "groupPolicy": "closed"
+        }
+      }
+    }
+  },
+  "cron": [
+    {
+      "name": "ews-tick",
+      "schedule": "*/15 * * * *",
+      "delivery": "silent"
+    }
+  ]
+}

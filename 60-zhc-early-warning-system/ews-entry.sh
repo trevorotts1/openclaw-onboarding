@@ -15,6 +15,7 @@
 #   cadence {show|recommend|set ...}   weekly-pinned cadence (D8)
 #   fleet {ingest|cycle|digest}        operator-box aggregator (operator box only)
 #   escalate                 push unacked P1s to Rescue Rangers
+#   notices [--peek]         read (and consume) the box's own pending D5 self-notices
 #   prune                    enforce snapshot retention (D7)
 #   --self-test              run EVERY script's --self-test (the aggregate gate)
 #
@@ -70,6 +71,7 @@ case "$CMD" in
     cadence)          py ews_cadence.py "$@" ;;
     fleet)            py ews_fleet.py "$@" ;;
     escalate)         py ews_alert.py escalate "$@" ;;
+    notices)          py ews_alert.py notices "$@" ;;
     prune)            py ews_snapshot.py prune "$@" ;;
     --self-test)      aggregate_self_test ;;
     -h|--help|"")     usage ;;

@@ -150,6 +150,18 @@ negative, or `softThresholdTokens` is set at or above the box's own context wind
 That is not a "running low" note; it is a "this box cannot function until you fix the
 number" alert, because only you can repair a config value.
 
+**One narrow, approved exception — your OWN box only.** On the operator box you are
+reading this on (never a client box), an 85%-handoff finding ALSO sends you one
+plain-language self-notice — "your assistant's working memory is N% full, it will
+wrap up cleanly and start a fresh session" — because on that one box the finding's
+subject and the reader are the same person: it is your own session's health, not an
+ops alert about someone else's box. It is gated in code on that box's own role
+being `operator`, not just a config flag, so it structurally cannot fire on a client
+box; turn it off with `context.operator_self_notify: false` in `thresholds.json` if
+you don't want it. The self-notice the box's OWN agent gets (the normal D5 case
+above) is readable with `bash ews-entry.sh notices` (add `--peek` to read without
+consuming it).
+
 ## The D9 furnace/billing framing
 
 An idle-burn alert always tells you what kind of waste you're looking at, because the

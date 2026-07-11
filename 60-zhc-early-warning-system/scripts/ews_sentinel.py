@@ -457,6 +457,165 @@ def _read_trajectory_events(led, max_files=50, max_bytes=1_000_000):
     return events
 
 
+# --------------------------------------------------------------------------- #
+# S3 live-usage helper - the missing half that made the 70%/85% branches dead
+# code (they were only ever exercised by sig_s3's own self-test, never by a
+# real tick). Zero model calls, zero network beyond an OPT-IN local-binary
+# probe (see the CLI fallback below); deterministic file reads only.
+# --------------------------------------------------------------------------- #
+
+# OPEN QUESTION (verify-first; the rescue spec is explicit: "do not assume").
+# The exact trajectory-event field carrying the CUMULATIVE context/input-token
+# figure has NOT been confirmed against a real *.trajectory.jsonl on the
+# operator canary box (only modelId/provider/sessionId are proven fields today
+# - see _read_trajectory_events above and tests/fixtures/README.md). The names
+# below are the plausible OpenClaw trajectory-schema candidates, tried in
+# order; when NONE is present this returns None, which makes _context_usage()
+# a clean (None, None) no-op - identical to today's dead-code behavior, never
+# a guessed percentage. CONFIRM the true field on the canary box during the
+# Topic-2/3 burn-in, then trim this tuple to the one real name.
+_CONTEXT_TOKEN_FIELDS = (
+    "contextTokens", "cumulativeContextTokens", "contextUsedTokens",
+    "totalTokens", "cumulativeInputTokens", "inputTokens", "promptTokens",
+)
+_CONTEXT_TOKEN_NESTED = (
+    ("usage", "input_tokens"), ("usage", "total_tokens"),
+    ("usage", "context_tokens"), ("tokenUsage", "total"),
+)
+
+
+def _extract_context_tokens(obj):
+    """Best-effort cumulative-token read off a trajectory event or CLI status
+    dict, trying the OPEN QUESTION candidates above. Never raises; a wrong or
+    absent shape returns None so the caller can no-op rather than guess."""
+    if not isinstance(obj, dict):
+        return None
+    for key in _CONTEXT_TOKEN_FIELDS:
+        v = obj.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+            return int(v)
+    for outer, inner in _CONTEXT_TOKEN_NESTED:
+        sub = obj.get(outer)
+        if isinstance(sub, dict):
+            v = sub.get(inner)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                return int(v)
+    return None
+
+
+def _latest_trajectory_event(max_bytes=200_000):
+    """The LAST JSON row of the box's newest *.trajectory.jsonl (by mtime), the
+    same ground-truth stream S2 tails via _read_trajectory_events - but this is
+    a bounded-tail PEEK, not a tick-offset consumer: it must never advance the
+    ledger offsets S2 owns, so it re-reads the tail of the file directly rather
+    than sharing S2's cursor. Returns None when no session file exists yet."""
+    base = openclaw_root() / "agents"
+    files = glob.glob(str(base / "*" / "sessions" / "*.trajectory.jsonl"))
+    if not files:
+        return None
+
+    def _mtime(f):
+        try:
+            return os.path.getmtime(f)
+        except OSError:
+            return -1.0
+
+    newest = max(files, key=_mtime)
+    try:
+        size = os.path.getsize(newest)
+    except OSError:
+        return None
+    try:
+        with open(newest, "r", encoding="utf-8", errors="replace") as fh:
+            if size > max_bytes:
+                fh.seek(size - max_bytes)
+                fh.readline()  # drop a possibly-truncated partial first line
+            tail = fh.read(max_bytes)
+    except OSError:
+        return None
+    last = None
+    for line in tail.splitlines():
+        line = line.strip()
+        if line:
+            last = line
+    if not last:
+        return None
+    try:
+        return json.loads(last)
+    except ValueError:
+        return None
+
+
+def _context_usage_from_cli():
+    """Fallback probe per the spec's OPEN QUESTION: `openclaw session status
+    --json`, IF that subcommand exists on this OpenClaw build - unverified, so
+    this is OFF by default and requires the explicit opt-in
+    EWS_CONTEXT_CLI_FALLBACK=1 (set only after confirming the subcommand exists;
+    never assumed). Never a model call; the only egress is the local binary,
+    the same injectable seam ews_alert.py's gateway sender already uses. Any
+    failure (binary missing, non-zero exit, unparseable output) is a silent
+    None, never a crash and never a guessed number."""
+    if os.environ.get("EWS_CONTEXT_CLI_FALLBACK", "") != "1":
+        return None
+    openclaw = os.environ.get("OPENCLAW_BIN")
+    if not openclaw:
+        from shutil import which
+        openclaw = which("openclaw")
+    if not openclaw:
+        return None
+    try:
+        proc = subprocess.run([openclaw, "session", "status", "--json"],
+                              capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _context_usage(config, led):
+    """Return (usage_pct, context_window) for the box's ACTIVE session, or
+    (None, None) when it cannot be determined. Deterministic: reads the newest
+    session *.trajectory.jsonl (the same ground-truth stream S2 already tails
+    via _read_trajectory_events) and takes the LATEST event's cumulative
+    input/context-token figure; ceiling = contextWindow minus SUBTRACTIVE
+    softThresholdTokens, reusing ews_common.subtractive_broken's own ceiling
+    arithmetic so S3's two halves (broken-config, running-low) never compute
+    the ceiling two different ways. `led` is accepted for signature parity
+    with the spec and as a hook for a future active-session lookup; the
+    current field-name OPEN QUESTION does not require ledger state to resolve.
+    A missing signal returns (None, None) - never 0%, never a guess - so a box
+    with no trajectory data yet simply gets no running-low finding, exactly
+    today's (dead-code) behavior."""
+    cw = C.context_window_hint(config)
+    tokens = None
+    ev = _latest_trajectory_event()
+    if ev is not None:
+        tokens = _extract_context_tokens(ev)
+    if tokens is None:
+        cli = _context_usage_from_cli()
+        if isinstance(cli, dict):
+            tokens = _extract_context_tokens(cli)
+            if cw is None:
+                for key in ("contextWindow", "context_window"):
+                    v = cli.get(key)
+                    if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                        cw = int(v)
+                        break
+    if tokens is None or cw is None:
+        return None, None
+    broken, ceiling, _reason = C.subtractive_broken(config, cw)
+    if broken or ceiling is None or ceiling <= 0:
+        # the broken-config P1 already covers this box; never also guess a pct
+        return None, None
+    pct = int(round((tokens / ceiling) * 100))
+    return max(0, pct), cw
+
+
 def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None):
     """One deterministic tick. Records events; routes findings via ews_alert unless
     send is False. Returns a summary dict."""
@@ -525,7 +684,8 @@ def run_tick(state_dir=None, config_path=None, send=True, probe=None, role=None)
 
         # --- S3 (no baseline needed) -------------------------------------------
         if config is not None:
-            findings += sig_s3(config, thresholds)
+            u_pct, ctx_win = _context_usage(config, led)
+            findings += sig_s3(config, thresholds, usage_pct=u_pct, context_window=ctx_win)
 
         # --- S2 / S5 (trajectory) ----------------------------------------------
         traj = _read_trajectory_events(led)
@@ -668,6 +828,72 @@ def self_test():
     f3note = sig_s3({"agents": {"defaults": {}}}, thresholds, usage_pct=72)
     assert f3note and f3note[0]["route"] == R_BOX_AGENT and f3note[0]["severity"] == "P3"
     print("  S3 case: PASS (broken-config=P1 to OPERATOR; running-low routes to BOX agent, D5)")
+
+    # _context_usage: the live-usage computation that feeds S3's running-low
+    # branches (D1/D2 fix - these branches were dead code before this function).
+    # (tempfile was already imported above, in the S4 case.)
+    with tempfile.TemporaryDirectory() as ctd:
+        os.environ["EWS_OPENCLAW_ROOT"] = ctd
+        os.environ.pop("EWS_CONTEXT_CLI_FALLBACK", None)
+        cfg_cw = {"agents": {"defaults": {"compaction": {"memoryFlush":
+                  {"softThresholdTokens": 20000}}}}, "_contextWindow": 128000}
+
+        # (a) no trajectory file yet -> clean (None, None), never a guess
+        assert _context_usage(cfg_cw, None) == (None, None)
+
+        # (b) a trajectory file with a recognized field -> correct pct + window.
+        # ceiling = 128000 - 20000 = 108000; 92880 / 108000 = 0.86 -> 86%
+        sess_dir = Path(ctd) / "agents" / "main" / "sessions"
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        traj = sess_dir / "sess-example.trajectory.jsonl"
+        traj.write_text(
+            json.dumps({"ts": "2026-07-10T12:00:00Z", "sessionId": "sess-example",
+                       "modelId": "glm-5.2", "provider": "openrouter"}) + "\n" +
+            json.dumps({"ts": "2026-07-10T12:05:00Z", "sessionId": "sess-example",
+                       "modelId": "glm-5.2", "provider": "openrouter",
+                       "contextTokens": 92880}) + "\n",
+            encoding="utf-8")
+        pct, cw = _context_usage(cfg_cw, None)
+        assert pct == 86 and cw == 128000, (pct, cw)
+        print("  _context_usage case: PASS (trajectory field found -> 86% of 128000)")
+
+        # (c) ceiling broken (threshold >= window) -> never guess a pct even
+        # though tokens are present; the broken-config P1 already covers it
+        cfg_broken = {"agents": {"defaults": {"compaction": {"memoryFlush":
+                      {"softThresholdTokens": 900000}}}}, "_contextWindow": 128000}
+        assert _context_usage(cfg_broken, None) == (None, None)
+        print("  _context_usage case: PASS (broken ceiling never guesses a pct)")
+
+        # (d) CLI fallback OFF by default -> even with no trajectory data, it
+        # never shells out (proven by NOT setting OPENCLAW_BIN to anything that
+        # would answer, and still getting a clean None instead of a hang/crash)
+        empty_dir = Path(ctd) / "empty"
+        empty_dir.mkdir(exist_ok=True)
+        os.environ["EWS_OPENCLAW_ROOT"] = str(empty_dir)
+        assert _context_usage(cfg_cw, None) == (None, None)
+        print("  _context_usage case: PASS (CLI fallback OFF by default = no shell-out)")
+
+        # (e) CLI fallback ON (explicit opt-in) + a fake local binary -> proves
+        # the fallback path itself works once verified/enabled, without ever
+        # touching a real openclaw binary
+        fake_bin = Path(ctd) / "fake-openclaw.sh"
+        fake_bin.write_text(
+            "#!/bin/sh\n"
+            'echo \'{"contextTokens": 54000, "contextWindow": 128000}\'\n',
+            encoding="utf-8")
+        fake_bin.chmod(0o755)
+        os.environ["EWS_CONTEXT_CLI_FALLBACK"] = "1"
+        os.environ["OPENCLAW_BIN"] = str(fake_bin)
+        cfg_no_hint = {"agents": {"defaults": {"compaction": {"memoryFlush":
+                       {"softThresholdTokens": 20000}}}}}  # no _contextWindow hint
+        pct_cli, cw_cli = _context_usage(cfg_no_hint, None)
+        # ceiling = 128000 - 20000 = 108000; 54000/108000 = 0.50 -> 50%
+        assert pct_cli == 50 and cw_cli == 128000, (pct_cli, cw_cli)
+        print("  _context_usage case: PASS (opt-in CLI fallback resolves tokens + window)")
+
+        for k in ("EWS_CONTEXT_CLI_FALLBACK", "OPENCLAW_BIN"):
+            os.environ.pop(k, None)
+    os.environ.pop("EWS_OPENCLAW_ROOT", None)
 
     # S2
     events = [{"modelId": "glm-5.2", "provider": "openrouter", "sessionId": "s1"},

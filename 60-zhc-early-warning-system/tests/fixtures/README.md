@@ -33,6 +33,35 @@ case -- a guaranteed crash regardless of usage, which is the ONE context case th
 reaches the operator as a P1 under D5 (running-low never does; it stays local to the
 box's own agent). See `../drills/D-S3.md`.
 
+## `context-window-clean.json` + `context-usage-86pct.trajectory.jsonl`
+
+A PAIR of fixtures exercising `_context_usage()` and the D5 running-low branches
+end to end -- the two-part fix for the previously-dead-code S3 running-low path
+(nothing computed live usage; the tick never passed `usage_pct` into `sig_s3()`).
+
+- `context-window-clean.json`: `baseline-clean.json` plus a `_contextWindow` hint
+  (128000) and a SANE `softThresholdTokens` (20000), so the effective ceiling is
+  108000 -- a healthy, non-broken box (contrast with `subtractive-misconfig.json`,
+  which is deliberately broken).
+- `context-usage-86pct.trajectory.jsonl`: two synthetic trajectory events for the
+  same session; the LATEST carries `contextTokens: 92880`, which is exactly 86% of
+  the 108000 ceiling above (`92880 / 108000 = 0.86`).
+
+Together they prove `_context_usage()` reads the newest trajectory file's latest
+event, computes `usage_pct` against the SUBTRACTIVE ceiling (reusing
+`ews_common.subtractive_broken`'s own arithmetic), and that the resulting 86% feeds
+`sig_s3()`'s handoff branch (route: the box's own agent, D5) -- and, on the
+OPERATOR's own box only, the narrow Lane-2 self-notice exception. See
+`../drills/D-CONTEXT-USAGE.md`.
+
+**OPEN QUESTION carried into these fixtures, on purpose:** the exact trajectory
+field name (`contextTokens`) is a plausible OpenClaw schema candidate, NOT a
+field confirmed against a real `*.trajectory.jsonl` on the operator canary box
+(see the `_CONTEXT_TOKEN_FIELDS` comment in `ews_sentinel.py`). If the canary
+proves a different real field name, only these two fixtures and that candidate
+tuple need to change -- the arithmetic and the two-lane delivery this drill
+proves are field-name-independent.
+
 ## `announce-cron.json`
 
 `baseline-clean.json` plus a second cron entry, `daily-report`, with
