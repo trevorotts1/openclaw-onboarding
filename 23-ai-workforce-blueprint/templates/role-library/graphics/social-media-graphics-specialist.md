@@ -294,13 +294,21 @@ Before any output ships, it must pass these gates:
 - [ ] The graphic previews correctly in-context (verified in scheduling platform).
 - [ ] File naming convention followed correctly.
 
-### Gate 2 -- Department QC Review (Senior Designer or Chief Design Officer, sampled)
+### Gate 2 -- Department QC Review (SOP-GIP-02 for external generated assets; sampled for internal drafts)
 
-Not every graphic requires QC review (volume is too high), but a random sample of 10% of weekly graphics must be reviewed by a senior team member for:
+Every AI-generated graphic that leaves for an EXTERNAL surface (published social post, ad, email, funnel)
+runs 100% through SOP-GIP-02 (mandatory vision pass + AF-G auto-fail battery + average >= 8.5 gate; writes
+`<job>/qc/image_qc_report.json`). Prompts for these graphics use band `text_bearing_long` when copy is
+baked in, `medium` for Seedream/Ideogram quick posts (SOP-GIP-01). The 10% random-sample review below
+survives ONLY for INTERNAL drafts and non-generated template assets, reviewed by a senior team member for:
 - [ ] Does this graphic feel like it belongs to {{COMPANY_NAME}}'s social media presence?
 - [ ] Is the design quality consistent with or exceeding the team's established bar?
 - [ ] Is the template being used correctly, or is the designer fighting against it?
 - [ ] Are there quality drift patterns emerging across the full volume that a single-designer self-check would miss?
+
+> Skill 57 (social-media-in-a-box) media-core output is governed by Skill 57's own fail-closed provers
+> (Gemini 4-grid judge + SeedDream repair) — do NOT re-QC it here; graphics-department-authored social
+> assets are governed by SOP-GIP-02.
 
 ### Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes")
 

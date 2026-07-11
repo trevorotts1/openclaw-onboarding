@@ -19,6 +19,23 @@ WHAT IT ENFORCES (three sub-commands)
       back a tier (the MODEL-SPECS auto-fallback rule) rather than silently
       truncate at the endpoint.
 
+  prompt-band  — GRAPHICS IMAGE PROTOCOL (GIP) PROMPT BANDS (_system/prompt-bands.json).
+      The MAX-only cap tiers were necessary but not SUFFICIENT: a one-line prompt
+      could reach Kie.ai/GPT-Image 2 unchallenged (no MIN floor anywhere in graphics).
+      This is the graphics analogue of the Presentations 9,000-char floor gate. A
+      prompt is checked against its asset-class BAND:
+        * length below the band MIN  -> HARD FAIL (exit 3, AF-GIP-PROMPT-FLOOR):
+          NOT submitted, NOT rendered — re-author (never truncate up to the floor).
+        * length above the band MAX  -> HARD FAIL (exit 3, AF-DIU-PROMPT-CAP): fall
+          back a tier per MODEL-SPECS, do not ship a prompt the endpoint truncates.
+        * a QUALITY defect (independent of length, exactly like AF-P13/P14/P-DENSITY)
+          -> HARD FAIL (exit 6, AF-GIP-PROMPT-QUALITY): the negative block must name
+          >= 6 of the 8 defect classes; a text-bearing band requires a per-string
+          spelling-lock and the verbatim copy baked in; distinct-word density must
+          clear the band floor (anti-padding); and when style reference images are
+          attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
+          (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
+
   route-check  — DIU ROUTING INTERLOCK (SOP-DIU-611 §D.1 "coded hard stop").
       An audience / webinar / funnel / sales / virtual-event deck CANNOT proceed on
       the DIU Style Rotation Engine (strategy-(b) pipeline). Any such deck routes to
@@ -45,18 +62,26 @@ WHAT IT ENFORCES (three sub-commands)
       dimension resets its streak.
 
 EXIT CODES
-    0 — pass (within cap / legal route / consent OK / fidelity pass, no 3rd strike).
+    0 — pass (within cap / legal route / consent OK / fidelity pass, no 3rd strike;
+        prompt-band: within [MIN, MAX] AND clears every quality tooth).
     2 — routing-interlock violation (AF-DIU-ROUTING-INTERLOCK) or usage error.
-    3 — prompt over the tier cap (AF-DIU-PROMPT-CAP) OR a fidelity FAIL that has
-        not yet reached the 3rd consecutive strike.
+    3 — prompt over the tier cap (AF-DIU-PROMPT-CAP) OR under the band floor
+        (AF-GIP-PROMPT-FLOOR) OR a fidelity FAIL that has not yet reached the 3rd
+        consecutive strike.
     4 — consent/minor/PII gate failure (AF-DIU-CONSENT): consent unconfirmed, a
         minor, or the biometric IDENTITY store is unprotected — fail closed.
     5 — 3-strike escalation (AF-DIU-3-STRIKE): a dimension failed 3 consecutive
         times — escalate to CDO with the receipt evidence.
+    6 — prompt-band QUALITY failure (AF-GIP-PROMPT-QUALITY): the length cleared the
+        band but a quality tooth (8-class negative block / spelling-lock / verbatim
+        copy / density / style-reference-only) did not — re-author, do not submit.
 
 USAGE
     python3 diu_validator.py prompt-caps --tier LONG --prompt-file assembled.txt
     python3 diu_validator.py prompt-caps --tier SHORT --prompt "…inline…"
+    python3 diu_validator.py prompt-band --band text_bearing_long \
+                --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
+    python3 diu_validator.py prompt-band --band medium --prompt "…inline…" [--run-dir RUN]
     python3 diu_validator.py route-check --deck-kind webinar
     python3 diu_validator.py fidelity --run-dir RUN --card-id FB-003 \
                 --scores-file scores.json [--hard-rule-violation "text on face"]
@@ -417,12 +442,326 @@ def cmd_fidelity(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 4) GRAPHICS IMAGE PROTOCOL (GIP) PROMPT BANDS — _system/prompt-bands.json.
+# ---------------------------------------------------------------------------
+# The MAX-only cap tiers (cmd_prompt_caps) let a one-line prompt reach the paid API
+# unchallenged: there was NO minimum floor anywhere in graphics. This is the graphics
+# analogue of the Presentations 9,000-char floor + quality gate (build_deck.py /
+# prompt_gate.py), driven by the per-asset-class bands in prompt-bands.json. The gate
+# is TWO independent halves, mirroring presentations exactly:
+#   (1) LENGTH — a HARD MIN floor (AF-GIP-PROMPT-FLOOR) + the MAX cap (AF-DIU-PROMPT-CAP).
+#   (2) QUALITY — length-independent teeth (AF-GIP-PROMPT-QUALITY): the 8-class negative
+#       block, per-string spelling-lock + verbatim copy (text-bearing bands), distinct-word
+#       density, and the mandatory style-reference-only directive when refs are attached.
+# Clearing the floor is NECESSARY, never SUFFICIENT.
+
+# The default location of the bands config, relative to this script (skill 45 layout:
+# scripts/diu_validator.py + library/_system/prompt-bands.json). A --bands-file override
+# exists for tests; the on-box runtime always uses the shipped default.
+_BANDS_PATH = Path(__file__).resolve().parent.parent / "library" / "_system" / "prompt-bands.json"
+
+# AF-GIP-QUALITY tokens — the EIGHT mandatory negative-block defect CLASSES. Adapted from
+# the presentations 8-class negative block (build_deck.py / prompt_gate NEGATIVE_BLOCK_CLASS_
+# TOKENS). A class is "named" when >=1 of its tolerant tokens is present in the prompt. The
+# band gate requires the negative block to name at least GIP_MIN_NEGATIVE_CLASSES of the 8.
+GIP_NEGATIVE_CLASS_TOKENS = {
+    "garbled/misspelled text": [
+        "misspell", "garble", "letter-for-letter", "letter for letter",
+        "render every quoted", "exactly as written", "render every letter", "no invented text"],
+    "logo mutation": [
+        "logo", "monogram", "tagline lockup", "reference mark", "redraw",
+        "redesign", "recolor", "restyle", "reinterpret", "invent a"],
+    "anatomical artifacts": [
+        "finger", "fused hand", "malformed", "anatom", "distorted facial",
+        "mismatched eye", "asymmetric eye", "distorted teeth", "extra limb", "body proportion"],
+    "contrast/legibility": [
+        "busy", "cluttered", "high-detail background", "compete", "behind any text",
+        "text zone", "scrim", "legib", "negative space", "contrast"],
+    "placeholder/bracket tokens": [
+        "bracketed token", "square bracket", "placeholder", "tbd", "build note",
+        "to supply", "pending token", "insert token", "owner to confirm"],
+    "demographic default / skin-tone fidelity": [
+        "demographic", "skin tone", "skin-tone", "representation", "lighten",
+        "ashen", "desaturate", "mono-cast", "mono cast", "deep skin"],
+    "watermark / universal baseline": [
+        "watermark", "emoji", "clipart", "default font", "calibri", "arial",
+        "times new roman", "system default", "ui artifact", "user-interface"],
+    "style-drift": [
+        "style drift", "style-drift", "off-brand", "off brand", "off-palette",
+        "off palette", "deviate from the style", "inconsistent style", "outside the style card",
+        "outside the brand", "palette drift"],
+}
+GIP_MIN_NEGATIVE_CLASSES = 6  # per spec: the negative block must name >= 6 of the 8 classes.
+
+# Per-string SPELLING-LOCK marker tokens (text-bearing bands). At least one must be present.
+GIP_SPELLING_LOCK_TOKENS = [
+    "spelling-lock", "spelling lock", "letter-for-letter", "letter for letter",
+    "render this exact string", "reads exactly", "render every quoted text string exactly",
+    "spelled exactly", "exact spelling", "render every letter", "correctly spelled",
+]
+
+# STYLE-REFERENCE-ONLY directive tokens (mandatory whenever refs are attached for style —
+# MODEL-SPECS §4 "MANDATORY … applies equally to GPT-Image 2 I2I").
+GIP_STYLE_REF_ONLY_TOKENS = [
+    "style reference only", "style-reference only", "style-reference-only",
+    "only as style reference", "as style reference", "only for style reference",
+    "do not copy their subjects", "do not copy their faces", "do not copy their text",
+    "reference for color grading",
+]
+
+# Forbidden hardcoded demographic-default landmines (AF-R3, ported from prompt_gate). A prompt
+# must never bake in a default demographic split — representation comes from the client's
+# captured audience/casting ledger.
+GIP_FORBIDDEN_DEMOGRAPHIC_DEFAULTS = [
+    "60/30/10", "60-30-10", "default demographic", "default ethnicity", "default race",
+    "default skin tone", "default skin-tone", "standard demographic mix",
+    "standard representation mix", "assume the audience is", "assumed demographic",
+    "inferred demographic", "system default demographic",
+]
+
+_GIP_WORD_RE = re.compile(r"[a-z0-9][a-z0-9'\-]+")
+
+
+def _gip_norm_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s)).strip().lower()
+
+
+def load_bands(bands_file=None) -> dict:
+    """Load and validate prompt-bands.json. Returns the {band_id: band} mapping.
+    Raises FileNotFoundError / ValueError (fail loud — a missing/broken bands config is a
+    hard stop, never a silent default)."""
+    p = Path(bands_file) if bands_file else _BANDS_PATH
+    if not p.is_file():
+        raise FileNotFoundError(
+            f"prompt-bands.json not found at {p} — the GIP band config is required "
+            "(ship 45-design-intelligence-library/library/_system/prompt-bands.json).")
+    obj = json.loads(p.read_text(encoding="utf-8"))
+    bands = obj.get("bands") if isinstance(obj, dict) else None
+    if not isinstance(bands, dict) or not bands:
+        raise ValueError(f"{p}: no 'bands' object — malformed prompt-bands config.")
+    return bands
+
+
+def _resolve_band(band_id: str, bands: dict) -> dict:
+    key = (band_id or "").strip()
+    if key not in bands:
+        raise ValueError(
+            f"unknown band {band_id!r} — valid bands: {sorted(bands)}. "
+            "Declare 'ASSET: <class> | BAND: <band-id>' on the prompt's first line (SOP-GIP-01).")
+    return bands[key]
+
+
+def _is_text_bearing(band: dict) -> bool:
+    return bool(band.get("text_bearing"))
+
+
+def band_length_problems(prompt_text: str, band: dict, band_id: str) -> list:
+    """LENGTH half. Returns a list of (af_code, message). AF-GIP-PROMPT-FLOOR when under the
+    band MIN; AF-DIU-PROMPT-CAP when over the band MAX. Empty when within [MIN, MAX]."""
+    problems = []
+    stripped = prompt_text.strip()
+    n = len(stripped)
+    mn = int(band.get("min", 0))
+    mx = int(band.get("max", 0))
+    if not stripped:
+        problems.append(("AF-GIP-PROMPT-FLOOR",
+                         f"prompt is empty / whitespace-only — carries none of the mandatory "
+                         f"per-asset {band_id} spec (band floor {mn})."))
+        return problems
+    if n < mn:
+        problems.append(("AF-GIP-PROMPT-FLOOR",
+                         f"prompt is {n} chars, UNDER the {band_id} band floor of {mn}. Too short "
+                         f"to carry the rich per-asset spec — NOT submitted, NOT rendered. "
+                         f"Re-author (never truncate up to the floor)."))
+    if mx and n > mx:
+        problems.append(("AF-DIU-PROMPT-CAP",
+                         f"prompt is {n} chars, OVER the {band_id} band cap of {mx}. Fall back a "
+                         f"tier per MODEL-SPECS — do not ship a prompt the endpoint truncates."))
+    return problems
+
+
+def band_quality_problems(prompt_text: str, band: dict, band_id: str,
+                          copy_val=None, style_ref: bool = False) -> list:
+    """QUALITY half (length-independent, AF-GIP-PROMPT-QUALITY). Returns a list of fatal
+    problem strings (empty = clears every quality tooth). Teeth:
+      * the negative block must name >= GIP_MIN_NEGATIVE_CLASSES of the 8 defect classes;
+      * a text-bearing band requires a per-string spelling-lock directive AND the verbatim
+        copy baked into the body (when copy is supplied);
+      * distinct-word density must clear the band's min_distinct_words floor (anti-padding);
+      * when style refs are attached (style_ref), the style-reference-only directive is
+        MANDATORY (MODEL-SPECS §4);
+      * no forbidden hardcoded demographic-default landmine (AF-R3)."""
+    prompt_lc = prompt_text.lower()
+    problems = []
+
+    # (a) 8-class negative block coverage.
+    named = [cls for cls, toks in GIP_NEGATIVE_CLASS_TOKENS.items()
+             if any(t in prompt_lc for t in toks)]
+    if len(named) < GIP_MIN_NEGATIVE_CLASSES:
+        missing = [c for c in GIP_NEGATIVE_CLASS_TOKENS if c not in named]
+        problems.append(
+            f"AF-GIP-PROMPT-QUALITY: negative block names only {len(named)}/8 defect classes "
+            f"(floor {GIP_MIN_NEGATIVE_CLASSES}); a final-paragraph 'Do not…' block must cover "
+            f"at least {GIP_MIN_NEGATIVE_CLASSES}. Not yet named: {', '.join(missing)}.")
+
+    # (b) distinct-word density (anti paste-repetition padding).
+    floor_words = int(band.get("min_distinct_words", 0))
+    distinct = len(set(_GIP_WORD_RE.findall(prompt_lc)))
+    if floor_words and distinct < floor_words:
+        problems.append(
+            f"AF-GIP-PROMPT-QUALITY: only {distinct} distinct words (band floor {floor_words}) "
+            "— a long file with few distinct words is paste-repetition padding, not a rich spec.")
+
+    # (c) text-bearing bands: spelling-lock + verbatim copy baked in.
+    if _is_text_bearing(band):
+        if not any(t in prompt_lc for t in GIP_SPELLING_LOCK_TOKENS):
+            problems.append(
+                "AF-GIP-PROMPT-QUALITY: text-bearing band but NO per-string spelling-lock "
+                "directive (e.g. 'render this exact string, letter-for-letter, correctly "
+                "spelled') — every verbatim on-image string must be spelling-locked (SOP-GIP-01 "
+                "element 5). A verbatim string without its lock is an AUTO-FAIL.")
+        if copy_val is not None:
+            strings = copy_val if isinstance(copy_val, list) else [copy_val]
+            prompt_norm = _gip_norm_ws(prompt_text)
+            missing_copy = []
+            for c in strings:
+                cn = _gip_norm_ws(c)
+                if len(cn) < 3:
+                    continue
+                if cn not in prompt_norm:
+                    missing_copy.append(str(c) if len(str(c)) <= 60 else str(c)[:57] + "...")
+            if missing_copy:
+                problems.append(
+                    "AF-GIP-PROMPT-QUALITY: the asset's exact copy is NOT baked into the prompt "
+                    "body verbatim (kie.ai must bake the words, never overlaid): "
+                    + " | ".join(missing_copy))
+
+    # (d) style-reference-only directive when refs attached for style.
+    if style_ref and not any(t in prompt_lc for t in GIP_STYLE_REF_ONLY_TOKENS):
+        problems.append(
+            "AF-GIP-PROMPT-QUALITY: style reference image(s) attached (--style-ref) but the "
+            "STYLE-REFERENCE-ONLY directive is absent (MODEL-SPECS §4, MANDATORY for GPT-Image 2 "
+            "I2I / Nano Banana 2): add 'Use the attached images only as style reference for color "
+            "grading, lighting, and composition — do not copy their subjects, faces, or text.'")
+
+    # (e) forbidden hardcoded demographic-default landmine (AF-R3).
+    for landmine in GIP_FORBIDDEN_DEMOGRAPHIC_DEFAULTS:
+        if landmine.lower() in prompt_lc:
+            problems.append(
+                f"AF-GIP-PROMPT-QUALITY: forbidden hardcoded demographic default {landmine!r} "
+                "(AF-R3) — representation must come from the client's captured audience / casting "
+                "ledger, never a baked-in default split.")
+            break
+
+    return problems
+
+
+def band_problems(prompt_text: str, band: dict, band_id: str,
+                  copy_val=None, style_ref: bool = False) -> dict:
+    """Accumulating (non-raising) form used by the prover and the CLI. Returns
+    {'length': [(code, msg), ...], 'quality': [msg, ...]} — empty lists = clears the whole
+    band gate."""
+    return {
+        "length": band_length_problems(prompt_text, band, band_id),
+        "quality": band_quality_problems(prompt_text, band, band_id, copy_val, style_ref),
+    }
+
+
+def _band_receipts_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "diu_prompt_band_receipts.json"
+
+
+def cmd_prompt_band(args) -> int:
+    band_id = (args.band or "").strip()
+    if not band_id:
+        print("FATAL: --band is required (e.g. text_bearing_long | visual_long | medium | "
+              "short_draft).", file=sys.stderr)
+        return 2
+    try:
+        bands = load_bands(args.bands_file)
+        band = _resolve_band(band_id, bands)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"FATAL: {exc}", file=sys.stderr)
+        return 2
+
+    if args.prompt_file:
+        p = Path(args.prompt_file)
+        if not p.is_file():
+            print(f"FATAL: --prompt-file not found: {p}", file=sys.stderr)
+            return 2
+        prompt = p.read_text(encoding="utf-8")
+    elif args.prompt is not None:
+        prompt = args.prompt
+    else:
+        print("FATAL: pass --prompt-file PATH or --prompt STR.", file=sys.stderr)
+        return 2
+
+    copy_val = args.copy or None
+    res = band_problems(prompt, band, band_id, copy_val=copy_val, style_ref=bool(args.style_ref))
+    length_probs = res["length"]
+    quality_probs = res["quality"]
+    n = len(prompt.strip())
+
+    # Receipt on disk (institutional memory) — mirrors the fidelity/prompt-caps receipt pattern.
+    if args.run_dir:
+        run_dir = Path(args.run_dir).resolve()
+        if run_dir.is_dir():
+            receipt = {
+                "band": band_id,
+                "chars": n,
+                "min": band.get("min"),
+                "max": band.get("max"),
+                "distinct_words": len(set(_GIP_WORD_RE.findall(prompt.lower()))),
+                "text_bearing": _is_text_bearing(band),
+                "style_ref": bool(args.style_ref),
+                "length_problems": [f"{c}: {m}" for c, m in length_probs],
+                "quality_problems": quality_probs,
+                "passed": not length_probs and not quality_probs,
+                "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            }
+            rp = _band_receipts_path(run_dir)
+            prior = []
+            if rp.exists():
+                try:
+                    obj = json.loads(rp.read_text(encoding="utf-8"))
+                    prior = obj.get("receipts", []) if isinstance(obj, dict) else (obj or [])
+                except Exception:  # noqa: BLE001
+                    prior = []
+            rp.parent.mkdir(parents=True, exist_ok=True)
+            rp.write_text(json.dumps({"receipts": prior + [receipt]}, indent=2) + "\n",
+                          encoding="utf-8")
+
+    if not length_probs and not quality_probs:
+        print(f"OK: {band_id} prompt is {n}/{band.get('max')} chars (floor {band.get('min')}), "
+              f"clears the GIP band + quality gate.")
+        return 0
+
+    print("!" * 78, file=sys.stderr)
+    # LENGTH failures take precedence for the exit code (a floor/cap breach is not run at all).
+    if length_probs:
+        codes = sorted({c for c, _ in length_probs})
+        print(f"FATAL {'/'.join(codes)}: {band_id} prompt FAILS the GIP band length gate — it is "
+              f"NOT submitted, NOT rendered. Re-author.", file=sys.stderr)
+        for code, msg in length_probs:
+            print(f"  - {code}: {msg}", file=sys.stderr)
+    if quality_probs:
+        print(f"FATAL AF-GIP-PROMPT-QUALITY: {band_id} prompt cleared/failed length but has "
+              f"{len(quality_probs)} quality defect(s) (independent of length):", file=sys.stderr)
+        for msg in quality_probs:
+            print(f"  - {msg}", file=sys.stderr)
+    print("!" * 78, file=sys.stderr)
+    # Exit 3 when a floor/cap breach is present (fold under AF-GIP-PROMPT-FLOOR / AF-DIU-PROMPT-CAP);
+    # otherwise exit 6 for a pure quality failure (AF-GIP-PROMPT-QUALITY).
+    return 3 if length_probs else 6
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Deterministic DIU enforcement gate (prompt caps, routing "
-                    "interlock, fidelity + 3-strike).")
+        description="Deterministic DIU enforcement gate (prompt caps, GIP prompt "
+                    "bands, routing interlock, consent/minor/PII, fidelity + 3-strike).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     pc = sub.add_parser("prompt-caps", help="enforce SHORT/MEDIUM/LONG char caps")
@@ -430,6 +769,24 @@ def main(argv=None) -> int:
     pc.add_argument("--prompt-file", help="path to the assembled prompt")
     pc.add_argument("--prompt", help="inline prompt string")
     pc.set_defaults(func=cmd_prompt_caps)
+
+    pb = sub.add_parser("prompt-band",
+                        help="enforce the GIP per-asset-class prompt band (MIN floor + MAX cap "
+                             "+ quality teeth)")
+    pb.add_argument("--band", required=True,
+                    help="text_bearing_long | visual_long | medium | short_draft")
+    pb.add_argument("--prompt-file", help="path to the assembled prompt")
+    pb.add_argument("--prompt", help="inline prompt string")
+    pb.add_argument("--copy", action="append", default=[],
+                    help="a verbatim on-image copy string that must be baked into the prompt "
+                         "body (repeatable; enforced on text-bearing bands)")
+    pb.add_argument("--style-ref", action="store_true",
+                    help="style reference image(s) are attached -> require the mandatory "
+                         "style-reference-only directive (MODEL-SPECS §4)")
+    pb.add_argument("--run-dir", help="optional run dir for the band receipt "
+                                      "(working/checkpoints/diu_prompt_band_receipts.json)")
+    pb.add_argument("--bands-file", help="override path to prompt-bands.json (tests only)")
+    pb.set_defaults(func=cmd_prompt_band)
 
     rc = sub.add_parser("route-check", help="DIU routing interlock (SOP-DIU-611 D.1)")
     rc.add_argument("--deck-kind", required=True,

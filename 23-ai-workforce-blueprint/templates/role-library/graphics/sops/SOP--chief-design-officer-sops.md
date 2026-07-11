@@ -136,7 +136,12 @@
 **ZHC SOP.** Wires the full DIU production lifecycle onto the Command Center Kanban board so that CDO Gate 4 leaves a board record instead of being a silent, skippable step.
 **Problem this closes:** The DIU production lifecycle previously mapped to no board states, so Gate 4 (producer approval) could be skipped with no evidence a review ever happened. This SOP puts every production run on the board with Gate 4 living in the **review** column.
 **When to run:** On every DIU production run that spends metered generation (single image, deck, or personal photo shoot). Analysis-only requests that produce no image are exempt.
-**Reused caller (do NOT re-implement):** Skill 48's fail-soft board caller `48-facebook-ad-generator/scripts/cc_board.py` (stdlib `urllib`; POST `/api/ad-campaigns` to create, PATCH `/api/ad-campaigns/{job_id}` to move). It is **fail-soft by contract**: a missing `MISSION_CONTROL_URL`, absent token, outage, or HTTP error is caught and logged, and the run CONTINUES. Boarding is a convenience, never a hard gate on generation.
+
+**Two boarding paths (do NOT re-implement either caller):**
+- **Ad-campaign JOBS (Skill 48 Facebook-ad runs) keep `48-facebook-ad-generator/scripts/cc_board.py`** — POST `/api/ad-campaigns` to create, PATCH `/api/ad-campaigns/{job_id}` to move. Ad campaigns are a distinct board surface and stay there.
+- **ALL OTHER graphics production jobs board on the department Kanban via `45-design-intelligence-library/scripts/gr_board.py`** — the fail-soft port of the presentations `cc_board.py`: `ingest_graphics_task(...)` does POST `/api/tasks/ingest` with `department_slug:"graphics"`, `persona:"Chief Design Officer"`, and an idempotency key `sha256(job_slug+title)`; `patch_phase(...)` PATCHes the authoritative CC `TaskStatus` enum; `post_activity(...)` logs the mid-run phases `PROMPT-QC → RENDER → IMAGE-QC → GHL-DELIVERED` as board ACTIVITIES (never task-level status changes). This closes G4: graphics production work now appears as a real `department_slug:"graphics"` task on the department board the way presentations decks do, instead of only on `/api/ad-campaigns`.
+
+Both callers are **fail-soft by contract**: a missing `COMMAND_CENTER_URL`/`MISSION_CONTROL_URL`, absent token, outage, or HTTP error is caught and logged, and the run CONTINUES. Boarding is a convenience, never a hard gate on generation. `gr_board.py` writes per-phase movement receipts to `<job>/checkpoints/cc-board.json` and stamps `cc_task_id`/`cc_register_attempted` into `<job>/checkpoints/process_manifest.json`, so the offline `AF-GIP-CC-UNREGISTERED` check (`gr_board.py --registered <job_dir>`) passes whether or not the live POST succeeded and fails-closed ONLY when the board caller was never invoked for the run.
 
 **Lifecycle -> board-column mapping (cc_board status vocabulary: backlog | in_progress | review | blocked | done):**
 
@@ -150,7 +155,7 @@
 | Consent / legal / credential / payment hold | Photo Shoot Director / CDO | `* -> blocked` with `blocked_reason in {decision, approval, credential, payment}` + a non-empty `ask` |
 
 **Steps:**
-1. At intake acceptance, create the campaign via `cc_board.py` with one stage card per production phase; the run lands in `backlog`. If the board is unreachable, log the degrade and proceed (fail-soft) -- the deterministic `job_id` is still recorded.
+1. At intake acceptance, board the job: an **ad-campaign** run uses Skill 48's `cc_board.py` (`/api/ad-campaigns`); **every other graphics production job** uses `gr_board.py` — `ingest_graphics_task(job_dir, job_slug, title, description)` lands one department task in `backlog`. If the board is unreachable, log the degrade and proceed (fail-soft) -- the deterministic `job_id`/idempotency key is still recorded and `cc_register_attempted` is stamped so the offline registration check still passes.
 2. When the assigned specialist begins work, move the phase card `backlog -> in_progress`.
 3. On any consent/legal/credential/payment hold, or a `diu_validator.py fidelity` 3-strike escalation, move `-> blocked` with the required `blocked_reason` + `ask`. Clear it back to `in_progress` when resolved.
 4. When work reaches the producer, move the card `in_progress -> review`. **Gate 4 is this review column** -- no deliverable leaves the DIU without passing through it.

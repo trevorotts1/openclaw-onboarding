@@ -131,6 +131,18 @@ On every new agent session, sweep the receipt store for receipts with `state = s
    - Reported to: Chief Design Officer and Photo Shoot Director
    - Why: Identity reference images of real clients sitting on remote hosting after job completion is a consent/privacy exposure — the Photo Shoot Director's SOP-DIU-610 Rights Manifest contract requires confirmed deletion.
 
+4. **GHL Upload Success Rate**
+   - Target: 100% — every QC-passed asset (SOP-GIP-02 `pass:true`, zero auto-fails) is in the client's GHL media library with a `ghl_media_id` + `ghl_upload_status:"complete"` before the job closes
+   - Measured via: `graphics_ghl_push.py --gate --job-dir <dir>` exit 0 across the week's GHL-enabled jobs (SOP-GIP-03)
+   - Reported to: Chief Design Officer
+   - Why: the connection-manifest requires GHL delivery; a finished asset that never reaches the client's media library is undelivered. The only legitimate miss is a logged `owner_skip_approval` token.
+
+5. **`media_library.json` Written Before Close**
+   - Target: 100% of GHL-enabled jobs have a `<job>/media_library.json` recording folder + per-asset upload records before the job closes
+   - Measured via: presence + gate-pass of `media_library.json` at job close
+   - Reported to: Chief Design Officer
+   - Why: the ledger is the system of record for link-back and the closeout gate; a job that closes without it has no auditable delivery evidence.
+
 ### Secondary KPIs — graded monthly
 
 1. **Cache Hit Rate on Regression Jobs:** Percentage of regression-sweep re-runs that hit the content-addressed cache and return a stored asset. Target: >= 80% (regression checks should almost never re-spend). Low rates signal canonicalization errors in fingerprint computation.
@@ -167,6 +179,7 @@ This role contributes to the company revenue cascade by: **ensuring that every m
 | **gemini-embedding-2 @3072 (multimodal)** | Generate embeddings for new style-card entries (SOP-DIU-503 index infrastructure support) | `GEMINI_API_KEY` env var via TOOLS.md | Pin: `gemini-embedding-2`, dimensions=3072. GA model. NEVER use `gemini-embedding-001` (hard shutdown 2026-07-14). Index is derived and fully rebuildable from cards; INDEX.md remains canonical authority. |
 | **JSON sidecar writer (Python / Node.js script)** | Write and validate provenance sidecar JSON per generated asset | Script in `_vault/scripts/write-sidecar.py` | Schema version in every sidecar. Validated against sidecar schema before write. Schema version-bumped via MODEL-SPECS §6 update protocol when C2PA/platform policy changes require new fields. |
 | **Receipt store (per-task JSON files)** | Track every Kie.ai task lifecycle: `submitted` → `completed` → `done`; persist state across session crashes | Box-local path `_vault/receipts/{taskId}.json` (one file per task, never shared append) | Per-item files prevent concurrent-append write loss (fleet-proven pattern). Receipt schema includes `company_id` + `workspace_slug` fields for future Command Center telemetry without re-instrumentation. |
+| **`graphics_ghl_push.py` (finished-asset GHL delivery)** | Host every QC-passed finished asset in the client's GHL media library + enforce the AF-DELIVERY-COMPLETE closeout gate (SOP-GIP-03) | `45-design-intelligence-library/scripts/graphics_ghl_push.py` (imports the ONE canonical `48-facebook-ad-generator/tools/ghl_media.py`; client LOCATION PIT via `GOHIGHLEVEL_API_KEY`/`GHL_API_KEY`) | `create_media_folder` (POST `/medias/folder`) → per-job folder or `"root"`; `upload_media` (POST `/medias/upload-file`) per QC-passed asset → `{ghl_media_id, ghl_public_url}` written to `<job>/media_library.json` AND the sidecar; `--gate` exit 0/1. NEVER the browser, never the operator/agency PIT. |
 
 ---
 
@@ -185,7 +198,7 @@ This role contributes to the company revenue cascade by: **ensuring that every m
 3. For each URL in `resultUrls`: download immediately to a temporary path. Do not delay — URLs are ephemeral and may expire within minutes.
 4. Postflight verification on each downloaded file: (a) file size > 0 bytes; (b) image decodes without error (run `identify` or PIL open); (c) dimensions match the requested ratio/resolution within a 5% tolerance. Any check fails: write a failed-postflight receipt, escalate to CDO with the taskId and cost, do not deliver the asset.
 5. All checks pass: move the file to the content-addressed store path `_vault/{sha256[:2]}/{sha256[2:4]}/{sha256}.{ext}`. Create the human-readable symlink `_vault/by-job/{date}_{styleID}_{jobID}_{n}`.
-6. Write the provenance sidecar JSON beside the content-addressed file. Required fields: `schema_version`, `model`, `endpoint_id`, `endpoint_version_date` (date MODEL-SPECS entry was last verified), `full_assembled_prompt`, `all_params`, `seed` (null if unavailable), `taskId`, `sha256`, `cost_class`, `style_card_id`, `card_version`, `reference_images_used` (list of source identifiers — NOT the hosted URLs themselves), `date_iso`, `requesting_role`, `delivery_status`.
+6. Write the provenance sidecar JSON beside the content-addressed file. Required fields: `schema_version`, `model`, `endpoint_id`, `endpoint_version_date` (date MODEL-SPECS entry was last verified), `full_assembled_prompt`, `all_params`, `seed` (null if unavailable), `taskId`, `sha256`, `cost_class`, `style_card_id`, `card_version`, `reference_images_used` (list of source identifiers — NOT the hosted URLs themselves), `date_iso`, `requesting_role`, `delivery_status`. On GHL delivery (SOP-GIP-03), `graphics_ghl_push.py` merges two additive-only fields into this sidecar: `ghl_media_id` and `ghl_public_url` (the public `storage.googleapis.com/msgsndr/...` link) — the link-back record.
 7. Update the receipt file: flip `state` to `done`, record the local file path, sidecar path, and fingerprint. The receipt is the handoff artifact — never hand off a chat claim.
 8. Return the durable local file path and sidecar path to the requesting role and CDO. Log the session summary entry.
 
@@ -331,6 +344,26 @@ This role contributes to the company revenue cascade by: **ensuring that every m
 
 ---
 
+### SOP 9.8 — [SOP-GIP-03] Finished-Asset GHL Media Delivery
+
+**Library version pin:** Wraps MODEL-SPECS §5 (media hosting), the canonical `48-facebook-ad-generator/tools/ghl_media.py` REST module, and SOP-GIP-02 (`<job>/qc/image_qc_report.json`). §-refs verified 2026-07-10. Normative core: `graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`.
+**When to run:** On every client job with GHL enabled, once SOP-GIP-02 has produced the QC report. This is the Vault's post-completion delivery duty (the department's `connection-manifest.json` requires the GHL creds for exactly this).
+**Frequency:** On-demand per job at delivery; weekly folder-existence check; monthly folder-naming audit.
+**Inputs:** `<job>/qc/image_qc_report.json` (QC-passed assets), the client's LOCATION PIT (`GOHIGHLEVEL_API_KEY`/`GHL_API_KEY`) + location id.
+
+**Steps:**
+1. Resolve the per-job folder — `graphics_ghl_push.py` calls `create_media_folder` (POST `/medias/folder`, `Version: 2021-07-28`) with the name `"<Client> Graphics <Job> v<N>"`, or falls back to the media `"root"` with a name prefix. Record `ghl_folder_id` in `<job>/media_library.json`.
+2. Upload every QC-passed asset (`pass:true`, zero auto-fails) via `upload_media` (POST `/medias/upload-file`, multipart, `parentId`). Record `{ghl_media_id, ghl_public_url, ghl_upload_status:"complete", http_status}` per asset in the ledger AND merge `ghl_media_id` + `ghl_public_url` into that asset's provenance sidecar (additive-only, SOP 9.5).
+3. Liveness — GET each returned public URL, expect HTTP 200 with a non-empty body (SOP 9.2 step 3 law); record `liveness.live`.
+4. Run the closeout gate: `python3 45-design-intelligence-library/scripts/graphics_ghl_push.py --gate --job-dir <dir>` (exit 0/1). No deliverable closes without a gate pass; the only bypass is a logged `owner_skip_approval` token.
+5. Link-back — return the public URLs to the requesting department/client in the delivery message.
+
+**Outputs:** `<job>/media_library.json` (folder + per-asset uploads), updated sidecars, gate PASS.
+**Hand to:** requesting role / client (delivery message with public URLs); CDO on any liveness/deletion anomaly.
+**Failure mode:** NEVER drive the GHL web UI in a browser; NEVER use the operator's key or an agency PIT (the agency PIT 401s for media). If the LOCATION PIT is absent, halt and escalate to CDO — do not fabricate a CDN URL. If a client deleted a job folder, re-create it and re-upload; flag to CDO.
+
+---
+
 ## 10. Quality Gates
 
 Before any asset is handed off as "delivered," it must pass these gates:
@@ -364,6 +397,14 @@ Before any asset is handed off as "delivered," it must pass these gates:
 - [ ] Every sidecar written in this session validates against the current `schema.json` version.
 - [ ] No sidecar written against a deprecated schema version.
 - [ ] Any sidecar validation error halts delivery and escalates to CDO.
+
+### Gate 5 — Finished-Asset GHL Delivery (Vault-executed, SOP 9.8 / SOP-GIP-03)
+
+- [ ] `<job>/media_library.json` records a resolved `ghl_folder_id` (a real id OR `"root"`).
+- [ ] Every QC-passed asset (SOP-GIP-02 `pass:true`, zero auto-fails) uploaded with a `ghl_media_id` + `ghl_upload_status:"complete"`.
+- [ ] Each returned public URL passed the liveness check (HTTP 200, non-empty body).
+- [ ] `ghl_media_id` + `ghl_public_url` merged into each asset's provenance sidecar (link-back).
+- [ ] `graphics_ghl_push.py --gate --job-dir <dir>` returns exit 0 (or a logged `owner_skip_approval` token authorizes the skip).
 
 ---
 
