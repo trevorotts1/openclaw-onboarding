@@ -1,0 +1,30 @@
+{
+  "_comment": "Connection-manifest for the OPERATOR-ONLY Rescue Rangers department. Posture-only: it declares WHICH env keys the rescue path depends on so verify-wiring can confirm they are SET — it NEVER contains a value. The webhook URL + fleet secret are seeded fleet-wide at onboarding (install.sh); the push secret is OPERATOR-BOX-ONLY (the receiver's Cloudflare-tunnel auth) and is therefore not required on client boxes.",
+  "dept": "rescue-rangers",
+  "version": "1.0.0",
+  "client_facing": false,
+  "connection_points": [
+    {
+      "name": "rescue-rangers-webhook-url",
+      "description": "Public n8n webhook URL every fleet box POSTs its escalation to (outbound-only). Seeded at onboarding; default https://main.blackceoautomations.com/webhook/rescue-rangers.",
+      "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_URL",
+      "required": true
+    },
+    {
+      "name": "rescue-rangers-webhook-secret",
+      "description": "Shared fleet secret sent as X-Rescue-Secret so the relay Auth Check accepts the escalation (clean 403 otherwise). Seeded alongside the URL.",
+      "cfg_key": "env.vars.RESCUE_RANGERS_WEBHOOK_SECRET",
+      "required": true
+    },
+    {
+      "name": "rescue-push-secret",
+      "description": "OPERATOR-BOX-ONLY: authenticates the relay's push to the operator receiver over the dedicated rescue Cloudflare tunnel. Not present on client boxes by design.",
+      "cfg_key": "env.vars.RESCUE_PUSH_SECRET",
+      "required": false
+    }
+  ],
+  "deferred_live_dependencies": [
+    "n8n Relay Brain redeploy (nine-field validation + status branch) — operator-run, pre-change JSON export + staging test first",
+    "VPS outbound-only status-poll return leg armed on live VPS client boxes (batched fleet roll)"
+  ]
+}
