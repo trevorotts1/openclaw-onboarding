@@ -4,12 +4,12 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v19.20.0] - 2026-07-10 - Skill-6 SURVEY-builder hardening (Fable review)
+## [v19.21.0] - 2026-07-10 - Skill-6 SURVEY-builder hardening (Fable review)
 
 Branch **skill6-survey-builder-hardening** (off `skill6-community-course-live-ready`).
 Ships the outstanding survey-builder fixes from the Fable review (the repo hardening
 the two podcast surveys were built with as a one-off, but which never landed in the
-builder itself). Builder **v1.3.0 → v1.4.0**; skill **v19.19.0 → v19.20.0** (next minor
+builder itself). Builder **v1.3.0 → v1.4.0**; skill **v19.20.1 → v19.21.0** (next minor
 after origin/main — the Fable plan's proposed v19.18.0 was already consumed). Additive;
 `build_survey`'s public signature is unchanged (new behaviour is task-key gated).
 
