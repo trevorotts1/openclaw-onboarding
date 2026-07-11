@@ -2780,6 +2780,54 @@ print("  ✓ openclaw.json written")
 PYEOF
 success "Canonical sub-agent + bootstrap config applied"
 
+# 0.3b — runRetries ceiling (FLEET-FIX Area 3 / C.2–C.4)
+# Seeds agents.defaults.runRetries.{base,perProfile,min,max} SET-IF-ABSENT.
+#
+# C.1 VERDICT (recorded, do not re-derive): runRetries counts OUTER-RUN-LOOP
+# RETRY ITERATIONS, not tool cycles — the installed runtime's own schema doc
+# says "Outer run loop retry iteration boundaries for the embedded OpenClaw
+# runner to prevent infinite execution loops during failure recovery."
+# Ceiling = clamp(base + perProfile * profileCandidateCount, min, max), resolved
+# by resolveMaxRunRetryIterations() with 24 / 8 / 32 / 160.
+#
+# We seed the runtime's OWN defaults, so this is behaviour-neutral on every box
+# — it makes the ceiling explicit and auditable instead of buried in the
+# runtime. An operator value is NEVER overwritten (set-if-absent, per subkey).
+#
+# GATED on a per-box schema grep of the runtime actually installed here. Boxes
+# on a runtime that lacks the key are SKIPPED and reported as
+# CEILING_NOT_SUPPORTED@<version> — writing an unknown key would trip the strict
+# schema validator and get the WHOLE config rejected (same failure class as the
+# v11.3.1 agents.defaults.tools.exec defect noted above). Never fatal.
+# NOTE: this runs under `set -u` (line 97). ONBOARDING_DIR is defined above (see
+# the OC_CONFIG/onboarding assignment); SCRIPTS_DIR is NOT — it is only defined
+# LATER in this script, so it must never be referenced here. Both expansions are
+# written :-safe anyway, so a reordering upstream can't turn this into an
+# unbound-variable abort of the whole install.
+_WIRE_RUN_RETRIES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/wire-run-retries.sh"
+[ -f "$_WIRE_RUN_RETRIES" ] || _WIRE_RUN_RETRIES="${ONBOARDING_DIR:-}/scripts/wire-run-retries.sh"
+if [ -f "$_WIRE_RUN_RETRIES" ]; then
+    note "Wiring agents.defaults.runRetries ceiling (set-if-absent, schema-gated)..."
+    backup_config_file "$OCJSON"
+    _RUN_RETRIES_OUT="$(OC_JSON="$OCJSON" bash "$_WIRE_RUN_RETRIES" 2>&1)"
+    echo "$_RUN_RETRIES_OUT"
+    echo "$_RUN_RETRIES_OUT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$_RUN_RETRIES_OUT" in
+        *RUNRETRIES_STATUS=SEEDED*)
+            success "agents.defaults.runRetries seeded (set-if-absent)" ;;
+        *RUNRETRIES_STATUS=PRESERVED*)
+            note "agents.defaults.runRetries already set — preserved, not overwritten" ;;
+        *RUNRETRIES_STATUS=CEILING_NOT_SUPPORTED@*)
+            warn "runRetries ceiling unsupported by this box's runtime — skipped (see CEILING_NOT_SUPPORTED@<version> above)" ;;
+        *RUNRETRIES_STATUS=CONFLICT_SKIPPED*)
+            warn "agents.defaults.runRetries left untouched (pre-existing non-conforming value)" ;;
+        *)
+            warn "runRetries wiring returned no status line (non-fatal; see $LOG_FILE)" ;;
+    esac
+else
+    note "scripts/wire-run-retries.sh not found — skipping runRetries ceiling wiring (older bundle)"
+fi
+
 # 0.4 — Model selection (advisory; agent picks at runtime based on what's available)
 note "Master orchestrator model priority (per INSTALL-CONTRACT.md Rule 10):"
 note "  1. Subscription / OAuth (no per-call cost): codex/gpt-5.5, openai-codex/gpt-5.5"
