@@ -108,14 +108,28 @@ agent-browser --help | head -20
 ## Step 4 - Smoke test a simple browser session
 
 Run (HEADLESS — `--headed false` is mandatory; a visible browser window must NEVER
-open on a client box, even for a smoke test):
+open on a client box, even for a smoke test).
+
+**GUARANTEED-CLOSE (AUD-21 / FLEET-FIX Area 2 / B.3):** run the three
+commands as ONE subshell with a `trap ... EXIT` around `close`, not as three
+independent commands. If `open` or `snapshot` throws (a bad URL, a dead CDP
+socket, a killed process), a plain three-line sequence would skip `close` and
+leak the session — the exact `~/.agent-browser/*.engine` orphan class this
+skill's own "Lifecycle hygiene" section (below) warns about. The trap makes
+`close` run unconditionally, every time, while still surfacing the real
+open/snapshot exit code (not swallowed by `close`'s own exit code):
 ```bash
-agent-browser --headed false open https://example.com
-agent-browser snapshot -i
-agent-browser close
+(
+  set +e
+  trap 'agent-browser close' EXIT
+  agent-browser --headed false open https://example.com
+  agent-browser snapshot -i
+)
 ```
 
 If the snapshot shows interactive elements with refs like `@e1`, `@e2`, installation is good.
+If the subshell exits non-zero, `close` still ran (check `agent-browser state clean --older-than 1`
+if you suspect a leaked descriptor anyway) — investigate the open/snapshot failure per the reason above.
 
 ## Notes
 

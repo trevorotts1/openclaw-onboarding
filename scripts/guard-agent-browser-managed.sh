@@ -13,8 +13,18 @@
 #   mandatory gateway (browser_manager.sh / .py). This guard FAILS the build if a
 #   regression slips past it — so the leak can never silently return.
 #
+# SCAN ROOTS (AUD-20 / FLEET-FIX Area 2 / B.2, broadened 2026-07): checks (1)
+# MANAGED-ONLY and (5) HEADLESS-ONLY below scan THREE roots, not just
+# 06-ghl-install-pages/ — 41-build-with-ai-playbook/ (Skill 41's CDP preflight
+# probe) and 03-agent-browser/ (the install/smoke-test skill) both call the
+# agent-browser binary directly and were PREVIOUSLY UNSCANNED: an unmanaged
+# `agent-browser ... open|eval|click|...` call planted in either root passed
+# this guard silently. Checks (2)-(4) (gateway integrity, no per-run session
+# names, doctrine sentinel) remain 06-SPECIFIC — that doctrine describes the
+# Skill-06 browser_manager.sh gateway only and does not generalize.
+#
 # WHAT THIS GUARD ENFORCES (fails the build / QC on any violation):
-#   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER 06-ghl-install-pages/
+#   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER ANY of the scan roots
 #       (EXCLUDING browser_manager.sh itself + the reaper) may invoke
 #       `agent-browser ... (open|eval|click|fill|type|snapshot|wait|find)` or a
 #       bare `AB --session` UNLESS it is routed through the manager (the bm_*/AB()
@@ -67,7 +77,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) REPO_ROOT="$2"; shift 2 ;;
-    -h|--help) sed -n '1,46p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,67p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -77,6 +87,19 @@ TOOLS_DIR="$SKILL_DIR/tools"
 MANAGER_SH="$TOOLS_DIR/browser_manager.sh"
 MANAGER_PY="$TOOLS_DIR/browser_manager.py"
 REAPER_SH="$REPO_ROOT/scripts/agent-browser-reaper.sh"
+
+# ── AUD-20 / FLEET-FIX B.2 — the roots checks (1) MANAGED-ONLY and (5)
+# HEADLESS-ONLY scan. Broadened beyond just 06-ghl-install-pages/ so the
+# guard can no longer be blind to an unmanaged agent-browser spawn planted in
+# Skill 41 (the CDP preflight probe) or Skill 03 (agent-browser install /
+# smoke test). SKILL_DIR itself is untouched and still drives the
+# 06-specific gateway-integrity / per-run-session-name / doctrine-sentinel
+# checks (2)-(4) below — that doctrine does not generalize to other skills.
+MANAGED_SCAN_ROOTS=(
+  "$SKILL_DIR"
+  "$REPO_ROOT/41-build-with-ai-playbook"
+  "$REPO_ROOT/03-agent-browser"
+)
 
 # ── The canonical doctrine sentinel (MUST appear verbatim) ────────────────────
 SENTINEL='SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop'
@@ -307,8 +330,10 @@ scan_managed() {
   return "$hits"
 }
 
-# ── 1. MANAGED-ONLY scan across tracked 06 *.sh / *.py (excluding the gateway) ─
+# ── 1. MANAGED-ONLY scan across tracked *.sh / *.py in every scan root ────────
+# (excluding the gateway itself) — see MANAGED_SCAN_ROOTS above (AUD-20).
 echo "── (1) managed-only: no raw agent-browser launch outside the gateway ──"
+echo "     scan roots: ${MANAGED_SCAN_ROOTS[*]#$REPO_ROOT/}"
 managed_fail=0
 while IFS= read -r f; do
   [ -f "$f" ] || continue
@@ -328,9 +353,9 @@ while IFS= read -r f; do
       ;;
     *.sh) scan_managed "$f" strip_bash   || managed_fail=$((managed_fail + $?)) ;;
   esac
-done < <(find "$SKILL_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null)
+done < <(for root in "${MANAGED_SCAN_ROOTS[@]}"; do find "$root" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null; done)
 if [ "$managed_fail" -eq 0 ]; then
-  green "  ✓ PASS — all agent-browser calls under 06 route through the manager."
+  green "  ✓ PASS — all agent-browser calls in every scan root route through the manager."
 else
   FAILS=$((FAILS + managed_fail))
 fi
@@ -409,6 +434,7 @@ done
 # section makes a visible-window regression a BUILD FAILURE.
 echo ""
 echo "── (5) headless-only: no headless=False / bare launch() (D6 — no visible window) ──"
+echo "     scan roots: ${MANAGED_SCAN_ROOTS[*]#$REPO_ROOT/}"
 headless_fail=0
 
 # A real headless-off assignment (False or 0), NOT `headless=True`.
@@ -448,18 +474,20 @@ while IFS= read -r f; do
     *.py) scan_headless_code "$f" strip_python || headless_fail=$((headless_fail + $?)) ;;
     *.sh) scan_headless_code "$f" strip_bash   || headless_fail=$((headless_fail + $?)) ;;
   esac
-done < <(find "$SKILL_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null)
+done < <(for root in "${MANAGED_SCAN_ROOTS[@]}"; do find "$root" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null; done)
 
 # Markdown CODE-FENCE scan (Python is already a guard dependency). Only enters
 # fences opened with a code-language tag (```python / ```bash / …); bare ``` prose
 # blocks are skipped (they hold copy-paste doctrine that says "NEVER launch()").
+# Walks every MANAGED_SCAN_ROOTS entry (AUD-20), not just SKILL_DIR.
 while IFS= read -r m; do
   [ -z "$m" ] && continue
   red "  ✗ FAIL — $m"
   headless_fail=$((headless_fail + 1))
-done < <(python3 - "$SKILL_DIR" "$REPO_ROOT" <<'PY'
+done < <(python3 - "$REPO_ROOT" "${MANAGED_SCAN_ROOTS[@]}" <<'PY'
 import os, re, sys
-root, repo_root = sys.argv[1], sys.argv[2]
+repo_root = sys.argv[1]
+scan_roots = sys.argv[2:]
 HEADLESS_RE = re.compile(r"headless\s*=\s*(False|0)\b")
 LAUNCH_RE = re.compile(r"(?<![A-Za-z_])launch\s*\(")
 EXCLUDE_RE = re.compile(r"launch_persistent_context|launchPersistentContext")
@@ -494,13 +522,14 @@ def scan(path, rel):
                 out.append("%s:%d bare Playwright launch() inside a code fence (use launch_persistent_context, headless=True): %s"
                            % (rel, i, line.strip()[:100]))
     return out
-for dirpath, _, files in os.walk(root):
-    for fn in sorted(files):
-        if fn.endswith(".md"):
-            p = os.path.join(dirpath, fn)
-            rel = os.path.relpath(p, repo_root)
-            for h in scan(p, rel):
-                sys.stdout.write(h + "\n")
+for root in scan_roots:
+    for dirpath, _, files in os.walk(root):
+        for fn in sorted(files):
+            if fn.endswith(".md"):
+                p = os.path.join(dirpath, fn)
+                rel = os.path.relpath(p, repo_root)
+                for h in scan(p, rel):
+                    sys.stdout.write(h + "\n")
 PY
 )
 if [ "$headless_fail" -eq 0 ]; then

@@ -1341,6 +1341,20 @@ jobs:
           bash 41-build-with-ai-playbook/scripts/12-run-browser-harness.test.sh
           echo "✓ Skill 41 closed loop PROVEN: L1-L5 green + runner escalates on a broken core"
 
+      - name: Skill 41 agent-browser probe hard-timeout + child-tree-kill (AUD-19)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 41-build-with-ai-playbook/scripts/lib/browser-probe-timeout.test.sh
+          echo "✓ 06-verify-agent-browser.sh CDP probe is hard-timeout-bounded (<=120s) with a node-PID trap that kills the FULL descendant tree -- proven against real process trees: a hang is bounded, killing the probe mid-run leaves zero orphans"
+
+      - name: Skill 03 INSTALL Step 4 guaranteed-close smoke test (AUD-21)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 03-agent-browser/install-step4-close-guarantee.test.sh
+          echo "✓ INSTALL.md Step 4 chains open/snapshot/close under a trap -- close runs even when snapshot is forced to fail, and leaves zero orphaned browser processes"
+
       - name: Skill 42 Personal Assistant Library install QC (simulated install)
         shell: bash
         run: |
