@@ -12,6 +12,30 @@ STOP-and-report (never guesses CSS).
 > Convert and Flow = Go High Level = GHL. Courses live in the left-rail **Memberships**
 > area (VERIFIED — `references/form-click-map.md`; spec §5.2). 🔒 ids/names redacted.
 
+## Phase A (2026-07-10) — LIVE-READY (same branch as the community doc)
+
+Branch `skill6-community-course-live-ready` (offline code) made the course builder
+agent-browser 0.27.0 driveable: (a) every click/fill routes through
+`tools/ghl_ab_executor.py` (Playwright anchor → `find …`/native `.click()`); (b) list-scan
+idempotency (search box optional, not required); (d) **course cleanup is a TRUE delete** —
+see the discovery below.
+
+### Discovery — courses have a full CRUD API (unlike communities)
+
+The Skill-36 Tier-2 (588-tool) community-MCP list ships **`create_course`,
+`create_course_category/offer/post/product/importer`, `get_course(s)/...`,
+`update_course/...`, and `delete_course`, `delete_course_category`, `delete_course_post`,
+`delete_course_offer`, `delete_course_product`** (verified in
+`36-ghl-mcp-setup/ghl-mcp-setup-full.md`). So:
+- **Cleanup**: courses support true 0-residue delete — the row "More actions" → Delete
+  (UI, observed) OR the `delete_course` API. The zero-residue proof is scoped **here**.
+- **Create rail (Phase B note)**: per spec §3, if a real create tool exists the router
+  should flip primary to it and the browser flow becomes the fallback. GHL-LOOKUP-SOP
+  warns Tier-2 community-MCP create/delete tools **may be unverified shells** — so a
+  Phase B probe must confirm `create_course`/`delete_course` are real endpoints before
+  flipping. `ghl_object_router.py` is a PROTECTED file (not edited in Phase A); this is
+  recorded as a Phase B decision, not silently applied.
+
 ## 1. VERIFIED shared-rail facts
 
 | Fact | Anchor | Conf | Source |
@@ -24,13 +48,13 @@ STOP-and-report (never guesses CSS).
 
 ## 2. CAPTURE-PENDING targets
 
-| Surface | Target | Capture recipe (ordered fallbacks) |
+| Surface | Target | OBSERVED value / capture recipe |
 |---|---|---|
-| Route | courses list route (Memberships → Courses/Products) | reach via `getByText('Memberships')` + Courses tab; **never** deep-link |
+| Route | courses list route | **OBSERVED** `/v2/location/<LOC>/memberships/courses/products-v2` |
 | Route | outline-builder route + `COURSE_ID` shape | capture from `location.href` / iframe `.src` |
-| List | search box placeholder | `getByPlaceholder('Search…')` |
-| List | Create-Course button **name** (UNKNOWN) | `getByRole('button',{name:/Create\|Add\|New.*(Course\|Product)/})` → `getByText` |
-| List | row Actions → Delete → confirm | `Actions` → `menuitem 'Delete'` → dialog `Delete` |
+| List | search box (OPTIONAL — not required, fix b) | **OBSERVED** `getByPlaceholder('Search Courses')` |
+| List | Create-Course button | **OBSERVED** `getByRole('button',{name:'Create New'})` |
+| List | row Actions → Delete → confirm (**true delete**, fix d) | **OBSERVED** row "More actions" menu → `menuitem 'Delete'` → dialog `Delete` (`exec:native`) |
 | Modal | course name input | `getByPlaceholder('Course name')` → dialog `textbox` |
 | Modal | product-type picker (ASSUMED present) | `getByText('Course')` — capture whether a type choice is even shown |
 | Modal | Create confirm | `getByRole('button',{name:'Create'})` |
