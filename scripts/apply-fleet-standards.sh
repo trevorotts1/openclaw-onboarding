@@ -9,6 +9,15 @@
 #     CEO gated while every other agent inherits the wide-open baseline).
 #   • Telegram media limit 50 MB (inbound + outbound)
 #   • WhatsApp PERMANENTLY DISABLED (fleet-wide, non-negotiable — see FLEET-STANDARDS.md §3)
+#   • tools.toolSearch.mode="directory" — ON-DEMAND MCP tool loading (fleet-wide
+#     "schema-every-turn" token-burn fix; compacts GHL's hundreds of tools + all
+#     MCP/plugin tools behind a search-on-demand catalog — see FLEET-STANDARDS.md §8)
+#   • RESERVED SLOT — prompt caching on the ollama path (the MEASURED dominant
+#     per-turn burn: cacheRead=0 fleet-wide). No-op until the verified key returns;
+#     DO NOT GUESS the key — see FLEET-STANDARDS.md §9.
+#   • Core-bootstrap SIZE GUARD (warn-only, ~150K target) — flags oversized
+#     compiled AGENTS/MEMORY/TOOLS/SOUL/IDENTITY re-billed every turn; never edits
+#     content — see FLEET-STANDARDS.md §10.
 #
 # NOTE (v11.3.1): agents.defaults.tools.exec is INVALID on OpenClaw 2026.6.1+
 #   and causes "agents.defaults: Invalid input" / auto-revert by doctor --fix.
@@ -166,6 +175,27 @@ CANONICAL = {
         "exec": {
             "security": "full",
             "ask": "off"
+        },
+        # ON-DEMAND MCP TOOL LOADING — fleet-wide "schema-every-turn" token-burn fix.
+        # (FLEET-STANDARDS.md §8.) tools.toolSearch.mode = "directory" compacts EVERY
+        # OpenClaw / plugin / MCP tool behind a bounded names+descriptions catalog that
+        # the model searches and hydrates ON DEMAND (openclaw.tools search/describe/call),
+        # instead of injecting every full tool JSON schema into context on every turn.
+        # This is the durable fix for the fleet-wide burn — most acute on the GHL
+        # community MCP (`ghl-community-mcp`, ~hundreds of tools) that update-skills.sh
+        # `wire_ghl_mcp` re-registers on every pass: directory mode compacts it regardless
+        # of how many servers/tools are registered, so re-registration can NEVER
+        # reintroduce the full-schema cost. Client-provided run tools stay directly
+        # visible; only the standing catalog (OpenClaw/plugin/MCP) is compacted.
+        # Verified: docs.openclaw.ai/tools/tool-search — tools.toolSearch.mode accepts
+        #   "code" (gateway default) | "tools" | "directory"  (or `false` to disable).
+        # Idempotent + override-preserving: deep_merge() recurses into an existing
+        # toolSearch block and enforces ONLY `mode`, leaving any per-box tuning
+        # (codeTimeoutMs / searchDefaultLimit / maxSearchLimit) untouched. The
+        # `openclaw config validate` gate below is the backstop + auto-rollback if a
+        # gateway version ever rejects the key.
+        "toolSearch": {
+            "mode": "directory"
         }
     },
     "agents": {
@@ -509,6 +539,30 @@ else:
     print("[apply-fleet-standards] WhatsApp ban QC: plugins.entries.whatsapp.enabled = false — PASS")
 WAQCEOF
 
+# ─── 3d. RESERVED SLOT — PROMPT CACHING on the ollama / Ollama-Cloud path ─────
+# MEASURED ROOT CAUSE (fleet, 2026-07-09): prompt caching is structurally OFF on
+# the ollama path — cacheRead=0 on ~100% of ollama calls across every measured
+# box, so the ENTIRE payload is re-billed on every turn. That is the dominant
+# per-turn token-burn driver fleet-wide; the tools.toolSearch directory-mode
+# standard (§2 above / FLEET-STANDARDS.md §8) is only the tool-SCHEMA lever
+# (it helps GHL-heavy boxes, not the caching burn).
+#
+# The durable fix is enabling prompt caching on the ollama path — BUT the exact
+# config key AND whether Ollama-Cloud even supports server-side caching are still
+# being verified against the OpenClaw docs. DO NOT GUESS THE KEY: a wrong key
+# fails `openclaw config validate` (which rolls this entire apply back) or
+# silently no-ops. This is the clearly-marked, idempotent slot. When the VERIFIED
+# key/value returns, write it into `cfg` inside the canonical deep-merge block
+# above (Section 2) — it is then automatically covered by the
+# `openclaw config validate` + rollback gate below. Reference: FLEET-STANDARDS.md §9.
+#
+# >>> RESERVED-SLOT: PROMPT-CACHING-OLLAMA — fill with the VERIFIED key ONLY <<<
+# Placeholder SHAPE (NOT a real key — do NOT write until verified):
+#   cfg.setdefault("<verified-subtree>", {})["<verified-key>"] = <verified-value>
+#
+# This release writes NOTHING here (config stays valid); it only logs the slot.
+echo "[apply-fleet-standards] prompt-caching (ollama path): RESERVED slot — awaiting VERIFIED config key (FLEET-STANDARDS.md §9); no-op this release (nothing written)"
+
 # ─── 4. Validate + report ────────────────────────────────────────────────────
 echo ""
 echo "[apply-fleet-standards] running: openclaw config validate"
@@ -637,6 +691,51 @@ fi
 mkdir -p "$WORKSPACE_DIR"
 AGENTS_FILE_EARLY="$WORKSPACE_DIR/AGENTS.md"
 touch "$AGENTS_FILE_EARLY"
+
+# ─── 5a-SIZEGUARD. Core-bootstrap size guard (WARN-ONLY — never edits content) ─
+# MEASURED (fleet, 2026-07-09): several boxes carry a compiled core bootstrap
+# (the gateway-injected AGENTS/MEMORY/TOOLS/SOUL/IDENTITY/USER/HEARTBEAT) of
+# 190K–330K chars — re-injected on EVERY turn (and, while prompt caching is off
+# on the ollama path, re-billed every turn). This guard MEASURES the injected
+# core-file set in the resolved workspace (the SAME files the gateway reads — see
+# shared-utils/resolve_injected_core_files.py) and WARNS when the total exceeds
+# the target. It NEVER edits core-file content — trimming is an operator decision;
+# this only makes the bloat visible on every install/update. Idempotent (pure
+# measurement) + non-blocking (never aborts the run). Target overridable via
+# FLEET_CORE_BOOTSTRAP_TARGET_CHARS. Reference: FLEET-STANDARDS.md §10.
+FLEET_CORE_BOOTSTRAP_TARGET_CHARS="${FLEET_CORE_BOOTSTRAP_TARGET_CHARS:-150000}"
+WORKSPACE_DIR="$WORKSPACE_DIR" \
+FLEET_CORE_BOOTSTRAP_TARGET_CHARS="$FLEET_CORE_BOOTSTRAP_TARGET_CHARS" \
+python3 - <<'SIZEEOF' || true
+import os
+ws = os.environ.get("WORKSPACE_DIR", "")
+try:
+    target = int(os.environ.get("FLEET_CORE_BOOTSTRAP_TARGET_CHARS", "150000"))
+except ValueError:
+    target = 150000
+# The gateway-injected core-file set (matches resolve_injected_core_files.py).
+CORE = ["AGENTS.md", "MEMORY.md", "TOOLS.md", "SOUL.md", "IDENTITY.md", "USER.md", "HEARTBEAT.md"]
+total = 0
+rows = []
+for name in CORE:
+    p = os.path.join(ws, name)
+    try:
+        n = len(open(p, encoding="utf-8", errors="replace").read()) if os.path.isfile(p) else 0
+    except Exception:
+        n = 0
+    if n:
+        rows.append((name, n))
+        total += n
+rows.sort(key=lambda x: -x[1])
+if total > target:
+    print(f"[apply-fleet-standards] WARN: CORE-BOOTSTRAP {total:,} chars EXCEEDS target {target:,} (workspace {ws})")
+    print(f"[apply-fleet-standards]       injected + re-billed every turn — trim to cut per-turn token burn. WARN ONLY (no content edited).")
+    for name, n in rows:
+        print(f"[apply-fleet-standards]       {name:<13} {n:>8,} chars")
+    print(f"[apply-fleet-standards]       TARGET: keep compiled core bootstrap under {target:,} chars/box (FLEET-STANDARDS.md §10)")
+else:
+    print(f"[apply-fleet-standards] core-bootstrap size guard: {total:,} chars within target {target:,} (workspace {ws}) — OK")
+SIZEEOF
 
 ROLE_DISC_MARKER="<!-- ROLE_DISCIPLINE_V1 -->"
 if grep -qF "$ROLE_DISC_MARKER" "$AGENTS_FILE_EARLY"; then
