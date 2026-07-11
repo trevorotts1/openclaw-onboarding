@@ -4,6 +4,49 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.20.0] - 2026-07-10 - Skill-6 SURVEY-builder hardening (Fable review)
+
+Branch **skill6-survey-builder-hardening** (off `skill6-community-course-live-ready`).
+Ships the outstanding survey-builder fixes from the Fable review (the repo hardening
+the two podcast surveys were built with as a one-off, but which never landed in the
+builder itself). Builder **v1.3.0 → v1.4.0**; skill **v19.19.0 → v19.20.0** (next minor
+after origin/main — the Fable plan's proposed v19.18.0 was already consumed). Additive;
+`build_survey`'s public signature is unchanged (new behaviour is task-key gated).
+
+- **NAV FIX (real 2026-07-10 breakage).** `ghl_survey_builder._p2_navigate_create` no
+  longer clicks a left-rail **"Sites"** item that does not exist on this GHL build.
+  It now `$router.push`es to `/v2/location/<LOC>/survey-builder/main` (the survey LIST)
+  and creates via a native `.click()` on the ref-less **"Add survey"** button through
+  the `ghl_ab_executor` find→native resolver (REUSED, not reimplemented) — there is NO
+  "Create new survey" modal on this build. The survey id is captured from the builder
+  iframe `.src` (`/survey-builder-v2/<id>`, shape-gated). Idempotent reuse: an existing
+  row titled exactly `survey_name`, or the empty "Survey 0" shell, is opened in place
+  (no duplicate).
+- **BUILD-FROM-MAIN GUARD.** New preflight `P4:builder_convergence_capable` HARD-STOPs a
+  `converge_slide` / `owner_slide` build on a stale (pre-main) checkout that lacks the
+  Area-5.1 convergence primitive — making the silent "convergence-less, unsubmittable
+  survey" failure LOUD (`_assert_convergence_capable`, semver-compared).
+- **CROSS-ORIGIN-IFRAME DRAG PLAYBOOK — now IN the skill.** New
+  `tools/ghl_iframe_dragdrop.py` (reusable tab-click + coordinate-drag ladder, the
+  generalized version of the survey bring-up `synth_drag.js` one-off) + new skill-root
+  `TECHNIQUES-cross-origin-iframe-dragdrop.md` (detection → 5-rung ladder → capture-gated
+  write → pitfalls) + `SKILL.md` pointers. Other iframe-canvas builders reuse it.
+- **SMOKE-TEST-FIRST + CAPTURE-GATED REST FALLBACK.** `build_survey` gains a
+  `build_method` switch (`browser` default | `rest`). The browser lane now smoke-tests a
+  SINGLE tile-drag (`_p2_smoke_test_drag`) and proves it landed via the iframe-aware
+  snapshot delta BEFORE the full run — a CLI "✓ Done" that placed nothing is reported
+  honestly as a wall. On a wall it falls back to the **capture-gated** REST lane
+  (`tools/ghl_survey_rest.py` + `_rest_lane_build`): the save origin/path/verb are
+  derived ONLY from a recorded `routing/survey-save-capture.json` receipt (preflight
+  `P5:rest_write_proven`) — no hardcoded save endpoint exists, so the lane can never
+  blind-POST; a read-back `verify_roundtrip` gates "done".
+- **Tests.** New `tests/test_survey_builder_hardening.py` (nav fix, convergence guard,
+  smoke-test logic, rest capture-gate, version lockstep) + extended
+  `ghl_survey_builder._selftest` / `ghl_iframe_dragdrop._selftest` /
+  `ghl_survey_rest._selftest`. Full offline battery green.
+
+---
+
 ## [Unreleased] - 2026-07-10 - Command Center / Kanban tightenings (Skill-6 Bulletproof U9 §7)
 
 Branch **skill6-bulletproof-build-cckanban** (off skill6-bulletproof-build). Unit **U9**

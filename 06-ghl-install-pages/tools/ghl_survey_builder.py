@@ -125,6 +125,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -160,10 +161,49 @@ try:
 except Exception:  # noqa: BLE001
     _ghl_method = None  # type: ignore[assignment]
 
+# agent-browser 0.27.0 anchor→executor resolver (native ".click()" via eval for the
+# ref-less "Add survey" button and cross-origin-iframe targets). REUSED, never
+# reimplemented — see tools/ghl_ab_executor.py.
+try:
+    import ghl_ab_executor as _abx  # noqa: E402
+except Exception:  # noqa: BLE001
+    _abx = None  # type: ignore[assignment]
+
+# Cross-origin-iframe drag/drop + ref-less-tab playbook (the generalized, in-skill
+# version of the survey bring-up one-off). See TECHNIQUES-cross-origin-iframe-dragdrop.md.
+try:
+    import ghl_iframe_dragdrop as _idd  # noqa: E402
+except Exception:  # noqa: BLE001
+    _idd = None  # type: ignore[assignment]
+
+# Capture-gated canvas-free REST fallback lane (build_method='rest'). NEVER writes to
+# an assumed endpoint — see tools/ghl_survey_rest.py (anti-blind-POST invariant).
+try:
+    import ghl_survey_rest as _srest  # noqa: E402
+except Exception:  # noqa: BLE001
+    _srest = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.3.0"
+SURVEY_BUILDER_VERSION = "v1.4.0"
+
+# The convergence primitive (Area-5.1) shipped in builder v1.3.0 / repo v19.17.0,
+# which exists ONLY on an origin/main-based checkout. A build that carries a
+# ``converge_slide`` (or an owner_slide-bearing rule) on a stale pre-main checkout
+# silently produces routing WITHOUT convergence → unsubmittable surveys. The
+# preflight guard P4:builder_convergence_capable makes that failure LOUD. This is
+# the minimum builder version that has ``_derive_convergence_rules``.
+SURVEY_CONVERGENCE_MIN_VERSION = "v1.3.0"
+
+# Build lanes (P2 canvas write strategy):
+#   "browser" — DEFAULT: the drag rail (nav fix + Add-survey + object-field drags),
+#               smoke-tested by a single tile-drag before the full run is trusted.
+#   "rest"    — canvas-free internal write; ONLY runs behind a save-capture receipt
+#               (routing/survey-save-capture.json). Selected explicitly, or auto-
+#               fallen-into when the smoke-test drag walls.
+BUILD_METHODS = ("browser", "rest")
+DEFAULT_BUILD_METHOD = "browser"
 
 # ── Field-creation posture (F1 fix — grocery-shopping rule) ────────────────
 # The survey rail MUST reuse API-pre-created custom fields (map-only via the
@@ -543,6 +583,106 @@ def _snapshot(session: str) -> str:
     return result.stdout or ""
 
 
+# ── agent-browser 0.27.0 executor + cross-origin-iframe drag (REUSED adapters) ──
+def _ab_executor():
+    """Bind the ghl_ab_executor.AbExecutor to THIS builder's _run_cmd/_eval so the
+    ref-less "Add survey" button (and any cross-origin-iframe target) resolves via
+    the proven `find …` → native `.click()` ladder. Returns None if the adapter is
+    unavailable (callers fall back to a plain _click)."""
+    if _abx is None:
+        return None
+    return _abx.AbExecutor(ab=_run_cmd, ev=_eval, log=_log)
+
+
+def _iframe_dragdrop():
+    """Bind the ghl_iframe_dragdrop.IframeDragDrop playbook to THIS builder's
+    _run_cmd/_eval (ref-less tab click + coordinate drag ladder). Returns None if
+    unavailable."""
+    if _idd is None:
+        return None
+    return _idd.IframeDragDrop(ab=_run_cmd, ev=_eval, log=_log)
+
+
+# ── survey-id capture from the builder iframe src (mirrors ghl_form_builder) ─────
+# The builder canvas is a CROSS-ORIGIN iframe at
+# `…/survey-builder-v2/<surveyId>`. An iframe `.src` ATTRIBUTE is parent-readable
+# even cross-origin (only contentWindow/Document are blocked), so the survey id
+# lives THERE, never in the top-frame pathname. Enumerate iframes, match the first
+# `/survey-builder-v2/<id>` src, fall back to the top-frame path/hash/search.
+_SURVEY_ID_CAPTURE_JS = (
+    "(() => {"
+    "  const RE = /\\/survey-builder-v2\\/([^/?#]+)/;"
+    "  for (const f of document.querySelectorAll('iframe')) {"
+    "    const src = f.src || f.getAttribute('src') || '';"
+    "    const m = src.match(RE);"
+    "    if (m) return m[1];"
+    "  }"
+    "  const top = (location.pathname || '') + (location.hash || '') + (location.search || '');"
+    "  const tm = top.match(RE);"
+    "  return tm ? tm[1] : '';"
+    "})()"
+)
+
+# Server-side shape gate: a real GHL survey id is a ~15-30 char [A-Za-z0-9] token
+# (e.g. "ExAPmAV3Llo0tREenfJy"). Never trust raw eval output as an id.
+_SURVEY_ID_SHAPE_RE = re.compile(r"[A-Za-z0-9]{15,30}")
+
+
+def _capture_survey_id(session: str) -> str:
+    """Read the built survey id from the builder IFRAME's `.src` (parent-readable),
+    re-validated against the GHL survey-id shape. Returns '' on no/invalid capture —
+    a malformed value can never poison downstream verify/delete targeting."""
+    got = (_eval(session, _SURVEY_ID_CAPTURE_JS, timeout=12) or "").strip()
+    return got if _SURVEY_ID_SHAPE_RE.fullmatch(got) else ""
+
+
+# ── convergence-capability guard (build-from-main preflight, §3.2) ──────────────
+def _parse_semver(v: str) -> tuple:
+    """Parse "v1.4.0"/"1.4"/"v19.20.0" → an int tuple for ordered comparison.
+    Non-numeric tails are dropped; missing components pad with 0."""
+    parts = re.findall(r"\d+", str(v or ""))
+    nums = [int(p) for p in parts[:3]]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def _assert_convergence_capable(
+    task: dict,
+    *,
+    version: str = SURVEY_BUILDER_VERSION,
+    has_primitive: Optional[bool] = None,
+) -> tuple:
+    """P4:builder_convergence_capable — the build-from-main guard (§3.2).
+
+    A task that carries ``converge_slide`` OR any rule with an explicit
+    ``owner_slide`` NEEDS the Area-5.1 branch-convergence primitive, which exists
+    ONLY on an origin/main-based checkout (builder ≥ v1.3.0 / repo ≥ v19.17.0). A
+    stale checkout silently drops convergence → branches fall through into siblings
+    → the survey is UNSUBMITTABLE. This asserts the primitive is present AND the
+    builder version is recent enough; otherwise it is a HARD STOP.
+
+    Pure + injectable (``version`` / ``has_primitive`` overridable) so the stale-
+    checkout failure is unit-testable offline. Returns ``(ok: bool, detail: str)``."""
+    needs = bool(task.get("converge_slide")) or any(
+        isinstance(r, dict) and r.get("owner_slide")
+        for r in (task.get("conditional_logic") or [])
+    )
+    if not needs:
+        return True, "no converge_slide / owner_slide rule — convergence not required"
+    if has_primitive is None:
+        has_primitive = callable(globals().get("_derive_convergence_rules"))
+    version_ok = _parse_semver(version) >= _parse_semver(SURVEY_CONVERGENCE_MIN_VERSION)
+    if has_primitive and version_ok:
+        return True, (f"convergence primitive present; builder {version} ≥ "
+                      f"{SURVEY_CONVERGENCE_MIN_VERSION} (main-based checkout)")
+    return False, (
+        "checkout too old for converge_slide: needs the branch-convergence primitive "
+        f"(builder ≥ {SURVEY_CONVERGENCE_MIN_VERSION}, repo ≥ v19.17.0 from origin/main). "
+        f"Have builder={version}, primitive_present={has_primitive}. "
+        "Sync origin/main and rebuild — do NOT ship convergence-less routing.")
+
+
 # ── in-SPA navigation — $router.push ONLY (never open/reload after a token seed) ─
 # ROOT CAUSE (2026-07 first live run): Phase A used a full ``open`` of the app URL.
 # A full open/reload re-runs GHL's SPA boot gate, which signs a TOKEN-SEEDED
@@ -692,6 +832,32 @@ def _run_preflight(task: dict, evidence_root: str) -> dict:
         "; ".join(_topo_errs) if _topo_errs
         else f"{len(_slides_pf)} slides + {len(_rules_pf)} branch rule(s); "
              "all field + slide references resolve")
+
+    # P4 — build-from-main convergence guard (§3.2): a converge_slide / owner_slide
+    # build on a stale (pre-main) checkout silently drops convergence. HARD STOP so
+    # the stale-checkout failure is LOUD, not a mid-survey fall-through.
+    _conv_ok, _conv_detail = _assert_convergence_capable(task)
+    chk("P4:builder_convergence_capable", _conv_ok, _conv_detail)
+
+    # P5 — rest-lane capture gate: the canvas-free write may ONLY run behind a
+    # recorded save-capture receipt (anti-blind-POST). HARD STOP, rest lane only.
+    build_method = _resolve_build_method(task)
+    if build_method == "rest":
+        if _srest is None:
+            chk("P5:rest_write_proven", False,
+                "build_method='rest' but ghl_survey_rest is unavailable")
+        else:
+            receipt = os.path.join(evidence_root, "routing", _srest.CAPTURE_RECEIPT_NAME)
+            try:
+                _srest.require_capture(evidence_root)
+                chk("P5:rest_write_proven", True,
+                    f"save-capture receipt present + valid ({receipt})")
+            except _srest.CaptureRequired as exc:
+                chk("P5:rest_write_proven", False, str(exc))
+    else:
+        checks.append({"check": "P5:rest_write_proven", "pass": True,
+                       "detail": f"build_method={build_method!r} — browser lane, "
+                                 "capture gate not required"})
 
     # P5 — duplicate-survey check (delegated to ghl_method if available)
     chk("P5:no_duplicate", True,
@@ -1440,6 +1606,16 @@ def _resolve_field_creation_mode(task: dict) -> str:
     return mode
 
 
+def _resolve_build_method(task: dict) -> str:
+    """Resolve + validate the P2 canvas write lane (default 'browser'). 'rest' is the
+    canvas-free fallback and is gated by a save-capture receipt at preflight."""
+    method = str(task.get("build_method") or DEFAULT_BUILD_METHOD).lower()
+    if method not in BUILD_METHODS:
+        _log(f"unknown build_method={method!r} — defaulting to {DEFAULT_BUILD_METHOD!r}")
+        method = DEFAULT_BUILD_METHOD
+    return method
+
+
 def _build_field_map(fields: List[dict], folder_name: str) -> dict:
     """Build routing/survey-field-map.json."""
     custom_entries: List[dict] = []
@@ -1652,45 +1828,198 @@ def _p1_create_field(
 # Part 2 — Build survey in survey-builder-v2
 # ---------------------------------------------------------------------------
 
+# Native "Add survey" click — the EXACT sequence proven live 2026-07-10 (this build
+# has NO left-rail "Sites" item and NO "Create new survey" modal; clicking the
+# button whose innerText === 'Add survey' creates a survey directly). Used as the
+# fallback when the ghl_ab_executor find→native ladder is unavailable.
+_ADD_SURVEY_NATIVE_JS = (
+    "(() => {"
+    "  const b = [...document.querySelectorAll('button')]"
+    "    .find(x => x.innerText.trim() === 'Add survey');"
+    "  if (!b) return 'no-btn';"
+    "  b.click();"
+    "  return 'clicked';"
+    "})()"
+)
+
+# Top-frame survey-list scan (idempotency/reuse): report whether a row titled exactly
+# ``survey_name`` exists, and whether the known empty shell "Survey 0" exists. The
+# list page is TOP-FRAME (rows are plain text) so this reads without the iframe.
+def _survey_list_scan_js(survey_name: str) -> str:
+    return (
+        "(() => {"
+        "  const want = " + json.dumps(survey_name or "") + ";"
+        "  const norm = s => (s || '').replace(/\\s+/g, ' ').trim();"
+        "  const texts = [...document.querySelectorAll("
+        "    'a,span,div,td,h1,h2,h3,p')].map(e => norm(e.textContent));"
+        "  return JSON.stringify({"
+        "    named: !!(want && texts.includes(want)),"
+        "    shell: texts.includes('Survey 0')"
+        "  });"
+        "})()"
+    )
+
+
 def _p2_navigate_create(
     session: str,
     location_id: str,
     evidence_root: str,
     shot_n: List[int],
-) -> None:
-    """Phase A: navigate to Surveys and click Add survey (PRD §5.B.2 steps 1–4)."""
-    _log("P2-A: navigate to Surveys + create survey")
+    survey_name: str = "",
+    reuse_shell: bool = True,
+) -> str:
+    """Phase A: navigate to the survey list and open/create the builder.
 
-    # Step 1: land on the dashboard IN-APP. The token-seeded session is already on
-    # the dashboard (inject-ghl-auth.sh --pre-open activates via $router.push); a
-    # full `open` here would re-run the SPA boot gate and bounce the seed to the
-    # login form (2026-07 live-run root cause). Assert we are logged in, then
-    # SPA-route — NEVER a full open/reload.
+    NAV FIX (2026-07-10 live root cause): the previous path clicked a left-rail
+    "Sites" item that DOES NOT EXIST on this GHL build → the whole run stalled.
+    Replaced with the checkpoint-proven in-app ``$router.push`` to
+    ``/v2/location/<LOC>/survey-builder/main`` (the survey LIST) + a native
+    ".click()" on the ref-less "Add survey" button (via the ghl_ab_executor
+    resolver, native fallback = the exact proven innerText click). There is NO
+    "Create new survey" modal on this build — the click creates directly.
+
+    Idempotency/reuse: before creating, the top-frame list is scanned. If a row
+    titled exactly ``survey_name`` already exists it is OPENED (edit-in-place, no
+    duplicate); else if only the empty shell "Survey 0" exists and ``reuse_shell``
+    is set, that shell is opened for Phase B to rename. Absorbs a live leftover.
+
+    Returns the captured survey id (shape-validated) or '' when it could not be
+    read from the builder iframe src."""
+    _log("P2-A: navigate to survey list + open/create survey (router.push nav fix)")
+
+    # Step 1: assert the token-seeded session is on the app (NOT bounced to login),
+    # then SPA-route to the survey LIST. NEVER a full open/reload (re-runs the SPA
+    # boot gate → signs the seed out; 2026-07 live-run root cause).
     _assert_logged_in(session)
-    _router_push(session, f"/v2/location/{location_id}/dashboard",
-                 expect_contains="/dashboard")
-    _wait(session, "Dashboard")
-    shot_n[0] += 1
-    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-dashboard"))
-
-    # Step 2: open Sites (left rail)
-    _click(session, "Sites")
-    _wait(session, "Funnels")
-    shot_n[0] += 1
-    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-sites"))
-
-    # Step 3: click Surveys sub-nav tab
-    _click(session, "Surveys")
+    _router_push(session, f"/v2/location/{location_id}/survey-builder/main",
+                 expect_contains="survey-builder")
     _wait(session, "Add survey")
     shot_n[0] += 1
-    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-surveys-tab"))
+    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-survey-list"))
 
-    # Step 4: click Add survey; builder opens in the iframe
-    # URL: …/survey-builder/main → redirect to leadconnectorhq.com/survey-builder-v2/<surveyId>
-    _click(session, "Add survey")
+    # Step 2: idempotency scan — reuse an existing survey / the empty shell.
+    opened_existing = False
+    scan_raw = _eval(session, _survey_list_scan_js(survey_name), timeout=12)
+    try:
+        scan = json.loads((scan_raw or "").strip().strip('"').strip("'") or "{}")
+    except (ValueError, TypeError):
+        scan = {}
+    ex = _ab_executor()
+    if scan.get("named") and survey_name:
+        _log(f"  reuse: opening existing survey {survey_name!r} (edit-in-place)")
+        if ex is not None:
+            ex.click(session, survey_name, kind="text", mode="auto")
+        else:
+            _click(session, survey_name)
+        opened_existing = True
+    elif scan.get("shell") and reuse_shell:
+        _log("  reuse: opening the empty 'Survey 0' shell")
+        if ex is not None:
+            ex.click(session, "Survey 0", kind="text", mode="auto")
+        else:
+            _click(session, "Survey 0")
+        opened_existing = True
+
+    # Step 3: create a fresh survey when nothing was reused — native "Add survey"
+    # click (find→native ladder; on this build there is NO create modal).
+    if not opened_existing:
+        clicked = False
+        if ex is not None:
+            res = ex.click(session, "getByRole('button', { name: 'Add survey' })",
+                           mode="auto")
+            clicked = bool(res.get("ok"))
+        if not clicked:
+            # Explicit native fallback — the exact proven innerText click.
+            r = _eval(session, _ADD_SURVEY_NATIVE_JS, timeout=12)
+            clicked = "clicked" in (r or "")
+        if not clicked:
+            raise SurveyAuthStop(
+                "could not create a survey: neither the find→native 'Add survey' "
+                "ladder nor the innerText click fired (list route may not have "
+                "mounted). Confirm router.push landed on survey-builder/main.")
+
+    # Step 4: builder opens in the iframe → wait for Slide 1, capture the survey id.
     _wait(session, "Slide 1", timeout=45)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-a-builder-opened"))
+
+    survey_id = _capture_survey_id(session)
+    _log(f"P2-A: survey_id={survey_id!r} (reused={opened_existing})")
+    return survey_id
+
+
+def _snapshot_text_count(session: str, needle: str) -> int:
+    """Count occurrences of ``needle`` in the a11y snapshot (agent-browser 0.27.0
+    inlines the builder iframe, so a placed canvas element shows up here). Used as
+    the smoke-test's iframe-aware ground truth for "did a tile land on the canvas"."""
+    snap = _snapshot(session)
+    return snap.count(needle) if snap else 0
+
+
+def _survey_store_len_expr(slide_index: int = 0) -> str:
+    """JS EXPRESSION returning the survey Pinia store's slideData length for a slide
+    (``-1`` on any error). Precise verify probe for a CDP-in-iframe coordinate drag
+    (agent-browser top-frame eval cannot reach the cross-origin store — use CDP)."""
+    return (
+        "(() => { try { return document.querySelector('#builderApp')"
+        ".__vue_app__.config.globalProperties.$pinia.state.value.app"
+        f".slides[{int(slide_index)}].slideData.length; }} catch (e) {{ return -1; }} }})()"
+    )
+
+
+def _p2_smoke_test_drag(
+    session: str,
+    evidence_root: str,
+    shot_n: List[int],
+    *,
+    tile_text: str = "Multi Line",
+    slide_label: str = "Slide 1",
+) -> dict:
+    """SMOKE TEST (run BEFORE trusting a full run): drive ONE Quick-Add tile drag
+    onto ``slide_label`` and prove it landed via the iframe-aware snapshot delta.
+
+    Ladder: rung 1 = agent-browser text-locator drag (iframe-aware, form-proven);
+    if the canvas did NOT gain the tile, rung 2 = in-frame coordinate pointer drag.
+    Success = the tile text appears MORE times in the post-drag snapshot than before
+    (tile stays in the panel; a landed copy adds one on the canvas). Honest: a
+    CLI "✓ Done" that placed nothing is reported as ``ok:false`` (→ rest fallback).
+    Returns ``{ok, path, before, after, detail}``. Best-effort undo keeps the canvas
+    clean for the real build."""
+    _log(f"P2-smoke: single-tile drag test ({tile_text!r} → {slide_label})")
+    idd = _iframe_dragdrop()
+    if idd is None:
+        return {"ok": False, "path": "unavailable",
+                "detail": "ghl_iframe_dragdrop adapter unavailable"}
+
+    _click(session, slide_label)
+    _click(session, "Add Elements")
+    _wait(session, "Quick Add")
+    idd.tab_click(session, "Quick Add")
+    shot_n[0] += 1
+    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-smoke-quickadd"))
+
+    before = _snapshot_text_count(session, tile_text)
+    # rung 1 — text-locator drag across the auto-inlined frame.
+    idd.text_locator_drag(session, tile_text, slide_label)
+    mid = _snapshot_text_count(session, tile_text)
+    path = "text-drag"
+    if mid <= before:
+        # rung 2 — in-frame bounding-box pointer drag (best-effort; precise store
+        # delta needs CDP into the iframe target — see TECHNIQUES doc rung 3/4).
+        idd.coord_drag(session, tile_text, slide_label,
+                       verify_expr=_survey_store_len_expr(0))
+        path = "coord-drag"
+    after = _snapshot_text_count(session, tile_text)
+    ok = after > before
+    shot_n[0] += 1
+    _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-smoke-after"))
+
+    if ok:
+        # Best-effort undo so the smoke element does not pollute the real build.
+        _run_cmd(session, "press", "Meta+z", timeout=8)
+        _run_cmd(session, "press", "Control+z", timeout=8)
+    _log(f"P2-smoke: ok={ok} path={path} before={before} after={after}")
+    return {"ok": ok, "path": path, "before": before, "after": after}
 
 
 def _p2_rename_survey(
@@ -2149,6 +2478,87 @@ def _p2_save_and_get_url(
 
 
 # ---------------------------------------------------------------------------
+# Capture-gated REST fallback lane (build_method='rest' / smoke-wall fallback)
+# ---------------------------------------------------------------------------
+
+def _rest_lane_build(
+    session: str,
+    survey_id: str,
+    task: dict,
+    evidence_root: str,
+    gov: RateGovernor,
+) -> dict:
+    """Canvas-free internal write, gated so it can NEVER blind-POST.
+
+    HARD gates (each raises → the build STOPs honestly):
+      1. a valid save-capture receipt at routing/survey-save-capture.json — records
+         the builder's OWN Save request; origin/path/verb are derived from it, never
+         hardcoded (ghl_survey_rest.require_capture / survey_save_route).
+      2. a composed ``formData`` (``task['form_data']`` or the §6.4 composer output).
+         This builder does NOT reimplement the composer — a missing formData STOPs
+         rather than writing an empty/guessed survey.
+      3. a Firebase ``id_token`` to stage the ``token-id`` header.
+    Then: stage token (python-written JS file → window.__VT, never inlined) →
+    save_survey_js → read_survey_js → verify_roundtrip. Returns
+    ``{ok, survey_id, verify, survey_url}``."""
+    if _srest is None:
+        raise RuntimeError("rest lane requested but ghl_survey_rest is unavailable")
+
+    # Gate 1 — capture receipt (anti-blind-POST). Raises CaptureRequired.
+    capture = _srest.require_capture(evidence_root)
+
+    # Gate 2 — composed formData.
+    form_data = task.get("form_data")
+    if not isinstance(form_data, dict):
+        raise RuntimeError(
+            "rest lane needs a composed formData (task['form_data'] or the §6.4 "
+            "composer); none supplied — refusing to write an empty/guessed survey.")
+
+    # Gate 3 — id_token for token-id staging.
+    id_token = task.get("id_token") or os.environ.get("GHL_ID_TOKEN", "")
+    if not id_token:
+        raise RuntimeError(
+            "rest lane needs a Firebase id_token (task['id_token'] / GHL_ID_TOKEN) "
+            "to stage the token-id header; none supplied.")
+
+    survey_name = task.get("survey_name", task.get("title", "New Survey"))
+    body = _srest.build_save_body(survey_name, form_data, capture=capture)
+
+    # Stage the JWT via a python-written JS file → window.__VT (never inlined in JS
+    # source or bash — ghl_rest_canvas contract). The eval pipes it via --stdin, so
+    # the token never appears in a logged command string.
+    import ghl_rest_canvas as _rc
+    tok_path = os.path.join(evidence_root, "routing", "survey-token.js")
+    _rc.write_token_js_file(id_token, tok_path)
+    with open(tok_path, "r", encoding="utf-8") as fh:
+        _eval(session, fh.read(), timeout=10)
+
+    # Write — origin/path/verb come from the capture receipt only.
+    gov.before("save")
+    save_js = _srest.save_survey_js(survey_id, body, capture)
+    save_out = _eval(session, save_js, timeout=30)
+    _log(f"rest save status: {(save_out or '')[:120]!r}")
+
+    # Read-back + semantic roundtrip diff (no false 'done').
+    read_out = _eval(session, _srest.read_survey_js(survey_id), timeout=30)
+    got: dict = {}
+    try:
+        parsed = json.loads((read_out or "").strip().strip('"').strip("'") or "{}")
+        got = parsed.get("body", parsed) if isinstance(parsed, dict) else {}
+    except (ValueError, TypeError):
+        got = {}
+    verify = _srest.verify_roundtrip({"formData": form_data}, got)
+    if not verify["ok"]:
+        raise RuntimeError(f"rest roundtrip verify FAILED: {verify['diffs']}")
+
+    survey_url = ""
+    if isinstance(got, dict):
+        survey_url = got.get("surveyUrl") or got.get("url") or ""
+    return {"ok": True, "survey_id": survey_id, "verify": verify,
+            "survey_url": survey_url, "build_method": "rest"}
+
+
+# ---------------------------------------------------------------------------
 # Dry-run click list emitter
 # ---------------------------------------------------------------------------
 
@@ -2416,6 +2826,8 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     )
     fields = _resolve_fields(task)
     field_creation = _resolve_field_creation_mode(task)
+    build_method = _resolve_build_method(task)          # 'browser' (default) | 'rest'
+    reuse_shell = bool(task.get("reuse_shell", True))
 
     # Task-driven slide model + normalized branching (Area-5). Preflight
     # (P4:topology_valid) already proved every reference resolves; these drive
@@ -2648,102 +3060,141 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                     if keepalive.due():
                         _eval(session, "true", timeout=5)  # harmless keepalive ping
 
-            # ── Part 2: Phase A — create survey ──────────────────────────────
+            # ── Part 2: Phase A — nav fix + create/reuse survey ──────────────
             _pre_phase_check(session, keepalive)
             step_n += 1
             _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase A — create survey")
-            _p2_navigate_create(session, location_id, evidence_root, shot_n)
-
-            # ── Part 2: Phase B — rename survey ──────────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase B — rename survey")
-            _p2_rename_survey(session, survey_name, evidence_root, shot_n)
-
-            # ── Part 2: Phase C — add slides ──────────────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(
-                board_task_id, "updated",
-                f"Step {step_n}/{total_steps}: Part 2 Phase C — add {num_extra} slides "
-                f"(total={1 + num_extra})",
-            )
-            _p2_add_slides(session, num_extra, evidence_root, shot_n)
-
-            # ── Part 2: Phase D — welcome slide ───────────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase D — welcome slide (Text element)")
-            _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n)
-
-            # ── Part 2: Phase E — pull custom fields ──────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(
-                board_task_id, "updated",
-                f"Step {step_n}/{total_steps}: Part 2 Phase E — Add Object Fields "
-                f"from folder {folder_name!r}",
-            )
-            _p2_pull_object_fields(
-                session, folder_name, fields, evidence_root, shot_n,
-                dep_custom_fields=dep_plan.get("custom_fields", []),
-                slides=slides_model,
+                            f"Step {step_n}/{total_steps}: Part 2 Phase A — create survey "
+                            "(router.push nav fix + native 'Add survey')")
+            survey_id = _p2_navigate_create(
+                session, location_id, evidence_root, shot_n,
+                survey_name=survey_name, reuse_shell=reuse_shell,
             )
 
-            # ── Part 2: Phase F — rename question slides ──────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
-            _p2_rename_question_slides(
-                session, fields, gov, evidence_root, shot_n, slides=slides_model
-            )
+            # ── SMOKE TEST FIRST — one tile drag proves the canvas is drivable ─
+            # before the full run is trusted. A walled drag falls back to the
+            # capture-gated REST lane (never a blind write).
+            use_rest = (build_method == "rest")
+            smoke: dict = {"ok": None, "skipped": use_rest}
+            if build_method == "browser":
+                _pre_phase_check(session, keepalive)
+                smoke = _p2_smoke_test_drag(session, evidence_root, shot_n)
+                _write_json(os.path.join(evidence_root, "routing", "survey-smoke.json"),
+                            smoke)
+                if not smoke.get("ok"):
+                    _log("SMOKE drag WALLED — switching to capture-gated REST lane")
+                    _board_activity(board_task_id, "updated",
+                                    "Smoke tile-drag walled — falling back to "
+                                    "capture-gated REST lane (routing/survey-save-capture.json)")
+                    use_rest = True
 
-            # ── Part 2: Phase G — conditional logic ───────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
-                            f"({len(norm_rules)} rule(s))")
-            _p2_conditional_logic(
-                session, norm_rules, gov, evidence_root, shot_n
-            )
+            if use_rest:
+                # ── REST lane (canvas-free, capture-gated) ───────────────────
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: REST lane — "
+                                f"canvas-free capture-gated write (smoke_ok={smoke.get('ok')})")
+                rest_res = _rest_lane_build(session, survey_id, task, evidence_root, gov)
+                survey_url = rest_res.get("survey_url", "")
+                build_method = "rest"
+            else:
+                # ── Part 2: Phase B — rename survey ──────────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 2 Phase B — rename survey")
+                _p2_rename_survey(session, survey_name, evidence_root, shot_n)
 
-            # ── Part 2: Phase H — required toggles ───────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            required_count = sum(1 for f in fields if f.get("required"))
-            _board_activity(
-                board_task_id, "updated",
-                f"Step {step_n}/{total_steps}: Part 2 Phase H — required toggles "
-                f"({required_count} fields)",
-            )
-            _p2_required_toggles(
-                session, fields, evidence_root, shot_n, slides=slides_model
-            )
+                # ── Part 2: Phase C — add slides ─────────────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(
+                    board_task_id, "updated",
+                    f"Step {step_n}/{total_steps}: Part 2 Phase C — add {num_extra} slides "
+                    f"(total={1 + num_extra})",
+                )
+                _p2_add_slides(session, num_extra, evidence_root, shot_n)
 
-            # ── Part 2: Phase J — capture slide + T&C ────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(
-                board_task_id, "updated",
-                f"Step {step_n}/{total_steps}: Part 2 Phase J — Quick-Add capture "
-                "slide + T&C (plain consent checkbox, NOT A2P)",
-            )
-            _p2_capture_slide(
-                session, business_name, campaign, len(fields),
-                evidence_root, shot_n, capture_slide_n=capture_slide_n,
-            )
+                # ── Part 2: Phase D — welcome slide ──────────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 2 Phase D — welcome slide (Text element)")
+                _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n)
 
-            # ── Part 2: Phase K — save + get URL ─────────────────────────────
-            _pre_phase_check(session, keepalive)
-            step_n += 1
-            _board_activity(board_task_id, "updated",
-                            f"Step {step_n}/{total_steps}: Part 2 Phase K — save + capture URL")
-            survey_url = _p2_save_and_get_url(session, gov, evidence_root, shot_n)
+                # ── Part 2: Phase E — pull custom fields ─────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(
+                    board_task_id, "updated",
+                    f"Step {step_n}/{total_steps}: Part 2 Phase E — Add Object Fields "
+                    f"from folder {folder_name!r}",
+                )
+                _p2_pull_object_fields(
+                    session, folder_name, fields, evidence_root, shot_n,
+                    dep_custom_fields=dep_plan.get("custom_fields", []),
+                    slides=slides_model,
+                )
+
+                # ── Part 2: Phase F — rename question slides ─────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
+                _p2_rename_question_slides(
+                    session, fields, gov, evidence_root, shot_n, slides=slides_model
+                )
+
+                # ── Part 2: Phase G — conditional logic ──────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
+                                f"({len(norm_rules)} rule(s))")
+                _p2_conditional_logic(
+                    session, norm_rules, gov, evidence_root, shot_n
+                )
+
+                # ── Part 2: Phase H — required toggles ───────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                required_count = sum(1 for f in fields if f.get("required"))
+                _board_activity(
+                    board_task_id, "updated",
+                    f"Step {step_n}/{total_steps}: Part 2 Phase H — required toggles "
+                    f"({required_count} fields)",
+                )
+                _p2_required_toggles(
+                    session, fields, evidence_root, shot_n, slides=slides_model
+                )
+
+                # ── Part 2: Phase J — capture slide + T&C ────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(
+                    board_task_id, "updated",
+                    f"Step {step_n}/{total_steps}: Part 2 Phase J — Quick-Add capture "
+                    "slide + T&C (plain consent checkbox, NOT A2P)",
+                )
+                _p2_capture_slide(
+                    session, business_name, campaign, len(fields),
+                    evidence_root, shot_n, capture_slide_n=capture_slide_n,
+                )
+
+                # ── Part 2: Phase K — save + get URL ─────────────────────────
+                _pre_phase_check(session, keepalive)
+                step_n += 1
+                _board_activity(board_task_id, "updated",
+                                f"Step {step_n}/{total_steps}: Part 2 Phase K — save + capture URL")
+                survey_url = _p2_save_and_get_url(session, gov, evidence_root, shot_n)
+
+            # ── Evidence: survey-built.json (survey_id + lane + smoke result) ──
+            _write_json(
+                os.path.join(evidence_root, "routing", "survey-built.json"),
+                {"survey_id": survey_id, "survey_name": survey_name,
+                 "location_id": location_id, "build_method": build_method,
+                 "smoke": smoke, "survey_url": survey_url},
+            )
 
     except Exception as exc:  # noqa: BLE001
         _log(f"build_survey EXCEPTION: {type(exc).__name__}: {exc}")
@@ -3286,6 +3737,80 @@ def _selftest() -> int:
         topo_ft = _validate_topology(conv_task, fields_c, slides_c, list(conv_router))
         if not any("falls through" in e for e in topo_ft):
             errors.append("fall-through guard must flag a branch with no convergence jump")
+
+        # ── v1.4.0 hardening: nav fix, guards, lanes, smoke, rest gate ────────
+        # 25. semver parse ordering
+        if not (_parse_semver("v1.4.0") > _parse_semver("v1.3.0")
+                and _parse_semver("v19.20.0") > _parse_semver("v19.9.0")):
+            errors.append("_parse_semver ordering wrong")
+
+        # 26. convergence-capability guard (build-from-main §3.2)
+        if not _assert_convergence_capable({"survey_name": "x"})[0]:
+            errors.append("no-converge task should be convergence-capable")
+        if not _assert_convergence_capable(dict(conv_task), version="v1.4.0")[0]:
+            errors.append("converge task on v1.4.0 must be capable")
+        stale_ok, _sd = _assert_convergence_capable(dict(conv_task), version="v1.1.0")
+        if stale_ok:
+            errors.append("converge task on a stale v1.1.0 checkout must HARD-STOP")
+        prim_ok, _pd = _assert_convergence_capable(dict(conv_task), has_primitive=False)
+        if prim_ok:
+            errors.append("missing convergence primitive must HARD-STOP")
+        if not _assert_convergence_capable(
+                {"conditional_logic": [{"if_field": "Q1", "if_value": "A",
+                                        "then_slide": "S2", "owner_slide": "S1"}]},
+                version="v1.1.0")[0] is False:
+            errors.append("owner_slide rule on a stale checkout must HARD-STOP")
+
+        # 27. preflight P4:builder_convergence_capable — passes on THIS v1.4.0 build,
+        #     and specifically fails when the primitive is (simulated) missing.
+        pf_conv_ok = _run_preflight(dict(conv_task), tmp)
+        if not any(c["check"] == "P4:builder_convergence_capable" and c["pass"]
+                   for c in pf_conv_ok["checks"]):
+            errors.append("converge build on v1.4.0 must pass P4:builder_convergence_capable")
+
+        # 28. build-method resolution + validation
+        if _resolve_build_method({}) != "browser":
+            errors.append("default build_method should be 'browser'")
+        if _resolve_build_method({"build_method": "rest"}) != "rest":
+            errors.append("build_method 'rest' should resolve")
+        if _resolve_build_method({"build_method": "bogus"}) != "browser":
+            errors.append("unknown build_method must default to 'browser'")
+
+        # 29. preflight P5:rest_write_proven — rest lane HARD-STOPs without a receipt,
+        #     browser lane never requires it.
+        pf_rest = _run_preflight(
+            {"survey_name": "R", "title": "R", "location_id": "LOC",
+             "field_creation": "browser", "build_method": "rest"}, tmp)
+        if pf_rest["pass"]:
+            errors.append("rest lane without a save-capture receipt must fail preflight")
+        if not any(c["check"] == "P5:rest_write_proven" and not c["pass"]
+                   for c in pf_rest["checks"]):
+            errors.append("rest lane must fail P5:rest_write_proven specifically")
+        pf_browser = _run_preflight(
+            {"survey_name": "R", "title": "R", "location_id": "LOC",
+             "field_creation": "browser"}, tmp)
+        if not any(c["check"] == "P5:rest_write_proven" and c["pass"]
+                   for c in pf_browser["checks"]):
+            errors.append("browser lane must pass P5:rest_write_proven (gate not required)")
+
+        # 30. survey-id shape gate + capture JS shape
+        if _SURVEY_ID_SHAPE_RE.fullmatch("ExAPmAV3Llo0tREenfJy") is None:
+            errors.append("valid survey id must pass the shape gate")
+        if _SURVEY_ID_SHAPE_RE.fullmatch("../etc/passwd") is not None:
+            errors.append("a path must NOT pass the survey-id shape gate")
+        if "survey-builder-v2" not in _SURVEY_ID_CAPTURE_JS:
+            errors.append("_SURVEY_ID_CAPTURE_JS must match the survey-builder-v2 src")
+
+        # 31. nav-fix JS emitters (native Add survey + list scan)
+        if "'Add survey'" not in _ADD_SURVEY_NATIVE_JS or ".click()" not in _ADD_SURVEY_NATIVE_JS:
+            errors.append("_ADD_SURVEY_NATIVE_JS must click the 'Add survey' button")
+        scan_js = _survey_list_scan_js("My Survey")
+        if "My Survey" not in scan_js or "Survey 0" not in scan_js:
+            errors.append("_survey_list_scan_js must probe both the named survey and the shell")
+
+        # 32. store-length verify expression shape
+        if "slideData.length" not in _survey_store_len_expr(0):
+            errors.append("_survey_store_len_expr must probe slideData.length")
 
     if errors:
         for e in errors:
