@@ -598,7 +598,7 @@ marked `failed`) if **any** of the following is true:
 | It exits 0 but prints no `downloaded N SOP records` line | No trustworthy row floor for this run. |
 | It reports `downloaded 0 SOP records` | The release asset is empty. |
 | Total `sops` rows < half the downloaded count | The upsert did not land. |
-| **Zero rows with `source='role-library'`** | `converge(scope=sops)` never succeeded — the role library is a ghost and Triad routing starves. |
+| **Zero rows with `source='role-library'` while role `how-to.md` files exist on disk** | `converge(scope=sops)` was pointed at a real library and imported **nothing** — the role library is a ghost and Triad routing starves. |
 | The gate script or `python3` is missing | An **unverified** library must never ship green. |
 
 There is deliberately **no "warn and continue" path**. The Command Center
@@ -608,6 +608,27 @@ runs. Any relaxed "just check it isn't empty" floor would therefore rubber-stamp
 the boot-seed ghost as a healthy 2,555-row library — which is precisely the
 regression this gate was written to catch. **A gate that fails open is not a
 gate.**
+
+**The converge step is gated on the response BODY, never on the HTTP status.**
+`curl -sf` is the same fail-open class: a Command Center whose departments tree
+does not resolve answers `HTTP 200 {"ok":true,"sops":{"imported":0,"updated":0}}`
+having written **nothing**, and a status-only check stamps that ghost `ok`. Phase 6i
+parses `sops.imported + sops.updated` — *rows written* — and treats HTTP 2xx with
+zero rows written as `zero-imported`, not success. It must be **both** counters:
+`imported` is INSERTs only, so the second run of a perfectly healthy library reports
+`imported=0, updated=912`, and gating on `imported` alone would hard-fail every
+idempotent re-run.
+
+**Zero role-library rows is not always a bug — and the gate can tell the difference.**
+The discriminator is the on-disk source: the count of role `how-to.md` files under the
+tree the Command Center actually reads. If ≥1 exists and converge still wrote zero rows,
+that is the C2 ghost → **fail the install**. If the box has **no** role-library source at
+all (0 `how-to.md`, and the Command Center resolved no ZHC company tree, or it would have
+written rows), then zero role-library rows is the **correct** outcome → the install
+proceeds, the role floor is 0 for that run, and the state file records the library as
+**absent** (`commandCenterSopRoleLibraryExpected=false`) rather than as healthy. A gate
+that cannot tell "nothing to import" from "silently failed" either bricks healthy installs
+or rubber-stamps ghosts; this one is required to do neither.
 
 **If Phase 6i fails the install:** fix the underlying cause (usually network /
 GitHub release reachability, or a Command Center that is not answering
@@ -877,6 +898,16 @@ cp .env.example .env.local
 > - `MC_API_TOKEN` + `WEBHOOK_SECRET` are generated so the middleware never silently
 >   fails closed. A Cloudflare-Access box may instead set `CC_ALLOW_INSECURE_OPEN_API=true`
 >   to write `ALLOW_INSECURE_OPEN_API=true`.
+> - `ROLE_LIBRARY_PATH` ← `$OC_ROOT/workspace/departments`, pinned whenever that tree holds
+>   at least one role `how-to.md`. **This is the C2 root cause.** `converge(scope=sops)`
+>   resolves its departments tree from the ZHC company roots, then `ROLE_LIBRARY_PATH`, then
+>   `<OPENCLAW_WORKSPACE_PATH>/departments` — whose built-in default is the **Docker-only**
+>   `/data/.openclaw/workspace`. On a Mac there is no ZHC company tree and no `/data`, so the
+>   path resolves to nothing; the importer returns `[]` for a missing directory **without
+>   throwing**, converge answers `HTTP 200 {"ok":true,"sops":{"imported":0,"updated":0}}`, and
+>   **zero** role-library rows land — forever. Pinning this key puts the box's real library
+>   back in the Command Center's search path (measured on a throwaway CC: 0 role-library rows
+>   unpinned → 690 rows across 70 departments pinned, same DB, same code).
 >
 > Phase 6 also runs a **freshness-gated `next build`** (rebuilds `.next` only when it is
 > stale vs source) so `next start` always serves code that registers the intake-advance +
