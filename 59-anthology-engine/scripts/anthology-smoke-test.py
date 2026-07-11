@@ -67,6 +67,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -484,6 +485,101 @@ def reconcile_board(scripts_dir, environ=None, runner=None):
             "detail": (err or "")[:200]}
 
 
+def _default_capture_subprocess(argv):
+    """Like _run_subprocess but also returns stdout (rc, stdout_text, stderr_text).
+    A SEPARATE seam from _run_subprocess's (rc, err) contract: the ONE caller here
+    (the E8 stale sweep) needs the JSON payload a read-only query prints, not just
+    an exit code."""
+    try:
+        proc = subprocess.run(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=120, check=False,
+        )
+        return (proc.returncode,
+                (proc.stdout or b"").decode("utf-8", "replace"),
+                (proc.stderr or b"").decode("utf-8", "replace"))
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 1, "", "subprocess failed: %s" % type(exc).__name__
+
+
+def stale_participant_sweep(scripts_dir, environ=None, capture_runner=None, alert_runner=None):
+    """E8: stuck non-terminal-job sweep, part of the daily tick (mirrors
+    reconcile_board's exact fail-soft shape). Shells `anthology_state.py
+    stale-cursors --json` (read-only) and fires ONE deduped operator alert per
+    stale participant through alert-dedup.py (dedup_key includes the
+    participant_key, so alert-dedup's own 86400s/24h default window gives
+    'one per stale job' without any new dedup machinery; alert-dedup's own spool
+    is the durable record, matching its own 'the spool is lossless' guarantee).
+    Alert-only: never advances, holds, or otherwise mutates a row. Fail-soft by
+    construction: a missing sibling script or a non-zero exit degrades to a
+    reported error and never turns a green smoke-test tick red.
+
+    Two independent test seams, matching the two different subprocess contracts
+    in play: capture_runner(argv) -> (rc, stdout, stderr) for the read-only
+    stale-cursors query; alert_runner(argv) -> (rc, stderr) for each per-participant
+    alert-dedup send, the SAME (rc, err) contract age_hold_queue/reconcile_board/
+    fire_alert already use."""
+    env = environ if environ is not None else os.environ
+    capture = capture_runner or _default_capture_subprocess
+    alert_run = alert_runner or _run_subprocess
+    astate = Path(scripts_dir) / "anthology_state.py"
+    if not astate.exists():
+        return {"status": "skipped", "reason": "anthology_state.py not present", "alerted": 0}
+
+    argv = [sys.executable, str(astate), "stale-cursors", "--json"]
+    state_dir = (env.get("ANTHOLOGY_STATE_DIR") or "").strip()
+    if state_dir:
+        argv += ["--state-dir", state_dir]
+    # Threshold override, matching the SAME env-var-JSON-args convention this file
+    # already uses for its sibling steps (ANTHOLOGY_HOLD_QUEUE_AGE_ARGS,
+    # ANTHOLOGY_ALERT_ARGS), e.g. ANTHOLOGY_STALE_SWEEP_ARGS='["--default-hours","12"]'.
+    override = (env.get("ANTHOLOGY_STALE_SWEEP_ARGS") or "").strip()
+    if override:
+        try:
+            extra = json.loads(override)
+            if isinstance(extra, list):
+                argv += [str(x) for x in extra]
+        except ValueError:
+            pass  # malformed override degrades to the stale-cursors built-in defaults
+    rc, out, err = capture(argv)
+    if rc != 0:
+        return {"status": "error", "exit": rc,
+                "reason": "anthology_state.py stale-cursors returned %s" % rc,
+                "detail": (err or "")[:200], "alerted": 0}
+    try:
+        payload = json.loads(out or "{}")
+    except ValueError:
+        return {"status": "error", "reason": "stale-cursors emitted non-JSON output",
+                "alerted": 0}
+
+    stale = payload.get("stale") or []
+    dedup = Path(scripts_dir) / "alert-dedup.py"
+    alerted = 0
+    errors = []
+    for item in stale:
+        pkey = item.get("participant_key")
+        cursor = item.get("stage_cursor")
+        if not pkey:
+            continue
+        sig = "anthology-stale:%s:%s" % (pkey, cursor)
+        summary = ("Participant %s has sat at stage_cursor '%s' for %.1fh "
+                   "(threshold %.0fh). Possible crashed/hung stage runner."
+                   % (pkey, cursor, float(item.get("age_hours", 0)),
+                      float(item.get("threshold_hours", 0))))
+        if not dedup.exists():
+            errors.append({"participant_key": pkey, "reason": "alert-dedup.py not present"})
+            continue
+        rc2, _err2 = alert_run([sys.executable, str(dedup), "--source", "anthology-smoke-test",
+                                "--dedup-key", sig, "--summary", summary])
+        if rc2 == 0:
+            alerted += 1
+        else:
+            errors.append({"participant_key": pkey, "reason": "alert-dedup exit %s" % rc2})
+
+    return {"status": "ok", "stale_count": len(stale), "alerted": alerted,
+            "errors": errors, "stale": stale}
+
+
 def _run_subprocess(argv):
     """Run a sibling script; return (exit_code, stderr_text). Fail-soft on any OSError."""
     try:
@@ -609,7 +705,7 @@ def assert_spend_ceiling(max_cents):
 
 def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
               age=True, do_alert=True, strict_hold=False, subprocess_runner=None,
-              max_spend_cents=1.0, reconcile=True):
+              max_spend_cents=1.0, reconcile=True, sweep_stale=True):
     environ = environ if environ is not None else os.environ
     opener = opener or _urllib_opener
     scripts_dir = scripts_dir or SCRIPTS_DIR
@@ -666,6 +762,14 @@ def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
     if reconcile:
         reconciling = reconcile_board(scripts_dir, environ, subprocess_runner)
 
+    # E8: stuck non-terminal-job sweep, regardless of probe outcome (it is part of
+    # the daily tick). Read-only + alert-only; never changes the smoke verdict.
+    stale_sweep = None
+    if sweep_stale:
+        stale_sweep = stale_participant_sweep(
+            scripts_dir, environ, alert_runner=subprocess_runner
+        )
+
     # Alert on failure (fail-soft; one deduped founder alert through the gateway).
     alerting = None
     if failures and do_alert:
@@ -683,6 +787,7 @@ def run_smoke(opener=None, environ=None, rdir=None, scripts_dir=None,
         "failures": failures,
         "hold_queue_aging": aging,
         "board_reconcile": reconciling,
+        "stale_job_sweep": stale_sweep,
         "alert": alerting,
     }
     return exit_code, report
@@ -713,6 +818,7 @@ def cmd_run(args):
         strict_hold=args.strict_hold,
         max_spend_cents=args.max_spend_cents,
         reconcile=not args.no_reconcile,
+        sweep_stale=not args.no_stale_sweep,
     )
     path = persist_report(report, args.report_dir)
     if path:
@@ -816,7 +922,7 @@ def self_test():
         "api.minimax.io": (200, b'{"base_resp":{"status_code":0},"total_remain":9}'),
         "api.kie.ai": (200, b'{"code":200,"data":50}'),
     })
-    rc, rep = run_smoke(opener=opener_ok, environ=env_full, age=False, do_alert=False, reconcile=False)
+    rc, rep = run_smoke(opener=opener_ok, environ=env_full, age=False, do_alert=False, reconcile=False, sweep_stale=False)
     check("all-funded exits 0", rc == EX_OK)
     check("all-funded no failures", rep["failures"] == [])
     check("report declares zero spend", rep["declared_spend_cents"] == 0.0)
@@ -829,13 +935,13 @@ def self_test():
         "api.minimax.io": (200, b'{"base_resp":{"status_code":0},"total_remain":9}'),
         "api.kie.ai": (402, b'{"code":402}'),
     })
-    rc2, rep2 = run_smoke(opener=opener_kie_broke, environ=env_full, age=False, do_alert=False, reconcile=False)
+    rc2, rep2 = run_smoke(opener=opener_kie_broke, environ=env_full, age=False, do_alert=False, reconcile=False, sweep_stale=False)
     check("kie unfunded exits 4", rc2 == EX_UNFUNDED)
     check("kie is the sole failure", [f["provider"] for f in rep2["failures"]] == ["kie"])
 
     # --- missing REQUIRED credential -> exit 4; missing OPTIONAL -> skipped -------
     env_missing = {"OPENROUTER_API_KEY": "x", "GOOGLE_API_KEY": "x", "KIE_API_KEY": "x"}  # no ollama, no minimax
-    rc3, rep3 = run_smoke(opener=opener_ok, environ=env_missing, age=False, do_alert=False, reconcile=False)
+    rc3, rep3 = run_smoke(opener=opener_ok, environ=env_missing, age=False, do_alert=False, reconcile=False, sweep_stale=False)
     provs = {r["provider"]: r["result"] for r in rep3["providers"]}
     check("missing required ollama fails", provs["ollama-cloud"] == R_NO_CREDENTIAL)
     check("missing optional minimax skipped", provs["minimax"] == R_SKIPPED)
@@ -844,7 +950,7 @@ def self_test():
 
     # --- transport failure (status None) -> unreachable -> exit 4 ----------------
     opener_down = _scripted_opener({}, (None, b""))
-    rc4, rep4 = run_smoke(opener=opener_down, environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False, reconcile=False)
+    rc4, rep4 = run_smoke(opener=opener_down, environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False, reconcile=False, sweep_stale=False)
     check("all-unreachable exits 4", rc4 == EX_UNFUNDED)
 
     # --- minimax region retry: primary 401 -> alternate host funded -> OK --------
@@ -894,13 +1000,84 @@ def self_test():
         return 0, ""
     _rc, _rep = run_smoke(opener=_scripted_opener({}, (200, b'{"models":[{"name":"m"}]}')),
                           environ={"OLLAMA_API_KEY": "x"}, age=False, do_alert=False,
-                          reconcile=True, subprocess_runner=_rs_runner)
+                          reconcile=True, subprocess_runner=_rs_runner, sweep_stale=False)
     check("run_smoke invokes the board reconcile step", rs_calls["reconcile"] == 1)
     check("report carries the board_reconcile block",
           _rep.get("board_reconcile") is not None and _rep["board_reconcile"]["status"] == "reconciled")
 
+    # --- E8: stale non-terminal-job sweep (stuck-job detection) ------------------
+    # absent anthology_state.py -> skipped (fail-soft), never fatal.
+    sweep_absent = stale_participant_sweep("/nonexistent-scripts-dir", {})
+    check("stale sweep skipped when anthology_state.py absent",
+          sweep_absent["status"] == "skipped")
+
+    # present + a scripted stale-cursors JSON payload -> fires one deduped alert
+    # per stale participant through alert-dedup.py; the real anthology_state.py is
+    # a sibling of this file, but its subprocess call is intercepted here so
+    # nothing ever touches a real DB.
+    scripted_stale = {
+        "ok": True, "stale_count": 2,
+        "stale": [
+            {"participant_key": "c1::anthA", "anthology_id": "anthA",
+             "stage_cursor": "s1_avatar", "age_hours": 30.0, "threshold_hours": 24.0},
+            {"participant_key": "c2::anthA", "anthology_id": "anthA",
+             "stage_cursor": "s6_rewrite", "age_hours": 40.0, "threshold_hours": 24.0},
+        ],
+    }
+    capture_calls = {"n": 0, "argv": None}
+
+    def _capture_ok(argv):
+        capture_calls["n"] += 1
+        capture_calls["argv"] = list(argv)
+        return 0, json.dumps(scripted_stale), ""
+
+    alert_calls = {"argvs": []}
+
+    def _alert_ok(argv):
+        alert_calls["argvs"].append(list(argv))
+        return 0, ""
+
+    sweep_ok = stale_participant_sweep(SCRIPTS_DIR, {}, capture_runner=_capture_ok,
+                                       alert_runner=_alert_ok)
+    check("stale sweep shells anthology_state.py stale-cursors --json",
+          capture_calls["argv"] is not None
+          and capture_calls["argv"][1].endswith("anthology_state.py")
+          and "stale-cursors" in capture_calls["argv"] and "--json" in capture_calls["argv"])
+    check("stale sweep status ok with 2 stale participants",
+          sweep_ok["status"] == "ok" and sweep_ok["stale_count"] == 2)
+    check("stale sweep fires exactly one alert-dedup send per stale participant",
+          sweep_ok["alerted"] == 2 and len(alert_calls["argvs"]) == 2)
+    dedup_keys = set()
+    for argv in alert_calls["argvs"]:
+        check("stale alert shells alert-dedup.py with a dedup key + summary",
+              argv[1].endswith("alert-dedup.py") and "--dedup-key" in argv and "--summary" in argv)
+        dedup_keys.add(argv[argv.index("--dedup-key") + 1])
+    check("each stale participant gets its OWN dedup key (per-job dedup)",
+          len(dedup_keys) == 2)
+
+    # a stale-cursors non-zero exit is a fail-soft error, never fatal, never a send.
+    sweep_err = stale_participant_sweep(SCRIPTS_DIR, {}, capture_runner=lambda a: (2, "", "boom"),
+                                        alert_runner=_alert_ok)
+    check("stale sweep surfaces a stale-cursors failure as error, not a crash",
+          sweep_err["status"] == "error" and sweep_err["alerted"] == 0)
+
+    # run_smoke wires the stale sweep into the daily tick (default on) + report.
+    # Real subprocess call to the real anthology_state.py, but pinned to a fresh
+    # isolated temp state dir (mirrors the existing "ANTHOLOGY_STATE_DIR is threaded
+    # through" pattern above) so this end-to-end proof never touches real state and
+    # is fully deterministic (a brand-new mirror-only DB has zero participants).
+    with tempfile.TemporaryDirectory() as stale_state_td:
+        _rc5, _rep5 = run_smoke(
+            opener=_scripted_opener({}, (200, b'{"models":[{"name":"m"}]}')),
+            environ={"OLLAMA_API_KEY": "x", "ANTHOLOGY_STATE_DIR": stale_state_td},
+            age=False, do_alert=False, reconcile=False, sweep_stale=True,
+        )
+    check("report carries the stale_job_sweep block",
+          _rep5.get("stale_job_sweep") is not None
+          and _rep5["stale_job_sweep"]["status"] == "ok"
+          and _rep5["stale_job_sweep"]["stale_count"] == 0)
+
     # --- alert record is written on failure (fail-soft, no gateway present) ------
-    import tempfile
     with tempfile.TemporaryDirectory() as td:
         res = fire_alert([{"provider": "kie", "result": R_UNFUNDED, "detail": "402"}],
                          td, "/nonexistent-scripts-dir", {}, runner=lambda a: (0, ""))
@@ -943,6 +1120,9 @@ def build_parser():
     p.add_argument("--no-age", action="store_true", help="skip hold-queue aging (probe only)")
     p.add_argument("--no-reconcile", action="store_true",
                    help="skip the board-mirror reconcile (mc_board.py reconcile) step")
+    p.add_argument("--no-stale-sweep", action="store_true",
+                   help="skip the E8 stuck non-terminal-job sweep (anthology_state.py "
+                        "stale-cursors) step")
     p.add_argument("--no-alert", action="store_true", help="do not fire the founder alert on failure")
     p.add_argument("--strict-hold", action="store_true",
                    help="treat a hold_queue.py aging error as a smoke failure (default: fail-soft)")

@@ -77,8 +77,16 @@
   },
   "cron": {
     "daily_tick_only": true,
-    "daily_tick": "one cron entry: smoke test (balance endpoints only, at or under one cent), hold-queue aging, mirror reconcile, stuck-gate re-nudge policy",
+    "daily_tick": "one cron entry: smoke test (balance endpoints only, at or under one cent), hold-queue aging, mirror reconcile, stuck non-terminal-job sweep, stuck-gate re-nudge policy",
     "no_heartbeat": "NO heartbeat cron ever; guard-cron-inventory.py proves exactly the one daily tick and that churn leaves zero recurring jobs"
+  },
+  "stale_job_sweep": {
+    "note": "(E8) Read-only, alert-only detection for a participant sitting in a non-terminal, non-held, non-gate stage_cursor (a MACHINE-driven cursor a stage runner should move within a run) past an age threshold -- a crashed/hung stage runner, never a legitimate wait. Runs as part of the SAME daily smoke-test cron (anthology_state.py stale-cursors, shelled by anthology-smoke-test.py); no second cron. The *_gate cursors are deliberately excluded here -- nudge_send.py's own 7-day stuck-renudge already owns that human-wait path -- and s9_wait_assembly/approved default to the SAME 7-day threshold (a group wait on sibling participants, not a machine step).",
+    "default_hours": 24,
+    "group_wait_cursors_default_hours": 168,
+    "group_wait_cursors": ["s9_wait_assembly", "approved"],
+    "excluded_cursors": ["delivered", "held", "exception", "s1_gate", "s2_gate", "s3_gate", "s4_gate_producer", "s4_gate_participant", "s5_gate"],
+    "override": "ANTHOLOGY_STALE_SWEEP_ARGS env var, a JSON list of extra anthology_state.py stale-cursors CLI args, e.g. '[\"--default-hours\", \"12\"]' -- the SAME env-var-JSON-args convention as ANTHOLOGY_HOLD_QUEUE_AGE_ARGS and ANTHOLOGY_ALERT_ARGS."
   },
   "credential_labels": {
     "note": "Resolved SET or NOT SET only, never by value, across all three client env stores (live process env first). See PRD Section 14.",

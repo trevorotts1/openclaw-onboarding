@@ -46,14 +46,18 @@
       "jitter_minutes": 15,
       "max_cost_usd": 0.01,
       "overspend_alert_reason": "smoke_test_overspend",
-      "recurring_jobs_per_client": 1
+      "recurring_jobs_per_client": 1,
+      "stale_job_alert_hours": 24,
+      "stale_job_alert_hours_by_status": {}
     },
     "smoke_test_meaning": {
       "cron_local_time": "One daily smoke-test cron per client at 06:00 client timezone.",
       "jitter_minutes": "Per-client random jitter up to this many minutes to stop a fleet-wide provider stampede.",
       "max_cost_usd": "The entire daily smoke-test run must cost at most this; balance endpoints only, never a model turn, never an image, never a synthesis, never the pipeline.",
       "overspend_alert_reason": "If a run exceeds max_cost_usd, alert the OPERATOR (not the client) with this reason; that is the canary that someone wired a render into the health check.",
-      "recurring_jobs_per_client": "Exactly ONE recurring job per client. No heartbeat entry ever, no queue poller, no per-job watchers, no dashboard-driven computation. guard-cron-inventory.py enforces this."
+      "recurring_jobs_per_client": "Exactly ONE recurring job per client. No heartbeat entry ever, no queue poller, no per-job watchers, no dashboard-driven computation. guard-cron-inventory.py enforces this.",
+      "stale_job_alert_hours": "(E8) Default age threshold, in hours, past which a job sitting in a non-terminal, non-held podcast_jobs.status (received/researching/writing/in_qc/generating_art/producing_audio/publishing/enrolling; never queued_credit_out or a TERMINAL_STATES row, those already have their own age/hold handling) fires ONE deduped operator alert via the SAME daily smoke-test cron. Read-only SELECT; never auto-fails or auto-resumes the job.",
+      "stale_job_alert_hours_by_status": "Optional per-status override map, e.g. {\"in_qc\": 12}; a status absent from this map uses stale_job_alert_hours."
     },
     "alerts": {
       "dedup_window_hours": 6,
