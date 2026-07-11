@@ -6,7 +6,7 @@
 
 ---
 
-There is a major update available for your OpenClaw / BlackCEO system. The latest version is **v19.30.0**. Follow these instructions carefully.
+There is a major update available for your OpenClaw / BlackCEO system. The latest version is **v19.31.0**. Follow these instructions carefully.
 
 **FIRST: Check your current version.** Look at the "version" file in your onboarding installation. This tells you how far behind you are.
 
