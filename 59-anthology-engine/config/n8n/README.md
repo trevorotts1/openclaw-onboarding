@@ -102,3 +102,37 @@ own box). CLI: `drive_adapter.py broker-status`, `drive_adapter.py broker-prefli
 (HOLDs by name on a missing action), `drive-tree-provision.py create-book-tree ...`.
 Offline contract tests: `tests/test_drive_broker.py`,
 `tests/test_drive_broker_per_doc.py`, `tests/test_drive_broker_workflow.py`.
+
+## Operational standing rules for the n8n deployment (learned from the July 2026 outage)
+
+The broker runs on a **Recreate-strategy, 1-replica** `n8n-main` Kubernetes deployment
+(no rolling update — every pod recreation is a brief outage). A July 2026 incident where
+the broker's Code node could not read `$env.*` (root cause: n8n v2 defaults to blocking
+`$env` access inside Code nodes) produced three standing rules that bind EVERY future
+touch of this deployment, not just that incident. These rules outlive
+`N8N-DRIVE-BROKER-FIX-SPEC.md` (retired after this port — see `AGENTS.md` for the
+pointer) and are restated here in full because this file is the durable ops runbook for
+the deployment they govern:
+
+1. **Batch env changes — never one-at-a-time.** On a Recreate/1-replica deployment,
+   every `kubectl set env` triggers a pod recreation, and a pod recreation is an outage.
+   Setting three env vars one call at a time is three outages where one would do. Always
+   combine every env var that needs to change into a SINGLE `kubectl set env` call.
+
+2. **Digest pins only — never floating tags.** Never `image: n8nio/n8n:latest` and never
+   `imagePullPolicy: Always` on this deployment. An upgrade is a deliberate, pinned digest
+   change, with a database backup taken FIRST — never an implicit pull-through on the next
+   pod recreation.
+
+3. **`N8N_BLOCK_ENV_ACCESS_IN_NODE` defaults ON (true) in n8n v2.** n8n v2 blocks `$env`
+   access inside Code nodes by default. Any workflow whose Code nodes read `$env.*` (this
+   broker's `Authorize & Dispatch` node does) needs `N8N_BLOCK_ENV_ACCESS_IN_NODE` set to
+   `false` on the deployment — and that needs testing end-to-end at go-live ("it
+   activated" is not proof; a Code node that cannot read `$env.*` still activates, it just
+   500s on first real call), not assumed from a successful `POST /activate`.
+
+Rollback for this deployment NEVER touches the persistent volume or the SQLite database,
+NEVER changes the image or re-adds `:latest`, and NEVER deletes the deployment — unset the
+same batched env vars in one call, or deactivate ONLY the workflow
+(`POST /api/v1/workflows/<id>/deactivate`) if n8n itself is healthy and only the workflow
+misbehaves.
