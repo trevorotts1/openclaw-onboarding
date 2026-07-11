@@ -2677,6 +2677,31 @@ PYEOF
     _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
     _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
   fi
+  # ----------------------------------------------------------
+  # D5-PRE (stale-checkout guard): both D5 branches below run the ON-BOX Skill-32
+  # installer ($SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh).
+  # But the copy loop only refreshes Skill 32 when it is in THIS run's copy set —
+  # an `--only <not-32>` run (or a resume/closeout path) leaves a STALE on-box
+  # installer, yet D5 invokes it unconditionally. A stale installer silently
+  # lacks cc_mirror_api_auth_to_agent_secrets (Skill-32 v12.9.31), so it writes
+  # the token to CC .env.local but never mirrors it to $OC_ROOT/secrets/.env —
+  # the server is half-provisioned and dept-agent write-backs 401 (root cause of
+  # boxes that "provisioned" but stayed dispatch-dead). Fix: bring the on-box
+  # Skill-32 folder CURRENT from the freshly-cloned source BEFORE running it, so
+  # the installer that runs always carries the latest provisioning logic. Version-
+  # gated (skill-version.txt compare) so it is a no-op when already current; best-
+  # effort and never fatal.
+  if [ -n "${ONBOARDING_DIR:-}" ] \
+     && [ -f "$ONBOARDING_DIR/32-command-center-setup/scripts/run-full-install.sh" ]; then
+    _CC_SRC_VER=$(tr -d '[:space:]' < "$ONBOARDING_DIR/32-command-center-setup/skill-version.txt" 2>/dev/null || echo "")
+    _CC_DST_VER=$(tr -d '[:space:]' < "$SKILLS_DIR/32-command-center-setup/skill-version.txt" 2>/dev/null || echo "")
+    if [ -n "$_CC_SRC_VER" ] && [ "$_CC_SRC_VER" != "$_CC_DST_VER" ]; then
+      echo "  [D5-PRE] Refreshing on-box Skill 32 (${_CC_DST_VER:-none} -> ${_CC_SRC_VER}) before running the CC installer (stale-checkout guard)..."
+      rm -rf "$SKILLS_DIR/32-command-center-setup"
+      cp -r "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
+      command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
+    fi
+  fi
   if [ -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ]; then
     _CC_REMOTE=$(git -C "$_CC_DIR" remote get-url origin 2>/dev/null || echo "")
     if echo "$_CC_REMOTE" | grep -q 'blackceo-command-center'; then
