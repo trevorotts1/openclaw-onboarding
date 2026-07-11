@@ -110,7 +110,8 @@ def test_nav_fix_router_push_to_survey_list_not_sites(patched):
         "nav fix must router.push to /survey-builder/main"
     # the dead left-rail 'Sites' click must NEVER happen (browser lane nav fix)
     assert "Sites" not in rec.clicks
-    assert not any("Sites" in a for a in rec.run_calls for a in (a if isinstance(a, tuple) else (a,)))
+    all_run_args = [arg for call in rec.run_calls for arg in call]
+    assert not any("Sites" in arg for arg in all_run_args)
     # survey id captured + shape-validated
     assert sid == "ExAPmAV3Llo0tREenfJy"
     assert "Add survey" in rec.waits and "Slide 1" in rec.waits
