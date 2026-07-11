@@ -69,9 +69,25 @@
 # whose REAL path is such a template tree (the "I pointed the workspace at the
 # template" trick) is treated as NOT materialized → SHELL/FAIL.
 #
+# AF-PHANTOM-DEPT-TREE (C5) — PHANTOM DUPLICATE DEPARTMENT TREES:
+#   A second failure this gate now makes impossible: the SAME canonical department
+#   materialized TWICE side-by-side under departments/ as two sibling dirs whose
+#   names normalize to ONE canonical slug (billing + billing-finance, legal +
+#   legal-compliance, Sales + sales), plus phantom '.bak' dept dirs
+#   (Presentations.bak-20260615-024720/). The variant-aware presence check counts
+#   the pair as ONE department, so the floor gate can never see the duplication —
+#   both trees keep diverging rosters on disk, agents get pointed at whichever dir
+#   resolved first, and the '.bak' trees poison the SOP/substance gate. Detection
+#   is department-floor.sibling_slug_collisions() + the '.bak' scan (single source
+#   of truth). Remediation is reconcile-legacy-tree.py --merge-duplicates --apply
+#   (keeps the canonical winner, layers the loser's unique roles in, archives the
+#   loser OUT of departments/ — never deletes).
+#
 # EXIT CODES (fail-closed):
-#   0  every REQUIRED department is FULL in the WORKSPACE
+#   0  every REQUIRED department is FULL in the WORKSPACE (and no phantom trees)
 #   3  AF-WORKSPACE-SHELL — at least one required dept is SHELL or PARTIAL
+#   5  AF-PHANTOM-DEPT-TREE — two sibling dirs resolve to the same canonical slug,
+#      or a phantom '.bak' dept dir is on disk
 #   4  no workspace / cannot resolve a real (non-template) departments dir
 #   2  could not run the gate (missing department-floor.py / python3)
 #
@@ -200,6 +216,56 @@ if _is_template_path(departments_dir):
           f"  'TEMPLATE DEPLOYED' is not 'WORKSPACE INSTANTIATED'. The workspace "
           f"department was never built.", file=sys.stderr)
     sys.exit(4)
+
+# ── AF-PHANTOM-DEPT-TREE (C5): no two sibling dirs may resolve to ONE canonical
+#    slug, and no phantom '.bak' dept dir may sit inside departments/. Checked
+#    BEFORE the per-dept materialization table: while a canonical department is
+#    materialized twice, "which tree is the department?" has no answer, so no
+#    FULL/PARTIAL/SHELL verdict about it can be trusted. Detection lives in
+#    department-floor.py (single source of truth) — a department-floor.py that
+#    predates C5 cannot answer, and the check is loudly SKIPPED (never silently
+#    passed) so the shell dimension still gates.
+_collide = getattr(df, "sibling_slug_collisions", None)
+_raw_dirs = getattr(df, "_raw_department_dirs", None)
+if _collide is None or _raw_dirs is None:
+    print("AF-PHANTOM-DEPT-TREE: CHECK SKIPPED — department-floor.py predates the "
+          "C5 collision detector (no sibling_slug_collisions). Update Skill 23; the "
+          "workspace-shell checks below still ran.", file=sys.stderr)
+else:
+    try:
+        collisions = _collide(departments_dir)
+        backup_dirs = _raw_dirs(departments_dir)[1]
+    except Exception as e:  # noqa: BLE001 — fail-closed: cannot prove clean → FAIL
+        print(f"AF-PHANTOM-DEPT-TREE: GATE CANNOT RUN — collision scan failed: {e}",
+              file=sys.stderr)
+        sys.exit(2)
+    if collisions or backup_dirs:
+        print("=" * 72)
+        print("AF-PHANTOM-DEPT-TREE gate — phantom duplicate department trees")
+        print(f"workspace departments dir : {departments_dir.resolve()}")
+        print("-" * 72)
+        for g in collisions:
+            print(f"  COLLISION: canonical '{g['canonical']}' is materialized as "
+                  f"{len(g['dirs'])} sibling dirs: {', '.join(g['dirs'])}")
+        for b in backup_dirs:
+            print(f"  PHANTOM BACKUP DIR: {b} (a backup tree is not a department)")
+        print("-" * 72)
+        print(f"COLLISIONS={len(collisions)}  PHANTOM_BACKUP_DIRS={len(backup_dirs)}")
+        print("", file=sys.stderr)
+        print("INVARIANT VIOLATED — AF-PHANTOM-DEPT-TREE: the same canonical department "
+              "is materialized more than once (or a '.bak' tree is being carried as a "
+              "department). The floor check counts the duplicate pair as ONE department, "
+              "so the duplication is invisible to it — the trees diverge, agents resolve "
+              "to whichever dir wins, and '.bak' trees poison the SOP/substance gate.",
+              file=sys.stderr)
+        print("REMEDIATION (operator, on the client box): "
+              "python3 23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py "
+              "--merge-duplicates            # dry-run, shows the plan\n"
+              "                              "
+              "python3 23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py "
+              "--merge-duplicates --apply    # keep canonical winner, layer unique roles, "
+              "archive loser OUT of departments/ (never deletes)", file=sys.stderr)
+        sys.exit(5)
 
 # ── Required department set = the department FLOOR (single source of truth) ──
 try:

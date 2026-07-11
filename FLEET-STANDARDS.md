@@ -128,6 +128,16 @@ master-files template tree is treated as **not materialized**.
    single source of truth that gates the on-disk department count. The workspace
    gate goes one layer deeper: for EACH required dept it classifies FULL /
    PARTIAL / SHELL using RAW on-disk facts (never a build-state JSON).
+4. ONE canonical department is materialized EXACTLY ONCE. Two sibling dirs under
+   `departments/` that normalize to the same canonical slug (`billing` +
+   `billing-finance`, `legal` + `legal-compliance`) are a PHANTOM DUPLICATE: the
+   variant-aware presence check counts the pair as ONE department, so the floor
+   gate cannot see the duplication while both trees diverge on disk. A `.bak`
+   tree is never a department (it also poisons the SOP/substance gate). The
+   workspace gate FAILS (`rc=5 AF-PHANTOM-DEPT-TREE`); remediation is
+   `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py --merge-duplicates
+   [--apply]` (keeps the canonical winner, layers the loser's unique roles in,
+   archives the loser OUT of `departments/` — never deletes).
 
 This extends the `lib-onboarding-state.sh` onboarding-honesty philosophy
 ("installed" is a VERIFIED claim, never a file-copy claim) to the workspace
@@ -135,7 +145,8 @@ layer. See `AGENTS.md` N37.
 
 **Enforced (fail-closed) by** `scripts/qc-assert-workspace-departments-built.sh`
 (single source of truth) via `scripts/qc-system-integrity.sh` **CHECK X.11**
-(rc=3 = `AF-WORKSPACE-SHELL` hard-fail), the onboarding completion gate
+(rc=3 = `AF-WORKSPACE-SHELL` hard-fail; rc=5 = `AF-PHANTOM-DEPT-TREE` hard-fail),
+the onboarding completion gate
 `lib-onboarding-state.sh` `oc_overall_goal_check()` (criterion iii
 `workspaceMaterialized`), the `scripts/watchdog-onboarding-loop.sh` kill
 condition, and CI (`.github/workflows/qc-static.yml` runs

@@ -785,9 +785,11 @@ fi
 # IDENTITY.md/SOUL.md, no real SOPs). "TEMPLATE DEPLOYED" and "WORKSPACE
 # INSTANTIATED" are two separate states; this check verifies the WORKSPACE.
 # Delegates to qc-assert-workspace-departments-built.sh (single source of truth).
-#   rc=3 (AF-WORKSPACE-SHELL: a dept is SHELL/PARTIAL) -> HARD FAIL.
-#   rc=4 (no workspace / not built yet)                -> warn (CHECK 1.1 owns it).
-#   rc=2 (gate could not run)                          -> warn.
+#   rc=3 (AF-WORKSPACE-SHELL: a dept is SHELL/PARTIAL)       -> HARD FAIL.
+#   rc=5 (AF-PHANTOM-DEPT-TREE: one canonical dept materialized
+#         twice as sibling dirs, or a '.bak' dept tree on disk) -> HARD FAIL (C5).
+#   rc=4 (no workspace / not built yet)                       -> warn (CHECK 1.1 owns it).
+#   rc=2 (gate could not run)                                 -> warn.
 echo
 blue "── CHECK X.11: Workspace department materialization ──"
 WORKSPACE_SHELL_SCRIPT=""
@@ -813,6 +815,16 @@ if [[ -n "$WORKSPACE_SHELL_SCRIPT" ]]; then
       while IFS= read -r _wsline; do
         case "$_wsline" in
           *"SHELL ("*|*"PARTIAL ("*|*"MISSING ("*) red "$_wsline" ;;
+        esac
+      done <<< "$WORKSPACE_SHELL_OUT" ;;
+    5)
+      red "  ✗ X.11 AF-PHANTOM-DEPT-TREE — the same canonical department is materialized twice (phantom duplicate dept trees) or a '.bak' tree is carried as a department"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.11|Phantom duplicate department tree(s) on disk (two sibling dirs resolve to ONE canonical slug, and/or a '.bak' dept dir)|Run: python3 23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py --merge-duplicates (dry-run) then --merge-duplicates --apply — keeps the canonical winner, layers the loser's unique roles in, archives the loser OUT of departments/ (never deletes)")
+      # surface the collision / phantom-backup lines
+      while IFS= read -r _wsline; do
+        case "$_wsline" in
+          *"COLLISION:"*|*"PHANTOM BACKUP DIR:"*) red "$_wsline" ;;
         esac
       done <<< "$WORKSPACE_SHELL_OUT" ;;
     4)
