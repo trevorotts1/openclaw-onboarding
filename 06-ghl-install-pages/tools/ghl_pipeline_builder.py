@@ -109,6 +109,24 @@ if _TOOLS_DIR not in sys.path:
 
 import ghl_form_builder as fb  # noqa: E402  — the ONE proven DO-layer implementation
 
+# U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
+import ghl_run_state  # noqa: E402
+from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
+# ── U8: the pipeline builder's declared phase walk ──────────────────────────────
+# HONESTLY COARSE: the live pipeline walk (create + stages + verify) is ONE
+# `_walk_pipeline_build` call, so it is ONE resumable phase. Splitting it here
+# would be a phase list that only LOOKS granular — the ledger would claim resume
+# points the code cannot actually stop at. A pipeline is a small object; the THINK
+# phases are the cheap part and the walk is the expensive part, and that is exactly
+# what the two phases below say.
+PIPELINE_PHASES: List[PhaseSpec] = [
+    PhaseSpec("plan",       "pipeline plan (THINK)", resumable=False),
+    PhaseSpec("preflight",  "preflight gate",        resumable=False),
+    PhaseSpec("click_list", "click list",            resumable=False),
+    PhaseSpec("pl_walk",    "PL1–PL6 — create pipeline + stages + verify"),
+]
+
 StopAndReport = fb.StopAndReport
 
 # ---------------------------------------------------------------------------
@@ -659,7 +677,8 @@ def _walk_pipeline_build(session: str, plan: dict, evidence_root: str,
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
-                evidence_root: str, started: float) -> dict:
+                evidence_root: str, started: float,
+                state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Live browser execution: seed → walk → verify → (optional) cleanup —
     mirrors ghl_form_builder._live_build (same session bracket, same STOP +
     always-cleanup contract)."""
@@ -683,8 +702,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         auth = fb._seed_and_land(session, location_id, evidence_root)
         _write_json(os.path.join(evidence_root, "routing", "auth-receipt.json"),
                     {"landed": auth["landed"], "seeded_at": _ts()})
-        built = _walk_pipeline_build(session, plan, evidence_root, shot_n,
-                                     steps_done, walk_state)
+        built = run_phase(state, "pl_walk", lambda: _walk_pipeline_build(
+            session, plan, evidence_root, shot_n, steps_done, walk_state), log=_log)
     except StopAndReport as sr:
         stop = sr
         _log(f"STOP-and-report @ {sr.step}: {sr.reason}")
@@ -732,7 +751,8 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
-def build_pipeline(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
+def build_pipeline(task: dict, evidence_root: str, *, dry_run: bool = True,
+                   state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Build a GHL (Convert and Flow) PIPELINE (+stages) via browser-control.
     THINK always runs (plan + click list + preflight); LIVE needs the Skill-6
     tools (ghl_builder / browser_manager, via ghl_form_builder)."""
@@ -742,9 +762,10 @@ def build_pipeline(task: dict, evidence_root: str, *, dry_run: bool = True) -> d
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
 
     stages = _resolve_stages(task)
-    plan = _build_pipeline_plan(task, stages)
-    preflight = _run_preflight(task, plan, stages)
-    click_list = _emit_click_list(plan)
+    plan = run_phase(state, "plan", lambda: _build_pipeline_plan(task, stages), log=_log)
+    preflight = run_phase(state, "preflight",
+                          lambda: _run_preflight(task, plan, stages), log=_log)
+    click_list = run_phase(state, "click_list", lambda: _emit_click_list(plan), log=_log)
     _write_json(os.path.join(evidence_root, "routing", "pipeline-plan.json"), plan)
     _write_json(os.path.join(evidence_root, "routing", "pipeline-click-list.json"), click_list)
     _write_json(os.path.join(evidence_root, "routing", "pipeline-preflight.json"), preflight)
@@ -765,7 +786,8 @@ def build_pipeline(task: dict, evidence_root: str, *, dry_run: bool = True) -> d
             "LIVE pipeline build requires the Skill-6 tools/ modules (ghl_builder + "
             "browser_manager) importable on sys.path — run --dry-run/--selftest here "
             "and live from the skill's tools/ dir only.")
-    return _live_build(task, plan, click_list, preflight, evidence_root, started)
+    return _live_build(task, plan, click_list, preflight, evidence_root, started,
+                       state=state)
 
 
 # ---------------------------------------------------------------------------
@@ -992,6 +1014,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "'Anthology Engine' pipeline (Skill 59).")
     p.add_argument("--cleanup-after-build", action="store_true",
                    help="TEST RUNS: delete the pipeline after a verified build.")
+    # U8/U10 — identical flags on every Skill-6 builder.
+    ghl_run_state.add_run_state_args(p)
     args = p.parse_args(argv)
 
     if args.selftest:
@@ -1005,9 +1029,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         "stages": [s.strip() for s in args.stages.split(",") if s.strip()] or None,
         "cleanup_after_build": args.cleanup_after_build,
     }
-    result = build_pipeline(task, args.evidence_root, dry_run=args.dry_run)
-    print(json.dumps(result, indent=2, default=str))
-    return 0 if result.get("location_gate_ok", True) else 1
+    return ghl_run_state.cli_run(
+        args, builder="ghl_pipeline_builder", specs=PIPELINE_PHASES,
+        script_path=__file__, task=task, build=build_pipeline,
+        ok_key="location_gate_ok", url_key="pipeline_name",
+        argv=list(argv if argv is not None else sys.argv[1:]),
+    )
 
 
 if __name__ == "__main__":

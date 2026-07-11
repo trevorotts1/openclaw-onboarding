@@ -49,6 +49,26 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
+# U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
+# It ships in THIS dir; bootstrap the path so an import from any cwd resolves it.
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_run_state  # noqa: E402
+from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
+# ── U8: the community builder's declared phase walk ─────────────────────────────
+# resumable=False: gates + pure THINK output + the navigation that walks back in.
+COMMUNITY_PHASES: List[PhaseSpec] = [
+    PhaseSpec("plan",         "community plan (THINK)",   resumable=False),
+    PhaseSpec("preflight",    "preflight gate",           resumable=False),
+    PhaseSpec("click_list",   "click list",               resumable=False),
+    PhaseSpec("c1_list",      "C1 — communities list",    resumable=False),
+    PhaseSpec("c3_create",    "C2/C3 — create/reuse group"),
+    PhaseSpec("c4_channels",  "C4 — channels"),
+]
+
 # ── shared LIVE-executor glue + THINK helpers (imported, kept in lockstep) ────
 # ghl_form_builder ships in THIS dir; its seed/land/nav/ab glue is generic and
 # proven live. We import rather than re-implement (spec F7/F11: new builders route
@@ -600,7 +620,8 @@ def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
 
 
 def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
-                evidence_root: str, started: float) -> dict:
+                evidence_root: str, started: float,
+                state: Optional["ghl_run_state.RunState"] = None) -> dict:
     if not (_HAVE_FFB and getattr(_ffb, "browser_manager", None) is not None):
         raise RuntimeError(
             "LIVE build requires the Skill-6 tools/ modules (ghl_form_builder glue + "
@@ -634,49 +655,70 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 
         # C1 — reach the communities LIST by navigating its route directly (Phase B:
         # the Memberships left-rail text is a non-navigating SPAN on some accounts).
-        _nav_to_list(session, location_id, sels, "community.routes.communities_list", "Create Group")
-        _screenshot(session, _shot(evidence_root, shot_n, "c1-communities-list"))
-        steps_done.append("C1:communities-list")
+        # NON-RESUMABLE: this is the navigation that walks back in.
+        def _do_c1() -> dict:
+            _nav_to_list(session, location_id, sels,
+                         "community.routes.communities_list", "Create Group")
+            _screenshot(session, _shot(evidence_root, shot_n, "c1-communities-list"))
+            steps_done.append("C1:communities-list")
+            return {"landed": "communities-list"}
 
-        # C2 — LIST-SCAN idempotency (fix b): the communities list has NO search box.
-        existed = _list_has(session, plan["community_name"], plan["slug"])
+        run_phase(state, "c1_list", _do_c1, log=_log)
 
-        if existed:
-            warnings.append("C2: a ZHC community of this name/slug already exists — REUSED (no create)")
-            identity = _capture_group_identity(session, plan)
-            action = "reused"
-        else:
-            # C3 — create group on the create PAGE (all capture-pending → STOP until captured).
-            _ex_click(session, sels, "community.list_page.create_group_button")
-            _ex_fill(session, sels, "community.create_page.name_input", plan["community_name"])
-            if plan["description"]:
-                _ex_fill(session, sels, "community.create_page.description_input",
-                         plan["description"], required=False)
-            if plan["privacy"] == "private":
-                _ex_click(session, sels, "community.create_page.privacy_switch", required=False)
-            gov.before_save()
-            _ex_click(session, sels, "community.create_page.create_confirm")   # exec:native submit
-            _ex_wait_text(session, plan["community_name"][:18], timeout=25)
-            identity = _capture_group_identity(session, plan)               # fix c: slug + portal host
-            _screenshot(session, _shot(evidence_root, shot_n, "c3-created"))
-            action = "created"
+        # C2/C3 — create or REUSE. Already idempotent (list-scan), so a resume that
+        # re-enters here reuses rather than duplicating; the checkpoint just spares
+        # the walk from paying for it twice.
+        def _do_c3() -> dict:
+            # C2 — LIST-SCAN idempotency (fix b): the communities list has NO search box.
+            existed = _list_has(session, plan["community_name"], plan["slug"])
+            if existed:
+                warnings.append("C2: a ZHC community of this name/slug already exists — "
+                                "REUSED (no create)")
+                ident = _capture_group_identity(session, plan)
+                act = "reused"
+            else:
+                # C3 — create group on the create PAGE (all capture-pending → STOP until captured).
+                _ex_click(session, sels, "community.list_page.create_group_button")
+                _ex_fill(session, sels, "community.create_page.name_input", plan["community_name"])
+                if plan["description"]:
+                    _ex_fill(session, sels, "community.create_page.description_input",
+                             plan["description"], required=False)
+                if plan["privacy"] == "private":
+                    _ex_click(session, sels, "community.create_page.privacy_switch", required=False)
+                gov.before_save()
+                _ex_click(session, sels, "community.create_page.create_confirm")   # exec:native submit
+                _ex_wait_text(session, plan["community_name"][:18], timeout=25)
+                ident = _capture_group_identity(session, plan)          # fix c: slug + portal host
+                _screenshot(session, _shot(evidence_root, shot_n, "c3-created"))
+                act = "created"
+            steps_done.append(f"C3:{act}")
+
+            # community receipt (F6).
+            vb = _verify_community(session, plan, ident, evidence_root)   # fix e
+            _write_receipt(evidence_root, _receipt(
+                "community", plan["slug"], act, response_id=ident.get("slug", ""),
+                request_shape={"name": plan["community_name"], "privacy": plan["privacy"],
+                               "slug": ident.get("slug"),
+                               "portal_host": ident.get("portal_host")},
+                verify=vb))
+            return {"identity": ident, "action": act, "verify": vb}
+
+        c3 = run_phase(state, "c3_create", _do_c3, log=_log) or {}
+        identity = c3.get("identity", {}) or {}
+        action = c3.get("action", "")
+        verify_block = c3.get("verify", {}) or {}
         group_id = identity.get("slug", "")            # groups are keyed by SLUG (fix c)
         group_url = identity.get("portal_url", "")
-        steps_done.append(f"C3:{action}")
-
-        # community receipt (F6).
-        verify_block = _verify_community(session, plan, identity, evidence_root)   # fix e
-        _write_receipt(evidence_root, _receipt(
-            "community", plan["slug"], action, response_id=group_id,
-            request_shape={"name": plan["community_name"], "privacy": plan["privacy"],
-                           "slug": identity.get("slug"), "portal_host": identity.get("portal_host")},
-            verify=verify_block))
 
         # C4 — channels (idempotent, per-channel receipt).
-        for ch in plan["channels"]:
-            rc = _add_channel(session, sels, ch, evidence_root, shot_n, gov, keep)
-            _write_receipt(evidence_root, rc)
-            steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
+        def _do_c4() -> dict:
+            for ch in plan["channels"]:
+                rc = _add_channel(session, sels, ch, evidence_root, shot_n, gov, keep)
+                _write_receipt(evidence_root, rc)
+                steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
+            return {"channels": len(plan["channels"])}
+
+        run_phase(state, "c4_channels", _do_c4, log=_log)
 
         _write_json(os.path.join(evidence_root, "routing", "community-built.json"), {
             "community_id": group_id, "community_slug": identity.get("slug", ""),
@@ -843,15 +885,16 @@ def _verify_community(session: str, plan: dict, identity: dict, evidence_root: s
 # ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
-def build_community(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
+def build_community(task: dict, evidence_root: str, *, dry_run: bool = True,
+                    state: Optional["ghl_run_state.RunState"] = None) -> dict:
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
     os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
 
-    plan = plan_community(task)
-    preflight = _preflight(plan)
-    click_list = emit_click_list(plan)
+    plan = run_phase(state, "plan", lambda: plan_community(task), log=_log)
+    preflight = run_phase(state, "preflight", lambda: _preflight(plan), log=_log)
+    click_list = run_phase(state, "click_list", lambda: emit_click_list(plan), log=_log)
     _write_json(os.path.join(evidence_root, "routing", "community-plan.json"), plan)
     _write_json(os.path.join(evidence_root, "routing", "community-click-list.json"), click_list)
     _write_json(os.path.join(evidence_root, "routing", "community-preflight.json"), preflight)
@@ -868,7 +911,7 @@ def build_community(task: dict, evidence_root: str, *, dry_run: bool = True) -> 
                 "plan": plan, "click_list": click_list, "preflight": preflight,
                 "tier_disclosure": disclosure, "dry_run": True}
 
-    return _live_build(task, plan, click_list, preflight, evidence_root, started)
+    return _live_build(task, plan, click_list, preflight, evidence_root, started, state=state)
 
 
 # ---------------------------------------------------------------------------
@@ -1069,15 +1112,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--description", default="")
     p.add_argument("--privacy", default="private", choices=["public", "private"])
     p.add_argument("--channels", default="", help="Comma-separated channel names")
+    # U8/U10 — identical flags on every Skill-6 builder.
+    ghl_run_state.add_run_state_args(p)
     args = p.parse_args(argv)
     if args.selftest:
         return _selftest()
     task = {"community_name": args.community_name, "location_id": args.location_id,
             "description": args.description, "privacy": args.privacy,
             "channels": [c.strip() for c in args.channels.split(",") if c.strip()]}
-    result = build_community(task, args.evidence_root, dry_run=args.dry_run)
-    print(json.dumps(result, indent=2, default=str))
-    return 0 if result.get("ok", True) else 1
+    return ghl_run_state.cli_run(
+        args, builder="ghl_community_builder", specs=COMMUNITY_PHASES,
+        script_path=__file__, task=task, build=build_community,
+        ok_key="ok", url_key="community_url",
+        argv=list(argv if argv is not None else sys.argv[1:]),
+    )
 
 
 if __name__ == "__main__":

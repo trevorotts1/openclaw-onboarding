@@ -146,6 +146,15 @@ import browser_manager  # noqa: E402  — browser_session context manager
 # v2_dispatcher (reused, not reinvented)
 from v2_dispatcher import RateGovernor, SessionKeepalive, remint_if_stale  # noqa: E402
 
+# U6/F13 — the survey-URL receipt is written through the SAME F6 receipts store
+# every other object uses. A URL with no fetch-200 receipt behind it is a claim,
+# not a deliverable.
+import ghl_receipts  # noqa: E402
+
+# U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
+import ghl_run_state  # noqa: E402
+from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
 try:
     import cc_board as _cc_board  # noqa: E402 — best-effort board producer
 except Exception:  # noqa: BLE001
@@ -191,7 +200,7 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.4.0"
+SURVEY_BUILDER_VERSION = "v1.5.0"   # v1.5.0: U6 URL fetch-200 receipt + U8 phase resume + U10 RUN REPORT
 
 # The convergence primitive (Area-5.1) shipped in builder v1.3.0 / repo v19.17.0,
 # which exists ONLY on an origin/main-based checkout. A build that carries a
@@ -654,23 +663,32 @@ def _iframe_dragdrop():
     return _idd.IframeDragDrop(ab=_run_cmd, ev=_eval, log=_log)
 
 
-# ── survey-id capture from the builder iframe src (mirrors ghl_form_builder) ─────
-# The builder canvas is a CROSS-ORIGIN iframe at
-# `…/survey-builder-v2/<surveyId>`. An iframe `.src` ATTRIBUTE is parent-readable
-# even cross-origin (only contentWindow/Document are blocked), so the survey id
-# lives THERE, never in the top-frame pathname. Enumerate iframes, match the first
-# `/survey-builder-v2/<id>` src, fall back to the top-frame path/hash/search.
+# ── survey-id capture from `location.href` + the builder iframe src ─────────────
+# U6/F13. The id is read from the URL — `location.href` on the top frame and the
+# `.src` of the builder iframe, which is the SAME `/survey-builder-v2/<id>` URL
+# one frame down. An iframe `.src` ATTRIBUTE is parent-readable even cross-origin
+# (only contentWindow/Document are blocked), so when the SPA keeps the id off the
+# top-frame href it still lives THERE.
+#
+# What this REPLACED, and why: the old capture scanned
+# `document.querySelectorAll('a[href]')` for any href containing the substring
+# "survey" and, on a miss, logged "read from the integrate-panel screenshot" —
+# i.e. it asked a HUMAN to read a URL off a PNG. That is not a capture; it is a
+# fallback that guarantees the pipeline has no machine-readable deliverable. Both
+# are gone. The id now comes from the URL, the public URL is CONSTRUCTED from it,
+# and the URL is only returned after a fetch proves it 200s.
 _SURVEY_ID_CAPTURE_JS = (
     "(() => {"
     "  const RE = /\\/survey-builder-v2\\/([^/?#]+)/;"
+    "  const href = location.href || '';"
+    "  const hm = href.match(RE);"
+    "  if (hm) return hm[1];"
     "  for (const f of document.querySelectorAll('iframe')) {"
     "    const src = f.src || f.getAttribute('src') || '';"
     "    const m = src.match(RE);"
     "    if (m) return m[1];"
     "  }"
-    "  const top = (location.pathname || '') + (location.hash || '') + (location.search || '');"
-    "  const tm = top.match(RE);"
-    "  return tm ? tm[1] : '';"
+    "  return '';"
     "})()"
 )
 
@@ -678,13 +696,102 @@ _SURVEY_ID_CAPTURE_JS = (
 # (e.g. "ExAPmAV3Llo0tREenfJy"). Never trust raw eval output as an id.
 _SURVEY_ID_SHAPE_RE = re.compile(r"[A-Za-z0-9]{15,30}")
 
+# The public widget origin the survey is SERVED from (same host ghl_method builds
+# its form/booking embeds against — one constant, not two drifting ones).
+GHL_WIDGET_HOST = "https://link.msgsndr.com"
+
+# How long the public URL gets to answer, and how long we keep re-asking. A
+# just-saved survey can take a beat to become publicly routable, so a single
+# instant GET would report a false 404 on a survey that is perfectly fine.
+_URL_RECEIPT_TIMEOUT_S = 45.0
+_URL_RECEIPT_POLL_S = 3.0
+
+
+class SurveyUrlCaptureStop(RuntimeError):
+    """The survey id could not be read from the URL, or the constructed public URL
+    did not return 200. FAIL-CLOSED: the build STOPs and reports rather than
+    handing back an unproven (or empty) URL. There is deliberately no fallback —
+    a fallback here is what let the old code return '' and call it a build."""
+
 
 def _capture_survey_id(session: str) -> str:
-    """Read the built survey id from the builder IFRAME's `.src` (parent-readable),
-    re-validated against the GHL survey-id shape. Returns '' on no/invalid capture —
-    a malformed value can never poison downstream verify/delete targeting."""
+    """Read the built survey id out of the URL (`location.href`, then the builder
+    iframe's `.src`), re-validated against the GHL survey-id shape. Returns '' on
+    no/invalid capture — a malformed value can never poison downstream
+    verify/delete targeting."""
     got = (_eval(session, _SURVEY_ID_CAPTURE_JS, timeout=12) or "").strip()
     return got if _SURVEY_ID_SHAPE_RE.fullmatch(got) else ""
+
+
+def survey_public_url(survey_id: str) -> str:
+    """The public survey URL, CONSTRUCTED from the id — never scraped from a link
+    in the DOM. `…/widget/survey/<id>` is the documented public route (see
+    ghl_object_router: "public /widget/survey/<id> 200 + branch walk vs plan")."""
+    return f"{GHL_WIDGET_HOST}/widget/survey/{survey_id}"
+
+
+def _http_get_status(url: str, timeout: float = 15.0) -> tuple:
+    """GET ``url`` and return ``(status:int, final_url:str, err:str)``.
+
+    Module-level (not nested) so tests can substitute it — the receipt's whole
+    value is that the status in it came from a REAL request, so the request path
+    has to be a real, single, inspectable function.
+
+    A 4xx/5xx is a STATUS, not an exception: urllib raises HTTPError for those and
+    we want the code, not a traceback. Only a transport failure (DNS, refused,
+    timeout) has no status, and that is reported as 0 + the error string.
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, method="GET", headers={
+        "User-Agent": "openclaw-skill6-survey-builder/1.0 (url-receipt)",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return int(resp.status), str(resp.geturl()), ""
+    except urllib.error.HTTPError as exc:       # 4xx / 5xx — a real status
+        return int(exc.code), url, f"HTTPError {exc.code}"
+    except Exception as exc:                    # noqa: BLE001 — no status at all
+        return 0, url, f"{type(exc).__name__}: {exc}"
+
+
+def _fetch_url_receipt(
+    survey_id: str,
+    survey_url: str,
+    *,
+    timeout_s: float = _URL_RECEIPT_TIMEOUT_S,
+    poll_s: float = _URL_RECEIPT_POLL_S,
+) -> dict:
+    """Fetch the constructed public URL until it 200s or the budget runs out, and
+    return the RECEIPT of what actually happened (never a claim about it).
+
+    Always makes at least one attempt, even with a zero budget. Bounded — it can
+    poll, but it can never hang.
+    """
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    attempts: List[dict] = []
+    status, final_url, err = 0, survey_url, ""
+    while True:
+        status, final_url, err = _http_get_status(survey_url, timeout=15.0)
+        attempts.append({"at": _ts(), "status": status, "error": err})
+        if status == 200 or time.monotonic() >= deadline:
+            break
+        time.sleep(max(0.0, poll_s))
+
+    return {
+        "survey_id": survey_id,
+        "public_url": survey_url,
+        "final_url": final_url,
+        "http_status": status,
+        "ok": status == 200,
+        "attempts": len(attempts),
+        "attempt_log": attempts[-5:],   # bounded — a 45s poll must not bloat the ledger
+        "method": "GET",
+        "source": "constructed from location.href survey id (U6/F13)",
+        "error": "" if status == 200 else (err or f"public URL returned {status}, want 200"),
+        "fetched_at": _ts(),
+    }
 
 
 # ── convergence-capability guard (build-from-main preflight, §3.2) ──────────────
@@ -2557,11 +2664,35 @@ def _p2_save_and_get_url(
     gov: RateGovernor,
     evidence_root: str,
     shot_n: List[int],
+    *,
+    survey_name: str = "",
 ) -> str:
-    """Phase K: final save + Integrate + capture the survey URL."""
-    _log("P2-K: save + Integrate + capture survey URL")
+    """Phase K: final save → Integrate → derive the survey URL from the id → PROVE
+    it with a fetch-200 receipt.  (U6 / F13.)
 
-    # Final save (transcript step 135)
+    The contract, in order:
+
+      1. Save the survey.
+      2. Read the survey **id** out of the URL (`location.href`, then the builder
+         iframe's `.src`) — NOT by scraping ``a[href]`` for a link that happens to
+         contain the word "survey".
+      3. **Construct** the public URL as ``…/widget/survey/<id>``.
+      4. **GET it.** Store a receipt of the real HTTP status.
+      5. Return the URL **only if that fetch returned 200.**
+
+    Anything else raises ``SurveyUrlCaptureStop``. There is no fallback path — in
+    particular, the old branch that shrugged on an eval miss and told the operator
+    to go read the URL off the integrate-panel PNG is GONE. A build whose only
+    record of its own deliverable is a screenshot a human has to squint at has not
+    produced a deliverable, and every downstream consumer (board deliverable
+    registration, ghl_verify, the F6 receipt reducer) needs a real URL.
+
+    The failure receipt is written BEFORE the raise, so a STOP is just as
+    evidenced as a pass.
+    """
+    _log("P2-K: save → Integrate → derive survey URL from id → fetch-200 receipt")
+
+    # 1. Final save (transcript step 135)
     gov.before("save")
     _click(session, "Save")
     _wait(session, "Yes")
@@ -2569,28 +2700,76 @@ def _p2_save_and_get_url(
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-k-saved"))
 
-    # Click Integrate (share panel shows the survey link + embed snippet)
+    # Integrate panel — still opened + shot, purely as EVIDENCE of the save. Its
+    # contents are no longer parsed for the URL, and nothing falls back to it.
     gov.before("publish")
     _click(session, "Integrate")
     _wait(session, "http", timeout=20)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-k-integrate-panel"))
 
-    # Capture the survey URL via JS eval (fallback: read from screenshot)
-    survey_url = _eval(
-        session,
-        (
-            "Array.from(document.querySelectorAll('a[href]'))"
-            ".map(a=>a.href)"
-            ".find(h=>h.includes('survey'))||''"
-        ),
-        timeout=15,
-    )
-    if not survey_url:
-        _log("survey URL not captured via eval — read from integrate-panel screenshot")
+    # 2. The id, from the URL.
+    survey_id = _capture_survey_id(session)
+    if not survey_id:
+        receipt = {
+            "survey_id": "", "public_url": "", "http_status": 0, "ok": False,
+            "attempts": 0,
+            "error": ("survey id not present in location.href or the builder iframe src — "
+                      "cannot construct /widget/survey/<id>"),
+            "fetched_at": _ts(),
+        }
+        _write_json(os.path.join(evidence_root, "routing", "survey-url-receipt.json"), receipt)
+        _emit_survey_url_receipt(evidence_root, survey_name, receipt, ok=False)
+        raise SurveyUrlCaptureStop(receipt["error"])
 
-    _log(f"Survey URL: {survey_url!r}")
+    # 3. Construct the public URL from the id.
+    survey_url = survey_public_url(survey_id)
+    _log(f"P2-K: survey id {survey_id!r} → {survey_url}")
+
+    # 4. Prove it. The receipt records whatever really happened.
+    receipt = _fetch_url_receipt(survey_id, survey_url)
+    _write_json(os.path.join(evidence_root, "routing", "survey-url-receipt.json"), receipt)
+    _emit_survey_url_receipt(evidence_root, survey_name, receipt, ok=receipt["ok"])
+
+    # 5. 200 or STOP.
+    if not receipt["ok"]:
+        raise SurveyUrlCaptureStop(
+            f"public survey URL {survey_url} returned HTTP {receipt['http_status']} "
+            f"after {receipt['attempts']} attempt(s), want 200 — "
+            f"refusing to report an unproven URL. {receipt['error']}"
+        )
+
+    _log(f"P2-K: survey URL PROVEN 200 → {survey_url}")
     return survey_url
+
+
+def _emit_survey_url_receipt(
+    evidence_root: str, survey_name: str, receipt: dict, *, ok: bool
+) -> None:
+    """Mirror the URL receipt into the F6 per-object receipts store, so the run
+    summary (a pure reduction of receipts on disk) can never claim a survey URL
+    the fetch did not prove. Best-effort: a receipts-store problem must not mask
+    the real build outcome."""
+    try:
+        rec = ghl_receipts.make_receipt(
+            "survey",
+            _slug(survey_name or receipt.get("survey_id") or "survey"),
+            "created" if ok else "failed",
+            response_id=receipt.get("survey_id") or None,
+            request_shape={"widget_route": "/widget/survey/<id>", "method": "GET"},
+            verify={
+                "ok": ok,
+                "public_url": receipt.get("public_url", ""),
+                "http": receipt.get("http_status", 0),
+                "checked_at": receipt.get("fetched_at", ""),
+                "proof": "fetch-200 receipt (U6/F13)",
+            },
+            error=None if ok else (receipt.get("error") or "public URL did not return 200"),
+        )
+        ghl_receipts.write_receipt(evidence_root, rec)
+    except Exception as exc:  # noqa: BLE001
+        _log(f"P2-K: WARNING — could not write the F6 survey receipt: "
+             f"{type(exc).__name__}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -2873,7 +3052,42 @@ def _emit_click_list(
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dict:
+# ── U8: the survey builder's declared phase walk ────────────────────────────────
+# ``resumable=False`` = ALWAYS re-executes on a resume. Three kinds qualify, and
+# only three (see ghl_run_state design note 2):
+#   * ``preflight`` — a GATE. A gate that a resume skips is not a gate.
+#   * ``plan`` / ``field_map`` / ``dep_plan`` / ``click_list`` — pure THINK output:
+#     deterministic, side-effect-free, and the objects they build are needed IN
+#     MEMORY by every phase that follows, so "skipping" them would just mean
+#     reconstructing them anyway.
+#   * ``p2a_create`` — NAVIGATION. You cannot skip walking back INTO the survey you
+#     are resuming. It is idempotent (``reuse_shell`` reuses the survey by name), so
+#     re-running it creates nothing.
+# Everything else MUTATES the survey and is genuinely skipped on resume — those are
+# the phases a killed run does not have to pay for twice.
+SURVEY_PHASES: List[PhaseSpec] = [
+    PhaseSpec("preflight",         "preflight gates",                 resumable=False),
+    PhaseSpec("plan",              "survey plan (THINK)",             resumable=False),
+    PhaseSpec("field_map",         "field map",                       resumable=False),
+    PhaseSpec("dep_plan",          "Skill-44 dependency plan",        resumable=False),
+    PhaseSpec("click_list",        "click list (dry-run output)",     resumable=False),
+    PhaseSpec("p1_fields",         "Part 1 — folder + custom fields"),
+    PhaseSpec("p2a_create",        "Phase A — create/reuse survey",   resumable=False),
+    PhaseSpec("p2_smoke",          "smoke tile-drag"),
+    PhaseSpec("p2b_rename",        "Phase B — rename survey"),
+    PhaseSpec("p2c_slides",        "Phase C — add slides"),
+    PhaseSpec("p2d_welcome",       "Phase D — welcome slide"),
+    PhaseSpec("p2e_fields",        "Phase E — pull custom fields"),
+    PhaseSpec("p2f_rename_slides", "Phase F — rename question slides"),
+    PhaseSpec("p2g_conditional",   "Phase G — conditional logic"),
+    PhaseSpec("p2h_required",      "Phase H — required toggles"),
+    PhaseSpec("p2j_capture",       "Phase J — capture slide + T&C"),
+    PhaseSpec("p2k_save_url",      "Phase K — save + URL fetch-200 receipt"),
+]
+
+
+def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
+                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Build a GoHighLevel native survey via browser-control.
 
     This is the v2_dispatcher INJECTED BUILDER: called as
@@ -2914,7 +3128,19 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     # task['dry_run'] overrides the kwarg so the dispatcher can control it
     dry_run = bool(task.get("dry_run", dry_run))
 
-    _log(f"build_survey START dry_run={dry_run} evidence_root={evidence_root!r}")
+    # U8 — one checkpointed phase. ``state is None`` (the dispatcher / library
+    # callers) means no checkpointing at all and the walk behaves exactly as it
+    # always did; a RunState turns every phase below into a resume point.
+    stop_after: str = str(task.get("stop_after_phase", "") or "")
+
+    def _phase(name: str, fn, carry: str = ""):
+        res = run_phase(state, name, fn, log=_log, carry=carry)
+        if stop_after and name == stop_after:
+            raise ghl_run_state.StopAfterPhase(name)
+        return res
+
+    _log(f"build_survey START dry_run={dry_run} evidence_root={evidence_root!r}"
+         + (f" run_id={state.run_id}" if state is not None else ""))
     _ensure_dirs(
         os.path.join(evidence_root, "routing"),
         os.path.join(evidence_root, "shots"),
@@ -2976,7 +3202,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     # ── Step 1: Preflight ─────────────────────────────────────────────────────
     _board_activity(board_task_id, "updated",
                     f"Step 1/{total_steps}: Running preflight checks")
-    preflight = _run_preflight(task, evidence_root)
+    preflight = _phase("preflight", lambda: _run_preflight(task, evidence_root))
     if not preflight["pass"]:
         stop = preflight.get("stop_reason", "preflight failed")
         _log(f"PREFLIGHT HARD STOP: {stop}")
@@ -2994,7 +3220,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     # ── Step 2: Write survey plan (THINK output) ──────────────────────────────
     _board_activity(board_task_id, "updated",
                     f"Step 2/{total_steps}: Writing survey plan (THINK phase)")
-    plan = _build_survey_plan(task, fields)
+    plan = _phase("plan", lambda: _build_survey_plan(task, fields))
     plan_path = os.path.join(evidence_root, "routing", "survey-plan.json")
     _write_json(plan_path, plan)
     _log(f"Survey plan: {plan_path}")
@@ -3002,7 +3228,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     # ── Step 3: Write field map ───────────────────────────────────────────────
     _board_activity(board_task_id, "updated",
                     f"Step 3/{total_steps}: Writing survey field map")
-    field_map = _build_field_map(fields, folder_name)
+    field_map = _phase("field_map", lambda: _build_field_map(fields, folder_name))
     field_map_path = os.path.join(evidence_root, "routing", "survey-field-map.json")
     _write_json(field_map_path, field_map)
     _log(f"Field map: {field_map_path}")
@@ -3010,9 +3236,9 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
     # ── Step 3.5: Skill-44 dependency plan (F1/F2 — grocery-shopping rule) ─────
     # api/map_only reuse API-pre-created custom fields; browser mode keeps the
     # legacy in-browser create as an explicit no-PIT fallback.
-    dep_plan = plan_survey_dependencies(
+    dep_plan = _phase("dep_plan", lambda: plan_survey_dependencies(
         fields, task, existing_field_keys=task.get("existing_field_keys")
-    )
+    ))
     dep_plan["field_creation_mode"] = field_creation
     dep_plan_path = os.path.join(evidence_root, "routing", "survey-dependency-plan.json")
     _write_json(dep_plan_path, dep_plan)
@@ -3021,12 +3247,12 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
 
     # ── Dry-run: emit click list and return ───────────────────────────────────
     if dry_run:
-        click_list = _emit_click_list(
+        click_list = _phase("click_list", lambda: _emit_click_list(
             fields, folder_name, survey_name,
             business_name, campaign, welcome_copy, location_id,
             field_creation=field_creation,
             slides=slides_model, rules=norm_rules,
-        )
+        ))
         click_list_path = os.path.join(evidence_root, "routing", "survey-click-list.json")
         _write_json(click_list_path, click_list)
         _log(f"[dry-run] Click list ({click_list['total_steps']} steps): {click_list_path}")
@@ -3158,34 +3384,42 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                 _board_activity(board_task_id, "updated",
                                 f"Step {step_n}/{total_steps}: Part 1 (LEGACY browser create) — "
                                 f"folder {folder_name!r}")
-                _p1_create_folder(
-                    session, location_id, folder_name, gov, evidence_root, shot_n
-                )
-                for fi, field in enumerate(fields):
-                    step_n += 1
-                    _board_activity(
-                        board_task_id, "updated",
-                        f"Step {step_n}/{total_steps}: Part 1 — field {fi + 1}/{len(fields)}: "
-                        f"{field['label'][:40]!r}",
+
+                def _do_p1_fields() -> dict:
+                    _p1_create_folder(
+                        session, location_id, folder_name, gov, evidence_root, shot_n
                     )
-                    _p1_create_field(
-                        session, field, is_first=(fi == 0),
-                        gov=gov, evidence_root=evidence_root,
-                        shot_n=shot_n, field_index=fi + 1,
-                    )
-                    if keepalive.due():
-                        _eval(session, "true", timeout=5)  # harmless keepalive ping
+                    for fi, field in enumerate(fields):
+                        _board_activity(
+                            board_task_id, "updated",
+                            f"Part 1 — field {fi + 1}/{len(fields)}: "
+                            f"{field['label'][:40]!r}",
+                        )
+                        _p1_create_field(
+                            session, field, is_first=(fi == 0),
+                            gov=gov, evidence_root=evidence_root,
+                            shot_n=shot_n, field_index=fi + 1,
+                        )
+                        if keepalive.due():
+                            _eval(session, "true", timeout=5)  # harmless keepalive ping
+                    return {"folder": folder_name, "fields": len(fields)}
+
+                _phase("p1_fields", _do_p1_fields)
+                step_n += len(fields)
 
             # ── Part 2: Phase A — nav fix + create/reuse survey ──────────────
             _pre_phase_check(session, keepalive)
+            # p2a_create is NON-RESUMABLE by design: it is the walk back INTO the
+            # survey. It is idempotent (reuse_shell reuses by name), so a resume
+            # re-enters the SAME survey rather than creating a second one.
             step_n += 1
             _board_activity(board_task_id, "updated",
                             f"Step {step_n}/{total_steps}: Part 2 Phase A — create survey "
                             "(router.push nav fix + native 'Add survey')")
-            survey_id = _p2_navigate_create(
+            survey_id = _phase("p2a_create", lambda: _p2_navigate_create(
                 session, location_id, evidence_root, shot_n,
                 survey_name=survey_name, reuse_shell=reuse_shell,
-            )
+            ), carry="survey_id")
 
             # ── SMOKE TEST FIRST — one tile drag proves the canvas is drivable ─
             # before the full run is trusted. A walled drag falls back to the
@@ -3194,7 +3428,8 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
             smoke: dict = {"ok": None, "skipped": use_rest}
             if build_method == "browser":
                 _pre_phase_check(session, keepalive)
-                smoke = _p2_smoke_test_drag(session, evidence_root, shot_n)
+                smoke = _phase("p2_smoke",
+                               lambda: _p2_smoke_test_drag(session, evidence_root, shot_n))
                 _write_json(os.path.join(evidence_root, "routing", "survey-smoke.json"),
                             smoke)
                 if not smoke.get("ok"):
@@ -3219,7 +3454,8 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                 step_n += 1
                 _board_activity(board_task_id, "updated",
                                 f"Step {step_n}/{total_steps}: Part 2 Phase B — rename survey")
-                _p2_rename_survey(session, survey_name, evidence_root, shot_n)
+                _phase("p2b_rename",
+                       lambda: _p2_rename_survey(session, survey_name, evidence_root, shot_n))
 
                 # ── Part 2: Phase C — add slides ─────────────────────────────
                 _pre_phase_check(session, keepalive)
@@ -3229,14 +3465,16 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                     f"Step {step_n}/{total_steps}: Part 2 Phase C — add {num_extra} slides "
                     f"(total={1 + num_extra})",
                 )
-                _p2_add_slides(session, num_extra, evidence_root, shot_n)
+                _phase("p2c_slides",
+                       lambda: _p2_add_slides(session, num_extra, evidence_root, shot_n))
 
                 # ── Part 2: Phase D — welcome slide ──────────────────────────
                 _pre_phase_check(session, keepalive)
                 step_n += 1
                 _board_activity(board_task_id, "updated",
                                 f"Step {step_n}/{total_steps}: Part 2 Phase D — welcome slide (Text element)")
-                _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n)
+                _phase("p2d_welcome",
+                       lambda: _p2_welcome_slide(session, welcome_copy, evidence_root, shot_n))
 
                 # ── Part 2: Phase E — pull custom fields ─────────────────────
                 _pre_phase_check(session, keepalive)
@@ -3246,20 +3484,20 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                     f"Step {step_n}/{total_steps}: Part 2 Phase E — Add Object Fields "
                     f"from folder {folder_name!r}",
                 )
-                _p2_pull_object_fields(
+                _phase("p2e_fields", lambda: _p2_pull_object_fields(
                     session, folder_name, fields, evidence_root, shot_n,
                     dep_custom_fields=dep_plan.get("custom_fields", []),
                     slides=slides_model,
-                )
+                ))
 
                 # ── Part 2: Phase F — rename question slides ─────────────────
                 _pre_phase_check(session, keepalive)
                 step_n += 1
                 _board_activity(board_task_id, "updated",
                                 f"Step {step_n}/{total_steps}: Part 2 Phase F — rename question slides")
-                _p2_rename_question_slides(
+                _phase("p2f_rename_slides", lambda: _p2_rename_question_slides(
                     session, fields, gov, evidence_root, shot_n, slides=slides_model
-                )
+                ))
 
                 # ── Part 2: Phase G — conditional logic ──────────────────────
                 _pre_phase_check(session, keepalive)
@@ -3267,9 +3505,9 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                 _board_activity(board_task_id, "updated",
                                 f"Step {step_n}/{total_steps}: Part 2 Phase G — conditional logic "
                                 f"({len(norm_rules)} rule(s))")
-                _p2_conditional_logic(
+                _phase("p2g_conditional", lambda: _p2_conditional_logic(
                     session, norm_rules, gov, evidence_root, shot_n
-                )
+                ))
 
                 # ── Part 2: Phase H — required toggles ───────────────────────
                 _pre_phase_check(session, keepalive)
@@ -3280,9 +3518,9 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                     f"Step {step_n}/{total_steps}: Part 2 Phase H — required toggles "
                     f"({required_count} fields)",
                 )
-                _p2_required_toggles(
+                _phase("p2h_required", lambda: _p2_required_toggles(
                     session, fields, evidence_root, shot_n, slides=slides_model
-                )
+                ))
 
                 # ── Part 2: Phase J — capture slide + T&C ────────────────────
                 _pre_phase_check(session, keepalive)
@@ -3292,17 +3530,20 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                     f"Step {step_n}/{total_steps}: Part 2 Phase J — Quick-Add capture "
                     "slide + T&C (plain consent checkbox, NOT A2P)",
                 )
-                _p2_capture_slide(
+                _phase("p2j_capture", lambda: _p2_capture_slide(
                     session, business_name, campaign, len(fields),
                     evidence_root, shot_n, capture_slide_n=capture_slide_n,
-                )
+                ))
 
-                # ── Part 2: Phase K — save + get URL ─────────────────────────
+                # ── Part 2: Phase K — save + URL fetch-200 receipt (U6) ──────
                 _pre_phase_check(session, keepalive)
                 step_n += 1
                 _board_activity(board_task_id, "updated",
-                                f"Step {step_n}/{total_steps}: Part 2 Phase K — save + capture URL")
-                survey_url = _p2_save_and_get_url(session, gov, evidence_root, shot_n)
+                                f"Step {step_n}/{total_steps}: Part 2 Phase K — save + derive URL "
+                                "from location.href id + fetch-200 receipt")
+                survey_url = _phase("p2k_save_url", lambda: _p2_save_and_get_url(
+                    session, gov, evidence_root, shot_n, survey_name=survey_name,
+                ), carry="survey_url")
 
             # ── Evidence: survey-built.json (survey_id + lane + smoke result) ──
             _write_json(
@@ -3311,6 +3552,27 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True) -> dic
                  "location_id": location_id, "build_method": build_method,
                  "smoke": smoke, "survey_url": survey_url},
             )
+
+    except ghl_run_state.StopAfterPhase as sap:
+        # NOT a failure: the operator asked the walk to stop here. State is already
+        # committed through the named phase, so `--resume <run_id>` picks it straight
+        # back up at the next one.
+        duration = time.monotonic() - started
+        _log(f"build_survey STOPPED after phase {sap.phase!r} (--stop-after-phase) — "
+             f"resume with --resume "
+             f"{state.run_id if state is not None else '<run_id>'}")
+        _board_activity(board_task_id, "updated",
+                        f"Build STOPPED after phase {sap.phase} as requested; state committed.")
+        return {
+            "pages": [], "location_gate_ok": bool(location_id),
+            "duration_s": duration, "survey_url": "", "field_map": field_map,
+            "dependency_plan": dep_plan, "field_creation": field_creation,
+            "preflight": preflight, "plan_path": plan_path,
+            "field_map_path": field_map_path,
+            "dependency_plan_path": dep_plan_path, "shots": [],
+            "stopped_after_phase": sap.phase,
+            "run_id": state.run_id if state is not None else "",
+        }
 
     except Exception as exc:  # noqa: BLE001
         _log(f"build_survey EXCEPTION: {type(exc).__name__}: {exc}")
@@ -4013,11 +4275,34 @@ def main(argv: Optional[List[str]] = None) -> int:
             "built from the CLI (Area-5)."
         ),
     )
+    # U8/U10 — --resume / --run-id / --state-root / --stop-after-phase, spelled
+    # identically on every Skill-6 builder.
+    ghl_run_state.add_run_state_args(parser)
 
     args = parser.parse_args(argv)
 
     if args.selftest:
         return _selftest()
+
+    started = time.monotonic()
+
+    # U8 — open (or reopen) the phase ledger. On --resume the evidence root and the
+    # task payload come back from the state file, so `--resume <run_id>` on its own
+    # is a complete command: an operator resuming a run at 3am must not have to
+    # remember which evidence root the dead run was using.
+    try:
+        state = ghl_run_state.open_run_state(
+            args, "ghl_survey_builder", SURVEY_PHASES,
+            argv=list(argv if argv is not None else sys.argv[1:]),
+        )
+    except (ghl_run_state.RunStateNotFound, ghl_run_state.RunStateCorrupt) as exc:
+        print(f"--resume: {exc}", file=sys.stderr)
+        return 2
+
+    resumed = bool(args.resume)
+    evidence_root = args.evidence_root
+    if resumed and state.evidence_root:
+        evidence_root = state.evidence_root
 
     task: dict = {
         "id": "cli-survey-run",
@@ -4047,8 +4332,65 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         task.update(payload)
 
-    result = build_survey(task, args.evidence_root, dry_run=args.dry_run)
+    dry_run = args.dry_run
+    if resumed:
+        # Restore the ORIGINAL run's task + posture: a resume must rebuild the same
+        # survey the dead run was building, not a fresh one shaped by whatever flags
+        # happen to be on this command line.
+        saved_task = state.carry_get("task")
+        if isinstance(saved_task, dict):
+            task = dict(saved_task)
+        saved_dry = state.carry_get("dry_run")
+        if saved_dry is not None:
+            dry_run = bool(saved_dry)
+    else:
+        state.carry_set("task", task)
+        state.carry_set("dry_run", bool(dry_run))
+
+    task["stop_after_phase"] = args.stop_after_phase
+
+    status = ghl_run_state.STATUS_OK
+    error = ""
+    result: dict = {}
+    try:
+        result = build_survey(task, evidence_root, dry_run=dry_run, state=state)
+    except ghl_run_state.StopAfterPhase as sap:
+        # A stop during the THINK phases (the live walk returns a dict instead).
+        status = ghl_run_state.STATUS_STOPPED
+        result = {"stopped_after_phase": sap.phase, "run_id": state.run_id}
+    except Exception as exc:  # noqa: BLE001
+        status = ghl_run_state.STATUS_FAILED
+        error = f"{type(exc).__name__}: {exc}"
+        result = {"error": error}
+
+    if status == ghl_run_state.STATUS_OK:
+        if result.get("stopped_after_phase"):
+            status = ghl_run_state.STATUS_STOPPED
+        elif result.get("error"):
+            status = ghl_run_state.STATUS_FAILED
+            error = str(result["error"])
+    state.finish(status, error)
+
     print(json.dumps(result, indent=2, default=str))
+
+    # U10 — the honest cockpit. STDERR, so the JSON contract on stdout above stays
+    # machine-parseable for the dispatcher and the board hooks.
+    ghl_run_state.emit_run_report(
+        builder="ghl_survey_builder",
+        run_id=state.run_id,
+        status=status,
+        dry_run=bool(dry_run),
+        evidence_root=evidence_root,
+        duration_s=time.monotonic() - started,
+        script_path=__file__,
+        state=state,
+        state_root=args.state_root,
+        error=error,
+        extra_rows={"survey_url": result.get("survey_url") or "(none)"},
+    )
+
+    if status == ghl_run_state.STATUS_FAILED:
+        return 1
     return 0 if result.get("location_gate_ok", True) else 1
 
 
