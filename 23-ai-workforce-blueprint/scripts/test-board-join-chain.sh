@@ -600,6 +600,108 @@ rm -f "$T16_STATE"
 seed_board >/dev/null 2>&1
 
 echo
+echo "== T17: MULTI-COMPANY, company_id NOT derivable from company-config — a HEALTHY board must PASS =="
+# THE FALSE-FAIL T14 never exercised: T14's rows live under company_id='acme', which
+# IS company_slug_candidates()'s dir-name candidate, so the auto-resolver always
+# matched. But seed-workspaces.py writes workspaces.company_id from company_info["slug"],
+# which — when it derives from the company NAME (a COMPANY_NAME override, an
+# interview-answers name, no company-config.json) — need NOT equal the dir name,
+# the config .slug, or slugify(config .name). On a MULTI-company board none of this
+# company's candidates then match ANY company_id, resolve_company_slug() returns a
+# candidate that is NOT on the board (the phantom fallback), the filter empties this
+# company's REAL rows, and the gate CANNOT-VOUCHes a board that is in fact HEALTHY —
+# rc=6, blocking "done" FOREVER on a healthy box. This is the multi-company
+# re-opening of the single-company fail-safe asymmetry the header documents.
+#
+# Restore LAYER 1 (T16 deleted the durable artifact) with the REAL writer …
+python3 - "$SKILL_DIR" "$COMPANY_DIR" "$STATE" >/dev/null 2>&1 <<'PY' || { bad "T17: could not restore chosen artifact"; }
+import importlib.util, sys
+SKILL, COMPANY, STATE = sys.argv[1], sys.argv[2], sys.argv[3]
+spec = importlib.util.spec_from_file_location("bw", f"{SKILL}/scripts/build-workforce.py")
+bw = importlib.util.module_from_spec(spec); spec.loader.exec_module(bw)
+bw._build_state_path = lambda: STATE
+sel = {"marketing": {"name": "Marketing", "emoji": "\U0001F4E3", "head": "CMO"},
+       "sales": {"name": "Sales", "emoji": "\U0001F4B0", "head": "CRO"},
+       "billing-finance": {"name": "Billing & Finance", "emoji": "\U0001F4B3", "head": "CFO"},
+       "publishing-studio": {"name": "Publishing Studio", "emoji": "\U0001F4DA", "head": "Head"}}
+bw.write_chosen_departments_artifact(sel, company_dir=COMPANY, source="t17-fixture")
+PY
+mk_tree
+# … and re-seed acme's REAL board with the REAL seeder, but under a company_id
+# derived from the company NAME "Acme Inc" -> "acme-inc" (NOT the dir name "acme",
+# and there is no company-config.json here, so candidates = {"acme"} only).
+rm -f "$DB"; python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).close()" "$DB"
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" COMPANY_NAME="Acme Inc" OPENCLAW_PLATFORM="mac" \
+  python3 "$SEEDER" >"$TMP/seed17.log" 2>&1 || { echo "FATAL: T17 seed failed" >&2; cat "$TMP/seed17.log" >&2; exit 2; }
+# a second company shares the table -> genuinely MULTI-company
+python3 - "$DB" <<'PY'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1]); cur = con.cursor()
+for i in range(40):
+    s = f"globex-dept-{i:02d}"
+    cur.execute("INSERT OR IGNORE INTO workspaces (id,name,slug,description,icon,company_id) "
+                "VALUES (?,?,?,?,?,?)", (s, s, s, "another company's dept", "X", "globex"))
+con.commit(); con.close()
+PY
+# (1) the fixture is REAL: acme's 5 rows live under 'acme-inc', NOT 'acme', and globex shares the table
+N_INC="$(query "SELECT COUNT(*) FROM workspaces WHERE company_id='acme-inc'")"
+N_ACME="$(query "SELECT COUNT(*) FROM workspaces WHERE company_id='acme'")"
+N_GLOBEX="$(query "SELECT COUNT(*) FROM workspaces WHERE company_id='globex'")"
+if [ "$N_INC" = "5" ] && [ "$N_ACME" = "0" ] && [ "$N_GLOBEX" = "40" ]; then
+  ok "fixture is real: acme's 5 rows under company_id='acme-inc' (0 under 'acme'), globex=40 — a multi-company board"
+else
+  bad "T17 fixture wrong: acme-inc=$N_INC acme=$N_ACME globex=$N_GLOBEX (want 5 / 0 / 40)"
+fi
+# (2) NON-VACUITY: the company-config resolver really DOES fall back to a phantom that
+#     is NOT on the board — so without the content fix this board WOULD false-fail.
+python3 - "$JOIN_PY" "$COMPANY_DIR" > "$TMP/phantom.txt" 2>/dev/null <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("pbj", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+cand = m.resolve_company_slug(sys.argv[2], {"acme-inc", "globex"})
+print(cand, "ON-BOARD" if cand in {"acme-inc", "globex"} else "PHANTOM")
+PY
+read -r PHANTOM PHANTOM_KIND < "$TMP/phantom.txt"
+[ "$PHANTOM_KIND" = "PHANTOM" ] \
+  && ok "NON-VACUOUS: company-config resolver falls back to '$PHANTOM' — a company_id NOT on the board (the bug path is live)" \
+  || bad "T17 vacuous: company-config resolver returned '$PHANTOM' ($PHANTOM_KIND) — the phantom fallback is not being exercised"
+# (3) AUTO-SCOPED join (every consumer's default path) must identify acme's rows by
+#     CONTENT and report a CLEAN chain -> rc=0 (the healthy board is NOT false-failed).
+python3 "$JOIN_PY" --company-dir "$COMPANY_DIR" --db "$DB" >"$TMP/t17.out" 2>"$TMP/t17.err"; rc=$?
+[ "$rc" = "0" ] && ok "auto-scoped join on a HEALTHY multi-company board (unrecognizable company_id) -> rc=0" \
+  || { bad "*** THE FALSE-FAIL *** healthy board with a name-derived company_id -> rc=$rc (want 0)"; sed -n '1,12p' "$TMP/t17.err"; }
+grep -q "acme-inc" "$TMP/t17.out" \
+  && ok "the verdict scoped to acme's real rows (company_id 'acme-inc'), surfaced by content resolution" \
+  || bad "the verdict does not name the content-resolved scope 'acme-inc'"
+# (4) THE GATE THE PIPELINE RUNS must NOT hard-fail rc=6 on this healthy board.
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
+  bash "$QC_GATE" --departments-dir "$DEPTS_DIR" >"$TMP/qc17.out" 2>"$TMP/qc17.err"; rc=$?
+[ "$rc" != "6" ] && ok "qc-assert-workspace-departments-built.sh does NOT false-fire rc=6 on the healthy board (rc=$rc)" \
+  || { bad "THE QC GATE STILL FALSE-FIRES rc=6 on a healthy multi-company board — this blocks 'done' forever"; tail -12 "$TMP/qc17.err"; }
+# (5) FAIL-CLOSED: content resolution must buy NO false pass. Drop acme's rows entirely
+#     — now this company is GENUINELY un-seeded on a still-multi-company board. No
+#     company_id overlaps its chosen depts, so scope is UNRESOLVABLE and the gate must
+#     still CANNOT-VOUCH (rc=6). "They paid and cannot see any of it" stays caught.
+sql "DELETE FROM workspaces WHERE company_id='acme-inc'"
+# keep it multi-company so this exercises the SAME no-candidate path, not the empty-board one
+python3 - "$DB" <<'PY'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1]); cur = con.cursor()
+for i in range(7):
+    s = f"initech-dept-{i:02d}"
+    cur.execute("INSERT OR IGNORE INTO workspaces (id,name,slug,description,icon,company_id) "
+                "VALUES (?,?,?,?,?,?)", (s, s, s, "a third company", "X", "initech"))
+con.commit(); con.close()
+PY
+python3 "$JOIN_PY" --company-dir "$COMPANY_DIR" --db "$DB" >/dev/null 2>"$TMP/t17b.err"; rc=$?
+[ "$rc" = "3" ] && ok "FAIL-CLOSED: a GENUINELY un-seeded company on a multi-company board still CANNOT-VOUCHes -> rc=3 (no false pass)" \
+  || { bad "content resolution bought a FALSE PASS on a genuinely un-seeded company -> rc=$rc (want 3 CANNOT-VOUCH)"; sed -n '1,8p' "$TMP/t17b.err"; }
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
+  bash "$QC_GATE" --departments-dir "$DEPTS_DIR" >/dev/null 2>"$TMP/qc17b.err"; rc=$?
+[ "$rc" = "6" ] && ok "…and the QC gate still HARD-FAILS rc=6 on the genuinely un-seeded company (the protection is intact)" \
+  || bad "the QC gate went soft on a genuinely un-seeded company -> rc=$rc (want 6)"
+
+echo
 echo "==================================================="
 echo "  test-board-join-chain: PASS=$PASS FAIL=$FAIL"
 echo "==================================================="

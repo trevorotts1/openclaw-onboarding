@@ -345,17 +345,16 @@ else:
         # materialized" (feeding oc_overall_goal_check AND the watchdog kill
         # condition), that false drift would block "done" forever on a healthy box.
         # The resolver lives in prove-board-join.py (ONE source of truth, shared with
-        # CI and with a bare operator run) and returns None on a single-company board,
-        # where no filter is needed and none is applied.
+        # CI and with a bare operator run): main() scopes a single-company board to
+        # nothing, auto-resolves a multi-company board from company-config, and — when
+        # no company-config spelling matches a real company_id — identifies this
+        # company's rows by CONTENT. We must NOT pre-resolve a --company-slug here: the
+        # bare resolver would hand back a candidate that is NOT on the board (the
+        # phantom fallback), which main() would then honour as explicit and skip the
+        # content disambiguation, CANNOT-VOUCHing a HEALTHY multi-company board. Let
+        # main() own the full resolution.
         _jargs = ["--company-dir", str(_company_dir),
                   "--departments-dir", str(departments_dir)]
-        try:
-            _cslug = _jmod.resolve_company_slug_from_db(
-                _company_dir, _jmod.resolve_db(None))
-        except Exception:  # noqa: BLE001 — resolution is best-effort; main() re-resolves
-            _cslug = None
-        if _cslug:
-            _jargs += ["--company-slug", _cslug]
         _jrc = _jmod.main(_jargs)
         if _jrc == _jmod.RC_NOT_APPLICABLE:
             print("AF-BOARD-JOIN-DRIFT: CHECK SKIPPED — no Command Center board exists on "

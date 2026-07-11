@@ -479,6 +479,45 @@ def resolve_company_slug_from_db(company_dir, db_path):
     return resolve_company_slug(company_dir, company_ids)
 
 
+def resolve_scope_by_content(displayed_rows, chosen_keys, key):
+    """Last-resort company scoping for a MULTI-COMPANY board on which NOT ONE of
+    company_slug_candidates() reproduces any workspaces.company_id — i.e.
+    resolve_company_slug() fell back to a candidate that is NOT on the board.
+
+    That fallback is a phantom: it filters this company's REAL rows down to zero and
+    the caller then CANNOT-VOUCHes a board that is in fact HEALTHY (the "13 headless
+    workspaces" false-fail in reverse). It happens whenever seed-workspaces.py wrote
+    workspaces.company_id from the company NAME / a COMPANY_NAME override rather than
+    a spelling company-config.json can reproduce — exactly the single-company
+    fail-safe asymmetry documented above, which the multi-company path re-opens.
+
+    We cannot NAME this company's id from company-config.json, so we identify its
+    rows by CONTENT: the company_id whose DISPLAYED departments overlap what this
+    company actually CHOSE (the C7 artifact). Returns that company_id iff ONE
+    company_id dominates the overlap; None on no overlap (genuinely un-seeded — the
+    caller's CANNOT-VOUCH correctly blocks) or on a tie (ambiguous — fail-closed).
+
+    This can never manufacture a false PASS: it only ever swaps a phantom slug that
+    was already guaranteed to match zero rows for a real company_id, and the join
+    then verifies chosen == provisioned == displayed on those rows independently.
+    """
+    mine = {k for k in chosen_keys if k and k != ORCHESTRATOR_CANONICAL}
+    if not mine:
+        return None
+    by_cid = {}
+    for row in displayed_rows:
+        cid = row[2]
+        k = key(row[0])
+        if k and k in mine:
+            by_cid.setdefault(cid, set()).add(k)
+    if not by_cid:
+        return None
+    ranked = sorted(by_cid.items(), key=lambda kv: len(kv[1]), reverse=True)
+    if len(ranked) == 1 or len(ranked[0][1]) > len(ranked[1][1]):
+        return ranked[0][0]
+    return None          # ambiguous tie -> fail-closed; the phantom slug stands.
+
+
 # ── THE JOIN ──────────────────────────────────────────────────────────────────
 def make_keyer(df, canonical_dept_slug):
     nm = df.load_naming_map()
@@ -699,21 +738,8 @@ def main(argv=None):
               f"unreadable ({e}). Refusing to pass on an unreadable board.", file=sys.stderr)
         return RC_CANNOT_VOUCH
 
-    # ── COMPANY SCOPING: an explicit --company-slug always wins; otherwise scope
-    #    automatically (multi-company board) or not at all (single-company board).
-    #    Doing this HERE rather than at one call site means EVERY consumer — the QC
-    #    gate, the CI suite, an operator running this bare — is scoped correctly.
-    if args.company_slug:
-        company_slug, slug_source = args.company_slug, "explicit (--company-slug)"
-    else:
-        company_slug = resolve_company_slug(company_dir, company_ids)
-        slug_source = ("auto-resolved (multi-company board)" if company_slug
-                       else "none (single-company board — no filter needed)")
-    if company_slug is not None:
-        displayed_rows = [r for r in displayed_rows if r[2] == company_slug]
-        archived_rows = [r for r in archived_rows if r[2] == company_slug]
-
-    # ── LAYER 1: the chosen list, scoped to THIS company ──
+    # ── LAYER 1: the chosen list (read BEFORE scoping — it does not depend on the
+    #    board, and content-based scope disambiguation below needs it) ──
     build_state = df.load_build_state()
     chosen, chosen_source = read_chosen_for_company(company_dir, build_state)
     if not chosen:
@@ -724,6 +750,37 @@ def main(argv=None):
               f"client chose; this gate will NOT re-derive it from the floor and call "
               f"that 'chosen'.", file=sys.stderr)
         return RC_CANNOT_VOUCH
+
+    key = make_keyer(df, canonical_dept_slug)
+
+    # ── COMPANY SCOPING: an explicit --company-slug always wins; otherwise scope
+    #    automatically (multi-company board) or not at all (single-company board).
+    #    Doing this HERE rather than at one call site means EVERY consumer — the QC
+    #    gate, the CI suite, an operator running this bare — is scoped correctly.
+    if args.company_slug:
+        company_slug, slug_source = args.company_slug, "explicit (--company-slug)"
+    else:
+        company_slug = resolve_company_slug(company_dir, company_ids)
+        slug_source = ("auto-resolved (multi-company board)" if company_slug
+                       else "none (single-company board — no filter needed)")
+        # PHANTOM-SLUG GUARD: on a multi-company board where NONE of this company's
+        # company-config spellings match a real company_id, resolve_company_slug()
+        # returns a candidate that is NOT on the board. Filtering on it empties this
+        # company's REAL rows and CANNOT-VOUCHes a HEALTHY board (the multi-company
+        # re-opening of the single-company fail-safe asymmetry). Before accepting
+        # that, identify this company's rows by CONTENT — the company_id whose
+        # displayed departments overlap what the client CHOSE.
+        _board_ids = {str(c) for c in (company_ids or ())}
+        if company_slug is not None and company_slug not in _board_ids:
+            _resolved = resolve_scope_by_content(
+                displayed_rows, {key(c) for c in chosen}, key)
+            if _resolved is not None:
+                company_slug = _resolved
+                slug_source = ("content-resolved (multi-company board; company_id not "
+                               "derivable from company-config — matched on chosen depts)")
+    if company_slug is not None:
+        displayed_rows = [r for r in displayed_rows if r[2] == company_slug]
+        archived_rows = [r for r in archived_rows if r[2] == company_slug]
 
     # ── the board must actually be seeded for THIS company ──
     if not displayed_rows and not archived_rows:
@@ -748,7 +805,6 @@ def main(argv=None):
     # ── LAYER 2 ──
     provisioned = read_provisioned(departments_dir, df)
 
-    key = make_keyer(df, canonical_dept_slug)
     verdict = join(chosen, provisioned, [r[0] for r in displayed_rows], key)
     verdict["company_dir"] = str(company_dir)
     verdict["departments_dir"] = str(departments_dir)
