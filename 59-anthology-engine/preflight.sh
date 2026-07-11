@@ -23,22 +23,69 @@
 #                        (AF-AE-UNRESOLVED-MODELMAP) or an Anthropic-family id
 #                        (AF-AE-ANTHROPIC). A missing map is a clean pass (the
 #                        installer resolves per box).
+#   --broker-check    -- E9-short: a THIN assertion that the n8n Drive credential
+#                        broker is CONFIGURED on this box (N8N_DRIVE_WEBHOOK_URL +
+#                        N8N_DRIVE_WEBHOOK_TOKEN both resolve -- env first, then
+#                        engine-config.json delivery.drive_broker.webhook_url, the
+#                        SAME resolution scripts/drive_adapter.py:broker_configured()
+#                        uses; asked here via `drive_adapter.py broker-status` so
+#                        there is exactly ONE implementation of "is the broker
+#                        configured", never a second drifting copy in bash). This
+#                        gates PROVISIONING (a client box must never fall back to
+#                        holding the local Google SA key -- broker_configured()'s own
+#                        docstring: "the ONLY box that legitimately holds the SA key
+#                        is the operator's OWN box, never a client box"). It does NOT
+#                        probe the per-Doc broker ACTIONS themselves -- that deeper
+#                        capability probe already exists and is tested as
+#                        drive_adapter.py's `broker-preflight` / broker_preflight()
+#                        (SHORT E9 fix, run mid-provisioning before S7/S8). This mode
+#                        is an explicit opt-in gate for callers that require the
+#                        broker (it is NOT part of the default RESOLVE flow, which is
+#                        unchanged and stays broker-agnostic).
 #
-# Exit 0 = ok; 2 = banned id / residual placeholder (fail-closed); 3 = usage.
+# Exit 0 = ok; 2 = banned id / residual placeholder / broker not configured
+#          (fail-closed); 3 = usage.
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TEMPLATE="$SELF_DIR/config/model-map.template.json"
+DRIVE_ADAPTER="$SELF_DIR/scripts/drive_adapter.py"
 OUT_DIR="$SELF_DIR"
 MODE="resolve"
 while [ $# -gt 0 ]; do
     case "$1" in
-        --run-dir) OUT_DIR="${2:-}"; shift 2 ;;
-        --check)   MODE="check"; shift ;;
-        -h|--help) echo "usage: preflight.sh [--run-dir DIR] [--check]"; exit 0 ;;
+        --run-dir)      OUT_DIR="${2:-}"; shift 2 ;;
+        --check)        MODE="check"; shift ;;
+        --broker-check) MODE="broker_check"; shift ;;
+        -h|--help) echo "usage: preflight.sh [--run-dir DIR] [--check] [--broker-check]"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 3 ;;
     esac
 done
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit 3; }
+
+if [ "$MODE" = "broker_check" ]; then
+    [ -f "$DRIVE_ADAPTER" ] || { echo "FATAL: drive_adapter.py not found: $DRIVE_ADAPTER" >&2; exit 3; }
+    STATUS_JSON="$(python3 "$DRIVE_ADAPTER" broker-status 2>&1)"
+    RC=$?
+    if [ "$RC" -ne 0 ]; then
+        echo "FATAL: drive_adapter.py broker-status failed (exit $RC): $STATUS_JSON" >&2
+        exit 3
+    fi
+    CONFIGURED="$(printf '%s' "$STATUS_JSON" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("error")
+    sys.exit(0)
+print("true" if d.get("broker_configured") else "false")
+')"
+    if [ "$CONFIGURED" = "true" ]; then
+        echo "preflight --broker-check: n8n Drive-broker config present (N8N_DRIVE_WEBHOOK_URL + N8N_DRIVE_WEBHOOK_TOKEN both resolve) -- PASS"
+        exit 0
+    fi
+    echo "AF-AE-BROKER-NOT-CONFIGURED: n8n Drive-broker config absent on this box (N8N_DRIVE_WEBHOOK_URL and/or N8N_DRIVE_WEBHOOK_TOKEN do not both resolve). A client box must never fall back to holding the local Google service-account key -- only the operator's OWN box may legitimately run local-SA mode. Set the broker webhook URL + token (or engine-config.json delivery.drive_broker.webhook_url) and re-run. Raw status: $STATUS_JSON" >&2
+    exit 2
+fi
 
 if [ "$MODE" = "check" ]; then
     OUT_DIR="$OUT_DIR" python3 - <<'PY'
