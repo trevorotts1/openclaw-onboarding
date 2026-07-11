@@ -44,6 +44,13 @@ jobs:
           bash scripts/guard-agent-browser-managed.sh
           echo "✓ Skill 06 singleton pooled-browser gateway enforced (managed-only, teardown+lock+breaker, no per-run names, sentinel present)"
 
+      - name: Guard scan-roots negative fixture (AUD-20 -- guard also scans 41-*/03-*)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/guard-agent-browser-managed-scan-roots.test.sh
+          echo "✓ guard-agent-browser-managed.sh now bites an unmanaged agent-browser spawn planted in 41-build-with-ai-playbook/ or 03-agent-browser/, not just 06-ghl-install-pages/"
+
       - name: Run static singleton tests
         shell: bash
         run: |

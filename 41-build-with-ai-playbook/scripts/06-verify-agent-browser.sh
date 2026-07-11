@@ -17,6 +17,16 @@ set -uo pipefail
 
 SKILL_TAG="[skill 41][agent-browser]"
 
+# ─── AUD-19 / FLEET-FIX B.1: shared hard-timeout + child-tree-kill helper ────
+# Provides ab_kill_tree() (recursive pgrep -P kill) and ab_wait_with_timeout()
+# (bounded poll, hard-capped at AB_PROBE_MAX_TIMEOUT_SECS=120). Used below to
+# make sure the CDP probe (step 3) can never hang this script forever, and
+# that a kill of THIS script mid-probe never leaves an orphan node/Chromium
+# process behind.
+SCRIPT_DIR_41="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/browser-probe-timeout.sh
+source "$SCRIPT_DIR_41/lib/browser-probe-timeout.sh"
+
 _flag_loudly() {
   # Print a loud, impossible-to-miss failure banner and a human-escalation directive.
   local reason="$1"
@@ -219,7 +229,21 @@ _info "Step 3: Verifying headless Chrome via CDP ..."
 # that drives browser sessions, we adapt. This probe is written against the
 # @vercel/agent-browser API surface; adjust if the package ships differently.
 CDP_PROBE_SCRIPT="$(mktemp /tmp/skill41-cdp-probe-XXXXXX.mjs)"
-trap 'rm -f "$CDP_PROBE_SCRIPT"' EXIT
+CDP_OUT_FILE="$(mktemp /tmp/skill41-cdp-out-XXXXXX)"
+# node-PID trap (AUD-19): populated right before we background the node
+# process below. The EXIT/INT/TERM trap kills the FULL descendant tree
+# rooted at this PID (node + any Chromium it launched via CDP) -- so if this
+# script is killed mid-probe (or the probe hangs and we time it out), zero
+# orphan processes survive. Safe/no-op before the PID is set or after the
+# process has already been reaped.
+CDP_NODE_PID=""
+_cleanup_cdp_probe() {
+  rm -f "$CDP_PROBE_SCRIPT" "$CDP_OUT_FILE"
+  if [[ -n "$CDP_NODE_PID" ]]; then
+    ab_kill_tree "$CDP_NODE_PID" TERM
+  fi
+}
+trap _cleanup_cdp_probe EXIT INT TERM
 
 cat > "$CDP_PROBE_SCRIPT" << 'CDP_PROBE_EOF'
 // Minimal CDP probe for Skill 41 preflight.
@@ -249,9 +273,25 @@ try {
 }
 CDP_PROBE_EOF
 
-CDP_OUTPUT="$("$NODE_BIN" --input-type=module < "$CDP_PROBE_SCRIPT" 2>&1)" || CDP_EXIT=$?
-if [[ "${CDP_EXIT:-0}" -ne 0 ]]; then
-  _fail "Headless Chrome CDP probe FAILED. Output: $CDP_OUTPUT -- Agent Browser cannot launch a browser session. Check: (1) Chromium/Chrome is installed ('which chromium-browser' or 'which google-chrome'), (2) the container is not sandboxed beyond what Chromium supports (VPS: try --no-sandbox flag), (3) @vercel/agent-browser is compatible with this Node.js version. See protocols/agent-browser-preflight-protocol.md."
+# Hard timeout (AUD-19): default 90s, override via BROWSER_PROBE_TIMEOUT,
+# ALWAYS clamped to AB_PROBE_MAX_TIMEOUT_SECS (120s) by ab_wait_with_timeout
+# -- a caller can shorten the wait, never lengthen it past the ceiling.
+BROWSER_PROBE_TIMEOUT="${BROWSER_PROBE_TIMEOUT:-90}"
+_info "CDP probe timeout: ${BROWSER_PROBE_TIMEOUT}s (hard ceiling ${AB_PROBE_MAX_TIMEOUT_SECS}s)"
+
+"$NODE_BIN" --input-type=module < "$CDP_PROBE_SCRIPT" > "$CDP_OUT_FILE" 2>&1 &
+CDP_NODE_PID=$!
+
+ab_wait_with_timeout "$CDP_NODE_PID" "$BROWSER_PROBE_TIMEOUT"
+CDP_EXIT=$?
+CDP_OUTPUT="$(cat "$CDP_OUT_FILE" 2>/dev/null)"
+CDP_TIMED_OUT="$AB_PROBE_TIMED_OUT"
+CDP_NODE_PID=""   # already reaped by `wait` above -- trap becomes a no-op
+
+if [[ "$CDP_TIMED_OUT" -eq 1 ]]; then
+  _fail "Headless Chrome CDP probe TIMED OUT after ${BROWSER_PROBE_TIMEOUT}s (hard ceiling ${AB_PROBE_MAX_TIMEOUT_SECS}s). The node process and its FULL child tree (node + any Chromium it launched via CDP) were killed via pgrep -P child-tree teardown -- no orphan process was left running. Output captured before timeout: $CDP_OUTPUT -- Agent Browser likely cannot reach or launch headless Chrome. See protocols/agent-browser-preflight-protocol.md."
+elif [[ "$CDP_EXIT" -ne 0 ]]; then
+  _fail "Headless Chrome CDP probe FAILED (exit $CDP_EXIT). Output: $CDP_OUTPUT -- Agent Browser cannot launch a browser session. Check: (1) Chromium/Chrome is installed ('which chromium-browser' or 'which google-chrome'), (2) the container is not sandboxed beyond what Chromium supports (VPS: try --no-sandbox flag), (3) @vercel/agent-browser is compatible with this Node.js version. See protocols/agent-browser-preflight-protocol.md."
 fi
 _info "Headless Chrome CDP probe: PASSED"
 _info "Probe output: $CDP_OUTPUT"
