@@ -153,7 +153,7 @@ A missing resource is a blocker to escalate, never a reason to co-mingle. Co-min
 
 A pattern match **cannot** tell a client's real name from a book-persona name. It will either miss real leaks or block legitimate product PRs forever — and it has already done both. Do not "fix" a missed name by widening a regex, and do not add an identifier scan pass.
 
-- **Names → LLM review.** The authoritative name check is `scripts/qc-llm-diff-review.py`, which runs on every PR (`.github/workflows/qc-llm-diff-review.yml`). It reads the diff's added lines and blocks on the three rules above. It **fails closed**: a reviewer error, malformed response, API error, or timeout is a **BLOCK**.
+- **Names → LLM review.** The authoritative name check is `scripts/qc-llm-diff-review.py`, which runs on every PR (`.github/workflows/qc-llm-diff-review.yml`). It reads the diff's added lines and blocks on the three rules above. It **fails closed**: a reviewer error, malformed response, API error, or timeout is a **BLOCK**. The reviewer calls **Google Gemini Flash** (the fleet's own provider) via the `GEMINI_API_KEY` repo secret — **never Anthropic**; the fleet uses no Anthropic models. If this gate is ever run on a client box it must use that client's own provider.
 - **Secrets → regex is correct.** A secret has a literal shape; a human name does not. The `pit-` token regex in `05-ghl-setup/qc-ghl-setup.sh` is correct — keep it, and the reviewer runs its own secret pre-filter in addition.
 
 ### History — why this section exists

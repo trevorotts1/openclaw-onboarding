@@ -12,13 +12,15 @@
 #   5.  CLIENT HOST — hostname literally CONTAINING a client name  .... expect BLOCK
 #   6a. FAIL-CLOSED — malformed reviewer JSON  ........................ expect BLOCK
 #   6b. FAIL-CLOSED — no credential (transport unreachable)  .......... expect BLOCK
-#   6c. FAIL-CLOSED — API error (bad credential -> HTTP 401)  ......... expect BLOCK
+#   6c. FAIL-CLOSED — API error (bad credential -> HTTP 4xx)  ......... expect BLOCK
 #
-# Cases 1-5 make a real (cheap) model call. Transport is auto-selected:
-#   ANTHROPIC_API_KEY set  -> api  (this is what CI uses)
-#   else `claude` on PATH  -> cli  (operator box; holds no raw Anthropic key)
-#   neither                -> FATAL (fails closed; never a vacuous pass)
-# Cases 6a-6c are transport-independent.
+# Cases 1-5 make a real (cheap) GOOGLE GEMINI FLASH call. The gate uses the
+# fleet's own Google provider — NEVER Anthropic. Cases 6a-6c are transport-
+# independent (6a/6c never leave the box; 6b proves the no-key path).
+#
+# Reviewer credential (one Google key under three alias names):
+#   GEMINI_API_KEY  →  GOOGLE_AI_STUDIO_API_KEY  →  GOOGLE_API_KEY
+# None set -> FATAL (fails closed; never a vacuous pass).
 #
 # All fixture literals are OBVIOUSLY SYNTHETIC — no real client name and no real
 # secret exists anywhere in this tree.
@@ -33,17 +35,13 @@ REVIEWER="$REPO_ROOT/scripts/qc-llm-diff-review.py"
 
 [ -f "$REVIEWER" ] || { echo "FATAL: reviewer not found at $REVIEWER"; exit 1; }
 
-# ─── Transport auto-selection ────────────────────────────────────────────────
-if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  TRANSPORT="api"
-elif command -v claude >/dev/null 2>&1; then
-  TRANSPORT="cli"
-else
-  echo "FATAL: no reviewer transport available (no ANTHROPIC_API_KEY, no \`claude\` CLI)."
+# ─── Credential presence (one Google key, three alias names) ─────────────────
+if [ -z "${GEMINI_API_KEY:-}${GOOGLE_AI_STUDIO_API_KEY:-}${GOOGLE_API_KEY:-}" ]; then
+  echo "FATAL: no Google API key (GEMINI_API_KEY / GOOGLE_AI_STUDIO_API_KEY / GOOGLE_API_KEY)."
   echo "       The gate FAILS CLOSED rather than reporting a vacuous pass."
   exit 1
 fi
-echo "reviewer transport: $TRANSPORT"
+echo "reviewer provider: Google Gemini Flash (${QC_LLM_REVIEW_MODEL:-gemini-flash-latest})"
 echo ""
 
 FAILURES=0
@@ -71,40 +69,41 @@ run_case() {
   echo ""
 }
 
-# ─── LIVE MODEL CASES ────────────────────────────────────────────────────────
+# ─── LIVE MODEL CASES (Google Gemini Flash) ──────────────────────────────────
 run_case "1. EXEMPT — CF UUID + AUD tag + Telegram chat ID + GHL location ID + book persona" \
-  0 PASS "" --transport "$TRANSPORT" --diff-file "$HERE/exempt.diff"
+  0 PASS "" --diff-file "$HERE/exempt.diff"
 
 # NOTE: greps target the FINDING's "category" field, never the "counts" keys —
 # a grep for bare client_name would also match `"client_name": 0` and be vacuous.
 run_case "2. CLIENT NAME — a real human customer / roster member" \
-  1 BLOCK '"category": "client_name"' --transport "$TRANSPORT" --diff-file "$HERE/client-name.diff"
+  1 BLOCK '"category": "client_name"' --diff-file "$HERE/client-name.diff"
 
 run_case "3. SECRET — pit- GHL token + Telegram bot token + API key" \
-  1 BLOCK '"category": "secret"' --transport "$TRANSPORT" --diff-file "$HERE/secret.diff"
+  1 BLOCK '"category": "secret"' --diff-file "$HERE/secret.diff"
 
 # "why" only ever appears INSIDE a flag_for_operator entry, so this proves the
 # list is actually populated (grepping "flag_for_operator" would match the empty
 # array key and pass vacuously).
 run_case "4. OPAQUE HOSTNAME — allowed, surfaced under flag_for_operator" \
-  0 PASS '"why"' --transport "$TRANSPORT" --diff-file "$HERE/opaque-hostname.diff"
+  0 PASS '"why"' --diff-file "$HERE/opaque-hostname.diff"
 
 # A hostname carrying a client's name may be reported as client_name OR as
 # one_client_build — both are correct BLOCKs. Assert a real finding exists
 # ("confidence" appears only inside a finding object) rather than pinning the
 # category, which would make the test brittle without making it stronger.
 run_case "5. CLIENT-NAMED HOSTNAME — hostname contains a client name" \
-  1 BLOCK '"confidence"' --transport "$TRANSPORT" --diff-file "$HERE/client-hostname.diff"
+  1 BLOCK '"confidence"' --diff-file "$HERE/client-hostname.diff"
 
-# ─── FAIL-CLOSED CASES (transport-independent) ───────────────────────────────
+# ─── FAIL-CLOSED CASES ───────────────────────────────────────────────────────
 run_case "6a. FAIL-CLOSED — malformed reviewer JSON" \
   1 BLOCK "reviewer_error" --diff-file "$HERE/exempt.diff" --response-file "$HERE/malformed-response.txt"
 
 echo "═══════════════════════════════════════════════════════════════════"
-echo "CASE: 6b. FAIL-CLOSED — no credential (api transport, key unset)"
+echo "CASE: 6b. FAIL-CLOSED — no credential (all key aliases unset)"
 echo "      (expect exit=1 verdict=BLOCK)"
 echo "───────────────────────────────────────────────────────────────────"
-_out="$(ANTHROPIC_API_KEY="" python3 "$REVIEWER" --transport api --diff-file "$HERE/exempt.diff" 2>&1)"; _rc=$?
+_out="$(env -u GEMINI_API_KEY -u GOOGLE_AI_STUDIO_API_KEY -u GOOGLE_API_KEY \
+        python3 "$REVIEWER" --diff-file "$HERE/exempt.diff" 2>&1)"; _rc=$?
 echo "$_out"; echo "--- exit=$_rc ---"
 if [ "$_rc" = 1 ] && echo "$_out" | grep -q reviewer_error; then
   echo "  ✓ CASE PASSED (fails closed)"
@@ -114,11 +113,12 @@ fi
 echo ""
 
 echo "═══════════════════════════════════════════════════════════════════"
-echo "CASE: 6c. FAIL-CLOSED — API error (bad credential -> HTTP 401)"
+echo "CASE: 6c. FAIL-CLOSED — API error (bad credential -> HTTP 4xx)"
 echo "      (expect exit=1 verdict=BLOCK)"
 echo "───────────────────────────────────────────────────────────────────"
-_out="$(ANTHROPIC_API_KEY="sk-ant-invalid-selftest-credential-000000" \
-        python3 "$REVIEWER" --transport api --diff-file "$HERE/exempt.diff" 2>&1)"; _rc=$?
+_out="$(env -u GOOGLE_AI_STUDIO_API_KEY -u GOOGLE_API_KEY \
+        GEMINI_API_KEY="AIzaINVALID-selftest-credential-0000000000000000" \
+        python3 "$REVIEWER" --diff-file "$HERE/exempt.diff" 2>&1)"; _rc=$?
 echo "$_out"; echo "--- exit=$_rc ---"
 if [ "$_rc" = 1 ] && echo "$_out" | grep -q reviewer_error; then
   echo "  ✓ CASE PASSED (fails closed on API error)"

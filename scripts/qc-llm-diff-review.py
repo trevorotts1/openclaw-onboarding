@@ -31,24 +31,24 @@
 # for SECRETS — a secret has a literal shape; a human name does not. That is why
 # a cheap secret regex runs here as a pre-filter IN ADDITION to the model.)
 #
-# ─── ⚠️ MODEL PROVIDER WARNING ────────────────────────────────────────────────
-# This reviewer runs in GitHub Actions on OUR OWN repos only, on `pull_request`.
-# It does NOT ship into the repo and it NEVER executes on a client box. That is
-# the ONLY reason a cheap Anthropic model is correct here.
-# ⚠️ IF THIS IS EVER MOVED ONTO A CLIENT BOX IT MUST BE RE-POINTED AT THE
-#    CLIENT'S OWN PROVIDER — NEVER ANTHROPIC. Client sovereignty is absolute.
+# ─── ✅ MODEL PROVIDER — GOOGLE GEMINI FLASH ──────────────────────────────────
+# This reviewer calls GOOGLE GEMINI FLASH via the Generative Language API — the
+# fleet's own provider. Do NOT wire this gate to a provider the fleet does not
+# run (an earlier draft's Anthropic/Haiku call was a defect: no such key exists
+# on the fleet — it has been removed, do not reintroduce it).
+#   • If this gate is ever run on a CLIENT box, it must use the CLIENT's own
+#     configured provider — never a provider the client does not own. Client
+#     sovereignty is absolute.
 #
 # ─── FAIL CLOSED (non-negotiable) ─────────────────────────────────────────────
-# Non-zero exit, malformed JSON, API error, or timeout → BLOCK with
-# `reviewer_error`. A guard that fails open is not a guard.
+# Non-zero exit, malformed JSON, API error, timeout, or an empty/blocked model
+# response → BLOCK with `reviewer_error`. A guard that fails open is not a guard.
 #
-# ─── TRANSPORTS ───────────────────────────────────────────────────────────────
-#   api (DEFAULT — this is what GitHub Actions uses): Anthropic Messages API.
-#       Needs ANTHROPIC_API_KEY (a CI repo secret). No key -> BLOCK (fail closed).
-#   cli: shells out to the locally-authenticated `claude` CLI. For running the
-#       gate on the operator box, which holds no raw Anthropic API key.
-#   Both transports feed the SAME parse + fail-closed path.
-#   Select with --transport or QC_LLM_REVIEW_TRANSPORT.
+# ─── CREDENTIAL ───────────────────────────────────────────────────────────────
+#   Reads the Google Generative Language API key from the FIRST set of:
+#       GEMINI_API_KEY  →  GOOGLE_AI_STUDIO_API_KEY  →  GOOGLE_API_KEY
+#   (These three env-var names are aliases for the SAME single Google key.)
+#   In GitHub Actions add ONE repo secret named `GEMINI_API_KEY`. No key → BLOCK.
 #
 # Exit codes: 0 = PASS · 1 = BLOCK (findings or reviewer_error) · 2 = bad usage
 #
@@ -56,7 +56,6 @@
 #   python3 scripts/qc-llm-diff-review.py                       # origin/main...HEAD
 #   python3 scripts/qc-llm-diff-review.py --base origin/main
 #   python3 scripts/qc-llm-diff-review.py --diff-file some.diff # review a saved diff
-#   python3 scripts/qc-llm-diff-review.py --transport cli       # operator box (no API key)
 #   python3 scripts/qc-llm-diff-review.py --diff-file d.diff \
 #           --response-file canned.txt                          # TEST-ONLY transport stub
 
@@ -69,12 +68,28 @@ import sys
 import urllib.error
 import urllib.request
 
-# CI-only reviewer model. See the MODEL PROVIDER WARNING above before moving this.
-MODEL = os.environ.get("QC_LLM_REVIEW_MODEL", "claude-haiku-4-5-20251001")
-API_URL = "https://api.anthropic.com/v1/messages"
-API_VERSION = "2023-06-01"
+# Reviewer model. Default is the rolling `-latest` Flash alias so a single model
+# retirement never silently disables the gate (Google retires pinned versions —
+# e.g. gemini-2.5-flash / 2.0-flash returned HTTP 404 "no longer available").
+# Override with QC_LLM_REVIEW_MODEL to pin a specific version.
+MODEL = os.environ.get("QC_LLM_REVIEW_MODEL", "gemini-flash-latest")
+API_BASE = os.environ.get(
+    "QC_LLM_REVIEW_API_BASE",
+    "https://generativelanguage.googleapis.com/v1beta",
+)
 TIMEOUT_S = int(os.environ.get("QC_LLM_REVIEW_TIMEOUT", "90"))
 MAX_LINES_PER_CHUNK = 250
+
+# The three env-var aliases for the ONE Google Generative Language API key.
+API_KEY_ENV_NAMES = ("GEMINI_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_API_KEY")
+
+
+def get_api_key():
+    for name in API_KEY_ENV_NAMES:
+        v = os.environ.get(name, "")
+        if v:
+            return v
+    return ""
 
 SYSTEM_PROMPT = """You review a diff from a FLEET-WIDE repo shipped to every client. BLOCK on exactly three things:
 1. A CLIENT or ROSTER MEMBER's real human name (an actual customer or team member).
@@ -90,12 +105,13 @@ Respond with ONLY a JSON object, no prose and no code fences:
 {"verdict":"PASS"|"BLOCK","findings":[{"file":"...","line":42,"category":"client_name"|"secret"|"one_client_build","confidence":"high"|"medium"}],"flag_for_operator":[{"file":"...","line":7,"why":"opaque hostname"}],"counts":{"client_name":0,"secret":0,"one_client_build":0}}"""
 
 # ─── Cheap SECRET pre-filter (regex is CORRECT for secrets — literal shapes) ───
-# Runs IN ADDITION to the model. Never used for names.
+# Runs IN ADDITION to the model. Never used for names. These are credential
+# SHAPES; the model independently catches any key-shaped string it also sees.
 SECRET_PATTERNS = [
     ("ghl_pit_token", re.compile(r"pit-[0-9a-f]{8}-[0-9a-f]{4}")),
     ("telegram_bot_token", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_\-]{30,}")),
-    ("anthropic_key", re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}")),
     ("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{32,}")),
+    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
     ("github_pat", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("private_key_block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
@@ -180,65 +196,52 @@ def render_chunk(rows):
 
 
 def call_model(payload_text, api_key):
-    """Return the model's raw text. Raise on any transport/API failure (fail closed)."""
+    """Return the model's raw text from Google Gemini. Raise on any transport /
+    API failure or an empty/blocked response (fail closed)."""
     body = json.dumps(
         {
-            "model": MODEL,
-            "max_tokens": 2000,
-            "temperature": 0,
-            "system": SYSTEM_PROMPT,
-            "messages": [
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": [
                 {
                     "role": "user",
-                    "content": "Review these ADDED diff lines (format `file:line: content`):\n\n"
-                    + payload_text,
+                    "parts": [
+                        {
+                            "text": "Review these ADDED diff lines (format `file:line: content`):\n\n"
+                            + payload_text
+                        }
+                    ],
                 }
             ],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 4000,
+                "responseMimeType": "application/json",
+            },
         }
     ).encode("utf-8")
+    url = "%s/models/%s:generateContent" % (API_BASE, MODEL)
     req = urllib.request.Request(
-        API_URL,
+        url,
         data=body,
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": API_VERSION,
-        },
+        headers={"content-type": "application/json", "x-goog-api-key": api_key},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
-    return "".join(parts)
-
-
-def call_model_cli(payload_text):
-    """Operator-box transport: the locally-authenticated `claude` CLI.
-
-    Same model, same system prompt, same parse path as the API transport.
-    Any non-zero exit / timeout / empty output raises -> caller BLOCKs.
-    """
-    proc = subprocess.run(
-        [
-            "claude",
-            "--print",
-            "--model",
-            MODEL,
-            "--system-prompt",
-            SYSTEM_PROMPT,
-            "--output-format",
-            "text",
-        ],
-        input="Review these ADDED diff lines (format `file:line: content`):\n\n" + payload_text,
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT_S,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError("claude CLI exited %d" % proc.returncode)
-    if not proc.stdout.strip():
-        raise RuntimeError("claude CLI returned empty output")
-    return proc.stdout
+    cands = data.get("candidates") or []
+    if not cands:
+        # No candidate at all — prompt blocked, quota, etc. Fail closed.
+        raise RuntimeError("model returned no candidates")
+    cand = cands[0]
+    parts = cand.get("content", {}).get("parts", []) or []
+    text = "".join(p.get("text", "") for p in parts)
+    if not text.strip():
+        # Truncated (MAX_TOKENS), safety-blocked, or empty. Fail closed rather
+        # than treat a contentless reply as a PASS.
+        raise RuntimeError(
+            "empty model response (finishReason=%s)" % cand.get("finishReason")
+        )
+    return text
 
 
 def parse_verdict(text):
@@ -300,12 +303,6 @@ def main():
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--diff-file", default=None)
     ap.add_argument(
-        "--transport",
-        choices=("api", "cli"),
-        default=os.environ.get("QC_LLM_REVIEW_TRANSPORT", "api"),
-        help="api = Anthropic Messages API (CI default); cli = local `claude` CLI (operator box).",
-    )
-    ap.add_argument(
         "--response-file",
         default=None,
         help="TEST-ONLY: read the model response from a file instead of calling the model.",
@@ -350,29 +347,19 @@ def main():
     flags = []
 
     # ── Model pass ────────────────────────────────────────────────────────────
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if args.response_file:
         try:
             with open(args.response_file, "r", encoding="utf-8", errors="replace") as fh:
                 raw_responses = [fh.read()]
         except OSError as e:
             return block_on_error("cannot read --response-file: %s" % e, findings)
-        chunks = [added]
-    elif args.transport == "cli":
-        chunks = list(chunk(added, MAX_LINES_PER_CHUNK))
-        raw_responses = []
-        for rows in chunks:
-            try:
-                raw_responses.append(call_model_cli(render_chunk(rows)))
-            except subprocess.TimeoutExpired:
-                return block_on_error("claude CLI timed out after %ss" % TIMEOUT_S, findings)
-            except FileNotFoundError:
-                return block_on_error("`claude` CLI not found on PATH", findings)
-            except Exception as e:
-                return block_on_error("claude CLI failed: %s" % e, findings)
     else:
+        api_key = get_api_key()
         if not api_key:
-            return block_on_error("ANTHROPIC_API_KEY is not set", findings)
+            return block_on_error(
+                "no Google API key (set GEMINI_API_KEY / GOOGLE_AI_STUDIO_API_KEY / GOOGLE_API_KEY)",
+                findings,
+            )
         chunks = list(chunk(added, MAX_LINES_PER_CHUNK))
         raw_responses = []
         for rows in chunks:
@@ -382,7 +369,7 @@ def main():
                 return block_on_error("API HTTP %s" % e.code, findings)
             except urllib.error.URLError as e:
                 return block_on_error("API unreachable: %s" % e.reason, findings)
-            except Exception as e:  # timeout, bad payload, anything
+            except Exception as e:  # timeout, empty/blocked response, bad payload
                 return block_on_error("API call failed: %s" % type(e).__name__, findings)
 
     for raw in raw_responses:

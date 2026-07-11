@@ -25,12 +25,17 @@ name: QC — LLM diff review (fleet-repo leak gate)
 # referenced works · product proper nouns.
 # Opaque infrastructure identifiers and product content are NOT the target.
 #
-# ─── ⚠️ MODEL PROVIDER ────────────────────────────────────────────────────────
-# This job runs in GitHub Actions on OUR OWN repo only. The reviewer does NOT
-# ship into the repo and NEVER executes on a client box — that is the only reason
-# a cheap Anthropic model is correct here.
-# ⚠️ IF THIS IS EVER MOVED ONTO A CLIENT BOX IT MUST BE RE-POINTED AT THE
-#    CLIENT'S OWN PROVIDER — NEVER ANTHROPIC. Client sovereignty is absolute.
+# ─── ✅ MODEL PROVIDER — GOOGLE GEMINI FLASH (never Anthropic) ────────────────
+# The reviewer calls GOOGLE GEMINI FLASH — the fleet's own provider. The fleet
+# does NOT use Anthropic models and holds no Anthropic key, so a prior Anthropic
+# (Haiku) build could never have run. Anthropic is deliberately absent.
+# ⚠️ If this gate is ever run on a CLIENT box it must use the CLIENT's OWN
+#    configured provider — never a provider the client does not own.
+#
+# ─── REQUIRED REPO SECRET ─────────────────────────────────────────────────────
+#   GEMINI_API_KEY  — the Google Generative Language API key (AI Studio key).
+#   Add it under: Settings → Secrets and variables → Actions → New repository secret.
+#   No key -> the gate FAILS CLOSED (BLOCK), never a vacuous pass.
 #
 # FAIL CLOSED: reviewer error / malformed JSON / API error / timeout -> BLOCK.
 
@@ -54,20 +59,20 @@ jobs:
 
       - name: Non-vacuity self-test — prove the reviewer bites, exempts, and fails closed
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
-          # Proves, with real model calls: an EXEMPT diff (CF UUID + AUD tag +
-          # Telegram chat ID + GHL location ID + book persona) PASSES; a client
-          # human name BLOCKS; a pit-/bot token BLOCKS; an opaque hostname PASSES
-          # and is surfaced under flag_for_operator; malformed JSON / API error
-          # BLOCK. A guard that fails open is not a guard.
+          # Proves, with real Gemini Flash calls: an EXEMPT diff (CF UUID + AUD
+          # tag + Telegram chat ID + GHL location ID + book persona) PASSES; a
+          # client human name BLOCKS; a pit-/bot token BLOCKS; an opaque hostname
+          # PASSES and is surfaced under flag_for_operator; malformed JSON / API
+          # error BLOCK. A guard that fails open is not a guard.
           bash tests/fixtures/llm-diff-review/selftest-qc-llm-diff-review.sh
           echo "✓ LLM diff reviewer proven non-vacuous, exempt-safe, and fail-closed"
 
       - name: Review this PR's added lines
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # Passed via env, never interpolated into the shell body — a ${{ }} in a
           # run: block is a command-injection surface. Quote it at point of use.
           BASE_REF: ${{ github.base_ref }}
