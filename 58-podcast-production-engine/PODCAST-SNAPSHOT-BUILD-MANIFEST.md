@@ -400,12 +400,21 @@ NEW (a real typo) — so the just-changed answer was dropped. Fixes (live-verifi
   supporting-optional READ fields; not on the active tracker path).
 
 ### K.6 - OPEN DECISIONS for the operator (flagged, not guessed)
+> **✅ ALL FOUR RESOLVED 2026-07-10 (operator-APPROVED) — applied LIVE on the internal rail
+> against `CjxATjhv9Gt21qSqURIt`, demote-trap-safe, re-GET-verified. Both gates
+> (`scripts/verify-podcast-ghl-workflows.py` + `scripts/verify-podcast-smiq.py`) exit 0 after.
+> See SECTION K.8 for the after-state + evidence.** The original text of each open decision is
+> preserved below for provenance; the resolution follows each item.
 1. **07 vs 02 personal-survey collision:** both `07-2nd Podcast Interview/Survey v2.1` and the v2
    required `02-Podcast Intake Submitted (Personal)` trigger on the SAME personal survey
    `vX5BuhxSeucMHrcKOwEn`. 07 no longer posts production (webhooks removed) so there is no
    double-production today, but if 07 is ever re-pointed at the box it would double-fire.
    Recommend deciding whether 07 stays (CRM/opportunity side-effects only) or its trigger is
    retired in favor of 02. Not changed unilaterally.
+   → **RESOLVED: 07 kept CRM-only, trigger(s) retired.** Both of 07's `survey_submission`
+   triggers (`HM5lUUPFtao0MjgNCOPV`, `LG4QedMbESVeClkvCIqe`) DELETED; workflow re-committed
+   `status:published`, all 13 steps intact, `triggers=[]`. It can no longer double-fire with the
+   required `02` on the personal survey. Re-GET: 0 triggers.
 2. **02/02a completion-tag semantics:** the reminder ladders stop reminding when the contact has
    tag `podcast-survey-submission-completed`. In v2 that tag is applied by 07 (personal), not by
    the required `01` interview intake — so a FB *interview* lead who completes may keep getting
@@ -413,15 +422,61 @@ NEW (a real typo) — so the just-changed answer was dropped. Fixes (live-verifi
    completion (or repointing the ladder check to the canonical `Podcast Completed Survey Style`).
    The ladder MECHANICS are sound (verified: escalating 60m/8h/2d/7d waits; the `goto` steps all
    jump to the completion handler, not a loop; terminal opportunity at day 7).
+   → **RESOLVED: completion tag now applied on INTERVIEW completion.** Added an `add_contact_tag`
+   step (tag `podcast-survey-submission-completed`) to the required **`01-Podcast Intake Submitted
+   (Interview)`** (`e008e027-…`), chained after its intake webhook. WHY 01 (not 04/04a): the FB
+   reminder ladders are "reminder to *complete the interview survey*", and their stop-condition is
+   this tag; a lead is done being reminded the moment they SUBMIT the interview survey
+   `ExAPmAV3Llo0tREenfJy` — which is exactly what fires `01`. This is the clean mirror of `07`,
+   which already applies the same tag on PERSONAL survey submission. (`04`/`04a` fire on
+   *episode-url produced*, which is days later — the wrong semantic point, would leave leads
+   over-reminded meanwhile.) Demote-trap-safe: `01` re-asserted `status:published`, its
+   `survey_submission` trigger stays committed + active, steps 1→2. Re-GET confirms + required-4
+   gate still ALL PASS.
 3. **`{{custom_values.podcast_survey_podcast_title}}`** appears in 02/02a email copy but is not
    among §B's 6 custom values, so it renders empty (cosmetic). Recommend the provisioner set it
    (or map the copy to `podcast_show_name`). Not a fire blocker; 29-step email bodies left intact.
+   → **RESOLVED: remapped to `podcast_show_name`.** All 7 occurrences of
+   `{{custom_values.podcast_survey_podcast_title}}` in **02 Fb Lead didn't complete**
+   (`e8fc8a75-…`) and all 7 in **02a 2nd Fb interview** (`49c56f90-…`) were rewritten to
+   `{{custom_values.podcast_show_name}}` (§B custom value #1, filled at provisioning). Both stay
+   `status:draft` (per §K.3 FB-workflow boundary; verify-smiq still PASS). Re-GET: 0 old refs
+   remain, 7 new refs each. NOTE (flag, out of approved scope, NOT changed): the same copy also
+   references `{{custom_values.podcast_survey_host_name}}`, likewise absent from §B — recommend
+   remapping to `podcast_host_name` in a follow-up.
 4. **04a** (untouched) still fires on the same `podcast_survey_episode_url` change as the required
    `04` and uses the hyphenated tag `podcast-completed-survey-style`; its `internal_notification`
    needs an assigned user. Left as recreated (out of this task's FB/SMIQ scope) — flagged.
+   → **RESOLVED: 04a's duplicate trigger retired.** 04a's `contact_changed` trigger
+   (`d8Qvp8l44XpUNBaOfqDG`, on `contact.podcast_survey_episode_url` field `UQUZa9x80H4JWq52RbmI`)
+   DELETED; workflow re-committed `status:published`, all 13 steps intact, `triggers=[]`. It no
+   longer double-fires with the required `04` on the same episode-url change. Re-GET: 0 triggers.
+   (04a's hyphenated tag + unassigned `internal_notification` are moot while it has no active
+   trigger; left as recreated.)
+
+### K.8 - K.6 RESOLUTION AFTER-STATE (LIVE, verified 2026-07-10)
+Applied on the internal rail (`backend.leadconnectorhq.com`, Firebase-JWT `token-id`), write-guarded
+to NEW `CjxATjhv9Gt21qSqURIt` (OLD `w4A5LiurmAjBbvJOXmyz` read-only; agency `Mct54Bwi1KlNouGXQcDX`
+never touched). Trigger retirement = `DELETE /workflow/{loc}/trigger/{tr}` + re-commit
+`PUT /workflow/{loc}/{wf}` with `newTriggers:[]`. Step-add + copy-edit = `PUT /workflow/{loc}/{wf}`
+re-asserting `status` + `version` + `workflowData.templates` (demote-trap-safe; the required `01`
+also re-asserted `triggersChanged`/trigger `active:true`).
+
+| WF | id | change | after (re-GET) |
+|---|---|---|---|
+| 01 Interview intake (REQUIRED) | `e008e027-…` | +`add_contact_tag` `podcast-survey-submission-completed` | published, 2 steps, 1 active `survey_submission` trigger |
+| 02 Fb Lead didn't complete | `e8fc8a75-…` | merge field →`podcast_show_name` (×7) | draft, 29 steps, 0 old refs |
+| 02a 2nd Fb interview | `49c56f90-…` | merge field →`podcast_show_name` (×7) | draft, 29 steps, 0 old refs |
+| 04a 2nd interview completed | `f3776ba3-…` | `contact_changed` trigger DELETED | published, 13 steps, 0 triggers |
+| 07 2nd Podcast Survey v2.1 | `34c8c3cd-…` | both `survey_submission` triggers DELETED | published, 13 steps, 0 triggers |
+
+Gates after (both exit 0): `verify-podcast-ghl-workflows.py` → required-4 (01/02/04/06) ALL PASS
+(01 now `steps=2`, trigger still active); `verify-podcast-smiq.py` → SMIQ + FB (02/02a still
+draft+clean) + pipeline + 07 (no dead endpoint) ALL PASS.
 
 ### K.7 - Snapshot note
-This work lands AFTER the v1 golden snapshot (`IEmFFkIngiskcfJk9MH6`); it ships only on a v2
-re-cut from `CjxATjhv9Gt21qSqURIt`. Per operator doctrine the operator re-syncs the SAME snapshot
-id after the re-cut. Repo changes are branch-only pending QC >= 8.5 (single-writer onboarding
-train); the repo version roll + fleet rollout are deferred to the train, not done per-fix.
+This work — **including the four §K.6/§K.8 resolutions** — lands AFTER the v1 golden snapshot
+(`IEmFFkIngiskcfJk9MH6`); it ships only on a v2 re-cut from `CjxATjhv9Gt21qSqURIt`. Per operator
+doctrine the operator re-syncs the SAME snapshot id (`IEmFFkIngiskcfJk9MH6`) after the re-cut.
+Repo changes are branch-only pending QC >= 8.5 (single-writer onboarding train); the repo version
+roll + fleet rollout are deferred to the train, not done per-fix.
