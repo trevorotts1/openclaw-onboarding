@@ -17,7 +17,8 @@
     "handoff_threshold_pct": 85,
     "handoff_target": "box_own_agent",
     "operator_alert_only_on": "broken_config",
-    "_locked": "D5: running-low (>=70 note, >=85 handoff) is a LOCAL matter routed to the BOX'S OWN agent so it self-handles (handoff/memory flush). The OPERATOR is alerted ONLY for the broken-config case (effective ceiling <= 0, or softThresholdTokens >= contextWindow) - a crash-no-matter-what only the operator can repair."
+    "operator_self_notify": true,
+    "_locked": "D5: running-low (>=70 note, >=85 handoff) is a LOCAL matter routed to the BOX'S OWN agent so it self-handles (handoff/memory flush). The OPERATOR is alerted ONLY for the broken-config case (effective ceiling <= 0, or softThresholdTokens >= contextWindow) - a crash-no-matter-what only the operator can repair. NARROW EXCEPTION (approved, scoped to the OPERATOR'S OWN BOX ONLY - Trevor's box, never a client box): when `operator_self_notify` is true (default), an S3|handoff finding ALSO sends ONE deduped, plain-language self-notice to the operator's own chat ('your assistant's working memory is N% full...'), because on that one box the finding's SUBJECT and the operator are the same person - it is the owner's own session health, not an ops alert about someone else's box. This is gated STRUCTURALLY in code on the box's own ledger role meta being 'operator' (ews_alert.py route_finding, Lane 2), never on this flag alone; flipping this flag can only turn the notice OFF on the operator box, it can never turn it ON for a client box. Everything else in this skill stays client-silent, unchanged."
   },
   "alert": {
     "dedup_window_hours": 6,

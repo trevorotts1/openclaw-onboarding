@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -118,18 +119,79 @@ def _box_agent_text(box, finding):
             % (box, finding["signal"], finding.get("detail") or ""))
 
 
+def _owner_notice_text(finding):
+    """Lane 2 plain-language text (D5 narrow exception, operator-box only) -
+    no jargon, no key paths, just what the OWNER of that one box needs to know
+    about their OWN session."""
+    m = re.search(r"(\d+)\s*%", finding.get("detail") or "")
+    pct_phrase = ("%s%%" % m.group(1)) if m else "very"
+    return ("Your assistant's working memory is %s full. It will wrap up cleanly "
+            "and start a fresh session to stay sharp." % pct_phrase)
+
+
+# --------------------------------------------------------------------------- #
+# D3 fix: a reader for the box's own agent notices (box-agent-notices.jsonl
+# previously had NO consumer anywhere in the repo - a pure dead end). This
+# gives the box's OWN agent (never the operator, never a client) a
+# deterministic, at-most-once way to pull pending self-notices, e.g. at its own
+# heartbeat or session-start turn. The read cursor is tracked the SAME way
+# every other tailed stream in this skill is tracked - an ews_ledger offset row
+# - so there is still exactly ONE state writer (ews_ledger.Ledger), per
+# SKILL.md doctrine; this reader never opens the notices file for writing.
+# --------------------------------------------------------------------------- #
+_NOTICES_OFFSET_KEY = "box-agent-notices"
+
+
+def read_box_agent_notices(state_dir=None, mark_read=True, max_bytes=1_000_000):
+    """Return the list of NEW (unread) box-agent notices since the last read,
+    oldest first. Each item is exactly the JSON row route_finding's box_agent
+    branch wrote. When mark_read is True (the default - the box's own agent
+    calling this for real), the read offset advances so the same notice is
+    never re-served. Pass mark_read=False to PEEK without consuming (drills,
+    diagnostics, `ews-entry.sh notices --peek`)."""
+    with Ledger(state_dir) as led:
+        path = led.state_dir / "box-agent-notices.jsonl"
+        if not path.is_file():
+            return []
+        size = path.stat().st_size
+        off = led.get_offset(_NOTICES_OFFSET_KEY)
+        if off > size:
+            off = 0  # file rotated/truncated
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            fh.seek(off)
+            data = fh.read(max_bytes)
+            new_off = fh.tell()
+        out = []
+        for line in data.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        if mark_read:
+            led.set_offset(_NOTICES_OFFSET_KEY, new_off)
+        return out
+
+
 # --------------------------------------------------------------------------- #
 # route one finding (the function the sentinel calls)
 # --------------------------------------------------------------------------- #
 def route_finding(finding, state_dir=None, sender=None, dry_run=False):
     """Decide + (maybe) send one finding. Returns True iff a send actually happened.
-    box_agent findings NEVER reach the operator. Operator findings dedup by
-    (signal, dedup_key) within the window and honor the daily storm cap (P1 bypasses
-    the batch, not the dedup)."""
+    box_agent findings NEVER reach the operator, with ONE narrow, approved
+    exception (Lane 2 below): on the OPERATOR's OWN box only, an S3 handoff
+    finding also sends the operator a plain-language self-notice, because on
+    that one box the finding's SUBJECT and the operator are the same person -
+    it is the owner's own session health, not an ops alert about someone
+    else's box. Operator findings dedup by (signal, dedup_key) within the
+    window and honor the daily storm cap (P1 bypasses the batch, not the
+    dedup)."""
     sender = sender or _gateway_sender
-    th = C.load_skill_config("thresholds.json").get("alert", {})
-    window = th.get("dedup_window_hours", 6)
-    cap = th.get("max_operator_alerts_per_box_per_day", 4)
+    th_alert = C.load_skill_config("thresholds.json").get("alert", {})
+    window = th_alert.get("dedup_window_hours", 6)
+    cap = th_alert.get("max_operator_alerts_per_box_per_day", 4)
 
     with Ledger(state_dir) as led:
         box = _box_name(led)
@@ -152,7 +214,33 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
             except OSError:
                 pass
             led.record_digest("box_agent", dedup_key, payload="routed to box's own agent (deliver:false)")
-            return False  # not an operator SEND; the box's agent self-handles
+
+            # --- Lane 2: NARROW D5 doctrine exception (approved), scoped
+            # STRUCTURALLY to the operator's own box only. `role` is read from
+            # THIS box's own ledger meta (the same field S1/S2 already use to
+            # tell an operator box from a client box); a client box can never
+            # satisfy this check regardless of the config flag below, because
+            # its role meta is "client", never "operator" - the flag can only
+            # turn Lane 2 OFF on the operator box, never ON for a client box.
+            role = led.get_meta("role", "client")
+            th_ctx = C.load_skill_config("thresholds.json").get("context", {})
+            lane2_on = bool(th_ctx.get("operator_self_notify", True))
+            is_handoff = str(finding.get("dedup_key") or "").endswith("S3|handoff")
+            if role == "operator" and lane2_on and is_handoff:
+                lane2_key = "lane2_owner|%s" % dedup_key
+                if led.recent_digest(lane2_key, window) is None:
+                    target = _first_env(_OPERATOR_TARGET_ENV)
+                    if target:
+                        if dry_run:
+                            led.record_digest("owner_notice", lane2_key,
+                                              payload="DRY-RUN (no gateway call)")
+                        else:
+                            text2 = _owner_notice_text(finding)
+                            ok2, detail2 = sender(_OPERATOR_ACCOUNT, target, text2)
+                            led.record_digest("owner_notice" if ok2 else "owner_notice_failed",
+                                              lane2_key,
+                                              payload="%s target=%s" % (detail2, _mask(target)))
+            return False  # not an operator SEND (in the S3-alert sense); the box's agent self-handles
 
         # operator route
         target = _first_env(_OPERATOR_TARGET_ENV)
@@ -221,6 +309,8 @@ def _cli(argv=None):
     sp.add_argument("--dry-run", action="store_true")
     sp = sub.add_parser("escalate", help="escalate unacked P1s to Rescue Rangers")
     sp.add_argument("--dry-run", action="store_true")
+    sp = sub.add_parser("notices", help="read (and consume) the box's own pending self-notices")
+    sp.add_argument("--peek", action="store_true", help="do not advance the read offset")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
@@ -234,6 +324,10 @@ def _cli(argv=None):
     if args.cmd == "escalate":
         out = escalate(sd, dry_run=args.dry_run)
         _emit({"ok": True, "escalated": out})
+        return EX_OK
+    if args.cmd == "notices":
+        out = read_box_agent_notices(sd, mark_read=not args.peek)
+        _emit({"ok": True, "notices": out})
         return EX_OK
     ap.error("a subcommand is required (or use --self-test)")
 
@@ -276,6 +370,76 @@ def self_test():
         notices = Path(os.environ["EWS_STATE_DIR"]) / "box-agent-notices.jsonl"
         assert notices.is_file() and "context at 90%" in notices.read_text()
         print("  D5 box-agent case: PASS (self-notice written; operator NOT contacted)")
+
+        # Lane 2 (D5 narrow exception, approved, operator box ONLY): an
+        # S3|handoff finding on the OPERATOR's own box ALSO sends ONE
+        # plain-language self-notice, because on that one box the finding's
+        # subject and the operator are the same person.
+        with Ledger() as led_role:
+            led_role.set_meta("role", "operator")
+        fh1 = F("S3", "P2", "context.usage", "compaction",
+               "context at 87% of the effective ceiling - recommend a proactive "
+               "handoff / new session NOW while context remains",
+               route="box_agent", dedup_key="S3|handoff")
+        before = len(sent_log)
+        assert route_finding(fh1, sender=fake_sender) is False  # still not an "operator S3 send"
+        lane2_sends = sent_log[before:]
+        assert len(lane2_sends) == 1, lane2_sends
+        assert lane2_sends[0]["account"] == "operator" and lane2_sends[0]["target"] == "9999operator"
+        assert "working memory" in lane2_sends[0]["text"] and "87%" in lane2_sends[0]["text"]
+        print("  Lane-2 owner-notice case: PASS (operator box, S3|handoff -> ONE plain-language self-notice)")
+
+        # the reader (D3 fix): pending notices are consumable exactly once
+        pending = read_box_agent_notices()
+        assert len(pending) >= 1
+        assert read_box_agent_notices() == []  # second read: nothing new, at-most-once
+        print("  notices-reader case: PASS (pending self-notices consumed at-most-once)")
+
+        # a NOTE-level (70%, not handoff) box_agent finding never triggers Lane 2
+        fn = F("S3", "P3", "context.usage", "compaction", "context at 73% (note)",
+              route="box_agent", dedup_key="S3|note")
+        before2 = len(sent_log)
+        route_finding(fn, sender=fake_sender)
+        assert len(sent_log) == before2  # no new send
+        print("  Lane-2 note-vs-handoff case: PASS (70% note never sends Lane 2, only 85% handoff)")
+
+        # the IDENTICAL finding shape on a CLIENT box NEVER sends Lane 2 - the
+        # D5 doctrine boundary must not leak (distinct dedup key so the outer
+        # per-route dedup can't mask the role check itself)
+        with Ledger() as led_role:
+            led_role.set_meta("role", "client")
+        fh2 = F("S3", "P2", "context.usage", "compaction",
+               "context at 91% of the effective ceiling - recommend a proactive "
+               "handoff / new session NOW while context remains",
+               route="box_agent", dedup_key="client-box|S3|handoff")
+        before3 = len(sent_log)
+        assert route_finding(fh2, sender=fake_sender) is False
+        assert len(sent_log) == before3  # NOT sent - client box, structurally excluded
+        print("  Lane-2 client-box case: PASS (D5 exception NEVER fires on a client box)")
+
+        # operator_self_notify:false suppresses Lane 2 even ON the operator box
+        with Ledger() as led_role:
+            led_role.set_meta("role", "operator")
+        real_load = C.load_skill_config
+
+        def _lane2_off(name):
+            data = real_load(name)
+            if name == "thresholds.json":
+                data = json.loads(json.dumps(data))
+                data.setdefault("context", {})["operator_self_notify"] = False
+            return data
+        C.load_skill_config = _lane2_off
+        try:
+            fh3 = F("S3", "P2", "context.usage", "compaction",
+                   "context at 88% of the effective ceiling - recommend a proactive "
+                   "handoff / new session NOW while context remains",
+                   route="box_agent", dedup_key="notify-off|S3|handoff")
+            before4 = len(sent_log)
+            route_finding(fh3, sender=fake_sender)
+            assert len(sent_log) == before4  # Lane 2 OFF -> no send even on the operator box
+        finally:
+            C.load_skill_config = real_load
+        print("  Lane-2 opt-out case: PASS (operator_self_notify:false suppresses Lane 2)")
 
         # storm cap: after `cap` operator alerts, a NON-P1 defers but a P1 bypasses
         # (use distinct dedup keys so dedup doesn't hide the cap behavior)

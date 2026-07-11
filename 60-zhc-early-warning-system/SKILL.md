@@ -30,6 +30,14 @@ anything, and (by default) not an auto-healer.
    OWN OpenClaw gateway to the OPERATOR account, with `deliver:false` semantics on
    any agent-loop injected event. The client's bot, chats, and Telegram account are
    never recipients. Move in silence toward clients is structural here, not policy.
+   ONE narrow, approved exception: on the OPERATOR's OWN box only (never a client
+   box), S3's 85%-handoff case ALSO sends the operator a plain-language self-notice
+   about that box's own context health (Lane 2, `context.operator_self_notify`) --
+   because on that one box the finding's subject and the operator are the same
+   person. It is gated structurally on the box's own ledger `role` meta being
+   `"operator"` in code (`ews_alert.py route_finding`), never on a config flag
+   alone, so it cannot be misconfigured onto a client box. Every other D5 case and
+   every other signal in this skill stays exactly as client-silent as before.
 3. NEVER print, echo, grep, or paste a secret VALUE. Credentials are reported by
    LABEL and POSTURE only (SET / NOT SET / signed-in / signed-out). A leaked-secret
    finding reports file:line and CLASS only; the value is never reproduced, not even
@@ -72,7 +80,7 @@ anything, and (by default) not an auto-healer.
 |---|---|---|---|
 | S1 | Model / provider config drift vs pinned baseline | `openclaw.json` model keys, diffed each tick | P2, P1 on a client box for a `claude-*` / `anthropic/*` / paid-tier change |
 | S2 | Runtime fallback (ground truth) | trajectory `modelId`/`provider` per event | P2, P1 for out-of-allowlist paid/Anthropic-family on a client box |
-| S3 | Context vs compaction | live usage vs effective ceiling (contextWindow minus SUBTRACTIVE `softThresholdTokens`) | broken-config = P1 to OPERATOR; running-low = to the BOX'S OWN agent (D5), not the operator |
+| S3 | Context vs compaction | live usage (`_context_usage()`, off the newest trajectory file) vs effective ceiling (contextWindow minus SUBTRACTIVE `softThresholdTokens`) | broken-config = P1 to OPERATOR; running-low = to the BOX'S OWN agent (D5), not the operator, EXCEPT the operator's own box also self-notifies at 85% (Lane 2, narrow approved exception) |
 | S4 | Safety-cap raise (never-silently) | enumerated cap keys vs baseline + approval stamp | P1 on an unstamped RAISE; ALERT-ONLY (D2), emits a revert |
 | S5 | Furnace / idle-burn (hybrid, billing-aware) | heartbeat cadence/model, cron inventory, idle paid-model activity, per-box BILLING MODEL | P1 idle burn; framed as usage-consumed vs dollars-spent per billing type (D9) |
 | S6 | Config-write hygiene + reversibility | `config-audit.jsonl` tail + ownership stat | P1 root-owned; SNAPSHOT on every write |
@@ -102,7 +110,8 @@ id, revert command text), `baseline_stamps` (S4 approval records), `digests`
 | Never silently raise a safety limit | `ews_baseline.py` approval stamp + `ews_sentinel.py` S4 (unstamped raise = P1) |
 | Configuration changes are backed up and reversible | `ews_snapshot.py` (snapshot on every write) + `ews_revert.py` (restore as box user, byte read-back) |
 | Model / fallback switches are detected | `ews_sentinel.py` S1 (config) + S2 (trajectory ground truth) |
-| A handoff is requested while context remains | `ews_sentinel.py` S3 (70/85% thresholds; running-low to the box's own agent, D5) |
+| A handoff is requested while context remains | `ews_sentinel.py` S3 (`_context_usage()` feeds live 70/85% thresholds; running-low to the box's own agent, D5) |
+| The box's own agent can actually see its self-notices | `ews_alert.py read_box_agent_notices()` / `ews-entry.sh notices` (D3 fix: `box-agent-notices.jsonl` previously had no reader) |
 | Operator-only, never client-facing | `ews_alert.py` (gateway-only, operator account, dedup, `deliver:false`) |
 | Zero Anthropic at runtime | vacuous at runtime + `guard-no-anthropic-runtime.py` at the merge gate |
 | No secret value ever printed | `scan-no-secrets.sh` class detector reused everywhere; alerts carry class only |
