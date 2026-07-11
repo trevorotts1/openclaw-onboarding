@@ -135,7 +135,7 @@ class TestExactNameMode:
     def test_cli_exact_name_flag_wires_through(self, monkeypatch, tmp_path):
         seen = {}
 
-        def _fake_build(task, evidence_root, *, dry_run=True):
+        def _fake_build(task, evidence_root, *, dry_run=True, state=None):
             seen.update(task)
             seen["_dry_run"] = dry_run
             return {"location_gate_ok": True}
@@ -153,7 +153,7 @@ class TestExactNameMode:
     def test_cli_default_has_no_exact_name(self, monkeypatch, tmp_path):
         seen = {}
 
-        def _fake_build(task, evidence_root, *, dry_run=True):
+        def _fake_build(task, evidence_root, *, dry_run=True, state=None):
             seen.update(task)
             return {"location_gate_ok": True}
 

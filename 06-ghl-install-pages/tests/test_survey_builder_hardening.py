@@ -312,8 +312,10 @@ def test_preflight_rest_gate_passes_with_valid_receipt(tmp_path):
 
 # ═══════════════ 5. VERSION ═══════════════
 
-def test_builder_version_is_1_4_0():
-    assert sb.SURVEY_BUILDER_VERSION == "v1.4.0"
+def test_builder_version_is_1_5_0():
+    # v1.5.0 lands U6 (survey-URL fetch-200 receipt, no screenshot fallback),
+    # U8 (phase-granular --resume), and U10 (uniform RUN REPORT).
+    assert sb.SURVEY_BUILDER_VERSION == "v1.5.0"
 
 
 def test_skill_version_lockstep():

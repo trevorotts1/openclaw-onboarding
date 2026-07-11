@@ -48,6 +48,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import urllib.error
@@ -1860,6 +1861,7 @@ def captured_gates(gates_path: str | None = None) -> list[dict]:
 # ── CLI (mechanical helpers the agent shells out to) ─────────────────────────
 
 def main() -> int:
+    _MAIN_STARTED[0] = time.monotonic()
     # `browser-cmd` is intercepted BEFORE argparse so pass-through flags like
     # --session / -i reach the emitted agent-browser line verbatim (argparse
     # would otherwise treat them as unknown options of THIS program).
@@ -1896,6 +1898,72 @@ def main() -> int:
             )
         return 0
 
+    # U10 — every Skill-6 builder emits the uniform RUN REPORT at exit. The two
+    # fast paths ABOVE (`browser-cmd` / `browser-session`) deliberately do NOT: they
+    # are per-command emitters the OTHER builders shell out to in tight loops, not
+    # runs, and a run report per emitted click would bury the log it exists to make
+    # readable. Everything below is a subcommand an operator types.
+    rc = _main_subcommands()
+    _emit_builder_run_report(rc)
+    return rc
+
+
+def _emit_builder_run_report(rc: int) -> None:
+    """RUN REPORT for ghl_builder's operator subcommands (U10), on stderr.
+
+    ghl_builder is the mechanical-helper CLI, not an object builder — its unit of
+    work is a subcommand, not a phase walk. But it DOES own the funnel-page run
+    ledger (`ledger_write` / `resume_point`, keyed by run_id), so when the
+    subcommand carries a run_id the resume row is that ledger's real resume
+    command. For the stateless helpers (zhc, gates, verify…) the exact command just
+    run IS the way to run it again — those subcommands are pure, so re-running one
+    is the honest 'resume'.
+    """
+    try:
+        _td = os.path.dirname(os.path.abspath(__file__))
+        if _td not in sys.path:
+            sys.path.insert(0, _td)
+        import ghl_run_state
+    except Exception:  # noqa: BLE001 - never let the report break the command
+        return
+
+    argv = sys.argv[1:]
+    cmd = argv[0] if argv else "(none)"
+    run_id = ""
+    resume_cmd = ""
+    if cmd == "resume" and len(argv) >= 3:
+        run_id = argv[1]
+        resume_cmd = " ".join(shlex.quote(x) for x in
+                              [sys.executable, os.path.abspath(__file__),
+                               "resume", argv[1], argv[2]])
+    elif cmd == "ledger-write" and len(argv) >= 2:
+        run_id = argv[1]
+        resume_cmd = (f"{shlex.quote(sys.executable)} "
+                      f"{shlex.quote(os.path.abspath(__file__))} resume "
+                      f"{shlex.quote(run_id)} <manifest_path>")
+    else:
+        resume_cmd = " ".join(shlex.quote(x) for x in
+                              [sys.executable, os.path.abspath(__file__), *argv])
+
+    status = (ghl_run_state.STATUS_OK if rc == 0 else ghl_run_state.STATUS_FAILED)
+    ghl_run_state.emit_run_report(
+        builder="ghl_builder",
+        run_id=run_id,
+        status=status,
+        dry_run=False,
+        evidence_root=(os.path.join("/tmp", run_id) if run_id else ""),
+        duration_s=time.monotonic() - _MAIN_STARTED[0],
+        script_path=__file__,
+        error="" if rc == 0 else f"exit code {rc}",
+        extra_rows={"subcommand": cmd},
+        resume_cmd=resume_cmd,
+    )
+
+
+_MAIN_STARTED = [0.0]
+
+
+def _main_subcommands() -> int:
     ap = argparse.ArgumentParser(description="GoHighLevel builder mechanical helpers")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

@@ -70,6 +70,29 @@ except Exception:  # noqa: BLE001
 
 # ── shared selector/receipt layer (owned by ghl_community_builder) ────────────
 import ghl_community_builder as _cb  # type: ignore
+
+# U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
+import ghl_run_state  # noqa: E402
+from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
+# ── U8: the course builder's declared phase walk ────────────────────────────────
+# The course builder ALREADY had the skill's only resume — a per-LESSON receipt
+# skip inside M4 (`_resume_done_lessons`). That is FINER than a phase, and it is
+# kept exactly as it was: `--resume` with no run id still means "skip lessons
+# already receipted". What is new is the run-id-keyed PHASE ledger around it, so
+# the course builder reports the same RUN REPORT and takes the same
+# `--resume <run_id>` as every other builder — with the lesson-level skip still
+# doing the fine-grained work inside M4.
+# Sentinel for a BARE `--resume` (legacy: lesson-receipt skip, no run id). It must
+# not collide with any real run id, hence the spaces.
+_RESUME_LESSONS_ONLY = "__lessons_only__"
+
+COURSE_PHASES: List[PhaseSpec] = [
+    PhaseSpec("plan",       "course plan (THINK)", resumable=False),
+    PhaseSpec("preflight",  "preflight gate",      resumable=False),
+    PhaseSpec("click_list", "click list",          resumable=False),
+    PhaseSpec("m_walk",     "M1–M5 — create course + modules + lessons (per-lesson resume)"),
+]
 anchor = _cb.anchor
 load_selectors = _cb.load_selectors
 _receipt = _cb._receipt
@@ -467,15 +490,19 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 # Main entry
 # ---------------------------------------------------------------------------
 def build_course(task: dict, evidence_root: str, *, dry_run: bool = True,
-                 resume: bool = False) -> dict:
+                 resume: bool = False,
+                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
+    # A run-id resume implies the lesson-level skip too: re-walking a lesson that
+    # already has a receipt would just duplicate it.
+    resume = bool(resume or task.get("resume") or (state is not None and state.doc.get("attempts", 1) > 1))
     os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
 
-    plan = plan_course(task)
-    preflight = _preflight(plan)
-    click_list = emit_click_list(plan)
+    plan = run_phase(state, "plan", lambda: plan_course(task), log=_log)
+    preflight = run_phase(state, "preflight", lambda: _preflight(plan), log=_log)
+    click_list = run_phase(state, "click_list", lambda: emit_click_list(plan), log=_log)
     _write_json(os.path.join(evidence_root, "routing", "course-plan.json"), plan)
     _write_json(os.path.join(evidence_root, "routing", "course-click-list.json"), click_list)
     _write_json(os.path.join(evidence_root, "routing", "course-preflight.json"), preflight)
@@ -493,7 +520,8 @@ def build_course(task: dict, evidence_root: str, *, dry_run: bool = True,
                 "plan": plan, "click_list": click_list, "preflight": preflight,
                 "tier_disclosure": disclosure, "dry_run": True}
 
-    return _live_build(task, plan, click_list, preflight, evidence_root, started, resume)
+    return run_phase(state, "m_walk", lambda: _live_build(
+        task, plan, click_list, preflight, evidence_root, started, resume), log=_log)
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +677,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     g.add_argument("--dry-run", action="store_true", default=True)
     g.add_argument("--no-dry-run", dest="dry_run", action="store_false")
     p.add_argument("--selftest", action="store_true")
-    p.add_argument("--resume", action="store_true", help="Skip lessons already receipted")
+    # BACKWARDS-COMPATIBLE --resume (U8). Bare `--resume` keeps its original
+    # meaning — "skip lessons already receipted in --evidence-root" — so every
+    # existing invocation behaves exactly as before. `--resume <run_id>` is the new
+    # uniform form: it reopens that run's PHASE ledger (and still skips the
+    # already-receipted lessons inside M4).
+    p.add_argument("--resume", nargs="?", const=_RESUME_LESSONS_ONLY, default="",
+                   metavar="RUN_ID",
+                   help="Bare: skip lessons already receipted (legacy behaviour). "
+                        "With a RUN_ID: resume that run's phase ledger as well.")
+    p.add_argument("--run-id", metavar="RUN_ID", default="",
+                   help="Force this run's id (default: generated).")
+    p.add_argument("--state-root", metavar="DIR", default=ghl_run_state.default_state_root(),
+                   help="Where per-run phase state is stored "
+                        f"(default: {ghl_run_state.default_state_root()}).")
+    p.add_argument("--stop-after-phase", metavar="PHASE", default="",
+                   help="Stop cleanly AFTER this phase completes; resume with --resume.")
     p.add_argument("--evidence-root", default="/tmp/course-run-01")
     p.add_argument("--course-name", default="New Course")
     p.add_argument("--location-id", default=os.environ.get("GHL_LOCATION_ID", ""))
@@ -657,13 +700,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = p.parse_args(argv)
     if args.selftest:
         return _selftest()
+
+    # Split the two meanings of --resume apart before anything else looks at it.
+    lessons_only = (args.resume == _RESUME_LESSONS_ONLY)
+    run_id_to_resume = "" if lessons_only else (args.resume or "")
+    args.resume = run_id_to_resume     # what ghl_run_state.cli_run reads
+
     task: Dict[str, Any] = {"course_name": args.course_name, "location_id": args.location_id}
     if args.plan_json and os.path.isfile(args.plan_json):
         with open(args.plan_json, encoding="utf-8") as fh:
             task.update(json.load(fh))
-    result = build_course(task, args.evidence_root, dry_run=args.dry_run, resume=args.resume)
-    print(json.dumps(result, indent=2, default=str))
-    return 0 if result.get("ok", True) else 1
+    if lessons_only:
+        task["resume"] = True
+
+    return ghl_run_state.cli_run(
+        args, builder="ghl_course_builder", specs=COURSE_PHASES,
+        script_path=__file__, task=task, build=build_course,
+        ok_key="ok", url_key="preview_url",
+        argv=list(argv if argv is not None else sys.argv[1:]),
+    )
 
 
 if __name__ == "__main__":
