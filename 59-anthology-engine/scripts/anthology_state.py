@@ -64,7 +64,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -151,6 +151,38 @@ MIN_CHAPTERS_FLOOR = 2      # S9 ready-trigger floor (PRD 3.11); configurable up
 
 # A participant counts as "done and frozen, awaiting assembly" at these cursors.
 APPROVED_CURSORS = ("approved", "delivered")
+
+# ---------------------------------------------------------------------------
+# E8: stuck non-terminal-job detection. A participant cursor is one of three
+# kinds, and only ONE of them is a "should move fast, alert if it doesn't" state:
+#   TERMINAL           delivered                            -> never stale
+#   HOLD/EXCEPTION      held, exception                      -> already alerted
+#                       (hold_queue.py / exceptions.py own that path)
+#   GATE (human-wait)   s1_gate, s2_gate, s3_gate,            -> already covered:
+#                       s4_gate_producer, s4_gate_participant,   nudge_send.py's
+#                       s5_gate                                  renudge-sweep
+#                                                                 (7-day
+#                                                                 stuck-renudge)
+#   MACHINE (stage-runner-owned) -- everything else in STAGE_CURSORS. A stage
+#   runner is expected to advance these within a run; a row whose updated_at has
+#   not moved in stale_job_alert_hours is a crashed/hung stage runner, not a
+#   legitimate wait. s9_wait_assembly and approved wait on SIBLING participants
+#   plus a producer sign-off (a genuinely long, non-anomalous group wait), so
+#   they default to the SAME 7-day threshold this engine already uses for
+#   "stuck" (nudge_send.py DEFAULT_RENUDGE_DAYS) rather than the 24h default
+#   used for a true single-participant machine step.
+# ---------------------------------------------------------------------------
+STALE_SWEEP_GATE_CURSORS = frozenset({
+    "s1_gate", "s2_gate", "s3_gate", "s4_gate_producer", "s4_gate_participant", "s5_gate",
+})
+STALE_SWEEP_TERMINAL_CURSORS = frozenset({"delivered"})
+STALE_SWEEP_HOLD_CURSORS = frozenset({"held", "exception"})
+STALE_SWEEP_EXCLUDED_CURSORS = (
+    STALE_SWEEP_GATE_CURSORS | STALE_SWEEP_TERMINAL_CURSORS | STALE_SWEEP_HOLD_CURSORS
+)
+STALE_SWEEP_GROUP_WAIT_CURSORS = frozenset({"s9_wait_assembly", "approved"})
+DEFAULT_STALE_JOB_ALERT_HOURS = 24.0
+DEFAULT_STALE_JOB_ALERT_HOURS_GROUP_WAIT = 168.0  # 7 days; matches DEFAULT_RENUDGE_DAYS
 
 # ---------------------------------------------------------------------------
 # THE LEGAL TRANSITION MATRIX (SPEC 7.3 / data-model-design.md Section 4).
@@ -1756,12 +1788,75 @@ def cmd_get_artifact(led: Ledger, a):
     return out
 
 
+def _parse_updated_at(raw):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
+def cmd_stale_cursors(led: Ledger, a):
+    """READ-ONLY (E8): non-terminal, non-held, non-gate participant cursors whose
+    updated_at is older than the (optionally per-status) threshold. A stage-runner-
+    owned cursor sitting still this long is a crashed/hung stage runner; the *_gate
+    cursors are excluded (nudge_send.py's own 7-day stuck-renudge already owns that
+    human-wait path), and s9_wait_assembly/approved default to a longer group-wait
+    threshold (nothing here is a legitimate machine step for them). Alert-only: this
+    subcommand never mutates a row."""
+    default_hours = float(a.default_hours) if getattr(a, "default_hours", None) is not None \
+        else DEFAULT_STALE_JOB_ALERT_HOURS
+    by_status = _loads(getattr(a, "by_status_hours_json", None), {}) or {}
+    if not isinstance(by_status, dict):
+        raise _invalid("--by-status-hours-json must be a JSON object")
+    anthology_filter = getattr(a, "anthology_id", None)
+
+    now = datetime.now(timezone.utc)
+    sql = ("SELECT participant_key, anthology_id, stage_cursor, updated_at "
+           "FROM participants")
+    params = ()
+    if anthology_filter:
+        sql += " WHERE anthology_id = ?"
+        params = (anthology_filter,)
+    rows = led.conn.execute(sql, params).fetchall()
+
+    stale = []
+    for row in rows:
+        cursor = row["stage_cursor"]
+        if cursor is None or cursor in STALE_SWEEP_EXCLUDED_CURSORS:
+            continue
+        since = _parse_updated_at(row["updated_at"])
+        if since is None:
+            continue
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        age_hours = (now - since).total_seconds() / 3600.0
+        threshold = by_status.get(cursor)
+        if threshold is None:
+            threshold = (DEFAULT_STALE_JOB_ALERT_HOURS_GROUP_WAIT
+                        if cursor in STALE_SWEEP_GROUP_WAIT_CURSORS else default_hours)
+        threshold = float(threshold)
+        if age_hours >= threshold:
+            stale.append({
+                "participant_key": row["participant_key"],
+                "anthology_id": row["anthology_id"],
+                "stage_cursor": cursor,
+                "updated_at": row["updated_at"],
+                "age_hours": round(age_hours, 2),
+                "threshold_hours": threshold,
+            })
+
+    return {"ok": True, "action": "stale-cursors", "read_only": True,
+            "default_hours": default_hours, "stale_count": len(stale), "stale": stale}
+
+
 # ===========================================================================
 # CLI
 # ===========================================================================
 # Handlers that MUTATE (go through commit_write) vs read-only (no base flush).
 _READ_ONLY = {"assembly-readiness-report", "export-bundle", "bootstrap",
-              "get-participant", "get-anthology", "get-artifact"}
+              "get-participant", "get-anthology", "get-artifact", "stale-cursors"}
 
 
 def build_parser():
@@ -1924,6 +2019,16 @@ def build_parser():
             "READ-ONLY: the latest artifact row of one type for a participant")
     s.add_argument("--participant-key", required=True)
     s.add_argument("--type", required=True)
+
+    s = add("stale-cursors", cmd_stale_cursors,
+            "READ-ONLY (E8): non-terminal, non-held, non-gate participant cursors "
+            "past their age threshold (alert-only; never mutates)")
+    s.add_argument("--anthology-id", help="restrict to one anthology (default: all)")
+    s.add_argument("--default-hours", dest="default_hours", type=float,
+                   help="override the default stale threshold in hours (default %s)"
+                        % DEFAULT_STALE_JOB_ALERT_HOURS)
+    s.add_argument("--by-status-hours-json", dest="by_status_hours_json",
+                   help="JSON object of stage_cursor -> hours overrides")
 
     add("selftest", None, "run the in-process acceptance battery (temp DB)")
     return p
@@ -2297,6 +2402,114 @@ def run_selftest():
     expect("reconcile mirror-only", ["reconcile-mirror"], 0)
     expect("export bundle", ["export-bundle", "--anthology-id", "anthA",
                             "--out", str(tmp / "bundle.json")], 0)
+
+    # ---- E8: stale-cursors (read-only stuck-job sweep) -----------------------
+    # p6 sits at a MACHINE cursor (s1_avatar); backdate it 30h -> stale (>24h default).
+    # p7 sits at the SAME machine cursor, left fresh -> never flagged.
+    # p1 is TERMINAL (delivered, from the happy path above); backdate it 999h anyway
+    #   -> still never flagged (terminal is excluded regardless of age).
+    # p9 is parked at a GATE cursor (s1_gate: advanced in, never yet approved);
+    #   backdate it 999h -> still never flagged (nudge_send.py's own 7-day
+    #   stuck-renudge owns that human-wait path, not this sweep). NOTE: p2 (above)
+    #   is NOT a gate-cursor example -- record-approval's 'exclude' decision owns
+    #   no GATE_EDGE, so it never moves the cursor off whatever it already was
+    #   (p2 is left at its s0_intake default, itself a useful second machine-cursor
+    #   fixture, exercised separately below).
+    # p8 sits at s9_wait_assembly (a GROUP-WAIT cursor); backdate it 30h -> NOT
+    #   flagged under the default threshold because it uses the longer 168h
+    #   group-wait default, proving the per-cursor default actually differs.
+    # (p3/p4/p5 and contacts c3-c5 are already in use above -- fresh contact ids
+    # c6-c9 avoid colliding with the earlier S9-guard-matrix participants.)
+    expect("participant p6", ["upsert-participant", "--contact-id", "c6",
+                             "--anthology-id", "anthA", "--first-name", "Cy2"], 0)
+    expect("participant p7", ["upsert-participant", "--contact-id", "c7",
+                             "--anthology-id", "anthA", "--first-name", "Dee2"], 0)
+    expect("participant p8", ["upsert-participant", "--contact-id", "c8",
+                             "--anthology-id", "anthA", "--first-name", "Fen2"], 0)
+    expect("participant p9", ["upsert-participant", "--contact-id", "c9",
+                             "--anthology-id", "anthA", "--first-name", "Gee2"], 0)
+    p6, p7, p8, p9 = "c6::anthA", "c7::anthA", "c8::anthA", "c9::anthA"
+    expect("p6 s0->s1_avatar", ["advance-stage", "--participant-key", p6, "--to", "s1_avatar"], 0)
+    expect("p7 s0->s1_avatar", ["advance-stage", "--participant-key", p7, "--to", "s1_avatar"], 0)
+    # p9 parked at the s1_gate cursor (advanced in, never approved past it).
+    expect("p9 s0->s1_avatar", ["advance-stage", "--participant-key", p9, "--to", "s1_avatar"], 0)
+    expect("p9 ->s1_gate", ["advance-stage", "--participant-key", p9, "--to", "s1_gate"], 0)
+    # p8 needs to reach s9_wait_assembly through the same proven S0->approved path
+    # this file already uses above (drive_to_approved_frozen stops one edge short of
+    # s9_wait_assembly, so drive it inline instead of adding a 4th producer stamp).
+    for frm, to in (("s0_intake", "s1_avatar"), ("s1_avatar", "s1_gate")):
+        expect("p8 %s->%s" % (frm, to), ["advance-stage", "--participant-key", p8, "--to", to], 0)
+    expect("p8 s1 approve", ["record-approval", "--gate", "s1_producer",
+                             "--participant-key", p8, "--decision", "approve"], 0)
+    expect("p8 ->s2_gate", ["advance-stage", "--participant-key", p8, "--to", "s2_gate"], 0)
+    expect("p8 s2 approve", ["record-approval", "--gate", "s2_producer",
+                             "--participant-key", p8, "--decision", "approve"], 0)
+    expect("p8 ->s3_gate", ["advance-stage", "--participant-key", p8, "--to", "s3_gate"], 0)
+    expect("p8 title", ["record-approval", "--gate", "s3_selection",
+                        "--participant-key", p8, "--decision", "approve", "--title", "P8"], 0)
+    expect("p8 ->s4_gate_producer", ["advance-stage", "--participant-key", p8, "--to", "s4_gate_producer"], 0)
+    expect("p8 s4 prod", ["record-approval", "--gate", "s4_producer",
+                          "--participant-key", p8, "--decision", "approve"], 0)
+    expect("p8 s4 part", ["record-approval", "--gate", "s4_participant",
+                          "--participant-key", p8, "--decision", "approve"], 0)
+    expect("p8 chapter", ["record-artifact", "--participant-key", p8,
+                          "--type", "chapter", "--sha256", "shaP8", "--model-used", "glm-5.2"], 0)
+    expect("p8 ->s5_gate", ["advance-stage", "--participant-key", p8, "--to", "s5_gate"], 0)
+    expect("p8 approve", ["record-approval", "--gate", "s5_participant",
+                          "--participant-key", p8, "--decision", "approve"], 0)
+    for to in ("s8_deliver", "s9_wait_assembly"):
+        expect("p8 ->%s" % to, ["advance-stage", "--participant-key", p8, "--to", to], 0)
+
+    def _backdate(key, hours):
+        led_bd = Ledger(db)
+        try:
+            old = (datetime.now(timezone.utc) - timedelta(hours=hours)) \
+                .replace(microsecond=0).isoformat()
+            led_bd.conn.execute(
+                "UPDATE participants SET updated_at = ? WHERE participant_key = ?", (old, key))
+            led_bd.conn.commit()
+        finally:
+            led_bd.close()
+
+    _backdate(p1, 999)
+    _backdate(p9, 999)
+    _backdate(p6, 30)
+    _backdate(p8, 30)
+    # p7 stays fresh (just upserted). p2 (already backdated to 999h by nothing --
+    # it is still at its s0_intake default from much earlier and was never
+    # touched again) is checked below as a genuinely-old MACHINE cursor.
+    old_p2 = (datetime.now(timezone.utc) - timedelta(hours=999)).replace(microsecond=0).isoformat()
+    led_bd2 = Ledger(db)
+    try:
+        led_bd2.conn.execute(
+            "UPDATE participants SET updated_at = ? WHERE participant_key = ?", (old_p2, p2))
+        led_bd2.conn.commit()
+    finally:
+        led_bd2.close()
+
+    rc_stale = expect("stale-cursors run", ["stale-cursors", "--anthology-id", "anthA", "--json"], 0)
+    led_sc = Ledger(db)
+    try:
+        result_sc = cmd_stale_cursors(led_sc, argparse.Namespace(
+            anthology_id="anthA", default_hours=None, by_status_hours_json=None))
+    finally:
+        led_sc.close()
+    stale_keys = {s["participant_key"] for s in result_sc["stale"]}
+    checks.append(("stale-cursors run exits 0", rc_stale == 0))
+    checks.append(("p6 (machine cursor, 30h stale) flagged", p6 in stale_keys))
+    checks.append(("p2 (machine cursor s0_intake, 999h stale) flagged", p2 in stale_keys))
+    checks.append(("p1 (terminal, 999h) never flagged despite age", p1 not in stale_keys))
+    checks.append(("p9 (gate cursor s1_gate, 999h) never flagged despite age", p9 not in stale_keys))
+    checks.append(("p7 (machine cursor, fresh) not flagged", p7 not in stale_keys))
+    checks.append(("p8 (group-wait cursor, 30h < 168h default) not flagged", p8 not in stale_keys))
+    # malformed JSON in --by-status-hours-json degrades to "no override" (0), matching
+    # this file's house _loads() convention for every other JSON-bearing flag; a
+    # VALID-JSON-but-wrong-shape value (a list, not an object) is the real validation
+    # failure -> exit 5, nothing mutated.
+    expect("stale-cursors malformed json degrades to no-override",
+          ["stale-cursors", "--by-status-hours-json", "not-json"], 0)
+    expect("stale-cursors non-object override json rejected",
+          ["stale-cursors", "--by-status-hours-json", "[1,2]"], 5)
 
     # ---- kill-and-resume: reopen a fresh Ledger and confirm p1 persisted -----
     led2 = Ledger(db)
