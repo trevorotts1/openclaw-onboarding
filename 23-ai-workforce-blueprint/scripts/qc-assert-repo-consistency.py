@@ -375,11 +375,16 @@ def _persona_set_triad_failures(skill_dir):
                       f"persona-categories.json missing: {cats_path}"))
 
     man_count = man_canon = None
+    man_embedded = None
+    man_rebuild = False
     if manifest_path.is_file():
         try:
             man = json.loads(manifest_path.read_text(encoding="utf-8"))
             man_count = int(man.get("persona_count", -1))
             man_canon = int(man.get("canonical_persona_count", -1))
+            man_rebuild = bool(man.get("asset_rebuild_required", False))
+            _emb = man.get("embedded_persona_count")
+            man_embedded = int(_emb) if _emb is not None else None
         except Exception as e:
             fails.append(("(persona-set)", "PERSONA-SET-COUNT",
                           f"INDEX-MANIFEST.json unreadable: {e}"))
@@ -394,12 +399,33 @@ def _persona_set_triad_failures(skill_dir):
         "manifest.canonical_persona_count": man_canon,
     }
     present = {k: v for k, v in vals.items() if v is not None}
+    core_agree = len(present) > 0 and len(set(present.values())) == 1
     if len(set(present.values())) > 1:
         fails.append(("(persona-set)", "PERSONA-SET-COUNT",
                       "persona-SET count triad DISAGREES (a persona shipped to "
                       "the SET without an embedded asset, or the manifest was "
                       "bumped without a blueprint): " +
                       ", ".join(f"{k}={v}" for k, v in vals.items())))
+
+    # ── FIX F1.3/F2.2 — 5th triad member: the PUBLISHED asset's embedded persona
+    # count. Only meaningful once the core-4 agree (an SET count exists). CARVE-OUT
+    # when asset_rebuild_required==true (a --no-asset staging bump synced counts but
+    # did NOT re-embed — branch-level enforcement for main/release lives in
+    # persona-set-asset-consistency-guard.yml). Field absent ⇒ additive tolerance
+    # (legacy manifest). Otherwise embedded MUST equal the SET count, else the
+    # served asset is STALE (counted-but-vector-less persona). Kept in lockstep with
+    # persona_fleet.py:_embedded_member_failure.
+    if core_agree and not man_rebuild and man_embedded is not None:
+        core_n = next(iter(present.values()))
+        if man_embedded != core_n:
+            fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                          f"persona-SET 5th member DISAGREES — "
+                          f"manifest.embedded_persona_count={man_embedded} != SET "
+                          f"count {core_n} while asset_rebuild_required=false: the "
+                          f"PUBLISHED embeddings asset is STALE (a persona was "
+                          f"counted but its vectors were not embedded/published). "
+                          f"Rebuild via shared-utils/prebuilt-index/"
+                          f"build-and-publish.sh and commit the refreshed manifest."))
     return fails
 
 
