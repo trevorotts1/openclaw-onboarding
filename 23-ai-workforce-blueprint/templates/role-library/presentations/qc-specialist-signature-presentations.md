@@ -56,6 +56,7 @@ Review the QC rubric against any MASTERDOC revision; propose lockstep updates (S
 ## 8. Tools You Use
 
 - The three provers under `51-signature-presentation/scripts/` (the deterministic floor).
+- `51-signature-presentation/scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner (advisory, NON-gating; SOP 9.1). Reads `<RUN_DIR>/working/interview/intake_transcript.json`.
 - `scripts/build_deck.py` `_chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch` (the manifest-wired preflight wrappers; they DEFER for non-signature decks).
 - The MASTER QC ruleset (`universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md`, Section 5) — the AF-SP-* rows are the wireable list.
 - The client's independent scoring chain (`qwen3-vl:235b-cloud` primary / DeepSeek fallback, client keys).
@@ -66,7 +67,9 @@ Review the QC rubric against any MASTERDOC revision; propose lockstep updates (S
 See `sops/qc-specialist-signature-presentations-sops.md` for the full detail. Summary:
 
 ### SOP 9.1 -- Intake QC (P-SP-INTAKE)
-Confirm `prove_sp_intake.py` exit 0, then semantically verify the 8 answers are real (not placeholder) and the frame fits the client. Failure: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED.
+Confirm `prove_sp_intake.py` exit 0 against `working/copy/sp_intake.json` (the RECORD gate), then semantically verify the 8 answers are real (not placeholder) and the frame fits the client. Failure: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED.
+
+**Conversation-trace scan (AF-INTAKE-BATCH — advisory, NON-gating).** In ADDITION to the deterministic record gate, verify the intake CONVERSATION was run one question at a time (Trevor's ruling): (1) obtain the intake conversation transcript at `<RUN_DIR>/working/interview/intake_transcript.json` — the driver's turn-gate writes it mechanically; if the front-door agent ran the interview free-form instead of through `deck-intake-driver.py --signature`, export those assistant/owner turns to that same path (JSON list of `{"role","text"}`). (2) Run `python3 51-signature-presentation/scripts/intake_trace_check.py <RUN_DIR>/working/interview/intake_transcript.json --json`. (3) On an `AF-INTAKE-BATCH` autofail (exit 2), file the finding to the OPERATOR as a conversation-quality note (which turn, which reason: BATCH-IN-TURN / BATCH-BY-QMARKS / NO-CHOICE-OPENER / BANNED-PHRASE). This is a CONVERSATION-layer signal ONLY: it is **advisory**, it NEVER gates `build_deck.py` / `run_signature_deck.py`, and it never blocks delivery — the record gate above is the hard gate. Do NOT run it from the standalone `qc-completeness.sh` (that path leaks to the client channel).
 
 ### SOP 9.2 -- Structure QC (P-SP-STRUCTURE)
 Confirm `prove_sp_structure.py` exit 0, then verify the arc reads as the frame intends and Movement/Message/Methodology are present. Failure: AF-SP-SLIDE-FLOOR / AF-SP-PHASE-* / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT.

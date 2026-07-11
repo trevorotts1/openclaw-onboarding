@@ -15,7 +15,8 @@
 #       Skill-51 intake artifact regresses to the old "delivered as ONE block" /
 #       "asked in the SAME block" conversation framing, and
 #   (E) the deterministic RECORD gate (prove_sp_intake.py --self-test) still
-#       passes -- the record layer (asked_all_at_once / one_block) is UNCHANGED;
+#       passes -- the record layer (record_committed_atomically / one_block; the
+#       machine layer no longer teaches batching) still gates the atomic commit;
 #       only the CONVERSATION doctrine is added, and
 #   (F) the client-facing WORDING never regresses: the banned quick-questions
 #       phrases ("ask a few quick questions" / "ask you one or two quick
@@ -92,11 +93,23 @@ if cc.get("af_on_violation") != "AF-INTAKE-BATCH":
 choices = [str(c).lower() for c in (cc.get("interview_choices") or [])]
 if "quick" not in choices or not any("depth" in c for c in choices):
     errs.append("delivery.conversation_contract.interview_choices must include quick + in-depth")
-# The RECORD layer must be LEFT INTACT (prove_sp_intake still validates one_block).
-if d.get("asked_all_at_once") is not True:
-    errs.append("RECORD layer regressed: delivery.asked_all_at_once must stay true")
+# The RECORD layer must be LEFT INTACT (prove_sp_intake still validates the
+# atomic-commit fact). v1.1: the canonical field is record_committed_atomically;
+# asked_all_at_once is a deprecated alias (accepted for one release). Accept
+# either as the truthy record-committed signal, and mode must stay 'one_block'.
+_committed = d.get("record_committed_atomically")
+if _committed is None:
+    _committed = d.get("asked_all_at_once")  # deprecated alias
+if _committed is not True:
+    errs.append("RECORD layer regressed: delivery.record_committed_atomically "
+                "(or its deprecated alias asked_all_at_once) must stay true")
 if d.get("mode") != "one_block":
     errs.append("RECORD layer regressed: delivery.mode must stay 'one_block'")
+# The machine layer must NOT teach batching: one_question_per_turn was removed
+# from the record layer (it describes the one-per-turn conversation, not the record).
+if "one_question_per_turn" in d:
+    errs.append("delivery.one_question_per_turn must be REMOVED from the record "
+                "layer (it describes the conversation, not the record commit)")
 if errs:
     print("\n".join(errs)); sys.exit(1)
 sys.exit(0)

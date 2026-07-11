@@ -14,7 +14,8 @@ name: presentation-intake-conversation-guard
 #      one_question_per_message + af_on_violation == AF-INTAKE-BATCH, and no
 #      artifact regresses to the old "delivered as ONE block" framing, and
 #   4. the deterministic RECORD gate (prove_sp_intake.py --self-test) still passes
-#      -- the record layer (asked_all_at_once / one_block) is left INTACT; only the
+#      -- the record layer (record_committed_atomically / one_block; the machine
+#      layer no longer teaches batching) still gates the atomic commit; only the
 #      CONVERSATION doctrine is added.
 #
 # This is the INTAKE conversation ONLY. It does NOT touch the image-prompt floor,

@@ -1095,11 +1095,12 @@ def cmd_selftest() -> None:
 #       assembled into ONE atomic intake record and WIRED straight to the fail-
 #       closed AF-SP-8Q-SPLIT prover
 #       (51-signature-presentation/scripts/prove_sp_intake.py). Here
-#       asked_all_at_once / mode=one_block / one_question_per_turn=False describe
-#       the assembled RECORD being committed as one atomic block (NOT a batch of
+#       record_committed_atomically / mode=one_block describe the assembled
+#       RECORD being committed as one atomic ledger write (NOT a batch of
 #       questions dumped at the owner), so a record that was not committed
-#       atomically can never pass. The prover is the source of truth; this driver
-#       emits the plan and hands the assembled record to it.
+#       atomically can never pass. one_question_per_turn is NOT a record signal
+#       (it describes the one-at-a-time conversation). The prover is the source
+#       of truth; this driver emits the plan and hands the assembled record to it.
 # ---------------------------------------------------------------------------
 SP_SPEC_REL = pathlib.Path("intake") / "sp-8-questions.json"
 SP_PROVER_REL = pathlib.Path("scripts") / "prove_sp_intake.py"
@@ -1152,8 +1153,39 @@ def find_sp_prover() -> Optional[pathlib.Path]:
 
 
 def _sp_block_msg_id() -> str:
-    """A single opaque id proving the 8 + frame question went out as ONE block."""
-    return "blk_sp_" + datetime.datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    """A single opaque id proving the atomic intake-record commit."""
+    return "rec_sp_" + datetime.datetime.now().strftime("%Y%m%dT%H%M%S%f")
+
+
+SP_TRANSCRIPT_REL = pathlib.Path("working") / "interview" / "intake_transcript.json"
+
+
+def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text) -> None:
+    """Mechanically append ONE turn to the signature intake transcript
+    (working/interview/intake_transcript.json) — the input the QC/Healer
+    AF-INTAKE-BATCH scanner (51-signature-presentation/scripts/intake_trace_check.py)
+    reads post-hoc. Because the driver's turn-gate asks exactly ONE bank question
+    per --next and records ONE answer per --answer, this machine-authored
+    transcript is a faithful one-question-per-turn record: scanning it is expected
+    to PASS. It is ADVISORY provenance only — it NEVER gates build_deck.py /
+    run_signature_deck.py. Fail-soft: a transcript write must never break intake."""
+    if run_dir is None:
+        return
+    try:
+        tpath = run_dir / SP_TRANSCRIPT_REL
+        tpath.parent.mkdir(parents=True, exist_ok=True)
+        turns = []
+        if tpath.exists():
+            try:
+                loaded = json.loads(tpath.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    turns = loaded
+            except (json.JSONDecodeError, OSError):
+                turns = []
+        turns.append({"role": role, "text": str(text)})
+        tpath.write_text(json.dumps(turns, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass  # fail-soft: never break the intake on a transcript write
 
 
 def build_signature_block(spec: dict, block_msg_id: str) -> dict:
@@ -1165,8 +1197,8 @@ def build_signature_block(spec: dict, block_msg_id: str) -> dict:
     offer QUICK vs IN-DEPTH first, then ONE question per message; a batch is
     AF-INTAKE-BATCH), and later COMMITS the answers as one atomic record. The
     `delivery` block carries the RECORD contract (mode == one_block,
-    asked_all_at_once) that prove_sp_intake.py validates on that assembled record
-    — it is NOT a licence to dump the questions at the owner.
+    record_committed_atomically) that prove_sp_intake.py validates on that
+    assembled record — it is NOT a licence to dump the questions at the owner.
     """
     questions = spec.get("questions") or []
     frame_q = spec.get("frame_selection_question") or {}
@@ -1176,12 +1208,16 @@ def build_signature_block(spec: dict, block_msg_id: str) -> dict:
         "status": "signature_intake_plan",
         "deck_type": spec.get("deck_type", "signature_presentation"),
         # delivery describes the RECORD layer (the assembled ledger committed as
-        # one atomic block) — NOT the conversation. mode==one_block is asserted by
-        # prove_sp_intake.py on the assembled record and by this driver's selftest.
+        # one atomic record) — NOT the conversation. mode==one_block is the
+        # record's atomic-commit mode, asserted by prove_sp_intake.py on the
+        # assembled record and by this driver's selftest. record_committed_
+        # atomically is the canonical field; asked_all_at_once is a deprecated
+        # alias emitted for one release. one_question_per_turn is intentionally
+        # NOT emitted — it describes the conversation, not the record commit.
         "delivery": {
             "mode": "one_block",
+            "record_committed_atomically": True,
             "asked_all_at_once": True,
-            "one_question_per_turn": False,
         },
         # conversation_contract describes the CONVERSATION layer: choice-first,
         # one question at a time; a batch trips AF-INTAKE-BATCH (never gates build).
@@ -1343,6 +1379,11 @@ def cmd_sp_answer(run_dir: pathlib.Path, spec: dict, ledger: dict, qid: str, tex
 
     stored = canonicalize_enum_answer(text, question) if question.get("kind") == "enum" else text
     write_answer_file(run_dir, qid, text, SP_ANSWERS_REL)
+    # Mechanically log this one-at-a-time turn (the question as an assistant turn,
+    # the client's reply as an owner turn) to the intake transcript the QC/Healer
+    # AF-INTAKE-BATCH scanner reads. ADVISORY provenance only — never gates build.
+    _sp_append_transcript(run_dir, "assistant", question.get("prompt") or qid)
+    _sp_append_transcript(run_dir, "owner", text)
     entries[qid]["answer"] = stored
     entries[qid]["validated"] = True
     entries[qid]["validated_at"] = _now()
@@ -1431,19 +1472,44 @@ def _sp_offer_ledger(record: dict) -> list:
 
 def assemble_sp_intake(answers_record: dict, block_msg_id: str) -> dict:
     """Assemble the runtime intake record (working/copy/sp_intake.json shape) the
-    AF-SP-8Q-SPLIT prover validates. The one-block delivery facts are stamped
-    HERE, from the emitted block, so a caller cannot silently mark a split intake
-    as one-block — the prover still re-checks every field."""
+    AF-SP-8Q-SPLIT prover validates. The atomic-record-commit facts are stamped
+    HERE, from the emitted block, so a caller cannot silently mark a non-atomic
+    intake as committed — the prover still re-checks every field.
+
+    v1.1 RECORD-LAYER field names (the machine layer no longer teaches batching):
+      record_committed_atomically  (canonical) — the ledger was committed as ONE
+          atomic write. Deprecated alias asked_all_at_once is ALSO emitted for one
+          release so an old prover on a stale box still validates this record.
+      record_commit_ids            (canonical) — the atomic record-commit id.
+          Deprecated alias question_block_msg_id is ALSO emitted for one release.
+    one_question_per_turn is NO LONGER emitted — it describes the conversation
+    (which is one-per-turn, the REQUIRED behavior), not the record commit."""
     answers = _sp_extract_answers(answers_record)
     frame = answers_record.get("signature_frame")
     if isinstance(frame, str):
         frame = frame.strip().lower()
     ledger = _sp_offer_ledger(answers_record)
+    # Accept the canonical name OR the deprecated alias from the caller; a caller
+    # can only ever DOWNGRADE the atomic-commit fact (any present False → False),
+    # never silently upgrade a non-atomic record. Missing → True (the driver only
+    # reaches here after the turn-gated one-at-a-time interview completes).
+    committed = all(
+        answers_record.get(k, True) is True
+        for k in ("record_committed_atomically", "asked_all_at_once")
+        if k in answers_record
+    )
+    if not any(k in answers_record for k in ("record_committed_atomically", "asked_all_at_once")):
+        committed = True
+    commit_id = (answers_record.get("record_commit_ids")
+                 or answers_record.get("question_block_msg_id")
+                 or block_msg_id)
     out = {
         "deck_type": "signature_presentation",
-        "asked_all_at_once": bool(answers_record.get("asked_all_at_once", True)),
-        "one_question_per_turn": bool(answers_record.get("one_question_per_turn", False)),
-        "question_block_msg_id": answers_record.get("question_block_msg_id") or block_msg_id,
+        "record_committed_atomically": bool(committed),
+        "record_commit_ids": commit_id,
+        # deprecated aliases, emitted for one release (fleet-ordering safety)
+        "asked_all_at_once": bool(committed),
+        "question_block_msg_id": commit_id,
         "answers": answers,
         "signature_frame": frame,
         "offer_token_ledger": ledger,
@@ -1599,11 +1665,15 @@ def signature_selftest() -> bool:
     ok = ok and step2
     print(f"[sig-selftest] Test 2 {'PASS' if step2 else 'FAIL'}: VALID record -> prover exit {rc} (want 0)")
 
-    split = dict(valid); split = {**valid, "one_question_per_turn": True, "asked_all_at_once": False}
+    # A record that was NOT committed atomically must fail AF-SP-8Q-SPLIT. This is
+    # a RECORD-layer fact (record_committed_atomically=False); it is NOT about the
+    # conversation pacing. one_question_per_turn is deliberately absent — carrying
+    # it True no longer fails the record gate.
+    split = {**valid, "record_committed_atomically": False}
     rc, out = _assemble_and_prove(split)
     step3 = rc == 2 and "AF-SP-8Q-SPLIT" in out
     ok = ok and step3
-    print(f"[sig-selftest] Test 3 {'PASS' if step3 else 'FAIL'}: SPLIT record -> prover exit {rc} "
+    print(f"[sig-selftest] Test 3 {'PASS' if step3 else 'FAIL'}: non-atomic RECORD -> prover exit {rc} "
           f"(want 2, AF-SP-8Q-SPLIT present={('AF-SP-8Q-SPLIT' in out)})")
 
     missing_q7 = {**valid, "answers": {k: v for k, v in valid["answers"].items() if k != "q7"}}

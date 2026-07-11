@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
-version: 1.0.7
+version: 1.0.8
 ---
 
 # Signature Presentation (Skill 51)
@@ -28,6 +28,11 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
 - `structure/sp_structure.json` — the sacred-structure ledger CONTRACT the structure prover loads.
 - `scripts/prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py` — the three
   fail-closed provers (installed into the department's `scripts/` at wire time).
+- `scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner: an
+  **advisory, NON-gating** deterministic scan the QC Specialist / Healer run over the intake
+  transcript (`<RUN_DIR>/working/interview/intake_transcript.json`, written mechanically by the
+  driver's turn-gate). It flags a batched or choice-less intake CONVERSATION but NEVER inspects,
+  runs inside, or gates `build_deck.py` / `run_signature_deck.py`.
 
 ## The methodology in one screen
 
@@ -146,6 +151,10 @@ and wires via the department lockstep. The three legs:
   fail-closed provers in `--self-test` mode and the `register-library-additions.py --check` sanity
   (both SP roles registered in `role-library/_index.json`). Exits nonzero on any failure, so it can
   gate a merge / CI / a post-install check. Run it with `bash 51-signature-presentation/verify.sh`.
+  The AF-INTAKE-BATCH scanner (`scripts/intake_trace_check.py --self-test`) and the intake-conversation
+  guard (`tests/unit/presentation-intake-conversation.test.sh`) are self-tested separately in CI; the
+  scanner is wired as an **advisory** duty in the QC Specialist / Healer role SOPs (SOP 9.1 / SOP 9.13),
+  never as a build gate.
 
 ## Prerequisites
 
