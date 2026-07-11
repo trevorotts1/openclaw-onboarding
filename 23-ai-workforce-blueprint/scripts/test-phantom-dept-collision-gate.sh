@@ -23,6 +23,14 @@
 #   T9. Case-insensitive canonical resolution: 'Sales' and 'sales' both resolve to
 #       the same canonical (proven via canonical_slug_for, since a case-insensitive
 #       filesystem cannot hold both sibling dirs at once).
+#  T10. ENFORCEMENT: the gate the QC pipeline actually runs
+#       (scripts/qc-assert-workspace-departments-built.sh — CHECK X.11 + the
+#       onboarding-honesty "done" contract) FAILS rc=5 AF-PHANTOM-DEPT-TREE on a
+#       duplicate tree and prints the reconcile remediation.
+#  T11. That same gate FAILS rc=5 on a phantom '.bak' dept dir.
+#  T12. NO false positive: a collision-free workspace never returns rc=5 — it falls
+#       through to the pre-existing shell verdict (rc=3), so the phantom check
+#       neither false-fires nor swallows the shell dimension.
 #
 # Exit 0 = all tests pass; non-zero = a test failed.
 set -uo pipefail
@@ -122,6 +130,39 @@ print("OK" if (a == b and a is not None and p == "podcast" and au == "audio") el
 PY
 )
 if [ "$RES" = "OK" ]; then ok "T9: 'Sales'/'sales' resolve identically; podcast/audio stay distinct"; else bad "T9: $RES"; fi
+
+# ── ENFORCEMENT (not description): the phantom check must FAIL the gate that the
+#    QC pipeline / onboarding-honesty contract actually runs
+#    (scripts/qc-assert-workspace-departments-built.sh, CHECK X.11 rc=3/rc=5 hard
+#    fail + lib-onboarding-state oc_workspace_departments_materialized). A
+#    detector nothing calls is documentation, not a gate.
+WS_GATE="$SCRIPT_DIR/../../scripts/qc-assert-workspace-departments-built.sh"
+
+echo "=== T10: workspace gate FAILS (rc=5 AF-PHANTOM-DEPT-TREE) on a duplicate tree ==="
+if [ ! -f "$WS_GATE" ]; then
+  bad "T10: workspace gate not found at $WS_GATE"
+else
+  DD=$(mk_departments t10 billing billing-finance marketing legal)
+  bash "$WS_GATE" --departments-dir "$DD" >/dev/null 2>&1; RC=$?
+  if [ "$RC" -eq 5 ]; then ok "T10: qc-assert-workspace-departments-built -> rc=5 on billing+billing-finance"; else bad "T10: expected gate rc=5, got $RC"; fi
+  OUT=$(bash "$WS_GATE" --departments-dir "$DD" 2>&1)
+  if echo "$OUT" | grep -q "AF-PHANTOM-DEPT-TREE"; then ok "T10: gate emits AF-PHANTOM-DEPT-TREE"; else bad "T10: AF-PHANTOM-DEPT-TREE marker absent"; fi
+  if echo "$OUT" | grep -q "reconcile-legacy-tree.py --merge-duplicates"; then ok "T10: gate prints the reconcile remediation"; else bad "T10: no remediation printed"; fi
+
+  echo "=== T11: phantom .bak dept dir also FAILS the workspace gate (rc=5) ==="
+  DD=$(mk_departments t11 marketing legal)
+  mkdir -p "$DD/Presentations.bak-20260615-024720/01-x"
+  bash "$WS_GATE" --departments-dir "$DD" >/dev/null 2>&1; RC=$?
+  if [ "$RC" -eq 5 ]; then ok "T11: .bak dept dir -> workspace gate rc=5"; else bad "T11: expected gate rc=5 for .bak dir, got $RC"; fi
+
+  echo "=== T12: NO false positive — a collision-free workspace never returns rc=5 ==="
+  # This workspace is collision-free but its depts are unmaterialized shells, so the
+  # gate must fall through to its EXISTING shell verdict (rc=3), never rc=5. Proves
+  # the phantom check neither false-fires nor swallows the shell dimension.
+  DD=$(mk_departments t12 marketing legal billing-finance)
+  bash "$WS_GATE" --departments-dir "$DD" >/dev/null 2>&1; RC=$?
+  if [ "$RC" -ne 5 ]; then ok "T12: collision-free workspace -> rc=$RC (not 5; shell dimension still gates)"; else bad "T12: false AF-PHANTOM-DEPT-TREE on a clean workspace"; fi
+fi
 
 echo
 echo "==================================================="

@@ -975,7 +975,11 @@ gate passing **with raw counts** printed per department.
 - `scripts/qc-assert-workspace-departments-built.sh` — the gate (single source of
   truth; resolves the WORKSPACE departments dir via `department-floor.resolve_departments_dir`,
   guards template paths via `_is_template_path`, classifies FULL/PARTIAL/SHELL with raw counts).
-- `scripts/qc-system-integrity.sh` — **CHECK X.11** (rc=3 hard-fail; rc=4 warn = not built yet).
+- `scripts/qc-system-integrity.sh` — **CHECK X.11** (rc=3 `AF-WORKSPACE-SHELL` hard-fail;
+  rc=5 `AF-PHANTOM-DEPT-TREE` hard-fail — the same canonical dept materialized twice
+  as sibling dirs (`billing` + `billing-finance`), or a `.bak` tree carried as a
+  department; remediate with `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
+  --merge-duplicates [--apply]`; rc=4 warn = not built yet).
 - `lib-onboarding-state.sh` — `oc_workspace_departments_materialized()` +
   `oc_overall_goal_check()` criterion (iii): overall "done" requires
   `workspaceMaterialized=true` (a hand-seeded `buildCompletedAt` is no longer sufficient).

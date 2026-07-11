@@ -17,6 +17,11 @@
 #       canonicalReconciliation fields (e.g. decisions) are preserved.
 #   T7. Slugs are CEO-first, canonical, and deduped (same contract as the CC-facing
 #       departments.json).
+#   T8. THE DOWNSTREAM READER: department-floor.evaluate_floor() — the single tool
+#       every QC gate already consumes — surfaces the chosen list
+#       (chosen_departments + chosen_departments_source), preferring build-state,
+#       falling back to the on-disk artifact, NEVER fabricating one, and never
+#       changing the floor rc contract (0/3/7).
 #
 # Exit 0 = all tests pass; non-zero = a test failed.
 set -uo pipefail
@@ -103,6 +108,40 @@ slugs = cd.get("slugs", [])
 ok("CEO column first") if slugs and slugs[0] == "ceo" else bad(f"CEO not first: {slugs[:1]}")
 ok("no duplicate slugs") if len(slugs) == len(set(slugs)) else bad("duplicate slugs present")
 ok("client customs preserved (publishing-studio present)") if "publishing-studio" in slugs else bad("custom dept dropped")
+
+print("== T8: department-floor READS the durable chosen-list (the downstream reader) ==")
+# ENFORCEMENT, not description: the chosen list must be readable by the tool every
+# downstream gate already consumes (department-floor.py --json), or "durable
+# artifact" is a file nobody reads. The floor verdict must surface it WITHOUT
+# changing the floor rc contract, and must NEVER fabricate one.
+dfspec = importlib.util.spec_from_file_location("df", os.path.join(SCRIPTS, "department-floor.py"))
+df = importlib.util.module_from_spec(dfspec); dfspec.loader.exec_module(df)
+
+from pathlib import Path   # evaluate_floor takes a Path (same shape every real caller passes)
+
+dd = Path(comp) / "departments"
+os.makedirs(dd, exist_ok=True)
+for slug in ("marketing", "billing-finance"):
+    os.makedirs(dd / slug / "01-a-role", exist_ok=True)
+
+bs_with = {"canonicalReconciliation": {"chosenDepartments": {"slugs": ["ceo", "marketing"], "count": 2}}}
+v = df.evaluate_floor(departments_dir=dd, build_state=bs_with, core_answers={})
+ok("floor verdict carries chosen_departments") if v.get("chosen_departments") == ["ceo", "marketing"] else bad(f"chosen_departments wrong: {v.get('chosen_departments')}")
+ok("source == build-state (authoritative)") if v.get("chosen_departments_source") == "build-state" else bad(f"source wrong: {v.get('chosen_departments_source')}")
+
+# Artifact fallback: no build-state record -> read <company>/departments.json on disk.
+v2 = df.evaluate_floor(departments_dir=dd, build_state={}, core_answers={})
+ok("falls back to the on-disk artifact") if v2.get("chosen_departments") == art_slugs and art_slugs else bad(f"artifact fallback wrong: {v2.get('chosen_departments')}")
+ok("source == artifact") if v2.get("chosen_departments_source") == "artifact" else bad(f"source wrong: {v2.get('chosen_departments_source')}")
+
+# Never fabricated: no build-state record AND no artifact -> [] / "none".
+bare = Path(tmp) / "bare" / "departments"
+os.makedirs(bare / "marketing" / "01-a-role", exist_ok=True)
+v3 = df.evaluate_floor(departments_dir=bare, build_state={}, core_answers={})
+ok("no chosen list -> [] (never fabricated)") if v3.get("chosen_departments") == [] else bad(f"fabricated: {v3.get('chosen_departments')}")
+ok("no chosen list -> source none") if v3.get("chosen_departments_source") == "none" else bad(f"source wrong: {v3.get('chosen_departments_source')}")
+# The chosen-list read must NOT touch the floor rc contract (0/3/7).
+ok("floor rc contract unchanged (0/3/7)") if v.get("rc") in (0, 3, 7) and v3.get("rc") in (0, 3, 7) else bad(f"floor rc contract broken: {v.get('rc')}/{v3.get('rc')}")
 
 print()
 print("===================================================")

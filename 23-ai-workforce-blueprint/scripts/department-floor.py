@@ -577,6 +577,55 @@ def load_build_state():
     return {}
 
 
+# ── C7: AUTHORITATIVE READ OF THE DURABLE "CHOSEN-LIST" ARTIFACT ─────────────
+# The departments the client CHOSE during the interview are persisted by
+# build-workforce.write_chosen_departments_artifact() in two places:
+#   1. build-state  canonicalReconciliation.chosenDepartments.slugs   (durable record)
+#   2. <company_dir>/departments.json                                 (durable artifact)
+# Downstream (QC gates, closeout, Command Center seeding) must be able to read
+# the chosen set AUTHORITATIVELY instead of re-deriving the floor and guessing.
+# department-floor is the single tool every gate already consumes, so the chosen
+# list is surfaced here — as INFORMATIONAL verdict fields. It never changes the
+# floor rc (0/3/7) and it NEVER fabricates a chosen set: when neither source
+# exists the reader returns [] with source "none", and the caller decides.
+
+CHOSEN_DEPARTMENTS_ARTIFACT = "departments.json"
+
+
+def read_chosen_departments(build_state=None, departments_dir=None):
+    """
+    Read the client's chosen department set. Resolution order (authoritative first):
+      1. build-state canonicalReconciliation.chosenDepartments.slugs;
+      2. the <company_dir>/departments.json artifact (company_dir = departments_dir's
+         parent — where build-workforce writes it);
+      3. ([], "none") — NEVER fabricated from the floor.
+    Returns (slugs, source) with source in {"build-state", "artifact", "none"}.
+    """
+    bs = build_state if build_state is not None else load_build_state()
+    recon = bs.get("canonicalReconciliation", {}) if isinstance(bs, dict) else {}
+    chosen = recon.get("chosenDepartments") if isinstance(recon, dict) else None
+    if isinstance(chosen, dict):
+        slugs = chosen.get("slugs")
+        if isinstance(slugs, list) and slugs:
+            return [s for s in slugs if s], "build-state"
+    if departments_dir:
+        p = departments_dir if isinstance(departments_dir, Path) else Path(departments_dir)
+        artifact = p.parent / CHOSEN_DEPARTMENTS_ARTIFACT
+        try:
+            data = json.loads(artifact.read_text())
+        except (OSError, json.JSONDecodeError):
+            return [], "none"
+        out, seen = [], set()
+        for entry in (data if isinstance(data, list) else []):
+            s = entry.get("slug") or entry.get("id") if isinstance(entry, dict) else None
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        if out:
+            return out, "artifact"
+    return [], "none"
+
+
 def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     """
     Compute the HARD department floor and compare it to REAL on-disk departments.
@@ -599,6 +648,10 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
         "on_disk_count": int,
         "missing_mandatory": [...],      # mandatory not found on disk (not declined)
         "missing_universal_primary": [...],  # universal-primary depts missing from disk
+        "slug_collisions": [{"canonical": id, "dirs": [...]}],  # C5 phantom duplicates (informational)
+        "phantom_backup_dirs": [...],    # C5 '.bak' dept dirs on disk (informational)
+        "chosen_departments": [...],     # C7 durable chosen-list (informational, never fabricated)
+        "chosen_departments_source": "build-state"|"artifact"|"none",
         "floor_met": bool,
         "reason": str,
       }
@@ -617,6 +670,7 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
             "expected_floor": [], "expected_floor_count": 0, "on_disk_count": 0,
             "missing_mandatory": [], "missing_universal_primary": [],
             "slug_collisions": [], "phantom_backup_dirs": [],
+            "chosen_departments": [], "chosen_departments_source": "none",
         }
 
     if core_answers is None:
@@ -656,9 +710,16 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
 
     # C5: surface phantom-duplicate trees + backup dirs in the verdict. INFORMATIONAL
     # here (does NOT change the floor rc contract 0/3/7); the dedicated
-    # `--check-collisions` gate returns rc=5 on these so callers opt in explicitly.
+    # `--check-collisions` gate returns rc=5 on these so callers opt in explicitly,
+    # and qc-assert-workspace-departments-built.sh FAILS on them (AF-PHANTOM-DEPT-TREE).
     slug_collisions = sibling_slug_collisions(departments_dir, nm)
     phantom_backup_dirs = _raw_department_dirs(departments_dir)[1]
+
+    # C7: the durable chosen-list, read authoritatively (build-state, then the
+    # <company>/departments.json artifact). INFORMATIONAL — never changes the floor
+    # rc and never fabricated: [] / "none" when the client's choice was never
+    # persisted (an OLD build that predates the durable artifact).
+    chosen, chosen_source = read_chosen_departments(build_state, departments_dir)
 
     return {
         "rc": rc,
@@ -674,6 +735,8 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
         "missing_universal_primary": missing_universal_primary,
         "slug_collisions": slug_collisions,
         "phantom_backup_dirs": phantom_backup_dirs,
+        "chosen_departments": chosen,
+        "chosen_departments_source": chosen_source,
         "floor_met": floor_met,
         "reason": reason,
     }
