@@ -22,12 +22,16 @@ but **not** created on the instance. Import it by hand:
 
 ## One-time credential + env setup (inside n8n only)
 
-4. **Connect the Google credential (one-time).** The nine Google HTTP Request nodes
-   (`List/Create Client|Producer|Book Folder`, `Share Book To Producer`) reference a
-   credential of type **Google Drive OAuth2 API** named
-   *"BlackCEO Anthology Drive (connect me)"* with a placeholder id. Create/select
-   Trevor's Google credential on those nodes (a service-account or OAuth2 credential with
-   Drive scope). This is the credential that never leaves n8n.
+4. **Connect the Google credential (one-time).** Every Google HTTP Request node
+   (the `create_book_tree` / `create_participant_tree` list+create+share nodes and the
+   per-Doc `CD*` / `UP*` / `SD*` / `PD*` nodes) references a credential of type **Google
+   Drive OAuth2 API** named *"BlackCEO Anthology Drive (connect me)"* with a placeholder
+   id (`REPLACE_WITH_GOOGLE_CREDENTIAL_ID`). Create/select Trevor's Google credential on
+   those nodes (a service-account or OAuth2 credential with **Drive scope**; the per-Doc
+   branches deliberately use Drive-scope-only endpoints — `files.create` + media update +
+   `files.export` — so **no Documents scope is required**). This is the credential that
+   never leaves n8n. Tip: import once, connect the credential on any one node, then use
+   n8n's "apply to all nodes of this type" to fan it across the rest.
 5. Set two n8n **environment variables** (Settings → Variables/Env, or the container env):
    - `ANTHOLOGY_DRIVE_BROKER_TOKEN` — the low-privilege shared token. It must equal the
      value a client box holds as `N8N_DRIVE_WEBHOOK_TOKEN`.
@@ -62,16 +66,39 @@ Behaviour: idempotent get-or-create of `root/client_key/producer_email/book_titl
 (re-runs return the same ids), then a named-user **editor** (writer) share of the book
 folder to `producer_email`. Bad/absent token → `401`; missing fields → `400`.
 
-**Stubbed (designed extension points, not faked)** — `create_doc`, `upload_pdf`,
-`share_doc_edit`, `pull_doc_text` return `501 { "error": "not_implemented" }`. Until
-they are built, a client box can mint the per-book tree through the broker, but the
-per-Doc operations still require the operator's own box (local service account). See
-`MASTERDOC.md` floor #10.
+**Implemented — the per-participant tree + the four per-Doc actions.** These close the
+E9 gap so the WHOLE S0..S8 Drive path runs on a pure client box through the broker:
+
+- `create_participant_tree` `{ producer, anthology, participant }` → idempotent
+  get-or-create of `root/producer/anthology/participant`; returns
+  `{ ok, via, root_folder_id, producer_folder_id, anthology_folder_id, participant_folder_id }`.
+  This is the S0 "on first sight" runtime tree.
+- `create_doc` `{ parent_folder_id, name, text, share_mode? }` → creates a Google Doc in
+  the folder (via `files.create` + a `uploadType=media` text/plain update — **Drive
+  scope only, no Docs API**), optionally shares it (`view`→reader / `edit`→writer,
+  anyone-with-link), returns `{ ok, via, doc_id, doc_url, share_mode, permission_id }`.
+- `upload_pdf` `{ parent_folder_id, name, content_b64, mime, share_mode? }` → lands a
+  base64-relayed binary (the S7 cover PNG or a rendered PDF), optionally shares it,
+  returns `{ ok, via, file_id, drive_url, download_url, share_mode, permission_id }`.
+- `share_doc_edit` `{ file_id, share_mode }` → anyone-with-link `view`/`edit` share,
+  returns `{ ok, via, file_id, share_mode, permission_id, view_url }`.
+- `pull_doc_text` `{ doc_id }` → exports the Doc body as `text/plain` (the
+  confirm-then-pull read-back), returns `{ ok, via, doc_id, text }`.
+- `capabilities` `{}` → `{ ok, via, implemented_actions: [...] }` — the set this
+  workflow implements, for `broker-preflight`. A `probe:true` on any known action is a
+  side-effect-free `{ ok, action, probe:true, implemented:true }` (preflight fallback).
+
+Because the per-Doc branches use Drive-scope-only endpoints, the single **Google Drive
+OAuth2 API** credential above is sufficient (no separate Documents scope needed).
 
 ## Skill side
 
-`scripts/drive_adapter.py` speaks this contract: `provision_book_tree(...)` POSTs
-`create_book_tree` when `broker_configured()` (both `N8N_DRIVE_WEBHOOK_URL` and
-`N8N_DRIVE_WEBHOOK_TOKEN` resolve), else falls back to the local SA. CLI:
-`drive_adapter.py provision-book-tree ...`, `drive_adapter.py broker-status`,
-`drive-tree-provision.py create-book-tree ...`.
+`scripts/drive_adapter.py` speaks this contract. When `broker_configured()` (both
+`N8N_DRIVE_WEBHOOK_URL` and `N8N_DRIVE_WEBHOOK_TOKEN` resolve): `provision_book_tree`
+POSTs `create_book_tree`; `deliver_doc`/`deliver_media`/`do_share`/`pull_doc_text` POST
+the per-Doc actions; and `drive-tree-provision.py provision` POSTs
+`create_participant_tree`. Otherwise every path falls back to the local SA (operator's
+own box). CLI: `drive_adapter.py broker-status`, `drive_adapter.py broker-preflight`
+(HOLDs by name on a missing action), `drive-tree-provision.py create-book-tree ...`.
+Offline contract tests: `tests/test_drive_broker.py`,
+`tests/test_drive_broker_per_doc.py`, `tests/test_drive_broker_workflow.py`.

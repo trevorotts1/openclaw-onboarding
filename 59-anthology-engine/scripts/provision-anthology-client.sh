@@ -497,6 +497,27 @@ except Exception:
 sys.exit(0 if d.get("broker_configured") else 1)' 2>/dev/null
 }
 
+# SHORT E9 fix -- in broker mode, probe the LIVE broker for the REQUIRED per-Doc/tree
+# action set (drive_adapter.py broker-preflight). If the deployed workflow predates the
+# per-Doc actions, this HOLDs provisioning at GATE 5 by NAME (echoing the missing
+# actions to the operator surface) instead of letting the run dead-end mid-stream at
+# S7/S8 on a client box. broker-preflight exits 0 when every REQUIRED action is present,
+# 3 (HELD) otherwise. Its stdout JSON is captured here; no Google key is read.
+# MISSING_ACTIONS is set as a side effect for the operator surface.
+MISSING_ACTIONS=""
+drive_broker_preflight() {   # echoes 0 on pass, 3 on HOLD; sets MISSING_ACTIONS
+    [ -f "$SCRIPTS/drive_adapter.py" ] || { echo 3; return; }
+    local out rc
+    out="$(python3 "$SCRIPTS/drive_adapter.py" broker-preflight 2>/dev/null)"; rc=$?
+    MISSING_ACTIONS="$(printf '%s' "$out" | python3 -c 'import sys,json;
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    print(""); sys.exit(0)
+print(", ".join(d.get("missing_actions") or []))' 2>/dev/null)"
+    [ "$rc" -eq 0 ] && echo 0 || echo 3
+}
+
 step5_drive() {
     note "STEP 5/10 — provision the client's Drive delivery root (n8n credential broker if configured; else the local per-client BlackCEO-hosted Shared-Drive root via the BlackCEO SA)"
     if [ "$MODE" = "dryrun" ]; then
@@ -509,7 +530,22 @@ step5_drive() {
     # here. A compromised client box cannot leak Google creds because they were never here.
     if drive_broker_configured; then
         note "  n8n Drive broker CONFIGURED: Google creds live ONLY in n8n; this box holds no Google SA key."
-        note "  Per-book folder trees are minted via the broker (drive-tree-provision.py create-book-tree) at book bind; nothing to verify locally."
+        # SHORT E9: probe the broker for the REQUIRED per-Doc/tree action set BEFORE any
+        # book binds, so an under-provisioned (stale) broker HOLDs here by name rather than
+        # dead-ending mid-run at S7/S8. The full S0..S8 Drive path (create_participant_tree,
+        # create_doc, upload_pdf, share_doc_edit, pull_doc_text) is minted through the broker.
+        local pf; pf="$(drive_broker_preflight)"
+        if [ "$pf" != "0" ]; then
+            op_surface "STEP 5/10 (Drive broker preflight)" "AF-AE-BROKER-ACTIONS-MISSING" "$pf" "$EX_HELD" \
+                "The n8n Drive broker does NOT implement every REQUIRED per-Doc/tree action." \
+                "Missing action(s): ${MISSING_ACTIONS:-unknown (broker unreachable or token rejected)}." \
+                "Import + activate the CURRENT config/n8n/anthology-drive-broker.workflow.json in n8n" \
+                "(it ships create_book_tree, create_participant_tree, create_doc, upload_pdf, share_doc_edit, pull_doc_text)," \
+                "then confirm 'drive_adapter.py broker-preflight' exits 0. See MASTERDOC floor #10."
+            set_crc 3; echo "$EX_HELD"; return
+        fi
+        note "  broker preflight PASS: every REQUIRED per-Doc/tree action is implemented on the deployed workflow."
+        note "  Per-book + per-participant folder trees and the per-Doc S7/S8 ops are minted via the broker; nothing to verify locally."
         echo "$EX_OK"; return
     fi
     # LOCAL-SA MODE (the operator's OWN box, which legitimately holds the SA key).

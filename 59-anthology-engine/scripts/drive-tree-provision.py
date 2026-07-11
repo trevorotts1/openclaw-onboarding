@@ -38,9 +38,10 @@ FLEET BROKER MODEL: when the n8n Drive credential broker is configured on this b
 `create-book-tree` routes the privileged per-book folder-tree creation + producer
 editor share through n8n (drive_adapter.provision_book_tree), and `verify-root`
 reports broker mode instead of verifying a local SA root. The per-participant
-`provision` path is not yet brokered (a designed extension point); it is flagged
-loudly (exit 3) in broker mode and still runs via the local SA on the operator's own
-box. See MASTERDOC floor #10.
+`provision` path (the Root/Producer/Anthology/Participant tree S0 mints "on first
+sight") is ALSO brokered through n8n (action create_participant_tree via
+drive_adapter.broker_provision_participant_tree); the operator's own box still runs it
+via the local SA. See MASTERDOC floor #10.
 
 USAGE:
   drive-tree-provision.py provision --producer NAME
@@ -104,16 +105,13 @@ def provision(producer, anthology=None, participant=None, root_folder_id=None):
 
     Returns a machine-readable dict with each level's id and a created flag."""
     if da.broker_configured():
-        # FLEET broker model: this box holds NO Google key, so the per-participant
-        # Producer/Anthology/Participant runtime tree cannot be minted locally. That
-        # per-Doc-time op is a DESIGNED extension point not yet brokered (the broker
-        # implements the per-book create_book_tree). Flag it loudly (exit 3 -> HELD);
-        # never fake it. The operator's OWN box (local SA) still runs this path.
-        raise da.DependencyError(
-            "per-participant Producer/Anthology/Participant provisioning is not yet "
-            "brokered through n8n (a designed extension point); the operator's own box "
-            "performs it via the local service account. The brokered per-book tree is "
-            "available via `create-book-tree`. See MASTERDOC floor #10.")
+        # FLEET broker model: this box holds NO Google key. The per-participant
+        # Producer/Anthology/Participant runtime tree S0 mints "on first sight" is
+        # brokered through n8n (action create_participant_tree): n8n does the idempotent
+        # get-or-create with Trevor's Google creds (which never leave n8n) and returns the
+        # folder ids, which S0 caches onto the ledger rows exactly as in local-SA mode. A
+        # compromised client box cannot leak Google creds because they were never here.
+        return da.broker_provision_participant_tree(producer, anthology, participant)
     if not producer or not str(producer).strip():
         raise da.ValidationError("--producer is required (a display name).")
     if participant and not anthology:
@@ -214,29 +212,57 @@ def self_test():
     # broker wiring: create-book-tree delegates to the adapter's broker-or-SA selector
     assert callable(da.provision_book_tree)
     assert callable(da.broker_configured)
-    # in broker mode the per-participant provision path is flagged (not faked): with
-    # the broker env set, provision() raises DependencyError (exit 3), never a fake id.
+    assert callable(da.broker_provision_participant_tree)
+    # in broker mode the per-participant provision path is BROKERED (not faked, not a
+    # local-SA call): with the broker env set, provision() routes through n8n
+    # (create_participant_tree) and returns the folder ids n8n created. The broker POST
+    # is mocked so no network is touched and no Google SA is minted.
     import os as _os
     _saved = {k: _os.environ.get(k) for k in
               (da.N8N_WEBHOOK_URL_ENV, da.N8N_WEBHOOK_TOKEN_ENV)}
+    _bpost = da._broker_post
+    _mint = da.mint_token
     try:
         _os.environ[da.N8N_WEBHOOK_URL_ENV] = "https://main.example/webhook/anthology-drive"
         _os.environ[da.N8N_WEBHOOK_TOKEN_ENV] = "unit-token"
         assert da.broker_configured() is True
+        # the local SA must NOT be minted in broker mode
+        da.mint_token = lambda scope=da.FULL_SCOPE: (_ for _ in ()).throw(
+            AssertionError("mint_token (local SA) must NOT be called in broker mode"))
+        captured = {}
+
+        def _fake_post(action, payload):
+            captured["action"] = action
+            captured["payload"] = dict(payload)
+            return {"ok": True, "root_folder_id": "ROOT",
+                    "producer_folder_id": "PROD1", "producer_created": True,
+                    "anthology_folder_id": "ANTH1", "participant_folder_id": "PART1"}
+        da._broker_post = _fake_post
+        res = provision("ProducerName", anthology="Summit", participant="Ada")
+        assert captured["action"] == "create_participant_tree", captured
+        assert captured["payload"] == {"producer": "ProducerName",
+                                       "anthology": "Summit", "participant": "Ada"}, captured
+        assert res["via"] == "n8n_broker"
+        assert res["producer"]["id"] == "PROD1" and res["participant_folder_id"] == "PART1"
+        assert res["deepest_folder_id"] == "PART1"
+        # a broker response missing folder ids fails loudly (never a fake id)
+        da._broker_post = lambda a, p: {"ok": True}
         flagged = False
         try:
             provision("ProducerName")
         except da.DependencyError:
             flagged = True
-        assert flagged, "broker-mode per-participant provision must be flagged, not faked"
+        assert flagged, "a brokered tree response without folder ids must raise"
     finally:
+        da._broker_post = _bpost
+        da.mint_token = _mint
         for k, v in _saved.items():
             if v is None:
                 _os.environ.pop(k, None)
             else:
                 _os.environ[k] = v
     print("drive-tree-provision self-test: OK (top-down guard, root reuse, "
-          "broker-mode flagging, exit-code contract)")
+          "broker-mode participant-tree routing, exit-code contract)")
     return EX_OK
 
 

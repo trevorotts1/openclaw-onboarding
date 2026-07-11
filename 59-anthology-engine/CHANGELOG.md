@@ -6,6 +6,50 @@ Integration branch consolidating the Anthology Engine feature units (U5, U6, U7,
 U9, U10, U19, U20, U21) under one Unreleased heading. Version intentionally left
 unbumped (see skill-version.txt / SKILL.md) until the release cut.
 
+### E9: per-Doc Drive credential broker implemented end-to-end (skill-version 0.1.3 -> 0.1.4, 2026-07-11)
+
+Closes the E9 gap where the per-Doc Google Drive broker path was unimplemented on pure
+client boxes: `drive_adapter.broker_stub` raised "not yet implemented via the broker"
+for the per-Doc ops and `drive-tree-provision.provision` raised in broker mode, so a
+client box (which holds NO Google key) dead-ended mid-run at S0 (participant tree) and
+S7/S8 (cover upload, Doc create/share, confirm-then-pull). Now the WHOLE S0..S8 Drive
+path runs through the n8n credential broker.
+
+Added / changed:
+- `scripts/drive_adapter.py`: implemented the four per-Doc broker actions
+  (`broker_create_doc`, `broker_upload_media` [`upload_pdf`], `broker_share`
+  [`share_doc_edit`], `broker_pull_doc_text`) plus `broker_provision_participant_tree`
+  (`create_participant_tree`). `deliver_doc` / `deliver_media` / `do_share` /
+  `pull_doc_text` now SELECT the broker whenever `broker_configured()` (else the local
+  SA on the operator's own box), normalizing every broker response to the local-SA shape
+  so the stage runners consume either path identically. Split `_broker_post` into a
+  classify-friendly `_broker_request` + the fail-loud `_broker_post`. Removed the
+  `broker_stub`/`BROKER_STUB_ACTIONS` dead end; added `BROKER_DOC_ACTIONS`,
+  `BROKER_PARTICIPANT_ACTION`, `BROKER_REQUIRED_ACTIONS`.
+- SHORT preflight: `broker_capabilities()` + `broker_preflight()` + a `broker-preflight`
+  CLI that probes the broker's `capabilities` (with a side-effect-free `probe:true`
+  fallback for an older broker) and HOLDs (exit 3) naming any missing REQUIRED action.
+  Wired into `provision-anthology-client.sh` STEP 5 so an under-provisioned (stale)
+  broker HOLDs at provisioning by name (AF-AE-BROKER-ACTIONS-MISSING) instead of
+  dead-ending mid-run.
+- `scripts/drive-tree-provision.py`: the per-participant `provision` path is now brokered
+  (`create_participant_tree`) instead of raising in broker mode.
+- `config/n8n/anthology-drive-broker.workflow.json`: the route template now dispatches
+  `create_participant_tree`, `create_doc`, `upload_pdf`, `share_doc_edit`,
+  `pull_doc_text`, and `capabilities`/`probe` (via a Switch router). The per-Doc branches
+  use Drive-scope-only endpoints (`files.create` + `uploadType=media` update +
+  `files.export`), so the single Google Drive OAuth2 credential suffices (no Documents
+  scope). Ships INACTIVE; operator imports/activates it (README updated).
+- Tests: `tests/test_drive_broker_per_doc.py` (per-Doc routing, base64 relay, byte-exact
+  pull, participant tree, preflight capability/probe HOLD-by-name) and
+  `tests/test_drive_broker_workflow.py` (route-template structure/contract) added;
+  `tests/test_drive_broker.py` stub assertion updated. drive_adapter + drive-tree
+  self-tests extended.
+- LIVE (operator, NOT in this repo change): import + activate the workflow in n8n,
+  connect the Google Drive credential + set `ANTHOLOGY_DRIVE_BROKER_TOKEN` /
+  `ANTHOLOGY_DRIVE_ROOT_FOLDER`, then confirm `drive_adapter.py broker-preflight` exits 0
+  on a client box. No live n8n/Drive write is performed by this branch.
+
 ### Snapshot: eight tag->notification release workflows built + snapshot contract updated (2026-07-10)
 
 Closes the release-bus gap: the engine EMITS `anthology-release-*` / `anthology-delivered`

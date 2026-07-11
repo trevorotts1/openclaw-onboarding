@@ -157,10 +157,17 @@ def test_provision_book_tree_falls_back_to_local_sa_when_broker_absent(monkeypat
     assert shared["email"] == "producer@example.com"
 
 
-def test_per_doc_broker_actions_are_stubbed_not_faked():
-    for action in da.BROKER_STUB_ACTIONS:
-        with pytest.raises(da.DependencyError):
-            da.broker_stub(action)
+def test_per_doc_broker_actions_are_implemented_not_stubbed():
+    # E9: the per-Doc actions are now IMPLEMENTED through the broker (create_doc,
+    # upload_pdf, share_doc_edit, pull_doc_text) -- the old broker_stub() is gone.
+    assert not hasattr(da, "broker_stub")
+    assert not hasattr(da, "BROKER_STUB_ACTIONS")
+    assert da.BROKER_DOC_ACTIONS == ("create_doc", "upload_pdf", "share_doc_edit",
+                                     "pull_doc_text")
+    # every REQUIRED action (the two trees + the four per-Doc ops) is a real broker fn.
+    assert set(da.BROKER_REQUIRED_ACTIONS) == {
+        "create_book_tree", "create_participant_tree",
+        "create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text"}
 
 
 def test_broker_rejects_bad_token_and_missing_ids(monkeypatch):

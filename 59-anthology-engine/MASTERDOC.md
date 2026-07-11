@@ -72,10 +72,19 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
     local SA. `caf_credential_gate.py` enforces EITHER the broker pair OR the SA trio per
     box (a half-configured broker, or a mode missing its levers, STOPS provisioning, exit
     2). The per-Doc broker actions (`create_doc`, `upload_pdf`, `share_doc_edit`,
-    `pull_doc_text`) and the per-participant runtime tree are DESIGNED extension points,
-    stubbed not faked: until they are brokered, those ops still require the operator's OWN
-    box (local SA), and a client box in broker mode flags them loudly (exit 3). The n8n
-    workflow asset ships at `config/n8n/anthology-drive-broker.workflow.json`.
+    `pull_doc_text`) AND the per-participant runtime tree (`create_participant_tree`) are
+    IMPLEMENTED in the n8n route template, so the WHOLE S0..S8 Drive path (S0 first-sight
+    tree, S7 cover upload, S8 Doc create/share, confirm-then-pull read-back) runs on a
+    pure client box through the broker -- the local SA is never touched there. Selection
+    is per box: `deliver_doc` / `deliver_media` / `do_share` / `pull_doc_text` route to the
+    broker whenever `broker_configured()`, else the local SA (operator's own box). To
+    avoid a stale broker dead-ending mid-run, `drive_adapter.py broker-preflight` probes
+    the broker's `capabilities` (with a side-effect-free `probe:true` fallback) and the
+    provisioner HOLDs at STEP 5 by NAME (AF-AE-BROKER-ACTIONS-MISSING) on any missing
+    action. The n8n workflow asset ships at
+    `config/n8n/anthology-drive-broker.workflow.json` (import + activate it per its
+    README; the per-Doc branches use Drive-scope-only endpoints -- files.create + media
+    update + files.export -- so the single Google Drive credential suffices).
 11. PIPELINE FIND-AND-BIND: GoHighLevel exposes no API to create a pipeline --
     pipelines are UI-only. The standard Anthology pipeline must pre-exist in the
     CLIENT's OWN Convert and Flow account (shipped in the snapshot, or hand-built
