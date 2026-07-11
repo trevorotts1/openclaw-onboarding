@@ -26,8 +26,8 @@ This guide walks you through activating your AI workforce as a live Command Cent
 > deploys the LOCKED CC shell FIRST, then gates the real workforce, in two blocks:
 > **BLOCK A** (Phase 1 prereqs → a **lock-assert** → Phase 6 dashboard deploy → Phase 6h
 > tunnel) brings up the locked `/interview` shell; **BLOCK B** (Phase 3/4/5 + Phase
-> 6b–6f seeding → Phase 7 verification → Phase 7z ZHE gate) runs only after the
-> interview-complete gate passes. The **lock-before-reachable** invariant is the safety
+> 6b–6g seeding + Phase 6i SOP V2 library ingestion → Phase 7 verification → Phase 7z
+> ZHE gate) runs only after the interview-complete gate passes. The **lock-before-reachable** invariant is the safety
 > guarantee: the lock-assert FAILS CLOSED if the build-state file (the middleware's only
 > lock source) is missing, and because a pre-closeout build has `interviewComplete=false`
 > / `buildCompletedAt` unset, the shell serves LOCKED (302 → `/interview`) from its first
@@ -557,19 +557,104 @@ If you operate a Hostinger Docker VPS, use the platform/vps variant of this scri
 - Unified repo (Mac + VPS): https://github.com/trevorotts1/openclaw-onboarding
 - VPS-specific docs: platform/vps/ in the same repo
 
-## Phase 6c: SOP V2 Library Ingestion (Agent Does This Automatically — v10.13.29+)
+## Phase 6i: SOP V2 Library Ingestion (Agent Does This Automatically)
 
-The agent runs the new library ingester to pull the canonical V2 SOP
-library asset from this repo's GitHub Release, apply migration 028,
-upsert 2,555 SOPs, and seed 19 platform-default template variables.
+> **Renumbered from "Phase 6c"** — that heading duplicated 6.5b's real Phase
+> 6c above (unrelated: dashboard department sync) AND documented this step
+> as automatic for several releases while `run-full-install.sh` never
+> actually called it (closes finding C2, "CC SOP library is a ghost" — a
+> fresh install shipped whatever the Command Center's own boot-time starter
+> seed happened to write instead of the real V2 library). The code phase is
+> named 6i because 6b-6h were already taken by unrelated steps by the time
+> this got wired in.
+
+`run-full-install.sh` PHASE 6i now runs this automatically (idempotent —
+safe to re-run on every install/resume/update, in both full and
+`--update-only` mode). It has **two writers and two independent asserts**:
+
+1. **`ingest-sop-library.sh`** pulls the canonical V2 SOP library asset from
+   this repo's GitHub Release, applies migration 028, upserts the SOP records,
+   and seeds 19 platform-default template variables. Its rows carry
+   `source` NULL.
+2. **`converge(scope=sops)`** — an authenticated call to the Command Center,
+   which runs `importRoleLibrary()` to import the on-disk role-library
+   `how-to.md` files into the SAME `sops` table. Its rows carry
+   `source='role-library'`. **This is the only writer of role-library rows.**
+3. **`scripts/assert-sop-library-populated.py`** then asserts BOTH, separately:
+   `--min-total` (all rows) **and** `--min-role-library` (rows with
+   `source='role-library'`). A single `COUNT(*)` conflates the two writers — a
+   perfect 2,555-row ingest with a *failed* converge yields **zero**
+   role-library rows and would sail through a bare count, which is exactly the
+   ghost this phase exists to prevent.
+
+### This phase FAILS THE INSTALL — by design
+
+Phase 6i is **fail-closed**. It calls `fail_install` (install stops, build-state
+marked `failed`) if **any** of the following is true:
+
+| Condition | Why it is fatal |
+|---|---|
+| `ingest-sop-library.sh` exits non-zero | Network / GitHub outage / rate-limit / asset removed / gunzip error. The library was **not** ingested. |
+| It exits 0 but prints no `downloaded N SOP records` line | No trustworthy row floor for this run. |
+| It reports `downloaded 0 SOP records` | The release asset is empty. |
+| Total `sops` rows < half the downloaded count | The upsert did not land. |
+| **Zero rows with `source='role-library'` while role `how-to.md` files exist on disk** | `converge(scope=sops)` was pointed at a real library and imported **nothing** — the role library is a ghost and Triad routing starves. |
+| The gate script or `python3` is missing | An **unverified** library must never ship green. |
+
+There is deliberately **no "warn and continue" path**. The Command Center
+boot-seeds a handful of starter SOPs (`autoSeedStarterSOPs`) the moment it
+boots in Phase 6, so the `sops` table is **never empty** by the time this gate
+runs. Any relaxed "just check it isn't empty" floor would therefore rubber-stamp
+the boot-seed ghost as a healthy 2,555-row library — which is precisely the
+regression this gate was written to catch. **A gate that fails open is not a
+gate.**
+
+**The converge step is gated on the response BODY, never on the HTTP status.**
+`curl -sf` is the same fail-open class: a Command Center whose departments tree
+does not resolve answers `HTTP 200 {"ok":true,"sops":{"imported":0,"updated":0}}`
+having written **nothing**, and a status-only check stamps that ghost `ok`. Phase 6i
+parses `sops.imported + sops.updated` — *rows written* — and treats HTTP 2xx with
+zero rows written as `zero-imported`, not success. It must be **both** counters:
+`imported` is INSERTs only, so the second run of a perfectly healthy library reports
+`imported=0, updated=912`, and gating on `imported` alone would hard-fail every
+idempotent re-run.
+
+**Zero role-library rows is not always a bug — and the gate can tell the difference.**
+The discriminator is the on-disk source: the count of role `how-to.md` files under the
+tree the Command Center actually reads. If ≥1 exists and converge still wrote zero rows,
+that is the C2 ghost → **fail the install**. If the box has **no** role-library source at
+all (0 `how-to.md`, and the Command Center resolved no ZHC company tree, or it would have
+written rows), then zero role-library rows is the **correct** outcome → the install
+proceeds, the role floor is 0 for that run, and the state file records the library as
+**absent** (`commandCenterSopRoleLibraryExpected=false`) rather than as healthy. A gate
+that cannot tell "nothing to import" from "silently failed" either bricks healthy installs
+or rubber-stamps ghosts; this one is required to do neither.
+
+**If Phase 6i fails the install:** fix the underlying cause (usually network /
+GitHub release reachability, or a Command Center that is not answering
+`/api/system/converge`), then re-run the installer. Both writers are idempotent
+upserts, so re-running is safe and cheap. The build-state records
+`commandCenterSopLibraryIngested`, `commandCenterSopLibraryTotal`,
+`commandCenterSopLibraryRoleLibraryTotal`, and `commandCenterSopConvergeStatus`
+so the failure mode is durably recorded, not just logged.
+
+Manual invocation (e.g. to re-ingest a refreshed library on an existing client)
+still works the same way:
 
 ```bash
 cd ~/.openclaw/skills/32-command-center-setup
-./scripts/ingest-sop-library.sh "$CLIENT_SLUG" v10.13.29
+./scripts/ingest-sop-library.sh "$CLIENT_SLUG"
 ```
 
 Expected result: `sops total: 2555`, `v2 sops: 2448`, `v1 sops: 107`,
-`sop_dependencies: 19`, `client_template_vars: 19` for this client.
+`sop_dependencies: 19`, `client_template_vars: 19` for this client, **plus a
+non-zero count of `source='role-library'` rows** from the converge call. To
+check the gate by hand (it refuses to run without an explicit floor — an
+implicit floor is a rubber stamp):
+
+```bash
+./scripts/assert-sop-library-populated.py --min-total 1277 --min-role-library 1 --json
+```
 
 ---
 
@@ -813,6 +898,16 @@ cp .env.example .env.local
 > - `MC_API_TOKEN` + `WEBHOOK_SECRET` are generated so the middleware never silently
 >   fails closed. A Cloudflare-Access box may instead set `CC_ALLOW_INSECURE_OPEN_API=true`
 >   to write `ALLOW_INSECURE_OPEN_API=true`.
+> - `ROLE_LIBRARY_PATH` ← `$OC_ROOT/workspace/departments`, pinned whenever that tree holds
+>   at least one role `how-to.md`. **This is the C2 root cause.** `converge(scope=sops)`
+>   resolves its departments tree from the ZHC company roots, then `ROLE_LIBRARY_PATH`, then
+>   `<OPENCLAW_WORKSPACE_PATH>/departments` — whose built-in default is the **Docker-only**
+>   `/data/.openclaw/workspace`. On a Mac there is no ZHC company tree and no `/data`, so the
+>   path resolves to nothing; the importer returns `[]` for a missing directory **without
+>   throwing**, converge answers `HTTP 200 {"ok":true,"sops":{"imported":0,"updated":0}}`, and
+>   **zero** role-library rows land — forever. Pinning this key puts the box's real library
+>   back in the Command Center's search path (measured on a throwaway CC: 0 role-library rows
+>   unpinned → 690 rows across 70 departments pinned, same DB, same code).
 >
 > Phase 6 also runs a **freshness-gated `next build`** (rebuilds `.next` only when it is
 > stale vs source) so `next start` always serves code that registers the intake-advance +

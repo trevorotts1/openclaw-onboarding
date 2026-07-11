@@ -225,13 +225,18 @@ cc_pm2_start_canonical() {
 #     ingest + agent-completion webhooks (fail-closed) unless
 #     ALLOW_INSECURE_OPEN_API=true.
 #
+#   * ROLE_LIBRARY_PATH unset -> converge(scope=sops) imports ZERO role-library
+#     rows on any box whose role library lives under $OC_ROOT/workspace (i.e.
+#     every Mac). See (5) below — this is the C2 root cause.
+#
 # The two guards below make a converge self-healing + idempotent:
 #   (1) cc_ensure_fresh_build  — rebuild `.next` IFF it is stale vs source.
-#   (2)+(3)+(4) cc_write_env_local — additively provision the three env families
+#   (2)+(3)+(4)+(5) cc_write_env_local — additively provision the four env families
 #       into CC .env.local (0600) from the box's OWN gateway token + primary TEXT
-#       model. Existing operator values are ALWAYS preserved; generated secrets
-#       are written once and reused (never rotated). Secret VALUES are never
-#       logged/printed — only the key name + a SET/preserved/skipped label.
+#       model + on-disk role library. Existing operator values are ALWAYS
+#       preserved; generated secrets are written once and reused (never rotated).
+#       Secret VALUES are never logged/printed — only the key name + a
+#       SET/preserved/skipped label.
 # ----------------------------------------------------------------------
 
 # _cc_mtime — epoch mtime of a file, portable across BSD (Mac) and GNU (Linux).
@@ -488,9 +493,9 @@ cc_mirror_api_auth_to_agent_secrets() {
   return 0
 }
 
-# cc_write_env_local — fixes (2)+(3)+(4). Provisions CC .env.local from the box's
-# own config so a rebuild/reboot can never silently fail closed. Idempotent +
-# additive; safe to re-run on every install/update/resume.
+# cc_write_env_local — fixes (2)+(3)+(4)+(5). Provisions CC .env.local from the
+# box's own config so a rebuild/reboot can never silently fail closed. Idempotent
+# + additive; safe to re-run on every install/update/resume.
 cc_write_env_local() {
   local dir="${DASHBOARD_DIR}" envf
   envf="${dir}/.env.local"
@@ -598,6 +603,62 @@ cc_write_env_local() {
     api_status="set(MC_API_TOKEN+WEBHOOK_SECRET provisioned)"
   fi
   log "INFO" "cc-env: API-auth ${api_status}"
+
+  # ---- (5) ROLE_LIBRARY_PATH — WHERE THE ROLE LIBRARY ACTUALLY LIVES ---------
+  # THE C2 ROOT CAUSE, and the reason converge(scope=sops) has always imported
+  # ZERO role-library rows on this fleet. Established by a supervised converge
+  # against a throwaway CC (isolated DB + port), NOT by reading code:
+  #
+  #   converge/route.ts   -> departmentsPath = resolveDepartmentsTreePath() ?? undefined
+  #   migrations.ts       -> resolveDepartmentsTreePath() searches ONLY the ZHC
+  #                          company roots: $ZERO_HUMAN_COMPANY_DIR, the sibling of
+  #                          a resolved departments.json, and newestZhcChild()
+  #                          (~/Downloads/openclaw-master-files/zero-human-company,
+  #                          /data/openclaw-master-files/..., ~/clawd/zero-human-company)
+  #   role-library-import -> when that returns null, falls back to ROLE_LIBRARY_PATH,
+  #                          else <OPENCLAW_WORKSPACE_PATH>/departments, whose default
+  #                          is the DOCKER-ONLY '/data/.openclaw/workspace'.
+  #
+  # So the box's REAL role library — $OC_ROOT/workspace/departments — is invisible
+  # to the Command Center on any Mac: no ZHC company tree exists on a client box,
+  # and /data/.openclaw/workspace does not exist outside Docker. discoverRoleHowTos()
+  # then does `if (!isDir(departmentsPath)) return []` — it does NOT throw — so the
+  # import silently scans NOTHING, converge returns HTTP 200 {"ok":true,
+  # "sops":{"imported":0,"updated":0}}, and 0 role-library rows land. Forever.
+  # (Measured on a throwaway CC pointed at a departments-less HOME: 0 role rows.
+  # Same CC, same DB, ROLE_LIBRARY_PATH pinned: 690 rows across 70 departments.)
+  #
+  # ROLE_LIBRARY_PATH is the CC's OWN documented highest-precedence override, and
+  # it is honoured EXACTLY in the broken case: converge passes an explicit
+  # departmentsPath only when it FOUND a ZHC tree (which already imports fine), and
+  # falls through to this env var when it did not. Pinning it therefore repairs the
+  # broken shape without overriding the working one.
+  #
+  # Written BEFORE the CC is started/restarted (Phase 6 order: cc_write_env_local ->
+  # db:push -> pm2 start|restart), so the board boots already knowing where its role
+  # library is. No extra restart, and Phase 6i's converge just works.
+  local rl_status rl_dir rl_howtos
+  rl_dir="$OC_ROOT/workspace/departments"
+  if cc_env_has_nonempty "$envf" ROLE_LIBRARY_PATH; then
+    # Operator override wins, as everywhere else in this function. If it points at
+    # nothing, Phase 6i's row gate fails the install LOUDLY (naming this key) rather
+    # than importing 0 rows behind a green check.
+    rl_status="preserved(existing)"
+  elif [[ -d "$rl_dir" ]]; then
+    rl_howtos="$(find "$rl_dir" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "${rl_howtos:-0}" -ge 1 ]]; then
+      cc_env_set_if_absent "$envf" ROLE_LIBRARY_PATH "$rl_dir" >/dev/null
+      rl_status="set($rl_dir; $rl_howtos role how-to.md)"
+    else
+      # Directory exists but holds no role how-tos — pinning it would tell the CC to
+      # import from an empty tree. Leave unset so the CC's own ZHC resolution still
+      # gets its chance; Phase 6i decides on EVIDENCE (rows), not on this guess.
+      rl_status="skipped(no how-to.md under $rl_dir)"
+    fi
+  else
+    rl_status="skipped($rl_dir not present)"
+  fi
+  log "INFO" "cc-env: ROLE_LIBRARY_PATH ${rl_status}"
 
   # WRITE-BACK-401 durable fix: mirror MC_API_TOKEN + WEBHOOK_SECRET into the
   # dept-agent OpenClaw runtime secrets env so a dispatched agent's $MC_API_TOKEN
@@ -1395,6 +1456,345 @@ else
   log "WARN" "phase=6g ghl-preflight: MISSING $_ghl_missing in $GHL_SECRETS_ENV -- GHL funnel/automation templates are ingested but department agents CANNOT act on GHL until Skill 36 wires GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID into ~/.openclaw/secrets/.env. (Operator-only; CC + Kanban remain fully functional.)"
   # P3-2: carry the free-form missing-cred string via jq --arg, not interpolation.
   [[ -f "$STATE_FILE" ]] && state_set_arg '.commandCenterGhlCredPreflight = "missing" | .commandCenterGhlCredMissing = $val' "$_ghl_missing"
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 6i -- SOP V2 Library Ingestion (C2 fix: closes the CC SOP-library
+# ghost)
+# ----------------------------------------------------------------------
+# THE GAP THIS CLOSES (finding C2): INSTALL.md has documented a "Phase 6c:
+# SOP V2 Library Ingestion" step since v10.13.29 ("Agent Does This
+# Automatically") but `run-full-install.sh` never actually called
+# ingest-sop-library.sh -- confirmed live: `grep -c ingest-sop-library
+# run-full-install.sh` == 0 before this phase existed. (Named 6i here, not
+# 6c, because this file's Phase 6c is already the unrelated
+# sync-departments-from-build-state step -- INSTALL.md's duplicate "Phase
+# 6c" heading is renumbered to match.) Every install therefore ran on
+# whatever CC's own autoSeedStarterSOPs boot-seed happened to write --
+# observed live as 54 rows (30 test-dept residue + 24 stale legacy-alias
+# rows) instead of the real ~2,555-row V2 library, silently starving
+# dispatch_rules.sop_id matching + Triad routing. Two writers populate the
+# SAME `sops` table and both are wired here: (1) ingest-sop-library.sh does
+# the direct JSONL-asset upsert (its rows carry source NULL); (2) the CC
+# converge(scope=sops) HTTP call runs importRoleLibrary() -- the on-disk
+# departments/ role-library ingest that "never succeeded here" per the live
+# evidence (rows carry source='role-library').
+#
+# BOTH are asserted, INDEPENDENTLY, by assert-sop-library-populated.py:
+# --min-total (all rows) AND --min-role-library (source='role-library' rows).
+# A single COUNT(*) conflates the two writers -- a perfect 2,555-row JSONL
+# ingest with a FAILED converge yields ZERO role-library rows and sails
+# through a bare count. That is precisely the live C2 shape, so it gets its
+# own floor.
+#
+# WHY converge(scope=sops) had ALWAYS imported zero role-library rows -- the C2
+# open question ("never invoked vs importRoleLibrary erroring?"), settled by a
+# supervised converge against a throwaway Command Center (isolated DB + port,
+# never the live board): NEITHER. It IS invoked and it does NOT error. It
+# resolves its departments tree from ZERO_HUMAN_COMPANY_DIR / a ZHC company tree
+# / ROLE_LIBRARY_PATH / <OPENCLAW_WORKSPACE_PATH>/departments -- and that last
+# default is the DOCKER-ONLY '/data/.openclaw/workspace'. On a Mac there is no
+# ZHC company tree and no /data, so the path resolves to something that does not
+# exist; discoverRoleHowTos() returns [] for a missing dir WITHOUT throwing, and
+# converge answers HTTP 200 {"ok":true,"sops":{"imported":0,"updated":0}} having
+# written nothing. The box's real library ($OC_ROOT/workspace/departments) was
+# never in its search path. cc_write_env_local (5) now PINS ROLE_LIBRARY_PATH at
+# it before the board boots. Measured on the throwaway CC: 0 role-library rows
+# unpinned -> 690 rows across 70 departments pinned, same DB, same code.
+#
+# The whole phase is FAIL-CLOSED: a failed ingest, an unparseable download
+# count, a missing gate script, or ANY non-zero gate rc is a fail_install --
+# never a degrade to a permissive floor. The CC boot-seed guarantees `sops`
+# is non-empty by Phase 6, so every "just check it's not empty" fallback is a
+# rubber stamp for the ghost. A gate that fails open is not a gate.
+#
+# Idempotent (both writers are upsert-only) -- safe to re-run on every
+# install/resume/update, so it runs in BOTH full and --update-only mode
+# (matching 6b/6c/6d/6e/6f/6g).
+log "INFO" "phase=6i sop-library-ingestion: starting"
+INGEST_SOP_SH="$SKILL_DIR/scripts/ingest-sop-library.sh"
+ASSERT_SOP_PY="$SKILL_DIR/scripts/assert-sop-library-populated.py"
+
+# NOTE ON THE STATE CONTRACT: .commandCenterSopLibraryIngested is a BOOLEAN.
+# It was briefly a string on the skip paths ("script-missing" / "no-client-slug"),
+# which is a fail-open in disguise: a non-empty string is TRUTHY, so every
+# consumer doing `if (state.commandCenterSopLibraryIngested)` read a SKIPPED
+# ingest as a SUCCESSFUL one -- the same "a state field actively asserts health
+# it does not have" defect this whole phase exists to kill. Skips now write
+# `false` and put the reason in .commandCenterSopLibrarySkipReason.
+if [[ ! -f "$INGEST_SOP_SH" ]]; then
+  # The ingester ships in THIS skill dir, next to this very script -- if it is
+  # missing, the Skill 32 install is corrupt/partial. Fatal, exactly like the
+  # missing row-count gate below: a Command Center whose SOP library was never
+  # even attempted is the C2 ghost, and it must never ship with a green check.
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "ingest-script-missing"'; fi
+  fail_install "phase=6i: $INGEST_SOP_SH not found -- the SOP V2 library ingester is missing from this Skill 32 install, so the library would never be ingested and the Command Center would ship the boot-seed ghost. Re-run update-skills.sh to repair the skill dir, then re-run install."
+elif [[ -z "${CLIENT_SLUG:-}" ]]; then
+  # Reachable ONLY in --update-only mode (a full install hard-exits on a missing
+  # slug during arg parsing) on a box whose state file records no companySlug.
+  # Left non-fatal: this is a pre-existing box-state anomaly, not a library
+  # defect, and hard-failing every slug-less update-only re-run is out of C2's
+  # scope. It is recorded FALSY + with a reason, so nothing downstream can read
+  # it as a successful ingest.
+  log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- SKIPPING the SOP library ingest (ingest-sop-library.sh requires a client slug). The SOP library is NOT verified on this run; re-run with the slug once known."
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibrarySkipReason = "no-client-slug"'; fi
+else
+  # ---- (1) direct JSONL-asset ingest -> `sops` table -------------------
+  # FAIL-CLOSED. ingest-sop-library.sh runs under `set -euo pipefail` and only
+  # prints its "downloaded N SOP records" line AFTER curl+gunzip both succeed.
+  # So on ANY network failure / GitHub outage / rate-limit / asset removal /
+  # gunzip error it aborts BEFORE that line: rc != 0 and NO count to parse.
+  # The first cut of this phase then dropped --expected AND --min-total from
+  # the gate below and let it fall back to its old floor of 1 -- but the CC
+  # boot-seed (autoSeedStarterSOPs) has ALREADY filled `sops` by Phase 6, so
+  # the table is never empty and the gate returned "healthy: 54 row(s) >= floor
+  # 1" over the exact ghost it exists to catch, then stamped
+  # commandCenterSopLibraryIngested=true. A gate that fails open is not a gate.
+  # A failed ingest, or an ingest whose count we cannot read, means we have NO
+  # trustworthy floor -- so we do not guess one, we FAIL THE INSTALL. Both
+  # writers are idempotent upserts, so the operator just re-runs once the
+  # asset/network is reachable again.
+  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$CLIENT_SLUG" 2>&1)"; SOP_INGEST_RC=$?
+  printf '%s\n' "$SOP_INGEST_OUT" >> "$LOG_FILE"
+  SOP_INGEST_TAIL="$(printf '%s' "$SOP_INGEST_OUT" | tail -n 3 | tr '\n' ' ')"
+
+  if [[ "$SOP_INGEST_RC" -ne 0 ]]; then
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopConvergeStatus = "not-reached"'; fi
+    fail_install "phase=6i: ingest-sop-library.sh FAILED (rc=$SOP_INGEST_RC) -- the SOP V2 library was NOT downloaded/ingested. Refusing to degrade to a not-empty floor: the CC boot-seed already populated \`sops\`, so any relaxed gate would rubber-stamp a ghost library. Fix the ingest (network/GitHub release asset/DB path), then re-run install (the ingest is an idempotent upsert). Last output: ${SOP_INGEST_TAIL} -- full log: $LOG_FILE"
+  fi
+  log "INFO" "phase=6i sop-library-ingestion: ingest-sop-library.sh completed (rc=0)"
+
+  # The script's own "[sop-library] downloaded N SOP records" line is the ONLY
+  # trustworthy floor for this run (never a hardcoded 2555, which would rot as
+  # the library grows/shrinks across releases). No count parsed => no floor =>
+  # FAIL, never a silent degrade.
+  SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE 'downloaded [0-9]+ SOP records' | grep -oE '[0-9]+' | head -n1 || true)"
+  if [[ -z "$SOP_DOWNLOADED_COUNT" ]]; then
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopConvergeStatus = "not-reached"'; fi
+    fail_install "phase=6i: ingest-sop-library.sh exited 0 but printed NO 'downloaded N SOP records' line -- there is no trustworthy row floor for this run, and a relaxed gate would rubber-stamp the CC boot-seed ghost as a healthy library. This means the ingester changed its output contract or half-completed. See $LOG_FILE, then re-run install. Last output: ${SOP_INGEST_TAIL}"
+  fi
+  if [[ "$SOP_DOWNLOADED_COUNT" -lt 1 ]]; then
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopConvergeStatus = "not-reached"'; fi
+    fail_install "phase=6i: ingest-sop-library.sh reported 'downloaded 0 SOP records' -- the release asset is empty or gunzip produced an empty file. The SOP V2 library would ship as a ghost. See $LOG_FILE, then re-run install."
+  fi
+  log "INFO" "phase=6i sop-library-ingestion: ingest reported $SOP_DOWNLOADED_COUNT SOP record(s) downloaded"
+
+  # ---- (2) CC converge(scope=sops) -> importRoleLibrary() role rows ----
+  # MC_API_TOKEN is provisioned into $DASHBOARD_DIR/.env.local by
+  # cc_write_env_local (Phase 6, above) and CC is already running locally on
+  # $DASHBOARD_PORT by this point in the sequence. Mirrors sync-extensions.sh's
+  # existing converge call (same route, same scope contract).
+  #
+  # THIS GATE READS THE RESPONSE BODY, NOT THE HTTP STATUS. `curl -sf` alone is
+  # the SAME fail-open class this phase exists to kill, and it was measured, not
+  # theorised: a CC whose departments tree does not resolve returns
+  #     HTTP 200  {"ok":true,"sops":{"imported":0,"updated":0}}
+  # -- rc=0, zero rows written. The old code logged "converge succeeded
+  # (role-library rows imported)" and stamped .commandCenterSopConvergeStatus=ok
+  # over a library that had imported NOTHING. The CC's own C2 guard cannot save
+  # us either: it 500s only when `sops` is ENTIRELY empty (activeSopCount===0),
+  # and the boot-seed + step (1)'s JSONL ingest guarantee it never is.
+  #
+  # WRITTEN = imported + updated, and it MUST be both:
+  #   * `imported` is INSERTS ONLY. This phase is idempotent and re-runs on every
+  #     install/resume/--update-only, so on the 2nd+ run a PERFECTLY HEALTHY
+  #     library reports imported=0, updated=912. Gating on imported>0 alone would
+  #     brick every re-run. (Measured: run 1 -> {690,222}; run 2 -> {0,912}.)
+  #   * `updated`-only still means the importer read the tree and refreshed rows.
+  # Rows written is the honest signal; the row-count gate in step (3) is the proof.
+  SOP_CONVERGE_STATUS="skipped"
+  SOP_CONVERGE_WRITTEN=-1        # -1 = no trustworthy number parsed from the body
+  if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
+    SOP_MC_TOKEN="$(cc_env_get "$DASHBOARD_DIR/.env.local" MC_API_TOKEN)"
+    # An ALLOW_INSECURE_OPEN_API (CF-Access) box legitimately has NO MC_API_TOKEN;
+    # CC's checkAuth() then disables bearer auth entirely. Send the header only when
+    # we actually have a token, so an insecure-posture box converges instead of
+    # being failed for a token it is not supposed to have.
+    SOP_CONVERGE_ARGS=(-sS -X POST "http://127.0.0.1:$DASHBOARD_PORT/api/system/converge"
+                       -H "Content-Type: application/json" -d '{"scope":"sops"}' --max-time 120)
+    if [[ -n "$SOP_MC_TOKEN" ]]; then
+      SOP_CONVERGE_ARGS+=(-H "Authorization: Bearer $SOP_MC_TOKEN")
+    fi
+    SOP_CONVERGE_BODY="$(curl "${SOP_CONVERGE_ARGS[@]}" -w $'\n%{http_code}' 2>&1)"; SOP_CONVERGE_CURL_RC=$?
+    SOP_MC_TOKEN=""; SOP_CONVERGE_ARGS=()   # scrub the token from shell memory promptly
+    SOP_CONVERGE_CODE="$(printf '%s' "$SOP_CONVERGE_BODY" | tail -n1)"
+    SOP_CONVERGE_JSON="$(printf '%s' "$SOP_CONVERGE_BODY" | sed '$d')"
+    printf 'phase=6i converge http=%s rc=%s body=%s\n' \
+      "$SOP_CONVERGE_CODE" "$SOP_CONVERGE_CURL_RC" "$SOP_CONVERGE_JSON" >> "$LOG_FILE"
+
+    if [[ "$SOP_CONVERGE_CURL_RC" -ne 0 ]]; then
+      SOP_CONVERGE_STATUS="unreachable"
+      log "WARN" "phase=6i sop-library-ingestion: CC converge(scope=sops) could not be reached (curl rc=$SOP_CONVERGE_CURL_RC) -- NO role-library rows were imported by this run; the row gate below decides on evidence"
+    elif [[ ! "$SOP_CONVERGE_CODE" =~ ^2 ]]; then
+      # Includes CC's own C2 guard (500 on an entirely empty `sops` table).
+      SOP_CONVERGE_STATUS="http-$SOP_CONVERGE_CODE"
+      log "WARN" "phase=6i sop-library-ingestion: CC converge(scope=sops) returned HTTP $SOP_CONVERGE_CODE -- NO role-library rows were imported by this run; see $LOG_FILE"
+    else
+      # HTTP 2xx is NOT success. Parse ok + sops.imported + sops.updated. A body we
+      # cannot parse, an ok:false, or a missing `sops` object all mean we have NO
+      # evidence rows were written -- and no evidence is never a pass.
+      SOP_CONVERGE_WRITTEN="$(printf '%s' "$SOP_CONVERGE_JSON" | python3 -c '
+import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.stdout.write("-1"); sys.exit(0)
+if not d.get("ok") or not isinstance(d.get("sops"), dict):
+    sys.stdout.write("-1"); sys.exit(0)
+s = d["sops"]
+try:
+    sys.stdout.write(str(int(s.get("imported", 0)) + int(s.get("updated", 0))))
+except Exception:
+    sys.stdout.write("-1")
+' 2>/dev/null || echo "-1")"
+      case "$SOP_CONVERGE_WRITTEN" in ''|*[!0-9-]*) SOP_CONVERGE_WRITTEN=-1 ;; esac
+
+      if [[ "$SOP_CONVERGE_WRITTEN" -lt 0 ]]; then
+        SOP_CONVERGE_STATUS="bad-response"
+        log "WARN" "phase=6i sop-library-ingestion: CC converge(scope=sops) returned HTTP $SOP_CONVERGE_CODE but the body was not a parseable {ok:true, sops:{imported,updated}} -- treating as NO rows written; see $LOG_FILE"
+      elif [[ "$SOP_CONVERGE_WRITTEN" -eq 0 ]]; then
+        # THE C2 GHOST, caught. 200 + ok:true + zero rows written.
+        SOP_CONVERGE_STATUS="zero-imported"
+        log "WARN" "phase=6i sop-library-ingestion: CC converge(scope=sops) returned ok:true but wrote ZERO role-library rows (imported+updated=0) -- the departments tree did not resolve inside the Command Center. NOTHING was imported."
+      else
+        SOP_CONVERGE_STATUS="ok"
+        log "INFO" "phase=6i sop-library-ingestion: CC converge(scope=sops) wrote $SOP_CONVERGE_WRITTEN role-library row(s) (imported+updated)"
+      fi
+    fi
+  else
+    SOP_CONVERGE_STATUS="no-env-local"
+    log "WARN" "phase=6i sop-library-ingestion: $DASHBOARD_DIR/.env.local not found -- cannot call CC converge(scope=sops); the role-library assert below decides on evidence"
+  fi
+  # Durably record the converge outcome BEFORE the gate runs, so the state file
+  # carries the reason even when the gate then fail_install()s on it.
+  state_set_arg '.commandCenterSopConvergeStatus = $val' "$SOP_CONVERGE_STATUS"
+
+  # ---- (3) fail-loud row-count gate (BOTH writers, independently) -------
+  # The gate script itself is now fail-closed (--min-total has no default: it
+  # exits 3 rather than assume a floor). Belt AND braces: this phase must never
+  # invoke it without a floor, and treats EVERY non-zero rc as a hard failure --
+  # there is deliberately no "WARN + degrade" branch left for any rc, because
+  # every such branch is a way for a ghost library to ship with a green check.
+  if [[ ! -f "$ASSERT_SOP_PY" ]] || ! command -v python3 >/dev/null 2>&1; then
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false'; fi
+    fail_install "phase=6i: row-count gate unavailable ($ASSERT_SOP_PY missing, or python3 not on PATH) -- the SOP V2 library cannot be verified, and an unverified library is exactly the C2 ghost. Install python3 / update Skill 32 to the version shipping assert-sop-library-populated.py, then re-run install."
+  fi
+
+  # Floor scales with what THIS run's asset actually reported downloading
+  # (>=1 guaranteed above). Half the downloaded count tolerates the upsert
+  # errors / legacy-slug overlap the ingester itself reports, while still
+  # sitting far above any boot-seed ghost (the live ghost was 54 rows vs a
+  # ~1,277 floor for a 2,555-record asset).
+  SOP_MIN_TOTAL=$(( SOP_DOWNLOADED_COUNT / 2 ))
+  if [[ "$SOP_MIN_TOTAL" -lt 1 ]]; then SOP_MIN_TOTAL=1; fi
+
+  # ROLE-LIBRARY FLOOR — decided on EVIDENCE, never on a guess. This is the
+  # difference between "converge correctly imported nothing because this box has
+  # nothing to import" and "converge silently failed" -- and a gate that cannot
+  # tell them apart either bricks healthy installs or rubber-stamps ghosts.
+  #
+  # The discriminating fact is the on-disk role-library SOURCE: how many role
+  # how-to.md files exist under a tree the CC could import from. It is decidable,
+  # local, and cheap.
+  #
+  #   converge wrote > 0 rows                  -> floor 1 (rows landed; the DB must show them)
+  #   wrote 0 BUT >=1 how-to.md on disk        -> floor 1 => HARD FAIL. We pointed the
+  #                                               CC at a real library and it imported
+  #                                               NOTHING. That is the C2 ghost.
+  #   wrote 0 AND 0 how-to.md on disk          -> floor 0. There is genuinely nothing to
+  #                                               import (and CC found no ZHC company tree
+  #                                               either, or it would have written rows).
+  #                                               Zero is the CORRECT answer -- do not brick
+  #                                               a healthy install over an absent library.
+  #   any converge we could not evaluate       -> floor 1. No evidence is never a pass.
+  #
+  # THE SOURCE COUNT IS A UNION, not a single dir. The floor-0 "nothing to import"
+  # verdict is only honest when the box has NO role library ANYWHERE it could
+  # import from. Counting how-to.md under the pinned ROLE_LIBRARY_PATH alone
+  # re-opens the exact fail-open cc_write_env_local (5) promises to fail LOUDLY on:
+  # a PRESERVED-but-empty/mis-pointed ROLE_LIBRARY_PATH (an operator override, or a
+  # prior pin against a tree since moved/regenerated) would count 0 how-tos there,
+  # drop the floor to 0, and let a REAL library under the box default ship as a
+  # GHOST behind a green check. So we count BOTH the pinned dir AND the box default
+  # ($OC_ROOT/workspace/departments): a real library under EITHER forces floor 1,
+  # turning a mis-pointed ROLE_LIBRARY_PATH into a LOUD rc=4 (naming the key) rather
+  # than a silent pass -- which is precisely what the contract promises.
+  SOP_ROLE_SRC_DIR=""
+  if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
+    SOP_ROLE_SRC_DIR="$(cc_env_get "$DASHBOARD_DIR/.env.local" ROLE_LIBRARY_PATH)"
+  fi
+  SOP_ROLE_DEFAULT_DIR="$OC_ROOT/workspace/departments"
+  [[ -z "$SOP_ROLE_SRC_DIR" ]] && SOP_ROLE_SRC_DIR="$SOP_ROLE_DEFAULT_DIR"
+  SOP_ROLE_SRC_COUNT=0
+  if [[ -d "$SOP_ROLE_SRC_DIR" ]]; then
+    SOP_ROLE_SRC_COUNT="$(find "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+  SOP_ROLE_DEFAULT_COUNT=0
+  if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && -d "$SOP_ROLE_DEFAULT_DIR" ]]; then
+    SOP_ROLE_DEFAULT_COUNT="$(find "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_SRC_COUNT=$(( SOP_ROLE_SRC_COUNT + SOP_ROLE_DEFAULT_COUNT ))
+  fi
+
+  SOP_MIN_ROLE_LIBRARY=1
+  if [[ "$SOP_CONVERGE_STATUS" == "zero-imported" && "${SOP_ROLE_SRC_COUNT:-0}" -eq 0 ]]; then
+    SOP_MIN_ROLE_LIBRARY=0
+    log "WARN" "phase=6i sop-library-ingestion: no role-library source on this box (0 how-to.md under $SOP_ROLE_SRC_DIR or the box default $SOP_ROLE_DEFAULT_DIR) and the CC resolved no ZHC company tree -- zero role-library rows is the CORRECT outcome here, so the role floor is 0 for this run. The role library is NOT verified; it is recorded as absent, not as healthy."
+  fi
+  state_set_arg '.commandCenterSopRoleLibrarySource = $val' "$SOP_ROLE_SRC_DIR"
+  state_set_arg '.commandCenterSopRoleLibraryExpected = $val' "$([[ "$SOP_MIN_ROLE_LIBRARY" -ge 1 ]] && echo true || echo false)"
+
+  SOP_ASSERT_OUT="$(python3 "$ASSERT_SOP_PY" --json \
+      --expected "$SOP_DOWNLOADED_COUNT" \
+      --min-total "$SOP_MIN_TOTAL" \
+      --min-role-library "$SOP_MIN_ROLE_LIBRARY" 2>&1)"; SOP_ASSERT_RC=$?
+  printf '%s\n' "$SOP_ASSERT_OUT" >> "$LOG_FILE"
+  SOP_TOTAL="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('total',0)))" 2>/dev/null || echo "0")"
+  SOP_ROLE_TOTAL="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('role_library_total',0)))" 2>/dev/null || echo "0")"
+  SOP_MISMATCH="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write('true' if json.load(sys.stdin).get('row_count_mismatch') else 'false')" 2>/dev/null || echo "false")"
+  SOP_ASSERT_REASON="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('reason','')))" 2>/dev/null || echo "$SOP_ASSERT_OUT")"
+
+  if [[ "$SOP_ASSERT_RC" -eq 0 ]]; then
+    if [[ "$SOP_MIN_ROLE_LIBRARY" -eq 0 && "${SOP_ROLE_TOTAL:-0}" -eq 0 ]]; then
+      # Honest by construction: this run did NOT verify a role library, it verified
+      # that this box has none to import. Never log it as a healthy role library.
+      log "INFO" "phase=6i sop-library-ingestion: PASS (JSONL library only) -- sops table has $SOP_TOTAL row(s) >= floor $SOP_MIN_TOTAL. ZERO role-library rows, and that is CORRECT: no role-library source exists on this box (0 how-to.md under $SOP_ROLE_SRC_DIR). Triad role routing stays unpopulated until a departments tree is built."
+    else
+      log "INFO" "phase=6i sop-library-ingestion: PASS -- sops table has $SOP_TOTAL row(s) incl. $SOP_ROLE_TOTAL role-library row(s) (floors: total=$SOP_MIN_TOTAL role=$SOP_MIN_ROLE_LIBRARY, converge=$SOP_CONVERGE_STATUS wrote=$SOP_CONVERGE_WRITTEN)"
+    fi
+    if [[ -f "$STATE_FILE" ]]; then state_set ".commandCenterSopLibraryIngested = true | .commandCenterSopLibraryTotal = $SOP_TOTAL | .commandCenterSopLibraryRoleLibraryTotal = $SOP_ROLE_TOTAL"; fi
+    if [[ "$SOP_MISMATCH" == "true" ]]; then
+      # fail-WARN per the C2 spec (row-count != downloaded count is NOT a
+      # ghost by itself -- upsert errors / legacy overlap are expected).
+      log "WARN" "phase=6i sop-library-ingestion: row-count mismatch vs downloaded count ($SOP_DOWNLOADED_COUNT) -- non-blocking, see $LOG_FILE"
+    fi
+  else
+    # ANY non-zero rc is a hard failure: 1=GHOST (total below floor / no table),
+    # 2=no mission-control.db, 3=NO FLOOR (gate invoked without --min-total --
+    # unreachable from here, kept fatal so it can never regress into a rubber
+    # stamp), 4=NO ROLE LIBRARY (converge/importRoleLibrary never landed a
+    # single source='role-library' row: the JSONL ingest can be perfectly
+    # healthy and the role library still be a ghost -- the live C2 shape).
+    # C2 is P0 precisely because a fresh install silently claiming success over
+    # a ghost SOP library is the bug. FAIL LOUD -- never a silent degrade.
+    if [[ -f "$STATE_FILE" ]]; then state_set ".commandCenterSopLibraryIngested = false | .commandCenterSopLibraryTotal = $SOP_TOTAL | .commandCenterSopLibraryRoleLibraryTotal = $SOP_ROLE_TOTAL"; fi
+    # rc=4 (NO ROLE LIBRARY) has ONE overwhelmingly likely cause, and the operator
+    # should not have to rediscover it: the Command Center could not resolve the
+    # departments tree, so importRoleLibrary() scanned nothing and returned 0 without
+    # erroring. Name the key and the tree so the fix is mechanical.
+    SOP_FAIL_HINT=""
+    if [[ "$SOP_ASSERT_RC" -eq 4 ]]; then
+      # Name the mis-pointed key when the box's real library is at the default but
+      # ROLE_LIBRARY_PATH points elsewhere (0 how-tos under the pin, but the union
+      # counted the default's) -- the fix is then to correct the pin, not to build a
+      # tree that already exists.
+      SOP_ROLE_DIR_HINT="the tree the CC actually read ($SOP_ROLE_SRC_DIR)"
+      if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && "${SOP_ROLE_DEFAULT_COUNT:-0}" -ge 1 ]]; then
+        SOP_ROLE_DIR_HINT="ROLE_LIBRARY_PATH=$SOP_ROLE_SRC_DIR (0 role how-to.md there) while the box default $SOP_ROLE_DEFAULT_DIR holds $SOP_ROLE_DEFAULT_COUNT role how-to.md -- ROLE_LIBRARY_PATH is MIS-POINTED"
+      fi
+      SOP_FAIL_HINT=" -- ROOT CAUSE: the CC imported NO role-library rows; $SOP_ROLE_DIR_HINT ($SOP_ROLE_SRC_COUNT role how-to.md file(s) on disk across the pinned + default trees). converge(scope=sops) resolves its departments tree from ZERO_HUMAN_COMPANY_DIR / a ZHC company tree / ROLE_LIBRARY_PATH / <OPENCLAW_WORKSPACE_PATH>/departments (whose built-in default is the DOCKER-ONLY /data/.openclaw/workspace) -- and it does NOT error when that path is missing, it silently imports nothing. Set ROLE_LIBRARY_PATH to the tree that actually holds the role how-to.md in $DASHBOARD_DIR/.env.local, restart the board (pm2 restart $CC_PM2_NAME) so it reloads the env, then re-run install."
+    fi
+    fail_install "phase=6i: SOP V2 library gate FAILED (rc=$SOP_ASSERT_RC) after ingest-sop-library.sh (downloaded=$SOP_DOWNLOADED_COUNT) + CC converge(scope=sops) (status=$SOP_CONVERGE_STATUS, rows_written=$SOP_CONVERGE_WRITTEN): ${SOP_ASSERT_REASON}${SOP_FAIL_HINT} -- the Command Center SOP library would ship as a ghost (dispatch_rules.sop_id matching + Triad routing starved). See $LOG_FILE for the ingest/converge/assert output, then re-run install."
+  fi
 fi
 
 # ----------------------------------------------------------------------
