@@ -60,6 +60,30 @@
 #  T13.  ...and that same gate does NOT return 6 on the clean chain (no false
 #        fire), and SKIPS loudly (never fails) on a pre-C7 workspace that has no
 #        chosen-list artifact at all.
+#  T14.  MULTI-COMPANY (no FALSE drift): ONE mission-control.db holding acme's 5
+#        rows AND 57 rows belonging to ANOTHER company. An UNSCOPED read sees all 62
+#        and reports every one of the other company's departments as
+#        DISPLAYED_NOT_CHOSEN — FALSE drift on a healthy box, which (via
+#        lib-onboarding-state.sh's "any non-zero rc = not materialized") can block
+#        "done" FOREVER. The join must scope to ONE company_id -> rc=0. NON-VACUOUS:
+#        the suite first proves an UNSCOPED read really does see both companies, and
+#        then proves the gate STILL CATCHES real drift on that same multi-company
+#        board (scoping must not blind it).
+#  T15.  *** THE FAIL-OPEN IS CLOSED *** — rc=6 makes scripts/qc-system-integrity.sh
+#        CHECK X.11 HARD-FAIL. Before the fix rc=6 fell into X.11's `*)` catch-all ->
+#        a yellow WARN, and a WARN does not change the exit code: a box with PROVEN
+#        board-join drift printed "ALL CHECKS PASSED ✓". ANTI-VACUOUS: proved as a
+#        DELTA on a fixture where X.11 is otherwise GREEN (every floor dept
+#        materialized FULL + a clean board) — clean -> "✓ X.11"; drifted -> "✗ X.11
+#        AF-BOARD-JOIN-DRIFT" AND an [X.11] entry under FAILURE DETAILS (never
+#        WARNING DETAILS). FAILURES is appended ONLY on a FAIL and the script exits 1
+#        iff FAIL>0, so that membership IS the exit-code proof.
+#  T16.  A FAILED ARTIFACT WRITE BUYS NO PASS: write_chosen_departments_artifact() is
+#        fail-soft (OSError -> warning, never raises), so a box whose durable
+#        departments.json write FAILED looked identical to a pre-C7 box — the join
+#        was SKIPPED and the box silently PASSED. Drives the REAL OSError branch and
+#        proves the join still RUNS (build-state's companyDir marker stands in for
+#        the missing artifact) and still returns rc=6 on real drift.
 #
 # HERMETIC: builds its own mktemp sandbox, sandboxes $HOME, and pins the CC DB via
 # DASHBOARD_DB_PATH. Writes NOTHING under the real ~/.openclaw, ~/projects, or the
@@ -315,6 +339,265 @@ HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
   || bad "pre-C7 workspace wrongly hard-failed the join"
 grep -q "AF-BOARD-JOIN-DRIFT: CHECK SKIPPED" "$TMP/qc3.err" \
   && ok "the skip is LOUD and recorded (never silent)" || bad "the skip was silent"
+
+echo
+echo "== T14: MULTI-COMPANY — another company's board rows must NOT produce FALSE drift =="
+# ONE mission-control.db can hold SEVERAL companies' `workspaces` rows. Here acme's
+# 5 rows share the table with 57 rows belonging to 'globex' — departments acme never
+# chose and never provisioned. An UNSCOPED read sees all 62 and reports every one of
+# globex's as DISPLAYED_NOT_CHOSEN / DISPLAYED_NOT_PROVISIONED: FALSE drift on a
+# perfectly healthy box. And because lib-onboarding-state.sh maps ANY non-zero rc
+# from the QC gate to "not materialized" — feeding oc_overall_goal_check AND the
+# watchdog kill condition — that false drift can block "done" INDEFINITELY.
+seed_board >/dev/null 2>&1        # acme's board: clean, 5 rows
+python3 - "$DB" <<'PY'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1]); cur = con.cursor()
+for i in range(57):
+    s = f"globex-dept-{i:02d}"
+    cur.execute("INSERT OR IGNORE INTO workspaces (id,name,slug,description,icon,company_id) "
+                "VALUES (?,?,?,?,?,?)", (s, s, s, "another company's dept", "X", "globex"))
+con.commit(); con.close()
+PY
+# (1) the fixture is REAL — raw counts, so a vacuous "pass on an empty board" is impossible
+N_ACME="$(query "SELECT COUNT(*) FROM workspaces WHERE company_id='acme'")"
+N_GLOBEX="$(query "SELECT COUNT(*) FROM workspaces WHERE company_id='globex'")"
+if [ "$N_ACME" = "5" ] && [ "$N_GLOBEX" = "57" ]; then
+  ok "multi-company fixture is real: acme=5 rows, globex=57 rows in ONE workspaces table"
+else
+  bad "fixture wrong: acme=$N_ACME globex=$N_GLOBEX (want 5 / 57)"
+fi
+# (2) NON-VACUITY: an UNSCOPED read really does see BOTH companies. This is the
+#     hazard the scoping exists to defeat — if this assertion ever fails, T14 is
+#     passing for the wrong reason (an empty/absent globex fixture).
+python3 - "$JOIN_PY" "$DB" > "$TMP/unscoped.txt" 2>/dev/null <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("pbj", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+disp, arch, cids, col = m.read_displayed(sys.argv[2])          # NO company filter
+print(len(disp), len(sorted(str(c) for c in cids)), ",".join(sorted(str(c) for c in cids)))
+PY
+read -r U_ROWS U_NIDS U_IDS < "$TMP/unscoped.txt"
+if [ "${U_ROWS:-0}" -ge 62 ] && [ "${U_NIDS:-0}" = "2" ]; then
+  ok "NON-VACUOUS: an UNSCOPED read sees all $U_ROWS rows across $U_NIDS companies ($U_IDS) — the hazard is real"
+else
+  bad "unscoped read saw rows=${U_ROWS:-?} companies=${U_NIDS:-?} (want >=62 / 2) — fixture not proving the hazard"
+fi
+# (3) AUTO-SCOPING (no --company-slug): this is the path every consumer gets by
+#     default. It must scope to acme and report NO drift.
+join_auto() { python3 "$JOIN_PY" --company-dir "$COMPANY_DIR" --db "$DB" "$@"; }
+join_auto >"$TMP/ms.out" 2>"$TMP/ms.err"; rc=$?
+[ "$rc" = "0" ] && ok "auto-scoped join on a MULTI-COMPANY board -> rc=0 (no false drift)" \
+  || { bad "FALSE DRIFT on a multi-company board -> rc=$rc (want 0)"; sed -n '1,12p' "$TMP/ms.err"; }
+grep -q "company scope    : acme" "$TMP/ms.out" \
+  && ok "the verdict names the company it scoped to (acme)" || bad "company scope not surfaced in the verdict"
+grep -q "globex" "$TMP/ms.out" \
+  && ok "…and still REPORTS that globex's rows are on the board (scoped, not blind)" \
+  || bad "the other company's ids are not surfaced — scoping is silent"
+# (4) EXPLICIT --company-slug must agree with the auto path
+[ "$(join_rc)" = "0" ] && ok "explicit --company-slug acme -> rc=0 (agrees with auto-scoping)" \
+  || bad "explicit --company-slug disagrees with auto-scoping"
+# (5) THE GATE THE PIPELINE ACTUALLY RUNS must not fire on a multi-company board
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
+  bash "$QC_GATE" --departments-dir "$DEPTS_DIR" >"$TMP/qc14.out" 2>"$TMP/qc14.err"; rc=$?
+[ "$rc" != "6" ] && ok "qc-assert-workspace-departments-built.sh does NOT hard-fail rc=6 on a multi-company board (rc=$rc)" \
+  || { bad "THE QC GATE FALSE-FIRES rc=6 on a multi-company box — this would block 'done' forever"; tail -12 "$TMP/qc14.err"; }
+# (6) …and it still CATCHES real drift on the very same multi-company board
+sql "DELETE FROM workspaces WHERE slug='sales' AND company_id='acme'"
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
+  bash "$QC_GATE" --departments-dir "$DEPTS_DIR" >"$TMP/qc14b.out" 2>"$TMP/qc14b.err"; rc=$?
+[ "$rc" = "6" ] && ok "REAL drift is still caught on the SAME multi-company board -> rc=6 (scoping did not blind the gate)" \
+  || bad "scoping BLINDED the gate — real drift on a multi-company board -> rc=$rc (want 6)"
+grep -q "CHOSEN_NOT_DISPLAYED: sales" "$TMP/qc14b.err" \
+  && ok "and it names the right department (sales), not globex's" || bad "wrong/no department named"
+sql "DELETE FROM workspaces WHERE company_id='globex'"
+seed_board >/dev/null 2>&1
+
+echo
+echo "== T15: *** FAIL-OPEN CLOSED *** rc=6 makes qc-system-integrity.sh CHECK X.11 HARD-FAIL =="
+# THE BLOCKER THIS PROVES FIXED: CHECK X.11's `case` had arms 0/3/5/4/* only. rc=6
+# fell into `*)` -> a yellow WARN — and a WARN does NOT change the exit code (the
+# script exits 0 when FAIL==0). So a box with PROVEN board-join drift printed
+# "ALL CHECKS PASSED", with the drift mislabeled as an infrastructure error.
+#
+# ANTI-VACUITY: qc-system-integrity.sh runs ~50 checks and a sandbox trips several
+# of them, so "it exited non-zero" proves NOTHING on its own. The proof is the
+# DELTA on CHECK X.11 itself, on a fixture where X.11 is otherwise GREEN:
+#     clean board  -> "✓ X.11"  (X.11 contributes ZERO failures)
+#     drifted board-> "✗ X.11 AF-BOARD-JOIN-DRIFT" AND an [X.11] entry in the
+#                     FAILURE DETAILS block (never WARNING DETAILS)
+# An [X.11] entry in FAILURES means FAIL was incremented; the script exits 1 iff
+# FAIL>0. So a box whose ONLY defect is board drift now exits NON-ZERO, where it
+# previously printed ALL CHECKS PASSED.
+QC_SYS="$REPO_ROOT/scripts/qc-system-integrity.sh"
+if [ ! -f "$QC_SYS" ]; then
+  bad "qc-system-integrity.sh not found — cannot prove the fail-open is closed"
+else
+  FULL_HOME="$TMP/full"; FULL_CDIR="$FULL_HOME/clawd/zero-human-company/acme"
+  FULL_DD="$FULL_CDIR/departments"; FULL_DB="$FULL_HOME/mc.db"
+  mkdir -p "$FULL_DD"
+  # A fixture where X.11 passes CLEAN requires every FLOOR department materialized
+  # FULL (roles + IDENTITY + SOUL + a real >=3KB SOP). The floor is DYNAMIC (vertical
+  # detection grows it as the tree appears), so converge it, then write the chosen
+  # list with the REAL C7 artifact writer and seed the board with the REAL seeder.
+  HOME="$FULL_HOME" OPENCLAW_PLATFORM=mac python3 - "$SKILL_DIR" "$FULL_CDIR" \
+      >"$TMP/full.log" 2>&1 <<'PY'
+import importlib.util, sys
+from pathlib import Path
+SKILL, COMPANY = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("df", f"{SKILL}/scripts/department-floor.py")
+df = importlib.util.module_from_spec(spec); spec.loader.exec_module(df)
+dd = Path(COMPANY) / "departments"
+SOP = "# How To\n\n" + ("A substantive standard operating procedure line.\n" * 120)
+def materialize(d):
+    role = dd / d / "01-lead"; role.mkdir(parents=True, exist_ok=True)
+    (dd / d / "IDENTITY.md").write_text(f"# {d} director\n")
+    (dd / d / "SOUL.md").write_text(f"# {d} soul\n")
+    (role / "how-to.md").write_text(SOP)
+floor = []
+for _ in range(6):
+    floor = list(df.evaluate_floor(departments_dir=dd).get("expected_floor", []))
+    missing = [d for d in floor if not (dd / d).is_dir()]
+    if not missing:
+        break
+    for d in missing:
+        materialize(d)
+materialize("master-orchestrator")
+spec2 = importlib.util.spec_from_file_location("bw", f"{SKILL}/scripts/build-workforce.py")
+bw = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(bw)
+bw._build_state_path = lambda: str(Path(COMPANY).parents[2] / ".openclaw/workspace/.workforce-build-state.json")
+sel = {d: {"name": d.replace("-", " ").title(), "emoji": "\U0001F4E6", "head": "Head"} for d in floor}
+bw.write_chosen_departments_artifact(sel, company_dir=COMPANY, source="fail-open-fixture")
+print("FLOOR", len(floor))
+PY
+  python3 -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).close()" "$FULL_DB"
+  HOME="$FULL_HOME" DASHBOARD_DB_PATH="$FULL_DB" COMPANY_NAME="Acme" COMPANY_SLUG="acme" \
+    OPENCLAW_PLATFORM=mac python3 "$SEEDER" >>"$TMP/full.log" 2>&1
+  # PRECONDITION: the gate, SELF-RESOLVING (exactly how qc-system-integrity.sh calls
+  # it — with no --departments-dir), must be GREEN on this fixture. Without a green
+  # baseline the ✓->✗ delta below would prove nothing.
+  HOME="$FULL_HOME" DASHBOARD_DB_PATH="$FULL_DB" OPENCLAW_PLATFORM=mac \
+    bash "$QC_GATE" >"$TMP/fg.out" 2>"$TMP/fg.err"; rc=$?
+  if [ "$rc" != "0" ]; then
+    bad "PRECONDITION FAILED: the self-resolved gate is not green on the full fixture (rc=$rc) — cannot prove the delta"
+    tail -6 "$TMP/fg.err"
+  else
+    ok "baseline: every floor department FULL + clean board -> the self-resolved gate is GREEN (rc=0)"
+
+    # ── RUN A: clean board ──
+    HOME="$FULL_HOME" DASHBOARD_DB_PATH="$FULL_DB" OPENCLAW_PLATFORM=mac \
+      timeout 300 bash "$QC_SYS" >"$TMP/sysA.out" 2>&1; SYS_A=$?
+    sed 's/\x1b\[[0-9;]*m//g' "$TMP/sysA.out" > "$TMP/sysA.txt"
+    grep -q "✓ X.11" "$TMP/sysA.txt" \
+      && ok "CLEAN board -> qc-system-integrity CHECK X.11 is GREEN (contributes 0 failures)" \
+      || { bad "CLEAN board -> X.11 not green; the delta below would be meaningless"; grep -a "X.11" "$TMP/sysA.txt"; }
+    grep -q "AF-BOARD-JOIN-DRIFT" "$TMP/sysA.txt" \
+      && bad "X.11 reports board-join drift on a CLEAN board (false fire)" \
+      || ok "…and reports NO board-join drift on a clean board (the check is not always-on)"
+
+    # ── introduce REAL drift: the client chose 'sales', it is built, and its board
+    #    column is gone. They paid for it and cannot see it. ──
+    python3 -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"DELETE FROM workspaces WHERE slug='sales'\"); c.commit()" "$FULL_DB"
+    HOME="$FULL_HOME" DASHBOARD_DB_PATH="$FULL_DB" OPENCLAW_PLATFORM=mac \
+      bash "$QC_GATE" >/dev/null 2>&1; rc=$?
+    [ "$rc" = "6" ] && ok "the delegate gate returns rc=6 AF-BOARD-JOIN-DRIFT on the drifted board" \
+      || bad "delegate gate -> rc=$rc (want 6) — the rest of T15 is meaningless"
+
+    # ── RUN B: drifted board ──
+    HOME="$FULL_HOME" DASHBOARD_DB_PATH="$FULL_DB" OPENCLAW_PLATFORM=mac \
+      timeout 300 bash "$QC_SYS" >"$TMP/sysB.out" 2>&1; SYS_B=$?
+    sed 's/\x1b\[[0-9;]*m//g' "$TMP/sysB.out" > "$TMP/sysB.txt"
+
+    grep -q "✗ X.11 AF-BOARD-JOIN-DRIFT" "$TMP/sysB.txt" \
+      && ok "DRIFT -> CHECK X.11 HARD-FAILS and names AF-BOARD-JOIN-DRIFT" \
+      || { bad "*** FAIL-OPEN *** X.11 did not hard-fail on rc=6"; grep -a "X.11" "$TMP/sysB.txt"; }
+
+    # THE FAIL-OPEN SIGNATURE: rc=6 must never reach the catch-all WARN arm.
+    grep -q "could not run (rc=6)" "$TMP/sysB.txt" \
+      && bad "*** FAIL-OPEN *** rc=6 still routes to the WARN catch-all ('gate could not run')" \
+      || ok "rc=6 never routes to the WARN catch-all (it is no longer mislabeled an infra error)"
+
+    # The [X.11] entry must land in FAILURE DETAILS, NOT WARNING DETAILS. FAILURES is
+    # appended ONLY on a FAIL, and the script exits 1 iff FAIL>0 — so this single
+    # assertion IS the exit-code proof.
+    awk '/^FAILURE DETAILS:/{f=1} /^WARNING DETAILS:/{f=0} f' "$TMP/sysB.txt" | grep -q "\[X.11\]" \
+      && ok "[X.11] is listed under FAILURE DETAILS => FAIL was incremented => the script must exit non-zero" \
+      || bad "[X.11] is NOT in FAILURE DETAILS — the drift did not increment FAIL (fail-open)"
+    awk '/^WARNING DETAILS:/{w=1} w' "$TMP/sysB.txt" | grep -q "\[X.11\]" \
+      && bad "*** FAIL-OPEN *** [X.11] was recorded as a WARNING (warnings do NOT change the exit code)" \
+      || ok "[X.11] is NOT a warning (a warning would not change the exit code — that WAS the bug)"
+
+    [ "$SYS_B" -ne 0 ] \
+      && ok "qc-system-integrity.sh exits NON-ZERO ($SYS_B) on a box with proven board-join drift" \
+      || bad "*** FAIL-OPEN *** qc-system-integrity.sh exited 0 on a box with proven board-join drift"
+
+    # The drift class + the named department must reach the operator's screen.
+    grep -q "CHOSEN_NOT_DISPLAYED" "$TMP/sysB.txt" \
+      && ok "the drift class reaches the operator (CHOSEN_NOT_DISPLAYED surfaced under X.11)" \
+      || bad "the drift class was swallowed — the operator cannot see WHAT drifted"
+  fi
+fi
+
+echo
+echo "== T16: a FAILED artifact write must NOT buy a silent pass =="
+# write_chosen_departments_artifact() is fail-soft: an OSError writing
+# <company>/departments.json is a WARNING, never a raise. On such a box the artifact
+# is ABSENT and artifactPath is recorded as None. If artifactPath were the only
+# company scope key, the chosen list would read back empty and the QC gate would SKIP
+# the join as though this were a pre-C7 build — a box whose durable write FAILED
+# would be indistinguishable from one that never had the feature, and would PASS.
+# We drive the REAL fail-soft branch (a patched open() that raises OSError on the
+# artifact) and prove the join still RUNS.
+T16_STATE="$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json"
+mkdir -p "$(dirname "$T16_STATE")"
+rm -f "$COMPANY_DIR/departments.json"
+python3 - "$SKILL_DIR" "$COMPANY_DIR" "$T16_STATE" >"$TMP/t16.log" 2>&1 <<'PY'
+import builtins, importlib.util, json, sys
+SKILL, COMPANY, STATE = sys.argv[1], sys.argv[2], sys.argv[3]
+spec = importlib.util.spec_from_file_location("bw", f"{SKILL}/scripts/build-workforce.py")
+bw = importlib.util.module_from_spec(spec); spec.loader.exec_module(bw)
+bw._build_state_path = lambda: STATE
+_real_open = builtins.open
+def _boom(path, *a, **k):
+    # Fail exactly the durable artifact write — the REAL OSError branch.
+    if str(path).endswith("departments.json"):
+        raise OSError(28, "No space left on device")
+    return _real_open(path, *a, **k)
+builtins.open = _boom
+try:
+    sel = {"marketing": {"name": "Marketing", "emoji": "\U0001F4E3", "head": "CMO"},
+           "sales": {"name": "Sales", "emoji": "\U0001F4B0", "head": "CRO"},
+           "billing-finance": {"name": "Billing & Finance", "emoji": "\U0001F4B3", "head": "CFO"},
+           "publishing-studio": {"name": "Publishing Studio", "emoji": "\U0001F4DA", "head": "Head"}}
+    bw.write_chosen_departments_artifact(sel, company_dir=COMPANY, source="failed-write-fixture")
+finally:
+    builtins.open = _real_open
+rec = json.load(_real_open(STATE))["canonicalReconciliation"]["chosenDepartments"]
+print("ARTIFACT_PATH", rec.get("artifactPath"))
+print("ARTIFACT_WRITTEN", rec.get("artifactWritten"))
+print("COMPANY_DIR", rec.get("companyDir"))
+print("SLUGS", len(rec.get("slugs") or []))
+PY
+if [ ! -f "$COMPANY_DIR/departments.json" ] && grep -q "ARTIFACT_PATH None" "$TMP/t16.log" \
+   && grep -q "ARTIFACT_WRITTEN False" "$TMP/t16.log"; then
+  ok "the REAL fail-soft branch ran: the durable artifact never landed (artifactPath=None, artifactWritten=False)"
+else
+  bad "could not reproduce a failed artifact write"; cat "$TMP/t16.log"
+fi
+grep -q "COMPANY_DIR $COMPANY_DIR" "$TMP/t16.log" \
+  && ok "…but build-state still records companyDir (the reconciliation-ran marker)" \
+  || bad "companyDir not recorded — a failed write is indistinguishable from a pre-C7 box"
+# Now put REAL drift on the board. The join MUST still run and catch it.
+sql "DELETE FROM workspaces WHERE slug='sales'"
+HOME="$SANDBOX_HOME" DASHBOARD_DB_PATH="$DB" \
+  bash "$QC_GATE" --departments-dir "$DEPTS_DIR" >"$TMP/qc16.out" 2>"$TMP/qc16.err"; rc=$?
+[ "$rc" = "6" ] && ok "drift on a box whose artifact write FAILED -> rc=6 (the failed write bought NO pass)" \
+  || { bad "*** SILENT PASS *** artifact-write failure let real drift through -> rc=$rc (want 6)"; tail -8 "$TMP/qc16.err"; }
+grep -q "CHECK SKIPPED — no durable chosen-departments list" "$TMP/qc16.err" \
+  && bad "the gate SKIPPED the join — a failed write is still being read as 'pre-C7'" \
+  || ok "the gate did NOT skip the join (build-state stood in for the missing artifact)"
+rm -f "$T16_STATE"
+seed_board >/dev/null 2>&1
 
 echo
 echo "==================================================="
