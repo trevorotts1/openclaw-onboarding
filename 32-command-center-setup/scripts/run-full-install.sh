@@ -1694,8 +1694,8 @@ except Exception:
   # tell them apart either bricks healthy installs or rubber-stamps ghosts.
   #
   # The discriminating fact is the on-disk role-library SOURCE: how many role
-  # how-to.md files exist under the tree the CC will actually read (the pinned
-  # ROLE_LIBRARY_PATH, else the box default). It is decidable, local, and cheap.
+  # how-to.md files exist under a tree the CC could import from. It is decidable,
+  # local, and cheap.
   #
   #   converge wrote > 0 rows                  -> floor 1 (rows landed; the DB must show them)
   #   wrote 0 BUT >=1 how-to.md on disk        -> floor 1 => HARD FAIL. We pointed the
@@ -1707,20 +1707,38 @@ except Exception:
   #                                               Zero is the CORRECT answer -- do not brick
   #                                               a healthy install over an absent library.
   #   any converge we could not evaluate       -> floor 1. No evidence is never a pass.
+  #
+  # THE SOURCE COUNT IS A UNION, not a single dir. The floor-0 "nothing to import"
+  # verdict is only honest when the box has NO role library ANYWHERE it could
+  # import from. Counting how-to.md under the pinned ROLE_LIBRARY_PATH alone
+  # re-opens the exact fail-open cc_write_env_local (5) promises to fail LOUDLY on:
+  # a PRESERVED-but-empty/mis-pointed ROLE_LIBRARY_PATH (an operator override, or a
+  # prior pin against a tree since moved/regenerated) would count 0 how-tos there,
+  # drop the floor to 0, and let a REAL library under the box default ship as a
+  # GHOST behind a green check. So we count BOTH the pinned dir AND the box default
+  # ($OC_ROOT/workspace/departments): a real library under EITHER forces floor 1,
+  # turning a mis-pointed ROLE_LIBRARY_PATH into a LOUD rc=4 (naming the key) rather
+  # than a silent pass -- which is precisely what the contract promises.
   SOP_ROLE_SRC_DIR=""
   if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
     SOP_ROLE_SRC_DIR="$(cc_env_get "$DASHBOARD_DIR/.env.local" ROLE_LIBRARY_PATH)"
   fi
-  [[ -z "$SOP_ROLE_SRC_DIR" ]] && SOP_ROLE_SRC_DIR="$OC_ROOT/workspace/departments"
+  SOP_ROLE_DEFAULT_DIR="$OC_ROOT/workspace/departments"
+  [[ -z "$SOP_ROLE_SRC_DIR" ]] && SOP_ROLE_SRC_DIR="$SOP_ROLE_DEFAULT_DIR"
   SOP_ROLE_SRC_COUNT=0
   if [[ -d "$SOP_ROLE_SRC_DIR" ]]; then
     SOP_ROLE_SRC_COUNT="$(find "$SOP_ROLE_SRC_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+  SOP_ROLE_DEFAULT_COUNT=0
+  if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && -d "$SOP_ROLE_DEFAULT_DIR" ]]; then
+    SOP_ROLE_DEFAULT_COUNT="$(find "$SOP_ROLE_DEFAULT_DIR" -name how-to.md -type f 2>/dev/null | wc -l | tr -d ' ')"
+    SOP_ROLE_SRC_COUNT=$(( SOP_ROLE_SRC_COUNT + SOP_ROLE_DEFAULT_COUNT ))
   fi
 
   SOP_MIN_ROLE_LIBRARY=1
   if [[ "$SOP_CONVERGE_STATUS" == "zero-imported" && "${SOP_ROLE_SRC_COUNT:-0}" -eq 0 ]]; then
     SOP_MIN_ROLE_LIBRARY=0
-    log "WARN" "phase=6i sop-library-ingestion: no role-library source on this box (0 how-to.md under $SOP_ROLE_SRC_DIR) and the CC resolved no ZHC company tree -- zero role-library rows is the CORRECT outcome here, so the role floor is 0 for this run. The role library is NOT verified; it is recorded as absent, not as healthy."
+    log "WARN" "phase=6i sop-library-ingestion: no role-library source on this box (0 how-to.md under $SOP_ROLE_SRC_DIR or the box default $SOP_ROLE_DEFAULT_DIR) and the CC resolved no ZHC company tree -- zero role-library rows is the CORRECT outcome here, so the role floor is 0 for this run. The role library is NOT verified; it is recorded as absent, not as healthy."
   fi
   state_set_arg '.commandCenterSopRoleLibrarySource = $val' "$SOP_ROLE_SRC_DIR"
   state_set_arg '.commandCenterSopRoleLibraryExpected = $val' "$([[ "$SOP_MIN_ROLE_LIBRARY" -ge 1 ]] && echo true || echo false)"
@@ -1765,7 +1783,15 @@ except Exception:
     # erroring. Name the key and the tree so the fix is mechanical.
     SOP_FAIL_HINT=""
     if [[ "$SOP_ASSERT_RC" -eq 4 ]]; then
-      SOP_FAIL_HINT=" -- ROOT CAUSE: the CC imported NO role-library rows from $SOP_ROLE_SRC_DIR ($SOP_ROLE_SRC_COUNT role how-to.md file(s) are on disk there). converge(scope=sops) resolves its departments tree from ZERO_HUMAN_COMPANY_DIR / a ZHC company tree / ROLE_LIBRARY_PATH / <OPENCLAW_WORKSPACE_PATH>/departments (whose built-in default is the DOCKER-ONLY /data/.openclaw/workspace) -- and it does NOT error when that path is missing, it silently imports nothing. Confirm ROLE_LIBRARY_PATH=$SOP_ROLE_SRC_DIR is present in $DASHBOARD_DIR/.env.local, restart the board (pm2 restart $CC_PM2_NAME) so it reloads the env, then re-run install."
+      # Name the mis-pointed key when the box's real library is at the default but
+      # ROLE_LIBRARY_PATH points elsewhere (0 how-tos under the pin, but the union
+      # counted the default's) -- the fix is then to correct the pin, not to build a
+      # tree that already exists.
+      SOP_ROLE_DIR_HINT="the tree the CC actually read ($SOP_ROLE_SRC_DIR)"
+      if [[ "$SOP_ROLE_SRC_DIR" != "$SOP_ROLE_DEFAULT_DIR" && "${SOP_ROLE_DEFAULT_COUNT:-0}" -ge 1 ]]; then
+        SOP_ROLE_DIR_HINT="ROLE_LIBRARY_PATH=$SOP_ROLE_SRC_DIR (0 role how-to.md there) while the box default $SOP_ROLE_DEFAULT_DIR holds $SOP_ROLE_DEFAULT_COUNT role how-to.md -- ROLE_LIBRARY_PATH is MIS-POINTED"
+      fi
+      SOP_FAIL_HINT=" -- ROOT CAUSE: the CC imported NO role-library rows; $SOP_ROLE_DIR_HINT ($SOP_ROLE_SRC_COUNT role how-to.md file(s) on disk across the pinned + default trees). converge(scope=sops) resolves its departments tree from ZERO_HUMAN_COMPANY_DIR / a ZHC company tree / ROLE_LIBRARY_PATH / <OPENCLAW_WORKSPACE_PATH>/departments (whose built-in default is the DOCKER-ONLY /data/.openclaw/workspace) -- and it does NOT error when that path is missing, it silently imports nothing. Set ROLE_LIBRARY_PATH to the tree that actually holds the role how-to.md in $DASHBOARD_DIR/.env.local, restart the board (pm2 restart $CC_PM2_NAME) so it reloads the env, then re-run install."
     fi
     fail_install "phase=6i: SOP V2 library gate FAILED (rc=$SOP_ASSERT_RC) after ingest-sop-library.sh (downloaded=$SOP_DOWNLOADED_COUNT) + CC converge(scope=sops) (status=$SOP_CONVERGE_STATUS, rows_written=$SOP_CONVERGE_WRITTEN): ${SOP_ASSERT_REASON}${SOP_FAIL_HINT} -- the Command Center SOP library would ship as a ghost (dispatch_rules.sop_id matching + Triad routing starved). See $LOG_FILE for the ingest/converge/assert output, then re-run install."
   fi

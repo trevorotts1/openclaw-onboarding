@@ -332,7 +332,7 @@ else
       # $7 scripted CC converge response body ("" => no .env.local, converge skipped)
       # $8 role how-to.md files on disk under $OC_ROOT/workspace/departments
       local scenario="$1" rows="$2" role_rows="$3" ingest_rc="$4" bootseed="$5" expect_fail="$6"
-      local converge_json="${7:-}" role_howtos="${8:-0}"
+      local converge_json="${7:-}" role_howtos="${8:-0}" preserved_rl="${9:-}"
       local SBOX FAIL_MARKER SKILL_ROOT
       SBOX="$(mktemp -d)"
       # Mirror the REAL repo depth (assert-sop-library-populated.py resolves
@@ -441,6 +441,14 @@ CCEOF
         for _ in $(seq 1 60); do [[ -s "$SBOX/ccport" ]] && break; sleep 0.1; done
         CC_PORT="$(cat "$SBOX/ccport" 2>/dev/null || echo 1)"
         printf 'MC_API_TOKEN=sandbox-token\n' > "$SKILL_ROOT/dashboard/.env.local"
+        # A PRESERVED-but-empty ROLE_LIBRARY_PATH: the .env.local already carries an
+        # operator/prior-run pin that points at a dir holding NO how-to.md, while the
+        # box's REAL role library sits at the $OC_ROOT/workspace/departments default.
+        # This is the fail-open the floor-0 discriminator must NOT fall into.
+        if [[ -n "$preserved_rl" ]]; then
+          mkdir -p "$SBOX/$preserved_rl"
+          printf 'ROLE_LIBRARY_PATH=%s\n' "$SBOX/$preserved_rl" >> "$SKILL_ROOT/dashboard/.env.local"
+        fi
       fi
 
       # Harness: stub log/state_set/fail_install (the real functions this snippet
@@ -529,6 +537,22 @@ HARNESSEOF
     _run_sandbox "4g RE-RUN NOT BRICKED (converge imported=0 updated=912 on a healthy 690-row library)" \
                                                                   2555  690   0    54    "no" \
                                                                   '{"ok":true,"sops":{"imported":0,"updated":912}}' 912
+
+    # 4h is the fail-open the floor-0 discriminator must NOT fall into: the box has
+    # a REAL role library on disk (12 how-to.md under $OC_ROOT/workspace/departments,
+    # exactly like 4e), but .env.local carries a PRESERVED ROLE_LIBRARY_PATH pointing
+    # at an EMPTY dir (an operator override, or a prior pin against a tree since
+    # moved/regenerated). converge returns the same 0-row body as 4e/4f. A gate that
+    # counts how-to.md ONLY under the pinned ROLE_LIBRARY_PATH sees 0, drops the role
+    # floor to 0, and PASSES GREEN while a real library imports NOTHING and ships as a
+    # ghost -- the exact fail-open cc_write_env_local (5) promises to fail LOUDLY on.
+    # The floor MUST come from the UNION of the pinned dir and the box default, so a
+    # real library under the default forces floor 1 -> rc=4 -> fail_install. This
+    # scenario FAILS (fail-open) against the count-one-dir version of the gate.
+    _run_sandbox "4h PRESERVED-EMPTY ROLE_LIBRARY_PATH FAIL-OPEN (real 12-how-to library at default, ROLE_LIBRARY_PATH pins an empty dir, converge 0-imported)" \
+                                                                  2555  0     0    54    "yes" \
+                                                                  '{"ok":true,"sops":{"imported":0,"updated":0}}' 12 \
+                                                                  "preserved-empty-role-lib"
   fi
 fi
 
