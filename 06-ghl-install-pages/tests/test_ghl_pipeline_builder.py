@@ -97,6 +97,75 @@ class TestThinkLayer:
 
 
 # ---------------------------------------------------------------------------
+# 1b. EXACT-NAME mode — the Anthology Engine (Skill 59) integration contract:
+#     anthology_registry.py provision-pipeline invokes this builder with
+#     --exact-name and binds the created pipeline BY NAME through the read API
+#     afterwards, so the ZHC container prefix must NOT be applied.
+# ---------------------------------------------------------------------------
+class TestExactNameMode:
+    def test_exact_name_is_byte_exact_no_zhc_prefix(self):
+        plan = pb._build_pipeline_plan({"pipeline_name": "Anthology Engine",
+                                        "location_id": "L", "exact_name": True},
+                                       ["Intake", "Avatar"])
+        assert plan["pipeline_name"] == "Anthology Engine"
+        assert plan["exact_name"] is True
+
+    def test_default_mode_unchanged_still_zhc(self):
+        plan = pb._build_pipeline_plan({"pipeline_name": "Anthology Engine",
+                                        "location_id": "L"}, ["Intake"])
+        assert plan["pipeline_name"] == "ZHC Anthology Engine"
+        assert plan["exact_name"] is False
+
+    def test_exact_name_preflight_passes(self):
+        task = {"pipeline_name": "Anthology Engine", "location_id": "L",
+                "exact_name": True}
+        plan = pb._build_pipeline_plan(task, ["Intake", "Avatar"])
+        pf = pb._run_preflight(task, plan, ["Intake", "Avatar"])
+        assert pf["pass"] is True
+        names = {c["check"] for c in pf["checks"]}
+        assert "PL-P2:exact_pipeline_name" in names
+        assert "PL-P2:zhc_pipeline_name" not in names
+
+    def test_exact_name_preflight_refuses_empty_name(self):
+        task = {"pipeline_name": "   ", "location_id": "L", "exact_name": True}
+        plan = pb._build_pipeline_plan(task, ["Intake"])
+        pf = pb._run_preflight(task, plan, ["Intake"])
+        assert pf["pass"] is False
+
+    def test_cli_exact_name_flag_wires_through(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def _fake_build(task, evidence_root, *, dry_run=True):
+            seen.update(task)
+            seen["_dry_run"] = dry_run
+            return {"location_gate_ok": True}
+
+        monkeypatch.setattr(pb, "build_pipeline", _fake_build)
+        rc = pb.main(["--dry-run", "--exact-name", "--location-id", "L",
+                      "--pipeline-name", "Anthology Engine",
+                      "--stages", "Intake,Avatar",
+                      "--evidence-root", str(tmp_path)])
+        assert rc == 0
+        assert seen["exact_name"] is True
+        assert seen["pipeline_name"] == "Anthology Engine"
+        assert seen["stages"] == ["Intake", "Avatar"]
+
+    def test_cli_default_has_no_exact_name(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def _fake_build(task, evidence_root, *, dry_run=True):
+            seen.update(task)
+            return {"location_gate_ok": True}
+
+        monkeypatch.setattr(pb, "build_pipeline", _fake_build)
+        rc = pb.main(["--dry-run", "--location-id", "L",
+                      "--pipeline-name", "Sales", "--stages", "A,B",
+                      "--evidence-root", str(tmp_path)])
+        assert rc == 0
+        assert seen["exact_name"] is False
+
+
+# ---------------------------------------------------------------------------
 # 2. Runtime label binding (docs disagree on capitalization — bind live)
 # ---------------------------------------------------------------------------
 class TestRuntimeLabelBinding:
@@ -185,6 +254,83 @@ class TestWalk:
             pb._save_and_verify("s", "ZHC P")
         assert ei.value.step == "PL6.verify"
         assert "unverified creation" in ei.value.reason
+
+
+# ---------------------------------------------------------------------------
+# 3b. PL1.land poll-with-deadline + rich diagnostics (first-live-run fix,
+#     2026-07-08). THE BUG THIS KILLS: the OLD landing check waited for the
+#     generic word "Pipeline" (satisfied instantly by page chrome) then took
+#     EXACTLY ONE snapshot and regex-searched it for the create control — a
+#     classic render-race single-shot bug. These lock the poll-with-deadline
+#     replacement + the rich STOP diagnostics that replace the old bare
+#     "not found" message.
+# ---------------------------------------------------------------------------
+class TestLandingPoll:
+    def test_poll_recovers_from_a_late_rendering_create_control(self, monkeypatch):
+        """The create control hydrates a beat AFTER the page chrome. A single
+        static snapshot would miss it entirely; the poll must catch a LATER
+        attempt within the deadline instead of STOPping prematurely."""
+        monkeypatch.setattr(fb, "_router_push",
+                            lambda session, path, expect_contains="": "nav")
+        monkeypatch.setattr(fb, "_wait_text_polling", lambda session, text, **k: True)
+        calls = {"n": 0}
+
+        def racing_snapshot(session, timeout=20):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return "chrome Pipelines header only, list still loading"
+            return "list chrome Create new pipeline Add stage"
+
+        monkeypatch.setattr(fb, "_snapshot", racing_snapshot)
+        label = pb._land_on_pipelines("s", "L")
+        assert label == "Create new pipeline"
+        assert calls["n"] >= 3, "must have polled PAST the first miss(es), not given up on one"
+
+    def test_poll_gives_up_cleanly_at_deadline_never_hangs(self, monkeypatch):
+        monkeypatch.setattr(fb, "_snapshot", lambda session, timeout=20: "never matches")
+        label, snap = pb._poll_for_create_pipeline_label("s")
+        assert label == ""
+        assert snap == "never matches", "the LAST snapshot must be returned even on a miss"
+
+    def test_poll_always_makes_at_least_one_attempt_on_zero_budget(self, monkeypatch):
+        calls = {"n": 0}
+
+        def snap_fn(session, timeout=20):
+            calls["n"] += 1
+            return "Create new pipeline"
+
+        monkeypatch.setattr(fb, "_snapshot", snap_fn)
+        label, _snap = pb._poll_for_create_pipeline_label("s", timeout_s=0.0)
+        assert label == "Create new pipeline"
+        assert calls["n"] == 1
+
+    def test_missing_control_stop_carries_rich_diagnostics_not_bare_not_found(self, monkeypatch):
+        monkeypatch.setattr(fb, "_router_push",
+                            lambda session, path, expect_contains="": "nav")
+        monkeypatch.setattr(fb, "_wait_text_polling", lambda session, text, **k: True)
+        monkeypatch.setattr(fb, "_snapshot",
+                            lambda session, timeout=20:
+                            "Pipeline Settings header, + Add Pipeline (beta), no exact match")
+        monkeypatch.setattr(fb, "_capture_entry_diag", lambda session: "{}")
+        with pytest.raises(pb.StopAndReport) as ei:
+            pb._land_on_pipelines("s", "L")
+        assert ei.value.step == "PL1.land"
+        assert "Pipeline Settings header" in ei.value.reason, \
+            "must quote what the screen ACTUALLY showed, not a bare 'not found'"
+        assert "UNCONFIRMED alternate-wording" in ei.value.reason, \
+            "must surface the alt-label hint as EVIDENCE, never auto-click it"
+
+    def test_empty_snapshot_diagnostic(self):
+        assert "EMPTY" in pb._diagnose_missing_create_control("")
+
+    def test_no_pipeline_mentions_diagnostic(self):
+        diag = pb._diagnose_missing_create_control("totally unrelated screen text")
+        assert "never rendered pipeline content" in diag
+
+    def test_limit_gating_hint_surfaced_but_not_actioned(self):
+        diag = pb._diagnose_missing_create_control(
+            "Pipelines (3/3 used) - upgrade your plan to add more pipelines")
+        assert "plan/limit-gating" in diag
 
 
 # ---------------------------------------------------------------------------

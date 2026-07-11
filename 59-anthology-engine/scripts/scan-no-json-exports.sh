@@ -39,9 +39,10 @@
 # detection class only. The reference dir is enumerated for names/hashes at runtime
 # and never printed. The four scanners self-exclude (their markers are definitions).
 #
-# EXPORTS_REF_DIR default: "$HOME/Downloads/anthology project"
-# (the operator's out-of-tree exports). Absent in CI -- structural detection still
-# fully protects.
+# EXPORTS_REF_DIR default: "$HOME/Downloads/anthology project" (the operator's
+# out-of-tree exports, resolved from the running user's home -- never a
+# hardcoded operator path; repo-is-fleet-wide doctrine). Absent in CI --
+# structural detection still fully protects.
 #
 # SCOPE: (default) engine skill dir | --changed vs base | --fleet top-level | --root DIR
 # EXIT CODES (SPEC 3.4; guard family): 0 clean; 1 error; 2 usage; 3 dep (git for
@@ -62,7 +63,7 @@ trap _cleanup_selftest EXIT
 
 OPT_ROOT=""; OPT_SCOPE="engine"; OPT_BASE="origin/main"; OPT_JSON=0
 OPT_INCLUDE_SELF="${SCAN_INCLUDE_SELF:-0}"; OPT_ALL_FILES="${SCAN_ALL_FILES:-0}"
-EXPORTS_REF_DIR="${EXPORTS_REF_DIR:-$HOME/Downloads/anthology project}"
+EXPORTS_REF_DIR="${EXPORTS_REF_DIR:-${HOME:-~}/Downloads/anthology project}"
 
 usage() {
     cat <<EOF

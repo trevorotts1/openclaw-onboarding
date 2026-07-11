@@ -181,6 +181,87 @@ live attempt fails, `routing/f4-remove-diag-phone.json` + the failure
 screenshot will finally show exactly what sits near the selected field's
 top-right, and §6 gets locked from that census.
 
+## [v18.1.13] - 2026-07-08 - Pipeline builder PL1.land: poll-with-deadline + rich diagnostics (the first-live-run STOP)
+
+**WHY:** tonight's first live test of the pipeline auto-create walk
+authenticated, router-pushed to the real Opportunities▸Pipelines route, and
+confirmed ZERO iframes on the surface — but STOPped honestly at `PL1.land`:
+no control matching `/Create\s+[Nn]ew\s+[Pp]ipeline/` was visible. Code
+inspection found the landing check waited only for the generic word
+"Pipeline" (satisfied instantly by the page's own header, regardless of
+whether the create control had hydrated), then took **exactly one**
+`_snapshot()` and regex-searched that single opaque result — the identical
+single-shot-race bug class the sibling `ghl_form_builder.py` already killed
+(v18.1.2's `_wait_text_polling`, v18.1.11's `_reveal_row_actions` hover-poll).
+
+**RESEARCH (2026-07-08, help.gohighlevel.com + help.leadconnectorhq.com,
+re-fetched — see `SELECTORS-LIVE-pipeline.md` §7 for full citations):** the
+button text itself is still documented as "Create new pipeline"/"Create New
+Pipeline" — unchanged. GHL's own material confirms the Pipelines screen
+"now uses the HighRise design system" (a newer frontend, opt-in via Labs),
+consistent with a render race rather than label drift. No source documents
+menu-nesting or plan/limit gating for this control. Diagnosis: render race
+is the best-evidenced hypothesis; NOT independently confirmed live.
+
+**THE CHANGE (`ghl_pipeline_builder.py`, v0.1.0 → v0.2.0):**
+
+- `_poll_for_create_pipeline_label()`: polls `_snapshot()` + the create-label
+  match on our own monotonic deadline — same poll-with-deadline doctrine as
+  `ghl_form_builder._wait_text_polling` / `_capture_form_id` / this file's
+  own `_save_and_verify` leaf-count poll. Never trusts one opaque snapshot.
+- `_diagnose_missing_create_control()`: on a genuine miss, lists every
+  distinct 'pipeline'-mentioning text window actually seen (deduped,
+  capped), flags any UNCONFIRMED alternate-wording hint (`+ Add Pipeline`,
+  `+ New Pipeline`, `Add Pipeline`, `New Pipeline` — evidence only, never
+  auto-clicked) and any possible plan/limit-gating text — a second failure
+  now explains exactly what was found and why, never a bare "not found".
+- `_land_on_pipelines()` STOP message names the poll window and folds in the
+  rich diagnostic alongside the existing `_capture_entry_diag` evidence.
+
+**Coverage:** 8 new hermetic pytest cases in
+`tests/test_ghl_pipeline_builder.py::TestLandingPoll` (render-race recovery,
+clean deadline give-up, zero-budget single-attempt guarantee, rich-diagnostic
+STOP text, and the diagnostic helper's empty/no-mention/limit-gating paths) +
+selftest sections 5b/5c. Full suite: zero regressions. Still NOT live-locked:
+`SELECTORS-LIVE-pipeline.md` remains RESEARCH-SEEDED (§7 records this run's
+evidence and the honest caveat that the render-race diagnosis is not
+independently confirmed); the next live run is a separate step.
+
+---
+
+## [v18.1.14] - 2026-07-08 - Pipeline builder EXACT-NAME mode (the Anthology Engine integration contract)
+
+> Renumbered v18.1.12 -> v18.1.14 at merge time: two parallel branches (the F4 remove-control
+> rebuild, and this pipeline-builder EXACT-NAME work) independently claimed v18.1.12 for
+> DIFFERENT changes, and v18.1.13 was already taken by PL1.land. Both entries are preserved;
+> this one takes the next free patch number. No content was dropped.
+
+**WHY:** the Anthology Engine (Skill 59) needs its standard pipeline created
+with the BYTE-EXACT contract name `"Anthology Engine"` — its
+`anthology_registry.py provision-pipeline` binds the created pipeline BY NAME
+through the read API (`GET /opportunities/pipelines`) afterwards. The
+builder's default applies the fleet `ZHC ` container prefix
+(`ensure_zhc_name`), which would rename the pipeline to
+`"ZHC Anthology Engine"` and silently break that find-by-name bind.
+
+**THE CHANGE (`ghl_pipeline_builder.py`):**
+
+- **`--exact-name` / `task["exact_name"]`**: the pipeline name is used
+  byte-exact — no ZHC prefix. The plan records `exact_name` and the preflight
+  swaps `PL-P2:zhc_pipeline_name` for `PL-P2:exact_pipeline_name` (non-empty
+  name, hard). The DEFAULT path is unchanged: no flag → ZHC prefix exactly as
+  before.
+- Skill 59's `provision_pipeline` now invokes this builder (subprocess, fixed
+  argv, `--no-dry-run --exact-name`) when the standard pipeline is absent,
+  then re-reads the pipelines through the API and binds ONLY what that read
+  surface shows — the builder's own success claim is never trusted.
+- Coverage: selftest section 1b (byte-exact name, recorded mode, preflight
+  pass/refuse-empty) + 6 new hermetic pytest cases in
+  `tests/test_ghl_pipeline_builder.py::TestExactNameMode` (plan, preflight,
+  CLI wiring, default-path regression). Still NOT live-locked:
+  `SELECTORS-LIVE-pipeline.md` remains RESEARCH-SEEDED; the first live run is
+  a separate step.
+
 ---
 
 ## [v18.1.11] - 2026-07-08 - Forms-list row-'Actions' acquisition is the SAME hover-reveal POLL as F4 (cleanup could silently fail to delete) + F-P9 interpreter/Playwright preflight (a live attempt can never be burned on an environment mistake)
