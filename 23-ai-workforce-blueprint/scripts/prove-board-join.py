@@ -91,6 +91,26 @@ becomes CHOSEN_NOT_DISPLAYED drift, and archiving a DECLINED department is
 correctly invisible to this gate.
 
 --------------------------------------------------------------------------------
+COMPANY SCOPING (multi-company boxes)
+--------------------------------------------------------------------------------
+One mission-control.db can hold the `workspaces` rows of MORE THAN ONE company
+(company A's 10 rows and company B's 57 in the same table). Joining company A's
+tree against ALL of those rows manufactures FALSE drift — every one of B's
+departments would land in DISPLAYED_NOT_CHOSEN / DISPLAYED_NOT_PROVISIONED — and
+because the QC gate turns any non-zero rc into "not materialized", a false drift
+can block "done" indefinitely on a healthy box.
+
+So the DISPLAY layer is always scoped to ONE company_id:
+  * --company-slug <id>   explicit; always wins.
+  * otherwise AUTO: when the board holds MORE THAN ONE distinct company_id we
+    resolve this company's id from the same sources seed-workspaces.py used
+    (company-config.json .slug -> the ZHC dir name -> slugified company name).
+  * when the board holds zero or one distinct company_id there is nothing to
+    disambiguate and NO filter is applied — identical to the unscoped behavior, so
+    scoping cannot invent a new false-fail on a single-company box.
+See company_slug_candidates() / resolve_company_slug() for the full rationale.
+
+--------------------------------------------------------------------------------
 EXIT CODES (fail-closed — this gate never passes on uncertainty)
 --------------------------------------------------------------------------------
   0  JOIN OK          chosen == provisioned == displayed (every pairwise diff empty)
@@ -121,6 +141,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sqlite3
 import sys
 import urllib.parse
@@ -215,9 +236,22 @@ def read_chosen_for_company(company_dir, build_state=None):
 
     Resolution (authoritative first):
       1. <company_dir>/departments.json                      -> ("artifact")
-      2. build-state canonicalReconciliation.chosenDepartments, but ONLY when its
-         recorded artifactPath lives INSIDE this company_dir                -> ("build-state")
+      2. build-state canonicalReconciliation.chosenDepartments, but ONLY when it is
+         PROVABLY scoped to THIS company_dir — either its recorded artifactPath
+         lives inside it, or its recorded companyDir IS it            -> ("build-state")
       3. ([], "none")  — NEVER re-derived from the floor.
+
+    WHY companyDir MATTERS (a failed artifact write must not buy a pass):
+    build-workforce.write_chosen_departments_artifact() is deliberately fail-soft —
+    an OSError writing <company_dir>/departments.json is a WARNING, never a raise,
+    so a build continues. On such a box the artifact is absent and artifactPath is
+    recorded as None. If the ONLY scope key were artifactPath, that record would be
+    unusable, this reader would return ([], "none"), and the QC gate would SKIP the
+    join as though the box were a pre-C7 build — a box whose durable write FAILED
+    would be indistinguishable from a box that never had the feature, and would get
+    a silent PASS. Scoping on companyDir (stamped by the same writer) keeps the
+    chosen list readable when the artifact write failed, so the join still RUNS and
+    the drift is still caught. A write failure cannot buy a pass.
     """
     cdir = Path(company_dir)
     artifact = cdir / CHOSEN_ARTIFACT
@@ -244,11 +278,24 @@ def read_chosen_for_company(company_dir, build_state=None):
         chosen = recon.get("chosenDepartments") if isinstance(recon, dict) else None
         if isinstance(chosen, dict):
             slugs = chosen.get("slugs")
-            ap = chosen.get("artifactPath")
             in_scope = False
-            if ap:
+            try:
+                resolved_cdir = cdir.resolve()
+            except OSError:
+                resolved_cdir = None
+            # (a) the artifact this record points at lives in THIS company dir
+            ap = chosen.get("artifactPath")
+            if ap and resolved_cdir is not None:
                 try:
-                    in_scope = Path(ap).resolve().parent == cdir.resolve()
+                    in_scope = Path(ap).resolve().parent == resolved_cdir
+                except OSError:
+                    in_scope = False
+            # (b) the record names THIS company dir directly — survives a failed
+            #     (fail-soft) artifact write, where artifactPath is None.
+            cd = chosen.get("companyDir")
+            if not in_scope and cd and resolved_cdir is not None:
+                try:
+                    in_scope = Path(cd).resolve() == resolved_cdir
                 except OSError:
                     in_scope = False
             if in_scope and isinstance(slugs, list) and slugs:
@@ -343,6 +390,93 @@ def read_displayed(db_path, company_slug=None):
         else:
             displayed.append((slug, name, cid))
     return displayed, archived, company_ids, archive_col
+
+
+# ── COMPANY SCOPING — never join THIS company's tree against ANOTHER company's board ──
+#
+# THE BUG THIS KILLS: read_displayed() with company_slug=None returns EVERY row in
+# the `workspaces` table. On a multi-company box — one mission-control.db whose
+# table holds company A's 10 rows and company B's 57 — joining A's chosen list and
+# A's tree against ALL 67 rows manufactures FALSE drift: every one of B's
+# departments lands in DISPLAYED_NOT_CHOSEN and DISPLAYED_NOT_PROVISIONED. That
+# verdict does not stay local: qc-assert-workspace-departments-built.sh turns it
+# into rc=6, and lib-onboarding-state.sh maps ANY non-zero rc to "not
+# materialized", which feeds BOTH oc_overall_goal_check AND the watchdog kill
+# condition. A false drift can therefore block "done" indefinitely on a perfectly
+# healthy box. A gate that can be pointed at the wrong company is not a gate.
+#
+# THE JOIN KEY ON THE DISPLAY SIDE is workspaces.company_id, which
+# 32-command-center-setup/scripts/seed-workspaces.py writes from
+# company_info["slug"] (`company_slug = company_info["slug"]`). That slug resolves,
+# in the seeder's own priority order:
+#     1. <company_dir>/company-config.json  ->  .slug   (whose default is the ZHC
+#                                                        company DIR NAME)
+#     2. else a slug derived from the company NAME
+# so we must offer the SAME candidate spellings rather than assume the dir name.
+#
+# FAIL-SAFE ASYMMETRY (deliberate, and the reason this cannot regress the fleet):
+# when the board carries ZERO or ONE distinct company_id there is nothing to
+# disambiguate, so we apply NO filter — byte-for-byte the pre-existing behavior.
+# That keeps this fix from inventing a NEW false-fail class on the single-company
+# boxes that make up the fleet (e.g. a box whose company_id was derived from the
+# company NAME and does not equal its dir name: filtering on the dir name there
+# would find zero rows and CANNOT-VOUCH a healthy board). We narrow the read ONLY
+# when the table actually holds more than one company — which is exactly and only
+# when the unscoped read is wrong.
+def company_slug_candidates(company_dir):
+    """Every spelling seed-workspaces.py could have written as workspaces.company_id
+    for this company dir, most-authoritative first. Pure — touches no database."""
+    cdir = Path(company_dir)
+    out = []
+
+    def _add(v):
+        if isinstance(v, str) and v.strip() and v.strip() not in out:
+            out.append(v.strip())
+
+    cfg = {}
+    try:
+        cfg = json.loads((cdir / "company-config.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    _add(cfg.get("slug"))            # 1. the seeder's authoritative source
+    _add(cdir.name)                  # 2. the seeder's own default for .slug
+    if cfg.get("name"):              # 3. the seeder's last-resort name derivation
+        _add(re.sub(r"[^a-z0-9]+", "-", str(cfg["name"]).lower()).strip("-"))
+    return out
+
+
+def resolve_company_slug(company_dir, company_ids):
+    """The workspaces.company_id this company's rows live under, or None when no
+    filter should be applied. `company_ids` = every distinct company_id in the
+    table. See the block comment above for the fail-safe asymmetry."""
+    ids = {c for c in (company_ids or ()) if c is not None and str(c) != ""}
+    if len(ids) <= 1:
+        return None          # single-company board: nothing to disambiguate.
+    cands = company_slug_candidates(company_dir)
+    for cand in cands:
+        if cand in ids:
+            return cand
+    # A multi-company board on which NOT ONE of this company's spellings appears:
+    # this company has no board rows at all. Return the best candidate so the
+    # caller's "rows for X but NONE for Y" CANNOT-VOUCH branch fires. We never fall
+    # back to "join against everybody" — that is the bug.
+    return cands[0] if cands else None
+
+
+def resolve_company_slug_from_db(company_dir, db_path):
+    """Same resolution for a caller that holds a DB path but has not read rows yet
+    (the QC gate). Returns None on an absent/unreadable/board-less DB — the
+    caller's own NOT-APPLICABLE / CANNOT-VOUCH paths own those states."""
+    if not db_path:
+        return None
+    try:
+        _disp, _arch, company_ids, _col = read_displayed(db_path)
+    except (LookupError, sqlite3.Error, OSError):
+        return None
+    return resolve_company_slug(company_dir, company_ids)
 
 
 # ── THE JOIN ──────────────────────────────────────────────────────────────────
@@ -460,6 +594,9 @@ def render(v, company_dir, departments_dir, db_path, chosen_source, archive_col,
     print(f"departments dir  : {departments_dir}")
     print(f"command-center db: {db_path}")
     print(f"chosen source    : {chosen_source}")
+    print(f"company scope    : {v.get('company_slug') or '(unscoped)'} "
+          f"[{v.get('company_slug_source', 'n/a')}]  "
+          f"board company_ids: {', '.join(v.get('board_company_ids') or []) or '(none)'}")
     print(f"archive column   : {archive_col or '(none — every workspaces row is displayed)'}")
     print("-" * 78)
     print(f"{'DEPARTMENT':<30} {'CHOSEN':>7} {'PROVIS':>7} {'DISPLAY':>8}")
@@ -545,10 +682,11 @@ def main(argv=None):
                               "reason": "no mission-control.db"}, indent=2))
         return RC_NOT_APPLICABLE
 
+    # Read the board UNFILTERED first: `company_ids` (every distinct company_id in
+    # the table) is what tells us whether this is a multi-company board at all, and
+    # therefore whether a scope filter is required. We filter immediately below.
     try:
-        displayed_rows, archived_rows, company_ids, archive_col = read_displayed(
-            db_path, args.company_slug
-        )
+        displayed_rows, archived_rows, company_ids, archive_col = read_displayed(db_path)
     except LookupError as e:
         print(f"AF-BOARD-JOIN-DRIFT: NOT APPLICABLE — {e} in {db_path}. The Command "
               f"Center board has not been created yet.", file=sys.stderr)
@@ -560,6 +698,20 @@ def main(argv=None):
         print(f"AF-BOARD-JOIN-DRIFT: CANNOT VOUCH — mission-control.db is present but "
               f"unreadable ({e}). Refusing to pass on an unreadable board.", file=sys.stderr)
         return RC_CANNOT_VOUCH
+
+    # ── COMPANY SCOPING: an explicit --company-slug always wins; otherwise scope
+    #    automatically (multi-company board) or not at all (single-company board).
+    #    Doing this HERE rather than at one call site means EVERY consumer — the QC
+    #    gate, the CI suite, an operator running this bare — is scoped correctly.
+    if args.company_slug:
+        company_slug, slug_source = args.company_slug, "explicit (--company-slug)"
+    else:
+        company_slug = resolve_company_slug(company_dir, company_ids)
+        slug_source = ("auto-resolved (multi-company board)" if company_slug
+                       else "none (single-company board — no filter needed)")
+    if company_slug is not None:
+        displayed_rows = [r for r in displayed_rows if r[2] == company_slug]
+        archived_rows = [r for r in archived_rows if r[2] == company_slug]
 
     # ── LAYER 1: the chosen list, scoped to THIS company ──
     build_state = df.load_build_state()
@@ -587,9 +739,10 @@ def main(argv=None):
                   f"not a pass.", file=sys.stderr)
         else:
             print(f"AF-BOARD-JOIN-DRIFT: CANNOT VOUCH — the workspaces table has rows for "
-                  f"company_id(s) {sorted(company_ids)} but NONE for "
-                  f"'{args.company_slug}'. Refusing to pass a board that does not "
-                  f"describe this company.", file=sys.stderr)
+                  f"company_id(s) {sorted(str(c) for c in company_ids)} but NONE for "
+                  f"'{company_slug}' ({slug_source}). Every department this company "
+                  f"chose is therefore invisible on its board. Refusing to pass a board "
+                  f"that does not describe this company.", file=sys.stderr)
         return RC_CANNOT_VOUCH
 
     # ── LAYER 2 ──
@@ -601,6 +754,9 @@ def main(argv=None):
     verdict["departments_dir"] = str(departments_dir)
     verdict["db"] = str(db_path)
     verdict["chosen_source"] = chosen_source
+    verdict["company_slug"] = company_slug
+    verdict["company_slug_source"] = slug_source
+    verdict["board_company_ids"] = sorted(str(c) for c in company_ids)
     verdict["archive_column"] = archive_col
     verdict["archived_not_displayed"] = sorted(r[0] for r in archived_rows)
 

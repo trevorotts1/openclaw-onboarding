@@ -1641,6 +1641,18 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             "slugs": slugs,
             "count": len(slugs),
             "artifactPath": artifact_path,
+            # companyDir + artifactWritten are the RECONCILIATION-RAN marker. The
+            # artifact write above is fail-soft (an OSError is a warning, never a
+            # raise), so on a box where it FAILED artifactPath is None. Without a
+            # company-scoped key, the AF-BOARD-JOIN-DRIFT reader
+            # (prove-board-join.read_chosen_for_company) could not tell that box
+            # apart from a pre-C7 build that never had a chosen list — it would SKIP
+            # the join, and the failed write would buy a SILENT PASS. Stamping the
+            # company dir keeps the chosen list readable and the join ENFORCED even
+            # when the durable artifact never landed; artifactWritten=False is the
+            # visible evidence that it did not.
+            "companyDir": str(cdir) if cdir else None,
+            "artifactWritten": artifact_path is not None,
             "writtenAt": datetime.now().isoformat(),
             "source": source,
         }
