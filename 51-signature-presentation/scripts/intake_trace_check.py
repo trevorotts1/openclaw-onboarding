@@ -29,12 +29,25 @@ WHAT THIS DETECTS (AF-INTAKE-BATCH):
                           banks: sp-8-questions.json's 8 Questions + frame
                           question, and deck-intake-questions.json's full
                           question set) before the owner answers any of them.
+                          VERBATIM-PROMPT EXEMPTION: when one or more bank
+                          prompts appear VERBATIM (normalized, whitespace-
+                          insensitive substring) in the turn, the turn
+                          resolves to exactly THOSE bank id(s) -- a single
+                          verbatim bank prompt's own internal '?' sentences
+                          (e.g. frame_selection has 2) are never re-matched
+                          against OTHER bank questions by incidental keyword
+                          overlap (e.g. "transformational teaching" also
+                          appearing in sp:q5/sp:q6) and double-counted as a
+                          multi-question batch. Two or more DIFFERENT bank
+                          prompts appearing verbatim in the same turn still
+                          correctly fires BATCH-IN-TURN.
   2. BATCH-BY-QMARKS   — a lighter heuristic fallback: an assistant turn with
-                          2+ sentences ending in '?' (used only when the turn
-                          does not resolve any known bank-question match, so
-                          a turn that is legitimately one bank question plus
-                          one incidental clarifying '?' is not double-counted
-                          against the same bank id).
+                          2+ sentences ending in '?' that resolves ZERO known
+                          bank-question matches (elif fires ONLY when
+                          len(bank_ids_in_turn) == 0 -- a turn that is
+                          legitimately one bank question, verbatim or via
+                          keyword match, plus one incidental clarifying '?'
+                          is not double-counted against the same bank id).
   3. NO-CHOICE-OPENER  — a signature-presentation transcript (detected by the
                           presence of >=2 of the 8-Question ids/keywords
                           anywhere in the transcript) whose FIRST assistant
@@ -223,6 +236,33 @@ def _match_bank_ids(sentence: str, bank: dict) -> set:
     return matched
 
 
+def _normalize_for_match(text: str) -> str:
+    """Lowercase + collapse whitespace, for verbatim substring comparisons
+    that must not be tripped up by newlines/indentation differences between
+    how a prompt is authored in the bank JSON and how it is relayed in a
+    transcript."""
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _verbatim_bank_ids(text: str, bank: dict) -> set:
+    """Bank ids whose FULL prompt text appears verbatim (normalized,
+    whitespace-insensitive substring) inside `text`. Used to exempt a turn
+    that asks one (or more) canonical bank question(s) verbatim from the
+    keyword-overlap sentence scan below -- a verbatim prompt's own internal
+    '?' sentences must resolve to ITS bank id only, not whatever else it
+    happens to keyword-overlap with."""
+    norm_text = _normalize_for_match(text)
+    if not norm_text:
+        return set()
+    found = set()
+    for qid, info in bank.items():
+        prompt = info.get("prompt") or ""
+        norm_prompt = _normalize_for_match(prompt)
+        if norm_prompt and norm_prompt in norm_text:
+            found.add(qid)
+    return found
+
+
 def scan_transcript(turns: list, bank: dict) -> dict:
     violations = []
 
@@ -241,12 +281,26 @@ def scan_transcript(turns: list, bank: dict) -> dict:
             })
 
         qsentences = _sentences(text)
-        if len(qsentences) < 2:
-            continue
 
-        bank_ids_in_turn = set()
-        for s in qsentences:
-            bank_ids_in_turn |= _match_bank_ids(s, bank)
+        # Verbatim-prompt exemption: when one or more canonical bank prompts
+        # appear VERBATIM in this turn, resolve the turn to exactly those
+        # bank id(s) and SKIP the per-sentence keyword-overlap qmark scan
+        # entirely for it -- otherwise a single compliant bank question
+        # whose own prompt text keyword-overlaps OTHER bank questions (e.g.
+        # frame_selection's 2 internal '?' sentences overlapping sp:q5 /
+        # sp:q6 on "transformational"/"teaching") gets miscounted as a
+        # multi-question batch. Two or more DIFFERENT prompts verbatim in
+        # the same turn is a real batch and still fires below.
+        verbatim_ids = _verbatim_bank_ids(text, bank)
+
+        if verbatim_ids:
+            bank_ids_in_turn = verbatim_ids
+        elif len(qsentences) < 2:
+            continue
+        else:
+            bank_ids_in_turn = set()
+            for s in qsentences:
+                bank_ids_in_turn |= _match_bank_ids(s, bank)
 
         if len(bank_ids_in_turn) >= 2:
             violations.append({
@@ -259,7 +313,7 @@ def scan_transcript(turns: list, bank: dict) -> dict:
                     f"({sorted(bank_ids_in_turn)}) in a single assistant message."
                 ),
             })
-        elif len(qsentences) >= 2:
+        elif len(bank_ids_in_turn) == 0 and len(qsentences) >= 2:
             violations.append({
                 "code": AF_CODE,
                 "reason": "BATCH-BY-QMARKS",
@@ -437,6 +491,42 @@ def _self_test() -> bool:
     ok = ok and t6
     print(f"[self-test] Test 6 {'PASS' if t6 else 'FAIL'}: plain-text speaker-prefixed transcript parses "
           f"({turns})")
+
+    # Test 7: EVERY canonical bank prompt (all 8 SP questions + frame_selection
+    # from sp-8-questions.json, plus every prompt in deck-intake-questions.json
+    # if present) asked VERBATIM, alone, in its own assistant turn inside an
+    # otherwise-compliant choice-first / one-question-per-turn conversation,
+    # must PASS. This is the regression guard for the LIVE-CONFIRMED bug
+    # (E2): the frame_selection prompt has 2 internal '?' sentences that
+    # keyword-overlap sp:q5/sp:q6, so a single compliant question was
+    # miscounted as a 3-question BATCH-IN-TURN ([sp:frame_selection, sp:q5,
+    # sp:q6]) even though it was asked one-per-turn, verbatim, alone.
+    opener = {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"}
+    opener_reply = {"role": "owner", "text": "quick"}
+    t7 = True
+    t7_failures = []
+    if not bank:
+        t7 = False
+        t7_failures.append("bank loaded 0 questions -- sp-8-questions.json / "
+                            "deck-intake-questions.json not found from this environment")
+    for qid, info in sorted(bank.items()):
+        prompt = info.get("prompt") or ""
+        if not prompt:
+            continue
+        convo = [
+            opener,
+            opener_reply,
+            {"role": "assistant", "text": prompt},
+            {"role": "owner", "text": "answer"},
+        ]
+        res = scan_transcript(convo, bank)
+        if not res["pass"]:
+            t7 = False
+            t7_failures.append((qid, res["violations"]))
+    ok = ok and t7
+    print(f"[self-test] Test 7 {'PASS' if t7 else 'FAIL'}: every canonical bank prompt "
+          f"({len(bank)} loaded) passes when asked verbatim, one-per-turn "
+          f"(failures={t7_failures})")
 
     print(f"[intake_trace_check] --self-test: {'ALL PASS' if ok else 'FAILED'}")
     return ok

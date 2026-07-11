@@ -156,6 +156,45 @@ else
   bad "deck-intake-driver.py missing at $DRIVER"
 fi
 
+# ---- (I) AF-INTAKE-BATCH: the scanner does not autofail a COMPLIANT transcript ----
+# LIVE-CONFIRMED regression guard (E2): a one-question-per-turn transcript whose
+# frame_selection turn is asked VERBATIM, alone, was previously misdetected as a
+# 3-question BATCH-IN-TURN ([sp:frame_selection, sp:q5, sp:q6]) purely from
+# incidental keyword overlap inside that ONE compliant bank question. This must
+# now PASS (exit 0), not autofail (exit 2).
+echo "--- AF-INTAKE-BATCH: compliant transcript (frame prompt verbatim, alone) does not autofail ---"
+if [ -f "$TRACE_CHECK" ]; then
+  TRANSCRIPT_TMP="$(mktemp -t sp-intake-compliant-transcript.XXXXXX.json 2>/dev/null || mktemp)"
+  if OUT="$("$PY" - "$SPEC" "$TRANSCRIPT_TMP" <<'PYEOF'
+import json, sys
+spec = json.load(open(sys.argv[1]))
+frame_prompt = spec["frame_selection_question"]["prompt"]
+turns = [
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
+    {"role": "owner", "text": "quick"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
+    {"role": "owner", "text": "The Signature Talk"},
+    {"role": "assistant", "text": frame_prompt},
+    {"role": "owner", "text": "rulebook"},
+]
+json.dump(turns, open(sys.argv[2], "w"))
+PYEOF
+  )"; then
+    if OUT="$("$PY" "$TRACE_CHECK" "$TRANSCRIPT_TMP" --json 2>&1)"; then
+      ok "intake_trace_check.py: compliant one-per-turn transcript (frame prompt verbatim, alone) PASSES (no false BATCH-IN-TURN)"
+    else
+      bad "intake_trace_check.py: compliant transcript AUTOFAILED (E2 regression)"
+      printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+    fi
+  else
+    bad "intake_trace_check.py: could not build the compliant-transcript fixture"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+  rm -f "$TRANSCRIPT_TMP"
+else
+  bad "intake_trace_check.py missing at $TRACE_CHECK -- cannot regression-test E2"
+fi
+
 # ---- (F) client-facing WORDING never regresses to the banned quick-questions phrasing ----
 # PR-440 remainder: the one-question-at-a-time doctrine must reach the CLIENT-FACING copy,
 # not only the guard/record layers. These two phrases are BANNED and must appear NOWHERE in
