@@ -1,8 +1,8 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
   "version": "19.24.0",
-  "total_roles": 426,
-  "total_departments": 34,
+  "total_roles": 431,
+  "total_departments": 35,
   "departments": {
     "account-management": {
       "count": 6,
@@ -667,6 +667,18 @@
       ],
       "content_sha": "sha256:b558e1b17ac6f30d9f3e95357ea3fc020c13ec3ad4d414f8561559ec48d5eca8",
       "content_hashed_at": "2026-07-10T12:49:03.158929+00:00"
+    },
+    "rescue-rangers": {
+      "count": 5,
+      "roles": [
+        "diagnostician--rescue-rangers",
+        "director-of-rescue-rangers",
+        "qc-postmortem-specialist--rescue-rangers",
+        "structured-fix-operator--rescue-rangers",
+        "ticket-clerk--rescue-rangers"
+      ],
+      "content_sha": "sha256:b7e054a27687018ba671dfb079da52473c2e539516a101626838d600f07a5879",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
     }
   },
   "roles": [
@@ -7485,6 +7497,86 @@
       "render_sha": "sha256:f2c005b09c07b088ae39d059c3cdaceea4faa0fb280acf2b4f212e101a6b31b0",
       "content_version": "1.0.2",
       "content_hashed_at": "2026-07-10T12:49:03.158929+00:00"
+    },
+    {
+      "slug": "director-of-rescue-rangers",
+      "dept": "rescue-rangers",
+      "title": "Director Of Rescue Rangers",
+      "role_type": "director",
+      "word_count": 1431,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/rescue-rangers/director-of-rescue-rangers.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false,
+      "content_sha": "sha256:9191c51230fc5bf58716cce07e6c6f2fd61d593e6e126ac4eb9d24ddddc7e88c",
+      "render_sha": "sha256:225b6f03921a34a2baf3d107bd684dd09f218488747bef88749cbb8816afe8d6",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "diagnostician--rescue-rangers",
+      "dept": "rescue-rangers",
+      "title": "Diagnostician Rescue Rangers",
+      "role_type": "specialist",
+      "word_count": 1036,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/rescue-rangers/diagnostician--rescue-rangers.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false,
+      "content_sha": "sha256:d1b01c31266d59e671247400f48e589008981fae9670894fe25f98e553b462cd",
+      "render_sha": "sha256:fdfd907a7f339c630fb97e7a907b560866921d0c5ea9ef519fb5b4e65350ead1",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "structured-fix-operator--rescue-rangers",
+      "dept": "rescue-rangers",
+      "title": "Structured Fix Operator Rescue Rangers",
+      "role_type": "specialist",
+      "word_count": 1084,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/rescue-rangers/structured-fix-operator--rescue-rangers.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false,
+      "content_sha": "sha256:476bfcf83a6e6c710e7088c749bf0c8e516f3c09a560a49cad912842ee8b46bb",
+      "render_sha": "sha256:84905a816d0f48747d17fdb78d952825cba1ab7083b8e963688a3c2e698f6bcf",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "ticket-clerk--rescue-rangers",
+      "dept": "rescue-rangers",
+      "title": "Ticket Clerk Rescue Rangers",
+      "role_type": "specialist",
+      "word_count": 1293,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/rescue-rangers/ticket-clerk--rescue-rangers.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false,
+      "content_sha": "sha256:6bcf3733898351b7f724f70a871f7b94068c3158affe02aa06e4ad75eec30a2c",
+      "render_sha": "sha256:90a58c11898ef937d9d334844cb11f67da4a16da00c6ac3737c847af8011a4d2",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "qc-postmortem-specialist--rescue-rangers",
+      "dept": "rescue-rangers",
+      "title": "Qc Postmortem Specialist Rescue Rangers",
+      "role_type": "specialist",
+      "word_count": 1221,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/rescue-rangers/qc-postmortem-specialist--rescue-rangers.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false,
+      "content_sha": "sha256:8fd81c441bc77ec720a4081213eae2785148bfb0d4a1cb1e72d100bc9ddc6ace",
+      "render_sha": "sha256:68bfb3cf6b762f7f1f2dbf1349dfd3fd519233a1889f81466b5554cb0bb945fa",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
     }
   ],
   "sops": [
@@ -8479,6 +8571,46 @@
       "content_sha": "sha256:5e839a14ad3c2e1ec487d9d895a0c0852adb38b0603592cb464d0735f352118d",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-07-10T12:49:03.158929+00:00"
+    },
+    {
+      "slug": "SOP-RR-01-triage-and-dispatch",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-01-triage-and-dispatch.md",
+      "content_sha": "sha256:306a8da577038cefe9f5d304cef7ef4f579654b23bbb05453c9766a31b3047de",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "SOP-RR-02-durable-ticket-ledger",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-02-durable-ticket-ledger.md",
+      "content_sha": "sha256:13fbd1af164153490da4e7a0b87767a69a44b04e2d8f2e39ae7eed3f9f49b98e",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "SOP-RR-03-cc-board-and-aging-sweep",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-03-cc-board-and-aging-sweep.md",
+      "content_sha": "sha256:843e5567b192f6576b9e463e31e2ec439914f0b8f13ca18cf0276062dde7962a",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "SOP-RR-04-structured-fix-discipline",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-04-structured-fix-discipline.md",
+      "content_sha": "sha256:001fac7f5d183545f245ad6fc0994f1b37ae4c29ea54bed8bec6362eb6713180",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
+    },
+    {
+      "slug": "SOP-RR-05-postmortem-and-prevention",
+      "dept": "rescue-rangers",
+      "path": "templates/role-library/rescue-rangers/sops/SOP-RR-05-postmortem-and-prevention.md",
+      "content_sha": "sha256:a7b6b22ab6f64216e76d5b8c15dfaf5e6f55e393fefffdf3d88fdf74a8dfdf60",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-11T04:29:07.007837+00:00"
     }
   ],
   "content_manifest": {
