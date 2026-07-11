@@ -1248,6 +1248,137 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6i -- SOP V2 Library Ingestion (C2 fix: closes the CC SOP-library
+# ghost)
+# ----------------------------------------------------------------------
+# THE GAP THIS CLOSES (finding C2): INSTALL.md has documented a "Phase 6c:
+# SOP V2 Library Ingestion" step since v10.13.29 ("Agent Does This
+# Automatically") but `run-full-install.sh` never actually called
+# ingest-sop-library.sh -- confirmed live: `grep -c ingest-sop-library
+# run-full-install.sh` == 0 before this phase existed. (Named 6i here, not
+# 6c, because this file's Phase 6c is already the unrelated
+# sync-departments-from-build-state step -- INSTALL.md's duplicate "Phase
+# 6c" heading is renumbered to match.) Every install therefore ran on
+# whatever CC's own autoSeedStarterSOPs boot-seed happened to write --
+# observed live as 54 rows (30 test-dept residue + 24 stale legacy-alias
+# rows) instead of the real ~2,555-row V2 library, silently starving
+# dispatch_rules.sop_id matching + Triad routing. Two writers populate the
+# SAME `sops` table and both are wired here: (1) ingest-sop-library.sh does
+# the direct JSONL-asset upsert; (2) the CC converge(scope=sops) HTTP call
+# runs importRoleLibrary() -- the on-disk departments/ role-library ingest
+# that was "never succeeded here" per the live evidence. A dedicated
+# fail-loud row-count gate (assert-sop-library-populated.py) runs after
+# both so an empty/near-empty table can never again be silently accepted as
+# done. Idempotent (both writers are upsert-only) -- safe to re-run on every
+# install/resume/update, so it runs in BOTH full and --update-only mode
+# (matching 6b/6c/6d/6e/6f/6g).
+log "INFO" "phase=6i sop-library-ingestion: starting"
+INGEST_SOP_SH="$SKILL_DIR/scripts/ingest-sop-library.sh"
+ASSERT_SOP_PY="$SKILL_DIR/scripts/assert-sop-library-populated.py"
+
+if [[ ! -f "$INGEST_SOP_SH" ]]; then
+  log "WARN" "phase=6i sop-library-ingestion: $INGEST_SOP_SH not found -- skipping (Skill 32 not at the version that ships the V2 library ingester)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = "script-missing"'; fi
+elif [[ -z "${CLIENT_SLUG:-}" ]]; then
+  log "WARN" "phase=6i sop-library-ingestion: no CLIENT_SLUG resolved -- skipping (ingest-sop-library.sh requires a client slug; re-run with the slug once known)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = "no-client-slug"'; fi
+else
+  # ---- (1) direct JSONL-asset ingest -> `sops` table -------------------
+  SOP_INGEST_OUT="$(bash "$INGEST_SOP_SH" "$CLIENT_SLUG" 2>&1)"; SOP_INGEST_RC=$?
+  printf '%s\n' "$SOP_INGEST_OUT" >> "$LOG_FILE"
+  if [[ "$SOP_INGEST_RC" -eq 0 ]]; then
+    log "INFO" "phase=6i sop-library-ingestion: ingest-sop-library.sh completed (rc=0)"
+  else
+    log "WARN" "phase=6i sop-library-ingestion: ingest-sop-library.sh exited rc=$SOP_INGEST_RC (see $LOG_FILE) -- proceeding to the row-count gate, which will fail loud if the table is left empty"
+  fi
+  # The script's own "[sop-library] downloaded N SOP records" line lets the
+  # gate below fail-WARN on a row-count mismatch without hardcoding the
+  # library's current size (it changes across onboarding releases).
+  SOP_DOWNLOADED_COUNT="$(printf '%s' "$SOP_INGEST_OUT" | grep -oE 'downloaded [0-9]+ SOP records' | grep -oE '[0-9]+' | head -n1 || true)"
+
+  # ---- (2) CC converge(scope=sops) -> importRoleLibrary() role rows ----
+  # Best-effort: MC_API_TOKEN is provisioned into $DASHBOARD_DIR/.env.local by
+  # cc_write_env_local (Phase 6, above) and CC is already running locally on
+  # $DASHBOARD_PORT by this point in the sequence. Mirrors sync-extensions.sh's
+  # existing converge call (same route, same scope contract) -- never fatal
+  # here: ingest-sop-library.sh above already wrote the `sops` table directly,
+  # so a converge miss degrades role-library coverage, not the table's
+  # existence, and the row-count gate below is the true pass/fail authority.
+  SOP_CONVERGE_STATUS="skipped"
+  if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
+    SOP_MC_TOKEN="$(cc_env_get "$DASHBOARD_DIR/.env.local" MC_API_TOKEN)"
+    if [[ -n "$SOP_MC_TOKEN" ]]; then
+      if curl -sf -X POST "http://127.0.0.1:$DASHBOARD_PORT/api/system/converge" \
+          -H "Authorization: Bearer $SOP_MC_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"scope":"sops"}' \
+          --max-time 60 >>"$LOG_FILE" 2>&1; then
+        SOP_CONVERGE_STATUS="ok"
+        log "INFO" "phase=6i sop-library-ingestion: CC converge(scope=sops) succeeded (role-library rows imported)"
+      else
+        SOP_CONVERGE_STATUS="failed"
+        log "WARN" "phase=6i sop-library-ingestion: CC converge(scope=sops) failed (see $LOG_FILE) -- role-library rows may be missing; the direct ingest above still populated the JSONL-asset SOPs"
+      fi
+      SOP_MC_TOKEN=""   # scrub from shell memory promptly
+    else
+      log "WARN" "phase=6i sop-library-ingestion: MC_API_TOKEN not found in $DASHBOARD_DIR/.env.local -- skipping CC converge(scope=sops) (role-library rows deferred to the next converge/cron)"
+    fi
+  else
+    log "WARN" "phase=6i sop-library-ingestion: $DASHBOARD_DIR/.env.local not found -- skipping CC converge(scope=sops)"
+  fi
+
+  # ---- (3) fail-loud row-count gate -------------------------------------
+  if [[ -f "$ASSERT_SOP_PY" ]] && command -v python3 >/dev/null 2>&1; then
+    SOP_ASSERT_ARGS=(--json)
+    if [[ -n "$SOP_DOWNLOADED_COUNT" ]]; then
+      # Floor scales with what this run's asset actually reported downloading
+      # (never a hardcoded 2555 that would rot as the library grows/shrinks
+      # across releases) -- but a downloaded count of 0 (the asset itself
+      # reported nothing, or curl/gunzip silently produced an empty file)
+      # must NEVER collapse the floor to 0/2==0, which would rubber-stamp an
+      # empty table as healthy. Always keep at least the script's own
+      # not-empty default of 1.
+      SOP_MIN_TOTAL=$(( SOP_DOWNLOADED_COUNT / 2 ))
+      if [[ "$SOP_MIN_TOTAL" -lt 1 ]]; then SOP_MIN_TOTAL=1; fi
+      SOP_ASSERT_ARGS+=(--expected "$SOP_DOWNLOADED_COUNT" --min-total "$SOP_MIN_TOTAL")
+    fi
+    SOP_ASSERT_OUT="$(python3 "$ASSERT_SOP_PY" "${SOP_ASSERT_ARGS[@]}" 2>&1)"; SOP_ASSERT_RC=$?
+    printf '%s\n' "$SOP_ASSERT_OUT" >> "$LOG_FILE"
+    SOP_TOTAL="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write(str(json.load(sys.stdin).get('total',0)))" 2>/dev/null || echo "0")"
+    SOP_MISMATCH="$(printf '%s' "$SOP_ASSERT_OUT" | python3 -c "import json,sys; sys.stdout.write('true' if json.load(sys.stdin).get('row_count_mismatch') else 'false')" 2>/dev/null || echo "false")"
+
+    if [[ "$SOP_ASSERT_RC" -eq 0 ]]; then
+      log "INFO" "phase=6i sop-library-ingestion: PASS -- sops table has $SOP_TOTAL row(s) (converge=$SOP_CONVERGE_STATUS)"
+      if [[ -f "$STATE_FILE" ]]; then state_set ".commandCenterSopLibraryIngested = true | .commandCenterSopLibraryTotal = $SOP_TOTAL"; fi
+      if [[ "$SOP_MISMATCH" == "true" ]]; then
+        # fail-WARN per the C2 spec (row-count != downloaded count is NOT a
+        # ghost by itself -- upsert errors / legacy overlap are expected).
+        log "WARN" "phase=6i sop-library-ingestion: row-count mismatch vs downloaded count ($SOP_DOWNLOADED_COUNT) -- non-blocking, see $LOG_FILE"
+      fi
+    elif [[ "$SOP_ASSERT_RC" -eq 2 ]]; then
+      # mission-control.db not found -- Phase 6 dashboard deploy is a hard
+      # prerequisite for this phase and already fail_install()s on its own
+      # failure, so reaching here with no DB is unexpected. WARN + degrade
+      # rather than a second independent fail_install for the same root cause.
+      log "WARN" "phase=6i sop-library-ingestion: assert-sop-library-populated.py could not find mission-control.db (rc=2) -- see $LOG_FILE"
+      if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false'; fi
+    else
+      # rc=1: GHOST -- the sops table is empty (or the table itself is
+      # missing) after BOTH writers ran. C2 is P0 precisely because a fresh
+      # install silently claiming success over an empty SOP library is the
+      # bug -- FAIL LOUD (same severity class as Phase 6e2's
+      # department-runtime-parity gate: a required per-install capability is
+      # completely absent), never a silent degrade.
+      if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = false | .commandCenterSopLibraryTotal = 0'; fi
+      fail_install "phase=6i: SOP V2 library is EMPTY after ingest-sop-library.sh (rc=$SOP_INGEST_RC) + CC converge(scope=sops) ($SOP_CONVERGE_STATUS) -- the Command Center SOP library would ship as a ghost (dispatch_rules.sop_id matching + Triad routing starved). See $LOG_FILE for the ingest/converge/assert output, then re-run install."
+    fi
+  else
+    log "WARN" "phase=6i sop-library-ingestion: $ASSERT_SOP_PY not found (or python3 missing) -- skipping the row-count gate (Skill 32 not at the version that ships it)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterSopLibraryIngested = "gate-script-missing"'; fi
+  fi
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 7 — Verification (local :4000 + subdomain)
 # ----------------------------------------------------------------------
 log "INFO" "phase=7 verification: starting"
