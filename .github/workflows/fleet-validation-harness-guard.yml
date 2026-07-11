@@ -1,0 +1,80 @@
+name: fleet-validation-harness-guard
+
+# AUD-58 / FLEET-FIX 4b — the gate in front of THE ONE BATCHED FLEET ROLL.
+#
+# This workflow exists to stop exactly one thing regressing: a fan-out that
+# reports GREEN on a BROKEN box. It proves, on every push:
+#
+#   • a simulated 20-box fan-out writes 20 per-box ledger rows to /tmp/<sweep>/<box>.json
+#   • the post-fan-out validation harness runs the five REQUIRED per-box checks
+#     (MC_API_TOKEN store reachable · write-back 2xx/401 · browser probe ·
+#      `openclaw --version` + the runRetries ceiling row · repo stamp)
+#   • one deliberately-broken box FAILS THE WAVE LOUDLY (exit 2, FAIL banner,
+#     box named, root cause stated) instead of reporting green
+#   • every fail-open path is closed: unparseable probe output, a probe that
+#     never ran, an ssh that timed out, an UNDECLARED expectation, a required
+#     check that was skipped, a corrupt ledger row — all FAIL or UNKNOWN
+#   • no secret value can reach a ledger row
+#
+# Everything here is hermetic (the `sim` backend). No ssh, no network, no box.
+
+on:
+  push:
+    paths:
+      - shared-utils/fleet_ledger.py
+      - shared-utils/fleet_validation_harness.py
+      - scripts/fleet-validate.sh
+      - tests/unit/fleet-ledger-harness.test.py
+      - tests/unit/fleet-validation-harness.test.sh
+      - docs/FLEET-VALIDATION-HARNESS.md
+      - .github/workflows/fleet-validation-harness-guard.yml
+  pull_request:
+    paths:
+      - shared-utils/fleet_ledger.py
+      - shared-utils/fleet_validation_harness.py
+      - scripts/fleet-validate.sh
+      - tests/unit/fleet-ledger-harness.test.py
+      - tests/unit/fleet-validation-harness.test.sh
+      - docs/FLEET-VALIDATION-HARNESS.md
+      - .github/workflows/fleet-validation-harness-guard.yml
+
+jobs:
+  fleet-validation-harness-guard:
+    name: Per-box ledger + post-fan-out validation harness
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax check
+        run: |
+          python3 -m py_compile shared-utils/fleet_ledger.py shared-utils/fleet_validation_harness.py
+          bash -n scripts/fleet-validate.sh
+          bash -n tests/unit/fleet-validation-harness.test.sh
+
+      - name: Ledger + harness unit tests (fail-open hunt)
+        run: python3 tests/unit/fleet-ledger-harness.test.py
+
+      - name: ACCEPTANCE — 20-box fan-out, one broken box, must FAIL LOUDLY
+        run: |
+          chmod +x tests/unit/fleet-validation-harness.test.sh
+          bash tests/unit/fleet-validation-harness.test.sh
+
+      - name: A no-argument invocation must not look green
+        run: |
+          set +e
+          bash scripts/fleet-validate.sh >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" = "0" ]; then
+            echo "::error::fleet-validate.sh exited 0 with no arguments — a no-op must never read as a green wave"
+            exit 1
+          fi
+          echo "no-arg invocation exits $rc (non-zero) — correct"
