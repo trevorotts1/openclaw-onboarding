@@ -83,11 +83,37 @@
 #   (keeps the canonical winner, layers the loser's unique roles in, archives the
 #   loser OUT of departments/ — never deletes).
 #
+# AF-BOARD-JOIN-DRIFT (the C-series JOIN) — CHOSEN == PROVISIONED == DISPLAYED:
+#   A third failure this gate now makes impossible. The two checks above prove the
+#   department TREE is honest. Neither of them looks at what the CLIENT ACTUALLY
+#   SEES: the `workspaces` rows in the Command Center's mission-control.db — the
+#   Kanban columns / department rail. Those three layers —
+#     (1) the departments the client CHOSE      (C7 durable artifact / build-state)
+#     (2) the departments PROVISIONED on disk   (this gate's own tree)
+#     (3) the departments DISPLAYED on the board (CC workspaces rows)
+#   — were each guarded INTERNALLY and never JOINED, so all three could be
+#   internally perfect and still describe three different companies: a department
+#   the client paid for with no board column (they cannot see it), a ghost column
+#   with no tree behind it, a phantom tree nobody chose. The join lives in
+#   23-ai-workforce-blueprint/scripts/prove-board-join.py (single source of truth)
+#   and is ARCHIVE-AWARE: an archived workspaces row is NOT displayed.
+#
+#   ENGAGEMENT (deliberately scoped, and LOUD when it does not engage): the join
+#   runs only when a durable chosen-list exists FOR THE RESOLVED COMPANY DIR
+#   (<company>/departments.json, or a build-state record whose artifactPath points
+#   inside it). A pre-C7 workspace has no such artifact, so the join is SKIPPED
+#   with a printed reason — never silently passed, and never allowed to hard-fail a
+#   workspace it cannot speak about. Once the box re-runs reconciliation (every
+#   build since Skill-23 C7) the artifact exists and the join is enforced.
+#
 # EXIT CODES (fail-closed):
-#   0  every REQUIRED department is FULL in the WORKSPACE (and no phantom trees)
+#   0  every REQUIRED department is FULL in the WORKSPACE (and no phantom trees,
+#      and the board join is clean)
 #   3  AF-WORKSPACE-SHELL — at least one required dept is SHELL or PARTIAL
 #   5  AF-PHANTOM-DEPT-TREE — two sibling dirs resolve to the same canonical slug,
 #      or a phantom '.bak' dept dir is on disk
+#   6  AF-BOARD-JOIN-DRIFT — chosen != provisioned != displayed (or the board
+#      exists but the join cannot be vouched for)
 #   4  no workspace / cannot resolve a real (non-template) departments dir
 #   2  could not run the gate (missing department-floor.py / python3)
 #
@@ -266,6 +292,75 @@ else:
               "--merge-duplicates --apply    # keep canonical winner, layer unique roles, "
               "archive loser OUT of departments/ (never deletes)", file=sys.stderr)
         sys.exit(5)
+
+# ── AF-BOARD-JOIN-DRIFT — the C-series JOIN: chosen == provisioned == displayed ──
+#    The checks above prove the TREE is honest. This one proves the tree, the
+#    client's CHOICE, and the Command Center board the client actually LOOKS AT are
+#    the same company. Delegated to prove-board-join.py (single source of truth for
+#    the join key, the archive-awareness, and the six drift classes) so this gate
+#    and the CI suite can never diverge.
+#
+#    ENGAGEMENT: only when a durable chosen-list exists for THIS company dir.
+#    Without it (a pre-C7 build) there is no authoritative statement of what the
+#    client chose, and this gate refuses BOTH to invent one and to hard-fail a
+#    workspace it cannot speak about — so it SKIPS, loudly.
+_JOIN_PY = Path(FLOOR_PY).parent / "prove-board-join.py"
+if not _JOIN_PY.is_file():
+    print("AF-BOARD-JOIN-DRIFT: CHECK SKIPPED — prove-board-join.py not found next to "
+          "department-floor.py. Update Skill 23; the workspace checks below still ran.",
+          file=sys.stderr)
+else:
+    _jspec = importlib.util.spec_from_file_location("prove_board_join", str(_JOIN_PY))
+    _jmod = importlib.util.module_from_spec(_jspec)
+    try:
+        _jspec.loader.exec_module(_jmod)
+    except Exception as e:  # noqa: BLE001
+        print(f"AF-BOARD-JOIN-DRIFT: GATE CANNOT RUN — could not import "
+              f"prove-board-join.py: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    _company_dir = departments_dir.parent
+    try:
+        _chosen, _chosen_src = _jmod.read_chosen_for_company(_company_dir, df.load_build_state())
+    except Exception as e:  # noqa: BLE001 — fail-closed: cannot read → cannot vouch
+        print(f"AF-BOARD-JOIN-DRIFT: GATE CANNOT RUN — chosen-list read failed: {e}",
+              file=sys.stderr)
+        sys.exit(2)
+
+    if not _chosen:
+        print(f"AF-BOARD-JOIN-DRIFT: CHECK SKIPPED — no durable chosen-departments list "
+              f"for {_company_dir} (no departments.json artifact, and no build-state "
+              f"canonicalReconciliation.chosenDepartments record scoped to it). This is a "
+              f"pre-C7 workspace: what the client CHOSE was never persisted, so "
+              f"chosen==provisioned==displayed cannot be proven here. Re-run Skill-23 "
+              f"reconciliation to write the artifact; the workspace checks below still ran.",
+              file=sys.stderr)
+    else:
+        _jrc = _jmod.main(["--company-dir", str(_company_dir),
+                           "--departments-dir", str(departments_dir)])
+        if _jrc == _jmod.RC_NOT_APPLICABLE:
+            print("AF-BOARD-JOIN-DRIFT: CHECK SKIPPED — no Command Center board exists on "
+                  "this box yet (no mission-control.db / no workspaces table), so no "
+                  "department is DISPLAYED. Nothing to join; the workspace checks below "
+                  "still ran.", file=sys.stderr)
+        elif _jrc == _jmod.RC_CANNOT_RUN:
+            print("AF-BOARD-JOIN-DRIFT: GATE CANNOT RUN — see the error above.",
+                  file=sys.stderr)
+            sys.exit(2)
+        elif _jrc != 0:
+            print("", file=sys.stderr)
+            print("INVARIANT VIOLATED — AF-BOARD-JOIN-DRIFT: the departments the client "
+                  "CHOSE, the departments PROVISIONED on disk, and the departments "
+                  "DISPLAYED on their Command Center board do not agree (details above). "
+                  "A department the client paid for that has no board column is a "
+                  "department they CANNOT SEE. This workspace is NOT done.", file=sys.stderr)
+            print("REMEDIATION (operator, on the client box):\n"
+                  "  python3 23-ai-workforce-blueprint/scripts/prove-board-join.py --json"
+                  "        # the full six-class diff\n"
+                  "  python3 32-command-center-setup/scripts/seed-workspaces.py"
+                  "                    # re-seed the board from the chosen list",
+                  file=sys.stderr)
+            sys.exit(6)
 
 # ── Required department set = the department FLOOR (single source of truth) ──
 try:

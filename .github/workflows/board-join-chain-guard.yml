@@ -1,0 +1,81 @@
+name: Board-join chain guard (chosen == provisioned == displayed)
+
+# THE C-SERIES JOIN — the structural prover for the one contract nothing in CI
+# asserted end-to-end.
+#
+# The Skill-23 provisioning suites already prove each LAYER internally:
+#   * roster == _index.json == folders            (test-department-instantiation.sh)
+#   * no phantom duplicate department trees, C5   (test-phantom-dept-collision-gate.sh)
+#   * the chosen-list artifact is durable + read, C7
+#                                                 (test-chosen-departments-artifact.sh)
+# and guard-department-runtime-parity.py proves every BOARD row has an OpenClaw
+# runtime behind it.
+#
+# NOT ONE of those joins the layers. So all of them can be green while:
+#   * a department the client CHOSE was never built;
+#   * a department was built that the client never chose;
+#   * a department the client CHOSE AND PAID FOR has no Command Center column —
+#     they cannot see it (the "headless workspaces" class);
+#   * a GHOST column sits on the board with no tree and no runtime behind it.
+#
+# This job runs the JOIN: 23-ai-workforce-blueprint/scripts/test-board-join-chain.sh
+# builds all three layers with the REAL shipped code (build-workforce's C7 artifact
+# writer for CHOSEN, a materialized tree for PROVISIONED, and Skill-32's
+# seed-workspaces.py executed as a subprocess against a real SQLite
+# mission-control.db for DISPLAYED), then asserts they agree — and asserts the gate
+# FAILS on a seeded mismatch in each of the four directions, is fail-closed when it
+# cannot know what was chosen, and is enforced by the QC gate the pipeline actually
+# runs (scripts/qc-assert-workspace-departments-built.sh, rc=6 AF-BOARD-JOIN-DRIFT).
+#
+# Hermetic: mktemp sandbox + sandboxed $HOME + DASHBOARD_DB_PATH-pinned DB. Writes
+# nothing outside its sandbox. python3 only (sqlite3 is stdlib) — no jq, no network.
+#
+# It is its OWN workflow (not a 9th suite inside skill23-provisioning-tests.yml)
+# because it spans BOTH skills — it is the only test in the repo whose inputs are
+# Skill 23 AND Skill 32 — so it must trigger on a change to either one, plus the
+# QC gate it enforces through.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
+      - "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh"
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
+      - "shared-utils/canonical_slug.py"
+      - "shared-utils/resolve_db.py"
+      - "scripts/qc-assert-workspace-departments-built.sh"
+      - ".github/workflows/board-join-chain-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
+      - "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh"
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
+      - "shared-utils/canonical_slug.py"
+      - "shared-utils/resolve_db.py"
+      - "scripts/qc-assert-workspace-departments-built.sh"
+      - ".github/workflows/board-join-chain-guard.yml"
+
+jobs:
+  board-join-chain:
+    name: chosen == provisioned == displayed (13 assertions)
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the C-series board-join prover
+        shell: bash
+        run: bash 23-ai-workforce-blueprint/scripts/test-board-join-chain.sh
