@@ -1560,6 +1560,139 @@ def _write_canonical_reconciliation(record):
         print(f"[CANONICAL WARNING] Could not write reconciliation to {path}: {e}", file=sys.stderr)
 
 
+# ── C7: DURABLE "CHOSEN-LIST" DEPARTMENT ARTIFACT ─────────────────────────────
+# The departments the client chose during the interview must survive as a durable
+# artifact so downstream (Skill 32 seeding, Command Center) can AUTHORITATIVELY
+# read the chosen set instead of re-deriving the floor, and so a build that aborts
+# AFTER the department set is finalized (e.g. a SOP-population timeout) still leaves
+# the chosen list on disk AND in build-state. Historically departments.json was
+# written only late in the non-interactive path, so an aborted/interactive build
+# left NO durable chosen-list at the ZHC company folder.
+CHOSEN_DEPARTMENTS_ARTIFACT = "departments.json"
+
+
+def _chosen_department_slugs(selected_departments):
+    """Canonical bare slugs for the chosen departments (deterministic, deduped).
+    Uses the SAME canonical resolution + CEO-first ordering as
+    generate_departments_json so the durable artifact and the CC-facing
+    departments.json can never disagree on the chosen set."""
+    slugs = []
+    seen = set()
+    for entry in generate_departments_json(selected_departments):
+        s = entry.get("slug") or entry.get("id")
+        if s and s not in seen:
+            seen.add(s)
+            slugs.append(s)
+    return slugs
+
+
+def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
+                                      discovery_dir=None, source="reconciliation-end"):
+    """
+    C7: write the DURABLE chosen-list artifact — the authoritative record of the
+    departments the client chose — and record it in build-state so build-state
+    itself is an authoritative reader of the chosen set.
+
+    Writes (each independently, fail-soft):
+      1. <company_dir>/departments.json          — the durable artifact (CC-schema list)
+      2. <discovery_dir>/departments.json        — legacy mirror (only when provided)
+      3. build-state canonicalReconciliation.chosenDepartments =
+           {slugs, count, artifactPath, writtenAt, source}
+
+    Idempotent + never raises (a durable-write failure must never abort a build).
+    Returns the list of files written.
+    """
+    dept_json = generate_departments_json(selected_departments)
+    slugs = _chosen_department_slugs(selected_departments)
+    written = []
+    cdir = company_dir or COMPANY_DIR
+    artifact_path = None
+    if cdir:
+        try:
+            os.makedirs(cdir, exist_ok=True)
+            artifact_path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
+            with open(artifact_path, "w") as f:
+                json.dump(dept_json, f, indent=2)
+            written.append(artifact_path)
+            print(f"[CHOSEN-LIST] Wrote durable departments.json "
+                  f"({len(slugs)} departments) to {artifact_path}", file=sys.stderr)
+        except OSError as e:
+            print(f"[CHOSEN-LIST WARNING] Could not write durable artifact to {cdir}: {e}",
+                  file=sys.stderr)
+            artifact_path = None
+    if discovery_dir:
+        try:
+            legacy_path = os.path.join(discovery_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
+            with open(legacy_path, "w") as f:
+                json.dump(dept_json, f, indent=2)
+            written.append(legacy_path)
+        except OSError as e:
+            print(f"[CHOSEN-LIST WARNING] Could not write legacy mirror to {discovery_dir}: {e}",
+                  file=sys.stderr)
+    # Stamp build-state so it is an authoritative reader of the chosen set.
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        recon = state.get("canonicalReconciliation", {})
+        if not isinstance(recon, dict):
+            recon = {}
+        recon["chosenDepartments"] = {
+            "slugs": slugs,
+            "count": len(slugs),
+            "artifactPath": artifact_path,
+            "writtenAt": datetime.now().isoformat(),
+            "source": source,
+        }
+        state["canonicalReconciliation"] = recon
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[CHOSEN-LIST] Recorded {len(slugs)} chosen departments in build-state "
+              f"(canonicalReconciliation.chosenDepartments)", file=sys.stderr)
+    except OSError as e:
+        print(f"[CHOSEN-LIST WARNING] Could not record chosen list in build-state: {e}",
+              file=sys.stderr)
+    return written
+
+
+def read_chosen_departments(build_state=None, company_dir=None):
+    """
+    C7: the AUTHORITATIVE reader of the client's chosen department set. Downstream
+    (verification, re-seeding, audits) call this instead of re-deriving the floor.
+
+    Resolution order:
+      1. build-state canonicalReconciliation.chosenDepartments.slugs (durable record);
+      2. the <company_dir>/departments.json artifact on disk (bare slugs);
+      3. [] when neither exists (the caller decides — this NEVER fabricates a floor).
+    """
+    bs = build_state if build_state is not None else _load_build_state()
+    recon = bs.get("canonicalReconciliation", {}) if isinstance(bs, dict) else {}
+    chosen = recon.get("chosenDepartments") if isinstance(recon, dict) else None
+    if isinstance(chosen, dict):
+        slugs = chosen.get("slugs")
+        if isinstance(slugs, list) and slugs:
+            return list(slugs)
+    cdir = company_dir or COMPANY_DIR
+    if cdir:
+        artifact = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
+        try:
+            with open(artifact) as f:
+                data = json.load(f)
+            out, seen = [], set()
+            for entry in (data if isinstance(data, list) else []):
+                s = None
+                if isinstance(entry, dict):
+                    s = entry.get("slug") or entry.get("id")
+                if s and s not in seen:
+                    seen.add(s)
+                    out.append(s)
+            if out:
+                return out
+        except (OSError, json.JSONDecodeError):
+            pass
+    return []
+
+
 # ── v12.3.1: Interview state persistence helpers ──────────────────────────────
 
 def _write_interview_complete_to_state(answers_path=None):
@@ -2658,6 +2791,20 @@ def build_from_config(config):
     # variance bug impossible - no department can silently ship with 0 roles/SOPs.
     assert_dept_map_resolves(list(selected_departments.keys()))
 
+    # C7: DURABLE CHOSEN-LIST ARTIFACT — persist the finalized chosen department
+    # set NOW (immediately at reconciliation end), BEFORE the fragile SOP-population
+    # / config-registration steps below that can time out or abort. This guarantees
+    # the durable <COMPANY_DIR>/departments.json + the build-state
+    # canonicalReconciliation.chosenDepartments record exist even if a later step
+    # fails, so downstream can AUTHORITATIVELY read what the client chose. The later
+    # departments.json write in this function re-emits the same content idempotently
+    # (and adds the discovery/CC mirrors).
+    try:
+        write_chosen_departments_artifact(selected_departments, source="reconciliation-end")
+    except Exception as _chosen_e:  # noqa: BLE001 — durable-write must never abort the build
+        print(f"[CHOSEN-LIST WARNING] durable chosen-list write skipped: {_chosen_e}",
+              file=sys.stderr)
+
     # Issue #9: now that the department set is final, publish the department roster
     # + a stable documents_total (sum of each dept's suggested-role count) so the
     # onboarding page can render per-department progress bars and an overall %.
@@ -2916,19 +3063,20 @@ def build_from_config(config):
     # Generate departments.json - v9.6.1 writes to BOTH the ZHC company folder
     # (canonical for Skill 32 to read) and the legacy company-discovery folder
     # (kept for backward compatibility during the v9.5 -> v9.6 transition).
+    # C7: route through write_chosen_departments_artifact so the durable artifact,
+    # the legacy mirror, AND the build-state chosenDepartments record are all
+    # (re-)written from ONE source of truth. Idempotent with the reconciliation-end
+    # write above (same content); this pass also adds the discovery mirror + the CC
+    # copy below once the full build has succeeded.
     departments_json = generate_departments_json(selected_departments)
+    write_chosen_departments_artifact(
+        selected_departments,
+        discovery_dir=discovery_dir,
+        source="build_from_config-final",
+    )
     if COMPANY_DIR:
-        zhc_dept_json = os.path.join(COMPANY_DIR, "departments.json")
-        with open(zhc_dept_json, 'w') as f:
-            json.dump(departments_json, f, indent=2)
-        print(f"[NON-INTERACTIVE] Wrote departments.json to ZHC folder: {zhc_dept_json}", file=sys.stderr)
-        print(f"[NON-INTERACTIVE] EXACT department count: {len(departments_json)} (this is what the client chose)", file=sys.stderr)
-
-    if discovery_dir:
-        dept_json_path = os.path.join(discovery_dir, "departments.json")
-        with open(dept_json_path, 'w') as f:
-            json.dump(departments_json, f, indent=2)
-        print(f"[NON-INTERACTIVE] Created legacy departments.json at {dept_json_path}", file=sys.stderr)
+        print(f"[NON-INTERACTIVE] EXACT department count: {len(departments_json)} "
+              f"(this is what the client chose)", file=sys.stderr)
 
     # Copy departments.json to Command Center config directory (bridge path gap)
     copy_departments_to_command_center(departments_json)

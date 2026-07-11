@@ -57,10 +57,18 @@ Reads the SAME source of truth as build-workforce.py:
 USAGE
   python3 department-floor.py --json            # machine-readable verdict to stdout
   python3 department-floor.py                   # human summary to stderr
+  python3 department-floor.py --check-collisions [--json]  # C5 phantom-duplicate gate
 EXIT CODES
   0  floor met (all mandatory(−declines) + all universal primaries(−declines) on disk)
+     / --check-collisions: no phantom duplicate dept trees
   3  floor NOT met (below computed floor or a mandatory/universal-primary dept missing)
+  5  --check-collisions only: phantom duplicate dept trees present (two sibling dirs
+     resolving to the same canonical slug, or a phantom '.bak' dept dir on disk)
   7  no workforce / cannot resolve company on disk
+
+The floor verdict (--json / default) also carries INFORMATIONAL `slug_collisions`
+and `phantom_backup_dirs` fields (they never change the floor rc; use
+--check-collisions to gate on them).
 
 The exact floor count is computed dynamically from HARDCODED_MANDATORY +
 universal_primary_vertical_departments(); print it with --json or the default
@@ -421,6 +429,111 @@ def _present(cid, present_norm):
     return False
 
 
+# ── C5: PHANTOM-DUPLICATE DEPARTMENT-TREE DETECTION ──────────────────────────
+# Two sibling directories under departments/ that normalize to the SAME canonical
+# slug (billing + billing-finance, legal + legal-compliance, Sales + sales) are a
+# PHANTOM DUPLICATE: the variant-aware _present() counts them as ONE department so
+# the floor gate never catches the duplication, and both trees keep diverging
+# rosters on disk. These helpers surface the collision so a gate can FAIL and a
+# reconcile can merge+archive the loser.
+
+# A phantom backup dept dir: 'Presentations.bak-20260615-024720', 'legal.bak', etc.
+_BACKUP_DIR_RE = re.compile(r"\.bak(\b|[-_.]|$)", re.IGNORECASE)
+
+
+def _is_backup_dirname(name):
+    """True for a phantom backup dept dir (any '.bak' / '.bak-<stamp>' folder).
+    These are not live departments; they poison the SOP/substance gate and must be
+    moved OUT of departments/."""
+    return bool(_BACKUP_DIR_RE.search(name))
+
+
+def all_canonical_ids(nm=None):
+    """Every canonical department id — mandatory + universal-primary — used to
+    resolve a directory name to its canonical slug for collision detection."""
+    nm = nm if nm is not None else load_naming_map()
+    ids = list(mandatory_ids(nm))
+    for u in universal_primary_vertical_departments(nm):
+        if u not in ids:
+            ids.append(u)
+    return ids
+
+
+def canonical_slug_for(name, nm=None):
+    """
+    Resolve a department DIRECTORY name to its canonical slug for collision
+    detection. Precedence:
+      1. DIRECT canonical-id match (a dir literally named after a canonical id —
+         mandatory OR universal-primary — maps to ITSELF). This is what keeps a
+         'podcast' universal-primary dir from being folded into 'audio' just
+         because 'podcast' also appears in audio's variant list.
+      2. VARIANT-slug match (CANONICAL_VARIANT_SLUGS): 'billing' -> 'billing-finance',
+         'legal-compliance' -> 'legal', 'graphics-design' -> 'graphics'.
+      3. No canonical mapping -> None (a genuine custom department; it maps to
+         itself and can never collide with a canonical dept).
+    Case/spacing/punctuation-insensitive (delegates to the shared _norm).
+    """
+    nm = nm if nm is not None else load_naming_map()
+    n = _norm(name)
+    for cid in all_canonical_ids(nm):
+        if _norm(cid) == n:
+            return cid
+    for cid, variants in CANONICAL_VARIANT_SLUGS.items():
+        for v in variants:
+            if _norm(v) == n:
+                return cid
+    return None
+
+
+def _raw_department_dirs(departments_dir):
+    """
+    Raw (un-normalized) dept dir names on disk, split into (live, backups).
+    Hidden/underscore dirs are dropped; '.bak' dirs are collected as backups.
+    Unlike departments_on_disk() this preserves the actual folder names (needed to
+    identify WHICH sibling to keep vs archive in a collision).
+    """
+    live, backups = [], []
+    if not departments_dir:
+        return live, backups
+    p = departments_dir if isinstance(departments_dir, Path) else Path(departments_dir)
+    if not p.is_dir():
+        return live, backups
+    for d in sorted(p.iterdir(), key=lambda x: x.name):
+        if not d.is_dir() or d.name.startswith((".", "_")):
+            continue
+        if _is_backup_dirname(d.name):
+            backups.append(d.name)
+        else:
+            live.append(d.name)
+    return live, backups
+
+
+def sibling_slug_collisions(departments_dir, nm=None):
+    """
+    Detect phantom-duplicate department trees: 2+ sibling dirs under departments/
+    that resolve to the SAME canonical slug. Returns a deterministic list of
+    collision groups, each: {"canonical": <id>, "dirs": [<raw names, sorted>]}.
+    Only canonical collisions are reported (customs map to None -> distinct, and a
+    filesystem cannot hold two identically-named siblings anyway).
+    """
+    nm = nm if nm is not None else load_naming_map()
+    live, _ = _raw_department_dirs(departments_dir)
+    by_canonical = {}
+    for name in live:
+        cid = canonical_slug_for(name, nm)
+        if cid is None:
+            continue
+        by_canonical.setdefault(cid, [])
+        if name not in by_canonical[cid]:
+            by_canonical[cid].append(name)
+    collisions = []
+    for cid in sorted(by_canonical):
+        dirs = sorted(by_canonical[cid])
+        if len(dirs) > 1:
+            collisions.append({"canonical": cid, "dirs": dirs})
+    return collisions
+
+
 def read_core_answers(build_state, departments_dir):
     """
     Resolve the industry signal needed to compute matched vertical packs.
@@ -503,6 +616,7 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
             "matched_vertical_departments": [],
             "expected_floor": [], "expected_floor_count": 0, "on_disk_count": 0,
             "missing_mandatory": [], "missing_universal_primary": [],
+            "slug_collisions": [], "phantom_backup_dirs": [],
         }
 
     if core_answers is None:
@@ -540,6 +654,12 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
             bits.append("missing universal-primary vertical: " + ", ".join(missing_universal_primary))
         reason = " | ".join(bits)
 
+    # C5: surface phantom-duplicate trees + backup dirs in the verdict. INFORMATIONAL
+    # here (does NOT change the floor rc contract 0/3/7); the dedicated
+    # `--check-collisions` gate returns rc=5 on these so callers opt in explicitly.
+    slug_collisions = sibling_slug_collisions(departments_dir, nm)
+    phantom_backup_dirs = _raw_department_dirs(departments_dir)[1]
+
     return {
         "rc": rc,
         "departments_dir": str(departments_dir),
@@ -552,6 +672,8 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
         "on_disk_count": len(present),
         "missing_mandatory": missing_mandatory,
         "missing_universal_primary": missing_universal_primary,
+        "slug_collisions": slug_collisions,
+        "phantom_backup_dirs": phantom_backup_dirs,
         "floor_met": floor_met,
         "reason": reason,
     }
@@ -564,6 +686,47 @@ def main(argv):
     for i, a in enumerate(argv):
         if a == "--departments-dir" and i + 1 < len(argv):
             dd = Path(argv[i + 1])
+
+    # C5 gate: --check-collisions FAILs (rc=5) when phantom-duplicate dept trees
+    # (two sibling dirs resolving to the same canonical slug) OR phantom '.bak'
+    # dept dirs are present on disk. Separate from the floor rc (0/3/7) so a caller
+    # opts into the collision gate explicitly. rc=7 when no departments dir resolves.
+    if "--check-collisions" in argv:
+        dd_resolved = dd or resolve_departments_dir()
+        if dd_resolved is None:
+            report = {"rc": 7, "departments_dir": None, "slug_collisions": [],
+                      "phantom_backup_dirs": [],
+                      "reason": "no workforce / cannot resolve departments dir on disk"}
+            if as_json:
+                print(json.dumps(report, indent=2))
+            else:
+                print("department-floor.py --check-collisions: no departments dir on disk (rc=7)",
+                      file=sys.stderr)
+            return 7
+        collisions = sibling_slug_collisions(dd_resolved)
+        backups = _raw_department_dirs(dd_resolved)[1]
+        rc = 5 if (collisions or backups) else 0
+        report = {
+            "rc": rc,
+            "departments_dir": str(dd_resolved),
+            "slug_collisions": collisions,
+            "phantom_backup_dirs": backups,
+            "reason": ("phantom duplicate dept trees present" if collisions or backups
+                       else "no phantom duplicate dept trees"),
+        }
+        if as_json:
+            print(json.dumps(report, indent=2))
+        else:
+            print("============================================", file=sys.stderr)
+            print(f"department-floor.py --check-collisions ({report['departments_dir']})", file=sys.stderr)
+            for g in collisions:
+                print(f"  COLLISION: canonical '{g['canonical']}' materialized as "
+                      f"{len(g['dirs'])} sibling dirs: {', '.join(g['dirs'])}", file=sys.stderr)
+            for b in backups:
+                print(f"  PHANTOM BACKUP DIR: {b} (must be moved OUT of departments/)", file=sys.stderr)
+            print(f"RESULT: {'PHANTOM TREES PRESENT' if rc else 'CLEAN'} (rc={rc})", file=sys.stderr)
+        return rc
+
     verdict = evaluate_floor(departments_dir=dd)
     if as_json:
         print(json.dumps(verdict, indent=2))
