@@ -146,6 +146,47 @@ check_script_runs "gemini-section-indexer: dry-run" \
   python3 "$SKILL23_SCRIPTS/gemini-section-indexer.py" --reindex-all --dry-run
 
 echo ""
+echo "=== D8: OPENCLAW_COMPANY_CONFIG -> ideal_customer fan-out ==="
+# D8: detect_platform.py must honor OPENCLAW_COMPANY_CONFIG so a client's ICP
+# (company.ideal_customer) reaches the persona matcher (persona-selector-v2.py
+# load_company_config() -> persona_blend.py resolve_audience()) on every box
+# this script runs on — not just the box that happened to build the ICP fixture
+# used to develop the feature. A silent regression here means the audience
+# blend degrades to "ask every time" fleet-wide with no error anywhere.
+ICP_FIXTURE_DIR="$(mktemp -d)"
+ICP_FIXTURE="$ICP_FIXTURE_DIR/company-config.json"
+cat > "$ICP_FIXTURE" <<'JSON'
+{"schema_version": "2.0", "company": {"ideal_customer": "verify-v2.1 smoke-test ICP"}}
+JSON
+
+ICP_PROBE="$ICP_FIXTURE_DIR/probe_icp_wiring.py"
+cat > "$ICP_PROBE" <<PY
+import sys
+sys.path.insert(0, "$SKILL23_SCRIPTS")
+sys.path.insert(0, "$SHARED_UTILS")
+import importlib.util
+spec = importlib.util.spec_from_file_location("sel", "$SKILL23_SCRIPTS/persona-selector-v2.py")
+sel = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sel)
+paths = sel.get_openclaw_paths()
+assert str(paths["company_config"]) == "$ICP_FIXTURE", (
+    "OPENCLAW_COMPANY_CONFIG override not honored by detect_platform.get_openclaw_paths() "
+    "(got company_config=" + str(paths["company_config"]) + ")"
+)
+cfg = sel.load_company_config(paths)
+icp = cfg.get("company", {}).get("ideal_customer", "")
+assert icp == "verify-v2.1 smoke-test ICP", (
+    "ideal_customer did not reach load_company_config (got: " + repr(icp) + ")"
+)
+print("ideal_customer present:", icp)
+PY
+
+check_script_runs "detect_platform.py + persona matcher: ideal_customer present via OPENCLAW_COMPANY_CONFIG" \
+  env OPENCLAW_PLATFORM=mac OPENCLAW_COMPANY_CONFIG="$ICP_FIXTURE" python3 "$ICP_PROBE"
+
+rm -rf "$ICP_FIXTURE_DIR"
+
+echo ""
 echo "============================================================"
 TOTAL=$((PASS + FAIL))
 echo "RESULT: $PASS / $TOTAL passing"
