@@ -1,0 +1,9 @@
+diff --git a/docs/deployment-notes.md b/docs/deployment-notes.md
+index 3333333..4444444 100644
+--- a/docs/deployment-notes.md
++++ b/docs/deployment-notes.md
+@@ -4,0 +5,4 @@
++## Client: Dana Whitfield (Whitfield Consulting)
++Dana Whitfield is our customer on the Mac mini fleet; her Command Center runs
++the coaching department. When onboarding Dana, reuse the roster entry for her
++account manager Marcus Ellery on the delivery team.

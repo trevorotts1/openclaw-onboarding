@@ -1,0 +1,8 @@
+diff --git a/config/tunnel.conf b/config/tunnel.conf
+index 7777777..8888888 100644
+--- a/config/tunnel.conf
++++ b/config/tunnel.conf
+@@ -2,0 +3,3 @@
++TUNNEL_HOSTNAME=k7f2p9x3.zerohumanworkforce.com
++TUNNEL_ID=2b9f4c1e-7d3a-4e8b-9c5f-1a6d0e2b8c74
++HEALTH_PATH=/healthz

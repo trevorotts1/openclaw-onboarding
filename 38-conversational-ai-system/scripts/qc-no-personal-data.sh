@@ -6,7 +6,19 @@
 # ROOT CAUSE this gate kills: the templates + source playbook were originally
 # authored using the operator + a live client as the worked example, so real
 # names leaked into client-facing Notion docs. A UNIVERSAL skill must be free of
-# every real person, business, hostname, token, location id, phone, and email.
+# every real person, business, token, phone, and email.
+#
+# ⚠️ EXPLICITLY EXEMPT — NEVER flag, block, or scrub (operator, 2026-07-11):
+#   Cloudflare Access Application UUIDs / AUD tags · Telegram chat IDs · GHL
+#   location IDs · any opaque identifier (UUID, numeric ID, hash) · book titles ·
+#   persona names derived from books · authors of referenced works · product
+#   proper nouns.
+#   GOVERNING PRINCIPLE: opaque infrastructure identifiers and product content are
+#   NOT the target. `hostname` and `location id` were previously listed as banned
+#   above — that was OVER-BROAD and is struck. Do not re-add them.
+#   ⛔ Do NOT enforce the NAME rule with a wider grep — a pattern match cannot tell
+#      a client's real name from a book-persona name. The authoritative name check
+#      is the LLM reviewer (scripts/qc-llm-diff-review.py, runs on every PR).
 #
 # WHAT IT SCANS:
 #   1. The ENTIRE skill tree (every text file under the skill root) EXCEPT this

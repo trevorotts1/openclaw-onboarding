@@ -1,0 +1,15 @@
+diff --git a/docs/access-and-personas.md b/docs/access-and-personas.md
+index 1111111..2222222 100644
+--- a/docs/access-and-personas.md
++++ b/docs/access-and-personas.md
+@@ -10,0 +11,9 @@
++## Cloudflare Access binding
++CF_ACCESS_APP_UUID=f47ac10b-58cc-4372-a567-0e02b2c3d479
++CF_ACCESS_AUD_TAG=9b7c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c
++
++## Channel + CRM identifiers (opaque)
++OWNER_TELEGRAM_CHAT_ID=8123456789
++GHL_LOCATION_ID=aB3xKp9QrTn2LmVw7ZcY
++
++## Persona set (derived from published books)
++Persona: Brene Brown - "Atlas of the Heart" coaching voice; see personas/brown-atlas-of-heart/.

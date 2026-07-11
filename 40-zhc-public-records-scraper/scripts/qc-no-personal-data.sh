@@ -4,6 +4,17 @@
 # Replace each with a generic placeholder. Exit 0 = clean; 1 = found.
 # BASH only (grep core). This file is excluded from the scan.
 #
+# ⚠️ EXPLICITLY EXEMPT — NEVER flag, block, or scrub (operator, 2026-07-11):
+#   Cloudflare Access Application UUIDs / AUD tags · Telegram chat IDs · GHL
+#   location IDs · any opaque identifier (UUID, numeric ID, hash) · book titles ·
+#   persona names derived from books · authors of referenced works · product
+#   proper nouns.
+#   GOVERNING PRINCIPLE: opaque infrastructure identifiers and product content are
+#   NOT the target. A `hostname` / `location id` is NOT a banned identifier here.
+#   ⛔ Do NOT enforce the NAME rule with a wider grep — a pattern match cannot tell
+#      a client's real name from a book-persona name. The authoritative name check
+#      is the LLM reviewer (scripts/qc-llm-diff-review.py, runs on every PR).
+#
 # Usage: bash scripts/qc-no-personal-data.sh [--skill-dir DIR]
 
 set -uo pipefail

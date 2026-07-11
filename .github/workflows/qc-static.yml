@@ -2315,25 +2315,6 @@ jobs:
           bash scripts/qc-assert-no-client-names.sh
           echo "✓ No real client names found in tracked files"
 
-      - name: CRITICAL-1b — No client Telegram chat-id leak (shape rule, denylist-blind gap)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Closes the structural gap in CRITICAL-1: the client-name denylist only
-          # knows the three OPERATOR ids, so a REAL CLIENT chat id (just a 9–10 digit
-          # integer) sails straight through — that is how the real client id "…4298"
-          # shipped in a sessions.json session key. This shape gate fails on any
-          # "telegram:direct:<8-10 digits>" session key OR any chat-id-shaped integer
-          # in a telegram-identity context, UNLESS it is the sanctioned placeholder
-          # 1234567890 or one of the three operator ids. No client id is hardcoded; it
-          # never fails open. See scripts/qc-assert-no-telegram-chat-id-leak.sh.
-          bash scripts/qc-assert-no-telegram-chat-id-leak.sh
-          echo "✓ No client Telegram chat-id leak in tracked files"
-          # Non-vacuity: prove the gate still bites (plants a fake id, asserts FAIL,
-          # removes it, asserts PASS) — ships no real client id.
-          bash tests/fixtures/telegram-chat-id-leak/selftest-telegram-chat-id-leak.sh
-          echo "✓ Telegram chat-id gate self-test passed (gate proven non-vacuous)"
-
       - name: FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)
         shell: bash
         run: |

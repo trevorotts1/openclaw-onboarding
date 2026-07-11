@@ -125,6 +125,43 @@ A missing resource is a blocker to escalate, never a reason to co-mingle. Co-min
 
 ---
 
+## 🔴🔴🔴 FLEET-REPO CONTENT RULE — what may NOT go in this repo (AUTHORITATIVE, 2026-07-11) 🔴🔴🔴
+
+**READ THIS BEFORE AUTHORING ANY REPO CONTENT.** This repo is FLEET-WIDE — it ships to every client. Exactly **THREE** things are enforceable here, and **nothing else**:
+
+1. **No CLIENT / ROSTER MEMBER real human names.** An actual customer or an actual team member. **NOT** book characters. **NOT** personas. **NOT** authors of referenced works.
+2. **No genuine secrets** — live tokens, API keys, `pit-` GHL tokens, bot tokens, private keys. **ABSOLUTE. This one never relaxes.**
+3. **Nothing built for ONE client.** Repo content stays generic and fleet-reusable.
+
+### ✅ EXPLICITLY EXEMPT — never flag, block, or scrub these
+
+| Exempt | Examples |
+|---|---|
+| Cloudflare Access Application UUIDs / AUD tags | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
+| **Telegram chat IDs** | any numeric chat id |
+| **GHL location IDs** | opaque alphanumeric location token |
+| Any **opaque identifier** | UUID, numeric ID, hash |
+| **Book titles** | the source works behind the persona system |
+| **Persona names derived from books** | every persona under `22-book-to-persona-coaching-leadership-system/personas/` |
+| **Authors of referenced works** | the persona directories are *named after real book authors* — this is PRODUCT, not client data |
+| **Product proper nouns** | product/feature names |
+
+> **GOVERNING PRINCIPLE: opaque infrastructure identifiers and product content are NOT the target.**
+> A UUID is not a person. A book author is not a customer. A chat ID is not a secret.
+
+### ⛔ NEVER ENFORCE THE NAME RULE WITH A GREP / REGEX / NAME-ROSTER
+
+A pattern match **cannot** tell a client's real name from a book-persona name. It will either miss real leaks or block legitimate product PRs forever — and it has already done both. Do not "fix" a missed name by widening a regex, and do not add an identifier scan pass.
+
+- **Names → LLM review.** The authoritative name check is `scripts/qc-llm-diff-review.py`, which runs on every PR (`.github/workflows/qc-llm-diff-review.yml`). It reads the diff's added lines and blocks on the three rules above. It **fails closed**: a reviewer error, malformed response, API error, or timeout is a **BLOCK**.
+- **Secrets → regex is correct.** A secret has a literal shape; a human name does not. The `pit-` token regex in `05-ghl-setup/qc-ghl-setup.sh` is correct — keep it, and the reviewer runs its own secret pre-filter in addition.
+
+### History — why this section exists
+
+The guard scripts once encoded an over-broad rule that banned "every real person, business, **hostname**, token, **location id**…" and hard-blocked PRs on any Telegram-chat-id-shaped integer. The **correct** rule lived only in the operator's head while the **wrong** rule lived in the code, so every fresh agent re-derived the wrong rule from the guards' own comments and repeated the mistake. That is why the rule is written **here**, where an agent authoring repo content actually reads it.
+
+---
+
 ## 🔴 N2 — MASTER ORCHESTRATOR DOES NO WORK
 
 **The Master Orchestrator does NOT perform installation work, file edits, API calls, or any other domain operation. The Master Orchestrator coordinates. Sub-agents do the work.**

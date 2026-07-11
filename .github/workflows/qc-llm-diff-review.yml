@@ -1,0 +1,80 @@
+name: QC — LLM diff review (fleet-repo leak gate)
+
+# ─── WHAT THIS REPLACES ───────────────────────────────────────────────────────
+# The old regex/roster name gates encoded an OVER-BROAD rule: they swept opaque
+# infrastructure identifiers (Telegram chat IDs, GHL location IDs, CF Access
+# UUIDs / AUD tags) and book-derived persona names into a denylist scan. That
+# blocked legitimate product PRs while still not being able to recognise a real
+# client's name. A pattern match cannot tell a client's real name from a
+# book-persona name.
+#
+# ⛔ DO NOT re-implement the NAME rule as a grep / regex / name-roster.
+#    (Regex IS still correct for SECRETS — a secret has a literal shape; a human
+#     name does not. A `pit-`/token regex pre-filter therefore runs INSIDE the
+#     reviewer, in addition to the model.)
+#
+# ─── THE RULE (operator, 2026-07-11 — AUTHORITATIVE) ─────────────────────────
+# BLOCK on exactly three things:
+#   1. A CLIENT / ROSTER MEMBER's real human name (an actual customer or team member)
+#   2. A genuine secret (live token, API key, `pit-` GHL token, bot token, private key)
+#   3. Content built for ONE client rather than the generic fleet
+#
+# EXPLICITLY EXEMPT — never flagged: Cloudflare Access Application UUIDs / AUD
+# tags · Telegram chat IDs · GHL location IDs · any opaque identifier (UUID,
+# numeric ID, hash) · book titles · persona names derived from books · authors of
+# referenced works · product proper nouns.
+# Opaque infrastructure identifiers and product content are NOT the target.
+#
+# ─── ⚠️ MODEL PROVIDER ────────────────────────────────────────────────────────
+# This job runs in GitHub Actions on OUR OWN repo only. The reviewer does NOT
+# ship into the repo and NEVER executes on a client box — that is the only reason
+# a cheap Anthropic model is correct here.
+# ⚠️ IF THIS IS EVER MOVED ONTO A CLIENT BOX IT MUST BE RE-POINTED AT THE
+#    CLIENT'S OWN PROVIDER — NEVER ANTHROPIC. Client sovereignty is absolute.
+#
+# FAIL CLOSED: reviewer error / malformed JSON / API error / timeout -> BLOCK.
+
+on:
+  pull_request:
+
+jobs:
+  llm-diff-review:
+    name: LLM diff review (client names · secrets · one-client builds)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (full history — the reviewer diffs against origin/main)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Non-vacuity self-test — prove the reviewer bites, exempts, and fails closed
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Proves, with real model calls: an EXEMPT diff (CF UUID + AUD tag +
+          # Telegram chat ID + GHL location ID + book persona) PASSES; a client
+          # human name BLOCKS; a pit-/bot token BLOCKS; an opaque hostname PASSES
+          # and is surfaced under flag_for_operator; malformed JSON / API error
+          # BLOCK. A guard that fails open is not a guard.
+          bash tests/fixtures/llm-diff-review/selftest-qc-llm-diff-review.sh
+          echo "✓ LLM diff reviewer proven non-vacuous, exempt-safe, and fail-closed"
+
+      - name: Review this PR's added lines
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Passed via env, never interpolated into the shell body — a ${{ }} in a
+          # run: block is a command-injection surface. Quote it at point of use.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=0 || true
+          python3 scripts/qc-llm-diff-review.py \
+            --base "origin/$BASE_REF" \
+            --head HEAD
+          echo "✓ No client/roster human name, secret, or one-client build in the diff"

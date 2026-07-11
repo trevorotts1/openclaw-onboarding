@@ -1,0 +1,7 @@
+diff --git a/config/routes.conf b/config/routes.conf
+index 9999999..aaaaaaa 100644
+--- a/config/routes.conf
++++ b/config/routes.conf
+@@ -1,0 +2,2 @@
++PUBLIC_HOSTNAME=dana-whitfield-consulting.zerohumanworkforce.com
++UPSTREAM=http://127.0.0.1:18789

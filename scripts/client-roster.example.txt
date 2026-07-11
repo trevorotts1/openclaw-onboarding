@@ -10,11 +10,38 @@
 #     # then replace the placeholders below with the real roster.
 # NEVER commit the filled file.
 #
+# ─── THIS IS A HUMAN-NAME ROSTER. NOTHING ELSE. ──────────────────────────────
 # FORMAT: one entry per line. Blank lines and lines beginning with '#' are
 # ignored. Each line is an extended-regex (ERE) pattern:
 #   - Full names match literally, case-insensitive:      Jane Q Public
 #   - Short/common first names use word-boundary anchors: \bJane\b
-#   - Opaque client IDs (chat IDs, GHL location IDs) go one-per-line as literals.
+#
+# ⚠️ DO NOT PUT OPAQUE IDENTIFIERS IN THIS FILE. Telegram chat IDs, GHL location
+#    IDs, Cloudflare Access UUIDs / AUD tags, hashes — these are EXPLICITLY EXEMPT
+#    and are FILTERED OUT on load even if you add them. Listing them here does
+#    nothing except mislead the next reader.
+#
+# ─── THE RULE THIS ROSTER SERVES (operator, 2026-07-11 — AUTHORITATIVE) ──────
+# This repo is FLEET-WIDE. Only THREE things are enforceable:
+#   1. No CLIENT / ROSTER MEMBER real HUMAN NAMES (an actual customer or team
+#      member — NOT book characters, NOT personas, NOT authors of referenced works)
+#   2. No genuine SECRETS (live tokens, API keys, `pit-` GHL tokens, bot tokens,
+#      private keys) — ABSOLUTE
+#   3. Nothing built for ONE client — content stays generic and fleet-reusable
+#
+# EXPLICITLY EXEMPT — never flag, block, or scrub:
+#   Cloudflare Access Application UUIDs / AUD tags · Telegram chat IDs · GHL
+#   location IDs · any opaque identifier (UUID, numeric ID, hash) · book titles ·
+#   persona names derived from books · authors of referenced works · product
+#   proper nouns.
+#   GOVERNING PRINCIPLE: opaque infrastructure identifiers and product content are
+#   NOT the target.
+#
+# ⛔ This roster is a CHEAP always-on scan, NOT the authoritative name check. Never
+#    try to enforce the name rule with a wider regex or a longer roster — a pattern
+#    match cannot tell a client's real name from a book-persona name. The
+#    authoritative check is the LLM reviewer (scripts/qc-llm-diff-review.py),
+#    which runs on every PR. See AGENTS.md → "FLEET-REPO CONTENT RULE".
 #
 # ─── PLACEHOLDERS (obviously fake) ────────────────────────────────────────────
 # The names below are used by the CI structural check and the qc-assert
