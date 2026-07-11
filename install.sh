@@ -3643,7 +3643,15 @@ REASSERT_EOF
             warn "openclaw CLI not on PATH — skipping presentation-deps re-assert cron. Re-run update-skills.sh later."
             return 0
         fi
-        if openclaw cron list 2>/dev/null | grep -qi "reassert-presentation-deps"; then
+        if oc_cron_tombstoned "reassert-presentation-deps"; then
+            warn "reassert-presentation-deps is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove reassert-presentation-deps"
+            return 0
+        fi
+        # JSON-exact presence check (fix/industry-gate-and-idempotent-crons
+        # sweep): "reassert-presentation-deps" is 26 chars — over the ~22-char
+        # threshold at which `openclaw cron list`'s text table truncates names
+        # — the same defect that caused the Skill 39/38 6x-duplicate incident.
+        if oc_cron_present "reassert-presentation-deps"; then
             success "Presentation-deps re-assert cron already installed — skipping"
             return 0
         fi
