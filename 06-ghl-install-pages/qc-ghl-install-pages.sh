@@ -45,6 +45,11 @@ else
 fi
 assert "builder helper parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_builder.py').read())\""
 assert "auth-seed module parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/seed-ghl-auth.py').read())\""
+# Cross-origin iframe drag FIX (shared frame-scoped coordinate-drag primitive).
+assert "iframe-drag primitive present"     "[ -f \"$SK/tools/ghl_iframe_drag.py\" ]"
+assert "iframe-drag primitive parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_iframe_drag.py').read())\""
+assert "iframe-drag dep-free selftest passes" "python3 \"$SK/tools/ghl_iframe_drag.py\" --selftest"
+warn_only "iframe-drag LIVE selftest passes (needs Playwright)" "python3 \"$SK/tools/ghl_iframe_drag.py\" --live-selftest"
 # TOKEN-ONLY doctrine (D7): the Firebase refresh token is the ONLY auth path.
 # GHL_AGENCY_EMAIL/PASSWORD are a MANUAL operator-only last resort — NOT required
 # for builds and NEVER auto-invoked. So they are warn-only, not a hard assert.

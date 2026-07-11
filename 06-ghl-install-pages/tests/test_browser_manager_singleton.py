@@ -275,6 +275,8 @@ class TestPoolCeiling:
             os.environ,
             PATH=f"{bindir}:{os.environ.get('PATH','')}",
             TMPDIR=str(lockdir),
+            HOME=str(tmp_path),                 # never the real box home
+            BM_DURABLE_ROOT_OVERRIDE="",        # breaker/park state stays EPHEMERAL
             GHL_LOCATION_ID="poolloc",
             AB_MAX_SESSIONS="1",
             AB_LOCK_WAIT="2",
@@ -474,6 +476,8 @@ class TestTeardownFiresOnAbort:
             os.environ,
             PATH=f"{bindir}:{os.environ.get('PATH','')}",
             TMPDIR=str(lockdir),
+            HOME=str(tmp_path),                 # never the real box home
+            BM_DURABLE_ROOT_OVERRIDE="",        # breaker/park state stays EPHEMERAL
             GHL_LOCATION_ID="abortloc",
             AB_MAX_SESSIONS="1",
             AB_LOCK_WAIT="2",
@@ -491,6 +495,64 @@ class TestTeardownFiresOnAbort:
         )
         assert "state clear ghl-skill6-abortloc" in logged, (
             f"teardown must state-clear the canonical session on abort.\nargv log:\n{logged}"
+        )
+        # TEST-ISOLATION LOCK (v18.1.8): the simulated abort's breaker state must
+        # live in the EPHEMERAL lockdir, and the fake HOME must have gained no
+        # durable .openclaw park state — WITHOUT this isolation, repeated suite
+        # runs on a REAL box accumulated these fake 'abortloc' aborts in the
+        # durable park dir until the circuit-breaker tripped and PARKED the
+        # box's real workforce-build rail (live 2026-07-07, operator box; the
+        # park marker read 'location=abortloc').
+        breaker_files = list((lockdir).rglob("agent-browser-abortloc.count"))
+        assert breaker_files, (
+            "the abort's breaker count must land in the EPHEMERAL lockdir "
+            f"(TMPDIR fallback), found none under {lockdir}"
+        )
+        assert not (tmp_path / ".openclaw").exists(), (
+            "the harness must not create durable .openclaw state under HOME"
+        )
+
+    def test_abort_breaker_state_isolated_from_durable_root(self, tmp_path):
+        """BM_DURABLE_ROOT_OVERRIDE semantics: pointing it at a fake durable
+        root sends breaker/park state THERE (durable behavior preserved for
+        production), while the suite's ''-override keeps state ephemeral —
+        both directions locked so the real-box park regression cannot return."""
+        bindir = tmp_path / "bin"
+        log = tmp_path / "argv.log"
+        lockdir = tmp_path / "lockdir"
+        fake_root = tmp_path / "fake-openclaw"
+        fake_root.mkdir()
+        _write_stub_agent_browser(bindir, log, "")
+        harness = tmp_path / "abort_harness.sh"
+        harness.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f'source "{_MANAGER_SH}"\n'
+            "bm_ensure\n"
+            'echo "REFUSE: simulated seed failure" >&2\n'
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        env = dict(
+            os.environ,
+            PATH=f"{bindir}:{os.environ.get('PATH','')}",
+            TMPDIR=str(lockdir),
+            HOME=str(tmp_path),
+            BM_DURABLE_ROOT_OVERRIDE=str(fake_root),
+            GHL_LOCATION_ID="abortloc",
+            AB_MAX_SESSIONS="1",
+            AB_LOCK_WAIT="2",
+            AB_SESSION_TTL="60",
+        )
+        res = subprocess.run(
+            ["bash", str(harness)],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        assert res.returncode == 1, f"expected the simulated abort exit, got {res.returncode}"
+        park_dir = fake_root / "workspace" / ".park"
+        assert (park_dir / "agent-browser-abortloc.count").exists(), (
+            "with an explicit durable-root override, breaker state must land "
+            f"under it (durable semantics preserved): {park_dir}"
         )
 
 

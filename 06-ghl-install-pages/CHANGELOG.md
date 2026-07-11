@@ -86,6 +86,776 @@ FAIL-SOFT (a board outage never blocks a build); no existing public call signatu
 
 ---
 
+## [v18.1.12] - 2026-07-08 - F4 remove-control TIERED acquisition — the §6 `role=link 'Remove field'` claim is CONTRADICTED live; rebuild around the evidenced icon-pill mechanism + rich failure diagnostics (the 3×-failed `STOP@F4.delete:Phone` root-cause fix)
+
+**THE ROOT CAUSE (finally evidence-pinned, not another timing tweak).** Three
+consecutive live runs failed at `F4.delete:Phone` — attempt #6 (v18.1.9),
+attempt #7 (`skill6-attempt7-20260707-222852`), and the v18.1.11 verify run
+(`skill6-live-verify-20260708-040836`, HEAD 07d5c453). The v18.1.11 run's own
+diagnostics are decisive: after the select-click AND **13 genuine
+park-away/re-hover cycles**, BOTH documented forms attached **ZERO** nodes for
+the whole 15s budget — `'role=link:Remove field': 0 attached match(es);
+'role~=link:Remove field': 0 attached match(es)`. That is NOT hover timing
+(v18.1.10's poll/re-stimulation worked exactly as built and proved the point):
+**the SELECTORS-LIVE-form.md §6 lock itself is wrong against the live UI.**
+The link claim was captured ONCE (2026-07-02) and its raw snapshot was never
+retained; it has never been reproduced since. Cross-evidence for the REAL
+mechanism: the training video (CLICK-MAP Step 8: "Delete a field = select it →
+**trash icon** (top-right of the selected field's blue bar)"; Step 15: a
+dropped field "auto-selects (blue outline + **gear/trash icons**)"), the
+2026-07-02 capture's own screenshot `008-field-selected.png` (a SELECTED
+field's blue pill at its top-right with two ICON-ONLY controls), and GHL
+help/community docs ("hover over the field until you see the delete or trash
+icon, then click the delete icon"). The per-field controls are therefore in
+the §5-documented icon-only class (Naive-UI buttons with NO accessible
+name/aria-label/testid) — invisible to EVERY role+name query, which is exactly
+what three live runs measured.
+
+**THE REDESIGN (`ghl_iframe_drag` v1.3.0 — tiered acquisition, evidence-first):**
+
+- **Tier 1 — documented specs (unchanged):** `role=link:Remove field` exact +
+  the `role~=` lock form still scan first and still win when they attach (§6
+  downgraded to conf 4, kept in case the names return).
+- **Tier 2 — broad accessible-name scan:** role link/button whose name matches
+  `/remove|delete|trash/i`.
+- **Tier 3 — attribute scan:** `[aria-label]`/`[title]` containing
+  remove/delete/trash (case-insensitive CSS attr match).
+  Tiers 2–3 are GATED to the field's top-right **CONTROL ZONE** (geometry from
+  the capture screenshot) so a deletion-ish control elsewhere (settings panel,
+  dialog) can never be wrong-target clicked.
+- **Tier 4 — LAST-RESORT geometric icon-pill ladder** (deadline expired,
+  select-click done): a JS census enumerates every small visible clickable
+  (`a`/`button`/`[role]`/`svg`) whose center sits in the control zone, with
+  per-candidate rejection reasons; accepted candidates are clicked
+  RIGHTMOST-FIRST with a REAL pointer (trash sits right of gear on the pill),
+  each click individually verified by the count-decrease proof before trying
+  the next (max 3; a wrong click hits the benign gear/settings).
+- **Selection stimulation widened (the never-actually-SELECTED hypothesis):**
+  after 2 fruitless re-hover cycles, ONE real-pointer click lands on the field
+  WRAPPER/label strip just above the anchor — the pill provably renders on a
+  *selected* field, and clicking the inner input may not register as
+  selection. Receipted as `wrapper_click_done`.
+- **A 4th failure must explain itself:** `remove-link-not-found` now carries
+  `IframeDragError.details` — per-strategy attached/visible counts, the FULL
+  geometric census (accepted + rejected-with-reasons), a capped whole-frame
+  ARIA snapshot, and the stimulation trace. `ghl_form_builder` persists it as
+  `routing/f4-remove-diag-<field>.json` AND captures a failure-moment
+  screenshot (`f4-delete-FAILED-<field>`) showing whether the field was even
+  selected. Count-decrease proof, idempotent already-absent no-op, and every
+  fail-closed code are unchanged; nothing ever fakes a delete.
+
+**Honest docs:** SELECTORS-LIVE-form.md §6 now records the contradiction
+(3 live runs, 0 attached, dates), the evidence chain for the icon-pill
+mechanism, the tiered doctrine, and re-OPENS CLICK-MAP Ambiguity #4 pending
+live census evidence.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (new 13g: broad name-scan finds a
+0-attached-doc-spec control and refuses out-of-zone candidates; 13h: failure
+details carry the full strategy census + stimulation + geometric/aria slots)
+and `--live-selftest` PASS against a REAL headless Chromium — the fixture now
+carries a field whose per-field controls are an icon-only gear+trash pill (NO
+name, NO href, NO title — the evidenced live pattern): new case (j) proves the
+geometric ladder censuses the pill, real-pointer clicks the RIGHTMOST icon,
+and count-verifies the removal. `ghl_form_builder --selftest` PASS;
+`ghl_survey_builder --selftest` PASS. Full skill-6 pytest **1169 passed / 15
+skipped** (was 1152 — +17 regression locks in
+`tests/test_ghl_f4_remove_redesign.py`: name-scan drift + case-insensitive
+regex; attr-scan by title/aria-label; out-of-zone deletion controls NEVER
+clicked; doc spec still wins over broad tiers; already-absent keeps idempotent
+semantics; geometric rightmost-first + count proof; wrong-first-click ladder
+fallback; no geometric click without a select-click; wrapper-click fires
+exactly once and reveals; failure details census/aria/strategy-counts +
+JSON-serializable; unevaluable census degrades honestly; details attribute
+contract; deletion-name regex scope; details threading through StopAndReport;
+diag receipt + failure screenshot persisted; success path unchanged;
+unwritable receipt never masks the STOP). Guards: no-secret-printing PASS,
+no-client-names PASS (structural), no-telegram-chat-id-leak PASS,
+skill-frontmatter-version PASS, skill-version-newline PASS, version-drift OK.
+(Honesty note: earlier entries cite a "no-anthropic-runtime" guard as a
+skill-6 gate — the only script by that name in this repo is skill-58-scoped
+and does not apply here; it was NOT run as a skill-6 gate for this release.)
+
+**Live status: NOT yet live-proven.** This is the best-evidenced attempt, not
+a claim of certainty — the pill's true DOM shape is still unobserved. If a 4th
+live attempt fails, `routing/f4-remove-diag-phone.json` + the failure
+screenshot will finally show exactly what sits near the selected field's
+top-right, and §6 gets locked from that census.
+
+---
+
+## [v18.1.11] - 2026-07-08 - Forms-list row-'Actions' acquisition is the SAME hover-reveal POLL as F4 (cleanup could silently fail to delete) + F-P9 interpreter/Playwright preflight (a live attempt can never be burned on an environment mistake)
+
+**BUG 1 — the Forms-list row 'Actions' button has the SAME hover-reveal
+timing as the F4 per-field remove control** (proactively found in tonight's
+live-cleanup evidence: exactly ONE matched row title, ZERO 'Actions' buttons
+attached — the control does not EXIST in the DOM until the row is hovered).
+`_delete_form` made a SINGLE `_eval_actions_button_count` peek and correctly
+refused to click (fail-closed, good) — but that means cleanup silently fails
+to delete a form whenever the reveal needs a hover, the exact class of bug
+v18.1.10 killed inside the builder iframe.
+
+**THE FIX (`ghl_form_builder` — the v18.1.10 doctrine applied to the list
+surface):**
+
+- **Hover-then-POLL, never one peek.** `_reveal_row_actions` hovers the
+  matched row title (`find text <t> hover` — a REAL Playwright pointer move)
+  and polls a monotonic deadline (12s / 0.5s cadence); misses RE-FIRE the
+  reveal every 2s by PARKING the pointer at the viewport origin and
+  re-entering the row (`mouseenter` only fires on a real re-entry). Hermetic
+  data:-page probe: 0 visible 'Actions' buttons before the hover, 1 after;
+  parking hid it again.
+- **Attached-vs-visible evidence + nearest-row disambiguation.**
+  `_ACTIONS_PROBE_JS` measures, in ONE pass, the ATTACHED count, the VISIBLE
+  count (non-zero client rect, not `visibility:hidden`), and the viewport
+  center of the visible button NEAREST the matched row's title leaf. With
+  exactly ONE attached button the §3 locked role-exact anchor is clicked as
+  before; with SEVERAL (partial-name matches in the filtered list) the
+  nearest one is clicked with a REAL pointer click (`mouse move/down/up`) —
+  hermetic probe proved `find role button click --name Actions --exact`
+  resolves the FIRST DOM match, which can be a HIDDEN 0×0 button from the
+  WRONG row, and still returns rc=0 with NO click delivered (a silent
+  wrong-target no-op). Title ambiguity (several rows with the SAME title)
+  still fails closed.
+- **Fail-closed + diagnosable.** A control that never reveals within the
+  deadline refuses to click ANYTHING and reports attached/visible counts plus
+  the hover-cycle count; probe-unevaluable (-1) is UNKNOWN, never zero. The
+  receipt gains `actions_buttons_attached` / `actions_hover_cycles` /
+  `actions_click_method`.
+
+**BUG 2 — wrong-interpreter live harness (F-P9 preflight).** Tonight's live
+harness resolved `python3` to a Homebrew python3.14 WITHOUT Playwright instead
+of the interpreter Playwright is installed under; the miss would only surface
+DEEP in a live walk (F3/F4 ride Playwright-over-CDP) as an opaque
+`playwright-unavailable` AFTER a real form existed. `_run_preflight` now takes
+`live=` (wired `live=not dry_run` in `build_form`) and HARD-stops a live run
+when Playwright is not importable under `sys.executable`, naming the
+interpreter and spelling out the fix (`<python3> -m pip install playwright &&
+<python3> -m playwright install chromium`, plus the bare-`pip`-belongs-to-a-
+different-python trap); dry-run/THINK records it as a soft WARNING and keeps
+working. INSTALL.md Step 1 now pins `python3 -m pip` / `python3 -m playwright`
+(never bare `pip`/`playwright`) and documents the PATH-shadowing trap.
+
+**Proof:** hermetic E2E against a REAL headless Chromium via the REAL
+agent-browser CLI (fixture rows with CSS hover-revealed 'Actions' buttons):
+pre-hover probe 3 attached / 0 visible → reveal poll → nearest-coordinate
+real-pointer click landed on the CORRECT row (`window.__clicked` receipt) and
+opened its menu. `ghl_form_builder --selftest` PASS under BOTH a
+Playwright-bearing and the pytest interpreter. Full skill-6 pytest
+**1152 passed / 15 skipped** (was 1131 — +21 regression locks: re-hover-only
+reveal is found and clicked; never-appearing control fails closed with NO
+click and the stimulation proven tried; unknown probe never counts as
+revealed; nearest-coordinate click on multi-row reveal + its no-coordinates
+and failed-click fail-closed paths; role-exact rc-check; reveal receipt
+fields; hover/park/mouse CLI verb shapes; probe JSON parse fail-closed; probe
+JS geometry doctrine; F-P9 live hard-stop incl. module-absent, actionable
+message content, dry-run softness, `build_form` wiring both ways, and
+live-stop-before-any-browser). Guards: no-secret-printing PASS,
+no-client-names PASS, no-telegram-chat-id-leak PASS, no-anthropic-runtime
+PASS, version-drift OK.
+
+---
+
+## [v18.1.10] - 2026-07-08 - F4 remove-control acquisition is a POLL with hover/select re-stimulation + the documented lock-form name fallback (the live attempt-#6 `STOP@F4.delete:Phone` fix)
+
+**THE LIVE BUG (attempt #6 against a real account).** Auth, F1/F2 form
+creation, and the F3 rename all landed (now live-proven); F4 then STOPped at
+`F4.delete:Phone` — the Phone field's documented anchor resolved, was hovered
+and click-selected, but `role=link:'Remove field'` "never became visible
+within 15000ms (TimeoutError)". Root cause, two coupled defects in
+`drive_remove_canvas_field` (ghl_iframe_drag v1.2.0) — the SAME classes the
+earlier form-id/F2-modal and F2-'Create' fixes killed elsewhere:
+
+1. **One opaque wait, no re-stimulation.** The §6 lock says the per-field
+   controls are **hover/selected-revealed**, but after the single hover+click
+   the code made ONE `_resolve_visible` call whose slow path is
+   `first.wait_for(visible)` — bound to the FIRST DOM match, with nothing
+   re-firing the reveal for the whole 15s. The builder only re-renders the
+   control on a REAL `mouseenter`, and the pointer never left the field after
+   the select-click, so nothing could ever appear (hovering an already-hovered
+   point is a browser no-op).
+2. **Stricter-than-the-lock name matching.** SELECTORS-LIVE-form.md §6 records
+   the affordance as `getByRole('link', { name: 'Remove field' })` — WITHOUT
+   `exact`, i.e. Playwright-DEFAULT case-insensitive substring matching.
+   v1.2.0 hardened the spec to `exact=True`; a live accessible name drifting
+   by case/suffix then attaches ZERO nodes for the entire budget — precisely
+   the observed TimeoutError shape.
+
+**THE FIX (`ghl_iframe_drag` v1.2.1 — nothing Phone-specific):**
+
+- **Poll-with-deadline + hover/select re-stimulation.** The remove-control
+  acquisition is now a monotonic-deadline POLL (0.25s cadence): every pass
+  scans ALL attached matches for a VISIBLE one; the first miss CLICK-SELECTS
+  the field exactly once (a control already revealed by hover alone is used
+  WITHOUT the click — least canvas disturbance); later misses RE-FIRE the
+  hover on a 1s cadence by PARKING the pointer off the field and re-entering
+  it (`mouseenter` only fires on a real re-entry).
+- **Documented lock-form fallback.** New locator spec `role~=<role>:<name>`
+  (Playwright-default name matching — the LITERAL §6 lock form). Every poll
+  pass scans the exact spec first, then `role~=link:Remove field`
+  (`REMOVE_FIELD_LINK_LOCK_SPEC`); the exact form wins when both attach (the
+  v18.1.4 collision discipline stands).
+- **Nearest-control pick.** When SEVERAL remove controls are visible at once
+  (one per canvas field), the one NEAREST the target field's own bounding box
+  is clicked — never the DOM-first one, which belongs to a KEEP field and
+  would only fail at the count proof AFTER deleting the wrong field.
+- **Decisive honest failure.** `remove-link-not-found` now carries per-spec
+  attached-match diagnostics plus the stimulation trace (select-click done,
+  N re-hover cycles) so the next live run pins any residual mismatch in one
+  read. The receipt gains `remove_link_matched` / `select_clicked` /
+  `hover_cycles`. Count-decrease removal proof and the idempotent
+  already-absent no-op are unchanged; nothing ever fakes a delete.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (spec dispatch incl. `role~=` +
+new checks 13e/13f: hover-reveal-without-click, lock-form fallback) and
+`--live-selftest` PASS (real headless Chromium; the fixture now carries a
+field whose control appears ONLY on a re-entry hover AFTER selection — new
+case (i) proves the park-away + re-hover cycle against a real browser).
+`ghl_form_builder --selftest` PASS; `ghl_survey_builder --selftest` PASS.
+Full skill-6 pytest **1131 passed / 15 skipped** (was 1125 — +6 regression
+locks: `role~=` grammar, hover-reveal-needs-no-select-click, re-hover-cycle
+reveal, lock-form name fallback, never-appearing control fails closed with
+diagnostics + stimulation proven tried, nearest-control pick). Guards:
+no-secret-printing PASS, no-client-names PASS, no-telegram-chat-id-leak PASS,
+no-anthropic-runtime PASS.
+
+---
+
+## [v18.1.9] - 2026-07-08 - F4 default-field reconciliation is REAL + the F5 drop target is role-scoped and visible-match robust (the live attempt-#5 `iframe-drag:target-not-found` fix)
+
+**THE LIVE BUG (attempt #5 against a real account, evidence bundle
+`live-attempt-5-evidence/`).** Auth, F1/F2 form creation, and the F3 rename all
+landed; the F5 field drag then STOPped at `iframe-drag:target-not-found` — the
+drop target `text=Submit` "was not found/visible" inside the builder iframe for
+the full 15s (TimeoutError) while the run's own screenshots show the builder
+open and healthy. Root cause, two coupled defects:
+
+1. **`text=Submit` is AMBIGUOUS inside the iframe.** The Quick-Add panel carries
+   its own **'Submit' CATEGORY header + 'Submit' tile** (SELECTORS-LIVE-form.md
+   §8, visible in shot `005-f3-renamed.png`) alongside the canvas Submit
+   button, and `drive_drag` bound the target with a blind
+   `get_by_text(...).first` — first-in-DOM match. That match never became
+   visible, so the visible-wait burned the whole budget and failed "honestly"
+   at the wrong element — the SAME class of defect as the v18.1.4 F2 'Create'
+   collision, now on the drop side.
+2. **F4 default-field reconciliation was a warn-and-keep STUB.** GHL's
+   Start-from-Scratch template pre-seeds the canvas (First Name, Last Name,
+   Phone, Email, the Terms & Conditions consent block — §6); the plan says
+   `default_fields_delete: [Phone, Terms & Conditions]` and the click list
+   emits real `delete_field` steps, but the walk just warned
+   "kept defaults for the minimal run" (the run's own warnings prove it). The
+   kept defaults (a) would have shipped a DUPLICATE Phone once F5 dragged the
+   plan's Phone tile in (spec violation), (b) make the kept 'Phone' canvas
+   label collide with the 'Phone' Quick-Add tile as a drag SOURCE text, and
+   (c) stretch the canvas so Submit sits below the viewport fold.
+
+**THE FIX (nothing Submit- or Phone-specific):**
+
+- **`ghl_iframe_drag` v1.2.0 — visible-match resolution.** Source AND target
+  resolution now scans ALL matches of a spec in DOM order and binds the FIRST
+  VISIBLE one (`_resolve_visible`; wait-then-rescan fallback preserved for
+  slow-rendering, unambiguous specs). An all-hidden target still fails closed
+  as `target-not-found` — now carrying attached-match diagnostics
+  ("N attached match(es), none visible") and a `target_matches` receipt field.
+- **New documented locator specs:** `role=<role>:<name>` →
+  `get_by_role(..., exact=True)` and `placeholder=<text>` →
+  `get_by_placeholder(...)`. The FORM builder's drop anchors are now SPEC
+  pairs: **`role=button:Submit`** (§5, conf 9 — the locked canvas landmark)
+  with the §6 placeholder anchors as fallbacks; `_perform_iframe_drag` passes
+  the spec VERBATIM (the old unconditional `text=` wrapping was the ambiguity).
+  `_canvas_drop_anchor` always returns a spec (advisory-snapshot doctrine —
+  the frame-scoped resolve is the authoritative fail-closed gate).
+- **F4 reconciliation is REAL and fail-closed.** New shared primitive
+  `drive_remove_canvas_field`/`remove_canvas_field`: select the canvas field by
+  its DOCUMENTED anchor (§6 placeholders; the consent block by its consent
+  paragraph text) → click the per-field **`role=link 'Remove field'`** control
+  (§6, conf 8) → prove the removal by a **COUNT-DECREASE** of the field's own
+  anchor (mirror of the v1.1.1 count-delta placement proof). 0 matches = a
+  truthful idempotent already-absent no-op (safe re-runs). The walk's F4 branch
+  now calls it per `delete_field` step — BEFORE any F5 drag — and a genuine
+  miss STOPs at the honest `F4.delete:<name>` / `F4.anchor:<name>` step
+  (never invented CSS, never a form shipped with fields the plan excluded).
+  The SURVEY builder has no default-field surface (blank first slide) — it
+  inherits the visible-match target robustness through the shared primitive.
+- **Hermetic-suite isolation completed (`tests/test_parallel_saves.py`).** The
+  four fake-location batch harnesses (`test0caploc` / `test0failureloc` /
+  `test0concurrencyloc` / `test0maxsessionloc`) now pass
+  `BM_DURABLE_ROOT_OVERRIDE=""` like the v18.1.8 singleton harnesses — a fake
+  HOME alone does NOT protect a box where `/data/.openclaw` exists (checked
+  FIRST by `_bm_durable_root`), so a suite run there wrote real
+  `agent-browser-test0*.count` breaker state into the box's durable park dir.
+
+**Proof:** `ghl_iframe_drag --selftest` PASS (new checks 12-13: ambiguous
+hidden-first 'Submit' resolves to the visible landmark + all-hidden still fails
+closed with diagnostics; remove-field happy/absent/no-link/no-drop paths);
+`--live-selftest` PASS against a real headless Chromium whose fixture now
+carries a hidden first-in-DOM 'Submit' node, a real `role=button` Submit, and a
+removable default field with a 'Remove field' link (cases a/c/f re-prove the
+ambiguity fix live; new g/h prove the role-scoped target + the F4 remove flow
+end-to-end, including idempotent re-run). `ghl_form_builder --selftest` PASS
+(drop spec locked to `role=button:Submit`; F4 walk deletes via the two
+documented §6 anchors in order BEFORE the drag; a remove miss STOPs at
+F4.delete and never drags). Full skill-6 pytest: **1125 passed / 15 skipped**
+(+16 new regression locks, zero regressions; the box's real durable park dir is
+byte-identical after a full suite run). Guards: no-secret-printing PASS,
+no-client-names PASS, no-anthropic-runtime PASS.
+
+---
+
+## [v18.1.8] - 2026-07-07 - COUNT-DELTA placement proof + the suite can never PARK a real box again (two defects the final review pass caught)
+
+**1. Drag verification was trivially satisfiable for Quick-Add tiles.** The
+in-frame `verify_text` equals the TILE's own label — which already matches
+BEFORE the drag (object-field search rows too) — so a FAILED drop would have
+verified as placed; and with the top-frame snapshot re-check demoted to a
+warning in v18.1.5, nothing downstream would have caught it. `drive_drag`
+(v1.1.1) now reads the PRE-drag match count as a baseline and the placement
+proof is `count > baseline` (`_verify_placed(min_count=pre+1)`); the receipt
+carries `verify_pre_count`, and `not-placed` names the baseline. Proven
+hermetically AND against a real headless Chromium (live-selftest case (f):
+a SECOND drag of the same tile must push 'State placed' from 1 → 2).
+
+**2. The hermetic suite was PARKING the operator's real box.** The
+teardown-abort test simulates aborts for the fake location `abortloc`, but the
+v14.1.5 durable-breaker change moved park state to the box's REAL
+`.openclaw/workspace/.park` — so every full-suite run appended a real abort
+count until the circuit-breaker tripped and wrote the box-level
+`workforce-build.parked` (observed live 2026-07-07 on the operator box; the
+marker read `location=abortloc` — pure test provenance; the three abortloc
+artifacts were removed, pre-existing park files untouched). Fix:
+`browser_manager.sh:_bm_durable_root` honors an explicit
+`BM_DURABLE_ROOT_OVERRIDE` (set-even-if-empty semantics; production callers
+never set it), the two bash harnesses in
+`tests/test_browser_manager_singleton.py` pass override='' + a fake HOME so
+breaker/park state stays in the ephemeral lockdir, and NEW regression locks
+prove BOTH directions: ephemeral isolation (state lands in the lockdir, no
+durable `.openclaw` appears under HOME) AND preserved durable semantics (an
+explicit override root receives the state).
+
+Full skill-6 pytest: **1109 passed / 15 skipped**; the durable park dir is
+byte-identical after a full suite run. `--selftest` + `--live-selftest` PASS.
+
+---
+
+## [v18.1.7] - 2026-07-07 - Survey Phase-B rename wiring LOCKED + targeted mutation-kill evidence for the v18.1.5/v18.1.6 wave
+
+- NEW hermetic locks in `tests/test_ghl_iframe_drag.py`: the SURVEY builder's
+  Phase-B rename must route through the frame-scoped
+  `set_inline_title` (survey iframe selector + `re:^Survey \d+$` pattern
+  specs, url_marker `survey-builder`), and a missing primitive / missing CDP /
+  failed rename are all honest STOPs — a survey can never proceed
+  default-named (the same silent-failure class the FORM builder hit live
+  2026-07-07).
+- MUTATION-KILL PROOF for the wave's load-bearing lines (each mutation flipped
+  ONE line; the suite had to fail): source-scroll removal, hint-miss swallow,
+  editable-gate bypass, exactly-one-row gate bypass, post<=0-as-gone, save
+  rows<0 gate, rename-always-true — **7/7 KILLED**, working tree byte-restored
+  after each run.
+- Full skill-6 pytest: **1106 passed / 15 skipped** (+2).
+
+---
+
+## [v18.1.6] - 2026-07-07 - PIPELINE (+stages) CREATION via BROWSER CONTROL — new `ghl_pipeline_builder.py` (no public API exists for this surface)
+
+Operator-ratified boundary (2026-07-07): GHL exposes NO public API to CREATE a
+pipeline or CREATE/EDIT pipeline stages — confirmed the same night against
+GHL's real v2 AND v3 OpenAPI specs. The only public surface is the read-only
+`GET /opportunities/pipelines` (Skill 44 `caf opportunities pipelines`), and
+Skill 44 was audited to have NO pipeline-creation capability of any kind
+(API or browser). Pipeline/stage creation is therefore UI-only and now ships
+as a Skill-6 browser walk. Custom FIELDS stay on the proven Skill-44 API path
+(explicitly out of scope per the same ratification); opportunity CRUD stays on
+Skill 44's `caf opportunities …` API.
+
+New `tools/ghl_pipeline_builder.py` (v0.1.0):
+
+- **THINK layer**: ZHC-prefixed pipeline name (fleet container convention),
+  stage normalization that STRIPS manual Won/Lost (GHL auto-creates the
+  terminal stages — a manual duplicate would corrupt win/loss semantics),
+  preflight, and a dry-run click list (PL1–PL7) that spells out the Skill-44
+  id-capture handoff for post-build opportunity wiring.
+- **DO layer**: REUSES the form builder's proven primitives (one implementation
+  of the v18.1.3 text-verb doctrine, v18.1.4 role+exact clicks, v18.1.1+
+  poll-with-deadline waits, the token-only seed rail, and the v18.1.5
+  walk_state + leaf-count positive-verification machinery) — locked by a
+  source-level test that forbids forked copies.
+- **RUNTIME-BOUND anchors**: the flow is docs-seeded (official HighLevel
+  support portal, researched 2026-07-07: Opportunities ▸ Pipelines →
+  "Create new pipeline" → Pipeline Name → per-stage "Add stage" → Save), and
+  GHL's own docs disagree on the button's capitalization — so labels are bound
+  by PATTERN from the live snapshot and clicked role=button + --exact on the
+  string the page ACTUALLY shows. Documented in NEW
+  `tools/SELECTORS-LIVE-pipeline.md`, honestly marked RESEARCH-SEEDED (NOT
+  live-locked) until the first live run captures real anchors.
+- **POSITIVE verification everywhere**: the typed pipeline name and every typed
+  stage must RENDER (STOP otherwise); the saved pipeline must appear in the
+  RENDERED Pipelines list (leaf-text count ≥ 1) or `PL6.verify` STOPs — never
+  an unverified 'created'.
+- **Fail-closed cleanup** (`_delete_pipeline`): present→delete→absent proof.
+  Requires EXACTLY ONE rendered row for the ZHC test name; the whole-pipeline
+  delete flow is UNDOCUMENTED (runtime-capture), so it only ever clicks a
+  delete affordance it can COUNT to exactly one on screen — ambiguous or
+  unlocatable affordances are an honest not-deleted + OPERATOR REVIEW flag,
+  never a blind click on a real account. Unknown counts (-1) never read as
+  gone. Auto-runs after a STOP that may have left a partial pipeline behind.
+
+Files: NEW `tools/ghl_pipeline_builder.py`, NEW `tools/SELECTORS-LIVE-pipeline.md`,
+NEW `tests/test_ghl_pipeline_builder.py` (28 cases), SKILL.md inventory.
+Proof: `ghl_pipeline_builder.py --selftest` PASS; full skill-6 pytest
+**1104 passed / 15 skipped** (was 1076 — +28, zero regressions).
+
+---
+
+## [v18.1.5] - 2026-07-07 - F5 BELOW-THE-FOLD LOCATE + F3 FRAME-SCOPED RENAME + POSITIVE-VERIFY CLEANUP — the three defects live attempt #4 exposed, fixed at their shared root (the cross-origin iframe reach seam)
+
+Live attempt #4 (the furthest run yet — past auth, the Forms list, the create
+modal, INTO the real builder) exposed three distinct defects. All three are
+fixed through the SAME proven frame-scoped Playwright-over-CDP seam
+(`ghl_iframe_drag`, now v1.1.0), hermetically proven (dep-free selftest + a
+real-Playwright cross-origin fixture + pytest), with zero regressions
+(1076 passed / 15 skipped, up from 1035).
+
+**1. `F5.locate:City` — a Quick-Add tile below the panel fold was a false STOP.**
+The Quick-Add panel is a scrollable column of category sections
+(SELECTORS-LIVE-form.md §8); `City` sits under `Address`, below the fold, so it
+was absent from the top-frame a11y snapshot and the old snapshot-gate STOPped a
+tile that was 100% reachable. General fix for ANY field in ANY category (never a
+City-only patch):
+
+- `ghl_iframe_drag.drive_drag` now scrolls BOTH the source tile and the drop
+  target into view (Playwright `scroll_into_view_if_needed`, actionability-aware,
+  no-op when already visible — playwright.dev/python, verified) BEFORE reading
+  bounding boxes, and reads the boxes AFTER all scrolls.
+- New `source_scroll_hint` parameter: when the source misses directly, the hint
+  (the tile's CATEGORY header text from `QUICK_ADD_TAXONOMY`) is scrolled into
+  view FIRST to reveal its section, then the source is retried. Fail-closed codes
+  `scroll-hint-not-found` / `source-not-found` keep a genuinely absent tile an
+  honest STOP.
+- `ghl_form_builder._place_quick_add_field` passes each field's
+  `quick_add_category` as the hint automatically and demotes the top-frame
+  snapshot to ADVISORY (the frame-scoped locate is authoritative — it has real
+  access to the cross-origin frame); a frame-scoped locate miss maps back to the
+  honest `F5.locate:<tile>` step. The post-drag top-frame snapshot re-check at
+  F5/F6 is likewise demoted to recorded evidence — the in-frame `verify_text`
+  gate (which raises `not-placed`) is the authoritative placement proof.
+
+**2. F3 rename silently failed → a REAL form left default-named ("Form 55").**
+The title is an in-iframe inline-edit surface; the old top-frame
+`dblclick <xpath>` + `keyboard type` walk could never reach it (same cross-origin
+constraint as the drags) and was treated as cosmetic. Fix:
+
+- New `ghl_iframe_drag.set_inline_title` / `read_inline_title`: pattern-locate
+  the title (`re:^Form\s*\d+$` — the default number is unknowable), click (then
+  double-click) into edit mode with a VERIFIED editable-focus check (fail-closed
+  `title-not-editable` — typing into a non-editor is now impossible), select-all
+  (`ControlOrMeta+A`, per-platform fallbacks) + type + Enter, then VERIFY the new
+  text inside the iframe (`title-not-set` otherwise). Proven against a real
+  click-to-edit input inside a genuine cross-origin fixture (--live-selftest).
+- `ghl_form_builder._rename_form_title` (replaces `_try_rename`): renames via the
+  primitive and — success OR failure — records the title the form ACTUALLY
+  carries (`actual_title`, read back from the iframe) so cleanup targets the real
+  name, never an assumption. Idempotent (an already-renamed form reads back as
+  the target → renamed).
+- The walk's F3 is now FAIL-CLOSED by default (`rename_required`, plan-carried):
+  a build never proceeds on an unlabeled container; even on STOP the actual title
+  is recorded for cleanup. The SURVEY builder's Phase B rename
+  (`_p2_rename_survey`) rides the same primitive (`re:^Survey\s*\d+$`).
+
+**3. Cleanup claimed "no form was created" while a real form sat live.**
+Two compounding defects: (a) `_walk_click_list` captured the form id into a LOCAL
+thrown away when a later step raised StopAndReport, so cleanup saw no id; (b)
+`_delete_form` ignored every click rc and inferred success from a name-match
+absence — with the rename silently failed, the search for the intended name found
+nothing and "no residue" was fabricated. Fix:
+
+- New caller-owned `walk_state` dict: `form_id` / `actual_title` are recorded AT
+  CAPTURE TIME and survive the exception path; `_live_build`'s cleanup uses them.
+- `_delete_form` overhauled to a POSITIVE present→delete→absent proof: search the
+  ACTUAL title first, count RENDERED leaf-text matches via top-frame eval (the
+  search textbox echoing the query can never satisfy the check — input values are
+  not textContent), require EXACTLY ONE matching row title AND EXACTLY ONE
+  visible row `Actions` button (never risk the wrong row), rc-check every click
+  (row `Actions` role-button, `Delete` role-MENUITEM exact — new
+  `_click_menuitem`, dialog `Delete` role-button exact per SELECTORS §3), then
+  POLL the re-searched list to ZERO matches. Anything unverifiable returns
+  `deleted=False` + evidence; unknown counts (-1) NEVER read as gone.
+- New `_verify_no_residue` for the no-form-id path: positively proves the
+  intended name is absent from the RENDERED list (leaf-count 0), actually deletes
+  a row if one is found, and flags `possible_unnamed_orphan` LOUDLY when the walk
+  stopped between the create-confirm and the id capture (a default-named form
+  cannot be safely auto-deleted by name — operator review required).
+
+Files: `tools/ghl_iframe_drag.py` (v1.1.0), `tools/ghl_form_builder.py`,
+`tools/ghl_survey_builder.py`, `references/iframe-drag-capability.md`,
+`tests/test_ghl_iframe_drag.py` (+13 cases), NEW
+`tests/test_ghl_form_rename_and_cleanup.py` (27 cases),
+`tests/test_ghl_text_verb_cli_shapes.py` (rename lock modernized).
+
+---
+
+## [v18.1.4] - 2026-07-07 - F2 MODAL-CONFIRM DISAMBIGUATION: the 'Create' confirm click now targets role=button + EXACT accessible name — a substring click resolves to the WRONG element when three 'Create'-text elements coexist
+
+The next defect in the F2 chain, live-evidenced the same day and UNDER the
+v18.1.1–v18.1.3 fixes (all of which remain correct and in place — the
+create-modal now provably OPENS; this fix is about confirming it). With the
+'Create new form' modal open, THREE separate on-screen elements contain the
+text 'Create' simultaneously:
+
+1. the page header's '+ Create form' button, sitting BEHIND the modal overlay;
+2. the modal's own title text, 'Create new form';
+3. the blue confirmation button labeled exactly 'Create'.
+
+The confirm step emitted `find text Create click` — a SUBSTRING match that
+resolves to the FIRST DOM-order hit, which is NOT the confirm button. Live
+evidence: the click returned rc=0 (it landed — on the wrong element), the SPA
+never navigated off `/form-builder/main`, no `form-builder-v2` iframe ever
+mounted, and the v18.1.1 id-capture poll correctly timed out and STOPPED
+honestly instead of faking success.
+
+Proven hermetically on the same locator engine agent-browser 0.27.0 wraps
+(collision-fixture probe, no live-account contact):
+
+- text substring `Create` → **3 matches**; first DOM-order = the header
+  '+ Create form' button (the wrong element);
+- role=button + name `Create` + exact → **exactly 1 match** — the modal
+  confirm; clicking it fired the confirm handler;
+- role=button + name `Create` WITHOUT exact → still **2 matches** (substring
+  pulls the header button back in) — `--exact` is REQUIRED, not decoration.
+
+Changes:
+
+- `tools/ghl_form_builder.py` — new `_click_button(session, name)` primitive
+  emitting `find role button click --name <name> --exact` (flags per
+  `agent-browser find --help`, 0.27.0 — the `gates.json` pin). This is
+  SELECTORS-LIVE-form.md §4's LOCKED anchor for the modal confirm,
+  `getByRole('button', { name: 'Create' })` (confidence 9.5), expressed
+  through the CLI. Role=button excludes the modal title (not a button);
+  `--exact` excludes the header button ('Create form' ≠ 'Create'
+  byte-for-byte) — exactly one candidate can match.
+- The F2 confirm step now uses `_click_button` and CHECKS its rc: with the
+  modal proven open (still gated on 'Start from Scratch'), an exact-name miss
+  is structural, so the walk STOPs at a new honest gate `F2.confirm` with
+  live page-state evidence — instead of polling the id capture for a
+  navigation that can never happen.
+- `_click`'s docstring now carries the substring/first-DOM-order ambiguity
+  warning so future call sites don't reintroduce the pattern on collision-
+  prone chrome text.
+- Tests (`tests/test_ghl_form_builder_capture.py` — new
+  `TestWalkF2ConfirmDisambiguation`; `tests/test_ghl_text_verb_cli_shapes.py`
+  — CLI-shape + source-lock additions): a collision fixture models all three
+  'Create'-text elements at the `_ab` seam with the probe-proven resolution
+  semantics (a loose text click "succeeds" rc=0 but does NOT navigate; only
+  the role+exact click enters the builder route). The walk-level regression
+  proves the confirm step captures the form id amid the collision and NEVER
+  emits the ambiguous `find text Create click`; an rc≠0 confirm STOPs at
+  `F2.confirm` without touching the capture poll; and a source-level lock
+  keeps the ambiguous substring-Create emission from ever coming back. All
+  key new tests FAIL on the pre-fix code (mutation-checked against 78ca1ae0).
+- KNOWN LATENT TWIN (out of scope here, documented for the next operator):
+  `tools/ghl_survey_builder.py` P1 Step 6 clicks 'Create' via the same
+  substring helper inside the Create-folder dialog (page shows a
+  'Create folder' button at the same time). Same collision class; fix the
+  same way when that walk is next touched.
+
+Version bump v18.1.3 -> v18.1.4 (skill-version.txt + SKILL.md frontmatter +
+CHANGELOG in lockstep).
+
+---
+
+## [v18.1.3] - 2026-07-07 - TEXT-VERB ROOT-CAUSE FIX: bare `click`/`fill`/`wait` positionals are CSS SELECTORS, not text matches — every text interaction now uses the CLI's real text verbs
+
+The deeper bug UNDER the v18.1.1/v18.1.2 fixes (both of which remain correct
+and in place): per agent-browser 0.27.0's own `--help` for each verb, a BARE
+positional on `click` / `fill` / `wait` / `dblclick` / `type` is a CSS
+selector / XPath / `@ref` — NEVER a text match. Proven hermetically on a
+`data:` URL with no live-account contact:
+
+- `wait -- "Start from Scratch"` with that exact text visibly present →
+  rc=1 timeout; `wait --text "Start from Scratch"` → rc=0.
+- `click "Create form"` on a button with that exact label → rc=1
+  "Element not found"; `find text "Create form" click` → rc=0.
+
+So every live run failed at the SAME step (F2, "Create form") because the
+click NEVER actually happened — the walk only reached F1 because F1 navigates
+via a router-push `eval`, not a text click. Every text-based `_click` /
+`_fill` / `_wait_text` / `_type` / `_dblclick` call in the WHOLE walk (forms
+AND surveys) was affected.
+
+Changes (fix lives in the SHARED HELPERS so every caller is corrected at once
+and future call sites can't reintroduce the bug):
+
+- `tools/ghl_form_builder.py` — `_wait_text` now emits `wait --text <text>`
+  (substring match); `_click` emits `find text <target> click`; `_fill` emits
+  `find label <x> fill <v>` with a `find placeholder <x> fill <v>` fallback
+  (GHL search boxes like "Search by Name" are placeholder-identified), rc
+  semantics preserved (rc==0 iff a fill landed). `_try_rename` binds the
+  inline title via an XPath text-node match (new quote-safe `_xpath_text`;
+  `dblclick` has no text mode and `find` has no dblclick action) and types
+  through `keyboard type <text>` (types into the FOCUSED element — bare
+  `type <text>` parsed the text as a selector).
+- `tools/ghl_survey_builder.py` — same fix for its own `_wait` / `_click` /
+  `_fill` / `_type` / `_dblclick` helpers, and the five raw
+  `_run_cmd(session, "click", ...)` call sites (dialog Create, inter,
+  Paragraph, 2x gear) now route through the fixed `_click`.
+- SECOND compounding defect fixed in both glue layers (`_ab` / `_run_cmd`):
+  `ghl_builder.browser_cmd` joins args into ONE string with a plain
+  `' '.join` and the glue re-splits it with `shlex.split`, so an unquoted
+  multi-word arg ("Create form", "Search by Name", a JS eval payload, a
+  screenshot path with spaces) silently SHATTERED into separate CLI tokens.
+  Every arg is now `shlex.quote`d before the join and survives the round-trip
+  as exactly ONE argv token; bare flags (`-i`, `--text`) are unchanged.
+- `tools/ghl_iframe_drag.py` audited: NOT affected (pure Playwright over CDP;
+  zero agent-browser CLI subprocess calls).
+- Retry/poll logic from v18.1.1/v18.1.2 (`_wait_text_polling`,
+  `_capture_form_id` poll-with-deadline, the rc-checked F2 modal gate) is
+  UNCHANGED — those fixes gated a click that never landed; now it lands.
+- `--selftest` placement checks updated to the corrected `find label ... fill`
+  shape + a new regression lock: any BARE `click`/`fill`/`wait --` emission
+  in the placement path is a selftest FAILURE.
+- NEW `tests/test_ghl_text_verb_cli_shapes.py` (20 tests): verifies the ACTUAL
+  argv built by each helper (real `browser_cmd` join inside the hermetic
+  emitter-only `browser_session()` bracket, `subprocess.run` seam recorded) —
+  wait/click/fill/type/dblclick shapes, one-token quoting of multi-word text,
+  label→placeholder fill fallback + honest double-miss rc, XPath text-literal
+  quote-safety, and source-level locks against the bare forms returning.
+
+Suite: 1029 passed (was 1009), 15 skipped. Both module selftests PASS.
+Version bump v18.1.2 -> v18.1.3 (triple-equality drift gate OK).
+
+## [v18.1.2] - 2026-07-07 - F2 create-modal wait FIX: poll-with-deadline (the v18.1.1 gate worked; the wait under it didn't get its budget)
+
+Fixes the F2 create-modal wait itself. A second live run (2026-07-07, same
+client account, AFTER v18.1.1 shipped) still stopped honestly at
+`STOP@F2.modal` — the v18.1.1 rc-checked gate worked EXACTLY as designed (it
+is not the bug) — but diagnosis of the wait it gates found the wait never got
+the budget its own `timeout=` argument implies:
+
+- `_wait_text(session, text, timeout=N)` shells out to a single
+  `agent-browser wait -- <text>` call. Per `agent-browser --help` there is no
+  generic per-call `--timeout` CLI flag — the Python `timeout=N` kwarg is ONLY
+  the `subprocess.run` kill-switch. The wait duration `agent-browser` itself
+  actually uses is its own `AGENT_BROWSER_DEFAULT_TIMEOUT` (default 25000ms),
+  entirely outside this file's control.
+- F2's modal wait passed `timeout=20` — SHORTER than agent-browser's own 25s
+  default — so the Python watchdog could silently force-kill the wait
+  subprocess up to 5s BEFORE agent-browser's own native wait would have
+  elapsed, on exactly the step (a cross-origin SPA modal transition) most
+  likely to need the full window on a slow, form-heavy real account. (F1's
+  forms-list wait, by contrast, used `timeout=25` — matching the native
+  default — and passed live both times.)
+
+Changes (`tools/ghl_form_builder.py`):
+
+- **New `_wait_text_polling(session, text, timeout_s=20.0)`**: polls short,
+  bounded `_wait_text` sub-calls (4s each, 0.5s pace) against OUR OWN
+  monotonic deadline — same poll-with-deadline doctrine as `_capture_form_id`
+  (v18.1.1) — instead of trusting one opaque single-shot call to honor a
+  budget it never actually receives from agent-browser.
+- F2's create-modal wait (both the initial wait and the one-retry wait) now
+  calls `_wait_text_polling` instead of a raw `_wait_text`. The rc-checked
+  gate, the one-click retry, and the honest `StopAndReport("F2.modal", ...)`
+  with page-state evidence (v18.1.1) are UNCHANGED — only the wait underneath
+  is now a real poll.
+- The `_wait_text` calls for F1 (`Create form`) and the Save-wait evidence
+  read after `Create` are left as-is: F1's is not gating and already matched
+  agent-browser's native default; the Save-wait is explicitly evidence-only
+  (`_capture_form_id`'s poll is the authoritative entered-the-builder check).
+
+Tests (`tests/test_ghl_form_builder_capture.py`, +8): `_wait_text_polling`
+rides through early misses to a later success; returns cleanly (bounded,
+never hangs) at the deadline; zero-budget keeps single-shot semantics; every
+sub-call gets a real positive int timeout; None-sentinel defaults read the
+module constants at call time; shipped 20s/4s/0.5s window locked; walk-level
+regression proving a late-rendering modal (misses twice, hits on the third
+poll) now succeeds on the FIRST `Create form` click with no click-retry
+needed — the exact scenario the pre-fix single-shot wait could not ride out.
+Suite: 1009 passed, 15 skipped (was 1001/15 before this fix).
+
+## [v18.1.1] - 2026-07-07 - form-id capture FIX: poll-with-deadline + honest F2 modal/create gates (pre-existing bug blocking live verification of the iframe-drag fix)
+
+Fixes the PRE-EXISTING `_capture_form_id` failure (untouched by the v18.1.0
+iframe-drag commit) that stopped a live form build at `STOP@F2.create` BEFORE the
+drag step the v18.1.0 fix targets could ever run. Live evidence (2026-07-07, a
+slow, form-heavy client account on a fleet VPS box):
+
+- The run's `f2-create-modal` screenshot was **byte-identical** (same md5) to the
+  `f1-forms-list` screenshot — the Create-new-form modal NEVER opened — yet the
+  walk blundered on because the `_click`/`_wait_text` return codes at F2 were
+  ignored, and the miss finally surfaced two steps later as a misleading
+  `F2.create` "could not read the form id" report.
+- Even on the happy path, `_capture_form_id` was a **single-shot** eval: the SPA
+  flips to `/form-builder-v2/<id>` and mounts the builder iframe ASYNCHRONOUSLY
+  after the modal `Create` click, so one read raced the mount and returned ''.
+
+Changes (`tools/ghl_form_builder.py`):
+
+- **`_capture_form_id` now POLLS on a monotonic deadline** (default 15s budget,
+  0.5s pause — module constants `_FORM_ID_CAPTURE_TIMEOUT_S` /
+  `_FORM_ID_CAPTURE_POLL_S`; same poll pattern as `ghl_iframe_drag._verify_placed`,
+  never a fixed sleep). Returns the id as soon as ONE attempt clears the
+  server-side shape gate (`[A-Za-z0-9]{15,30}` fullmatch, unchanged, enforced per
+  attempt); returns '' CLEANLY at the deadline (bounded — never hangs); always
+  makes at least one attempt.
+- **F2 modal gate**: the `Start from Scratch` wait rc is now CHECKED; one retry
+  click, then an HONEST `StopAndReport("F2.modal", ...)` instead of blundering
+  into Create/capture blind.
+- **Evidence-bearing STOPs**: both F2 STOP reports now attach live page-state
+  (`_capture_entry_diag`: top-frame path + up-to-6 truncated iframe srcs — the two
+  surfaces the capture JS reads) plus the Save-wait rc and the poll budget, so the
+  next operator sees WHERE the browser actually was.
+
+Tests (`tests/test_ghl_form_builder_capture.py`, +10): poll rides through
+late-mounting iframe srcs; deadline return is clean and bounded (never hangs);
+zero-budget keeps single-shot semantics; shape gate enforced per attempt;
+None-sentinel defaults read the module constants at call time; shipped window
+locked at 15s/0.5s; walk-level F2 gates (modal fail-fast after one retry, retry
+success proceeds, walk uses the polling capture, capture-miss STOP carries the
+page-state evidence). Suite: 1001 passed, 15 skipped.
+
+## [v18.1.0] - 2026-07-07 - cross-origin iframe drag FIX: shared frame-scoped coordinate-drag primitive (forms + surveys)
+
+Fix branch **fix/skill6-ghl-form-iframe-drag**. Fixes the real bug where field
+placement in the GHL FORM (and SURVEY) builder could never complete because the
+builder renders inside a **cross-origin iframe** and `agent-browser` 0.27.0 cannot
+LOCATE a non-interactive drag-source tile across that boundary (its `frame` verb
+only re-scopes the read-only a11y snapshot; `eval`/`find`/`drag` still bind to the
+top frame — verified live, SELECTORS-LIVE-form.md §7, and re-verified against a
+two-origin fixture during this fix). There is NO GoHighLevel/LeadConnector REST API
+that creates or edits a form's field schema (public v1/v2 are read-only for form
+definitions — confirmed), so the fix does NOT go through an API.
+
+- **NEW `tools/ghl_iframe_drag.py`** — a SHARED, reusable, builder-AGNOSTIC
+  frame-scoped coordinate-drag primitive. Any Skill-6 script can import
+  `coordinate_drag(cdp_url, *, iframe_selector, source, target, verify_text, ...)`.
+  Architecture (hybrid): agent-browser stays the PRIMARY engine (Firebase-token
+  login injection, navigation, clicks); Playwright attaches to the SAME
+  already-logged-in Chromium over that session's CDP endpoint (`get cdp-url` →
+  `connect_over_cdp`) and performs ONLY the drag — one browser, one login, zero
+  duplicate auth. It resolves the tile's TRUE page coordinates with a frame-scoped
+  `frame_locator(...).bounding_box()` (works across the cross-origin boundary), then
+  drives a RAW interpolated-pointer drag (>= 20 moves per gates.json; a single
+  down→up does not trip GHL's drag sensor), which works whether the builder uses
+  native HTML5 DnD or a custom mousedown dragger. Headless (D6): live path uses
+  agent-browser's already-headless Chromium; the self-test browser uses
+  `launch_persistent_context(headless=True)` — never a bare `launch()`. FAIL-CLOSED:
+  `IframeDragError` on any unlocatable source/target, null box, or unverified
+  placement — never fakes success. Self-tests: `--selftest` (dep-free structural)
+  and `--live-selftest` (real Playwright vs a local cross-origin fixture, headless).
+- **`tools/ghl_form_builder.py`** — the F5 (Quick-Add) and F6 (Add-Object-Fields)
+  drag steps now route through the frame-scoped seam `_perform_iframe_drag(...)`
+  instead of the top-frame-only `_ab(session, "drag", ...)` (which could not reach
+  the tile). The existing STOP-and-report fail-closed behavior is preserved. Offline
+  self-test updated to prove the drag routes through the seam (not a top-frame drag).
+- **`tools/ghl_survey_builder.py`** — same fix wired into `_p2_pull_object_fields`
+  (same cross-origin builder host `survey-builder-v2`).
+- **NEW `tests/test_ghl_iframe_drag.py`** — 13-case regression suite (hermetic mocks
+  + Playwright-gated real cross-origin proof, skipped cleanly when Playwright absent).
+- **NEW `references/iframe-drag-capability.md`** — documents the capability, the
+  audit of other Skill-6 iframe surfaces (page/funnel Code-element drag noted as a
+  ready-to-wire follow-on; page/funnel CONTENT stays REST via `ghl_rest_canvas.py`),
+  and the smoke-test labeling convention (`TEST - OpenClaw Skill6 Verification - DO
+  NOT USE`, deleted at end of run).
+- **QC** — `qc-ghl-install-pages.sh` asserts the primitive parses + passes its
+  dep-free self-test, with a warn-only LIVE self-test (needs Playwright).
 ## [v17.0.35] - 2026-07-05 - copy-fidelity gate flipped opt-in → opt-out + FAB-QC fires on engine-routed builds (FIX-COPY-02, T-w1-copy-fidelity)
 
 Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**. The two "real" copy gates were no-ops
