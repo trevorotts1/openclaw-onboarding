@@ -289,6 +289,13 @@ All four required workflows exist in the TEMPLATE sub-account `CjxATjhv9Gt21qSqU
 
 ## SECTION J-2 - LEGACY WORKFLOWS RECREATED (per §H override, LIVE, verified 2026-07-10)
 
+> **➡️ SUPERSEDED 2026-07-10 by SECTION K.** The dependency GAPS listed at the bottom of this
+> section (dead pipeline, dead make.com/n8n webhooks, per-client FB steps, the SMIQ tracker
+> firing on a field the podcast flow never writes) were RESOLVED — pipeline built + every
+> `create_opportunity` remapped, dead webhooks removed, FB steps taken to the honest per-client
+> template boundary, and the SMIQ capture made bulletproof. See **SECTION K** for the live
+> after-state; the table/gaps below are kept as the pre-functionalization record.
+
 Recreated into `CjxATjhv9Gt21qSqURIt` via the same PROVEN internal rail + activation model as §J. Steps copied VERBATIM from OLD `w4A5LiurmAjBbvJOXmyz` (step ids preserved so `goto`/`parentKey`/`next` stay wired); only trigger survey/field ids and the SMIQ update-target field were remapped OLD→NEW. Two folders created in NEW: **`AI Podcast Survey`** (`bad049cd-ace0-46a4-bb7f-201fc1016473`) and **`SMIQ Tracker`** (`b5b63418-b30b-4f65-9f52-624d36e41cb1`). The original 4 (§J) were NOT touched. Live re-GET below.
 
 | Legacy WF | NEW live id | status | steps | trigger (NEW) | committed |
@@ -312,3 +319,109 @@ Recreated into `CjxATjhv9Gt21qSqURIt` via the same PROVEN internal rail + activa
 - **02 / 02a** — need: (a) a **FB Lead Form trigger**; (b) FB add/remove Custom Audience integration; (c) `create_opportunity` OLD pipeline (absent in NEW); (d) custom value `{{custom_values.podcast_survey_podcast_title}}` referenced in email copy (not among §B's 6 custom values). 29-step reminder ladders (wait/if_else/goto) recreated intact.
 
 **No fabrication:** FB integrations, FB Lead Forms, the OLD pipeline, and the external webhook targets were NOT connected or invented — the workflows are faithful recreations of OLD's structure, and the above is the exact connect-list for them to fire. Re-GET verify: `legacy-recreate/verify_final.py` (scratchpad) or list `GET /workflow/CjxATjhv9Gt21qSqURIt/list`.
+
+---
+
+## SECTION K - FB WORKFLOWS FUNCTIONALIZED + SMIQ BULLETPROOFED (LIVE, verified 2026-07-10)
+
+Executed on the internal rail against `CjxATjhv9Gt21qSqURIt` (write-guarded to NEW; OLD
+`w4A5LiurmAjBbvJOXmyz` read-only). Both gates exit 0: `scripts/verify-podcast-ghl-workflows.py`
+(required 4 still published/active) AND the new `scripts/verify-podcast-smiq.py` (this work).
+
+### K.1 - Pipeline built + every `create_opportunity` remapped
+Created **`Podcast Interview System Pipeline`** id **`a9RNaoDAYoVqLLaS964Q`** (mirrors OLD
+`yOomdMVVZgM9x4oB2fvK`), 5 stages: `Lead Form Ad` `7363deae-1e88-43d2-952a-4d407023a684` ·
+`Did Not Complete Interview` `893d6321-81ac-46da-a86f-f85294987398` · `Completed Interview
+Survey Form` `68774da0-9ad5-4172-b5f4-7b58bc03775f` · `Podcast Episode Is Ready`
+`a5c4c4ff-5593-4dce-bd0e-bad8b0b5f0a4` · `Made A Purchase` `e54ec70c-cb95-4132-b30e-75359dd8c151`.
+Every `create_opportunity` step in 03 (Lead Form Ad), 02 + 02a (Did Not Complete Interview),
+and 07 (Completed Interview Survey Form) was remapped OLD pipeline/stage -> NEW. Zero OLD
+pipeline id remains in any workflow (re-GET verified).
+
+### K.2 - Dead webhooks removed from 07 (no dead endpoint left pointed-to)
+07 shrank 17 -> 13 steps. Removed: the make.com `hook.us1.make.com/...2r0cl` node carrying the
+stray `{"black woman focused":"yes"}` payload (legacy contamination, already flagged NOT-to-
+replicate in §H); the two `n8n.apptime.me/webhook/954f12b5-...` per-style production webhooks
+(their job — box-side production — is owned in v2 by the required `02-Podcast Intake Submitted
+(Personal)` posting to `{{custom_values.podcast_intake_webhook_url}}` (client-box Cloudflare
+tunnel), where the BOX does per-style routing, so 07's per-style n8n branch is superseded); and
+07's per-client `facebook_add_to_custom_audience` step (01a owns that function). 07 kept its
+tags + branch + (remapped) opportunities + reminder waits, stays published, both triggers
+retargeted to the new head and active. No `make.com`/`apptime.me` string remains anywhere.
+
+### K.3 - FB steps at the honest per-client template boundary (nothing fabricated)
+The four FB-ad workflows are STRUCTURALLY CORRECT but **DRAFT**, with the hard-coded OLD
+Facebook ids **blanked** (`facebook_account_id` / `facebook_custom_audience_id` = "" on 01a/02/
+02a; `pixel_id` / `access_token` = "" on 03) so no other account's Facebook ids ship in a
+fleet template. Draft is REQUIRED here (and correct): GoHighLevel refuses to PUBLISH a workflow
+whose Facebook custom-audience/CAPI step is unconfigured (`MISSING_REQUIRED_FIELDS`), and these
+cannot run until a client connects Facebook anyway. This is DELIBERATE per-client-activation
+state, NOT the original "inactive shell" bug (that bug was the required 4 intake workflows
+silently shipping unpublished + triggerless; those 4 remain published + active + committed, and
+the fail-loud gate covers them).
+
+| FB workflow | live id | template state | needs at per-client connect |
+|---|---|---|---|
+| 01a Update FB audience | `5f6c90a9-6d41-4d71-b822-695b670da8dd` | draft, FB audience blanked, 1 step | connect FB + pick audience; add a "survey completed" trigger; publish |
+| 02 Fb Lead didn't complete | `e8fc8a75-43bc-4f97-b951-3f446372f4ac` | draft, NEW pipeline, FB add/remove blanked, 29-step ladder | connect FB + pick audience; add FB Lead Form trigger; publish |
+| 02a 2nd Fb interview | `49c56f90-50d3-47cb-97fc-7ab8b6cc7ac5` | draft, NEW pipeline, FB blanked, 29-step ladder | connect FB + pick audience; add FB Lead Form trigger; publish |
+| 03 LeadForm Fb Ad | `8abd4d30-ee3f-4e40-a60f-dfd6f3307da6` | draft, NEW pipeline, CAPI pixel/token blanked, 3 steps | connect FB + pixel/CAPI; add FB Lead Form trigger; publish |
+
+### K.4 - Per-client FB-connect provisioning step (process improvement, authorized)
+`scripts/activate-podcast-fb-workflows.py` (NEW): given the client's connected FB ids
+(`--fb-account`/`--fb-audience`/`--fb-pixel`/`--fb-token`), fills the blanked FB steps and
+PUBLISHES (activates) the four workflows; runs a DRY report with no ids. `provision-podcast-
+client.sh` STEP 7 (`fb-ads-connect`, opt-in via `PODCAST_FB_ADS_READY=1`) records the connect
+checklist and delegates to the activator. The Facebook OAuth connection + Lead Form/Audience
+selection is done by the client in the GHL UI (inherently per-client); the FB Lead Form trigger
+for 02/02a/03 is added in the builder because it must bind a live connected form.
+
+### K.5 - SMIQ Tracker BULLETPROOFED (operator: "very important")
+Evidence (`scripts/caf/field_layer/constants.py` READ_KEYS + `config/questionnaires/index.json`):
+the podcast SMIQ answer ALWAYS lands in `contact.podcast_interview_smiq` (canonical source of
+record); NOTHING in the podcast flow writes `contact.smiq_answers`. So the recreated SMIQ Answer
+Tracker (which triggered on `smiq_answers`) NEVER fired on a podcast submission, and its
+accumulator value referenced `{{contact.smiq_answer}}` — a field key present in NEITHER OLD nor
+NEW (a real typo) — so the just-changed answer was dropped. Fixes (live-verified):
+- **SMIQ Answer Tracker** `0795e466-cfe2-4f05-845a-7751927839d9`: trigger now `contact_changed`
+  ACTIVE on `contact.podcast_interview_smiq` (`pTkurBfVPJOuiAv7HELI`); accumulator reads
+  `{{contact.podcast_interview_smiq}}`, still self-appends `{{contact.smiq_history}}` and writes
+  `contact.smiq_history` (`i08poncoJMo6abdET5nI`). Published + committed. Fires for BOTH surveys
+  (both write `podcast_interview_smiq`). No re-trigger loop (writes a different field).
+- **05 Create Note SMIQ** `bdf6c354-55b4-4913-8623-b0a73c385404`: added a 2nd trigger so it fires
+  on the PERSONAL survey `vX5BuhxSeucMHrcKOwEn` too (was interview-only) — personal-podcast SMIQ
+  answers now also get a timeline note. Both triggers active + committed; step reads
+  `{{contact.podcast_interview_smiq}}`.
+- **SMIQ fields (live keys/types confirmed):** `podcast_interview_smiq` (`pTkur`, LARGE_TEXT,
+  canonical) · `smiq_history` (`i08pon`, LARGE_TEXT, accumulator target) · `smiq_answers`
+  (`habMr`, LARGE_TEXT) · `my_client_smiq_answers` (`fPAbt`, LARGE_TEXT) · `my_client_smiq_history`
+  (`AXIud`, LARGE_TEXT). NOTE: §A recorded the two `my_client_smiq_*` as TEXT (live OLD); in NEW
+  they were built LARGE_TEXT — non-load-bearing (engine asserts KEYS not types; these are
+  supporting-optional READ fields; not on the active tracker path).
+
+### K.6 - OPEN DECISIONS for the operator (flagged, not guessed)
+1. **07 vs 02 personal-survey collision:** both `07-2nd Podcast Interview/Survey v2.1` and the v2
+   required `02-Podcast Intake Submitted (Personal)` trigger on the SAME personal survey
+   `vX5BuhxSeucMHrcKOwEn`. 07 no longer posts production (webhooks removed) so there is no
+   double-production today, but if 07 is ever re-pointed at the box it would double-fire.
+   Recommend deciding whether 07 stays (CRM/opportunity side-effects only) or its trigger is
+   retired in favor of 02. Not changed unilaterally.
+2. **02/02a completion-tag semantics:** the reminder ladders stop reminding when the contact has
+   tag `podcast-survey-submission-completed`. In v2 that tag is applied by 07 (personal), not by
+   the required `01` interview intake — so a FB *interview* lead who completes may keep getting
+   reminders. Recommend applying `podcast-survey-submission-completed` on interview-survey
+   completion (or repointing the ladder check to the canonical `Podcast Completed Survey Style`).
+   The ladder MECHANICS are sound (verified: escalating 60m/8h/2d/7d waits; the `goto` steps all
+   jump to the completion handler, not a loop; terminal opportunity at day 7).
+3. **`{{custom_values.podcast_survey_podcast_title}}`** appears in 02/02a email copy but is not
+   among §B's 6 custom values, so it renders empty (cosmetic). Recommend the provisioner set it
+   (or map the copy to `podcast_show_name`). Not a fire blocker; 29-step email bodies left intact.
+4. **04a** (untouched) still fires on the same `podcast_survey_episode_url` change as the required
+   `04` and uses the hyphenated tag `podcast-completed-survey-style`; its `internal_notification`
+   needs an assigned user. Left as recreated (out of this task's FB/SMIQ scope) — flagged.
+
+### K.7 - Snapshot note
+This work lands AFTER the v1 golden snapshot (`IEmFFkIngiskcfJk9MH6`); it ships only on a v2
+re-cut from `CjxATjhv9Gt21qSqURIt`. Per operator doctrine the operator re-syncs the SAME snapshot
+id after the re-cut. Repo changes are branch-only pending QC >= 8.5 (single-writer onboarding
+train); the repo version roll + fleet rollout are deferred to the train, not done per-fix.

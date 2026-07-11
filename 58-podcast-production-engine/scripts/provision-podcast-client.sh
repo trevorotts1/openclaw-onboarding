@@ -512,6 +512,45 @@ provision_cron() {
 provision_cron
 
 # --------------------------------------------------------------------------- #
+# STEP 7: Facebook-ads connect (PER-CLIENT, opt-in). Facebook ads run LATER in the
+# podcast process; the four FB-ad workflows (01a Update FB audience, 02 Fb Lead didn't
+# complete, 02a 2nd Fb interview, 03 LeadForm Fb Ad) ship in the snapshot STRUCTURALLY
+# CORRECT but DRAFT with their Facebook account/audience/pixel/token fields BLANK, because
+# the Facebook connection is inherently per-client (each client connects their OWN Facebook
+# Business account and selects their OWN Lead Forms / Custom Audiences / Pixel). Nothing
+# about Facebook is fabricated in the template. This step records the connect checklist and,
+# when the client is ready (PODCAST_FB_ADS_READY=1 with the real ids), fills + publishes them
+# via scripts/activate-podcast-fb-workflows.py. Default: OFF (documented PENDING), never a
+# provision blocker.
+# --------------------------------------------------------------------------- #
+provision_fb_ads() {
+  if [ "${PODCAST_FB_ADS_READY:-0}" != "1" ]; then
+    ledger_step "fb-ads-connect" "PENDING" "OFF by default (ads run later). When the client is ready: (1) client connects their Facebook Business account in Convert-and-Flow (Settings > Integrations > Facebook); (2) note act_ ad-account id, Custom Audience id(s), Pixel id + CAPI token; (3) run scripts/activate-podcast-fb-workflows.py --location <client-loc> --token-env <client-refresh-var> --execute --fb-account act_XXXX --fb-audience NNN --fb-pixel NNN --fb-token TTT (fills + PUBLISHES the 4 draft FB workflows); (4) add the Facebook Lead Form TRIGGER to 02/02a/03 in the builder (must bind a live form); (5) re-run scripts/verify-podcast-ghl-workflows.py (required 4 still PASS)"
+    return 0
+  fi
+  if [ "$DRY_RUN" = "1" ]; then ledger_step "fb-ads-connect" "DRY-RUN" "would fill + publish the 4 FB workflows via activate-podcast-fb-workflows.py"; return 0; fi
+  local activator="$SCRIPT_DIR/activate-podcast-fb-workflows.py"
+  if [ ! -f "$activator" ]; then
+    ledger_step "fb-ads-connect" "PENDING" "activate-podcast-fb-workflows.py not present in this build; run it on the box with the client's FB ids"
+    return 0
+  fi
+  # The client's own Convert-and-Flow location + refresh var and FB ids are supplied via env
+  # (never hardcoded, never printed). Missing any -> record PENDING, do not guess.
+  if [ -z "${PODCAST_FB_LOCATION:-}" ] || [ -z "${PODCAST_FB_TOKEN_ENV:-}" ]; then
+    ledger_step "fb-ads-connect" "PENDING" "PODCAST_FB_LOCATION / PODCAST_FB_TOKEN_ENV not set; export them plus the FB ids and re-run"
+    return 0
+  fi
+  if runas python3 "$activator" --location "$PODCAST_FB_LOCATION" --token-env "$PODCAST_FB_TOKEN_ENV" --execute \
+       --fb-account "${PODCAST_FB_ACCOUNT:-}" --fb-audience "${PODCAST_FB_AUDIENCE:-}" \
+       --fb-pixel "${PODCAST_FB_PIXEL:-}" --fb-token "${PODCAST_FB_CAPI_TOKEN:-}" >/dev/null 2>&1; then
+    ledger_step "fb-ads-connect" "OK" "filled + published the 4 FB workflows (add the FB Lead Form trigger in the builder to complete 02/02a/03)"
+  else
+    ledger_step "fb-ads-connect" "PENDING" "activator returned nonzero (usually a FB field still blank — GHL refuses to publish a FB workflow with an empty required attribute); supply all --fb-* ids the workflow uses and re-run"
+  fi
+}
+provision_fb_ads
+
+# --------------------------------------------------------------------------- #
 # PASS GATE
 # --------------------------------------------------------------------------- #
 GATE_HARD_FAIL="0"
