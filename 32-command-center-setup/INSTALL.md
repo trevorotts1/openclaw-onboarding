@@ -570,14 +570,54 @@ If you operate a Hostinger Docker VPS, use the platform/vps variant of this scri
 
 `run-full-install.sh` PHASE 6i now runs this automatically (idempotent —
 safe to re-run on every install/resume/update, in both full and
-`--update-only` mode). It: (1) pulls the canonical V2 SOP library asset from
-this repo's GitHub Release, applies migration 028, upserts the SOP records,
-and seeds 19 platform-default template variables; (2) calls the Command
-Center's `converge(scope=sops)` route, which imports the on-disk role-library
-`how-to.md` files into the same `sops` table; (3) runs a fail-loud row-count
-gate (`scripts/assert-sop-library-populated.py`) so an install can never
-again silently claim success over an empty/near-empty SOP library. Manual
-invocation (e.g. to re-ingest a refreshed library on an existing client)
+`--update-only` mode). It has **two writers and two independent asserts**:
+
+1. **`ingest-sop-library.sh`** pulls the canonical V2 SOP library asset from
+   this repo's GitHub Release, applies migration 028, upserts the SOP records,
+   and seeds 19 platform-default template variables. Its rows carry
+   `source` NULL.
+2. **`converge(scope=sops)`** — an authenticated call to the Command Center,
+   which runs `importRoleLibrary()` to import the on-disk role-library
+   `how-to.md` files into the SAME `sops` table. Its rows carry
+   `source='role-library'`. **This is the only writer of role-library rows.**
+3. **`scripts/assert-sop-library-populated.py`** then asserts BOTH, separately:
+   `--min-total` (all rows) **and** `--min-role-library` (rows with
+   `source='role-library'`). A single `COUNT(*)` conflates the two writers — a
+   perfect 2,555-row ingest with a *failed* converge yields **zero**
+   role-library rows and would sail through a bare count, which is exactly the
+   ghost this phase exists to prevent.
+
+### This phase FAILS THE INSTALL — by design
+
+Phase 6i is **fail-closed**. It calls `fail_install` (install stops, build-state
+marked `failed`) if **any** of the following is true:
+
+| Condition | Why it is fatal |
+|---|---|
+| `ingest-sop-library.sh` exits non-zero | Network / GitHub outage / rate-limit / asset removed / gunzip error. The library was **not** ingested. |
+| It exits 0 but prints no `downloaded N SOP records` line | No trustworthy row floor for this run. |
+| It reports `downloaded 0 SOP records` | The release asset is empty. |
+| Total `sops` rows < half the downloaded count | The upsert did not land. |
+| **Zero rows with `source='role-library'`** | `converge(scope=sops)` never succeeded — the role library is a ghost and Triad routing starves. |
+| The gate script or `python3` is missing | An **unverified** library must never ship green. |
+
+There is deliberately **no "warn and continue" path**. The Command Center
+boot-seeds a handful of starter SOPs (`autoSeedStarterSOPs`) the moment it
+boots in Phase 6, so the `sops` table is **never empty** by the time this gate
+runs. Any relaxed "just check it isn't empty" floor would therefore rubber-stamp
+the boot-seed ghost as a healthy 2,555-row library — which is precisely the
+regression this gate was written to catch. **A gate that fails open is not a
+gate.**
+
+**If Phase 6i fails the install:** fix the underlying cause (usually network /
+GitHub release reachability, or a Command Center that is not answering
+`/api/system/converge`), then re-run the installer. Both writers are idempotent
+upserts, so re-running is safe and cheap. The build-state records
+`commandCenterSopLibraryIngested`, `commandCenterSopLibraryTotal`,
+`commandCenterSopLibraryRoleLibraryTotal`, and `commandCenterSopConvergeStatus`
+so the failure mode is durably recorded, not just logged.
+
+Manual invocation (e.g. to re-ingest a refreshed library on an existing client)
 still works the same way:
 
 ```bash
@@ -586,10 +626,14 @@ cd ~/.openclaw/skills/32-command-center-setup
 ```
 
 Expected result: `sops total: 2555`, `v2 sops: 2448`, `v1 sops: 107`,
-`sop_dependencies: 19`, `client_template_vars: 19` for this client. A total
-that stays 0 (or the `sops` table doesn't exist) after this phase fails the
-install loud — see `run-full-install.sh` PHASE 6i and
-`scripts/assert-sop-library-populated.py`.
+`sop_dependencies: 19`, `client_template_vars: 19` for this client, **plus a
+non-zero count of `source='role-library'` rows** from the converge call. To
+check the gate by hand (it refuses to run without an explicit floor — an
+implicit floor is a rubber stamp):
+
+```bash
+./scripts/assert-sop-library-populated.py --min-total 1277 --min-role-library 1 --json
+```
 
 ---
 
