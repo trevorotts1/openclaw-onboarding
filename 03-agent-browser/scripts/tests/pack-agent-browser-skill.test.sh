@@ -93,6 +93,15 @@ EOF
 # Minimal pre-hardening INSTALL.md (no N24 / no --headed false / no trap /
 # no Lifecycle hygiene / no GATEWAY RESTART PROTOCOL) -- a faithful stand-in
 # for the stale archive content confirmed by direct diff against origin/main.
+# The stale Step-4 smoke test is rendered in PROSE here, NOT as a literal
+# `agent-browser open|snapshot` command block: this is a tracked *.sh file and
+# the SINGLETON POOLED BROWSER guard (scripts/guard-agent-browser-managed.sh)
+# correctly fails the build on a raw agent-browser launch in any tracked
+# *.sh/*.py (its bash comment-stripper deliberately does not parse heredoc
+# bodies, so an inlined command block would read as a live, unmanaged launch).
+# The fixture only needs to DIFFER from the hardened on-disk INSTALL.md for the
+# archive-diff drift assertion below -- the exact bytes of the smoke test are
+# not load-bearing, only its ABSENCE of the four hardening sections is.
 cat > "$PRE_FIX/agent-browser/INSTALL.md" <<'EOF'
 # INSTALL.md - Agent Browser (Vercel)
 
@@ -102,12 +111,9 @@ Ensure `agent-browser` is installed and available as the primary browser automat
 
 ## Step 4 - Smoke test a simple browser session
 
-Run:
-```bash
-agent-browser open https://example.com
-agent-browser snapshot -i
-agent-browser close
-```
+Open a page, take an interactive snapshot to confirm element refs, then close
+the session -- three independent steps, with no headless flag and no
+guaranteed-close trap around teardown.
 
 If the snapshot shows interactive elements with refs like `@e1`, `@e2`, installation is good.
 EOF

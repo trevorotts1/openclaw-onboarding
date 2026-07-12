@@ -350,10 +350,23 @@ def _resolve_skill_dir():
 
     try:
         paths = get_openclaw_paths()
-        return paths["skills"] / "23-ai-workforce-blueprint"
+        candidate = paths["skills"] / "23-ai-workforce-blueprint"
+        # Only trust the resolved install skill dir if it ACTUALLY carries the
+        # role-library (mirrors the same _index.json validation steps 1 and 2
+        # above already apply). An OPENCLAW_PLATFORM override resolves a skills
+        # path deterministically even on a box that has no installed skill on
+        # disk (e.g. a bare CI runner or an in-repo/dev checkout), so returning
+        # it unconditionally would hand back a library-less directory and
+        # silently degrade every library fill to a stub. Fall through to the
+        # co-located in-repo fallback instead.
+        if (candidate / "templates" / "role-library" / "_index.json").exists():
+            return candidate
     except Exception:
-        # Fallback: assume this file is at skills/23-ai-workforce-blueprint/scripts/
-        return Path(__file__).resolve().parent.parent
+        pass
+    # Fallback: assume this file is at skills/23-ai-workforce-blueprint/scripts/
+    # (in-repo / dev / CI execution, or an install whose skills dir carries no
+    # role-library).
+    return Path(__file__).resolve().parent.parent
 
 
 # ─── ROLE-NAME NORMALIZER (WS-2: 58% naive match → ~100% normalized) ──────────

@@ -42,6 +42,7 @@ v6.6.0 additions:
   Phase 6: after _append_persona_to_categories, invoke create_role_workspaces.py
     --refresh-personas-only so governing-personas.md auto-regenerates.
 """
+from __future__ import annotations
 
 import argparse
 import os
@@ -51,7 +52,33 @@ import sys
 import time
 import asyncio
 import subprocess
-import aiohttp
+# aiohttp is only used by the live model-call code paths (Ollama Cloud /
+# OpenRouter / Moonshot / Codex sessions). It is imported optionally so the
+# pure-Python persona-registration and matcher-selectability code paths
+# (e.g. _phase6_register_categories) stay importable and unit-testable in
+# environments that do not install the heavy network dependency — such as the
+# persona-blend-match-quality-guard CI job, whose end-to-end test imports this
+# module only to exercise the write-side registration path. The
+# `from __future__ import annotations` above keeps the aiohttp.* type hints in
+# the async function signatures from being evaluated at import time, so the
+# module imports cleanly without aiohttp; a live-call path that actually needs
+# it still fails loudly (see _AiohttpUnavailable below).
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover - exercised only where aiohttp is absent
+    class _AiohttpUnavailable:
+        """Fails loudly only if a live model-call path is actually reached
+        without aiohttp installed; import and offline code paths keep working."""
+
+        def __getattr__(self, name):
+            raise ImportError(
+                "aiohttp is required for the book-to-persona live model-call "
+                "pipeline (extraction/analysis/synthesis); install it with "
+                "`pip install aiohttp`. It is intentionally optional so persona "
+                "registration and matcher tests can import this module without it."
+            )
+
+    aiohttp = _AiohttpUnavailable()  # type: ignore
 import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -384,14 +411,26 @@ def _local_ollama_reachable(timeout: float = 1.0) -> bool:
 # No hard requirement on any single key — at least ONE provider ROUTE must be
 # usable, but the selector decides which one to use. A signed-in LOCAL Ollama
 # daemon counts as a route (bug 3): it needs NO API key at all.
-if not (OLLAMA_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY or _local_ollama_reachable()):
-    raise ValueError(
-        "No usable model provider route found. Either run `ollama signin` so the "
-        "local daemon (http://localhost:11434) can proxy *:cloud models, or set "
-        "at least one of: OPENROUTER_API_KEY (fallback), OLLAMA_API_KEY (direct "
-        "ollama.com — only needed with a non-local OLLAMA_BASE_URL), or "
-        "OPENAI_API_KEY (last resort) in secrets/.env or as a container env var."
-    )
+#
+# This precondition is enforced at the START of main() (i.e. a live run), NOT at
+# module import time. Like the optional aiohttp import above, the pure-Python
+# persona-registration / matcher-selectability code paths (e.g.
+# _phase6_register_categories) MUST stay importable and unit-testable on a bare
+# runner that has no provider route configured — such as the
+# persona-blend-match-quality-guard CI job, whose end-to-end and duality-tag
+# tests import this module only to exercise the write side (no live model call is
+# ever made). A real CLI invocation still fails fast — before any orphan-guard or
+# network work — because main() calls _assert_provider_route() first, so the
+# fail-closed behavior a live run relies on is unchanged.
+def _assert_provider_route():
+    if not (OLLAMA_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY or _local_ollama_reachable()):
+        raise ValueError(
+            "No usable model provider route found. Either run `ollama signin` so the "
+            "local daemon (http://localhost:11434) can proxy *:cloud models, or set "
+            "at least one of: OPENROUTER_API_KEY (fallback), OLLAMA_API_KEY (direct "
+            "ollama.com — only needed with a non-local OLLAMA_BASE_URL), or "
+            "OPENAI_API_KEY (last resort) in secrets/.env or as a container env var."
+        )
 
 # task-64 bug 4 (max_tokens ceiling): Ollama Cloud hard-caps each model's
 # OUTPUT tokens; requesting more is a deterministic 400 ("max_tokens exceeds
@@ -2894,6 +2933,12 @@ def _ensure_status_entry(status: dict, book: dict) -> dict:
 async def main(args=None):
     if args is None:
         args = _parse_args()
+
+    # Fail fast (before any orphan-guard / network work) if no model provider
+    # route is usable. Deferred here from module-import time so this file stays
+    # importable for the pure-Python write/matcher code paths the CI guards
+    # exercise; a live run's fail-closed behavior is unchanged.
+    _assert_provider_route()
 
     # ── ORPHAN-PROCESS PREVENTION (fleet-wide) ────────────────────────────────
     # Arm the shared self-defense so an interrupted/detached run can never leave

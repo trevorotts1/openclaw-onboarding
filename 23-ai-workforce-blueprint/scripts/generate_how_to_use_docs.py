@@ -33,14 +33,19 @@ import how_to_use_department as htu  # noqa: E402
 # Departments whose how-to-use guide is authored as a static seed file rather
 # than rendered from the specialist index. These departments exist in the role
 # library and MUST have a guide committed (the --check gate enforces this), but
-# their roster is either entirely internal-hygiene roles (healer) or a routing
-# layer rather than a client-facing specialist pool (master-orchestrator), so
-# the renderer's output is degenerate. Their guides are ported from the
-# feat/how-to-use-this-department-docs branch where they were hand-crafted to
-# be accurate and owner-facing. --check verifies EXISTENCE only for these two.
+# their roster is either entirely internal-hygiene roles (healer), a routing
+# layer rather than a client-facing specialist pool (master-orchestrator), or an
+# operator-only escalation channel whose folder mixes real role files with
+# non-role documentation (rescue-rangers: CHANGELOG-RESCUE-DEPT.md and
+# RELAY-BRAIN-PATCH.md are build-log/runbook docs, not specialists, but they are
+# indexed with role_type "specialist" and the renderer has no way to tell them
+# apart from a real role file) -- so the renderer's output is degenerate for all
+# three. Their guides are hand-crafted to be accurate and owner-facing.
+# --check verifies EXISTENCE only for these departments.
 STATIC_SEED_DEPTS = {
     "healer",
     "master-orchestrator",
+    "rescue-rangers",
 }
 
 

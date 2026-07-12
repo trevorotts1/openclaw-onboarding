@@ -274,7 +274,7 @@ TF="$(pr_install_tunnel_token_file "unit-test" "eyJhIjoiZmFrZS10ZXN0LXRva2VuIn0"
 [ -f "$TF" ] \
     && pass "7a: token file written at $TF" \
     || fail "7a: token file not written"
-MODE="$(stat -f '%Lp' "$TF" 2>/dev/null || stat -c '%a' "$TF" 2>/dev/null)"
+MODE="$(stat -c '%a' "$TF" 2>/dev/null || stat -f '%Lp' "$TF" 2>/dev/null)"
 [ "$MODE" = "600" ] \
     && pass "7b: token file is mode 600 (was: world-readable root plist)" \
     || fail "7b: token file mode is $MODE, expected 600"
