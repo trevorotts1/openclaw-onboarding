@@ -1,5 +1,24 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.10 - 2026-07-12 — P3-08 merge (renumbered v2.9.9→v2.9.10): QC-fix — CTA lockstep completed in example templates + comment-reader injection fencing
+
+### Changed
+- **CTA lockstep finished in residual example templates.** §12/§19/pitch-schedule were already DM-first, but example TEMPLATES still modeled comment-only CTAs that the new §19 checklist would REJECT (a post with only the comment directive and no DM CTA FAILS). Added the PRIMARY "send us a message" DM CTA (with the comment link as backup) to: carousel Slide 7 (§ Carousel Slide Structure), the canonical JSON post-body `summary` example, the carousel-caption and video-caption example placeholders, and the `caf social create-post --text` CLI example. Content generated from these templates no longer auto-fails §19.
+
+### Security
+- **Comment-reader injection fencing (`scripts/comment_reader.py`).** Public comments are the lowest-trust inbound surface, and Skill 38 consumes `conversational-logs/` as conversation history. The reader now sanitizes every field before writing: the comment BODY is wrapped in a clearly-delimited `UNTRUSTED-PUBLIC-COMMENT` block with line-leading markdown structure (`#`/`-`/`>`/`|`/code fences/…) escaped, and single-line fields (author, permalink, comment_id) are newline-collapsed — so a crafted comment can no longer forge a Skill-38 `### Inbound` turn or inject a `- text:` field / instructions. New fail-first tests (`test_comment_reader.py`): spoofed-turn, code-fence breakout, and field-injection are all neutralized.
+
+## v2.9.9 - 2026-07-11 — P3-08 merge (renumbered v2.9.8→v2.9.9): Gap B — DM-first CTA + comment reader (comments become conversations); Gap C weekly-link automation
+
+### Changed
+- **DM-first two-channel CTA (playbook §12, §6 pitch examples).** The primary call-to-action is now "send us a message / DM" (which reaches an agent that answers via GHL Conversations → Skill 38's inbound pipeline), with "the link is in the comments" as the reach-preserving backup. Previously the highest-intent CTA funneled prospects to public comments, which NOTHING in the repo reads or replies to — a prospect who commented got no automated reply from anywhere.
+- **§19 QC checklist updated in LOCKSTEP.** The comment-CTA check is replaced by two checks: the PRIMARY DM CTA must be present, and the BACKUP comment-link directive must be present; a post with only the comment directive and no DM CTA now FAILS QC.
+
+### Added
+- **Comment reader (playbook §12b, `scripts/comment_reader.py` + `scripts/test_comment_reader.py`).** Phase-4 Engagement Monitor sub-task: polls prospect comment REPLIES and surfaces each as a synthetic inbound handoff into Skill 38's `conversational-logs/`, tagged with post/permalink context. Per-channel honesty: a channel with no comment-read API surface is ledgered + skipped, never fabricated (`CHANNEL_COMMENT_SURFACE` registry; FB/IG wired, others None until proven live).
+- **Cross-reference to Skill 38** (SKILL.md Phase 4): Skill 38 owns every inbound conversation Skill 35's CTAs generate; Skill 35 is the inbound SOURCE (DM-CTA + comment handoff). Reciprocal reference added in `38-conversational-ai-system/SKILL.md`.
+- **Gap C — optional themed weekly landing page** (playbook Step 4): the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty). Optional-graded.
+
 ## v2.9.8 - 2026-07-12 — P3-05: PRE-generation prompt QC gate, Ideogram routing for text-overlay images, Skill-45 negative-prompting wiring, input-quality gate on graphics-department assets
 
 ### Added

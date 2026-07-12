@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v2.9.7
+version: v2.9.10
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -125,7 +125,10 @@ QC: Compliance.
 ### Phase 4: Engagement Monitoring
 1. Engagement Monitor: Poll APIs for likes/views (e.g., every [from config: monitor_interval]h).
 2. Report anomalies to `[from identity.md: owner telegram]`.
+3. **Comment reader (comments → conversations):** poll prospect comment REPLIES on published posts and surface each as a synthetic inbound handoff into Skill 38's pipeline (see `scripts/comment-reader.py` and `references/playbook.md` §12b). Comments are not a GHL Conversations event, so without this a reader who follows the campaign's own "the link is in the comments" instruction and then comments would get no reply. Per-channel: use the §17 posting ladder's available read surface (official MCP or REST — `caf` has NO comment command); if a channel exposes no comment-read API, ledger it per-channel and skip — never fabricate a comment feed.
 QC: Performance.
+
+> **Cross-reference — Skill 38 owns the conversations these CTAs generate.** Skill 35's CTAs (the primary DM call-to-action, §12, and the comment-reader handoff, §12b) are INBOUND SOURCES; `38-conversational-ai-system` (Skill 38) is the OWNER of every inbound conversation they generate — DM → GHL Conversations → Skill 38's inbound playbook; comment reply → synthetic handoff → Skill 38's `<MASTER_FILES_DIR>/conversational-logs/`. Skill 35 never answers a conversation itself; it routes the highest-intent interaction to the skill that does. See the reciprocal cross-reference in `38-conversational-ai-system/SKILL.md`.
 
 ### Phase 5: Email Newsletter
 1. Email Designer: HTML table:

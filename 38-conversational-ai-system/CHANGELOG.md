@@ -1,3 +1,8 @@
+## [1.9.1] - 2026-07-12 - P3-08 merge (renumbered [1.8.3]→[1.9.1] — branch cut at 1.8.2, [1.9.0] P3-07 landed on main first): Skill 35 named as an inbound SOURCE (DM-CTA + comment handoff)
+
+### Added
+- **Cross-reference to Skill 35 (`social-media-planner`) as an INBOUND SOURCE** (SKILL.md "What This Skill Is"). Skill 35's campaign CTAs feed conversations into this brain two ways: (1) the primary DM CTA (playbook §12) → FB/IG DM → GHL Conversations → this skill's existing inbound pipeline; (2) the comment-reader (playbook §12b) surfaces prospect comment replies as synthetic handoffs into this skill's `conversational-logs/`. Skill 38 OWNS every inbound conversation those CTAs generate; Skill 35 never answers a conversation itself. Reciprocal reference added in `35-social-media-planner/SKILL.md` (Phase 4). Closes the Skill 35 ↔ Skill 38 zero-cross-reference gap. No code/behavior change to the inbound pipeline itself.
+
 ## [1.9.0] - 2026-07-11 - fix+feat (P3-07): playbook_engine.py parser fixes + the RUNTIME U-1 tool-gating prover
 
 Two live parser fixes in `tools/playbook_engine.py` (the SINGLE canonical parser every machine-enforced QC gate trusts) plus the missing RUNTIME proof for the tool-gating guarantee. Preserves every v1.8.x differentiator. OPERATOR-ONLY surfaces; no customer-invokable path. No client names.
