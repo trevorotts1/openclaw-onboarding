@@ -37,12 +37,22 @@
 #   MC_ROUTE_SOURCE       payload "source"   (default telegram)
 #   MC_ROUTE_PRIORITY     payload "priority" (default medium)
 #   MC_ROUTE_MAX_RETRIES  retries after 1st  (default 2)
+#   MC_ROUTE_REQUESTER_CHAT_ID   P1-04 trust engine: the ORIGINATING client chat id the
+#                                Command Center report-back loop acks/progress/dones back to.
+#                                Set by the orchestrator when the task came from a client message.
+#   MC_ROUTE_REQUESTER_CHANNEL   the client channel (default telegram); only used when
+#                                MC_ROUTE_REQUESTER_CHAT_ID is set.
 set -uo pipefail
 
 INGEST_URL="${MC_ROUTE_INGEST_URL:-http://127.0.0.1:4000/api/tasks/ingest}"
 MAX_RETRIES="${MC_ROUTE_MAX_RETRIES:-2}"
 SOURCE="${MC_ROUTE_SOURCE:-telegram}"
 PRIORITY="${MC_ROUTE_PRIORITY:-medium}"
+# P1-04 trust engine: the originating client channel + chat id, so the Command
+# Center report-back loop can acknowledge/progress/done back to the client. Empty
+# (the default) => omitted from the payload (an operator/internal route).
+REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}"
+REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}"
 
 DEPARTMENT_SLUG="${1:-}"
 TITLE="${2:-}"
@@ -126,7 +136,9 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     SOURCE="$SOURCE" PRIORITY="$PRIORITY" python3 - >"$BODY_FILE" <<'PYBODY'
+     SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
 payload = {
     "title": os.environ.get("TITLE", "")[:120],
@@ -135,6 +147,13 @@ payload = {
     "source": os.environ.get("SOURCE", "telegram"),
     "priority": os.environ.get("PRIORITY", "medium"),
 }
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
 then
