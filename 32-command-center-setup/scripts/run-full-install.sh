@@ -664,7 +664,25 @@ cc_write_env_local() {
   # dept-agent OpenClaw runtime secrets env so a dispatched agent's $MC_API_TOKEN
   # resolves and its task write-backs authenticate (else they 401 and finished
   # work freezes in_progress). Idempotent; preserves any existing agent value.
-  cc_mirror_api_auth_to_agent_secrets "$envf"
+  #
+  # D6 credential-drift guard: the mirror WRITES into the guarded agent secrets
+  # store ($OC_ROOT/secrets/.env) whenever MC_API_TOKEN/WEBHOOK_SECRET are absent
+  # or empty there -- a genuine credential-store mutation (absent -> appended, or
+  # empty-placeholder -> filled in place). That is first-time PROVISIONING and
+  # must run on a FULL install only. During --update-only (the mode a code-only
+  # fleet roll drives via update-skills.sh's CC refresh) it must NEVER mutate the
+  # credential store, or scripts/fleet-roll/preflight-credential-guard.sh sees
+  # secrets/.env change between snapshot and verify and force-REVERTS the whole
+  # box (the revert then undoes the very write, so the box drifts/reverts every
+  # roll). A genuinely under-provisioned update-only box is still caught LOUDLY
+  # by the post-condition immediately below and remediated by a full install --
+  # never silently mutated mid-roll. The guard stays strict; we remove the
+  # CAUSE, not the detector.
+  if [[ "$UPDATE_ONLY" == "true" ]]; then
+    log "INFO" "cc-env: --update-only — dept-agent secrets mirror is READ-ONLY this run (code-only roll must not write $OC_ROOT/secrets/.env). A missing MC_API_TOKEN is flagged by the post-condition below; provision it with a full install."
+  else
+    cc_mirror_api_auth_to_agent_secrets "$envf"
+  fi
 
   # STALE-CHECKOUT POST-CONDITION (loud): a box running an OLD on-box installer
   # (predating cc_mirror_api_auth_to_agent_secrets, Skill-32 v12.9.31) writes the
@@ -810,6 +828,31 @@ _cc_resolve_bash4() {
     fi
   done
   return 1
+}
+
+# cc_git_sync_to_default_branch <repo_dir> — detached-HEAD-safe replacement for
+# `git pull --ff-only` on the CC checkout (D7). A client CC pinned to a version
+# tag is in DETACHED HEAD, where `git pull --ff-only` aborts ("You are not
+# currently on a branch"), silently freezing the CC at the old tag so the update
+# never lands (observed on multiple client Command Center boxes). Fix: fetch origin's default
+# branch, then re-attach to it via `git checkout -B` (detached) or fast-forward
+# (already on a branch). BOTH paths preserve the client's local patches:
+#   • .env.local / *.db are gitignored — no git op ever touches them.
+#   • logo-config.json / dept-board edits are tracked+locally-modified — `-B` and
+#     `merge --ff-only` carry a clean local mod across the switch and REFUSE
+#     non-destructively on a genuine conflict (same safety as the old ff-only).
+# Deliberately NEVER `git reset --hard` / `checkout -f` / `git clean`. Returns 0
+# on a landed sync, non-zero otherwise (callers WARN + keep the prior checkout).
+cc_git_sync_to_default_branch() {
+  local dir="$1" branch
+  branch="$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+  [[ -n "$branch" ]] || branch="main"
+  git -C "$dir" fetch --quiet origin "$branch" >>"$LOG_FILE" 2>&1 || return 1
+  if git -C "$dir" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
+    git -C "$dir" merge --ff-only "origin/$branch" >>"$LOG_FILE" 2>&1
+  else
+    git -C "$dir" checkout -B "$branch" "origin/$branch" >>"$LOG_FILE" 2>&1
+  fi
 }
 
 # cc_route_update_through_canonical_path — the D5 update-only build+restart step.
@@ -1049,9 +1092,11 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
     log "WARN" "phase=6 dashboard-update: $DASHBOARD_DIR/.git not found — run full install first (skipping refresh)"
   else
-    ( cd "$DASHBOARD_DIR" && git pull --ff-only >>"$LOG_FILE" 2>&1 ) \
-      && log "INFO" "phase=6: git pull --ff-only done" \
-      || log "WARN" "phase=6: git pull non-clean — continuing with existing checkout"
+    if cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
+      log "INFO" "phase=6: git sync to origin default branch done (detached-HEAD-safe; local patches preserved)"
+    else
+      log "WARN" "phase=6: git sync non-clean (detached-HEAD or conflicting local patch) — continuing with existing checkout"
+    fi
     ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: npm install done" \
       || log "WARN" "phase=6: npm install reported errors (continuing)"
@@ -1091,7 +1136,7 @@ else
     fi
   else
     log "INFO" "phase=6: dashboard repo already cloned — pulling latest"
-    ( cd "$DASHBOARD_DIR" && git pull --ff-only >>"$LOG_FILE" 2>&1 ) || log "WARN" "phase=6: git pull non-clean (continuing with existing checkout)"
+    cc_git_sync_to_default_branch "$DASHBOARD_DIR" || log "WARN" "phase=6: git sync non-clean (continuing with existing checkout)"
   fi
 
   log "INFO" "phase=6: npm install in $DASHBOARD_DIR"
