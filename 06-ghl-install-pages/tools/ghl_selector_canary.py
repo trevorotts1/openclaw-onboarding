@@ -32,12 +32,27 @@ MACHINE-READABLE, ORDERED fallback chain (``selectors-live.json``, loaded by
      / MISSING. A MISSING anchor files a board card (fail-soft) BEFORE any client
      build hits it — drift is detected once, fleet-wide, not per-client.
 
+  3. ``run_iframe_survival_check()`` / the ``--iframe-survival`` CLI (P3-04 c4)
+     — a READ-ONLY weekly companion check that a set of PUBLISHED GHL pages/
+     surveys/forms still embed their cross-origin (``*.leadconnectorhq.com``)
+     iframe. Iframe survival was proven ONCE (2026-06-27 probe: GHL preview
+     does not strip iframes) but never continuously guarded — this closes that
+     gap in the same read-only, dependency-injected, fail-soft-board-notify
+     shape as ``run_canary()`` (a caller-supplied ``page_fetcher`` does the
+     real HTTP GET / agent-browser snapshot; this module performs no network
+     I/O of its own). A stripped iframe reuses cc_board.py's existing
+     ``VERIFY-FAIL`` taxonomy value (a post-publish render/verification check
+     failing is exactly F6's shape) — it deliberately never invents a 7th
+     cc_board taxonomy value.
+
 This module performs NO GHL I/O of its own (same discipline as ghl_object_router):
-callers inject a ``finder`` callable. In production a finder wraps a live
-``agent-browser`` snapshot (see ``live_finder_over_browser_manager`` for the wiring
-sketch — deliberately NOT exercised by CI, since it needs a real seeded session).
-``--selftest`` and the pytest suite drive the full decision path with fake finders:
-no network, no browser, no GHL writes.
+callers inject a ``finder`` / ``page_fetcher`` callable. In production a finder
+wraps a live ``agent-browser`` snapshot (see ``live_finder_over_browser_manager``
+for the wiring sketch — deliberately NOT exercised by CI, since it needs a real
+seeded session) and a page_fetcher wraps a real HTTP GET of a public published-
+page URL (see ``live_page_fetcher_over_http``, same discipline). ``--selftest``
+and the pytest suite drive the full decision path with fake finders/fetchers: no
+network, no browser, no GHL writes.
 
 USAGE
 -----
@@ -50,10 +65,15 @@ USAGE
                                 evidence_root="/tmp/run01")
     print(report.summary())
 
+    targets = canary.load_iframe_survival_targets()["targets"]
+    report2 = canary.run_iframe_survival_check(targets, page_fetcher=my_page_fetcher)
+    print(report2.summary())
+
     # CLI
     python3 ghl_selector_canary.py --matrix                  # print anchor counts
     python3 ghl_selector_canary.py --matrix --object-type form
     python3 ghl_selector_canary.py --canary --evidence-root /tmp/canary --selftest
+    python3 ghl_selector_canary.py --iframe-survival --evidence-root /tmp/canary --selftest-finder
     python3 ghl_selector_canary.py --selftest
 """
 
@@ -67,10 +87,11 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 
-CANARY_VERSION = "v1.0.0"
+CANARY_VERSION = "v1.1.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-survival
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SELECTORS_PATH = os.path.join(_HERE, "selectors-live.json")
+DEFAULT_IFRAME_TARGETS_PATH = os.path.join(_HERE, "iframe-survival-targets.json")
 
 VALID_OBJECT_TYPES = ("form", "survey", "funnel", "page")
 
@@ -78,6 +99,19 @@ VALID_OBJECT_TYPES = ("form", "survey", "funnel", "page")
 # canary MISS is queryable the same way a live build's SELECTOR-MISS stop is.
 BOARD_NOTE_SELECTOR_MISS = "SELECTOR-MISS"
 BOARD_NOTE_SELECTOR_GAP = "SELECTOR-GAP"  # known-undocumented surface, not a regression
+
+# Board failure-taxonomy prefix for the iframe-survival check (P3-04 c4). A
+# stripped iframe on a published page is a post-publish render/verification
+# check failing — exactly cc_board.py's F6 "VERIFY-FAIL" shape (sealed
+# verifier / render_check did not PASS). REUSES that existing value; this
+# module never invents a 7th cc_board taxonomy entry (see cc_board.py's own
+# "_CC_BLOCK_REASONS drifted from spec taxonomy" self-check).
+BOARD_NOTE_IFRAME_SURVIVAL_MISS = "VERIFY-FAIL"
+
+# Cross-origin iframe host proven to survive GHL publish (2026-06-27 probe).
+# Overridable per-call (run_iframe_survival_check(..., iframe_src_marker=...))
+# for a target embedded on a different host.
+DEFAULT_IFRAME_SRC_MARKER = "leadconnectorhq.com"
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +151,22 @@ def get_anchor(data: Dict[str, Any], anchor_id: str) -> Dict[str, Any]:
         if anchor["id"] == anchor_id:
             return anchor
     raise KeyError(f"no anchor with id {anchor_id!r} in selectors-live.json")
+
+
+def load_iframe_survival_targets(path: Optional[str] = None) -> Dict[str, Any]:
+    """Load iframe-survival-targets.json — the weekly check's target list
+    (published GHL page/survey/form URLs on the operator test sub-account).
+    Same fail-loud discipline as load_selectors(): a missing/corrupt targets
+    doc is a config error, not something to silently default around. An
+    EMPTY ``targets`` array is valid (the check simply reports zero targets,
+    clean) — this repo intentionally ships no live client URLs; the operator
+    populates real published-page URLs on the box that runs the weekly cron."""
+    p = path or DEFAULT_IFRAME_TARGETS_PATH
+    with open(p, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if "targets" not in data:
+        raise ValueError(f"{p}: missing top-level 'targets' key — not a valid iframe-survival-targets.json")
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +341,99 @@ def run_canary(data: Dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# Weekly iframe-survival check (P3-04 c4) — same read-only / DI discipline as
+# run_canary() above, checking a different property: does a PUBLISHED page
+# still embed its cross-origin iframe (2026-06-27 probe: GHL preview does not
+# strip it — this makes that proof CONTINUOUS instead of a one-time snapshot).
+# ---------------------------------------------------------------------------
+@dataclass
+class IframeSurvivalReport:
+    started_at: float
+    finished_at: float = 0.0
+    results: List[Dict[str, Any]] = field(default_factory=list)
+    misses: List[Dict[str, Any]] = field(default_factory=list)
+    canary_version: str = CANARY_VERSION
+
+    def summary(self) -> Dict[str, Any]:
+        return {
+            "total_targets": len(self.results),
+            "misses": [m["target"] for m in self.misses],
+            "clean": len(self.misses) == 0,
+            "duration_s": round(self.finished_at - self.started_at, 3),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["summary"] = self.summary()
+        return d
+
+
+def run_iframe_survival_check(
+    targets: List[Dict[str, str]],
+    page_fetcher: Callable[[str], str],
+    evidence_root: Optional[str] = None,
+    board_notifier: Optional[Callable[[Dict[str, Any]], None]] = None,
+    iframe_src_marker: str = DEFAULT_IFRAME_SRC_MARKER,
+) -> IframeSurvivalReport:
+    """READ-ONLY weekly check that every PUBLISHED target in ``targets`` still
+    embeds its cross-origin (``iframe_src_marker``) iframe. Mirrors
+    run_canary()'s shape exactly: no network of its own (``page_fetcher(url)
+    -> html`` is caller-injected — a real HTTP GET or agent-browser snapshot
+    in production, a canned string in tests), one target's failure never
+    blocks scanning the rest, and a MISS fail-softly notifies
+    ``board_notifier`` (never lets a board outage crash the scan) with the
+    REUSED VERIFY-FAIL taxonomy value (never a 7th cc_board category).
+
+    targets: ``[{"id": "...", "url": "https://...", "object_type": "survey"}, ...]``
+    — see load_iframe_survival_targets() / iframe-survival-targets.json for the
+    on-disk schema this list is normally loaded from.
+
+    A target whose page_fetcher call raises is recorded as a "fetch-error"
+    MISS (also board-notified) rather than crashing the whole weekly run —
+    one unreachable page must never hide the rest of the report."""
+    report = IframeSurvivalReport(started_at=time.time())
+    for t in targets:
+        entry: Dict[str, Any] = {
+            "target": t["id"], "object_type": t.get("object_type", ""), "url": t["url"],
+        }
+        try:
+            html = page_fetcher(t["url"]) or ""
+        except Exception as exc:
+            entry["status"] = "fetch-error"
+            entry["error"] = str(exc)
+            report.results.append(entry)
+            report.misses.append(entry)
+            if board_notifier is not None:
+                try:
+                    board_notifier({"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
+                except Exception:
+                    pass  # board calls are fail-soft, never block the check
+            continue
+
+        survived = ("<iframe" in html) and (iframe_src_marker in html)
+        entry["status"] = "survived" if survived else "stripped"
+        report.results.append(entry)
+        if not survived:
+            report.misses.append(entry)
+            if board_notifier is not None:
+                try:
+                    board_notifier({"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
+                except Exception:
+                    pass  # board calls are fail-soft, never block the check
+    report.finished_at = time.time()
+
+    if evidence_root:
+        os.makedirs(evidence_root, exist_ok=True)
+        out_path = os.path.join(evidence_root,
+                                 f"iframe-survival-{int(report.started_at)}.json")
+        with open(out_path, "w", encoding="utf-8") as fh:
+            json.dump(report.to_dict(), fh, indent=2, sort_keys=True)
+        report.results_path = out_path  # type: ignore[attr-defined]
+
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Live finder wiring sketch (NOT exercised by tests — needs a real seeded
 # session). Kept here so a builder wires the canary to browser_manager without
 # re-deriving the resolver contract.
@@ -324,6 +467,25 @@ def live_finder_over_browser_manager(session: str, ab_eval: Callable[[str, str],
         return result or None
 
     return _finder
+
+
+def live_page_fetcher_over_http() -> Callable[[str], str]:
+    """Return a page_fetcher() suitable for run_iframe_survival_check() that
+    performs a real HTTP GET of a published page's PUBLIC url (a published
+    GHL preview/live page needs no auth — that is the same 2026-06-27 probe
+    this check makes continuous). Kept as a thin, injectable FACTORY (same
+    discipline as live_finder_over_browser_manager) — constructing it performs
+    NO network I/O; only calling the returned function does. Deliberately NOT
+    exercised by CI / --selftest; only the weekly cron or a live wiring calls
+    the returned callable."""
+
+    def _fetch(url: str) -> str:
+        import urllib.request
+
+        with urllib.request.urlopen(url, timeout=20) as resp:  # noqa: S310 - public GET, read-only
+            return resp.read().decode("utf-8", errors="replace")
+
+    return _fetch
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +583,34 @@ def _selftest() -> int:
     r2 = finder(save_anchor, {"kind": "svg_d_signature", "d": "x", "order": 1})
     assert r2 is None  # runtime-capture kinds never fabricate a live match
 
+    # 10. run_iframe_survival_check: mixed outcome (one survives, one
+    #     stripped) reduces correctly, board-notifies with the REUSED
+    #     VERIFY-FAIL taxonomy value (never a 7th), and never raises.
+    assert BOARD_NOTE_IFRAME_SURVIVAL_MISS == "VERIFY-FAIL"
+    survived_html = '<html><iframe src="https://forms.leadconnectorhq.com/widget/survey/x"></iframe></html>'
+    stripped_html = "<html><p>no iframe here</p></html>"
+    def _page_fetcher(url):
+        return survived_html if url.endswith("ok") else stripped_html
+    iframe_targets = [
+        {"id": "survey.ok", "url": "https://x/ok", "object_type": "survey"},
+        {"id": "survey.stripped", "url": "https://x/stripped", "object_type": "survey"},
+    ]
+    iframe_notified = []
+    iframe_report = run_iframe_survival_check(
+        iframe_targets, _page_fetcher,
+        board_notifier=lambda payload: iframe_notified.append(payload),
+    )
+    iframe_summary = iframe_report.summary()
+    assert iframe_summary["total_targets"] == 2
+    assert iframe_summary["misses"] == ["survey.stripped"]
+    assert len(iframe_notified) == 1
+    assert iframe_notified[0]["prefix"] == "VERIFY-FAIL"
+
+    # 11. live_page_fetcher_over_http: pure lazy factory, no network at
+    #     construction time.
+    fetcher = live_page_fetcher_over_http()
+    assert callable(fetcher)
+
     return 0
 
 
@@ -447,18 +637,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--canary", action="store_true",
                      help="run the read-only canary (requires a live finder; without one, "
                           "combine with --selftest-finder for an offline dry run)")
+    ap.add_argument("--iframe-survival", action="store_true",
+                     help="run the read-only weekly iframe-survival check (P3-04 c4; requires a "
+                          "live page_fetcher; without one, combine with --selftest-finder for an "
+                          "offline dry run)")
     ap.add_argument("--selftest-finder", action="store_true",
-                     help="with --canary: use an always-hit fake finder (offline dry run of the report path)")
+                     help="with --canary/--iframe-survival: use an always-hit fake finder/fetcher "
+                          "(offline dry run of the report path)")
     ap.add_argument("--object-type", action="append", choices=VALID_OBJECT_TYPES,
                      help="restrict to one or more object types (repeatable)")
     ap.add_argument("--evidence-root", default=None, help="write the canary report JSON here")
     ap.add_argument("--selectors-path", default=None, help="override selectors-live.json path")
+    ap.add_argument("--iframe-targets-path", default=None,
+                     help="override iframe-survival-targets.json path")
     args = ap.parse_args(argv)
 
     if args.selftest:
         rc = _selftest()
         print("OK — ghl_selector_canary selftest passed" if rc == 0 else "FAILED")
         return rc
+
+    if args.iframe_survival:
+        targets = load_iframe_survival_targets(args.iframe_targets_path)["targets"]
+        if not args.selftest_finder:
+            print("ERROR: --iframe-survival needs a live page_fetcher wired by the caller "
+                  "(see live_page_fetcher_over_http). Pass --selftest-finder for an offline "
+                  "dry run of the report path, or import this module and call "
+                  "run_iframe_survival_check() with a real fetcher.", file=sys.stderr)
+            return 2
+        fetcher = lambda url: (
+            '<html><iframe src="https://forms.leadconnectorhq.com/widget/survey/x"></iframe></html>'
+        )
+        report = run_iframe_survival_check(targets, fetcher, evidence_root=args.evidence_root)
+        print(json.dumps(report.summary(), indent=2, sort_keys=True))
+        return 0 if report.summary()["clean"] else 1
 
     data = load_selectors(args.selectors_path)
 

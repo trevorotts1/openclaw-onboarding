@@ -36,9 +36,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           # P3-04 (c)1: the all-skill-dirs fail-first test reads the PRE-fix
-          # guard via `git show origin/main:...` (the 2.1 "test that would fail
-          # against the pre-fix tree" law) -- needs main's history resolvable,
-          # not just the PR/push commit a shallow (fetch-depth:1) checkout gives.
+          # guard via `git show <pinned-SHA>:...` (the 2.1 "test that would
+          # fail against the pre-fix tree" law) -- the ref is PINNED to the
+          # last-blind commit (49b88cd5832a99ff7885036d7e9dbc78c43b9a2d), not
+          # `origin/main` (a moving ref would read the FIXED guard once this
+          # merges and fail permanently -- P3-04 fix-loop item 1). Still needs
+          # fetch-depth:0 so that pinned ancestor SHA is resolvable from any
+          # PR/push commit, not just the tip a shallow (fetch-depth:1)
+          # checkout gives.
           fetch-depth: 0
 
       - name: Set up Python

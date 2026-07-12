@@ -286,7 +286,12 @@ def test_survey_builder_drag_stops_when_no_cdp(monkeypatch):
     monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "")
     with pytest.raises(RuntimeError) as ei:
         sb._perform_iframe_drag("s", "Rating", "Slide 2", verify_text="Rating")
-    assert "iframe-drag" in str(ei.value)
+    # P3-04 (c)4 fix-loop item 6: this pre-flight STOP is now a classified
+    # sb._InfraStop (still a RuntimeError -- pytest.raises above is unchanged)
+    # carrying a SELECTOR-MISS board note instead of a bare, unclassified
+    # "STOP (survey iframe-drag): ..." string.
+    assert "cdp-url-missing" in str(ei.value)
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
 
 
 def test_survey_rename_routes_through_frame_scoped_primitive(monkeypatch):
@@ -330,7 +335,12 @@ def test_survey_rename_stops_when_primitive_or_cdp_missing(monkeypatch):
     monkeypatch.setattr(sb, "_ghl_iframe_drag", None)
     with pytest.raises(RuntimeError) as ei:
         sb._p2_rename_survey("s", "ZHC X", "/tmp/x-sb-r1", [0])
-    assert "survey rename" in str(ei.value)
+    # P3-04 (c)4 fix-loop item 6: this pre-flight STOP is now a classified
+    # sb._InfraStop (still a RuntimeError -- pytest.raises above is unchanged)
+    # carrying a SELECTOR-MISS board note instead of a bare, unclassified
+    # "STOP (survey rename): ..." string.
+    assert "primitive-unavailable" in str(ei.value)
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
 
     class _FailingIdg:
         DEFAULT_SURVEY_TITLE_SPECS = (r"re:^Survey\s*\d+$",)

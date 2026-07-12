@@ -30,6 +30,23 @@
 # 06-SPECIFIC — that doctrine describes the Skill-06 browser_manager.sh gateway
 # only and does not generalize.
 #
+# AUD-26 (P3-04 fix-loop, 2026-07-12) — PERFORMANCE: auto-discovery (AUD-25)
+# widened the scan from 3 roots (~140 files) to every skill dir (~1,022 files).
+# The original per-file design was TWO layers of per-file/per-line process
+# spawning: (a) python3 (tokenize + AST) invoked per .py file per section, AND
+# (b) — the dominant cost, only found by actually timing the widened scan —
+# `printf | grep -Eq` invoked PER STRIPPED LINE, per regex, per section, for
+# EVERY file. Across ~1,022 files averaging ~150 lines each that is on the
+# order of a million short-lived process forks; a real timed run did not
+# finish in 7+ minutes. Fixed below: the ENTIRE scan — stripping, the argv-
+# spawn AST pass, AND every regex check (BANNED_RAW_RE / ALLOW_RE / echo-
+# prose / BANNED_AB_RE / HEADLESS_FALSE_RE / BARE_LAUNCH_RE) for BOTH .py and
+# .sh files — now runs inside ONE batched python3 process that emits the
+# final, ready-to-print report text (identical wording/format to the old
+# per-line bash output) directly to two cache files. Sections (1) and (5)
+# below just `cat` those files — zero process spawns per file, per line, or
+# per section, regardless of file count.
+#
 # WHAT THIS GUARD ENFORCES (fails the build / QC on any violation):
 #   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER ANY of the scan roots
 #       (EXCLUDING browser_manager.sh itself + the reaper) may invoke
@@ -40,7 +57,7 @@
 #       stripped first so doc text never false-positives.
 #       (1c) Python argv-LIST form — an AST pass ALSO catches the
 #       `subprocess.run(["agent-browser", ...])` / Popen / os.exec* / os.system
-#       spawn form. strip_python erases the string token, so the shell-string
+#       spawn form. Stripping erases the string token, so the shell-string
 #       regex above is blind to it; the AST pass flags `agent-browser` as a spawn
 #       argv element (NOT docstrings, `argv[0] == "agent-browser"` assertions, or
 #       a `path / "agent-browser"`), closing the documented evasion residual.
@@ -84,7 +101,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) REPO_ROOT="$2"; shift 2 ;;
-    -h|--help) sed -n '1,67p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,75p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -164,81 +181,82 @@ if [ "$FAILS" -gt 0 ]; then
   echo ""; red "guard-agent-browser-managed FAILED — gateway not found."; exit 1
 fi
 
-# ── Comment / string strippers (same approach as guard-ghl-token-only.sh) ─────
-strip_python() {
-  python3 - "$1" <<'PY'
-import io, sys, tokenize
-path = sys.argv[1]
-with open(path, encoding="utf-8") as fh:
-    src = fh.read()
-lines = src.splitlines()
-n = len(lines)
-grid = [list(line) for line in lines]
-def erase(start, end):
-    (sr, sc), (er, ec) = start, end
-    for r in range(sr, er + 1):
-        idx = r - 1
-        if idx < 0 or idx >= n:
-            continue
-        row = grid[idx]
-        c0 = sc if r == sr else 0
-        c1 = ec if r == er else len(row)
-        for c in range(c0, min(c1, len(row))):
-            row[c] = " "
-# Erase comments + ALL string content. On Python 3.12+ an f-string is NOT a single
-# STRING token — it is FSTRING_START/FSTRING_MIDDLE/FSTRING_END, so the literal
-# TEXT of an f-string (e.g. an f"headless=False …" assert message) would otherwise
-# survive stripping and false-positive. Erase the f-string text tokens too; the
-# replacement-field `{expr}` tokens are NAME/OP and stay (they are real code).
-_ERASE = {tokenize.COMMENT, tokenize.STRING}
-for _name in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END"):
-    _t = getattr(tokenize, _name, None)
-    if _t is not None:
-        _ERASE.add(_t)
-try:
-    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-        if tok.type in _ERASE:
-            erase(tok.start, tok.end)
-except (tokenize.TokenError, IndentationError, SyntaxError):
-    sys.stdout.write("0:GUARD-ERROR-UNPARSEABLE-PYTHON agent-browser open\n")
-    sys.exit(0)
-for i in range(n):
-    sys.stdout.write("%d:%s\n" % (i + 1, "".join(grid[i])))
-PY
-}
+# ── AUD-26 — walk every scan root ONCE and run the ENTIRE checks (1)+(5) scan
+# (comment/string stripping, the argv-spawn AST pass, AND every regex check)
+# for every *.sh/*.py file in a SINGLE batched python3 process. The process
+# writes two ready-to-print, ANSI-colored report files (identical wording to
+# the old per-line bash output) plus two fail-count files — sections (1) and
+# (5) below just `cat`/`read` those, with zero further process spawns.
+SCAN_TMP="$(mktemp -d)"
+_cleanup_scan_tmp() { rm -rf "$SCAN_TMP" 2>/dev/null; }
+trap _cleanup_scan_tmp EXIT
 
-# ── Python argv-LIST spawn scanner (closes the documented residual) ───────────
-# strip_python ERASES every STRING token, so the shell-string regex in
-# scan_managed cannot see `agent-browser` when it lives INSIDE a Python list/
-# tuple passed to subprocess — e.g.
-#     subprocess.run(["agent-browser", "--session", s, "open", url])
-#     subprocess.Popen(("agent-browser", ...))
-#     os.execvp("agent-browser", ["agent-browser", ...])
-# That argv-list form is a RAW spawn outside browser_manager and used to slip the
-# guard. This AST pass catches it precisely. It flags a violation ONLY when an
-# `agent-browser` string literal is an ARGUMENT (positional or inside a list/
-# tuple argument) of a process-SPAWN primitive — so it does NOT false-positive on
-# docstrings, `argv[0] == "agent-browser"` test assertions, the emitter's
-# returned strings, or a Path like `bindir / "agent-browser"`.
-# Prints `line:colN raw agent-browser spawn ...` for each hit (0 hits => silent).
-scan_python_argv_spawn() {
-  python3 - "$1" <<'PY'
-import ast, sys
-path = sys.argv[1]
-try:
-    tree = ast.parse(open(path, encoding="utf-8").read())
-except (SyntaxError, ValueError):
-    # An unparseable .py is itself suspicious — fail loud so it cannot hide a spawn.
-    sys.stdout.write("0:GUARD-ERROR-UNPARSEABLE-PYTHON argv-spawn scan\n")
-    sys.exit(0)
+ALL_SCAN_FILES="$SCAN_TMP/all_files.list"
+: > "$ALL_SCAN_FILES"
+for root in "${MANAGED_SCAN_ROOTS[@]}"; do
+  find "$root" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null
+done | sort -u > "$ALL_SCAN_FILES"
 
-# Process-spawn primitives whose argv may launch the agent-browser BINARY.
+MANAGED_REPORT="$SCAN_TMP/managed_report.txt"
+HEADLESS_REPORT="$SCAN_TMP/headless_report.txt"
+MANAGED_FAIL_COUNT="$SCAN_TMP/managed_fail_count"
+HEADLESS_FAIL_COUNT="$SCAN_TMP/headless_fail_count"
+
+python3 - "$REPO_ROOT" "$MANAGER_SH" "$MANAGER_PY" "$REAPER_SH" \
+         "$MANAGED_REPORT" "$HEADLESS_REPORT" "$MANAGED_FAIL_COUNT" "$HEADLESS_FAIL_COUNT" \
+         "$ALL_SCAN_FILES" <<'PY'
+import io, os, re, sys, tokenize, ast
+
+# NOTE: the file LIST is passed as an argv PATH, deliberately NOT via a
+# `< file` stdin redirect — `python3 - <<'PY' ... PY` already consumes stdin
+# to read this script's OWN source (that is what the bare `-` argv means), so
+# a `< file` redirect on the same invocation is silently overridden by the
+# heredoc (proven: both target fd 0; the heredoc, appearing last, wins) and
+# `sys.stdin` inside the running script would read EOF immediately — the scan
+# would silently process ZERO files and "pass" every run vacuously. Caught by
+# the negative-fixture tests (guard-agent-browser-managed-scan-roots.test.sh /
+# -all-skill-dirs.test.sh) going from PASS to FAIL when a planted spawn
+# stopped being caught. Fixed by opening the list file directly below.
+(repo_root, manager_sh, manager_py, reaper_sh,
+ managed_report_path, headless_report_path,
+ managed_count_path, headless_count_path, all_scan_files_path) = sys.argv[1:10]
+
+EXEMPT = {manager_sh, manager_py, reaper_sh}
+
+RED = "\033[31m%s\033[0m"
+
+def red(s):
+    return RED % s
+
+# ---------------------------------------------------------------------------
+# Regexes — IDENTICAL semantics to the original bash BRE/ERE patterns (only
+# [[:space:]] -> \s / [^[:space:]] -> \S translated for Python's `re`; every
+# other token — alternation, quantifiers, \b word boundaries, character
+# classes — is unchanged POSIX-ERE-compatible syntax valid in both engines).
+# ---------------------------------------------------------------------------
+BANNED_RAW_RE = re.compile(
+    r"agent-browser(\s+--headed\s+(false|true))?(\s+--session\s+\S+)?\s+"
+    r"(open|eval|click|fill|type|snapshot|wait|find)\b"
+)
+BANNED_AB_RE = re.compile(r"(^|\s)AB\s+--session\b")
+ALLOW_RE = re.compile(
+    r"(AB\(\)|bm_|browser_manager|browser_cmd|agent_browser_eval_cmd|"
+    r"AGENT_BROWSER_HEADLESS_PREFIX|emit_teardown_step)"
+)
+ECHO_PROSE_RE = re.compile(r"^\s*(echo|printf)\b")
+SOURCES_MGR_RE = re.compile(r"^\s*(source|\.)\s.*browser_manager\.sh", re.MULTILINE)
+HEADLESS_FALSE_RE = re.compile(r"headless\s*=\s*([Ff]alse|0)([^A-Za-z0-9_]|$)")
+BARE_LAUNCH_RE = re.compile(r"(^|[^A-Za-z_])launch\(")
+
+# Process-spawn primitives whose argv may launch the agent-browser BINARY
+# (identical set to the original scan_python_argv_spawn).
 SPAWN = {
     "run", "call", "check_call", "check_output", "Popen", "getoutput", "getstatusoutput",
     "system",
     "execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp", "execlpe",
     "spawnv", "spawnve", "spawnvp", "spawnvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe",
 }
+
 
 def _is_ab_literal(node):
     """A str constant that IS the agent-browser binary token (bare or as the
@@ -248,136 +266,176 @@ def _is_ab_literal(node):
         return v == "agent-browser" or v.startswith("agent-browser ") or v.startswith("agent-browser\t")
     return False
 
+
 def _call_name(func):
-    # Return the (dotted) callable name's terminal attribute/name, e.g.
-    # subprocess.run -> "run", os.execvp -> "execvp", run -> "run".
     if isinstance(func, ast.Attribute):
         return func.attr
     if isinstance(func, ast.Name):
         return func.id
     return None
 
-hits = []
-for node in ast.walk(tree):
-    if not isinstance(node, ast.Call):
-        continue
-    name = _call_name(node.func)
-    if name not in SPAWN:
-        continue
-    # Inspect each positional arg: the binary may be the first string arg
-    # (os.system("agent-browser ..."), execvp("agent-browser", ...)) OR an
-    # element of a list/tuple argv ([... "agent-browser" ...]).
-    for arg in node.args:
-        if _is_ab_literal(arg):
-            hits.append((node.lineno, getattr(node, "col_offset", 0)))
-            break
-        if isinstance(arg, (ast.List, ast.Tuple)):
-            if any(_is_ab_literal(el) for el in arg.elts):
+
+def strip_python_source(src):
+    """Erase comments + ALL string content (identical algorithm/semantics to
+    the original per-file strip_python). On Python 3.12+ an f-string is NOT a
+    single STRING token — erase its FSTRING_START/MIDDLE/END text tokens too
+    so a literal f-string message can never survive stripping."""
+    lines = src.splitlines()
+    n = len(lines)
+    grid = [list(line) for line in lines]
+
+    def erase(start, end):
+        (sr, sc), (er, ec) = start, end
+        for r in range(sr, er + 1):
+            idx = r - 1
+            if idx < 0 or idx >= n:
+                continue
+            row = grid[idx]
+            c0 = sc if r == sr else 0
+            c1 = ec if r == er else len(row)
+            for c in range(c0, min(c1, len(row))):
+                row[c] = " "
+
+    erase_types = {tokenize.COMMENT, tokenize.STRING}
+    for name in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END"):
+        t = getattr(tokenize, name, None)
+        if t is not None:
+            erase_types.add(t)
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type in erase_types:
+                erase(tok.start, tok.end)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return [(0, "GUARD-ERROR-UNPARSEABLE-PYTHON agent-browser open")]
+    return [(i + 1, "".join(grid[i])) for i in range(n)]
+
+
+def strip_bash_source(src):
+    """Blank full-line + inline # comments — identical heuristic to the
+    original strip_bash (does not parse heredocs; fine per its own note)."""
+    out = []
+    for i, line in enumerate(src.splitlines(), 1):
+        if re.match(r"^\s*#", line):
+            out.append((i, ""))
+            continue
+        code = re.sub(r"\s#.*$", "", line)
+        out.append((i, code))
+    return out
+
+
+def argv_spawn_hits(src):
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return [(0, "raw agent-browser spawn — GUARD-ERROR-UNPARSEABLE-PYTHON argv-spawn scan")]
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if name not in SPAWN:
+            continue
+        for arg in node.args:
+            if _is_ab_literal(arg):
                 hits.append((node.lineno, getattr(node, "col_offset", 0)))
                 break
+            if isinstance(arg, (ast.List, ast.Tuple)):
+                if any(_is_ab_literal(el) for el in arg.elts):
+                    hits.append((node.lineno, getattr(node, "col_offset", 0)))
+                    break
+    return [(ln, "raw agent-browser spawn (argv-list, col %d) outside browser_manager" % col)
+            for ln, col in hits]
 
-for ln, col in hits:
-    sys.stdout.write("%d: raw agent-browser spawn (argv-list, col %d) outside browser_manager\n" % (ln, col))
-PY
-}
 
-strip_bash() {
-  # Blank full-line + inline # comments. Heuristic (does not parse heredocs),
-  # which is fine: the inject script's only raw agent-browser reference is the
-  # final NEXT-hint, which is a quoted echo string (excluded below).
-  awk '
-  {
-    line = $0
-    if (line ~ /^[[:space:]]*#/) { print NR ":"; next }
-    sub(/[[:space:]]#.*$/, "", line)
-    print NR ":" line
-  }' "$1"
-}
+def snippet(code):
+    # Mirrors `sed 's/^[[:space:]]*//' | cut -c1-120` (strip LEADING
+    # whitespace only, then take the first 120 characters).
+    return code.lstrip()[:120]
 
-# A line is a quoted-echo (documentation prose), not an executable call, if its
-# code content begins with echo/printf — we skip those (they are NEXT hints).
-is_echo_prose() {
-  printf '%s' "$1" | grep -Eq '^[[:space:]]*(echo|printf)\b'
-}
 
-# BANNED form A — the literal agent-browser BINARY driving an action verb. This
-# is ALWAYS a raw launch unless it is the sanctioned routing (ALLOW_RE) or a
-# quoted echo. Banned in EVERY non-gateway file.
-BANNED_RAW_RE='agent-browser([[:space:]]+--headed[[:space:]]+(false|true))?([[:space:]]+--session[[:space:]]+[^[:space:]]+)?[[:space:]]+(open|eval|click|fill|type|snapshot|wait|find)\b'
+managed_out = []
+headless_out = []
+managed_fail = 0
+headless_fail = 0
 
-# BANNED form B — a bare `AB --session` wrapper CALL. This is the managed wrapper
-# ONLY when the file SOURCES browser_manager.sh (which defines the lock-asserting
-# AB()). In a file that does NOT source the manager, an `AB --session` is an
-# unmanaged wrapper of unknown provenance → VIOLATION.
-BANNED_AB_RE='(^|[[:space:]])AB[[:space:]]+--session\b'
+with open(all_scan_files_path, encoding="utf-8") as _fh:
+    all_paths = [ln.rstrip("\n") for ln in _fh]
 
-# ALLOW: lines that ARE the legitimate managed routing / definition.
-#   - bash: the `AB()` definition, `bm_` functions, the browser_manager source.
-#   - python: browser_cmd / agent_browser_eval_cmd / the headless prefix.
-ALLOW_RE='(AB\(\)|bm_|browser_manager|browser_cmd|agent_browser_eval_cmd|AGENT_BROWSER_HEADLESS_PREFIX|emit_teardown_step)'
-
-scan_managed() {
-  local file="$1" stripper="$2"
-  local rel="${file#$REPO_ROOT/}"
-  local hits=0 codeln lineno code
-  # File-level fact: does this file SOURCE the manager? If so, a bare
-  # `AB --session` IS the sanctioned lock-asserting wrapper (form B is allowed).
-  local sources_mgr=0
-  if grep -Eq '^[[:space:]]*(source|\.)[[:space:]].*browser_manager\.sh' "$file" 2>/dev/null; then
-    sources_mgr=1
-  fi
-  while IFS= read -r codeln; do
-    lineno="${codeln%%:*}"
-    code="${codeln#*:}"
-    [ -z "$code" ] && continue
-    # Always-banned: the literal binary driving a verb (unless routed / echo).
-    if printf '%s' "$code" | grep -Eq "$BANNED_RAW_RE"; then
-      if printf '%s' "$code" | grep -Eq "$ALLOW_RE"; then : ; \
-      elif is_echo_prose "$code"; then : ; \
-      else
-        red "  ✗ FAIL — $rel:$lineno raw agent-browser launch outside browser_manager.sh:"
-        echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
-        hits=$((hits + 1))
+for path in all_paths:
+    if not path:
         continue
-      fi
-    fi
-    # Conditionally-banned: `AB --session` only when the file does NOT source the
-    # manager (then the wrapper provenance is unknown / unmanaged).
-    if [ "$sources_mgr" = "0" ] && printf '%s' "$code" | grep -Eq "$BANNED_AB_RE"; then
-      if printf '%s' "$code" | grep -Eq "$ALLOW_RE"; then continue; fi
-      if is_echo_prose "$code"; then continue; fi
-      red "  ✗ FAIL — $rel:$lineno bare 'AB --session' but file does not source browser_manager.sh:"
-      echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
-      hits=$((hits + 1))
-    fi
-  done < <("$stripper" "$file")
-  return "$hits"
-}
+    rel = os.path.relpath(path, repo_root)
+    is_py = path.endswith(".py")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            src = fh.read()
+    except OSError:
+        src = ""
+
+    stripped = strip_python_source(src) if is_py else strip_bash_source(src)
+    exempt = path in EXEMPT
+    sources_mgr = bool(SOURCES_MGR_RE.search(src))
+
+    # ── section (1) MANAGED-ONLY — skipped entirely for exempt gateway files,
+    # matching the original `is_exempt "$f" && continue` short-circuit. ──────
+    if not exempt:
+        for lineno, code in stripped:
+            if not code:
+                continue
+            if BANNED_RAW_RE.search(code):
+                if ALLOW_RE.search(code) or ECHO_PROSE_RE.match(code):
+                    pass
+                else:
+                    managed_out.append(red("  ✗ FAIL — %s:%d raw agent-browser launch outside browser_manager.sh:" % (rel, lineno)))
+                    managed_out.append("          " + snippet(code))
+                    managed_fail += 1
+                    continue
+            if not sources_mgr and BANNED_AB_RE.search(code):
+                if ALLOW_RE.search(code) or ECHO_PROSE_RE.match(code):
+                    continue
+                managed_out.append(red("  ✗ FAIL — %s:%d bare 'AB --session' but file does not source browser_manager.sh:" % (rel, lineno)))
+                managed_out.append("          " + snippet(code))
+                managed_fail += 1
+
+        if is_py:
+            for lineno, msg in argv_spawn_hits(src):
+                managed_out.append(red("  ✗ FAIL — %s:%d %s" % (rel, lineno, msg)))
+                managed_fail += 1
+
+    # ── section (5) HEADLESS-ONLY — NOT skipped for exempt files (D6 applies
+    # to the gateway itself too), matching the original section (5) exactly. ─
+    for lineno, code in stripped:
+        if not code:
+            continue
+        if HEADLESS_FALSE_RE.search(code):
+            headless_out.append(red("  ✗ FAIL — %s:%d headless=False / headless off (D6 forbids a visible window):" % (rel, lineno)))
+            headless_out.append("          " + snippet(code))
+            headless_fail += 1
+        if BARE_LAUNCH_RE.search(code):
+            headless_out.append(red("  ✗ FAIL — %s:%d bare Playwright launch() (use launch_persistent_context, headless=True):" % (rel, lineno)))
+            headless_out.append("          " + snippet(code))
+            headless_fail += 1
+
+with open(managed_report_path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(managed_out))
+    if managed_out:
+        fh.write("\n")
+with open(headless_report_path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(headless_out))
+    if headless_out:
+        fh.write("\n")
+with open(managed_count_path, "w", encoding="utf-8") as fh:
+    fh.write(str(managed_fail))
+with open(headless_count_path, "w", encoding="utf-8") as fh:
+    fh.write(str(headless_fail))
+PY
 
 # ── 1. MANAGED-ONLY scan across tracked *.sh / *.py in every scan root ────────
 # (excluding the gateway itself) — see MANAGED_SCAN_ROOTS above (AUD-20).
 echo "── (1) managed-only: no raw agent-browser launch outside the gateway ──"
 echo "     scan roots: ${MANAGED_SCAN_ROOTS[*]#$REPO_ROOT/}"
-managed_fail=0
-while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  is_exempt "$f" && continue
-  case "$f" in
-    *.py)
-      scan_managed "$f" strip_python || managed_fail=$((managed_fail + $?))
-      # Form C — AST pass that catches the argv-LIST spawn form the shell-string
-      # regex cannot see (strip_python erases the string token). A raw
-      # subprocess.run(["agent-browser", ...]) outside the manager fails here.
-      rel="${f#$REPO_ROOT/}"
-      while IFS= read -r m; do
-        [ -z "$m" ] && continue
-        red "  ✗ FAIL — $rel:${m%%:*} ${m#*: }"
-        managed_fail=$((managed_fail + 1))
-      done < <(scan_python_argv_spawn "$f")
-      ;;
-    *.sh) scan_managed "$f" strip_bash   || managed_fail=$((managed_fail + $?)) ;;
-  esac
-done < <(for root in "${MANAGED_SCAN_ROOTS[@]}"; do find "$root" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null; done)
+managed_fail="$(cat "$MANAGED_FAIL_COUNT" 2>/dev/null || echo 0)"
+[ -s "$MANAGED_REPORT" ] && cat "$MANAGED_REPORT"
 if [ "$managed_fail" -eq 0 ]; then
   green "  ✓ PASS — all agent-browser calls in every scan root route through the manager."
 else
@@ -459,51 +517,15 @@ done
 echo ""
 echo "── (5) headless-only: no headless=False / bare launch() (D6 — no visible window) ──"
 echo "     scan roots: ${MANAGED_SCAN_ROOTS[*]#$REPO_ROOT/}"
-headless_fail=0
-
-# A real headless-off assignment (False or 0), NOT `headless=True`.
-HEADLESS_FALSE_RE='headless[[:space:]]*=[[:space:]]*([Ff]alse|0)([^A-Za-z0-9_]|$)'
-# A bare Playwright launch(. `(^|[^A-Za-z_])launch\(` matches `chromium.launch(` /
-# `.launch(` but NOT `launch_persistent_context(` / `launchPersistentContext(`
-# (the char after `launch` there is `_`/`P`, never `(`).
-BARE_LAUNCH_RE='(^|[^A-Za-z_])launch\('
-
-# Code-file scan: reuse the stripped-line strippers (comments/strings erased), so
-# only REAL code lines are tested (a docstring "no chromium.launch" never trips).
-scan_headless_code() {
-  local file="$1" stripper="$2"
-  local rel="${file#$REPO_ROOT/}"
-  local hits=0 codeln lineno code
-  while IFS= read -r codeln; do
-    lineno="${codeln%%:*}"
-    code="${codeln#*:}"
-    [ -z "$code" ] && continue
-    if printf '%s' "$code" | grep -Eq "$HEADLESS_FALSE_RE"; then
-      red "  ✗ FAIL — $rel:$lineno headless=False / headless off (D6 forbids a visible window):"
-      echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
-      hits=$((hits + 1))
-    fi
-    if printf '%s' "$code" | grep -Eq "$BARE_LAUNCH_RE"; then
-      red "  ✗ FAIL — $rel:$lineno bare Playwright launch() (use launch_persistent_context, headless=True):"
-      echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
-      hits=$((hits + 1))
-    fi
-  done < <("$stripper" "$file")
-  return "$hits"
-}
-
-while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  case "$f" in
-    *.py) scan_headless_code "$f" strip_python || headless_fail=$((headless_fail + $?)) ;;
-    *.sh) scan_headless_code "$f" strip_bash   || headless_fail=$((headless_fail + $?)) ;;
-  esac
-done < <(for root in "${MANAGED_SCAN_ROOTS[@]}"; do find "$root" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null; done)
+headless_fail="$(cat "$HEADLESS_FAIL_COUNT" 2>/dev/null || echo 0)"
+[ -s "$HEADLESS_REPORT" ] && cat "$HEADLESS_REPORT"
 
 # Markdown CODE-FENCE scan (Python is already a guard dependency). Only enters
 # fences opened with a code-language tag (```python / ```bash / …); bare ``` prose
 # blocks are skipped (they hold copy-paste doctrine that says "NEVER launch()").
-# Walks every MANAGED_SCAN_ROOTS entry (AUD-20), not just SKILL_DIR.
+# Walks every MANAGED_SCAN_ROOTS entry (AUD-20), not just SKILL_DIR. This was
+# already a SINGLE batched python3 call handling every .md file internally
+# (os.walk) — no per-file spawn here, so AUD-26 does not need to touch it.
 while IFS= read -r m; do
   [ -z "$m" ] && continue
   red "  ✗ FAIL — $m"

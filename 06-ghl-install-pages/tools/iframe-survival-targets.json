@@ -1,0 +1,10 @@
+{
+  "_comment": "P3-04 (c)4 — weekly iframe-survival check target list, consumed by ghl_selector_canary.py's load_iframe_survival_targets() / run_iframe_survival_check(). Ships EMPTY (no live client URLs belong in this repo — repo is fleet-wide, no client identifiers per policy). The operator (or the weekly cron on the box that runs it) populates real published-page URLs from the operator TEST sub-account before the check does anything meaningful; an empty list is a valid, clean (zero-target) run, never an error.",
+  "_schema": {
+    "id": "a stable, human-readable identifier for the target (e.g. 'survey.p2.published')",
+    "url": "the PUBLIC published-page URL (no auth required for a published GHL preview/live page — the 2026-06-27 probe this check makes continuous)",
+    "object_type": "one of: form | survey | funnel | page (matches VALID_OBJECT_TYPES, informational only — the check itself does not branch on it)"
+  },
+  "version": "v1.0.0",
+  "targets": []
+}

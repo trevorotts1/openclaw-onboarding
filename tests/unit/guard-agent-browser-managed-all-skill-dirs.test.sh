@@ -13,10 +13,13 @@
 # THE FIX: MANAGED_SCAN_ROOTS is no longer a fixed list — it is AUTO-DISCOVERED
 # from every top-level `NN-*/` skill directory (_discover_skill_dirs). This test
 # proves BOTH halves of that claim:
-#   (A) FAIL-FIRST — the guard AS IT WAS at v19.58.0 (origin/main, before this
-#       fix; read via `git show`, never hand-retyped) is blind to a spawn
-#       planted in 44-convert-and-flow-operator/ AND in a brand-new directory
-#       that did not exist when the guard was written — reproducing the bug.
+#   (A) FAIL-FIRST — the guard AS IT WAS immediately before this fix landed
+#       (PINNED to commit 49b88cd5832a99ff7885036d7e9dbc78c43b9a2d, v19.58.0's
+#       hand-enumerated 3-root array; read via `git show`, never hand-retyped
+#       — see the PRE_FIX_REF default below for why this is a fixed SHA and
+#       NOT `origin/main`) is blind to a spawn planted in
+#       44-convert-and-flow-operator/ AND in a brand-new directory that did
+#       not exist when the guard was written — reproducing the bug.
 #   (B) the CURRENT (fixed) guard catches BOTH, by construction, with ZERO
 #       further edits to the guard for either directory — proving true
 #       auto-discovery, not a second hand-added entry.
@@ -43,11 +46,28 @@ trap 'rm -rf "$TMP_TREE" "$PRE_FIX_GUARD"' EXIT
 
 # ── the pre-fix guard, read from git history (never hand-retyped — 2.1 law:
 # "run once against the origin/main copy") ────────────────────────────────────
-PRE_FIX_REF="${PRE_FIX_GUARD_REF:-origin/main}"
+# PINNED, not a moving ref: `origin/main` was the right target ONLY until this
+# fix merged -- once merged, origin/main IS the fixed (auto-discovering) guard,
+# so a `${PRE_FIX_GUARD_REF:-origin/main}` default would read the FIXED guard
+# here, section (A) would find it no longer blind, and this CI-wired test would
+# fail PERMANENTLY on every future PR (proven: PRE_FIX_GUARD_REF=origin/
+# fix/skill6-residuals bash ...all-skill-dirs.test.sh -> "TESTS FAILED", exit 1,
+# because that branch's tip IS the fixed guard). Fix (P3-04 fix-loop item 1):
+# pin the default to the last-BLIND commit SHA --
+# 49b88cd5832a99ff7885036d7e9dbc78c43b9a2d is the commit immediately BEFORE
+# this fix landed (v19.58.0 release, hand-enumerated 3-root
+# MANAGED_SCAN_ROOTS array, verified blind to 44-*/62-* below). A commit SHA
+# is immutable and remains resolvable in `git show` forever once it is an
+# ancestor of main (this repo's `--no-ff` merge discipline, meta-rule 2.6,
+# guarantees it stays an ancestor) -- so this never goes stale the way a
+# branch ref does. PRE_FIX_GUARD_REF stays override-able (e.g. for a one-time
+# documented re-proof against a different ref) but the default is now a
+# fixed point in history, not a moving target.
+PRE_FIX_REF="${PRE_FIX_GUARD_REF:-49b88cd5832a99ff7885036d7e9dbc78c43b9a2d}"
 if ! git -C "$REPO_ROOT" show "${PRE_FIX_REF}:scripts/guard-agent-browser-managed.sh" \
      > "$PRE_FIX_GUARD" 2>/dev/null; then
   # A shallow CI checkout (actions/checkout default fetch-depth=1) may not
-  # have 'origin/main' resolvable yet -- try one bounded, best-effort fetch
+  # have the pinned SHA resolvable yet -- try one bounded, best-effort fetch
   # before giving up (self-healing; never widens what the workflow checks out).
   git -C "$REPO_ROOT" fetch --depth=1 origin main >/dev/null 2>&1 || true
   git -C "$REPO_ROOT" show "${PRE_FIX_REF}:scripts/guard-agent-browser-managed.sh" \

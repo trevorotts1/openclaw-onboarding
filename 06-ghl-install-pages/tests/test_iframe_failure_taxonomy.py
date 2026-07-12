@@ -219,3 +219,90 @@ def test_perform_iframe_drag_raises_classified_stop(monkeypatch):
     # (str(exc) additionally carries the "[survey iframe-drag]" context tag).
     assert sb._board_fail_note(ei.value) == ei.value.board_note
     assert sb._board_fail_note(ei.value).startswith("SELECTOR-MISS: ")
+
+
+# ---------------------------------------------------------------------------
+# P3-04 (c)4 fix-loop item 6 — the PRE-FLIGHT stops (primitive-missing /
+# CDP-url-missing) fire BEFORE any IframeDragError can exist, so they could
+# never be caught by the `except _ghl_iframe_drag.IframeDragError` blocks
+# above. Before this fix-loop item they raised a bare
+# `RuntimeError("STOP (survey iframe-drag): ...")` with no `.board_note`,
+# which `_board_fail_note()` posts as a generic
+# `"Build exception: RuntimeError: STOP (survey iframe-drag): ..."` card —
+# reproduced verbatim by the FAIL-FIRST assertions below (each proves what
+# the OLD raise site would have produced), then the NEW `_InfraStop`-raising
+# behavior is proven to carry the SELECTOR-MISS classification instead.
+# ---------------------------------------------------------------------------
+def test_pre_fix_primitive_missing_would_have_hidden_the_taxonomy():
+    """FAIL-FIRST: reproduces the OLD bare-RuntimeError shape for the
+    primitive-missing case verbatim and proves it does NOT classify."""
+    old_shape = RuntimeError(
+        "STOP (survey iframe-drag): the shared ghl_iframe_drag primitive is not "
+        "importable, and agent-browser 0.27.0 alone cannot locate a non-interactive "
+        "field row across the cross-origin survey-builder iframe. Ship "
+        "ghl_iframe_drag.py + Playwright (scoped to Skill 6)."
+    )
+    note = sb._board_fail_note(old_shape)
+    assert note == f"Build exception: RuntimeError: {old_shape}"
+    assert not note.startswith(tuple(f"{r}: " for r in cc_board._CC_BLOCK_REASONS))
+
+
+def test_infra_stop_carries_selector_miss_board_note():
+    """_InfraStop (the fix) carries a pre-classified .board_note SELECTOR-MISS
+    is the correct bucket — ghl_iframe_drag.classify_board_reason()'s own
+    bucket doc names "the CDP endpoint/Playwright itself could not be
+    resolved or reached" as SELECTOR-MISS, never a 7th taxonomy value."""
+    exc = sb._InfraStop(
+        "primitive-unavailable", "the shared primitive is not importable",
+        iframe_selector=sb.GHL_SURVEY_IFRAME_SELECTOR,
+    )
+    assert exc.board_reason == "SELECTOR-MISS"
+    assert exc.board_note.startswith("SELECTOR-MISS: iframe(")
+    assert sb.GHL_SURVEY_IFRAME_SELECTOR in exc.board_note
+    assert sb._board_fail_note(exc) == exc.board_note
+
+
+def test_perform_iframe_drag_primitive_missing_raises_classified_infra_stop(monkeypatch):
+    """_perform_iframe_drag's `_ghl_iframe_drag is None` branch must raise a
+    classified _InfraStop, not a bare RuntimeError -- fixes the P3-04 (c)4
+    fix-loop item 6 residual."""
+    monkeypatch.setattr(sb, "_ghl_iframe_drag", None)
+    with pytest.raises(sb._InfraStop) as ei:
+        sb._perform_iframe_drag("s", "Rating", "Slide 2", verify_text="Rating")
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
+    assert "primitive-unavailable" in ei.value.board_note
+    assert sb._board_fail_note(ei.value).startswith("SELECTOR-MISS: ")
+
+
+def test_perform_iframe_drag_cdp_url_missing_raises_classified_infra_stop(monkeypatch):
+    """_perform_iframe_drag's empty-cdp_url branch must raise a classified
+    _InfraStop, not a bare RuntimeError."""
+    monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "")
+    with pytest.raises(sb._InfraStop) as ei:
+        sb._perform_iframe_drag("s", "Rating", "Slide 2", verify_text="Rating")
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
+    assert "cdp-url-missing" in ei.value.board_note
+    assert sb._board_fail_note(ei.value).startswith("SELECTOR-MISS: ")
+
+
+def test_rename_survey_primitive_missing_raises_classified_infra_stop(monkeypatch, tmp_path):
+    """_p2_rename_survey's `_ghl_iframe_drag is None` branch must raise a
+    classified _InfraStop, not a bare RuntimeError."""
+    monkeypatch.setattr(sb, "_ghl_iframe_drag", None)
+    with pytest.raises(sb._InfraStop) as ei:
+        sb._p2_rename_survey("s", "My Survey", str(tmp_path), [0])
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
+    assert "primitive-unavailable" in ei.value.board_note
+    assert sb.GHL_SURVEY_IFRAME_SELECTOR in ei.value.board_note
+    assert sb._board_fail_note(ei.value).startswith("SELECTOR-MISS: ")
+
+
+def test_rename_survey_cdp_url_missing_raises_classified_infra_stop(monkeypatch, tmp_path):
+    """_p2_rename_survey's empty-cdp_url branch must raise a classified
+    _InfraStop, not a bare RuntimeError."""
+    monkeypatch.setattr(sb, "_get_cdp_url", lambda session: "")
+    with pytest.raises(sb._InfraStop) as ei:
+        sb._p2_rename_survey("s", "My Survey", str(tmp_path), [0])
+    assert ei.value.board_note.startswith("SELECTOR-MISS: ")
+    assert "cdp-url-missing" in ei.value.board_note
+    assert sb._board_fail_note(ei.value).startswith("SELECTOR-MISS: ")
