@@ -1,3 +1,12 @@
+## [v19.57.0]  -  2026-07-12  -  test(interview): P2-05 — aggregate standing gate, prove-p2-05-interview-correlation.sh
+
+Merges `feat/interview-dept-correlation` (1 additional commit beyond the P2-05 feature already merged at v19.55.0) into `main` as the serial onboarding writer, `--no-ff`. Clean merge — the branch's only new commit adds a single net-new file with no conflicts against the divergent bump history that landed between v19.55.0 and this merge (P2-06/07/08).
+
+P2-05 (opt-out loss warnings, net-new department path, sub-floor verification) shipped functionally at v19.55.0, but — unlike P2-06/07/08, each of which contributes a named regression gate for the P6-01 per-box probe — it lacked its own aggregate standing gate. This unit closes that gap:
+
+- **New `23-ai-workforce-blueprint/scripts/prove-p2-05-interview-correlation.sh`** — runs, in one command: Part 1, the three P2-05 fail-first component suites (`test-opt-out-loss-warning.sh`, `test-net-new-department.sh`, `test-sub-floor-build.sh`); Part 2, the part-(e) break-it battery (force a known department as net-new → rejected exit 2; genuine net-new → accepted exit 0; malformed un-provenanced decline → rejected by `canonical_decline.py`; floor decline without `--confirm-loss` → refused exit 2, not written; floor decline with `--confirm-loss` → exit 0, honored). Exercises the real modules end-to-end, no mocks. Verified on this merged tree: 9/9 passed, rc=0. Additive only — no functional P2-05 code touched.
+- **Version roll** — repo rolled v19.56.0 → **v19.57.0** via `scripts/bump-version.sh` (all 11 markers in lockstep). No role/SOP/persona content changed by this merge (only `23-ai-workforce-blueprint/scripts/` touched, and that script is not part of the role-library/SOP/persona content manifest), so no `hash-content-manifest.py` restamp was required — verified via `hash-content-manifest.py --check` PASS post-merge (433 roles + 132 sops + 19 personas, all shas match). Annotated tag `v19.57.0` cut on the release merge commit. No client names, no secret values, no roster human names in the diff.
+
 ## [v19.56.0]  -  2026-07-12  -  fix(routing): P2-07 (c) steps 1+3 — general-task catch-all P6-01 probe
 
 Merges `fix/general-task-catchall-probe` (1 commit) into `main` as the serial onboarding writer, `--no-ff`. Clean merge — both files in the branch's diff are net-new (no conflicts against the divergent bump history that landed between P2-07's step 2 at v19.52.0 and this merge).
