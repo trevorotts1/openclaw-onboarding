@@ -1,5 +1,27 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+### P3-03 (c)4 -- G23 confirmed + regression-locked: MISSION_CONTROL_URL env resolution (2026-07-12)
+
+SUPER-SPEC-2026-07-11 P3-03 (c)4 asked to confirm `mc_board.py` honors the
+`MISSION_CONTROL_URL` env override before its `http://localhost:4000` default, and to
+document that :4000 is the correct fleet-standard default. Read the resolution order
+in `BoardConfig.__init__` (`mc_board.py`): the live-process env is consulted FIRST, in
+priority order (an explicitly-named `board.base_url_env` config override, then
+`MISSION_CONTROL_URL`, then `MC_URL`), THEN a literal `board.base_url` in config, and
+`http://localhost:4000` fires only when none of those are present. **Confirmed
+correct as shipped -- no code change was required.** This was previously untested:
+added `tests/test_mc_board_base_url_resolution.py` (10 tests, hermetic, no network)
+locking in the full precedence order, including a fail-first proof
+(`test_env_priority_order_is_load_bearing`) that a naive "default/config-first"
+resolver -- the regression shape G23 exists to prevent -- diverges from the real
+`BoardConfig` on the exact case that matters (a live `MISSION_CONTROL_URL` override
+present). **Documented:** `:4000` is the fleet-standard Command Center port (every
+box's `mc_board.py` sibling across Skills 49/50/53/54/55/56/57 shares this same
+default), so the literal default is correct; a box that legitimately runs the board
+on a different port or host sets `MISSION_CONTROL_URL` (or `MC_URL`, or names its own
+env var via `board.base_url_env` in `engine-config.json`) and that override is never
+shadowed.
+
 ## Unreleased (2026-07-09)
 
 Integration branch consolidating the Anthology Engine feature units (U5, U6, U7, U8,
