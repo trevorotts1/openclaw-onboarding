@@ -640,7 +640,12 @@ def _check_cc_health(paths: dict) -> bool:
 def step_detect(paths: dict, repo_root: Path, compat: dict, res: BoxResult) -> None:
     """Step 0: detect platform, read versions."""
     res.platform = paths.get("platform", "unknown")
-    res.onboarding_version = _read_onboarding_version(repo_root)
+    # D1: read the ACTIVE skills-dir stamp (paths["skills"]), not repo_root —
+    # update-skills.sh writes <skills-dir>/.onboarding-version, never
+    # repo_root/.onboarding-version. Matches step_pull_onboarding's read-path
+    # so detect/verify never disagree with the actual roll outcome.
+    skills_dir = Path(paths.get("skills") or Path(paths["root"]) / "skills")
+    res.onboarding_version = _read_onboarding_version(skills_dir)
     res.cc_version = _read_cc_version(paths.get("cc_dir", Path("/nonexistent")))
     res.step_ok("detect")
     _info(f"  platform: {res.platform}  onboarding: {res.onboarding_version}  CC: {res.cc_version}")
@@ -669,28 +674,48 @@ def step_pin_resolve(paths: dict, repo_root: Path, compat: dict, res: BoxResult)
     return cc_tag
 
 
-def step_pull_onboarding(repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> None:
-    """Step 2: update onboarding skills to the pinned version."""
+def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: BoxResult, dry_run: bool) -> None:
+    """Step 2: run update-skills.sh to sync onboarding skills to the pinned tag.
+
+    D1: consumes update-skills.sh's unified stamp-gate contract. That script
+    writes <skills-dir>/.onboarding-version ONLY when its own internal gate
+    (A3 content-gate + persona/D2-refresh/shared-core/D5-activation latches)
+    all pass; on any incompletion it exits 1 and never stamps. A bare
+    `returncode == 0` is therefore NEVER treated as done on its own — we
+    double-gate on the ACTIVE skills-dir stamp actually equalling pinned_tag
+    post-run. force-update.sh is left untouched as the manual "machine was
+    off" notifier; it is no longer the autonomous skill-sync entry point.
+    """
     if dry_run:
         res.step_skip("pull-onboarding")
         return
 
-    force_update = repo_root / "force-update.sh"
-    if not force_update.is_file():
-        res.step_fail("pull-onboarding", f"force-update.sh not found at {force_update}")
+    update_skills = repo_root / "update-skills.sh"
+    if not update_skills.is_file():
+        res.step_fail("pull-onboarding", f"update-skills.sh not found at {update_skills}")
         return
+
+    skills_dir = Path(paths.get("skills") or Path(paths["root"]) / "skills")
+    stamp_file = skills_dir / ".onboarding-version"
 
     try:
         result = subprocess.run(
-            ["bash", str(force_update), "--apply"],
-            capture_output=True, text=True, timeout=300
+            ["bash", str(update_skills)],
+            capture_output=True, text=True, timeout=1200,
+            env={**os.environ, "OPENCLAW_UPDATE_AUTO_SYNC": "1"},
         )
-        if result.returncode != 0:
-            res.step_fail("pull-onboarding", f"force-update.sh exited {result.returncode}: {result.stderr[:200]}")
-        else:
+        post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
+        if result.returncode == 0 and post_stamp == pinned_tag:
+            res.onboarding_version = post_stamp
             res.step_ok("pull-onboarding")
+        else:
+            res.step_fail(
+                "pull-onboarding",
+                f"update-skills.sh exited {result.returncode}; stamp={post_stamp!r} "
+                f"expected={pinned_tag!r}: {result.stderr[:200]}"
+            )
     except subprocess.TimeoutExpired:
-        res.step_fail("pull-onboarding", "force-update.sh timed out after 300s")
+        res.step_fail("pull-onboarding", "update-skills.sh timed out after 1200s")
     except Exception as e:
         res.step_fail("pull-onboarding", str(e))
 
@@ -1210,7 +1235,7 @@ def run_box(
     if not verify_only:
         # Step 2: pull-onboarding
         try:
-            step_pull_onboarding(repo_root, pinned_onboarding_tag, res, dry_run)
+            step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
         except Exception as e:
             res.step_fail("pull-onboarding", str(e))
 

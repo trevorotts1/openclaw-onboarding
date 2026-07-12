@@ -600,11 +600,13 @@ reconcile_persona_assets() {
     local _SK22="$1"
     local _COACHING_DB_DIR="$2"
     local _WS="$3"
+    export _RECONCILE_OK=1
 
     local _SRC_CATS="$_SK22/persona-categories.json"
     local _SRC_PERSONAS="$_SK22/personas"
 
     if [ ! -f "$_SRC_CATS" ] || [ ! -d "$_SRC_PERSONAS" ]; then
+        export _RECONCILE_OK=0
         _pidx_skip_warn "Skill-22 persona source not found at $_SK22 — skipping persona reconcile (additive)"
         return 0
     fi
@@ -643,6 +645,7 @@ reconcile_persona_assets() {
             fi
             ;;
         *)
+            export _RECONCILE_OK=0
             _pidx_skip_warn "persona-categories.json union-merge could not read the seed ($_canon_status) — canonical categories NOT written (additive)"
             ;;
     esac

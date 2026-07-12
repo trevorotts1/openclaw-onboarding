@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.3"
+ONBOARDING_VERSION="v20.0.4"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v20.0.3 - safe_json_edit
+# v20.0.4 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1182,6 +1182,26 @@ main() {
   fi
 
   # ----------------------------------------------------------
+  # UNIFIED COMPLETENESS-GATE LATCHES (D3/D4/D5 convergence). Initialized here,
+  # BEFORE Step U6b, so every latch is set -u safe no matter which branch below
+  # runs. PASS values by default (0 / "ok" / 1) -- flipped to FAIL only on a
+  # genuine completeness-critical miss. The single stamp gate inserted between
+  # the A3 content-gate and the version-stamp write reads all of these; see
+  # that block for the consolidated pass/fail contract. Universal convention:
+  # PASS == fully completed OR a benign/legitimate skip (idempotent no-op,
+  # already-current, pre-interview no-op, nothing-to-do, out-of-scope); FAIL
+  # ONLY when a completeness-critical action genuinely did not happen.
+  # ----------------------------------------------------------
+  _U6B_PERSONA_FAIL=0
+  _D2_REFRESH_STATUS="ok"
+  _SHAREDCORE_STATUS="ok"
+  _D5_ACTIVATION_PASS=1
+  _D5_NOTLIVE_DETAIL=""
+  _D5_AGENT_COUNT=0
+  _D5_DEPT_STATE="skipped"
+  _STEP_GATE_FAILS=""
+
+  # ----------------------------------------------------------
   # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
   # (v14.25.0) — mirrors install.sh Step 6b so update-only boxes receive
   # the section-tagged canonical persona DB and catalog path vars identically to a
@@ -1256,10 +1276,12 @@ except Exception:
     fi
     if [ "$_U6B_TRIAD_OK" != "1" ]; then
       _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-set triad DIVERGENT in the pulled repo (blueprint dirs / categories keys / INDEX-MANIFEST persona_count disagree) — persona provisioning SKIPPED (refused to ship a stale library). Run 22-…/pipeline/publish-personas-to-fleet.sh, merge, and re-roll."
+      _U6B_PERSONA_FAIL=1  # D3: triad-divergent skip is completeness-critical, not benign
       echo "  ✗ PRE-ROLL persona-set triad DIVERGENT — REFUSING to provision a stale/divergent persona library on this box."
       echo "     Fix the repo with 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh and re-roll."
     elif [ "$_U6B_ASSET_OK" != "1" ]; then
       _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }INDEX-MANIFEST asset_rebuild_required:true (a --no-asset staging manifest — the published asset lacks vectors for the newest persona(s)) — persona index provisioning SKIPPED (kept the box's current index). Rebuild+publish the asset via shared-utils/prebuilt-index/build-and-publish.sh, merge, and re-roll."
+      _U6B_PERSONA_FAIL=1  # D3: asset-rebuild-required skip is completeness-critical, not benign
       echo "  ✗ PRE-ROLL asset_rebuild_required:true — REFUSING to (re)provision from a staged --no-asset manifest (would ship a counted-but-vector-less library). Keeping the box's current persona index."
       echo "     Rebuild+publish the real asset with shared-utils/prebuilt-index/build-and-publish.sh and re-roll."
     else
@@ -1267,6 +1289,30 @@ except Exception:
       # gate sees the persona dirs (furnace-safe), then provision the index.
       reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
       provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
+
+      # ----------------------------------------------------------
+      # D3 (C4): COMPLETION RE-ASSERTION. reconcile_persona_assets /
+      # provision_persona_index both always `return 0` (so a bare caller under
+      # set -euo pipefail never aborts mid-provision) -- truth is carried
+      # out-of-band via the exported _RECONCILE_OK (0/1) plus the on-disk
+      # .prebuilt-index-version sentinel. Re-check BOTH here so a reconcile
+      # failure or a sentinel that never reached the manifest's release_tag
+      # flips the completeness-gate latch instead of silently passing.
+      # ----------------------------------------------------------
+      _U6B_RELEASE_TAG="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("release_tag",""))
+except Exception:
+    print("")' "$_U6B_MANIFEST" 2>/dev/null || true)"
+      _U6B_SENTINEL_VAL="$(cat "$_U6B_COACHING_DB_DIR/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "${_RECONCILE_OK:-1}" != "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; then
+        _U6B_PERSONA_FAIL=1
+        _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index completion re-assertion FAILED (reconcile_ok=${_RECONCILE_OK:-unset}, sentinel=${_U6B_SENTINEL_VAL:-<missing>}, manifest release_tag=${_U6B_RELEASE_TAG:-<unknown>}) — persona provisioning incomplete on this box"
+        echo "  ✗ [D3] U6b completion re-assertion FAILED — sentinel(${_U6B_SENTINEL_VAL:-<missing>}) != release_tag(${_U6B_RELEASE_TAG:-<unknown>}) or reconcile not ok(${_RECONCILE_OK:-unset})"
+      else
+        echo "  ✓ [D3] U6b completion re-assertion PASSED (sentinel == manifest release_tag, reconcile ok)"
+      fi
+
       # F2.1: if a re-download could not preserve some client-local persona
       # rows, provision_persona_index leaves a .persona-local-reembed-queue
       # marker. Surface it in the operator completion report (never client-
@@ -1300,6 +1346,7 @@ except Exception:
     # (built below from ONBOARDING_GATE_SUMMARY/QC_STATUS_LINE) surfaces it
     # too, instead of a plain log line an operator would never see.
     _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index manifest or provision helper not found — Step U6b did not run"
+    _U6B_PERSONA_FAIL=1  # D3: manifest/helper missing means U6b genuinely did not run -- completeness-critical, not benign
     echo "  ⚠️  Persona-index provisioning SKIPPED: manifest or provision helper not found — Step U6b did not run"
   fi
 
@@ -1941,6 +1988,7 @@ except:
       echo "  migrate-existing-workforce.sh: OK"
     else
       echo "  migrate-existing-workforce.sh: completed with warnings (see $LOG_FILE)"
+      _D2_REFRESH_STATUS="fail"  # D4[E]: non-zero rc is a genuine incomplete refresh, not benign
     fi
   else
     echo "  (migrate-existing-workforce.sh not found or not executable -- skipping)"
@@ -2030,8 +2078,18 @@ else:
   if [ -f "$REFRESH_CONSUMER" ] && command -v python3 >/dev/null 2>&1; then
     echo ""
     echo "  Draining artifact-refresh-queue (STALE role docs -> fresh library content)..."
-    python3 "$REFRESH_CONSUMER" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE" || \
+    # D4[F]: pipefail-correct capture (set -euo pipefail active at L50) -- the
+    # old `cmd | tee ... || echo` swallowed refresh-stale-roles.py's own exit
+    # code (0=drain complete/benign, 3=in-scope refresh incomplete,
+    # 1=usage-only) because `tee`'s exit status, not python3's, terminated the
+    # pipeline. `if PIPE; then` under `set -o pipefail` correctly reflects the
+    # FIRST failing command in the pipe.
+    if python3 "$REFRESH_CONSUMER" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE"; then
+      :
+    else
       echo "  refresh-stale-roles.py: completed with warnings (see $LOG_FILE)"
+      _D2_REFRESH_STATUS="fail"
+    fi
   else
     echo "  (refresh-stale-roles.py not found or python3 unavailable -- skipping artifact-refresh-queue drain; older bundle)"
   fi
@@ -2046,7 +2104,55 @@ else:
   # ----------------------------------------------------------
   echo ""
   echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
-  link_shared_core_files || echo "  ⚠ link_shared_core_files reported warnings (update continues)"
+  if link_shared_core_files; then
+    :
+  else
+    echo "  ⚠ link_shared_core_files reported warnings (update continues)"
+    _SHAREDCORE_STATUS="fail"  # D4[G]: renamed from the old _D5_ACTIVATION_STATUS name collision
+  fi
+
+  # ----------------------------------------------------------
+  # D5 -- PRE-STAMP dept-agent activation gate (feeds the unified completeness
+  # gate below). Runs materialize-dept-agents.sh here so a genuine
+  # registration failure blocks the version stamp; the existing POST-stamp
+  # materialize block further down (routing-correct final registration) is
+  # LEFT IN PLACE and still runs its own idempotent re-pass afterward -- D5
+  # keeps BOTH runs. A pre-interview self-skip (INTERVIEW_NOT_COMPLETE) and a
+  # box where Skill 32 is not yet installed are BOTH benign -- PASS, not
+  # fail. Only a genuine non-zero exit, or an interview-complete run that
+  # still leaves agents.list[] under 2 entries, flips _D5_ACTIVATION_PASS.
+  # ----------------------------------------------------------
+  _D5_MATERIALIZE="$SKILLS_DIR/32-command-center-setup/scripts/materialize-dept-agents.sh"
+  if [ -f "$_D5_MATERIALIZE" ]; then
+    echo ""
+    echo "  [D5] Pre-stamp dept-agent activation check (materialize-dept-agents.sh)..."
+    if _D5_OUT="$(bash "$_D5_MATERIALIZE" 2>&1)"; then _D5_RC=0; else _D5_RC=$?; fi
+    if [ "$_D5_RC" -ne 0 ]; then
+      _D5_ACTIVATION_PASS=0
+      _D5_DEPT_STATE="fail"
+      _D5_NOTLIVE_DETAIL="materialize-dept-agents.sh exited $_D5_RC"
+      echo "  ✗ [D5] materialize-dept-agents.sh exited $_D5_RC — dept agents NOT registered"
+    elif printf '%s' "$_D5_OUT" | grep -q "INTERVIEW_NOT_COMPLETE"; then
+      _D5_DEPT_STATE="interview-not-complete"
+      echo "  ✓ [D5] pre-interview self-skip (INTERVIEW_NOT_COMPLETE) — benign, not a failure"
+    else
+      _D5_AGENT_COUNT=0
+      if [ -f "$OC_JSON" ]; then
+        _D5_AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+      fi
+      if [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt 2 ]; then
+        _D5_ACTIVATION_PASS=0
+        _D5_DEPT_STATE="fail"
+        _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize (interview complete)"
+        echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize"
+      else
+        _D5_DEPT_STATE="registered"
+        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[])"
+      fi
+    fi
+  else
+    echo "  (materialize-dept-agents.sh not found -- Skill 32 not yet installed on this box; D5 pre-stamp activation check SKIPPED, benign)"
+  fi
 
   # ----------------------------------------------------------
   # A3: CONTENT-GATE — verify installed content matches source
@@ -2102,6 +2208,42 @@ else:
     echo "  [A3] skill-content-hash.sh unavailable — skipping content verification (legacy path)"
   fi
 
+  # ----------------------------------------------------------
+  # UNIFIED COMPLETENESS-GATE (D3/D4/D5 convergence; replaces the three
+  # overlapping gate blocks each defect proposed with ONE). Runs strictly
+  # AFTER the A3 content-gate above and reuses its exit-1 discipline. A
+  # healthy box ALWAYS reaches the stamp below: PASS == fully completed OR a
+  # benign/legitimate skip; FAIL is reserved for a genuine completeness-
+  # critical miss in one of the four latches initialized at Step U6b's entry.
+  # On ANY fail the stamp is NEVER written.
+  # ----------------------------------------------------------
+  if [ "${_U6B_PERSONA_FAIL:-0}" -eq 1 ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - persona index (U6b, provision-persona-index.sh): incomplete${_PIDX_SKIP_WARNINGS:+ — ${_PIDX_SKIP_WARNINGS}}\n"
+  fi
+  if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - artifact refresh (D2, migrate-existing-workforce.sh / refresh-stale-roles.py): incomplete — see $LOG_FILE\n"
+  fi
+  if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
+  fi
+  if [ "${_D5_ACTIVATION_PASS:-1}" -ne 1 ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - dept-agent activation (D5, materialize-dept-agents.sh): incomplete${_D5_NOTLIVE_DETAIL:+ — ${_D5_NOTLIVE_DETAIL}}\n"
+  fi
+
+  if [ -n "$_STEP_GATE_FAILS" ]; then
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  COMPLETENESS-GATE FAILED — stamp NOT written."
+    echo "  The following completeness-critical step(s) did not finish:"
+    printf '%b' "$_STEP_GATE_FAILS"
+    echo ""
+    echo "  The version stamp is NEVER written when a completeness-critical step fails."
+    echo "  Re-run update-skills.sh to retry the incomplete step(s)."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+
   # Write version file ONLY after content gate passes (A3)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
@@ -2128,7 +2270,12 @@ data = {
     'src_from_zip': bool(${SRC_FROM_ZIP:-0}),
     'tree_sha': '${_TREE_SHA:-unknown}',
     'installed_at': '${_NOW_ISO}',
-    'skills': {${_SKILLS_JSON}}
+    'skills': {${_SKILLS_JSON}},
+    'activation': {
+        'deptAgents': '${_D5_DEPT_STATE:-skipped}',
+        'deptAgentCount': ${_D5_AGENT_COUNT:-0},
+        'skillVerifyGate': '${ONBOARDING_GATE_OK:-pending-resume-cron}'
+    }
 }
 with open('${_MANIFEST_TMP}', 'w') as f:
     json.dump(data, f, indent=2)
