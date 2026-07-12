@@ -20,10 +20,22 @@
 #                                             PATH instead of in place (testing).
 #
 # DETERMINISM: the archive is built with `zip -X` (no extra file attributes)
-# from a sorted, fixed file list, with a normalized mtime on every entry
-# (`zip -X` + `touch -t` before zipping) so two regenerations from identical
-# source content always produce a byte-identical archive — a real content
-# change is the only thing that can change the output.
+# from a sorted, fixed file list, with every entry's mtime normalized to a
+# fixed timestamp (`touch -t 202601010000` applied to the build directory
+# AND every file inside it — the `agent-browser/` directory is itself a zip
+# entry; omitting it from normalization previously left that one entry's
+# mtime at a live build-time value, so two regenerations differed at that
+# byte even though every file underneath was identical). With that fix, two
+# regenerations of identical source content, run with the same `zip` binary
+# on the same OS/toolchain, produce a byte-identical archive — proven by
+# scripts/tests/pack-agent-browser-skill.test.sh's "two independent
+# regenerations of identical source content are byte-identical" assertion
+# (runs the packer twice, `cmp`s the output). This is a same-toolchain
+# guarantee, not a claim that the archive is byte-identical across different
+# `zip` implementations or operating systems (permission bits, OS-type byte,
+# and extra-field encoding are not independently pinned here) — only that
+# re-running this script against unchanged source on the SAME box never
+# produces drift.
 #
 # WIRED INTO CI: .github/workflows/qc-static.yml runs this in --check mode on
 # every push/PR (mirrors scripts/bump-version.sh --check) — a content change
@@ -87,7 +99,11 @@ _build_archive() {
 
   # Normalize mtimes so the archive is byte-identical across regenerations of
   # identical content (deterministic --check, no timestamp false-positives).
-  find "$build_dir" -type f -exec touch -t 202601010000 {} +
+  # Deliberately NOT `-type f`: the `agent-browser/` directory itself is a
+  # zip entry too, and its mtime must be normalized as well, or two
+  # regenerations diverge at the directory entry's mtime field even when
+  # every file underneath is byte-identical.
+  find "$build_dir" -exec touch -t 202601010000 {} +
 
   rm -f "$dest"
   ( cd "$build_dir" && zip -X -q -r "$dest" agent-browser )
