@@ -1,6 +1,6 @@
 ---
 name: signature-presentation
-description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
+description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with four fail-closed provers: the routing/claim gate (closes the omit-deck_type bypass), the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
 version: 1.0.9
 ---
 
@@ -26,8 +26,12 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
 - `frame-templates/the-rulebook.md`, `the-vault.md`, `the-quest.md`, `the-original.md` — the four
   client-facing teaching frames, each mapped to the 4 phases and slide ranges.
 - `structure/sp_structure.json` — the sacred-structure ledger CONTRACT the structure prover loads.
-- `scripts/prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py` — the three
-  fail-closed provers (installed into the department's `scripts/` at wire time).
+- `scripts/prove_sp_routing.py`, `prove_sp_intake.py`, `prove_sp_structure.py`,
+  `prove_sp_no_pitch.py` — the four fail-closed provers (installed into the department's
+  `scripts/` at wire time). `prove_sp_routing.py` is the claim/routing gate
+  (`AF-SP-TYPE-UNDECLARED`) that closes the "omit `deck_type` to skip every SP gate" bypass; it
+  runs unconditionally on every deck (never defers). The other three DEFER unless
+  `deck_type == "signature_presentation"`.
 - `scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner: an
   **advisory, NON-gating** deterministic scan the QC Specialist / Healer run over the intake
   transcript (`<RUN_DIR>/working/interview/intake_transcript.json`, written mechanically by the
@@ -117,15 +121,19 @@ the engine; this skill only adds the sacred-method gates on top.
 **What the engine gives us for free (no new code):** the 9,000–18,000-char rich-prompt floor,
 phase-skip impossibility (`run_signature_deck.py`), the delivery-blocking process certificate
 (`prove-deck.py`), and the full existing auto-fail battery (hook, one-big-idea, density, typography,
-logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-method rules and install
-as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
-`deck_type == "signature_presentation"`.
+logo, canonical-render, image-QC). The four SP provers add ONLY the sacred-method rules and install
+as manifest phases + thin `_chk_sp_*` preflight wrappers — three of the four (`prove_sp_intake`,
+`prove_sp_structure`, `prove_sp_no_pitch`) DEFER unless `deck_type == "signature_presentation"`; the
+fourth (`prove_sp_routing`) runs unconditionally on every deck, closing the bypass where an SP run
+omits `deck_type` and every deferring gate would otherwise no-op.
 
 ## Integration surface (wired by `wire-signature-presentation.sh`)
 
-- `PIPELINE-MANIFEST.json` — three SP phases + `AF-SP-*` autofail rows + a manifest_version bump.
-- `build_deck.py` — three ≤6-line thin `_chk_sp_*` wrappers appended to `PREFLIGHT_REQUIRED`,
-  each deferring when the deck type is not signature_presentation.
+- `PIPELINE-MANIFEST.json` — four SP phases (`P-SP-CLAIM`, `P-SP-INTAKE`, `P-SP-STRUCTURE`,
+  `P-SP-P3-HYGIENE`) + `AF-SP-*` autofail rows + a manifest_version bump.
+- `build_deck.py` — four ≤6-line thin `_chk_sp_*` wrappers (`_chk_sp_claim`, `_chk_sp_intake`,
+  `_chk_sp_structure`, `_chk_sp_no_pitch`) appended to `PREFLIGHT_REQUIRED`; three defer when the
+  deck type is not signature_presentation, `_chk_sp_claim` never defers.
 - `phase_verifiers.py`, `prove-deck.py` (declared steps), `test_preflight.py` (golden + adversarial),
   `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` rows — the full SOP-SLIDE-06 lockstep, so
   `sync_check.py` stays green.
@@ -141,13 +149,13 @@ and wires via the department lockstep. The three legs:
   this skill into the box (`$SKILLS_DIR/51-signature-presentation`) and marks the provers executable.
   Skill 23 (the Presentations engine) is the prerequisite and installs alongside it.
 - **Wire** — the **SOP-SLIDE-06 lockstep** (`universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
-  It installs the three SP manifest phases (`P-SP-INTAKE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE`),
-  the `AF-SP-*` autofail rows, and the ≤6-line `_chk_sp_*` preflight wrappers into the department
-  engine (`build_deck.py`, `phase_verifiers.py`, `prove-deck.py`, `PIPELINE-MANIFEST.json`,
-  `test_preflight.py`, the MASTER QC ruleset). The wiring is already in the engine; `sync_check.py`
-  stays green. There is **no** separate `wire.sh` — re-running the lockstep is how the wiring is
-  changed, per SOP-SLIDE-06.
-- **Verify** — `51-signature-presentation/verify.sh` (idempotent, read-only): runs the three
+  It installs the four SP manifest phases (`P-SP-CLAIM` / `P-SP-INTAKE` / `P-SP-STRUCTURE` /
+  `P-SP-P3-HYGIENE`), the `AF-SP-*` autofail rows, and the ≤6-line `_chk_sp_*` preflight wrappers
+  into the department engine (`build_deck.py`, `phase_verifiers.py`, `prove-deck.py`,
+  `PIPELINE-MANIFEST.json`, `test_preflight.py`, the MASTER QC ruleset). The wiring is already in
+  the engine; `sync_check.py` stays green. There is **no** separate `wire.sh` — re-running the
+  lockstep is how the wiring is changed, per SOP-SLIDE-06.
+- **Verify** — `51-signature-presentation/verify.sh` (idempotent, read-only): runs the four
   fail-closed provers in `--self-test` mode and the `register-library-additions.py --check` sanity
   (both SP roles registered in `role-library/_index.json`). Exits nonzero on any failure, so it can
   gate a merge / CI / a post-install check. Run it with `bash 51-signature-presentation/verify.sh`.
