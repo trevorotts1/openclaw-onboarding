@@ -113,6 +113,24 @@ out="$(run --slug "engineering" --departments-dir "$DD" \
 set -e
 if [ "$rc" -eq 2 ] && ! echo "$out" | grep -q "stub add-department"; then ok "create: canonical dup rejected pre-create (rc2, add never called)"; else bad "engineering should be rejected pre-create, got $rc :: $out"; fi
 
+# ── Case 6: slug length sanity cap (P2-05 QC regression) ─────────────────────
+# BUG (pre-fix): an arbitrarily long slug (5000 chars) returned rc0 net-new in
+# --check-only and could be passed to add-department.sh as a filesystem-hostile
+# directory name. FIX: a slug over MAX_SLUG_LEN (64) is rejected as bad usage.
+LONG5000="$(python3 -c 'print("a"*5000)')"
+set +e
+out="$(run --slug "$LONG5000" --check-only --departments-dir "$DD" 2>&1)"; rc=$?
+set -e
+if [ "$rc" -eq 5 ]; then ok "slug cap: 5000-char slug rejected (rc5), never accepted as net-new"; else bad "5000-char slug expected rc5, got $rc :: $(echo "$out" | head -c 120)"; fi
+
+# Boundary: 64 chars (at the cap) still passes; 65 chars is over → rc5.
+S64="$(python3 -c 'print("a"*64)')"
+set +e; run --slug "$S64" --check-only --departments-dir "$DD" >/dev/null 2>&1; rc=$?; set -e
+if [ "$rc" -eq 0 ]; then ok "slug cap: 64-char slug (at cap) accepted (rc0)"; else bad "64-char slug expected rc0, got $rc"; fi
+S65="$(python3 -c 'print("a"*65)')"
+set +e; run --slug "$S65" --check-only --departments-dir "$DD" >/dev/null 2>&1; rc=$?; set -e
+if [ "$rc" -eq 5 ]; then ok "slug cap: 65-char slug (over cap) rejected (rc5)"; else bad "65-char slug expected rc5, got $rc"; fi
+
 echo ""
 echo "── test-net-new-department: $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -28,8 +28,17 @@ USAGE
 EXIT CODES
   0  a floor dept with a loss_warning was found (text printed to stdout)
   2  bad usage (no --dept)
-  3  the dept is not a floor dept, or a floor dept carries no loss_warning
+  3  the dept is CONCLUSIVELY not a floor dept, or a floor dept carries no
+     loss_warning — determined against a READABLE, structurally-valid naming map
      (either way: nothing to confirm — the caller may proceed without a warning)
+  4  INDETERMINATE: the naming map could not be read/parsed, or it is
+     structurally unusable for floor determination (no populated `mandatory`
+     section). Floor status is UNKNOWN — the caller must NOT treat this as
+     "non-floor / proceed". It must fail closed (refuse the decline unless the
+     owner explicitly overrides), because a real floor department under an
+     unreadable map would otherwise masquerade as a non-floor dept (rc=3) and
+     its opt-out would be dropped silently. This mirrors department-floor.py,
+     which fails CLOSED to the full 28 floor on an unreadable map (OQ-7).
 
 Read-only. Never writes. Import-safe: `from department_loss_warning import
 loss_warning_for` (after adding the scripts dir to sys.path).
@@ -55,6 +64,18 @@ def load_naming_map(path=None):
         return json.loads(p.read_text())
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def naming_map_is_usable(nm):
+    """True only when the map is structurally usable for FLOOR determination: it
+    must be a dict carrying a populated `mandatory` object. A missing/empty/
+    non-dict `mandatory` means we cannot know the 22 mandatory floor depts, so
+    floor status is UNKNOWN and rc=3 ('conclusively non-floor') would be a lie.
+    A healthy naming map always ships a populated `mandatory` section."""
+    if not isinstance(nm, dict):
+        return False
+    mand = nm.get("mandatory")
+    return isinstance(mand, dict) and len(mand) > 0
 
 
 def _floor_warnings(nm):
@@ -104,7 +125,28 @@ def main(argv=None):
         print("ERROR: --dept <id> is required", file=sys.stderr)
         return 2
 
-    warning = loss_warning_for(args.dept, naming_map_path=args.naming_map)
+    nm = load_naming_map(args.naming_map)
+    # Fail-closed: if the map is unreadable/unparseable/structurally-unusable we
+    # CANNOT determine floor status. Return rc=4 (INDETERMINATE) rather than
+    # rc=3 — the caller must not mistake "can't read the floor" for "not a floor
+    # dept". (See OQ-7 / department-floor.py, which fails closed to full 28.)
+    if not naming_map_is_usable(nm):
+        if args.json:
+            print(json.dumps({
+                "dept": args.dept,
+                "is_floor_department": None,
+                "loss_warning": None,
+                "indeterminate": True,
+                "reason": "department-naming-map.json unreadable/unparseable/"
+                          "missing populated `mandatory` — floor status unknown",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("INDETERMINATE: department-naming-map.json is unreadable/"
+                  "unparseable or missing its `mandatory` floor section — cannot "
+                  "determine floor status.", file=sys.stderr)
+        return 4
+
+    warning = loss_warning_for(args.dept, nm=nm)
     if args.json:
         print(json.dumps({
             "dept": args.dept,

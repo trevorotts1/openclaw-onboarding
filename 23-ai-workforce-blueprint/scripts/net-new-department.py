@@ -78,6 +78,14 @@ RC_DISK_DUP = 3
 RC_CREATE_FAIL = 4
 RC_USAGE = 5
 
+# A department slug becomes a filesystem directory name (departments/<slug>) and a
+# board/runtime key. Cap it so creation mode can never hand add-department.sh a
+# filesystem-hostile / absurd name. 64 chars is comfortably above every real
+# canonical slug (longest shipped is well under 20) and safely under the 255-byte
+# POSIX filename limit. slugify() already restricts the character set to [a-z0-9-],
+# so length is the remaining sanity check.
+MAX_SLUG_LEN = 64
+
 
 def _load_department_floor():
     """Import the sibling department-floor.py for the canonical-slug resolver +
@@ -281,6 +289,14 @@ def main(argv=None):
     slug = slugify(slug)
     if not slug:
         print("ERROR: slug normalized to empty — provide a valid --name/--slug", file=sys.stderr)
+        return RC_USAGE
+    # Sanity cap: a slug becomes a directory name + board/runtime key. Refuse an
+    # absurd length up front so creation mode cannot pass a filesystem-hostile name
+    # to add-department.sh (a genuine department name is never this long).
+    if len(slug) > MAX_SLUG_LEN:
+        print(f"ERROR: slug is {len(slug)} chars — exceeds the {MAX_SLUG_LEN}-char sanity cap. "
+              f"A department slug becomes a directory/board/runtime key; provide a real, short name.",
+              file=sys.stderr)
         return RC_USAGE
 
     df = _load_department_floor()

@@ -168,33 +168,82 @@ case "$DEPT_VALIDATION" in
     exit 1 ;;
 esac
 
-# ── Opt-out loss warning gate (P2-05 step 1) ─────────────────────────────────
+# ── Opt-out loss warning gate (P2-05 step 1) — FAIL-CLOSED ───────────────────
 # For a floor-department decline, ECHO the loss_warning and REQUIRE --confirm-loss.
 # The warning text is looked up from the single source (department-naming-map.json
-# via department-loss-warning.py); a floor dept returns rc=0 + the text, a
-# non-floor dept returns rc=3 + no text (no confirmation required).
+# via department-loss-warning.py):
+#   rc=0 + text  → this IS a floor dept (opt-out costs guaranteed functionality)
+#   rc=3         → CONCLUSIVELY a non-floor dept, decided against a READABLE map
+#                  (no confirmation required — decline it directly)
+#   rc=4 / other → INDETERMINATE: the naming map is unreadable/corrupt (or the
+#                  reader is missing / crashed), so floor status is UNKNOWN.
+#
+# FAIL-CLOSED DOCTRINE (P2-05 QC fix): an INDETERMINATE result must NEVER be
+# treated as "non-floor, proceed". Under a corrupt map a real floor department
+# reports no warning; writing its decline blindly would SILENTLY drop a floor
+# department — exactly the "an opt-out is sovereign, but it is never silent"
+# promise this feature makes, and the same class of bug department-floor.py's
+# OQ-7 fix closes by degrading to the FULL 28 floor. So when floor status cannot
+# be determined we REFUSE the write (exit 2) and tell the owner to restore the
+# map or, if they truly intend to drop this department, re-run with the explicit
+# --confirm-loss override.
 LOSS_WARNING=""
+LOSS_INDETERMINATE=0
+INDET_REASON=""
 if [ "$DECISION_LC" = "no" ]; then
   LOSS_READER="$SCRIPT_DIR_RD/department-loss-warning.py"
-  if [ -f "$LOSS_READER" ]; then
-    if LOSS_WARNING="$(python3 "$LOSS_READER" --dept "$DEPT" 2>/dev/null)" && [ -n "$LOSS_WARNING" ]; then
-      # This is a FLOOR department — opt-out costs guaranteed functionality.
-      if [ "$CONFIRM_LOSS" -ne 1 ]; then
-        echo "─────────────────────────────────────────────────────────────" >&2
-        echo "OPT-OUT WARNING for '$DEPT' — here's what you lose without it:" >&2
-        echo "  $LOSS_WARNING" >&2
-        echo "" >&2
-        echo "This is a guaranteed floor department. Declining it is your call" >&2
-        echo "(opt-out is sovereign), but it must be CONFIRMED. If the owner still" >&2
-        echo "wants to skip it, re-run this command WITH --confirm-loss:" >&2
-        echo "  record-dept-decision.sh --dept $DEPT --decision no --confirm-loss \\" >&2
-        echo "    --source $SOURCE --by <ownerId> --session <sessionId>" >&2
-        echo "The decline was NOT recorded (department stays in the floor until confirmed)." >&2
-        echo "─────────────────────────────────────────────────────────────" >&2
-        exit 2
-      fi
-      # Confirmed: surface the acknowledged warning for the operator log.
+  if [ ! -f "$LOSS_READER" ]; then
+    LOSS_INDETERMINATE=1
+    INDET_REASON="the loss-warning reader is missing at $LOSS_READER — floor status cannot be determined"
+  else
+    set +e
+    LOSS_WARNING="$(python3 "$LOSS_READER" --dept "$DEPT" 2>/dev/null)"
+    LOSS_RC=$?
+    set -e
+    if [ "$LOSS_RC" -eq 0 ] && [ -n "$LOSS_WARNING" ]; then
+      : # floor dept — handled by the gate below (LOSS_WARNING non-empty)
+    elif [ "$LOSS_RC" -eq 3 ]; then
+      LOSS_WARNING=""   # conclusively non-floor against a readable map — proceed
+    else
+      # rc=4 (map unreadable/corrupt), rc=2 (usage), python crash, or rc=0 with
+      # empty text — none of these conclusively say "non-floor". Fail closed.
+      LOSS_INDETERMINATE=1
+      LOSS_WARNING=""
+      INDET_REASON="the loss-warning reader could not determine '$DEPT' floor status (rc=$LOSS_RC) — department-naming-map.json may be unreadable or corrupt"
+    fi
+  fi
+
+  # A floor dept OR an indeterminate lookup both REQUIRE --confirm-loss.
+  if { [ -n "$LOSS_WARNING" ] || [ "$LOSS_INDETERMINATE" -eq 1 ]; } && [ "$CONFIRM_LOSS" -ne 1 ]; then
+    echo "─────────────────────────────────────────────────────────────" >&2
+    if [ -n "$LOSS_WARNING" ]; then
+      echo "OPT-OUT WARNING for '$DEPT' — here's what you lose without it:" >&2
+      echo "  $LOSS_WARNING" >&2
+      echo "" >&2
+      echo "This is a guaranteed floor department. Declining it is your call" >&2
+      echo "(opt-out is sovereign), but it must be CONFIRMED." >&2
+    else
+      echo "CANNOT DETERMINE floor status for '$DEPT' — refusing to record a decline." >&2
+      echo "  reason: $INDET_REASON" >&2
+      echo "" >&2
+      echo "Recording this decline blindly could SILENTLY drop a floor department" >&2
+      echo "(the map is the only source of floor truth). RESTORE department-naming-map.json" >&2
+      echo "and re-run, so the correct opt-out warning can be shown." >&2
+    fi
+    echo "If the owner still intends to skip '$DEPT', re-run WITH --confirm-loss:" >&2
+    echo "  record-dept-decision.sh --dept $DEPT --decision no --confirm-loss \\" >&2
+    echo "    --source $SOURCE --by <ownerId> --session <sessionId>" >&2
+    echo "The decline was NOT recorded (department stays in the floor until confirmed)." >&2
+    echo "─────────────────────────────────────────────────────────────" >&2
+    exit 2
+  fi
+
+  # Confirmed override — surface it for the operator log so the choice is auditable.
+  if [ "$CONFIRM_LOSS" -eq 1 ]; then
+    if [ -n "$LOSS_WARNING" ]; then
       echo "opt-out CONFIRMED for '$DEPT' (owner accepts losing: $LOSS_WARNING)"
+    elif [ "$LOSS_INDETERMINATE" -eq 1 ]; then
+      echo "opt-out CONFIRMED for '$DEPT' via --confirm-loss despite indeterminate floor status ($INDET_REASON)"
     fi
   fi
 fi

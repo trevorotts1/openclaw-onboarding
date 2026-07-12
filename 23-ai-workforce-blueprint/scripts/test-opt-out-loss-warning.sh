@@ -150,6 +150,52 @@ if [ "$cw" = "no" ]; then ok "custom decline written directly"; else bad "custom
 cack="$(jq -r '.canonicalReconciliation.decisions["my-custom-lab"].lossWarningAck // "none"' "$STATE")"
 if [ "$cack" = "none" ]; then ok "no lossWarningAck on a non-floor decline (nothing to lose)"; else bad "unexpected lossWarningAck on custom: $cack"; fi
 
+# ── Test 4: FAIL-CLOSED — an unreadable/corrupt naming map must NOT let a floor
+#    department decline slip through silently (P2-05 QC regression) ────────────
+# BUG (pre-fix): the reader returned rc=3 (indistinguishable from a genuine
+# non-floor dept) when the map was corrupt, so the gate treated a real floor
+# decline as "no warning, proceed" and WROTE it with no confirmation — silently
+# dropping a floor department. FIX: reader returns rc=4 INDETERMINATE and the
+# recorder fails closed (refuse unless --confirm-loss).
+MAP_BAK="$TMPD/naming-map.orig"
+cp "$NAMING_MAP" "$MAP_BAK"
+# Extend cleanup so the REAL map is always restored, even on an early exit.
+trap 'cp -f "$MAP_BAK" "$NAMING_MAP" 2>/dev/null; rm -rf "$TMPD"' EXIT
+
+# 4a: corrupt the map, decline a FLOOR dept WITHOUT --confirm-loss => refuse, NOT written
+seed_state
+printf '{ this is not valid json\n' > "$NAMING_MAP"
+set +e
+werr="$(bash "$RECORDER" --dept billing-finance --decision no \
+  --source owner-interview --by owner123 --session s1 --state "$STATE" 2>&1 >/dev/null)"
+rc=$?
+set -e
+if [ "$rc" -eq 2 ]; then ok "fail-closed: floor decline under a CORRUPT map refuses (exit 2)"; else bad "corrupt-map floor decline expected exit 2, got $rc"; fi
+written="$(jq -r '.canonicalReconciliation.decisions["billing-finance"] // "ABSENT"' "$STATE")"
+if [ "$written" = "ABSENT" ]; then ok "fail-closed: decline NOT written under a corrupt map (floor never silently dropped)"; else bad "corrupt-map decline was written silently: $written"; fi
+if echo "$werr" | grep -q "CANNOT DETERMINE"; then ok "fail-closed: the indeterminate reason is surfaced to the owner"; else bad "no CANNOT DETERMINE message under a corrupt map"; fi
+
+# 4b: same corrupt map, WITH --confirm-loss => the explicit override still writes (escape hatch)
+seed_state
+set +e
+bash "$RECORDER" --dept billing-finance --decision no --confirm-loss \
+  --source owner-interview --by owner123 --session s1 --state "$STATE" >/dev/null 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then ok "override: --confirm-loss under a corrupt map still writes (exit 0)"; else bad "confirm-loss under corrupt map expected exit 0, got $rc"; fi
+cw="$(jq -r '.canonicalReconciliation.decisions["billing-finance"].decision // "ABSENT"' "$STATE")"
+if [ "$cw" = "no" ]; then ok "override: decline written under an explicit --confirm-loss"; else bad "confirm-loss under corrupt map did not write (got $cw)"; fi
+
+# 4c: the reader itself returns rc=4 INDETERMINATE (not a false rc=3) under a corrupt map
+set +e
+python3 "$LOSS_READER" --dept billing-finance >/dev/null 2>&1; rrc=$?
+set -e
+if [ "$rrc" -eq 4 ]; then ok "reader returns rc=4 INDETERMINATE under a corrupt map (never a false rc=3)"; else bad "reader expected rc=4 under a corrupt map, got $rrc"; fi
+
+# Restore + prove the repo is left clean.
+cp -f "$MAP_BAK" "$NAMING_MAP"
+if jq -e '.mandatory | length' "$NAMING_MAP" >/dev/null 2>&1; then ok "naming map restored intact after the fail-closed test"; else bad "naming map NOT restored — repo left dirty"; fi
+
 echo ""
 echo "── test-opt-out-loss-warning: $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ] || exit 1
