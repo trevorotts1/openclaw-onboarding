@@ -214,13 +214,21 @@ def parse_playbook(text):
             cur = lines[i]
             if _PHASE_RE.match(cur):
                 break
-            # A top-level section heading (## or #) closes the phase block; a
+            # A '#', '##', or '###' section heading closes the phase block; a
             # deeper heading inside the phase (#### edge) does not.
             hm = _HEADING_RE.match(cur)
             if hm and len(hm.group(0).strip()) <= 3 and not cur.lstrip().startswith("####"):
-                # '#', '##', or '###' non-phase heading closes phases only when
-                # it is not itself a Phase heading (checked above).
-                if cur.lstrip().startswith(("# ", "## ")):
+                # A non-Phase '#', '##', OR '###' heading closes the phase block
+                # (a Phase heading was already handled above via _PHASE_RE). The
+                # tuple MUST include '### ' (P3-07 fix): a bare '### Some heading'
+                # mid-playbook is a real section break, and if it did NOT close the
+                # block its key:value-looking lines (e.g. a '### Notes' block with a
+                # 'tools:' or 'max-attempts:' line) would silently bleed into the
+                # preceding phase's tools/max-attempts resolution -- corrupting the
+                # exact data the U-1 tool-gating gates trust. The prior check only
+                # matched '# '/'## ', so level-3 headings leaked. Since _HEADING_RE
+                # guarantees a space after the hashes, matching '### ' is complete.
+                if cur.lstrip().startswith(("# ", "## ", "### ")):
                     break
             key, val = _kv(cur)
             if key == "tools":
@@ -272,37 +280,51 @@ def parse_playbook(text):
     return result
 
 
+# The three named clauses that may follow the tag on an 'exit-when-tag:' line.
+# They may appear IN ANY ORDER after the tag (P3-07 order-independence fix).
+_EXIT_CLAUSE_RE = re.compile(r",\s*(action|closing|target)\s*:\s*", re.IGNORECASE)
+
+
 def _parse_exit_rule(val):
     """Parse the tail of an 'exit-when-tag:' line into an exit-rule dict.
 
     Grammar: <tag>, action: <end|handoff|route>[, closing: <msg>][, target: <id>]
-    The tag is everything up to the first ', action:'. Returns None if no tag.
+    The three named clauses (action, closing, target) may appear in ANY ORDER
+    after the tag. Each clause value runs from just after its 'key:' up to the
+    next named clause (or end of line), so a later clause can never swallow an
+    earlier one's value (the pre-P3-07 regex assumed closing preceded target and
+    let target greedily eat a trailing closing message). Returns None if no tag.
     """
-    m = re.match(r"^(.*?),\s*action\s*:\s*(.*)$", val, re.IGNORECASE)
-    if not m:
-        # A tag with no action clause: record the tag, action unknown.
+    matches = list(_EXIT_CLAUSE_RE.finditer(val))
+    if not matches:
+        # A tag with no named clause: record the tag, action unknown.
         tag = val.strip()
         if not tag:
             return None
         return {"tag": tag, "action": None, "closing": None, "target": None}
-    tag = m.group(1).strip()
-    rest = m.group(2).strip()
-    action = rest
-    closing = None
-    target = None
-    cm = re.search(r",\s*closing\s*:\s*(.*?)(?:,\s*target\s*:|$)", rest, re.IGNORECASE)
-    if cm:
-        closing = cm.group(1).strip()
-    tm = re.search(r",\s*target\s*:\s*(.*)$", rest, re.IGNORECASE)
-    if tm:
-        target = tm.group(1).strip()
-    # action word is the first token before any comma.
-    action = rest.split(",", 1)[0].strip().lower()
+
+    # The tag is everything before the first named clause.
+    tag = val[: matches[0].start()].strip()
+
+    segments = {}
+    for idx, m in enumerate(matches):
+        key = m.group(1).lower()
+        seg_start = m.end()
+        seg_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(val)
+        # First occurrence of a key wins; a duplicate clause is ignored.
+        segments.setdefault(key, val[seg_start:seg_end].strip())
+
+    action = segments.get("action")
+    if action:
+        # The action word is the first token (defensive against trailing junk).
+        action = action.split(",", 1)[0].strip().lower()
+    closing = segments.get("closing")
+    target = segments.get("target")
     return {
         "tag": tag,
         "action": action or None,
-        "closing": closing,
-        "target": target,
+        "closing": closing or None,
+        "target": target or None,
     }
 
 
