@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.14] - 2026-07-11 — P3-08: RULE 6 BUILD-path Tier-4 workflow-build routes through Skill 6's GATED managed builder (not bare agent-browser); token-circularity encoded
+
+### Changed
+- **RULE 6 BUILD-path table (`GHL-LOOKUP-SOP.md`).** Tier-4 workflow BUILD no longer routes to bare "agent-browser → Playwright at app.gohighlevel.com" freehand (which violates Skill 6's no-invented-CSS law). It now routes to Skill 6's GATED, MANAGED Automations builder (`06-ghl-install-pages/tools/ghl_workflow_builder.py` via the `browser_manager.sh` singleton gateway, selectors from `tools/gates.json` / `SELECTORS-LIVE-automations.md`).
+- **Token-circularity routing encoded in RULE 6.** Tier 4 helps ONLY when the Firebase token is unread/misconfigured (the browser session is seeded from the same token). A genuinely dead/revoked/expired token routes to `ghl_auth.py` Tier-2 email-2FA self-heal, NOT Tier 4. The decision table and summary block reflect this. Cross-references `44-convert-and-flow-operator/SKILL.md`.
+
+---
+
 ## [v1.2.11] - 2026-07-05 — Version drift: wire.sh / qc script read the live version from skill-version.txt (FIX-XC-13a)
 
 ### Fixed (FIX-XC-13a — doc/code version drift)

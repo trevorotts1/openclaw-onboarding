@@ -117,9 +117,36 @@ for lookups. See `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md` for the full lookup routin
 `workflows build`, `workflows patch-email`, `workflows patch-trigger`, `workflows restore`
 require the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`. When that token is:
 - **present + healthy** — Tier 0 builds/edits the workflow directly via the internal API.
-- **missing or expired** — reads fall through Tiers 1-3; BUILD falls to Tier 4 (agent-browser) as the
-  no-token backstop, and the owner is nudged: "I need you to grab the Convert and Flow token to build
-  workflows directly." Nothing is silent.
+- **unread / misconfigured** (e.g. the token exists in a store the process did not resolve, or a
+  key-name/env-store mismatch) — BUILD falls to **Tier 4: Skill 6's GATED, MANAGED Automations builder**
+  (the designated path — `06-ghl-install-pages/tools/ghl_workflow_builder.py`, routed through the
+  `browser_manager.sh` singleton gateway, using selectors captured LIVE into `tools/gates.json` /
+  `SELECTORS-LIVE-automations.md` — NEVER bare agent-browser freehand at `app.gohighlevel.com`), and the
+  owner is nudged: "I need you to grab the Convert and Flow token to build workflows directly." Nothing is
+  silent.
+  > **Tier-4 builder implementation status (P3-08):** the guard that protects this path is LIVE NOW —
+  > `44-convert-and-flow-operator/` is a scan root of `scripts/guard-agent-browser-managed.sh`, so any
+  > unmanaged agent-browser spawn planted here (including a first Tier-4 implementation that bypasses the
+  > singleton gateway) FAILS CI (P3-08 step 1, pre-emptive). The concrete `ghl_workflow_builder.py` +
+  > live-captured Automations DOM gates land under Skill 6 via a LIVE capture pass on the operator's own
+  > GHL location — Skill 6's "NO invented CSS is shipped as fact" law forbids shipping selectors captured
+  > any other way, so the gates are NOT fabricated ahead of that capture. Until it lands, the human-in-loop
+  > Build-with-AI paste (Skill 41 Layer 0) remains the no-token fallback for workflow builds.
+- **genuinely dead / revoked / expired** — Tier 4 does NOT help (see the token-circularity note below);
+  route to `06-ghl-install-pages/tools/ghl_auth.py`'s gated Tier-2 email-2FA self-heal, which mints a
+  fresh token so the next run is Tier 0 again.
+
+> **TOKEN CIRCULARITY (P3-08 — read this before relying on Tier 4).** Tier 4 is NOT a universal
+> no-token backstop. The managed browser session Tier 4 needs is **seeded from the SAME
+> `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`** whose absence supposedly triggered Tier 4 (Skill 6's
+> `browser_manager.sh` reuses the Firebase-token session seed). So Tier 4 only helps when the token is
+> **unread or misconfigured** — present but not resolved by the process. When the token is **genuinely
+> dead** (revoked, expired, wrong client), Tier 4 cannot seed a session either, and the ONLY recovery is
+> `ghl_auth.py`'s gated Tier-2 email-2FA self-heal (gated on recorded authorization + a live Gmail
+> read-proof + email-2FA method + client-owned creds), which logs in headless, reads the freshest 2FA code
+> from the client's own Gmail, and SELF-HEALS a fresh refresh token into the client store. Decision rule:
+> **token unread/misconfigured → Tier 4 gated builder; token genuinely dead → ghl_auth.py Tier-2
+> self-heal, never Tier 4.** (Skill 36 `GHL-LOOKUP-SOP.md` RULE 6 encodes the same routing.)
 
 > **GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.**
 > The canonical auth entry point Skill 44 calls when a workflow write needs a session is the shared

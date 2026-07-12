@@ -115,6 +115,8 @@ Ask: "What is your action link for this week? This is the link you want people t
 
 Also ask: "Should I use this same action link every week, or will it change? I'll confirm with you each week either way."
 
+**Optional automation — themed weekly landing page (P3-08 Gap C, OPT-IN, client link always wins):** if the client does NOT supply a static action link for the week (or explicitly opts in to auto-generated pages), the weekly campaign step MAY invoke Skill 6's `06-ghl-install-pages/tools/funnel_matcher.py --match` to spin up a themed weekly landing page matched to that week's television-show theme, handing off form/automation linkage via the existing `routing/skill44-handoff.json` pattern (Skill 6 → Skill 44) so the page's form and follow-up automation are wired end to end. **Client sovereignty over their own link ALWAYS wins:** when the client provides a static link (Step 4 above), that link is used verbatim — the auto-generated page is only a fallback for weeks with no client-supplied link and only when the client has opted in. Never override a client-provided link with a generated page. This step is OPTIONAL (optional-graded); the planner works fully without it, using the client's confirmed weekly link.
+
 ### Step 5: Ask Video Preference
 
 Ask: "How many videos would you like produced each week?"
@@ -409,7 +411,7 @@ This is additional text visible on desktop (but hidden on mobile behind "See Mor
 The main body of educational, informational, or story-driven content. This zone starts delivering value IMMEDIATELY after the hook. The recap from previous days is woven INTO this zone naturally, somewhere in the middle of the value delivery, NOT at the beginning. The reader must start getting value first, then encounter the recap as a natural part of the narrative. This prevents losing readers who just got hooked but then hit a recap of content they haven't seen. The recap should feel like a natural part of the conversation: "Earlier this week, we explored why this matters more than most people realize, and the stat we shared on Day 1 caught a lot of people off guard."
 
 **Zone 4: Pitch Zone (includes engagement CTA)**
-The primary goal of every post is getting appointments. The pitch zone creates an emotionally compelling reason for the reader to schedule an appointment with [Brand Name]. This is not about selling a product. This is about helping the reader take the next step. The pitch follows the intensity schedule (4/10 on Day 1, gradually increasing to 10/10 on Day 7), and always ends with a directive to check the comments for how to schedule their appointment. The pitch should make them FEEL something: the urgency of their situation, the hope that comes from taking action, the relief of finally having someone who understands. Then it points them to the comments where the action link lives.
+The primary goal of every post is getting appointments. The pitch zone creates an emotionally compelling reason for the reader to schedule an appointment with [Brand Name]. This is not about selling a product. This is about helping the reader take the next step. The pitch follows the intensity schedule (4/10 on Day 1, gradually increasing to 10/10 on Day 7), and always ends with a **two-channel CTA (§12): the PRIMARY directive is to send a message / DM** (which reaches an agent that answers, via GHL Conversations → Skill 38), **with "the link is in the comments" as the backup** for readers who prefer to self-serve the weekly action link. The pitch should make them FEEL something: the urgency of their situation, the hope that comes from taking action, the relief of finally having someone who understands. Then it points them to DM us (primary) and to the comments where the action link lives (backup).
 
 **Zone 5: Cliffhanger Zone**
 The last content element the reader sees (before hashtags). Teases tomorrow's content (Days 1-6) or next week's theme (Day 7). Must create genuine excitement and anticipation. This is what people remember as they scroll away.
@@ -477,14 +479,14 @@ When writing content for any platform, follow this process:
 **Step 4: Write Zone 4 (Pitch + Appointment Directive)**
 - The primary goal is ALWAYS getting appointments. Every pitch should create an emotionally compelling reason to schedule.
 - Follow the pitch intensity schedule:
-  - Day 1 (Intensity: 4/10): Warm introduction. "[Brand Name] helps people with exactly this. Check the comments to learn how to take the next step."
-  - Day 2 (Intensity: 5/10): Building. "This is what [Brand Name] does every day. Check the comments to start a conversation."
-  - Day 3 (Intensity: 5/10): Steady. "If this is resonating, you're not alone. Check the comments to connect with [Brand Name]."
-  - Day 4 (Intensity: 6/10): Direct. "This is exactly what [Brand Name] is designed to address. Check the comments to take action."
-  - Day 5 (Intensity: 7/10): Strong. "You've seen the evidence. You feel it. Check the comments to schedule your conversation with [Brand Name]."
-  - Day 6 (Intensity: 9/10): Urgent. "You don't have to figure this out alone. The [Brand Name] team is ready. Check the comments right now."
-  - Day 7 (Intensity: 10/10): Maximum. "This is the moment. Don't let another week go by. Check the comments to take action with [Brand Name] today."
-- The pitch always ends with a directive to CHECK THE COMMENTS. The action link lives in the comment, not the post.
+  - Day 1 (Intensity: 4/10): Warm introduction. "[Brand Name] helps people with exactly this. Send us a message to learn how to take the next step — the link is also in the comments."
+  - Day 2 (Intensity: 5/10): Building. "This is what [Brand Name] does every day. Send us a message to start a conversation — the link is in the comments too."
+  - Day 3 (Intensity: 5/10): Steady. "If this is resonating, you're not alone. DM us to connect with [Brand Name] — or grab the link in the comments."
+  - Day 4 (Intensity: 6/10): Direct. "This is exactly what [Brand Name] is designed to address. Send us a message to take action — the link is in the comments."
+  - Day 5 (Intensity: 7/10): Strong. "You've seen the evidence. You feel it. Send us a message to schedule your conversation with [Brand Name] — the link is in the comments."
+  - Day 6 (Intensity: 9/10): Urgent. "You don't have to figure this out alone. The [Brand Name] team is ready. Send us a message right now — the link is in the comments."
+  - Day 7 (Intensity: 10/10): Maximum. "This is the moment. Don't let another week go by. Send us a message to take action with [Brand Name] today — the link is in the comments."
+- The pitch always ends with the two-channel CTA (§12): the PRIMARY directive is to SEND A MESSAGE / DM (it reaches an agent that answers, via GHL Conversations → Skill 38); "the link is in the comments" is the reach-preserving BACKUP. The action link lives in the comment, not the post body.
 - Combine the pitch with an engagement ask where natural:
   - "Save this post so you can reference it later."
   - "Tag someone who needs to see this."
@@ -824,11 +826,20 @@ This works on every platform. One video, every platform.
 
 ---
 
-## 12. Comment Strategy (Every Post, Every Day)
+## 12. Comment Strategy + DM Call-to-Action (Every Post, Every Day)
+
+### The Two-Channel CTA Rule (DM-first, comment-backup)
+
+Every single social media post drives the highest-intent reader into a channel that ANSWERS. There are two CTA surfaces, and the post uses BOTH:
+
+1. **DM (primary — the one that gets a reply).** The post asks the reader to **send us a message / DM us** ("Send us a message and we'll help you take the next step"). A Facebook or Instagram DM lands in GHL Conversations, which flows straight into Skill 38's (`38-conversational-ai-system`) existing inbound playbook pipeline — so the reader gets an actual conversational reply, automatically, end to end. This is the change that closes the dead-end: the campaign's highest-intent interaction now lands where an agent (Skill 38) is listening.
+2. **Comment (backup — carries the link for reach).** Every post still gets a comment below it carrying the weekly action link ("the link is in the comments"), because platforms (especially Facebook) suppress posts with links in the body, so the comment preserves organic reach for readers who prefer to self-serve the link.
+
+> **Why DM-first (the connection to Skill 38):** the old strategy funneled the highest-intent reader to "check the comments," but nothing in the system reads or replies to public comments — `caf`'s `social` group has no comment/reply command (§17) and public post comments are not a GHL Conversations event, so they never reach Skill 38's inbound webhook. A reader who followed the "check the comments" instruction and then *commented* got no automated reply from anywhere. Routing the primary CTA to DM sends that reader into GHL Conversations (FB/IG DM), which Skill 38 already answers. The comment-link remains as the reach-preserving backup, and §12b (comment reader) turns the residual comment traffic into conversations too. Skill 38 is the owner of every inbound conversation these CTAs generate; Skill 35 is the inbound SOURCE. See the cross-reference in `38-conversational-ai-system/SKILL.md`.
 
 ### The Rule
 
-Every single social media post gets a comment below it. The post itself contains a line like "Check the comments to see how you can schedule a conversation with an [Brand Name] specialist" or similar. This directs the reader from the post down to the comment, where the actual appointment link lives.
+Every single social media post gets a comment below it. The post itself contains BOTH a DM call-to-action (primary — e.g. "Send us a message to talk with an [Brand Name] specialist") AND a line like "the link is in the comments" (backup) that directs the reader to the comment where the weekly action link lives.
 
 ### Why Comments, Not Links in the Post
 
@@ -882,6 +893,20 @@ Schedule your conversation with [Brand Name] right here:
 ### How Comments Are Posted
 
 Comments are posted programmatically after the main post is published. See the GoHighLevel Social Planner API section for technical details. The comment is posted within 1-2 minutes of the main post going live.
+
+---
+
+## 12b. Comment Reader — comments become conversations (Phase 4)
+
+**The gap this closes (P3-08 Gap B):** the primary CTA is now the DM (§12), which reaches Skill 38 end to end. But the comment link is still live, and some readers will REPLY to the comment instead of DMing. Public post comments are NOT a GHL Conversations event, so they never reach Skill 38's inbound webhook — and `caf` has no comment/reply command (§17). Without a reader, a prospect who replies to the comment gets no answer. The comment reader turns those replies into conversations.
+
+**What it does:** as part of Phase 4 (Engagement Monitoring), poll prospect comment REPLIES on published posts and surface each as a SYNTHETIC HANDOFF into Skill 38's existing pipeline. Each prospect comment is appended to that contact's conversational log (`<MASTER_FILES_DIR>/conversational-logs/comment-<author>__<name>.md` — the exact format Skill 38's inbound hook reads), tagged with the post/permalink context. The comment then flows through Skill 38's matching conversation playbook exactly like any other inbound message.
+
+**Implementation:** `scripts/comment_reader.py` (unit-tested in `scripts/test_comment_reader.py`). It consumes NORMALIZED comment events (read via the §17 ladder's available surface — official GHL MCP or raw REST, since `caf` has no comment command) and writes the synthetic handoffs. It is deterministic and does not itself call any live API — the orchestrator supplies a per-channel reader for channels that HAVE a surface.
+
+**Per-channel honesty (BINDING — 2.4):** the reader carries a per-channel capability registry (`CHANNEL_COMMENT_SURFACE`). A channel with a verified comment-read surface (FB/IG via the GHL Social Planner read path today) is processed; a channel with NO comment-read API surface is **LEDGERED per-channel (returned in `skipped` with an explicit reason) and skipped — NEVER fabricated**. There is no silent empty result and no invented comment feed. As each channel's surface is proven live, flip it from `None` to its surface string in the registry.
+
+**Ownership:** Skill 35 only creates the synthetic handoff (the inbound turn). Skill 38 OWNS the reply — reading the log, drafting per the matching playbook, and replying on the comment thread (or inviting to DM). See the cross-reference in `38-conversational-ai-system/SKILL.md`.
 
 ---
 
@@ -1754,7 +1779,8 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 - [ ] The recap (starting Day 2) is woven into the middle of the value zone, NOT at the beginning
 - [ ] The pitch matches the day's intensity level (soft Day 1, maximum Day 7)
 - [ ] The cliffhanger is present at the end (Days 1-6 tease next day, Day 7 teases next week)
-- [ ] The "check the comments" directive is present in the post body, tied to scheduling an appointment
+- [ ] The PRIMARY DM call-to-action is present in the post body (e.g. "send us a message" / "DM us"), tied to scheduling an appointment — this is the interaction that reaches an agent that answers (GHL Conversations → Skill 38). (§12)
+- [ ] The BACKUP "the link is in the comments" directive is also present in the post body (reach-preserving self-serve path for the weekly action link). (§12) — a post that has ONLY the comment directive and NO DM CTA FAILS this checklist.
 - [ ] The pitch creates an emotionally compelling reason to schedule an appointment (not just a mention of the brand)
 - [ ] The series label is present (e.g., "Three of Seven")
 - [ ] Hashtags follow platform-specific guidelines

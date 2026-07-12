@@ -1,5 +1,16 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.8 - 2026-07-11 — P3-08 Gap B: DM-first CTA + comment reader (comments become conversations); Gap C weekly-link automation
+
+### Changed
+- **DM-first two-channel CTA (playbook §12, §6 pitch examples).** The primary call-to-action is now "send us a message / DM" (which reaches an agent that answers via GHL Conversations → Skill 38's inbound pipeline), with "the link is in the comments" as the reach-preserving backup. Previously the highest-intent CTA funneled prospects to public comments, which NOTHING in the repo reads or replies to — a prospect who commented got no automated reply from anywhere.
+- **§19 QC checklist updated in LOCKSTEP.** The comment-CTA check is replaced by two checks: the PRIMARY DM CTA must be present, and the BACKUP comment-link directive must be present; a post with only the comment directive and no DM CTA now FAILS QC.
+
+### Added
+- **Comment reader (playbook §12b, `scripts/comment_reader.py` + `scripts/test_comment_reader.py`).** Phase-4 Engagement Monitor sub-task: polls prospect comment REPLIES and surfaces each as a synthetic inbound handoff into Skill 38's `conversational-logs/`, tagged with post/permalink context. Per-channel honesty: a channel with no comment-read API surface is ledgered + skipped, never fabricated (`CHANNEL_COMMENT_SURFACE` registry; FB/IG wired, others None until proven live).
+- **Cross-reference to Skill 38** (SKILL.md Phase 4): Skill 38 owns every inbound conversation Skill 35's CTAs generate; Skill 35 is the inbound SOURCE (DM-CTA + comment handoff). Reciprocal reference added in `38-conversational-ai-system/SKILL.md`.
+- **Gap C — optional themed weekly landing page** (playbook Step 4): the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty). Optional-graded.
+
 ## v2.9.5 - 2026-07-01 — Command Center token resolution: Mac/VPS-aware candidate paths, loud single skip warning
 
 ### Fixed

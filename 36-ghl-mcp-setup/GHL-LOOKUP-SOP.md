@@ -216,7 +216,9 @@ UI-only flows and workflow-build backstops only.
 
 | Primary | Backstop | Human-in-loop fallback |
 |---|---|---|
-| Tier 0: Skill 44 internal Build API (Firebase token required — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`) | Tier 4: agent-browser → Playwright at `app.gohighlevel.com` (skill 03) — only when Firebase token is genuinely unavailable | Build-with-AI manual paste (skill 41 Layer 0) |
+| Tier 0: Skill 44 internal Build API (Firebase token required — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`) | Tier 4: Skill 6's GATED, MANAGED Automations builder (`06-ghl-install-pages/tools/ghl_workflow_builder.py` — routed through the `browser_manager.sh` singleton gateway, gates in `tools/gates.json` / `SELECTORS-LIVE-automations.md`) — only when the Firebase token is unread/misconfigured | Build-with-AI manual paste (skill 41 Layer 0) |
+
+**Tier-4 workflow-build routing (P3-08 — corrected):** Tier-4 workflow BUILD does **NOT** freehand-navigate the Automations UI with bare agent-browser/Playwright and zero captured selectors — that violates Skill 6's own law ("NO invented CSS is shipped as fact"). It routes through Skill 6's **gated, managed** builder (the designated path): `06-ghl-install-pages/tools/ghl_workflow_builder.py`, which drives the Automations builder UI **only** with selectors captured LIVE into `tools/gates.json` (recorded in `SELECTORS-LIVE-automations.md`), through the ONE `browser_manager.sh` singleton gateway (one session, lock=1, TTL, guaranteed teardown, reaper backstop — the same discipline every other Skill 6 builder uses). Bare agent-browser at `app.gohighlevel.com` for workflow build is retired. *(Implementation status, P3-08: the CI guard protecting this path is live now — `44-convert-and-flow-operator/` is a scan root of `scripts/guard-agent-browser-managed.sh`. The concrete `ghl_workflow_builder.py` + live-captured gates land under Skill 6 via a live capture pass on the operator's own GHL location; gates are never fabricated ahead of that capture. Until then, Skill 41 Layer 0 Build-with-AI paste is the no-token fallback.)* **Token circularity (important):** Tier 4 only helps when the Firebase token is unread/misconfigured — the browser session it needs is seeded from the SAME Firebase refresh token whose absence triggers Tier 4. A GENUINELY dead/revoked/expired token does NOT route to Tier 4; it routes to `06-ghl-install-pages/tools/ghl_auth.py`'s gated Tier-2 email-2FA self-heal, which mints a fresh token so the next run is Tier 0 again. See `44-convert-and-flow-operator/SKILL.md` → "Workflow BUILD and EDIT" for the full token-circularity note. (Funnel PAGE content remains browser-only via Skill 6/03, unchanged.)
 
 **Critical constraint — public API is read-only for workflows:**
 
@@ -248,7 +250,10 @@ Task: contact lookup
 Task: workflow BUILD or EDIT
   → Tier 0 Skill 44 internal Build API (requires Firebase refresh token)
   → Token health check first (50-min cache; TOKEN_REFRESH_FAILED = stop and re-grab)
-  → (if no token) Tier 4 agent-browser / Playwright backstop + owner nudge
+  → (if token UNREAD/misconfigured) Tier 4 = Skill 6 gated managed Automations
+    builder (ghl_workflow_builder.py via browser_manager.sh) + owner nudge
+  → (if token GENUINELY dead/revoked/expired) NOT Tier 4 — route to ghl_auth.py
+    Tier-2 email-2FA self-heal, which mints a fresh token → next run is Tier 0
 
 Task: funnel PAGE CONTENT deploy
   → Tier 4 browser (agent-browser FIRST, Playwright fallback) — always, no exception
@@ -318,7 +323,7 @@ GHL LOOKUP SOP (skill 36 / 2026-06-14):
 - Raw HTTP: MUST include BOTH "Accept: application/json, text/event-stream" AND "Version: 2021-07-28" — missing text/event-stream = HTTP 406
 - No grep -P on macOS — use python3 -c / jq
 - Fail-fast preflight: check API_KEY + LOCATION_ID before any call
-- BUILD = Skill 44 internal Build API (Firebase token) → Tier 4 browser backstop; NEVER build via MCP
+- BUILD = Skill 44 internal Build API (Firebase token) → Tier 4 = Skill 6 GATED managed builder (ghl_workflow_builder.py via browser_manager.sh), NOT bare agent-browser; genuinely dead token → ghl_auth.py Tier-2 self-heal, NOT Tier 4; NEVER build via MCP
 - Funnel page content = browser-only (Tier 4) always
 - No metered :cloud model for lookups — deepseek-v4-flash direct or free fallback
 - Disclosure required: [GHL tier used: N — tool_name]

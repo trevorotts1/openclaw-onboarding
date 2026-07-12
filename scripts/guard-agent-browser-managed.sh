@@ -13,15 +13,26 @@
 #   mandatory gateway (browser_manager.sh / .py). This guard FAILS the build if a
 #   regression slips past it — so the leak can never silently return.
 #
-# SCAN ROOTS (AUD-20 / FLEET-FIX Area 2 / B.2, broadened 2026-07): checks (1)
-# MANAGED-ONLY and (5) HEADLESS-ONLY below scan THREE roots, not just
-# 06-ghl-install-pages/ — 41-build-with-ai-playbook/ (Skill 41's CDP preflight
-# probe) and 03-agent-browser/ (the install/smoke-test skill) both call the
-# agent-browser binary directly and were PREVIOUSLY UNSCANNED: an unmanaged
-# `agent-browser ... open|eval|click|...` call planted in either root passed
-# this guard silently. Checks (2)-(4) (gateway integrity, no per-run session
-# names, doctrine sentinel) remain 06-SPECIFIC — that doctrine describes the
-# Skill-06 browser_manager.sh gateway only and does not generalize.
+# SCAN ROOTS (AUD-20 / FLEET-FIX Area 2 / B.2, broadened 2026-07; P3-08 adds a
+# FOURTH root, 2026-07-11): checks (1) MANAGED-ONLY and (5) HEADLESS-ONLY below
+# scan FOUR roots, not just 06-ghl-install-pages/ — 41-build-with-ai-playbook/
+# (Skill 41's CDP preflight probe), 03-agent-browser/ (the install/smoke-test
+# skill), and 44-convert-and-flow-operator/ (Skill 44 — the `caf` Tier-0 GHL
+# operator). Skills 41 and 03 already call the agent-browser binary directly and
+# were PREVIOUSLY UNSCANNED (an unmanaged `agent-browser ... open|eval|click|...`
+# call planted in either root passed this guard silently). Skill 44 is added
+# PRE-EMPTIVELY (P3-08 step 1): its SKILL.md/INSTRUCTIONS.md/qc-built-workflow.sh
+# document a "Tier 4 agent-browser" workflow-build backstop that has NO
+# implementation yet and NO CI protection — so the FIRST careless Tier-4
+# implementation would otherwise land unguarded, reproducing the exact 22-orphan/
+# 357MB incident. Adding 44 as a scan root now means the guard bites the first
+# unmanaged spawn, not the second incident; the sanctioned Tier-4 path routes
+# through Skill 6's browser_manager.sh singleton gateway (which passes ALLOW_RE).
+# This widening is INCLUSIVE and coordinates with P3-04 (which widens the same
+# guard to further skill dirs): the 06/41/03 coverage is never removed or
+# narrowed — 44 is ADDED alongside it. Checks (2)-(4) (gateway integrity, no
+# per-run session names, doctrine sentinel) remain 06-SPECIFIC — that doctrine
+# describes the Skill-06 browser_manager.sh gateway only and does not generalize.
 #
 # WHAT THIS GUARD ENFORCES (fails the build / QC on any violation):
 #   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER ANY of the scan roots
@@ -88,17 +99,23 @@ MANAGER_SH="$TOOLS_DIR/browser_manager.sh"
 MANAGER_PY="$TOOLS_DIR/browser_manager.py"
 REAPER_SH="$REPO_ROOT/scripts/agent-browser-reaper.sh"
 
-# ── AUD-20 / FLEET-FIX B.2 — the roots checks (1) MANAGED-ONLY and (5)
+# ── AUD-20 / FLEET-FIX B.2 + P3-08 — the roots checks (1) MANAGED-ONLY and (5)
 # HEADLESS-ONLY scan. Broadened beyond just 06-ghl-install-pages/ so the
 # guard can no longer be blind to an unmanaged agent-browser spawn planted in
-# Skill 41 (the CDP preflight probe) or Skill 03 (agent-browser install /
-# smoke test). SKILL_DIR itself is untouched and still drives the
-# 06-specific gateway-integrity / per-run-session-name / doctrine-sentinel
-# checks (2)-(4) below — that doctrine does not generalize to other skills.
+# Skill 41 (the CDP preflight probe), Skill 03 (agent-browser install / smoke
+# test), or Skill 44 (the `caf` Tier-0 GHL operator, whose documented "Tier 4
+# agent-browser" workflow-build backstop is added here PRE-EMPTIVELY — before any
+# such code exists — so the first unmanaged spawn is caught, not the second
+# incident). This list is an INCLUSIVE superset: entries are only ever ADDED
+# (P3-08 appends 44; P3-04 may append further skill dirs). SKILL_DIR itself is
+# untouched and still drives the 06-specific gateway-integrity / per-run-session-
+# name / doctrine-sentinel checks (2)-(4) below — that doctrine does not
+# generalize to other skills.
 MANAGED_SCAN_ROOTS=(
   "$SKILL_DIR"
   "$REPO_ROOT/41-build-with-ai-playbook"
   "$REPO_ROOT/03-agent-browser"
+  "$REPO_ROOT/44-convert-and-flow-operator"
 )
 
 # ── The canonical doctrine sentinel (MUST appear verbatim) ────────────────────

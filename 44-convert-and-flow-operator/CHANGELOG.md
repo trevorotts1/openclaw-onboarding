@@ -1,5 +1,14 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.8] - 2026-07-11 — P3-08: token-circularity doc + Tier-4 routes to Skill 6's GATED managed builder (not bare agent-browser); guard widened to cover this skill
+
+### Changed
+- **Token-circularity documented (SKILL.md "Workflow BUILD and EDIT").** Tier 4 is NOT a universal no-token backstop: the managed browser session it needs is seeded from the SAME `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` whose absence supposedly triggered it. Decision rule now explicit — token UNREAD/misconfigured → Tier-4 gated builder; token GENUINELY dead/revoked/expired → `06-ghl-install-pages/tools/ghl_auth.py` Tier-2 email-2FA self-heal, never Tier 4.
+- **Tier-4 workflow BUILD now routes through Skill 6's GATED, MANAGED Automations builder** (`ghl_workflow_builder.py` via the `browser_manager.sh` singleton gateway, gates in `SELECTORS-LIVE-automations.md`) — never bare agent-browser freehand at `app.gohighlevel.com`. Mirrors Skill 36 RULE 6.
+
+### Guarded (P3-08 step 1, pre-emptive)
+- **`44-convert-and-flow-operator/` added as a scan root of `scripts/guard-agent-browser-managed.sh`** (the singleton-pooled-browser CI guard). Skill 44's documented Tier-4 agent-browser backstop had NO implementation and NO CI protection; adding this skill to the guard's `MANAGED_SCAN_ROOTS` NOW means the first careless unmanaged spawn fails CI (the 22-orphan/357MB incident shape), instead of the second incident. Inclusive widening — 06/41/03 coverage unchanged; negative-fixture proof in `tests/unit/guard-agent-browser-managed-scan-roots.test.sh`.
+
 ## [1.3.5] - 2026-07-05 — fix: close FAB-QC/TRINITY fail-open gaps + persona-log + Firebase/Tier-4 doc truth (merge-train T-44-convert-and-flow)
 
 Skills-analysis campaign fixes. All changes are scoped to this skill directory.
