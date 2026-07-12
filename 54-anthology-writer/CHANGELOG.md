@@ -1,5 +1,28 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.1 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
+
+### Fixed
+- **`mc_board.py` — an UNRECOGNIZED `department_slug`** (a typo, a regressed
+  hardcoded fake slug like the historical `funnels`/`books`/`email` family, or an
+  empty string) is now caught client-side before the ingest POST, logged loudly to
+  stderr, and RE-ROUTED to the `general-task` catch-all department with the
+  original bad slug annotated on the card description and on `begin_run`'s initial
+  board event note. Never silently dropped. Recognized slugs (the 22 mandatory + 6
+  universal-primary floor departments + known variant aliases, mirrored from
+  `23-ai-workforce-blueprint/scripts/department-floor.py:116-158`) pass through
+  unchanged. Applied identically to the shared `mc_board.py` family
+  (49/50/53/54/55/56/57).
+
+### Added
+- **`test_cc_contract.py`** — this skill's `mc_board.py` shipped with NO contract
+  test at all; it now carries the same shared board-contract suite as its sibling
+  skills, plus six new regression cases for the department_slug reroute: an
+  unrecognized slug reroutes to `general-task`, an empty slug reroutes, a known
+  slug (`marketing`) and `general-task` itself pass through unchanged, the reroute
+  logs loudly to stderr, and `begin_run`'s initial advance note records the
+  original bad slug as a board-visible event.
+
 ## 1.4.0 — Wave-1 extension W1.3 (prompt completion, SPEC 3.2 item 2)
 - **Two NEW baked authoring assets pinned into the SINGLE source of truth.**
   `assets/prompts/11-cover-image-prompt.md` (aw-11, cover-image prompt) and

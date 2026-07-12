@@ -193,6 +193,83 @@ class BoardContractTest(unittest.TestCase):
         self.assertEqual(rec.statuses_written()[-1], "review",
                          "the terminal producer status must be 'review'")
 
+    # ---- P2-07: an UNRECOGNIZED department_slug must never be silently
+    # dropped — it re-routes to the general-task catch-all with a loud log and
+    # a board-visible event noting the original bad slug. Regression coverage
+    # for the historical fake-slug family (funnels/books/email) plus an empty
+    # slug, per SUPER-SPEC P2-07(c).2. ------------------------------------
+    def test_unrecognized_department_slug_reroutes_to_general_task(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        tid = mc_board.card_open(self.run_dir, slug="run-1", title="Run 1",
+                                 department="funnels", env=_ENABLED_ENV)
+        self.assertEqual(tid, "TASK-1")
+        ingest_calls = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")]
+        self.assertEqual(len(ingest_calls), 1)
+        sent = ingest_calls[0]["payload"]
+        self.assertEqual(sent["department_slug"], "general-task",
+                         "an unrecognized department_slug must land in general-task, "
+                         "never be sent through unchanged and never silently dropped")
+        self.assertIn("funnels", sent["description"],
+                      "the original bad slug must be annotated on the card")
+
+    def test_empty_department_slug_reroutes_to_general_task(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        tid = mc_board.card_open(self.run_dir, slug="run-2", title="Run 2",
+                                 department="", env=_ENABLED_ENV)
+        self.assertEqual(tid, "TASK-1")
+        sent = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")][0]["payload"]
+        self.assertEqual(sent["department_slug"], "general-task",
+                         "an empty department_slug must land in general-task")
+
+    def test_known_department_slug_passes_through_unchanged(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        mc_board.card_open(self.run_dir, slug="run-3", title="Run 3",
+                           department="web-development", env=_ENABLED_ENV)
+        sent = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")][0]["payload"]
+        self.assertEqual(sent["department_slug"], "web-development",
+                         "a real, seeded floor department must NEVER be rerouted")
+        self.assertEqual(sent["description"], "Run 3",
+                         "a recognized department must carry no reroute annotation")
+
+    def test_general_task_itself_is_never_rerouted(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        mc_board.card_open(self.run_dir, slug="run-4", title="Run 4",
+                           department="general-task", env=_ENABLED_ENV)
+        sent = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")][0]["payload"]
+        self.assertEqual(sent["department_slug"], "general-task")
+
+    def test_unrecognized_department_slug_logs_loudly(self):
+        import io
+        import contextlib
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            mc_board.card_open(self.run_dir, slug="run-5", title="Run 5",
+                               department="books", env=_ENABLED_ENV)
+        logged = buf.getvalue()
+        self.assertIn("books", logged, "the original bad slug must be logged, not silently swallowed")
+        self.assertIn("UNRECOGNIZED", logged.upper())
+
+    def test_begin_run_emits_reroute_event_note(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        tid = mc_board.begin_run(self.run_dir, slug="run-6", title="Run 6",
+                                 department="email", env=_ENABLED_ENV)
+        self.assertEqual(tid, "TASK-1")
+        # The initial in_progress advance is the board-visible EVENT; its note
+        # must record the original bad slug so the reroute is not silent.
+        advance_calls = [c for c in rec.calls
+                         if not c["url"].endswith("/api/tasks/ingest") and c["method"] != "GET"]
+        self.assertTrue(advance_calls)
+        notes = " ".join(c["payload"].get("note", "") for c in advance_calls)
+        self.assertIn("email", notes,
+                      "the original bad department_slug must appear as a board event note")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

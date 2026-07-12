@@ -1,5 +1,26 @@
 # Changelog — Skill 50 (email-engine)
 
+## 1.1.3 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
+
+### Fixed
+- **`mc_board.py` — an UNRECOGNIZED `department_slug`** (a typo, a regressed
+  hardcoded fake slug like the historical `funnels`/`books`/`email` family, or an
+  empty string) is now caught client-side before the ingest POST, logged loudly to
+  stderr, and RE-ROUTED to the `general-task` catch-all department with the
+  original bad slug annotated on the card description and on `begin_run`'s initial
+  board event note. Never silently dropped. Recognized slugs (the 22 mandatory + 6
+  universal-primary floor departments + known variant aliases, mirrored from
+  `23-ai-workforce-blueprint/scripts/department-floor.py:116-158`) pass through
+  unchanged. Applied identically to the shared `mc_board.py` family
+  (49/50/53/54/55/56/57).
+
+### Added
+- **`test_cc_contract.py`** — six new regression cases: an unrecognized slug
+  reroutes to `general-task`, an empty slug reroutes, a known slug
+  (`web-development`) and `general-task` itself pass through unchanged, the
+  reroute logs loudly to stderr, and `begin_run`'s initial advance note records the
+  original bad slug as a board-visible event.
+
 ## 1.1.1 — 2026-07-08 — board card routes to a REAL department (Command Center routing fix)
 
 ### Fixed
