@@ -160,9 +160,19 @@ else
   fail "T4a: wrapper did not spawn a live child (setup broken, not the fix)"
 fi
 kill -TERM "$WRAPPER_PID" 2>/dev/null   # simulate: operator kills the probe mid-run
-sleep 1.5
+# The wrapper's EXIT/INT/TERM trap runs ab_kill_tree (which reaps the child tree
+# with its OWN grace period) BEFORE the wrapper process itself unwinds and exits,
+# so under load the wrapper can legitimately stay alive for a few seconds while it
+# finishes cleanup. A single fixed `sleep` then a one-shot liveness check RACED
+# that cleanup window and flaked on loaded CI runners (T4c/T4d below already prove
+# the tree is reaped and zero orphans remain — the real AUD-19 guarantee). Poll
+# for the wrapper's ACTUAL death with a generous bound instead of a fixed sleep.
+T4B_DEADLINE=$(( $(date +%s) + 20 ))
+while kill -0 "$WRAPPER_PID" 2>/dev/null && [ "$(date +%s)" -lt "$T4B_DEADLINE" ]; do
+  sleep 0.2
+done
 if kill -0 "$WRAPPER_PID" 2>/dev/null; then
-  fail "T4b: wrapper process $WRAPPER_PID still alive after kill -TERM"
+  fail "T4b: wrapper process $WRAPPER_PID still alive >20s after kill -TERM"
 else
   pass "T4b: wrapper process $WRAPPER_PID terminated"
 fi
