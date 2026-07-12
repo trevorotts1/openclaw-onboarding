@@ -91,6 +91,20 @@ If any source is missing, **STOP** and surface the gap via the triple-fire trigg
 3. (If video) Video Script Writer drafts → Audio Generator voices it → Thumbnail Designer makes the preview
 ```
 
+**Image Prompt Engineer — mandatory pre-write + pre-generation contract (P3-05, steps 7/9):**
+Before writing ANY image prompt, load and merge the applicable avoid-list entries from
+`45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md` (universal
+baseline) and `45-design-intelligence-library/library/social-media-designs/_RULES.md`
+(category rules — ratios, hard rules, model routing). This is a load-BEFORE-write contract,
+not a post-hoc check. Then, before the Image Generator submits ANY prompt, it MUST clear
+`scripts/pregen_prompt_gate.py check` (playbook.md Section 8a) — ratio/pixel spec, brand
+colors, merged avoid-list, verbatim Section-18 copy, and the brand-safety clause are all
+required (exit 3 if any is missing); every text-overlay prompt MUST route to Ideogram V3
+DESIGN, never Nano Banana (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
+is fixed and re-run, never generated. If the week's image asset instead comes from the
+Graphics department, the Image Generator step is REPLACED by the Section 19a input-quality
+gate: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5.
+
 ### Phase 3 — Production
 **Agents:** Video Producer (FFmpeg), Email Designer
 **Outputs:** Final video files (with crossfades, intro/outro), HTML email body
@@ -366,6 +380,7 @@ See also: `docs/HEARTBEAT-GUARD-PATTERN.md` (fleet-wide reference).
 - `references/<platform>.md` — per-platform API specifics
 - Skill 36 — Paid Ads counterpart
 - Skill 22 — persona pipeline (the brand voice persona is consumed by the Strategist)
+- Skill 45 (`45-design-intelligence-library`) — owner of the negative-prompting SOP and the social-media-designs category rules every image prompt this skill writes MUST load before authoring (playbook.md Section 8b); Skill 45's graphics-department deliverables are gated into this skill's pipeline via the Section 19a input-quality gate (SOP-GIP-02 receipt >= 8.5, `scripts/pregen_prompt_gate.py --asset-source graphics-department`)
 - AGENTS.md `## 🔴 N1–N27` — non-negotiables governing this pipeline
 
 ---

@@ -1,5 +1,15 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [v1.3.3] - 2026-07-12 - P3-05: GIP prompt-band floor wired into 15 graphics role docs, CLI-level fail-first prover, social-media-designs _RULES.md enriched
+
+### Added
+- **`scripts/test_prompt_band_cli.py`** — real CLI-level (subprocess) fail-first tests for `diu_validator.py prompt-band`, exercising the exact P3-05 QC break-it probes: a 300-char "logo pls" prompt refused (exit 3, `AF-GIP-PROMPT-FLOOR`); a ~6,000-char, <150-distinct-word prompt refused (exit 6, `AF-GIP-PROMPT-QUALITY`, density-specific message quoted); a genuinely compliant `text_bearing_long` prompt passes (exit 0); and a fail-first cross-check that both refusals disappear against a permissive fixture bands file (proving the refusals are caused by the shipped floor numbers, not a coincidental unrelated failure).
+- **`library/social-media-designs/_RULES.md`** enriched from a 26-line stub: added Skill 35's pixel-exact spec table (previously only in `35-social-media-planner/references/playbook.md`), the mandatory brand-safety clause (verbatim from playbook.md Section 18 rule 5), and the Ideogram-for-text routing rationale tied explicitly to Skill 35's every-image-carries-text-overlay design (closes the "one shared category file is a 26-line stub" finding — Skill 35 and Skill 45 previously described the same deliverable with no single source of truth).
+
+### Changed
+- **Wired the GIP prompt-band gate into the WORKFLOW, not just the tool** (P3-05 step 3): `generation-operator.md` SOP 9.4 preflight checklist item 1 now runs the `diu_validator.py prompt-band` MIN-floor + quality gate BEFORE the endpoint's own MAX-cap check (previously MAX-cap-only, per the P3-05 root-cause finding G1 — the floor existed as config but nothing in the role docs told an agent to run it). 14 additional prompt-authoring roles (`ad-creative-specialist`, `ai-image-generator-specialist`, `book-cover-designer`, `deck-systems-specialist`, `email-designer`, `infographic-specialist`, `photo-shoot-director`, `presentation-designer-slides-decks`, `print--asset-design-specialist`, `style-analyst`, `thumbnail--cover-designer`, `course-slide-designer`, `brand-identity-specialist-logo-color-type`, `motion-systems-specialist`) gained a "GIP Prompt-Band Compliance" section requiring the gate before generation and SOP-GIP-02 vision QC after, mirroring the presentation department's `build_deck.py` floor exactly. `social-media-graphics-specialist.md` gained an explicit pre-generation Gate 0 (it already had the post-generation SOP-GIP-02 gate). `qc-specialist--graphics.md` and `asset-provenance-librarian.md` already carried this wiring pre-fix.
+- Role-library `_index.json` content_sha/content_version restamped via `hash-content-manifest.py` for all 16 touched role docs; `--check` passes clean.
+
 ## [v1.3.1] - 2026-07-08 - fix: fail-closed consent/minor/PII gate, sales interlock, funnel-category install, gate self-tests (OPENCLAW-FIX-SPEC L18)
 
 ### Added

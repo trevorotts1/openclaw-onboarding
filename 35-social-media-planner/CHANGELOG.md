@@ -1,5 +1,19 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.8 - 2026-07-12 — P3-05: PRE-generation prompt QC gate, Ideogram routing for text-overlay images, Skill-45 negative-prompting wiring, input-quality gate on graphics-department assets
+
+### Added
+- **`scripts/pregen_prompt_gate.py`** (stdlib-only, mirrors `diu_validator.py prompt-band`'s fail-closed exit-code discipline: 0 pass / 2 usage / 3 FORM failure `AF-SM-PROMPT-FORM` / 6 quality-or-routing failure `AF-SM-MODEL-ROUTING` / `AF-SM-INPUT-QC-GATE`). Gates every assembled image prompt BEFORE the paid kie.ai generation call: platform ratio + pixel spec present, brand colors named, a merged negative/avoid-list attached, the Section-18 on-image copy baked verbatim, the mandatory brand-safety clause present; then routing (a text-overlay prompt on a non-text-rendering model is refused outright) and, for graphics-department-sourced assets, a SOP-GIP-02 QC receipt scoring >= 8.5 is required or the asset is rejected, not posted.
+- **`scripts/test_pregen_prompt_gate.py`** — real CLI-level (subprocess) fail-first tests: an under-specified prompt is refused (exit 3); a text-overlay prompt on Nano Banana is refused (exit 6) and the SAME prompt passes once re-routed to Ideogram V3 DESIGN; an ungated graphics-department asset is refused and a >=8.5-receipted one passes; a non-text prompt on Nano Banana passes (the routing rule is text-overlay-only).
+- **playbook.md Section 8a** (PRE-generation prompt QC gate) and **Section 8b** (mandatory load of Skill 45's `NEGATIVE-PROMPTING-SOP.md` + `social-media-designs/_RULES.md` BEFORE writing any image prompt) — closes the P3-05 root-cause finding that Skill 35's only prompt-level check was one generic post-generation checklist line, with zero memory of prior failure classes.
+- **playbook.md Section 19a** — the input-quality gate on Graphics-department-sourced assets (P3-05 step 4i): the planner rejects an asset lacking a SOP-GIP-02 receipt >= 8.5 instead of posting it.
+- **INSTRUCTIONS.md Phase 2** — the Image Prompt Engineer step now states the load-before-write + gate-before-generate contract explicitly, and the Cross-references section names Skill 45 as the owner of the negative-prompting/category rules this skill must load.
+
+### Changed
+- **playbook.md Section 8 model table** — every Skill 35 image carries a baked text/headline overlay (Section 18), so the model table now routes ALL of them to **Ideogram V3 DESIGN** (per Skill 45's own documented routing rule) and reserves Nano Banana 2/Pro for non-text imagery only. This closes the root-cause gap the P3-05 investigation named: Nano Banana is not a text-rendering specialist, which plausibly drove the Section 18 "spelling errors on image text, retry up to 3x" loop.
+- **playbook.md Section 18** ("If Image Text Has Spelling Errors") — the retry procedure now checks routing + gate compliance FIRST, before assuming the copy itself is the defect.
+- **playbook.md Section 19 Image Checks** — added checks that the prompt passed the pre-generation gate, that text-overlay images were routed to Ideogram V3 DESIGN, and that any graphics-department-sourced asset carries a passing SOP-GIP-02 receipt.
+
 ## v2.9.5 - 2026-07-01 — Command Center token resolution: Mac/VPS-aware candidate paths, loud single skip warning
 
 ### Fixed
