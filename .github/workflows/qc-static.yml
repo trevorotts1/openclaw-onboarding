@@ -800,6 +800,30 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-tool-gating.test.sh
           echo "✓ qc-tool-gating negative test passes (fails on out-of-vocab tool + gated-off escalate)"
 
+      - name: Skill 38 Runtime tool-gating prover (U-1 runtime proof)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the RUNTIME U-1 proof (P3-07): scripts/33-runtime-tool-gating-
+          # prover.sh must exist, be bash -n clean, POST a synthetic inbound to its own hook,
+          # read the session transcript, and assert the agent REFUSED an ungranted tool. The
+          # gate RUNS the canonical engine against the shipped fixture to prove the active phase
+          # grants check_availability but NOT book_appointment (a real gating boundary), runs the
+          # prover's Layer-A --dry-run, and confirms the prover is wired into the pre-handoff gate
+          # set and the box-level self-test cron. Not a grep-only check - it exercises the engine.
+          bash 38-conversational-ai-system/scripts/qc-runtime-tool-gating.sh
+          echo "✓ Skill 38 runtime U-1 tool-gating prover is present, its fixture boundary holds, and it is wired"
+
+      - name: Skill 38 runtime tool-gating gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-runtime-tool-gating.sh actually FAILS when the fixture's active phase is
+          # mutated to also grant book_appointment (the gating boundary destroyed) and PASSES the
+          # shipped fixture (a green gate that never fails is worthless).
+          bash 38-conversational-ai-system/scripts/qc-runtime-tool-gating.test.sh
+          echo "✓ qc-runtime-tool-gating negative test passes (fails when the active phase grants the tempted tool)"
+
       - name: Skill 38 Tag-driven workflow exits (U-2)
         shell: bash
         run: |

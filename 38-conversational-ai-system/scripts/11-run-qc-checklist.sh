@@ -104,6 +104,8 @@ SCRIPT_FILES=(
   "scripts/qc-communications-playbook-standard.sh"
   "scripts/qc-ghl-raw-body-standard.sh"
   "scripts/qc-notion-doc-standard.sh"
+  "scripts/33-runtime-tool-gating-prover.sh"
+  "scripts/qc-runtime-tool-gating.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -775,6 +777,19 @@ if [ -f "$QC_TOOLGATE" ]; then
   fi
 else
   report_fail "qc-tool-gating.sh not found (looked in scripts/)"
+fi
+
+section "Runtime tool-gating prover (qc-runtime-tool-gating.sh)"
+QC_RTGATE="$SCRIPT_DIR/qc-runtime-tool-gating.sh"
+[ -f "$QC_RTGATE" ] || QC_RTGATE="$SKILL38_ROOT/scripts/qc-runtime-tool-gating.sh"
+if [ -f "$QC_RTGATE" ]; then
+  if bash "$QC_RTGATE" >/dev/null 2>&1; then
+    report_pass "U-1 RUNTIME proof wired (scripts/33-runtime-tool-gating-prover.sh drives a synthetic conversation whose active phase grants check_availability but NOT book_appointment, tempts the agent to book, and asserts by ground truth that it REFUSED the ungranted tool; Layer-A boundary green; wired into the box-level self-test cron)"
+  else
+    report_fail "qc-runtime-tool-gating.sh found the runtime tool-gating prover missing/unwired or its Layer-A boundary broken - run it directly for detail"
+  fi
+else
+  report_fail "qc-runtime-tool-gating.sh not found (looked in scripts/)"
 fi
 
 section "Tag-driven workflow exits (qc-workflow-exits.sh)"

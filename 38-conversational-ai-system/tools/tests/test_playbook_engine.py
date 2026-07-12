@@ -243,6 +243,159 @@ class TestRegistryIds(unittest.TestCase):
         self.assertNotIn("id", ids)
 
 
+class TestPhaseHeadingClosure(unittest.TestCase):
+    """P3-07 step 1: a rogue mid-phase level-3 (###) non-Phase heading must
+    CLOSE the phase block. Its key:value-looking lines must NOT leak into the
+    preceding phase's tools/max-attempts (the data the U-1 tool-gating gates
+    trust). Pre-fix, the closing check matched only '# '/'## ', so a bare
+    '### Notes' silently absorbed its lines into the phase above it.
+    """
+
+    ROGUE = (
+        "# WF\n\n"
+        "## What the agent does\n\n"
+        "### Phase 1 - Qualify\n"
+        "tools: check_availability\n"
+        "max-attempts: 2\n"
+        "Ask what they need.\n\n"
+        "### Notes\n"
+        "tools: book_appointment, send_invoice, everything\n"
+        "max-attempts: 99\n\n"
+        "### Phase 2 - Close\n"
+        "tools: update_tags\n"
+        "Wrap up.\n"
+    )
+
+    def setUp(self):
+        self.p = engine.parse_playbook(self.ROGUE)
+        self.ph1 = self.p["phases"][0]
+
+    def test_rogue_heading_does_not_leak_tools(self):
+        # Phase 1 granted ONLY check_availability. The '### Notes' tools line
+        # must NOT bleed in.
+        self.assertEqual(self.ph1["tools"], ["check_availability"])
+        for leaked in ("book_appointment", "send_invoice", "everything"):
+            self.assertNotIn(leaked, self.ph1["tools"],
+                             "'%s' leaked from '### Notes' into Phase 1" % leaked)
+
+    def test_rogue_heading_does_not_corrupt_max_attempts(self):
+        # Phase 1's max-attempts is 2; the rogue block's 'max-attempts: 99'
+        # must not overwrite it.
+        self.assertEqual(self.ph1["max_attempts"], "2")
+
+    def test_rogue_heading_not_in_resolved_tools(self):
+        # The tool-gating gate resolves the enabled set from the phase; the
+        # leaked tools must not become grantable.
+        resolved = engine.resolve_phase_tools(self.ph1)
+        self.assertIn("check_availability", resolved)
+        self.assertNotIn("book_appointment", resolved)
+        self.assertNotIn("everything", resolved)
+
+    def test_phase_count_is_two(self):
+        # '### Notes' is NOT a phase; only Phase 1 and Phase 2 are phases.
+        self.assertEqual(len(self.p["phases"]), 2)
+        self.assertEqual(self.p["phases"][1]["number"], 2)
+        self.assertEqual(self.p["phases"][1]["tools"], ["update_tags"])
+
+    def test_h1_and_h2_headings_still_close(self):
+        # The fix must not regress '# '/'## ' closure: a '## ' section heading
+        # after Phase 1 still closes it.
+        pb = (
+            "### Phase 1 - Qualify\n"
+            "tools: check_availability\n"
+            "## Some section\n"
+            "tools: book_appointment\n"
+        )
+        p = engine.parse_playbook(pb)
+        self.assertEqual(p["phases"][0]["tools"], ["check_availability"])
+
+    def test_h4_edge_heading_does_not_close(self):
+        # A deeper '#### edge' heading inside a phase must NOT close it (kv lines
+        # under it still belong to the phase) - the documented '#### edge'
+        # carve-out is preserved.
+        pb = (
+            "### Phase 1 - Qualify\n"
+            "tools: check_availability\n"
+            "#### Edge case: no availability\n"
+            "max-attempts: 3\n"
+        )
+        p = engine.parse_playbook(pb)
+        self.assertEqual(p["phases"][0]["tools"], ["check_availability"])
+        self.assertEqual(p["phases"][0]["max_attempts"], "3")
+
+
+class TestExitRuleOrderIndependence(unittest.TestCase):
+    """P3-07 step 2: closing: and target: may appear in EITHER order after the
+    action clause. Neither may swallow the other's value. Pre-fix, a reversed
+    'target: ..., closing: ...' let target greedily eat the trailing closing.
+    """
+
+    def test_normal_order_closing_then_target(self):
+        r = engine._parse_exit_rule(
+            "switch, action: route, closing: Handing you over, target: support-intake")
+        self.assertEqual(r["tag"], "switch")
+        self.assertEqual(r["action"], "route")
+        self.assertEqual(r["closing"], "Handing you over")
+        self.assertEqual(r["target"], "support-intake")
+
+    def test_reversed_order_target_then_closing(self):
+        r = engine._parse_exit_rule(
+            "switch, action: route, target: support-intake, closing: Handing you over")
+        # target must be EXACTLY the id - it must not swallow the closing text.
+        self.assertEqual(r["target"], "support-intake")
+        self.assertEqual(r["closing"], "Handing you over")
+        self.assertEqual(r["action"], "route")
+
+    def test_both_orders_parse_identically(self):
+        a = engine._parse_exit_rule(
+            "x, action: route, closing: bye now, target: t-id")
+        b = engine._parse_exit_rule(
+            "x, action: route, target: t-id, closing: bye now")
+        self.assertEqual(a, b)
+
+    def test_reversed_route_validates_clean(self):
+        # A reversed-order route rule must not produce a spurious "route needs a
+        # target" defect (the target was being corrupted pre-fix).
+        pb = (
+            "### Phase 1 - Only\n"
+            "tools: reference_documents\n"
+            "Do the thing.\n\n"
+            "Exit rules\n"
+            "exit-when-tag: switch, action: route, target: support-intake, closing: Bye\n\n"
+            "## On success\nWin.\n"
+        )
+        p = engine.parse_playbook(pb)
+        defects = engine.validate_playbook(p, registry_targets={"support-intake"})
+        self.assertFalse(any("route" in d and "target" in d for d in defects),
+                         "reversed-order route should validate clean: %s" % defects)
+
+    def test_malformed_no_action_is_loud_not_silent(self):
+        # A tag with named clauses but NO action clause must leave action None,
+        # which validate_playbook flags loudly (never a silent bad action).
+        r = engine._parse_exit_rule("foo, target: bar")
+        self.assertEqual(r["tag"], "foo")
+        self.assertIsNone(r["action"])
+        self.assertEqual(r["target"], "bar")
+        pb = (
+            "### Phase 1 - Only\n"
+            "tools: reference_documents\n\n"
+            "Exit rules\n"
+            "exit-when-tag: foo, target: bar\n\n"
+            "## On success\nWin.\n"
+        )
+        p = engine.parse_playbook(pb)
+        defects = engine.validate_playbook(p)
+        self.assertTrue(any("action" in d for d in defects),
+                        "a missing action must be a loud defect: %s" % defects)
+
+    def test_tag_only_no_clauses(self):
+        r = engine._parse_exit_rule("just-a-tag")
+        self.assertEqual(r["tag"], "just-a-tag")
+        self.assertIsNone(r["action"])
+        self.assertIsNone(r["closing"])
+        self.assertIsNone(r["target"])
+
+
 class TestFormattingLaws(unittest.TestCase):
     """The engine and its fixtures must obey the operator formatting laws."""
 

@@ -173,7 +173,12 @@ _cli_supports_command() {
   printf '%s' "$help" | grep -qE '^[[:space:]]*--command[[:space:]<]'
 }
 register_command_cron() {
-  local name="$1" cron_expr="$2" script="$3"
+  local name="$1" cron_expr="$2" script="$3" script_args="${4:-}"
+  # Compose the shell command once so optional args (e.g. --auto) flow through
+  # every registration path identically. Existing callers pass no 4th arg, so
+  # the command is exactly "bash $script" as before.
+  local run_cmd="bash $script"
+  [ -n "$script_args" ] && run_cmd="bash $script $script_args"
   if oc_cron_tombstoned "$name"; then
     echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
     return 0
@@ -191,9 +196,9 @@ register_command_cron() {
     # it does NOT stop the script's own deliberate `openclaw message send` (e.g.
     # ghl-pit-liveness notifying the client on a 401). No-flag retry if rejected.
     if openclaw cron add --name "$name" --cron "$cron_expr" \
-         ${CMD_SILENCE_ARGS[@]+"${CMD_SILENCE_ARGS[@]}"} --command "bash $script" >&2 \
-       || openclaw cron add --name "$name" --cron "$cron_expr" --command "bash $script" >&2; then
-      echo "registered command-cron: $name ($cron_expr) -> bash $script [delivery silenced]" >&2
+         ${CMD_SILENCE_ARGS[@]+"${CMD_SILENCE_ARGS[@]}"} --command "$run_cmd" >&2 \
+       || openclaw cron add --name "$name" --cron "$cron_expr" --command "$run_cmd" >&2; then
+      echo "registered command-cron: $name ($cron_expr) -> $run_cmd [delivery silenced]" >&2
       _assert_cron_silent "$name"
     else
       echo "ERROR: 'openclaw cron add $name --command' failed — register it manually" >&2
@@ -201,7 +206,7 @@ register_command_cron() {
     fi
   else
     # 2026.5.x: no --command. Run the SAME script via a silent agent-message job.
-    local msg="[SKILL38-CRON $name] Run this exact shell command now and report only on failure: bash $script"
+    local msg="[SKILL38-CRON $name] Run this exact shell command now and report only on failure: $run_cmd"
     if _add_agent_cron "$name" "$cron_expr" "$msg"; then
       echo "registered agent-message cron (5.x fallback): $name ($cron_expr) -> bash $script [delivery silenced]" >&2
       _assert_cron_silent "$name"
@@ -263,4 +268,20 @@ register_command_cron "ghl-pit-liveness" "15 8 * * *" \
   "$SCRIPT_DIR/check-ghl-pit-liveness.sh" || \
   echo "WARN: ghl-pit-liveness cron not registered — register it manually (bash $SCRIPT_DIR/check-ghl-pit-liveness.sh, daily)." >&2
 
-echo "OK: crons registered via 'openclaw cron add' [delivery silenced — --no-deliver + isolated session] — 5 agent-message crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) + 1 command-cron (ghl-pit-liveness runtime credential watcher). Maintenance output never reaches the client chat; operator notifications go through notification-routing-protocol.md." >&2
+# -----------------------------------------------------------------------------
+# Cron 7 — skill38-tool-gating-selftest  (2nd of each month, 9:30 AM)  [P3-07]
+# The box-level RUNTIME self-test for U-1 per-phase tool gating. Runs
+# scripts/33-runtime-tool-gating-prover.sh --auto: on a configured box it drives
+# a synthetic conversation whose active phase grants check_availability but NOT
+# book_appointment, tempts the agent to book, and asserts by ground truth that
+# it REFUSED the ungranted tool (writing runtimeToolGatingPassed). On a box where
+# the live hook params cannot be resolved it degrades to the Layer-A static
+# ground-truth self-check (never schedule spam). This is the tool-gating twin of
+# the backend self-test (scripts/24-self-test-hook.sh): tool gating is proven at
+# RUNTIME on a schedule, not just at build time.
+# -----------------------------------------------------------------------------
+register_command_cron "skill38-tool-gating-selftest" "30 9 2 * *" \
+  "$SCRIPT_DIR/33-runtime-tool-gating-prover.sh" "--auto" || \
+  echo "WARN: skill38-tool-gating-selftest cron not registered — register it manually (bash $SCRIPT_DIR/33-runtime-tool-gating-prover.sh --auto, monthly)." >&2
+
+echo "OK: crons registered via 'openclaw cron add' [delivery silenced — --no-deliver + isolated session] — 5 agent-message crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) + 2 command-crons (ghl-pit-liveness runtime credential watcher; skill38-tool-gating-selftest runtime U-1 tool-gating prover). Maintenance output never reaches the client chat; operator notifications go through notification-routing-protocol.md." >&2
