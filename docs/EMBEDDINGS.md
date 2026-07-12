@@ -5,14 +5,30 @@ If a build, agent, or script touches embeddings and disagrees with this page,
 the build is wrong. CI enforces the invariants below
 (`.github/workflows/embedding-integrity-guard.yml`).
 
-## The four corpora
+## The six corpora
+
+**P4-03 (2026-07-12) ground truth:** there are TWO entirely separate embedding
+SYSTEMS on two different stacks, not connected to each other. System 1
+(corpora 1–2, Python, this repo) is the mature "embed once, push to clients"
+pipeline. System 2 (corpora 5–6, TypeScript, the Command Center repo) was
+**broken as a fleet pipeline** before P4-03 — every client box burned its OWN
+key re-embedding an IDENTICAL shared SOP library, the table was never wired
+into install at all, and two health surfaces (`embedding_health.py` here vs.
+`heartbeat-canary-probe.py` in the CC repo) disagreed about the SAME box
+state. P4-03 closes the gap: corpus 5 now has its own embed-once pipeline
+mirroring corpus 1's, and corpus 6's per-department vectors are cached
+instead of re-embedded on every dispatch. See
+`shared-utils/sop-embed-once/` for the implementation and
+`SECTION 6 / P4-03` of the 2026-07-11 spec for the full root-cause writeup.
 
 | # | Corpus | Retrieval model | Store | Integrity gate |
 |---|--------|-----------------|-------|----------------|
 | 1 | Coaching personas (Skill 22 blueprints) | Gemini vectors, section-level | `workspace/data/coaching-personas/gemini-index.sqlite` | real-vector hard gate + `--verify` + count triad |
 | 2 | Persona matching at runtime | cosine over corpus 1 + category/keyword ladder | same DB + `persona-categories.json` | provider/model row filter + dim guard + keyword fallback |
 | 3 | Role library (426 roles) | deterministic `_index.json` lookup — **no embeddings by design** | `23-ai-workforce-blueprint/templates/role-library/_index.json` | `content_sha` (CONTENT-HASH) via `hash-content-manifest.py`, CI `library-lockstep` |
-| 4 | SOP libraries | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (131) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
+| 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (131) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
+| 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057) | real-vector hard gate (`embed_sop_library.py --verify`) + sha256 asset gate + dual-surface row-count reconciliation |
+| 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
 ## Non-negotiable invariants (EMBED-1..8)
 
@@ -148,6 +164,74 @@ Two DIFFERENT things — never conflate the counts:
   by `regenerate-sop-index.py` on the installed box; the Command Center
   ingests raw markdown directly.
 
+## Corpus 5 — CC SOP / routing embeddings (System 2, TypeScript, mission-control.db)
+
+**Who embeds, who pays:** the OPERATOR embeds the canonical shared SOP
+library (`sops.jsonl`, the SAME content `ingest-sop-library.py` loads into
+every client's `sops` table) ONCE, mirroring corpus 1. Clients spend their own
+key ONLY on genuinely client-specific content — custom SOPs from
+`sop_proposals` that are NOT covered by the shipped asset — via
+`scripts/backfill-sop-embeddings.ts` (CC repo) in delta-only mode.
+
+- **Build (operator box only)**: `shared-utils/sop-embed-once/build-and-publish.sh`
+  — mirrors `shared-utils/prebuilt-index/build-and-publish.sh` field-for-field:
+  hermetic staging dir, HASH-SKIP incremental embed
+  (`shared-utils/sop-embed-once/embed_sop_library.py`, md5 of the SAME
+  title+description+keywords+first-8-steps text shape as
+  `sop-embeddings.ts::buildSOPEmbedText()` in the CC repo — kept in lockstep
+  by hand, not by import, since it is a cross-language/cross-repo pair),
+  REAL-VECTOR HARD GATE (`--verify`, gemini-embedding-2 @3072 float32, refuses
+  to publish a short/wrong-dim row), sha256 + row-count triad, GitHub Release
+  asset (`sop-embeddings.sqlite.gz`) + manifest
+  (`shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json` — `sop_count`,
+  `chunk_count`, `sha256`, `embedding_model`, `dims`, `release_tag`, the direct
+  analog of `INDEX-MANIFEST.json`).
+- **Ship (every client box, install + every Sunday update)**:
+  `32-command-center-setup/scripts/ingest-sop-library.sh` calls
+  `shared-utils/sop-embed-once/provision_sop_embeddings.py` immediately after
+  the SOP content ingest — sha256-verified download, idempotency gate (marker
+  table `sop_embeddings_shipped_asset`: release_tag + row count), scoped
+  `INSERT OR REPLACE` restricted to `sop_id`s the box's own `sops` table
+  actually has, ZERO embedding API calls. A box with no published asset yet
+  (`asset_rebuild_required:true` in the seed manifest) additively no-ops —
+  never blocks install/update.
+- **Client-delta only**: `scripts/backfill-sop-embeddings.ts` (CC repo) is
+  incremental — it already skips any `sop_id` with a row for the active
+  model, so shared-library rows imported by provisioning are never re-embedded
+  UNLESS `--force` is passed. `--force` REFUSES a full re-embed when the
+  `sop_embeddings_shipped_asset` marker table is present, mirroring
+  `embedding_engine._refuse_full_rebuild_if_prebuilt` — the operator-only
+  override for a genuine embedding-model migration.
+- **Health**: TWO surfaces read the SAME ground truth and must never
+  disagree — `shared-utils/embedding_health.py::check_cc_sop_index` (leg-b
+  now reads REAL row counts via `_read_cc_sop_row_counts`, not a stamp table
+  CC's migrations never create) and the CC repo's own
+  `32-command-center-setup/scripts/heartbeat-canary-probe.py` (row-count/
+  coverage gate, cron'd every 6h). See `tests/unit/embedding-health-cc-sop-reconciliation.test.py`.
+- **Standing guard (EMBED-3/EMBED-8 analog)**: the client-box import path
+  asserts `embedding_model`+`dims` match between the shipped asset and the
+  manifest's declared contract BEFORE importing a single row — refuses to
+  mix vector spaces (a 1536-dim OpenAI row can never land next to a
+  3072-dim Gemini row for the same corpus).
+
+## Corpus 6 — department-router semantic vectors (System 2, TypeScript, in-memory)
+
+`department-router.ts::semanticRankDepartments()` embeds the LIVE task text on
+every `comDispatch()` call (unavoidable — the task text is dynamic) but, as of
+P4-03, embeds each department's `deptEmbedText()` (`name + purpose +
+keywords`) vector ONCE per department-config version — not on every call. The
+cache key is a content hash of that same text; an operator editing a
+department's name/purpose/keywords changes the hash and naturally invalidates
+the stale cached vector on the next dispatch (no explicit version field
+needed). Effect: an N-department fleet drops from N+1 embed calls per
+dispatch (1 task + N departments) to 1 (task only) — the department vectors
+are computed once and reused until the department config changes.
+
+This corpus is deliberately NOT persisted to `mission-control.db` — it is a
+per-process cache, cheap to rebuild on restart, and never shipped as a
+GitHub Release asset (department configs are per-client, not a shared
+library).
+
 ## Provider reliability (build pipeline)
 
 - Keys are read from ALL canonical secret stores and DEQUOTED
@@ -174,4 +258,15 @@ shared-utils/prebuilt-index/build-and-publish.sh --persona-id <slug>
 # SOP integrity:
 python3 scripts/hash-universal-sops-manifest.py --check
 python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py --check
+
+# Corpus 5 (CC SOP embeddings) — verify a staged/published asset (rc 0 pass / 4 fail):
+python3 shared-utils/sop-embed-once/embed_sop_library.py --db /path/to/sop-embeddings.sqlite --verify
+# Publish a delta asset (operator box only, needs a Gemini key):
+shared-utils/sop-embed-once/build-and-publish.sh
+# Dry-run (no key needed, proves the count/manifest math only):
+shared-utils/sop-embed-once/build-and-publish.sh --dry-run
+# Provision the shipped asset into a client's mission-control.db (normally
+# called automatically by ingest-sop-library.sh):
+python3 shared-utils/sop-embed-once/provision_sop_embeddings.py \
+  shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json /path/to/mission-control.db
 ```

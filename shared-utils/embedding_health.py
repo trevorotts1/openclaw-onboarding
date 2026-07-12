@@ -536,14 +536,15 @@ def _read_gemini_index_stamp(openclaw_root: Path) -> Optional[dict]:
     return None
 
 
-def _read_cc_sop_stamp(
-    cc_dir: Path,
+def _cc_sop_db_candidates(
+    cc_dir: Optional[Path],
     db_path_override: Optional[str] = None,
     openclaw_json: Optional[dict] = None,
-) -> Optional[dict]:
-    """
-    Read the embedding stamp from the Command Center SOP database (mission-control.db).
-    Returns {provider, model, dim} or None.
+) -> list[Path]:
+    """Shared candidate-path resolver for the CC mission-control.db, used by
+    BOTH _read_cc_sop_stamp (legacy stamp-table lookup) and
+    _read_cc_sop_row_counts (P4-03 — real row-count reconciliation) so the two
+    surfaces can never disagree about WHICH FILE they are inspecting.
 
     Bug-fix (v11.18.1): DATABASE_PATH may be wired into the box's own
     openclaw.json env.vars rather than this process's OS env, so we consult
@@ -565,6 +566,87 @@ def _read_cc_sop_stamp(
             cc_dir / "db" / "mission-control.db",
             cc_dir / "prisma" / "dev.db",
         ]
+    return candidates
+
+
+def _read_cc_sop_row_counts(
+    cc_dir: Optional[Path],
+    db_path_override: Optional[str] = None,
+    openclaw_json: Optional[dict] = None,
+    active_model: Optional[str] = None,
+) -> Optional[dict]:
+    """P4-03 reconciliation — read REAL row counts from the CC SOP database.
+
+    Root cause this fixes: CC's own migrations (migration 057) never create an
+    `embedding_meta` / `meta` / `settings` stamp table — _read_cc_sop_stamp()
+    ALWAYS returns None on a real CC box, which made leg_b_stamp_match ALWAYS
+    None regardless of how many (or how few) sop_embeddings rows existed. The
+    heartbeat probe (32-command-center-setup/scripts/heartbeat-canary-probe.py)
+    correctly gates on the REAL row counts of `sops` and `sop_embeddings` —
+    this function reads the SAME ground truth so the two health surfaces can
+    never disagree about the same box state again.
+
+    Returns None only when NO candidate DB file exists on disk (box not yet
+    provisioned — informational, not a failure). Once a DB file exists, this
+    ALWAYS returns real counts (defaulting missing tables to 0 rows) so the
+    caller can distinguish "nothing to embed yet" (sops_total==0) from
+    "SOP content loaded but embeddings never ran" (sops_total>0, count==0) —
+    the exact dark-but-reported-pass gap this closes.
+    """
+    for db_file in _cc_sop_db_candidates(cc_dir, db_path_override, openclaw_json):
+        if not db_file.is_file():
+            continue
+        try:
+            con = sqlite3.connect(str(db_file), timeout=5)
+            cur = con.cursor()
+
+            def _count(table: str, where: str = "", params: tuple = ()) -> int:
+                exists = cur.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                ).fetchone()
+                if not exists:
+                    return 0
+                sql = f"SELECT COUNT(*) FROM {table}"
+                if where:
+                    sql += f" WHERE {where}"
+                return cur.execute(sql, params).fetchone()[0]
+
+            sops_total = _count("sops")
+            sop_embeddings_count = _count("sop_embeddings")
+            active_model_count = (
+                _count("sop_embeddings", "embedding_model = ?", (active_model,))
+                if active_model
+                else sop_embeddings_count
+            )
+            con.close()
+            return {
+                "db_file": str(db_file),
+                "sops_total": sops_total,
+                "sop_embeddings_count": sop_embeddings_count,
+                "active_model_count": active_model_count,
+            }
+        except sqlite3.Error:
+            continue
+    return None
+
+
+def _read_cc_sop_stamp(
+    cc_dir: Path,
+    db_path_override: Optional[str] = None,
+    openclaw_json: Optional[dict] = None,
+) -> Optional[dict]:
+    """
+    Read the embedding stamp from the Command Center SOP database (mission-control.db).
+    Returns {provider, model, dim} or None.
+
+    NOTE (P4-03): CC's own migrations never create an embedding_meta / meta /
+    settings stamp table, so this ALWAYS returns None on a real box — it is
+    kept for forward-compat with any future stamp-table writer, but
+    check_cc_sop_index's PRIMARY leg-b signal is now _read_cc_sop_row_counts()
+    (real row counts), not this function. See that docstring for the root
+    cause this reconciliation fixes.
+    """
+    candidates = _cc_sop_db_candidates(cc_dir, db_path_override, openclaw_json)
 
     for db_file in candidates:
         if not db_file.is_file():
@@ -951,6 +1033,73 @@ def check_cc_sop_index(
                 f"stamped={stamped_provider}/{stamped_model} (consistent with current capable provider)"
             )
             _ok(f"{LBL} leg-b stamp: {res['leg_b_detail']}")
+
+    # ── Leg (b) RECONCILIATION (P4-03) ───────────────────────────────────────
+    # Root cause: CC's migrations never create the embedding_meta/meta/settings
+    # stamp table _read_cc_sop_stamp() looks for, so `stamp` above is ALWAYS
+    # None on a real box — leg_b_stamp_match stayed None regardless of row
+    # counts, and the overall `pass` gate (`leg_b_stamp_match is not False`)
+    # treated None as a PASS. A brand-new box with a valid key and ZERO
+    # embedded SOPs showed `pass` here while
+    # 32-command-center-setup/scripts/heartbeat-canary-probe.py correctly
+    # screamed `dark` from the SAME box state — the exact two-surfaces-
+    # disagree bug this closes. This block reads the REAL row counts (the
+    # heartbeat probe's own ground truth) and OVERRIDES leg_b_stamp_match to
+    # False whenever the box has SOP content loaded (`sops_total>0`) but zero
+    # rows on the currently-capable provider's model — it never loosens an
+    # already-False verdict from the stamp check above, only tightens a
+    # None/True verdict the stamp check could not see.
+    active_model_hint = None
+    if capable_provider == "google":
+        active_model_hint = GEMINI_EMBED_MODEL
+    elif capable_provider == "openai":
+        active_model_hint = OPENAI_EMBED_MODEL
+    counts = _read_cc_sop_row_counts(cc_dir, openclaw_json=openclaw_json, active_model=active_model_hint)
+    if counts is not None:
+        sops_total = counts["sops_total"]
+        emb_total = counts["sop_embeddings_count"]
+        active_count = counts["active_model_count"]
+        if sops_total > 0 and emb_total == 0:
+            res["needs_reindex"] = True
+            res["leg_b_stamp_match"] = False
+            msg = (
+                f"{LBL} leg-b FAIL (row-count reconciliation): {sops_total} SOP(s) loaded in "
+                f"`sops` but sop_embeddings is EMPTY (0 rows) — embeddings never ran. "
+                f"This box previously reported a false PASS here (no stamp table to detect it); "
+                f"the heartbeat probe's row-count gate agrees this is dark. Run the SOP-embeddings "
+                f"provisioning step (P4-03 step 2) or the backfill for client-specific SOPs (step 3)."
+            )
+            res["errors"].append(msg)
+            res["leg_b_detail"] = f"sops_total={sops_total} sop_embeddings_count=0 (db={counts['db_file']})"
+            _err(msg)
+        elif sops_total > 0 and emb_total > 0 and active_model_hint and active_count == 0:
+            res["needs_reindex"] = True
+            res["leg_b_stamp_match"] = False
+            msg = (
+                f"{LBL} leg-b FAIL (row-count reconciliation): {emb_total} sop_embeddings row(s) exist "
+                f"but ZERO match the currently-capable model '{active_model_hint}' — semantic routing is "
+                f"blind for the active provider even though rows are present. Re-index required."
+            )
+            res["errors"].append(msg)
+            res["leg_b_detail"] = (
+                f"sops_total={sops_total} sop_embeddings_count={emb_total} "
+                f"active_model_count=0 (db={counts['db_file']})"
+            )
+            _err(msg)
+        elif res["leg_b_stamp_match"] is None:
+            # No legacy stamp AND no dark condition proven by row counts —
+            # e.g. a fresh box with sops_total==0 (nothing to embed yet), or
+            # rows present and covering the active model. Report informational
+            # detail from the real counts instead of the uninformative
+            # "no stamp on disk" default, but do NOT force a pass/fail verdict
+            # the row counts don't support (sops_total==0 is legitimately "not
+            # yet provisioned", not a failure).
+            res["leg_b_detail"] = (
+                f"row-count reconciliation: sops_total={sops_total} "
+                f"sop_embeddings_count={emb_total} active_model_count={active_count} "
+                f"(db={counts['db_file']}) — no dark condition detected"
+            )
+            _info(f"{LBL} leg-b (row-count): {res['leg_b_detail']}")
 
     # ── Leg (c) ────────────────────────────────────────────────────────────────
     if generative_provider and _provider_is_ollama_cloud(generative_provider, openclaw_json):
