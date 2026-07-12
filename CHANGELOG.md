@@ -1,3 +1,15 @@
+## [v19.66.0]  -  2026-07-12  -  feat(skill23): P4-02 step 7 — synergy blend directive gains the TASK-persona slot
+
+P4-02's dual-persona content system combines a PERSONA SIDE (audience voice + topic expertise) with a TASK SIDE (the persona matched to the work being performed), "combined synergistically." The task side was computed (`build_task_personas`) and returned in the bundle, but it NEVER reached the writer's actual instruction: `build_blend_directive` composed only voice + audience + topic. Step 7 closes that — the directive now composes up to FOUR synergy slots and degrades gracefully.
+
+### `23-ai-workforce-blueprint/scripts/persona_blend.py`
+- **`build_blend_directive` gains a fourth slot** (`task_persona_pid=`): after the voice/audience/substance body, it appends "The task-side persona is W — apply ITS process and decision method to execute the work." The slot is content-gated and only added when W is a GENUINELY DISTINCT persona (not already the voice or topic persona, which already doubles as task guidance) so the composed directive never repeats itself. All four slots populate when available and degrade gracefully to three/two/one (voice-only, topic-only, task-only, or the neutral house voice). The mandatory `GUARDRAIL_CLAUSE` remains the non-removable trailing clause.
+- **`build_bundle` reordered**: `build_task_personas` now runs BEFORE the directive is built so the primary (first non-mechanical) task-side persona populates slot 4. No change to the bundle's shape, the confirm-gate, the audience resolution, or the back-compat `persona_id` mirror.
+
+### Tests
+- `23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py` — 10 fail-first checks (the whole file raises `TypeError: unexpected keyword argument 'task_persona_pid'` on the pre-P4-02 tree): the four-slot compose; graceful degradation with slot 4 omitted when the task persona is None or redundant (== voice/topic); topic-only and collapsed branches still carrying the task slot; non-content tasks never getting a voice/task blend; and the guardrail staying the non-removable trailing clause even with all four slots present, each paired with a NO-WEAKENING probe.
+- The existing W7 contract suite (`test-persona-blend-matcher.py`) stays green at 46/46 after the reorder.
+
 ## [v19.65.0]  -  2026-07-12  -  fix(skill6): P3-04 — residuals: iframe failure taxonomy, weekly iframe-survival check, unmanaged-spawn guard auto-discovery, per-box conformance probe
 
 Merges `fix/skill6-residuals` (2 commits) into `main` as the serial onboarding writer, `--no-ff`. The branch was cut at v19.58.0; several trains landed on `main` before this merge (through P3-08 at v19.64.0), so 2 files conflicted — real diamond-dependency content collisions, not pure version-number churn: both `main` (via P3-08) and the branch made genuine, independent changes to the same unmanaged-agent-browser-spawn guard in the same release window.

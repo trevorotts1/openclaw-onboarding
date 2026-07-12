@@ -609,9 +609,20 @@ def decide_collapse(catalog: dict, audience_pid, topic_pid,
 # ── blend directive (carries the mandatory guardrail) ─────────────────────────
 def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
                           collapsed_pid, content_task: bool,
-                          audience_label: str = "") -> str:
-    """Compose the writer's blend instruction. GUARDRAIL_CLAUSE is ALWAYS appended
-    and can never be omitted (fail-closed guardrail)."""
+                          audience_label: str = "", task_persona_pid=None) -> str:
+    """Compose the writer's SYNERGY instruction — up to FOUR slots working
+    together (P4-02 step 7):
+
+        1. VOICE     — the audience persona's cadence/devices/register.
+        2. AUDIENCE  — who the content is FOR (the resolved audience label).
+        3. SUBSTANCE — the topic persona's expertise/frameworks.
+        4. TASK      — the task-side persona (DEP-5), an INDEPENDENT dimension
+                       guiding HOW the work is executed (its process/method).
+
+    Every slot populates when available and DEGRADES GRACEFULLY when not
+    (voice-only, topic-only, task-only, or the neutral house voice). The
+    GUARDRAIL_CLAUSE is ALWAYS appended and can never be omitted (fail-closed).
+    """
     def _name(pid):
         return pid.replace("-", " ").title() if pid else None
 
@@ -634,6 +645,18 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
                 f"voice is applied once confirmed.")
     else:
         body = f"Proceed in the default house voice on {topic!r}."
+
+    # Slot 4 — the TASK-side persona. An independent dimension (DEP-5): it governs
+    # the work PROCESS, not the voice or substance. Appended only for content
+    # tasks and only when it is a GENUINELY DISTINCT persona (not already the
+    # voice or the topic persona, which already doubles as task guidance) so the
+    # composed directive never repeats itself — graceful degradation to
+    # three/two/one slot when the task persona is absent or redundant.
+    if content_task and task_persona_pid and task_persona_pid not in (
+            audience_pid, topic_pid, collapsed_pid):
+        body += (f" The task-side persona is {_name(task_persona_pid)} — apply "
+                 f"ITS process and decision method to execute the work.")
+
     return body + " " + GUARDRAIL_CLAUSE
 
 
@@ -839,14 +862,25 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         confirm_required = bool(ra.get("confirm_required", True))
     ra["confirm_required"] = confirm_required
 
-    blend_directive = build_blend_directive(
-        audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
-        voice_audience_label)
-
     # ── TASK personas (up to 10) ────────────────────────────────────────────────
+    # Computed BEFORE the directive (P4-02 step 7) so the primary task-side
+    # persona can populate the directive's fourth synergy slot.
     task_personas, combined = build_task_personas(
         task, department, max_task_personas=max_task_personas,
         use_llm=use_llm, record=record, variety=variety)
+
+    # The PRIMARY task-side persona (DEP-5): the first non-mechanical part's
+    # persona. None when the plan is empty or all-mechanical — the directive then
+    # simply omits slot 4 (graceful degradation).
+    primary_task_pid = next(
+        (tp.get("persona_id") for tp in task_personas
+         if tp.get("persona_id") and not tp.get("no_persona_required")),
+        None,
+    )
+
+    blend_directive = build_blend_directive(
+        audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
+        voice_audience_label, task_persona_pid=primary_task_pid)
 
     funnel = semantic_funnel if isinstance(semantic_funnel, dict) else {
         "pool": len(_persona_meta(catalog)),
