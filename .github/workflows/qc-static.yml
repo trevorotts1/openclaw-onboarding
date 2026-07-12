@@ -1379,6 +1379,70 @@ jobs:
           bash 03-agent-browser/install-step4-close-guarantee.test.sh
           echo "✓ INSTALL.md Step 4 chains open/snapshot/close under a trap -- close runs even when snapshot is forced to fail, and leaves zero orphaned browser processes"
 
+      - name: Skill 03 bundled archive matches on-disk source (P3-06 --check gate)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The ONLY sanctioned way to produce/update agent-browser.skill from now
+          # on is scripts/pack-agent-browser-skill.sh -- never hand-zip. --check
+          # fails the build the moment INSTALL.md/SKILL.md/CHANGELOG.md/
+          # CORE_UPDATES.md changes without a repack, naming the differing file
+          # (mirrors scripts/bump-version.sh --check).
+          bash 03-agent-browser/scripts/pack-agent-browser-skill.sh --check
+          echo "✓ agent-browser.skill is byte-for-byte current with its on-disk source (a content change without a repack now fails CI)"
+
+      - name: Skill 03 fail-first fixture (pre-fix qc-agent-browser.sh from origin/main)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The P3-06 fail-first proofs in pack-agent-browser-skill.test.sh,
+          # qc-agent-browser-drift-gate.test.sh, and
+          # qc-agent-browser-reaper-assert.test.sh each need a copy of
+          # qc-agent-browser.sh as it existed BEFORE this unit's drift-gate /
+          # assert-not-warn changes landed, to prove the gap was real (the
+          # pre-fix script silently PASSes a corrupted archive / a leaked
+          # session) before proving the fix closes it. Without this fixture
+          # every one of those tests silently SKIPs its fail-first branch and
+          # CI never actually exercises fail-first — derive it here, every
+          # run, from origin/main (the file has been untouched on main since
+          # v10.0.0, long before P3-06's branch point, so this is a faithful
+          # pre-fix capture) rather than committing a static binary-ish
+          # fixture that could itself drift from the real pre-fix script.
+          # Explicit destination refspec (origin/main:refs/remotes/origin/main)
+          # rather than a bare `git fetch origin main` -- actions/checkout's
+          # configured remote refspec is narrowed to the triggering ref, so an
+          # implicit fetch of "main" only populates FETCH_HEAD, not the
+          # origin/main ref `git show` needs below; the explicit destination
+          # forces the ref to exist regardless of the runner's fetch config.
+          git fetch --depth=1 origin main:refs/remotes/origin/main
+          git show origin/main:03-agent-browser/qc-agent-browser.sh > /tmp/qc-agent-browser.sh.prefix-fixture
+          chmod +x /tmp/qc-agent-browser.sh.prefix-fixture
+          # Sanity: the captured fixture must NOT already contain this unit's
+          # drift-gate/assert marker -- if it does, origin/main already carries
+          # the fix and the fixture is no longer "pre-fix" (fail closed, don't
+          # let the fail-first tests silently SKIP or silently pass-through).
+          if grep -q "is STALE vs on-disk source" /tmp/qc-agent-browser.sh.prefix-fixture; then
+            echo "✗ origin/main:03-agent-browser/qc-agent-browser.sh already contains the P3-06 drift gate -- this is no longer a valid pre-fix fixture. Re-derive the fixture from the actual pre-P3-06 commit." >&2
+            exit 1
+          fi
+          echo "✓ pre-fix qc-agent-browser.sh fixture captured at /tmp/qc-agent-browser.sh.prefix-fixture ($(wc -l < /tmp/qc-agent-browser.sh.prefix-fixture) lines, no drift gate present)"
+
+      - name: Skill 03 archive packer regression tests (P3-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 03-agent-browser/scripts/tests/pack-agent-browser-skill.test.sh
+          echo "✓ pack-agent-browser-skill.sh: fail-first proof against the pre-fix hand-packaged archive, deterministic rebuild, one-byte-drift detection, all four hardening sections present in the regenerated archive"
+
+      - name: Skill 03 QC drift gate + headed-refusal + reaper-assert regression tests (P3-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-drift-gate.test.sh
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-headed-refuse.test.sh
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-reaper-assert.test.sh
+          echo "✓ qc-agent-browser.sh: archive drift gate fails naming the file, ambient AGENT_BROWSER_HEADED is refused (exit-75 class), and a session leaked past the smoke test now FAILS QC (was warn_only) while a pre-existing session stays warn_only -- all four proven fail-first against the pre-fix script where a fixture exists"
+
       - name: Skill 42 Personal Assistant Library install QC (simulated install)
         shell: bash
         run: |
