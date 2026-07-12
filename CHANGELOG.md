@@ -1,3 +1,12 @@
+## [v20.0.2]  -  2026-07-12  -  fix(roll): bump Command Center pin v4.69.1->v6.0.0 to prevent fleet-wide CC downgrade
+
+Patch release. Corrects the Command Center pin in `cc-compat.json` so the fleet roll deploys the current CC major release instead of downgrading every box. No feature code, no skill-content change; repo-side only, touches no box.
+
+- **The fix.** `commandCenter.pinnedTag` was stale at `v4.69.1`. `resolve_cc_tag()` in `shared-utils/cc_compat.py` returns `pinnedTag` unconditionally, so `fleet-refresh.sh` would `git checkout v4.69.1` and DOWNGRADE any box already on Command Center `v6.0.0`. Bumped `pinnedTag` `v4.69.1` -> **`v6.0.0`**; `resolve_cc_tag()` now resolves to `v6.0.0` (verified via `cc_compat.py --self-test`).
+- **Constraint holds.** `minVersion` is UNCHANGED at `v4.59.1` (kept permissive so the roll's `assert_min_version` does not block boxes still on an older CC mid-update). `v6.0.0` >= `minVersion` (`v4.59.1`) and `maxVersion` is `null`, so the schema contract (`pinnedTag >= minVersion`, `pinnedTag <= maxVersion-or-unbounded`) holds; the `cc-compat.json` self-test and schema/constraint gate pass.
+
+All 11 version markers rolled `v20.0.1` -> **v20.0.2** in lockstep via `scripts/bump-version.sh`. No client names, no secret values, no box identifiers, no model added, removed, or substituted. The Skill 38 doc self-count advisory remains a pre-existing, non-fatal WARN carried unchanged from the v20.0.x train.
+
 ## [v20.0.1]  -  2026-07-12  -  fix(ci): green qc-static — restamp content manifest + pin pre-P3-06 fixture
 
 Patch release. Greens the last red CI guard (`qc-static`, "QC static invariants") on `main`, cutting `v20.0.0` -> **v20.0.1**. No feature code, no fleet action, touches no box.
