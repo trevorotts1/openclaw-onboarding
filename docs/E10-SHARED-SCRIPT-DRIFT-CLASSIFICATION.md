@@ -84,8 +84,9 @@ one engine's safety-critical guard.
   across two) — but this finding is exactly the kind of thing a shallow diff
   would misclassify as drift-to-fix. Verified by direct fixture call: both
   files' MODEL-ID-SHAPE detectors (the six shapes they DO share: `claude-<id>`,
-  `anthropic/<id>`, `us.anthropic.<id>`, `@anthropic-ai/`, the API host, and a
-  bare `"provider":"anthropic"` scalar) agree on every positive and negative
+  `anthropic/<id>`, the `us`-region cross-region inference-profile id form,
+  `@anthropic-ai/`, the API host, and a bare `"provider":"anthropic"` scalar)
+  agree on every positive and negative
   fixture tried (see the drift-guard test file) — this IS the safe subset to
   keep behavior-parity-tested going forward.
 - **Not safe to unify**: JOB 2 (routing assertion) and the dashboard screen
