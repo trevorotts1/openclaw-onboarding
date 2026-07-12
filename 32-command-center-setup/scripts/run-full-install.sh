@@ -785,6 +785,142 @@ cc_verify_db_parity() {
   return "$rc"
 }
 
+# ---- P1-07: single canonical CC update path ----
+#
+# Problem this closes (P1-07 / BUILD-05 tail): the old --update-only path built
+# the CC bundle itself via a bare `cc_ensure_fresh_build` (plain `npm run
+# build`) with NO health check and NO rollback wired to it — a build that
+# compiled broken code shipped straight to `pm2 restart` with nobody checking.
+# CC's OWN `update.sh` (which routes through `scripts/atomic-deploy.sh`)
+# already owns the real contract: build into a temp dir, gate on a FRESH
+# `.next/BUILD_ID` (mtime newer than build start), atomic swap, pm2 restart,
+# health-check, and AUTO-ROLLBACK to the prior build on a failed health check.
+# Route through it instead of re-implementing a weaker copy here — ONE
+# canonical CC update path, owned by the CC repo, per P1-07 (c)2.
+#
+# _cc_resolve_bash4 — atomic-deploy.sh requires bash 4+ (macOS system bash is
+# 3.2). Mirrors the exact resolution update.sh itself uses so this function
+# behaves identically whether invoked via update.sh or (fallback) directly.
+_cc_resolve_bash4() {
+  local _cand
+  for _cand in /opt/homebrew/bin/bash /usr/local/bin/bash bash; do
+    if command -v "$_cand" >/dev/null 2>&1 \
+       && [[ "$("$_cand" -c 'echo "${BASH_VERSINFO[0]:-0}"' 2>/dev/null || echo 0)" -ge 4 ]]; then
+      printf '%s' "$_cand"; return 0
+    fi
+  done
+  return 1
+}
+
+# cc_route_update_through_canonical_path — the D5 update-only build+restart step.
+# Three tiers, each strictly safer than a bare `npm run build` + `pm2 restart`:
+#   1. $DASHBOARD_DIR/update.sh (freshly pulled — the canonical, fully-owned
+#      CC update path: backup + pull + deps + atomic-deploy + AGENTS.md flag).
+#   2. $DASHBOARD_DIR/scripts/atomic-deploy.sh directly (same atomic
+#      build/swap/health/rollback contract, for a box whose checkout has
+#      atomic-deploy.sh but is missing/predates update.sh).
+#   3. Legacy fallback (oldest boxes with neither file): the original bare
+#      build, but now with this function's OWN BUILD_ID + health assertion
+#      and an OWN manual revert (snapshot .next before building, restore it
+#      on a failed post-check) — so even the last-resort tier never leaves a
+#      half-updated CC standing.
+# Sets state key .commandCenterLastUpdateVerified (true/false) either way.
+# Returns 0 if the box ends the call GREEN (fresh build + healthy), 1 otherwise
+# (the box may still be safely serving the PRIOR build — that is success from
+# the "never half-updated" invariant's point of view, just not a fresh deploy).
+cc_route_update_through_canonical_path() {
+  local pull_ts build_id_file build_id_mtime health_code tier
+  local update_sh="$DASHBOARD_DIR/update.sh"
+  local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
+  build_id_file="$DASHBOARD_DIR/.next/BUILD_ID"
+  pull_ts="$(date +%s)"
+
+  if [[ -f "$update_sh" ]]; then
+    tier=1
+    log "INFO" "phase=6 (update-only): tier 1 — routing through CC's own update.sh (freshly pulled, owns atomic-deploy.sh)"
+    if CC_APP_DIR="$DASHBOARD_DIR" CC_PORT="$DASHBOARD_PORT" bash "$update_sh" >>"$LOG_FILE" 2>&1; then
+      log "INFO" "phase=6 (update-only): update.sh reported success"
+    else
+      log "WARN" "phase=6 (update-only): update.sh exited non-zero — atomic-deploy.sh already rolled back internally on failure (never a half-updated CC from this tier); see $LOG_FILE"
+    fi
+  elif [[ -f "$atomic_deploy" ]]; then
+    tier=2
+    log "WARN" "phase=6 (update-only): update.sh not found in the freshly-pulled checkout — tier 2: invoking scripts/atomic-deploy.sh directly (still atomic build/swap/health/rollback)"
+    local bash4; bash4="$(_cc_resolve_bash4)" || bash4=""
+    if [[ -n "$bash4" ]]; then
+      "$bash4" "$atomic_deploy" --app-dir "$DASHBOARD_DIR" --pm2-app "$CC_PM2_NAME" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1
+      local _adrc=$?
+      case "$_adrc" in
+        0) log "INFO" "phase=6 (update-only): atomic-deploy.sh GREEN (tier 2)" ;;
+        1) log "WARN" "phase=6 (update-only): atomic-deploy.sh rolled back to the prior build (tier 2) — server verified green on the OLD build" ;;
+        2) log "WARN" "phase=6 (update-only): atomic-deploy.sh pre-flight failure (tier 2) — old build untouched" ;;
+        3) log "WARN" "phase=6 (update-only): atomic-deploy.sh UNKNOWN health (tier 2) — new build live, health indeterminate" ;;
+        *) log "WARN" "phase=6 (update-only): atomic-deploy.sh unexpected exit $_adrc (tier 2)" ;;
+      esac
+    else
+      log "WARN" "phase=6 (update-only): no bash 4+ available for atomic-deploy.sh — falling through to tier 3"
+      tier=3
+    fi
+  else
+    tier=3
+  fi
+
+  if [[ "$tier" -eq 3 ]]; then
+    log "WARN" "phase=6 (update-only): tier 3 — neither update.sh nor scripts/atomic-deploy.sh present; legacy build path with a manual snapshot/revert (this box predates P1-07; it will self-heal to tier 1 once this very update lands update.sh)"
+    local snapshot_dir="" snapshotted=0
+    if [[ -d "$DASHBOARD_DIR/.next" ]]; then
+      snapshot_dir="$DASHBOARD_DIR/.next.p107-snapshot.$$"
+      cp -r "$DASHBOARD_DIR/.next" "$snapshot_dir" 2>/dev/null && snapshotted=1
+    fi
+    cc_ensure_fresh_build; local _bfrc=$?
+    if [[ "$_bfrc" -eq 0 ]]; then
+      if pm2 restart "$CC_PM2_NAME" >>"$LOG_FILE" 2>&1; then
+        log "INFO" "phase=6 (update-only): pm2 restart $CC_PM2_NAME done (tier 3)"
+      else
+        pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+        cc_pm2_start_canonical || log "WARN" "phase=6 (update-only): pm2 start $CC_PM2_NAME failed (tier 3) — check: pm2 logs $CC_PM2_NAME"
+      fi
+      pm2 save >>"$LOG_FILE" 2>&1 || true
+    else
+      log "WARN" "phase=6 (update-only): tier-3 build not fresh (rc=$_bfrc) — leaving the currently-running build in place, no restart"
+    fi
+    # Post-check + manual revert (tier 3 only — tiers 1/2 already health-check +
+    # auto-rollback internally via atomic-deploy.sh).
+    build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
+    health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
+    if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+      [[ "$snapshotted" -eq 1 ]] && rm -rf "$snapshot_dir" 2>/dev/null || true
+    else
+      log "ERROR" "phase=6 (update-only): tier-3 post-update assertion FAILED (BUILD_ID mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code) — reverting via manual snapshot restore (no atomic-deploy.sh available on this box)"
+      if [[ "$snapshotted" -eq 1 ]]; then
+        rm -rf "$DASHBOARD_DIR/.next" 2>/dev/null || true
+        mv "$snapshot_dir" "$DASHBOARD_DIR/.next" 2>/dev/null \
+          && log "INFO" "phase=6 (update-only): reverted .next to the pre-update snapshot" \
+          || log "ERROR" "phase=6 (update-only): CRITICAL — revert copy failed; $DASHBOARD_DIR/.next may be missing. Manual intervention required."
+        pm2 restart "$CC_PM2_NAME" >>"$LOG_FILE" 2>&1 || true
+      else
+        log "ERROR" "phase=6 (update-only): CRITICAL — no pre-update snapshot existed (first deploy on this box); cannot revert. Manual intervention required."
+      fi
+    fi
+  fi
+
+  # ---- Final assertion (belt-and-suspenders for ALL tiers): BUILD_ID must be
+  # fresher than the pull timestamp AND the app must answer healthy on
+  # DASHBOARD_PORT. Tiers 1/2 already enforced + rolled back this internally;
+  # this is D5's OWN independent check so the invariant never depends solely
+  # on trusting a sub-agent's exit code (session-survival doctrine 2.8.6).
+  build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
+  health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
+  if [[ "$health_code" == "200" ]]; then
+    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (server is GREEN — on the fresh build if BUILD_ID postdates the pull, else verified-green on the prior build after rollback)"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true' 2>/dev/null || true
+    return 0
+  fi
+  log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false' 2>/dev/null || true
+  return 1
+}
+
 # ---- preflight ----
 if [[ ! -f "$STATE_FILE" ]]; then
   if [[ "$UPDATE_ONLY" == "true" ]]; then
@@ -896,7 +1032,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # --update-only: git pull --ff-only + npm install + db:push + pm2 restart.
   # Skips db:seed (protects client-customized rows).
   # Skips git-clone (we already verified .git exists before invoking this flag).
-  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + .env.local + next build (freshness-gated) + db:push + pm2 restart (no db:seed)"
+  log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + .env.local + db:push + CC's own update.sh (atomic-deploy, single canonical path, P1-07) (no db:seed)"
   if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
     log "WARN" "phase=6 dashboard-update: $DASHBOARD_DIR/.git not found — run full install first (skipping refresh)"
   else
@@ -909,13 +1045,6 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
     # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
     cc_write_env_local
-    # (1) rebuild `.next` IFF it is stale vs the just-pulled source. This is the
-    # Kanban-dead fix: without it `next start` keeps serving a bundle that predates
-    # the intake-advance + backlog-redispatch sweep registration.
-    cc_ensure_fresh_build; _bfrc=$?
-    if [[ "$_bfrc" -ne 0 ]]; then
-      log "WARN" "phase=6 (update-only): CC build not fresh (rc=$_bfrc) — board may serve a stale bundle until the resume cron rebuilds"
-    fi
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
@@ -926,21 +1055,17 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
       fail_install "phase=6 (update-only): DATA-08 decoy-DB guard failed -- shared-utils/resolve_db.py resolves a DIFFERENT mission-control.db than the app (see $LOG_FILE). Set/clear DATABASE_PATH so scripts and app agree, then re-run."
     fi
     # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
-    # (mission-control, command-center), then restart the canonical
-    # "blackceo-command-center" (start fresh if it isn't registered yet). This
-    # converges a box running under ANY name down to a single CC on :4000, so the
-    # two-process mutual-kill loop can never recur.
+    # (mission-control, command-center) BEFORE the atomic deploy restarts the
+    # canonical process, so it is never fighting a duplicate alias for :4000.
     cc_reconcile_pm2_names
-    if pm2 restart "$CC_PM2_NAME" >>"$LOG_FILE" 2>&1; then
-      log "INFO" "phase=6: pm2 restart $CC_PM2_NAME done (reconciled to one canonical CC)"
-    else
-      log "WARN" "phase=6: pm2 restart $CC_PM2_NAME failed — starting fresh"
-      pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
-      cc_pm2_start_canonical \
-        && log "INFO" "phase=6: pm2 start $CC_PM2_NAME done (fresh)" \
-        || log "WARN" "phase=6: pm2 start $CC_PM2_NAME failed — check: pm2 logs $CC_PM2_NAME"
-    fi
-    pm2 save >>"$LOG_FILE" 2>&1 || true
+    # (1) P1-07: build + restart now route through CC's OWN canonical update
+    # path (update.sh -> atomic-deploy.sh: fresh-.next/BUILD_ID gate, atomic
+    # swap, health-check, auto-rollback on failure) instead of a hand-rolled
+    # `npm run build` + bare `pm2 restart` with no rollback. This is the
+    # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
+    # a pull-without-a-verified-rebuild is now structurally impossible.
+    cc_route_update_through_canonical_path || \
+      log "ERROR" "phase=6 (update-only): CC did not end this update GREEN — see the post-update assertion line above and $LOG_FILE. Not fatal to the rest of the Sunday run (other clients' boxes must not be blocked by one), but this box needs operator attention."
   fi
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"

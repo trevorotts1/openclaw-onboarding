@@ -1,3 +1,68 @@
+## [Unreleased] — branch `fix/sunday-cc-rebuild` — fix(32): close the Sunday CC-update rebuild gap — D5 now routes through CC's OWN update.sh (atomic-deploy + health-check + auto-rollback), never a bare `npm run build` + `pm2 restart` (P1-07)
+
+**P1-07 — the version-update protocol.** Answers the operator's question
+("does the Sunday check update the CC repo too, and does it actually
+rebuild?") with a real fix, not just verification: it did pull, but the build
+step it ran had NO health check and NO rollback wired to it — a broken build
+could ship straight to `pm2 restart` with nobody checking. That is the same
+BUILD-05 "dead client Kanban" defect class the CC repo's own
+`scripts/atomic-deploy.sh` already exists to close on OTHER paths; this repo's
+own D5 update-only step just never routed through it.
+
+- **`32-command-center-setup/scripts/run-full-install.sh` — new
+  `cc_route_update_through_canonical_path()`**, called from the Phase 6
+  `--update-only` block in place of the old bare `cc_ensure_fresh_build` +
+  `pm2 restart`/`pm2 start` pair. Three tiers, each strictly safer than the
+  old path: (1) the freshly-pulled CC's own `update.sh` (owns
+  `scripts/atomic-deploy.sh` — build into a temp dir, gate on a FRESH
+  `.next/BUILD_ID`, atomic swap, restart, health-check, auto-rollback on a
+  failed health check); (2) `scripts/atomic-deploy.sh` invoked directly, for
+  a checkout that has it but predates `update.sh`; (3) a legacy fallback for
+  the oldest boxes with neither file — snapshots `.next` before building and
+  manually reverts it if the post-update assertion fails, so even the
+  last-resort tier can never leave a half-updated CC standing. ALL THREE
+  tiers end in the same independent post-update assertion: `.next/BUILD_ID`
+  mtime newer than the pull timestamp AND `curl -fsS localhost:4000/api/health`
+  returns `200` — stamped to the box's build-state as
+  `commandCenterLastUpdateVerified` (true/false), the single source of truth
+  for whether a given box's Sunday CC update actually took effect.
+- **Coordinated CC-repo fix (branch `fix/sunday-cc-rebuild` there too):**
+  `update.sh`'s own install-dir autodetection never matched this repo's
+  documented clone target (`~/projects/command-center` /
+  `/data/projects/command-center`) — a standalone invocation would have
+  failed "Command Center not found" on every real box. Fixed there; this
+  repo's new call passes `CC_APP_DIR` explicitly so it never depends on
+  autodetection succeeding at all.
+- **New: `scripts/probe/p107-sunday-update-probe.sh`** (ships in P6-01) —
+  per-box EXACT schedule+command match against `crontab -l` (never a
+  truncated-text grep, the v19.47.0 lesson) for both the Sunday 3:00 AM
+  CC/onboarding updater cron and the Saturday 23:59 OpenClaw-CLI updater
+  cron; on a Docker VPS box, verifies `/data` is a genuine persistent mount
+  (structural proof the CC checkout survives a container recreate, N40).
+  `--remediate` re-runs `scripts/setup-weekly-update.sh` to install whatever
+  is missing and re-verifies; `--json` for the fleet ledger.
+- **Tests (real, fail-first — proven to fail against the pre-fix tree before
+  passing against the fix):**
+  `tests/probe/test-cc-route-update-canonical-path.sh` — extracts the ACTUAL
+  `cc_route_update_through_canonical_path()` body from `run-full-install.sh`
+  (not a reimplementation) and proves tier 1 invokes the freshly-pulled
+  `update.sh` with `CC_APP_DIR` pointed at the checkout, AND that tier 3
+  reverts `.next` to its pre-update snapshot when the post-update health
+  check fails (the exact defect class this closes — a broken build that
+  would previously have shipped straight to `pm2 restart`).
+  `tests/probe/test-p107-sunday-update-probe.sh` — proves the probe's exact
+  schedule+command matching correctly rejects a line that would false-positive
+  under a naive substring grep (wrong schedule, extra trailing args), reports
+  ARMED only on an exact canonical match, and that `--remediate` converges a
+  bare box to ARMED. Existing regression suites re-run clean against the
+  changed file: `tests/unit/cc-tunnel-ingress-guard.test.sh` (21/21),
+  `tests/unit/both-paths-zhe-delivery.test.sh`, `tests/unit/cc-done-degraded-retry-gate.test.sh` (20/20).
+- **Docs:** `UPDATE-PLAYBOOK.md` gained a new "Automated Command Center
+  Update — Sunday 3AM (P1-07)" section — what runs, which file, what proves
+  success, how to roll back, one page — see also the CC repo's own
+  `DEPLOYMENT.md` for the other half of the same chain.
+- No client names, no secret values, no roster human names in the diff.
+
 ## [v19.50.0]  -  2026-07-11  -  fix(32/C2): wire the SOP V2 library ingestion into the Command Center install, fail CLOSED, and close a preserved-empty ROLE_LIBRARY_PATH fail-open
 
 Merges `fable-fix/onb32-c2-installer` (4 commits) off fresh origin/main (v19.49.0) as the serial onboarding writer, `--no-ff`. Repo-only: the live ingest/converge RUN is operator-live and deferred; no live-box change here. No client names, no secret values, no roster human names in the diff.

@@ -437,6 +437,97 @@ If a CORE_UPDATES.md entry conflicts with existing content:
 4. Wait for a decision before proceeding
 5. Document the decision in the update log
 
+---
+
+## Automated Command Center Update — Sunday 3AM (P1-07)
+
+**This section is separate from the skill-update playbook above.** Everything
+above this line governs the general OpenClaw/skills update (Method 3's
+"check for updates" step). THIS section is the one-page answer to "what runs,
+which file, what proves success, how to roll back" specifically for the
+**Command Center** half of the same Sunday run — see also the CC repo's own
+`DEPLOYMENT.md` ("Automated Sunday Update Path (P1-07)" section) for the
+CC-side half of this same chain.
+
+### What runs, in order
+
+1. **Cron** (`scripts/setup-weekly-update.sh` installs it): `0 3 * * 0` →
+   `~/.openclaw/skills/.update-restart-if-needed`, which downloads and runs the
+   LATEST `update-skills.sh` from this repo (never a stale local copy).
+2. **`update-skills.sh` D5 block** (~line 2651+) runs, after refreshing the
+   on-box Skill 32 installer itself (D5-PRE, v19.48.0 — closes the
+   stale-installer half-provisioning class):
+   `32-command-center-setup/scripts/run-full-install.sh --update-only`.
+3. **`run-full-install.sh` Phase 6 (update-only)** — this repo's half:
+   `git pull --ff-only` in the CC checkout, `npm install`, `cc_write_env_local`
+   (gateway token / sovereign model / API-auth posture — BEFORE the build so
+   both the build and the boot see it), `npm run db:push`, the DATA-08
+   decoy-DB parity guard, `cc_reconcile_pm2_names` (converge to ONE canonical
+   CC process before the restart), then
+   **`cc_route_update_through_canonical_path()`** — the P1-07 fix.
+4. **`cc_route_update_through_canonical_path()`** routes build+restart through
+   the freshly-pulled CC's OWN `update.sh` (tier 1; falls back to
+   `scripts/atomic-deploy.sh` directly at tier 2, and to a legacy
+   snapshot/build/revert path at tier 3 for a box old enough to have neither
+   file) instead of the old bare `npm run build` + `pm2 restart` with no
+   health check and no rollback. `update.sh` owns `scripts/atomic-deploy.sh`:
+   build into a temp dir, gate on a FRESH `.next/BUILD_ID`, atomic swap,
+   restart, health-check, auto-rollback on a failed health check.
+
+### What proves success
+
+`cc_route_update_through_canonical_path()` performs its OWN post-update
+assertion regardless of which tier ran — it does not just trust the tier's own
+exit code: `.next/BUILD_ID` mtime newer than the pull timestamp AND
+`curl -fsS localhost:4000/api/health` returns `200`. It stamps
+`commandCenterLastUpdateVerified` (`true`/`false`) into the box's build-state
+file (`$STATE_FILE`) either way. **This stamp is the single source of truth**
+for whether Sunday's CC update actually took effect on a given box — check it
+before trusting a log line or an exit code. A `false` stamp means the box
+needs operator attention; it does NOT mean the box is down (tiers 1/2 already
+rolled back to a health-verified prior build before returning failure).
+
+### How to roll back
+
+- **Automatic (the normal case):** `atomic-deploy.sh` (tiers 1/2) already
+  rolled back and health-verified the prior build before returning — no
+  action needed on a `false` stamp from THAT class of failure.
+- **Tier 3 only (oldest boxes, no atomic-deploy.sh):**
+  `cc_route_update_through_canonical_path()` snapshots `.next` to
+  `.next.p107-snapshot.$$` before building and restores it itself on a failed
+  post-check — also automatic, but logged distinctly (`tier=3` in the log
+  line) since it has no health-retry loop of its own.
+- **Repo-level (a bad merge, not a bad box):** `git revert` the offending
+  commit on `main` in the affected repo (onboarding or CC) and let the next
+  Sunday run — or a manual `run-full-install.sh --update-only` /
+  `update.sh` re-run — pull the reverted code through the exact same
+  atomic/health/rollback contract.
+
+### Docker VPS boxes
+
+The CC update above runs identically inside the container (in-container git
+pull + build + pm2 restart) — there is no separate docker-compose-managed "CC
+container" for a code-only Sunday update. VPS installs land under
+`/data/projects/command-center` specifically because `/data` is the
+persistent bind-mounted volume, so the checkout + database survive a
+`docker compose up -d --force-recreate` of the OUTER OpenClaw container (a
+DIFFERENT, less-frequent maintenance action, e.g. an image/dependency bump).
+Never use bare `docker compose restart` for that outer-container action — it
+skips `env_file` re-read.
+
+### Cron-presence probe (ships in P6-01)
+
+`scripts/probe/p107-sunday-update-probe.sh` asserts, per box, by EXACT
+schedule+command matching against `crontab -l` (never a truncated-text
+grep — the v19.47.0 lesson): the Sunday 3:00 AM CC/onboarding updater cron is
+present, the Saturday 23:59 OpenClaw-CLI updater cron is present, and — on a
+Docker VPS box — that `/data` is a genuine persistent mount (structural proof
+the CC checkout survives a container recreate). `--remediate` re-runs
+`scripts/setup-weekly-update.sh` to install whatever is missing, then
+re-verifies. Run it with `--json` for the fleet ledger.
+
+---
+
 ## Update Log
 After every update, append to ~/.openclaw/skills/.update-log:
 - Date and time
