@@ -97,29 +97,37 @@ deliverables API.
 
 ## Build Protocol (execute in order — the authoritative copy is BUILDER-PROMPT.md)
 
-### Step 1 — Write `slides.json`
-Read the task title, description, and any SOP steps in the message. Decide the slides:
-how many, the order, the photographic `scene` for each, and the EXACT `copy` (the words that
-must appear on each slide), per `slides.schema.json`. Spell every word in `copy`
-correctly — the script renders it verbatim into the image; it will not fix spelling or
-reword anything. You do NOT write KIE prompts, pick a model, or call any API — the script
-composes the prompt mechanically from your `slides.json`.
+**Two layers, always in order — full detail in `BUILDER-PROMPT.md`, doctrine home
+`universal-sops/PRESENTATION-MASTER-DOCTRINE.md`.** LAYER A is the multi-phase authoring
+pipeline the runner (`run_signature_deck.py --next`) walks you through one step at a
+time — intake, structure, copy, and the hand-authored 9,000–18,000-character rich
+per-slide image prompt (`working/prompts/slide-NN.txt`). LAYER B is the deterministic
+render: `presentation-canonical-entry.sh` (never `build_deck.py` directly) dispatches
+`run_signature_deck.py` → `build_deck.py`, which reads those rich prompts **VERBATIM** —
+it does **not** compose a prompt from a bare `scene`/`copy` pair, and a `slides.json`
+with no upstream Layer-A artifacts will not clear the render preflight. **The retired
+claim that "the script composes the prompt mechanically from your slides.json" is FALSE
+for the current engine — do not act on it.**
 
-### Step 2 — Run the deterministic build script
-Run exactly:
+### Steps 1–2 — Author Layer A, then dispatch the Layer B render
+Follow `BUILDER-PROMPT.md` exactly: walk `run_signature_deck.py --next` phase by phase
+until it serves `P4-RENDER`, then dispatch the render via:
 ```
-python3 <SCRIPTS_DIR>/build_deck.py slides.json <ARTIFACT_DIR>/presentation.pptx
+bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
 ```
-The script renders every slide on KIE.ai (`gpt-image-2-text-to-image`, 16:9, 2K), retries
-up to 3× per slide, verifies each PNG, then assembles a full-bleed `.pptx` (no text boxes —
-the copy is baked into each image). It prints a JSON summary:
+The canonical path renders every slide on KIE.ai (`gpt-image-2-text-to-image` /
+`-image-to-image`, 16:9, 2K), retries up to 3× per slide, verifies each PNG, then
+assembles a full-bleed `.pptx` (no text boxes — the copy is baked into each image), and
+runs the postflight completeness gate over the full deliverable bundle. It prints a JSON
+summary:
 ```json
 { "slidesRendered": N, "kieTaskIds": ["..."], "outputPath": ".../presentation.pptx", "failures": [] }
 ```
 - Exit code **0** + empty `failures` → the deck is built; `outputPath` is your deliverable.
 - Exit code **non-zero** → the build FAILED. Do NOT invent or substitute images. Read the
-  printed error; if it is a content problem (bad JSON, empty `copy`), fix `slides.json` and
-  re-run. If KIE is unreachable, report the failure — never fake a deliverable.
+  printed error — it almost always names a missing/thin upstream Layer-A artifact; re-run
+  `--next` to see what is still owed, fix it, and re-run the same render command. If KIE
+  is unreachable, report the failure — never fake a deliverable.
 
 ### Step 3 — Register the `.pptx` the script produced
 Use the EXACT `outputPath` from the script's summary (the `.pptx`). Do not register

@@ -1,7 +1,7 @@
 # SOP-PITCH-04: WALL OF WINS (REAL-CLIENT HOMAGE)
 
 **Cluster:** Pitch-Craft Rules (the offer choreography)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master rule 20 the Wall of Wins, Section 4.4 named required components)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master rule 20 the Wall of Wins, director-of-presentations SOP (`checklist_of_promises`) + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4) named required components)
 **Owning role at write time:** Slide Copywriter (the wall content), Offer Price Strategist / Director (its spacing)
 **Enforced at the gate by:** QC Specialist - Presentations (copy QC criterion c19 Wall-of-Wins framing gate, c24 spacing gate)
 **Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference, Section 4): Wall of Wins s68 (six real owner portraits, name+city chips, enrollment-stat chips, three aggregate stat chips, "These aren't case studies. These are your future colleagues."); distance to final offer s73 = 5 slides.

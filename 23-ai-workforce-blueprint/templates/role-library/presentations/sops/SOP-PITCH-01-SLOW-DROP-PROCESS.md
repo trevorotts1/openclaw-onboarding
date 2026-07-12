@@ -1,7 +1,7 @@
 # SOP-PITCH-01: SLOW-DROP PITCH PROCESS
 
 **Cluster:** Pitch-Craft Rules (the offer choreography)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4 Slide Math, Section 4.2 the proven flow, Section 5.5 the price sequence)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) Slide Math, SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) the proven flow, SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) the price sequence)
 **Owning role at write time:** Offer Price Strategist (the ladder numbers and earned reasons), Director of Presentations (arc_allocation.json spacing)
 **Enforced at the gate by:** QC Specialist - Presentations (the live AF-C7 gradual-drop choreography auto-fail and copy QC criterion c17 ladder integrity)
 **Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference): ladder at s24/35/51/65/73, gaps 11/16/14/8, minimum gap 8 slides.

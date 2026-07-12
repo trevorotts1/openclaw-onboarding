@@ -28,6 +28,20 @@
       "why": "FIX-PRES-09(v): the presentations image-prompt floor was RAISED from 5,000 chars to 9,000 chars (current HARD floor 9,000, ceiling 18,000; build_deck.py PROMPT_CHAR_FLOOR=9000, AF-P1). The retired 5,000-char floor must never re-appear as a live instruction — a prompt authored to 5,000 chars is now sub-floor and is refused, not run.",
       "pattern": "5[,.]?000[\\s-]*(?:char|character)",
       "scope": "**/*.md"
+    },
+    {
+      "id": "master-sop-section-n-citation",
+      "why": "P3-01(c)6 — the doctrine schism: dozens of role/SOP files cited a numbered \"master SOP Section N.N\" that no longer exists in any single file (the monolithic master SOP was decomposed into the universal-sops/ + sops/ SOP-* cluster). universal-sops/PRESENTATION-MASTER-DOCTRINE.md Section 4 is the ratified crosswalk from every legacy section number to its live home; every role/SOP file was repointed to cite the live file directly. The bare 'master SOP Section N' / 'CLIENT-WEBINAR-DECK-SOP.md (Section N' citation form must never re-appear — it points into a void.",
+      "pattern": "(?:master SOP\\s+Sections?\\s+\\d|CLIENT-WEBINAR-DECK-SOP\\.md\\s*\\(?Sections?\\s+\\d)",
+      "scope": "**/*.md",
+      "allowed_context_markers": ["crosswalk", "legacy", "resolves", "PRESENTATION-MASTER-DOCTRINE"]
+    },
+    {
+      "id": "script-composes-prompt-mechanically",
+      "why": "P3-01(c)6 / PRESENTATION-MASTER-DOCTRINE.md Section 1 (THE HANDSHAKE BETWEEN THE LAYERS): 'The retired claim that the script composes the KIE prompt mechanically is FALSE for the current engine and is a banned residual pattern.' build_deck.py renders the Layer-A-authored 9,000-18,000-char rich per-slide prompt VERBATIM; it does not compose a prompt from a bare scene+copy pair. This claim must never re-appear as a live instruction in BUILDER-PROMPT.md / SOUL.md / TOOLS.md or any role file.",
+      "pattern": "(?:MECHANICALLY\\s+composes?\\s+the\\s+(?:KIE\\s+)?prompt|composes?\\s+the\\s+(?:KIE\\s+)?prompt\\s+mechanically)",
+      "scope": "**/*.md",
+      "allowed_context_markers": ["retired", "banned residual", "FALSE for the current engine", "does not compose", "does NOT compose"]
     }
   ]
 }

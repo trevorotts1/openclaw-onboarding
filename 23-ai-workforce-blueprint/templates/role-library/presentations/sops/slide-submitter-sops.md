@@ -15,7 +15,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** At the very start of Phase 4, before the first API call.
 
 **Inputs:**
-- MODEL MANIFEST from master SOP (Section 9.0 of the master SOP)
+- MODEL MANIFEST from master SOP (SOP-IMG-01-KIE-CALL-MECHANICS + director-of-presentations SOP 9.x + build_deck.py MODEL_* pins (PRESENTATION-MASTER-DOCTRINE.md §4) of the master SOP)
 - working/copy/intake.json (LOGO_ON_SLIDES, LOGO_URL fields)
 - working/copy/media_library.json (LOGO_URL, FOUNDER_PORTRAIT_URL)
 

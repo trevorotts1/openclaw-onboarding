@@ -91,7 +91,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (offer_components: list of what is included in the offer)
 - price_ladder.json (DROP prices for each drop point)
-- master SOP Section 4.2 (value anchoring)
+- SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) (value anchoring)
 
 **Steps:**
 1. Extract offer_components from intake.json. If the client did not list components, flag to the Director and use a single-component entry: `[OFFER COMPONENTS PENDING -- client must supply]`.
@@ -192,7 +192,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (FINAL_PRICE, offer_components, VIP_TIER if any, payment_plan if any)
 - arc_allocation.json (offer section slide range)
-- master SOP Section 5.5 ("Mode straight")
+- SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) ("Mode straight")
 
 **Steps:**
 1. Read FINAL_PRICE from intake.json. If absent, halt and notify the Director (do NOT invent a price).
@@ -223,7 +223,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (VIP_TIER, VIP_PRICE, VIP_SPOTS, VIP contents)
 - price_ladder.json (the FINAL real buy price)
-- master SOP Sections 3.1 Q5 and 5.5 (VIP rules)
+- SOP-SIGPRES-01-EIGHT-QUESTIONS-... + deck-intake-questions.json (Q5 VIP) and SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (VIP rules — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk)
 
 **Steps:**
 1. Read VIP_TIER, VIP_PRICE, VIP_SPOTS, and the VIP contents from intake.json. If VIP_TIER is false or absent, this SOP does not run.
@@ -258,7 +258,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - intake.json (offer outcome, whether the offer produces measurable money, LTV inputs if monetary)
-- master SOP Section 4.3 rule 6 (cost versus value, the priceless pitch)
+- SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 6 (cost versus value, the priceless pitch)
 
 **Steps:**
 1. Determine whether the offer outcome is MONETARY (produces measurable money for the buyer, e.g. enrollments, revenue) or NON-MONETARY (a transformation, peace, confidence, a better relationship).
@@ -333,11 +333,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.8 -- The Guarantee (required component 6) and the Scarcity Factor (required component 7)
 
-**When to run:** Concurrently with SOP 9.1 or 9.4, before price_ladder.json is finalized. Both are required components of every deck (master SOP Section 4.4, rule 21).
+**When to run:** Concurrently with SOP 9.1 or 9.4, before price_ladder.json is finalized. Both are required components of every deck (director-of-presentations SOP (`checklist_of_promises`) + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4), rule 21).
 
 **Inputs:**
 - intake.json (any client-stated guarantee, refund policy, results promise; `VIP_SPOTS`, real cohort dates, real enrollment caps, real expiry windows)
-- master SOP Section 5.4 (the four guarantee types) and Section 4.3 rule 21
+- SOP-PITCH-02-VALUE-STACK-AND-PROMISES (guarantee) + SOP-OBJECTION-01 + offer-price-strategist SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the four guarantee types) and SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 21
 
 **Steps:**
 1. **Select the GUARANTEE type with the client (the deck must carry one).** Choose one of the four (master Section 5.4): Unconditional (any-reason refund), Conditional (do-the-work clause, allows a bolder promise), Anti-guarantee (all sales final, framed as exclusivity), or Implied (performance-based). For a service business wary of refunds, the operator-preferred frame is the SERVICE GUARANTEE: "if you do not get the result, your next 30 days is on us" or "five more sessions until your breakthrough." It reverses risk without writing checks. If intake states no guarantee, propose the service-guarantee frame and flag to the Director for the client to confirm; never ship a deck with no guarantee beat.

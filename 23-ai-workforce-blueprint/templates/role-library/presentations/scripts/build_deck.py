@@ -794,7 +794,11 @@ BUNDLE_DIR_DEFAULT = os.path.expanduser("~/Downloads")
 #   speech_md  > 2 KB  : a word-for-word script for any real webinar talk will be
 #                         thousands of words; 2KB floors an obvious empty or stub.
 #
-#   speech_pdf > 20 KB : a PDF export of a real speech; < 20KB implies a stub.
+#   speech_pdf > 3 KB  : a PDF export of a real speech (doctrine floor, AF-BUNDLE-COMPLETE
+#                         per presenters-speech-writer.md / -sops.md); < 3KB implies a stub.
+#
+#   teleprompter_html > 20 KB : a real self-contained scrolling teleprompter app (doctrine
+#                                floor, same authority); < 20KB implies an empty/stub page.
 #
 #   audio_mp3  > 500KB : a real Fish Audio S2 rendition of a 30-min script is
 #                         typically 50-150MB; 500KB floors the obvious failure case
@@ -837,8 +841,12 @@ DELIVERABLES_REQUIRED = [
         "key": "speech_pdf",
         "filename": "PRESENTERS-SPEECH.pdf",
         "label": "presenter speech teleprompter PDF",
-        "min_bytes": 20_480,             # 20 KB — PDF of a real multi-page script
-        "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP.",
+        # P3-01(c)5 — RECONCILED to the doctrine-ratified floor (presenters-speech-writer.md
+        # + sops/presenters-speech-writer-sops.md AF-BUNDLE-COMPLETE: "PDF >= 3,000 bytes"),
+        # which is also presenters_speech_pdf.py's own PDF_MIN_BYTES self-check. This table
+        # previously drifted to 20_480 — a stricter number nothing else in the doctrine cited.
+        "min_bytes": 3_000,              # 3 KB — doctrine floor (AF-BUNDLE-COMPLETE)
+        "note": ">3KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_fish_md",
@@ -867,10 +875,14 @@ DELIVERABLES_REQUIRED = [
         "key": "teleprompter_html",
         "filename": "presenter-teleprompter.html",
         "label": "presenter teleprompter web app",
-        "min_bytes": 10_240,             # 10 KB — a real self-contained scrolling
+        # P3-01(c)5 — RECONCILED to the doctrine-ratified floor (presenters-speech-writer.md
+        # + sops/presenters-speech-writer-sops.md AF-BUNDLE-COMPLETE: "HTML >= 20,000 bytes"),
+        # which is also build_teleprompter.py's own TELEPROMPTER_MIN_BYTES self-check. This
+        # table previously drifted to 10_240 — a looser number nothing else in the doctrine cited.
+        "min_bytes": 20_000,             # 20 KB — a real self-contained scrolling
                                           # teleprompter app (HTML + inline CSS/JS);
-                                          # < 10KB implies an empty/stub page.
-        "note": ">10KB; the standalone scrolling teleprompter app. Produced by the "
+                                          # < 20KB implies an empty/stub page.
+        "note": ">20KB; the standalone scrolling teleprompter app. Produced by the "
                 "build_teleprompter.py generator (owned by the speech/teleprompter "
                 "role). REQUIRED UPSTREAM STEP.",
     },

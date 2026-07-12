@@ -186,7 +186,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 1. Read the incoming deck request in full. Identify: client slug, deck slug, declared slide count or duration target, and any stated style references.
 2. Confirm all env stores are populated: KIE_API_KEY, OLLAMA_API_KEY, OPENROUTER_API_KEY, GHL credentials. Check all four locations (workspace/.env, ~/clawd/secrets/.env, openclaw.json env.vars, running gateway process env) before declaring any key missing.
-3. Create the working directory tree per master SOP Section 2 BEFORE any other action.
+3. Create the working directory tree per PIPELINE-MANIFEST.json (`produces_artifact` paths) + director-of-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) BEFORE any other action.
 4. Run Step 0.5 capacity probe. Record the results in capacity_plan.json. If budget will be exceeded, escalate to the operator before proceeding.
 5. **DECK-INTAKE GATE (hard pre-build precondition):** Before ingesting the brief, verify the deck-intake interview is complete by running:
    ```
@@ -312,7 +312,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Write the ECHO: a 3-5 sentence paragraph in plain language that restates the deck's mission. Format: "This deck is for [AUDIENCE]. It presents [OFFER] at [FINAL_PRICE]. It will [TRANSFORMATION_PROMISE]. The owner's primary goal is [GOAL]. The audience's biggest objection is [OBJECTION]."
-2. **Declare the MODEL MANIFEST** in the echo (per master SOP Section 9.0). Include it as a named block in the echo message and in the PRD:
+2. **Declare the MODEL MANIFEST** in the echo (per SOP-IMG-01-KIE-CALL-MECHANICS + director-of-presentations SOP 9.x + build_deck.py MODEL_* pins (PRESENTATION-MASTER-DOCTRINE.md §4)). Include it as a named block in the echo message and in the PRD:
    ```json
    {
      "image_platform": "kie.ai",
@@ -384,7 +384,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - master SOP slide-math table (see below)
 
 **Steps:**
-1. If the client provided a duration in minutes (not a slide count), convert using the master SOP table (Section 4). This table governs and cannot be overridden by agent judgment:
+1. If the client provided a duration in minutes (not a slide count), convert using the master SOP table (SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4)). This table governs and cannot be overridden by agent judgment:
 
    | Duration | Target slide count | Mode A cap |
    |----------|--------------------|----------|
@@ -406,7 +406,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 2a. **SIGNATURE PRESENTATION BRANCH (`deck_type: signature_presentation`) -- the 90-slide Mode-A cap does NOT apply.** When `working/copy/intake.json` records `deck_type: signature_presentation`, this deck type does NOT use the duration target/cap table above. Its arc is the SACRED Trevor Otts 4-phase methodology, and its length comes from the four phase FLOORS: **Avatar >= 11, Signature Story >= 13, Transformational Teaching >= 36, Purpose Pitch >= 40 -- >= 100 slides total.** The bands are FLOORS, not fixed spans: when Teaching expands, the later phases shift while staying contiguous and in order. The Mode-A 90-slide cap is explicitly **N/A** for this deck type. A client-exact count is STILL honored EXACTLY when logged (`client_overrode_slide_floor` + `client_exact_slide_count`), exactly as `AF-SLIDE-COUNT-EXACT` requires. Enforced fail-closed by `prove_sp_structure.py` / `AF-SP-SLIDE-FLOOR` (manifest phase **P-SP-STRUCTURE**, `build_deck._chk_sp_structure`), which SKIPS the >= 100 floor ONLY on the logged client-exact override. See SOP-SIGPRES-00 / `51-signature-presentation/MASTERDOC.md` §3.2.1 and Edge Case 17.3 below. (This branch is additive: every non-signature deck type behaves EXACTLY as steps 1-2 above.)
 
-3. Allocate the arc using the master SOP Section 4.1 worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
+3. Allocate the arc using SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE + director-of-presentations SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
 
    | Arc section | 45 slides | 60 slides | 75 slides |
    |---|---|---|---|
@@ -431,7 +431,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    The offer section (rows 14 to 17) is never compressed below 10 slides on a 45+ slide deck. If `VIP_TIER` exists, it takes 1 to 2 slides inside row 14 (presented AFTER the core final price).
 
-4. Apply the master SOP Section 4.2 proven flow. The proven reference run runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves. The signature moves below are ILLUSTRATIVE examples drawn from one reference run -- substitute your DISCOVERY VARIABLES (the client's own promise, niche, math, names, and prices); the prices shown are the reference run's, not a template:
+4. Apply SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) proven flow. The proven reference run runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves. The signature moves below are ILLUSTRATIVE examples drawn from one reference run -- substitute your DISCOVERY VARIABLES (the client's own promise, niche, math, names, and prices); the prices shown are the reference run's, not a template:
 
    | Section | Slides (of 75) | What it does | Signature moves (illustrative -- substitute your DISCOVERY VARIABLES) |
    |---|---|---|---|
@@ -624,7 +624,7 @@ A healthy run_ledger.json shows: `status: "delivered"`, slide_count = 75, phase_
 - Writing the PRD without declaring the MODEL MANIFEST -- the manifest is the operator's authorization; writing prompts without it means generation may happen on an unauthorized model.
 - In Mode B: rewriting a client's slide copy without per-substitution owner approval -- the rule is ADD and PROPOSE, not rewrite. Any unrequested change to client words is a violation regardless of quality.
 - Overriding the client's EXPLICIT slide count -- the gravest count error. If the client asked for an exact number (`client_requested_slide_count`), build EXACTLY that many (25 -> 25, 50 -> 50, 500 -> 500). NEVER floor it up to a pacing minimum, cap it down to 90, default it, or ask "this is 20, you said 25 — does 20 work?". The client's stated count is honored verbatim and overrides every heuristic (duration floor, Mode-A cap, AND the source_slide_count anti-compression floor). `AF-SLIDE-COUNT-EXACT` AUTO-FAILS any mismatch.
-- Using the old (wrong) slide-math table -- the master SOP Section 4 table governs ONLY when the client gave no explicit count; the 90 figure is the Mode A target/cap, and in Mode B it yields to source_slide_count (add-only, never trimmed).
+- Using the old (wrong) slide-math table -- SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) table governs ONLY when the client gave no explicit count; the 90 figure is the Mode A target/cap, and in Mode B it yields to source_slide_count (add-only, never trimmed).
 - Deleting a client slide to hit a duration cap in Mode B -- the source_slide_count floor OVERRIDES the cap. With no explicit client count, SLIDE_COUNT_FINAL = max(duration_target, source_slide_count) and the output deck must never contain fewer slides than the source deck.
 
 ---

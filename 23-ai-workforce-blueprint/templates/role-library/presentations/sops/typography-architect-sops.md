@@ -48,9 +48,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Purpose:** Kill the cookie-cutter chassis (the reference failure case Dimension F: the identical five-part vertical stack on nearly every slide; V8 rotated image position but kept a rigid recurring chassis). Force a real rotation of WORD-BLOCK placement, not just image position.
 
-**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per master SOP Section 7.2). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
+**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
 
-**Inputs:** master SOP Section 7.2 (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
+**Inputs:** SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
 
 **Steps:**
 1. Pull the five archetypes (A1 full-bleed photo with overlay; A2 photo one side, text opposite; A3 photo-top, data-bottom; A4 type-dominant punch; A5 portrait/selfie). Confirm definitions verbatim from Section 7.2.
@@ -83,12 +83,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **The hard rule:** Every slide tagged LADDER (ANCHOR, DROP1, DROP2, DROP3, FINAL) MUST render under the same three-part price-typography system: (1) the LIVE price in a metallic-gold gradient hero numeral with a soft glow; (2) every DEAD (superseded) price struck through with a DRAWN gold diagonal double-strike, shown cumulatively; (3) the price numeral is the hero of the slide (largest type element), per master SOP rule "numbers are heroes." The system is identical across all ladder slides; only which price is live changes.
 
-**Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), master SOP Section 7.4 (strikethrough handling).
+**Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (strikethrough handling).
 
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
 2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
-3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference master SOP Section 7 strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**

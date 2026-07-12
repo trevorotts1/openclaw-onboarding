@@ -2,7 +2,7 @@
 
 **Cluster:** Design System
 **Owner roles:** Brand Steward (locks the single logo asset, pins it in the STYLE BLOCK) + Slide Image Creator (composites it image-to-image on every slide). Enforced by: QC Specialist (Phase 5 image QC, Phase 6 final deck QC).
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 logo chip device, 7.3 element 10, Appendix A Kie.ai image-to-image)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) logo chip device, 7.3 element 10, Appendix A Kie.ai image-to-image)
 **Version:** 1.0
 
 > ONE locked logo mark, used identically on every slide it appears on. The forensic reference deck's logomark MUTATED across the deck into at least four-plus different marks (ringed leaf, bare leaf, a serif monogram, mountain peak, founders-tagline lockup; in V8 a roundel, a sprout, a tall tree, a mountain mark, a generic monogram) because it was generated text-to-image per slide. This SOP forces the image-to-image path with one canonical asset at a fixed size and position, and auto-fails any drift or misspelled render.
@@ -77,5 +77,5 @@ This is the gold-standard design system the whole design-system cluster ports to
 ## 7. Research Base
 
 - The gold-standard design proof (the locked logo spec, the image-to-image composite path, the bottom-right ~9% placement).
-- Master SOP Section 7.2 (logo chip device), 7.3 element 10 (logo placement + contrast plate), Appendix A (the Kie.ai gpt-image-2-image-to-image path and `input.input_urls` reference-image mechanics).
+- SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (logo chip device), 7.3 element 10 (logo placement + contrast plate), Appendix A (the Kie.ai gpt-image-2-image-to-image path and `input.input_urls` reference-image mechanics).
 - The forensic Dimension F (logo mutation root-caused to text-to-image-per-slide generation; this SOP forces image-to-image and adds the drift auto-fail).

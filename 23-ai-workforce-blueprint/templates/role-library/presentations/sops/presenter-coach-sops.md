@@ -12,7 +12,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Talk Track
 
-**When to run:** After the PPTX assembly final QC has passed (>= 8.5 per master SOP Section 11.3). The approved slides_copy.md and presenter_notes.json must both exist before this SOP begins.
+**When to run:** After the PPTX assembly final QC has passed (>= 8.5 per MASTER-QC-AUTOFAIL-RULESET.md (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4)). The approved slides_copy.md and presenter_notes.json must both exist before this SOP begins.
 
 **Inputs:**
 - working/copy/slides_copy.md (QC-passed, owner-approved, complete with PRESENTER NOTE on every slide)
@@ -45,7 +45,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    ```
 
    Hard rules for talk-track entries:
-   - The talk track says what the presenter SAYS. The slide carries the one big idea; the talk track carries the narration. These must not duplicate each other (master SOP Section 4.3, rule 15).
+   - The talk track says what the presenter SAYS. The slide carries the one big idea; the talk track carries the narration. These must not duplicate each other (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4), rule 15).
    - The HOOK must appear at every slide tagged HOOK_REFRAIN: yes in slides_copy.md. On those slides, the talk track entry includes the hook line verbatim -- exactly as recorded in intake.json -- as its closing sentence.
    - On ANCHOR slides: the talk track includes the memory hook line verbatim and the explicit coaching note "say 'remember this number' slowly and let them write it down before advancing."
    - On BUILDUP slides: the talk track uses future-pacing language and ends on an open loop that the next slide (the DROP) closes. The owner does not advance the slide until they have landed the buildup.
@@ -110,7 +110,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Every answer uses proof that is actually in the deck (slides_copy.md proof assets or the guarantee slide). No invented proof. If a [CLIENT TO SUPPLY] placeholder is unfilled, the answer says "I have a client who [result] -- I will share their full story when you connect with me after the session" and moves on.
    - The anchor line must not be a question. It is a confident declarative statement.
    - The tone of every answer matches the TONE from intake (a Tough Love deck gets Tough Love Q&A answers; a Calm Premium deck gets understated, confident replies).
-   - The price objection answer always references the cost-of-inaction math from the deck (master SOP Section 4.3, rule 6) and the guarantee.
+   - The price objection answer always references the cost-of-inaction math from the deck (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4), rule 6) and the guarantee.
    - No em dashes anywhere in any answer or coaching note.
 
 5. **Write the Q&A prep** to working/presenter-coach/qa_objection_prep.md with a header block: DECK_SLUG, DATE, TONE, primary_objection, source_documents used.
@@ -205,7 +205,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/presenter-coach/talk_track.md (complete)
 - working/presenter-coach/qa_objection_prep.md (complete)
 - working/presenter-coach/rehearsal_pack.md (complete, printed or on-screen)
-- The assembled PPTX (in the client's Downloads folder or confirmed delivery location per master SOP Section 11.4)
+- The assembled PPTX (in the client's Downloads folder or confirmed delivery location per SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4))
 - DURATION_MIN from intake.json
 
 **Steps:**

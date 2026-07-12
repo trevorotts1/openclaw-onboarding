@@ -430,7 +430,7 @@ Telegram message from watchdog: "[DECK_SLUG] watchdog: no new images completed i
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 2.1 (Step 0.5 capacity probe) and Phase 7 (resilience cron)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md PIPELINE-MANIFEST.json phase ordering + capacity-reliability-engineer SOP 9.x (Step 0.5 capacity probe) (PRESENTATION-MASTER-DOCTRINE.md §4) (Step 0.5 capacity probe) and Phase 7 (resilience cron)
 - OpenClaw documentation (docs.openclaw.ai) for env store locations and model routing configuration
 
 **Tier 2:**

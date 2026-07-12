@@ -43,7 +43,7 @@ These are SPEAKER-FACING deliverables. The exact words you write are for the pre
 
 You verified the pacing standard and chose the number. The general public-speaking band is 130 to 160 words per minute (VirtualSpeech, https://virtualspeech.com/blog/average-speaking-rate-words-per-minute), with about 140 wpm associated with peak perceived credibility, and 120 to 140 recommended when the audience must absorb and retain (this deck is exactly that: belief shifts, an emotional pitch, and deliberate dramatic pauses on every price drop). You budget the spoken script at 130 words per minute. That number sits in the verified 120-to-140 absorption band, leaves headroom for the mandatory 2-to-3-second pauses the pitch doctrine requires on drops, and prevents a rushed-feeling delivery. You expose the chosen rate so it can be tuned per owner.
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 15). Voice authority: 30-fish-audio-api-reference/fish-audio-voice-sop.md, references/fish-audio-api-reference.md, and the department tag catalog at fish-audio/FISH-AUDIO-TAGS-MASTER.md and fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md (see Section 9.3 and 9A).
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 15). Voice authority: 30-fish-audio-api-reference/fish-audio-voice-sop.md, references/fish-audio-api-reference.md, and the department tag catalog at fish-audio/FISH-AUDIO-TAGS-MASTER.md and fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md (see Section 9.3 and 9A).
 
 ### What This Role Is NOT
 
@@ -403,7 +403,7 @@ Syntax depends on the tier: S2/S2-Pro uses `[square brackets]` (open-domain, fre
 
 **Steps:**
 1. Surface-boundary check: confirm no spoken-block text was copied onto the audience deck (grep slide copy and prompt files). If any appears on the deck, flag to the Director (deck must be corrected) and hold delivery.
-2. Deliver per master SOP Section 11.4: Mac clients get PRESENTERS-SPEECH.pdf, PRESENTERS-SPEECH.md, PRESENTERS-SPEECH-FISH-TAGGED.md, presenter-teleprompter.html, and PRESENTER-AUDIO.mp3 copied to Downloads with clear names; include the Notion link. If the environment is unclear, ASK.
+2. Deliver per SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4): Mac clients get PRESENTERS-SPEECH.pdf, PRESENTERS-SPEECH.md, PRESENTERS-SPEECH-FISH-TAGGED.md, presenter-teleprompter.html, and PRESENTER-AUDIO.mp3 copied to Downloads with clear names; include the Notion link. If the environment is unclear, ASK.
 3. Notify the owner via openclaw message send, naming surfaces: "Your Presenter's Speech is ready. You get four things, all for YOU, the speaker. One: PRESENTERS-SPEECH.pdf, your word-for-word teleprompter to read live (also open presenter-teleprompter.html in any browser for a scrolling teleprompter). Two: PRESENTERS-SPEECH.md, the same words in plain text. Three: PRESENTERS-SPEECH-FISH-TAGGED.md, the same words with voice-direction tags so you can re-voice it anytime. Four: PRESENTER-AUDIO.mp3, an audio demo so you can hear how it should sound. The slide deck is what the audience sees; this script and the audio are only for you. The Presenter's Guide is your map of points; this Speech is the words."
 4. Verify file existence at every destination before reporting done (all four artifacts + the HTML).
 5. Update run_ledger.json: `presenter_speech_phase: "complete"`, PRESENTERS-SPEECH.md path, PRESENTERS-SPEECH.pdf path, PRESENTERS-SPEECH-FISH-TAGGED.md path, presenter-teleprompter.html path, Notion URL, PRESENTER-AUDIO.mp3 path, TTS tier.
@@ -541,7 +541,7 @@ SPOKEN: Here is what I want you to notice. You showed up. You stayed live with m
 
 **Tier 1:**
 - 30-fish-audio-api-reference/fish-audio-voice-sop.md and references/fish-audio-api-reference.md (S2 tags, API, pricing, settings)
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 15; Section 11.4 delivery)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 15; SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) delivery)
 - ElevenLabs docs (elevenlabs.io/docs) -- model generations (v2 stable voice-settings vs v3 expressive audio tags), verify the account's available models
 - presenter-coach.md (ROLE-14) -- the talk track the script feeds
 
@@ -593,7 +593,7 @@ Produce the audio anyway (it is a standard deliverable and the rehearsal benefit
 3. ElevenLabs ships a new model generation or changes the v2/v3 behavior.
 4. The box's local TTS tool changes.
 5. ffmpeg stitch workflow changes.
-6. Master SOP Section 4.3 rule 15 or Section 11.4 delivery changes.
+6. SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 15 or SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) delivery changes.
 7. The operator explicitly requests a revision.
 
 ---

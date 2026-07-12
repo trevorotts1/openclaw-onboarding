@@ -2,7 +2,7 @@
 
 **Cluster:** Design System
 **Owner role:** Typography Architect (SOP 9.1). Enforced by: QC Specialist (Phase 3 prompt QC, Phase 5 image QC).
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2, 7.4, 7.5)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4), 7.4, 7.5)
 **Version:** 1.0
 
 > Grounds the deck's typography in real type practice so it is a DESIGNED system, not a default one. The forensic reference deck used one device (a black headline with a single teal accent word) on about 40 of 45 slides: no weight ladder, no expressive display type, no per-slide treatment. This guide encodes the weight ladder, expressive display rules, and hierarchy that the Typography Architect locks and the prompt writer renders.
@@ -112,4 +112,4 @@ QC checks the prompt at Phase 3 against the Typography Architect treatment table
 
 - The gold-standard design proof (the locked Montserrat weight ladder, gold gradient, glow, strikethrough, watermark numerals, per-word emphasis) is the empirical model this guide encodes.
 - Hierarchy and weight-contrast principles (one reading order, four-weight ladder) from established editorial and display-type practice.
-- Master SOP Section 7.2 (archetypes, where type is the hero) and 7.4 (price typography as a drawn object, not a font style).
+- SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (archetypes, where type is the hero) and 7.4 (price typography as a drawn object, not a font style).

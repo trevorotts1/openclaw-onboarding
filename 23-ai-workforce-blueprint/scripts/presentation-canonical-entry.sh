@@ -575,6 +575,18 @@ export OC_DECK_ENTRY_NONCE
 # sufficient on its own; the nonce above is the real gate.
 export OC_DECK_CANONICAL_ENTRY=1
 
+# FIX P3-01(c)4 — close the kie_generate.py / kie-slide-submitter.js side door:
+# both are SHARED scripts (also reused by Skills 06/47/49/59 for non-presentations
+# image work), so their full 9,000-18,000-char rich-prompt floor gate is opt-in via
+# KIE_PROMPT_GATE=presentations (see prompt_gate.py / kie_generate.py). This entry
+# point IS the presentations context — force the full gate on for the ENTIRE process
+# tree it spawns so a Mode-B reference-image call made anywhere inside a canonical
+# deck run (build_deck.py's own submit_task already always gates; this covers the
+# standalone kie_generate.py / kie-slide-submitter.js helper paths too) can never run
+# ungated. Never overrides an explicit caller override to something stricter; only
+# sets the default when unset.
+export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
+
 # Consume/rotate the nonce on ANY exit (normal or signal) so it can never be replayed.
 trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 

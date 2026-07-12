@@ -1,7 +1,7 @@
 # SOP-PITCH-02: VALUE STACK AND PROMISES
 
 **Cluster:** Pitch-Craft Rules (the offer choreography)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.2 the proven flow, Section 4.4 named required components, Section 5.5 the price sequence)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) the proven flow, director-of-presentations SOP (`checklist_of_promises`) + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4) named required components, SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) the price sequence)
 **Owning role at write time:** Offer Price Strategist (the itemized stack, the tally, the promise inventory), Slide Copywriter (the slide copy)
 **Enforced at the gate by:** QC Specialist - Presentations (copy QC criteria c18-c22 named-component presence gates; the Offer Price Strategist gates)
 **Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference, Section 3): Day 1 $997 / Day 2 $1,497 / Day 3 $997 / VIP $497 / Action-Taker $297 / Strategy Session $997; stack slide s57 "$5,282", tally slide s58 "Over $5,000".

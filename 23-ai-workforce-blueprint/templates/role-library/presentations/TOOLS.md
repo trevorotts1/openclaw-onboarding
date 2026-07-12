@@ -21,9 +21,14 @@ A direct `build_deck.py` or `working/*.py` call is blocked by the front-door gua
 render-template directories and are installed into the client's Presentations scripts
 directory on a materialized box. Use the `SCRIPTS_DIR` your task message gives you.
 
-Your only job is to produce a correct `slides.json` (see `slides.schema.json`) and run
-the canonical entry command above. The procedure is in `BUILDER-PROMPT.md`; read it
-first on every deck task.
+**Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
+render also requires the hand-authored 9,000–18,000-character rich per-slide prompt files
+(`working/prompts/slide-NN.txt`) and every other upstream Layer-A artifact the manifest
+requires before the render preflight will pass. The full two-layer procedure — walk
+`run_signature_deck.py --next` phase by phase, THEN dispatch the canonical entry command
+above — is in `BUILDER-PROMPT.md`; read it first on every deck task. Treat the mechanics
+summary below as reference for what the render step itself does at P4-RENDER, not as a
+shortcut past Layer A.
 
 **FORBIDDEN (any one = immediate FAIL at QC, AF-I14):**
 - The native `image_generate` tool, or any other image-generating tool, for a deck slide.
@@ -39,15 +44,19 @@ first on every deck task.
 
 ## What the canonical pipeline does (so you don't have to)
 
-You hand `slides.json` and an output path to `presentation-canonical-entry.sh`. It runs
-three fail-closed gates (deps / bypass-scan / version-hash-pin) and then dispatches
-`run_signature_deck.py` → `build_deck.py`, which does EVERYTHING else, deterministically,
-with zero AI judgement at runtime:
+You hand `slides.json`, the pre-authored `working/prompts/slide-NN.txt` rich prompts, and
+an output path to `presentation-canonical-entry.sh`. It runs three fail-closed gates
+(deps / bypass-scan / version-hash-pin) and then dispatches `run_signature_deck.py` →
+`build_deck.py`, which does EVERYTHING else, deterministically, with zero AI judgement at
+runtime:
 
-1. Validates `slides.json` (fails loud on bad JSON / missing fields / non-unique ordinals).
-2. For each slide, MECHANICALLY composes the KIE prompt = `scene` + your exact `copy`
-   (verbatim) + optional `logo` wordmark + `layout` hint + a MANDATORY English/Latin-only
-   pin. No model decides wording — the copy is whatever you wrote in `slides.json`. The pin
+1. Validates `slides.json` (fails loud on bad JSON / missing fields / non-unique ordinals)
+   AND preflights the full Layer-A artifact set — including the rich prompt files.
+2. For each slide, renders the Layer-A-authored rich prompt **VERBATIM** — it does **not**
+   compose a prompt from `scene` + `copy` (that claim is a retired residual pattern; see
+   `BUILDER-PROMPT.md`). It appends the MANDATORY English/Latin-only pin if the authored
+   prompt does not already carry it. No model decides wording at render time — the copy is
+   whatever the Slide Copywriter / Slide Image Creator roles authored upstream. The pin
    appended to every prompt is, verbatim:
    > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK
    > or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter.

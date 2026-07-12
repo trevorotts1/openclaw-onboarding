@@ -1,7 +1,7 @@
 # SOP-PITCH-06: THE PITCH ENGINES (NET-NEW MECHANICAL AUTO-FAILS)
 
 **Cluster:** Pitch-Craft Rules (the offer choreography)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.2 the proven flow, Section 5.5 the price sequence); SOP-ENGINE-00 (the engine framework)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) the proven flow, SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) the price sequence); SOP-ENGINE-00 (the engine framework)
 **Owning roles at write time:** Offer Price Strategist (cadence loop, cost-of-inaction, guarantee felt-frame), Slide Copywriter (branded method, expectation, felt-stakes, villain ordering, method beat tags), Presenters Speech Writer (spoken hook count), Director of Presentations (reserves the per-rung beat block + villain/hero order in the arc), Brainstorming Buddy (proposes branded-method candidates)
 **Enforced at the gate by:** QC Specialist - Presentations (Phase 1Q + Phase 6, via `scripts/pitch_engines_check.py`); QC Specialist - Speech (Phase Speech-QC, the hook count)
 **Enforcement phase:** **WRITING (copy / offer).** Every pitch engine below is a SCRIPT/OFFER property, proven at COPY-QC (Phase 1Q + re-verified Phase 6), the EARLIEST phase the defect is detectable — before any image prompt is authored.

@@ -311,6 +311,64 @@ else
 fi
 
 echo
+echo "(D) P3-01(c)4 — entry script forces the full kie prompt-floor gate on for its process tree"
+
+# kie_generate.py / kie-slide-submitter.js are SHARED scripts (also reused by
+# Skills 06/47/49/59 for non-presentations image work) whose full 9,000-18,000-char
+# rich-prompt floor gate is opt-in via KIE_PROMPT_GATE=presentations. Inside the
+# presentations canonical entry point this must never be left unset -- any Mode-B
+# reference-image call made anywhere in the spawned process tree must inherit the
+# full gate. Static guard: the entry script exports the default.
+assert_entry_has "entry: forces KIE_PROMPT_GATE=presentations default" 'KIE_PROMPT_GATE="\$\{KIE_PROMPT_GATE:-presentations\}"'
+
+# Functional: run the entry far enough to mint the nonce + print its run banner,
+# then assert the child process actually sees KIE_PROMPT_GATE=presentations. We
+# splice a one-shot "printenv" in place of the real orchestrator via RUNNER
+# resolution is not exposed as a flag, so instead we assert indirectly: source the
+# entry's env-setup in a subshell up to (not including) the final exec, using --plan
+# with a stubbed SCRIPTS_DIR pointing at a fake run_signature_deck.py that dumps env.
+ENV_RUN="$TMPDIR_TEST/env-run"
+mkdir -p "$ENV_RUN/working/checkpoints"
+touch "$ENV_RUN/working/checkpoints/.test-context"
+write_complete_ledger "$ENV_RUN"
+echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
+
+FAKE_SCRIPTS="$TMPDIR_TEST/fake-scripts"
+mkdir -p "$FAKE_SCRIPTS"
+cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py" "$FAKE_SCRIPTS/build_deck.py" 2>/dev/null || touch "$FAKE_SCRIPTS/build_deck.py"
+# GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
+# co-located in SCRIPTS_DIR or it refuses before we ever reach the orchestrator dispatch.
+cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
+cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
+import os, sys
+print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))
+sys.exit(0)
+FAKERUNNER
+
+ENTRY_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" bash "$ENTRY" --run-dir "$ENV_RUN" \
+    --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \
+    > "$TMPDIR_TEST/env-run.log" 2>&1 || ENTRY_RC=$?
+if grep -q "KIE_PROMPT_GATE=presentations" "$TMPDIR_TEST/env-run.log"; then
+    pass "entry: spawned orchestrator inherits KIE_PROMPT_GATE=presentations by default"
+else
+    fail "entry: spawned orchestrator did NOT see KIE_PROMPT_GATE=presentations (rc=$ENTRY_RC)"
+    sed -n '1,25p' "$TMPDIR_TEST/env-run.log" | sed 's/^/    > /'
+fi
+
+# Functional: an explicit caller override is respected (never clobbered).
+ENTRY_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" KIE_PROMPT_GATE=off bash "$ENTRY" --run-dir "$ENV_RUN" \
+    --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \
+    > "$TMPDIR_TEST/env-run-override.log" 2>&1 || ENTRY_RC=$?
+if grep -q "KIE_PROMPT_GATE=off" "$TMPDIR_TEST/env-run-override.log"; then
+    pass "entry: an explicit caller KIE_PROMPT_GATE override is never clobbered"
+else
+    fail "entry: explicit KIE_PROMPT_GATE=off override was clobbered (rc=$ENTRY_RC)"
+    sed -n '1,25p' "$TMPDIR_TEST/env-run-override.log" | sed 's/^/    > /'
+fi
+
+echo
 echo "============================================"
 echo "presentation-deps-gate: PASS=$PASS FAIL=$FAIL"
 echo "============================================"
