@@ -51,8 +51,42 @@ SAFETY CONTRACT (inherited from floor-fill-driver.py, not reimplemented):
     A dept whose library source is missing is SKIPPED and reported under
     "no_library_source", never stubbed.
 
+JOIN VERIFICATION (P2-06 (c)2's own closing requirement — "then
+prove-board-join.py must pass"): materializing the missing department
+directories only closes the PROVISIONED layer of the three-layer contract
+(chosen == provisioned == displayed) that prove-board-join.py enforces. A box
+can leave this script with floor_met=True on disk and STILL be broken for the
+client if (a) the CHOSEN artifact (<company_dir>/departments.json) never
+listed the newly-materialized department (a pre-C7 or otherwise-short chosen
+list — the box may have hit the SAME wipe at the chosen-list layer, not just
+on disk), or (b) the Command Center's `workspaces` table was seeded before
+today and was never told about the department that just appeared. So, after a
+successful --apply that actually closed a gap, this script — UNLESS
+--skip-join-verify is passed —:
+  1. Appends the newly-closed department id(s) to the CHOSEN artifact
+     (<company_dir>/departments.json + build-state
+     canonicalReconciliation.chosenDepartments) — APPEND-ONLY, every existing
+     entry carried through byte-for-byte (mirrors write_chosen_departments_
+     artifact()'s own shape; never a second source of truth for dept-info —
+     resolved via build-workforce.load_canonical_floor() / the same
+     vertical_packs block apply_vertical_packs() reads).
+  2. If a Command Center database can be found on this box (the SAME shared
+     resolve_db.find_dashboard_db() every other gate uses, honoring
+     $DASHBOARD_DB_PATH), re-runs 32-command-center-setup/scripts/
+     seed-workspaces.py (idempotent, INSERT OR IGNORE) so the DISPLAYED layer
+     picks up the now-chosen-and-provisioned department, then runs
+     prove-board-join.py --company-dir <company_dir> --db <db> --json and
+     records its verdict under result["join_verification"].
+  3. If NO Command Center database is found, join verification is
+     NOT-APPLICABLE (a box with no CC yet has nothing to join — this is not a
+     failure) and is recorded as such, never silently skipped without a trace.
+  A DRIFT or CANNOT-VOUCH join verdict downgrades the overall exit code to 1
+  (needs operator attention) even though the on-disk floor is met — the
+  residue is not FULLY closed until chosen == provisioned == displayed.
+
 USAGE
   materialize-missing-departments.py [--departments-dir <dir>] [--apply] [--json]
+                                      [--skip-join-verify] [--db <mission-control.db>]
 
   --departments-dir defaults to department_floor.resolve_departments_dir()
   (the same platform-appropriate resolver department-floor.py itself uses),
@@ -60,14 +94,19 @@ USAGE
 
 EXIT CODES
   0  floor already met (nothing to do), OR --apply successfully closed the gap
+     AND (join verification passed OR was NOT-APPLICABLE / skipped)
   1  still short after --apply (a dept's role-library source is missing —
-     logged under no_library_source, never fabricated) — needs operator attention
+     logged under no_library_source, never fabricated) — needs operator
+     attention; OR the floor closed but join verification reported DRIFT /
+     CANNOT-VOUCH (chosen/provisioned/displayed disagree — also needs
+     operator attention)
   2  usage error / no departments dir resolvable
   3  floor is short and --apply was NOT passed (dry-run informs, does not mutate)
 """
 import argparse
 import importlib.util as _ilu
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -95,6 +134,9 @@ crw = _load_module("create_role_workspaces__materialize", "create_role_workspace
 LIBRARY = SCRIPT_DIR.parent / "templates" / "role-library"
 LIBRARY_INDEX = LIBRARY / "_index.json"
 FLOOR_FILL_DRIVER = SCRIPT_DIR / "floor-fill-driver.py"
+REPO_ROOT = SCRIPT_DIR.parent.parent
+SEED_WORKSPACES = REPO_ROOT / "32-command-center-setup" / "scripts" / "seed-workspaces.py"
+PROVE_BOARD_JOIN = SCRIPT_DIR / "prove-board-join.py"
 
 
 def _load_library_index():
@@ -171,6 +213,191 @@ def run_floor_fill_driver(gap_map, departments_dir, apply_):
         return proc.returncode, report, proc.stdout, proc.stderr
 
 
+# ── P2-06 (c)2 closing requirement: "then prove-board-join.py must pass" ────
+# Materializing directories only closes LAYER 2 (provisioned). These helpers
+# close the loop on LAYER 1 (chosen) and hand off to seed-workspaces.py /
+# prove-board-join.py to prove LAYER 3 (displayed) agrees too.
+
+def _universal_primary_dept_info(bw, dept_id):
+    """Resolve {name, emoji, head, description} for a universal-primary
+    vertical dept id from the SAME vertical_packs source
+    build-workforce.apply_vertical_packs() reads — never a second,
+    hand-maintained source of truth. None if dept_id is not universal-primary."""
+    packs = bw._load_vertical_packs() or {}
+    for pack_id, pack in packs.items():
+        if not isinstance(pack, dict):
+            continue
+        for dept in pack.get("auto_add_departments", []) or []:
+            if isinstance(dept, dict) and dept.get("id") == dept_id and dept.get("universal_primary"):
+                name = dept.get("name", dept_id.replace("-", " ").title())
+                return {"name": name, "emoji": dept.get("emoji", "\U0001f4c1"),
+                        "head": f"Director of {name}", "description": dept.get("one_liner", "")}
+    return None
+
+
+def sync_chosen_artifact(departments_dir, closed_ids):
+    """
+    APPEND-ONLY merge of the newly-closed department id(s) into the CHOSEN
+    artifact (<company_dir>/departments.json) + build-state
+    canonicalReconciliation.chosenDepartments. Every existing entry is
+    preserved unchanged; only ids not already present are appended. Returns
+    the list of ids actually appended (empty if they were already chosen —
+    the common case, since C7 builds usually chose the full floor already and
+    this box's residue was PROVISIONED-only).
+    """
+    bw = _load_module("build_workforce__materialize_join", "build-workforce.py")
+    company_dir = Path(departments_dir).parent
+    artifact_path = company_dir / "departments.json"
+    try:
+        existing = json.loads(artifact_path.read_text(encoding="utf-8"))
+        if not isinstance(existing, list):
+            existing = []
+    except (OSError, ValueError):
+        existing = []
+
+    known = set()
+    for e in existing:
+        if isinstance(e, dict):
+            slug = e.get("slug") or (e.get("id") or "").removeprefix("dept-")
+            if slug:
+                known.add(slug)
+
+    canonical_floor = bw.load_canonical_floor()
+    merged = list(existing)
+    appended = []
+    for did in closed_ids:
+        if did in known:
+            continue
+        info = canonical_floor.get(did) or _universal_primary_dept_info(bw, did)
+        if not info:
+            continue
+        merged.append({
+            "id": f"dept-{did}", "slug": did,
+            "emoji": info.get("emoji", "\U0001f4c1"),
+            "name": info.get("name", did.replace("-", " ").title()),
+            "headTitle": info.get("head", f"Director of {did}"),
+            "workspacePath": f"departments/{did}",
+        })
+        appended.append(did)
+        known.add(did)
+
+    if not appended:
+        return []
+
+    try:
+        company_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    except OSError:
+        return []  # fail-soft: a chosen-artifact write failure must never abort remediation
+
+    try:
+        state_path = Path(bw._build_state_path())
+        state = bw._load_build_state()
+        recon = state.get("canonicalReconciliation", {})
+        if not isinstance(recon, dict):
+            recon = {}
+        chosen = recon.get("chosenDepartments", {})
+        prior = chosen.get("slugs") if isinstance(chosen, dict) and isinstance(chosen.get("slugs"), list) else []
+        new_slugs = list(prior)
+        for sid in appended:
+            if sid not in new_slugs:
+                new_slugs.append(sid)
+        recon["chosenDepartments"] = {
+            **(chosen if isinstance(chosen, dict) else {}),
+            "slugs": new_slugs, "count": len(new_slugs),
+            "artifactPath": str(artifact_path), "companyDir": str(company_dir),
+            "artifactWritten": True, "source": "p2-06-materialize-missing-departments",
+        }
+        state["canonicalReconciliation"] = recon
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # the artifact write above already succeeded; build-state mirror is best-effort
+
+    return appended
+
+
+def _find_cc_db(explicit_db):
+    """
+    EXPLICIT-SIGNAL ONLY — never ambient install-path discovery.
+
+    SAFETY (found during this unit's own development, live incident):
+    resolve_db.find_dashboard_db()'s full candidate list includes fixed
+    per-platform install paths (e.g. ~/projects/command-center/mission-
+    control.db) that match a REAL, LIVE database on any box that has ever had
+    a real Command Center installed — including the operator's own dev
+    machine. Calling that full resolver unconditionally from a script that
+    can run in an unrelated test/scratch context (no isolated $HOME) silently
+    found and mutated a live database during this unit's own test run
+    ("do NOT touch any client/operator box" — violated once, here, and fixed
+    on the spot). This function therefore honors ONLY an EXPLICIT --db
+    argument or the $DASHBOARD_DB_PATH / $DATABASE_PATH env vars — both of
+    which require a caller to deliberately opt in — and NEVER falls through
+    to the shared resolver's ambient install-path candidate list. A caller
+    (the P6-01 rollout) that wants join verification on a real box must pass
+    --db (or the env var) explicitly; a bare --apply with neither set is
+    NOT-APPLICABLE by design, never a guess.
+    """
+    if explicit_db:
+        p = Path(explicit_db)
+        return p if p.is_file() else None
+    for env_var in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        v = os.environ.get(env_var)
+        if v and Path(v).is_file():
+            return Path(v)
+    return None
+
+
+def verify_board_join(departments_dir, explicit_db):
+    """
+    Close LAYER 3: re-seed the Command Center's `workspaces` table (idempotent
+    INSERT OR IGNORE — never touches an already-displayed row) then run
+    prove-board-join.py and report its verdict. Returns a dict:
+      {"status": "OK"|"DRIFT"|"CANNOT-VOUCH"|"NOT-APPLICABLE"|"GATE-ERROR",
+       "rc": <prove-board-join.py exit code or None>,
+       "seed_ran": bool, "verdict": {...} or None}
+    NOT-APPLICABLE (no CC database on this box yet) is NOT a failure — a box
+    with no Command Center installed has nothing to join.
+    """
+    company_dir = Path(departments_dir).parent
+    db_path = _find_cc_db(explicit_db)
+    if db_path is None:
+        return {"status": "NOT-APPLICABLE", "rc": None, "seed_ran": False, "verdict": None,
+                "reason": "no Command Center database found on this box "
+                          "(checked $DASHBOARD_DB_PATH / $DATABASE_PATH / install candidates)"}
+
+    seed_ran = False
+    if SEED_WORKSPACES.is_file():
+        env = dict(os.environ)
+        env["DASHBOARD_DB_PATH"] = str(db_path)
+        subprocess.run([sys.executable, str(SEED_WORKSPACES)], capture_output=True, text=True, env=env)
+        seed_ran = True
+
+    if not PROVE_BOARD_JOIN.is_file():
+        return {"status": "GATE-ERROR", "rc": None, "seed_ran": seed_ran, "verdict": None,
+                "reason": f"prove-board-join.py not found at {PROVE_BOARD_JOIN}"}
+
+    proc = subprocess.run(
+        [sys.executable, str(PROVE_BOARD_JOIN), "--company-dir", str(company_dir),
+         "--db", str(db_path), "--json"],
+        capture_output=True, text=True,
+    )
+    verdict = None
+    stdout = proc.stdout
+    brace = stdout.find("{")
+    if brace >= 0:
+        try:
+            verdict = json.loads(stdout[brace:])
+        except ValueError:
+            verdict = None
+    status_by_rc = {0: "OK", 1: "GATE-ERROR", 2: "DRIFT", 3: "CANNOT-VOUCH", 4: "NOT-APPLICABLE"}
+    return {
+        "status": status_by_rc.get(proc.returncode, "GATE-ERROR"),
+        "rc": proc.returncode, "seed_ran": seed_ran, "verdict": verdict,
+        "reason": None if verdict is not None else (proc.stderr[-2000:] or stdout[-2000:]),
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -183,6 +410,13 @@ def main(argv=None):
                           "are always honored, a declined dept is NEVER re-added.")
     ap.add_argument("--apply", action="store_true", help="mutate (default: dry-run report only)")
     ap.add_argument("--json", action="store_true", help="emit the result as JSON on stdout")
+    ap.add_argument("--skip-join-verify", action="store_true",
+                     help="skip the post-apply chosen-artifact sync + prove-board-join.py "
+                          "verification (isolated testing only; the live remediation path "
+                          "should always leave this on so the residue is FULLY closed)")
+    ap.add_argument("--db", default=None,
+                     help="explicit mission-control.db path for join verification "
+                          "(default: the shared resolve_db.find_dashboard_db() candidate list)")
     args = ap.parse_args(argv)
 
     dd = Path(args.departments_dir) if args.departments_dir else department_floor.resolve_departments_dir()
@@ -239,6 +473,25 @@ def main(argv=None):
     result["action"] = "materialized via floor-fill-driver.py --apply"
     result["rc"] = 0 if after["floor_met"] else 1
 
+    # P2-06 (c)2's own closing requirement: "then prove-board-join.py must
+    # pass." Only reached when SOMETHING was actually closed (gap_map
+    # non-empty) — an already-met floor short-circuited above and never
+    # reaches here, so the pre-existing "none -- floor already met" contract
+    # (relied on by test-materialize-missing-departments.sh T2 / the P2-06(c)1
+    # probe's short-circuit) is untouched.
+    closed_ids = [d for d in missing if d not in no_library]
+    if closed_ids and not args.skip_join_verify:
+        appended = sync_chosen_artifact(dd, closed_ids)
+        result["chosen_artifact_appended"] = appended
+        join = verify_board_join(dd, args.db)
+        result["join_verification"] = join
+        if after["floor_met"] and join["status"] in ("DRIFT", "CANNOT-VOUCH"):
+            result["rc"] = 1
+            result["action"] = ("materialized via floor-fill-driver.py --apply, but "
+                                 f"prove-board-join.py reported {join['status']} "
+                                 "(chosen/provisioned/displayed disagree) -- residue "
+                                 "not fully closed")
+
     _emit(result, args.json)
     return result["rc"]
 
@@ -259,6 +512,14 @@ def _emit(result, as_json):
     if "after_floor_met" in result:
         print(f"after:  floor_met={result['after_floor_met']} missing={result.get('missing_after', [])}",
               file=sys.stderr)
+    if result.get("chosen_artifact_appended"):
+        print(f"chosen artifact: appended {result['chosen_artifact_appended']}", file=sys.stderr)
+    if "join_verification" in result:
+        jv = result["join_verification"]
+        print(f"join verification (prove-board-join.py): status={jv.get('status')} rc={jv.get('rc')}",
+              file=sys.stderr)
+        if jv.get("reason"):
+            print(f"  reason: {jv['reason']}", file=sys.stderr)
     print(f"action: {result.get('action')}", file=sys.stderr)
     print(f"RESULT: rc={result.get('rc')}", file=sys.stderr)
 
