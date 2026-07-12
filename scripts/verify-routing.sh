@@ -152,12 +152,14 @@ else
   fi
 fi
 
-# ─── G2: CEO_ROUTING_NO_LOOPHOLES_V1 in AGENTS.md ────────────────────────────
-_info "G2: checking CEO_ROUTING_NO_LOOPHOLES_V1 in $AGENTS_FILE"
-if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V1" "$AGENTS_FILE" 2>/dev/null; then
-  _pass "G2: CEO_ROUTING_NO_LOOPHOLES_V1 present in $AGENTS_FILE"
+# ─── G2: CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in AGENTS.md ─────────────────────
+# Version-agnostic: P1-04 bumped the marker to V2 (adds the trust-engine chat-id
+# rule); either the migrated V2 or a not-yet-migrated V1 block satisfies the gate.
+_info "G2: checking CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in $AGENTS_FILE"
+if [ -f "$AGENTS_FILE" ] && grep -qE "CEO_ROUTING_NO_LOOPHOLES_V[0-9]+" "$AGENTS_FILE" 2>/dev/null; then
+  _pass "G2: CEO_ROUTING_NO_LOOPHOLES present in $AGENTS_FILE"
 else
-  _fail "G2: CEO_ROUTING_NO_LOOPHOLES_V1 MISSING from $AGENTS_FILE — run apply-routing-fix.sh"
+  _fail "G2: CEO_ROUTING_NO_LOOPHOLES MISSING from $AGENTS_FILE — run apply-routing-fix.sh"
   FAILURES=$((FAILURES + 1))
 fi
 

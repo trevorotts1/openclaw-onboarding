@@ -119,8 +119,12 @@ unset — those are never reported on. NEVER invent or reuse another client's ch
 real originating chat id of the message you are routing.
 
 ### Idempotency note
-This section is written to `workspace/AGENTS.md` and is idempotent via the
-`CEO_ROUTING_NO_LOOPHOLES_V1` marker. `apply-fleet-standards.sh` injects it on existing boxes.
+The on-box CEO routing doctrine — including this trust-engine chat-id rule — is assembled into
+`workspace/AGENTS.md` by the installers, NOT copied from this repo-root file. `apply-fleet-standards.sh`
+and `apply-routing-fix.sh` inject it, guarded by the `CEO_ROUTING_NO_LOOPHOLES_V2` marker (P1-04
+bumped it from V1 so already-onboarded boxes re-inject the rule on the next update instead of no-opping
+on the stale V1 marker). The SKILL_INTENT_ROUTING_REFLEX block (strip-then-reinsert every run) carries
+the same env-prefixed `mc-route.sh` invocation to the agent.
 
 ---
 
