@@ -3,12 +3,20 @@
 # enforcement driver (executive_producer.py) can be self-tested in CI without OpenMontage
 # present (AGPLv3-safe: no upstream source touched).
 #
-#   GOOD run: a complete free documentary-montage job — every DMAIC phase receipt
-#             present + valid + a real >100KB MP4 + a logged owner-authorized skip of
-#             V-ANALYZE (the free path) -> the driver must ATTEST V-CONTROL (exit 0).
-#   BAD  run: the EXACT bypass signature — V-IMPROVE dispatched with NO upstream phases
-#             attested and a render receipt with ffprobe_pass:false -> the driver must
-#             HARD-ABORT (AF-VID-PHASE-SKIPPED, exit 2).
+#   GOOD run:     a complete free documentary-montage job — every DMAIC phase receipt
+#                 present + valid + a real >100KB MP4 + a logged owner-authorized skip of
+#                 V-ANALYZE (the free path) -> the driver must ATTEST V-CONTROL (exit 0).
+#   BAD-FREE run: the EXACT phase-skip bypass on the FREE path — V-IMPROVE dispatched with
+#                 NO upstream phases attested and a render receipt with ffprobe_pass:false,
+#                 on the free documentary-montage pipeline (kie_in_scope:false, cost 0) so
+#                 phase-0 is N/A and the driver must HARD-ABORT at the phase-precondition
+#                 check (AF-VID-PHASE-SKIPPED, exit 2). This is the fixture that proves the
+#                 phase-skip gate specifically bites.
+#   BAD run:      the SAME phase-skip signature but on a PAID Kie job (kie_in_scope:true,
+#                 pipeline kie-video.yaml, cost 2.0) with NO KIE_API_KEY on the box. SK1-67
+#                 makes phase-0 fail EARLIEST here: a keyless paid job can never run, so the
+#                 driver must HARD-ABORT at phase-0 (AF-VID-KIE-BALANCE, exit 4) BEFORE the
+#                 phase-precondition check is even reached. This fixture locks SK1-67 in.
 #
 # Usage: bash make-video-fixtures.sh OUTDIR
 set -euo pipefail
@@ -16,8 +24,10 @@ set -euo pipefail
 OUT="${1:?usage: make-video-fixtures.sh OUTDIR}"
 GOOD="$OUT/good-run"
 BAD="$OUT/bad-run"
-rm -rf "$GOOD" "$BAD"
-mkdir -p "$GOOD/working/checkpoints" "$BAD/working/checkpoints"
+BAD_FREE="$OUT/bad-run-free"
+rm -rf "$GOOD" "$BAD" "$BAD_FREE"
+mkdir -p "$GOOD/working/checkpoints" "$BAD/working/checkpoints" \
+         "$BAD_FREE/working/checkpoints"
 
 # ---------- GOOD: complete free documentary-montage job ----------
 cat > "$GOOD/working/job-manifest.json" <<'JSON'
@@ -128,5 +138,37 @@ cat > "$BAD/working/checkpoints/render-receipt.json" <<'JSON'
 }
 JSON
 
-echo "GOOD run: $GOOD"
-echo "BAD  run: $BAD"
+# ---------- BAD-FREE: the phase-skip bypass on the FREE path ----------
+# Identical bypass signature to BAD (V-IMPROVE dispatched with NO upstream phase
+# attestations, NO owner-authorized skip, and an ffprobe-failing render receipt) but on
+# the FREE documentary-montage pipeline: kie_in_scope:false + estimated_cost_usd:0, so
+# phase-0 is N/A (no paid Kie call) and the driver reaches the phase-precondition check,
+# where it must refuse the skip (AF-VID-PHASE-SKIPPED, exit 2). This proves the phase-skip
+# gate itself bites — distinct from BAD, which now fails EARLIER at phase-0 (exit 4) under
+# SK1-67 because it is a keyless PAID job.
+cat > "$BAD_FREE/working/job-manifest.json" <<'JSON'
+{
+  "job_id": "fixture-bad-free-001",
+  "pipeline_selected": "documentary-montage.yaml",
+  "kie_in_scope": false,
+  "brief_complete": true,
+  "topic": "skip the whole pipeline (free path)",
+  "target_duration_sec": 8,
+  "aspect_ratio": "16:9",
+  "budget_ceiling_usd": 1.0,
+  "tone": "documentary",
+  "estimated_cost_usd": 0.0
+}
+JSON
+
+cat > "$BAD_FREE/working/checkpoints/render-receipt.json" <<'JSON'
+{
+  "job_id": "fixture-bad-free-001",
+  "kie_in_scope": false,
+  "ffprobe_pass": false
+}
+JSON
+
+echo "GOOD run:      $GOOD"
+echo "BAD-FREE run:  $BAD_FREE"
+echo "BAD  run:      $BAD"

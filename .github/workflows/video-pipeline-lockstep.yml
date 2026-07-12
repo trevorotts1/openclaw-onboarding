@@ -11,8 +11,12 @@ name: Video pipeline lockstep (Movie Producer)
 #   3. video_gate_integrity_check.py — Guard A: declared == enforced == tested; exit 1 on
 #                                    a no-op / untested gate.
 #   4. GOOD/BAD fixture self-test — the driver ATTESTS the GOOD run (exit 0) and HARD-ABORTS
-#                                    the BAD bypass run (AF-VID-PHASE-SKIPPED, exit 2) so the
-#                                    gate provably bites (a no-op driver would pass both).
+#                                    BOTH bypass fixtures so the gate provably bites (a no-op
+#                                    driver would pass all three):
+#                                      - BAD-FREE (free documentary-montage path): the
+#                                        phase-skip bypass -> AF-VID-PHASE-SKIPPED, exit 2.
+#                                      - BAD (paid Kie job, no KIE_API_KEY): SK1-67 fails
+#                                        EARLIEST at phase-0 -> AF-VID-KIE-BALANCE, exit 4.
 #   5. qc-assert-no-client-names.sh — fleet-wide privacy invariant.
 #   6. qc-movie-producer.sh        — install QC stays green (no regression).
 
@@ -130,26 +134,57 @@ jobs:
           done
           echo "GOOD run attested every phase through V-CONTROL as expected."
 
-      - name: BAD run MUST HARD-ABORT (driver exit 2 — AF-VID-PHASE-SKIPPED)
+      - name: BAD-FREE run MUST HARD-ABORT (driver exit 2 — AF-VID-PHASE-SKIPPED)
         shell: bash
         run: |
           set -euo pipefail
+          # The FREE-path phase-skip fixture: kie_in_scope:false so phase-0 is N/A and the
+          # driver reaches the phase-precondition check, which MUST refuse the skip. This
+          # is the fixture that proves the AF-VID-PHASE-SKIPPED gate specifically bites.
+          RUN="$RUNNER_TEMP/vfix/bad-run-free"
+          DRV="47-movie-producer/scripts/executive_producer.py"
+          set +e
+          python3 "$DRV" --run-dir "$RUN" --phase V-IMPROVE
+          rc=$?
+          set -e
+          echo "BAD-FREE V-IMPROVE driver exit: $rc"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::Movie-Producer driver ATTESTED the BAD-FREE bypass run (expected HARD-ABORT / exit 2). The phase-skip gate is not enforcing."
+            exit 1
+          fi
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::BAD-FREE run aborted with exit $rc, expected the AF-VID-PHASE-SKIPPED precondition exit 2."
+            exit 1
+          fi
+          echo "BAD-FREE bypass run HARD-ABORTED with AF-VID-PHASE-SKIPPED (exit 2) as expected."
+
+      - name: BAD paid keyless run MUST HARD-ABORT (driver exit 4 — AF-VID-KIE-BALANCE)
+        shell: bash
+        env:
+          # SK1-67: a PAID Kie job with no KIE_API_KEY can never run — its balance cannot
+          # be verified. The driver must fail EARLIEST at phase-0 (exit 4), before the
+          # phase-precondition check. Guarantee the key is unset so this locks in SK1-67 at
+          # the driver level and it can never silently revert to the pre-SK1-67 defer branch.
+          KIE_API_KEY: ""
+        run: |
+          set -euo pipefail
+          unset KIE_API_KEY
           RUN="$RUNNER_TEMP/vfix/bad-run"
           DRV="47-movie-producer/scripts/executive_producer.py"
           set +e
           python3 "$DRV" --run-dir "$RUN" --phase V-IMPROVE
           rc=$?
           set -e
-          echo "BAD V-IMPROVE driver exit: $rc"
+          echo "BAD (paid keyless) V-IMPROVE driver exit: $rc"
           if [ "$rc" -eq 0 ]; then
-            echo "::error::Movie-Producer driver ATTESTED the BAD bypass run (expected HARD-ABORT / exit 2). The gate is not enforcing."
+            echo "::error::Movie-Producer driver ATTESTED the BAD paid keyless run (expected HARD-ABORT / exit 4). The phase-0 balance gate is not enforcing."
             exit 1
           fi
-          if [ "$rc" -ne 2 ]; then
-            echo "::error::BAD run aborted with exit $rc, expected the AF-VID-PHASE-SKIPPED precondition exit 2."
+          if [ "$rc" -ne 4 ]; then
+            echo "::error::BAD paid keyless run aborted with exit $rc, expected the AF-VID-KIE-BALANCE phase-0 exit 4 (SK1-67)."
             exit 1
           fi
-          echo "BAD bypass run HARD-ABORTED with AF-VID-PHASE-SKIPPED (exit 2) as expected."
+          echo "BAD paid keyless run HARD-ABORTED with AF-VID-KIE-BALANCE (exit 4) as expected."
 
       - name: qc-assert-no-client-names.sh — fleet privacy invariant (exit 0 required)
         shell: bash
@@ -172,5 +207,6 @@ jobs:
           echo "  lockstep (sync) -> PASS"
           echo "  every gate negative-tested + Guard A -> PASS"
           echo "  GOOD run -> ATTEST (exit 0)"
-          echo "  BAD bypass run -> HARD-ABORT (exit 2)"
+          echo "  BAD-FREE bypass run (free path) -> HARD-ABORT AF-VID-PHASE-SKIPPED (exit 2)"
+          echo "  BAD paid keyless run -> HARD-ABORT AF-VID-KIE-BALANCE (exit 4, SK1-67)"
           echo "The anti-bypass layer is wired and self-testing in CI."

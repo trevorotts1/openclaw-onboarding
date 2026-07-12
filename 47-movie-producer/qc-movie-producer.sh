@@ -290,12 +290,19 @@ assert "test_video_preflight.py — every gate negative-tested (exit 0, emits af
 assert "video_gate_integrity_check.py — Guard A declared==enforced==tested (exit 0)" \
   "python3 \"${VID_GUARDA}\" >/dev/null 2>&1"
 
-# The driver must HARD-ABORT a bypass (AF-VID-PHASE-SKIPPED) and ATTEST a complete run.
+# The driver must HARD-ABORT both bypass fixtures and ATTEST a complete run.
+#   BAD-FREE (free path): the phase-skip bypass -> AF-VID-PHASE-SKIPPED (exit 2), the
+#     fixture that proves the phase-skip gate itself bites.
+#   BAD (paid Kie job, no KIE_API_KEY): SK1-67 fails EARLIEST at phase-0 ->
+#     AF-VID-KIE-BALANCE (exit 4). KIE_API_KEY is unset for this assertion so the check is
+#     deterministic (no live balance lookup) even on a box that carries a real Kie key.
 QC_TMP="$(mktemp -d 2>/dev/null || echo /tmp/mp-qc-$$)"
 if [ -f "${VID_FIXTURES}" ]; then
   bash "${VID_FIXTURES}" "${QC_TMP}/vfix" >/dev/null 2>&1
-  assert "driver HARD-ABORTS the BAD bypass run (AF-VID-PHASE-SKIPPED, exit 2)" \
-    "python3 \"${VID_DRIVER}\" --run-dir \"${QC_TMP}/vfix/bad-run\" --phase V-IMPROVE >/dev/null 2>&1; [ \$? -eq 2 ]"
+  assert "driver HARD-ABORTS the BAD-FREE bypass run (AF-VID-PHASE-SKIPPED, exit 2)" \
+    "python3 \"${VID_DRIVER}\" --run-dir \"${QC_TMP}/vfix/bad-run-free\" --phase V-IMPROVE >/dev/null 2>&1; [ \$? -eq 2 ]"
+  assert "driver HARD-ABORTS the BAD paid keyless run (AF-VID-KIE-BALANCE, exit 4 — SK1-67)" \
+    "env -u KIE_API_KEY python3 \"${VID_DRIVER}\" --run-dir \"${QC_TMP}/vfix/bad-run\" --phase V-IMPROVE >/dev/null 2>&1; [ \$? -eq 4 ]"
   # GOOD run: attest the free path through every phase; final V-CONTROL must be exit 0.
   GOOD_OK=1
   for ph in V-DEFINE V-MEASURE V-IMPROVE V-CONTROL; do
