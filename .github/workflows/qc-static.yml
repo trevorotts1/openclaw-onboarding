@@ -1355,6 +1355,34 @@ jobs:
           bash 03-agent-browser/install-step4-close-guarantee.test.sh
           echo "✓ INSTALL.md Step 4 chains open/snapshot/close under a trap -- close runs even when snapshot is forced to fail, and leaves zero orphaned browser processes"
 
+      - name: Skill 03 bundled archive matches on-disk source (P3-06 --check gate)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The ONLY sanctioned way to produce/update agent-browser.skill from now
+          # on is scripts/pack-agent-browser-skill.sh -- never hand-zip. --check
+          # fails the build the moment INSTALL.md/SKILL.md/CHANGELOG.md/
+          # CORE_UPDATES.md changes without a repack, naming the differing file
+          # (mirrors scripts/bump-version.sh --check).
+          bash 03-agent-browser/scripts/pack-agent-browser-skill.sh --check
+          echo "✓ agent-browser.skill is byte-for-byte current with its on-disk source (a content change without a repack now fails CI)"
+
+      - name: Skill 03 archive packer regression tests (P3-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 03-agent-browser/scripts/tests/pack-agent-browser-skill.test.sh
+          echo "✓ pack-agent-browser-skill.sh: fail-first proof against the pre-fix hand-packaged archive, deterministic rebuild, one-byte-drift detection, all four hardening sections present in the regenerated archive"
+
+      - name: Skill 03 QC drift gate + headed-refusal + reaper-assert regression tests (P3-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-drift-gate.test.sh
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-headed-refuse.test.sh
+          bash 03-agent-browser/scripts/tests/qc-agent-browser-reaper-assert.test.sh
+          echo "✓ qc-agent-browser.sh: archive drift gate fails naming the file, ambient AGENT_BROWSER_HEADED is refused (exit-75 class), and a session leaked past the smoke test now FAILS QC (was warn_only) while a pre-existing session stays warn_only -- all four proven fail-first against the pre-fix script where a fixture exists"
+
       - name: Skill 42 Personal Assistant Library install QC (simulated install)
         shell: bash
         run: |
