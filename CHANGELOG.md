@@ -1,3 +1,50 @@
+## [v19.54.0]  -  2026-07-12  -  fix(workforce): P2-06 — THE FLOOR-WIPE FIX, live remediation + verify residue
+
+Onboarding-side, repo-only fix. The root cause (`department-floor.py` /
+`build-workforce.py` failing OPEN when `department-naming-map.json` is
+unreadable, silently shrinking the enforced floor from 28 departments down to
+22) was already fixed at build-time in an earlier unit. This unit closes
+P2-06's remaining scope: verification tooling plus live remediation for boxes
+that were built before that fix landed and are still missing whole
+departments today.
+
+- **New `scripts/probe/p206-floor-short-probe.py`** — per-box floor-short
+  verdict via `department-floor.py`'s own `evaluate_floor()`, three distinct
+  exit codes (0 ARMED / 1 DEGRADED / 2 UNRESOLVABLE), `--remediate` support,
+  and it always re-verifies from the live tree rather than trusting the
+  remediator's self-report.
+- **New `23-ai-workforce-blueprint/scripts/materialize-missing-departments.py`**
+  — for a flagged box, re-runs the fixed builder path additively: resolves
+  each missing department's full role roster from
+  `templates/role-library/_index.json` (handles both library layouts — flat
+  `<slug>.md` files and per-role `<slug>/how-to.md` subdirectories) and
+  invokes the already-shipped v16.0.2 `floor-fill-driver.py --apply` to
+  materialize it. Additive-only, idempotent, honors client declines, never
+  fabricates content, dry-run by default.
+- **Regression lock + new permanent residue coverage** —
+  `23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh`
+  (new: corrupts a TEST COPY of the naming map — invalid JSON / missing file /
+  valid-but-empty — and proves the enforced floor never silently shrinks to
+  22; verified fail-first by reintroducing the actual defect before
+  restoring), `test-materialize-missing-departments.sh` (new: additive-only /
+  idempotent / decline-respecting / dry-run-never-mutates proofs, plus a
+  fail-first regression lock for a library-layout bug hit during this unit's
+  own development), and `scripts/probe/test-p206-floor-short-probe.sh` (new:
+  ARMED/DEGRADED/UNRESOLVABLE contract, remediate-then-reverify, JSON-output
+  integrity). `.github/workflows/floor-wipe-fix-guard.yml` (new) wires all
+  three suites into CI, path-triggered on the files this unit touches. The
+  pre-existing `test-department-floor.sh` re-runs green (12/12), unaffected —
+  `department-floor.py` itself is unchanged by this unit.
+- **Version roll** — repo rolled v19.53.0 → **v19.54.0** via
+  `scripts/bump-version.sh` (all 11 markers in lockstep; content-manifest
+  `--check` already passing, no role/SOP/persona content touched by this
+  merge so no `hash-content-manifest.py` restamp was required — verified via
+  `qc-assert-repo-consistency.py`, full PASS on both the department-consistency
+  and artifact-coverage gates post-merge). Annotated tag `v19.54.0` cut on the
+  release merge commit. Merged `fix/floor-wipe-verify` (1 commit) as the
+  serial onboarding writer, `--no-ff`. No client names, no secret values, no
+  roster human names in the diff.
+
 ## [v19.53.0]  -  2026-07-12  -  fix(23): P2-08 step 2 — the artifact-refresh-queue CONSUMER (stale role docs now actually refresh on update)
 
 Onboarding-side, repo-only fix. `.artifact-refresh-queue.json` has had a PRODUCER since v12.27.0 (`detect-stale-artifacts.py`, invoked from `update-skills.sh` and `shared-utils/workspace-dept-refresh.sh`) but NEVER a consumer for the STALE-role case — a box that updates its skills kept its OLD role docs forever, because nothing ever read the queue and acted on it (Presentation spec Section 13.9 deploy trap; P2-08 (b)). The v16.0.2 `floor-fill-driver.py` closed the MISSING-role half of this gap (skip-existing/no-clobber by design — it never touches a role that already has a folder on disk); the STALE half stayed open until now.
