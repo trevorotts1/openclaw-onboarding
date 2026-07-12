@@ -909,14 +909,27 @@ cc_route_update_through_canonical_path() {
   # DASHBOARD_PORT. Tiers 1/2 already enforced + rolled back this internally;
   # this is D5's OWN independent check so the invariant never depends solely
   # on trusting a sub-agent's exit code (session-survival doctrine 2.8.6).
+  #
+  # BOTH conditions are REQUIRED for commandCenterLastUpdateVerified=true —
+  # this stamp is documented (UPDATE-PLAYBOOK.md / DEPLOYMENT.md) as "the
+  # single source of truth for whether Sunday's CC update actually took
+  # effect". Health alone is NOT that proof: a box that rolled back to the
+  # prior build (tiers 1/2 auto-rollback, or a tier-3 revert that itself
+  # leaves BUILD_ID older than the pull) is legitimately healthy but did
+  # NOT take the update — it must stamp false, not true, or the stamp lies
+  # about the one thing it exists to answer.
   build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
   health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
-  if [[ "$health_code" == "200" ]]; then
-    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (server is GREEN — on the fresh build if BUILD_ID postdates the pull, else verified-green on the prior build after rollback)"
+  if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
     [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true' 2>/dev/null || true
     return 0
   fi
-  log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
+  if [[ "$health_code" == "200" ]]; then
+    log "WARN" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 but BUILD_ID does NOT postdate the pull — server is GREEN on the PRIOR build (rolled back), the update did NOT take effect. commandCenterLastUpdateVerified=false (not a half-updated CC — box is safely serving the old build; see $LOG_FILE)."
+  else
+    log "ERROR" "phase=6 (update-only): POST-UPDATE ASSERTION FAILED — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code. CC may be down; this box needs operator attention (see $LOG_FILE)."
+  fi
   [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = false' 2>/dev/null || true
   return 1
 }
