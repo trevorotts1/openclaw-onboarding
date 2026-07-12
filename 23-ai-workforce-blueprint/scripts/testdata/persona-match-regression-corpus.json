@@ -1,0 +1,147 @@
+{
+  "_doc": "P4-01 step 2 -- persona-match regression corpus (20 labeled request -> expected-persona cases). Runs against the REAL, shipped 99-persona catalog (22-book-to-persona-coaching-leadership-system/persona-categories.json), never a synthetic fixture, so it measures actual production match quality. Each `request` is phrased the way a real board task/content request reads (drawing on request shapes named in the P4/spec cluster: content/comms tasks, sales scripts, coaching notes, marketing copy). `dimension` selects which pure matcher function is exercised: 'topic' -> persona_blend.match_topic_persona(catalog, request); 'audience' -> persona_blend.match_audience_persona(catalog, request) (request is then read as an audience LABEL, not a task). The gate (test-persona-match-regression-corpus.py) requires >=90% of cases to land on `expected_persona_id`. This corpus is a drift lock: an unrelated change to _tag_hit/_stem/ranking that quietly degrades match quality trips this gate before it reaches prod.",
+  "schema_version": 1,
+  "gate_pass_rate": 0.90,
+  "cases": [
+    {
+      "id": "C01",
+      "dimension": "topic",
+      "request": "Write ad copy pitching a new high-ticket offer with bonuses stacking and a strong money-back guarantee",
+      "expected_persona_id": "hormozi-100m-offers",
+      "note": "offer-creation / guarantees-and-risk-reversal / bonuses-and-stacking cluster"
+    },
+    {
+      "id": "C02",
+      "dimension": "topic",
+      "request": "Draft a cold outreach and lead generation sequence to bring in new leads via paid ads and referrals",
+      "expected_persona_id": "hormozi-100m-leads",
+      "note": "lead-generation / cold-outreach / paid-ads / referrals cluster"
+    },
+    {
+      "id": "C03",
+      "dimension": "topic",
+      "request": "Write persuasive sales copy applying influence and persuasion psychology and reciprocity to convert skeptical buyers",
+      "expected_persona_id": "cialdini-influence",
+      "note": "influence-psychology / persuasion / ethical-influence cluster"
+    },
+    {
+      "id": "C04",
+      "dimension": "topic",
+      "request": "Write a coaching note about identity change and continuous improvement using small systems design habits for personal development",
+      "expected_persona_id": "clear-atomic-habits",
+      "note": "distinguishes from duhigg-power-of-habit via identity-change/systems-design/continuous-improvement, which duhigg does not carry"
+    },
+    {
+      "id": "C05",
+      "dimension": "topic",
+      "request": "Prepare talking points for a crucial and difficult conversation with a direct report about accountability",
+      "expected_persona_id": "grenny-crucial-conversations",
+      "note": "crucial-conversations / accountability-conversations / difficult-feedback cluster"
+    },
+    {
+      "id": "C06",
+      "dimension": "topic",
+      "request": "Write an empathetic newsletter about vulnerability shame resilience and emotional courage for leaders",
+      "expected_persona_id": "brown-atlas-of-heart",
+      "note": "vulnerability / shame-resilience / emotional-intelligence cluster"
+    },
+    {
+      "id": "C07",
+      "dimension": "topic",
+      "request": "Write a positioning and brand strategy blog post about permission marketing and finding your smallest viable market",
+      "expected_persona_id": "godin-this-is-marketing",
+      "note": "positioning / permission-marketing / smallest-viable-market cluster"
+    },
+    {
+      "id": "C08",
+      "dimension": "topic",
+      "request": "Draft a financial planning newsletter about profit first cash flow management and owner pay for small business owners",
+      "expected_persona_id": "michalowicz-profit-first",
+      "note": "cash-flow-management / owner-pay / small-business-finance cluster"
+    },
+    {
+      "id": "C09",
+      "dimension": "topic",
+      "request": "Write sales call discovery questions using the NEPQ sales-questioning and objection-reframing framework",
+      "expected_persona_id": "jeremy-miner-the-nepq-black-book-of-questions",
+      "note": "sales-questioning / discovery-calls / objection-reframing cluster"
+    },
+    {
+      "id": "C10",
+      "dimension": "topic",
+      "request": "Write a scroll-stopping hook and headline for a short-form video to capture attention in the first three seconds",
+      "expected_persona_id": "kane-hook-point",
+      "note": "attention-capture / hooks-and-headlines / short-form-video-openings cluster"
+    },
+    {
+      "id": "C11",
+      "dimension": "topic",
+      "request": "Write a motivational post about mental toughness discipline and overcoming adversity for our morning accountability broadcast",
+      "expected_persona_id": "goggins-cant-hurt-me",
+      "note": "mental-toughness / self-discipline / overcoming-adversity cluster"
+    },
+    {
+      "id": "C12",
+      "dimension": "topic",
+      "request": "Write a productivity newsletter about building a second brain note-taking and personal knowledge management",
+      "expected_persona_id": "forte-building-second-brain",
+      "note": "personal-knowledge-management / note-taking / second-brain cluster"
+    },
+    {
+      "id": "C13",
+      "dimension": "topic",
+      "request": "Draft a weekly planning email about execution discipline and the 12 week year goal execution system",
+      "expected_persona_id": "moran-12-week-year",
+      "note": "execution-discipline / goal-execution / weekly-planning cluster"
+    },
+    {
+      "id": "C14",
+      "dimension": "topic",
+      "request": "Write sales email copy using language patterns and influence-language techniques to change the reader's mind",
+      "expected_persona_id": "charvet-words-change-minds",
+      "note": "influence-language / language-patterns / sales-messaging cluster"
+    },
+    {
+      "id": "C15",
+      "dimension": "topic",
+      "request": "Write direct-response sales email copy with strong headlines and calls-to-action for a landing page",
+      "expected_persona_id": "bly-copywriters-handbook",
+      "note": "direct-response-copy / headlines / calls-to-action cluster"
+    },
+    {
+      "id": "C16",
+      "dimension": "topic",
+      "request": "Write an internal memo about organizational excellence execution discipline and building a great company culture",
+      "expected_persona_id": "collins-good-to-great",
+      "note": "organizational-excellence / execution-discipline / company-culture cluster"
+    },
+    {
+      "id": "C17",
+      "dimension": "topic",
+      "request": "Draft a sales script using magic words, assumptive phrasing, and conversation control to get buy-in during the meeting",
+      "expected_persona_id": "jones-exactly-what-to-say",
+      "note": "distinguishes from gitomer-sales-bible via magic-words/assumptive-phrasing/conversation-control/meeting-and-buy-in-scripts, which gitomer does not carry"
+    },
+    {
+      "id": "C18",
+      "dimension": "audience",
+      "request": "small business owners",
+      "expected_persona_id": "michalowicz-profit-first",
+      "note": "audience-label match: small-business-owners / service-business-owners / agency-owners cluster (usable_as includes 'audience')"
+    },
+    {
+      "id": "C19",
+      "dimension": "audience",
+      "request": "leaders and people managers doing emotional work",
+      "expected_persona_id": "brown-atlas-of-heart",
+      "note": "audience-label match: leaders / people-managers / professionals-doing-emotional-work (usable_as includes 'audience')"
+    },
+    {
+      "id": "C20",
+      "dimension": "audience",
+      "request": "men facing adversity and discipline seekers",
+      "expected_persona_id": "goggins-cant-hurt-me",
+      "note": "audience-label match: men-facing-adversity / discipline-and-mental-toughness-seekers (usable_as includes 'audience')"
+    }
+  ]
+}
