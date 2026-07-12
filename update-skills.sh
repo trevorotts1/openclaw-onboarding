@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.4"
+ONBOARDING_VERSION="v20.0.5"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v20.0.4 - safe_json_edit
+# v20.0.5 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1305,7 +1305,7 @@ try:
 except Exception:
     print("")' "$_U6B_MANIFEST" 2>/dev/null || true)"
       _U6B_SENTINEL_VAL="$(cat "$_U6B_COACHING_DB_DIR/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
-      if [ "${_RECONCILE_OK:-1}" != "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; then
+      if [ "${_RECONCILE_OK:-1}" = "0" ] || [ -z "$_U6B_RELEASE_TAG" ] || [ "$_U6B_SENTINEL_VAL" != "$_U6B_RELEASE_TAG" ]; then
         _U6B_PERSONA_FAIL=1
         _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index completion re-assertion FAILED (reconcile_ok=${_RECONCILE_OK:-unset}, sentinel=${_U6B_SENTINEL_VAL:-<missing>}, manifest release_tag=${_U6B_RELEASE_TAG:-<unknown>}) — persona provisioning incomplete on this box"
         echo "  ✗ [D3] U6b completion re-assertion FAILED — sentinel(${_U6B_SENTINEL_VAL:-<missing>}) != release_tag(${_U6B_RELEASE_TAG:-<unknown>}) or reconcile not ok(${_RECONCILE_OK:-unset})"
@@ -2119,8 +2119,17 @@ else:
   # LEFT IN PLACE and still runs its own idempotent re-pass afterward -- D5
   # keeps BOTH runs. A pre-interview self-skip (INTERVIEW_NOT_COMPLETE) and a
   # box where Skill 32 is not yet installed are BOTH benign -- PASS, not
-  # fail. Only a genuine non-zero exit, or an interview-complete run that
-  # still leaves agents.list[] under 2 entries, flips _D5_ACTIVATION_PASS.
+  # fail. A genuine non-zero exit always flips _D5_ACTIVATION_PASS. For an
+  # interview-complete run, agents.list[] is compared against THIS box's real
+  # expected department count (department-floor.py's expected_floor_count --
+  # the 22-mandatory + 6-universal-primary 28-department floor from
+  # department-naming-map.json, net of any owner-declined department) rather
+  # than a fixed "under 2" magic number -- a box whose activation genuinely
+  # failed for most departments but still kept >=2 agents no longer sails
+  # through. When department-floor.py cannot resolve a verdict for this box
+  # (older bundle, or no departments dir yet), the gate falls back to the
+  # prior "under 2" wiring-only check rather than false-FAIL a box with no
+  # computable floor.
   # ----------------------------------------------------------
   _D5_MATERIALIZE="$SKILLS_DIR/32-command-center-setup/scripts/materialize-dept-agents.sh"
   if [ -f "$_D5_MATERIALIZE" ]; then
@@ -2140,14 +2149,52 @@ else:
       if [ -f "$OC_JSON" ]; then
         _D5_AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
       fi
-      if [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt 2 ]; then
+      # D5[F2]: gate on THIS box's real expected department count instead of a
+      # fixed "-lt 2" magic number. A genuine interview-complete box carries the
+      # 28-department universal floor (department-naming-map.json: 22 mandatory
+      # + 6 universal-primary, net of any owner-declined dept) -- "-lt 2" let a
+      # box whose activation genuinely failed for MOST departments but still
+      # kept >=2 agents.list[] entries false-PASS. department-floor.py is the
+      # single source of truth qc-completeness.sh's own floor gate already
+      # imports, so this stays in lockstep with the rest of the completeness
+      # contract instead of drifting from it.
+      _D5_EXPECTED_COUNT=""
+      _D5_FLOOR_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/department-floor.py"
+      if [ -f "$_D5_FLOOR_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+        _D5_FLOOR_JSON="$(python3 "$_D5_FLOOR_SCRIPT" --json 2>/dev/null || true)"
+        _D5_EXPECTED_COUNT="$(printf '%s' "$_D5_FLOOR_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+n = d.get('expected_floor_count')
+if isinstance(n, int) and n > 0:
+    sys.stdout.write(str(n))
+" 2>/dev/null || true)"
+      fi
+      if [ -n "$_D5_EXPECTED_COUNT" ]; then
+        # Precise per-box floor available -- gate on THIS box's real expected count.
+        if [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt "$_D5_EXPECTED_COUNT" ]; then
+          _D5_ACTIVATION_PASS=0
+          _D5_DEPT_STATE="fail"
+          _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below this box's computed department floor of ${_D5_EXPECTED_COUNT} (interview complete)"
+          echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below the computed department floor of ${_D5_EXPECTED_COUNT}"
+        else
+          _D5_DEPT_STATE="registered"
+          echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[], floor=${_D5_EXPECTED_COUNT})"
+        fi
+      elif [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt 2 ]; then
+        # department-floor.py unavailable / no verdict for this box -- fall
+        # back to the prior wiring-only check so we never false-FAIL a box
+        # we have no computable floor for.
         _D5_ACTIVATION_PASS=0
         _D5_DEPT_STATE="fail"
-        _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize (interview complete)"
+        _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize (interview complete; department-floor.py unavailable -- fell back to the wiring-only check)"
         echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize"
       else
         _D5_DEPT_STATE="registered"
-        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[])"
+        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[]; department-floor.py unavailable -- wiring-only check)"
       fi
     fi
   else

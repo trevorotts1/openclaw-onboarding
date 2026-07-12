@@ -1702,6 +1702,20 @@ jobs:
 
           echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
 
+      # PRD 1.11 D1: fleet-refresh behavioral test suite (executing, not static).
+      # The static step above only proves the PRD 1.11 artefacts exist, parse,
+      # and are version-consistent — it does NOT exercise step_pull_onboarding's
+      # update-skills.sh delegation or its returncode-AND-stamp double-gate
+      # contract (D1). This step actually RUNS scripts/test-fleet-refresh.sh
+      # (including Test 6/6a/6b, the D1 double-gate fixtures) so a regression
+      # in that contract fails CI instead of being provable only by code read.
+      - name: "PRD 1.11 D1: fleet-refresh behavioral test suite (test-fleet-refresh.sh)"
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/test-fleet-refresh.sh
+
       # PRD 1.11 / AF4: retirement-clock trigger contract.
       # Proves that the fleet-refresh.sh retirement trigger is wired correctly:
       #   (a) dry-run is inert (does NOT write the loaded-state manifest)
