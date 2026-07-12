@@ -13,15 +13,22 @@
 #   mandatory gateway (browser_manager.sh / .py). This guard FAILS the build if a
 #   regression slips past it — so the leak can never silently return.
 #
-# SCAN ROOTS (AUD-20 / FLEET-FIX Area 2 / B.2, broadened 2026-07): checks (1)
-# MANAGED-ONLY and (5) HEADLESS-ONLY below scan THREE roots, not just
-# 06-ghl-install-pages/ — 41-build-with-ai-playbook/ (Skill 41's CDP preflight
-# probe) and 03-agent-browser/ (the install/smoke-test skill) both call the
-# agent-browser binary directly and were PREVIOUSLY UNSCANNED: an unmanaged
-# `agent-browser ... open|eval|click|...` call planted in either root passed
-# this guard silently. Checks (2)-(4) (gateway integrity, no per-run session
-# names, doctrine sentinel) remain 06-SPECIFIC — that doctrine describes the
-# Skill-06 browser_manager.sh gateway only and does not generalize.
+# SCAN ROOTS (AUD-20 / FLEET-FIX Area 2 / B.2, broadened 2026-07; widened AGAIN
+# P3-04 to ALL skill directories, coordinated with P3-08's Skill-44 widening —
+# see below): checks (1) MANAGED-ONLY and (5) HEADLESS-ONLY below used to scan
+# only THREE hand-enumerated roots (06-ghl-install-pages/, 41-build-with-ai-
+# playbook/, 03-agent-browser/) — any OTHER skill directory (44-convert-and-
+# flow-operator/ among them — the exact root P3-08 needed widened for its Tier-4
+# workflow-build backstop) could plant an unmanaged `agent-browser
+# open|eval|click|...` spawn and pass this guard SILENTLY. AUD-25 (this pass):
+# the roots list is no longer a fixed enumeration at all — it is AUTO-DISCOVERED
+# from every top-level `NN-*/` skill directory in the repo (see
+# _discover_skill_dirs below), so Skill 44 is covered by construction (never a
+# second, competing widening racing this one) and so is every future numbered
+# skill directory, with zero further guard edits required. Checks (2)-(4)
+# (gateway integrity, no per-run session names, doctrine sentinel) remain
+# 06-SPECIFIC — that doctrine describes the Skill-06 browser_manager.sh gateway
+# only and does not generalize.
 #
 # WHAT THIS GUARD ENFORCES (fails the build / QC on any violation):
 #   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER ANY of the scan roots
@@ -88,18 +95,35 @@ MANAGER_SH="$TOOLS_DIR/browser_manager.sh"
 MANAGER_PY="$TOOLS_DIR/browser_manager.py"
 REAPER_SH="$REPO_ROOT/scripts/agent-browser-reaper.sh"
 
-# ── AUD-20 / FLEET-FIX B.2 — the roots checks (1) MANAGED-ONLY and (5)
-# HEADLESS-ONLY scan. Broadened beyond just 06-ghl-install-pages/ so the
-# guard can no longer be blind to an unmanaged agent-browser spawn planted in
-# Skill 41 (the CDP preflight probe) or Skill 03 (agent-browser install /
-# smoke test). SKILL_DIR itself is untouched and still drives the
-# 06-specific gateway-integrity / per-run-session-name / doctrine-sentinel
-# checks (2)-(4) below — that doctrine does not generalize to other skills.
-MANAGED_SCAN_ROOTS=(
-  "$SKILL_DIR"
-  "$REPO_ROOT/41-build-with-ai-playbook"
-  "$REPO_ROOT/03-agent-browser"
-)
+# ── AUD-25 (P3-04) — auto-discover EVERY top-level skill directory ───────────
+# A skill directory is any immediate child of REPO_ROOT matching `NN-*` (two
+# digits, a dash, then a name) — the repo's own numbering convention (01-… .
+# 61-… as of v19.58.0). This replaces the old hand-enumerated 3-root array:
+# a hand-enumerated list only ever covers roots someone remembered to add
+# (that is exactly how 44-convert-and-flow-operator was missed before P3-08
+# named it) — auto-discovery covers every skill directory that exists NOW and
+# every one added LATER with zero further edits to this guard. Sorted for
+# deterministic scan order / output.
+_discover_skill_dirs() {
+  find "$REPO_ROOT" -maxdepth 1 -mindepth 1 -type d -name '[0-9][0-9]-*' 2>/dev/null | sort
+}
+
+# ── AUD-20 / FLEET-FIX B.2, superseded by AUD-25 above — the roots checks (1)
+# MANAGED-ONLY and (5) HEADLESS-ONLY scan. SKILL_DIR itself is still called out
+# separately below (it always exists and drives the 06-specific gateway-
+# integrity / per-run-session-name / doctrine-sentinel checks (2)-(4)) — that
+# doctrine does not generalize to other skills. MANAGED_SCAN_ROOTS is now every
+# discovered skill directory, deduplicated against SKILL_DIR.
+# NOTE: `while read` (not `mapfile`/`readarray`) — the repo's Mac boxes run the
+# system bash (3.2), which has neither builtin (Skill-6 spec §4 Mac-vs-VPS
+# matrix, "bash 3.2" row); this loop form is bash-3.2-safe.
+MANAGED_SCAN_ROOTS=("$SKILL_DIR")
+while IFS= read -r _d; do
+  [ -z "$_d" ] && continue
+  [ "$_d" = "$SKILL_DIR" ] && continue
+  MANAGED_SCAN_ROOTS+=("$_d")
+done < <(_discover_skill_dirs)
+unset _d
 
 # ── The canonical doctrine sentinel (MUST appear verbatim) ────────────────────
 SENTINEL='SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop'

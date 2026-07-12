@@ -41,6 +41,7 @@ for _p in (str(_TOOLS_DIR), str(_TESTS_DIR)):
         sys.path.insert(0, _p)
 
 import ghl_form_builder as fb  # noqa: E402
+import ghl_iframe_drag as _real_idg  # noqa: E402 — real, pure classification helpers
 
 
 def _cp(rc: int, stdout: str = "") -> subprocess.CompletedProcess:
@@ -66,6 +67,11 @@ class _FakeIdgError(RuntimeError):
 class _FakeIdg:
     DEFAULT_FORM_TITLE_SPECS = (r"re:^Form\s*\d+$", "text=Untitled")
     IframeDragError = _FakeIdgError
+    # P3-04 (c)4: the real module's classification helpers are pure (no
+    # browser/network) — reuse them verbatim rather than re-implementing (and
+    # risking drift) inside this test double.
+    board_note = staticmethod(_real_idg.board_note)
+    classify_board_reason = staticmethod(_real_idg.classify_board_reason)
 
     def __init__(self, set_result=None, set_error=None, read_title=None,
                  read_error=None):

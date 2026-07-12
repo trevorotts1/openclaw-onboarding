@@ -179,7 +179,9 @@ FORM_PHASES: List[PhaseSpec] = [
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-FORM_BUILDER_VERSION = "v0.1.0"
+FORM_BUILDER_VERSION = "v0.1.1"   # v0.1.1 (P3-04 c4): iframe-drag/remove/rename failure
+                                   # reasons now carry the CC board-note taxonomy prefix
+                                   # (SELECTOR-MISS/VERIFY-FAIL) + frame-origin context
 
 GHL_APP_ORIGIN_DEFAULT = os.environ.get("GHL_AGENCY_URL", "https://app.convertandflow.com")
 # The form builder loads inside the same leadgen iframe host as the survey builder.
@@ -1099,7 +1101,15 @@ def _perform_iframe_drag(session: str, source_text: str, drop_spec: str,
             source_scroll_hint=(f"text={source_scroll_hint}" if source_scroll_hint else None),
         )
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
-        raise StopAndReport(f"iframe-drag:{exc.code}", exc.reason) from exc
+        # P3-04 (c)4: `.step` stays the EXACT "iframe-drag:<code>" form other
+        # code keys on (_DRAG_LOCATE_MISS_STEPS, the selftest at ~2903) — only
+        # `.reason` is enriched, to the CC-taxonomy-classified, frame-origin-
+        # tagged note (SELECTOR-MISS/VERIFY-FAIL) instead of the bare
+        # ``exc.reason`` — so a future board wiring for this builder gets the
+        # same diagnosable-card text the survey builder already produces.
+        reason = ghl_iframe_drag.board_note(  # type: ignore[union-attr]
+            exc, iframe_selector=iframe_selector)
+        raise StopAndReport(f"iframe-drag:{exc.code}", reason) from exc
 
 
 def _perform_iframe_field_remove(session: str, field_spec: str,
@@ -1133,7 +1143,12 @@ def _perform_iframe_field_remove(session: str, field_spec: str,
             url_marker="form-builder",
         )
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
-        sr = StopAndReport(f"iframe-remove:{exc.code}", exc.reason)
+        # P3-04 (c)4: `.reason` carries the CC-taxonomy-classified, frame-
+        # origin-tagged note (see _perform_iframe_drag above); `.details`
+        # (rich diagnostics) still rides along unchanged.
+        reason = ghl_iframe_drag.board_note(  # type: ignore[union-attr]
+            exc, iframe_selector=iframe_selector)
+        sr = StopAndReport(f"iframe-remove:{exc.code}", reason)
         sr.details = getattr(exc, "details", None)   # rich diagnostics ride along
         raise sr from exc
 
@@ -1466,7 +1481,11 @@ def _rename_form_title(session: str, form_name: str) -> dict:
                    old_title=rec.get("old_title", ""))
         return out
     except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
-        out["reason"] = f"{exc.code}: {exc.reason}"
+        # P3-04 (c)4: same CC-taxonomy classification, frame-origin tagged —
+        # this function's "never raises" contract is unchanged, only the
+        # reason text carries the diagnosable prefix now.
+        out["reason"] = ghl_iframe_drag.board_note(  # type: ignore[union-attr]
+            exc, iframe_selector=GHL_FORM_IFRAME_SELECTOR)
     except Exception as exc:  # noqa: BLE001
         out["reason"] = f"{type(exc).__name__}: {exc}"
     # Rename failed → READ BACK the title the form ACTUALLY carries so cleanup can

@@ -200,7 +200,9 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.5.0"   # v1.5.0: U6 URL fetch-200 receipt + U8 phase resume + U10 RUN REPORT
+SURVEY_BUILDER_VERSION = "v1.5.1"   # v1.5.0: U6 URL fetch-200 receipt + U8 phase resume + U10 RUN REPORT
+                                     # v1.5.1 (P3-04 c4): iframe-drag/rename STOPs now raise the
+                                     # classified IframeDragStop (CC board-note taxonomy)
 
 # The convergence primitive (Area-5.1) shipped in builder v1.3.0 / repo v19.17.0,
 # which exists ONLY on an origin/main-based checkout. A build that carries a
@@ -480,6 +482,22 @@ def _board_move(task_id: Optional[str], status: str, note: Optional[str] = None)
             _cc_board.update_status(task_id, status, note=note or "")
     except Exception as exc:  # noqa: BLE001
         _log(f"_board_move({status!r}) fail-soft: {exc}")
+
+
+def _board_fail_note(exc: BaseException) -> str:
+    """Render an exception as a board note for the build's catch-all STOP.
+
+    P3-04 (c)4: an exception carrying a pre-classified ``.board_note`` (e.g.
+    :class:`ghl_iframe_drag.IframeDragStop`) is posted VERBATIM — its CC
+    failure-prefix (SELECTOR-MISS/VERIFY-FAIL/...) must sit at position 0 for
+    cc_board.py's ``note.startswith(...)`` classification to key on it. Wrapping
+    it in ``f"Build exception: {type(exc).__name__}: {exc}"`` (the prior,
+    still-used fallback for every OTHER exception type) would push the prefix
+    off position 0 and the card would read as a generic stall again."""
+    classified = getattr(exc, "board_note", None)
+    if classified:
+        return str(classified)
+    return f"Build exception: {type(exc).__name__}: {exc}"
 
 
 def _board_activity(
@@ -962,7 +980,14 @@ def _perform_iframe_drag(session: str, source_text: str, drop_target: str,
             verify_text=verify_text,
         )
     except _ghl_iframe_drag.IframeDragError as exc:
-        raise RuntimeError(f"STOP (survey iframe-drag:{exc.code}): {exc.reason}") from exc
+        # P3-04 (c)4: raise the CC-taxonomy-classified stop (SELECTOR-MISS /
+        # VERIFY-FAIL, frame-origin tagged) instead of a bare RuntimeError —
+        # `str(exc)` IS the classified board note, so build_survey's catch-all
+        # (`_board_move(..., note=f"Build exception: {type(exc).__name__}:
+        # {exc}")`) now posts a DIAGNOSABLE card, not a generic stall.
+        raise _ghl_iframe_drag.IframeDragStop(
+            exc, iframe_selector=iframe_selector, context="survey iframe-drag"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2256,8 +2281,13 @@ def _p2_rename_survey(
             url_marker="survey-builder",
         )
     except _ghl_iframe_drag.IframeDragError as exc:
-        raise RuntimeError(
-            f"STOP (survey rename:{exc.code}): {exc.reason}") from exc
+        # P3-04 (c)4: classified CC board note (SELECTOR-MISS/VERIFY-FAIL,
+        # frame-origin tagged) instead of a generic STOP string — see
+        # _perform_iframe_drag above for the same treatment.
+        raise _ghl_iframe_drag.IframeDragStop(
+            exc, iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+            context="survey rename"
+        ) from exc
     _wait(session, survey_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-b-renamed"))
@@ -3576,8 +3606,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
 
     except Exception as exc:  # noqa: BLE001
         _log(f"build_survey EXCEPTION: {type(exc).__name__}: {exc}")
-        _board_move(board_task_id, "backlog",
-                    note=f"Build exception: {type(exc).__name__}: {exc}")
+        _board_move(board_task_id, "backlog", note=_board_fail_note(exc))
         _board_activity(board_task_id, "completed",
                         f"Build FAILED: {type(exc).__name__}: {exc}")
         duration = time.monotonic() - started

@@ -1,3 +1,31 @@
+## [1.5.7] - 2026-07-12 — P3-04 (c)1: Agent Browser preflight routed through the managed gateway
+
+### Why
+`06-verify-agent-browser.sh`'s headless-Chrome CDP probe spawned
+`createBrowser({ headless: true })` directly via the `@vercel/agent-browser` Node
+API in a bare backgrounded node process, with its own bespoke timeout/kill-tree
+machinery — entirely OUTSIDE `06-ghl-install-pages/tools/browser_manager.sh`'s
+singleton lock, TTL, guaranteed-teardown trap, pool-ceiling, and circuit-breaker.
+That was exactly the shape of unmanaged spawn that caused the 2026-06-23
+22-orphan/357MB leak in Skill 06 itself — the widened
+`guard-agent-browser-managed.sh` (now auto-discovering every skill directory,
+not a fixed 3-entry list) now catches it.
+
+### Fixed
+- `06-verify-agent-browser.sh` Step 3 now sources
+  `06-ghl-install-pages/tools/browser_manager.sh` and drives the CLI
+  `agent-browser` binary through `bm_ensure` + `AB()` — the same box-wide
+  singleton (lock=1, TTL self-kill, EXIT/INT/TERM/HUP guaranteed-teardown trap,
+  B1 headless-lock + guard-freshness gate) every other Skill-6 caller uses,
+  instead of a second, uncoordinated browser lifecycle. `lib/browser-probe-
+  timeout.sh`'s bespoke kill-tree machinery is no longer used by this script
+  (the lib itself is untouched and still independently tested — other Skill-41
+  probes that spawn a browser process directly may still need it).
+- Fixed a `$?`-after-negation bug in the new code (`if ! bm_ensure; then ...`
+  would have made `$?` inside the then-block reflect the negation's own status,
+  not `bm_ensure`'s real refusal code) — calls `bm_ensure` un-negated and checks
+  `$?` directly.
+
 ## [1.5.5] - 2026-07-05 — FIX-XC-03f + FIX-S36-18: real-output prompt gate, harness board-wiring, bash-3.2 + concurrency fixes
 
 ### Why

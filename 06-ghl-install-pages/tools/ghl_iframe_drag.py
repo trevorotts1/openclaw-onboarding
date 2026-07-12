@@ -242,7 +242,10 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.3.0"
+IFRAME_DRAG_VERSION = "v1.4.0"   # v1.4.0 (P3-04 c4): CC failure-taxonomy classification
+                                  # (classify_board_reason/board_note/IframeDragStop) —
+                                  # iframe failures now carry a SELECTOR-MISS/VERIFY-FAIL
+                                  # board-note prefix + frame-origin context
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -273,6 +276,78 @@ class IframeDragError(RuntimeError):
         self.reason = reason
         self.details = details
         super().__init__(f"{code}: {reason}")
+
+
+# ---------------------------------------------------------------------------
+# P3-04 (c)4 — iframe failure TAXONOMY. Every :class:`IframeDragError` this
+# module raises previously surfaced to the operator as a generic exception
+# string ("Build exception: RuntimeError: STOP (survey iframe-drag:<code>):
+# <reason>") once it reached a builder's catch-all — indistinguishable from
+# any other stall on the Kanban board. cc_board.py already defines a 6-value
+# CC failure-prefix taxonomy (``_CC_BLOCK_REASONS`` — AUTH-STOP / SELECTOR-MISS
+# / RATE-LIMIT / TOKEN-CONTEXT / PARKED / VERIFY-FAIL) that ``CCTask.fail()``
+# prefixes onto a board note so a card becomes machine-queryable. This module
+# classifies its OWN error codes into that SAME taxonomy (never inventing a
+# 7th value) so an iframe failure lands on the board as a DIAGNOSABLE card —
+# ``SELECTOR-MISS: iframe(<selector>) source-not-found — ...`` — instead of a
+# generic stall, with the cross-origin frame identified in the note itself.
+#
+# Two buckets:
+#   VERIFY-FAIL — the locator/control WAS resolved and an interaction WAS
+#     attempted, but the resulting state change never verified (a click that
+#     didn't commit, a field that didn't get removed, a placement whose
+#     count-delta never landed).
+#   SELECTOR-MISS — everything else: the locator/iframe/page/CDP endpoint/
+#     Playwright itself could not be resolved or reached in the first place.
+IFRAME_VERIFY_FAIL_CODES = frozenset({
+    "field-not-removed", "field-not-selectable", "not-placed",
+    "remove-click-failed", "select-all-failed", "title-commit-failed",
+    "title-not-clickable", "title-not-editable", "title-not-readable",
+    "title-not-set",
+})
+
+
+def classify_board_reason(code: str) -> str:
+    """Map an :class:`IframeDragError` ``code`` onto cc_board.py's
+    ``_CC_BLOCK_REASONS`` taxonomy. Defaults to ``SELECTOR-MISS`` (a locate/
+    reach failure) for every code not explicitly listed as a verify failure —
+    this includes future codes this module has not been taught about yet, so
+    classification degrades to the more common bucket rather than raising."""
+    return "VERIFY-FAIL" if code in IFRAME_VERIFY_FAIL_CODES else "SELECTOR-MISS"
+
+
+def board_note(exc: "IframeDragError", *, iframe_selector: str = "") -> str:
+    """Render ``exc`` as a CC-taxonomy-PREFIXED, frame-origin-tagged board
+    note — e.g. ``SELECTOR-MISS: iframe(iframe[src*="survey-builder-v2"])
+    source-not-found — <reason>``. The prefix sits at position 0 (cc_board.py's
+    ``CCTask.fail()``/board-note consumers match with ``str.startswith``), and
+    the frame-origin context (which cross-origin iframe the failure happened
+    inside) is embedded right after it — so the card is diagnosable at a
+    glance instead of reading as a generic stall."""
+    reason = classify_board_reason(exc.code)
+    origin = f"iframe({iframe_selector}) " if iframe_selector else ""
+    return f"{reason}: {origin}{exc.code} — {exc.reason}"
+
+
+class IframeDragStop(RuntimeError):
+    """A builder-facing STOP raised from a caught :class:`IframeDragError`,
+    carrying the classified CC board-note (``.board_note``) and reason
+    (``.board_reason``) alongside the human message — so a caller's catch-all
+    can post a DIAGNOSABLE card (``_board_move(..., note=exc.board_note)``)
+    instead of flattening every iframe failure into an opaque "Build
+    exception: ..." string. ``str(exc)`` IS the classified board note, so a
+    caller that does nothing special still gets the taxonomy prefix."""
+
+    def __init__(self, exc: "IframeDragError", *, iframe_selector: str = "",
+                 context: str = ""):
+        self.code = exc.code
+        self.reason = exc.reason
+        self.details = getattr(exc, "details", None)
+        self.iframe_selector = iframe_selector
+        self.board_reason = classify_board_reason(exc.code)
+        self.board_note = board_note(exc, iframe_selector=iframe_selector)
+        message = self.board_note if not context else f"{self.board_note} [{context}]"
+        super().__init__(message)
 
 
 # ---------------------------------------------------------------------------

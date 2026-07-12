@@ -340,6 +340,11 @@ def test_survey_rename_stops_when_primitive_or_cdp_missing(monkeypatch):
                 self.code, self.reason = code, reason
                 super().__init__(f"{code}: {reason}")
 
+        # P3-04 (c)4: the real IframeDragStop's __init__ closes over the real
+        # module's classify_board_reason()/board_note() (pure, duck-typed on
+        # .code/.reason/.details) — reuse it verbatim rather than re-implementing.
+        IframeDragStop = idg.IframeDragStop
+
         @classmethod
         def set_inline_title(cls, *a, **k):
             raise cls.IframeDragError("title-not-editable", "no editor took focus")
