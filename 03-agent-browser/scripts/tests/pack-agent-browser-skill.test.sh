@@ -93,24 +93,19 @@ EOF
 # Minimal pre-hardening INSTALL.md (no N24 / no --headed false / no trap /
 # no Lifecycle hygiene / no GATEWAY RESTART PROTOCOL) -- a faithful stand-in
 # for the stale archive content confirmed by direct diff against origin/main.
-cat > "$PRE_FIX/agent-browser/INSTALL.md" <<'EOF'
-# INSTALL.md - Agent Browser (Vercel)
-
-## Goal
-
-Ensure `agent-browser` is installed and available as the primary browser automation tool.
-
-## Step 4 - Smoke test a simple browser session
-
-Run:
-```bash
-agent-browser open https://example.com
-agent-browser snapshot -i
-agent-browser close
-```
-
-If the snapshot shows interactive elements with refs like `@e1`, `@e2`, installation is good.
-EOF
+#
+# This pre-fix fixture's Step-4 smoke test contains raw `agent-browser open` /
+# `snapshot` command examples (exactly as the pre-hardening INSTALL.md shipped
+# them). Those raw command examples are DOCUMENTATION and, per the SINGLETON
+# POOLED BROWSER doctrine (scripts/guard-agent-browser-managed.sh), belong in a
+# `.md` doc file -- never inline in an executable `*.sh`. The managed-only
+# guard scans tracked `*.sh`/`*.py` and, by design, does NOT parse heredocs, so
+# an inline `cat <<'EOF'` of this content reads as a raw, unmanaged agent-browser
+# launch and (correctly, for the guard's model) trips it. The fixture therefore
+# lives in fixtures/pre-fix-INSTALL.md -- a `*.md`, the very same home the live
+# INSTALL.md gives the identical example -- and is copied in here. Keeping it in
+# a doc file satisfies the doctrine WITHOUT weakening the guard.
+cp "$SCRIPT_DIR/fixtures/pre-fix-INSTALL.md" "$PRE_FIX/agent-browser/INSTALL.md"
 ( cd "$PRE_FIX" && zip -X -q -r pre-fix.skill agent-browser )
 
 # A scratch "source dir" mirroring the CURRENT (post-fix) on-disk docs, which

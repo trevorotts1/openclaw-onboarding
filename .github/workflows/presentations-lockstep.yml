@@ -63,9 +63,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install reportlab (required by presenters_speech_pdf.py import in sync env)
+      - name: Install reportlab + python-pptx (required by presenters_speech_pdf.py / build_deck.py assemble_pptx in sync env)
         shell: bash
-        run: pip install reportlab --quiet
+        run: pip install reportlab python-pptx --quiet
 
       - name: sync_check.py — presentations lockstep (exit 0 required)
         shell: bash

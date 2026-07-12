@@ -3,7 +3,7 @@
 **Department:** Rescue Rangers
 **Department head:** Director of Rescue Rangers (Dispatcher)
 **Folder:** `departments/rescue-rangers/`
-**Scope:** **OPERATOR-ONLY — internal fleet operations, not client-facing**
+**Scope:** **OPERATOR-ONLY - internal fleet operations, not client-facing**
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
@@ -18,7 +18,7 @@
 ## 1. What This Department Does (in plain language)
 
 In one sentence: **When any box in the fleet gets stuck and cannot fix itself, its
-distress call lands here, gets triaged and worked, and an answer goes back — and no
+distress call lands here, gets triaged and worked, and an answer goes back - and no
 call is ever dropped.**
 
 Rescue Rangers is the **terminal escalation channel** for the whole fleet. It is
@@ -89,7 +89,7 @@ hands-on work under dispatch.
 | **Diagnostician** | Evidence-first root-cause analysis. Names the failure class with proof (log line / config value / doc citation). Never guesses; cheap checks first. |
 | **Structured-Fix Operator** | Applies the sanctioned `remediate.sh` fix for the diagnosed class, DRY-RUN first, live only on explicit opt-in, within the tier's fix budget. Refuses never-auto classes (credentials/DNS/deletion/model-sovereignty). |
 | **Ticket Clerk** | Owns the durable ledger, the Command Center board sync, the aging/SLA sweep, and the weekly digest. Every ticket leaves a durable trace. |
-| **QC / Postmortem Specialist** | Turns every P1 and 3-strike ticket into fleet prevention — a Skill-61 fix-class proposal or a repo issue — and audits that answers were correct and actually delivered. |
+| **QC / Postmortem Specialist** | Turns every P1 and 3-strike ticket into fleet prevention - a Skill-61 fix-class proposal or a repo issue - and audits that answers were correct and actually delivered. |
 
 ---
 
@@ -97,12 +97,12 @@ hands-on work under dispatch.
 
 Every rescue ends with the **client's own agent** telling its owner one of exactly
 three things (never leaving the owner in the dark):
-- **(a) We solved it** — what was fixed and confirmation normal operation is back.
-- **(b) Here is what you should do** — the actionable next step the owner must take.
-- **(c) Here is the answer** — the informational response relayed verbatim.
+- **(a) We solved it** - what was fixed and confirmation normal operation is back.
+- **(b) Here is what you should do** - the actionable next step the owner must take.
+- **(c) Here is the answer** - the informational response relayed verbatim.
 
 A ticket answered in the operator group but never returned to the client agent is an
-**incomplete dispatch** — the department chases the return leg (which is exactly why
+**incomplete dispatch** - the department chases the return leg (which is exactly why
 the VPS-safe `status`-poll return leg exists).
 
 ---

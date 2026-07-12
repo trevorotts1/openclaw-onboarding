@@ -37,10 +37,23 @@ import how_to_use_department as htu  # noqa: E402
 # layer rather than a client-facing specialist pool (master-orchestrator), so
 # the renderer's output is degenerate. Their guides are ported from the
 # feat/how-to-use-this-department-docs branch where they were hand-crafted to
-# be accurate and owner-facing. --check verifies EXISTENCE only for these two.
+# be accurate and owner-facing. --check verifies EXISTENCE only for these depts.
+#
+# rescue-rangers is the same class: it is an OPERATOR-ONLY terminal-escalation
+# department (never client-facing, carries no intent triggers), and its folder
+# holds department scaffolding files (CHANGELOG-RESCUE-DEPT.md,
+# RELAY-BRAIN-PATCH.md, connection-manifest.json, etc.) alongside the five real
+# role files. The generic renderer has no way to tell those scaffolding files
+# apart from role files, so it parses their section headings as if they were
+# specialist names (e.g. "Rescue Rangers Department - Build Log") and produces
+# a client-facing template that misdescribes an operator-only department -
+# degenerate output, same failure mode as healer/master-orchestrator. The
+# committed guide is hand-crafted to accurately describe the escalation path,
+# the real 5-role roster, and the OPERATOR-ONLY scope.
 STATIC_SEED_DEPTS = {
     "healer",
     "master-orchestrator",
+    "rescue-rangers",
 }
 
 

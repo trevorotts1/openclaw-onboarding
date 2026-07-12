@@ -69,7 +69,8 @@ not improvise destructive commands from memory.
 
 ## 2. Persona Governance Override
 
-> **Load the persona's Task Mode BEFORE you execute:** run the persona search
+> **How to load the persona's Task Mode (do this BEFORE you execute — naming the
+> persona is not enough):** run the persona search
 > (`--mode leadership`), read the matched `persona-blueprint.md` Section 4 (4A-4D) +
 > Section 7B, execute TO that standard, self-verify against the Definition of Done.
 > Full procedure: `23-ai-workforce-blueprint/persona-matching-protocol.md` → "Step 5".

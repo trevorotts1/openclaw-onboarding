@@ -350,10 +350,27 @@ def _resolve_skill_dir():
 
     try:
         paths = get_openclaw_paths()
-        return paths["skills"] / "23-ai-workforce-blueprint"
+        install_skill = paths["skills"] / "23-ai-workforce-blueprint"
+        # Only trust the platform install path when it ACTUALLY carries the
+        # shipped role-library — mirroring the $ROLE_LIBRARY_PATH /
+        # $OPENCLAW_WORKSPACE_PATH index-existence checks above. get_openclaw_paths()
+        # returns a fixed per-platform path (e.g. ~/.openclaw/skills/...) that is a
+        # bare string on any box with no skill installed there: a fresh CI runner,
+        # or the scripts run in place from a repo checkout. Returning it anyway
+        # yields an EMPTY _index.json library index, which makes library_lookup()
+        # miss every role and silently STUB it — violating this pipeline's
+        # never-fabricate/never-stub contract (this is what made the P2-06
+        # floor-wipe remediation stub every role on a box lacking an ambient
+        # install). Fall through instead to the __file__ location, which is where
+        # the running code AND its own templates/role-library/ ship together.
+        if (install_skill / "templates" / "role-library" / "_index.json").exists():
+            return install_skill
     except Exception:
-        # Fallback: assume this file is at skills/23-ai-workforce-blueprint/scripts/
-        return Path(__file__).resolve().parent.parent
+        pass
+    # Fallback: this file ships at <skill>/scripts/, so parent.parent is the
+    # skill dir that holds the running code and its own templates/role-library
+    # (an installed box's install path resolves here identically).
+    return Path(__file__).resolve().parent.parent
 
 
 # ─── ROLE-NAME NORMALIZER (WS-2: 58% naive match → ~100% normalized) ──────────
