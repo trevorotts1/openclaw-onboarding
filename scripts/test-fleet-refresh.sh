@@ -244,6 +244,26 @@ BASH
   chmod +x "$BIN_DIR/pm2"
 }
 
+# ── Helper: build a mock update-skills.sh (D1) ────────────────────────────────
+# step_pull_onboarding() (PRD 1.11 D1) shells <repo-root>/update-skills.sh and
+# double-gates success on BOTH: (1) the process returncode == 0, AND (2) the
+# active skills-dir stamp (<skills-dir>/.onboarding-version) actually equalling
+# the pinned onboarding tag afterwards. This mock lets each test case control
+# both halves of that gate independently.
+build_mock_update_skills() {
+  local SCRIPT_PATH="$1"   # where to write the update-skills.sh mock
+  local STAMP_FILE="$2"    # <skills-dir>/.onboarding-version to write
+  local STAMP_VALUE="$3"   # value the mock stamps
+  local EXIT_CODE="$4"     # process exit code (0 or 1)
+  cat > "$SCRIPT_PATH" <<BASH
+#!/usr/bin/env bash
+mkdir -p "\$(dirname "$STAMP_FILE")"
+echo -n "$STAMP_VALUE" > "$STAMP_FILE"
+exit $EXIT_CODE
+BASH
+  chmod +x "$SCRIPT_PATH"
+}
+
 # ── Test 1: cc_compat.py self-test ────────────────────────────────────────────
 section "Test 1: cc_compat.py self-test"
 
@@ -366,8 +386,8 @@ R5_VAL=$(echo "$R5" | python3 -c "import json,sys; print(json.load(sys.stdin).ge
 
 rm -rf "$FX5"
 
-# ── Test 6: Apply mode — ordered steps ────────────────────────────────────────
-section "Test 6: Apply mode — ordered steps"
+# ── Test 6: Apply mode — update-skills.sh delegation, ordered steps (D1) ─────
+section "Test 6: Apply mode — update-skills.sh delegation, ordered steps"
 
 FX6="$(mktemp -d)"
 CALLS6="$FX6/calls.log"
@@ -376,15 +396,15 @@ OC6="$(build_fixture "$FX6" mac)"
 WS6="$OC6/workspace"
 build_fixture_soul "$WS6" loaded
 build_mock_bin "$FX6/bin" "$CALLS6"
-# Add fake force-update.sh
-cat > "$REPO_ROOT/../test-force-update-mock.sh" <<'EOF'
-#!/usr/bin/env bash
-echo "force-update mock called"
-exit 0
-EOF
-chmod +x "$REPO_ROOT/../test-force-update-mock.sh"
-# We don't have a force-update.sh on the test fixture, so the pull-onboarding step
-# will fail gracefully. We just verify the runner runs and emits valid JSON.
+
+# D1: step_pull_onboarding shells <repo-root>/update-skills.sh (never
+# force-update.sh — that script is the manual "machine was off" notifier only).
+# Point --repo-root at the fixture itself (build_fixture already copied
+# cc-compat.json there) so our mock below is what actually runs, never the
+# real repo-root update-skills.sh.
+PINNED_TAG6=$(python3 -c "import json; print(json.load(open('$FX6/cc-compat.json'))['onboardingVersion'])")
+STAMP_FILE6="$OC6/skills/.onboarding-version"
+build_mock_update_skills "$FX6/update-skills.sh" "$STAMP_FILE6" "$PINNED_TAG6" 0
 
 export FLEET_REFRESH_ROOT="$FX6"
 export PATH="$FX6/bin:$PATH"
@@ -395,11 +415,16 @@ export FLEET_REFRESH_CC_DIR="$FX6/home/projects/command-center"
 R6=$(python3 "$SHARED_UTILS/fleet_refresh_runner.py" \
   --box test-apply \
   --shared-utils "$SHARED_UTILS" \
-  --repo-root "$REPO_ROOT" \
+  --repo-root "$FX6" \
   --local \
-  --apply 2>/dev/null)
+  --apply 2>/dev/null) || true
 
 info "apply result: $R6"
+
+PULL_STEP6=$(echo "$R6" | python3 -c "import json,sys; print(json.load(sys.stdin).get('steps',{}).get('pull-onboarding','not_found'))" 2>/dev/null)
+[ "$PULL_STEP6" = "ok" ] \
+  && pass "Apply mode: pull-onboarding passes when update-skills.sh mock exits 0 and stamps the pinned tag" \
+  || fail "Apply mode: expected pull-onboarding=ok, got: $PULL_STEP6"
 
 # sessions.reset should have been called
 if grep -q "sessions.reset" "$CALLS6" 2>/dev/null; then
@@ -430,7 +455,81 @@ R6_VAL=$(echo "$R6" | python3 -c "import json,sys; print(json.load(sys.stdin).ge
   || fail "Apply mode: invalid result: $R6_VAL"
 
 rm -rf "$FX6"
-rm -f "$REPO_ROOT/../test-force-update-mock.sh"
+
+# ── Test 6a: D1 double-gate — returncode=0 but stamp != pinned tag → FAIL ────
+section "Test 6a: D1 double-gate — wrong stamp with returncode=0 fails the step"
+
+FX6A="$(mktemp -d)"
+CALLS6A="$FX6A/calls.log"
+touch "$CALLS6A"
+OC6A="$(build_fixture "$FX6A" mac)"
+WS6A="$OC6A/workspace"
+build_fixture_soul "$WS6A" loaded
+build_mock_bin "$FX6A/bin" "$CALLS6A"
+
+PINNED_TAG6A=$(python3 -c "import json; print(json.load(open('$FX6A/cc-compat.json'))['onboardingVersion'])")
+STAMP_FILE6A="$OC6A/skills/.onboarding-version"
+# Mock exits 0 but stamps a DIFFERENT tag than pinned — proves the runner does
+# NOT trust returncode==0 alone (the D1 double-gate contract).
+build_mock_update_skills "$FX6A/update-skills.sh" "$STAMP_FILE6A" "v0.0.1-stale" 0
+
+export FLEET_REFRESH_ROOT="$FX6A"
+export PATH="$FX6A/bin:$PATH"
+export OC_JSON="$OC6A/openclaw.json"
+export FLEET_REFRESH_FIXTURE_SOUL="$WS6A/SOUL.md"
+export FLEET_REFRESH_CC_DIR="$FX6A/home/projects/command-center"
+
+R6A=$(python3 "$SHARED_UTILS/fleet_refresh_runner.py" \
+  --box test-stamp-mismatch \
+  --shared-utils "$SHARED_UTILS" \
+  --repo-root "$FX6A" \
+  --local \
+  --apply 2>/dev/null) || true
+
+PULL_STEP6A=$(echo "$R6A" | python3 -c "import json,sys; print(json.load(sys.stdin).get('steps',{}).get('pull-onboarding','not_found'))" 2>/dev/null)
+[[ "$PULL_STEP6A" == failed:* ]] \
+  && pass "D1 double-gate: returncode=0 but stamp mismatch ('v0.0.1-stale' != '$PINNED_TAG6A') correctly FAILS pull-onboarding" \
+  || fail "D1 double-gate: expected pull-onboarding to fail on stamp mismatch, got: $PULL_STEP6A"
+
+rm -rf "$FX6A"
+
+# ── Test 6b: D1 double-gate — returncode != 0 → FAIL, even if stamp matches ──
+section "Test 6b: D1 double-gate — nonzero returncode fails the step"
+
+FX6B="$(mktemp -d)"
+CALLS6B="$FX6B/calls.log"
+touch "$CALLS6B"
+OC6B="$(build_fixture "$FX6B" mac)"
+WS6B="$OC6B/workspace"
+build_fixture_soul "$WS6B" loaded
+build_mock_bin "$FX6B/bin" "$CALLS6B"
+
+PINNED_TAG6B=$(python3 -c "import json; print(json.load(open('$FX6B/cc-compat.json'))['onboardingVersion'])")
+STAMP_FILE6B="$OC6B/skills/.onboarding-version"
+# Mock stamps the CORRECT pinned tag but exits 1 — proves the runner does NOT
+# trust the stamp alone either; a nonzero returncode fails the step even when
+# the stamp already equals the pinned tag.
+build_mock_update_skills "$FX6B/update-skills.sh" "$STAMP_FILE6B" "$PINNED_TAG6B" 1
+
+export FLEET_REFRESH_ROOT="$FX6B"
+export PATH="$FX6B/bin:$PATH"
+export OC_JSON="$OC6B/openclaw.json"
+export FLEET_REFRESH_FIXTURE_SOUL="$WS6B/SOUL.md"
+export FLEET_REFRESH_CC_DIR="$FX6B/home/projects/command-center"
+
+R6B=$(python3 "$SHARED_UTILS/fleet_refresh_runner.py" \
+  --box test-nonzero-exit \
+  --shared-utils "$SHARED_UTILS" \
+  --repo-root "$FX6B" \
+  --local \
+  --apply 2>/dev/null) || true
+
+PULL_STEP6B=$(echo "$R6B" | python3 -c "import json,sys; print(json.load(sys.stdin).get('steps',{}).get('pull-onboarding','not_found'))" 2>/dev/null)
+[[ "$PULL_STEP6B" == failed:* ]] \
+  && pass "D1 double-gate: update-skills.sh exit 1 correctly FAILS pull-onboarding (even with a matching stamp)" \
+  || fail "D1 double-gate: expected pull-onboarding to fail on nonzero returncode, got: $PULL_STEP6B"
+
+rm -rf "$FX6B"
 
 # ── Test 7: resolve_injected_core_files — 3-step priority ────────────────────
 section "Test 7: resolve_injected_core_files — 3-step priority"
