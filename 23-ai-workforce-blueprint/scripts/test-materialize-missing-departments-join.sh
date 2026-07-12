@@ -40,6 +40,16 @@
 #       after materialize-missing-departments.py --apply + its own
 #       seed-workspaces.py re-run.
 #   T4. --skip-join-verify bypasses chosen-artifact sync + join check entirely.
+#   T5. THE HEADLINE REGRESSION LOCK: a phantom CHOSEN department that is
+#       neither provisioned nor part of the mandatory/universal-primary floor
+#       (so it can never be closed by floor-fill-driver.py) forces
+#       prove-board-join.py to report DRIFT even though the real on-disk
+#       floor is fully met -> the overall exit code must downgrade to 1
+#       ("residue not fully closed"), never 0. This is the single most
+#       important new behavior this unit ships (the "then prove-board-join.py
+#       must pass" half of the P2-06 (c)2 contract) and previously had NO
+#       automated coverage — T2 only proved NOT-APPLICABLE and T3 only proved
+#       the clean-pass OK case; neither exercises the downgrade branch at all.
 #
 # Exit 0 = all checks pass; non-zero = a test failed.
 set -uo pipefail
@@ -257,6 +267,63 @@ else
 fi
 [ ! -f "$CDIR4/departments.json" ] && ok "T4b: --skip-join-verify never even created a departments.json artifact" \
   || bad "T4b: --skip-join-verify unexpectedly wrote a departments.json"
+
+echo "=== T5: HEADLINE REGRESSION LOCK -- DRIFT downgrades the overall exit code to 1 ==="
+if [ ! -f "$SEED_WORKSPACES" ] || [ ! -f "$PROVE_JOIN" ]; then
+  bad "T5 setup: seed-workspaces.py or prove-board-join.py not found in this checkout"
+else
+  HOME5="$TMP/home-t5"
+  CDIR5="$HOME5/clawd/zero-human-company/testco5"
+  DD5=$(mk_workspace "$CDIR5" marketing sales research crm billing-finance)
+  # Pre-seed the CHOSEN artifact with the 5 real present depts PLUS one
+  # PHANTOM department that is neither on disk nor part of the mandatory /
+  # universal-primary floor department_floor.evaluate_floor() enforces, so
+  # build_gap_map() never includes it and it can NEVER be closed by
+  # floor-fill-driver.py -- it stays chosen forever, with no matching tree.
+  python3 -c "
+import json
+entries = [{'id': f'dept-{i}', 'slug': i, 'emoji': '📁', 'name': i.title(), 'headTitle': f'Director of {i}', 'workspacePath': f'departments/{i}'} for i in ('marketing', 'sales', 'research', 'crm', 'billing-finance')]
+entries.append({'id': 'dept-zzz-totally-fake-phantom-dept', 'slug': 'zzz-totally-fake-phantom-dept', 'emoji': '👻', 'name': 'Zzz Totally Fake Phantom Dept', 'headTitle': 'Director of Nothing', 'workspacePath': 'departments/zzz-totally-fake-phantom-dept'})
+json.dump(entries, open('$CDIR5/departments.json', 'w'), indent=2)
+"
+  DB5="$TMP/mission-control-t5.db"
+  python3 -c "import sqlite3; sqlite3.connect('$DB5').close()"
+
+  HOME="$HOME5" COMPANY_NAME="TestCo5" \
+    python3 "$MATERIALIZE" --departments-dir "$DD5" --build-state-file "$NEUTRAL_BS" \
+      --apply --db "$DB5" --json >"$TMP/t5-result.json" 2>"$TMP/t5.log"
+  T5_RC=$?
+  T5_JV_STATUS=$(json_get "$(cat "$TMP/t5-result.json")" "d.get('join_verification', {}).get('status')")
+  T5_AFTER_FLOOR_MET=$(json_get "$(cat "$TMP/t5-result.json")" "d.get('after_floor_met')")
+
+  if [ "$T5_AFTER_FLOOR_MET" = "True" ]; then
+    ok "T5 setup: after_floor_met == True -- the real on-disk floor IS fully closed (this test isolates a PURE join-layer defect, not a floor-materialization failure)"
+  else
+    bad "T5 setup: after_floor_met != True -- test does not isolate the join layer. log:"; cat "$TMP/t5.log"
+  fi
+  if [ "$T5_JV_STATUS" = "DRIFT" ]; then
+    ok "T5a: join_verification.status == DRIFT (the phantom chosen dept can never be provisioned or displayed)"
+  else
+    bad "T5a: expected join_verification.status == DRIFT, got '$T5_JV_STATUS'. log:"; cat "$TMP/t5.log"
+  fi
+  if [ "$T5_RC" = "1" ]; then
+    ok "T5b: overall rc == 1 even though the on-disk floor is met -- DRIFT correctly downgrades the exit code (the P2-06 (c)2 contract's headline branch, now under a real regression lock)"
+  else
+    bad "T5b: expected overall rc == 1, got $T5_RC -- a DRIFT join must never leave rc=0. log:"; cat "$TMP/t5.log"
+  fi
+
+  # Independent re-check: prove-board-join.py run fresh against the same
+  # scratch db/company-dir must ALSO report DRIFT (rc=2) -- confirms this
+  # isn't an artifact of materialize's own status mapping.
+  HOME="$HOME5" python3 "$PROVE_JOIN" --company-dir "$CDIR5" --db "$DB5" --json \
+    >"$TMP/t5-postjoin.out" 2>"$TMP/t5-postjoin.log"
+  T5_POST_RC=$?
+  if [ "$T5_POST_RC" = "2" ]; then
+    ok "T5c: independent prove-board-join.py re-check also reports rc=2 (AF-BOARD-JOIN-DRIFT)"
+  else
+    bad "T5c: independent prove-board-join.py re-check exit=$T5_POST_RC (expected 2). log:"; cat "$TMP/t5-postjoin.log"
+  fi
+fi
 
 echo "--------------------------------------------"
 echo "RESULT: $PASS passed, $FAIL failed"

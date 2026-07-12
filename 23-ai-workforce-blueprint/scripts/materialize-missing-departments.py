@@ -70,19 +70,25 @@ successful --apply that actually closed a gap, this script — UNLESS
      artifact()'s own shape; never a second source of truth for dept-info —
      resolved via build-workforce.load_canonical_floor() / the same
      vertical_packs block apply_vertical_packs() reads).
-  2. If a Command Center database can be found on this box (the SAME shared
-     resolve_db.find_dashboard_db() every other gate uses, honoring
-     $DASHBOARD_DB_PATH), re-runs 32-command-center-setup/scripts/
-     seed-workspaces.py (idempotent, INSERT OR IGNORE) so the DISPLAYED layer
-     picks up the now-chosen-and-provisioned department, then runs
-     prove-board-join.py --company-dir <company_dir> --db <db> --json and
-     records its verdict under result["join_verification"].
-  3. If NO Command Center database is found, join verification is
-     NOT-APPLICABLE (a box with no CC yet has nothing to join — this is not a
-     failure) and is recorded as such, never silently skipped without a trace.
-  A DRIFT or CANNOT-VOUCH join verdict downgrades the overall exit code to 1
-  (needs operator attention) even though the on-disk floor is met — the
-  residue is not FULLY closed until chosen == provisioned == displayed.
+  2. If a Command Center database is found via an EXPLICIT signal ONLY —
+     --db, or $DASHBOARD_DB_PATH / $DATABASE_PATH — re-runs
+     32-command-center-setup/scripts/seed-workspaces.py (idempotent, INSERT OR
+     IGNORE) so the DISPLAYED layer picks up the now-chosen-and-provisioned
+     department, then runs prove-board-join.py --company-dir <company_dir>
+     --db <db> --json and records its verdict under
+     result["join_verification"]. This NEVER falls through to the shared
+     resolve_db.find_dashboard_db() ambient install-path candidate list every
+     OTHER gate uses — see _find_cc_db()'s docstring for why (a live incident
+     during this unit's own development).
+  3. If NO explicit --db / env var is set (or the path it names is not a
+     real file), join verification is NOT-APPLICABLE (a box with no CC
+     wired in yet has nothing to join — this is not a failure) and is
+     recorded as such, never silently skipped without a trace.
+  A DRIFT, CANNOT-VOUCH, or GATE-ERROR (prove-board-join.py itself could not
+  run) join verdict downgrades the overall exit code to 1 (needs operator
+  attention) even though the on-disk floor is met — an un-runnable or
+  disagreeing join is not a verified join, so the residue is not FULLY closed
+  until chosen == provisioned == displayed is actually PROVEN, not assumed.
 
 USAGE
   materialize-missing-departments.py [--departments-dir <dir>] [--apply] [--json]
@@ -98,8 +104,10 @@ EXIT CODES
   1  still short after --apply (a dept's role-library source is missing —
      logged under no_library_source, never fabricated) — needs operator
      attention; OR the floor closed but join verification reported DRIFT /
-     CANNOT-VOUCH (chosen/provisioned/displayed disagree — also needs
-     operator attention)
+     CANNOT-VOUCH (chosen/provisioned/displayed disagree) / GATE-ERROR
+     (prove-board-join.py itself could not run — an un-verified join is
+     treated as an unproven one, never a silent pass) — also needs operator
+     attention
   2  usage error / no departments dir resolvable
   3  floor is short and --apply was NOT passed (dry-run informs, does not mutate)
 """
@@ -348,6 +356,15 @@ def _find_cc_db(explicit_db):
     return None
 
 
+# Join verdicts that mean "not verified" -- either the layers disagree (DRIFT /
+# CANNOT-VOUCH) or the verifier itself could not run (GATE-ERROR: missing
+# prove-board-join.py, bad usage, unreadable inputs). An un-runnable join is
+# not a verified join, so GATE-ERROR blocks exactly like a disagreeing one --
+# never silently treated as non-blocking just because it isn't a content
+# disagreement. NOT-APPLICABLE and OK are the only non-blocking statuses.
+BLOCKING_JOIN_STATUSES = ("DRIFT", "CANNOT-VOUCH", "GATE-ERROR")
+
+
 def verify_board_join(departments_dir, explicit_db):
     """
     Close LAYER 3: re-seed the Command Center's `workspaces` table (idempotent
@@ -363,8 +380,9 @@ def verify_board_join(departments_dir, explicit_db):
     db_path = _find_cc_db(explicit_db)
     if db_path is None:
         return {"status": "NOT-APPLICABLE", "rc": None, "seed_ran": False, "verdict": None,
-                "reason": "no Command Center database found on this box "
-                          "(checked $DASHBOARD_DB_PATH / $DATABASE_PATH / install candidates)"}
+                "reason": "no Command Center database found on this box (checked --db / "
+                          "$DASHBOARD_DB_PATH / $DATABASE_PATH ONLY -- explicit-signal-only, "
+                          "never the ambient install-path candidate list; see _find_cc_db())"}
 
     seed_ran = False
     if SEED_WORKSPACES.is_file():
@@ -416,7 +434,11 @@ def main(argv=None):
                           "should always leave this on so the residue is FULLY closed)")
     ap.add_argument("--db", default=None,
                      help="explicit mission-control.db path for join verification "
-                          "(default: the shared resolve_db.find_dashboard_db() candidate list)")
+                          "(or set $DASHBOARD_DB_PATH / $DATABASE_PATH). EXPLICIT-SIGNAL "
+                          "ONLY: with none of the three set, join verification is "
+                          "NOT-APPLICABLE -- this NEVER falls through to the shared "
+                          "resolve_db.find_dashboard_db() ambient install-path candidate "
+                          "list every other gate uses (see _find_cc_db()).")
     args = ap.parse_args(argv)
 
     dd = Path(args.departments_dir) if args.departments_dir else department_floor.resolve_departments_dir()
@@ -485,12 +507,13 @@ def main(argv=None):
         result["chosen_artifact_appended"] = appended
         join = verify_board_join(dd, args.db)
         result["join_verification"] = join
-        if after["floor_met"] and join["status"] in ("DRIFT", "CANNOT-VOUCH"):
+        if after["floor_met"] and join["status"] in BLOCKING_JOIN_STATUSES:
             result["rc"] = 1
+            reason = ("chosen/provisioned/displayed disagree" if join["status"] in
+                       ("DRIFT", "CANNOT-VOUCH") else "prove-board-join.py could not be run")
             result["action"] = ("materialized via floor-fill-driver.py --apply, but "
                                  f"prove-board-join.py reported {join['status']} "
-                                 "(chosen/provisioned/displayed disagree) -- residue "
-                                 "not fully closed")
+                                 f"({reason}) -- residue not fully closed")
 
     _emit(result, args.json)
     return result["rc"]

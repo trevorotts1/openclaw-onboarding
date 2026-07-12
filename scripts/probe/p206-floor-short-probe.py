@@ -23,13 +23,39 @@ re-checks and reports the after-state — mirroring the p107-sunday-update-probe
 --remediate contract (detect, optionally fix, always re-verify from the
 SOURCE, never trust the fixer's own exit code as proof).
 
+LAYER 3 (DISPLAYED) RE-VERIFICATION: materialize-missing-departments.py only
+closes LAYER 2 (provisioned) on disk by itself; its own LAYER 3 join proof
+(chosen == provisioned == displayed via prove-board-join.py) is EXPLICIT-SIGNAL
+ONLY — it requires --db or $DASHBOARD_DB_PATH / $DATABASE_PATH, and NEVER
+falls through to ambient DB discovery (a live incident during that unit's own
+development — see materialize-missing-departments.py's _find_cc_db()). This
+probe therefore accepts its own --db and threads it through to the
+remediator's --db, AND independently re-runs
+materialize_missing_departments.verify_board_join() itself from source after
+remediation (never trusting the remediator's embedded self-report alone) so a
+box that never receives --db / the env var honestly reports LAYER 3 as
+NOT-APPLICABLE instead of silently skipping the check without a trace, and a
+box that DOES supply --db actually gets the (c)2 contract's "then
+prove-board-join.py must pass" enforced live.
+
 USAGE
   p206-floor-short-probe.py [--json] [--box <label>] [--remediate]
                              [--departments-dir <dir>] [--build-state-file <file>]
+                             [--db <mission-control.db>]
+
+  --db is only consulted when --remediate is also passed; it (or
+  $DASHBOARD_DB_PATH / $DATABASE_PATH) is what turns LAYER 3 join
+  verification from NOT-APPLICABLE into a real, live check.
 
 EXIT CODES
-  0  ARMED       (floor met — either already, or closed this run via --remediate)
-  1  DEGRADED    (floor short; re-run with --remediate to close it)
+  0  ARMED       (floor met — either already, or closed this run via
+                  --remediate — AND, when --db / the env var made LAYER 3
+                  verification possible, prove-board-join.py reported OK or
+                  the check was NOT-APPLICABLE)
+  1  DEGRADED    (floor short; re-run with --remediate to close it) OR the
+                  floor closed but the independently re-verified LAYER 3 join
+                  reported DRIFT / CANNOT-VOUCH / GATE-ERROR — an un-runnable
+                  or disagreeing join is not a verified join
   2  UNRESOLVABLE (no departments dir could be found on this box — usage error
                    or a box with no workforce at all; distinct from DEGRADED)
 ================================================================================
@@ -102,6 +128,12 @@ def main(argv=None):
     ap.add_argument("--build-state-file", default=None,
                      help="test isolation / operator override — default is the box's real "
                           "build-state (department_floor.load_build_state()).")
+    ap.add_argument("--db", default=None,
+                     help="explicit mission-control.db path, threaded through to "
+                          "materialize-missing-departments.py --db (or set "
+                          "$DASHBOARD_DB_PATH / $DATABASE_PATH) so --remediate's LAYER 3 "
+                          "(displayed) join verification actually runs instead of reporting "
+                          "NOT-APPLICABLE. EXPLICIT-SIGNAL ONLY -- never ambient discovery.")
     args = ap.parse_args(argv)
 
     department_floor_path = SCRIPTS_DIR / "department-floor.py"
@@ -168,6 +200,7 @@ def main(argv=None):
 
     remediated = False
     remediation_report = None
+    join_verification = None
     after = before
     if args.remediate and floor_short:
         materialize = _load_module("materialize_missing_departments__p206probe",
@@ -175,6 +208,8 @@ def main(argv=None):
         mz_argv = ["--departments-dir", departments_dir, "--apply", "--json"]
         if args.build_state_file:
             mz_argv += ["--build-state-file", args.build_state_file]
+        if args.db:
+            mz_argv += ["--db", args.db]
         # Capture the remediator's own stdout (its --json report) so it never
         # corrupts THIS probe's --json output; surfaced under remediation_report
         # instead, for the ledger to inspect.
@@ -190,8 +225,17 @@ def main(argv=None):
         # source (meta-rule 2.3.6 / session-survival rule 6): re-run
         # evaluate_floor() against the live tree it just wrote to.
         after = department_floor.evaluate_floor(departments_dir=Path(departments_dir), build_state=build_state)
+        # LAYER 3 (displayed): the remediator's own embedded join_verification
+        # (inside remediation_report) is a sub-agent's self-report, not proof —
+        # independently re-run materialize's verify_board_join() from source
+        # against the SAME --db (or env var) this probe was given, so the
+        # (c)2 contract "then prove-board-join.py must pass" is actually
+        # exercised live rather than trusted from the remediator's own claim.
+        join_verification = materialize.verify_board_join(Path(departments_dir), args.db)
 
     overall_armed = bool(after["floor_met"])
+    if join_verification is not None and join_verification["status"] in materialize.BLOCKING_JOIN_STATUSES:
+        overall_armed = False
 
     verdict = {
         "box": args.box,
@@ -208,6 +252,7 @@ def main(argv=None):
     if remediated:
         verdict["missing_after"] = after["missing_mandatory"] + after["missing_universal_primary"]
         verdict["remediation_report"] = remediation_report
+        verdict["join_verification"] = join_verification
 
     _emit(verdict, args.json)
     return 0 if overall_armed else 1
@@ -234,6 +279,9 @@ def _emit(verdict, as_json):
     if verdict.get("remediated_this_run"):
         print(f"  [INFO] --remediate ran materialize-missing-departments.py --apply; "
               f"missing_after={verdict.get('missing_after')}")
+        jv = verdict.get("join_verification") or {}
+        print(f"  [INFO] LAYER 3 join re-verification (independent, from source): "
+              f"status={jv.get('status')} rc={jv.get('rc')}")
     print(f"  VERDICT: {'ARMED' if verdict.get('overall_armed') else 'DEGRADED'}")
 
 

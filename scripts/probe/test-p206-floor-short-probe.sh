@@ -18,6 +18,20 @@
 #   T5. --json output is ALWAYS valid JSON on stdout even with --remediate (the
 #       remediator's own stdout must never leak into and corrupt the probe's
 #       JSON report).
+#   T6. --remediate --db <scratch> ACTUALLY RUNS LAYER 3 join verification
+#       (P2-06 dormant-live-join fix): an explicit --db (never ambient) makes
+#       the probe independently re-verify prove-board-join.py from source
+#       after remediation, reaching join_verification.status == OK and
+#       exit 0 -- proving the sole production caller of
+#       materialize-missing-departments.py can actually exercise the (c)2
+#       contract ("then prove-board-join.py must pass") instead of always
+#       reporting NOT-APPLICABLE.
+#   T7. THE HEADLINE REGRESSION LOCK: a phantom CHOSEN department that is
+#       neither provisioned nor part of the mandatory floor (so
+#       materialize-missing-departments.py never closes it) forces
+#       prove-board-join.py to report DRIFT even though the on-disk floor is
+#       fully met -> the probe's independently re-verified LAYER 3 check
+#       downgrades overall_armed to false and the probe exits 1, not 0.
 #
 # Exit 0 = all checks pass; non-zero = a test failed.
 set -uo pipefail
@@ -130,6 +144,100 @@ if echo "$OUT5" | python3 -m json.tool >/dev/null 2>&1; then
   ok "T5: --remediate --json output remains a single valid JSON document"
 else
   bad "T5: --remediate corrupted the --json output (remediator stdout leaked through)"
+fi
+
+echo "=== T6: --remediate --db <scratch> actually runs LAYER 3 join verification (join OK) ==="
+PROVE_JOIN="$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/prove-board-join.py"
+SEED_WORKSPACES="$SCRIPT_DIR/../../32-command-center-setup/scripts/seed-workspaces.py"
+if [ ! -f "$PROVE_JOIN" ] || [ ! -f "$SEED_WORKSPACES" ]; then
+  bad "T6 setup: prove-board-join.py or seed-workspaces.py not found in this checkout"
+else
+  HOME6="$TMP/home-t6"
+  CDIR6="$HOME6/clawd/zero-human-company/testco6"
+  DD6="$CDIR6/departments"
+  mkdir -p "$DD6/marketing/some-role" "$DD6/sales/some-role" "$DD6/research/some-role"
+  python3 -c "
+import json
+entries = [{'id': f'dept-{i}', 'slug': i, 'emoji': '📁', 'name': i.title(), 'headTitle': f'Director of {i}', 'workspacePath': f'departments/{i}'} for i in ('marketing', 'sales', 'research')]
+json.dump(entries, open('$CDIR6/departments.json', 'w'), indent=2)
+"
+  DB6="$TMP/mission-control-t6.db"
+  python3 -c "import sqlite3; sqlite3.connect('$DB6').close()"
+  OUT6=$(HOME="$HOME6" COMPANY_NAME="TestCo6" \
+    python3 "$PROBE" --box t6-box --departments-dir "$DD6" --build-state-file "$NEUTRAL_BS" \
+      --remediate --db "$DB6" --json 2>"$TMP/t6.log")
+  RC6=$?
+  JV6_STATUS=$(echo "$OUT6" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('join_verification', {}).get('status'))" 2>/dev/null)
+  if [ "$RC6" = "0" ]; then
+    ok "T6a: --remediate --db <scratch> -> exit 0 (floor closed + join OK)"
+  else
+    bad "T6a: expected exit 0, got $RC6. log:"; cat "$TMP/t6.log"
+  fi
+  if [ "$JV6_STATUS" = "OK" ]; then
+    ok "T6b: join_verification.status == OK -- LAYER 3 was ACTUALLY VERIFIED (not silently NOT-APPLICABLE)"
+  else
+    bad "T6b: expected join_verification.status == OK, got '$JV6_STATUS'. output: $OUT6"
+  fi
+fi
+
+echo "=== T7: HEADLINE REGRESSION LOCK -- DRIFT downgrades overall_armed / exit code ==="
+if [ ! -f "$PROVE_JOIN" ] || [ ! -f "$SEED_WORKSPACES" ]; then
+  bad "T7 setup: prove-board-join.py or seed-workspaces.py not found in this checkout"
+else
+  HOME7="$TMP/home-t7"
+  CDIR7="$HOME7/clawd/zero-human-company/testco7"
+  DD7="$CDIR7/departments"
+  mkdir -p "$DD7/marketing/some-role" "$DD7/sales/some-role" "$DD7/research/some-role"
+  # A phantom CHOSEN department that is NOT part of the mandatory/universal-primary
+  # floor (so evaluate_floor() never lists it as "missing" and
+  # materialize-missing-departments.py never closes it) and has no on-disk dir --
+  # it stays CHOSEN forever, is neither PROVISIONED nor (per seed-workspaces.py,
+  # which seeds straight from this artifact) excluded from DISPLAYED, so the join
+  # reports drift even after the real floor is fully materialized.
+  python3 -c "
+import json
+entries = [{'id': f'dept-{i}', 'slug': i, 'emoji': '📁', 'name': i.title(), 'headTitle': f'Director of {i}', 'workspacePath': f'departments/{i}'} for i in ('marketing', 'sales', 'research')]
+entries.append({'id': 'dept-zzz-totally-fake-phantom-dept', 'slug': 'zzz-totally-fake-phantom-dept', 'emoji': '👻', 'name': 'Zzz Totally Fake Phantom Dept', 'headTitle': 'Director of Nothing', 'workspacePath': 'departments/zzz-totally-fake-phantom-dept'})
+json.dump(entries, open('$CDIR7/departments.json', 'w'), indent=2)
+"
+  DB7="$TMP/mission-control-t7.db"
+  python3 -c "import sqlite3; sqlite3.connect('$DB7').close()"
+  OUT7=$(HOME="$HOME7" COMPANY_NAME="TestCo7" \
+    python3 "$PROBE" --box t7-box --departments-dir "$DD7" --build-state-file "$NEUTRAL_BS" \
+      --remediate --db "$DB7" --json 2>"$TMP/t7.log")
+  RC7=$?
+  JV7_STATUS=$(echo "$OUT7" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('join_verification', {}).get('status'))" 2>/dev/null)
+  ARMED7=$(echo "$OUT7" | python3 -c "import json,sys; print(json.load(sys.stdin)['overall_armed'])" 2>/dev/null)
+  FLOOR_MET_ON_DISK7=$(python3 - "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/department-floor.py" "$DD7" <<'PYEOF'
+import importlib.util, json, sys
+from pathlib import Path
+floor_path, dd = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("df_t7", floor_path)
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+v = m.evaluate_floor(departments_dir=Path(dd), build_state={}, core_answers={})
+print(v["floor_met"])
+PYEOF
+)
+  if [ "$FLOOR_MET_ON_DISK7" = "True" ]; then
+    ok "T7 setup: the real on-disk floor IS fully met post-remediation (isolates this test to a PURE join-layer defect, not a floor-materialization failure)"
+  else
+    bad "T7 setup: on-disk floor not met post-remediation -- test does not isolate the join layer. log:"; cat "$TMP/t7.log"
+  fi
+  if [ "$JV7_STATUS" = "DRIFT" ]; then
+    ok "T7a: join_verification.status == DRIFT (the phantom chosen dept is neither provisioned nor library-backed, so it can never be closed)"
+  else
+    bad "T7a: expected join_verification.status == DRIFT, got '$JV7_STATUS'. output: $OUT7"
+  fi
+  if [ "$ARMED7" = "False" ]; then
+    ok "T7b: overall_armed == false despite the on-disk floor being met -- the independently re-verified LAYER 3 DRIFT correctly downgrades the verdict"
+  else
+    bad "T7b: expected overall_armed == false, got '$ARMED7' -- a DRIFT join must never report ARMED"
+  fi
+  if [ "$RC7" = "1" ]; then
+    ok "T7c: probe exits 1 (DEGRADED) on a DRIFT join, even though floor_met on disk -- this is the P2-06 (c)2 contract's headline branch, now under a real regression lock"
+  else
+    bad "T7c: expected exit 1, got $RC7"
+  fi
 fi
 
 echo "--------------------------------------------"

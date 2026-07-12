@@ -14,7 +14,7 @@ name: Floor-wipe fix guard (P2-06)
 # absent was invisible to it (make-gap-from-staleness.py deliberately drops
 # "dept"-kind items; proven by tests/unit/floor-fill-gap.test.sh).
 #
-# This gate runs the three suites this unit ships:
+# This gate runs the four suites this unit ships:
 #
 #   1. test-naming-map-corruption-fail-closed.sh — PERMANENT regression for
 #      the (d)/(e) break-it requirement ("corrupt a test copy of the naming
@@ -31,15 +31,32 @@ name: Floor-wipe fix guard (P2-06)
 #      lock for the exact subdirectory-layout bug hit during this unit's own
 #      development), additive-only (byte-identical pre-existing depts,
 #      checksum-proven), idempotent, and honors client declines.
-#   3. scripts/probe/test-p206-floor-short-probe.sh — the P6-01 per-box
+#   3. test-materialize-missing-departments-join.sh — the P2-06 (c)2 CLOSING
+#      REQUIREMENT ("then prove-board-join.py must pass"): materializing
+#      directories only closes LAYER 2 (provisioned); this proves the CHOSEN
+#      artifact sync is append-only, DB discovery is EXPLICIT-SIGNAL ONLY
+#      (never the ambient resolve_db.find_dashboard_db() candidate list — T0
+#      is a fail-first regression lock for a real live-DB-touching incident
+#      hit during this unit's own development), an explicit --db reaches a
+#      genuine end-to-end JOIN OK independently re-verified via a fresh
+#      prove-board-join.py invocation, --skip-join-verify bypasses both new
+#      code paths, and — T5, the headline regression lock — a DRIFT/
+#      CANNOT-VOUCH join verdict downgrades the overall exit code to 1 even
+#      when the on-disk floor is fully met.
+#   4. scripts/probe/test-p206-floor-short-probe.sh — the P6-01 per-box
 #      detect verdict (ships now, runs against live fleet boxes only in the
 #      final rollout phase per meta-rule 2.1/2.7): ARMED / DEGRADED /
 #      UNRESOLVABLE are three DISTINCT exit codes (0/1/2), --remediate closes
 #      a flagged box and RE-VERIFIES from the live tree rather than trusting
-#      the remediator's own report, and --json output is never corrupted by
-#      a subprocess/import's own stdout.
+#      the remediator's own report, --json output is never corrupted by
+#      a subprocess/import's own stdout, and (T6/T7) an explicit --db makes
+#      the probe independently re-verify LAYER 3 (the displayed board) from
+#      source after remediation — never trusting the remediator's own
+#      embedded join_verification claim — so a DRIFT verdict downgrades
+#      overall_armed and the probe's exit code even though the on-disk floor
+#      is met.
 #
-# All three are hermetic: mktemp sandboxes, and every non-decline-testing
+# All four are hermetic: mktemp sandboxes, and every non-decline-testing
 # scenario pins --build-state-file to a neutral {} record so the verdict
 # never depends on whatever real client build-state happens to exist on the
 # box running the suite (verified live on the operator's own box, which
@@ -63,9 +80,12 @@ on:
       - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
+      - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh"
       - "23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh"
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
       - "23-ai-workforce-blueprint/department-naming-map.json"
       - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
       - "scripts/probe/p206-floor-short-probe.py"
       - "scripts/probe/test-p206-floor-short-probe.sh"
       - ".github/workflows/floor-wipe-fix-guard.yml"
@@ -77,16 +97,19 @@ on:
       - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
+      - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh"
       - "23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh"
+      - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
       - "23-ai-workforce-blueprint/department-naming-map.json"
       - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
       - "scripts/probe/p206-floor-short-probe.py"
       - "scripts/probe/test-p206-floor-short-probe.sh"
       - ".github/workflows/floor-wipe-fix-guard.yml"
 
 jobs:
   floor-wipe-fix-guard:
-    name: P2-06 floor-wipe fix (3 hermetic suites)
+    name: P2-06 floor-wipe fix (4 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -126,6 +149,16 @@ jobs:
           fi
 
           echo "======================================================================"
+          echo "RUN: 23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh"
+          echo "======================================================================"
+          if bash 23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh; then
+            echo "PASS: test-materialize-missing-departments-join.sh"
+          else
+            echo "FAIL: test-materialize-missing-departments-join.sh exited non-zero" >&2
+            rc=1
+          fi
+
+          echo "======================================================================"
           echo "RUN: scripts/probe/test-p206-floor-short-probe.sh"
           echo "======================================================================"
           if bash scripts/probe/test-p206-floor-short-probe.sh; then
@@ -137,7 +170,7 @@ jobs:
 
           echo "======================================================================"
           if [ "$rc" -eq 0 ]; then
-            echo "ALL 3 P2-06 FLOOR-WIPE-FIX SUITES PASSED"
+            echo "ALL 4 P2-06 FLOOR-WIPE-FIX SUITES PASSED"
           else
             echo "ONE OR MORE P2-06 FLOOR-WIPE-FIX SUITES FAILED" >&2
           fi
