@@ -49,7 +49,11 @@ sop_id_from_slug = mod.sop_id_from_slug
 embed_delta = mod.embed_delta
 verify_real_vectors = mod.verify_real_vectors
 ensure_schema = mod.ensure_schema
-GEMINI_MODEL = mod.GEMINI_MODEL
+# NB: bind under a non-`GEMINI_MODEL` name — the PRD 1.8 CI guard greps
+# `^GEMINI_MODEL\s*=` across all *.py to enforce a single model definition in
+# shared-utils/embedding_engine.py, and a top-level `GEMINI_MODEL =` alias here
+# (even one that just re-reads mod.GEMINI_MODEL) trips it as a false duplicate.
+EMBED_MODEL = mod.GEMINI_MODEL
 GEMINI_OUTPUT_DIM = mod.GEMINI_OUTPUT_DIM
 
 
@@ -190,7 +194,7 @@ class TestRealVectorHardGate(unittest.TestCase):
 
     def test_correct_dim_vectors_pass_the_gate(self):
         embed_delta(self.conn, [SOP_A, SOP_B], embed_fn=_fake_embed(dim=GEMINI_OUTPUT_DIM))
-        ok, bad_count, detail = verify_real_vectors(self.conn, GEMINI_MODEL, GEMINI_OUTPUT_DIM)
+        ok, bad_count, detail = verify_real_vectors(self.conn, EMBED_MODEL, GEMINI_OUTPUT_DIM)
         self.assertTrue(ok, detail)
         self.assertEqual(bad_count, 0)
 
@@ -201,7 +205,7 @@ class TestRealVectorHardGate(unittest.TestCase):
         # BEFORE an asset is ever published. This proves the gate, not the
         # writer, is what refuses a bad vector.
         embed_delta(self.conn, [SOP_A], embed_fn=_wrong_dim_embed(dim=768))
-        ok, bad_count, detail = verify_real_vectors(self.conn, GEMINI_MODEL, GEMINI_OUTPUT_DIM)
+        ok, bad_count, detail = verify_real_vectors(self.conn, EMBED_MODEL, GEMINI_OUTPUT_DIM)
         self.assertFalse(ok, "a 768-dim vector must NEVER pass the gemini/3072 hard gate")
         self.assertEqual(bad_count, 1)
         self.assertIn("test_onboard_new_client", detail.replace("-", "_"))
