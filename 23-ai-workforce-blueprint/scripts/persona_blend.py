@@ -203,6 +203,21 @@ def _tag_hit(query_tokens: set, tags) -> tuple:
                 matched_orig.add(qstems[xs])
                 hit = True
                 continue
+            # P4-01 fix: the substring-containment nudge is documented (and
+            # intended) as a "long tokens (>=5 chars)" fallback for compound/
+            # drift matches (e.g. 'copywriting' <-> 'copywriter'). Before this
+            # fix only the QUERY-side stem (`st`) was length-gated — a SHORT
+            # tag-side token (`xs`), e.g. 'a'/'b' from the tag 'a-b-testing' or
+            # 'hr' from 'hr-leaders', is a trivial substring of almost any long
+            # query stem ('a' in 'persuasive', 'hr' in 'other'), so those tags
+            # silently won matches against semantically-unrelated queries across
+            # the whole catalog (measured: 84 of 99 personas' audience/topic tags
+            # carry a <=2-char hyphen-split token). Gating BOTH sides at >=5
+            # restores the documented "long tokens" contract with no loss of the
+            # legitimate compound-drift matches (those are exact-length stems on
+            # both sides already, e.g. 'copywriting'/'copywriter' are len>=10).
+            if len(xs) < 5:
+                continue
             for st, orig in qstems.items():
                 if len(st) >= 5 and (st in xs or xs in st):
                     matched_orig.add(orig)
@@ -677,6 +692,114 @@ def build_task_personas(task_text: str, department: str, *, max_task_personas: i
     return task_personas, combined
 
 
+# ── P4-01 step 2: match-score-distribution logging (drift observability) ──────
+# "log match score distributions so drift is observable" (P4-01 spec (c)2).
+# Best-effort, append-only JSONL — one record per audience/topic decision made
+# inside build_bundle(). Logging failures (unwritable dir, disk full, a client
+# box with a read-only workspace mount, ...) NEVER raise and NEVER block a
+# persona match: this is pure observability riding alongside the real
+# decision, never a dependency of it.
+MATCH_SCORE_LOG_FILENAME = "match-score-log.jsonl"
+
+
+def _match_score_log_path(paths: dict):
+    """Resolve the match-score log path. OPENCLAW_PERSONA_MATCH_SCORE_LOG
+    overrides (same override pattern as OPENCLAW_PERSONA_CATEGORIES — used by
+    tests so this never touches a live workspace); otherwise
+    paths['coaching_personas']/match-score-log.jsonl, alongside the persona
+    catalog and gemini index this module already reads/writes near. Returns
+    None when neither is resolvable (e.g. a paths dict with no
+    coaching_personas key) — the caller treats that as "logging unavailable".
+    """
+    override = os.environ.get("OPENCLAW_PERSONA_MATCH_SCORE_LOG", "").strip()
+    if override:
+        return Path(override)
+    cp = paths.get("coaching_personas") if isinstance(paths, dict) else None
+    return Path(cp) / MATCH_SCORE_LOG_FILENAME if cp else None
+
+
+def log_match_score(paths: dict, *, dimension: str, persona_id, score,
+                     task_category=None, content_task=None) -> bool:
+    """Append ONE match-score record. dimension in {"audience","topic"}.
+
+    Returns True on a successful write, False on ANY failure (never raises —
+    see module note above). Records are plain JSON lines:
+      {ts, dimension, persona_id, score, task_category, content_task}
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    try:
+        log_path = _match_score_log_path(paths)
+        if not log_path:
+            return False
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "dimension": dimension,
+            "persona_id": persona_id,
+            "score": score,
+            "task_category": task_category,
+            "content_task": content_task,
+        }
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(rec) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def match_score_distribution(paths: dict, *, dimension: str = None,
+                             tail: int = 2000) -> dict:
+    """Summarize the match-score log for drift observability.
+
+    Reads at most the last `tail` lines (bounded — this is a log-tail summary,
+    never an unbounded full-file load) and returns:
+      {count, mean, min, max, buckets: {low: n (<0.3), mid: n (0.3-0.6),
+       high: n (>0.6)}}
+    Filters to a single `dimension` when given. Returns count=0 (never raises,
+    never fabricates a distribution) when the log is absent/unreadable/empty —
+    an honest "no data yet" is what a fresh box or a logging-path failure
+    looks like, and callers (health probes) must be able to tell that apart
+    from "the matcher is genuinely producing low scores".
+    """
+    import json as _json
+    empty = {"count": 0, "mean": None, "min": None, "max": None,
+             "buckets": {"low": 0, "mid": 0, "high": 0}}
+    log_path = _match_score_log_path(paths)
+    if not log_path or not log_path.exists():
+        return empty
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return empty
+    scores = []
+    for line in lines[-tail:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = _json.loads(line)
+        except Exception:
+            continue
+        if dimension and rec.get("dimension") != dimension:
+            continue
+        s = rec.get("score")
+        if isinstance(s, (int, float)):
+            scores.append(float(s))
+    if not scores:
+        return empty
+    buckets = {"low": 0, "mid": 0, "high": 0}
+    for s in scores:
+        if s < 0.3:
+            buckets["low"] += 1
+        elif s <= 0.6:
+            buckets["mid"] += 1
+        else:
+            buckets["high"] += 1
+    return {"count": len(scores), "mean": sum(scores) / len(scores),
+            "min": min(scores), "max": max(scores), "buckets": buckets}
+
+
 # ── the bundle assembler ──────────────────────────────────────────────────────
 def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
                  use_llm: bool = True, record: bool = True,
@@ -789,6 +912,10 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                      f"persona ({default_src}).",
               "matched_tags": [], "matched_tokens": [], "score": 0.0}
     topic_pid = tp["persona_id"]
+    if topic_pid:
+        log_match_score(paths, dimension="topic", persona_id=topic_pid,
+                         score=tp.get("score"), task_category=task_category,
+                         content_task=content_task)
 
     # topic string: prefer explicit hint, else the matched topic tags, else category.
     if topic_hint:
@@ -811,6 +938,10 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
     if content_task and voice_audience_label:
         ap = match_audience_persona(catalog, voice_audience_label)
     audience_pid = ap["persona_id"] if ap else None
+    if ap and audience_pid:
+        log_match_score(paths, dimension="audience", persona_id=audience_pid,
+                         score=ap.get("score"), task_category=task_category,
+                         content_task=content_task)
 
     # ── COLLAPSE decision ───────────────────────────────────────────────────────
     if content_task:

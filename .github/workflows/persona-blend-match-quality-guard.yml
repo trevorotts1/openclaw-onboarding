@@ -1,0 +1,86 @@
+name: persona-blend-match-quality-guard
+
+# P4-01 — persona matching + book-to-persona (strengthen). Fails the build if:
+#   (A) the Skill-23 voice-first AUDIENCE+TOPIC blend matcher (persona_blend.py)
+#       regresses any of its 46 existing contract tests,
+#   (B) match quality on the 20-case, REAL-catalog regression corpus drops
+#       below the 90% gate (persona-match-regression-corpus.json) — this is
+#       the drift lock for silent _tag_hit/_stem/ranking regressions,
+#   (C) the match-score-distribution logger (log_match_score /
+#       match_score_distribution — "log match score distributions so drift is
+#       observable") stops writing or stops summarizing correctly,
+#   (D) the book-to-persona pipeline (Skill 22 orchestrator) writes a duality-
+#       enriched catalog entry the matcher (Skill 23) cannot actually select —
+#       the true end-to-end round trip, not just the orchestrator's own write-
+#       side unit tests.
+#
+# Pre-existing gap this workflow ALSO closes as a byproduct: no CI workflow
+# previously ran persona_blend.py's own 46-test suite at all (verified: no
+# .github/workflows/*.yml referenced test-persona-blend-matcher.py or
+# persona_blend.py before this file). It is wired in here because this unit's
+# changes touch persona_blend.py directly.
+
+on:
+  push:
+    paths:
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+      - tests/unit/persona-match-score-log.test.py
+      - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
+      - tests/unit/persona-duality-tags-pipeline.test.sh
+      - .github/workflows/persona-blend-match-quality-guard.yml
+  pull_request:
+    paths:
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
+      - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+      - tests/unit/persona-match-score-log.test.py
+      - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
+      - tests/unit/persona-duality-tags-pipeline.test.sh
+      - .github/workflows/persona-blend-match-quality-guard.yml
+
+jobs:
+  persona-blend-match-quality-guard:
+    name: Persona-blend matcher — contract + regression-corpus + logging + e2e selectability
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: persona_blend.py compiles
+        run: python3 -m py_compile 23-ai-workforce-blueprint/scripts/persona_blend.py
+
+      - name: W7 blend-matcher contract suite (46 tests, hermetic fixtures)
+        run: python3 23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py
+
+      - name: P4-01 — 20-case match-quality regression corpus (>=90% gate, REAL catalog)
+        run: python3 23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py
+
+      - name: P4-01 — match-score-distribution logging (drift observability)
+        run: python3 tests/unit/persona-match-score-log.test.py
+
+      - name: P4-01 — book-to-persona -> matcher-selectable end-to-end round trip
+        run: python3 tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
+
+      - name: D6 — Skill-22 duality-tag write-side contract (orchestrator)
+        run: |
+          chmod +x tests/unit/persona-duality-tags-pipeline.test.sh
+          bash tests/unit/persona-duality-tags-pipeline.test.sh
