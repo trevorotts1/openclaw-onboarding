@@ -1,0 +1,144 @@
+name: Floor-wipe fix guard (P2-06)
+
+# P2-06 — THE FLOOR-WIPE FIX (verify + close residuals).
+#
+# ROOT CAUSE (already fixed, this unit is verify + residue): department-floor.py /
+# build-workforce.py now fail CLOSED when department-naming-map.json is
+# unreadable — the enforced floor stays the full 22 mandatory + 6
+# universal-primary = 28, never a silent drop to 22. That closed the
+# BUILD-TIME defect. It did nothing for a box that was BUILT before the fix
+# landed and is still missing whole departments TODAY ("the wipe"), because
+# the existing update-path floor-fill (migrate-existing-workforce.sh Step 2b
+# -> floor-fill-driver.py, v16.0.2) only ever fills missing ROLES/SOPS inside
+# a department that ALREADY EXISTS on disk — a department that is entirely
+# absent was invisible to it (make-gap-from-staleness.py deliberately drops
+# "dept"-kind items; proven by tests/unit/floor-fill-gap.test.sh).
+#
+# This gate runs the three suites this unit ships:
+#
+#   1. test-naming-map-corruption-fail-closed.sh — PERMANENT regression for
+#      the (d)/(e) break-it requirement ("corrupt a test copy of the naming
+#      map and prove the build refuses to go short"): department-floor.py's
+#      evaluate_floor() still enforces the full 28-department floor when the
+#      naming map is invalid JSON, missing entirely, or valid-but-empty —
+#      NEVER silently shrinking to 22. The acceptance case (T2) is the exact
+#      P2-06 defect: a corrupted map must not let a 22-only board pass.
+#   2. test-materialize-missing-departments.sh — the NEW live remediation
+#      (materialize-missing-departments.py): given a box department-floor.py
+#      reports floor-short, it materializes ONLY the genuinely missing whole
+#      departments with REAL role-library content (both the flat-.md and the
+#      per-role-subdirectory library layouts — T5 is a fail-first regression
+#      lock for the exact subdirectory-layout bug hit during this unit's own
+#      development), additive-only (byte-identical pre-existing depts,
+#      checksum-proven), idempotent, and honors client declines.
+#   3. scripts/probe/test-p206-floor-short-probe.sh — the P6-01 per-box
+#      detect verdict (ships now, runs against live fleet boxes only in the
+#      final rollout phase per meta-rule 2.1/2.7): ARMED / DEGRADED /
+#      UNRESOLVABLE are three DISTINCT exit codes (0/1/2), --remediate closes
+#      a flagged box and RE-VERIFIES from the live tree rather than trusting
+#      the remediator's own report, and --json output is never corrupted by
+#      a subprocess/import's own stdout.
+#
+# All three are hermetic: mktemp sandboxes, and every non-decline-testing
+# scenario pins --build-state-file to a neutral {} record so the verdict
+# never depends on whatever real client build-state happens to exist on the
+# box running the suite (verified live on the operator's own box, which
+# carries real prior declines that would otherwise silently change the
+# expected department set). No corrupted file is ever written to the real
+# repo checkout — the naming-map corruption test monkeypatches the imported
+# module's NAMING_MAP constant onto a private tmp copy; the regression-lock
+# test injects its bug into a scratch copy placed and removed (trap) beside
+# the real script, never into the file under test itself. python3 + shasum
+# only — no jq, no network, no git.
+#
+# Runs on every push to main and on any PR that touches the files this unit
+# ships or the tests that exercise them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
+      - "23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "scripts/probe/p206-floor-short-probe.py"
+      - "scripts/probe/test-p206-floor-short-probe.sh"
+      - ".github/workflows/floor-wipe-fix-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
+      - "23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - "23-ai-workforce-blueprint/templates/role-library/_index.json"
+      - "scripts/probe/p206-floor-short-probe.py"
+      - "scripts/probe/test-p206-floor-short-probe.sh"
+      - ".github/workflows/floor-wipe-fix-guard.yml"
+
+jobs:
+  floor-wipe-fix-guard:
+    name: P2-06 floor-wipe fix (3 hermetic suites)
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the P2-06 suites (each exit 0 required)
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+
+          echo "======================================================================"
+          echo "RUN: 23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh"
+          echo "======================================================================"
+          if bash 23-ai-workforce-blueprint/scripts/test-naming-map-corruption-fail-closed.sh; then
+            echo "PASS: test-naming-map-corruption-fail-closed.sh"
+          else
+            echo "FAIL: test-naming-map-corruption-fail-closed.sh exited non-zero" >&2
+            rc=1
+          fi
+
+          echo "======================================================================"
+          echo "RUN: 23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
+          echo "======================================================================"
+          if bash 23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh; then
+            echo "PASS: test-materialize-missing-departments.sh"
+          else
+            echo "FAIL: test-materialize-missing-departments.sh exited non-zero" >&2
+            rc=1
+          fi
+
+          echo "======================================================================"
+          echo "RUN: scripts/probe/test-p206-floor-short-probe.sh"
+          echo "======================================================================"
+          if bash scripts/probe/test-p206-floor-short-probe.sh; then
+            echo "PASS: test-p206-floor-short-probe.sh"
+          else
+            echo "FAIL: test-p206-floor-short-probe.sh exited non-zero" >&2
+            rc=1
+          fi
+
+          echo "======================================================================"
+          if [ "$rc" -eq 0 ]; then
+            echo "ALL 3 P2-06 FLOOR-WIPE-FIX SUITES PASSED"
+          else
+            echo "ONE OR MORE P2-06 FLOOR-WIPE-FIX SUITES FAILED" >&2
+          fi
+          exit "$rc"
