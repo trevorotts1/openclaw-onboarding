@@ -1,6 +1,19 @@
 # Anthology Engine (Skill 59) -- Changelog
 
-### P3-03 (c)4 -- G23 confirmed + regression-locked: MISSION_CONTROL_URL env resolution (2026-07-12)
+### P3-03 (c)4 -- G23 confirmed + regression-locked: MISSION_CONTROL_URL env resolution (skill-version 0.1.6 -> 0.1.7, 2026-07-12)
+
+**FIX-LOOP addendum (2026-07-12):** the prior QC pass on this unit failed on two
+items. (1) The sibling-parity sentence below was verified FALSE by reading all seven
+`mc_board.py` siblings directly and has been corrected in place (see the
+"Correction" paragraph). (2) `skill-version.txt` was left unbumped after this unit's
+test-only + changelog-only change; this repo's own precedent (commit `62daa0f3`,
+"scrub Airtable base-id-shape token from Skill 59 intake-transform comment" -- a
+COMMENT-only diff -- still rolled `skill-version.txt` 0.1.0 -> 0.1.1 in lockstep)
+establishes that ANY change to a skill directory rolls its `skill-version.txt` under
+this repo's doctrine, with no test-only exemption on record anywhere in the repo.
+SUPER-SPEC 2.6 ("changed skills roll their skill-version.txt") is read accordingly:
+rolled here, 0.1.6 -> 0.1.7. (No `_index.json`/role-library `content_sha` restamp
+is required -- this diff touches neither role-library content nor personas.)
 
 SUPER-SPEC-2026-07-11 P3-03 (c)4 asked to confirm `mc_board.py` honors the
 `MISSION_CONTROL_URL` env override before its `http://localhost:4000` default, and to
@@ -15,12 +28,25 @@ locking in the full precedence order, including a fail-first proof
 (`test_env_priority_order_is_load_bearing`) that a naive "default/config-first"
 resolver -- the regression shape G23 exists to prevent -- diverges from the real
 `BoardConfig` on the exact case that matters (a live `MISSION_CONTROL_URL` override
-present). **Documented:** `:4000` is the fleet-standard Command Center port (every
-box's `mc_board.py` sibling across Skills 49/50/53/54/55/56/57 shares this same
-default), so the literal default is correct; a box that legitimately runs the board
-on a different port or host sets `MISSION_CONTROL_URL` (or `MC_URL`, or names its own
-env var via `board.base_url_env` in `engine-config.json`) and that override is never
-shadowed.
+present). **Documented:** `:4000` is the Command Center's pinned fleet-standard port
+(per SUPER-SPEC 2026-07-11 G23, "correct per the :4000 pin"), so Skill 59's literal
+default is correct as shipped; a box that legitimately runs the board on a different
+port or host sets `MISSION_CONTROL_URL` (or `MC_URL`, or names its own env var via
+`board.base_url_env` in `engine-config.json`) and that override is never shadowed.
+**Correction (verified by reading all seven files directly, not by re-asserting a
+prior claim):** this is NOT because "every box's `mc_board.py` sibling shares this
+same default" -- that claim was false and has been removed. The `mc_board.py`
+siblings in Skills 49 (`49-signature-funnel/scripts/mc_board.py`), 50
+(`50-email-engine/mc_board.py`), 53 (`53-book-writer/scripts/mc_board.py`), 54
+(`54-anthology-writer/mc_board.py`), 55 (`55-product-bio/scripts/mc_board.py`), 56
+(`56-sales-page-assets/scripts/mc_board.py`), and 57
+(`57-social-media-in-a-box/scripts/mc_board.py`) each read `COMMAND_CENTER_URL` or
+`MISSION_CONTROL_URL` and, when NEITHER is set, disable the board entirely (a clean
+no-op -- "board disabled (no-op); run continues", per their own comments) rather than
+falling back to any `http://localhost:4000` literal. None of the seven siblings
+defines that default. Skill 59's `http://localhost:4000` default is a deliberate
+design difference (fail-open to the fleet-standard port instead of fail-closed to a
+no-op), justified on its own by the :4000 pin -- not by sibling parity.
 
 ## Unreleased (2026-07-09)
 
