@@ -4,6 +4,20 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.58.1] - 2026-07-12 - P3-08 Gap A: GATED Automations (workflow) builder implemented
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`).
+
+### Added
+- **`tools/ghl_workflow_builder.py` — the Skill 6 GATED, MANAGED Automations (workflow) builder.** This is the Tier-4 workflow-BUILD backstop Skill 44 routes to when the Firebase token is unread/misconfigured (Gap A). It drives the GoHighLevel Automations UI (name + trigger + action) through the ONE `browser_manager.sh` singleton gateway — one session, lock=1, TTL, guaranteed teardown, reaper backstop — and NEVER spawns agent-browser directly. It resolves its steps from the new `automations_builder_gates` registry in `tools/gates.json`; if a required gate is absent it raises `MissingGateError` rather than freehand-navigate ("NO invented CSS is shipped as fact"). Reads back and returns the built workflow id; a save with no readable id is a loud `WorkflowBuildError`, never a silent partial success.
+- **`tools/gates.json` → `automations_builder_gates`.** 12-step gate registry for the Automations builder. Steps ship `status: runtime` (accessibility role/name find hints resolved against the live DOM), `_capture_status: pending_live_capture` — the harness is complete now; the live-captured selectors are the operator-box follow-on.
+- **`tools/SELECTORS-LIVE-automations.md`.** Human-readable companion documenting the gates, the two-phase runtime→captured discipline, and the live-capture follow-on procedure.
+- **`tests/test_ghl_workflow_builder.py`.** Fail-first proof: a token-unset build drives the gated path, quotes the built workflow id, and asserts zero-orphan teardown (teardown runs exactly once, even on a mid-build exception); missing-gate refusal; no-id-readback loudness; managed-gateway-never-agent-browser. `python3 tools/ghl_workflow_builder.py --selftest` is the runnable CLI proof.
+
+---
+
 ## [v19.21.0] - 2026-07-10 - Skill-6 SURVEY-builder hardening (Fable review)
 
 Branch **skill6-survey-builder-hardening** (off `skill6-community-course-live-ready`).

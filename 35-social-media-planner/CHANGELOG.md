@@ -1,5 +1,13 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.9 - 2026-07-12 — P3-08 QC-fix: CTA lockstep completed in example templates + comment-reader injection fencing
+
+### Changed
+- **CTA lockstep finished in residual example templates.** §12/§19/pitch-schedule were already DM-first, but example TEMPLATES still modeled comment-only CTAs that the new §19 checklist would REJECT (a post with only the comment directive and no DM CTA FAILS). Added the PRIMARY "send us a message" DM CTA (with the comment link as backup) to: carousel Slide 7 (§ Carousel Slide Structure), the canonical JSON post-body `summary` example, the carousel-caption and video-caption example placeholders, and the `caf social create-post --text` CLI example. Content generated from these templates no longer auto-fails §19.
+
+### Security
+- **Comment-reader injection fencing (`scripts/comment_reader.py`).** Public comments are the lowest-trust inbound surface, and Skill 38 consumes `conversational-logs/` as conversation history. The reader now sanitizes every field before writing: the comment BODY is wrapped in a clearly-delimited `UNTRUSTED-PUBLIC-COMMENT` block with line-leading markdown structure (`#`/`-`/`>`/`|`/code fences/…) escaped, and single-line fields (author, permalink, comment_id) are newline-collapsed — so a crafted comment can no longer forge a Skill-38 `### Inbound` turn or inject a `- text:` field / instructions. New fail-first tests (`test_comment_reader.py`): spoofed-turn, code-fence breakout, and field-injection are all neutralized.
+
 ## v2.9.8 - 2026-07-11 — P3-08 Gap B: DM-first CTA + comment reader (comments become conversations); Gap C weekly-link automation
 
 ### Changed

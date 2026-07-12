@@ -1,5 +1,12 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.9] - 2026-07-12 — P3-08 QC-fix: Tier-4 "designated path" is now IMPLEMENTED (no longer a promise to a missing file)
+
+### Changed
+- **SKILL.md "Workflow BUILD and EDIT" implementation-status note corrected.** The unread/misconfigured-token branch routes to `06-ghl-install-pages/tools/ghl_workflow_builder.py`, which now EXISTS as a built, unit-tested harness driving the Automations builder through the `browser_manager.sh` singleton gateway (guaranteed teardown, reaper backstop; `MissingGateError` instead of freehand navigation). Replaced the "until it lands, Skill 41 Layer 0 is the no-token fallback" hedge with the real status: the harness is built; the live-captured Automations selectors (`status: runtime` today) are the operator-box hardening follow-on. Runnable proof: `06-ghl-install-pages/tests/test_ghl_workflow_builder.py` drives a token-unset build through the gated path, quotes the built workflow id, and asserts zero-orphan teardown; `--selftest` is the one-liner. Token-circularity note unchanged.
+
+---
+
 ## [1.3.8] - 2026-07-11 — P3-08: token-circularity doc + Tier-4 routes to Skill 6's GATED managed builder (not bare agent-browser); guard widened to cover this skill
 
 ### Changed

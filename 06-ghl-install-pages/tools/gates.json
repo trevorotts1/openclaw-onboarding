@@ -512,5 +512,41 @@
     ],
     "checked_by": "06-ghl-install-pages/tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync — reads every literal directly from source (and this registry's canonical_value) and fails CI on any mismatch.",
     "not_a_secret": "Public Firebase Web API key, restricted server-side by Google (see gate 27 auth_storage_keys note); safe to ship in source under the existing D7 token-only doctrine."
+  },
+
+  "automations_builder_gates": {
+    "_doc": "P3-08 Gap A — gate registry for the GoHighLevel Automations (Workflow) BUILDER UI, consumed by tools/ghl_workflow_builder.py. This is the Tier-4 gated, MANAGED workflow-build path Skill 44 routes to when the Firebase token is unread/misconfigured (see 44-convert-and-flow-operator/SKILL.md and 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md RULE 6). The HARNESS (ghl_workflow_builder.py) is complete and unit-tested against a mocked gateway; it drives EVERY browser action through Skill 6's browser_manager.sh singleton gateway (one session, lock=1, TTL, guaranteed teardown, reaper backstop) — never bare agent-browser. Per Skill 6's 'NO invented CSS is shipped as fact' law, the step selectors below are status=runtime: role/name/visible-text FIND HINTS the harness resolves against the LIVE DOM at runtime, NOT captured CSS asserted as fact. A live-capture hardening pass on the operator's own GHL location will flip each step to status=captured and record the confirmed nodes in SELECTORS-LIVE-automations.md — same discipline every other Skill 6 runtime gate follows. The harness REFUSES to run (MissingGateError) if a required step name is absent here; it NEVER freehand-navigates.",
+    "_capture_status": "pending_live_capture",
+    "_capture_note": "Steps are runtime find-hints (accessibility role/name), not fabricated CSS. Flip to captured only after a live snapshot on the operator's location; record in SELECTORS-LIVE-automations.md.",
+    "nav_route_template": "/v2/location/{location_id}/automation/workflows",
+    "nav_route_status": "runtime-unverified",
+    "required_steps": [
+      "open_automations",
+      "create_workflow",
+      "start_from_scratch",
+      "name_workflow",
+      "add_trigger",
+      "choose_trigger_type",
+      "save_trigger",
+      "add_action",
+      "choose_action_type",
+      "save_action",
+      "save_workflow",
+      "read_workflow_id"
+    ],
+    "steps": [
+      { "name": "open_automations", "status": "runtime", "label": "Automations / Workflows list view", "find": "navigate nav_route_template then find role heading name 'Workflows'" },
+      { "name": "create_workflow", "status": "runtime", "label": "Create Workflow button", "find": "find role button name 'Create Workflow' | find role button name '+ Create Workflow'" },
+      { "name": "start_from_scratch", "status": "runtime", "label": "Start from scratch template option", "find": "find role button name 'Start from Scratch' | find text 'Start from scratch'" },
+      { "name": "name_workflow", "status": "runtime", "label": "Workflow name field (top-of-builder, editable title)", "find": "find role textbox name 'Workflow name' | find role textbox name 'Untitled Workflow'" },
+      { "name": "add_trigger", "status": "runtime", "label": "Add New Trigger button", "find": "find role button name 'Add New Trigger' | find text 'Add Trigger'" },
+      { "name": "choose_trigger_type", "status": "runtime", "label": "Trigger-type picker list item", "find": "find role option name {trigger_type} | find text {trigger_type}" },
+      { "name": "save_trigger", "status": "runtime", "label": "Save Trigger button in the trigger config panel", "find": "find role button name 'Save Trigger' | find role button name 'Save'" },
+      { "name": "add_action", "status": "runtime", "label": "Add action '+' node on the canvas", "find": "find role button name 'Add your first Action' | find role button name 'Add Action'" },
+      { "name": "choose_action_type", "status": "runtime", "label": "Action-type picker list item", "find": "find role option name {action_type} | find text {action_type}" },
+      { "name": "save_action", "status": "runtime", "label": "Save Action button in the action config panel", "find": "find role button name 'Save Action' | find role button name 'Save'" },
+      { "name": "save_workflow", "status": "runtime", "label": "Top-right Save button (persists the draft workflow)", "find": "find role button name 'Save'" },
+      { "name": "read_workflow_id", "status": "runtime", "label": "Built workflow id read back from the builder URL after save", "find": "eval location.href — parse /workflows/(?:builder/)?<id> ; id also appears in the workflow settings panel" }
+    ]
   }
 }

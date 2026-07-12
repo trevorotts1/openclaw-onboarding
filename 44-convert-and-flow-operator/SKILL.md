@@ -119,19 +119,26 @@ require the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`. When that token is:
 - **present + healthy** — Tier 0 builds/edits the workflow directly via the internal API.
 - **unread / misconfigured** (e.g. the token exists in a store the process did not resolve, or a
   key-name/env-store mismatch) — BUILD falls to **Tier 4: Skill 6's GATED, MANAGED Automations builder**
-  (the designated path — `06-ghl-install-pages/tools/ghl_workflow_builder.py`, routed through the
-  `browser_manager.sh` singleton gateway, using selectors captured LIVE into `tools/gates.json` /
-  `SELECTORS-LIVE-automations.md` — NEVER bare agent-browser freehand at `app.gohighlevel.com`), and the
+  (the designated path, IMPLEMENTED — `06-ghl-install-pages/tools/ghl_workflow_builder.py`, routed through the
+  `browser_manager.sh` singleton gateway, resolving its steps from the `automations_builder_gates` registry
+  in `tools/gates.json` — NEVER bare agent-browser freehand at `app.gohighlevel.com`), and the
   owner is nudged: "I need you to grab the Convert and Flow token to build workflows directly." Nothing is
   silent.
-  > **Tier-4 builder implementation status (P3-08):** the guard that protects this path is LIVE NOW —
-  > `44-convert-and-flow-operator/` is a scan root of `scripts/guard-agent-browser-managed.sh`, so any
-  > unmanaged agent-browser spawn planted here (including a first Tier-4 implementation that bypasses the
-  > singleton gateway) FAILS CI (P3-08 step 1, pre-emptive). The concrete `ghl_workflow_builder.py` +
-  > live-captured Automations DOM gates land under Skill 6 via a LIVE capture pass on the operator's own
-  > GHL location — Skill 6's "NO invented CSS is shipped as fact" law forbids shipping selectors captured
-  > any other way, so the gates are NOT fabricated ahead of that capture. Until it lands, the human-in-loop
-  > Build-with-AI paste (Skill 41 Layer 0) remains the no-token fallback for workflow builds.
+  > **Tier-4 builder implementation status (P3-08):** the HARNESS is BUILT and unit-tested —
+  > `06-ghl-install-pages/tools/ghl_workflow_builder.py` drives the Automations builder end-to-end through
+  > the `browser_manager.sh` singleton gateway (guaranteed teardown, reaper backstop) and REFUSES
+  > (`MissingGateError`) if a required gate is absent rather than freehand-navigate. Proof:
+  > `06-ghl-install-pages/tests/test_ghl_workflow_builder.py` drives a **token-unset** build through the
+  > gated path, quotes the built workflow id, and asserts zero-orphan teardown; `python3
+  > 06-ghl-install-pages/tools/ghl_workflow_builder.py --selftest` is the runnable one-liner. The Automations
+  > STEP SELECTORS ship `status: runtime` (accessibility role/name find hints the harness resolves against
+  > the live DOM) — Skill 6's "NO invented CSS is shipped as fact" law forbids asserting them as captured, so
+  > a live-capture hardening pass on the operator's own GHL location flips each to `captured` in
+  > `SELECTORS-LIVE-automations.md` (the ordinary runtime-gate follow-on). The CI guard protecting this path
+  > is live — `06-ghl-install-pages/` and `44-convert-and-flow-operator/` are scan roots of
+  > `scripts/guard-agent-browser-managed.sh`, so any unmanaged spawn here FAILS CI (P3-08 step 1). When even
+  > the managed browser session cannot seed, the human-in-loop Build-with-AI paste (Skill 41 Layer 0) is the
+  > fallback.
 - **genuinely dead / revoked / expired** — Tier 4 does NOT help (see the token-circularity note below);
   route to `06-ghl-install-pages/tools/ghl_auth.py`'s gated Tier-2 email-2FA self-heal, which mints a
   fresh token so the next run is Tier 0 again.

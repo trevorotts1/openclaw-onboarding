@@ -671,7 +671,7 @@ If a specific week's content demands a more detailed, text-heavy LinkedIn carous
 | Slide 4 | Day 3 key insight (1-2 sentences + visual) |
 | Slide 5 | Day 4 key insight (1-2 sentences + visual) |
 | Slide 6 | Teaser slide. "Days 5-7 are still coming. You don't want to miss what's next." |
-| Slide 7 | CTA slide. "Follow us for the rest of the series. Check the comments to take the next step with [Brand Name]." |
+| Slide 7 | CTA slide. PRIMARY DM CTA first, comment link as backup: "Follow us for the rest of the series. **Send us a message to take the next step with [Brand Name]** — and the link is also in the comments." (DM → GHL Conversations → Skill 38 answers; §12/§19.) |
 
 ### Carousel Image Costs
 
@@ -1506,7 +1506,7 @@ caf --json social accounts            # GET /social-media-posting/{locationId}/a
 CAF_APPROVAL_TOKEN="skill35-social-approved" \
   caf social create-post \
     --account-id "<social_account_id>" \
-    --text       "<full post copy incl. the 'check the comments' directive>" \
+    --text       "<full post copy incl. the PRIMARY 'send us a message' DM CTA + the 'link is in the comments' backup directive (§12/§19)>" \
     --media-url  "<public CDN url>" \
     --schedule   "2026-04-06T13:00:00.000Z"
 # --account-id and --media-url are repeatable (one flag per id / per media url).
@@ -1649,7 +1649,7 @@ Body:
   "socialMediaAccountIds": ["{facebook_account_id}", "{instagram_account_id}", "{linkedin_account_id}"],
   "status": "scheduled",
   "scheduledAt": "2026-04-06T13:00:00.000Z",
-  "summary": "One of Seven: [Post content here with full zones, pitch, cliffhanger]\n\nCheck the comments to schedule your conversation with a [Brand Name] specialist.",
+  "summary": "One of Seven: [Post content here with full zones, pitch, cliffhanger]\n\nSend us a message to schedule your conversation with a [Brand Name] specialist — the link is also in the comments.",
   "mediaUrls": ["https://storage.kie.ai/generated/image-day1-4x5.png"],
   "tags": ["social-media-planner", "week-14", "day-1"]
 }
@@ -1670,7 +1670,7 @@ Body:
   "socialMediaAccountIds": ["{facebook_account_id}", "{instagram_account_id}"],
   "status": "scheduled",
   "scheduledAt": "2026-04-10T13:00:00.000Z",
-  "summary": "[Carousel caption with swipe CTA and check the comments directive]",
+  "summary": "[Carousel caption with swipe CTA, a PRIMARY 'send us a message' DM CTA, and the 'link is also in the comments' backup directive]",
   "mediaUrls": [
     "https://storage.kie.ai/generated/carousel-slide1.png",
     "https://storage.kie.ai/generated/carousel-slide2.png",
@@ -1701,7 +1701,7 @@ Body:
   "socialMediaAccountIds": ["{tiktok_account_id}", "{instagram_account_id}", "{youtube_account_id}"],
   "status": "scheduled",
   "scheduledAt": "2026-04-06T13:00:00.000Z",
-  "summary": "[Video post caption with check the comments directive]",
+  "summary": "[Video post caption with a PRIMARY 'send us a message' DM CTA and the 'link is also in the comments' backup directive]",
   "mediaUrls": ["https://storage.example.com/video-day1-9x16.mp4"],
   "tags": ["social-media-planner", "week-14", "video", "day-1"]
 }

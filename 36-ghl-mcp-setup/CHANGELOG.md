@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.15] - 2026-07-12 — P3-08 QC-fix: RULE 6 Tier-4 no longer routes to a missing file — the gated builder is now IMPLEMENTED
+
+### Changed
+- **RULE 6 BUILD-path implementation status corrected.** The Tier-4 cell routes to `06-ghl-install-pages/tools/ghl_workflow_builder.py`, which now EXISTS as a built, unit-tested harness (drives the Automations UI through the `browser_manager.sh` singleton gateway; refuses with `MissingGateError` rather than freehand-navigate). Removed the "until then, Skill 41 Layer 0 is the fallback" hedge that implied the designated path was unbuilt. The Automations step selectors ship `status: runtime` (role/name find hints resolved against the live DOM, per Skill 6's no-invented-CSS law); the live-captured selectors in `SELECTORS-LIVE-automations.md` are the ordinary runtime-gate hardening follow-on. Runnable proof cited: `--selftest` + `tests/test_ghl_workflow_builder.py`.
+
+---
+
 ## [v1.2.14] - 2026-07-11 — P3-08: RULE 6 BUILD-path Tier-4 workflow-build routes through Skill 6's GATED managed builder (not bare agent-browser); token-circularity encoded
 
 ### Changed
