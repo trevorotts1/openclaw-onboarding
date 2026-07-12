@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "skill": "anthology-engine",
   "skill_number": 59,
-  "skill_version": "0.1.1",
+  "skill_version": "0.1.7",
   "schema_version": "1",
   "ledger_schema_version": 1,
   "authoring_core": "54-anthology-writer",

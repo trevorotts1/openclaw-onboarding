@@ -1,5 +1,35 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+### P3-03 QC fix-loop round 2 -- SKILL.md frontmatter `version:` lockstep (0.1.5 -> 0.1.7, 2026-07-12)
+
+**FIX-LOOP addendum (round 2):** the round-1 fix-loop rolled `skill-version.txt`
+0.1.6 -> 0.1.7 but left `SKILL.md`'s frontmatter `version:` at the stale `0.1.5`,
+which put THIS skill's own directory in violation of the two mechanisms it ships
+and relies on: `verify.sh`'s own "version agreement" check (`skill-version.txt`
+must equal the `SKILL.md` frontmatter `version:`), which exited 4 with
+`DRIFT: skill-version.txt=0.1.7 != SKILL.md=0.1.5`; and the repo-wide CI gate
+`.github/workflows/skill-frontmatter-version-guard.yml`, which runs
+`scripts/qc-assert-skill-frontmatter-version.sh` and named `59-anthology-engine`
+in its INVARIANT VIOLATED output. Both are now confirmed clean for this skill:
+`verify.sh` reports `PASS`, and the frontmatter gate no longer lists
+`59-anthology-engine` among its violations. Per the same `62daa0f3` lockstep
+precedent this changelog already invokes, and per SUPER-SPEC 2.6 (SKILL.md
+frontmatter is a lockstep version marker alongside `skill-version.txt`): rolled
+`SKILL.md` `version:` 0.1.5 -> 0.1.7 to match `skill-version.txt`.
+
+Also rolled `ENGINE-MANIFEST.json`'s `skill_version` field (0.1.1 -> 0.1.7) for
+full three-marker agreement. This third marker is pre-existing drift dating to
+before this branch (it was never kept in lockstep with the other two), is not
+read by `verify.sh`'s version-agreement check, and is not checked by any CI gate
+found in this repo -- so it was not a QC blocker -- but the same lockstep
+precedent applies to it once noticed, so it is rolled here for consistency.
+
+Unrelated, pre-existing drift on 7 other skills (49, 50, 53, 54, 55, 56, 57) was
+found by the same CI gate scan and is OUT OF SCOPE for this unit: none of those
+skill directories were touched by this branch (confirmed via
+`git diff main..HEAD --stat`), and the drift is present on `main` independent of
+this branch's changes.
+
 ### P3-03 (c)4 -- G23 confirmed + regression-locked: MISSION_CONTROL_URL env resolution (skill-version 0.1.6 -> 0.1.7, 2026-07-12)
 
 **FIX-LOOP addendum (2026-07-12):** the prior QC pass on this unit failed on two
