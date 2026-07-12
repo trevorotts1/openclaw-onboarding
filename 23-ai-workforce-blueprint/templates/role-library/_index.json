@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "19.51.0",
+  "version": "19.52.0",
   "total_roles": 433,
   "total_departments": 35,
   "departments": {
@@ -6111,7 +6111,7 @@
     {
       "slug": "deep-research-specialist-sales",
       "dept": "sales",
-      "title": "Deep Research Specialist — Sales",
+      "title": "Deep Research Specialist \u2014 Sales",
       "role_type": "specialist",
       "word_count": 8639,
       "sop_count": 8,
@@ -6207,7 +6207,7 @@
     {
       "slug": "qc-specialist-sales",
       "dept": "sales",
-      "title": "QC Specialist — Sales",
+      "title": "QC Specialist \u2014 Sales",
       "role_type": "specialist",
       "word_count": 8703,
       "sop_count": 8,
@@ -7503,7 +7503,7 @@
     {
       "slug": "CHANGELOG-RESCUE-DEPT",
       "dept": "rescue-rangers",
-      "title": "Rescue Rangers Department — Build Log",
+      "title": "Rescue Rangers Department \u2014 Build Log",
       "role_type": "specialist",
       "word_count": 365,
       "sop_count": 0,
@@ -7519,7 +7519,7 @@
     {
       "slug": "RELAY-BRAIN-PATCH",
       "dept": "rescue-rangers",
-      "title": "Relay Brain Patch — nine-field validation + `status` return leg (DEFERRED live step)",
+      "title": "Relay Brain Patch \u2014 nine-field validation + `status` return leg (DEFERRED live step)",
       "role_type": "specialist",
       "word_count": 569,
       "sop_count": 0,

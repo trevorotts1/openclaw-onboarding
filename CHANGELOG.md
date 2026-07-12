@@ -1,3 +1,36 @@
+## [v19.52.0]  -  2026-07-12  -  fix(routing): P2-07 — mc_board.py never silently drops an unrecognized department_slug
+
+Fixes the shared `mc_board.py` family (Skills 49/50/53/54/55/56/57 — Signature
+Funnel, Email Engine, Book Writer, Anthology Writer, Product Bio, Sales Page
+Assets, Social Media In-a-Box) so a Command Center board-routing bug can never
+silently swallow a bad department slug again. Repo-only; no live-box change
+here beyond the shared script content each already carries.
+
+- **`mc_board.py` — an UNRECOGNIZED `department_slug`** (a typo, a regressed
+  hardcoded fake slug like the historical `funnels`/`books`/`email` family, or
+  an empty string) is now caught client-side before the ingest POST, logged
+  loudly to stderr, and RE-ROUTED to the `general-task` catch-all department
+  with the original bad slug annotated on the card description and on
+  `begin_run`'s initial board event note. Never silently dropped. Recognized
+  slugs (the 22 mandatory + 6 universal-primary floor departments + known
+  variant aliases, mirrored from
+  `23-ai-workforce-blueprint/scripts/department-floor.py:116-158`) pass
+  through unchanged. Applied identically across all seven `mc_board.py`
+  copies (49/50/53/54/55/56/57).
+- **`test_cc_contract.py`** — new regression cases per skill: an unrecognized
+  slug reroutes to `general-task`, an empty slug reroutes, a known slug and
+  `general-task` itself pass through unchanged, the reroute logs loudly to
+  stderr, and `begin_run`'s initial advance note records the original bad
+  slug as a board-visible event.
+- **Per-skill CHANGELOG + `skill-version.txt` bumps** — 49→1.3.3, 50→1.1.3,
+  53→1.1.5, 54→1.4.1, 55→1.0.11, 56→1.4.2, 57→0.2.10.
+- **Version roll** — repo rolled v19.51.0 → **v19.52.0** via
+  `scripts/bump-version.sh` (all 11 markers in lockstep; content-manifest
+  `--check` already passing, no role/SOP content touched by this merge so no
+  restamp was needed). Annotated tag `v19.52.0` cut on the release merge
+  commit. Merged `fix/general-task-catchall` (1 commit) as the serial
+  onboarding writer, `--no-ff`.
+
 ## [v19.51.0]  -  2026-07-12  -  feat(routing): P1-04 trust-engine requester stamp — the CEO passes the originating client chat id when routing a client message
 
 Onboarding side of P1-04 (the #1 client-complaint "report-back loop"; the Command Center side is `blackceo-command-center` branch `feat/v5.18-trust-engine`). Repo-only; no live-box change here. No client names, no secret values, no roster human names in the diff.
