@@ -607,7 +607,7 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 2 (media library requirements) and Section 6 (delivery)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md PIPELINE-MANIFEST.json (`produces_artifact` paths) + director-of-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (media library requirements) and Section 6 (delivery)
 - `29-ghl-convert-and-flow/references/medias.md` -- the authoritative Tier-3 GHL media upload reference (endpoint, LOCATION-PIT auth, multipart fields, the folder-create-returns-404 caveat, the `url` response field)
 - GHL API documentation (current media library endpoints)
 

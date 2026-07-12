@@ -22,7 +22,7 @@ You produce one artifact, the DESIGN SYSTEM SPEC (working/typography/design_syst
 
 You think typography before prompts. The Slide Image Creator is a renderer of your decisions, not the inventor of them. When you finish, every slide already has a named archetype, a named type treatment, a named text-anchor position, and a price-typography rule (if it is a price slide). The image prompt writer fills in the photo and the words; you decided the type architecture.
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Sections 4.3 rule 16, 7.1, 7.2, 7.3, 7.4).
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (rule 16); presentation-design-system/ cluster SOP-DESIGN-01..04 (typography, archetypes, layout, logo — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk).
 
 ### What This Role Is NOT
 
@@ -84,7 +84,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 6. Quarterly Operations
 
-- Re-read master SOP Sections 7.1 to 7.4 and the gold-standard reference type spec for version changes. If the proven type system has evolved (new weight, new price treatment), update the token system here.
+- Re-read the presentation-design-system/ cluster (SOP-DESIGN-01..04 — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk) and the gold-standard reference type spec for version changes. If the proven type system has evolved (new weight, new price treatment), update the token system here.
 - Audit which archetypes the image model renders most reliably and which it garbles; feed the finding to the Slide Image Creator and adjust the rotation weighting.
 
 ---
@@ -115,7 +115,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - working/typography/type_layout_system.md (write: the deterministic font-floor tokens — min_body_pt, type_scale_steps, min_contrast_ratio — parsed by the AF-FONT-FLOOR coded gate; mandatory once a design system exists)
 - working/typography/system_registry.json (maintain: per-client design system registry)
 - working/typography/lessons.md (write: recurring design-craft findings)
-- master SOP Sections 7.1 to 7.4 (archetypes, prompt design spec, strikethrough handling)
+- presentation-design-system/ cluster SOP-DESIGN-01..04 (archetypes, prompt design spec, strikethrough handling — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk)
 - openclaw message send (Director notifications, never raw API)
 
 ---
@@ -167,9 +167,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Purpose:** Kill the cookie-cutter chassis (the reference failure case: the identical five-part vertical stack on nearly every slide; a later revision rotated image position but kept a rigid recurring chassis). Force a real rotation of WORD-BLOCK placement, not just image position.
 
-**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per master SOP Section 7.2). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
+**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
 
-**Inputs:** master SOP Section 7.2 (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
+**Inputs:** SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
 
 **Steps:**
 1. Pull the five archetypes (A1 full-bleed photo with overlay; A2 photo one side, text opposite; A3 photo-top, data-bottom; A4 type-dominant punch; A5 portrait/selfie). Confirm definitions verbatim from Section 7.2.
@@ -202,12 +202,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **The hard rule:** Every slide tagged LADDER (ANCHOR, DROP1, DROP2, DROP3, FINAL) MUST render under the same three-part price-typography system: (1) the LIVE price in a metallic-gold gradient hero numeral with a soft glow; (2) every DEAD (superseded) price struck through with a DRAWN gold diagonal double-strike, shown cumulatively; (3) the price numeral is the hero of the slide (largest type element), per master SOP rule "numbers are heroes." The system is identical across all ladder slides; only which price is live changes.
 
-**Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), master SOP Section 7.4 (strikethrough handling).
+**Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (strikethrough handling).
 
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
 2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
-3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference master SOP Section 7 strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**
@@ -366,7 +366,7 @@ design_system.json and design_system.md exist, audit passed, Slide Image Creator
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Sections 7.1 to 7.4: archetypes, prompt spec, strikethrough)
+- presentation-design-system/ cluster SOP-DESIGN-01..04 (archetypes, prompt spec, strikethrough — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk)
 - The gold-standard reference type spec (5-archetype system, locked Montserrat weight ladder, gold-gradient/glow/strikethrough, logo bottom-right ~9% via image-to-image)
 - working/brand/style_block.md (the locked brand identity for this client)
 
@@ -395,7 +395,7 @@ When the STYLE BLOCK is no-people, the type system carries more weight. Lean A4 
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. Master SOP Sections 7.1 to 7.4 (archetypes, prompt spec, strikethrough) change.
+1. The presentation-design-system/ cluster SOP-DESIGN-01..04 (archetypes, prompt spec, strikethrough — PRESENTATION-MASTER-DOCTRINE.md §4 crosswalk) changes.
 2. The Brand Steward STYLE BLOCK format changes (new weight, new color role).
 3. Phase 5 design-craft QC failures (cookie-cutter, flat price beats) exceed 5 percent of slides in any deck.
 4. The proven gold-standard reference type system is updated.

@@ -129,7 +129,7 @@ Read the master SOP for any updates to the slide copy format, hook mechanics, or
 - working/copy/proof_audit.txt (write -- proof integrity gate, SOP 9.3)
 - working/copy/mode_b_proposals.json (write -- Mode B only: proposed improvements + flagged typo fixes, SOP 9.4)
 - STYLE BLOCK from Brand Steward (read for brand voice and copy tone)
-- master SOP Section 4 (Hormozi pitch mechanics) and Section 4.3 (18-point Pitch Doctrine, applied at writing time per SOP 9.7)
+- SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) (Hormozi pitch mechanics) and SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (18-point Pitch Doctrine, applied at writing time per SOP 9.7)
 - **Signature Presentation authoring (Skill 51).** For `deck_type: signature_presentation`, write to the locked frame template `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md` under the **Signature Presentation Architect** (`signature-presentation-architect.md`): phase label slide first, N.E.E.I.T. / 4-Quadrant beats, the frame's teaching devices, `CASE_STUDY` tags (<= 2), and a `SUGGESTED_IMAGE` field per slide recorded in `working/copy/sp_structure.json`; Phase 3 (Transformational Teaching) is FORBIDDEN to pitch. The **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`) grades it. Additive: non-signature decks author exactly as above.
 
 ---
@@ -159,8 +159,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Open slides_copy.md. Write a file header: `# Slide Copy -- [DECK_SLUG] -- Draft 1`.
-1a. Walk the canonical arc (master SOP Section 4.2A, THE BLACKCEO SIGNATURE WEBINAR ARC). arc_allocation.json carries each slot's arc-section label (A through J): A. Hook Open, B. Care / See-Yourself, C. The Promise, D. Story, E. Teaching, F. Proof (Who Says So + Wall of Wins), G. The Offer (gradual spread ladder), H. Guarantee, I. Scarcity / Close, J. Hook Callback. Write each slide to do its arc-section's beat (the Section 4.2A table names the components for each, including the ten required components of Section 4.4), and carry the connective tissue across slides: open ON the hook (A) and sing it from the first verse toward the ~10x cadence; care about the audience before any credentials (B); pitch the promise not the product and weave the light pitch from the front (C); demonstrate expertise not charisma and quote names without credentials (D); one big idea per slide, Point-Story-Demo, appetizer-not-dinner, with the hook refraining after every proof (E, F); on the offer, the ANCHOR is a value plant not a drop, every drop is earned and built up and ADDS value with proof between drops and the FINAL below the whole ladder (G); reverse the risk (H); close on real scarcity (I); reprise the hook on the final substantive slide (J). Vary the text anchor so eyes do not fade out, and never put the presenter's spoken words on the slide.
-2. For each slide in arc_allocation order, write one slide block using this EXACT template (mirrors master SOP Section 5.2 -- every field is mandatory):
+1a. Walk the canonical arc (SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4), THE BLACKCEO SIGNATURE WEBINAR ARC). arc_allocation.json carries each slot's arc-section label (A through J): A. Hook Open, B. Care / See-Yourself, C. The Promise, D. Story, E. Teaching, F. Proof (Who Says So + Wall of Wins), G. The Offer (gradual spread ladder), H. Guarantee, I. Scarcity / Close, J. Hook Callback. Write each slide to do its arc-section's beat (SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) table names the components for each, including the ten required components of director-of-presentations SOP (`checklist_of_promises`) + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)), and carry the connective tissue across slides: open ON the hook (A) and sing it from the first verse toward the ~10x cadence; care about the audience before any credentials (B); pitch the promise not the product and weave the light pitch from the front (C); demonstrate expertise not charisma and quote names without credentials (D); one big idea per slide, Point-Story-Demo, appetizer-not-dinner, with the hook refraining after every proof (E, F); on the offer, the ANCHOR is a value plant not a drop, every drop is earned and built up and ADDS value with proof between drops and the FINAL below the whole ladder (G); reverse the risk (H); close on real scarcity (I); reprise the hook on the final substantive slide (J). Vary the text anchor so eyes do not fade out, and never put the presenter's spoken words on the slide.
+2. For each slide in arc_allocation order, write one slide block using this EXACT template (mirrors slide-copywriter SOP 9.x + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) -- every field is mandatory):
    ```
    ---
    SLIDE [N]
@@ -301,10 +301,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.7 -- Doctrine Application (the writing-time checklist)
 
-**When to run:** WHILE writing, on every slide as you draft it. This is not a post-write audit -- it is the doctrine you hold in your hands as you write each line. Source authority: master SOP Section 4.3 (the BlackCEO Pitch Doctrine). Copy QC scores against these same rules (Phase 1Q criterion 12), so building them in as you write is how you pass the gate the first time.
+**When to run:** WHILE writing, on every slide as you draft it. This is not a post-write audit -- it is the doctrine you hold in your hands as you write each line. Source authority: SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (the BlackCEO Pitch Doctrine). Copy QC scores against these same rules (Phase 1Q criterion 12), so building them in as you write is how you pass the gate the first time.
 
 **Inputs:**
-- master SOP Section 4.3 (the pitch doctrine)
+- SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (the pitch doctrine)
 - intake.json (TONE, OFFER_STACK, the client's named methodologies, PRICE_MODE)
 - arc_allocation.json (section boundaries, so per-section rules can be checked)
 - slides_copy.md (the slide you are writing right now)
@@ -523,7 +523,7 @@ A 75-slide deck with the canonical hook "[CANONICAL_HOOK]" placed VERBATIM on ex
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 4 (Hormozi pitch mechanics) and Section 4.3 (18-point Pitch Doctrine)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) (Hormozi pitch mechanics) and SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (18-point Pitch Doctrine)
 - Alex Hormozi, $100M Offers and $100M Leads -- offer copy frameworks
 - Copywriting frameworks: AIDA, PAS, Hormozi value equation
 
@@ -552,7 +552,7 @@ If the client does not want the price revealed until a specific slide (common in
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. Master SOP version increments (especially changes to Section 4 copy mechanics).
+1. Master SOP version increments (especially changes to SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) copy mechanics).
 2. Phase 1Q average score misses 8.5 for 2 consecutive decks.
 3. A new hard limit on slide copy is adopted (currently per master Section 5.1: 9-word headlines, 18-word sub-copy, maximum 3 text blocks per slide, 5 bullets at 7 words, 6 value-stack items at 7 words per name).
 4. The Hormozi framework is superseded by a new operator-approved pitch framework.

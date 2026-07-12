@@ -12,19 +12,19 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 > Engine cross-reference: this role OWNS the Signature Presentation methodology (the Trevor Otts 4-phase arc). Every SOP below is machine-enforced by a fail-closed prover: `51-signature-presentation/scripts/prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py`, wired into `scripts/build_deck.py` as the `_chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch` preflight wrappers (which DEFER for every non-signature deck).
 
-### SOP 9.1 -- The 8 Questions (asked all at once)
+### SOP 9.1 -- The 8 Questions (asked ONE at a time via the REQUIRED driver turn-gate, recorded as ONE atomic block)
 
 **When to run:** first, before any authoring. Routed from the Brainstorming Buddy "signature presentation" trigger.
 
-**Inputs:** the client conversation; `51-signature-presentation/intake/sp-8-questions.json` (the spec).
+**Inputs:** the client conversation; `51-signature-presentation/intake/sp-8-questions.json` (the spec); the REQUIRED turn-gate `deck-intake-driver.py --signature --next` / `--answer <ID> "<TEXT>"`.
 
-**Steps:** deliver q1..q8 + the frame-selection question as ONE message block (never one-per-turn); record answers to `working/copy/sp_intake.json`; set `deck_type: signature_presentation` in `working/copy/intake.json`; seed `offer_token_ledger` from q7 (the offer question).
+**Steps:** interview the owner choice-first (QUICK vs IN-DEPTH), then ask q1..q8 + the frame-selection question ONE AT A TIME through the turn-gate — never free-form and never a wall of questions (dumping two or more questions in one turn, or opening with no quick-vs-in-depth choice, is the `AF-INTAKE-BATCH` conversation autofail, a QC/Healer scan that NEVER gates the build); the driver auto-assembles the answers into ONE atomic RECORD at `working/copy/sp_intake.json` on the final validated answer (that assembled record is what `prove_sp_intake.py` validates as `AF-SP-8Q-SPLIT` — a record-layer gate only, it says nothing about conversation pacing); set `deck_type: signature_presentation` in `working/copy/intake.json`; seed `offer_token_ledger` from q7 (the offer question).
 
 **Outputs:** `working/copy/sp_intake.json` (clears `prove_sp_intake.py`).
 
 **Hand to:** SOP 9.2.
 
-**Failure mode:** AF-SP-8Q-MISSING, AF-SP-8Q-SPLIT, AF-SP-OFFER-UNDECLARED, AF-SP-TYPE-MISMATCH.
+**Failure mode:** Conversation layer: AF-INTAKE-BATCH. Record layer: AF-SP-8Q-MISSING, AF-SP-8Q-SPLIT, AF-SP-OFFER-UNDECLARED, AF-SP-TYPE-MISMATCH.
 
 ### SOP 9.2 -- Frame Selection and Template Load
 

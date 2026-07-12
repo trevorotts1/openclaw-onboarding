@@ -115,7 +115,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Surface-boundary check: grep the slide copy and prompt files to confirm none of the Guide's talking-point text or POINT TO DRIVE HOME lines were copied onto the audience deck. If any appear on the deck, flag to the Director (deck must be corrected) and do not deliver until resolved.
-2. Deliver per master SOP Section 11.4: Mac clients get the PDF copied to their Downloads folder with a clear descriptive name (Presenters_Guide_<DeckTitle>.pdf); the Notion URL is included in the message. If the environment is unclear, ASK where to deliver.
+2. Deliver per SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4): Mac clients get the PDF copied to their Downloads folder with a clear descriptive name (Presenters_Guide_<DeckTitle>.pdf); the Notion URL is included in the message. If the environment is unclear, ASK where to deliver.
 3. Notify the owner via openclaw message send, stating plainly which artifact is which surface: "Two speaker-facing documents are ready. The Presenter's Guide (this PDF and Notion link) is your MAP: what to cover and the point to land on each slide. The Presenter's Speech, coming from [ROLE-20], is the exact words plus an audio demo. The slide deck is what the AUDIENCE sees; the Guide and Speech are only for you."
 4. Verify file existence at every destination (ground truth) before reporting done.
 5. Update working/checkpoints/run_ledger.json: `presenter_guide_phase: "complete"`, with the PDF path and Notion URL.

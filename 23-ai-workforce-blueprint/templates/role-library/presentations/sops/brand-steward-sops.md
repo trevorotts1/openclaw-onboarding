@@ -102,7 +102,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    tonal_contrast: [HIGH / LOW -- high = strong shadow/highlight separation; low = softer, more even tonal range]
    lock: "Every prompt in this deck states TEMPERATURE=[value], SATURATION=[value], TONAL CONTRAST=[value] in a COLOR GRADING comment block. A deck where some images are warm-toned and others are cool-toned is an AUTO-FAIL at QC."
 
-   ARCHETYPES: A1-A5 per master SOP Section 7.2 (delivered separately via SOP 9.3)
+   ARCHETYPES: A1-A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (delivered separately via SOP 9.3)
 
    16:9 ALWAYS. 2K resolution (2560x1440). Never 4:3 or square.
    ```
@@ -200,15 +200,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - working/brand/style_block.md (just completed)
-- master SOP Section 7.2 (the five archetypes A1-A5)
-- master SOP Section 7.5 (the gold-standard exemplar prompt)
+- SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the five archetypes A1-A5)
+- SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (the gold-standard exemplar prompt)
 
 **Steps:**
-1. Confirm that the STYLE BLOCK already carries the note "ARCHETYPES: A1-A5 per master SOP Section 7.2 (delivered separately via SOP 9.3)" in the COLORS/GRAMMAR section.
+1. Confirm that the STYLE BLOCK already carries the note "ARCHETYPES: A1-A5 per SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (delivered separately via SOP 9.3)" in the COLORS/GRAMMAR section.
 2. Prepare an Archetype Palette handoff note for the Slide Image Creator. The note must contain:
-   a. A summary table of all five archetypes (A1-A5) drawn verbatim from master SOP Section 7.2, including Code, Archetype name, Layout definition, and Best for columns.
+   a. A summary table of all five archetypes (A1-A5) drawn verbatim from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4), including Code, Archetype name, Layout definition, and Best for columns.
    b. The full recurring brand grammar device list from the STYLE BLOCK, cross-referenced to the archetype each device appears in most.
-   c. The complete Section 7.5 gold-standard exemplar prompt, verbatim, labeled clearly as: "REQUIRED PRE-READING -- GOLD-STANDARD EXEMPLAR PROMPT (master SOP Section 7.5). Read this before writing a single prompt. Every prompt produced must match this density, this structure, and this level of art direction, adapted to its own slide, archetype, and brand variables."
+   c. The complete SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) gold-standard exemplar prompt, verbatim, labeled clearly as: "REQUIRED PRE-READING -- GOLD-STANDARD EXEMPLAR PROMPT (SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4)). Read this before writing a single prompt. Every prompt produced must match this density, this structure, and this level of art direction, adapted to its own slide, archetype, and brand variables."
 3. Write the handoff note to working/brand/archetype_palette_handoff.md.
 4. Notify the Slide Image Creator that working/brand/archetype_palette_handoff.md is ready and must be read before Phase 2 begins.
 5. Notify the Director that the archetype palette and exemplar handoff has been delivered.

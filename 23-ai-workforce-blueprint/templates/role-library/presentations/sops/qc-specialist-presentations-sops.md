@@ -546,7 +546,7 @@ Re-score the seven Design-Craft dimensions from Phase 3 Prompt QC against the RE
 
 **When to run:** Phase 6 -- after the PPTX Assembly Specialist has assembled the deck. This gate grades the ACTUAL `.pptx` (the deliverable), not the raw Phase 5 PNGs. It is the gap that let a colliding 5-box text stack ship on a prior deck: nobody owned text-vs-image collision, text-over-face, overlay overlap, or finished-artifact contrast on the COMPOSED slide. ROLE-09 owns it now.
 
-**Render step (always first):** an agent cannot eyeball a PPTX directly. Render it to inspectable pages exactly per the master SOP Section 11.3:
+**Render step (always first):** an agent cannot eyeball a PPTX directly. Render it to inspectable pages exactly per MASTER-QC-AUTOFAIL-RULESET.md (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4):
 ```
 soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.pdf working/qc/finalrender/page
 ```

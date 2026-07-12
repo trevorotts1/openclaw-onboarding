@@ -1223,6 +1223,44 @@ def test_postflight_gate():
             f"  Got:      {sorted(actual_keys)}")
     print(f"POSTFLIGHT-H (key set exact) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-H' in f] else 'FAIL'}")
 
+    # --- Sub-test I: P3-01(c)5 — byte-floor constants RECONCILED to doctrine ---
+    # (presenters-speech-writer.md / sops/presenters-speech-writer-sops.md
+    # AF-BUNDLE-COMPLETE: "HTML >= 20,000 bytes, PDF >= 3,000 bytes" — the SAME
+    # numbers as build_teleprompter.py's TELEPROMPTER_MIN_BYTES and
+    # presenters_speech_pdf.py's PDF_MIN_BYTES). DELIVERABLES_REQUIRED previously
+    # drifted to speech_pdf=20_480 / teleprompter_html=10_240 — neither doctrine number.
+    speech_pdf_spec = next(s for s in build_deck.DELIVERABLES_REQUIRED if s["key"] == "speech_pdf")
+    tele_spec = next(s for s in build_deck.DELIVERABLES_REQUIRED if s["key"] == "teleprompter_html")
+    if speech_pdf_spec["min_bytes"] != 3_000:
+        fails.append(f"POSTFLIGHT-I: speech_pdf min_bytes should be 3_000 (doctrine), got {speech_pdf_spec['min_bytes']}")
+    if tele_spec["min_bytes"] != 20_000:
+        fails.append(f"POSTFLIGHT-I: teleprompter_html min_bytes should be 20_000 (doctrine), got {tele_spec['min_bytes']}")
+
+    # I1: a 5,000-byte speech_pdf — above the doctrine floor (3,000) but below the
+    # OLD drifted ledger floor (20,480) — must now PASS the gate.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    (bundle_dir / build_deck._expand_filename(speech_pdf_spec["filename"], slug)).write_bytes(
+        _valid_bytes_for("speech_pdf", 5_000))
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"POSTFLIGHT-I1: 5,000-byte speech_pdf (above doctrine floor) should PASS, got exit({exc.code})")
+    print(f"POSTFLIGHT-I1 (pdf 5KB pass) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I1' in f] else 'FAIL'}")
+
+    # I2: a 15,000-byte teleprompter_html — above the OLD drifted ledger floor
+    # (10,240) but below the doctrine floor (20,000) — must now FAIL the gate.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    (bundle_dir / build_deck._expand_filename(tele_spec["filename"], slug)).write_bytes(
+        _valid_bytes_for("teleprompter_html", 15_000))
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-I2: 15,000-byte teleprompter_html (below doctrine floor) should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-I2: 15,000-byte teleprompter_html should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-I2 (html 15KB fail) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I2' in f] else 'FAIL'}")
+    print(f"POSTFLIGHT-I (byte-floor doctrine reconcile) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-I' in f] else 'FAIL'}")
+
     print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
     return fails
 

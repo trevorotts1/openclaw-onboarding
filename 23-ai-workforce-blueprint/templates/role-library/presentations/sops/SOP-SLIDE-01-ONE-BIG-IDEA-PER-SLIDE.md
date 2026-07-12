@@ -1,7 +1,7 @@
 # SOP-SLIDE-01: ONE BIG IDEA PER SLIDE
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 9, Section 5.1, criterion 1)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 9, SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4), criterion 1)
 **Owning roles at write time:** Director of Presentations (arc allocation and the hard splits), Slide Copywriter (per-slide enforcement)
 **Owning role at render time:** Slide Image Creator (renders only the copy blocks)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-OBI, below)

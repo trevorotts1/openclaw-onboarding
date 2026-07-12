@@ -22,7 +22,7 @@
    - **Your Transformational Teaching — Slides 25–60** (Phase 3)
    - **Your Purpose Pitch — Slides 61–100** (Phase 4)
 6. Do NOT start writing until the **8 Questions** have been asked.
-7. Ask all **8 Questions at one time**.
+7. **Ask one question at a time** — offer a quick-vs-in-depth choice first, then ask exactly one of the 8 Questions per turn and wait for the answer before sending the next. Once every answer is gathered, commit them as **one atomic record**.
 8. Once answered, write **all slides at one time**.
 9. Review "Important things from Trevor Otts Methodology" before writing and stay in alignment.
 10. **Label each phase with its name + purpose** before writing that phase's slides. (e.g., "Phase 2 – Crafting Your Personal Story – Intent is to tell your story in a captivating, compelling way that connects with your audience.")
@@ -31,7 +31,7 @@
 13. Always draw from the "Examples of completed Signature Presentations" for variation/style — every deck feels unique while following the 4-phase structure. **Pay special attention to the ending of Example 3.**
 14. If a brand bio / product bio / personal bio / tone-style was previously shared, write in **harmony** with it.
 
-## THE 8 QUESTIONS (ask all at once, before writing)
+## THE 8 QUESTIONS (asked one at a time, before writing; recorded as one atomic block)
 1. What is the title of your Signature Presentation?
 2. Do you want me to provide other possible titles before I start writing?
 3. Any specific pain points to address in the avatar section?

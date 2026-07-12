@@ -527,7 +527,7 @@ The client-facing last mile is enforced MECHANICALLY, not just by following SOPs
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 11.4 (Delivery)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) (Delivery)
 - `29-ghl-convert-and-flow/references/medias.md` -- the authoritative Tier-3 GHL media upload reference (endpoint, LOCATION-PIT auth, multipart fields, the folder-create-returns-404 caveat, the `url` response field)
 - GHL API documentation (current media library and upload endpoints)
 
@@ -561,7 +561,7 @@ If the client box_type is not mac, you ask for the delivery destination, and the
 1. GHL API changes its upload or file-retrieval endpoints or authentication method.
 2. Google Drive API changes its upload or metadata endpoints.
 3. A new delivery channel is added (email, Dropbox, S3, etc.).
-4. The master SOP Section 11.4 (Delivery) is updated.
+4. The SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) (Delivery) is updated.
 5. The openclaw message send API or channel routing changes.
 6. The operator explicitly requests a revision.
 7. A Devil's Advocate challenge for this role gets accepted 3+ times.

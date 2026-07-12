@@ -22,7 +22,7 @@ You exist because the audience-facing deck is deliberately sparse (one big idea 
 
 This is a SPEAKER-FACING deliverable. Nothing you write ever lands on the audience-facing deck. The deck is the AUDIENCE surface; the Guide and the Speech are the SPEAKER surface. Keeping content on the correct surface is the cardinal rule the reference failure case broke (speaker lines, doctrine, and meta-telegraphing leaked onto the audience face). You are part of the fix: the speaker content has a proper home now, and it is your Guide and the Speech, never the slide.
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 15, Section 5.2 PRESENTER NOTE).
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 15, slide-copywriter SOP 9.x + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) PRESENTER NOTE).
 
 ### What This Role Is NOT
 
@@ -61,7 +61,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 4. Run SOP 9.2 (Render the Beautiful PDF, font never below 12).
 5. Run SOP 9.3 (Publish the Notion Doc).
 6. Run SOP 9.4 (Surface-Boundary Audit and Delivery).
-7. Write outputs to working/presenter-guide/ and deliver per master SOP Section 11.4 (Mac clients: Downloads folder, clearly labeled).
+7. Write outputs to working/presenter-guide/ and deliver per SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) (Mac clients: Downloads folder, clearly labeled).
 
 ---
 
@@ -84,7 +84,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 6. Quarterly Operations
 
-- Re-read master SOP Section 4.3 (pitch doctrine) and Section 5.2 (PRESENTER NOTE format) for version changes; update the outline structure if the doctrine evolved.
+- Re-read SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine) and slide-copywriter SOP 9.x + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format) for version changes; update the outline structure if the doctrine evolved.
 - Compare the Guide structure against the Presenter Coach's talk track to ensure they complement (Guide = points to cover; Speech and talk track = words to say) and never contradict.
 
 ---
@@ -229,7 +229,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Surface-boundary check: grep the slide copy and prompt files to confirm none of the Guide's talking-point text or POINT TO DRIVE HOME lines were copied onto the audience deck. If any appear on the deck, flag to the Director (deck must be corrected) and do not deliver until resolved.
-2. Deliver per master SOP Section 11.4: Mac clients get the PDF copied to their Downloads folder with a clear descriptive name (Presenters_Guide_<DeckTitle>.pdf); the Notion URL is included in the message. If the environment is unclear, ASK where to deliver.
+2. Deliver per SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4): Mac clients get the PDF copied to their Downloads folder with a clear descriptive name (Presenters_Guide_<DeckTitle>.pdf); the Notion URL is included in the message. If the environment is unclear, ASK where to deliver.
 3. Notify the owner via openclaw message send, stating plainly which artifact is which surface: "Two speaker-facing documents are ready. The Presenter's Guide (this PDF and Notion link) is your MAP: what to cover and the point to land on each slide. The Presenter's Speech, coming from [ROLE-20], is the exact words plus an audio demo. The slide deck is what the AUDIENCE sees; the Guide and Speech are only for you."
 4. Verify file existence at every destination (ground truth) before reporting done.
 5. Update working/checkpoints/run_ledger.json: `presenter_guide_phase: "complete"`, with the PDF path and Notion URL.
@@ -346,7 +346,7 @@ DROP1 cue: say "$2,500, because you showed up live today," land it, then GO QUIE
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.3 rule 15, Section 5.2 PRESENTER NOTE, Section 11.4 delivery)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 15, slide-copywriter SOP 9.x + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) PRESENTER NOTE, SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md Section 9a (PRESENTATION-MASTER-DOCTRINE.md §4) delivery)
 - presenter-coach.md (ROLE-14) -- the talk track structure the Guide complements
 - working/copy/slides_copy.md and arc_allocation.json (the deck this Guide maps)
 
@@ -375,7 +375,7 @@ Optimize the PDF for printing (high-contrast, no dark backgrounds that drain ink
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. Master SOP Section 5.2 (PRESENTER NOTE format) or Section 4.3 (doctrine) changes.
+1. slide-copywriter SOP 9.x + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format) or SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (doctrine) changes.
 2. The font floor policy changes (currently 12pt minimum).
 3. Post-webinar feedback shows owners consistently want more or less direction in the Guide.
 4. The Notion structure standard changes.

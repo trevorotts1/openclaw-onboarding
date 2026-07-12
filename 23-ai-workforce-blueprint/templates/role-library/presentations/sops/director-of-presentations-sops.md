@@ -81,7 +81,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Write the ECHO: a 3-5 sentence paragraph in plain language that restates the deck's mission. Format: "This deck is for [AUDIENCE]. It presents [OFFER] at [FINAL_PRICE]. It will [TRANSFORMATION_PROMISE]. The owner's primary goal is [GOAL]. The audience's biggest objection is [OBJECTION]."
-2. **Declare the MODEL MANIFEST** in the echo (per master SOP Section 9.0). Include it as a named block in the echo message and in the PRD:
+2. **Declare the MODEL MANIFEST** in the echo (per SOP-IMG-01-KIE-CALL-MECHANICS + director-of-presentations SOP 9.x + build_deck.py MODEL_* pins (PRESENTATION-MASTER-DOCTRINE.md §4)). Include it as a named block in the echo message and in the PRD:
    ```json
    {
      "image_platform": "kie.ai",
@@ -154,7 +154,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - master SOP slide-math table (see below)
 
 **Steps:**
-1. If the client provided a duration in minutes (not a slide count), convert using the master SOP table (Section 4). This table governs and cannot be overridden by agent judgment:
+1. If the client provided a duration in minutes (not a slide count), convert using the master SOP table (SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4)). This table governs and cannot be overridden by agent judgment:
 
    | Duration | Target slide count | HARD MAX |
    |----------|--------------------|----------|
@@ -174,7 +174,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 2. **Floor overrides ceiling (anti-compression) — UNLESS the client fixed the count.** When the client stated an explicit `client_requested_slide_count`, that exact number is `SLIDE_COUNT_FINAL`, full stop — it overrides BOTH the duration target/cap AND the `source_slide_count` anti-compression floor (an explicit client instruction to set an exact length is the client's own choice, even when it is below the source). Otherwise (no explicit count): compute `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`; the output deck MUST contain AT LEAST `source_slide_count` slides; this floor OVERRIDES the duration-based target/cap and the 90 Mode-A figure; never delete a client slide to hit a duration cap; Mode B is ADD-ONLY: improve and expand, never reduce below `source_slide_count`. (Mode A has `source_slide_count == 0`, so the duration target/cap governs unchanged.) Record `slide_count_final` in mission_prd.json.
 
-3. Allocate the arc using the master SOP Section 4.1 worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
+3. Allocate the arc using SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE + director-of-presentations SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
 
    | Arc section | 45 slides | 60 slides | 75 slides |
    |---|---|---|---|
@@ -199,9 +199,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    The offer section (rows 14 to 17) is never compressed below 10 slides on a 45+ slide deck. If `VIP_TIER` exists, it takes 1 to 2 slides inside row 14 (presented AFTER the core final price).
 
-3a. **Walk the canonical arc (master SOP Section 4.2A, THE BLACKCEO SIGNATURE WEBINAR ARC).** The allocation table sizes the deck; the canonical arc is the named slide-by-slide JOURNEY you allocate INTO. It runs ten named sections in the operator's revealed order: A. Hook Open -> B. Care / See-Yourself -> C. The Promise -> D. Story -> E. Teaching (one big idea per slide, each carrying the hook and a light pitch) -> F. Proof: Who Says So + Wall of Wins -> G. The Offer (gradual spread ladder, value added at every drop) -> H. Guarantee -> I. Scarcity / Close -> J. Hook Callback. Each arc section maps to its components (the doctrine 4.3 plus the ten required components 4.4), the typography-and-standalone-art standard, and a QC gate (the full mapping is the Section 4.2A table). The ten named sections collapse onto the seven proven sections below; record the arc-section label on each slot in arc_allocation.json so the Copywriter and QC can trace every slide to its beat. Carry forward the connective-tissue rules (hook cadence ~10x from the first verse and woven the whole way through; proof woven between the drops; value ADDED at every drop; the light pitch distributed not back-loaded; a slide earns the next slide; section banner-in / emotional-punctuation-out; text-anchor variation; the slide is not the script; the designed emotional sequence that creates a Significant Emotional Experience; no em dashes; echo-then-build; enhance-don't-replace).
+3a. **Walk the canonical arc (SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4), THE BLACKCEO SIGNATURE WEBINAR ARC).** The allocation table sizes the deck; the canonical arc is the named slide-by-slide JOURNEY you allocate INTO. It runs ten named sections in the operator's revealed order: A. Hook Open -> B. Care / See-Yourself -> C. The Promise -> D. Story -> E. Teaching (one big idea per slide, each carrying the hook and a light pitch) -> F. Proof: Who Says So + Wall of Wins -> G. The Offer (gradual spread ladder, value added at every drop) -> H. Guarantee -> I. Scarcity / Close -> J. Hook Callback. Each arc section maps to its components (the doctrine 4.3 plus the ten required components 4.4), the typography-and-standalone-art standard, and a QC gate (the full mapping is SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) table). The ten named sections collapse onto the seven proven sections below; record the arc-section label on each slot in arc_allocation.json so the Copywriter and QC can trace every slide to its beat. Carry forward the connective-tissue rules (hook cadence ~10x from the first verse and woven the whole way through; proof woven between the drops; value ADDED at every drop; the light pitch distributed not back-loaded; a slide earns the next slide; section banner-in / emotional-punctuation-out; text-anchor variation; the slide is not the script; the designed emotional sequence that creates a Significant Emotional Experience; no em dashes; echo-then-build; enhance-don't-replace).
 
-4. Apply the master SOP Section 4.2 proven flow. The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves, and it is how the ten canonical arc sections (step 3a) collapse onto the slide-count math:
+4. Apply SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) proven flow. The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves, and it is how the ten canonical arc sections (step 3a) collapse onto the slide-count math:
 
    | Section | Slides (of 75) | What it does | Signature moves |
    |---|---|---|---|

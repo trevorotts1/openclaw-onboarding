@@ -1,7 +1,7 @@
 # SOP-SLIDE-04: DECK DENSITY AND PACING
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4 Slide Math, Section 4.2 the proven flow, Section 5.5 the price sequence)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-01..06 cluster (PRESENTATION-MASTER-DOCTRINE.md §4) Slide Math, SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) the proven flow, SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) the price sequence)
 **Owning role at write time:** Director of Presentations (arc_allocation.json minimum-count enforcement)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-DENSITY, below)
 **Gold-standard numbers:** the gold-standard reference deck (the gold-standard principles reference): ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75.

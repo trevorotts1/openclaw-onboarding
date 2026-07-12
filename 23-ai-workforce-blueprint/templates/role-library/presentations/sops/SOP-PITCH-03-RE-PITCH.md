@@ -1,7 +1,7 @@
 # SOP-PITCH-03: RE-PITCH (THE MANDATORY POST-PRICE RECAP)
 
 **Cluster:** Pitch-Craft Rules (the offer choreography)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.2 the proven flow, Section 5.5 the price sequence)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) the proven flow, SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) the price sequence)
 **Owning role at write time:** Offer Price Strategist (the re-pitch choreography), Slide Copywriter (the recap copy)
 **Enforced at the gate by:** QC Specialist - Presentations (copy QC criterion c23 re-pitch presence gate, c24 close-density gate)
 **Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference, Section 5): re-pitch s74 "Here's Everything You're Getting" ("TOTAL VALUE $5,276+" vs "$47 / $97", "This is not a deal. This is a decision."), send-off s75.
