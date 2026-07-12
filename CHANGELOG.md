@@ -1,3 +1,21 @@
+## [v19.68.0]  -  2026-07-12  -  feat(skill23): P4-02 step 7 — synergy blend directive gains the TASK-persona slot
+
+Merges `feat/p4-02-synergy-directive-task-slot` into `main` as the serial onboarding writer, `--no-ff`. The branch was cut at v19.65.0 and targeted v19.66.0, but by merge time `main` had already advanced to v19.67.0 (P3-06 first consumed v19.66.0, then P4-01 rolled to v19.67.0) — all 15 non-CHANGELOG version-marker files (`version`, `install.sh`, `update-skills.sh`, both `23-ai-workforce-blueprint` and `06-ghl-install-pages` skill-version markers, `_index.json`, `_qc-summary.md`, README.md, `cc-compat.json`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, and the browser-manager/reaper/guard sub-markers) conflicted as PURE version-number churn — verified line-by-line, no content collision. Resolved by taking `main`'s current state for those files and re-bumping fresh to v19.68.0 via `scripts/bump-version.sh` so every marker lands in lockstep. The real functional change (`persona_blend.py`) and the new test file both merged clean with zero conflict.
+
+P4-02's dual-persona content system combines a PERSONA SIDE (audience voice + topic expertise) with a TASK SIDE (the persona matched to the work being performed), "combined synergistically." The task side was computed (`build_task_personas`) and returned in the bundle, but it NEVER reached the writer's actual instruction: `build_blend_directive` composed only voice + audience + topic. Step 7 closes that — the directive now composes up to FOUR synergy slots and degrades gracefully.
+
+### `23-ai-workforce-blueprint/scripts/persona_blend.py`
+- **`build_blend_directive` gains a fourth slot** (`task_persona_pid=`): after the voice/audience/substance body, it appends "The task-side persona is W — apply ITS process and decision method to execute the work." The slot is content-gated and only added when W is a GENUINELY DISTINCT persona (not already the voice or topic persona, which already doubles as task guidance) so the composed directive never repeats itself. All four slots populate when available and degrade gracefully to three/two/one (voice-only, topic-only, task-only, or the neutral house voice). The mandatory `GUARDRAIL_CLAUSE` remains the non-removable trailing clause.
+- **`build_bundle` reordered**: `build_task_personas` now runs BEFORE the directive is built so the primary (first non-mechanical) task-side persona populates slot 4. No change to the bundle's shape, the confirm-gate, the audience resolution, or the back-compat `persona_id` mirror.
+
+### Tests
+- `23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py` — 10 fail-first checks (the whole file raises `TypeError: unexpected keyword argument 'task_persona_pid'` on the pre-P4-02 tree): the four-slot compose; graceful degradation with slot 4 omitted when the task persona is None or redundant (== voice/topic); topic-only and collapsed branches still carrying the task slot; non-content tasks never getting a voice/task blend; and the guardrail staying the non-removable trailing clause even with all four slots present, each paired with a NO-WEAKENING probe.
+- The existing W7 contract suite (`test-persona-blend-matcher.py`) stays green at 46/46 after the reorder.
+
+No client names, no secret values, no roster human names in the diff, no canary, no model added/removed/substituted, no client box touched.
+
+- **Version roll** — repo rolled v19.67.0 → **v19.68.0** via `scripts/bump-version.sh` (all 11 markers + the browser-manager/reaper/guard sub-markers in lockstep). Role/SOP/persona CONTENT was NOT changed by this merge (`persona_blend.py` is matcher logic, not catalog content; no `role-library`/SOP/persona files touched), so no `hash-content-manifest.py` restamp was required. Annotated tag `v19.68.0` cut on the release merge commit.
+
 ## [v19.67.0]  -  2026-07-12  -  feat(persona): P4-01 — persona matching + book-to-persona (strengthen)
 
 Merges `feat/p4-01-persona-match-strengthen` (1 commit) into `main` as the serial onboarding writer, `--no-ff`. Clean merge, no conflicts — the branch's changes are net-new files only (a persona-match regression corpus, match-score logging, a book-to-persona matcher-selectable e2e suite, and their CI workflow); `main`'s changes since branch-cut (P3-06, `03-agent-browser/` + version markers) touch none of the same paths.
