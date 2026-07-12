@@ -7,28 +7,32 @@
       "emoji": "\ud83d\udce3",
       "one_liner": "Getting the word out about your business",
       "director_title": "Director of Marketing",
-      "suggested_roles_file": "marketing-suggested-roles.md"
+      "suggested_roles_file": "marketing-suggested-roles.md",
+      "loss_warning": "no dedicated owner for brand awareness, demand generation, or getting your name in front of new people"
     },
     "sales": {
       "display_name": "Sales",
       "emoji": "\ud83d\udcb0",
       "one_liner": "Turning interested people into paying customers",
       "director_title": "Director of Sales",
-      "suggested_roles_file": "sales-suggested-roles.md"
+      "suggested_roles_file": "sales-suggested-roles.md",
+      "loss_warning": "nobody owns turning interested leads into paying customers \u2014 outreach, follow-up, and closing go unmanaged"
     },
     "billing-finance": {
       "display_name": "Billing & Finance",
       "emoji": "\ud83e\uddfe",
       "one_liner": "Invoices, payments, tracking your money",
       "director_title": "Director of Finance",
-      "suggested_roles_file": "billing-suggested-roles.md"
+      "suggested_roles_file": "billing-suggested-roles.md",
+      "loss_warning": "invoices, collections, and expense chasing won't have a dedicated owner"
     },
     "customer-support": {
       "display_name": "Customer Support",
       "emoji": "\ud83e\udd1d",
       "one_liner": "Helping your existing customers when they need it",
       "director_title": "Director of Customer Support",
-      "suggested_roles_file": "customer-support-suggested-roles.md"
+      "suggested_roles_file": "customer-support-suggested-roles.md",
+      "loss_warning": "no dedicated owner for answering existing customers, onboarding, or handling refunds"
     },
     "web-development": {
       "display_name": "Web Development",
@@ -39,21 +43,24 @@
       "v2_1_additions": [
         "SEO Specialist",
         "Technical SEO Specialist"
-      ]
+      ],
+      "loss_warning": "your website, funnels, landing pages, and SEO have no dedicated owner to build or maintain them"
     },
     "app-development": {
       "display_name": "App Development",
       "emoji": "\ud83d\udcf1",
       "one_liner": "Desktop apps, mobile apps, PWAs",
       "director_title": "Director of App Development",
-      "suggested_roles_file": "app-development-suggested-roles.md"
+      "suggested_roles_file": "app-development-suggested-roles.md",
+      "loss_warning": "no dedicated owner for desktop, mobile, or web-app builds"
     },
     "graphics": {
       "display_name": "Graphics",
       "emoji": "\ud83c\udfa8",
       "one_liner": "Visual content \u2014 logos, images, ads, slides",
       "director_title": "Director of Graphics",
-      "suggested_roles_file": "graphics-suggested-roles.md"
+      "suggested_roles_file": "graphics-suggested-roles.md",
+      "loss_warning": "no dedicated owner for logos, social graphics, slides, or ad creative \u2014 visuals get outsourced or skipped"
     },
     "video": {
       "display_name": "Video",
@@ -63,28 +70,32 @@
       "suggested_roles_file": "video-suggested-roles.md",
       "v2_1_additions": [
         "Video SEO Specialist"
-      ]
+      ],
+      "loss_warning": "no dedicated owner for video production, editing, YouTube, or short-form clips"
     },
     "audio": {
       "display_name": "Audio",
       "emoji": "\ud83c\udf99\ufe0f",
       "one_liner": "Podcasts, voiceovers, AI voice, music, sound design",
       "director_title": "Director of Audio",
-      "suggested_roles_file": "audio-suggested-roles.md"
+      "suggested_roles_file": "audio-suggested-roles.md",
+      "loss_warning": "no dedicated owner for podcasts, voiceovers, AI voice, or sound design"
     },
     "research": {
       "display_name": "Research",
       "emoji": "\ud83d\udd2c",
       "one_liner": "Market research, competitor analysis, data insights",
       "director_title": "Director of Research",
-      "suggested_roles_file": "research-suggested-roles.md"
+      "suggested_roles_file": "research-suggested-roles.md",
+      "loss_warning": "no dedicated owner for market research, competitor analysis, or data-backed insights before you decide"
     },
     "communications": {
       "display_name": "Communications",
       "emoji": "\ud83d\udce8",
       "one_liner": "PR, announcements, internal and external messaging",
       "director_title": "Director of Communications",
-      "suggested_roles_file": "communications-suggested-roles.md"
+      "suggested_roles_file": "communications-suggested-roles.md",
+      "loss_warning": "no dedicated owner for PR, announcements, or internal and external messaging"
     },
     "crm": {
       "display_name": "CRM",
@@ -92,21 +103,24 @@
       "one_liner": "Manages your contact management, email, automations",
       "director_title": "Director of CRM",
       "suggested_roles_file": "crm-suggested-roles.md",
-      "v2_1_flagship_role": "Email Deliverability & Optimization Specialist"
+      "v2_1_flagship_role": "Email Deliverability & Optimization Specialist",
+      "loss_warning": "no dedicated owner for your contact database, email automations, or deliverability"
     },
     "openclaw-maintenance": {
       "display_name": "OpenClaw Maintenance",
       "emoji": "\ud83d\udee0\ufe0f",
       "one_liner": "Keeps your AI system healthy and up to date",
       "director_title": "Director of OpenClaw Maintenance",
-      "suggested_roles_file": "openclaw-maintenance-suggested-roles.md"
+      "suggested_roles_file": "openclaw-maintenance-suggested-roles.md",
+      "loss_warning": "nobody keeps your AI system healthy, updated, backed up, or secure \u2014 problems surface only when something breaks"
     },
     "legal": {
       "display_name": "Legal",
       "emoji": "\u2696\ufe0f",
       "one_liner": "Contracts, regulations, keeping you protected",
       "director_title": "Director of Legal",
-      "suggested_roles_file": "legal-compliance-suggested-roles.md"
+      "suggested_roles_file": "legal-compliance-suggested-roles.md",
+      "loss_warning": "no dedicated owner for contracts, compliance, terms, or protecting you from risk"
     },
     "social-media": {
       "display_name": "Social Media",
@@ -125,7 +139,8 @@
         "Threads Specialist",
         "Bluesky Specialist",
         "Community Manager"
-      ]
+      ],
+      "loss_warning": "no dedicated owner for organic posting or community across your platforms"
     },
     "paid-advertisement": {
       "display_name": "Paid Advertisement",
@@ -146,7 +161,8 @@
         "Spotify Audio Ads Specialist",
         "Snapchat Ads Specialist",
         "Native Ads Specialist"
-      ]
+      ],
+      "loss_warning": "no dedicated owner for paid ads \u2014 campaigns, budgets, and targeting go unmanaged"
     },
     "personal-assistant": {
       "display_name": "Personal Assistant",
@@ -154,42 +170,48 @@
       "one_liner": "Inbox, scheduling, travel, personal life \u2014 the owner's right hand",
       "director_title": "Director of Personal Assistance",
       "suggested_roles_file": "personal-assistant-suggested-roles.md",
-      "v2_3_note": "Promoted to mandatory in v10.15.42 (Skill 42 PA Library approved). Raises the universal floor to 24 departments."
+      "v2_3_note": "Promoted to mandatory in v10.15.42 (Skill 42 PA Library approved). Raises the universal floor to 24 departments.",
+      "loss_warning": "no right-hand owner for your inbox, scheduling, travel, or personal-life logistics"
     },
     "general-task": {
       "display_name": "General Task",
       "emoji": "\ud83d\uddc2\ufe0f",
       "one_liner": "Catches any task that doesn't fit a dedicated department, so nothing is ever dropped",
       "director_title": "Head of General Task",
-      "suggested_roles_file": "general-task-suggested-roles.md"
+      "suggested_roles_file": "general-task-suggested-roles.md",
+      "loss_warning": "the catch-all safety net is gone \u2014 a task that fits no other department can be dropped instead of routed somewhere"
     },
     "project-architecture-office": {
       "display_name": "Project Architecture Office",
       "emoji": "\ud83c\udfdb\ufe0f",
       "one_liner": "Governs every project from trigger to verifiable completion \u2014 creates PRDs, runs loops, hands off to building departments",
       "director_title": "Chief Project Architect",
-      "suggested_roles_file": "project-architecture-office-suggested-roles.md"
+      "suggested_roles_file": "project-architecture-office-suggested-roles.md",
+      "loss_warning": "no owner governs multi-step projects end to end; work can start without a plan and stall without verified completion"
     },
     "bugs": {
       "display_name": "Bugs",
       "emoji": "\ud83d\udc1b",
       "one_liner": "The front desk and medical records for every defect: logs, triages, dedupes, and tracks every bug to verified closure",
       "director_title": "Director of Bugs",
-      "suggested_roles_file": "bugs-suggested-roles.md"
+      "suggested_roles_file": "bugs-suggested-roles.md",
+      "loss_warning": "defects aren't logged, triaged, or tracked to closure \u2014 the same problem can recur with no record"
     },
     "healer": {
       "display_name": "Healer",
       "emoji": "\ud83e\ude79",
       "one_liner": "The company doctors: root-cause diagnosis, fix-forward, SOP surgery, and teachings so the same bug never happens twice",
       "director_title": "Chief Healer",
-      "suggested_roles_file": "healer-suggested-roles.md"
+      "suggested_roles_file": "healer-suggested-roles.md",
+      "loss_warning": "no self-repair function; when something breaks there's no root-cause diagnosis or SOP fix so it won't recur"
     },
     "quality-control": {
       "display_name": "Quality Control",
       "emoji": "\ud83d\udd0e",
       "one_liner": "Owns and operates the system analyzer: holds every other department's roles and procedures to the standard on two axes (is it real, is it specific enough to follow) and routes the failures it finds to the Healer",
       "director_title": "Director of Quality Control",
-      "suggested_roles_file": "quality-control-suggested-roles.md"
+      "suggested_roles_file": "quality-control-suggested-roles.md",
+      "loss_warning": "no function holds your other departments' work to the standard (is it real, is it specific enough to follow) before it ships"
     }
   },
   "vertical_packs": {
@@ -214,7 +236,8 @@
           "emoji": "\ud83d\uddbc\ufe0f",
           "one_liner": "End-to-end branded webinar/slide decks: copy, price ladder, images, QC, delivery",
           "base_suggested_roles": "presentations-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner for branded webinar/slide decks \u2014 copy, pricing, images, and delivery"
         },
         {
           "id": "client-coaches",
@@ -323,7 +346,8 @@
           "emoji": "\ud83d\udcc5",
           "one_liner": "Booking, routing, technician/staff scheduling",
           "base_suggested_roles": "customer-support-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner for booking, routing, and staff or technician scheduling"
         },
         {
           "id": "field-operations",
@@ -367,7 +391,8 @@
           "emoji": "\ud83d\udce6",
           "one_liner": "Inventory, shipping, returns",
           "base_suggested_roles": "customer-support-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner for inventory, shipping, and returns"
         },
         {
           "id": "merchandising",
@@ -396,7 +421,8 @@
           "emoji": "\u2699\ufe0f",
           "one_liner": "Builds your software, apps & web products",
           "base_suggested_roles": "app-development-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner builds or maintains your software, apps, and web products"
         },
         {
           "id": "devops",
@@ -431,7 +457,8 @@
           "emoji": "\ud83d\udcbc",
           "one_liner": "Client relationships, deliverables, retention",
           "base_suggested_roles": "crm-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner for client relationships, deliverables, and retention"
         },
         {
           "id": "project-management",
@@ -457,7 +484,8 @@
           "emoji": "\ud83c\udfa7",
           "one_liner": "Production, distribution, sponsor management",
           "base_suggested_roles": "audio-suggested-roles.md",
-          "universal_primary": true
+          "universal_primary": true,
+          "loss_warning": "no dedicated owner for podcast production, distribution, or sponsor management"
         },
         {
           "id": "community-management",

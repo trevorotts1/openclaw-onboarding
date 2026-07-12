@@ -470,6 +470,16 @@ bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh \
   --source owner-interview --by <ownerId> --session <sessionId>
 ```
 
+**OPT-OUT WARNING (BINDING — a NO for a floor department must be confirmed).** When the owner declines a *floor* department (any of the 28: the 22 mandatory + the 6 universal-primary verticals), you MUST first SHOW them what they lose and get an explicit confirmation — an opt-out is sovereign, but it is never silent. The recorder enforces this: a plain `--decision no` for a floor dept **echoes the department's one-line `loss_warning`** (authored per department in `department-naming-map.json`, read via `scripts/department-loss-warning.py`) and **exits without writing** until you re-run with `--confirm-loss`. So the loop is: (1) read the owner the loss warning in your own words — *"If we skip Billing & Finance, invoices, collections and expense chasing won't have a dedicated owner. Still want to skip it?"*; (2) only after the owner confirms, record the confirmed decline:
+
+```bash
+bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh \
+  --dept <floor_id> --decision no --confirm-loss \
+  --source owner-interview --by <ownerId> --session <sessionId>
+```
+
+The confirmed decline is written in the SAME provenanced object form the enforcer honors, plus `lossWarning` + `lossWarningAck:true` audit fields recording that the owner was shown, and accepted, the loss. A NO for a NON-floor department (a keyword-matched industry extra or a custom dept) needs no `--confirm-loss` — declining it costs no guaranteed floor functionality. NEVER pass `--confirm-loss` on the owner's behalf without actually reading them the warning first.
+
 The helper writes the provenanced OBJECT form the enforcer accepts into `[ZHC]/[slug]/.workforce-build-state.json` under `canonicalReconciliation.decisions` (idempotent - re-running a dept overwrites its object). The full block:
 
 ```json
@@ -510,7 +520,7 @@ Record the answer in `canonicalReconciliation.mergeDecisions[<custom_id>]` as `"
 
 #### Step 3.6  -  Opt-out for the universal-primary verticals AND customs (Capability 5)
 
-Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH universal-primary vertical department that `scripts/list-canonical-departments.py` lists (currently Presentations, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast — always read the live list, never a frozen roster) that does NOT fit the owner's business, offer the same YES / NO / LATER and record the opt-out with `bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh --dept <vertical_id> --decision no --source owner-interview --by <ownerId> --session <sessionId>`. A provenanced `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are opt-out-able the same way (`--dept <custom_id> --decision no ...`) - opt-in is no longer the only option for a custom. NEVER hand-write a bare `decisions[<id>] = "no"`: without provenance the enforcer rejects the decline and force-adds the department back, silently over-building the workforce.
+Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH universal-primary vertical department that `scripts/list-canonical-departments.py` lists (currently Presentations, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast — always read the live list, never a frozen roster) that does NOT fit the owner's business, offer the same YES / NO / LATER. These six ARE floor departments, so a decline follows the opt-out-warning rule above: show the owner the `loss_warning`, get confirmation, then record with `bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh --dept <vertical_id> --decision no --confirm-loss --source owner-interview --by <ownerId> --session <sessionId>`. A provenanced `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are opt-out-able the same way (`--dept <custom_id> --decision no ...`, no `--confirm-loss` needed — a custom is not a floor dept) - opt-in is no longer the only option for a custom. NEVER hand-write a bare `decisions[<id>] = "no"`: without provenance the enforcer rejects the decline and force-adds the department back, silently over-building the workforce.
 
 #### Step 3.7  -  Per-dept custom ROLES (Capability 3)
 
@@ -519,6 +529,30 @@ For each department in the final set, ask whether the owner wants any EXTRA spec
 #### Step 3.8  -  Per-dept custom SOPs (Capability 4)
 
 For each department, ask whether the owner has a SPECIFIC procedure they run that the team must follow (e.g. *"our refund flow"*, *"our cohort onboarding"*). Record them under `canonicalReconciliation.customSops[<dept_id>]` as strings or `{ "title", "procedure" }` objects. The build captures them (`capture_custom_sops()`) respecting the SOP boundary gate: a CANONICAL department writes the procedure as a supplemental `owner-procedures.md` overlay the copied 420-role library SOPs reference (LLM authoring stays refused); a CUSTOM department uses the procedure as the GROUND TRUTH its LLM-authored SOP is built from. Capture the owner's actual procedure - never generic flavor.
+
+#### Step 3.9  -  Net-new department discovery (Capability 6 — the "we uncovered a department we don't have" path)
+
+After the canonical/vertical/custom decisions are recorded, do ONE analysis pass over everything the owner told you in Phases 1-4 and ask: **is there a real, recurring need that NO existing department — mandatory, universal-primary, industry vertical, OR a custom they already named — covers?** For each such uncovered need:
+
+1. **PREFER routing to an existing department.** Most "new" needs are an existing department under a different word (grant writing → could live in `communications` or a custom; podcast guest booking → `podcast`). If any existing dept fits, route the need there and do NOT create a new department. When unsure whether a proposed name is really new, run the guard — it will tell you which existing department it maps to:
+
+```bash
+python3 23-ai-workforce-blueprint/scripts/net-new-department.py \
+  --name "<proposed name>" --check-only \
+  --departments-dir "[ZHC]/[slug]/departments"
+```
+
+   Exit **2** = it duplicates a canonical/known department (the verdict names which — route there). Exit **3** = a department already on disk covers it. Exit **0** = it is genuinely net-new.
+
+2. **Only when the guard returns 0 (genuinely net-new), propose the new department to the owner:** a name, a slug, and 2-3 seed roles (the guard suggests the nearest role-library department to seed those roles from + a customized head-of-department how-to). Confirm with the owner, then create it — the guard runs `add-department.sh` (which wires BOTH the board row AND the OpenClaw runtime, so no card sticks in `no_specialist_runtime`) and then `guard-department-runtime-parity.py`, and reports success ONLY if that parity guard passes:
+
+```bash
+python3 23-ai-workforce-blueprint/scripts/net-new-department.py \
+  --name "<proposed name>" --roles "<Role A>,<Role B>" \
+  --departments-dir "[ZHC]/[slug]/departments"
+```
+
+**Hard rules for this step:** (a) NEVER duplicate a canonical slug — the guard enforces it (exit 2), and you must route to the existing department instead; (b) NEVER report the new department as done until `guard-department-runtime-parity.py` passes (the guard enforces it — exit 4 on parity failure); (c) a net-new department is created at BUILD time from the interview, never left as a "come back later" task.
 
 #### Step 4  -  Hard rules
 
