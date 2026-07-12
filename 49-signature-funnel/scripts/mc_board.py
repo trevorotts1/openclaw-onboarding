@@ -125,6 +125,66 @@ _LEGAL = {
 # (review -> done). Hard-blocked in card_advance, identical to Skill 6 / Skill 41.
 _PRODUCER_FORBIDDEN = ("done",)
 
+# ---------------------------------------------------------------------------
+# P2-07 hardening: last-resort department_slug routing. An UNRECOGNIZED
+# department_slug (a typo, a regressed hardcoded fake slug like the historical
+# "funnels"/"books"/"email" family, or an empty string) must never be sent to
+# the Command Center unchanged and never silently dropped — the CC's own
+# unrecognized-slug handling is exactly the silent-drop that enabled that fake-
+# slug family (v18.0.6-v18.1.1). It re-routes client-side to the general-task
+# catch-all instead, so the card is ALWAYS visible somewhere on the board.
+#
+# This mirrors — does NOT import — the 22 HARDCODED_MANDATORY + 6
+# HARDCODED_UNIVERSAL_PRIMARY canonical department ids plus their known variant
+# aliases from 23-ai-workforce-blueprint/scripts/department-floor.py:116-158
+# (v2.6.1 naming map). mc_board.py stays STDLIB-ONLY / zero-deps and is dropped
+# byte-for-byte into skill dirs with no shared relative path to that file, so
+# the canonical ids are mirrored here exactly like VALID_STATUSES/_LEGAL mirror
+# the CC server's enum above. general-task is always a member of this set — it
+# is both a real floor department and the re-route target.
+_CANONICAL_MANDATORY_DEPARTMENTS = (
+    "marketing", "sales", "billing-finance", "customer-support",
+    "web-development", "app-development", "graphics", "video", "audio",
+    "research", "communications", "crm", "openclaw-maintenance", "legal",
+    "social-media", "paid-advertisement", "personal-assistant",
+    "general-task", "project-architecture-office",
+    "bugs", "healer", "quality-control",
+)
+_CANONICAL_UNIVERSAL_PRIMARY_DEPARTMENTS = (
+    "presentations", "scheduling-dispatch", "logistics-fulfillment",
+    "engineering", "account-management", "podcast",
+)
+_CANONICAL_VARIANT_ALIASES = {
+    "billing-finance": ("finance", "finance-ops", "billing", "finance-billing", "accounting"),
+    "customer-support": ("support", "customer-service", "cs", "client-success"),
+    "web-development": ("web-dev", "webdev", "website", "web"),
+    "app-development": ("app-dev", "appdev", "mobile", "application-development"),
+    "legal": ("legal-compliance", "compliance", "legal-ops", "risk-compliance"),
+    "graphics": ("graphics-design", "design", "creative", "graphic-design"),
+    "openclaw-maintenance": ("openclaw", "maintenance", "ops", "platform-maintenance"),
+    "paid-advertisement": ("paid-ads", "paid-advertising", "ads", "advertising", "paid-media"),
+    "social-media": ("social", "smm", "social-media-management"),
+    "crm": ("crm-ops", "customer-relationship-management"),
+    "communications": ("comms", "communication", "pr", "public-relations"),
+    "video": ("video-production", "video-content", "video-editing"),
+    "audio": ("audio-production", "audio-content", "sound", "podcast"),
+}
+
+
+def _known_department_slugs() -> frozenset:
+    known = set(_CANONICAL_MANDATORY_DEPARTMENTS) | set(_CANONICAL_UNIVERSAL_PRIMARY_DEPARTMENTS)
+    for aliases in _CANONICAL_VARIANT_ALIASES.values():
+        known.update(aliases)
+    return frozenset(known)
+
+
+KNOWN_DEPARTMENT_SLUGS = _known_department_slugs()
+GENERAL_TASK_SLUG = "general-task"
+
+
+def _normalize_department_slug(dep: Optional[str]) -> str:
+    return (dep or "").strip().lower()
+
 
 # ---------------------------------------------------------------------------
 # Config — read from the environment; absent base URL => board disabled.
@@ -303,17 +363,43 @@ def card_open(
     # Mark the attempt (receipt-backed) BEFORE the network call.
     _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug})
 
+    # P2-07: last-resort department_slug hardening. An UNRECOGNIZED slug (typo,
+    # regressed hardcoded fake slug, or empty string) is NEVER sent through
+    # unchanged and NEVER silently dropped — log loudly and re-route to the
+    # general-task catch-all, annotating the card with the original bad slug.
+    original_bad_slug: Optional[str] = None
+    department_slug = department
+    if _normalize_department_slug(department) not in KNOWN_DEPARTMENT_SLUGS:
+        original_bad_slug = department
+        _log(
+            f"UNRECOGNIZED department_slug {department!r} for slug={slug!r} — "
+            f"re-routing card to '{GENERAL_TASK_SLUG}' (never silently dropped; "
+            f"this is the last-resort catch-all)."
+        )
+        department_slug = GENERAL_TASK_SLUG
+        _merge_receipt(run_dir, {
+            "department_slug_rerouted": True,
+            "original_department_slug": original_bad_slug,
+        })
+
     source_ref = slug or source or "run"
     idem_input = f"{source_ref}{title}".encode("utf-8")
     idempotency_key = hashlib.sha256(idem_input).hexdigest()
 
+    base_description = description or title
+    if original_bad_slug is not None:
+        base_description = (
+            f"[AUTO-REROUTED — unrecognized department_slug {original_bad_slug!r} -> "
+            f"'{GENERAL_TASK_SLUG}'] {base_description}"
+        )
+
     payload: dict = {
         "title": title,
-        "description": description or title,
+        "description": base_description,
         "priority": priority,
         "source": source or "productized-skill",
         "source_ref": source_ref,
-        "department_slug": department,
+        "department_slug": department_slug,
         "external_session_id": source_ref,
         "idempotency_key": idempotency_key,
     }
@@ -474,8 +560,15 @@ def begin_run(
             persona=persona, source=source, description=description, env=env,
         )
         if tid:
+            note = "run started"
+            reroute = _read_receipt(run_dir).get("original_department_slug")
+            if reroute:
+                note = (
+                    f"run started (auto-rerouted from unrecognized department_slug "
+                    f"{reroute!r} to '{GENERAL_TASK_SLUG}')"
+                )
             card_advance(run_dir, tid, phase_id="run", status="in_progress",
-                         note="run started", env=env)
+                         note=note, env=env)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
