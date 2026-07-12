@@ -1,6 +1,9 @@
 # Changelog — Social Media in a Box (Skill 57)
 
-## 0.2.10 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
+## 0.2.11 — 2026-07-12 — P3-05 step 11: SOP-SOCIAL-03 image-prompt FORM/AESTHETIC split (durable successor fix)
+
+### Changed
+- **`universal-sops/social-media-craft/SOP-SOCIAL-03-CREATIVE-INTERJECTION.md`** — new §3a explicitly distinguishes image-prompt **FORM** (ratio/pixel spec, legibility, merged avoid-list, brand-safety clause, text-overlay-to-Ideogram routing — provable, GATED, the same class as `image_prompt_carousel`/`image_prompt_series` length in `config/bands.json`) from image **AESTHETIC/content** (subject, mood, lighting, composition, color taste — correctly left sovereign, stays ungated per the existing §3 law). Skill 35 (`35-social-media-planner`) had exactly this prompt-quality gap fixed in its own P3-05 pass; Skill 57 supersedes Skill 35 per `cc-compat.json`, and §3's pre-existing GATED/NEVER-gated list did not yet enumerate these FORM elements — so the gap could have resurrected silently at the 35->57 migration. This section is now the binding doctrine that prevents that; a future prover pass may extend `prove_bands.py` with the enumerated FORM checks using the same band-file pattern `image_prompt_carousel` already establishes. No code changed — this is a documentation/doctrine fix; the 7-03 HOLD still governs rollout.
 
 ### Fixed
 - **`mc_board.py` — an UNRECOGNIZED `department_slug`** (a typo, a regressed

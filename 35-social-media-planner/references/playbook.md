@@ -599,10 +599,41 @@ When writing content for any platform, follow this process:
 
 ### Image Generation Models
 
-| Model | Role | Cost (1K) | Cost (2K) | Cost (4K) |
-|-------|------|-----------|-----------|-----------|
-| Nano Banana 2 | PRIMARY | $0.04 | $0.06 | $0.09 |
-| Nano Banana Pro | BACKUP | $0.09 | $0.09 | $0.12 |
+**Model routing rule (P3-05 fix — read this before picking a model):** every image this skill produces carries a baked text/headline overlay (Section 18) — there is no non-text image type in this playbook. Section 45's own documented routing rule
+(`45-design-intelligence-library/library/social-media-designs/_RULES.md`, "Model routing") states: *"Quote-card / text-led posts -> Ideogram V3 DESIGN."* Nano Banana 2/Pro are strong general image models but are NOT text-rendering specialists —
+routing every headline-bearing image to them was the root cause plausibly driving Section 18's "spelling errors on image text, retry up to 3x" failure loop (P3-05 root-cause finding). The fix:
+
+| Model | Role | When to use | Cost (1K) | Cost (2K) | Cost (4K) |
+|-------|------|-------------|-----------|-----------|-----------|
+| **Ideogram V3 DESIGN** | **PRIMARY for every Section-18 deliverable** | ANY image carrying baked text/headline copy — i.e. every regular daily image, carousel slide, blog featured image, and podcast cover this playbook produces. | see kie.ai pricing (Ideogram V3) | — | — |
+| Nano Banana 2 | Non-text imagery only | Photoreal/lifestyle backgrounds, mood/reference shots, or any asset with NO on-image text at all. | $0.04 | $0.06 | $0.09 |
+| Nano Banana Pro | Non-text imagery backup only | Same non-text scope as Nano Banana 2, used as its backup. | $0.09 | $0.09 | $0.12 |
+
+Every prompt MUST pass `scripts/pregen_prompt_gate.py check` (Section 8a) before generation — the gate REFUSES (exit 6, `AF-SM-MODEL-ROUTING`) a text-overlay prompt routed to Nano Banana, making the old failure mode structurally impossible rather than merely discouraged.
+
+### Section 8a — PRE-GENERATION Prompt QC Gate (P3-05 step 9, mandatory before every generation call)
+
+Before ANY image prompt reaches kie.ai, run it through the gate. This is the pre-generation counterpart to Section 19's post-generation QC — it exists to catch a defective prompt BEFORE spending the paid generation call, mirroring the Graphics department's `diu_validator.py prompt-band` fail-closed shape (same exit-code discipline: 0 = pass, 3 = structural FORM failure, 6 = quality/routing failure). A gate-failed prompt is fixed and re-run — it is never generated.
+
+```bash
+python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
+  --prompt-file working/prompts/day1-primary.txt \
+  --model ideogram-v3-design \
+  --platform instagram --ratio 4:5 --pixels 1080x1350 \
+  --text-overlay "Three Moves That Doubled Our Pipeline" \
+  --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
+  --avoid-list-file working/compiled-negatives.txt
+```
+
+The gate checks (all FORM-level, exit 3 if any is missing): the platform ratio + pixel spec are both declared; brand colors are named; a MERGED negative/avoid-list is attached (Section 8b — never generate with no avoid-list); the exact on-image copy from Section 18 is baked verbatim into the prompt body; and the mandatory brand-safety clause ("brand-appropriate, appropriate for the client's audience, no suggestive content") is present. Once FORM clears, the gate checks routing (exit 6 if wrong): a text-overlay prompt on Nano Banana is refused outright (see Section 8 above). If the image originates from the Graphics department rather than this skill's own pipeline, pass `--asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json` — the gate REJECTS a graphics-department asset with no SOP-GIP-02 QC receipt scoring >= 8.5 instead of posting it (Section 19a).
+
+### Section 8b — Load Skill 45's Negative-Prompting Rules BEFORE Writing Any Prompt (P3-05 step 7)
+
+The Image Prompt Engineer step (INSTRUCTIONS.md Phase 2) MUST load these two files and merge their applicable avoid-list entries into the prompt BEFORE writing it — never after, never skipped:
+1. `45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md` — the universal baseline avoid-list (Layer 1) every generation carries, plus the category/style-card layering pattern.
+2. `45-design-intelligence-library/library/social-media-designs/_RULES.md` — the social-media-designs category rules: aspect ratios, hard rules (never text over faces, 9:16 safe zones, mobile-first legibility), and the model routing rule (Section 8).
+
+Write the merged avoid-list to `working/compiled-negatives.txt` for the run (or per-image if content varies) and pass it to Section 8a's gate via `--avoid-list-file`. This gives the retry loop a MEMORY of prior failure classes instead of retrying blind (the gap the P3-05 root-cause finding names explicitly).
 
 ### Weekly Image Production Schedule
 
@@ -1725,10 +1756,13 @@ Every image generated for social posts must include text overlay (a title or hea
 
 ### If Image Text Has Spelling Errors
 
+**First remedy — check the routing, not just the copy (P3-05 fix):** before regenerating with "corrected" text, confirm the prompt was routed to Ideogram V3 DESIGN (Section 8) and cleared the Section 8a pre-generation gate. A recurring spelling-error loop on a prompt that WAS correctly gated and routed is a genuine model defect; a spelling-error loop on a prompt that skipped the gate or was routed to Nano Banana is a routing defect, not a text defect — fix the routing first, then retry.
+
 1. QC agent identifies the spelling error.
-2. Regenerate the image with corrected text.
-3. Retry up to 3 times.
-4. If still failing after 3 attempts, notify the user via Telegram with the error details.
+2. Confirm routing + gate compliance (above) before assuming the copy itself is at fault.
+3. Regenerate the image with corrected text (and corrected routing, if that was the actual cause).
+4. Retry up to 3 times.
+5. If still failing after 3 attempts, notify the user via Telegram with the error details, including which model/route was used on each attempt.
 
 ---
 
@@ -1770,6 +1804,9 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 - [ ] No misspellings in the comment
 
 **Image Checks:**
+- [ ] The prompt passed `scripts/pregen_prompt_gate.py check` BEFORE generation (Section 8a) — a prompt generated without a passing gate run is itself a QC failure, regardless of how the resulting image looks
+- [ ] Text-overlay images were routed to Ideogram V3 DESIGN, never Nano Banana (Section 8)
+- [ ] If the asset originated from the Graphics department, it carries a SOP-GIP-02 QC receipt scoring >= 8.5 (Section 19a) — an ungated graphics-department asset is REJECTED, not posted
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
 - [ ] Image contains NO violent or inappropriate imagery
@@ -1829,6 +1866,10 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 3. The QC agent re-checks the revised content.
 4. If it fails again, retry the revision up to 3 total attempts.
 5. If still failing after 3 attempts, notify the user via Telegram with the specific failure details.
+
+### Section 19a — Input-Quality Gate on Graphics-Department Assets (P3-05 step 4i)
+
+When an image asset for this week's content did NOT come from this skill's own Section 8/8a generation pipeline but was instead handed off from the Graphics department, the planner does not post it on trust. Run it through the same `pregen_prompt_gate.py check` used for every other image, with `--asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json` pointed at the department's SOP-GIP-02 vision-QC receipt. The gate REJECTS the asset (exit 6, `AF-SM-INPUT-QC-GATE`) when the receipt is missing or scores under 8.5 — the planner posts the FIRST asset that clears its own gate plus a valid receipt and REFUSES the second, loudly, exactly like every other gate failure in this section (never a silent skip).
 
 ---
 

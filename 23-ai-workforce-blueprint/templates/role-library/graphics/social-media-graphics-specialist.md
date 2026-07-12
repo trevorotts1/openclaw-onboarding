@@ -283,6 +283,10 @@ This role contributes to the company revenue cascade by: **driving audience enga
 
 Before any output ships, it must pass these gates:
 
+### Gate 0 -- GIP Prompt-Band Gate (BEFORE generation, AI-generated assets only)
+
+If this graphic is produced via AI image generation, the assembled prompt MUST clear `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <band> --prompt-file <path>` BEFORE it is handed to the Generation Operator — see this department's `generation-operator.md` SOP 9.4 preflight and the shared "GIP Prompt-Band Compliance" note carried by the other AI-generation-heavy roles in this department. A floor breach (exit 3, AF-GIP-PROMPT-FLOOR) or quality-teeth failure (exit 6, AF-GIP-PROMPT-QUALITY) is refused before the paid generation call — never hand a gate-failed prompt forward.
+
 ### Gate 1 -- Self-check
 
 - [ ] The graphic matches the content brief: correct message, correct platform, correct format specifications.
