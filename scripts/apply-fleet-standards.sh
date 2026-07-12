@@ -792,8 +792,27 @@ fi
 # v11.3.2: closes the "trivial task / quick API call / spawn-a-sub-agent" loopholes
 # that let the CEO self-execute even when the PRIME DIRECTIVE partially loaded.
 # Injected after ROLE_DISCIPLINE (or at top when ROLE_DISCIPLINE already present).
-# Idempotent: guarded by <!-- CEO_ROUTING_NO_LOOPHOLES_V1 --> marker.
-CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
+# Idempotent: guarded by <!-- CEO_ROUTING_NO_LOOPHOLES_V2 --> marker.
+# P1-04 (V1→V2): V2 adds the trust-engine rule — when the CEO routes a CLIENT
+# message it MUST pass the originating chat id so the report-back loop can keep
+# the client informed. Bumping the marker (with the strip-V1 migration below) is
+# what makes the new instruction re-inject on the ~30 already-onboarded boxes: a
+# stale V1 marker would no-op the block forever and the boxes would never see it.
+CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
+CEO_ROUTING_MARKER_V1="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
+if grep -qF "$CEO_ROUTING_MARKER_V1" "$AGENTS_FILE_EARLY" 2>/dev/null; then
+  # Legacy V1 block present: strip it so V2 re-injects. The V1 block has no END
+  # marker — it terminates at the first '---' line after its open marker — so we
+  # remove exactly that region (plus the blank lines hugging it).
+  python3 - "$AGENTS_FILE_EARLY" <<'CEOSTRIP_PY'
+import re, sys
+p = sys.argv[1]
+c = open(p, encoding="utf-8", errors="replace").read()
+c = re.sub(r"\n*<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->.*?\n---[ \t]*\n", "\n", c, count=1, flags=re.DOTALL)
+open(p, "w", encoding="utf-8").write(c)
+CEOSTRIP_PY
+  echo "[apply-fleet-standards] migrated legacy CEO_ROUTING_NO_LOOPHOLES_V1 → V2 in $AGENTS_FILE_EARLY"
+fi
 if grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE_EARLY"; then
   echo "[apply-fleet-standards] CEO ROUTING NO LOOPHOLES already present in $AGENTS_FILE_EARLY — no-op"
 else
@@ -808,8 +827,8 @@ else
       if (!injected && index($0, marker)) { in_rd=1 }
       if (in_rd && !injected && /^---[[:space:]]*$/) {
         print ""
-        print "<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
-        print "## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches)"
+        print "<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
+        print "## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)"
         print ""
         print "The CEO / master-orchestrator'\''s ONLY permitted routing action is:"
         print ""
@@ -847,6 +866,19 @@ else
         print "and consent from the owner. Seeking permission alone is not enough — explicit consent must be"
         print "received. Without that explicit consent, the CEO routes — always."
         print ""
+        print "### Trust engine — pass the client'\''s chat id when you route a CLIENT message (P1-04)"
+        print "When the task came from a CLIENT message (e.g. a Telegram request), you MUST pass the ORIGINATING"
+        print "chat id so the Command Center'\''s report-back loop keeps the client informed (assigned → in-progress"
+        print "+ ETA → done + where-to-find-it). A routed task must NEVER go silent — this is the #1 client"
+        print "complaint fix. Set the chat id on the signed router invocation:"
+        print ""
+        print "    MC_ROUTE_REQUESTER_CHAT_ID=\"<originating client chat id>\" MC_ROUTE_REQUESTER_CHANNEL=\"telegram\" \\"
+        print "      bash \"$OC_ROOT/scripts/mc-route.sh\" <department_slug> \"<title>\" \"<owner message, verbatim>\""
+        print ""
+        print "Leave the chat id UNSET for operator/internal routes (they are never reported on). NEVER invent or"
+        print "reuse another client'\''s chat id — pass ONLY the real originating chat id of the message you are routing."
+        print ""
+        print "<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->"
         print "---"
         print ""
         injected=1
@@ -857,10 +889,15 @@ else
   if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
     ORIG2=$(cat "$AGENTS_FILE_EARLY")
     {
-      printf '<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->\n'
-      printf '## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches)\n\n'
+      printf '<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->\n'
+      printf '## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)\n\n'
       printf 'The CEO'\''s ONLY permitted routing action: POST /api/tasks/ingest with department_slug.\n'
       printf 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions. See AGENTS.md for full rule.\n\n'
+      printf 'TRUST ENGINE (P1-04): when the task came from a CLIENT message, ALWAYS pass the originating chat id\n'
+      printf 'so the report-back loop keeps the client informed — set MC_ROUTE_REQUESTER_CHAT_ID (and\n'
+      printf 'MC_ROUTE_REQUESTER_CHANNEL, default telegram) on the signed router: bash "$OC_ROOT/scripts/mc-route.sh".\n'
+      printf 'Leave it unset for operator/internal routes; never invent or reuse another client'\''s chat id.\n\n'
+      printf '<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->\n'
       printf '---\n\n'
       printf '%s' "$ORIG2"
     } > "$TMPF"
@@ -969,12 +1006,22 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #   MC_ROUTE_SOURCE       payload "source"   (default telegram)
 #   MC_ROUTE_PRIORITY     payload "priority" (default medium)
 #   MC_ROUTE_MAX_RETRIES  retries after 1st  (default 2)
+#   MC_ROUTE_REQUESTER_CHAT_ID   P1-04 trust engine: the ORIGINATING client chat id the
+#                                Command Center report-back loop acks/progress/dones back to.
+#                                Set by the orchestrator when the task came from a client message.
+#   MC_ROUTE_REQUESTER_CHANNEL   the client channel (default telegram); only used when
+#                                MC_ROUTE_REQUESTER_CHAT_ID is set.
 set -uo pipefail
 
 INGEST_URL="${MC_ROUTE_INGEST_URL:-http://127.0.0.1:4000/api/tasks/ingest}"
 MAX_RETRIES="${MC_ROUTE_MAX_RETRIES:-2}"
 SOURCE="${MC_ROUTE_SOURCE:-telegram}"
 PRIORITY="${MC_ROUTE_PRIORITY:-medium}"
+# P1-04 trust engine: the originating client channel + chat id, so the Command
+# Center report-back loop can acknowledge/progress/done back to the client. Empty
+# (the default) => omitted from the payload (an operator/internal route).
+REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}"
+REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}"
 
 DEPARTMENT_SLUG="${1:-}"
 TITLE="${2:-}"
@@ -1058,7 +1105,9 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     SOURCE="$SOURCE" PRIORITY="$PRIORITY" python3 - >"$BODY_FILE" <<'PYBODY'
+     SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
 payload = {
     "title": os.environ.get("TITLE", "")[:120],
@@ -1067,6 +1116,13 @@ payload = {
     "source": os.environ.get("SOURCE", "telegram"),
     "priority": os.environ.get("PRIORITY", "medium"),
 }
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
 then
@@ -1623,6 +1679,17 @@ acknowledgement. Do NOT self-intake, do NOT ask "which skill do you want?", and 
 yourself — the owning department's specialist reaches for the skill (dept-scoped) after routing.
 
     bash @@MC_ROUTE_PATH@@ <department_slug> "<owner request, <=120 chars>" "<owner message, verbatim>"
+
+**Trust engine (P1-04) — ALWAYS pass the originating chat id when the request came from a client.**
+When the message you are routing came from a CLIENT (e.g. this Telegram chat), prefix the SIGNED helper
+with the ORIGINATING chat id so the Command Center's report-back loop keeps the client informed
+(assigned → in-progress + ETA → done + where-to-find-it) — a routed task must NEVER go silent:
+
+    MC_ROUTE_REQUESTER_CHAT_ID="<originating client chat id>" MC_ROUTE_REQUESTER_CHANNEL="telegram" \
+      bash @@MC_ROUTE_PATH@@ <department_slug> "<owner request, <=120 chars>" "<owner message, verbatim>"
+
+Leave the chat id UNSET for operator/internal routes (those are never reported on). NEVER invent or
+reuse another client's chat id — pass ONLY the real originating chat id of the message you are routing.
 
 | When the owner says (plain-language intent) … | Route to department |
 |---|---|

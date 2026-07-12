@@ -100,9 +100,31 @@ and consent from the owner. Seeking permission alone is not enough — explicit 
 received. Without that explicit consent, the CEO routes — always. Routing is always allowed
 without permission.
 
+### Trust engine — ALWAYS pass the originating chat id (P1-04)
+When you route a task that came from a **client message**, you MUST pass the ORIGINATING chat id
+so the Command Center's report-back loop can keep the client informed (acknowledge → in-progress +
+ETA → done + where-to-find-it). This is the #1 client complaint fix: a routed task must never go
+silent. Concretely, set the originating chat id when you invoke the signed router:
+
+```
+MC_ROUTE_REQUESTER_CHAT_ID="<the client's chat id>" \
+MC_ROUTE_REQUESTER_CHANNEL="telegram" \
+  bash "$OC_ROOT/scripts/mc-route.sh" "<department_slug>" "<title>" "<owner message, verbatim>"
+```
+
+The helper adds `requester_chat_id` + `requester_channel` to the ingest payload; the Command Center
+stamps them on the task and its trust engine sends the client the assign/progress/done updates
+through THIS box's own gateway. For operator/internal tasks (no client asked), leave the chat id
+unset — those are never reported on. NEVER invent or reuse another client's chat id; pass only the
+real originating chat id of the message you are routing.
+
 ### Idempotency note
-This section is written to `workspace/AGENTS.md` and is idempotent via the
-`CEO_ROUTING_NO_LOOPHOLES_V1` marker. `apply-fleet-standards.sh` injects it on existing boxes.
+The on-box CEO routing doctrine — including this trust-engine chat-id rule — is assembled into
+`workspace/AGENTS.md` by the installers, NOT copied from this repo-root file. `apply-fleet-standards.sh`
+and `apply-routing-fix.sh` inject it, guarded by the `CEO_ROUTING_NO_LOOPHOLES_V2` marker (P1-04
+bumped it from V1 so already-onboarded boxes re-inject the rule on the next update instead of no-opping
+on the stale V1 marker). The SKILL_INTENT_ROUTING_REFLEX block (strip-then-reinsert every run) carries
+the same env-prefixed `mc-route.sh` invocation to the agent.
 
 ---
 

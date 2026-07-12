@@ -134,7 +134,11 @@ SOUL_FILE="$WORKSPACE_DIR/SOUL.md"
 _log "--- LAYER 1: doctrine injection ---"
 
 ROLE_DISC_MARKER="<!-- ROLE_DISCIPLINE_V1 -->"
-CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
+# P1-04 (V1→V2): V2 adds the trust-engine rule (pass the client's originating chat
+# id when routing a client message). CEO_ROUTING_MARKER_V1 is kept so the block
+# below can strip a legacy V1 region and re-inject V2 on already-onboarded boxes.
+CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
+CEO_ROUTING_MARKER_V1="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
 CEO_ORCH_V2_MARKER="<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
 
 # --- AGENTS.md: ROLE_DISCIPLINE_V1 ---
@@ -199,12 +203,24 @@ RDEOF
   fi
 fi
 
-# --- AGENTS.md: CEO_ROUTING_NO_LOOPHOLES_V1 ---
+# --- AGENTS.md: CEO_ROUTING_NO_LOOPHOLES_V2 ---
+# P1-04: migrate a legacy V1 block out (no END marker — terminates at its first
+# '---') so the V2 doctrine (adds the trust-engine chat-id rule) re-injects.
+if [ "$DRY_RUN" != "1" ] && grep -qF "$CEO_ROUTING_MARKER_V1" "$AGENTS_FILE" 2>/dev/null && ! grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE" 2>/dev/null; then
+  python3 - "$AGENTS_FILE" <<'CEOSTRIP_PY'
+import re, sys
+p = sys.argv[1]
+c = open(p, encoding="utf-8", errors="replace").read()
+c = re.sub(r"\n*<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->.*?\n---[ \t]*\n", "\n", c, count=1, flags=re.DOTALL)
+open(p, "w", encoding="utf-8").write(c)
+CEOSTRIP_PY
+  _log "L1: migrated legacy CEO_ROUTING_NO_LOOPHOLES_V1 → V2 in $AGENTS_FILE"
+fi
 if grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE" 2>/dev/null; then
-  _log "L1: CEO_ROUTING_NO_LOOPHOLES_V1 already present in $AGENTS_FILE — no-op"
+  _log "L1: CEO_ROUTING_NO_LOOPHOLES_V2 already present in $AGENTS_FILE — no-op"
 else
   if [ "$DRY_RUN" = "1" ]; then
-    _dry "would inject CEO_ROUTING_NO_LOOPHOLES_V1 into $AGENTS_FILE"
+    _dry "would inject CEO_ROUTING_NO_LOOPHOLES_V2 into $AGENTS_FILE"
   else
     touch "$AGENTS_FILE"
     TMPF=$(mktemp)
@@ -215,8 +231,8 @@ else
         if (!injected && index($0, marker)) { in_rd=1 }
         if (in_rd && !injected && /^---[[:space:]]*$/) {
           print ""
-          print "<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
-          print "## CEO ROUTING — NO LOOPHOLES (closes all self-execution escape hatches)"
+          print "<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
+          print "## CEO ROUTING — NO LOOPHOLES (closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)"
           print ""
           print "The CEO / master-orchestrator'\''s ONLY permitted routing action is:"
           print ""
@@ -249,6 +265,18 @@ else
           print "and consent from the owner. Seeking permission alone is not enough — explicit consent must be"
           print "received. Without that explicit consent, the CEO routes — always."
           print ""
+          print "### Trust engine — pass the client'\''s chat id when you route a CLIENT message (P1-04)"
+          print "When the task came from a CLIENT message (e.g. a Telegram request), you MUST pass the ORIGINATING"
+          print "chat id so the Command Center'\''s report-back loop keeps the client informed (assigned → in-progress"
+          print "+ ETA → done + where-to-find-it). A routed task must NEVER go silent. Set it on the signed router:"
+          print ""
+          print "    MC_ROUTE_REQUESTER_CHAT_ID=\"<originating client chat id>\" MC_ROUTE_REQUESTER_CHANNEL=\"telegram\" \\"
+          print "      bash \"$OC_ROOT/scripts/mc-route.sh\" <department_slug> \"<title>\" \"<owner message, verbatim>\""
+          print ""
+          print "Leave the chat id UNSET for operator/internal routes (never reported on). NEVER invent or reuse"
+          print "another client'\''s chat id — pass ONLY the real originating chat id of the message you are routing."
+          print ""
+          print "<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->"
           print "---"
           print ""
           injected=1
@@ -259,10 +287,15 @@ else
     if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
       ORIG2=$(cat "$AGENTS_FILE")
       {
-        printf '%s\n' '<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->'
-        printf '%s\n\n' '## CEO ROUTING — NO LOOPHOLES'
+        printf '%s\n' '<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->'
+        printf '%s\n\n' '## CEO ROUTING — NO LOOPHOLES (V2 adds the P1-04 trust-engine chat-id rule)'
         printf '%s\n' "The CEO's ONLY permitted routing action: POST /api/tasks/ingest with department_slug."
         printf '%s\n\n' 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions.'
+        printf '%s\n' 'TRUST ENGINE (P1-04): when the task came from a CLIENT message, ALWAYS pass the originating chat id'
+        printf '%s\n' 'so the report-back loop keeps the client informed — set MC_ROUTE_REQUESTER_CHAT_ID (and'
+        printf '%s\n' 'MC_ROUTE_REQUESTER_CHANNEL, default telegram) on the signed router: bash "$OC_ROOT/scripts/mc-route.sh".'
+        printf '%s\n\n' "Leave it unset for operator/internal routes; never invent or reuse another client's chat id."
+        printf '%s\n' '<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->'
         # printf '%s' guard: a bare format string beginning with '-' (e.g. '---')
         # is parsed as an option by printf and aborts under set -e. Pass it as a
         # %s argument instead so the leading dashes are always literal.
@@ -271,7 +304,7 @@ else
       } > "$TMPF"
     fi
     mv "$TMPF" "$AGENTS_FILE"
-    _log "L1: CEO_ROUTING_NO_LOOPHOLES_V1 injected into $AGENTS_FILE"
+    _log "L1: CEO_ROUTING_NO_LOOPHOLES_V2 injected into $AGENTS_FILE"
   fi
 fi
 
@@ -368,12 +401,22 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #   MC_ROUTE_SOURCE       payload "source"   (default telegram)
 #   MC_ROUTE_PRIORITY     payload "priority" (default medium)
 #   MC_ROUTE_MAX_RETRIES  retries after 1st  (default 2)
+#   MC_ROUTE_REQUESTER_CHAT_ID   P1-04 trust engine: the ORIGINATING client chat id the
+#                                Command Center report-back loop acks/progress/dones back to.
+#                                Set by the orchestrator when the task came from a client message.
+#   MC_ROUTE_REQUESTER_CHANNEL   the client channel (default telegram); only used when
+#                                MC_ROUTE_REQUESTER_CHAT_ID is set.
 set -uo pipefail
 
 INGEST_URL="${MC_ROUTE_INGEST_URL:-http://127.0.0.1:4000/api/tasks/ingest}"
 MAX_RETRIES="${MC_ROUTE_MAX_RETRIES:-2}"
 SOURCE="${MC_ROUTE_SOURCE:-telegram}"
 PRIORITY="${MC_ROUTE_PRIORITY:-medium}"
+# P1-04 trust engine: the originating client channel + chat id, so the Command
+# Center report-back loop can acknowledge/progress/done back to the client. Empty
+# (the default) => omitted from the payload (an operator/internal route).
+REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}"
+REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}"
 
 DEPARTMENT_SLUG="${1:-}"
 TITLE="${2:-}"
@@ -457,7 +500,9 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     SOURCE="$SOURCE" PRIORITY="$PRIORITY" python3 - >"$BODY_FILE" <<'PYBODY'
+     SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
 payload = {
     "title": os.environ.get("TITLE", "")[:120],
@@ -466,6 +511,13 @@ payload = {
     "source": os.environ.get("SOURCE", "telegram"),
     "priority": os.environ.get("PRIORITY", "medium"),
 }
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
 then
