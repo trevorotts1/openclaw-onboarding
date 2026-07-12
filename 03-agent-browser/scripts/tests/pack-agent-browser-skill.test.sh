@@ -143,7 +143,9 @@ rm -f /tmp/p306-check-out.$$
 OUT1="$WORK/out1.skill"
 OUT2="$WORK/out2.skill"
 bash "$PACKER" --out "$OUT1" >/dev/null
-sleep 1  # cross a filesystem mtime tick to prove normalization, not luck
+sleep 3  # cross a >2s wall-clock boundary to prove normalization holds even
+         # when the live build-time second (and the live build-time minute,
+         # on a slow box) changes between regenerations -- not a 1-tick fluke
 bash "$PACKER" --out "$OUT2" >/dev/null
 if cmp -s "$OUT1" "$OUT2"; then
   pass "two independent regenerations of identical source content are byte-identical (deterministic packer)"
