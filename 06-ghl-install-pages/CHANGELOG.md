@@ -18,6 +18,56 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [Unreleased] - 2026-07-12 - P3-04 residuals: iframe failure taxonomy + weekly iframe-survival check
+
+Branch **fix/skill6-residuals**, off `origin/main` (v19.58.0). Closes the two
+P3-04 (c) items whose deliverables land inside THIS skill (item 4: iframe
+failure taxonomy + weekly iframe-survival check; the unmanaged-spawn guard
+widening (item 1) and the per-box conformance probe (item 5) are repo-level
+(`scripts/`), not skill-06 content, and get their own changelog coverage —
+`41-build-with-ai-playbook/CHANGELOG.md` for the guard-adjacent
+`06-verify-agent-browser.sh` rewrite). Additive; no existing public call
+signature changed.
+
+- **Iframe failure taxonomy (P3-04 c4).** `ghl_iframe_drag.py` gains
+  `classify_board_reason()` / `board_note()`, mapping every `IframeDragError`
+  code into `cc_board.py`'s existing 6-value taxonomy (`SELECTOR-MISS` /
+  `VERIFY-FAIL` — never a 7th value), prefixed at position 0 and tagged with
+  the cross-origin frame the failure happened inside — iframe problems now
+  post a diagnosable board card instead of a generic
+  `Build exception: RuntimeError: STOP (survey iframe-drag:<code>)` stall.
+  `ghl_survey_builder.py` and `ghl_form_builder.py` carry the classified
+  reason through their existing `StopAndReport`/dict-return contracts.
+  New `tests/test_iframe_failure_taxonomy.py` (13 tests). Tool version bumps:
+  `IFRAME_DRAG_VERSION` v1.3.0 → v1.4.0, `SURVEY_BUILDER_VERSION` v1.5.0 →
+  v1.5.1, `FORM_BUILDER_VERSION` v0.1.0 → v0.1.1.
+- **Weekly iframe-survival check (P3-04 c4, fix-loop).** New
+  `run_iframe_survival_check()` / `--iframe-survival` CLI wired into the
+  existing selector-canary machinery (`tools/ghl_selector_canary.py`) —
+  read-only, dependency-injected (a caller-supplied `page_fetcher`; no
+  network of its own, same discipline as `run_canary()`), checking that a
+  set of PUBLISHED pages/surveys/forms still embed their cross-origin
+  (`*.leadconnectorhq.com`) iframe (2026-06-27 probe: GHL preview does not
+  strip it — this makes that proof CONTINUOUS instead of a one-time
+  snapshot). A stripped iframe reuses the SAME `VERIFY-FAIL` cc_board
+  taxonomy value (never a 7th). New `tools/iframe-survival-targets.json`
+  (ships EMPTY — no client URLs belong in this repo; the operator populates
+  real published-page URLs per box before the weekly cron run means
+  anything). New `tests/test_iframe_survival_canary.py` (12 tests).
+  `CANARY_VERSION` v1.0.0 → v1.1.0.
+- **`06-ghl-install-pages/skill-version.txt` intentionally NOT bumped here.**
+  Per `scripts/bump-version.sh`'s own "G3-on-06 GAP FIX" comment, this file
+  is release-time-owned — it tracks the repo `/version` (`vX.Y.Z`, currently
+  `v19.58.0`, matching this branch's parent), not an independent per-skill
+  semver, and is rolled ONLY by `bump-version.sh` inside a `chore(release)`
+  commit (confirmed: it is not one of the 11 markers `bump-version.sh
+  --check` verifies). It will pick up the next repo version automatically
+  at the next release commit, same as every prior 06 feature branch's
+  observed history (`browser_manager.sh`/`.py` version bumps, this file
+  untouched until the following `chore(release)` commit).
+
+---
+
 ## [v19.21.0] - 2026-07-10 - Skill-6 SURVEY-builder hardening (Fable review)
 
 Branch **skill6-survey-builder-hardening** (off `skill6-community-course-live-ready`).

@@ -1,16 +1,23 @@
 name: agent-browser lifecycle guard
 
 # SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
-# reaper backstop. This guard FAILS the build if any code under Skill 06 launches
-# agent-browser OUTSIDE the single mandatory gateway (tools/browser_manager.sh),
-# if the gateway loses its teardown trap / lock / close+state-clear / breaker, if
-# a 06 doc reintroduces a per-iteration session name, or if the doctrine sentinel
-# is missing from the Skill 06 docs. It then runs the static singleton pytest.
+# reaper backstop. This guard FAILS the build if any code under ANY skill
+# directory launches agent-browser OUTSIDE the single mandatory gateway
+# (06-ghl-install-pages/tools/browser_manager.sh), if the gateway loses its
+# teardown trap / lock / close+state-clear / breaker, if a 06 doc reintroduces
+# a per-iteration session name, or if the doctrine sentinel is missing from the
+# Skill 06 docs. It then runs the static singleton + iframe-taxonomy pytests.
 #
 # WHY: verified live damage (operator box, 2026-06-23) — 22 orphan
 # ~/.agent-browser/*.engine descriptors (357M) because the 06 tools used a fresh
 # per-iteration session name and had ZERO teardown. A regression past this guard
 # can never reach a passing build.
+#
+# P3-04 (c)1 (2026-07-11/12): MANAGED_SCAN_ROOTS is no longer a fixed 3-entry
+# list — the guard now AUTO-DISCOVERS every top-level `NN-*/` skill directory,
+# so 44-convert-and-flow-operator/ (the root P3-08 needs for its Tier-4
+# workflow-build backstop) and every future skill are covered by construction,
+# with zero further edits to this guard ever required again.
 #
 # Triggers on every push to main and every PR targeting main.
 
@@ -27,6 +34,17 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # P3-04 (c)1: the all-skill-dirs fail-first test reads the PRE-fix
+          # guard via `git show <pinned-SHA>:...` (the 2.1 "test that would
+          # fail against the pre-fix tree" law) -- the ref is PINNED to the
+          # last-blind commit (49b88cd5832a99ff7885036d7e9dbc78c43b9a2d), not
+          # `origin/main` (a moving ref would read the FIXED guard once this
+          # merges and fail permanently -- P3-04 fix-loop item 1). Still needs
+          # fetch-depth:0 so that pinned ancestor SHA is resolvable from any
+          # PR/push commit, not just the tip a shallow (fetch-depth:1)
+          # checkout gives.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,17 +60,25 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/guard-agent-browser-managed.sh
-          echo "✓ Skill 06 singleton pooled-browser gateway enforced (managed-only, teardown+lock+breaker, no per-run names, sentinel present)"
+          echo "✓ every skill directory's agent-browser calls route through the singleton pooled-browser gateway (managed-only, teardown+lock+breaker, no per-run names, sentinel present)"
 
       - name: Guard scan-roots negative fixture (AUD-20 -- guard also scans 41-*/03-*)
         shell: bash
         run: |
           set -euo pipefail
           bash tests/unit/guard-agent-browser-managed-scan-roots.test.sh
-          echo "✓ guard-agent-browser-managed.sh now bites an unmanaged agent-browser spawn planted in 41-build-with-ai-playbook/ or 03-agent-browser/, not just 06-ghl-install-pages/"
+          echo "✓ guard-agent-browser-managed.sh bites an unmanaged agent-browser spawn planted in 41-build-with-ai-playbook/ or 03-agent-browser/"
 
-      - name: Run static singleton tests
+      - name: Guard auto-discovery negative fixture (P3-04 c1 -- EVERY skill dir, incl. 44-* and future dirs)
         shell: bash
         run: |
           set -euo pipefail
-          pytest 06-ghl-install-pages/tests/test_browser_manager_singleton.py -q
+          bash tests/unit/guard-agent-browser-managed-all-skill-dirs.test.sh
+          echo "✓ guard-agent-browser-managed.sh now AUTO-DISCOVERS every NN-*/ skill directory (44-convert-and-flow-operator/ and any future skill), not a fixed 3-entry list"
+
+      - name: Run static singleton + iframe-taxonomy tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest 06-ghl-install-pages/tests/test_browser_manager_singleton.py \
+                 06-ghl-install-pages/tests/test_iframe_failure_taxonomy.py -q

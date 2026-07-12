@@ -17,15 +17,7 @@ set -uo pipefail
 
 SKILL_TAG="[skill 41][agent-browser]"
 
-# ─── AUD-19 / FLEET-FIX B.1: shared hard-timeout + child-tree-kill helper ────
-# Provides ab_kill_tree() (recursive pgrep -P kill) and ab_wait_with_timeout()
-# (bounded poll, hard-capped at AB_PROBE_MAX_TIMEOUT_SECS=120). Used below to
-# make sure the CDP probe (step 3) can never hang this script forever, and
-# that a kill of THIS script mid-probe never leaves an orphan node/Chromium
-# process behind.
 SCRIPT_DIR_41="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/browser-probe-timeout.sh
-source "$SCRIPT_DIR_41/lib/browser-probe-timeout.sh"
 
 _flag_loudly() {
   # Print a loud, impossible-to-miss failure banner and a human-escalation directive.
@@ -215,86 +207,70 @@ fi
 AB_VERSION="$("$AB_BIN" --version 2>/dev/null || echo 'unknown')"
 _info "Agent Browser version: ${AB_VERSION}"
 
-# ─── step 4: verify headless Chrome launch via CDP ───────────────────────────
+# ─── step 4: verify headless Chrome launch via CDP, THROUGH THE MANAGED GATEWAY
+# ───────────────────────────────────────────────────────────────────────────
+# P3-04 (c)1 / AUD-20-25: this step USED TO spawn `createBrowser({headless:
+# true})` directly via the @vercel/agent-browser Node API in a bare
+# backgrounded node process, with its OWN bespoke timeout/kill-tree machinery
+# — entirely OUTSIDE 06-ghl-install-pages/tools/browser_manager.sh's singleton
+# lock, TTL, guaranteed-teardown-trap, pool-ceiling, and circuit-breaker. That
+# was the exact unmanaged-spawn hole guard-agent-browser-managed.sh's widened
+# scan (P3-04 (c)1) now catches on every skill directory: a second,
+# uncoordinated browser lifecycle outside the one gateway is precisely how the
+# 2026-06-23 22-orphan/357MB leak happened in Skill 06 itself. NOW: this probe
+# sources browser_manager.sh and drives the CLI `agent-browser` binary through
+# `bm_ensure` + `AB()` (the box-wide singleton, lock=1, TTL self-kill, EXIT/
+# INT/TERM/HUP guaranteed-teardown trap, B1 headless-lock + guard-freshness
+# gate) exactly like every other Skill-6 caller — one canonical lifecycle, one
+# place that can leak, already reaper-backstopped. `bm_ensure`'s own
+# `AB_CALL_TIMEOUT` (default 90s, env-overridable) bounds the call; its EXIT
+# trap guarantees `close --session` + `state clear` run even if this script is
+# killed mid-probe.
 
-_info "Step 3: Verifying headless Chrome via CDP ..."
+_info "Step 3: Verifying headless Chrome via CDP (through the managed gateway) ..."
 
-# Ask Agent Browser to launch a headless CDP session and exit cleanly.
-# We use a minimal inline Node.js probe that calls the agent-browser API to:
-#   1. Launch a headless browser instance
-#   2. Open a blank page
-#   3. Evaluate 1+1 (sanity check the JS engine is up)
-#   4. Close the browser
-# If agent-browser exposes a programmatic API, we call it. If it is a CLI tool
-# that drives browser sessions, we adapt. This probe is written against the
-# @vercel/agent-browser API surface; adjust if the package ships differently.
-CDP_PROBE_SCRIPT="$(mktemp /tmp/skill41-cdp-probe-XXXXXX.mjs)"
-CDP_OUT_FILE="$(mktemp /tmp/skill41-cdp-out-XXXXXX)"
-# node-PID trap (AUD-19): populated right before we background the node
-# process below. The EXIT/INT/TERM trap kills the FULL descendant tree
-# rooted at this PID (node + any Chromium it launched via CDP) -- so if this
-# script is killed mid-probe (or the probe hangs and we time it out), zero
-# orphan processes survive. Safe/no-op before the PID is set or after the
-# process has already been reaped.
-CDP_NODE_PID=""
-_cleanup_cdp_probe() {
-  rm -f "$CDP_PROBE_SCRIPT" "$CDP_OUT_FILE"
-  if [[ -n "$CDP_NODE_PID" ]]; then
-    ab_kill_tree "$CDP_NODE_PID" TERM
-  fi
-}
-trap _cleanup_cdp_probe EXIT INT TERM
-
-cat > "$CDP_PROBE_SCRIPT" << 'CDP_PROBE_EOF'
-// Minimal CDP probe for Skill 41 preflight.
-// Uses @vercel/agent-browser headless launch API.
-// If the package API differs, this probe surfaces the exact error rather than
-// silently passing -- per protocol: never silent on failure.
-import { createBrowser } from "@vercel/agent-browser";
-
-let browser;
-try {
-  browser = await createBrowser({ headless: true });
-  const page = await browser.newPage();
-  await page.goto("about:blank");
-  const result = await page.evaluate(() => 1 + 1);
-  if (result !== 2) {
-    process.stderr.write(`CDP probe: evaluate() returned unexpected value: ${result}\n`);
-    process.exit(1);
-  }
-  process.stdout.write("CDP probe: headless Chrome launched OK, JS engine responsive\n");
-  await browser.close();
-  process.exit(0);
-} catch (err) {
-  if (browser) { try { await browser.close(); } catch (_) {} }
-  process.stderr.write(`CDP probe FAILED: ${err.message}\n`);
-  if (err.stack) process.stderr.write(`${err.stack}\n`);
-  process.exit(1);
-}
-CDP_PROBE_EOF
-
-# Hard timeout (AUD-19): default 90s, override via BROWSER_PROBE_TIMEOUT,
-# ALWAYS clamped to AB_PROBE_MAX_TIMEOUT_SECS (120s) by ab_wait_with_timeout
-# -- a caller can shorten the wait, never lengthen it past the ceiling.
-BROWSER_PROBE_TIMEOUT="${BROWSER_PROBE_TIMEOUT:-90}"
-_info "CDP probe timeout: ${BROWSER_PROBE_TIMEOUT}s (hard ceiling ${AB_PROBE_MAX_TIMEOUT_SECS}s)"
-
-"$NODE_BIN" --input-type=module < "$CDP_PROBE_SCRIPT" > "$CDP_OUT_FILE" 2>&1 &
-CDP_NODE_PID=$!
-
-ab_wait_with_timeout "$CDP_NODE_PID" "$BROWSER_PROBE_TIMEOUT"
-CDP_EXIT=$?
-CDP_OUTPUT="$(cat "$CDP_OUT_FILE" 2>/dev/null)"
-CDP_TIMED_OUT="$AB_PROBE_TIMED_OUT"
-CDP_NODE_PID=""   # already reaped by `wait` above -- trap becomes a no-op
-
-if [[ "$CDP_TIMED_OUT" -eq 1 ]]; then
-  _fail "Headless Chrome CDP probe TIMED OUT after ${BROWSER_PROBE_TIMEOUT}s (hard ceiling ${AB_PROBE_MAX_TIMEOUT_SECS}s). The node process and its FULL child tree (node + any Chromium it launched via CDP) were killed via pgrep -P child-tree teardown -- no orphan process was left running. Output captured before timeout: $CDP_OUTPUT -- Agent Browser likely cannot reach or launch headless Chrome. See protocols/agent-browser-preflight-protocol.md."
-elif [[ "$CDP_EXIT" -ne 0 ]]; then
-  _fail "Headless Chrome CDP probe FAILED (exit $CDP_EXIT). Output: $CDP_OUTPUT -- Agent Browser cannot launch a browser session. Check: (1) Chromium/Chrome is installed ('which chromium-browser' or 'which google-chrome'), (2) the container is not sandboxed beyond what Chromium supports (VPS: try --no-sandbox flag), (3) @vercel/agent-browser is compatible with this Node.js version. See protocols/agent-browser-preflight-protocol.md."
+BROWSER_MANAGER_SH="$SCRIPT_DIR_41/../../06-ghl-install-pages/tools/browser_manager.sh"
+if [[ ! -f "$BROWSER_MANAGER_SH" ]]; then
+  _fail "06-ghl-install-pages/tools/browser_manager.sh not found at $BROWSER_MANAGER_SH -- Skill 06 (the managed agent-browser gateway) must be installed before Skill 41's Agent Browser preflight can run. Never spawn agent-browser directly outside the gateway."
 fi
-_info "Headless Chrome CDP probe: PASSED"
-_info "Probe output: $CDP_OUTPUT"
+# Source the LITERAL path (not just the $BROWSER_MANAGER_SH variable used for
+# the existence check above): scripts/guard-agent-browser-managed.sh's
+# sources_mgr detector is a static text scan (`grep -Eq
+# '^[[:space:]]*(source|\.)[[:space:]].*browser_manager\.sh'`), not a shell
+# variable evaluator — the literal substring "browser_manager.sh" must appear
+# ON THIS LINE for the guard to recognize this file as routing through the
+# managed gateway (and therefore allow the `AB --session` calls below).
+# shellcheck source=../../06-ghl-install-pages/tools/browser_manager.sh
+source "$SCRIPT_DIR_41/../../06-ghl-install-pages/tools/browser_manager.sh"
+
+# NOTE: call bm_ensure UN-negated, then check $? -- `if ! bm_ensure; then ...`
+# would have made `$?` inside the then-block reflect the NEGATION's own status
+# (always 0), not bm_ensure's real refusal code (75/76/...).
+bm_ensure
+BM_ENSURE_EXIT=$?
+if [[ "$BM_ENSURE_EXIT" -ne 0 ]]; then
+  _fail "browser_manager bm_ensure FAILED (exit $BM_ENSURE_EXIT) -- the managed session could not be opened (locked by another build / parked by the circuit-breaker / an old guard version / a headed-mode env leak; see the REFUSE reason printed above). Agent Browser preflight cannot verify headless Chrome via CDP through the managed gateway. See protocols/agent-browser-preflight-protocol.md."
+fi
+# bm_ensure installed the EXIT/INT/TERM/HUP teardown trap -- this session is
+# torn down (close + state clear) no matter how this script exits from here.
+CDP_SESSION="$(bm_session_name)"
+_info "Managed session ensured: $CDP_SESSION (lock held, TTL ${AB_SESSION_TTL}s, teardown trap installed)"
+
+# `eval` here is the agent-browser CLI's own verb -- it evaluates the piped JS
+# INSIDE the sandboxed headless Chrome page (the same primitive Playwright's
+# page.evaluate()/ghl_survey_builder.py's `_eval()` use), not a shell/Python
+# eval() of untrusted code in this process. The literal `1+1` is a fixed,
+# hardcoded sanity string, never interpolated user input.
+CDP_OUTPUT="$(printf '%s' '1+1' | AB --session "$CDP_SESSION" eval --stdin 2>&1)"
+CDP_EXIT=$?
+
+if [[ "$CDP_EXIT" -ne 0 ]]; then
+  _fail "Headless Chrome CDP probe FAILED (managed 'AB eval' exit $CDP_EXIT). Output: $CDP_OUTPUT -- Agent Browser cannot launch/drive a browser session through the managed gateway. Check: (1) Chromium/Chrome is installed ('which chromium-browser' or 'which google-chrome'), (2) the container is not sandboxed beyond what Chromium supports (VPS: try --no-sandbox flag), (3) agent-browser is compatible with this Node.js version. See protocols/agent-browser-preflight-protocol.md."
+fi
+if [[ "$CDP_OUTPUT" != *2* ]]; then
+  _fail "Headless Chrome CDP probe: eval('1+1') did not return 2 (got: $CDP_OUTPUT) -- the JS engine is not responsive as expected through the managed session."
+fi
+_info "Headless Chrome CDP probe: PASSED (managed session, eval('1+1') -> $CDP_OUTPUT)"
 
 # ─── step 5: verify reach to the encrypted auth vault ────────────────────────
 

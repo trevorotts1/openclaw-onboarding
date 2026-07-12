@@ -200,7 +200,9 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-SURVEY_BUILDER_VERSION = "v1.5.0"   # v1.5.0: U6 URL fetch-200 receipt + U8 phase resume + U10 RUN REPORT
+SURVEY_BUILDER_VERSION = "v1.5.1"   # v1.5.0: U6 URL fetch-200 receipt + U8 phase resume + U10 RUN REPORT
+                                     # v1.5.1 (P3-04 c4): iframe-drag/rename STOPs now raise the
+                                     # classified IframeDragStop (CC board-note taxonomy)
 
 # The convergence primitive (Area-5.1) shipped in builder v1.3.0 / repo v19.17.0,
 # which exists ONLY on an origin/main-based checkout. A build that carries a
@@ -480,6 +482,50 @@ def _board_move(task_id: Optional[str], status: str, note: Optional[str] = None)
             _cc_board.update_status(task_id, status, note=note or "")
     except Exception as exc:  # noqa: BLE001
         _log(f"_board_move({status!r}) fail-soft: {exc}")
+
+
+class _InfraStop(RuntimeError):
+    """P3-04 (c)4 fix-loop item 6: a pre-flight STOP that occurs BEFORE any
+    ``ghl_iframe_drag.IframeDragError`` can even be raised — the primitive
+    module itself failed to import (``_ghl_iframe_drag is None``), or the CDP
+    url could not be read. Both are iframe-path failures (the whole point of
+    step 4 was making these diagnosable), but neither can be caught by the
+    ``except _ghl_iframe_drag.IframeDragError`` blocks below them — they used
+    to raise a bare ``RuntimeError("STOP (survey iframe-drag): ...")``, which
+    ``_board_fail_note()`` posts as a generic ``Build exception: RuntimeError:
+    ...`` card, partially undercutting the diagnosable-card goal.
+
+    Carries the SAME ``.board_note`` shape ``IframeDragStop`` does (prefix at
+    position 0), classified ``SELECTOR-MISS`` — ``ghl_iframe_drag.
+    classify_board_reason()``'s own bucket doc explicitly names "the locator/
+    iframe/page/CDP endpoint/Playwright itself could not be resolved or
+    reached" as SELECTOR-MISS (never a 7th taxonomy value), which is exactly
+    this case. Self-contained (does not touch ``_ghl_iframe_drag``) so it
+    works even in the primitive-missing branch where that module is None."""
+
+    def __init__(self, code: str, reason: str, *, iframe_selector: str = ""):
+        self.code = code
+        self.reason = reason
+        self.board_reason = "SELECTOR-MISS"
+        origin = f"iframe({iframe_selector}) " if iframe_selector else ""
+        self.board_note = f"SELECTOR-MISS: {origin}{code} — {reason}"
+        super().__init__(f"STOP ({code}): {reason}")
+
+
+def _board_fail_note(exc: BaseException) -> str:
+    """Render an exception as a board note for the build's catch-all STOP.
+
+    P3-04 (c)4: an exception carrying a pre-classified ``.board_note`` (e.g.
+    :class:`ghl_iframe_drag.IframeDragStop`) is posted VERBATIM — its CC
+    failure-prefix (SELECTOR-MISS/VERIFY-FAIL/...) must sit at position 0 for
+    cc_board.py's ``note.startswith(...)`` classification to key on it. Wrapping
+    it in ``f"Build exception: {type(exc).__name__}: {exc}"`` (the prior,
+    still-used fallback for every OTHER exception type) would push the prefix
+    off position 0 and the card would read as a generic stall again."""
+    classified = getattr(exc, "board_note", None)
+    if classified:
+        return str(classified)
+    return f"Build exception: {type(exc).__name__}: {exc}"
 
 
 def _board_activity(
@@ -942,16 +988,24 @@ def _perform_iframe_drag(session: str, source_text: str, drop_target: str,
     or the drag does not land. Replaces the top-frame-only `_run_cmd drag`, which
     cannot reach the row across the cross-origin boundary."""
     if _ghl_iframe_drag is None:
-        raise RuntimeError(
-            "STOP (survey iframe-drag): the shared ghl_iframe_drag primitive is not "
-            "importable, and agent-browser 0.27.0 alone cannot locate a non-interactive "
-            "field row across the cross-origin survey-builder iframe. Ship "
-            "ghl_iframe_drag.py + Playwright (scoped to Skill 6).")
+        # P3-04 (c)4 fix-loop item 6: classified (SELECTOR-MISS) instead of a
+        # bare RuntimeError — see _InfraStop above.
+        raise _InfraStop(
+            "primitive-unavailable",
+            "the shared ghl_iframe_drag primitive is not importable, and "
+            "agent-browser 0.27.0 alone cannot locate a non-interactive field "
+            "row across the cross-origin survey-builder iframe. Ship "
+            "ghl_iframe_drag.py + Playwright (scoped to Skill 6).",
+            iframe_selector=iframe_selector,
+        )
     cdp_url = _get_cdp_url(session)
     if not cdp_url:
-        raise RuntimeError(
-            "STOP (survey iframe-drag): could not read the agent-browser CDP url "
-            "(`get cdp-url`) to hand the drag off to Playwright on the same session.")
+        raise _InfraStop(
+            "cdp-url-missing",
+            "could not read the agent-browser CDP url (`get cdp-url`) to hand "
+            "the drag off to Playwright on the same session.",
+            iframe_selector=iframe_selector,
+        )
     try:
         return _ghl_iframe_drag.coordinate_drag(
             cdp_url,
@@ -962,7 +1016,14 @@ def _perform_iframe_drag(session: str, source_text: str, drop_target: str,
             verify_text=verify_text,
         )
     except _ghl_iframe_drag.IframeDragError as exc:
-        raise RuntimeError(f"STOP (survey iframe-drag:{exc.code}): {exc.reason}") from exc
+        # P3-04 (c)4: raise the CC-taxonomy-classified stop (SELECTOR-MISS /
+        # VERIFY-FAIL, frame-origin tagged) instead of a bare RuntimeError —
+        # `str(exc)` IS the classified board note, so build_survey's catch-all
+        # (`_board_move(..., note=f"Build exception: {type(exc).__name__}:
+        # {exc}")`) now posts a DIAGNOSABLE card, not a generic stall.
+        raise _ghl_iframe_drag.IframeDragStop(
+            exc, iframe_selector=iframe_selector, context="survey iframe-drag"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2238,15 +2299,23 @@ def _p2_rename_survey(
     a survey must never proceed (or be left behind) default-named."""
     _log(f"P2-B: rename survey to {survey_name!r} (frame-scoped)")
     if _ghl_iframe_drag is None:
-        raise RuntimeError(
-            "STOP (survey rename): the shared ghl_iframe_drag primitive is not "
-            "importable — the in-iframe survey title cannot be reached (top-frame "
-            "verbs fail silently on this cross-origin surface).")
+        # P3-04 (c)4 fix-loop item 6: classified (SELECTOR-MISS) instead of a
+        # bare RuntimeError — see _InfraStop above.
+        raise _InfraStop(
+            "primitive-unavailable",
+            "the shared ghl_iframe_drag primitive is not importable — the "
+            "in-iframe survey title cannot be reached (top-frame verbs fail "
+            "silently on this cross-origin surface).",
+            iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+        )
     cdp_url = _get_cdp_url(session)
     if not cdp_url:
-        raise RuntimeError(
-            "STOP (survey rename): could not read the agent-browser CDP url "
-            "(`get cdp-url`) for the frame-scoped inline-title rename.")
+        raise _InfraStop(
+            "cdp-url-missing",
+            "could not read the agent-browser CDP url (`get cdp-url`) for the "
+            "frame-scoped inline-title rename.",
+            iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+        )
     try:
         _ghl_iframe_drag.set_inline_title(
             cdp_url,
@@ -2256,8 +2325,13 @@ def _p2_rename_survey(
             url_marker="survey-builder",
         )
     except _ghl_iframe_drag.IframeDragError as exc:
-        raise RuntimeError(
-            f"STOP (survey rename:{exc.code}): {exc.reason}") from exc
+        # P3-04 (c)4: classified CC board note (SELECTOR-MISS/VERIFY-FAIL,
+        # frame-origin tagged) instead of a generic STOP string — see
+        # _perform_iframe_drag above for the same treatment.
+        raise _ghl_iframe_drag.IframeDragStop(
+            exc, iframe_selector=GHL_SURVEY_IFRAME_SELECTOR,
+            context="survey rename"
+        ) from exc
     _wait(session, survey_name)
     shot_n[0] += 1
     _screenshot(session, _shot_path(evidence_root, shot_n[0], "p2-b-renamed"))
@@ -3576,8 +3650,7 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
 
     except Exception as exc:  # noqa: BLE001
         _log(f"build_survey EXCEPTION: {type(exc).__name__}: {exc}")
-        _board_move(board_task_id, "backlog",
-                    note=f"Build exception: {type(exc).__name__}: {exc}")
+        _board_move(board_task_id, "backlog", note=_board_fail_note(exc))
         _board_activity(board_task_id, "completed",
                         f"Build FAILED: {type(exc).__name__}: {exc}")
         duration = time.monotonic() - started
