@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v19.52.0"
+ONBOARDING_VERSION="v19.53.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v19.52.0 - safe_json_edit
+# v19.53.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2004,6 +2004,36 @@ else:
     fi
   else
     echo "  (detect-stale-artifacts.py / manifest / workspace not present -- skipping per-artifact staleness check)"
+  fi
+
+  # ----------------------------------------------------------
+  # P2-08 step 2: ARTIFACT-REFRESH-QUEUE CONSUMER.
+  # The queue write above (.artifact-refresh-queue.json) has had a producer
+  # since v12.27.0 but NEVER a consumer for the STALE-role case -- a box kept
+  # OLD role docs forever after an upgrade (Presentation spec Section 13.9
+  # deploy trap; the v16.0.2 floor-fill-driver.py only ever handled MISSING
+  # roles, skip-existing/no-clobber by design, so it never touches a role
+  # that already has a folder on disk). refresh-stale-roles.py drains ONLY
+  # kind=="role" AND status=="STALE" queue rows: it re-copies the current
+  # library content into the EXISTING role's how-to.md via the SAME
+  # library_lookup()/try_library_fill() path create_role_workspace() uses for
+  # a brand-new role, then re-stamps the provenance marker with the CURRENT
+  # content_sha so a future detect-stale-artifacts.py run classifies it
+  # CURRENT. SOP/dept/persona rows and MISSING/ORPHAN/UNTRACKED rows are left
+  # in the queue untouched (out of this consumer's scope). A poisoned row
+  # (nonexistent role path, corrupt JSON, no library match) is skipped with a
+  # loud WARN and left queued -- it never aborts the update. Best-effort:
+  # any failure here is swallowed (`|| true`) so a missing/broken consumer
+  # tool can never fail the update itself.
+  # ----------------------------------------------------------
+  REFRESH_CONSUMER="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/refresh-stale-roles.py"
+  if [ -f "$REFRESH_CONSUMER" ] && command -v python3 >/dev/null 2>&1; then
+    echo ""
+    echo "  Draining artifact-refresh-queue (STALE role docs -> fresh library content)..."
+    python3 "$REFRESH_CONSUMER" --workspace "$OC_WORKSPACE" --apply 2>&1 | tee -a "$LOG_FILE" || \
+      echo "  refresh-stale-roles.py: completed with warnings (see $LOG_FILE)"
+  else
+    echo "  (refresh-stale-roles.py not found or python3 unavailable -- skipping artifact-refresh-queue drain; older bundle)"
   fi
 
   # ----------------------------------------------------------
