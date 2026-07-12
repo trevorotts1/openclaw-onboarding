@@ -1384,7 +1384,13 @@ jobs:
           # v10.0.0, long before P3-06's branch point, so this is a faithful
           # pre-fix capture) rather than committing a static binary-ish
           # fixture that could itself drift from the real pre-fix script.
-          git fetch --depth=1 origin main
+          # Explicit destination refspec (origin/main:refs/remotes/origin/main)
+          # rather than a bare `git fetch origin main` -- actions/checkout's
+          # configured remote refspec is narrowed to the triggering ref, so an
+          # implicit fetch of "main" only populates FETCH_HEAD, not the
+          # origin/main ref `git show` needs below; the explicit destination
+          # forces the ref to exist regardless of the runner's fetch config.
+          git fetch --depth=1 origin main:refs/remotes/origin/main
           git show origin/main:03-agent-browser/qc-agent-browser.sh > /tmp/qc-agent-browser.sh.prefix-fixture
           chmod +x /tmp/qc-agent-browser.sh.prefix-fixture
           # Sanity: the captured fixture must NOT already contain this unit's
