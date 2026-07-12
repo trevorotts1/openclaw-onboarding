@@ -15,7 +15,17 @@ name: embedding-integrity-guard
 #   Job 2 (universal-sops): scripts/hash-universal-sops-manifest.py --check —
 #     any edit under universal-sops/ without a manifest re-stamp fails.
 #
-# Both jobs are offline (no embedding API calls, no downloads).
+#   Job 3 (sop-embed-once, P4-03): the CC SOP/routing embed-once pipeline
+#     (Corpus 5) — HASH-SKIP + real-vector hard gate for
+#     shared-utils/sop-embed-once/embed_sop_library.py, the client-box
+#     provisioning idempotency gate (sha256 hard gate, model/dims mismatch
+#     refusal, marker-table stamping) for provision_sop_embeddings.py, and the
+#     dual-health-surface reconciliation regression test proving a box with
+#     SOP content loaded but zero sop_embeddings rows can no longer
+#     false-pass embedding_health.py::check_cc_sop_index while the heartbeat
+#     probe correctly reports it dark.
+#
+# All jobs are offline (no embedding API calls, no downloads).
 
 on:
   push:
@@ -37,6 +47,12 @@ on:
       - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
+      - shared-utils/sop-embed-once/**
+      - 32-command-center-setup/scripts/ingest-sop-library.sh
+      - 32-command-center-setup/HEARTBEAT.md
+      - tests/unit/sop-embed-once-hash-skip.test.py
+      - tests/unit/provision-sop-embeddings-idempotency.test.py
+      - tests/unit/embedding-health-cc-sop-reconciliation.test.py
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
     paths:
@@ -57,6 +73,12 @@ on:
       - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
+      - shared-utils/sop-embed-once/**
+      - 32-command-center-setup/scripts/ingest-sop-library.sh
+      - 32-command-center-setup/HEARTBEAT.md
+      - tests/unit/sop-embed-once-hash-skip.test.py
+      - tests/unit/provision-sop-embeddings-idempotency.test.py
+      - tests/unit/embedding-health-cc-sop-reconciliation.test.py
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
 
@@ -112,3 +134,24 @@ jobs:
 
       - name: Check universal-sops content manifest
         run: python3 scripts/hash-universal-sops-manifest.py --check
+
+  sop-embed-once:
+    name: "P4-03 — CC SOP-embeddings embed-once pipeline (Corpus 5)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: SOP embed-once — HASH-SKIP + real-vector hard gate
+        run: python3 tests/unit/sop-embed-once-hash-skip.test.py -v
+
+      - name: SOP-embeddings client-box provisioning — idempotency + sha256/model-mix refusal
+        run: python3 tests/unit/provision-sop-embeddings-idempotency.test.py -v
+
+      - name: CC SOP embedding-health — dual-surface reconciliation (dark-box no longer false-passes)
+        run: python3 tests/unit/embedding-health-cc-sop-reconciliation.test.py -v

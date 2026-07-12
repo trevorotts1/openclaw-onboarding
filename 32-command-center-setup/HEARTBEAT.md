@@ -48,8 +48,29 @@ Idempotency: before creating, check it is not already registered —
 `openclaw cron list | grep -qi fleet-embedding-canary` — and skip if present.
 
 **If the canary reports `dark`:** the SOP embeddings or persona index are not
-built/stale. Re-run the SOP library ingest + persona index provisioning for the
-box, then re-run the canary to confirm it returns to `healthy`.
+built/stale. Re-running the SOP library ingest (`ingest-sop-library.sh`) does
+NOT fix a dark `sop_embeddings` reading by itself — it only loads SOP
+*content* into the `sops` table and never touches embeddings (P4-03
+root-cause). The ACTUAL fix depends on which corpus is dark:
+
+- **`sop_embeddings` empty/stale** (the shared library): re-run
+  `ingest-sop-library.sh` — as of P4-03 it now calls
+  `shared-utils/sop-embed-once/provision_sop_embeddings.py` automatically at
+  the end of the content ingest, which imports the operator-published
+  shipped asset (zero client-key embed calls). If that step warned
+  "no SOP-embeddings asset has been published yet," escalate to the operator
+  to run `shared-utils/sop-embed-once/build-and-publish.sh` — do NOT attempt
+  to embed the shared library with a client key.
+- **Client-specific SOPs uncovered by the shared asset** (e.g. rows from
+  `sop_proposals`): run `npm run db:embed:sops`
+  (`scripts/backfill-sop-embeddings.ts`) — it is delta-only and will not
+  re-embed anything already covered by the shipped asset.
+- **Persona index (`gemini-index.sqlite`) empty/stale**: re-run persona index
+  provisioning (`shared-utils/provision-persona-index.sh` /
+  `install.sh` Step 6b / `update-skills.sh` Step U6b) — this is the
+  DIFFERENT (System 1) corpus and is unrelated to `sop_embeddings`.
+
+Then re-run the canary to confirm it returns to `healthy`.
 
 ---
 

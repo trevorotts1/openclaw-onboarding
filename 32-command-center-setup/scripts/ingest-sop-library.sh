@@ -66,4 +66,20 @@ echo "[sop-library] backed up DB → $BACKUP"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "$SCRIPT_DIR/ingest-sop-library.py" "$CLIENT" "$JSONL" "$DB"
 
+# P4-03 step 2 — provision the shipped SOP-embeddings asset (zero client-key
+# embed calls for the shared library). Runs AFTER the SOP content ingest so
+# `sops` rows exist to join against. Additive/idempotent: no-ops when no asset
+# has been published yet (SOP-EMBEDDINGS-MANIFEST.json asset_rebuild_required),
+# skips a re-download when the box is already canonical, and NEVER blocks this
+# script's own exit code (mirrors install.sh Step 6b / update-skills.sh U6b's
+# additive treatment of provision_persona_index).
+SOP_EMBED_DIR="$(cd "$SCRIPT_DIR/../../shared-utils/sop-embed-once" 2>/dev/null && pwd || true)"
+if [ -n "$SOP_EMBED_DIR" ] && [ -f "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" ]; then
+  python3 "$SOP_EMBED_DIR/provision_sop_embeddings.py" \
+    "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" "$DB" \
+    || echo "[sop-library] note: SOP-embeddings provisioning step returned non-zero (additive; SOP content ingest already succeeded above)"
+else
+  echo "[sop-library] note: SOP-EMBEDDINGS-MANIFEST.json not found — skipping SOP-embeddings provisioning (additive)"
+fi
+
 echo "[sop-library] done. backup retained at $BACKUP"

@@ -1,0 +1,28 @@
+{
+  "model": "gemini-embedding-2",
+  "dims": 3072,
+  "provider": "gemini",
+  "sop_count": 0,
+  "chunk_count": 0,
+  "sha256": null,
+  "build_date": null,
+  "release_tag": null,
+  "asset_url": null,
+  "gz_size_bytes": null,
+  "gz_size_mb": null,
+  "source_db_bytes": null,
+  "source_jsonl_release_tag": null,
+  "manifest_last_updated": "2026-07-12",
+  "asset_rebuild_required": true,
+  "asset_rebuild_note": "P4-03 step 1 — seed manifest, NO asset published yet. release_tag/asset_url/sha256 are null on purpose: the operator has not yet run shared-utils/sop-embed-once/build-and-publish.sh with a real Gemini key against the canonical sops.jsonl (that is an operator action at deploy time, mirroring how the persona prebuilt-index was first published — see shared-utils/prebuilt-index/INDEX-MANIFEST.json history). shared-utils/provision-sop-embeddings.sh reads asset_rebuild_required==true as 'nothing to provision yet' and no-ops additively (never blocks install/update, never downloads a null asset_url). Once build-and-publish.sh publishes the first real asset, this file is committed with concrete release_tag/asset_url/sha256/sop_count and asset_rebuild_required flips to false.",
+  "schema": {
+    "table": "sop_embeddings",
+    "columns_required": [
+      "sop_id",
+      "embedding",
+      "embedding_model",
+      "embedding_dims",
+      "embedded_at"
+    ]
+  }
+}
