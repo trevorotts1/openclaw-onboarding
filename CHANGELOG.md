@@ -1,4 +1,4 @@
-## [Unreleased] — branch `fix/sunday-cc-rebuild` — fix(32): close the Sunday CC-update rebuild gap — D5 now routes through CC's OWN update.sh (atomic-deploy + health-check + auto-rollback), never a bare `npm run build` + `pm2 restart` (P1-07)
+## [v19.50.1]  -  2026-07-11  -  fix(32): close the Sunday CC-update rebuild gap — D5 now routes through CC's OWN update.sh (atomic-deploy + health-check + auto-rollback), never a bare `npm run build` + `pm2 restart` (P1-07)
 
 **P1-07 — the version-update protocol.** Answers the operator's question
 ("does the Sunday check update the CC repo too, and does it actually
