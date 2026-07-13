@@ -52,8 +52,8 @@ python3 ~/.openclaw/scripts/gemini-search.py "fish audio voice cloning"
 | Base URL | `https://api.fish.audio` |
 | TTS Endpoint | `POST /v1/tts` |
 | Auth Header | `Authorization: Bearer $FISH_AUDIO_API_KEY` |
-| Model Header | `model: s2-pro` |
-| Default Model | `s2-pro` (ALWAYS - never use s1 unless explicitly told) |
+| Model Header | `model: s2.1-pro` |
+| Default Model | `s2.1-pro` (ALWAYS - never use `s1`, the interim `s2-pro`, or the free `s2.1-pro-free` tier unless explicitly told) |
 | Voice ID | `$FISH_AUDIO_VOICE_ID` |
 
 ---
@@ -62,8 +62,8 @@ python3 ~/.openclaw/scripts/gemini-search.py "fish audio voice cloning"
 
 | Use Case | Model | Latency | Bitrate | Normalize | Format |
 |----------|-------|---------|---------|-----------|--------|
-| Phone calls | s2-pro | normal | 64 kbps | true | mp3 |
-| Podcasts / content | s2-pro | normal | 192 kbps | true | mp3 |
+| Phone calls | s2.1-pro | normal | 64 kbps | true | mp3 |
+| Podcasts / content | s2.1-pro | normal | 192 kbps | true | mp3 |
 
 - **Normal latency always** - best quality output
 - **Balanced latency** (~300ms) only for real-time live AI calling
@@ -77,7 +77,7 @@ python3 ~/.openclaw/scripts/gemini-search.py "fish audio voice cloning"
 curl -s -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d "{
     \"text\": \"YOUR TEXT HERE\",
     \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",
@@ -95,7 +95,7 @@ curl -s -X POST "https://api.fish.audio/v1/tts" \
 curl -s -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d "{
     \"text\": \"YOUR TEXT HERE\",
     \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",
@@ -120,9 +120,9 @@ ffmpeg -i "concat:chunk_1.mp3|chunk_2.mp3|chunk_3.mp3" -acodec copy full_podcast
 
 ---
 
-## Emotion Tags (S2-Pro Natural Language)
+## Emotion Tags (S2.1 Pro Natural Language)
 
-S2-Pro uses natural language in square brackets. Place before the sentence or phrase:
+S2.1 Pro uses natural language in square brackets. Place before the sentence or phrase:
 
 ```
 [excited] Big announcement today!
@@ -156,7 +156,7 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
 
 ---
 
-## Fish Audio Voice Behavior (S2 / S2-Pro)
+## Fish Audio Voice Behavior (S2 / S2.1 Pro)
 
 > **TYP Deep Reference:** `fish-audio-voice-sop.md` is a large document. Do NOT load it into core files. Read it once using TYP, internalize the rules, then apply them when generating voice output.
 

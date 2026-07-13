@@ -61,7 +61,7 @@ grep -A5 -i "fish audio" "$HOME/.openclaw/skills/.pending-setup.md" 2>/dev/null 
 > **Expected:** `POST /v1/tts`
 
 **Q3.** What model should BlackCEO use by default?
-> **Expected:** `s2-pro`
+> **Expected:** `s2.1-pro`
 
 **Q4.** What bitrate should be used for phone calls?
 > **Expected:** 64 kbps
@@ -75,7 +75,7 @@ grep -A5 -i "fish audio" "$HOME/.openclaw/skills/.pending-setup.md" 2>/dev/null 
 **Q7.** What latency is the real-time exception?
 > **Expected:** `balanced` for live streaming / real-time call situations
 
-**Q8.** How does S2-Pro emotion tagging work?
+**Q8.** How does S2.1 Pro emotion tagging work?
 > **Expected:** open-domain natural-language tags in square brackets, like `[calm and professional]`
 
 **Q9.** What inline paralanguage effects are available?
@@ -99,7 +99,7 @@ HTTP_CODE=$(curl -s -o /tmp/fish_audio_qc_test.mp3 -w "%{http_code}" \
   -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d "{\"text\":\"Fish Audio QC passed. Ready.\",\"reference_id\":\"$FISH_AUDIO_VOICE_ID\",\"format\":\"mp3\",\"mp3_bitrate\":64,\"normalize\":true,\"latency\":\"normal\"}")
 
 echo "HTTP: $HTTP_CODE"
@@ -120,11 +120,11 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
 
 Fail the skill if any of these happen:
 
-- agent uses `s1` instead of `s2-pro` without explicit instruction
+- agent uses `s1`, the interim `s2-pro`, or the free `s2.1-pro-free` tier instead of `s2.1-pro` without explicit instruction
 - agent uses 192 kbps for a phone call
 - agent uses 64 kbps for a podcast/content file
 - agent uses `balanced` latency for normal offline generation
-- agent uses parenthesis-based emotion syntax instead of square-bracket natural language for S2-Pro
+- agent uses parenthesis-based emotion syntax instead of square-bracket natural language for S2.1 Pro
 - agent sends very long scripts in one call instead of chunking
 - agent guesses endpoint details without consulting the reference
 
