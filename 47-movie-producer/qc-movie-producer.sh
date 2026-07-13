@@ -168,23 +168,29 @@ assert "kie-adapters payload carries ONLY our two adapter files (no OpenMontage 
   "[ \"\$(find \"${SELF_SKILL_DIR}/kie-adapters/tools\" -name '*.py' | wc -l | tr -d ' ')\" = '2' ]"
 
 # ---- Render-runtime provisioning invariants (HARD — always present in repo + post-install) ----
-# The provisioner + Dockerfile make Remotion/HyperFrames (headless-Chromium) renders and
-# offline Piper TTS work on BOTH macOS and Linux/VPS. These asserts keep the fix from
-# silently regressing (syntax, pinned versions, the Node>=22 floor, the Chromium libs).
+# The provisioner + Dockerfile make Remotion/HyperFrames (headless-Chromium) renders work on
+# BOTH macOS and Linux/VPS. Piper (offline TTS) is OPTIONAL/opt-in and OFF by default — the
+# primary narrator is Fish Audio 2.1 Pro, with Gemini/OpenAI/MiniMax (Mimo) TTS as cloud fallbacks. These
+# asserts keep the fix from silently regressing (syntax, pinned versions, Node>=22 floor,
+# Chromium libs) AND that Piper stays optional (opt-in, never installed on the default path).
 assert "provision-render-deps.sh is valid bash (bash -n)" \
   "bash -n \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
 assert "provision-render-deps.sh pins a Remotion version default (REMOTION_VERSION:-)" \
   "grep -q 'REMOTION_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
 assert "provision-render-deps.sh pins a HyperFrames version default (HYPERFRAMES_VERSION:-)" \
   "grep -q 'HYPERFRAMES_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
-assert "provision-render-deps.sh pins a Piper version default (PIPER_VERSION:-)" \
-  "grep -q 'PIPER_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh keeps Piper OPTIONAL/opt-in, OFF by default (SKILL47_INSTALL_PIPER gate)" \
+  "grep -q 'SKILL47_INSTALL_PIPER' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
 assert "provision-render-deps.sh installs an arch/OS Remotion compositor (@remotion/compositor-)" \
   "grep -q '@remotion/compositor-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
 assert "provision-render-deps.sh ensures Chrome-Headless-Shell (remotion browser ensure)" \
   "grep -q 'remotion browser ensure' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
-assert "provision-render-deps.sh pre-stages a Piper voice ONNX model (huggingface piper-voices)" \
-  "grep -q 'rhasspy/piper-voices' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh never installs Piper on the default path (opt-in gate precedes any piper-tts install)" \
+  "python3 -c \"
+import sys
+t=open('${SELF_SKILL_DIR}/provision-render-deps.sh').read()
+g=t.find('SKILL47_INSTALL_PIPER'); i=t.find('piper-tts==')
+sys.exit(0 if g!=-1 and (i==-1 or g<i) else 1)\""
 assert "install.sh wires the render-runtime provisioner (Step 3.5)" \
   "grep -q 'provision-render-deps.sh' \"${SELF_SKILL_DIR}/install.sh\""
 assert "preflight.sh enforces Node >= 22 (HyperFrames floor)" \
@@ -222,8 +228,8 @@ warn_only "jsonschema importable (installed by make setup)" "python3 -c 'import 
 # ---- HyperFrames (npm via npx) — warn_only (network-dependent on a fresh box) ----
 warn_only "npx hyperframes resolves (cache-warmed by make setup)" "npx --yes hyperframes --version >/dev/null 2>&1"
 
-# ---- Piper TTS (soft-fail: missing is WARN not FAIL) ----
-warn_only "piper-tts importable (soft-fail: cloud TTS fallback if missing)" \
+# ---- Piper TTS (OPTIONAL/opt-in: missing is WARN not FAIL — Fish 2.1 Pro is the primary narrator) ----
+warn_only "piper-tts importable (optional offline fallback; cloud TTS Fish 2.1 Pro/Gemini/OpenAI/MiniMax is primary)" \
   "python3 -c 'import piper'"
 
 echo ""

@@ -102,16 +102,21 @@ This installs:
 - Python packages: `pyyaml`, `pydantic`, `jsonschema`, `python-dotenv`, `Pillow`, `requests`, `google-auth`
 - Remotion + React: `cd remotion-composer && npm install`
 - HyperFrames CLI: `npx --yes hyperframes --version` (cache-warm)
-- Piper free TTS: `pip install piper-tts` (soft-fail at this layer — hardened in Step 3.5)
+- Piper free TTS: `pip install piper-tts` (soft-fail; Piper is OPTIONAL/opt-in — see Step 3.5)
 
 `make setup` must exit 0. If it exits non-zero, re-read the error message and fix the missing dependency (do NOT vendor anything — all deps are fetchable at install time; see `DEPENDENCY-MANIFEST.md`).
 
 ### Step 3.5 — Provision the render runtime (macOS AND Linux/VPS)
 
-`make setup` installs the npm/pip packages but **no Chromium system libraries and no Piper
-voice model**, so a fresh Linux/VPS container fails every Remotion/HyperFrames
-(headless-Chromium) render and can end up with no offline Piper TTS. `install.sh` runs this
-for you; if installing by hand, run it after `make setup`:
+`make setup` installs the npm/pip packages but **no Chromium system libraries**, so a fresh
+Linux/VPS container fails every Remotion/HyperFrames (headless-Chromium) render. `install.sh`
+runs this for you; if installing by hand, run it after `make setup`:
+
+> **Narration / TTS voice order:** the **primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`)**;
+> **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an
+> OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't
+> installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in
+> to the offline Piper fallback with `SKILL47_INSTALL_PIPER=1`.
 
 ```bash
 bash ~/.openclaw/skills/47-movie-producer/provision-render-deps.sh
@@ -128,13 +133,15 @@ Arch/OS-aware and idempotent. It:
   <https://www.remotion.dev/docs/docker>.
 - Cache-warms the pinned latest **HyperFrames 0.7.56** CLI + its bundled Chrome. Source:
   <https://registry.npmjs.org/hyperframes/latest>.
-- Installs the latest arch-aware **Piper `piper-tts==1.4.2`** (**FAIL-LOUD** — the root-cause
-  fix for the previously-silent soft-fail) and **pre-stages** the `en_US-lessac-medium` voice
-  ONNX model to `~/.piper/models`. Source: <https://github.com/OHF-voice/piper1-gpl/releases>,
-  <https://huggingface.co/rhasspy/piper-voices>.
+- **(OPTIONAL, opt-in — OFF by default)** Only when `SKILL47_INSTALL_PIPER=1`: installs the
+  latest arch-aware **Piper `piper-tts==1.4.2`** and **pre-stages** the `en_US-lessac-medium`
+  voice ONNX model to `~/.piper/models`. This is an offline-only last-resort fallback and
+  **never aborts the install**. Source: <https://github.com/OHF-voice/piper1-gpl/releases>,
+  <https://huggingface.co/rhasspy/piper-voices>. **Default path skips Piper entirely** — no
+  `pip install piper-tts`, no voice-model download — and TTS uses the cloud providers.
 
 Optional toggles: `SKILL47_SKIP_RENDER_PROVISION=1` (free-path-only box — skip entirely),
-`SKILL47_PIPER_OPTIONAL=1` (downgrade a Piper failure to a warning), `SKILL47_SKIP_APT=1`
+`SKILL47_INSTALL_PIPER=1` (opt in to the optional offline Piper TTS fallback), `SKILL47_SKIP_APT=1`
 (system libs already provisioned). To bump a version, edit the pinned constants at the top of
 `provision-render-deps.sh` (and the matching `ARG`s in the `Dockerfile`).
 

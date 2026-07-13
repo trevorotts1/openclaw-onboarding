@@ -1,5 +1,34 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v14.3.0 — 2026-07-13 — Piper demoted to OPTIONAL/opt-in (Fish Audio 2.1 Pro is the primary narrator)
+
+Demotes Piper to an **optional, opt-in, offline-only** TTS fallback that is **OFF by default**.
+The operator already has cloud TTS (Fish Audio / Gemini / OpenAI / MiniMax), so a box without
+Piper must install cleanly. This reverses the v14.2.0 FAIL-LOUD Piper behavior. Remotion +
+HyperFrames provisioning and the Node ≥ 22 preflight are unchanged.
+
+- **`provision-render-deps.sh`** — the Piper step (§5) is now gated behind an explicit opt-in
+  flag **`SKILL47_INSTALL_PIPER=1`**. **Default path skips Piper entirely** — no
+  `pip install piper-tts`, no `en_US-lessac-medium` voice-model download. The former FAIL-LOUD
+  behavior is removed: a Piper install/download failure is now **WARN-only and NEVER aborts the
+  install**. Removed the `SKILL47_PIPER_OPTIONAL` toggle (superseded by the off-by-default gate).
+  Remotion + arch/OS compositor + Chrome-Headless-Shell, HyperFrames CLI + bundled Chrome, and
+  the Linux Chromium system libs + ffmpeg are **unchanged** (still installed by default).
+- **`install.sh` (Step 3.5)** — messaging updated: Piper is optional/opt-in and never causes the
+  render-provisioning step to abort; removed the `SKILL47_PIPER_OPTIONAL` guidance.
+- **`qc-movie-producer.sh`** — the two HARD asserts that *required* Piper (pinned `PIPER_VERSION`
+  default, pre-staged voice ONNX model) are replaced by asserts that Piper is **optional/opt-in**
+  (the `SKILL47_INSTALL_PIPER` gate is present) and that **Piper is never installed on the default
+  path** (the opt-in gate precedes any `piper-tts` install). Remotion/HyperFrames/Chromium-libs
+  and Node ≥ 22 asserts are kept as-is. The runtime `import piper` check stays soft (WARN).
+- **Docs (`SKILL.md`, `INSTALL.md`, `DEPENDENCY-MANIFEST.md`)** — new voice order documented:
+  **Fish Audio 2.1 Pro (`s2.1-pro`) primary; Gemini TTS / OpenAI TTS / MiniMax (a.k.a. "Mimo")
+  cloud fallbacks; Piper optional, opt-in, offline-only, not installed by default.** Notes that
+  OpenMontage's TTS auto-discovery uses the cloud providers when Piper is absent.
+- **Unchanged:** the `Dockerfile` stays the opt-in Linux/VPS artifact (native install remains the
+  default); the Node ≥ 22 preflight requirement is left exactly as-is.
+- `skill-version.txt` + `SKILL.md` frontmatter: **v14.2.0 → v14.3.0**.
+
 ## v14.2.0 — 2026-07-13 — Render runtime provisioned for macOS AND Linux/VPS (Piper/Remotion/HyperFrames)
 
 Fixes the "Mac-only in practice" gap in the OpenMontage engine's browser-based render

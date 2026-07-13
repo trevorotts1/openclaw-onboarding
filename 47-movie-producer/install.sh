@@ -103,23 +103,24 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 3.5 — Render-runtime provisioning (arch/OS-aware, idempotent)
 # ---------------------------------------------------------------------------
-# `make setup` installs the upstream npm/pip deps but NO Chromium system libraries and
-# NO Piper voice model — so a fresh Linux/VPS container FAILS every Remotion/HyperFrames
-# (headless-Chromium) render and can end up with no offline Piper TTS. This step closes
-# those gaps for BOTH macOS and Linux: Chromium system libs + ffmpeg (Linux apt), the
-# pinned latest Remotion + arch/OS compositor + Chrome-Headless-Shell, the pinned latest
-# HyperFrames CLI + bundled Chrome, and the latest arch-aware Piper (FAIL-LOUD) with a
-# pre-staged default voice ONNX model. The free ffmpeg + Kie paths need no browser.
-#   Skip entirely on a free-path-only box: SKILL47_SKIP_RENDER_PROVISION=1
-#   Downgrade a Piper failure to a warning:  SKILL47_PIPER_OPTIONAL=1
-echo "--- Step 3.5: Provision render runtime (Chromium libs, Remotion, HyperFrames, Piper) ---"
+# `make setup` installs the upstream npm/pip deps but NO Chromium system libraries — so a
+# fresh Linux/VPS container FAILS every Remotion/HyperFrames (headless-Chromium) render.
+# This step closes that gap for BOTH macOS and Linux: Chromium system libs + ffmpeg (Linux
+# apt), the pinned latest Remotion + arch/OS compositor + Chrome-Headless-Shell, and the
+# pinned latest HyperFrames CLI + bundled Chrome. Piper (offline TTS) is OPTIONAL and OFF by
+# default — the PRIMARY narrator is Fish Audio 2.1 Pro (s2.1-pro), with Gemini TTS / OpenAI
+# TTS / MiniMax (a.k.a. "Mimo") as the cloud fallbacks; Piper installs ONLY when you opt in
+# and never aborts the install. The free ffmpeg + Kie paths need no browser.
+#   Skip entirely on a free-path-only box:         SKILL47_SKIP_RENDER_PROVISION=1
+#   Opt in to the optional offline Piper fallback:  SKILL47_INSTALL_PIPER=1
+echo "--- Step 3.5: Provision render runtime (Chromium libs, Remotion, HyperFrames) ---"
 if [ "${SKILL47_SKIP_RENDER_PROVISION:-0}" = "1" ]; then
   yellow "SKILL47_SKIP_RENDER_PROVISION=1 — skipping render-runtime provisioning (free-path-only box)."
 else
   OPENCLAW_OPENMONTAGE_DIR="$OPENMONTAGE_DIR" bash "$SKILL_DIR/provision-render-deps.sh" || {
-    red "Render-runtime provisioning FAILED. Fix the errors above (or set SKILL47_PIPER_OPTIONAL=1"
-    red "for a box that legitimately cannot run Piper, or SKILL47_SKIP_RENDER_PROVISION=1 for a"
-    red "free-path-only install), then re-run install.sh."
+    red "Render-runtime provisioning FAILED (Remotion/HyperFrames/Chromium libs). Fix the errors"
+    red "above, or set SKILL47_SKIP_RENDER_PROVISION=1 for a free-path-only install, then re-run"
+    red "install.sh. (Piper is optional/opt-in and never causes this failure.)"
     exit 1
   }
   green "Render-runtime provisioning complete."

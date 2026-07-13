@@ -16,9 +16,13 @@
 #     2. Install the pinned latest-stable Remotion + its arch/OS-specific compositor,
 #        then `npx remotion browser ensure` to fetch Chrome-Headless-Shell.
 #     3. Cache-warm the pinned latest-stable HyperFrames CLI + its bundled Chrome.
-#     4. Install the pinned latest-stable Piper (arch-aware wheel) — FAIL-LOUD by default
-#        (this is the root-cause fix for "Piper is not installed") — and PRE-STAGE a
-#        default voice ONNX model so TTS works offline with no on-demand download.
+#     4. (OPTIONAL, OPT-IN — OFF BY DEFAULT) Install the pinned latest-stable Piper
+#        (arch-aware wheel) and pre-stage a default voice ONNX model — ONLY when
+#        SKILL47_INSTALL_PIPER=1. Piper is an offline-only last-resort fallback: the
+#        PRIMARY narrator is Fish Audio 2.1 Pro (s2.1-pro), with Gemini TTS / OpenAI TTS /
+#        MiniMax (a.k.a. "Mimo") as the cloud fallbacks. With Piper absent, OpenMontage's
+#        TTS auto-discovery simply uses the cloud providers. Piper's absence/failure NEVER
+#        aborts the install.
 #
 #   The free ffmpeg documentary-montage path and the Kie.AI remote path need NO browser
 #   and are unaffected by this script.
@@ -34,18 +38,18 @@
 #   PIPER_VERSION              override the pinned piper-tts version
 #   PIPER_DEFAULT_VOICE        default voice model id (default: en_US-lessac-medium)
 #   PIPER_DATA_DIR             where to pre-stage voice models (default: ~/.piper/models)
-#   SKILL47_PIPER_OPTIONAL=1   downgrade a Piper install failure from FAIL-LOUD to WARN
+#   SKILL47_INSTALL_PIPER=1    OPT IN to the optional offline Piper TTS fallback (OFF by default)
 #   SKILL47_SKIP_APT=1         skip the Linux apt system-library step (already provisioned)
 #
 # EXIT CODE
 #   0 — provisioning complete (best-effort steps may have WARNed; see output)
-#   1 — a HARD failure: no OpenMontage clone, OR Piper failed and is not optional
+#   1 — a HARD failure: no OpenMontage clone. (Piper is optional and NEVER causes a hard failure.)
 #
 # ── PINNED LATEST-STABLE VERSIONS — bump these (each line cites its source) ─────────────
 #   Remotion 4.0.489      https://registry.npmjs.org/remotion/latest              (2026-07-13)
 #   HyperFrames 0.7.56    https://registry.npmjs.org/hyperframes/latest           (2026-07-13)
-#   piper-tts 1.4.2       https://github.com/OHF-voice/piper1-gpl/releases/latest (tag v1.4.2)
-#   Piper voice models    https://huggingface.co/rhasspy/piper-voices (pinned tag v1.0.0)
+#   piper-tts 1.4.2       https://github.com/OHF-voice/piper1-gpl/releases/latest (tag v1.4.2)  [OPTIONAL/opt-in only]
+#   Piper voice models    https://huggingface.co/rhasspy/piper-voices (pinned tag v1.0.0)       [OPTIONAL/opt-in only]
 set -uo pipefail
 
 REMOTION_VERSION="${REMOTION_VERSION:-4.0.489}"
@@ -191,73 +195,75 @@ npx --yes "hyperframes@$HYPERFRAMES_VERSION" browser >/dev/null 2>&1 \
   || warn "HyperFrames 'browser' provisioning skipped/failed — bundled Chrome fetches on first render."
 
 # ---------------------------------------------------------------------------
-# 5 — Piper (latest, arch-aware) — FAIL-LOUD by default + pre-stage a voice model
-#     Root-cause fix: the upstream Makefile does `pip install piper-tts || echo skip`,
-#     so a failed/absent install was SILENT. Here it is loud unless SKILL47_PIPER_OPTIONAL=1.
-#     piper-tts ships arch-aware wheels (macOS x64/arm64, manylinux x64/aarch64) — pip
-#     selects the right one automatically.
+# 5 — Piper TTS (OPTIONAL, OPT-IN, offline-only fallback) — OFF BY DEFAULT
+#     Voice order: Fish Audio 2.1 Pro (s2.1-pro) is the PRIMARY narrator; Gemini TTS,
+#     OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks; Piper is an OPTIONAL
+#     offline-only last-resort fallback that is NOT installed by default. With Piper absent,
+#     OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in with
+#     SKILL47_INSTALL_PIPER=1 to install the arch-aware wheel and pre-stage a default voice
+#     model. A Piper install/download failure NEVER aborts the Skill 47 install (WARN only).
 # ---------------------------------------------------------------------------
-head_ "Piper piper-tts==$PIPER_VERSION (arch-aware) + default voice '$PIPER_DEFAULT_VOICE'"
-# Prefer the OpenMontage clone's own venv so the `piper` module is importable by its tools.
-PY=""
-for cand in "$OPENMONTAGE_DIR/.venv/bin/python" "${VIRTUAL_ENV:-}/bin/python"; do
-  if [ -n "$cand" ] && [ -x "$cand" ]; then PY="$cand"; break; fi
-done
-[ -z "$PY" ] && PY="$(command -v python3 || command -v python || true)"
-if [ -z "$PY" ]; then
-  red "No python interpreter found — cannot install Piper."
-  FAIL=$((FAIL+1))
+head_ "Piper TTS (OPTIONAL — opt-in offline fallback, OFF by default)"
+if [ "${SKILL47_INSTALL_PIPER:-0}" != "1" ]; then
+  green "Piper not requested (SKILL47_INSTALL_PIPER unset) — skipping install + voice pre-stage."
+  info "Primary narrator is Fish Audio 2.1 Pro (s2.1-pro); Gemini/OpenAI/MiniMax (Mimo) TTS are the cloud fallbacks."
+  info "OpenMontage TTS auto-discovery will use the cloud providers. Opt in with SKILL47_INSTALL_PIPER=1."
 else
-  info "using interpreter: $PY"
-  PIPER_OK=0
-  for attempt in 1 2; do
-    if "$PY" -m pip install --disable-pip-version-check "piper-tts==$PIPER_VERSION" >/dev/null 2>&1; then
-      PIPER_OK=1; break
-    fi
-    warn "piper-tts install attempt $attempt failed — retrying ..."
+  info "SKILL47_INSTALL_PIPER=1 — installing the OPTIONAL offline Piper fallback (never fatal)."
+  info "piper-tts==$PIPER_VERSION (arch-aware) + default voice '$PIPER_DEFAULT_VOICE'"
+  # Prefer the OpenMontage clone's own venv so the `piper` module is importable by its tools.
+  PY=""
+  for cand in "$OPENMONTAGE_DIR/.venv/bin/python" "${VIRTUAL_ENV:-}/bin/python"; do
+    if [ -n "$cand" ] && [ -x "$cand" ]; then PY="$cand"; break; fi
   done
-  if [ "$PIPER_OK" = "1" ] && "$PY" -c "import piper" >/dev/null 2>&1; then
-    green "piper-tts $PIPER_VERSION installed and importable."
+  [ -z "$PY" ] && PY="$(command -v python3 || command -v python || true)"
+  if [ -z "$PY" ]; then
+    warn "No python interpreter found — skipping optional Piper install. Cloud TTS remains primary. Not fatal."
   else
-    if [ "${SKILL47_PIPER_OPTIONAL:-0}" = "1" ]; then
-      warn "piper-tts install failed but SKILL47_PIPER_OPTIONAL=1 — TTS will fall back to cloud."
+    info "using interpreter: $PY"
+    PIPER_OK=0
+    for attempt in 1 2; do
+      if "$PY" -m pip install --disable-pip-version-check "piper-tts==$PIPER_VERSION" >/dev/null 2>&1; then
+        PIPER_OK=1; break
+      fi
+      warn "piper-tts install attempt $attempt failed — retrying ..."
+    done
+    if [ "$PIPER_OK" = "1" ] && "$PY" -c "import piper" >/dev/null 2>&1; then
+      green "piper-tts $PIPER_VERSION installed and importable (optional offline fallback)."
     else
-      red "piper-tts $PIPER_VERSION failed to install/import (arch may lack a wheel)."
-      info "This is the root-cause fix for 'Piper not installed' and is FAIL-LOUD by default."
-      info "If this box legitimately cannot run Piper, re-run with SKILL47_PIPER_OPTIONAL=1."
-      FAIL=$((FAIL+1))
+      warn "Optional piper-tts install failed — cloud TTS (Fish 2.1 Pro / Gemini / OpenAI / MiniMax) remains primary. Not fatal."
     fi
-  fi
-fi
 
-# Pre-stage the default voice ONNX model (+ its .json) — CLI-agnostic direct download so
-# the file exists no matter which Piper CLI variant renders. Idempotent (skips if present).
-lang_country="${PIPER_DEFAULT_VOICE%%-*}"                 # en_US
-lang="${lang_country%%_*}"                                # en
-rest="${PIPER_DEFAULT_VOICE#*-}"                          # lessac-medium
-voice_name="${rest%%-*}"                                  # lessac
-quality="${rest#*-}"                                      # medium
-HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICES_TAG}/${lang}/${lang_country}/${voice_name}/${quality}"
-mkdir -p "$PIPER_DATA_DIR"
-fetch() { # fetch <url> <dest>
-  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2"
-  elif command -v wget >/dev/null 2>&1; then wget -qO "$2" "$1"
-  else return 3; fi
-}
-ONNX_DEST="$PIPER_DATA_DIR/${PIPER_DEFAULT_VOICE}.onnx"
-JSON_DEST="$PIPER_DATA_DIR/${PIPER_DEFAULT_VOICE}.onnx.json"
-if [ -s "$ONNX_DEST" ] && [ "$(wc -c < "$ONNX_DEST" 2>/dev/null || echo 0)" -gt 1000000 ]; then
-  green "Voice model already staged: $ONNX_DEST"
-else
-  info "downloading $PIPER_DEFAULT_VOICE ONNX voice to $PIPER_DATA_DIR ..."
-  if fetch "${HF_BASE}/${PIPER_DEFAULT_VOICE}.onnx" "$ONNX_DEST" \
-     && fetch "${HF_BASE}/${PIPER_DEFAULT_VOICE}.onnx.json" "$JSON_DEST" \
-     && [ "$(wc -c < "$ONNX_DEST" 2>/dev/null || echo 0)" -gt 1000000 ]; then
-    green "Voice model staged: $ONNX_DEST"
-  else
-    warn "Voice model pre-stage failed (offline?) — Piper will download it on first use."
-    info "Manual: python3 -m piper.download_voices $PIPER_DEFAULT_VOICE --data-dir $PIPER_DATA_DIR"
-    rm -f "$ONNX_DEST" "$JSON_DEST" 2>/dev/null || true
+    # Pre-stage the default voice ONNX model (+ its .json) — CLI-agnostic direct download.
+    # Only on the opt-in path. Idempotent (skips if already present). Never fatal.
+    lang_country="${PIPER_DEFAULT_VOICE%%-*}"                 # en_US
+    lang="${lang_country%%_*}"                                # en
+    rest="${PIPER_DEFAULT_VOICE#*-}"                          # lessac-medium
+    voice_name="${rest%%-*}"                                  # lessac
+    quality="${rest#*-}"                                      # medium
+    HF_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICES_TAG}/${lang}/${lang_country}/${voice_name}/${quality}"
+    mkdir -p "$PIPER_DATA_DIR"
+    fetch() { # fetch <url> <dest>
+      if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2"
+      elif command -v wget >/dev/null 2>&1; then wget -qO "$2" "$1"
+      else return 3; fi
+    }
+    ONNX_DEST="$PIPER_DATA_DIR/${PIPER_DEFAULT_VOICE}.onnx"
+    JSON_DEST="$PIPER_DATA_DIR/${PIPER_DEFAULT_VOICE}.onnx.json"
+    if [ -s "$ONNX_DEST" ] && [ "$(wc -c < "$ONNX_DEST" 2>/dev/null || echo 0)" -gt 1000000 ]; then
+      green "Voice model already staged: $ONNX_DEST"
+    else
+      info "downloading $PIPER_DEFAULT_VOICE ONNX voice to $PIPER_DATA_DIR ..."
+      if fetch "${HF_BASE}/${PIPER_DEFAULT_VOICE}.onnx" "$ONNX_DEST" \
+         && fetch "${HF_BASE}/${PIPER_DEFAULT_VOICE}.onnx.json" "$JSON_DEST" \
+         && [ "$(wc -c < "$ONNX_DEST" 2>/dev/null || echo 0)" -gt 1000000 ]; then
+        green "Voice model staged: $ONNX_DEST"
+      else
+        warn "Optional voice pre-stage failed (offline?) — Piper (if used) downloads it on first use. Not fatal."
+        info "Manual: python3 -m piper.download_voices $PIPER_DEFAULT_VOICE --data-dir $PIPER_DATA_DIR"
+        rm -f "$ONNX_DEST" "$JSON_DEST" 2>/dev/null || true
+      fi
+    fi
   fi
 fi
 
@@ -270,6 +276,7 @@ if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
 green "=== Render-runtime provisioning complete (os=$OS arch=$ARCH libc=$LIBC). ==="
-info "Remotion + HyperFrames headless-Chromium renders and offline Piper TTS are provisioned."
+info "Remotion + HyperFrames headless-Chromium renders are provisioned. Piper (offline TTS) is"
+info "optional/opt-in; cloud TTS (Fish 2.1 Pro primary; Gemini/OpenAI/MiniMax fallback) is the default narrator path."
 info "The free ffmpeg documentary-montage path and the Kie.AI remote path need no browser."
 exit 0
