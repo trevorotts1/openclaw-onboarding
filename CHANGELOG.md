@@ -1,3 +1,13 @@
+## [v20.0.8]  -  2026-07-12  -  fix(roll): pin Command Center to v6.0.2 (VPS container-portability fixes: sqlite3 CLI removed, mktemp portable, orphan-port guard python3-portable)
+
+v20.0.8 — pin Command Center to v6.0.2 (VPS container-portability fixes: sqlite3 CLI removed, mktemp portable, orphan-port guard python3-portable).
+
+Trivial pin bump so the fleet roll delivers three already-merged Command Center container-portability fixes instead of leaving them stranded behind the pin.
+
+- **Problem.** `blackceo-command-center` merged and tagged `v6.0.2` (annotated tag at commit `c418785ffe4377ea2e231ea09f9597fb6b4b75c7`, all CI green) fixing three VPS-container defects: the `sqlite3` CLI dependency was removed, the `mktemp` call was made portable, and the orphan-port guard was made `python3`-portable. `cc-compat.json` `commandCenter.pinnedTag` was still `v6.0.1` — `resolve_cc_tag()` returns `pinnedTag` unconditionally, so `fleet-refresh.sh` would keep checking out the un-fixed `v6.0.1` on every roll, permanently stranding these fixes behind the pin on every Linux/VPS fleet box.
+- **Fix.** `cc-compat.json` `commandCenter.pinnedTag` bumped `v6.0.1` -> `v6.0.2`. `minVersion` UNCHANGED at `v4.59.1` (permissive, so `assert_min_version` does not block a box still mid-update on an older CC); `maxVersion` UNCHANGED (`null`). `v6.0.2` >= `minVersion` and `maxVersion` is unbounded, so the schema contract (`pinnedTag >= minVersion`, `pinnedTag <= maxVersion-or-unbounded`) holds; `python3 shared-utils/cc_compat.py --self-test cc-compat.json` resolves `cc_tag = v6.0.2`. No app code, no endpoint, and no `mission-control.db` schema changed in the pinned CC delta.
+- All 11 version markers rolled `v20.0.7` -> **v20.0.8** via `scripts/bump-version.sh` (plus the four script-embedded browser-manager sub-markers and their two skill dirs, `06-ghl-install-pages` and `23-ai-workforce-blueprint`, so CI guard G3 stays green). `cc-compat.json` `commandCenter.pinnedTag` is bumped to **`v6.0.2`**; `minVersion` unchanged at `v4.59.1`. No client names, no secret values, no box identifiers, no model added, removed, or substituted. The Skill 38 doc self-count advisory remains a pre-existing, non-fatal WARN carried unchanged from the v20.0.x train.
+
 ## [v20.0.7]  -  2026-07-12  -  fix(roll): bump Command Center pin v6.0.0->v6.0.1 (mktemp fix)
 
 Trivial pin bump so the fleet roll delivers a already-merged Command Center fix instead of leaving it stranded behind the pin.
