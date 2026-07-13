@@ -130,7 +130,11 @@ def reconcile(evidence_root: str, *, retry: bool = False,
             report.flagged.append({"marker": marker, "reason": f"task.json unreadable: {exc}"})
             continue
 
-        result = gha.run_archive_task(task, requester=requester, env=env)
+        try:
+            result = gha.run_archive_task(task, requester=requester, env=env)
+        except Exception as exc:  # noqa: BLE001 — one bad page must never abort the whole sweep
+            report.flagged.append({"marker": marker, "reason": f"retry raised unexpectedly: {exc}"})
+            continue
         if _archive_ok(result.get("receipt")):
             report.retried_ok.append(marker)
         else:

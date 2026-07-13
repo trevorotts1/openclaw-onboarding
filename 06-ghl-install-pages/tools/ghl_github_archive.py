@@ -79,7 +79,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,11 +86,6 @@ if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
 import ghl_receipts  # noqa: E402  (F6 receipts store — reused, not reinvented)
-
-try:
-    import browser_manager  # noqa: E402  (durable_root() — the one canonical primitive)
-except Exception:  # pragma: no cover - browser_manager should always import
-    browser_manager = None
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────

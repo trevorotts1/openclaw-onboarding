@@ -125,6 +125,23 @@ class TestReconcile:
         assert "task.json" in report.flagged[0]["reason"] or "staged" in report.flagged[0]["reason"]
         assert report.all_clean() is False
 
+    def test_malformed_task_json_is_flagged_not_a_crash(self, tmp_path, monkeypatch):
+        """A corrupt/incomplete task.json (e.g. hand-edited, or written by a
+        future bug) must never abort the whole sweep — it's flagged for that
+        one page and reconciliation continues."""
+        er = str(tmp_path)
+        _write_deploy(er, "PAGE-BADTASK")
+        # Stage a task.json missing a required key ('src_dir').
+        task_dir = os.path.join(er, gha.ARCHIVE_SUBDIR, "PAGE-BADTASK")
+        os.makedirs(task_dir, exist_ok=True)
+        import json
+        with open(os.path.join(task_dir, "task.json"), "w") as fh:
+            json.dump({"marker": "PAGE-BADTASK", "evidence_root": er}, fh)  # no src_dir
+
+        report = rec.reconcile(er, retry=True, requester=_good_requester(), env={"GH_TOKEN": "x"})
+        assert report.retried_ok == []
+        assert any(f["marker"] == "PAGE-BADTASK" for f in report.flagged)
+
     def test_failed_archive_receipt_treated_as_missing_and_can_be_retried(self, tmp_path):
         er = str(tmp_path)
         _write_deploy(er, "PAGE-E")
