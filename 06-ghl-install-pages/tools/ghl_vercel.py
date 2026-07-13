@@ -68,6 +68,21 @@ However it makes no calls to GoHighLevel itself — it is GoHighLevel-agnostic.
 A ``fetcher`` parameter is injected for tests so NO live Vercel/network call
 ever runs in CI.
 
+GITHUB ARCHIVAL — NON-BLOCKING (operator standing rule: source ALWAYS also
+----------------------------------------------------------------------------
+lives in GitHub, never Vercel-only). After ``assert_embeddable`` passes,
+``run_pipeline`` writes an F6 receipt recording the deploy (so a later
+reconciliation pass can enumerate every VERCEL_EMBED page — see
+``ghl_github_reconcile.py``) and calls ``ghl_github_archive.archive_async``,
+which stages the generated files and fires a DETACHED subprocess to push them
+to GitHub. This happens AFTER the page is already live and embeddable — it
+cannot delay or block the deploy, and if it fails (no GitHub token, network
+error, whatever) the page stays live; the failure is recorded as an honest
+receipt, never raised. Pass ``evidence_root=`` to enable it (same root your
+other Skill-6 F6 receipts use); omit it and archival no-ops (nothing to write
+into) — this keeps existing callers/tests that don't pass it fully backward
+compatible.
+
 DRAFT-ONLY DOCTRINE
 -------------------
 Vercel deploy URLs produced here are used ONLY in GoHighLevel DRAFT page saves.
@@ -91,6 +106,13 @@ from typing import Any, Callable, Optional
 
 # Re-export iframe_embed_snippet from ghl_method so callers can import it here.
 from ghl_method import iframe_embed_snippet  # noqa: F401 (intentional re-export)
+
+# F6 receipts store (reused, not reinvented) + the non-blocking GitHub
+# archival module. Both are local siblings in tools/; imported lazily-safe
+# (no GHL/browser dependency) so importing ghl_vercel never pulls in more
+# than it needs.
+import ghl_receipts  # noqa: E402
+import ghl_github_archive  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -618,12 +640,18 @@ class VercelEmbedReceipt:
     All fields are populated only when the pipeline succeeds. On failure,
     ``VercelEmbedError`` is raised — this object is never returned in a
     partial state.
+
+    ``github_archive`` is populated only when ``evidence_root`` was passed to
+    ``run_pipeline`` (see that function's docstring — GitHub archival is
+    NON-BLOCKING and best-effort; it never causes this dataclass's other
+    fields to be affected, and it is never the reason ``run_pipeline`` raises).
     """
     project: VercelProject
     deployment: DeployReceipt
     embeddability: EmbeddabilityResult
     embed_snippet: str   # the iframe HTML snippet, ready to splice into GHL
     marker: str
+    github_archive: dict = field(default_factory=dict)
 
 
 def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
@@ -632,7 +660,10 @@ def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
                  env: dict | None = None,
                  team_id: str | None = None,
                  requester: Callable | None = None,
-                 fetcher: Callable | None = None) -> VercelEmbedReceipt:
+                 fetcher: Callable | None = None,
+                 evidence_root: str | None = None,
+                 github_repo_owner: str | None = None,
+                 github_repo_name: str | None = None) -> VercelEmbedReceipt:
     """Run the full Vercel-embed pipeline: prepare → deploy → make_public → assert.
 
     This is the one-call interface for a VERCEL_EMBED page. All steps must
@@ -647,6 +678,12 @@ def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
       4. ``make_public(deployment_id, token)``
       5. ``assert_embeddable(url, marker)``
       6. Build ``iframe_embed_snippet(url, height_px=height_px)``
+      7. Record an F6 ``vercel_deploy`` receipt (when ``evidence_root`` is
+         given) and kick off NON-BLOCKING GitHub archival
+         (``ghl_github_archive.archive_async``) of the generated source.
+         Step 7 runs strictly AFTER the page is live and embeddable — it
+         cannot delay steps 1-6, and it cannot turn a successful deploy into
+         a raised error. See the module docstring's "GITHUB ARCHIVAL" section.
 
     Args:
         html_fragment: The HTML fragment to embed.
@@ -658,12 +695,23 @@ def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
         team_id: Optional Vercel team id.
         requester: Injected HTTP callable for tests.
         fetcher: Injected fetch callable for assert_embeddable in tests.
+        evidence_root: Run-evidence root for F6 receipts (same root your other
+            Skill-6 object receipts use). Passing it ALSO enables non-blocking
+            GitHub archival of this page's source. Omit it and both the
+            ``vercel_deploy`` receipt and archival are skipped — a page built
+            by a caller that predates this parameter behaves exactly as before.
+        github_repo_owner: Optional explicit GitHub owner/org for the archive
+            repo (default: resolved from the token's own account).
+        github_repo_name: Optional explicit archive repo name (default:
+            deterministic from project_name + marker — see
+            ``ghl_github_archive.default_repo_name``).
 
     Returns:
         ``VercelEmbedReceipt`` with all receipts and the final iframe snippet.
 
     Raises:
-        ``VercelEmbedError``: on any pipeline failure.
+        ``VercelEmbedError``: on any pipeline failure (Vercel/embeddability
+            only — GitHub archival failures are never raised, only recorded).
         ``VercelTokenError``: if no Vercel token is resolvable.
     """
     project = prepare_app(html_fragment, marker, project_dir)
@@ -676,12 +724,44 @@ def run_pipeline(html_fragment: str, marker: str, project_dir: str, *,
     embeddability = assert_embeddable(deployment.url, marker, fetcher=fetcher)
     snippet = iframe_embed_snippet(deployment.url, height_px=height_px)
 
+    # ── The page is now live and embeddable. Everything below is best-effort
+    #    bookkeeping + non-blocking archival — nothing here may raise past
+    #    this point, and nothing here may delay the caller meaningfully
+    #    (receipt write is local disk; archive_async only stages files
+    #    locally then fires a detached subprocess and returns immediately).
+    archive_status: dict = {}
+    if evidence_root:
+        try:
+            deploy_receipt = ghl_receipts.make_receipt(
+                ghl_github_archive.DEPLOY_RECEIPT_TYPE, marker, "created",
+                response_id=deployment.deployment_id,
+                request_shape={"project_name": project_name, "url": deployment.url},
+                verify={"ok": embeddability.embeddable, "url": deployment.url},
+                disclosures=[deployment.url],
+            )
+            ghl_receipts.write_receipt(evidence_root, deploy_receipt)
+        except Exception as exc:  # noqa: BLE001 — bookkeeping must never break the build
+            archive_status = {"status": "failed", "reason": f"deploy receipt write failed: {exc}"}
+
+        if not archive_status:
+            try:
+                archive_status = ghl_github_archive.archive_async(
+                    project, deployment, marker, evidence_root,
+                    project_name=project_name,
+                    repo_owner=github_repo_owner,
+                    repo_name=github_repo_name,
+                    env=env,
+                )
+            except Exception as exc:  # noqa: BLE001 — archival is NEVER allowed to fail the build
+                archive_status = {"status": "failed", "reason": f"archive_async raised: {exc}"}
+
     return VercelEmbedReceipt(
         project=project,
         deployment=deployment,
         embeddability=embeddability,
         embed_snippet=snippet,
         marker=marker,
+        github_archive=archive_status,
     )
 
 

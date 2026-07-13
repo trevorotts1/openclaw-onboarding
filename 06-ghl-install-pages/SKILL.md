@@ -546,9 +546,46 @@ is a hard FAIL.
 
 This table supersedes any prior description of Vercel as a "manual last resort."
 
-> **VERCEL_EMBED IS A DIRECT API UPLOAD — NOT GitHub.** `tools/ghl_vercel.py`
-> base64-encodes the generated files and POSTs them straight to the Vercel
-> deployments API (no git, no GitHub repo, no PR). Do not add a GitHub step.
+> **VERCEL_EMBED is a direct API upload to Vercel, PLUS a non-blocking GitHub
+> archive.** `tools/ghl_vercel.py` base64-encodes the generated files
+> (`index.html`, `vercel.json`) and POSTs them straight to the Vercel
+> deployments API (no git, no PR, no build step) — the page goes live exactly
+> as fast as before. Operator standing rule: a page's source code must ALWAYS
+> ALSO live in a GitHub repo, never Vercel-only. `run_pipeline` satisfies that
+> AFTER the Vercel deploy is live and `assert_embeddable` has passed — never
+> before, and never in a way that can delay or fail the deploy:
+>   1. It writes an F6 `vercel_deploy` receipt (`ghl_receipts`, object_type
+>      `vercel_deploy`) recording the marker + deployment url, so every page
+>      built via this path is enumerable later.
+>   2. It calls `tools/ghl_github_archive.py::archive_async`, which copies the
+>      generated files to a stable path under the evidence root and fires a
+>      DETACHED subprocess (new session — survives the parent exiting) that
+>      pushes them to a per-page GitHub repo (name deterministic from
+>      `project_name` + `marker` — a re-deploy always updates its OWN repo,
+>      never an unrelated one) and writes an F6 `vercel_github_archive`
+>      receipt when it finishes.
+>   3. `archive_async` returns immediately — it never waits on the subprocess.
+>      ANY failure anywhere in this path (no `GH_TOKEN`/`GITHUB_TOKEN`,
+>      network error, GitHub API error, spawn failure) is caught and recorded
+>      as an honest `failed` receipt; it is NEVER raised into the Vercel
+>      pipeline and can never take a live page down. Pass `evidence_root=` to
+>      `run_pipeline` to enable this (omit it and both the receipt and the
+>      archive attempt no-op — a pre-existing caller that doesn't pass it
+>      behaves exactly as before this change).
+>
+> **Reconciliation — proving the archive actually landed.**
+> `tools/ghl_github_reconcile.py` sweeps ONE evidence root: it lists every
+> `vercel_deploy` receipt (every page built via this path), checks each has a
+> matching `vercel_github_archive` receipt with `verify.ok == True`, and for
+> any that don't (`--retry`), re-runs the archive job synchronously from the
+> staged source under `<evidence_root>/vercel-github-archive/<marker>/` if it
+> is still present — or FLAGS the page (never fabricates source) if it is not.
+> Run it by hand or wire it into a periodic gate:
+> `python3 tools/ghl_github_reconcile.py --evidence-root <dir> --retry`
+> (exit 0 = every page's code is confirmed in GitHub; exit 1 = attention
+> needed — see `missing_or_failed`/`flagged` in its output). This is a
+> straightforward per-root sweep, not a fleet-wide crawler; wiring it into a
+> cron / fleet-wide gate is left to the operator.
 >
 > **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
 > scorecards, and screenshots are written to a run-evidence root

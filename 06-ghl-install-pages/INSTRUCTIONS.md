@@ -229,14 +229,23 @@ When to use the iframe method:
 
 The full iframe snippet code and setup instructions are in the ghl-install-pages-full.md file, Section 9.
 
-> **HOW THE VERCEL PATH ACTUALLY WORKS (no GitHub).** When this skill uses Vercel
-> (the `VERCEL_EMBED` method), it does NOT push to GitHub. `tools/ghl_vercel.py`
-> generates the page locally, base64-encodes the files, and uploads them DIRECTLY
-> to the Vercel deployments API, then disables SSO and asserts the URL is
-> embeddable before splicing the iframe. There is no git repo, no GitHub-sourced
-> Vercel build, no PR/merge. Do NOT wire a GitHub step — the pipeline neither
-> needs nor supports one. "Host externally" above means Vercel hosts the deployed
-> page; its public, SSO-disabled URL is the iframe `src`.
+> **HOW THE VERCEL PATH ACTUALLY WORKS (Vercel deploy, PLUS a non-blocking
+> GitHub archive).** When this skill uses Vercel (the `VERCEL_EMBED` method),
+> `tools/ghl_vercel.py` generates the page locally, base64-encodes the files,
+> and uploads them DIRECTLY to the Vercel deployments API, then disables SSO
+> and asserts the URL is embeddable before splicing the iframe — there is no
+> git repo, no GitHub-sourced Vercel BUILD, no PR/merge, and the deploy is
+> exactly as fast as before. Separately (operator standing rule: a page's
+> source must ALWAYS also live in GitHub), once that Vercel deploy is live and
+> verified embeddable, `run_pipeline` fires a DETACHED, NON-BLOCKING push of
+> the same generated files to a per-page GitHub repo
+> (`tools/ghl_github_archive.py`) — it never delays the deploy and any failure
+> (missing token, network error, etc.) is recorded, never raised; the page
+> stays live either way. `tools/ghl_github_reconcile.py --retry` later
+> confirms every VERCEL_EMBED page's code actually landed in GitHub and
+> retries/flags any that didn't. "Host externally" above means Vercel hosts
+> the deployed page; its public, SSO-disabled URL is the iframe `src` — the
+> GitHub repo is the archived SOURCE, not what the iframe loads.
 
 
 ## Publishing (ONLY When User Approves)

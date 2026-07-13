@@ -147,6 +147,31 @@ assert "Founder name is fail-closed (real name passes; placeholder/blank HALTs)"
 assert "Media folder-per-funnel wiring present (ensure_funnel_media_folders, never browser-routed)" \
   "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_media as m;assert hasattr(m,'ensure_funnel_media_folders') and hasattr(m,'funnel_media_folder_plan')\""
 
+# ── VERCEL_EMBED non-blocking GitHub archival + reconciliation sweep ─────────
+# Operator standing rule: a page's source must ALWAYS also live in GitHub.
+# These asserts prove the doctrine fix actually shipped (not just prose) and
+# guard against the "NOT GitHub" line ever creeping back into SKILL.md.
+assert "GitHub archival module present" "[ -f \"$SK/tools/ghl_github_archive.py\" ]"
+assert "GitHub archival module parses clean" \
+  "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_github_archive.py').read())\""
+assert "GitHub archival self-test passes (no network, no real subprocess)" \
+  "python3 \"$SK/tools/ghl_github_archive.py\" --selftest"
+assert "GitHub reconciliation sweep present" "[ -f \"$SK/tools/ghl_github_reconcile.py\" ]"
+assert "GitHub reconciliation sweep parses clean" \
+  "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_github_reconcile.py').read())\""
+assert "run_pipeline is wired to non-blocking GitHub archival (evidence_root param + github_archive field)" \
+  "python3 -c \"import sys,inspect;sys.path.insert(0,'$SK/tools');import ghl_vercel as v;sig=inspect.signature(v.run_pipeline);assert 'evidence_root' in sig.parameters;assert 'github_archive' in [f.name for f in __import__('dataclasses').fields(v.VercelEmbedReceipt)]\""
+assert "SKILL.md no longer claims VERCEL_EMBED is 'NOT GitHub' (regression guard)" \
+  "! grep -qi 'IS A DIRECT API UPLOAD — NOT GitHub' \"$SK/SKILL.md\""
+assert "SKILL.md documents the non-blocking GitHub archive + reconciliation sweep" \
+  "grep -q 'ghl_github_archive' \"$SK/SKILL.md\" && grep -q 'ghl_github_reconcile' \"$SK/SKILL.md\""
+if command -v pytest >/dev/null 2>&1; then
+  assert "GitHub archival + reconciliation + run_pipeline wiring pytest suites pass (mock-only)" \
+    "( cd \"$SK\" && pytest -q tests/test_ghl_github_archive.py tests/test_ghl_github_reconcile.py tests/test_ghl_vercel.py )"
+else
+  warn_only "pytest available to run the GitHub archival test suites" "command -v pytest"
+fi
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 06 QC FAILED"; exit 1; } || { green "Skill 06 QC PASS"; exit 0; }

@@ -50,6 +50,13 @@ If ANY of these exist, the credential is satisfied.
 
 ## GitHub Token
 **Required by:** Skill 10
+**OPTIONAL for:** Skill 6 (non-blocking archival of VERCEL_EMBED page source to
+GitHub — `06-ghl-install-pages/tools/ghl_github_archive.py`). If absent, Skill
+6's Vercel-embed pages still deploy and go live normally; only the GitHub
+archive step is skipped (recorded as an honest failed receipt, never a build
+blocker). Flag it for the operator so the page's source ends up in GitHub per
+the standing "source always also lives in GitHub" rule, but do NOT halt the
+build over it.
 **Check ALL of these names:**
 - GH_TOKEN
 - GITHUB_TOKEN

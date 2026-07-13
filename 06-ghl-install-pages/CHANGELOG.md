@@ -4,6 +4,74 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.59.0] - 2026-07-13 - VERCEL_EMBED now archives to GitHub, non-blocking, with a reconciliation sweep
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`).
+
+### Changed
+- **`tools/ghl_vercel.py::run_pipeline`** now writes an F6 `vercel_deploy` receipt
+  (`ghl_receipts`) and, when `evidence_root=` is passed, kicks off non-blocking
+  GitHub archival AFTER the Vercel deploy is live and `assert_embeddable` has
+  passed — satisfying the operator's standing rule that a page's source code
+  must ALWAYS also live in a GitHub repo, never Vercel-only. This is fully
+  additive: `evidence_root` is optional and a caller that omits it (all prior
+  callers/tests) behaves exactly as before. `VercelEmbedReceipt` gained a
+  `github_archive` field reporting the archive attempt's status.
+- **`SKILL.md`** (§ "Phase-5 Method Decision Table") and **`INSTRUCTIONS.md`**
+  no longer say the VERCEL_EMBED path is "NOT GitHub" — both now document the
+  Vercel-deploy-plus-non-blocking-GitHub-archive shape and point at the two new
+  tools below. `v2-autonomous-build-sop.md`'s VERCEL end-to-end flow gained
+  step 7 documenting the same non-blocking archive hook.
+- **root `CREDENTIALS.md`**: `GH_TOKEN`/`GITHUB_TOKEN` is now also listed as
+  OPTIONAL for Skill 6 (archival only — never a build blocker).
+
+### Added
+- **`tools/ghl_github_archive.py`** (new) — the non-blocking GitHub archival
+  module. Stages the generated `index.html`/`vercel.json` to a stable path
+  under the run's evidence root (survives the original, possibly ephemeral,
+  `project_dir`), then fires a DETACHED subprocess (new session — survives the
+  parent process exiting) that pushes them to a per-page GitHub repo (name
+  deterministic from `project_name` + `marker`, so a re-deploy always updates
+  its OWN repo and can never touch an unrelated one) and writes an F6
+  `vercel_github_archive` receipt (`created`/`reused`/`failed`) when it
+  finishes. Every failure mode (no `GH_TOKEN`/`GITHUB_TOKEN`, GitHub API error,
+  network error, subprocess spawn failure) is caught and recorded — NEVER
+  raised into the Vercel pipeline. All GitHub REST calls are behind an
+  injectable `requester` seam (same style as `ghl_vercel.py`'s), and the
+  subprocess spawn is behind an injectable `popen` seam, so tests are
+  mock-only (no live GitHub call, no real subprocess).
+- **`tools/ghl_github_reconcile.py`** (new) — the reconciliation sweep. Lists
+  every `vercel_deploy` receipt under an evidence root, confirms each has a
+  verified `vercel_github_archive` receipt, and (`--retry`) re-runs the archive
+  job from its staged source for any that don't, or FLAGS the page if no
+  staged source remains (never fabricates source). CLI:
+  `python3 tools/ghl_github_reconcile.py --evidence-root <dir> --retry [--json]`
+  (exit 0 = every page's code is confirmed in GitHub, exit 1 = attention
+  needed). Deliberately scoped to a single evidence root per run — not a
+  fleet-wide crawler/daemon; wiring it into a periodic gate is an operator
+  decision.
+- **`tests/test_ghl_github_archive.py`** (18 cases) + **`tests/test_ghl_github_reconcile.py`**
+  (11 cases) — mock-only, no live GitHub/network/subprocess. `tests/test_ghl_vercel.py`
+  gained a `TestRunPipelineGithubArchival` class (4 cases) proving: archival is
+  skipped when `evidence_root` is omitted (backward compatible); the deploy
+  receipt + archive call fire when it's given; an exploding `archive_async`
+  never propagates out of `run_pipeline` (the Vercel deploy's own success is
+  unaffected); and archival is NEVER attempted when the Vercel gate itself
+  fails first.
+
+### Not yet built (explicitly out of scope this unit — operator decision open)
+- Automatic fleet-wide discovery of every run-evidence root on a box (the
+  reconciliation sweep takes an explicit `--evidence-root`; it does not crawl
+  `skill6-fix/v2-*/` itself).
+- Wiring `ghl_github_reconcile.py` into a cron / periodic fleet gate.
+- Org-owned (vs personal-account-owned) archive repos — `repo_owner` can be
+  passed explicitly, but auto-resolution only queries `GET /user` (the token's
+  own account), not an org.
+
+---
+
 ## [v19.58.1] - 2026-07-12 - P3-08 Gap A: GATED Automations (workflow) builder implemented
 
 > Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at

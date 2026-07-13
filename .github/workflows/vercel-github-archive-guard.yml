@@ -1,0 +1,116 @@
+name: Vercel-embed GitHub archive guard
+
+# Operator standing rule: a page's source code must ALWAYS also live in a
+# GitHub repo — the VERCEL_EMBED path (tools/ghl_vercel.py) previously
+# violated that (base64-upload straight to Vercel, no GitHub step at all;
+# SKILL.md used to say so explicitly: "VERCEL_EMBED IS A DIRECT API UPLOAD —
+# NOT GitHub"). This guard proves the fix shipped and stays shipped:
+#
+#   - tools/ghl_github_archive.py (new): non-blocking GitHub archival —
+#     stages the generated files, fires a DETACHED subprocess to push them to
+#     a per-page repo, and records an F6 receipt. Never blocks/delays the
+#     Vercel deploy; never raises a failure into the build.
+#   - tools/ghl_github_reconcile.py (new): sweeps an evidence root, confirming
+#     every VERCEL_EMBED deploy has a verified GitHub archive, retrying or
+#     flagging any that don't.
+#   - tools/ghl_vercel.py::run_pipeline: wired to call the above (opt-in via
+#     evidence_root=, fully backward compatible when omitted).
+#
+# All tests are MOCK-ONLY (no live GitHub, no live Vercel, no real subprocess
+# spawn) — same discipline as the rest of Skill 6's GHL-agnostic test suite.
+#
+# Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  vercel-github-archive-guard:
+    name: GitHub archival (non-blocking) + reconciliation sweep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python syntax — new/changed modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in 06-ghl-install-pages/tools/ghl_github_archive.py \
+                   06-ghl-install-pages/tools/ghl_github_reconcile.py \
+                   06-ghl-install-pages/tools/ghl_vercel.py; do
+            python3 -c "import ast; ast.parse(open('$f').read())" || { echo "✗ syntax: $f"; exit 1; }
+          done
+          echo "✓ Python syntax OK"
+
+      - name: ghl_github_archive self-test (no network, no real subprocess)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 06-ghl-install-pages/tools/ghl_github_archive.py --selftest
+
+      - name: ghl_receipts self-test (F6 store this feature reuses)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 06-ghl-install-pages/tools/ghl_receipts.py --selftest
+
+      - name: pytest — archive + reconcile + run_pipeline wiring (mock-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest
+          python3 -m pytest -q \
+            06-ghl-install-pages/tests/test_ghl_github_archive.py \
+            06-ghl-install-pages/tests/test_ghl_github_reconcile.py \
+            06-ghl-install-pages/tests/test_ghl_vercel.py
+
+      - name: run_pipeline is actually wired (evidence_root param + github_archive field)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import sys, inspect, dataclasses
+          sys.path.insert(0, '06-ghl-install-pages/tools')
+          import ghl_vercel as v
+          sig = inspect.signature(v.run_pipeline)
+          assert 'evidence_root' in sig.parameters, 'run_pipeline missing evidence_root param'
+          fields = [f.name for f in dataclasses.fields(v.VercelEmbedReceipt)]
+          assert 'github_archive' in fields, 'VercelEmbedReceipt missing github_archive field'
+          print('✓ run_pipeline wired to non-blocking GitHub archival')
+          "
+
+      - name: SKILL.md regression guard — must NOT claim VERCEL_EMBED is 'NOT GitHub'
+        shell: bash
+        run: |
+          set -uo pipefail
+          if grep -qi 'IS A DIRECT API UPLOAD — NOT GitHub' 06-ghl-install-pages/SKILL.md; then
+            echo "✗ SKILL.md still claims VERCEL_EMBED is NOT GitHub — the doctrine fix regressed"
+            exit 1
+          fi
+          grep -q 'ghl_github_archive' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not mention ghl_github_archive"; exit 1; }
+          grep -q 'ghl_github_reconcile' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not mention ghl_github_reconcile"; exit 1; }
+          echo "✓ SKILL.md documents the non-blocking GitHub archive + reconciliation sweep, and no longer bans it"
+
+      - name: Negative test — a re-introduced blocking archive call must be caught by review, not silently pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prove the "never blocks/never raises" contract is actually exercised:
+          # if archive_async raised, test_ghl_vercel.py's
+          # test_archive_async_exception_never_propagates_out_of_run_pipeline
+          # would fail. Re-run it in isolation as an explicit named check so a
+          # future refactor that removes the try/except around archive_async
+          # fails THIS step with an unambiguous name.
+          python3 -m pytest -q \
+            "06-ghl-install-pages/tests/test_ghl_vercel.py::TestRunPipelineGithubArchival::test_archive_async_exception_never_propagates_out_of_run_pipeline" \
+            "06-ghl-install-pages/tests/test_ghl_vercel.py::TestRunPipelineGithubArchival::test_vercel_failure_raises_before_any_archive_attempt"
+          echo "✓ Non-blocking contract proven: archival failures never propagate; Vercel-gate failures never attempt archival"

@@ -272,5 +272,142 @@ class TestAssertEmbeddablePassPath:
         ae(FAKE_URL, FAKE_MARKER, fetcher=fetcher)
 
 
+# ── run_pipeline — NON-BLOCKING GitHub archival wiring ───────────────────────
+#
+# Operator standing rule: a VERCEL_EMBED page's source must ALWAYS also land
+# in GitHub. These tests prove the archival hook is (a) wired into
+# run_pipeline AFTER the Vercel deploy succeeds, (b) fully optional/backward
+# compatible when evidence_root is omitted, and (c) NEVER able to turn the
+# Vercel pipeline's own success into a raised error, no matter what the
+# archival step does. All mock-only — no live Vercel, no live GitHub, no real
+# subprocess spawn (ghl_github_archive.archive_async's own popen seam is
+# exercised in tests/test_ghl_github_archive.py; here we only assert
+# run_pipeline calls it and handles its result/errors correctly).
+
+import ghl_receipts  # noqa: E402
+import ghl_github_archive  # noqa: E402
+
+
+def _vercel_requester():
+    """Fake requester for deploy()/make_public() — mirrors the real Vercel
+    deployments API shape closely enough for run_pipeline to complete."""
+    def _req(method, url, body, *, token=""):
+        if method == "POST" and url.endswith("/deployments"):
+            return {"id": "dpl_test123", "url": "test-deploy.vercel.app"}
+        if method == "GET" and "/deployments/" in url:
+            return {"readyState": "READY", "url": "test-deploy.vercel.app"}
+        if method == "PATCH":
+            return {"ok": True}
+        raise AssertionError(f"unexpected vercel call {method} {url}")
+    return _req
+
+
+def _embeddable_fetcher(marker: str):
+    def _f(url: str) -> dict:
+        return {
+            "status": 200,
+            "headers": {"content-security-policy": "frame-ancestors https://*.leadconnectorhq.com"},
+            "body": f"<html>{marker}</html>",
+        }
+    return _f
+
+
+class TestRunPipelineGithubArchival:
+    def test_no_evidence_root_skips_archival_backward_compatible(self, tmp_path, monkeypatch):
+        called = {"n": 0}
+
+        def fake_archive_async(*a, **kw):
+            called["n"] += 1
+            return {"status": "spawned"}
+
+        monkeypatch.setattr(ghl_github_archive, "archive_async", fake_archive_async)
+
+        marker = "PIPE-NOROOT"
+        receipt = gv.run_pipeline(
+            "<p>hi</p>", marker, str(tmp_path / "proj"),
+            env={"VERCEL_TOKEN": "fake"},
+            requester=_vercel_requester(),
+            fetcher=_embeddable_fetcher(marker),
+        )
+        assert receipt.github_archive == {}
+        assert called["n"] == 0, "archive_async must not be called when evidence_root is omitted"
+
+    def test_evidence_root_triggers_deploy_receipt_and_archive_call(self, tmp_path, monkeypatch):
+        captured = {}
+
+        def fake_archive_async(project, deployment, marker, evidence_root, **kw):
+            captured["marker"] = marker
+            captured["evidence_root"] = evidence_root
+            captured["project_name"] = kw.get("project_name")
+            return {"status": "spawned", "task_path": "x"}
+
+        monkeypatch.setattr(ghl_github_archive, "archive_async", fake_archive_async)
+
+        marker = "PIPE-WITHROOT"
+        evidence_root = str(tmp_path / "evidence")
+        receipt = gv.run_pipeline(
+            "<p>hi</p>", marker, str(tmp_path / "proj"),
+            project_name="zhc-test-page",
+            env={"VERCEL_TOKEN": "fake"},
+            requester=_vercel_requester(),
+            fetcher=_embeddable_fetcher(marker),
+            evidence_root=evidence_root,
+        )
+
+        assert receipt.github_archive["status"] == "spawned"
+        assert captured["marker"] == marker
+        assert captured["evidence_root"] == evidence_root
+        assert captured["project_name"] == "zhc-test-page"
+
+        # A vercel_deploy F6 receipt must exist so reconciliation can find this page.
+        summ = ghl_receipts.reduce_receipts(evidence_root)
+        assert f"vercel_deploy:{marker}" in summ["created"]
+        assert f"vercel_deploy:{marker}" in summ["verified"]
+
+    def test_archive_async_exception_never_propagates_out_of_run_pipeline(self, tmp_path, monkeypatch):
+        def exploding_archive_async(*a, **kw):
+            raise RuntimeError("simulated archive_async crash")
+
+        monkeypatch.setattr(ghl_github_archive, "archive_async", exploding_archive_async)
+
+        marker = "PIPE-ARCHIVEBOOM"
+        evidence_root = str(tmp_path / "evidence")
+        # Must NOT raise — the Vercel deploy already succeeded by this point.
+        receipt = gv.run_pipeline(
+            "<p>hi</p>", marker, str(tmp_path / "proj"),
+            env={"VERCEL_TOKEN": "fake"},
+            requester=_vercel_requester(),
+            fetcher=_embeddable_fetcher(marker),
+            evidence_root=evidence_root,
+        )
+        assert receipt.github_archive["status"] == "failed"
+        assert "simulated archive_async crash" in receipt.github_archive["reason"]
+        # The deploy itself still fully succeeded despite the archival crash.
+        assert receipt.embeddability.embeddable is True
+
+    def test_vercel_failure_raises_before_any_archive_attempt(self, tmp_path, monkeypatch):
+        called = {"n": 0}
+
+        def fake_archive_async(*a, **kw):
+            called["n"] += 1
+            return {"status": "spawned"}
+
+        monkeypatch.setattr(ghl_github_archive, "archive_async", fake_archive_async)
+
+        def failing_fetcher(url: str) -> dict:
+            # No marker in body -> assert_embeddable fails -> VercelEmbedError.
+            return {"status": 200, "headers": {}, "body": "<html>no marker here</html>"}
+
+        with pytest.raises(gv.VercelEmbedError):
+            gv.run_pipeline(
+                "<p>hi</p>", "PIPE-VERCELFAIL", str(tmp_path / "proj"),
+                env={"VERCEL_TOKEN": "fake"},
+                requester=_vercel_requester(),
+                fetcher=failing_fetcher,
+                evidence_root=str(tmp_path / "evidence"),
+            )
+        assert called["n"] == 0, "archival must never be attempted when the Vercel gate itself fails"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

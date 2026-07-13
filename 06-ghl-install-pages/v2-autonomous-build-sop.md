@@ -459,6 +459,15 @@ widget type. Do NOT use Vercel for simple pages.
    `<iframe src="<deployment_url>" width="100%" ...>`
 6. Paste the iframe snippet into a GoHighLevel DIRECT-method code element (the
    page blob still needs the §2.06 theme colors list)
+7. (Non-blocking, after the page is live) `ghl_vercel.run_pipeline`'s
+   `evidence_root=` hook fires `ghl_github_archive.archive_async` to push the
+   same generated files to a per-page GitHub repo, satisfying the operator's
+   standing "source always also lives in GitHub" rule. This step runs AFTER
+   step 4's embeddability gate passes and can never delay/block/fail steps
+   1-6; any archive failure is recorded, not raised. See SKILL.md's
+   "VERCEL_EMBED is a direct API upload to Vercel, PLUS a non-blocking GitHub
+   archive" note and `tools/ghl_github_reconcile.py` for the later
+   confirm-or-retry sweep.
 
 > **IFRAME SURVIVES — CONFIRMED (live probe, 2026-06-27).** A live authenticated
 > `/preview/` round-trip rendered `<iframe data-zhc src="…">` elements verbatim
