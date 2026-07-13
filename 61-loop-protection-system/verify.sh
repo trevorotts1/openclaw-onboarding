@@ -10,7 +10,7 @@
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN,
 # D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
-# D-COLLECT).
+# D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
@@ -48,7 +48,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -272,6 +272,72 @@ with tempfile.TemporaryDirectory() as td:
     check("D-COLLECT synthetic loop -> real windows/runs; D2+D3 P1; slice offset-consumed",
           bool(ev["windows"]) and len(ev["runs"]) >= 12
           and bool(d2_p1) and bool(d3_p1) and ev2["runs"] == [])
+
+# D-COLLECT-DELTA: within-run cumulative charging + the derivedTotal fallback. A
+# SINGLE runId whose cumulative usage rises 100k -> 800k, carried as COMPONENT
+# BUCKETS ONLY (input, no `usage.total`), must be charged as the 800k telescoping
+# DELTA and NOT the 3.6M naive sum of per-completion totals. Exercises BOTH the
+# within-run delta path (the D-COLLECT fixture above uses a DISTINCT runId per
+# completion, so that path was untested) AND the multi-candidate component-sum
+# fallback - so it FAILS against the old single-field `usage.total` reader (None ->
+# 0 -> zero paid) and PASSES after the 0.3.1 hardening.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    now = datetime.now(timezone.utc)
+    t0 = (now - timedelta(minutes=60)).replace(microsecond=0)
+    rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sD",
+             "sessionKey": "agent:main:main", "runId": "rDELTA",
+             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "data": {"trigger": "cron"}}]
+    for i in range(8):  # cumulative 100k, 200k, ... 800k under ONE runId
+        cum = 100000 * (i + 1)
+        rows.append({"type": "model.completed",
+                     "ts": (t0 + timedelta(minutes=i + 1)).isoformat(),
+                     "sessionId": "sD", "sessionKey": "agent:main:main",
+                     "runId": "rDELTA", "seq": i,
+                     "modelId": "minimax-m3:cloud", "provider": "ollama",
+                     "data": {"usage": {"input": cum}}})  # buckets only, no `total`
+    with open(os.path.join(sess, "sD.trajectory.jsonl"), "w") as fh:
+        fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
+    charged = sum(w["paid_tokens"] for w in W.collect_windows())
+    for k in ("LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
+    check("D-COLLECT-DELTA single-run cumulative 100k->800k charges the 800k DELTA "
+          "(not the 3.6M naive sum); component-sum fallback",
+          charged == 800000 and charged != 3600000)
+
+# D-COLLECT-FALLBACK: a `total_tokens`-only row (no `usage.total`) must still charge
+# non-zero and light D2 - proving the multi-candidate reader's raw-alias fallback.
+# FAILS against the old single-field reader (usage.total absent -> None -> zero paid
+# -> D2 silent) and PASSES after the 0.3.1 hardening.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    now = datetime.now(timezone.utc)
+    t0 = (now - timedelta(minutes=30)).replace(microsecond=0)
+    rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sF",
+             "sessionKey": "agent:main:main", "runId": "rF0",
+             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "data": {"trigger": "cron"}},
+            {"type": "model.completed", "ts": t0.isoformat(), "sessionId": "sF",
+             "sessionKey": "agent:main:main", "runId": "rF1", "seq": 0,
+             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "data": {"usage": {"total_tokens": 500000}}}]  # alias only, no `total`
+    with open(os.path.join(sess, "sF.trajectory.jsonl"), "w") as fh:
+        fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
+    winF = W.collect_windows()
+    paidF = sum(w["paid_tokens"] for w in winF)
+    d2F = D.d2_token_burn_rate(winF, th)
+    for k in ("LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
+    check("D-COLLECT-FALLBACK total_tokens-only row charges non-zero; D2 P1 fires "
+          "(multi-candidate raw-alias fallback)",
+          paidF == 500000 and any(x["severity"] == "P1" for x in d2F))
 
 os.environ.pop("LOOP_ALLOW_ROOT", None)
 if fails:

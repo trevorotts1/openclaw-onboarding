@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries four loop-specific detectors D1-D4 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.3.0
+version: 0.3.1
 ---
 
 # Loop Protection System (Skill 61)
@@ -50,7 +50,11 @@ escalated), and never client-facing.
 7. **DRY_RUN, THEN ARM.** Observe-only is the default for the first 7 days on any
    box (`armed=false`); Tier-1 arms only on the operator's word. Tier-2 stays
    proposal-only everywhere until a per-box stamp. A healer that loops is stopped by
-   its OWN breaker, never by discovering the damage later.
+   its OWN breaker, never by discovering the damage later. **Burn-in exit gate:**
+   before any `arm`, confirm `collect_windows` yields non-zero `paid_tokens` on the
+   operator canary's real trajectory — a silently-zero token feed (a schema field-name
+   drift the multi-candidate reader did not cover) would make D2 blind again, the exact
+   Star-furnace blind spot, so a live non-zero reading is the arming precondition.
 8. **CANARY, THEN HOLD.** The full install plus drill battery is proven on the
    OPERATOR box first; fleet rollout is HELD at repo-only until the operator's
    explicit word. The system obeys the laws it enforces.
@@ -113,7 +117,7 @@ without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (eleven drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (fourteen drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line

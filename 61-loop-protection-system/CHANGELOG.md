@@ -3,6 +3,45 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.3.1] - 2026-07-13
+
+Field-hardening + doc-honesty correction for the D2 token reader (QC follow-up to
+0.3.0). No box behavior changes; still DISARMED (DRY_RUN default, rollout HELD).
+
+Fixed:
+- **`_usage_total()` is now a multi-candidate, fail-soft extractor** instead of a
+  single hard-coded `usage.total` read. It tries `usage.total` (the CONFIRMED
+  emitted aggregate) -> `usage.totalTokens` / `usage.total_tokens` (defensive raw-
+  schema aliases) -> the summed component buckets `input+output+cacheRead+cacheWrite`
+  (== the writer's own `derivedTotal`). If a future schema drops `total` but keeps
+  the buckets, D2 still charges non-zero rather than going silently blind - the exact
+  Star-furnace failure mode. Mirrors Skill 60's `_extract_context_tokens` posture so
+  the two skills share ONE defensive reader convention. The verified within-run
+  cumulative-DELTA charging is preserved unchanged.
+- **Doc-honesty**: replaced every "verified against a live box" / "verified live
+  values" overclaim in `loop_watchdog.py` and this changelog with the truth. The D2
+  token field is **confirmed from the OpenClaw 2026.6.11 trajectory-writer source**
+  (`getUsageTotals()` emits `usage.total`; writer `dist/selection-CVIPXpKT.js:14200`
+  / `:14217`, shape `:4328-4339`, normalizer `dist/usage-C67Kbb7n.js:44-64`, codex
+  `dist/run-attempt-CJMFmJj8.js:5276`). The remaining field names (session triggers,
+  cron last-run markers, handoff keys) are honestly labeled plausible OpenClaw-schema
+  candidates, read defensively, **to be confirmed on the operator canary during
+  burn-in**. This also resolves Skill 60's `_CONTEXT_TOKEN_FIELDS` OPEN QUESTION for
+  the token field: the raw `total_tokens` / `input_tokens` guesses are aliases the
+  writer consumes but never emits into the trajectory - the emitted field is `total`.
+
+Added:
+- **BURN-IN EXIT GATE** documented on `collect_windows()` and in `SKILL.md` doctrine
+  7: *before any `arm`, confirm `collect_windows` yields non-zero `paid_tokens` on the
+  operator canary's real trajectory* - a live non-zero reading is the arming
+  precondition, so a silently-zero feed can never reach an armed box.
+- **Two new failable drills** in `verify.sh` + the watchdog self-test:
+  `D-COLLECT-DELTA` (a SINGLE runId whose cumulative usage rises 100k->800k, charged
+  as the 800k DELTA and NOT the 3.6M naive sum - and carried under component buckets
+  only, so it also exercises the derivedTotal fallback) and `D-COLLECT-FALLBACK` (a
+  `total_tokens`-only row with no `usage.total`, asserting D2 still charges non-zero).
+  Both FAIL against the old single-field reader and PASS after the fix.
+
 ## [0.3.0] - 2026-07-13
 
 The collect layer is REAL. `loop_watchdog.py :: collect_evidence()` was a stub
@@ -15,8 +54,8 @@ roll; DRY_RUN/armed/rollout gates all stay intact.
 
 Added:
 - **`collect_windows()` (D2 feed)**: hourly paid/local token windows for the
-  trailing 24h from the trajectory stream's `model.completed` events - field
-  names verified against a live box. Usage totals are CUMULATIVE PER RUN, so each
+  trailing 24h from the trajectory stream's `model.completed` events. Usage
+  totals are CUMULATIVE PER RUN, so each
   completion contributes its DELTA, making a burn visible MID-RUN while the
   looping run is still alive (a run-end-only source sees a furnace only after it
   stops). `trace.artifacts` totals back-fill runs whose completions carried no

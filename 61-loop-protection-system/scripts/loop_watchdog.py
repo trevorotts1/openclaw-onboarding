@@ -19,8 +19,12 @@
 # tick() takes an INJECTED evidence dict so the whole pipeline is testable offline;
 # collect_evidence() is the best-effort box-reading layer (never fatal on a probe
 # miss: a probe failure is DATA, never a crash - loop-detector.sh's exit-0-always
-# law). The collectors read the box's OWN local streams, all verified against a
-# real OpenClaw v2026.x box:
+# law). The collectors read the box's OWN local streams. The D2 token field is
+# CONFIRMED from the OpenClaw trajectory-writer source (`usage.total`, emitted by
+# getUsageTotals; the file:line proof lives on _usage_total below); the other field
+# names (session triggers, cron last-run markers, handoff keys) are plausible
+# OpenClaw v2026.x schema candidates, read DEFENSIVELY (multi-candidate, fail-soft)
+# and to be CONFIRMED on the operator canary's real streams during burn-in:
 #   D1  collect_units()    pm2 jlist (filtered to name/status/pid/restarts ONLY)
 #   D2  collect_windows()  trajectory `model.completed` cumulative usage -> hourly
 #                          paid/local token windows + human-initiated-session counts
@@ -157,20 +161,24 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
 # return {"windows": [], "runs": [], "crons": [], "wedge": {}} - so even a fully
 # armed watchdog handed D2/D3/D4 EMPTY evidence on a real box (fix design
 # 2026-07-13 SS4, finding 2: "the single most important repo finding"). Every
-# collector below reads a REAL local stream, verified field-by-field against a
-# live box, and fails SOFT: a missing/unreadable source contributes no findings
-# (never a crash, never a guess). No secret VALUE is ever read, stored, or
+# collector below reads a REAL local stream and fails SOFT: a missing/unreadable
+# source contributes no findings (never a crash, never a guess). The D2 token
+# field is source-confirmed (see _usage_total); every other field name is read
+# through a multi-candidate, fail-soft accessor so a schema-name miss degrades to
+# "no finding", never a wrong one. No secret VALUE is ever read, stored, or
 # printed - these streams carry counts, ids, model ids, tool NAMES, and
 # timestamps only, and the pm2 path stays behind filter_pm2_record.
 # --------------------------------------------------------------------------- #
 _PROBES_OFF_ENV = "LOOP_NO_PROBES"  # =1 disables every subprocess probe (tests)
 
-# session.started `data.trigger` values that count as HUMAN-initiated (verified
-# live values: user / cron / heartbeat / memory). Only 'user' is a human.
+# session.started `data.trigger` values that count as HUMAN-initiated. Only 'user'
+# is a human; cron/heartbeat/memory stay idle-classified. Plausible OpenClaw
+# session.started trigger values - CONFIRM on the operator canary during burn-in.
 _HUMAN_TRIGGERS = ("user",)
 
-# candidate last-run marker fields on a cron job's `state` block (verified live:
-# state.lastRunAtMs; the rest are defensive candidates, tried in order).
+# candidate last-run marker fields on a cron job's `state` block, tried in order
+# (plausible primary: lastRunAtMs; the rest are defensive candidates). CONFIRM the
+# real marker on the operator canary during burn-in.
 _CRON_LAST_RUN_FIELDS = ("lastRunAtMs", "lastRunAt", "lastFireAtMs", "lastRun")
 
 
@@ -256,13 +264,61 @@ def _iter_jsonl_tail(path, max_bytes):
         return
 
 
-def _usage_total(data):
-    """`data.usage.total` off a trajectory event, or None. Never a guess."""
-    usage = data.get("usage") if isinstance(data, dict) else None
-    total = usage.get("total") if isinstance(usage, dict) else None
-    if isinstance(total, (int, float)) and not isinstance(total, bool) and total >= 0:
-        return int(total)
+# The trajectory `data.usage` object is the NORMALIZED usage shape OpenClaw's own
+# trajectory writer emits - {input, output, cacheRead, cacheWrite, [reasoningTokens],
+# total} - so the run-aggregate field is `total` (NOT `total_tokens`, which is a raw
+# provider/OpenAI-compat alias the writer consumes but never emits into the stream).
+# CONFIRMED from OpenClaw 2026.6.11 source, read-only, no live box touched:
+#   writer  dist/selection-CVIPXpKT.js:14200  recordEvent("model.completed", {usage:
+#           attemptUsage ...})  and  :14217  recordEvent("trace.artifacts", {usage:
+#           attemptUsage ...})   [attemptUsage = getUsageTotals(), :13848]
+#   shape   dist/selection-CVIPXpKT.js:4328-4339  getUsageTotals() ->
+#           total = usageTotals.total || derivedTotal   (derivedTotal =
+#           input+output+cacheRead+cacheWrite)
+#   norm    dist/usage-C67Kbb7n.js:44-64  normalizeUsage() emits the SAME shape and
+#           ACCEPTS raw aliases (total/totalTokens/total_tokens, input/inputTokens/
+#           input_tokens, ...) -> always normalized to `.total`
+#   codex   dist/run-attempt-CJMFmJj8.js:5276 normalizeCodexTokenUsage -> normalizeUsage
+#           (identical `.total` shape); recorded :7268
+# `usage.total` is therefore the real field; the remaining scalar candidates are
+# DEFENSIVE (an un-normalized row from an older/newer schema, or a codex assistant
+# snapshot carrying `totalTokens`), and the component sum is the last-resort fallback
+# (== getUsageTotals' own derivedTotal) so a schema drift that drops `total` but keeps
+# the buckets still charges non-zero instead of going silently blind (the Star-furnace
+# failure mode). This also resolves Skill 60's _CONTEXT_TOKEN_FIELDS OPEN QUESTION for
+# the token field. Re-confirm on the operator canary's real trajectory during burn-in
+# before arming (the collect_windows burn-in exit gate).
+_USAGE_TOTAL_FIELDS = ("total", "totalTokens", "total_tokens")  # confirmed first
+_USAGE_COMPONENT_FIELDS = ("input", "output", "cacheRead", "cacheWrite")  # derivedTotal
+
+
+def _coerce_nonneg_int(value):
+    """A finite, non-negative real -> int; a bool, None, or anything else -> None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value >= 0:
+        return int(value)
     return None
+
+
+def _usage_total(data):
+    """Total tokens off a trajectory event's `data.usage`, or None. Multi-candidate
+    and FAIL-SOFT (a missing/odd shape -> None, never a guess, never a crash),
+    mirroring Skill 60's _extract_context_tokens posture so the two skills agree on
+    ONE defensive reader. Tries the CONFIRMED aggregate `usage.total` first, then the
+    defensive raw-schema aliases `totalTokens`/`total_tokens`, then the summed
+    component buckets (input+output+cacheRead+cacheWrite) - see the candidate-order
+    comment above for the OpenClaw-source proof."""
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    for fld in _USAGE_TOTAL_FIELDS:
+        v = _coerce_nonneg_int(usage.get(fld))
+        if v is not None:
+            return v
+    parts = [p for p in (_coerce_nonneg_int(usage.get(f))
+                         for f in _USAGE_COMPONENT_FIELDS) if p is not None]
+    return sum(parts) if parts else None
 
 
 def _paid_event(row, sig):
@@ -274,9 +330,11 @@ def _paid_event(row, sig):
 
 def collect_windows(now=None, max_files=24, max_bytes=750_000):
     """D2 evidence: hourly token windows for the trailing 24h, oldest first, from
-    the trajectory stream. Token source is `model.completed` data.usage.total,
-    which is CUMULATIVE PER RUN (verified live: successive completions in one run
-    carry increasing totals), so each completion contributes its DELTA - this is
+    the trajectory stream. Token source is `model.completed` data.usage (read via
+    _usage_total, whose aggregate `usage.total` is source-confirmed - see there),
+    which is CUMULATIVE PER RUN: OpenClaw's writer accumulates usage across a run
+    (getUsageTotals is a run-scoped accumulator), so successive completions in one
+    run carry rising totals and each completion contributes its DELTA - this is
     what makes a burn visible MID-RUN, while the looping run is still alive (the
     Star furnace burned ~466 completions inside ONE run; a run-end-only source
     sees nothing until it is over). `trace.artifacts` run totals back-fill only
@@ -285,7 +343,13 @@ def collect_windows(now=None, max_files=24, max_bytes=750_000):
     heartbeat activity stays idle-classified, per the D2 contract. Extra key
     `completions` (per-window completion count) is carried for the D5
     completion-rate detector to consume when it lands (fix design SS4) - D2
-    ignores it. Returns [] when no trajectory stream exists."""
+    ignores it. Returns [] when no trajectory stream exists.
+
+    BURN-IN EXIT GATE: before any `arm`, confirm collect_windows() yields non-zero
+    `paid_tokens` on the operator canary's real trajectory. A silently-zero feed
+    (a token-field-name drift the multi-candidate reader did not cover) would make
+    D2 blind again - exactly the Star furnace blind spot - so a live non-zero
+    reading is the arming precondition."""
     files = _traj_files(max_files=max_files)
     if not files:
         return []
@@ -480,7 +544,9 @@ def collect_runs(rows):
 def _cron_jobs_via_cli(timeout=15):
     """Best-effort `openclaw cron list --json` -> jobs list. [] on ANY miss (no
     binary, non-zero exit, bad JSON) - a probe miss is DATA. Read-only command;
-    output shape verified against a saved gateway cron-list capture."""
+    the {jobs:[...]} / [...] output shape is the documented `cron list --json`
+    contract, parsed defensively (either shape accepted); CONFIRM on the operator
+    canary during burn-in."""
     if _probes_off():
         return []
     from shutil import which
@@ -595,8 +661,10 @@ def _listener_pid_on(port):
 
 def _read_handoff():
     """The gateway supervisor restart-handoff marker (<openclaw_root>/
-    gateway-supervisor-restart-handoff.json; verified live keys include pid,
-    createdAt, expiresAt). None when absent/unreadable. Structural fields only."""
+    gateway-supervisor-restart-handoff.json; expected keys include pid, createdAt,
+    expiresAt - plausible candidates, CONFIRM on the operator canary during
+    burn-in). None when absent/unreadable. Structural fields only; each key read
+    defensively so a name miss degrades to "no orphan finding", never a wrong one."""
     p = openclaw_root() / "gateway-supervisor-restart-handoff.json"
     try:
         if not p.is_file():
@@ -794,6 +862,44 @@ def self_test():
         assert ev2["runs"] == []  # the slice was offset-consumed
         print("  collect case: PASS (stub replaced: synthetic loop -> real windows/"
               "runs; D2+D3 fire; slice offset-consumed)")
+
+        # _usage_total multi-candidate hardening (0.3.1): the source-confirmed
+        # `usage.total` first, then defensive aliases, then the component-sum
+        # fallback (== the writer's own derivedTotal), and fail-soft everywhere.
+        assert _usage_total({"usage": {"total": 300000}}) == 300000        # confirmed
+        assert _usage_total({"usage": {"totalTokens": 300000}}) == 300000  # camel alias
+        assert _usage_total({"usage": {"total_tokens": 500000}}) == 500000  # raw alias
+        assert _usage_total({"usage": {"input": 250000, "output": 50000,
+                                       "cacheRead": 0}}) == 300000          # derivedTotal
+        assert _usage_total({"usage": {}}) is None and _usage_total({}) is None
+        assert _usage_total({"usage": {"total": True}}) is None  # a bool is never a count
+        print("  usage-field case: PASS (multi-candidate total -> totalTokens -> "
+              "total_tokens -> component-sum; fail-soft; source-confirmed usage.total)")
+
+        # within-run cumulative DELTA end to end (the synthetic-loop case above uses
+        # a DISTINCT runId per completion, so this is the ONLY proof of the delta
+        # path): ONE runId whose cumulative usage rises 100k -> 800k, carried as
+        # component buckets only, is charged as the 800k telescoping delta - never
+        # the 3.6M naive sum - which also exercises the derivedTotal fallback.
+        _saved_root = os.environ.get("LOOP_OPENCLAW_ROOT")
+        with tempfile.TemporaryDirectory() as td2:
+            os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td2, "openclaw")
+            sdir = Path(td2) / "openclaw" / "agents" / "main" / "sessions"
+            sdir.mkdir(parents=True)
+            base = (datetime.now(timezone.utc) - timedelta(minutes=60)).replace(microsecond=0)
+            drows = [{"type": "model.completed",
+                      "ts": (base + timedelta(minutes=i + 1)).isoformat(),
+                      "sessionKey": "agent:main:main", "runId": "rDELTA", "seq": i,
+                      "modelId": "minimax-m3:cloud", "provider": "ollama",
+                      "data": {"usage": {"input": 100000 * (i + 1)}}} for i in range(8)]
+            (sdir / "sD.trajectory.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in drows) + "\n", encoding="utf-8")
+            charged = sum(w["paid_tokens"] for w in collect_windows())
+        if _saved_root is not None:
+            os.environ["LOOP_OPENCLAW_ROOT"] = _saved_root
+        assert charged == 800000, "within-run delta must charge 800k, got %d" % charged
+        print("  within-run-delta case: PASS (single-run 100k->800k charges the 800k "
+              "delta, not the 3.6M naive sum)")
 
         # crons: observed-fire counting via last-run marker transitions
         jobs_fx = [{"id": "j1", "name": "resume", "enabled": True,
