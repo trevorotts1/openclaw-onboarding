@@ -1,6 +1,6 @@
 # Fish Audio API Reference
 
-> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-07-06 (current model refreshed to S2.1 Pro).
+> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-07-13 (S2.1 Pro Free capability/constraint refresh from fish.audio's July 2026 announcement).
 
 ---
 
@@ -9,13 +9,30 @@
 These facts pin the current production release. They supersede any older `s2-pro` or plain `S2` wording elsewhere in this document; every example below now uses the current id.
 
 - **Model id:** `s2.1-pro`. This is the current release (S2.1 Pro), not plain S2 and not the interim `s2-pro` label. `s1` is the legacy generation and stays parenthesis-tagged.
-- **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: s2.1-pro`), never a request-body field. The public endpoint enum can lag the release blog, so verify the exact `s2.1-pro` header value with one live call before you depend on it.
+- **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: s2.1-pro`), never a request-body field. The public endpoint enum can lag the release blog, so verify the exact `s2.1-pro` header value with one live call before you depend on it. Fish Audio's own free-tier JS example confirms the identical mechanic for the other tier: `headers: { model: "s2.1-pro-free" }` (https://fish.audio/blog/s2-1-pro-free-api/).
 - **Voice selection:** by `reference_id`, one private voice model per speaker. For client work this is always the client's own private voice model, managed through the voices and instant-voice-clone APIs.
 - **Tag inventory:** S2.1 Pro reads free-form square-bracket tags. The emotional palette is 24 basic emotions plus 25 advanced emotions plus the tone markers, the audio-effect markers, and the short and long pause markers (all tabulated in the Emotions and Paralanguage section). S1 legacy uses the same names in parentheses.
 - **Pricing:** 15.00 US dollars per 1 million UTF-8 bytes, which works out to roughly 60 cents for a 30-minute episode.
 - **Concurrency (gated by cumulative prepaid spend):** under 100 US dollars gives 5 concurrent requests, 100 US dollars and up gives 15, and 1,000 US dollars and up gives 50.
 - **Output for podcasts:** mp3 at 192 kbps. Set `condition_on_previous_chunks` to true for long episodes so chunked synthesis stays consistent voice to voice.
 - **Free-tier prohibition:** the `s2.1-pro-free` model exists but carries no service level agreement and may train on submitted inputs. It is forbidden for production client content. Always use the paid `s2.1-pro` model with the client's own API key and the client's own `reference_id`.
+
+### `s2.1-pro-free` — operator-internal dev tier only (never client production)
+
+Grounded in Fish Audio's own S2.1 Pro Free announcement (https://fish.audio/blog/s2-1-pro-free-api/) and model reference (https://docs.fish.audio/features/text-to-speech). Every row below is a reason this tier is excluded from client production:
+
+| Constraint | Fish Audio's own wording | Why it disqualifies client production |
+|---|---|---|
+| No SLA / uptime / latency guarantee | "No SLA: No uptime/TTFA guarantees; built for experimentation and prototyping" / "No latency guarantee: Best-effort, not contractual" | Client production needs a contractual floor, not best-effort |
+| Data retention | "Requests may be used to improve model quality" | Client-data / sovereignty risk — client content should not train Fish Audio's model |
+| Commercial restriction | "Products generating more than $1M ARR should contact us before using S2.1 Pro Free" | Client production is commercial use; we hold no such clearance and are not pursuing one |
+| Time-limited | Originally "available till July 24, 2026," then extended: "We're extending the free window to cover all of July" (ends end of July 2026, with advance notice promised before further changes) | Anything hardcoded to this tier can break or reprice on short notice |
+
+> ⚠️ Do not hardcode `s2.1-pro-free` anywhere as a durable default. Use it only for operator-internal dev/prototyping, never as a client-facing default, and expect it to disappear or change terms after end of July 2026.
+
+Selection mechanics are identical for both tiers: same `POST /v1/tts` endpoint, model chosen by the HTTP `model` header (never a body field).
+
+**S2.1 Pro capability refresh (both tiers, July 2026 announcement):** 83 languages in a single model (no per-language endpoint or pricing); ~90ms TTFA on the standard API (~70ms on a single request); 61% win rate vs the prior S2 Pro in head-to-head listening evaluations; voice cloning via `reference_id` plus a reference audio sample; requests accept both `application/msgpack` and `application/json`; `format` is selectable (mp3/wav/etc, see the Output Formats table below).
 
 > Reuse note: the Podcast Production Engine (onboarding v18, department id `podcast`) render module pins exactly these S2.1 Pro facts, parameterizes the client `reference_id`, and structurally refuses `s2.1-pro-free`. This reference is the canonical Fish Audio source for that engine.
 
@@ -99,7 +116,7 @@ POST /v1/tts
 |--------|----------|-------------|
 | `Authorization` | Yes | `Bearer YOUR_API_KEY` |
 | `Content-Type` | Yes | `application/json` or `application/msgpack` |
-| `model` | Yes | `s1` or `s2.1-pro` (recommended: `s2.1-pro`) |
+| `model` | Yes | `s1`, `s2.1-pro` (recommended — PAID, client/production default), or `s2.1-pro-free` (FREE — operator-internal dev only, never client production, expires end of July 2026). Always a HEADER value, never a body field. |
 
 ### Request Parameters
 
@@ -217,10 +234,11 @@ Returns binary audio data in the specified format.
 
 | Model | Description | Quality | Speed | Use Case |
 |-------|-------------|---------|-------|----------|
-| `s2.1-pro` | Current release (S2.1 Pro), best quality | Excellent | Fastest | Production, content creation |
+| `s2.1-pro` | Current release (S2.1 Pro), best quality, PAID — client/production default | Excellent | Fastest | Production, content creation |
+| `s2.1-pro-free` | Same S2.1 Pro model at $0, operator-internal dev tier only | Excellent | Fastest | Internal dev/prototyping ONLY. Never client production. |
 | `s1` | Stable legacy model | Excellent | Fast | Prototyping, general use |
 
-> A separate `s2.1-pro-free` model exists. It carries no service level agreement and may train on inputs, so it is FORBIDDEN for production client content. Use the paid `s2.1-pro` with the client's own key and `reference_id`.
+> `s2.1-pro-free` carries no service level agreement, may train on submitted inputs, is restricted for products over $1M ARR without contacting Fish Audio first, and its free access expires end of July 2026. It is FORBIDDEN for production client content. Use the paid `s2.1-pro` with the client's own key and `reference_id`. Full detail: see "S2.1 Pro Free — operator-internal dev tier only" above. Sources: https://fish.audio/blog/s2-1-pro-free-api/, https://docs.fish.audio/features/text-to-speech.
 
 ### Recommended Settings by Use Case
 
@@ -705,6 +723,7 @@ curl -X POST "https://api.fish.audio/model" \
 | Model | Price |
 |-------|-------|
 | `s2.1-pro` | $15.00 / million UTF-8 bytes |
+| `s2.1-pro-free` | $0 — operator-internal dev tier only, never client production; see model prohibition above. Free access expires end of July 2026. |
 | `s1` | $15.00 / million UTF-8 bytes |
 
 > 1M UTF-8 bytes ≈ 180,000 English words ≈ 12 hours of speech

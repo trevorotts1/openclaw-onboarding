@@ -9,4 +9,6 @@
 
 **Full reference:** `SKILL.md` covers TYP instructions, standard curl templates, emotion tags, and long-form content splitting.
 
-**API docs:** `references/fish-audio-api-reference.md` (841 lines, all endpoints)
+**API docs:** `references/fish-audio-api-reference.md` (all endpoints)
+
+**Model default:** `s2.1-pro` (PAID) is the client/production default, always. The free `s2.1-pro-free` tier is operator-internal dev/prototyping ONLY — no SLA, data-retention risk, a $1M ARR commercial restriction, and it expires end of July 2026. Never use it for client production. See SKILL.md "Model Selection: Paid vs Free" and `references/fish-audio-api-reference.md` for full detail and sources.

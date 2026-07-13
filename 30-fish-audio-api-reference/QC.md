@@ -60,8 +60,8 @@ grep -A5 -i "fish audio" "$HOME/.openclaw/skills/.pending-setup.md" 2>/dev/null 
 **Q2.** What is the main TTS endpoint?
 > **Expected:** `POST /v1/tts`
 
-**Q3.** What model should BlackCEO use by default?
-> **Expected:** `s2-pro`
+**Q3.** What model should BlackCEO use by default for client/production work?
+> **Expected:** `s2.1-pro` (PAID). Never `s2.1-pro-free` for client production.
 
 **Q4.** What bitrate should be used for phone calls?
 > **Expected:** 64 kbps
@@ -75,7 +75,7 @@ grep -A5 -i "fish audio" "$HOME/.openclaw/skills/.pending-setup.md" 2>/dev/null 
 **Q7.** What latency is the real-time exception?
 > **Expected:** `balanced` for live streaming / real-time call situations
 
-**Q8.** How does S2-Pro emotion tagging work?
+**Q8.** How does S2.1 Pro emotion tagging work?
 > **Expected:** open-domain natural-language tags in square brackets, like `[calm and professional]`
 
 **Q9.** What inline paralanguage effects are available?
@@ -84,7 +84,10 @@ grep -A5 -i "fish audio" "$HOME/.openclaw/skills/.pending-setup.md" 2>/dev/null 
 **Q10.** What should happen to scripts longer than about 15,000 characters?
 > **Expected:** split into about 4,000-character chunks and stitch them after generation.
 
-**Pass criteria:** 10/10 answers correct.
+**Q11.** Why is `s2.1-pro-free` forbidden for client production?
+> **Expected:** No SLA/uptime/latency guarantee (best-effort, not contractual), data-retention risk (requests "may be used to improve model quality"), a commercial restriction (products over $1M ARR must contact Fish Audio first), and it is time-limited (free access ends end of July 2026).
+
+**Pass criteria:** 11/11 answers correct.
 
 ---
 
@@ -99,7 +102,7 @@ HTTP_CODE=$(curl -s -o /tmp/fish_audio_qc_test.mp3 -w "%{http_code}" \
   -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2-pro" \
+  -H "model: s2.1-pro" \
   -d "{\"text\":\"Fish Audio QC passed. Ready.\",\"reference_id\":\"$FISH_AUDIO_VOICE_ID\",\"format\":\"mp3\",\"mp3_bitrate\":64,\"normalize\":true,\"latency\":\"normal\"}")
 
 echo "HTTP: $HTTP_CODE"
@@ -120,11 +123,13 @@ ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:no
 
 Fail the skill if any of these happen:
 
-- agent uses `s1` instead of `s2-pro` without explicit instruction
+- agent uses `s1`, the interim `s2-pro`, or the free `s2.1-pro-free` tier for CLIENT PRODUCTION content instead of `s2.1-pro` — `s2.1-pro-free` is operator-internal dev/prototyping only (no SLA, data-retention risk, $1M ARR commercial restriction, expires end of July 2026; see SKILL.md "Model Selection: Paid vs Free")
+- agent hardcodes `s2.1-pro-free` anywhere as a durable/default model value
+- agent puts the `model` value in the request BODY instead of the HTTP header
 - agent uses 192 kbps for a phone call
 - agent uses 64 kbps for a podcast/content file
 - agent uses `balanced` latency for normal offline generation
-- agent uses parenthesis-based emotion syntax instead of square-bracket natural language for S2-Pro
+- agent uses parenthesis-based emotion syntax instead of square-bracket natural language for S2.1 Pro
 - agent sends very long scripts in one call instead of chunking
 - agent guesses endpoint details without consulting the reference
 

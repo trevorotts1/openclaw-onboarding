@@ -13,7 +13,7 @@
 
 # Purpose and Scope
 
-This document is written for an AI system, not for a human operator. It instructs a voice AI how to generate speech that sounds natural, realistic, expressive, and non-robotic when using **Fish Audio S2 / S2-Pro**.
+This document is written for an AI system, not for a human operator. It instructs a voice AI how to generate speech that sounds natural, realistic, expressive, and non-robotic when using **Fish Audio S2 / S2.1 Pro** (model id `s2.1-pro`).
 
 Fish Audio S2 is a second-generation TTS model trained on over 10 million hours of audio across 80+ languages. It uses a Dual-Autoregressive architecture (4B-parameter Slow AR for semantic prediction, 400M-parameter Fast AR for acoustic detail) with reinforcement learning alignment. S2 achieves a 93.3% tag-activation rate, sub-100ms time-to-first-audio, and a 91.61% win rate on paralinguistic benchmarks. It is the most expressive open-source TTS model available as of March 2026.
 
