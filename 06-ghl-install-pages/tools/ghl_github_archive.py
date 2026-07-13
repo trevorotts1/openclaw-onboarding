@@ -15,7 +15,7 @@ This module closes that gap WITHOUT slowing the page down:
   1. The Vercel deploy (``ghl_vercel.deploy`` / ``make_public`` /
      ``assert_embeddable``) still runs first and still returns/completes on
      its own — the page goes live exactly as fast as before.
-  2. ``stage_and_archive`` is called AFTER the Vercel pipeline succeeds. It:
+  2. ``archive_async`` is called AFTER the Vercel pipeline succeeds. It:
        a. Copies the generated project files (``index.html``, ``vercel.json``,
           any assets) to a STABLE location under the run's evidence root
           (``<evidence_root>/vercel-github-archive/<marker>/src/``) — fast,
@@ -25,7 +25,7 @@ This module closes that gap WITHOUT slowing the page down:
        b. Writes a small ``task.json`` describing the archive job.
        c. Spawns a DETACHED subprocess (new session — survives the parent
           process exiting) that performs the actual GitHub API calls. The
-          caller's call to ``stage_and_archive`` returns immediately; it does
+          caller's call to ``archive_async`` returns immediately; it does
           NOT wait for the subprocess. This mirrors the skill's existing
           "long runs fire detached; the agent resumes via the per-page
           ledger" doctrine (SKILL.md) — the same pattern, applied to archival.
