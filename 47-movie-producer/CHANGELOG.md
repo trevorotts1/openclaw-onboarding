@@ -1,5 +1,43 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v14.2.0 — 2026-07-13 — Render runtime provisioned for macOS AND Linux/VPS (Piper/Remotion/HyperFrames)
+
+Fixes the "Mac-only in practice" gap in the OpenMontage engine's browser-based render
+paths and the silent Piper soft-fail. `make setup` installed the upstream npm/pip deps but
+NO Chromium system libraries and NO Piper voice model, so a fresh Linux/VPS container FAILED
+every Remotion/HyperFrames (headless-Chromium) render and often ended up with no offline
+Piper TTS. All version claims are pinned to their source registry (bump in one place).
+
+- **NEW `provision-render-deps.sh`** — arch/OS-aware, idempotent render-runtime provisioner
+  wired into `install.sh` as Step 3.5. For BOTH macOS and Linux it: (Linux) `apt-get`s the
+  Chromium system libraries + ffmpeg that headless Chrome needs to launch (Remotion's
+  documented Debian/Ubuntu set, incl. the `libasound2`→`libasound2t64` rename fallback);
+  installs the pinned latest **Remotion 4.0.489** + the arch/OS-specific
+  `@remotion/compositor-<os>-<arch>[-<libc>]` + `npx remotion browser ensure`
+  (Chrome-Headless-Shell); cache-warms the pinned latest **HyperFrames 0.7.56** CLI +
+  bundled Chrome; installs the latest arch-aware **Piper `piper-tts==1.4.2`**
+  (OHF-voice/piper1-gpl) **FAIL-LOUD** (root-cause fix for the Makefile's silent
+  `pip install piper-tts || echo skip`) and **pre-stages the default `en_US-lessac-medium`
+  voice ONNX model** (direct from the pinned `rhasspy/piper-voices` HuggingFace tag).
+  Toggles: `SKILL47_SKIP_RENDER_PROVISION=1`, `SKILL47_PIPER_OPTIONAL=1`, `SKILL47_SKIP_APT=1`.
+- **NEW `Dockerfile`** — Linux/VPS image on `node:22-bookworm-slim` (Remotion's recommended
+  base; Node 22 satisfies HyperFrames' `engines: node>=22`) that bakes the Chromium system
+  libs + ffmpeg, clones OpenMontage at the pinned SHA, runs `make setup` then the
+  provisioner. The client's own `KIE_API_KEY` is injected at RUNTIME, never baked in.
+- **`preflight.sh`** — Node floor raised **18 → 22** (HyperFrames hard-requires Node ≥ 22;
+  a box on 18–21 passed preflight yet failed every HyperFrames render). nodesource hint
+  bumped to `setup_22.x`.
+- **`qc-movie-producer.sh`** — `node >= 18` assertion raised to `node >= 22`; added HARD
+  asserts that the provisioner + Dockerfile exist, the provisioner is valid bash, pins all
+  three versions, installs a compositor, ensures Chrome-Headless-Shell, and pre-stages a
+  voice model, that `install.sh` wires the provisioner, and that preflight/Dockerfile carry
+  the Node-22 floor + Chromium libs.
+- **`.github/workflows/video-pipeline-lockstep.yml`** — adds an `actions/setup-node@v4`
+  (Node 22) step so the `qc-movie-producer.sh` Node≥22 assertion is provisioned in CI; adds
+  the provisioner + Dockerfile to the path triggers.
+- Docs (`INSTALL.md`, `DEPENDENCY-MANIFEST.md`) updated: Node ≥ 22, the new Step 3.5, the
+  Linux/VPS + Docker provisioning path, and the pinned versions with source URLs.
+
 ## v14.1.4 — 2026-07-05 (Wave-0 merge-train T-47-movie-producer)
 
 Seven fixes from the 2026-07-05 master fix-plan (skills-36-to-end weakness sweep).

@@ -95,8 +95,8 @@ assert "npx installed"     "command -v npx"
 assert "python3 installed" "command -v python3"
 assert "git installed"     "command -v git"
 
-# ---- Node version >= 18 (HARD FAIL) ----
-assert "node >= 18" "node -e 'process.exit(parseInt(process.versions.node.split(\".\")[0]) >= 18 ? 0 : 1)'"
+# ---- Node version >= 22 (HARD FAIL — HyperFrames engines: node>=22) ----
+assert "node >= 22" "node -e 'process.exit(parseInt(process.versions.node.split(\".\")[0]) >= 22 ? 0 : 1)'"
 
 # ---- Skill payload structure (HARD — always present in repo + post-install) ----
 assert "SKILL.md present"        "[ -f \"${SELF_SKILL_DIR}/SKILL.md\" ]"
@@ -108,6 +108,8 @@ assert "skill-version.txt present" "[ -f \"${SELF_SKILL_DIR}/skill-version.txt\"
 assert "install.sh present"      "[ -f \"${SELF_SKILL_DIR}/install.sh\" ]"
 assert "preflight.sh present"    "[ -f \"${SELF_SKILL_DIR}/preflight.sh\" ]"
 assert "verify-deps.sh present"  "[ -f \"${SELF_SKILL_DIR}/verify-deps.sh\" ]"
+assert "provision-render-deps.sh present" "[ -f \"${SELF_SKILL_DIR}/provision-render-deps.sh\" ]"
+assert "Dockerfile present (Linux/VPS render image)" "[ -f \"${SELF_SKILL_DIR}/Dockerfile\" ]"
 assert "DEPENDENCY-MANIFEST.md present" "[ -f \"${SELF_SKILL_DIR}/DEPENDENCY-MANIFEST.md\" ]"
 assert "movie-producer.skill bundle present" "[ -f \"${SELF_SKILL_DIR}/movie-producer.skill\" ]"
 
@@ -164,6 +166,33 @@ assert "No remotion-composer/ in skill payload (no AGPLv3 source vendored)" \
   "[ ! -d \"${SELF_SKILL_DIR}/remotion-composer\" ]"
 assert "kie-adapters payload carries ONLY our two adapter files (no OpenMontage source)" \
   "[ \"\$(find \"${SELF_SKILL_DIR}/kie-adapters/tools\" -name '*.py' | wc -l | tr -d ' ')\" = '2' ]"
+
+# ---- Render-runtime provisioning invariants (HARD — always present in repo + post-install) ----
+# The provisioner + Dockerfile make Remotion/HyperFrames (headless-Chromium) renders and
+# offline Piper TTS work on BOTH macOS and Linux/VPS. These asserts keep the fix from
+# silently regressing (syntax, pinned versions, the Node>=22 floor, the Chromium libs).
+assert "provision-render-deps.sh is valid bash (bash -n)" \
+  "bash -n \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh pins a Remotion version default (REMOTION_VERSION:-)" \
+  "grep -q 'REMOTION_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh pins a HyperFrames version default (HYPERFRAMES_VERSION:-)" \
+  "grep -q 'HYPERFRAMES_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh pins a Piper version default (PIPER_VERSION:-)" \
+  "grep -q 'PIPER_VERSION:-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh installs an arch/OS Remotion compositor (@remotion/compositor-)" \
+  "grep -q '@remotion/compositor-' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh ensures Chrome-Headless-Shell (remotion browser ensure)" \
+  "grep -q 'remotion browser ensure' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "provision-render-deps.sh pre-stages a Piper voice ONNX model (huggingface piper-voices)" \
+  "grep -q 'rhasspy/piper-voices' \"${SELF_SKILL_DIR}/provision-render-deps.sh\""
+assert "install.sh wires the render-runtime provisioner (Step 3.5)" \
+  "grep -q 'provision-render-deps.sh' \"${SELF_SKILL_DIR}/install.sh\""
+assert "preflight.sh enforces Node >= 22 (HyperFrames floor)" \
+  "grep -Eq 'NODE_MAJOR.*-ge 22' \"${SELF_SKILL_DIR}/preflight.sh\""
+assert "Dockerfile uses the node:22 base (HyperFrames + Remotion Node floor)" \
+  "grep -q 'FROM node:22' \"${SELF_SKILL_DIR}/Dockerfile\""
+assert "Dockerfile installs the Chromium system libraries (libnss3)" \
+  "grep -q 'libnss3' \"${SELF_SKILL_DIR}/Dockerfile\""
 
 # ---- SOP DMAIC headers (HARD — the standalone SOP must satisfy the gate regex) ----
 # Resolve the role-library video SOP relative to the repo root (skill folder is a

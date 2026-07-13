@@ -31,6 +31,9 @@ on:
       - "47-movie-producer/scripts/test_video_preflight.py"
       - "47-movie-producer/test-fixtures/make-video-fixtures.sh"
       - "47-movie-producer/qc-movie-producer.sh"
+      - "47-movie-producer/provision-render-deps.sh"
+      - "47-movie-producer/Dockerfile"
+      - "47-movie-producer/preflight.sh"
       - "universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
       - "universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
       - "23-ai-workforce-blueprint/templates/role-library/video/*.md"
@@ -46,6 +49,9 @@ on:
       - "47-movie-producer/scripts/test_video_preflight.py"
       - "47-movie-producer/test-fixtures/make-video-fixtures.sh"
       - "47-movie-producer/qc-movie-producer.sh"
+      - "47-movie-producer/provision-render-deps.sh"
+      - "47-movie-producer/Dockerfile"
+      - "47-movie-producer/preflight.sh"
       - "universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
       - "universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
       - "23-ai-workforce-blueprint/templates/role-library/video/*.md"
@@ -64,6 +70,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Set up Node 22 (qc-movie-producer.sh HARD-asserts node >= 22 — HyperFrames floor)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install ffmpeg/ffprobe (runtime deps qc-movie-producer.sh HARD-asserts)
         shell: bash

@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v14.1.6
+version: v14.2.0
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -12,7 +12,7 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 
 - **Free documentary-montage path** — `pipeline_defs/documentary-montage.yaml` builds a semantic corpus of real-world footage from Pexels, Archive.org (Prelinger et al.), NASA, Wikimedia Commons, and Unsplash, then uses CLIP-based retrieval to fill slot descriptions. Zero API keys needed. Budget cap ~$1.
 - **Kie.AI generative path** — when the client sets `KIE_API_KEY`, the tool registry auto-routes ALL image generation through `kie_image.py` (models `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`) and ALL video generation through `kie_video.py` (primary `gemini-omni-video`, fallback `veo3`/`veo3_fast`). Native paid providers (FAL/Runway/HeyGen/OpenAI/Google) are never installed.
-- **Free render engines preserved** — FFmpeg mux/stitch, Remotion (`remotion-composer/`), HyperFrames (`npx hyperframes`), Piper free TTS. These are never rewired to a paid provider.
+- **Free render engines preserved + provisioned for macOS AND Linux/VPS** — FFmpeg mux/stitch, Remotion (`remotion-composer/`), HyperFrames (`npx hyperframes`), Piper free TTS. These are never rewired to a paid provider. `provision-render-deps.sh` (run by `install.sh`, and baked into the `Dockerfile`) installs the pinned latest Remotion + arch/OS compositor + Chrome-Headless-Shell, the pinned latest HyperFrames CLI + bundled Chrome, the Chromium system libraries + ffmpeg (Linux `apt`), and the latest arch-aware Piper with a pre-staged voice ONNX model — so the browser-based render paths work on a fresh Linux container, not just the operator's Mac. Node floor is **≥ 22** (HyperFrames requirement).
 - **13 production pipelines** — the pinned OpenMontage tree (`install.sh` pins commit `ce11f6a`, `OPENMONTAGE_PINNED_SHA`) ships exactly 13 `pipeline_defs/*.yaml`: `documentary-montage`, `animated-explainer`, `animation`, `avatar-spokesperson`, `character-animation`, `cinematic`, `clip-factory`, `hybrid`, `localization-dub`, `podcast-repurpose`, `screen-demo`, `talking-head`, and `framework-smoke` (internal smoke-test). They drive the AI coding-assistant-as-orchestrator model. See the pipeline selection guide in `INSTRUCTIONS.md`. No code orchestrator binary required.
 - **Rule-Zero budget discipline** — every client `config.yaml` ships with `budget.mode: cap` + a low `total_usd`. The system announces provider + model + estimated cost BEFORE any paid call and gates approval at `single_action_approval_usd: 0.50`.
 
@@ -54,6 +54,8 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
 - `skill-version.txt` — semver
 - `qc-movie-producer.sh` — install QC (fail-loud)
 - `verify-deps.sh` — clean-box dependency proof script
+- `provision-render-deps.sh` — arch/OS-aware, idempotent render-runtime provisioner (Chromium system libs + ffmpeg, pinned latest Remotion + compositor + Chrome-Headless-Shell, pinned latest HyperFrames + bundled Chrome, latest arch-aware Piper + a pre-staged voice model). Run by `install.sh` (Step 3.5); works on macOS and Linux/VPS.
+- `Dockerfile` — Linux/VPS container image (`node:22-bookworm-slim`) that bakes the Chromium system libs + ffmpeg and runs the provisioner, so the Remotion/HyperFrames render paths work on a VPS
 - `DEPENDENCY-MANIFEST.md` — the §A no-vendoring decision
 - `kie-adapters/` — our two Kie.AI BaseTool adapters (copied into the clone at install)
   - `tools/graphics/kie_image.py` — Kie image generation (gpt-image-2-*)

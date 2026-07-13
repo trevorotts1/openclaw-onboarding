@@ -46,19 +46,22 @@ check_binary "ffprobe" \
   "brew install ffmpeg  # ffprobe ships with ffmpeg" \
   "sudo apt-get install -y ffmpeg  # ffprobe ships with ffmpeg"
 
-# ---- Node.js >= 18 (required for Remotion + npx hyperframes) ----
+# ---- Node.js >= 22 (required for HyperFrames [engines: node>=22] + Remotion) ----
+# HyperFrames' CLI hard-requires Node >= 22 (npm `hyperframes` engines field, and
+# hyperframes_compose.py _NODE_FLOOR_MAJOR=22). A box on Node 18-21 passes every other
+# check yet FAILS every HyperFrames render, so the floor is enforced here, not at render.
 check_binary "node" \
   "brew install node" \
-  "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs"
+  "curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs"
 
 if command -v node >/dev/null 2>&1; then
   NODE_MAJOR=$(node -e "process.stdout.write(process.versions.node.split('.')[0])" 2>/dev/null || echo "0")
-  if [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null; then
-    green "  [PASS] node version $NODE_MAJOR >= 18"
+  if [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
+    green "  [PASS] node version $NODE_MAJOR >= 22"
   else
-    red   "  [FAIL] node version $NODE_MAJOR is < 18 (required >= 18)"
+    red   "  [FAIL] node version $NODE_MAJOR is < 22 (required >= 22 for HyperFrames)"
     red   "         macOS fix:  brew upgrade node"
-    red   "         Linux fix:  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs"
+    red   "         Linux fix:  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs"
     FAIL=$((FAIL+1))
   fi
 fi
