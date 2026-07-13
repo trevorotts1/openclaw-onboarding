@@ -43,9 +43,14 @@ end to end -- the two-part fix for the previously-dead-code S3 running-low path
   (128000) and a SANE `softThresholdTokens` (20000), so the effective ceiling is
   108000 -- a healthy, non-broken box (contrast with `subtractive-misconfig.json`,
   which is deliberately broken).
-- `context-usage-86pct.trajectory.jsonl`: two synthetic trajectory events for the
-  same session; the LATEST carries `contextTokens: 92880`, which is exactly 86% of
-  the 108000 ceiling above (`92880 / 108000 = 0.86`).
+- `context-usage-86pct.trajectory.jsonl`: two synthetic `model.completed` events for
+  the same session in the REAL trajectory shape -- usage 3 levels deep at
+  `data.usage`, the normalized `{input, output, cacheRead, cacheWrite, total}` object
+  the writer emits. The LATEST carries `input: 82880` + `cacheRead: 10000`, so its
+  prompt-side occupancy is `92880`, exactly 86% of the 108000 ceiling above
+  (`92880 / 108000 = 0.86`). Its `output: 50000` and billed `total: 147880` are
+  present ON PURPOSE: occupancy uses the input/prompt side only, so a `total`/spend
+  read here would compute 137%, not 86% -- the fixture discriminates the two metrics.
 
 Together they prove `_context_usage()` reads the newest trajectory file's latest
 event, computes `usage_pct` against the SUBTRACTIVE ceiling (reusing
@@ -54,13 +59,20 @@ event, computes `usage_pct` against the SUBTRACTIVE ceiling (reusing
 OPERATOR's own box only, the narrow Lane-2 self-notice exception. See
 `../drills/D-CONTEXT-USAGE.md`.
 
-**OPEN QUESTION carried into these fixtures, on purpose:** the exact trajectory
-field name (`contextTokens`) is a plausible OpenClaw schema candidate, NOT a
-field confirmed against a real `*.trajectory.jsonl` on the operator canary box
-(see the `_CONTEXT_TOKEN_FIELDS` comment in `ews_sentinel.py`). If the canary
-proves a different real field name, only these two fixtures and that candidate
-tuple need to change -- the arithmetic and the two-lane delivery this drill
-proves are field-name-independent.
+**Field name: CONFIRMED (this was formerly an OPEN QUESTION).** The trajectory token
+field is now confirmed from the OpenClaw 2026.6.11 trajectory-writer source
+(read-only, no live box): a `model.completed` row carries `data.usage` (3 levels
+deep) = `getUsageTotals()` = `{input, output, cacheRead, cacheWrite, [reasoningTokens],
+total}` (`selection-CVIPXpKT.js:14200-14216`, `:4310-4339`; `usage-C67Kbb7n.js:44-64`).
+Context-window OCCUPANCY is the prompt/input side = `input + cacheRead`, which is
+OpenClaw's own `prompt_tokens` definition (`usage-C67Kbb7n.js:68-70, :83`) -- NOT
+`output`, NOT the billed `total` (that is Skill 61's SPEND metric). The prior
+candidate `contextTokens` was a guess: it is a SESSION-STORE field
+(`agent-runner.runtime-BriI2__w.js:2310-2377`), not a trajectory-event field, and the
+old reader also used the wrong nesting depth (top-level `usage`, 2 levels) and raw
+provider aliases (`input_tokens`/`total_tokens`) the writer never emits -- so it was
+blind on every real row. See the source-cited comment above `_extract_context_tokens`
+in `ews_sentinel.py`.
 
 ## `announce-cron.json`
 

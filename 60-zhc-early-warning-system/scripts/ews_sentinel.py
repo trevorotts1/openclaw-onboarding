@@ -464,43 +464,104 @@ def _read_trajectory_events(led, max_files=50, max_bytes=1_000_000):
 # probe (see the CLI fallback below); deterministic file reads only.
 # --------------------------------------------------------------------------- #
 
-# OPEN QUESTION (verify-first; the rescue spec is explicit: "do not assume").
-# The exact trajectory-event field carrying the CUMULATIVE context/input-token
-# figure has NOT been confirmed against a real *.trajectory.jsonl on the
-# operator canary box (only modelId/provider/sessionId are proven fields today
-# - see _read_trajectory_events above and tests/fixtures/README.md). The names
-# below are the plausible OpenClaw trajectory-schema candidates, tried in
-# order; when NONE is present this returns None, which makes _context_usage()
-# a clean (None, None) no-op - identical to today's dead-code behavior, never
-# a guessed percentage. CONFIRM the true field on the canary box during the
-# Topic-2/3 burn-in, then trim this tuple to the one real name.
-_CONTEXT_TOKEN_FIELDS = (
-    "contextTokens", "cumulativeContextTokens", "contextUsedTokens",
-    "totalTokens", "cumulativeInputTokens", "inputTokens", "promptTokens",
-)
-_CONTEXT_TOKEN_NESTED = (
-    ("usage", "input_tokens"), ("usage", "total_tokens"),
-    ("usage", "context_tokens"), ("tokenUsage", "total"),
-)
+# CONFIRMED from the OpenClaw 2026.6.11 trajectory-writer source (read-only, no
+# live box touched). A trajectory `model.completed` / `trace.artifacts` row carries
+# its usage 3 LEVELS deep at row["data"]["usage"], = getUsageTotals(), the
+# RUN-ACCUMULATED normalized usage object {input, output, cacheRead, cacheWrite,
+# [reasoningTokens], total}:
+#   writer  dist/selection-CVIPXpKT.js:14200-14216  recordEvent("model.completed",
+#           {usage: attemptUsage, ...})  [attemptUsage = getUsageTotals(), :13848]
+#   totals  dist/selection-CVIPXpKT.js:4310-4339  commitAssistantUsage() accumulates
+#           usageTotals ACROSS the run; getUsageTotals() emits
+#           {input, output, cacheRead, cacheWrite, [reasoningTokens], total}
+#   norm    dist/usage-C67Kbb7n.js:44-64  normalizeUsage() EMITS exactly that shape
+#           and only CONSUMES the raw provider aliases (input_tokens, total_tokens,
+#           inputTokens, totalTokens, prompt_tokens, ...) - they are NEVER written to
+#           the stream. That is why the old 2-level ("usage","input_tokens") /
+#           ("usage","total_tokens") reader was DOUBLY blind: wrong depth (usage is
+#           under data, not top-level) AND wrong field names (aliases never emitted).
+#
+# METRIC: this detector wants CONTEXT-WINDOW OCCUPANCY (how full the window is
+# getting), NOT spend. Occupancy is the PROMPT / INPUT side - what is fed INTO the
+# model - which OpenClaw ITSELF defines as prompt_tokens = input + cacheRead
+# (dist/usage-C67Kbb7n.js:68-70, :83). We therefore sum input + cacheRead and
+# DELIBERATELY exclude `output` (generation, not resident prompt) and the billed
+# `total` (== input+output+cacheRead+cacheWrite - Skill 61's SPEND metric,
+# loop_watchdog._usage_total, NOT occupancy). cacheWrite is excluded to match
+# OpenClaw's own prompt_tokens accounting.
+#
+# CAVEAT (documented, never hidden): `data.usage` is RUN-ACCUMULATED, so input+
+# cacheRead off the LATEST completion is an UPPER-BOUND proxy for single-turn
+# occupancy on a long cached run - never an undercount, i.e. the conservative,
+# fail-EARLY direction (the defect being fixed here is BLINDNESS, so warning a touch
+# early is the safe side). The tight per-turn/current-context figure OpenClaw tracks
+# (`contextTokens`) is persisted to the SESSION STORE, not the trajectory
+# (dist/agent-runner.runtime-BriI2__w.js:2310-2377 persistSessionUsageUpdate), and is
+# surfaced only by the opt-in CLI path below; the trajectory stream this detector
+# tails carries `data.usage` alone.
+_USAGE_PROMPT_FIELDS = ("input", "cacheRead")  # OpenClaw prompt_tokens = input + cacheRead
+
+# Flat scalar occupancy candidates for a DIFFERENT shape than a trajectory row: the
+# session-store view a CLI probe surfaces (see _context_usage_from_cli), and any
+# already-flattened status dict. `contextTokens` is the session store's OWN
+# current-context figure (dist/agent-runner.runtime-BriI2__w.js:2328) - the truest
+# occupancy number when it is available; the rest are defensive aliases. These are
+# tried ONLY after the confirmed data.usage prompt-side read misses, so a real
+# trajectory row (which has no such flat field) never reaches them.
+_CONTEXT_TOKEN_FIELDS = ("contextTokens", "context_tokens", "totalTokens", "promptTokens")
+
+
+def _coerce_nonneg_int(value):
+    """A finite, non-negative real -> int; a bool, None, or anything else -> None.
+    Mirrors Skill 61 loop_watchdog._coerce_nonneg_int so the two skills share ONE
+    fail-soft numeric reader convention."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value >= 0:
+        return int(value)
+    return None
+
+
+def _prompt_side_tokens(usage):
+    """Context-window OCCUPANCY off a normalized `usage` dict = the prompt/input
+    side (input + cacheRead), per OpenClaw's own prompt_tokens definition. Sums the
+    prompt-side buckets present; returns None when `usage` is not a dict or carries
+    none of them. Fail-soft per bucket (a bool/odd value contributes nothing, never
+    a crash) - the same posture as Skill 61's component-sum fallback."""
+    if not isinstance(usage, dict):
+        return None
+    parts = [p for p in (_coerce_nonneg_int(usage.get(f)) for f in _USAGE_PROMPT_FIELDS)
+             if p is not None]
+    return sum(parts) if parts else None
 
 
 def _extract_context_tokens(obj):
-    """Best-effort cumulative-token read off a trajectory event or CLI status
-    dict, trying the OPEN QUESTION candidates above. Never raises; a wrong or
-    absent shape returns None so the caller can no-op rather than guess."""
+    """Best-effort CONTEXT-WINDOW occupancy (prompt-side tokens), off EITHER a raw
+    trajectory ROW or a CLI/session-store status dict. Never raises; a wrong or
+    absent shape returns None so the caller no-ops rather than guesses.
+
+    Resolution order:
+      (1) trajectory row -> data.usage prompt-side (input + cacheRead). This is the
+          CONFIRMED real shape: usage lives 3 levels deep at row["data"]["usage"]
+          (see the source-cited comment above), which is what the caller
+          (_latest_trajectory_event) hands in - the FULL row, not an unwrapped event.
+      (2) a flat occupancy scalar (contextTokens / ...) - the session-store view a
+          CLI probe surfaces.
+      (3) a TOP-LEVEL `usage` object's prompt-side - an already-unwrapped event or an
+          odd status dict; last resort, so a real row (which has no top-level usage)
+          never reaches it."""
     if not isinstance(obj, dict):
         return None
+    data = obj.get("data")
+    if isinstance(data, dict):
+        v = _prompt_side_tokens(data.get("usage"))
+        if v is not None:
+            return v
     for key in _CONTEXT_TOKEN_FIELDS:
-        v = obj.get(key)
-        if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
-            return int(v)
-    for outer, inner in _CONTEXT_TOKEN_NESTED:
-        sub = obj.get(outer)
-        if isinstance(sub, dict):
-            v = sub.get(inner)
-            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
-                return int(v)
-    return None
+        v = _coerce_nonneg_int(obj.get(key))
+        if v is not None:
+            return v
+    return _prompt_side_tokens(obj.get("usage"))
 
 
 def _latest_trajectory_event(max_bytes=200_000):
@@ -547,14 +608,23 @@ def _latest_trajectory_event(max_bytes=200_000):
 
 
 def _context_usage_from_cli():
-    """Fallback probe per the spec's OPEN QUESTION: `openclaw session status
-    --json`, IF that subcommand exists on this OpenClaw build - unverified, so
-    this is OFF by default and requires the explicit opt-in
-    EWS_CONTEXT_CLI_FALLBACK=1 (set only after confirming the subcommand exists;
-    never assumed). Never a model call; the only egress is the local binary,
-    the same injectable seam ews_alert.py's gateway sender already uses. Any
-    failure (binary missing, non-zero exit, unparseable output) is a silent
-    None, never a crash and never a guessed number."""
+    """Opt-in fallback probe that shells `openclaw session status --json`. VERDICT
+    (verified read-only against the installed OpenClaw 2026.6.11 dist, no live box):
+    there is NO `session status` subcommand on this build - the CLI command group is
+    `sessions` (list-only: `sessions` / `sessions list` / `sessions tail`), and
+    `openclaw sessions --json` is the read-only surface that carries the session
+    store's per-session `contextTokens` / `totalTokens` (the tight occupancy figure
+    the trajectory stream does not emit; see _extract_context_tokens's source note).
+    So THIS exact invocation is UNVERIFIED for 2026.6.11 and stays OFF by default
+    (requires the explicit EWS_CONTEXT_CLI_FALLBACK=1) - a separate, still-unverified
+    shape, NOT the confirmed trajectory-reader defect. The extractor's flat-field
+    reader IS aligned to the real session-store field names (`contextTokens` first),
+    so a confirmed status shape parses correctly; wiring the exact active-session
+    command (`sessions --json` returns a LIST, needing active-session resolution) is
+    deferred to canary burn-in rather than guessed here. Never a model call; the only
+    egress is the local binary, the same injectable seam ews_alert.py's gateway sender
+    uses. Any failure (binary missing, unknown subcommand -> non-zero exit,
+    unparseable output) is a silent None, never a crash and never a guessed number."""
     if os.environ.get("EWS_CONTEXT_CLI_FALLBACK", "") != "1":
         return None
     openclaw = os.environ.get("OPENCLAW_BIN")
@@ -581,13 +651,15 @@ def _context_usage(config, led):
     """Return (usage_pct, context_window) for the box's ACTIVE session, or
     (None, None) when it cannot be determined. Deterministic: reads the newest
     session *.trajectory.jsonl (the same ground-truth stream S2 already tails
-    via _read_trajectory_events) and takes the LATEST event's cumulative
-    input/context-token figure; ceiling = contextWindow minus SUBTRACTIVE
-    softThresholdTokens, reusing ews_common.subtractive_broken's own ceiling
-    arithmetic so S3's two halves (broken-config, running-low) never compute
-    the ceiling two different ways. `led` is accepted for signature parity
-    with the spec and as a hook for a future active-session lookup; the
-    current field-name OPEN QUESTION does not require ledger state to resolve.
+    via _read_trajectory_events) and takes the LATEST event's prompt-side
+    occupancy (data.usage input + cacheRead, CONFIRMED from the OpenClaw
+    trajectory-writer source - see _extract_context_tokens); ceiling =
+    contextWindow minus SUBTRACTIVE softThresholdTokens, reusing
+    ews_common.subtractive_broken's own ceiling arithmetic so S3's two halves
+    (broken-config, running-low) never compute the ceiling two different ways.
+    `led` is accepted for signature parity with the spec and as a hook for a
+    future active-session lookup; the confirmed data.usage prompt-side read does
+    not require ledger state to resolve.
     A missing signal returns (None, None) - never 0%, never a guess - so a box
     with no trajectory data yet simply gets no running-low finding, exactly
     today's (dead-code) behavior."""
@@ -829,6 +901,53 @@ def self_test():
     assert f3note and f3note[0]["route"] == R_BOX_AGENT and f3note[0]["severity"] == "P3"
     print("  S3 case: PASS (broken-config=P1 to OPERATOR; running-low routes to BOX agent, D5)")
 
+    # _extract_context_tokens: the token reader at the heart of S3's running-low
+    # path. Proves the CONFIRMED 3-level data.usage prompt-side read (input +
+    # cacheRead), a fail-old/pass-new regression against the pre-fix reader, the flat
+    # session-store shape, and fail-soft.
+    real_row = {"type": "model.completed", "sessionId": "sess-x", "modelId": "glm-5.2",
+                "data": {"usage": {"input": 82880, "output": 50000, "cacheRead": 10000,
+                                   "cacheWrite": 5000, "total": 147880}}}
+    # PASS-NEW: occupancy = input(82880) + cacheRead(10000) = 92880 - NOT output,
+    # NOT the billed total(147880). The exact number a spend/total read gets wrong.
+    assert _extract_context_tokens(real_row) == 92880, _extract_context_tokens(real_row)
+
+    # FAIL-OLD: the pre-fix reader was a 2-level obj["usage"][...] lookup on raw
+    # provider aliases (input_tokens/total_tokens) the writer NEVER emits -> it is
+    # blind (None) on this REAL row. Replayed inline so the regression is self-proving.
+    def _old_extract(obj):
+        old_flat = ("contextTokens", "cumulativeContextTokens", "contextUsedTokens",
+                    "totalTokens", "cumulativeInputTokens", "inputTokens", "promptTokens")
+        old_nested = (("usage", "input_tokens"), ("usage", "total_tokens"),
+                      ("usage", "context_tokens"), ("tokenUsage", "total"))
+        if not isinstance(obj, dict):
+            return None
+        for key in old_flat:
+            v = obj.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                return int(v)
+        for outer, inner in old_nested:
+            sub = obj.get(outer)
+            if isinstance(sub, dict):
+                v = sub.get(inner)
+                if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                    return int(v)
+        return None
+    assert _old_extract(real_row) is None, "old 2-level/alias reader must be blind on a real row"
+
+    # flat session-store / CLI shape (the opt-in `sessions --json` view): contextTokens
+    assert _extract_context_tokens({"contextTokens": 54000}) == 54000
+    # top-level usage (already-unwrapped event) -> prompt-side last resort (output ignored)
+    assert _extract_context_tokens({"usage": {"input": 40000, "cacheRead": 2000,
+                                              "output": 9}}) == 42000
+    # fail-soft: non-dict, empty, bool/negative buckets -> None, never a crash
+    assert _extract_context_tokens(None) is None
+    assert _extract_context_tokens({"data": {"usage": {}}}) is None
+    assert _extract_context_tokens({"data": {"usage": {"input": True,
+                                                       "cacheRead": -5}}}) is None
+    print("  _extract_context_tokens case: PASS (real data.usage input+cacheRead=92880; "
+          "old 2-level/alias reader blind=None; flat + fail-soft)")
+
     # _context_usage: the live-usage computation that feeds S3's running-low
     # branches (D1/D2 fix - these branches were dead code before this function).
     # (tempfile was already imported above, in the S4 case.)
@@ -841,21 +960,31 @@ def self_test():
         # (a) no trajectory file yet -> clean (None, None), never a guess
         assert _context_usage(cfg_cw, None) == (None, None)
 
-        # (b) a trajectory file with a recognized field -> correct pct + window.
-        # ceiling = 128000 - 20000 = 108000; 92880 / 108000 = 0.86 -> 86%
+        # (b) a REAL model.completed row -> data.usage prompt-side occupancy
+        # (input + cacheRead), 3 levels deep. ceiling = 128000 - 20000 = 108000;
+        # input(82880)+cacheRead(10000)=92880 -> 92880/108000 = 0.86 -> 86%. output
+        # (50000) and the billed total(147880 -> 137%) are DELIBERATELY not what
+        # occupancy uses; a `total`/spend read here would compute the wrong pct.
         sess_dir = Path(ctd) / "agents" / "main" / "sessions"
         sess_dir.mkdir(parents=True, exist_ok=True)
         traj = sess_dir / "sess-example.trajectory.jsonl"
         traj.write_text(
-            json.dumps({"ts": "2026-07-10T12:00:00Z", "sessionId": "sess-example",
-                       "modelId": "glm-5.2", "provider": "openrouter"}) + "\n" +
-            json.dumps({"ts": "2026-07-10T12:05:00Z", "sessionId": "sess-example",
-                       "modelId": "glm-5.2", "provider": "openrouter",
-                       "contextTokens": 92880}) + "\n",
+            json.dumps({"ts": "2026-07-10T12:00:00Z", "type": "model.completed",
+                       "sessionId": "sess-example", "modelId": "glm-5.2",
+                       "provider": "openrouter",
+                       "data": {"usage": {"input": 30000, "output": 8000,
+                                          "cacheRead": 10000, "cacheWrite": 0,
+                                          "total": 48000}}}) + "\n" +
+            json.dumps({"ts": "2026-07-10T12:05:00Z", "type": "model.completed",
+                       "sessionId": "sess-example", "modelId": "glm-5.2",
+                       "provider": "openrouter",
+                       "data": {"usage": {"input": 82880, "output": 50000,
+                                          "cacheRead": 10000, "cacheWrite": 5000,
+                                          "total": 147880}}}) + "\n",
             encoding="utf-8")
         pct, cw = _context_usage(cfg_cw, None)
         assert pct == 86 and cw == 128000, (pct, cw)
-        print("  _context_usage case: PASS (trajectory field found -> 86% of 128000)")
+        print("  _context_usage case: PASS (REAL data.usage prompt-side -> 86% of 128000)")
 
         # (c) ceiling broken (threshold >= window) -> never guess a pct even
         # though tokens are present; the broken-config P1 already covers it

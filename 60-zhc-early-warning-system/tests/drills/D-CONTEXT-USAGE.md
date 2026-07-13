@@ -16,8 +16,12 @@ never sees a running-low case" does not leak past its intended boundary.
 - `tests/fixtures/context-window-clean.json` -- a healthy box: `_contextWindow`
   128000, `softThresholdTokens` 20000, effective ceiling 108000.
 - `tests/fixtures/context-usage-86pct.trajectory.jsonl` -- the newest session's
-  latest trajectory event carries `contextTokens: 92880` (86% of the 108000
-  ceiling above).
+  latest `model.completed` event in the REAL trajectory shape (usage 3 levels deep
+  at `data.usage`); its prompt-side occupancy `input(82880) + cacheRead(10000) =
+  92880` is 86% of the 108000 ceiling above. `output`/`total` are present but are
+  NOT what occupancy reads (a `total` read would wrongly compute 137%). Field shape
+  confirmed from the OpenClaw 2026.6.11 trajectory-writer source; see the fixtures
+  README and `_extract_context_tokens` in `ews_sentinel.py`.
 
 ## Pass condition
 
