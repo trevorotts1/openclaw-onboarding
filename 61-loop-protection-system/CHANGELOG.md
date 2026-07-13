@@ -3,6 +3,62 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.3.0] - 2026-07-13
+
+The collect layer is REAL. `loop_watchdog.py :: collect_evidence()` was a stub
+that returned `{"windows": [], "runs": [], "crons": [], "wedge": {}}` - so even a
+fully armed watchdog handed D2, D3, and D4 EMPTY evidence on a real box; only D1
+(pm2) had a live feed. This is why the 2026-07-13 token-furnace / correction-wave
+incident produced zero findings (fix design SS4, finding 2: "the single most
+important repo finding"). No box behavior changes until the operator's batched
+roll; DRY_RUN/armed/rollout gates all stay intact.
+
+Added:
+- **`collect_windows()` (D2 feed)**: hourly paid/local token windows for the
+  trailing 24h from the trajectory stream's `model.completed` events - field
+  names verified against a live box. Usage totals are CUMULATIVE PER RUN, so each
+  completion contributes its DELTA, making a burn visible MID-RUN while the
+  looping run is still alive (a run-end-only source sees a furnace only after it
+  stops). `trace.artifacts` totals back-fill runs whose completions carried no
+  usage - never double-counted. `initiated_sessions` counts only HUMAN-triggered
+  `session.started` rows (`data.trigger == "user"`; cron/heartbeat stay
+  idle-classified). Windows also carry per-hour `completions` as the future D5
+  completion-rate feed.
+- **`collect_runs()` (D3 feed)**: offset-tracked NEW-bytes trajectory slice
+  (ledger offsets `loop-traj:<path>`, line-boundary safe, rotation-safe) ->
+  one signature per finished run from `trace.artifacts`: outcome class + ordered
+  tool NAMES (`data.toolMetas[].toolName`) + target. BOTH outcomes collected:
+  SUCCESSFUL runs hash as outcome `OK` - the correction wave was "successful"
+  turns end to end, invisible to failure-only hashing. Erroring `session.ended`
+  rows without an artifacts row are synthesized. Tool names only; arguments and
+  message content are never collected.
+- **`collect_crons()` + `collect_wedge()` (D4 feeds)**: `openclaw cron list
+  --json` (read-only, fail-soft) with OBSERVED fire counting - last-run marker
+  transitions persisted in ledger meta over a trailing 24h window; a strict
+  lower bound, `None` (silent) until a fire is actually observed. Wedge probe:
+  demand-without-progress tick counter (increments only when the slice shows
+  prompts/starts with zero completions while the gateway process is up; resets
+  on progress; HOLDS on an idle box - idleness is never a wedge) + orphan
+  :18789 listener vs the declared supervisor pid in a STALE (expired or >=1h
+  old) restart-handoff file; a fresh handoff mid-restart never reports.
+- **D3 success ceiling**: `d3_identical_signature` accepts outcome `OK` runs at
+  the new `config/thresholds.json` `p1_repeat_success: 10` (failures keep WARN 3
+  / P1 5; successes never WARN) - so a heartbeat succeeding once per slice stays
+  silent while 10+ back-to-back identical successful turns confirm a loop.
+- **`LOOP_NO_PROBES=1` env seam**: disables every subprocess probe
+  (pm2/openclaw/pgrep/lsof) so self-tests and drills are hermetic.
+- **D-COLLECT drill** in `verify.sh` + collect cases in the watchdog self-test:
+  a synthetic loop trajectory (real v20 schema) in a scratch openclaw root must
+  yield non-empty windows/runs, D2 must flag the idle paid burn, D3 must flag
+  the repeated identical successful turn, and the slice must be offset-consumed.
+
+Changed:
+- `collect_evidence(led=None)` now takes the tick's Ledger (offsets + persisted
+  counters); with `led=None` (the read-only `audit` path) it PEEKS at bounded
+  tails and advances nothing. The D5/D6 attach points (gateway-log model-fetch
+  counts; sendguard ledger) are documented in its docstring per the fix design -
+  deliberately NOT built here.
+
 ## [0.2.0] - 2026-07-10
 
 Repo-side path to live: the machinery is WIRED into onboarding + the updater, but

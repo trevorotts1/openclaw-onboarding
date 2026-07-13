@@ -92,7 +92,9 @@ cmd_troubleshoot() {
 self_test() {
     echo "$TAG self-test: audit (read-only) + status render on a scratch ledger"
     local td; td="$(mktemp -d)"
-    export LOOP_STATE_DIR="$td/loop-protection" LOOP_OPENCLAW_ROOT="$td/oc"
+    # LOOP_NO_PROBES keeps the sandboxed audit hermetic: no pm2/openclaw/pgrep/
+    # lsof subprocess probes fire from a self-test (the real audit keeps them).
+    export LOOP_STATE_DIR="$td/loop-protection" LOOP_OPENCLAW_ROOT="$td/oc" LOOP_NO_PROBES=1
     mkdir -p "$td/oc"
     # audit exits 0 (no findings collectible in the sandbox) or 4 (findings); both are valid
     cmd_audit >/dev/null 2>&1; local rc=$?
@@ -100,7 +102,7 @@ self_test() {
     else echo "$TAG self-test FAIL: audit errored ($rc)" >&2; rm -rf "$td"; return 1; fi
     cmd_status >/dev/null 2>&1 || { echo "$TAG self-test FAIL: status errored" >&2; rm -rf "$td"; return 1; }
     echo "  status case: PASS"
-    rm -rf "$td"; unset LOOP_STATE_DIR LOOP_OPENCLAW_ROOT
+    rm -rf "$td"; unset LOOP_STATE_DIR LOOP_OPENCLAW_ROOT LOOP_NO_PROBES
     echo "$TAG self-test: PASS"; return 0
 }
 

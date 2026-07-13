@@ -28,7 +28,8 @@
   "d3_identical_signature": {
     "warn_repeat": 3,
     "p1_repeat": 5,
-    "_source": "Generalized loop-detector.sh progress test, made content-based: rolling hash over (error class + tool-call name sequence + target) in the new-bytes-since-last-tick slice."
+    "p1_repeat_success": 10,
+    "_source": "Generalized loop-detector.sh progress test, made content-based: rolling hash over (outcome class + tool-call name sequence + target) in the new-bytes-since-last-tick slice. Outcome 'OK' (a SUCCESSFUL turn) counts too, at the higher p1_repeat_success ceiling - the 2026-07-13 correction-wave loop was 'successful' turns end to end, invisible to failure-only hashing; per-contact batch sends never false-positive because the target differs per contact. Failures keep 3/5."
   },
   "d4_timer_refire": {
     "cron_overfire_multiple": 2,

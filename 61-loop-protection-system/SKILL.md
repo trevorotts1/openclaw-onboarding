@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries four loop-specific detectors D1-D4 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Loop Protection System (Skill 61)
@@ -77,7 +77,7 @@ as Skill 60 signals S11-S14 (Open Decision T2) so the fleet keeps ONE vocabulary
 |---|---|---|---|
 | D1 | **Restart velocity** | `pm2 jlist` restarts / `launchctl` runs / `docker` RestartCount, delta per unit per tick (name/status/pid/restarts ONLY) | LP-B1..B4, the process breaker |
 | D2 | **Token-burn rate** | trajectory usage per window, paid vs local, correlated with initiated-session presence | LP-A2/A5/A6/A7 |
-| D3 | **Repeated-identical-signature** | rolling hash over (error class + tool-call sequence + target) in the new-bytes-since-last-tick slice | LP-A1/A3/A4, LP-D2 |
+| D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
 | D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
 
 ## The five circuit breakers (spec 5.1; config/breakers.json)

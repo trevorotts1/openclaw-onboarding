@@ -9,7 +9,8 @@
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN,
-# D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT).
+# D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
+# D-COLLECT).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
@@ -47,7 +48,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -224,6 +225,53 @@ with tempfile.TemporaryDirectory() as td:
     check("D-REVERT fix parks; the emitted `unpark --finding <id>` one-line revert unparks it",
           fixp.returncode == 0 and "cc-app" in parked_after_fix
           and shape_ok and revp.returncode == 0 and "cc-app" not in parked_after_revert)
+
+# D-COLLECT: the collect layer feeds the detectors REAL evidence (the incident
+# regression: the old collect_evidence() stub handed D2/D3/D4 EMPTY evidence even
+# fully armed). A synthetic loop trajectory in a SCRATCH openclaw root (real v20
+# schema; LOOP_NO_PROBES=1 so zero subprocess probes fire) must yield non-empty
+# windows + runs, D2 must flag the idle paid burn, D3 must flag the repeated
+# identical SUCCESSFUL turn, and the slice must be offset-consumed (a second
+# collect returns no runs).
+from datetime import datetime, timedelta, timezone
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    now = datetime.now(timezone.utc)
+    t0 = (now - timedelta(minutes=90)).replace(microsecond=0)
+    rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "s1",
+             "sessionKey": "agent:main:main", "runId": "r0",
+             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "data": {"trigger": "cron"}}]
+    for i in range(12):
+        common = {"ts": (t0 + timedelta(minutes=2 * i)).isoformat(),
+                  "sessionId": "s1", "sessionKey": "agent:main:main",
+                  "runId": "r%d" % (i + 1), "seq": i,
+                  "modelId": "minimax-m3:cloud", "provider": "ollama"}
+        rows.append(dict(common, type="model.completed",
+                         data={"usage": {"input": 250000, "output": 50000,
+                                         "total": 300000}}))
+        rows.append(dict(common, type="trace.artifacts",
+                         data={"finalStatus": "success", "usage": {"total": 300000},
+                               "toolMetas": [{"toolName": "exec"},
+                                             {"toolName": "message"}]}))
+    with open(os.path.join(sess, "s1.trajectory.jsonl"), "w") as fh:
+        fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
+    led = Ledger()
+    ev = W.collect_evidence(led)
+    fnd = W.run_detectors(ev, th, C.load_signatures())
+    d2_p1 = [x for x in fnd if x["detector"] == "D2" and x["severity"] == "P1"]
+    d3_p1 = [x for x in fnd if x["detector"] == "D3" and x["severity"] == "P1"]
+    ev2 = W.collect_evidence(led)
+    led.close()
+    for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
+    check("D-COLLECT synthetic loop -> real windows/runs; D2+D3 P1; slice offset-consumed",
+          bool(ev["windows"]) and len(ev["runs"]) >= 12
+          and bool(d2_p1) and bool(d3_p1) and ev2["runs"] == [])
 
 os.environ.pop("LOOP_ALLOW_ROOT", None)
 if fails:

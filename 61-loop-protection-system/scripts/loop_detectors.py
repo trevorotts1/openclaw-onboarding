@@ -124,8 +124,16 @@ def d3_identical_signature(runs, thresholds):
     session/cron runs seen in the new-bytes-since-last-tick slice (offset-tracked).
     A run of >=warn_repeat consecutive identical signatures = WARN; >=p1_repeat = P1
     'loop confirmed' (LP-A1/A3/A4, LP-D2). The content-based generalization of
-    loop-detector.sh's progress test."""
+    loop-detector.sh's progress test.
+
+    Signatures cover BOTH outcomes: error_class is a failure class OR "OK" for a
+    SUCCESSFUL turn - repeated identical successful turns are a loop face too (the
+    Star correction wave was 'successful' turns end to end; failure-only hashing is
+    exactly why D3 stayed silent). Successful repeats use the HIGHER
+    p1_repeat_success ceiling (default 2x p1_repeat) and never WARN, so legitimate
+    cadences (a heartbeat succeeding once per tick slice) stay silent."""
     t = thresholds["d3_identical_signature"]
+    p1_success = int(t.get("p1_repeat_success", 2 * int(t["p1_repeat"])))
     out = []
     # group consecutive-identical by (unit, signature_hash)
     prev_key = None
@@ -141,12 +149,15 @@ def d3_identical_signature(runs, thresholds):
             prev_key = key
             streak = 1
         loop_class = r.get("loop_class", "LP-A4")
-        if streak >= t["p1_repeat"] and key not in emitted:
+        ok_run = str(r.get("error_class") or "").upper() == "OK"
+        p1_at = p1_success if ok_run else t["p1_repeat"]
+        outcome = "successful-turn" if ok_run else "failure"
+        if streak >= p1_at and key not in emitted:
             out.append(_finding(loop_class, P1, unit,
-                       "identical failure signature %s repeated %d times consecutively (>= %d) -> loop confirmed"
-                       % (h, streak, t["p1_repeat"]), "D3", tier=r.get("tier", 2)))
+                       "identical %s signature %s repeated %d times consecutively (>= %d) -> loop confirmed"
+                       % (outcome, h, streak, p1_at), "D3", tier=r.get("tier", 2)))
             emitted.add(key)
-        elif streak == t["warn_repeat"] and key not in emitted:
+        elif (not ok_run) and streak == t["warn_repeat"] and key not in emitted:
             out.append(_finding(loop_class, WARN, unit,
                        "identical failure signature %s repeated %d times (>= %d)"
                        % (h, streak, t["warn_repeat"]), "D3", tier=r.get("tier", 2)))
@@ -235,6 +246,18 @@ def self_test():
     f3b = d3_identical_signature(mixed, th)
     assert not any(x["severity"] == P1 for x in f3b)  # streak never reaches 5
     print("  D3 case: PASS (5 identical=P1; a break resets the streak)")
+
+    # D3 success face: repeated identical SUCCESSFUL turns are a loop too, at the
+    # HIGHER ceiling (p1_repeat_success), and never WARN below it - a heartbeat
+    # succeeding once per slice stays silent forever.
+    ok_runs = [{"unit": "session:main", "error_class": "OK",
+                "tool_sequence": ["exec", "message"], "target": "session:main"}
+               for _ in range(12)]
+    f3c = d3_identical_signature(ok_runs, th)
+    assert any(x["severity"] == P1 and "successful-turn" in x["detail"] for x in f3c)
+    f3d = d3_identical_signature(ok_runs[:9], th)
+    assert not f3d  # 9 < p1_repeat_success(10) and successes never WARN
+    print("  D3 success case: PASS (12 identical OK=P1 at the success ceiling; 9=silent)")
 
     # D4: cron over-fire, wedge, orphan listener each = P1.
     crons = [{"name": "resume", "declared_schedule": "@daily", "actual_fires_per_day": 96},
