@@ -42,3 +42,40 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   `verify.sh`) proving the live computation, the reader, the Lane-2 operator-only
   boundary, and that the broken-config P1 path is untouched. `docs/SIGNAL-CATALOG.md`,
   `HOW-TO-USE.md`, and `SKILL.md` updated to match.
+
+- **Unit 3 - context-token extractor nesting + field correction** (version 0.1.2) -
+  closed the token-detection defect an independent QC found while verifying Skill 61:
+  `ews_sentinel.py`'s `_extract_context_tokens()` was DOUBLY blind on every real
+  trajectory row. (1) WRONG NESTING - it did a 2-level `obj["usage"][...]` lookup,
+  but a `model.completed` row carries usage 3 levels deep at `row["data"]["usage"]`;
+  the reader now digs into `data.usage`. (2) WRONG FIELD NAMES - it read the raw
+  provider aliases `input_tokens`/`total_tokens`, which OpenClaw's trajectory writer
+  CONSUMES but never EMITS (the emitted normalized shape is `{input, output,
+  cacheRead, cacheWrite, total}`). Both facts are now CONFIRMED from the OpenClaw
+  2026.6.11 trajectory-writer source, read-only, no live box touched
+  (`selection-CVIPXpKT.js:14200-14216` writer, `:4310-4339` `getUsageTotals`;
+  `usage-C67Kbb7n.js:44-64` `normalizeUsage`). The `OPEN QUESTION` labels in the
+  script and `tests/fixtures/README.md` are replaced with the source-cited truth.
+  METRIC: this detector measures CONTEXT-WINDOW OCCUPANCY, not spend, so it reads the
+  PROMPT/INPUT side `input + cacheRead` (OpenClaw's own `prompt_tokens` definition,
+  `usage-C67Kbb7n.js:68-70, :83`) - deliberately NOT `output` and NOT the billed
+  `total` (Skill 61's spend metric). Reader HARDENED fail-soft via a shared
+  `_coerce_nonneg_int`/`_prompt_side_tokens` posture mirroring Skill 61's
+  `loop_watchdog._usage_total`, so a missing/bool/odd value yields `None`, never a
+  crash or a guessed percentage. Documented CAVEAT: `data.usage` is run-accumulated,
+  so the latest-completion prompt-side is an UPPER-BOUND (fail-early) proxy for
+  single-turn occupancy - the safe direction for an early-warning detector; the tight
+  per-turn `contextTokens` lives in the SESSION STORE, not the trajectory
+  (`agent-runner.runtime-BriI2__w.js:2310-2377`). CLI-status fallback verdict: the
+  hardcoded `openclaw session status --json` invocation targets a subcommand that
+  does NOT exist on 2026.6.11 (the group is `sessions`, list-only; `sessions --json`
+  carries the session store's `contextTokens`/`totalTokens`) - it stays opt-in and
+  OFF by default (a separate, still-unverified shape, not the confirmed defect), with
+  the extractor's flat-field reader aligned to the real session-store field names.
+  The `context-usage-86pct.trajectory.jsonl` fixture is rebuilt into the real
+  `data.usage` shape (and now discriminates occupancy 86% from a `total` read's 137%);
+  new self-test cases prove pass-new (real `data.usage` -> 92880) and fail-old (the
+  pre-fix 2-level/alias reader returns `None` on the same row), plus flat + fail-soft
+  shapes. All script self-tests, four merge-gate scanners, and the fixture-drill
+  battery (`verify.sh`) pass; `py_compile` clean. Skill stays DISARMED / alert-only;
+  no rollout or HOLD state changed.

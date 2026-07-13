@@ -1,2 +1,2 @@
-{"ts":"2026-07-10T09:00:00Z","runId":"run-1001","sessionId":"sess-bbbb2222","provider":"openrouter","modelId":"glm-5.2","contextTokens":40000}
-{"ts":"2026-07-10T09:45:00Z","runId":"run-1002","sessionId":"sess-bbbb2222","provider":"openrouter","modelId":"glm-5.2","contextTokens":92880}
+{"ts":"2026-07-10T09:00:00Z","type":"model.completed","runId":"run-1001","sessionId":"sess-bbbb2222","provider":"openrouter","modelId":"glm-5.2","data":{"usage":{"input":30000,"output":8000,"cacheRead":10000,"cacheWrite":0,"total":48000}}}
+{"ts":"2026-07-10T09:45:00Z","type":"model.completed","runId":"run-1002","sessionId":"sess-bbbb2222","provider":"openrouter","modelId":"glm-5.2","data":{"usage":{"input":82880,"output":50000,"cacheRead":10000,"cacheWrite":5000,"total":147880}}}
