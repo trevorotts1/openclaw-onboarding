@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.10"
+ONBOARDING_VERSION="v20.0.11"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v20.0.10 - safe_json_edit
+# v20.0.11 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1153,11 +1153,30 @@ main() {
   # (adaptive_weights.py, prebuilt-index manifest) reach update-only boxes.
   # Mirrors install.sh:2876-2882.
   # ----------------------------------------------------------
+  _SHAREDUTILS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/shared-utils" ]; then
     mkdir -p "$SKILLS_DIR/shared-utils"
     cp -r "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
-    echo "  ✓ shared-utils refreshed in $SKILLS_DIR/shared-utils"
+    # v20.0.11: VERIFY the refresh actually landed every source top-level entry.
+    # shared-utils/ (incl. sop-embed-once/) is NOT covered by the A3 numbered-skill
+    # content-gate (skill-content-hash.sh enumerates only [0-9]* dirs), so a silently
+    # partial cp here previously left boxes missing entire helper trees while still
+    # getting stamped (observed: a box missing the whole sop-embed-once/ dir). We assert
+    # source ⊆ dest (missing source entries only — dest supersets are fine) and gate the
+    # stamp on it via _STEP_GATE_FAILS below.
+    _SU_MISSING=""
+    for _su_src in "$EXTRACTED_DIR/shared-utils/"*; do
+      [ -e "$_su_src" ] || continue
+      _su_base="$(basename "$_su_src")"
+      [ -e "$SKILLS_DIR/shared-utils/$_su_base" ] || _SU_MISSING="${_SU_MISSING} $_su_base"
+    done
+    if [ -n "$_SU_MISSING" ]; then
+      _SHAREDUTILS_STATUS="fail"
+      echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
+    else
+      echo "  ✓ shared-utils refreshed in $SKILLS_DIR/shared-utils"
+    fi
   fi
 
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
@@ -2314,6 +2333,9 @@ if isinstance(n, int) and n > 0:
   #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
   #     rows exit 0 and never land here.)
   #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
+  #   - _SHAREDUTILS_STATUS: shared-utils/ refresh landed incomplete (a source
+  #     top-level entry — e.g. sop-embed-once/ — is missing from the box). This tree
+  #     is NOT covered by the A3 numbered-skill content-gate, so it is gated here.
   # NOT STAMP-GATING (workforce provisioning -- advisory only): _D2_MIGRATE_STATUS,
   #   _D5_ACTIVATION_PASS (handled in the advisory block below).
   # ----------------------------------------------------------
@@ -2325,6 +2347,9 @@ if isinstance(n, int) and n > 0:
   fi
   if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
+  fi
+  if [ "${_SHAREDUTILS_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared-utils refresh (cp -r shared-utils): incomplete — source entries missing from box (e.g. sop-embed-once/); not covered by the A3 numbered-skill gate\n"
   fi
 
   # WORKFORCE-provisioning advisories (v20.0.10): recorded + surfaced, but they
@@ -2361,16 +2386,35 @@ if isinstance(n, int) and n > 0:
     exit 1
   fi
 
-  # Write version file ONLY after content gate passes (A3)
-  echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
-
-  # A3: Write the content manifest companion file alongside the version stamp.
-  # This is the ground-truth record that check-updates.sh (A4) reads for drift detection.
+  # ----------------------------------------------------------
+  # A3: CONTENT-MANIFEST + VERSION-STAMP (v20.0.11 ROOT-CAUSE FIX for the fleet
+  # false-"done" defect). Ordering is now MANIFEST-FIRST, STAMP-LAST:
+  #
+  #   Previously the .onboarding-version stamp was written UNCONDITIONALLY here,
+  #   BEFORE the manifest, and the manifest write was (a) gated on a possibly-empty
+  #   $SRC_MANIFEST (so it was silently SKIPPED whenever skill-content-hash.sh was
+  #   unavailable in the source, i.e. the "legacy path" that also skips A3) and
+  #   (b) swallowed with "... || echo WARN (non-fatal)" so a python3/mv failure
+  #   left the box STAMPED but WITHOUT a manifest. check-updates.sh (A4) then reads
+  #   a missing manifest as "first install — not an error" and reports the box
+  #   CURRENT on a version match. Net effect: v20.0.x stamp over stale/unverifiable
+  #   content that no drift-detector can ever catch (A4 needs the manifest to compare).
+  #
+  #   The stamp is a "content is current AND recorded" certificate. It must NEVER
+  #   exist without a matching manifest. So we now: build + validate the manifest
+  #   to a temp file, FAIL THE WHOLE UPDATE (withhold the stamp) if it cannot be
+  #   written or committed, and only THEN drop the stamp as the LAST artifact.
+  #   Even on the legacy path (empty $SRC_MANIFEST) we still emit a DEGRADED
+  #   manifest (content_verified="unavailable", empty skills map) so the stamp is
+  #   never orphaned and A4 can treat the box as degraded rather than silently current.
+  # ----------------------------------------------------------
+  _NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  _MANIFEST_TMP=$(mktemp)
+  _SKILLS_JSON=""
+  _TREE_SHA="unknown"
+  _CONTENT_VERIFIED="true"
   if [ -n "$SRC_MANIFEST" ]; then
-    _NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    _MANIFEST_TMP=$(mktemp)
-    # Build the per-skill JSON block
-    _SKILLS_JSON=""
+    # Build the per-skill JSON block from the A2/A3 source manifest.
     while IFS='|' read -r _sn _sd; do
       [ -z "$_sn" ] && continue
       [[ "$_sn" == "__TREE_SHA__" ]] && continue
@@ -2379,13 +2423,24 @@ if isinstance(n, int) and n > 0:
       _SKILLS_JSON="${_SKILLS_JSON}\"${_sn}\":\"${_sd}\""
     done <<< "$SRC_MANIFEST"
     _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1 || true)
-    python3 -c "
+    [ -z "$_TREE_SHA" ] && _TREE_SHA="unknown"
+  else
+    # Legacy path: skill-content-hash.sh was unavailable in source, so A3 was
+    # skipped and there are no per-skill digests. Still emit a manifest so the
+    # stamp is never orphaned; mark content unverifiable so A4 sees a degraded box.
+    _CONTENT_VERIFIED="unavailable"
+  fi
+
+  # Build + validate the manifest to a temp file. A build failure is FATAL:
+  # the stamp is withheld so this box is never reported "current" without a manifest.
+  if ! python3 -c "
 import json, sys
 data = {
     'version': '${ONBOARDING_VERSION}',
     'src_git_sha': '${SRC_GIT_SHA:-unknown}',
     'src_from_zip': bool(${SRC_FROM_ZIP:-0}),
     'tree_sha': '${_TREE_SHA:-unknown}',
+    'content_verified': '${_CONTENT_VERIFIED}',
     'installed_at': '${_NOW_ISO}',
     'skills': {${_SKILLS_JSON}},
     'activation': {
@@ -2397,20 +2452,48 @@ data = {
 with open('${_MANIFEST_TMP}', 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
-" 2>/dev/null && mv "$_MANIFEST_TMP" "$SKILLS_DIR/.onboarding-content-manifest.json" || \
-      echo "  [A3] WARN: could not write content manifest (non-fatal)"
-
-    # Post-write re-assertion: re-read and confirm tree_sha still matches
-    _RECHECK_TREE=$(python3 -c "import json; d=json.load(open('$SKILLS_DIR/.onboarding-content-manifest.json')); print(d.get('tree_sha',''))" 2>/dev/null || echo "")
-    if [ -n "$_RECHECK_TREE" ] && [ "$_RECHECK_TREE" != "$_TREE_SHA" ]; then
-      echo ""
-      echo "  A3 POST-WRITE ASSERTION FAILED: tree_sha in manifest does not match what was just written."
-      echo "  Expected: $_TREE_SHA  Found: $_RECHECK_TREE"
-      echo "  Active dir may have been modified during the write — aborting."
-      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-      exit 1
-    fi
+"; then
+    rm -f "$_MANIFEST_TMP"
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  A3 MANIFEST-WRITE FAILED — version stamp NOT written."
+    echo "  Could not build the content-manifest companion file (python3 error)."
+    echo "  The stamp is withheld so this box is never reported 'current' without a"
+    echo "  matching manifest. Re-run update-skills.sh to retry."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
   fi
+
+  # Commit the manifest atomically. A commit failure is FATAL for the same reason.
+  if ! mv "$_MANIFEST_TMP" "$SKILLS_DIR/.onboarding-content-manifest.json"; then
+    rm -f "$_MANIFEST_TMP"
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  A3 MANIFEST-COMMIT FAILED — version stamp NOT written."
+    echo "  Could not move the content-manifest into $SKILLS_DIR. Stamp withheld."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+
+  # Post-write re-assertion: re-read and confirm tree_sha persisted intact. If the
+  # manifest we just wrote is unreadable or diverged, the active dir was modified
+  # mid-write — abort with the stamp STILL withheld.
+  _RECHECK_TREE=$(python3 -c "import json; d=json.load(open('$SKILLS_DIR/.onboarding-content-manifest.json')); print(d.get('tree_sha',''))" 2>/dev/null || echo "")
+  if [ "$_RECHECK_TREE" != "$_TREE_SHA" ]; then
+    echo ""
+    echo "  A3 POST-WRITE ASSERTION FAILED: tree_sha in manifest does not match what was just written."
+    echo "  Expected: $_TREE_SHA  Found: ${_RECHECK_TREE:-<unreadable>}"
+    echo "  Active dir may have been modified during the write — aborting (stamp withheld)."
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+
+  # Manifest is committed and validated. NOW write the version stamp as the LAST
+  # artifact — ordering guarantees a box is never stamped-without-manifest (the
+  # exact false-"done" condition this fix eliminates).
+  echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
   # Sync version marker to legacy locations if they exist
   for _LEGACY_MARKER in \
