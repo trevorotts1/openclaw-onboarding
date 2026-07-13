@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "20.0.12",
+  "version": "20.0.13",
   "total_roles": 433,
   "total_departments": 35,
   "departments": {
@@ -638,8 +638,8 @@
         "video-seo-specialist",
         "vsl-video-sales-letter-specialist"
       ],
-      "content_sha": "sha256:64f3a821893ee5dfa6d033a86bcc601a5254be1cf9853617c72a2450cf3d8044",
-      "content_hashed_at": "2026-07-12T15:33:46.096885+00:00"
+      "content_sha": "sha256:9ac8871d0abf5dce22a9342e3a2fc56824bb904a306437997c6d8eaaa4c6fe7e",
+      "content_hashed_at": "2026-07-13T13:50:03.245708+00:00"
     },
     "web-development": {
       "count": 20,
@@ -6642,15 +6642,15 @@
       "title": "Ai Video Generator Specialist",
       "role_type": "specialist",
       "word_count": 7136,
-      "sop_count": 5,
+      "sop_count": 6,
       "sop_min": 1,
       "path": "templates/role-library/video/ai-video-generator-specialist.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:0bde1daaf9c08b0ecc5a3d3167f167825c1daec17a83bad2333080feb06d3fc7",
-      "render_sha": "sha256:1e0b2c5c7c25c8586fe1f4c2ddbbd50b3a17dc2e5ab79ce03a8630b5bc107e65",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-07-12T15:33:46.096885+00:00"
+      "content_sha": "sha256:ff6cac2014895bdeb52ac71d0d33ff6e4f429705e8991599eedbce8e100cfe79",
+      "render_sha": "sha256:743803aaf8024fb746b9c9b963e40001a1d6016eb5fa91c9b86a1c7b73757220",
+      "content_version": "1.0.5",
+      "content_hashed_at": "2026-07-13T13:50:03.245708+00:00"
     },
     {
       "slug": "animation-specialist-2d-3d-whiteboard",
