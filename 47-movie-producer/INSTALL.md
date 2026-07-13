@@ -22,7 +22,7 @@ The installer will abort with a clear error message if any required binary is mi
 |---|---|---|
 | `ffmpeg` | `command -v ffmpeg` | macOS: `brew install ffmpeg` / Ubuntu: `apt-get install -y ffmpeg` |
 | `ffprobe` | `command -v ffprobe` | Ships with FFmpeg — same install |
-| `node` (>=18) | `node -v` and version check | macOS: `brew install node` / Ubuntu: `apt-get install -y nodejs` |
+| `node` (>=22) | `node -v` and version check | macOS: `brew install node` / Ubuntu: `curl -fsSL https://deb.nodesource.com/setup_22.x \| sudo -E bash - && apt-get install -y nodejs` |
 | `npx` | `command -v npx` | Ships with Node.js — same install |
 | `git` | `command -v git` | macOS: `xcode-select --install` / Ubuntu: `apt-get install -y git` |
 | `python3` | `command -v python3` | macOS: `brew install python3` / Ubuntu: `apt-get install -y python3 python3-pip` |
@@ -102,9 +102,48 @@ This installs:
 - Python packages: `pyyaml`, `pydantic`, `jsonschema`, `python-dotenv`, `Pillow`, `requests`, `google-auth`
 - Remotion + React: `cd remotion-composer && npm install`
 - HyperFrames CLI: `npx --yes hyperframes --version` (cache-warm)
-- Piper free TTS: `pip install piper-tts` (soft-fail — if it fails, TTS uses cloud providers)
+- Piper free TTS: `pip install piper-tts` (soft-fail; Piper is OPTIONAL/opt-in — see Step 3.5)
 
 `make setup` must exit 0. If it exits non-zero, re-read the error message and fix the missing dependency (do NOT vendor anything — all deps are fetchable at install time; see `DEPENDENCY-MANIFEST.md`).
+
+### Step 3.5 — Provision the render runtime (macOS AND Linux/VPS)
+
+`make setup` installs the npm/pip packages but **no Chromium system libraries**, so a fresh
+Linux/VPS container fails every Remotion/HyperFrames (headless-Chromium) render. `install.sh`
+runs this for you; if installing by hand, run it after `make setup`:
+
+> **Narration / TTS voice order:** the **primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`)**;
+> **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an
+> OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't
+> installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in
+> to the offline Piper fallback with `SKILL47_INSTALL_PIPER=1`.
+
+```bash
+bash ~/.openclaw/skills/47-movie-producer/provision-render-deps.sh
+```
+
+Arch/OS-aware and idempotent. It:
+- **(Linux)** `apt-get` installs the Chromium system libraries + ffmpeg headless Chrome needs
+  to launch (`libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm-dev libxrandr2
+  libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 libpango-1.0-0 libcairo2 libcups2
+  libasound2 fonts-liberation`). On macOS this step is a no-op.
+- Installs the pinned latest **Remotion 4.0.489** + the arch/OS-specific
+  `@remotion/compositor-<os>-<arch>[-<libc>]` and runs `npx remotion browser ensure`
+  (Chrome-Headless-Shell). Source: <https://registry.npmjs.org/remotion/latest>,
+  <https://www.remotion.dev/docs/docker>.
+- Cache-warms the pinned latest **HyperFrames 0.7.56** CLI + its bundled Chrome. Source:
+  <https://registry.npmjs.org/hyperframes/latest>.
+- **(OPTIONAL, opt-in — OFF by default)** Only when `SKILL47_INSTALL_PIPER=1`: installs the
+  latest arch-aware **Piper `piper-tts==1.4.2`** and **pre-stages** the `en_US-lessac-medium`
+  voice ONNX model to `~/.piper/models`. This is an offline-only last-resort fallback and
+  **never aborts the install**. Source: <https://github.com/OHF-voice/piper1-gpl/releases>,
+  <https://huggingface.co/rhasspy/piper-voices>. **Default path skips Piper entirely** — no
+  `pip install piper-tts`, no voice-model download — and TTS uses the cloud providers.
+
+Optional toggles: `SKILL47_SKIP_RENDER_PROVISION=1` (free-path-only box — skip entirely),
+`SKILL47_INSTALL_PIPER=1` (opt in to the optional offline Piper TTS fallback), `SKILL47_SKIP_APT=1`
+(system libs already provisioned). To bump a version, edit the pinned constants at the top of
+`provision-render-deps.sh` (and the matching `ARG`s in the `Dockerfile`).
 
 ### Step 4 — Drop the Kie adapters into the clone
 
@@ -220,6 +259,36 @@ bash ~/.openclaw/skills/47-movie-producer/verify-deps.sh
 ```
 
 ---
+
+## Linux / VPS install (Docker)
+
+The browser-based render paths (Remotion, HyperFrames) need Chromium system libraries that a
+slim Linux image does not ship. The included `Dockerfile` bakes them in on `node:22-bookworm-slim`
+(Remotion's recommended base; Node 22 satisfies HyperFrames' `engines: node>=22`), clones the
+pinned OpenMontage tree, runs `make setup`, then the render provisioner:
+
+```bash
+# Build (context = the skill directory)
+docker build -t openmontage-skill47 ~/.openclaw/skills/47-movie-producer/
+
+# Run — the client's OWN Kie key is injected at RUNTIME, never baked into the image.
+# Omit -e KIE_API_KEY to run the free documentary-montage path.
+docker run --rm -e KIE_API_KEY=YOUR_CLIENT_KIE_KEY \
+  -v "$PWD/out:/work/out" openmontage-skill47 \
+  bash -lc 'cd $OPENCLAW_OPENMONTAGE_DIR && make demo'
+```
+
+Bump a pinned version with a build arg, e.g. `--build-arg REMOTION_VERSION=4.0.500`
+(mirrors the constants in `provision-render-deps.sh`).
+
+**Root-in-container Chrome:** Remotion's Chrome-Headless-Shell renders fine as root (matching
+Remotion's official Docker image). HyperFrames drives its own bundled Chrome; if a render fails
+to launch Chrome as root, run the container as a non-root user or pass the renderer's
+`--no-sandbox` option. The free ffmpeg documentary-montage path and the Kie.AI remote path need
+no browser at all and are VPS-ready without any of this.
+
+**Bare VPS (no Docker):** run `provision-render-deps.sh` directly (Step 3.5) — its Linux branch
+`apt-get`s the same libraries.
 
 ## Gateway restart protocol
 
