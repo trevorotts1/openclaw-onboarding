@@ -986,19 +986,39 @@ wire_ghl_funnel_catalog() {
     local _GHL_FUNNEL_CATALOG="${GHL_FUNNEL_CATALOG:-$_CATALOG_DIR}"
     local _GHL_FUNNEL_INDEX="${GHL_FUNNEL_INDEX:-$_CATALOG_INDEX}"
 
+    # Set VAR=value in secrets/.env (scoped, idempotent, clobber-guarded).
+    # v20.0.10 FIX: the old body unconditionally `grep -v | mv | append`-ed each
+    # var, which (a) MOVED it to the bottom of the file on EVERY run -- so an
+    # unchanged run never left secrets/.env byte-identical, breaking hash-based
+    # revert / integrity checks -- and (b) swallowed a failed grep (`|| true`)
+    # whose empty .tmp the `mv` then clobbered the WHOLE file with. This helper
+    # is idempotent (exact line already present -> no-op, no reorder) and never
+    # clobbers (backs up to .bak; only swaps in the rewritten .tmp when grep did
+    # not error AND the tmp is non-empty / a legit all-removed case).
+    _pidx_write_env() {
+        local var="$1"; local val="$2"; local f="$3"
+        [ -f "$f" ] || { touch "$f"; chmod 600 "$f" 2>/dev/null || true; }
+        if grep -qxF "${var}=${val}" "$f" 2>/dev/null; then
+            return 0
+        fi
+        cp -p "$f" "$f.bak" 2>/dev/null || true
+        local _grc=0
+        grep -v "^${var}=" "$f" > "$f.tmp" 2>/dev/null || _grc=$?
+        if [ "$_grc" -le 1 ] && { [ -s "$f.tmp" ] || [ "$_grc" -eq 1 ]; }; then
+            mv "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp" 2>/dev/null || true
+        else
+            rm -f "$f.tmp" 2>/dev/null || true
+        fi
+        printf '%s=%s\n' "$var" "$val" >> "$f"
+        chmod 600 "$f" 2>/dev/null || true
+    }
+
     # Write to secrets/.env
     if [ -n "$_OC_SECRETS_ENV" ]; then
         mkdir -p "$(dirname "$_OC_SECRETS_ENV")" 2>/dev/null || true
         [ ! -f "$_OC_SECRETS_ENV" ] && { touch "$_OC_SECRETS_ENV"; chmod 600 "$_OC_SECRETS_ENV" 2>/dev/null || true; }
-        # Replace or append GHL_FUNNEL_CATALOG
-        grep -v "^GHL_FUNNEL_CATALOG=" "$_OC_SECRETS_ENV" > "$_OC_SECRETS_ENV.tmp" 2>/dev/null || true
-        mv "$_OC_SECRETS_ENV.tmp" "$_OC_SECRETS_ENV" 2>/dev/null || true
-        printf 'GHL_FUNNEL_CATALOG=%s\n' "$_GHL_FUNNEL_CATALOG" >> "$_OC_SECRETS_ENV"
-        # Replace or append GHL_FUNNEL_INDEX
-        grep -v "^GHL_FUNNEL_INDEX=" "$_OC_SECRETS_ENV" > "$_OC_SECRETS_ENV.tmp" 2>/dev/null || true
-        mv "$_OC_SECRETS_ENV.tmp" "$_OC_SECRETS_ENV" 2>/dev/null || true
-        printf 'GHL_FUNNEL_INDEX=%s\n' "$_GHL_FUNNEL_INDEX" >> "$_OC_SECRETS_ENV"
-        chmod 600 "$_OC_SECRETS_ENV" 2>/dev/null || true
+        _pidx_write_env "GHL_FUNNEL_CATALOG" "$_GHL_FUNNEL_CATALOG" "$_OC_SECRETS_ENV"
+        _pidx_write_env "GHL_FUNNEL_INDEX" "$_GHL_FUNNEL_INDEX" "$_OC_SECRETS_ENV"
     fi
 
     # Write to openclaw.json env.vars

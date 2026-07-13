@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.9"
+ONBOARDING_VERSION="v20.0.10"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v20.0.9 - safe_json_edit
+# v20.0.10 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1206,14 +1206,23 @@ main() {
   # already-current, pre-interview no-op, nothing-to-do, out-of-scope); FAIL
   # ONLY when a completeness-critical action genuinely did not happen.
   # ----------------------------------------------------------
-  _U6B_PERSONA_FAIL=0
-  _D2_REFRESH_STATUS="ok"
-  _SHAREDCORE_STATUS="ok"
-  _D5_ACTIVATION_PASS=1
+  # CONTENT-integrity latches (each GATES the .onboarding-version stamp -- a fail
+  # WITHHOLDS the stamp because the skills CONTENT is not verifiably current):
+  _U6B_PERSONA_FAIL=0            # persona-index CONTENT wiring (sentinel != pinned release_tag, triad-divergent library, or helper did not run)
+  _D2_REFRESH_STATUS="ok"       # in-scope role/SOP CONTENT refresh (refresh-stale-roles.py rc 3 -- new library content that SHOULD have re-applied to an EXISTING artifact did not)
+  _SHAREDCORE_STATUS="ok"       # shared-core-file wiring step (link_shared_core_files)
+  # WORKFORCE-provisioning latches (v20.0.10: DECOUPLED from the content stamp --
+  # they describe "is the client's workforce fully built", NOT "is the skills
+  # content current". A miss is surfaced as an advisory and driven to completion
+  # by the POST-stamp qc-completeness run + the onboarding-resume cron; it NEVER
+  # withholds the skills-version stamp):
+  _D2_MIGRATE_STATUS="ok"       # workforce floor-fill / workforce QC (migrate-existing-workforce.sh: empty depts for an interview-incomplete client, or a dept below the 95% floor)
+  _D5_ACTIVATION_PASS=1         # dept-agent activation (materialize-dept-agents.sh: agents.list[] below this box's computed department floor)
   _D5_NOTLIVE_DETAIL=""
   _D5_AGENT_COUNT=0
   _D5_DEPT_STATE="skipped"
   _STEP_GATE_FAILS=""
+  _WORKFORCE_INCOMPLETE_NOTES=""  # workforce-provisioning advisories -- surfaced, NEVER stamp-gating
 
   # ----------------------------------------------------------
   # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
@@ -2002,7 +2011,19 @@ except:
       echo "  migrate-existing-workforce.sh: OK"
     else
       echo "  migrate-existing-workforce.sh: completed with warnings (see $LOG_FILE)"
-      _D2_REFRESH_STATUS="fail"  # D4[E]: non-zero rc is a genuine incomplete refresh, not benign
+      # v20.0.10: migrate-existing-workforce.sh is WORKFORCE floor-fill -- its
+      # exit code is its Step-5 qc-completeness WORKFORCE verdict (rc 2 = a dept
+      # below the 95% floor; rc 3 = a dept at zero materialization / no workforce
+      # built yet for an interview-incomplete client). Those are WORKFORCE-
+      # provisioning states, NOT skills-content problems: the A3 content-gate, the
+      # U6b persona-content re-assertion, and the refresh-stale-roles IN-SCOPE
+      # content-refresh check are what protect the content stamp. A half-built
+      # workforce must NOT withhold the skills-version stamp (the box IS on current
+      # content) -- it is surfaced as an advisory and driven to completion by the
+      # POST-stamp qc-completeness run + the onboarding-resume cron. So route it to
+      # the workforce latch, decoupled from the content stamp (was _D2_REFRESH_STATUS,
+      # which conflated workforce floor-fill with in-scope content refresh).
+      _D2_MIGRATE_STATUS="fail"
     fi
   else
     echo "  (migrate-existing-workforce.sh not found or not executable -- skipping)"
@@ -2270,35 +2291,70 @@ if isinstance(n, int) and n > 0:
   fi
 
   # ----------------------------------------------------------
-  # UNIFIED COMPLETENESS-GATE (D3/D4/D5 convergence; replaces the three
-  # overlapping gate blocks each defect proposed with ONE). Runs strictly
-  # AFTER the A3 content-gate above and reuses its exit-1 discipline. A
-  # healthy box ALWAYS reaches the stamp below: PASS == fully completed OR a
-  # benign/legitimate skip; FAIL is reserved for a genuine completeness-
-  # critical miss in one of the four latches initialized at Step U6b's entry.
-  # On ANY fail the stamp is NEVER written.
+  # CONTENT-COMPLETENESS GATE (v20.0.10: content-vs-workforce split).
+  # The .onboarding-version stamp certifies "this box's skills CONTENT is current
+  # and matches the pinned tag" -- NOT "this client's workforce is fully built".
+  # Runs strictly AFTER the A3 content-gate above and reuses its exit-1 discipline.
+  # A healthy box ALWAYS reaches the stamp below: a fail here is reserved for a
+  # genuine SKILLS-CONTENT integrity miss. Workforce-provisioning incompleteness
+  # (empty depts for an interview-incomplete client, floor-fill for a box with no
+  # workforce, a dept below the 95% floor) is surfaced as an ADVISORY and driven to
+  # completion by the POST-stamp qc-completeness run + the onboarding-resume cron --
+  # it NO LONGER withholds the content stamp (the ~11-box "content current but
+  # unstamped" defect this release fixes).
+  #
+  # STAMP-GATING (content/wiring integrity -- WITHHOLD the stamp on fail):
+  #   - A3 content-gate (above): installed skill digests == source digests.
+  #   - _U6B_PERSONA_FAIL: persona-index CONTENT wiring -- triad-divergent library,
+  #     asset lacking vectors, installed sentinel != manifest release_tag (installed
+  #     persona content does NOT match the pinned tag), or the provision helper
+  #     genuinely did not run.
+  #   - _D2_REFRESH_STATUS: refresh-stale-roles.py rc 3 -- an IN-SCOPE role/SOP
+  #     content refresh that SHOULD have re-applied the new library content to an
+  #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
+  #     rows exit 0 and never land here.)
+  #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
+  # NOT STAMP-GATING (workforce provisioning -- advisory only): _D2_MIGRATE_STATUS,
+  #   _D5_ACTIVATION_PASS (handled in the advisory block below).
   # ----------------------------------------------------------
   if [ "${_U6B_PERSONA_FAIL:-0}" -eq 1 ]; then
-    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - persona index (U6b, provision-persona-index.sh): incomplete${_PIDX_SKIP_WARNINGS:+ — ${_PIDX_SKIP_WARNINGS}}\n"
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - persona index (U6b, provision-persona-index.sh): content incomplete${_PIDX_SKIP_WARNINGS:+ — ${_PIDX_SKIP_WARNINGS}}\n"
   fi
   if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
-    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - artifact refresh (D2, migrate-existing-workforce.sh / refresh-stale-roles.py): incomplete — see $LOG_FILE\n"
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - in-scope role/SOP content refresh (D2, refresh-stale-roles.py rc 3): an in-scope refresh that SHOULD have applied did not — see $LOG_FILE\n"
   fi
   if [ "${_SHAREDCORE_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
   fi
+
+  # WORKFORCE-provisioning advisories (v20.0.10): recorded + surfaced, but they
+  # NEVER withhold the content stamp. The POST-stamp qc-completeness run
+  # (QC_COMPLETENESS_RC) and the onboarding-resume cron drive these to completion.
+  if [ "${_D2_MIGRATE_STATUS:-ok}" != "ok" ]; then
+    _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - workforce floor-fill (migrate-existing-workforce.sh): workforce below floor / interview-incomplete — see $LOG_FILE\n"
+  fi
   if [ "${_D5_ACTIVATION_PASS:-1}" -ne 1 ]; then
-    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - dept-agent activation (D5, materialize-dept-agents.sh): incomplete${_D5_NOTLIVE_DETAIL:+ — ${_D5_NOTLIVE_DETAIL}}\n"
+    _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - dept-agent activation (D5, materialize-dept-agents.sh): incomplete${_D5_NOTLIVE_DETAIL:+ — ${_D5_NOTLIVE_DETAIL}}\n"
+  fi
+  if [ -n "$_WORKFORCE_INCOMPLETE_NOTES" ]; then
+    echo ""
+    echo "  ------------------------------------------------------------"
+    echo "  WORKFORCE-PROVISIONING INCOMPLETE (advisory — does NOT withhold the"
+    echo "  skills-content stamp; this box IS on current $ONBOARDING_VERSION content):"
+    printf '%b' "$_WORKFORCE_INCOMPLETE_NOTES"
+    echo "  Driven to completion by the post-stamp qc-completeness run and the"
+    echo "  onboarding-resume cron (re-fires wiring + QC until green)."
+    echo "  ------------------------------------------------------------"
   fi
 
   if [ -n "$_STEP_GATE_FAILS" ]; then
     echo ""
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "  COMPLETENESS-GATE FAILED — stamp NOT written."
-    echo "  The following completeness-critical step(s) did not finish:"
+    echo "  CONTENT-COMPLETENESS GATE FAILED — stamp NOT written."
+    echo "  The following skills-content integrity step(s) did not finish:"
     printf '%b' "$_STEP_GATE_FAILS"
     echo ""
-    echo "  The version stamp is NEVER written when a completeness-critical step fails."
+    echo "  The version stamp is NEVER written when a content-integrity step fails."
     echo "  Re-run update-skills.sh to retry the incomplete step(s)."
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"

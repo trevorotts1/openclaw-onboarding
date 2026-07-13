@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.9"
+ONBOARDING_VERSION="v20.0.10"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1083,15 +1083,39 @@ inject_shared_operator_secrets() {
         chmod 600 "$OC_SECRETS_ENV" 2>/dev/null || true
     fi
 
-    # Helper: append VAR=value to secrets/.env (replacing any existing line for VAR)
+    # Helper: set VAR=value in secrets/.env (scoped, idempotent, clobber-guarded).
+    # v20.0.10 FIX: the old body unconditionally `grep -v | mv | append`-ed, which
+    # (a) MOVED the var to the bottom of the file on EVERY run -- so an unchanged
+    # run never left secrets/.env byte-identical, breaking hash-based revert /
+    # integrity checks -- and (b) swallowed a failed grep (`|| true`) whose empty
+    # .tmp the `mv` then clobbered the WHOLE file with. Now:
+    #   1. IDEMPOTENT: if the exact `VAR=val` line already exists, do nothing (file
+    #      stays byte-identical -- no reorder).
+    #   2. CLOBBER-GUARDED: back up to a .bak first; only swap in the rewritten .tmp
+    #      when grep did NOT error (rc<=1; rc1 = "all lines were VAR=", a legit empty)
+    #      AND the .tmp is non-empty (or that legit all-removed case). On any doubt
+    #      the original is left intact and we append in place.
     _shared_write_env() {
         local var="$1"; local val="$2"
-        # Remove any existing line for this var
-        grep -v "^${var}=" "$OC_SECRETS_ENV" > "$OC_SECRETS_ENV.tmp" 2>/dev/null || true
-        mv "$OC_SECRETS_ENV.tmp" "$OC_SECRETS_ENV" 2>/dev/null || true
-        # Append new line
-        printf '%s=%s\n' "$var" "$val" >> "$OC_SECRETS_ENV"
-        chmod 600 "$OC_SECRETS_ENV" 2>/dev/null || true
+        local f="$OC_SECRETS_ENV"
+        [ -f "$f" ] || { touch "$f"; chmod 600 "$f" 2>/dev/null || true; }
+        # (1) Already exact -> byte-identical no-op.
+        if grep -qxF "${var}=${val}" "$f" 2>/dev/null; then
+            return 0
+        fi
+        # (2) Scoped replace, clobber-guarded.
+        cp -p "$f" "$f.bak" 2>/dev/null || true
+        local _grc=0
+        grep -v "^${var}=" "$f" > "$f.tmp" 2>/dev/null || _grc=$?
+        if [ "$_grc" -le 1 ] && { [ -s "$f.tmp" ] || [ "$_grc" -eq 1 ]; }; then
+            mv "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp" 2>/dev/null || true
+        else
+            # grep errored (rc>=2) or produced an unexpectedly empty tmp -- never
+            # clobber: drop the tmp and append to the (untouched) original.
+            rm -f "$f.tmp" 2>/dev/null || true
+        fi
+        printf '%s=%s\n' "$var" "$val" >> "$f"
+        chmod 600 "$f" 2>/dev/null || true
     }
 
     # Helper: write to openclaw.json env.vars block (if openclaw.json exists)

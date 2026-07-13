@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # tests/unit/d5-dept-activation-floor-gate.test.sh
 #
-# CI guard for the D5 pre-stamp dept-agent activation gate (F2 fix). Before
-# this fix, update-skills.sh gated the PASS/FAIL stamp decision on a fixed
+# CI guard for the D5 dept-agent activation floor check (F2 fix). Before this
+# fix, update-skills.sh evaluated dept-agent activation against a fixed
 # `agents.list[] -lt 2` magic number. A real interview-complete box carries
 # the 28-department universal floor (department-naming-map.json: 22
 # mandatory + 6 universal-primary), so a box whose dept-agent activation
 # genuinely failed for MOST departments but still kept >=2 agents.list[]
-# entries sailed through the gate as a false PASS -- the exact "copied !=
-# live" defect this gate exists to catch.
+# entries evaluated as a false "fully activated" -- the exact "copied !=
+# live" defect this check exists to catch.
+#
+# v20.0.10 CONTRACT NOTE: dept-agent activation is WORKFORCE-provisioning
+# completeness, so as of v20.0.10 a miss no longer WITHHOLDS the skills-content
+# .onboarding-version stamp -- it feeds a workforce ADVISORY (surfaced + driven
+# to green by the post-stamp qc-completeness run + the onboarding-resume cron).
+# This test still asserts the FLOOR COMPARISON correctly DETECTS a partially-
+# activated box (the signal the advisory consumes); it does not assert stamp
+# withholding, so it is unaffected by the content-vs-workforce decoupling.
 #
 # Proves:
 #   (A) STATIC          -- update-skills.sh's D5 gate no longer gates SOLELY
@@ -21,17 +29,18 @@
 #                           expected_floor_count == 28 (22 mandatory + 6
 #                           universal-primary) -- the actual data source the
 #                           gate now reads, not another magic number.
-#   (C) PARTIAL-ACTIVATION BLOCKED -- replaying the exact bash comparison the
-#                           gate uses (agents.list[] count vs the computed
+#   (C) PARTIAL-ACTIVATION DETECTED -- replaying the exact bash comparison the
+#                           check uses (agents.list[] count vs the computed
 #                           expected floor) with an interview-complete,
 #                           partially-materialized box (agent count 3 --
-#                           ABOVE the OLD "-lt 2" threshold, so the OLD gate
+#                           ABOVE the OLD "-lt 2" threshold, so the OLD check
 #                           would have false-PASSED it, but far below the
-#                           28-department floor) asserts the NEW gate BLOCKS
-#                           the stamp.
-#   (D) FULLY-ACTIVATED PASSES -- the same comparison with agent count ==
-#                           the computed floor (28) asserts the gate does
-#                           NOT block.
+#                           28-department floor) asserts the NEW check DETECTS
+#                           the incomplete activation (v20.0.10: this feeds the
+#                           workforce advisory, not the content stamp).
+#   (D) FULLY-ACTIVATED CLEARS -- the same comparison with agent count ==
+#                           the computed floor (28) asserts the check does
+#                           NOT flag a fully-activated box.
 #
 # Fully hermetic: department-floor.py accepts an explicit --departments-dir
 # override so this test never touches a real ~/.openclaw or a real company
@@ -136,9 +145,9 @@ if [ -n "$EXPECTED_COUNT" ]; then
   # (the old gate would have PASSED this box) but far below the real floor --
   # this is the exact false-PASS hole F2 reported.
   if d5_gate_blocks "3" "$EXPECTED_COUNT"; then
-    pass "C1: partial-activation box (3 agents, floor=$EXPECTED_COUNT) is BLOCKED by the new gate"
+    pass "C1: partial-activation box (3 agents, floor=$EXPECTED_COUNT) is DETECTED by the new floor check (feeds workforce advisory)"
   else
-    fail "C1: partial-activation box (3 agents, floor=$EXPECTED_COUNT) was NOT blocked -- false-PASS hole still open"
+    fail "C1: partial-activation box (3 agents, floor=$EXPECTED_COUNT) was NOT detected -- false-PASS hole still open"
   fi
   # Sanity: the OLD threshold alone would have let 3 agents PASS -- prove that
   # was true, so the fixture above is a genuine regression case, not a strawman.
@@ -150,9 +159,9 @@ if [ -n "$EXPECTED_COUNT" ]; then
 
   # (D) Full activation: agent_count == the computed floor must NOT block.
   if d5_gate_blocks "$EXPECTED_COUNT" "$EXPECTED_COUNT"; then
-    fail "D1: fully-activated box (agents==floor==$EXPECTED_COUNT) was incorrectly BLOCKED"
+    fail "D1: fully-activated box (agents==floor==$EXPECTED_COUNT) was incorrectly FLAGGED"
   else
-    pass "D1: fully-activated box (agents==floor==$EXPECTED_COUNT) is NOT blocked"
+    pass "D1: fully-activated box (agents==floor==$EXPECTED_COUNT) is NOT flagged"
   fi
 else
   fail "C1/C2/D1: skipped -- department-floor.py did not produce a usable expected_floor_count in (B)"
