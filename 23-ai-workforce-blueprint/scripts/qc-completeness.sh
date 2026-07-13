@@ -16,8 +16,11 @@
 #
 # First-class "are you done?" check for the active workforce. Runs after every
 # build / install / update. Reports PASS / PARTIAL / FAIL per dept and emits a
-# JSON + human-readable artifact. On != PASS, Telegrams the operator with a
-# per-dept gap breakdown.
+# JSON + human-readable artifact. On != PASS it sends the per-dept gap breakdown
+# to the OPERATOR escalation chat ONLY (OPERATOR_ESCALATION_CHAT_ID, on the
+# operator account) — LOG-ONLY when no operator chat is configured. It NEVER
+# messages the client owner (channels.telegram.allowFrom[0]); that former path
+# leaked internal QC tables to real clients (fixed v20.0.9, SECURITY/PRIVACY).
 #
 # Read-only. Safe to re-run any number of times.
 #
@@ -34,6 +37,15 @@
 # embedded QC step can NEVER message a client owner during a roll. This gates only
 # whether QC NOTIFIES — never what it computes. Normal operation (flag unset and
 # OPENCLAW_MAINTENANCE unset) is UNCHANGED: alerts still fire on != PASS.
+#
+# MAINTENANCE-SILENT HARD GATE (v20.0.9, SECURITY/PRIVACY): exporting
+# OPENCLAW_MAINTENANCE_SILENT=1 ALSO suppresses the operator Telegram send below
+# (log-only), INDEPENDENT of --quiet and of ANY box's chat/account config. The
+# fleet roll exports this for its whole duration (update-skills.sh main() +
+# shared-utils/fleet_refresh_runner.py remote env) so no convergence re-run can
+# leak the QC gap table to a client chat, even on a box whose operator-escalation
+# chat is mis-pointed at the client. Like OPENCLAW_MAINTENANCE it gates only
+# whether QC NOTIFIES, never what it computes.
 #
 # Exit codes:
 #   0 = PASS  (>= 95% coverage on every dept across all metrics)
@@ -899,11 +911,11 @@ fi
 STATUS="$(python3 -c "import json,sys; d=json.load(open('$JSON_FILE')); print(d.get('status','UNKNOWN'))" 2>>"$LOG_FILE")"
 log "Final status: ${STATUS}"
 
-# MAINTENANCE / QUIET suppression note (log-only). When quiet mode is active
-# (--quiet / --no-telegram / --no-notify OR OPENCLAW_MAINTENANCE=1) and QC did not
-# PASS, the owner-chat Telegram send below is skipped ENTIRELY. We emit an explicit
-# log line so operators can see the alert was intentionally suppressed during a
-# maintenance / fleet roll — the embedded QC step can never message a client owner.
+# MAINTENANCE / QUIET / MAINTENANCE-SILENT suppression note (log-only). When quiet
+# mode is active (--quiet / --no-telegram / --no-notify OR OPENCLAW_MAINTENANCE=1)
+# and QC did not PASS, the operator Telegram send below is skipped ENTIRELY. We emit
+# an explicit log line so operators can see the alert was intentionally suppressed
+# during a maintenance / fleet roll — the embedded QC step can never notify anyone.
 if [ "$QUIET" = "1" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then
   if [ "$MAINT" = "1" ]; then
     log "maintenance mode — owner alert suppressed (OPENCLAW_MAINTENANCE=1); STATUS=${STATUS} (log-only, NOT sent to any client chat)"
@@ -911,9 +923,25 @@ if [ "$QUIET" = "1" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE
     log "quiet mode — owner alert suppressed (--quiet/--no-telegram/--no-notify); STATUS=${STATUS} (log-only)"
   fi
 fi
+# MAINTENANCE-SILENT HARD GATE (v20.0.9, SECURITY/PRIVACY): OPENCLAW_MAINTENANCE_SILENT=1
+# forces the operator Telegram send below to be SKIPPED entirely (log-only),
+# INDEPENDENT of --quiet and of ANY box's chat/account config. The fleet roll exports
+# this for its whole duration (update-skills.sh main() + fleet_refresh_runner remote
+# env) so no convergence re-run can ever push an internal QC table to a client chat —
+# even on a box whose operator-escalation chat is mis-pointed at the client. QC is
+# still COMPUTED; only the notification is gated. Emitted as a distinct audit line.
+if [ "${OPENCLAW_MAINTENANCE_SILENT:-0}" = "1" ] && [ "$QUIET" = "0" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then
+  log "maintenance-silent mode — QC alert suppressed (OPENCLAW_MAINTENANCE_SILENT=1); STATUS=${STATUS} computed but Telegram NOT sent to any chat (log-only)"
+fi
 
-# Telegram on != PASS (unless --quiet)
-if [ "$QUIET" = "0" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then
+# Telegram on != PASS (unless --quiet OR maintenance-silent). DURABLE OPERATOR-ONLY
+# ROUTING (v20.0.9, SECURITY/PRIVACY): the != PASS alert is an INTERNAL per-department
+# QC gap table — it must NEVER reach a client chat. This block routes it to the
+# OPERATOR escalation chat ONLY (OPERATOR_ESCALATION_CHAT_ID, sent on the operator
+# account) and LOG-ONLYs when no operator chat is configured. It NO LONGER resolves
+# _qc_owner_chat.py / channels.telegram.allowFrom[0] — that path was the client's own
+# chat and leaked internal QC tables to real clients.
+if [ "$QUIET" = "0" ] && [ "${OPENCLAW_MAINTENANCE_SILENT:-0}" != "1" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then
   # Resolve openclaw binary across the 6 known locations
   OC_BIN=""
   for cand in "${OPENCLAW_BIN:-}" "$(command -v openclaw 2>/dev/null)" \
@@ -922,23 +950,28 @@ if [ "$QUIET" = "0" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE
               "/data/linuxbrew/.linuxbrew/bin/openclaw"; do
     if [ -n "$cand" ] && [ -x "$cand" ]; then OC_BIN="$cand"; break; fi
   done
-  # Resolve owner chat id from openclaw.json
+  # Resolve the openclaw.json path for the operator-chat lookup.
   OCJSON="$HOME/.openclaw/openclaw.json"
   [ -f "/data/.openclaw/openclaw.json" ] && OCJSON="/data/.openclaw/openclaw.json"
-  # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: externalized from an inline
-  # python-in-$() heredoc (parse hazard on bash 3.2). The openclaw.json path is
-  # now passed as argv[1]. Logic byte-equivalent.
-  OWNER_CHAT="$(python3 "$SCRIPT_DIR/_qc_owner_chat.py" "$OCJSON" 2>>"$LOG_FILE")"
-  if [ -n "$OC_BIN" ] && [ -n "$OWNER_CHAT" ]; then
-    # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: externalized from an inline
-    # python-in-$() heredoc (parse hazard on bash 3.2). The QC JSON report path
-    # is now passed as argv[1]. Logic byte-equivalent.
-    SUMMARY="$(python3 "$SCRIPT_DIR/_qc_summary.py" "$JSON_FILE" 2>>"$LOG_FILE")"
-    "$OC_BIN" message send --channel telegram -t "$OWNER_CHAT" -m "$SUMMARY" >>"$LOG_FILE" 2>&1 \
-      && log "Telegram alert sent to ${OWNER_CHAT}" \
-      || log "Telegram send FAILED (see log)"
+  # Resolve the OPERATOR escalation chat ONLY (env first, then openclaw.json
+  # env.vars). Externalized to _qc_operator_chat.py to avoid the stock-macOS bash
+  # 3.2.57 python-in-$() heredoc parse hazard (same reason _qc_owner_chat.py exists).
+  # This NEVER resolves allowFrom[0] / the client owner chat.
+  OPERATOR_CHAT="$(python3 "$SCRIPT_DIR/_qc_operator_chat.py" "$OCJSON" 2>>"$LOG_FILE")"
+  if [ -z "$OPERATOR_CHAT" ]; then
+    # No operator escalation chat configured → LOG-ONLY. NEVER fall back to the
+    # client owner chat (allowFrom[0]) — closing that leak is the point of this fix.
+    log "QC != PASS (STATUS=${STATUS}) but no OPERATOR_ESCALATION_CHAT_ID configured — LOG-ONLY, NOT sent to any chat (never routed to a client)"
+  elif [ -z "$OC_BIN" ]; then
+    log "QC != PASS (STATUS=${STATUS}) but openclaw binary not found — LOG-ONLY (operator alert not sent)"
   else
-    log "Telegram skip: openclaw_bin=${OC_BIN:-MISSING} owner_chat=${OWNER_CHAT:-MISSING}"
+    # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: _qc_summary.py externalized from an
+    # inline python-in-$() heredoc (parse hazard on bash 3.2). QC JSON path is argv[1].
+    SUMMARY="$(python3 "$SCRIPT_DIR/_qc_summary.py" "$JSON_FILE" 2>>"$LOG_FILE")"
+    "$OC_BIN" message send --channel telegram --account operator \
+        --session-key agent:main:operator --target "$OPERATOR_CHAT" --message "$SUMMARY" >>"$LOG_FILE" 2>&1 \
+      && log "QC alert sent to OPERATOR chat ${OPERATOR_CHAT} (operator account)" \
+      || log "QC operator alert send FAILED (see log) — NOT routed to any client chat"
   fi
 fi
 

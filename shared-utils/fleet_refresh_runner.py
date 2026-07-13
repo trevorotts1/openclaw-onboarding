@@ -702,7 +702,14 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
         result = subprocess.run(
             ["bash", str(update_skills)],
             capture_output=True, text=True, timeout=1200,
-            env={**os.environ, "OPENCLAW_UPDATE_AUTO_SYNC": "1"},
+            # SECURITY/PRIVACY (v20.0.9): the fleet roll is MAINTENANCE — export
+            # OPENCLAW_MAINTENANCE_SILENT=1 into the updater's environment so it
+            # (and every subprocess it spawns: migrate-existing-workforce.sh and
+            # the embedded qc-completeness.sh) HARD-suppresses any QC Telegram to a
+            # client chat, independent of the box's chat/account config. This runner
+            # executes ON the target box, so the var reaches the remote updater.
+            env={**os.environ, "OPENCLAW_UPDATE_AUTO_SYNC": "1",
+                 "OPENCLAW_MAINTENANCE_SILENT": "1"},
         )
         post_stamp = stamp_file.read_text().strip() if stamp_file.is_file() else None
         if result.returncode == 0 and post_stamp == pinned_tag:

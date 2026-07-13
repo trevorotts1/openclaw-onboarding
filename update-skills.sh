@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.8"
+ONBOARDING_VERSION="v20.0.9"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v20.0.8 - safe_json_edit
+# v20.0.9 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -777,6 +777,20 @@ main() {
   # possible re-exec, then run the self-sync guard BEFORE any download/wiring.
   SELF_SYNC_ARGS=("$@")
   self_sync_guard
+
+  # ----------------------------------------------------------
+  # SECURITY/PRIVACY (v20.0.9) — MAINTENANCE-SILENT for the WHOLE roll. A fleet
+  # roll / skill update is inherently MAINTENANCE: no step may push an internal
+  # notification to a client chat. Export OPENCLAW_MAINTENANCE_SILENT=1 for the
+  # entire duration of this run so EVERY subprocess it spawns inherits it —
+  # migrate-existing-workforce.sh (which runs qc-completeness.sh at its Step 5)
+  # AND the embedded qc-completeness.sh call later in this function.
+  # qc-completeness.sh treats this as a HARD send-suppression gate that is
+  # INDEPENDENT of any box's chat/account config, so a box whose operator-
+  # escalation chat is mis-pointed at the client still cannot leak the QC gap
+  # table during a roll. It gates NOTIFICATION only, never what QC computes.
+  # ----------------------------------------------------------
+  export OPENCLAW_MAINTENANCE_SILENT=1
 
   # ----------------------------------------------------------
   # Parse CLI args: --only "05,06,35" installs only those skill folders
@@ -3073,19 +3087,25 @@ PYEOF
   #
   # SILENT-MAINTENANCE (v17.0.18): a fleet roll / skill update is inherently
   # MAINTENANCE, so this embedded QC call MUST run with OPENCLAW_MAINTENANCE=1.
-  # That forces qc-completeness.sh into quiet mode and SUPPRESSES its owner-chat
-  # Telegram alert entirely (log-only) — the embedded QC step can NEVER message a
-  # client owner during a roll. The operator still gets the workforce QC STATUS
-  # folded into the OPERATOR-ROUTED update note below (send_telegram_progress),
-  # so no visibility is lost — only the client-facing alert is suppressed.
+  # That forces qc-completeness.sh into quiet mode and SUPPRESSES its Telegram
+  # alert entirely (log-only) — the embedded QC step can NEVER message a client
+  # during a roll. The operator still gets the workforce QC STATUS folded into the
+  # OPERATOR-ROUTED update note below (send_telegram_progress), so no visibility is
+  # lost — only the client-facing alert is suppressed.
+  #
+  # v20.0.9 (SECURITY/PRIVACY): belt-and-suspenders — this call ALSO passes --quiet
+  # (log-only path) AND inherits the roll-wide OPENCLAW_MAINTENANCE_SILENT=1 exported
+  # at the top of main(). Any ONE of the three (OPENCLAW_MAINTENANCE=1, --quiet,
+  # OPENCLAW_MAINTENANCE_SILENT=1) fully suppresses the send, and qc-completeness now
+  # routes only to the OPERATOR (never the client owner / allowFrom[0]) in any case.
   # ----------------------------------------------------------
   QC_COMPLETENESS_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/qc-completeness.sh"
   QC_STATUS_LINE=""
   QC_COMPLETENESS_RC=0   # FIX 1: HONOR this exit code (was ignored). 0=PASS, 2=PARTIAL, 3=FAIL, 4=NO_WORKFORCE
   if [ -x "$QC_COMPLETENESS_SCRIPT" ]; then
     echo ""
-    echo "  Running qc-completeness.sh against live workforce (maintenance mode — owner alert suppressed)..."
-    QC_OUTPUT="$(OPENCLAW_MAINTENANCE=1 bash "$QC_COMPLETENESS_SCRIPT" 2>&1)" || QC_COMPLETENESS_RC=$?
+    echo "  Running qc-completeness.sh against live workforce (maintenance mode — client alert suppressed)..."
+    QC_OUTPUT="$(OPENCLAW_MAINTENANCE=1 bash "$QC_COMPLETENESS_SCRIPT" --quiet 2>&1)" || QC_COMPLETENESS_RC=$?
     QC_STATUS_LINE="$(printf '%s\n' "$QC_OUTPUT" | grep -E '^STATUS:' | tail -1 || true)"
     echo "  ${QC_STATUS_LINE:-qc-completeness ran (no STATUS line captured)} (exit $QC_COMPLETENESS_RC)"
   fi

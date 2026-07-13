@@ -218,7 +218,7 @@ else
   log "reconcile-legacy-tree.py not installed (Release 2 didn't land?)"
 fi
 
-# ----- Step 5: final completeness check with Telegram on != PASS -----
+# ----- Step 5: final completeness check (qc-completeness --quiet, LOG-ONLY) -----
 # v10.15.44 / v10.16.43 FIX: treat rc=4 (NO_WORKFORCE_FOUND from qc-completeness)
 # as advisory — log a warning but exit 0, since the substantive augmentation in
 # Steps 2-4 already succeeded additively. rc=4 means the QC probe's path-resolver
@@ -227,10 +227,15 @@ fi
 # would have been logged above; those steps still surface their own non-zero exits
 # as warnings. qc-completeness rc=3 (FAIL) and rc=1 (python crash) still force
 # FINAL_RC non-zero because they represent real QC problems worth surfacing.
-log "STEP 5/5: final qc-completeness (Telegrams on != PASS)"
+# v20.0.9 (SECURITY/PRIVACY): run qc-completeness with --quiet so the embedded QC
+# step is LOG-ONLY here and can never message any client — this migration is
+# operator-initiated maintenance. Even without --quiet, qc-completeness routes its
+# != PASS alert to the OPERATOR escalation chat only (never the client owner), and a
+# fleet roll additionally exports OPENCLAW_MAINTENANCE_SILENT=1 which this inherits.
+log "STEP 5/5: final qc-completeness (--quiet: LOG-ONLY; qc-completeness routes only to the OPERATOR, never the client)"
 FINAL_RC=0
 if [ -x "$QC_SCRIPT" ]; then
-  bash "$QC_SCRIPT" 2>&1 | tee -a "$LOG"
+  bash "$QC_SCRIPT" --quiet 2>&1 | tee -a "$LOG"
   QC_RC=${PIPESTATUS[0]}
   case "$QC_RC" in
     0)
