@@ -1,3 +1,11 @@
+## [v20.0.7]  -  2026-07-12  -  fix(roll): bump Command Center pin v6.0.0->v6.0.1 (mktemp fix)
+
+Trivial pin bump so the fleet roll delivers a already-merged Command Center fix instead of leaving it stranded behind the pin.
+
+- **Problem.** `blackceo-command-center` merged and tagged `v6.0.1` (annotated tag at commit `d4abf9436ff47a2c1aaadb8b11bd335e9c5551b8`, PR #157): `scripts/atomic-deploy.sh` line 428 called `mktemp /tmp/atomic-build-exit-$$.txt` — a fixed filename with no `XXXXXX` template. GNU coreutils `mktemp` (every Linux/VPS fleet box) REQUIRES the trailing path component to contain a template of at least 3 consecutive `X`s and fails closed (`too few X's in template`) without one, so Phase 2 of the atomic deploy (`npm run build`) never ran on any VPS box. macOS's BSD `mktemp` is lenient about a missing template (falls back to the literal path), which is why this never surfaced on the operator Mac. `cc-compat.json` `commandCenter.pinnedTag` was still `v6.0.0` — `resolve_cc_tag()` returns `pinnedTag` unconditionally, so `fleet-refresh.sh` would keep checking out the un-fixed `v6.0.0` on every roll, permanently stranding the fix behind the pin.
+- **Fix.** `cc-compat.json` `commandCenter.pinnedTag` bumped `v6.0.0` -> `v6.0.1`. `minVersion` UNCHANGED at `v4.59.1` (permissive, so `assert_min_version` does not block a box still mid-update on an older CC); `maxVersion` UNCHANGED (`null`). `v6.0.1` >= `minVersion` and `maxVersion` is unbounded, so the schema contract (`pinnedTag >= minVersion`, `pinnedTag <= maxVersion-or-unbounded`) holds. Verified the `v6.0.0`->`v6.0.1` delta (`git compare`) is scoped to `CHANGELOG.md` + `package.json` + `package-lock.json` + `version` (release metadata, all 5 CC version locations) plus the single-line `atomic-deploy.sh` fix — no app code, no endpoint, no `mission-control.db` schema change, so this pin bump carries zero migration risk.
+- All 11 version markers rolled `v20.0.6` -> **v20.0.7** via `scripts/bump-version.sh`. No client names, no secret values, no box identifiers, no model added, removed, or substituted.
+
 ## [v20.0.6]  -  2026-07-12  -  fix(cc-installer): D6 update-only credential-mirror gate + D7 detached-HEAD-safe git sync
 
 Two Skill-32 installer defects fixed together, both in `32-command-center-setup/scripts/run-full-install.sh`.
