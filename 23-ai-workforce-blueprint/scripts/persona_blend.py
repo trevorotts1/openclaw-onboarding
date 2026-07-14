@@ -621,10 +621,65 @@ def decide_collapse(catalog: dict, audience_pid, topic_pid,
     return False, None
 
 
+# ── A-U2: v2 structured voice-attribute block (additive, catalog-sourced) ─────
+# Attributes come ONLY from the catalog's voice_style{} — never model-invented.
+# Renders nothing (returns None) when the pid is absent, the catalog wasn't
+# passed, or the persona simply has no voice_style — that is exactly how a
+# schema-1.2 (pre-enrichment) catalog degrades to v1's prose-only directive,
+# byte-identical.
+def _vs_join(value, limit=None):
+    """Join a voice_style list field (or pass through a string field) into one
+    line fragment. Never fabricates: absent/empty input yields "" and the
+    caller omits that fragment entirely rather than printing a placeholder."""
+    if isinstance(value, list):
+        items = value[:limit] if limit else value
+        return ", ".join(str(x) for x in items if x)
+    return str(value) if value else ""
+
+
+def _voice_attr_block(label: str, pid, personas: dict):
+    """Render the SLOT's structured attribute block (A.3):
+        <LABEL> — <persona name> (<persona id>)
+          tone: <tone> | cadence: <cadence>
+          devices: <top 3 devices> | signature move: <1 signature move>
+          avoid: <avoid[]>
+    Returns a list of lines, or None when voice_style is unavailable for pid
+    (graceful degradation — no block, no fabricated attributes)."""
+    if not pid or not isinstance(personas, dict):
+        return None
+    info = personas.get(pid)
+    vs = info.get("voice_style") if isinstance(info, dict) else None
+    if not isinstance(vs, dict) or not vs:
+        return None
+
+    tone = _vs_join(vs.get("tone"))
+    cadence = _vs_join(vs.get("cadence"))
+    devices = _vs_join(vs.get("devices"), limit=3)
+    signature_move = _vs_join(vs.get("signature_moves"), limit=1)
+    avoid = _vs_join(vs.get("avoid"))
+
+    lines = [f"{label} — {pid.replace('-', ' ').title()} ({pid})"]
+    tone_cadence = " | ".join(
+        p for p in (f"tone: {tone}" if tone else "",
+                    f"cadence: {cadence}" if cadence else "") if p)
+    if tone_cadence:
+        lines.append("  " + tone_cadence)
+    devices_sig = " | ".join(
+        p for p in (f"devices: {devices}" if devices else "",
+                    f"signature move: {signature_move}" if signature_move else "")
+        if p)
+    if devices_sig:
+        lines.append("  " + devices_sig)
+    if avoid:
+        lines.append(f"  avoid: {avoid}")
+    return lines
+
+
 # ── blend directive (carries the mandatory guardrail) ─────────────────────────
 def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
                           collapsed_pid, content_task: bool,
-                          audience_label: str = "", task_persona_pid=None) -> str:
+                          audience_label: str = "", task_persona_pid=None,
+                          catalog: dict = None) -> str:
     """Compose the writer's SYNERGY instruction — up to FOUR slots working
     together (P4-02 step 7):
 
@@ -637,27 +692,46 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
     Every slot populates when available and DEGRADES GRACEFULLY when not
     (voice-only, topic-only, task-only, or the neutral house voice). The
     GUARDRAIL_CLAUSE is ALWAYS appended and can never be omitted (fail-closed).
+
+    A-U2 (Blend Directive v2): when `catalog` is supplied and a populated
+    slot's persona carries voice_style{} (schema >=1.3), a structured
+    voice-attribute block (tone/cadence/devices/signature move/avoid — sourced
+    ONLY from the catalog, never invented) is appended per populated slot,
+    followed by a one-line VOICE CONTRACT echo instruction. This is PURELY
+    ADDITIVE: `catalog=None` (the default), a schema-1.2 catalog, or a persona
+    with no voice_style all degrade to the identical v1 prose-only directive —
+    the guardrail remains the trailing, non-removable clause in every case.
     """
     def _name(pid):
         return pid.replace("-", " ").title() if pid else None
 
+    # voice_slots: [(LABEL, pid), ...] — the same populated-slot set the v1
+    # prose body already expresses, tracked in parallel so the v2 attribute
+    # block can never drift from what the directive's own prose claims.
+    voice_slots = []
+
     if not content_task:
         body = (f"Non-content task — no audience-voice blend. Execute with "
                 f"{_name(topic_pid)}'s expert judgement on {topic!r}.")
+        voice_slots.append(("SUBSTANCE", topic_pid))
     elif collapsed and collapsed_pid:
         aud = f" for the '{audience_label}' audience" if audience_label else ""
         body = (f"Write in {_name(collapsed_pid)}'s voice{aud}: one persona covers "
                 f"both the audience register and the {topic!r} expertise.")
+        voice_slots.append(("VOICE", collapsed_pid))
     elif audience_pid and topic_pid:
         aud = f" ({audience_label})" if audience_label else ""
         body = (f"Write in {_name(audience_pid)}'s VOICE{aud} — its cadence, "
                 f"devices and register — while carrying {_name(topic_pid)}'s "
                 f"EXPERTISE on {topic!r}. Audience voice leads; topic expertise "
                 f"informs substance.")
+        voice_slots.append(("VOICE", audience_pid))
+        voice_slots.append(("SUBSTANCE", topic_pid))
     elif topic_pid:
         body = (f"Audience not yet confirmed — draft with {_name(topic_pid)}'s "
                 f"expertise on {topic!r} in a neutral house voice; the audience "
                 f"voice is applied once confirmed.")
+        voice_slots.append(("SUBSTANCE", topic_pid))
     else:
         body = f"Proceed in the default house voice on {topic!r}."
 
@@ -671,6 +745,19 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
             audience_pid, topic_pid, collapsed_pid):
         body += (f" The task-side persona is {_name(task_persona_pid)} — apply "
                  f"ITS process and decision method to execute the work.")
+        voice_slots.append(("TASK", task_persona_pid))
+
+    # ── A-U2 v2 block — additive only; see docstring for the degrade contract ──
+    personas = _persona_meta(catalog) if catalog else {}
+    attr_blocks = []
+    for label, pid in voice_slots:
+        block = _voice_attr_block(label, pid, personas)
+        if block:
+            attr_blocks.append("\n".join(block))
+    if attr_blocks:
+        body = body + "\n\n" + "\n".join(attr_blocks) + (
+            "\nVOICE CONTRACT: echo one line into persona-selection-log "
+            "confirming the register you wrote in.")
 
     return body + " " + GUARDRAIL_CLAUSE
 
@@ -1011,7 +1098,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
 
     blend_directive = build_blend_directive(
         audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
-        voice_audience_label, task_persona_pid=primary_task_pid)
+        voice_audience_label, task_persona_pid=primary_task_pid, catalog=catalog)
 
     funnel = semantic_funnel if isinstance(semantic_funnel, dict) else {
         "pool": len(_persona_meta(catalog)),
