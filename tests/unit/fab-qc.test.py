@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -133,6 +135,76 @@ class TestFabQc(unittest.TestCase):
         r = fab_qc.grade(inp)
         self.assertFalse(r["passed"])
         self.assertIn("D4 Persona grounding", r["hard_misses"])
+
+    # ── B-U5 / U19 — FAB-QC D4 v2: bundle-aware voice grounding ─────────────
+    # (the FAB-QC half of the U17<->U19 merge-paired unit, B.0 item 5: the
+    # prior spec's P0 self-defeat is what these tests exist to close.)
+
+    def test_bundle_active_grounds_on_blend_voice_not_template_persona(self):
+        # A log naming the BLEND VOICE (not the template persona "Russell
+        # Brunson" the fixture's copyFramework declares) must PASS D4 when a
+        # bundle receipt is active — this is the v1 P0 self-defeat, fixed.
+        inp = _faithful_funnel()
+        inp["persona_log"] = "selected_persona: hormozi-100m-offers\nvoice_persona: hormozi-100m-offers\n"
+        inp["persona_bundle"] = {"source": "threaded", "voice_persona_id": "hormozi-100m-offers"}
+        r = fab_qc.grade(inp)
+        self.assertTrue(r["passed"], r)
+        self.assertNotIn("D4 Persona grounding", r["hard_misses"])
+
+    def test_bundle_active_log_naming_only_template_persona_is_hard_miss(self):
+        # Honest template-persona-only copy under an ACTIVE bundle must now
+        # HARD MISS naming "blend voice not grounded" — the exact defect the
+        # prior spec's P0 shipped (v2_dispatcher wired without the D4 fix).
+        inp = _faithful_funnel()
+        inp["persona_log"] = "selected_persona: russell-brunson-the-funnel-hackers-cookbook\n"
+        inp["persona_bundle"] = {"source": "local", "voice_persona_id": "hormozi-100m-offers"}
+        r = fab_qc.grade(inp)
+        self.assertFalse(r["passed"])
+        self.assertIn("D4 Persona grounding", r["hard_misses"])
+        d4 = next(d for d in r["dimensions"] if d["name"] == "D4 Persona grounding")
+        self.assertIn("blend voice not grounded", d4["observed"])
+
+    def test_legacy_fixture_no_receipt_is_byte_identical_scorecard(self):
+        # No persona_bundle key at all (every pre-B-U5 caller) -> the FULL
+        # scorecard must be byte-identical to the pre-unit golden scorecard.
+        inp_legacy = _faithful_funnel()
+        inp_with_empty_bundle = _faithful_funnel()
+        inp_with_empty_bundle["persona_bundle"] = {}
+        inp_with_absent_source = _faithful_funnel()
+        inp_with_absent_source["persona_bundle"] = {"source": "absent"}
+        golden = fab_qc.grade(inp_legacy)
+        self.assertEqual(golden, fab_qc.grade(inp_with_empty_bundle))
+        self.assertEqual(golden, fab_qc.grade(inp_with_absent_source))
+        self.assertTrue(golden["passed"], golden)
+
+    def test_bundle_active_still_failclosed_on_missing_log(self):
+        # The "no log -> 0.0 HARD MISS" fail-closed floor is unchanged in
+        # BOTH modes.
+        inp = _faithful_funnel()
+        inp["persona_log"] = ""
+        inp["persona_bundle"] = {"source": "cc", "voice_persona_id": "hormozi-100m-offers"}
+        r = fab_qc.grade(inp)
+        self.assertFalse(r["passed"])
+        self.assertIn("D4 Persona grounding", r["hard_misses"])
+        d4 = next(d for d in r["dimensions"] if d["name"] == "D4 Persona grounding")
+        self.assertEqual(d4["score"], 0.0)
+
+    def test_load_inputs_from_evidence_reads_persona_bundle_receipt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            routing = os.path.join(td, "routing")
+            os.makedirs(routing, exist_ok=True)
+            with open(os.path.join(routing, "persona-bundle-receipt.json"), "w") as f:
+                json.dump({"source": "local", "voice_persona_id": "wiebe-copy-hackers"}, f)
+            inp = fab_qc.load_inputs_from_evidence(td, "funnel")
+            self.assertEqual(inp["persona_bundle"]["voice_persona_id"], "wiebe-copy-hackers")
+
+    def test_load_inputs_from_evidence_absent_receipt_is_empty_dict(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "routing"), exist_ok=True)
+            inp = fab_qc.load_inputs_from_evidence(td, "funnel")
+            self.assertEqual(inp["persona_bundle"], {})
 
     def test_silently_dropped_linked_automations_fails_naming_d6(self):
         inp = _faithful_funnel()

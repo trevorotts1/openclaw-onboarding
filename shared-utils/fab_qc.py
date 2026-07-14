@@ -364,12 +364,49 @@ def _expected_personas(inp: dict) -> list[str]:
     return [p for p in out if p]
 
 
+def _bundle_active(bundle) -> bool:
+    """A persona-bundle-acquisition-ladder receipt (B-U1/U15) is ACTIVE for D4
+    grounding only when it named an actual source — an absent/missing receipt
+    (the field is entirely omitted, or ``{}``, or ``source: absent``) must
+    fall through to the legacy template-token path so a build with no bundle
+    wiring is UNCHANGED (B-U5's byte-identical-legacy-path guarantee)."""
+    return isinstance(bundle, dict) and bundle.get("source") not in (None, "", "absent")
+
+
 def score_d4(inp: dict) -> Dim:
+    """D4 — Persona grounding (fail-closed).
+
+    B-U5/U19 (bundle-aware voice grounding — the FAB-QC D4 v2 half of the
+    U17<->U19 merge-paired unit, B.0 item 5): when ``inp['persona_bundle']``
+    (loaded from ``routing/persona-bundle-receipt.json``, B-U1/U15) is
+    ACTIVE, D4 verifies the bundle's VOICE persona is named in the log — NOT
+    the template persona. A log naming only the template persona is now the
+    HARD MISS (the prior spec's P0 self-defeat: honoring the displayed blend
+    would otherwise fail this gate). When NO receipt is active (legacy run,
+    or a build that never wired the bundle), this function is BYTE-IDENTICAL
+    to the pre-B-U5 template-token behavior below. The ``no log -> 0.0
+    HARD MISS`` fail-closed floor is unchanged in BOTH modes.
+    """
     log = inp.get("persona_log") or ""
     if not log.strip():
         # fail-closed: the selector did not run / no log -> cannot prove grounding
         return Dim("D4 Persona grounding", W["D4"], 0.0, True,
                    "no persona-selection-log — fail-closed HARD MISS")
+
+    bundle = inp.get("persona_bundle")
+    if _bundle_active(bundle):
+        voice_pid = (bundle.get("voice_persona_id") or "").strip()
+        low = log.lower()
+        toks = [t for t in re.split(r"[^a-z0-9]+", voice_pid.lower()) if len(t) > 3]
+        voice_hit = bool(toks) and any(t in low for t in toks)
+        score = 10.0 if voice_hit else 3.0
+        hard = not voice_hit
+        observed = f"bundle source={bundle.get('source')}; blend voice persona {voice_pid!r} named in log: {voice_hit}"
+        if hard:
+            observed += " — HARD MISS (blend voice not grounded)"
+        return Dim("D4 Persona grounding", W["D4"], score, hard, observed)
+
+    # ── legacy path — byte-identical to pre-B-U5 behavior ──────────────────
     expected = _expected_personas(inp)
     md = inp.get("match_decision", {}) or {}
     if md.get("flex_decision") == "CREATE_NEW" or not expected:
@@ -464,7 +501,10 @@ def score_d6(inp: dict) -> Dim:
 # --------------------------------------------------------------------------- #
 def grade(inp: dict) -> dict:
     """Score a build. ``inp`` keys: kind('funnel'|'automation'), match_decision, template,
-    artifact, verify, persona_log, link_map. Returns the FAB-QC scorecard."""
+    artifact, verify, persona_log, link_map, persona_bundle (B-U5/U19, optional —
+    the normalized persona-bundle-acquisition-ladder receipt; D4 grounds on the
+    bundle's VOICE persona when active, else the legacy template-token path,
+    byte-identical, when absent). Returns the FAB-QC scorecard."""
     dims = [score_d1(inp), score_d2(inp), score_d3(inp),
             score_d4(inp), score_d5(inp), score_d6(inp)]
     weighted = round(sum(d.earned for d in dims), 2)        # 0-100
@@ -524,8 +564,14 @@ def load_inputs_from_evidence(evidence_root: str, kind: str) -> dict:
         or os.environ.get("CAF_FUNNEL_AUTOMATION_LINKS")
     if lm and os.path.isfile(lm):
         link_map = _load_json(lm)
+    # B-U5/U19: the persona-bundle-acquisition-ladder receipt (B-U1/U15),
+    # written to routing/persona-bundle-receipt.json alongside match-decision.
+    # Absent on any build that hasn't wired the bundle -> {} -> D4's legacy
+    # template-token path (byte-identical to pre-B-U5 behavior).
+    persona_bundle = _load_json(os.path.join(routing, "persona-bundle-receipt.json")) or {}
     return {"kind": kind, "match_decision": md, "template": template, "artifact": artifact,
-            "verify": verify, "persona_log": persona_log, "link_map": link_map}
+            "verify": verify, "persona_log": persona_log, "link_map": link_map,
+            "persona_bundle": persona_bundle}
 
 
 def main(argv: list[str]) -> int:
