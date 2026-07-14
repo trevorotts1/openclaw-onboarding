@@ -791,3 +791,98 @@ class TestCopyDependency:
         )
         assert res.state == disp.STATE_VERIFIED
         assert calls == ["built"]
+
+
+# ── B-U1 / U15: persona-bundle acquisition ladder (converges Skill 6 onto the
+# ONE unified persona-blend system) ────────────────────────────────────────
+
+class TestPersonaBundleAcquisition:
+    """threaded -> CC fetch -> local --blend -> absent; receipt always written;
+    a pending audience confirm HOLDS on a Command-Center-connected run (same
+    class of gate as FIX-COPY-01) and never blocks otherwise."""
+
+    def _tracking_builder(self, calls):
+        def _b(task, evidence_root):
+            calls.append("built")
+            os.makedirs(os.path.join(evidence_root, "funnel"), exist_ok=True)
+            return {"pages": [{"step": "optin", "preview_url": "u", "marker": "m"}],
+                    "location_gate_ok": True, "duration_s": 5.0}
+        return _b
+
+    def test_no_bundle_default_posture_never_blocks(self, tmp_path):
+        # Default env: no threaded bundle, no CC configured, rung 3 opt-in unset
+        # -> source=absent, exact legacy behavior, build proceeds normally.
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="noBundle"), str(tmp_path),
+            builder=self._tracking_builder(calls), verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED
+        assert calls == ["built"]
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        assert os.path.isfile(receipt_path), "the receipt must ALWAYS be written"
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["source"] == "absent"
+        assert receipt["confirm_state"] == "n/a"
+        assert receipt["hold"] is False
+
+    def test_threaded_bundle_confirmed_flows_through_and_normalizes(self, tmp_path):
+        calls = []
+        task = dict(FAKE_TASK, id="threadedConfirmed", persona_bundle={
+            "voice_persona_id": "hormozi-100m-offers",
+            "topic_persona_id": "miller-storybrand",
+            "confirm_required": False,
+            "blend_directive": "Write in Hormozi's voice. GUARDRAIL",
+            "task_personas": [{"seq": 1, "persona_id": "hormozi-100m-offers"}],
+        })
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED
+        assert calls == ["built"]
+        assert task["persona_bundle"]["voice_persona_id"] == "hormozi-100m-offers"
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["source"] == "threaded"
+        assert receipt["voice_persona_id"] == "hormozi-100m-offers"
+        assert receipt["confirm_state"] == "confirmed"
+
+    def test_threaded_bundle_pending_confirm_holds_never_builds(self, tmp_path):
+        calls = []
+        task = dict(FAKE_TASK, id="threadedPending", persona_bundle={
+            "voice_persona_id": "hormozi-100m-offers", "confirm_required": True,
+        })
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=self._tracking_builder(calls),
+            verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_WAITING, (
+            "a bundle with confirm_state=pending on a CC-connected (threaded) run "
+            "must HOLD — never build under an unconfirmed blend voice"
+        )
+        assert not bool(res)
+        assert calls == [], "the builder must NOT run while the blend voice is unconfirmed"
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["confirm_state"] == "pending"
+        assert receipt["hold"] is True
+
+    def test_ladder_never_raises_into_dispatch_on_module_failure(self, tmp_path, monkeypatch):
+        # A broken persona-bundle ladder must degrade to the legacy no-op, never
+        # crash or block the build (fail-soft on availability).
+        def _raise(*_a, **_k):
+            raise RuntimeError("boom")
+        monkeypatch.setattr(disp, "_PERSONA_BUNDLE_AVAILABLE", True)
+        monkeypatch.setattr(disp, "_persona_bundle",
+                            type("X", (), {"resolve_persona_bundle": staticmethod(_raise)}))
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="ladderRaises"), str(tmp_path),
+            builder=self._tracking_builder(calls), verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED, "a raising ladder must never block the build"
+        assert calls == ["built"]

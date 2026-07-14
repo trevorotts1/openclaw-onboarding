@@ -17,13 +17,25 @@
 ### PERSONA TASK-MODE SEAM (FIX-XC-02a — prepend AFTER the shared preamble)
 
 The copywriter-persona Step-0 grounding (SOP-FUNNEL-02-COPY §2 Step 0) resolves the matched copy persona
-via `persona-selector-v2.py` and logs it to `persona-selection-log.md`. Its **Section 4 "Agent Governance
-Framework"** is injected here so the writer builds TO the persona's Task Mode, not merely names it:
+via `persona-selector-v2.py --blend` and logs it to `persona-selection-log.md`. Its **Section 4 "Agent
+Governance Framework"** is injected here so the writer builds TO the persona's Task Mode, not merely names it:
 
 > `{{PERSONA_TASK_MODE}}` — verbatim Section-4 Execution Standard + Decision Logic + Definition of Done +
 > Failure Patterns from the matched `persona-blueprint.md` (persona id `{{SELECTED_PERSONA_ID}}`).
 > Ground every headline, offer, and CTA in this Task Mode, INSIDE the three-constraint envelope
 > (brand-voice-lock + locked brief + compliance). The persona's NAME alone does not load it.
+
+**`{{BLEND_DIRECTIVE}}` (B-U3/U17 — the audience+topic+task SYNERGY, additive to Task Mode above):**
+
+> `{{BLEND_DIRECTIVE}}` — the task's persona-bundle `blend_directive` (up to four SYNERGY slots:
+> VOICE cadence/devices/register, AUDIENCE the content is FOR, SUBSTANCE the topic persona's
+> expertise, TASK the process/method) rendered verbatim from `persona-selection-log.md`'s
+> `blend_directive_sha`-pinned text, ALWAYS ending in the mandatory, non-removable
+> STYLE-INSPIRED-NEVER-IMPERSONATION guardrail. `{{PERSONA_TASK_MODE}}` governs the WORK STANDARD
+> (execution/decision/DoD/failure patterns); `{{BLEND_DIRECTIVE}}` governs the VOICE + SUBSTANCE the
+> copy is written in — apply BOTH, they are independent dimensions, never a substitute for each
+> other. When no bundle was acquired (legacy / absent-source run), this variable is empty and the
+> seam behaves exactly as before FIX-XC-02a's blend extension.
 
 `{{SELECTED_PERSONA_ID}}` is read from `persona-selection-log.md`; if the log is absent or names no
 registered slug, `prove_sf_intake.py` fails closed (**AF-FUN-INTAKE-PERSONA-LOG**) and generation never

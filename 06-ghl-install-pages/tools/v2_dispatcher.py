@@ -108,6 +108,18 @@ except Exception:  # noqa: BLE001
     _model_router = None  # type: ignore[assignment]
     _MODEL_ROUTER_AVAILABLE = False
 
+# ── INTEGRATION: persona_bundle_ladder (B-U1 / U15) ───────────────────────────
+# Converges Skill 6 onto the ONE unified persona-blend system: threaded -> CC
+# fetch -> local --blend -> absent, always receipted. Fail-soft on availability
+# (import failure or every rung missing is a clean no-op, exact legacy
+# behavior); fail-closed on honesty (see _resolve_persona_bundle below).
+try:
+    import persona_bundle_ladder as _persona_bundle  # noqa: E402
+    _PERSONA_BUNDLE_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _persona_bundle = None  # type: ignore[assignment]
+    _PERSONA_BUNDLE_AVAILABLE = False
+
 # Job types that auto-resolve to ghl_survey_builder.build_survey.
 _SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "quiz"})
 # Job types that auto-resolve to ghl_form_builder.build_form. 'form' was moved out
@@ -543,6 +555,31 @@ def _select_and_thread_models(task: dict, evidence_root: str) -> dict:
     return receipts
 
 
+# ---------------------------------------------------------------------------
+# Persona-bundle acquisition (B-U1 / U15 — converges Skill 6 onto the ONE
+# unified persona-blend system)
+# ---------------------------------------------------------------------------
+
+def _resolve_persona_bundle(task: dict, evidence_root: str) -> dict:
+    """Run the persona-bundle-acquisition ladder (threaded -> CC fetch -> local
+    --blend -> absent) and thread the result onto ``task``.
+
+    Called AFTER intake + model routing and BEFORE the copy-dependency HALT
+    gate is evaluated for a HOLD (Wiring-Map placement: between `_run_intake`
+    and step0 — same seam FIX-COPY-01 occupies). Always writes
+    ``routing/persona-bundle-receipt.json``. Never raises — an unavailable
+    ladder module degrades to the exact legacy no-op receipt.
+    """
+    if not _PERSONA_BUNDLE_AVAILABLE:
+        return {"source": "absent", "confirm_state": "n/a", "hold": False,
+                "reason": "persona_bundle_ladder unavailable"}
+    try:
+        return _persona_bundle.resolve_persona_bundle(task, evidence_root)
+    except Exception as exc:  # noqa: BLE001 — the ladder must never block a build
+        return {"source": "absent", "confirm_state": "n/a", "hold": False,
+                "reason": f"persona bundle ladder raised: {type(exc).__name__}: {exc}"}
+
+
 # The bounded-dispatcher state machine (SOP §1). These are the ONLY task states.
 STATE_BACKLOG = "backlog"
 STATE_DISPATCHED = "dispatched"
@@ -938,6 +975,29 @@ def dispatch_one(
                        "(marketing). Build resumes once copy.md is APPROVED "
                        "(FIX-COPY-01: no inline-improvised copy)."),
             "copy_dependency": _copy_dep,
+        }
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_WAITING, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
+    # ── PERSONA-BUNDLE ACQUISITION (B-U1 / U15 — converges Skill 6 onto the ONE
+    # unified persona-blend system) ──────────────────────────────────────────
+    # threaded -> CC fetch -> local --blend -> absent; receipt always written.
+    # Fail-soft on availability: a missing bundle never blocks a build (matches
+    # step0's posture below). Fail-closed on honesty: a bundle whose audience
+    # confirmation is still pending HOLDS on a Command-Center-connected run —
+    # the same class of gate as FIX-COPY-01 immediately above — rather than
+    # silently building under an unconfirmed voice. A standalone run instead
+    # degrades to the neutral topic-only house voice (named in the receipt).
+    _pb_receipt = _resolve_persona_bundle(task, evidence_root)
+    if _pb_receipt.get("hold"):
+        rec = {
+            "task_id": task_id, "state": STATE_WAITING,
+            "reason": ("persona bundle confirm_state=pending on a Command-Center-"
+                      "connected run — HELD pending audience confirmation "
+                      "(same class of gate as FIX-COPY-01; never build under an "
+                      "unconfirmed blend voice)."),
+            "persona_bundle_receipt": _pb_receipt,
         }
         rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_WAITING, rec["reason"],

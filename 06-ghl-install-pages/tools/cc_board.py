@@ -523,6 +523,66 @@ def post_activity(
 
 
 # ---------------------------------------------------------------------------
+# B-U1 / U15 — persona-bundle READ. Rung 2 of the persona-bundle-acquisition
+# ladder (persona_bundle_ladder.py): a read-only fetch against the Command
+# Center's task_persona_bundle row so a CC-dispatched build gets the SAME
+# blend bundle the Command Center already resolved, instead of re-selecting a
+# second time or (today) never consuming a blend at all.
+# ---------------------------------------------------------------------------
+def fetch_persona_bundle(task_id: str, *, env: Optional[dict] = None) -> Optional[dict]:
+    """GET ``/api/tasks/<id>/persona-bundle`` — a read-only endpoint mirroring
+    the ``task_persona_bundle`` row (migration 090) for the given task.
+
+    Auth: **Bearer only** (same class as ``post_activity`` — a read endpoint,
+    no HMAC per-route layer).
+
+    FAIL-SOFT: returns None on ANY failure — board unconfigured, network error,
+    a non-2xx status, or a malformed body — including a 404 from an endpoint
+    that has not shipped yet on the target Command Center. The caller (the
+    bundle-acquisition ladder) falls through to the local ``--blend`` rung on
+    any None. Never raises.
+
+    Returns the bundle dict on success. Accepts either ``{"bundle": {...}}`` or
+    a bare bundle object at the top level (endpoint-shape-tolerant since the
+    CC-side route is not yet pinned by a shipped contract).
+    """
+    cfg = board_config(env)
+    if cfg is None:
+        return None
+    tid = (task_id or "").strip()
+    if not tid:
+        return None
+
+    url = f"{cfg['base_url']}/api/tasks/{tid}/persona-bundle"
+    headers = {"Accept": "application/json"}
+    if cfg["token"]:
+        headers["Authorization"] = f"Bearer {cfg['token']}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            status = resp.getcode()
+    except urllib.error.HTTPError as exc:
+        _log(f"GET {url} -> HTTP {exc.code}; persona bundle not fetched (falls through to local).")
+        return None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"GET {url} failed ({type(exc).__name__}: {exc}); persona bundle not fetched.")
+        return None
+
+    if not (200 <= status < 300):
+        _log(f"GET /persona-bundle non-2xx (HTTP {status}) for task {tid}; falls through to local.")
+        return None
+    try:
+        parsed = json.loads(body) if body else None
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    bundle = parsed.get("bundle") if "bundle" in parsed else parsed
+    return bundle if isinstance(bundle, dict) and bundle else None
+
+
+# ---------------------------------------------------------------------------
 # U9 §7.2 — QC score emission. The per-build QC gate (qc-built-*.sh) emits its
 # PASS/FAIL + numeric score INTO the card so the CC QC sweep reads ONE source (no
 # re-scoring drift): the score rides in the activity metadata AND is human-visible
