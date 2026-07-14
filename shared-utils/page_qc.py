@@ -193,8 +193,17 @@ def _detect_broken_images(inp: dict) -> list:
         status = rec.get("http_status")
         try:
             status_broken = status is not None and int(status) >= 400
-        except (TypeError, ValueError):
-            status_broken = False  # non-numeric http_status: never crash the scorer
+        except (TypeError, ValueError, OverflowError):
+            # TypeError:  None/list/dict/other non-coercible shapes
+            # ValueError: non-numeric strings, NaN (int(float('nan')) raises this)
+            # OverflowError: +-Infinity (int(float('inf')) raises this, NOT
+            #                 ValueError — json.load decodes bare `Infinity` /
+            #                 `-Infinity` / `NaN` tokens to Python floats by
+            #                 default, so a manifest record can carry any of
+            #                 these). A plain huge int/float never raises here —
+            #                 Python ints are arbitrary precision — so no extra
+            #                 magnitude guard is needed.
+            status_broken = False  # never crash the scorer on a malformed http_status
         is_broken = bool(rec.get("broken")) or status_broken
         if is_broken:
             broken.append(rec.get("cdn_url") or rec.get("path") or "unknown")

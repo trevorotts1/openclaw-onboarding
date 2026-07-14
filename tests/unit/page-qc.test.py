@@ -152,6 +152,81 @@ class TestPageQcCore(unittest.TestCase):
         self.assertTrue(r["available"])
         self.assertTrue(page_qc.validate_schema(r))
 
+    # ---- regression: OverflowError sibling crash — json.load decodes bare
+    #      Infinity/-Infinity/NaN tokens to Python floats BY DEFAULT, so an
+    #      images/manifest.json record can carry an http_status the original
+    #      (TypeError, ValueError) guard did NOT cover: int(float('inf'))/
+    #      int(float('-inf')) raise OverflowError, not ValueError. Sweep every
+    #      value shape http_status/dom_html can arrive as from an externally
+    #      sourced evidence tree and assert NONE of them ever crash grade(). ---
+    def test_http_status_overflow_and_exotic_shapes_never_crash(self):
+        # Every value here is a MALFORMED/non-numeric shape — none is a real HTTP
+        # status, so all must resolve to "not broken" (never crash, never fabricate
+        # a finding). Huge-but-genuinely-numeric values are covered separately
+        # below (they correctly DO count as broken — see the huge-int test).
+        exotic_statuses = [
+            float("inf"), float("-inf"), float("nan"),
+            "not-a-number", None, [1, 2], {"nested": "dict"},
+            "  ", "", (1, 2), {1, 2},
+        ]
+        for bad_status in exotic_statuses:
+            with self.subTest(bad_status=bad_status):
+                inp = _funnel_fixture(image_manifest=[
+                    {"cdn_url": "https://cdn.example.com/ok.png", "http_status": bad_status},
+                ])
+                found = page_qc._detect_broken_images(inp)  # noqa: SLF001
+                self.assertEqual(found, [], f"{bad_status!r} must never be treated as broken")
+
+                skip = page_qc.grade(inp, env={})  # SKIP path must also never crash
+                self.assertFalse(skip["available"])
+                self.assertEqual(skip["deterministic_findings"]["broken_images"], [])
+
+                r = page_qc.grade(inp, judge_fn=_high_judge)  # scored path
+                self.assertTrue(r["available"])
+                self.assertTrue(page_qc.validate_schema(r))
+
+    def test_json_native_infinity_and_nan_manifest_record_never_crashes(self):
+        """The exact production trigger: json.load('{"http_status": Infinity}')
+        parses to a Python float('inf') record with NO explicit test authoring —
+        this is what a real crawled images/manifest.json can contain by default."""
+        import json as _json
+        for token in ("Infinity", "-Infinity", "NaN"):
+            with self.subTest(token=token):
+                rec = _json.loads(f'{{"http_status": {token}, "cdn_url": "https://x/i.png"}}')
+                inp = _funnel_fixture(image_manifest=[rec])
+                found = page_qc._detect_broken_images(inp)  # noqa: SLF001
+                self.assertEqual(found, [])
+                r = page_qc.grade(inp, judge_fn=_high_judge)
+                self.assertTrue(r["available"])
+                self.assertTrue(page_qc.validate_schema(r))
+
+    def test_dom_html_exotic_non_string_shapes_never_crash(self):
+        exotic_dom = [None, 0, False, [], {}, {"nested": "dict"}, 12345, 1.5,
+                      float("inf"), float("nan"), [1, 2, 3], (1, 2)]
+        for bad_dom in exotic_dom:
+            with self.subTest(bad_dom=bad_dom):
+                inp = _funnel_fixture(dom_html=bad_dom)
+                found = page_qc._detect_broken_images(inp)  # noqa: SLF001
+                self.assertEqual(found, [])
+                r = page_qc.grade(inp, judge_fn=_high_judge)
+                self.assertTrue(r["available"])
+                self.assertTrue(page_qc.validate_schema(r))
+
+    def test_huge_but_finite_http_status_correctly_treated_as_broken_not_a_crash_guard(self):
+        """A huge-but-finite (non-overflowing) status — arbitrary-precision int OR
+        a giant-but-finite float — is real signal, not a malformed shape: >=400
+        must still correctly flag it broken. Neither path raises in CPython
+        (ints are arbitrary precision; int() of a large finite float just
+        produces a large int), so neither must be swallowed by the crash guard
+        the way Infinity/NaN/non-numeric strings are."""
+        for huge_status in (10 ** 20, 1e300):
+            with self.subTest(huge_status=huge_status):
+                inp = _funnel_fixture(image_manifest=[
+                    {"cdn_url": "https://cdn.example.com/huge.png", "http_status": huge_status},
+                ])
+                found = page_qc._detect_broken_images(inp)  # noqa: SLF001
+                self.assertEqual(found, ["https://cdn.example.com/huge.png"])
+
     # ---- (d) no-key box -> SKIP, never a numeric score, + qc_starved event ----
     def test_no_key_box_skips_honestly_never_fabricates(self):
         r = page_qc.grade(_funnel_fixture(), env={})
