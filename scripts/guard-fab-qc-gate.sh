@@ -25,6 +25,7 @@ INSTR="$ROOT/44-convert-and-flow-operator/INSTRUCTIONS.md"
 PRODUCER="$ROOT/shared-utils/fab_artifact.py"
 CROSSWALK_PY="$ROOT/shared-utils/persona_crosswalk.py"
 CROSSWALK_JSON="$ROOT/shared-utils/persona-crosswalk.json"
+PAGE_QC="$ROOT/shared-utils/page_qc.py"
 
 echo "═══ FAB-QC gate guard ═══"
 
@@ -93,6 +94,23 @@ has "$SOP" "BUILD-QC GATE"   && ok "v2-autonomous-build-sop.md §9 documents the
                              || bad "v2-autonomous-build-sop.md no longer documents the BUILD-QC GATE"
 has "$INSTR" "Step 9.3c"      && ok "INSTRUCTIONS.md documents Step 9.3c (FAB overlay)" \
                              || bad "INSTRUCTIONS.md no longer documents Step 9.3c"
+
+# 6. U25/B-U11 — Page-QC v2 (the semantic scorer FAB-QC cannot be) must NOT be
+#    silently weakened or removed either: the scorer exists, its threshold stays
+#    8.5 (same standing bar, never a new one), its six weights sum to 100, and the
+#    Skill-6 wrapper still calls it.
+[ -f "$PAGE_QC" ] && ok "Page-QC v2 scorer present: shared-utils/page_qc.py" \
+                  || bad "MISSING shared-utils/page_qc.py (U25/B-U11 semantic gate)"
+if python3 -c "import sys; sys.path.insert(0,'$ROOT/shared-utils'); import page_qc; assert sum(page_qc.W.values())==100 and page_qc.THRESHOLD==8.5" 2>/dev/null; then
+  ok "Page-QC v2 imports + weights sum to 100 + threshold 8.5"
+else
+  bad "Page-QC v2 failed import / weights!=100 / threshold!=8.5 (U25/B-U11 regressed)"
+fi
+if has "$FUNNEL_QC" "page_qc.py" && has "$FUNNEL_QC" "PAGE_QC_ENABLED"; then
+  ok "Skill-6 qc-built-funnel.sh wires the Page-QC v2 overlay (flag-gated)"
+else
+  bad "Skill-6 qc-built-funnel.sh no longer wires Page-QC v2 (page_qc.py / PAGE_QC_ENABLED missing)"
+fi
 
 echo ""
 if [ "$FAIL" -ne 0 ]; then
