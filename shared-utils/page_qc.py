@@ -191,10 +191,16 @@ def _detect_broken_images(inp: dict) -> list:
         if not isinstance(rec, dict):
             continue
         status = rec.get("http_status")
-        is_broken = bool(rec.get("broken")) or (status is not None and int(status) >= 400)
+        try:
+            status_broken = status is not None and int(status) >= 400
+        except (TypeError, ValueError):
+            status_broken = False  # non-numeric http_status: never crash the scorer
+        is_broken = bool(rec.get("broken")) or status_broken
         if is_broken:
             broken.append(rec.get("cdn_url") or rec.get("path") or "unknown")
     dom = inp.get("dom_html", "") or ""
+    if not isinstance(dom, str):
+        dom = ""  # non-string dom_html: never crash the scorer
     for m in re.finditer(r'data-img-broken="true"[^>]*?(?:src|data-src)="([^"]+)"', dom):
         broken.append(m.group(1))
     return broken

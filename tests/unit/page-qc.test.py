@@ -132,6 +132,26 @@ class TestPageQcCore(unittest.TestCase):
         found = page_qc._detect_broken_images(inp)  # noqa: SLF001
         self.assertEqual(found, ["/x/broken.png"])
 
+    # ---- regression: a non-numeric http_status + non-string dom_html (both
+    #      externally-sourced from images/manifest.json) must never crash the
+    #      scorer — SKIP and scored paths both handled gracefully -------------
+    def test_non_numeric_http_status_and_non_string_dom_html_never_crash(self):
+        inp = _funnel_fixture(
+            image_manifest=[{"cdn_url": "https://cdn.example.com/ok.png",
+                              "http_status": "not-a-number"}],
+            dom_html={"unexpected": "non-string dom"},
+        )
+        found = page_qc._detect_broken_images(inp)  # noqa: SLF001
+        self.assertEqual(found, [])  # non-numeric status is never treated as broken
+
+        skip = page_qc.grade(inp, env={})  # SKIP path
+        self.assertFalse(skip["available"])
+        self.assertEqual(skip["deterministic_findings"]["broken_images"], [])
+
+        r = page_qc.grade(inp, judge_fn=_high_judge)  # scored path
+        self.assertTrue(r["available"])
+        self.assertTrue(page_qc.validate_schema(r))
+
     # ---- (d) no-key box -> SKIP, never a numeric score, + qc_starved event ----
     def test_no_key_box_skips_honestly_never_fabricates(self):
         r = page_qc.grade(_funnel_fixture(), env={})
