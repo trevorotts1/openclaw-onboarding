@@ -37,6 +37,20 @@ name: persona-blend-match-quality-guard
 #       NOT silently strip them on workspace->repo sync — the exact gap this
 #       unit found and closed (persona_fleet.py was not previously watched by
 #       this workflow at all; added here because this unit touches it).
+#
+# A-U4 (conversion_goal as a first-class input, master-spec v2 §A.5) adds a
+# seventh check:
+#   (G) resolve_conversion_goal's source ladder (explicit operator/task field
+#       -> Skill 6 intake -> funnel-template-inferred -> ASK) resolves each
+#       rung's confirm-doctrine correctly; directive slot 5 is content-gated
+#       and never invents a fifth persona pick (_choose_closer_pid); a
+#       resolved goal lands as {conversion_goal, goal_source} on the bundle
+#       AND in the rationale decision receipt; an unresolved goal on a
+#       content task carries a goal ASK and gates a fixture write (no
+#       artifact); and — the regression this unit must never introduce — a
+#       caller that never supplies a goal (every pre-A-U4 call site) keeps
+#       its existing `confirm_required` behavior byte-for-byte
+#       (`goal_confirm_required` is additive, never folded into it).
 
 on:
   push:
@@ -46,6 +60,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
+      - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -67,6 +83,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
+      - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -128,3 +146,9 @@ jobs:
 
       - name: A-U3 — persona_fleet.py publish path carries the new fields (fail-first proven)
         run: python3 tests/unit/persona-fleet-schema14-sync.test.py
+
+      - name: persona-selector-v2.py compiles
+        run: python3 -m py_compile 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+
+      - name: A-U4 — conversion_goal first-class input (source ladder, slot 5, decision receipt, no-contamination)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py
