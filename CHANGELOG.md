@@ -1,3 +1,56 @@
+## [v20.0.26]  -  2026-07-14  -  n8n/self-hosted webhook tunnel SOP: ingress-rule merge into the box's existing tunnel, kills the impossible cloudflared tunnel login + second-connector dead ends (SOP-N8N-TUNNEL-01, QC 8.7)
+
+v20.0.26 — Merges `fix/n8n-tunnel-sop-round2`: a new universal SOP for any client agent operating a
+self-hosted service (a self-hosted n8n instance receiving inbound automation triggers is the flagship
+case) that needs to receive INBOUND webhooks over the public internet. Went through three QC rounds
+(7.8 -> 8.2 -> 8.7); round-3 closed the last blocking defect.
+
+- **Gap closed:** with no SOP for this, an agent's generic training knowledge reached for
+  `cloudflared tunnel login` (opens a browser, requires a Cloudflare account the client does not have
+  on the fleet's zone — a dead end that can never complete) or reached for provisioning a brand-new
+  tunnel/connector/token, duplicating what the box already has.
+- **`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` (new, 527 lines):** the correct
+  shape — Section 1 hard-guardrails `cloudflared tunnel login` outright; Section 2 documents the real
+  architecture (ONE operator-owned tunnel per box, multiple hostnames on one ingress array, a new
+  service gets one new ingress rule via `shared-utils/cc-tunnel-ingress.sh`'s GET->merge->PUT pattern,
+  never a full-replace); Section 3 is the only client-agent action — classify the connector
+  (`pm2 status cloudflare-tunnel`), prove the local origin (box-conditional: Mac `localhost`, VPS
+  compose-service DNS name or host-reachable address — never assumed), then escalate the five asks
+  (hostname, origin port+location, ingress-merge request, path-scoped Access bypass, root-app-stays-gated
+  confirmation) through the Rescue Rangers webhook (the only channel that crosses the box->operator
+  boundary; `AGENTS.md`'s cross-dept-request-template and bot-to-bot Telegram posts both explicitly do
+  NOT reach the operator); Section 4 confirms the existing PM2 connector rather than installing a new
+  one; Section 5 sets `WEBHOOK_URL` per install type (Mac launchd plist, VPS host-side Docker Compose —
+  a structural dead end for a client agent inside the OpenClaw container, routed to the operator as a
+  conditional ask #6, or VPS PM2 in the same container); Section 6 requires BOTH a webhook-path 404 (not
+  an Access 302) AND a UI-path 302 (not an unauthenticated 200/401/404) — either alone is a defect.
+- **Round-3 fix (this merge's HEAD):** closed a VPS-container dead end reintroduced inside the fix
+  itself — Section 5's only VPS instruction previously assumed a `docker` CLI/socket reachable from
+  inside the OpenClaw container, which does not exist there
+  (`platform/mac/service-selfheal/gateway-health-watchdog.sh:66-69`'s own box-type detection). Section 5
+  is now three explicit branches (Mac launchd, VPS host-side Compose service routed to the operator, VPS
+  PM2-in-same-container the agent can act on directly) plus a corrected ask #2 (port AND location, not
+  port alone) and a resurrect-hook persistence note for Docker-VPS `pm2 save`.
+- **`AGENTS.md`:** new Rescue Rangers cross-reference ("provisioning asks use this same channel") and a
+  new top-level guardrail section pointing at the SOP; one hardcoded operator name scrubbed (fleet-wide,
+  no-human-names).
+- **`32-command-center-setup/INSTALL.md` + `scripts/create-tunnel.sh`:** hardcoded operator name scrubbed
+  fleet-wide (Phase 6b architecture note, webhook messaging, gate check); `create-tunnel.sh` gains
+  explicit `ESCALATE:` guidance (never fall back to `cloudflared tunnel login`) on both its transport-
+  failure and webhook-failure exit paths.
+- **`38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md`:** new section
+  distinguishing Skill 38's own client-owned GHL-inbound tunnel from this SOP's operator-owned tunnel for
+  a self-hosted service, pointing at the new SOP.
+- **`universal-sops/_content-manifest.json`:** regenerated (`scripts/hash-universal-sops-manifest.py
+  --check` PASSES, 104 files, all sha256 match).
+- No client names, no human names, no secret values, no box identifiers. Cloudflare tunnel TOKEN is
+  referenced only by its env-var name (`CLOUDFLARE_TUNNEL_TOKEN`, distinct from Skill 38's own
+  client-owned `CLOUDFLARE_API_TOKEN`) and its canonical storage path — never a value. No model
+  added/removed/substituted; this is a pure documentation/SOP + escalation-plumbing change, no LLM/
+  provider wiring touched.
+- All 11 repo version markers rolled `v20.0.25` -> **v20.0.26** via `scripts/bump-version.sh` (`--check`
+  green before and after). `cc-compat.json` `commandCenter.pinnedTag` unchanged.
+
 ## [v20.0.25]  -  2026-07-14  -  Skill-6 board reconcile: `cc_board.py reconcile` closes the SKILL.md:607-608 blindness (U27/B-U13, both-train, Skill 6 Blended-Persona Kanban v2)
 
 v20.0.25 — Merges `skill6-v2/U27` (master unit U27, Section-B id B-U13) of the Skill 6 Blended-Persona Kanban v2 build (`ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md`), master spec v2 section B. Both-train unit — this repo carries the producer/reconcile side; the companion advisory probe lands on the same branch name in `blackceo-command-center`.
