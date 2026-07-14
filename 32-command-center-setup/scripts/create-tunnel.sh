@@ -19,7 +19,7 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   fi
 fi
 
-echo "[1/5] Requesting tunnel from Trevor's system..."
+echo "[1/5] Requesting tunnel from the operator's system..."
 # Build the JSON body with python3 so embedded quotes/spaces/special chars in
 # the company name or email are escaped correctly. The previous inline
 # double-quoted heredoc-style body (-d "{"clientName":...}") collapsed the
