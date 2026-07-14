@@ -265,6 +265,82 @@ class BookToPersonaMatcherSelectableE2E(unittest.TestCase):
         aud_pick = pb.match_audience_persona(catalog, "e2e-rejected-audience")
         self.assertIsNone(aud_pick, "rejected entry has no audiences[] to rank on — must be absent")
 
+    # ── 5. A-U3 (schema-1.4): scalar fields ride the SAME block end-to-end ──
+    def test_schema14_scalar_fields_stamped_on_new_persona(self):
+        """A-U3 ACCEPT (b): 'the Continuous-Integration end-to-end synthesis
+        test produces a NEW persona carrying all three fields.' A synthesized
+        book whose '## Duality Tags' block includes emotional_register/
+        audience_resonance/conversion_style (vocab-first, chosen from a
+        populated catalog vocab) lands all three on the orchestrator-written
+        entry, round-trips through load_catalog(), and validates clean under
+        the SAME persona_blend.validate_catalog_tags rulebook the matcher
+        reads through at select-time."""
+        self._seed_categories(
+            audience_tags=["e2e-schema14-audience"], topic_tags=["e2e-schema14-topic"])
+        self.catpath.write_text(json.dumps({
+            **json.loads(self.catpath.read_text()),
+            "schemaVersion": "1.4",
+            "emotionalRegisterTags": ["tough-love"],
+            "audienceResonanceTags": ["challenged-to-rise"],
+            "conversionStyleTags": ["challenge-close"],
+        }, indent=2))
+        self._mk_blueprint("e2e-schema14", duality_json={
+            "audiences": ["e2e-schema14-audience"],
+            "topics": ["e2e-schema14-topic"],
+            "voice_style": {"summary": "Direct, unsentimental, demanding."},
+            "usable_as": ["audience", "topic", "task"],
+            "emotional_register": "tough-love",
+            "audience_resonance": "challenged-to-rise",
+            "conversion_style": "challenge-close",
+        })
+        outcome = orch._phase6_register_categories(
+            self.book, "e2e-schema14", appendix_status="COMPLETE")
+        self.assertEqual(outcome, "ok")
+
+        catalog = self._load_catalog_via_persona_blend()
+        entry = catalog["personas"].get("e2e-schema14")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.get("emotional_register"), "tough-love")
+        self.assertEqual(entry.get("audience_resonance"), "challenged-to-rise")
+        self.assertEqual(entry.get("conversion_style"), "challenge-close")
+
+        result = pb.validate_catalog_tags(catalog)
+        self.assertTrue(result["ok"], f"must validate clean: {result['errors']}")
+        self.assertEqual(result["schema"], "1.4")
+
+    def test_schema14_out_of_vocab_scalar_never_selectable_nor_written(self):
+        """NO-WEAKENING twin of case 3, for the new scalar fields: an
+        out-of-vocab emotional_register is rejected — the WHOLE duality
+        block is omitted (all-or-nothing, matching the pre-A-U3 contract),
+        not just the offending field."""
+        self._seed_categories(
+            audience_tags=["e2e-s14-bad-audience"], topic_tags=["e2e-s14-bad-topic"])
+        self.catpath.write_text(json.dumps({
+            **json.loads(self.catpath.read_text()),
+            "emotionalRegisterTags": ["warm-encouragement"],  # does NOT include 'tough-love'
+        }, indent=2))
+        self._mk_blueprint("e2e-schema14-bad", duality_json={
+            "audiences": ["e2e-s14-bad-audience"],
+            "topics": ["e2e-s14-bad-topic"],
+            "voice_style": {"summary": "x"},
+            "usable_as": ["audience", "topic", "task"],
+            "emotional_register": "tough-love",  # NOT in the seeded vocab
+        })
+        outcome = orch._phase6_register_categories(
+            self.book, "e2e-schema14-bad", appendix_status="COMPLETE")
+        self.assertEqual(outcome, "ok", "core registration must survive a schema-1.4 rejection")
+        self.assertIn("e2e-schema14-bad", orch._DUALITY_TAG_WRITE_FAILURES)
+
+        catalog = self._load_catalog_via_persona_blend()
+        entry = catalog["personas"].get("e2e-schema14-bad")
+        self.assertIsNotNone(entry)
+        # all-or-nothing: even the IN-vocab audiences/topics are omitted too.
+        self.assertNotIn("emotional_register", entry)
+        self.assertNotIn("audiences", entry)
+
+        topic_pick = pb.match_topic_persona(catalog, "content about e2e-s14-bad-topic")
+        self.assertIsNone(topic_pick, "rejected entry has no topics[] to rank on — must be absent")
+
     # ── 4. one rulebook, not two ────────────────────────────────────────────
     def test_round_tripped_catalog_validates_clean_under_the_same_rulebook(self):
         self._seed_categories(

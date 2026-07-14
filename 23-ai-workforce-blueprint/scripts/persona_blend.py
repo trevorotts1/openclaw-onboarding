@@ -279,11 +279,24 @@ def validate_catalog_tags(catalog: dict) -> dict:
       • topics[]    ⊆ top-level topicTags vocab   (when that vocab is present)
       • usable_as[] ⊆ USABLE_AS_ENUM
       • voice_style has the required `summary` when voice_style is present
+      • emotional_register ⊆ top-level emotionalRegisterTags vocab (schema 1.4,
+        A-U3 — when that vocab is present; same subset-of-controlled-vocab
+        pattern as audiences ⊆ audienceTags above, one string per persona)
+      • audience_resonance ⊆ top-level audienceResonanceTags vocab (schema 1.4,
+        A-U3 — same pattern)
+      • conversion_style   ⊆ top-level conversionStyleTags vocab (schema 1.4,
+        A-U3 — same pattern; the operator-pinned canonical set is
+        story-close/stack-close/logic-close/invitation-close/challenge-close,
+        shipped as DATA in the catalog's conversionStyleTags, never hard-coded
+        here, so the vocab stays a one-place edit like every other tag family)
 
     On a pre-enrichment catalog (schema 1.2 — no audienceTags/topicTags/enriched
     personas) this is a NO-OP that returns ok=True with note='pre-enrichment', so
-    wiring it into a gate never turns a 1.2 box RED. The integrator that lands the
-    1.3 catalog (and the CC) call this to keep the vocab honest.
+    wiring it into a gate never turns a 1.2 box RED. A schema-1.3 catalog that
+    predates the A-U3 fields is likewise unaffected — the three new checks below
+    degrade to no-ops exactly like audiences/topics do when their vocab is absent
+    AND no persona carries the field yet. The integrator that lands the 1.3/1.4
+    catalog (and the CC) call this to keep the vocab honest.
 
     Returns {ok, schema, errors[], checked}.
     """
@@ -291,12 +304,23 @@ def validate_catalog_tags(catalog: dict) -> dict:
     personas = _persona_meta(catalog)
     aud_vocab = set(catalog.get("audienceTags") or []) if isinstance(catalog, dict) else set()
     top_vocab = set(catalog.get("topicTags") or []) if isinstance(catalog, dict) else set()
+    # A-U3 / schema-1.4: three additive scalar (single-string) fields, each
+    # validated against its own top-level controlled vocabulary — the exact
+    # same subset-of-vocab pattern audiences[]/topics[] already use above,
+    # just scalar instead of list-valued (persona_blend.py:317-324 pattern).
+    reg_vocab = set(catalog.get("emotionalRegisterTags") or []) if isinstance(catalog, dict) else set()
+    res_vocab = set(catalog.get("audienceResonanceTags") or []) if isinstance(catalog, dict) else set()
+    close_vocab = set(catalog.get("conversionStyleTags") or []) if isinstance(catalog, dict) else set()
 
     enriched = any(
-        isinstance(v, dict) and (v.get("audiences") or v.get("topics") or v.get("voice_style"))
+        isinstance(v, dict) and (
+            v.get("audiences") or v.get("topics") or v.get("voice_style")
+            or v.get("emotional_register") or v.get("audience_resonance")
+            or v.get("conversion_style")
+        )
         for v in personas.values()
     )
-    if not enriched and not aud_vocab and not top_vocab:
+    if not enriched and not aud_vocab and not top_vocab and not reg_vocab and not res_vocab and not close_vocab:
         return {"ok": True, "schema": schema or "1.2", "errors": [],
                 "checked": 0, "note": "pre-enrichment (no additive tags present)"}
 
@@ -325,6 +349,27 @@ def validate_catalog_tags(catalog: dict) -> dict:
         vs = pinfo.get("voice_style")
         if isinstance(vs, dict) and not str(vs.get("summary", "")).strip():
             errors.append(f"{pid}: voice_style.summary is required and missing")
+
+        # A-U3 / schema-1.4 scalar fields — each a required-non-empty-string
+        # when present, additionally vocab-checked when that vocab is populated.
+        er = pinfo.get("emotional_register")
+        if er is not None:
+            if not isinstance(er, str) or not er.strip():
+                errors.append(f"{pid}: emotional_register must be a non-empty string")
+            elif reg_vocab and er not in reg_vocab:
+                errors.append(f"{pid}: emotional_register {er!r} not in emotionalRegisterTags vocab")
+        ar = pinfo.get("audience_resonance")
+        if ar is not None:
+            if not isinstance(ar, str) or not ar.strip():
+                errors.append(f"{pid}: audience_resonance must be a non-empty string")
+            elif res_vocab and ar not in res_vocab:
+                errors.append(f"{pid}: audience_resonance {ar!r} not in audienceResonanceTags vocab")
+        cs = pinfo.get("conversion_style")
+        if cs is not None:
+            if not isinstance(cs, str) or not cs.strip():
+                errors.append(f"{pid}: conversion_style must be a non-empty string")
+            elif close_vocab and cs not in close_vocab:
+                errors.append(f"{pid}: conversion_style {cs!r} not in conversionStyleTags vocab")
     return {"ok": not errors, "schema": schema or "1.3", "errors": errors,
             "checked": checked}
 

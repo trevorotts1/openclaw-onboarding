@@ -27,6 +27,16 @@ name: persona-blend-match-quality-guard
 #       pre-A-U2 (v1) directive on a pre-enrichment (schema-1.2) catalog —
 #       plus the P4-02 four-slot synergy suite, which this unit's change must
 #       never disturb.
+#
+# A-U3 (schema-1.4, emotional_register/audience_resonance/conversion_style)
+# adds a sixth check:
+#   (F) the three new fields carry N/N coverage on the shipped catalog,
+#       validate_catalog_tags() agrees with the extended vocab, the D6
+#       pipeline stamps them on a newly-synthesized persona (all-or-nothing
+#       with the v1.3 fields), and the publish path (persona_fleet.py) does
+#       NOT silently strip them on workspace->repo sync — the exact gap this
+#       unit found and closed (persona_fleet.py was not previously watched by
+#       this workflow at all; added here because this unit touches it).
 
 on:
   push:
@@ -41,9 +51,14 @@ on:
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
       - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
       - "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
+      - tests/unit/schema14-enrichment-complete.test.py
+      - tests/unit/persona-fleet-schema14-sync.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
   pull_request:
     paths:
@@ -57,9 +72,14 @@ on:
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
       - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
       - "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
+      - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
+      - tests/unit/schema14-enrichment-complete.test.py
+      - tests/unit/persona-fleet-schema14-sync.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
 
 jobs:
@@ -102,3 +122,9 @@ jobs:
         run: |
           chmod +x tests/unit/persona-duality-tags-pipeline.test.sh
           bash tests/unit/persona-duality-tags-pipeline.test.sh
+
+      - name: A-U3 — schema-1.4 enrichment complete (N/N coverage + extended-vocab gate)
+        run: python3 tests/unit/schema14-enrichment-complete.test.py
+
+      - name: A-U3 — persona_fleet.py publish path carries the new fields (fail-first proven)
+        run: python3 tests/unit/persona-fleet-schema14-sync.test.py
