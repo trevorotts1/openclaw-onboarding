@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from typing import Any, Callable, Iterable
 
@@ -715,11 +716,17 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
                  threshold: float = DEFAULT_THRESHOLD,
                  top_k: int = 5,
                  reranker: "EmbeddingReranker | None" = None,
-                 intent_mode: str | None = None) -> dict:
+                 intent_mode: str | None = None,
+                 persona_bundle: dict | None = None) -> dict:
     """Classify -> detect intent mode -> score every template -> FLEXIBLE decision.
 
     decision is one of HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE / CREATE_NEW.
     The template is NEVER imposed onto a user's explicit desire; the matcher never blocks.
+
+    ``persona_bundle`` (B-U1/U15's normalized receipt) threads through to
+    ``instantiate_pages`` so each instantiated page carries a per-page
+    blend_directive (B-U2/U16). Optional and additive — omitting it is
+    byte-identical to the pre-B-U2 behavior.
 
     Backward compat: passing ``request["explicit_funnel"]`` or ``request["just_do_it"]``
     still works exactly as in v14.6.0 — those fields are honoured by detect_mode().
@@ -774,7 +781,7 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
     if tmpl:
         persona = catalog.resolve_persona(tmpl["persona"])
         if flex["build_from_template"] or mode == MODE_EXPLICIT:
-            pages = instantiate_pages(tmpl)
+            pages = instantiate_pages(tmpl, bundle=persona_bundle)
 
     rationale = _rationale_flex(mode, decision, best, threshold, flex)
     return {
@@ -842,17 +849,131 @@ def _rationale(best: dict | None, threshold: float, decision: str,
 
 
 # --------------------------------------------------------------------------- #
+# B-U2 / U16 — per-page blend directive (converges the template's persona onto
+# the ONE unified persona-blend system: the template persona is DEMOTED to a
+# crosswalk-resolved TOPIC/craft hint, never a second voice authority; the
+# VOICE stays the ONE task-level persona from the B-U1 bundle across every
+# page). Lazy-loaded and fully fail-soft: a repo layout where shared-utils or
+# 23-ai-workforce-blueprint aren't reachable simply skips the blend fields —
+# `copy_persona` (structure/craft) keeps working exactly as before.
+# --------------------------------------------------------------------------- #
+_CROSSWALK_CACHE: "tuple | None" = None
+_BLEND_MODULE_CACHE: "Any | bool | None" = None
+
+
+def _load_crosswalk_once():
+    """Lazy-load shared-utils/persona_crosswalk.py once. Returns
+    (module, canonical_set, crosswalk_dict) or None when unreachable."""
+    global _CROSSWALK_CACHE
+    if _CROSSWALK_CACHE is not None:
+        return _CROSSWALK_CACHE or None
+    try:
+        _tools_dir = os.path.dirname(os.path.abspath(__file__))
+        _shared = os.path.normpath(os.path.join(_tools_dir, "..", "..", "shared-utils"))
+        if _shared not in sys.path:
+            sys.path.insert(0, _shared)
+        import persona_crosswalk as _pcw  # type: ignore
+        canonical = _pcw.load_canonical()
+        crosswalk = _pcw.load_crosswalk()
+        _CROSSWALK_CACHE = (_pcw, canonical, crosswalk)
+    except Exception:  # noqa: BLE001 — the per-page blend directive is advisory
+        _CROSSWALK_CACHE = False
+    return _CROSSWALK_CACHE or None
+
+
+def _load_blend_module():
+    """Lazy-load 23-ai-workforce-blueprint/scripts/persona_blend.py once."""
+    global _BLEND_MODULE_CACHE
+    if _BLEND_MODULE_CACHE is not None:
+        return _BLEND_MODULE_CACHE or None
+    try:
+        _tools_dir = os.path.dirname(os.path.abspath(__file__))
+        _scripts = os.path.normpath(
+            os.path.join(_tools_dir, "..", "..", "23-ai-workforce-blueprint", "scripts"))
+        if _scripts not in sys.path:
+            sys.path.insert(0, _scripts)
+        import persona_blend as _pb  # type: ignore
+        _BLEND_MODULE_CACHE = _pb
+    except Exception:  # noqa: BLE001
+        _BLEND_MODULE_CACHE = False
+    return _BLEND_MODULE_CACHE or None
+
+
+def _build_page_blend(page: dict, template_persona_ref: str, bundle: dict, xwalk: tuple) -> dict:
+    """Resolve this PAGE's crosswalk topic hint + compose its blend_directive
+    under the bundle's ONE task-level voice. Different pages -> different
+    topic (and directive text); the voice_persona_id is constant across
+    pages (per-page SCOPE, one task-level VOICE)."""
+    _pcw, canonical, crosswalk = xwalk
+    page_topic_pid = None
+    if template_persona_ref:
+        resolved, _how = _pcw.resolve(template_persona_ref, canonical, crosswalk)
+        page_topic_pid = resolved
+    if not page_topic_pid:
+        page_topic_pid = bundle.get("topic_persona_id")
+
+    voice_pid = bundle.get("voice_persona_id")
+    audience_id = bundle.get("audience_id")
+    audience_label = bundle.get("audience_label") or ""
+    content_task = bundle.get("content_task")
+    if content_task is None:
+        content_task = True
+    task_personas = bundle.get("task_personas") or []
+    task_pid = next((tp.get("persona_id") for tp in task_personas
+                     if isinstance(tp, dict) and tp.get("persona_id")), None)
+
+    # Cheap, catalog-free collapse check (mirrors decide_collapse's first,
+    # zero-cost branch): the SAME persona covering audience + this page's
+    # topic collapses; anything else stays a two-persona blend.
+    collapsed = bool(audience_id and page_topic_pid and audience_id == page_topic_pid)
+    collapsed_pid = page_topic_pid if collapsed else None
+
+    directive = None
+    _pb = _load_blend_module()
+    if _pb is not None and voice_pid:
+        topic_text = page.get("purpose") or page.get("name") or ""
+        directive = _pb.build_blend_directive(
+            audience_id, page_topic_pid, topic_text, collapsed, collapsed_pid,
+            content_task, audience_label, task_persona_pid=task_pid,
+        )
+
+    return {
+        "blend_directive": directive,
+        "voice_persona_id": voice_pid,
+        "topic_persona_id": page_topic_pid,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Instantiate (template -> ghl_builder page plan)
 # --------------------------------------------------------------------------- #
-def instantiate_pages(tmpl: dict) -> list[dict]:
+def instantiate_pages(tmpl: dict, *, bundle: dict | None = None) -> list[dict]:
     """Turn a matched template's pageStructure into a build plan ready for
     ``ghl_builder.build_manifest`` (the persona that writes each page's copy is
-    attached so the copy step pulls from the right swipe-file voice)."""
-    persona_label = tmpl["persona"].get("label", "")
+    attached so the copy step pulls from the right swipe-file voice).
+
+    When ``bundle`` (the normalized persona-bundle-acquisition-ladder receipt,
+    B-U1/U15 — ``task['persona_bundle']``) is supplied AND carries a usable
+    ``voice_persona_id``, each page ALSO carries a per-page
+    ``blend_directive`` / ``voice_persona_id`` / ``topic_persona_id`` (B-U2 /
+    U16): the template persona is DEMOTED to a crosswalk-resolved topic/craft
+    hint feeding the blend's per-page TOPIC slot, while the VOICE stays the
+    ONE task-level persona from the bundle across every page.
+    ``copy_persona`` is UNCHANGED for back-compat (``ghl_survey_builder`` keeps
+    reading it verbatim) — its meaning is redefined as the topic/craft hint,
+    never the voice authority. Additive-only: omitting ``bundle`` is
+    byte-identical to the pre-B-U2 behavior."""
+    persona = tmpl["persona"]
+    persona_label = persona.get("label", "")
+    persona_ref = persona.get("id") or persona_label
+    usable_bundle = (bundle if isinstance(bundle, dict) and bundle.get("voice_persona_id")
+                     else None)
+    xwalk = _load_crosswalk_once() if usable_bundle else None
+
     pages = []
     for p in tmpl["pageStructure"]:
         path = _slug(p["page"]) or f"step-{p['order']}"
-        pages.append({
+        page = {
             "order": p["order"],
             "name": p["page"],
             "path": path,
@@ -862,7 +983,10 @@ def instantiate_pages(tmpl: dict) -> list[dict]:
             "skill44Widgets": p.get("skill44Widgets", []),
             "copy_persona": persona_label,
             "copy_scripts": tmpl.get("scripts", ""),
-        })
+        }
+        if usable_bundle and xwalk is not None:
+            page.update(_build_page_blend(page, persona_ref, usable_bundle, xwalk))
+        pages.append(page)
     return pages
 
 
@@ -1028,8 +1152,14 @@ def step0_match(task: dict, evidence_root: str, *,
             "explicit_funnel": task.get("explicit_funnel", ""),
             "just_do_it": bool(task.get("just_do_it")),
         }
+        # B-U2/U16: thread the task's acquired persona bundle (B-U1/U15's
+        # normalized routing/persona-bundle-receipt.json, if any) through to
+        # instantiate_pages so each page carries a per-page blend_directive.
+        _task_bundle = task.get("persona_bundle")
+        _task_bundle = _task_bundle if isinstance(_task_bundle, dict) else None
         decision = match_funnel(request, catalog, threshold=threshold, reranker=reranker,
-                                intent_mode=intent_mode or task.get("intent_mode"))
+                                intent_mode=intent_mode or task.get("intent_mode"),
+                                persona_bundle=_task_bundle)
 
         # persist
         routing = os.path.join(evidence_root, "routing")

@@ -161,3 +161,116 @@ def test_step0_stamps_funnel_template_id(tmp_path):
         assert task.get("funnel_template_id"), "funnel_template_id must be stamped on the task"
     receipt = tmp_path / "routing" / "match-decision.json"
     assert receipt.is_file(), "match-decision.json receipt must be written for the QC gate"
+
+
+# ── B-U2 / U16: per-page build_blend_directive; template persona demoted to a
+# crosswalk-resolved topic hint; copy_persona back-compat ────────────────────
+
+def _synthetic_template(persona_id: str = "funnel-architect",
+                        persona_label: str = "Funnel Architect") -> dict:
+    return {
+        "id": "synthetic-two-step", "group": "synthetic", "name": "Synthetic Two-Step",
+        "persona": {"id": persona_id, "label": persona_label, "author": "", "script": "", "detail": ""},
+        "pageStructure": [
+            {"order": 1, "page": "Optin", "purpose": "capture the lead's email",
+             "blocks": ["hero", "form"], "skill44Widgets": []},
+            {"order": 2, "page": "Thank You", "purpose": "confirm the booked call",
+             "blocks": ["cta"], "skill44Widgets": []},
+        ],
+        "scripts": "",
+    }
+
+
+_GUARDRAIL_MARK = "STYLE-INSPIRED, NEVER IMPERSONATION"
+
+
+def test_instantiate_pages_without_bundle_is_legacy_unchanged():
+    tmpl = _synthetic_template()
+    pages = fm.instantiate_pages(tmpl)
+    for p in pages:
+        assert p["copy_persona"] == "Funnel Architect"
+        assert "blend_directive" not in p
+        assert "voice_persona_id" not in p
+        assert "topic_persona_id" not in p
+
+
+def test_instantiate_pages_with_bundle_adds_blend_fields():
+    tmpl = _synthetic_template()
+    bundle = {
+        "voice_persona_id": "hormozi-100m-offers",
+        "topic_persona_id": "miller-building-storybrand",
+        "audience_id": None, "audience_label": "solo-founder coaches",
+        "confirm_required": False, "content_task": True,
+        "task_personas": [{"seq": 1, "persona_id": "hormozi-100m-offers"}],
+    }
+    pages = fm.instantiate_pages(tmpl, bundle=bundle)
+    for p in pages:
+        assert p["voice_persona_id"] == "hormozi-100m-offers"
+        assert p["blend_directive"], "every page must carry a non-empty blend_directive"
+        assert _GUARDRAIL_MARK in p["blend_directive"], (
+            "every blend_directive must end in the verbatim GUARDRAIL_CLAUSE"
+        )
+        # copy_persona is UNCHANGED — back-compat topic/craft hint, never the voice.
+        assert p["copy_persona"] == "Funnel Architect"
+
+
+def test_instantiate_pages_crosswalk_resolves_to_canonical_id():
+    tmpl = _synthetic_template(persona_id="funnel-architect")
+    bundle = {"voice_persona_id": "hormozi-100m-offers", "confirm_required": False}
+    pages = fm.instantiate_pages(tmpl, bundle=bundle)
+    xwalk = fm._load_crosswalk_once()
+    assert xwalk is not None, "persona_crosswalk must be reachable for this test to be meaningful"
+    _pcw, canonical, _crosswalk = xwalk
+    for p in pages:
+        assert p["topic_persona_id"] in canonical, (
+            f"page topic_persona_id {p['topic_persona_id']!r} must resolve to a real "
+            "persona-categories.json id"
+        )
+    # 'funnel-architect' is a known slug_map entry -> brunson-marketing-secrets-blackbook.
+    assert pages[0]["topic_persona_id"] == "brunson-marketing-secrets-blackbook"
+
+
+def test_instantiate_pages_two_purposes_distinct_directives_same_voice():
+    tmpl = _synthetic_template()
+    bundle = {"voice_persona_id": "hormozi-100m-offers", "confirm_required": False}
+    pages = fm.instantiate_pages(tmpl, bundle=bundle)
+    assert len(pages) == 2
+    assert pages[0]["blend_directive"] != pages[1]["blend_directive"], (
+        "two pages with different purposes must produce two distinct directives"
+    )
+    assert pages[0]["voice_persona_id"] == pages[1]["voice_persona_id"], (
+        "the VOICE stays the ONE task-level persona across every page"
+    )
+
+
+def test_instantiate_pages_ghl_survey_builder_fixture_bit_identical():
+    # ghl_survey_builder reads task['copy_persona'] / pages[i]['copy_persona'] only —
+    # a bundle-carrying run must not change what that consumer sees.
+    tmpl = _synthetic_template()
+    no_bundle_pages = fm.instantiate_pages(tmpl)
+    bundle = {"voice_persona_id": "hormozi-100m-offers", "confirm_required": False}
+    with_bundle_pages = fm.instantiate_pages(tmpl, bundle=bundle)
+    for a, b in zip(no_bundle_pages, with_bundle_pages):
+        assert a["copy_persona"] == b["copy_persona"]
+        assert a["order"] == b["order"]
+        assert a["path"] == b["path"]
+        assert a["purpose"] == b["purpose"]
+        assert a["blocks"] == b["blocks"]
+
+
+def test_instantiate_pages_missing_voice_id_skips_blend_fields():
+    # A bundle without a usable voice_persona_id (e.g. an 'absent'-source
+    # normalized receipt) must never add blend fields — legacy shape preserved.
+    tmpl = _synthetic_template()
+    pages = fm.instantiate_pages(tmpl, bundle={"voice_persona_id": None})
+    for p in pages:
+        assert "blend_directive" not in p
+
+
+def test_match_funnel_threads_persona_bundle_to_pages(catalog):
+    bundle = {"voice_persona_id": "hormozi-100m-offers", "confirm_required": False}
+    d = fm.match_funnel({"text": "build a survey quiz funnel that segments my list"},
+                        catalog, persona_bundle=bundle)
+    if d.get("pages"):
+        for p in d["pages"]:
+            assert p.get("voice_persona_id") == "hormozi-100m-offers"
