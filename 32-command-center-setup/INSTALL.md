@@ -688,7 +688,7 @@ The agent verifies that each department workspace has the required memory archit
 4. memory-core semantic memory (built-in backend, no external dependencies)
 5. Cognee / graph layer when enabled for the workspace
 
-**Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with Trevor's private memory or another client's workspace.
+**Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with the operator's private memory or another client's workspace.
 
 ### 7.4 Test Dashboard
 The agent verifies:
