@@ -63,13 +63,15 @@ Internet  →  Cloudflare DNS  →  THIS BOX'S EXISTING cloudflared connector  �
                           (protects the UI; bypassed for webhook paths only)
 ```
 
-- The fleet runs **ONE cloudflared tunnel per box, carrying multiple hostnames on a single ingress
-  array** — see `shared-utils/cc-tunnel-ingress.sh` lines 8-16 for the canonical shape (the Command
-  Center dashboard, the OpenClaw gateway, the podcast board, and now this service, all as sibling
-  rules on the SAME tunnel). A self-hosted service that needs a new public hostname does **not** get
-  its own tunnel, its own token, or a second connector process — it gets **one new ingress rule**
-  added to the box's existing tunnel. No new tunnel, no new token, no new connector, for the normal
-  case (Section 4.1).
+- The fleet runs **ONE OPERATOR-OWNED cloudflared tunnel per box** (a box that has also completed
+  Skill 38 additionally runs a SECOND, client-owned connector for the GHL-inbound gateway — see
+  Section 4.1's note on that; it is never the tunnel this SOP touches), **carrying multiple hostnames
+  on a single ingress array** — see `shared-utils/cc-tunnel-ingress.sh` lines 8-16 for the canonical
+  shape (the Command Center dashboard, the OpenClaw gateway, the podcast board, and now this service,
+  all as sibling rules on the SAME operator-owned tunnel). A self-hosted service that needs a new
+  public hostname does **not** get its own tunnel, its own token, or a second connector process — it
+  gets **one new ingress rule** added to the box's existing operator-owned tunnel. No new tunnel, no
+  new token, no new connector, for the normal case (Section 4.1).
 - The connector authenticates with a **tunnel TOKEN**, never an interactive login — that's how it got
   onto the box in the first place, via Command Center setup
   (`32-command-center-setup/scripts/create-tunnel.sh`, running under PM2 as `cloudflare-tunnel` on
@@ -81,21 +83,28 @@ Internet  →  Cloudflare DNS  →  THIS BOX'S EXISTING cloudflared connector  �
   never a full-replace `PUT`, which would silently delete the CC dashboard / gateway / podcast rules
   already sharing that array. The client agent's only job on the box itself is to confirm the
   connector is still up (Section 4.1) — there is nothing to install.
-- **Why this can't go through Skill 38's client-owned Cloudflare token instead.** A box that has
-  completed Skill 38 has its own client-owned `CLOUDFLARE_API_TOKEN` (see
+- **Why this can't go through Skill 38's client-owned Cloudflare token instead — it is not merely
+  forbidden, it is structurally impossible.** A box that has completed Skill 38 has its own
+  client-owned `CLOUDFLARE_API_TOKEN` (see
   `38-conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md`, Part
-  4), and that token's permission set (`Cloudflare Tunnel: Edit`, `Access: Apps and Policies: Edit`,
-  `DNS: Edit`) is broad enough that an agent could technically self-serve this hostname without asking
-  anyone. **Do not do this.** That token lives on the CLIENT's own Cloudflare account and zone, and it
-  provisions the OpenClaw gateway's own GHL-inbound tunnel there — a different tunnel, on a different
-  account, for a different purpose. This SOP's hostname has to land on the box's EXISTING
-  **operator-owned** tunnel (on `zerohumanworkforce.com` or another fleet zone) because that is the
-  only tunnel the fleet's shared-ingress tooling (`shared-utils/cc-tunnel-ingress.sh`), QC scripts,
-  and Access policies know how to reason about. Provisioning a second, client-zone tunnel for this
-  service would technically work in isolation but would be invisible to all of that — exactly the
-  divergent, un-modeled tunnel Section 0 exists to prevent. If both this SOP and Skill 38 are live on
-  the same box, they are two DIFFERENT tunnels on two DIFFERENT Cloudflare accounts for two DIFFERENT
-  purposes. Never merge them, and never reach for the Skill 38 token to solve this SOP's problem.
+  4), issued on the CLIENT's OWN, separate Cloudflare account — the one the client created for Skill
+  38 and connected to their own domain bought at GoDaddy (see the field guide, Part 1). That token
+  **cannot see, enumerate, or write** the operator's `zerohumanworkforce.com` zone or the operator's
+  Command Center tunnel: Cloudflare scopes every API token to the account that issued it, and
+  `38-conversational-ai-system/scripts/13-create-cloudflare-tunnel.sh` (Section A "Resolve account id"
+  / Section B "Resolve zone id") uses the token to resolve `$API/accounts` and
+  `$API/zones?name=$PARENT_DOMAIN` — both calls return only what THAT token's own account can see,
+  never the operator's separate account. If an agent reached for it anyway, that same script's
+  find-or-create logic (Section C "Find-or-create tunnel") would not fail loudly — it would silently
+  succeed at creating something, just the WRONG thing: a brand-new tunnel named `openclaw-<route_id>`
+  inside the CLIENT's OWN account, on the CLIENT's OWN domain, not a `zerohumanworkforce.com`
+  subdomain, and completely invisible to `shared-utils/cc-tunnel-ingress.sh`'s guard, the fleet's QC
+  scripts, and every operator-managed Access policy — exactly the divergent, un-modeled tunnel
+  Section 0 exists to prevent, and it would look like it "worked" while never being reachable the way
+  the rest of the fleet expects. If both this SOP and Skill 38 are live on the same box, they are two
+  DIFFERENT tunnels on two DIFFERENT Cloudflare accounts for two DIFFERENT purposes. Never merge them,
+  and never reach for the Skill 38 token to solve this SOP's problem — not because it is against the
+  rules, but because it cannot land on the right account no matter how it is used.
 - **Cloudflare Access**, if applied to the whole hostname, puts every request behind a login wall —
   including inbound webhook callers (Telegram, GHL, Stripe, the self-hosted service's own automation
   partners) that cannot authenticate interactively. An Access policy scoped to the whole hostname
@@ -120,21 +129,86 @@ Rescue Rangers is normally framed as "a problem you cannot solve" — this is st
 shape (something on this box needs an operator-side action it cannot take itself), so it is the
 correct channel for a provisioning ask too, not only for a bug report.
 
-Send exactly these five asks — packed into the `problem` field of the payload below, word for word:
+Do TWO things, in this order, before copying either payload template below: **classify the connector
+(3.1)**, then **determine and prove the origin (3.2)**. Each payload asserts a state you must have
+actually observed by then — never a state you are about to observe or assume.
+
+### 3.1 — Classify the connector FIRST
+
+Run both, and record the ACTUAL output — this is the same check Section 4.1/4.2 use to confirm the
+connector post-provisioning; running it here, first, is what makes the payload's `alreadyTried` field
+true instead of assumed:
+
+```bash
+pm2 status cloudflare-tunnel        # exact status string, e.g. "online", "errored", "stopped"
+pm2 list | grep cloudflare-tunnel   # confirms the process exists at all
+```
+
+- **Process exists and shows `online`** → the **NORMAL** case (Section 4.1). Use **Payload (A)**.
+- **Process exists but is NOT `online`** (stopped, errored) → **not** greenfield either — use the
+  "connector not running" row in Section 7; still escalate through this section, but do not write
+  "online" into `alreadyTried`.
+- **`pm2 list | grep cloudflare-tunnel` returns nothing at all** → the **GREENFIELD** case
+  (Section 4.2) — this box has never had the operator-owned tunnel. Use **Payload (B)**. Never copy
+  Payload (A) here — its `alreadyTried` text asserts the connector is online, which would be false.
+
+### 3.2 — Determine and PROVE the local origin (box-type-conditional — never assume `localhost`)
+
+The origin is **not** always `http://localhost:<PORT>` — that is only true when the cloudflared
+connector and the self-hosted service share the same host network namespace:
+
+- **Mac** (cloudflared runs under PM2 natively, directly on the same Mac that runs the service): the
+  origin is `http://localhost:<PORT>` — connector and service share the same loopback.
+- **Hostinger Docker VPS** (cloudflared runs under PM2 **inside the OpenClaw container** —
+  `32-command-center-setup/INSTALL.md` Phase 6c): `localhost` from inside that container is the
+  container's OWN loopback — it is neither the VPS host's loopback nor another container's. The origin
+  must be an address reachable **from inside that same container**:
+  - If the self-hosted service is a sibling container in the SAME docker-compose project as the
+    OpenClaw container, sharing its network, the origin is that compose service's DNS name, e.g.
+    `http://<compose-service-name>:<PORT>`.
+  - If it runs elsewhere on the VPS (a separate compose project, or directly on the host), `localhost`
+    will NOT reach it from inside the OpenClaw container — the origin has to be a host-reachable
+    address from inside that container instead.
+
+  **Do not guess — prove it**, run from inside the exact context the connector runs in:
+  ```bash
+  # Mac: run directly on the host
+  curl -sS -o /dev/null -w '%{http_code}\n' http://<candidate-origin>
+
+  # VPS: run INSIDE the OpenClaw container (same network namespace as the connector)
+  docker compose exec <openclaw-service> curl -sS -o /dev/null -w '%{http_code}\n' http://<candidate-origin>
+  ```
+  Any HTTP code back (even a 401/404, not just a 200) confirms the address is reachable; a
+  `curl: (7) Failed to connect` or a timeout means try the next candidate. Put the PROVEN, working
+  origin string — never an assumed one — into ask #3 and the `problem` field below. **This reconciles
+  with Section 5:** Section 5's VPS branch describes the service's `WEBHOOK_URL` env var living in a
+  compose project's `.env` / `environment:` block — that confirms the service is its own compose
+  service (the same project as the OpenClaw container, or a separate one), it does not by itself tell
+  you which network it is reachable on. The proof step above is what settles the actual reachable
+  address; do not assume `localhost` just because the pattern worked on Mac.
+
+### 3.3 — Send exactly these five asks
+
+Packed into the `problem` field of the payload below, word for word, with the origin proved in 3.2
+already substituted in:
 
 1. **A public hostname** for the service (e.g. `<client-slug>-n8n.zerohumanworkforce.com`).
 2. **The service's local origin port** — the port the service actually listens on, on THIS box (n8n
    defaults to `5678`). Without this the operator cannot write the ingress rule at all; asking for it
    up front avoids a round trip.
-3. **An ingress rule merged into this box's EXISTING tunnel**: `<hostname>` → `http://localhost:<PORT>`,
-   added via `GET` → merge → `PUT` per `shared-utils/cc-tunnel-ingress.sh` — never a full-replace
-   `PUT`. State plainly that this is **not** a request for a new tunnel or a new token.
+3. **An ingress rule merged into this box's EXISTING tunnel**: `<hostname>` → `<PROVEN origin from
+   3.2>`, added via `GET` → merge → `PUT` per `shared-utils/cc-tunnel-ingress.sh` — never a
+   full-replace `PUT`. State plainly that this is **not** a request for a new tunnel or a new token.
 4. **Path-scoped Access "Bypass (Everyone)" applications** for the service's webhook paths only
    (state the exact paths — for n8n: `/webhook`, `/webhook-test`, `/webhook-waiting`).
 5. Confirmation that the **root application** (UI / `/rest/*` / admin) stays behind Access — the
    bypass is scoped, not a removal of Access from the whole hostname.
 
-POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section):
+POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section). Use whichever
+variant matches the branch you took in 3.1 — never send Payload (A)'s `alreadyTried` text unless 3.1
+actually observed `online`.
+
+**Payload (A) — NORMAL case (3.1 confirmed the connector is `online`):**
 
 ```bash
 _RR_SECRET_ARGS=()
@@ -150,8 +224,30 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
     "boxName":        "<hostname or box label>",
     "boxType":        "<VPS | Mac Mini | MacBook Pro>",
     "openclawVersion":"<output of: openclaw --version>",
-    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting an ingress rule MERGED into the existing tunnel already running on this box (<hostname> -> http://localhost:<PORT>) via GET->merge->PUT per shared-utils/cc-tunnel-ingress.sh -- this is NOT a request for a new tunnel, new token, or new connector. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
-    "alreadyTried":   "1. Confirmed pm2 status cloudflare-tunnel shows the existing connector online (not the greenfield case). 2. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 3. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
+    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting an ingress rule MERGED into the existing tunnel already running on this box (<hostname> -> <PROVEN origin from 3.2, e.g. http://localhost:5678 on Mac, or a compose-service/host-reachable address on VPS>) via GET->merge->PUT per shared-utils/cc-tunnel-ingress.sh -- this is NOT a request for a new tunnel, new token, or new connector. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
+    "alreadyTried":   "1. Confirmed pm2 status cloudflare-tunnel shows the existing connector online (ran in Section 3.1, not the greenfield case). 2. Proved the origin is reachable from inside the same context the connector runs in before asking (ran in Section 3.2): <the exact curl/docker compose exec command and HTTP code observed>. 3. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 4. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
+    "returnTo":       "<this client Telegram chat id>"
+  }'
+```
+
+**Payload (B) — GREENFIELD case (3.1 found no `cloudflare-tunnel` PM2 process at all):**
+
+```bash
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
+  -d '{
+    "action":         "escalate",
+    "person":         "<owner/end-user name>",
+    "clientName":     "<client slug matching the roster>",
+    "agentName":      "<sending agent persona name>",
+    "boxName":        "<hostname or box label>",
+    "boxType":        "<VPS | Mac Mini | MacBook Pro>",
+    "openclawVersion":"<output of: openclaw --version>",
+    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. GREENFIELD CASE: no cloudflare-tunnel PM2 process exists on this box at all (pm2 list | grep cloudflare-tunnel returned nothing) -- this box has never had the operator-owned Command Center tunnel provisioned, so there is no existing tunnel to merge into. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting a FULL tunnel TOKEN (not a merge-only response) plus the ingress rule for <hostname> -> <origin, to be proved via Section 3.2 once the token is live>. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
+    "alreadyTried":   "1. Confirmed via pm2 list | grep cloudflare-tunnel that NO connector process exists on this box at all (ran in Section 3.1) -- this is the greenfield case, not a merge into an existing tunnel. 2. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 3. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
     "returnTo":       "<this client Telegram chat id>"
   }'
 ```
@@ -217,13 +313,18 @@ pm2 list | grep cloudflare-tunnel
 
 If that process exists at all — even stopped or errored — this is **not** the greenfield case; use
 the "connector not running" row in Section 7 instead. Only if the process is entirely absent does the
-box genuinely have no tunnel to merge into. In that case, say so explicitly in the Section 3 message;
-the operator will issue a full tunnel TOKEN instead of an ingress-merge-only response.
+box genuinely have no tunnel to merge into. This is exactly the classification Section 3.1 already
+walks through before escalating — use **Payload (B)** from Section 3.3; the operator will issue a full
+tunnel TOKEN instead of an ingress-merge-only response.
 
 Store the token exactly the way Command Center's own install does. Environment variable name:
-`CLOUDFLARE_TUNNEL_TOKEN`. Canonical location: `~/.openclaw/secrets/.env`, `chmod 600`. **Never echo,
-print, or paste the token value onto a shell command line** — it lands in shell history the moment you
-do (mirrors `32-command-center-setup/scripts/create-tunnel.sh` lines 66-79):
+`CLOUDFLARE_TUNNEL_TOKEN`. Canonical location: `~/.openclaw/secrets/.env`, `chmod 600`. **Never TYPE
+or echo the token value directly** — that is what lands it in interactive shell history. Reading it
+out of `~/.openclaw/secrets/.env` into a variable (below) is the fleet's own proven pattern (mirrors
+`32-command-center-setup/scripts/create-tunnel.sh` lines 66-79). Note this does not make the token
+invisible everywhere: `pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN"` still persists the
+expanded value as a process argument, visible in `ps` output and in `~/.pm2/dump.pm2` — that is the
+same tradeoff `create-tunnel.sh` itself makes fleet-wide, not a new exposure introduced here:
 
 ```bash
 mkdir -p ~/.openclaw/secrets
@@ -273,7 +374,9 @@ service's own persistent environment.
 
 **VPS / Docker:**
 - The variable lives in the compose project's env file (`/docker/<project>/.env`) or the service's
-  `environment:` block in `docker-compose.yml`.
+  `environment:` block in `docker-compose.yml`. This is the SAME compose project/service you identified
+  while proving the origin in Section 3.2 — whether that turned out to be a sibling service in the
+  OpenClaw container's own `docker-compose.yml` or an entirely separate compose project on the VPS.
 - Restart with `docker compose up -d <service>` — **not** `docker compose restart`, which does NOT
   re-read `env_file` / `.env` changes and will leave the service running on the old value.
 
@@ -319,8 +422,9 @@ the only passing state. Either one alone is a defect.
 |---|---|
 | Need a public webhook URL for a self-hosted service | Section 3 — POST the Rescue Rangers escalation with the five asks in `problem`/`alreadyTried`. Never attempt `cloudflared tunnel login`, never provision a second tunnel or connector yourself. |
 | Box has no systemd, `cloudflared service install` fails (e.g. "service already installed"), or the box already runs `cloudflared` under PM2 — an agent tried to install a connector the fleet way and it didn't fit | Covers both Mac-PM2 and Docker-VPS. Do **NOT** install a second connector and do NOT fall back to a raw `cloudflared tunnel run` outside PM2 — that produces a second, unmanaged, divergent process the fleet's tooling (`shared-utils/cc-tunnel-ingress.sh`, `pm2 startup`/`pm2 resurrect`) does not track. Run `pm2 status cloudflare-tunnel` to confirm the box's EXISTING connector, report that status to the operator via Section 3, and request the ingress-rule merge instead — the box does not need a new connector, it needs a new ingress rule on the one it already has. |
-| `pm2 status cloudflare-tunnel` / `pm2 list \| grep cloudflare-tunnel` shows nothing — the connector process does not exist at all | This box never completed Command Center's own tunnel setup — outside this SOP's normal scope (Section 4.1 assumes that tunnel already exists). Escalate to the operator (Section 3) and confirm before assuming Section 4.2 (greenfield) applies; do not hand-start a connector outside PM2. |
+| `pm2 status cloudflare-tunnel` / `pm2 list \| grep cloudflare-tunnel` shows nothing — the connector process does not exist at all | This box never completed Command Center's own tunnel setup — outside this SOP's normal scope (Section 4.1 assumes that tunnel already exists). This is exactly Section 3.1's classification; escalate via Section 3 using Payload (B) (greenfield), not Payload (A); do not hand-start a connector outside PM2. |
 | Greenfield connector (Section 4.2) prompts for a Cloudflare login | Token is wrong/missing. Stop, report to operator via Section 3, do not fall back to interactive auth. |
+| Check A (Section 6) returns a Cloudflare origin error (502 / 530 / 1033) instead of 404 — the ingress rule exists and `pm2 status cloudflare-tunnel` is online, but the connector cannot reach the origin | The origin address in the merged rule is not reachable from the connector's own network namespace — classic on a Docker VPS where cloudflared runs inside the OpenClaw container and the service is a sibling or separate container (Section 3.2). Re-run the origin-proof `curl` (VPS: `docker compose exec <openclaw-service> curl ...`) from inside the connector's own context, then re-escalate via Section 3 with the corrected, proven origin. Do **NOT** start a second connector and do **NOT** move the service to "fix" this. |
 | Check A returns 302 / an Access login page instead of 404 | Bypass application missing or misconfigured. Escalate to operator (Section 3) — do not edit Access policy from the client box. |
 | Check B returns anything other than 302 (200, 401, 404, ...) | Bypass scoped too broadly — the UI is unauthenticated. Escalate to operator (Section 3) immediately; this is an exposed-admin-surface defect, not a webhook problem. |
 | Service still shows `localhost` in its own webhook URLs after setting the public hostname | `WEBHOOK_URL` (or equivalent) not picked up — see Section 5 for the exact env-var location and restart command for this box's install type (launchd plist vs. Docker `.env`/compose); re-check and restart before re-testing. |
