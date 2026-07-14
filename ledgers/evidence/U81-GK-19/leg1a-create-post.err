@@ -1,0 +1,1 @@
+API Error (422): ['property locationId should not exist', 'media must be an array with media objects or an empty array', 'Post Type must be one of the following values: - post, story, reel', 'type should not be empty', 'userId must be a string', 'userId should not be empty']

@@ -1,0 +1,4 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+FATAL: prompt cleared FORM but has 1 quality/routing defect(s):
+  - AF-SM-MODEL-ROUTING: this prompt carries baked on-image text but is routed to 'nano-banana-2', which is NOT a text-rendering specialist (playbook.md Section 8, pre-fix). Every text-overlay / quote-card / headline deliverable (i.e. every Section 18 image) MUST route to Ideogram V3 DESIGN per Skill 45's own routing rule (45-design-intelligence-library/library/social-media-designs/_RULES.md). Nano Banana 2/Pro is reserved for non-text imagery only.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

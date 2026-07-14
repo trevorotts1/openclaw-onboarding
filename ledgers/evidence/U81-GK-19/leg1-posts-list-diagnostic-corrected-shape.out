@@ -1,0 +1,7 @@
+exit=0
+OK exit0
+(full JSON body of the live GHL response — success:true, statusCode:201, 20 real posts
+returned — redacted here to avoid committing unrelated real business content into the code
+repo; the metadata-only extract proving zero orphan fixture posts is archived at
+leg1-posts-list-full.json in this same directory: total_posts_returned=20,
+fixture_marker_hits=[])

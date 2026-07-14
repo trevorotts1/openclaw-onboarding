@@ -1,0 +1,4 @@
+Command: cat <deployed-skill-dir>/skill-version.txt
+
+45-design-intelligence-library/skill-version.txt (deployed): 1.3.3  [required >= 1.3.3]
+35-social-media-planner/skill-version.txt (deployed):        v2.9.10  [required >= v2.9.8]
