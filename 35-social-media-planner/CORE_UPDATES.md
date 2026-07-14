@@ -104,13 +104,13 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
 
-9. **Prepare webhook payload** with `[from secrets/.env: PODBEAN_PODCAST_ID]`, `audio_url` (GHL), `image_url` (GHL).
+9. **Prepare webhook payload** with all 7 required keys: `podcast_id` (`[from secrets/.env: PODBEAN_PODCAST_ID]`), `audio_url` (GHL), `image_url` (GHL), `title`, `description`, `publish_date`, `client_email`. **HARD STOP before POSTing:** verify every one of these 7 keys is present and non-null/non-empty in the JSON body — especially `image_url` and `client_email`, the two fields a 2026-07-12 production incident omitted, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed. If step 7/8 (cover art generation/upload) did not complete and yield a real GHL `image_url`, or the client email is not known, DO NOT POST — finish step 7/8 or notify the operator via Telegram first. n8n's own entry guard (GK-01/U63) now refuses an incomplete payload before touching Podbean and sends an honest refusal email, but the agent must not rely on it as the primary check.
 
 10. **Set publish_date** — Day 7 ISO 8601 with time (e.g. `2026-04-19T09:00:00-04:00`). Date-only strings error.
 
-11. **POST to n8n webhook** `https://main.blackceoautomations.com/webhook/podbean-publish`
+11. **POST to n8n webhook** `https://main.blackceoautomations.com/webhook/podbean-publish`. This responds `200 OK` immediately regardless of downstream outcome (fire-and-forget) — a `200` here only means the request was received, not that the episode published.
 
-12. **Verify response: 200 OK** — retry once after 30s on non-200. If still failing, notify client via Telegram.
+12. **Verify response: 200 OK** — retry once after 30s on non-200. If still failing, notify client via Telegram. A "Podcast Publish Refused at Entry Guard" email instead of a success/failure email means the payload was missing a required field (the email names it) and no Podbean call was made — fix the field and resend.
 
 13. **Log to Google Sheet Podcast tab.**
 

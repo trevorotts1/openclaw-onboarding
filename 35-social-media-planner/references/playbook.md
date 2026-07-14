@@ -1256,7 +1256,8 @@ The agent does NOT publish directly to Podbean. Publishing goes through an n8n w
 2. Agent uploads the audio file to the GHL Media Library. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL first.
 3. Agent generates the podcast cover image via kie.ai Nano Banana 2 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
 4. Agent uploads the cover image to the GHL Media Library.
-5. Agent sends the following JSON payload to the webhook:
+5. **Before sending, verify all 7 required fields below are present and non-null in the payload** — especially `image_url` and `client_email`. A 2026-07-12 production incident sent a payload missing both, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real GHL `image_url`, or the client email is not known, DO NOT send the webhook request — finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete payload before making any Podbean call and sends an honest refusal email (entry guard, GK-01/U63), but the agent must not rely on it as the primary check — it is a backstop, not a substitute for sending a complete payload.
+6. Agent sends the following JSON payload to the webhook:
 
 **Webhook Endpoint:**
 ```
@@ -1306,6 +1307,7 @@ Content-Type: application/json
 - If webhook returns non-200: retry once after 30 seconds. If still failing, notify client via Telegram.
 - If you get no confirmation email within 15 minutes: notify client that podcast publishing may have failed and to check Podbean manually.
 - Image format rejection: re-export the cover image as JPEG (not WebP) and re-send.
+- If you receive a "Podcast Publish Refused at Entry Guard" email instead of a success or failure email: the payload was missing or had an invalid value for one of the 7 required fields (the email names which one(s)) and no Podbean call was made — treat it the same as a failure, fix the named field per the Field Rules above, and resend the complete payload.
 
 ---
 
