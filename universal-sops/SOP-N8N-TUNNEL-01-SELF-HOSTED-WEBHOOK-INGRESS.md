@@ -16,7 +16,10 @@ shared tunnel), `32-command-center-setup/scripts/create-tunnel.sh` (the proven P
 connector-install pattern Section 4 mirrors), `32-command-center-setup/INSTALL.md` Phase 6b/6c (the
 same pattern narrated step-by-step, plus the PM2-persistence notes for Mac vs. Docker VPS), `AGENTS.md`
 "Rescue Rangers — how to escalate + resolution / loop-stop" (the only supported box→operator channel;
-Section 3 below uses it).
+Section 3 below uses it), `38-conversational-ai-system/references/VPS-VS-MAC-INSTALL.md` (where the
+Docker VPS environment actually lives, host vs. container — Section 5 below depends on this),
+`platform/mac/service-selfheal/gateway-health-watchdog.sh` (the fleet's own box-type detection and
+in-container ESCALATE pattern — Section 5 and Section 7 below mirror it).
 
 ---
 
@@ -170,32 +173,40 @@ connector and the self-hosted service share the same host network namespace:
     will NOT reach it from inside the OpenClaw container — the origin has to be a host-reachable
     address from inside that container instead.
 
-  **Do not guess — prove it**, run from inside the exact context the connector runs in:
+  **Do not guess — prove it**, run directly from wherever this agent is already executing — you do
+  **not** need a `docker` CLI, a docker socket, or `docker compose exec` for this. On a VPS you (the
+  client agent) are already running INSIDE the OpenClaw container (Section 5, Branch 2), which means
+  you are already IN the connector's own network namespace; a sibling container on the SAME
+  docker-compose network is reachable by its compose service DNS name over Docker's internal network
+  with a plain `curl` — no docker CLI is needed to REACH it, only to inspect or administer it, which
+  you cannot do from here (Section 5, Branch 2 covers that limit):
   ```bash
   # Mac: run directly on the host
   curl -sS -o /dev/null -w '%{http_code}\n' http://<candidate-origin>
 
-  # VPS: run INSIDE the OpenClaw container (same network namespace as the connector)
-  docker compose exec <openclaw-service> curl -sS -o /dev/null -w '%{http_code}\n' http://<candidate-origin>
+  # VPS: run directly, from inside the OpenClaw container you are already in
+  curl -sS -o /dev/null -w '%{http_code}\n' http://<candidate-origin>
   ```
   Any HTTP code back (even a 401/404, not just a 200) confirms the address is reachable; a
   `curl: (7) Failed to connect` or a timeout means try the next candidate. Put the PROVEN, working
   origin string — never an assumed one — into ask #3 and the `problem` field below. **This reconciles
-  with Section 5:** Section 5's VPS branch describes the service's `WEBHOOK_URL` env var living in a
+  with Section 5, Branch 2:** that branch describes the service's `WEBHOOK_URL` env var living in a
   compose project's `.env` / `environment:` block — that confirms the service is its own compose
   service (the same project as the OpenClaw container, or a separate one), it does not by itself tell
   you which network it is reachable on. The proof step above is what settles the actual reachable
   address; do not assume `localhost` just because the pattern worked on Mac.
 
-### 3.3 — Send exactly these five asks
+### 3.3 — Send these asks (1-5 always; 6 conditional, sent later — see below)
 
 Packed into the `problem` field of the payload below, word for word, with the origin proved in 3.2
 already substituted in:
 
 1. **A public hostname** for the service (e.g. `<client-slug>-n8n.zerohumanworkforce.com`).
-2. **The service's local origin port** — the port the service actually listens on, on THIS box (n8n
-   defaults to `5678`). Without this the operator cannot write the ingress rule at all; asking for it
-   up front avoids a round trip.
+2. **The service's local origin port AND where it runs** — the port the service actually listens on
+   (n8n defaults to `5678`), **and** whether that's a Mac host process, a process inside the SAME
+   OpenClaw container as this agent, or a sibling/separate container on the VPS host (the
+   classification from 3.1/3.2). A port number alone does not tell the operator what address is
+   actually reachable — the location is required, not optional.
 3. **An ingress rule merged into this box's EXISTING tunnel**: `<hostname>` → `<PROVEN origin from
    3.2>`, added via `GET` → merge → `PUT` per `shared-utils/cc-tunnel-ingress.sh` — never a
    full-replace `PUT`. State plainly that this is **not** a request for a new tunnel or a new token.
@@ -203,6 +214,17 @@ already substituted in:
    (state the exact paths — for n8n: `/webhook`, `/webhook-test`, `/webhook-waiting`).
 5. Confirmation that the **root application** (UI / `/rest/*` / admin) stays behind Access — the
    bypass is scoped, not a removal of Access from the whole hostname.
+6. **(VPS only, conditional — sent as a follow-up, not part of the initial payload below.)** If
+   Section 5 determines this box is a Docker VPS where you (the client agent) run INSIDE the OpenClaw
+   container and the self-hosted service is a SEPARATE host-side Docker Compose service (Section 5,
+   Branch 2), also ask the operator to **set `WEBHOOK_URL=https://<hostname>/` in that service's HOST
+   env file and force-recreate its container.** You cannot discover which of these applies until you
+   reach Section 5 (it happens after Section 4), so this ask is never known at the time of the
+   original five-ask escalation — send it as ONE focused follow-up POST to the same
+   `$RESCUE_RANGERS_WEBHOOK_URL` thread once Section 5 confirms Branch 2 (`AGENTS.md`'s own follow-up
+   pattern: "POST ONE focused follow-up... then wait"). Skip this ask entirely if the service runs
+   under PM2 in the SAME container as this agent (Section 5, Branch 3) — you can set that env var
+   yourself.
 
 POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section). Use whichever
 variant matches the branch you took in 3.1 — never send Payload (A)'s `alreadyTried` text unless 3.1
@@ -224,8 +246,8 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
     "boxName":        "<hostname or box label>",
     "boxType":        "<VPS | Mac Mini | MacBook Pro>",
     "openclawVersion":"<output of: openclaw --version>",
-    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting an ingress rule MERGED into the existing tunnel already running on this box (<hostname> -> <PROVEN origin from 3.2, e.g. http://localhost:5678 on Mac, or a compose-service/host-reachable address on VPS>) via GET->merge->PUT per shared-utils/cc-tunnel-ingress.sh -- this is NOT a request for a new tunnel, new token, or new connector. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
-    "alreadyTried":   "1. Confirmed pm2 status cloudflare-tunnel shows the existing connector online (ran in Section 3.1, not the greenfield case). 2. Proved the origin is reachable from inside the same context the connector runs in before asking (ran in Section 3.2): <the exact curl/docker compose exec command and HTTP code observed>. 3. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 4. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
+    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port AND where it runs: <PORT, e.g. 5678> on <Mac host process | inside the OpenClaw container | a sibling/separate container on the VPS host>. (3) Requesting an ingress rule MERGED into the existing tunnel already running on this box (<hostname> -> <PROVEN origin from 3.2, e.g. http://localhost:5678 on Mac, or a compose-service/host-reachable address on VPS>) via GET->merge->PUT per shared-utils/cc-tunnel-ingress.sh -- this is NOT a request for a new tunnel, new token, or new connector. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
+    "alreadyTried":   "1. Confirmed pm2 status cloudflare-tunnel shows the existing connector online (ran in Section 3.1, not the greenfield case). 2. Proved the origin is reachable from inside the same network namespace the connector runs in before asking (ran in Section 3.2): <the exact curl command and HTTP code observed>. 3. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 4. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
     "returnTo":       "<this client Telegram chat id>"
   }'
 ```
@@ -246,7 +268,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
     "boxName":        "<hostname or box label>",
     "boxType":        "<VPS | Mac Mini | MacBook Pro>",
     "openclawVersion":"<output of: openclaw --version>",
-    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. GREENFIELD CASE: no cloudflare-tunnel PM2 process exists on this box at all (pm2 list | grep cloudflare-tunnel returned nothing) -- this box has never had the operator-owned Command Center tunnel provisioned, so there is no existing tunnel to merge into. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting a FULL tunnel TOKEN (not a merge-only response) plus the ingress rule for <hostname> -> <origin, to be proved via Section 3.2 once the token is live>. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
+    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. GREENFIELD CASE: no cloudflare-tunnel PM2 process exists on this box at all (pm2 list | grep cloudflare-tunnel returned nothing) -- this box has never had the operator-owned Command Center tunnel provisioned, so there is no existing tunnel to merge into. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port AND where it runs: <PORT, e.g. 5678> on <Mac host process | inside the OpenClaw container | a sibling/separate container on the VPS host>. (3) Requesting a FULL tunnel TOKEN (not a merge-only response) plus the ingress rule for <hostname> -> <origin, to be proved via Section 3.2 once the token is live>. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
     "alreadyTried":   "1. Confirmed via pm2 list | grep cloudflare-tunnel that NO connector process exists on this box at all (ran in Section 3.1) -- this is the greenfield case, not a merge into an existing tunnel. 2. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 3. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
     "returnTo":       "<this client Telegram chat id>"
   }'
@@ -256,7 +278,8 @@ Do not proceed past this step until the operator has confirmed all five asks are
 is nothing else for the agent to build in the meantime. When the operator's reply comes back (posted to
 the Rescue Rangers webhook and relayed to `returnTo`), follow `AGENTS.md`'s resolution protocol: once
 it's confirmed live, POST `✅ RESOLVED: <what was provisioned>` to close the loop, then continue at
-Section 4.
+Section 4. (Ask #6, if it applies, is a separate follow-up sent later from Section 5 — do not hold up
+Section 4 waiting on it.)
 
 **What NOT to do while waiting:** do not attempt a workaround tunnel, do not install a second
 `cloudflared` connector or start a second PM2-managed `cloudflared` process (the box's existing
@@ -346,6 +369,15 @@ pm2 status cloudflare-tunnel   # confirm "online"
 If this prompts for a Cloudflare login at any point, the token was wrong or missing — go back to the
 operator, do not fall back to `tunnel login`.
 
+**On a Docker VPS, `pm2 save` alone does NOT survive a container restart.** Persistence there comes
+from a separate `command:` override in `/docker/<project>/docker-compose.yml` that backgrounds a
+45-second delayed `pm2 resurrect` call so PM2-managed processes survive `docker compose restart`
+(`32-command-center-setup/INSTALL.md` Phase 6c). Confirm that hook is present on this box (it should
+already be, from Command Center setup) before treating `pm2 save` as sufficient — if it is missing,
+report it to the operator via Section 3; the connector will otherwise vanish on the box's next
+`docker compose restart` even though `pm2 save` reported success. Mac needs no such check — `pm2
+startup` + launchd covers it.
+
 ## 5. SET THE PUBLIC WEBHOOK URL ON THE SERVICE
 
 Point the self-hosted service at the hostname the operator provisioned. For n8n, this is the
@@ -356,11 +388,14 @@ to validate inbound callback paths):
 WEBHOOK_URL=https://<provisioned-hostname>/
 ```
 
-Where this env var actually lives, and how to restart, depends on how the service was installed on
-this box. Setting it in a shell and expecting it to persist is not enough — it has to land in the
-service's own persistent environment.
+Where this env var actually lives, how to restart, and — critically, on a VPS — **whether you (the
+client agent) can even reach that location at all**, depends on how the service was installed on this
+box. Setting it in a shell and expecting it to persist is not enough — it has to land in the service's
+own persistent environment. **Check which branch applies BEFORE doing anything.** Branch 2 below is a
+structural dead end for a client agent — it exists so the escalation ask (Section 3.3, ask #6) is
+correct, not so you can execute it yourself.
 
-**Mac, running as a background service (launchd):**
+**Branch 1 — Mac, running as a background service (launchd):**
 - The variable lives in that service's `.plist` (commonly `~/Library/LaunchAgents/<label>.plist` for
   a per-user agent, or `/Library/LaunchDaemons/<label>.plist` if it was installed to run at boot for
   all users), inside the `<key>EnvironmentVariables</key>` dict.
@@ -372,17 +407,59 @@ service's own persistent environment.
   launchctl load ~/Library/LaunchAgents/<label>.plist
   ```
 
-**VPS / Docker:**
-- The variable lives in the compose project's env file (`/docker/<project>/.env`) or the service's
-  `environment:` block in `docker-compose.yml`. This is the SAME compose project/service you identified
-  while proving the origin in Section 3.2 — whether that turned out to be a sibling service in the
-  OpenClaw container's own `docker-compose.yml` or an entirely separate compose project on the VPS.
-- Restart with `docker compose up -d <service>` — **not** `docker compose restart`, which does NOT
-  re-read `env_file` / `.env` changes and will leave the service running on the old value.
+**Branch 2 — VPS / Hostinger Docker, the service is a SEPARATE Docker Compose service (the common case
+when you, the client agent, are running INSIDE the OpenClaw container). Detect this first:**
+```bash
+[ -d /data/.openclaw ] && echo "You are inside the OpenClaw container — this is Branch 2, not Branch 1."
+```
+This is the same detection `platform/mac/service-selfheal/gateway-health-watchdog.sh:66-69` uses to
+classify a box as `vps-container`: `/data/.openclaw` exists and there is no usable `docker` CLI ->
+you are running inside the OpenClaw container, and **there is no docker socket here.**
+
+If that's you: **`/docker/<project>/.env` and `docker compose` are HOST-side, and are NOT reachable
+from inside this container at all.**
+`38-conversational-ai-system/references/VPS-VS-MAC-INSTALL.md:19-32` documents that the docker-compose
+`env_file` lives on the HOST filesystem (`/docker/<project>/.env`) — a different filesystem than the
+container's; only the bind-mounted `/data/...` paths are visible in here, and `/docker/<project>/.env`
+is not one of them. You cannot read it, cannot write it, and cannot run `docker compose` (no CLI, no
+socket) to apply the change even if you somehow had the file.
+
+**This makes setting `WEBHOOK_URL` for a separate, host-level compose service an OPERATOR-side action
+— it is not something you execute yourself.** Send it as ask #6 (Section 3.3) on the same Rescue
+Rangers thread: *"Please set `WEBHOOK_URL=https://<provisioned-hostname>/` in the host env file for
+this service and force-recreate the container."* Do not keep searching this container for a way to
+reach it — there isn't one.
+
+For reference only — this is the procedure the OPERATOR runs on the HOST, not something the client
+agent executes:
+- The variable lives in the compose project's env file (`/docker/<project>/.env`, the docker-compose
+  `env_file`) or the service's `environment:` block in `docker-compose.yml`.
+- Apply with `docker compose up -d --force-recreate` (scoped to the one service if preferred) — **not**
+  `docker compose restart`, which does NOT re-read `env_file` / `.env` changes and will leave the
+  service running on the old value.
+
+**Branch 3 — VPS, but the service runs under PM2 in the SAME container you are already in** (you
+started it yourself, e.g. `pm2 start n8n --name n8n`, rather than it being a separate compose service
+— this is the one VPS case a client agent CAN act on directly, because the process lives in your own
+namespace):
+```bash
+# Set WEBHOOK_URL wherever this process's env source is (e.g. its own .env file, or the ecosystem
+# file it was started from), then:
+pm2 restart <service-name> --update-env
+pm2 save
+```
+`--update-env` is required — a bare `pm2 restart` reuses the environment PM2 captured at the ORIGINAL
+`pm2 start`, so an env-file edit alone will never reach the running process without it.
+
+**If none of these three branches match this box's install** — the service is not Mac launchd, not a
+host-side Docker Compose service, and not a PM2 process in your own container — do not guess or invent
+a fourth path. Escalate via Section 3, describe exactly how the service is actually running, and let
+the operator tell you where its environment lives.
 
 A service that still shows `localhost` in its own webhook URLs after this step has not picked up the
-new value — go back to whichever of the two cases above applies to this box and re-check that exact
-location and restart command before moving on.
+new value — go back to whichever branch above applies to this box (or confirm with the operator that
+ask #6 has been completed, if you are in Branch 2) and re-check that exact location and restart command
+before moving on.
 
 ## 6. VERIFY — BOTH CHECKS ARE REQUIRED
 
@@ -420,14 +497,15 @@ the only passing state. Either one alone is a defect.
 
 | Situation | Action |
 |---|---|
-| Need a public webhook URL for a self-hosted service | Section 3 — POST the Rescue Rangers escalation with the five asks in `problem`/`alreadyTried`. Never attempt `cloudflared tunnel login`, never provision a second tunnel or connector yourself. |
+| Need a public webhook URL for a self-hosted service | Section 3 — POST the Rescue Rangers escalation with the five asks (plus conditional ask #6 from Section 5) in `problem`/`alreadyTried`. Never attempt `cloudflared tunnel login`, never provision a second tunnel or connector yourself. |
 | Box has no systemd, `cloudflared service install` fails (e.g. "service already installed"), or the box already runs `cloudflared` under PM2 — an agent tried to install a connector the fleet way and it didn't fit | Covers both Mac-PM2 and Docker-VPS. Do **NOT** install a second connector and do NOT fall back to a raw `cloudflared tunnel run` outside PM2 — that produces a second, unmanaged, divergent process the fleet's tooling (`shared-utils/cc-tunnel-ingress.sh`, `pm2 startup`/`pm2 resurrect`) does not track. Run `pm2 status cloudflare-tunnel` to confirm the box's EXISTING connector, report that status to the operator via Section 3, and request the ingress-rule merge instead — the box does not need a new connector, it needs a new ingress rule on the one it already has. |
 | `pm2 status cloudflare-tunnel` / `pm2 list \| grep cloudflare-tunnel` shows nothing — the connector process does not exist at all | This box never completed Command Center's own tunnel setup — outside this SOP's normal scope (Section 4.1 assumes that tunnel already exists). This is exactly Section 3.1's classification; escalate via Section 3 using Payload (B) (greenfield), not Payload (A); do not hand-start a connector outside PM2. |
 | Greenfield connector (Section 4.2) prompts for a Cloudflare login | Token is wrong/missing. Stop, report to operator via Section 3, do not fall back to interactive auth. |
-| Check A (Section 6) returns a Cloudflare origin error (502 / 530 / 1033) instead of 404 — the ingress rule exists and `pm2 status cloudflare-tunnel` is online, but the connector cannot reach the origin | The origin address in the merged rule is not reachable from the connector's own network namespace — classic on a Docker VPS where cloudflared runs inside the OpenClaw container and the service is a sibling or separate container (Section 3.2). Re-run the origin-proof `curl` (VPS: `docker compose exec <openclaw-service> curl ...`) from inside the connector's own context, then re-escalate via Section 3 with the corrected, proven origin. Do **NOT** start a second connector and do **NOT** move the service to "fix" this. |
+| Check A (Section 6) returns a Cloudflare origin error (502 / 530 / 1033) instead of 404 — the ingress rule exists and `pm2 status cloudflare-tunnel` is online, but the connector cannot reach the origin | The origin address in the merged rule is not reachable from the connector's own network namespace — classic on a Docker VPS where cloudflared runs inside the OpenClaw container and the service is a sibling or separate container (Section 3.2). Re-run the origin-proof `curl` (run it directly — you're already inside the connector's own namespace, no docker CLI needed) against candidate addresses, then re-escalate via Section 3 with the corrected, proven origin. Do **NOT** start a second connector and do **NOT** move the service to "fix" this. |
+| You are inside the OpenClaw container on a VPS (Section 5, Branch 2) and cannot reach the host `docker` CLI, docker socket, or `/docker/<project>/.env` to set `WEBHOOK_URL` | Expected, not a bug. `platform/mac/service-selfheal/gateway-health-watchdog.sh` classifies this box type (`vps-container`) as having no docker socket by design (lines 66-69), and its own heal() logic for that exact case does the same thing this row asks of you: don't attempt a local fix, escalate to the operator on the HOST instead (lines 196-201: `` "ESCALATE: operator (on HOST): docker restart <openclaw-container> / docker compose up -d --force-recreate" ``). Setting `WEBHOOK_URL` here is an operator-side action — send ask #6 (Section 3.3) on the same Rescue Rangers thread; do not keep hunting this container for a way to read or write the host env file, there isn't one. |
 | Check A returns 302 / an Access login page instead of 404 | Bypass application missing or misconfigured. Escalate to operator (Section 3) — do not edit Access policy from the client box. |
 | Check B returns anything other than 302 (200, 401, 404, ...) | Bypass scoped too broadly — the UI is unauthenticated. Escalate to operator (Section 3) immediately; this is an exposed-admin-surface defect, not a webhook problem. |
-| Service still shows `localhost` in its own webhook URLs after setting the public hostname | `WEBHOOK_URL` (or equivalent) not picked up — see Section 5 for the exact env-var location and restart command for this box's install type (launchd plist vs. Docker `.env`/compose); re-check and restart before re-testing. |
+| Service still shows `localhost` in its own webhook URLs after setting the public hostname | `WEBHOOK_URL` (or equivalent) not picked up — see Section 5 for the exact env-var location and restart command for this box's install type (Branch 1 launchd plist, Branch 2 host-side Docker `.env`/compose via the operator, or Branch 3 PM2 `--update-env`); re-check and restart (or confirm the operator's ask-#6 fix) before re-testing. |
 | A shared tunnel's ingress rule for this host disappears after another service's install script runs | Full-replace ingress PUT clobbered it. See `shared-utils/cc-tunnel-ingress.sh` — any tunnel-ingress writer must GET → merge → PUT, never a bare full-replace. |
 
 ## 8. WHY THIS SOP EXISTS
