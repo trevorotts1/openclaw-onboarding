@@ -600,6 +600,9 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 - `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is seeded at install. The array pattern above correctly skips the header when the var is unset (backward-compatible).
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
+- This channel is also how you make a **provisioning ask**, not just a bug report — e.g. a new
+  self-hosted service's public webhook hostname. See
+  `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` Section 3.3 for that specific case.
 - The rescue agent will reply with a solution delivered back into the Rescue Rangers group; apply the fix, and when it works POST the resolution signal (below) to close the loop. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 
 Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
@@ -645,7 +648,8 @@ If a client's own self-hosted service (a self-hosted n8n instance is the flagshi
 receive INBOUND webhooks over the public internet, do **not** run `cloudflared tunnel login` and do
 not improvise a Cloudflare tunnel — the fleet's Cloudflare zone is operator-owned, the client has no
 account on it, and that command can never succeed for a client box. Follow
-`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`: escalate to the operator for a
+`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`: escalate to the operator via the
+Rescue Rangers webhook (that SOP's Section 3.3 — the same channel as the section above) for a
 hostname + origin port + an ingress-rule merge into the box's EXISTING tunnel (never a new tunnel/
 token/connector), then verify with the SOP's 404-vs-302 checks before calling it done.
 
