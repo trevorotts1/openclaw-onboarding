@@ -60,6 +60,17 @@ fail-closed gate — generation MUST NOT unlock without it.
    The regex parses `selected_persona:` (or `applied_persona:` / `copy_persona:`) unmodified — the
    ADDED `voice_persona:` / `topic_persona:` / `task_persona:` / `blend_directive_sha:` lines never
    interfere with it.
+5. **Report back (B-U6/U20 — declared-vs-used, never silent):** AFTER the copy for a page lands, report
+   the personas ACTUALLY used back onto the Command Center card — never silently trust that the
+   declared bundle and the written copy stayed in agreement:
+   `python3 49-signature-funnel/scripts/copy_persona_blend_seam.py --run-dir <run-dir> --report-persona-used
+   --task-id <CC task id> --page <page-slug> [--goal <conversion goal>]`
+   (delegates to `06-ghl-install-pages/tools/cc_board.py:report_persona_used()` / a
+   `BuildPhaseDriver.persona_used()` call when the build already holds a driver instance). The Command
+   Center compares the reported voice against the card's DECLARED `voice_persona_id` and renders a
+   `persona_mismatch` chip + one operator event on divergence; agreement renders nothing. Best-effort —
+   a missing task_id or unreachable board never blocks generation (fail-soft, matches every other
+   board write in this pipeline).
 
 - **Harmony Chain** — the 12 sections are ONE escalating argument; carry a word/image/idea from
   section N−1 into N; never reset the topic.

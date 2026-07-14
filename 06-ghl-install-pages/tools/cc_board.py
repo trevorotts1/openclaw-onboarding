@@ -670,6 +670,100 @@ def post_qc_score(
 
 
 # ---------------------------------------------------------------------------
+# B-U6 / U20 — Producer reports USED personas back to the card
+# (declared-vs-used, never silent).
+#
+# "A bundle-carrying task can never have its blend silently ignored — QC
+# verifies the blend landed (B-U5), the card shows declared-vs-used (B-U6)."
+# The Command Center side (blackceo-command-center src/lib/persona-mismatch.ts)
+# compares this report's voice_persona_id against the card's DECLARED
+# voice_persona_id (the resolved VOICE decision mirror column, migration 090)
+# and renders a `persona_mismatch` chip + writes ONE `persona_mismatch`
+# operator event on divergence. Agreement renders nothing.
+# ---------------------------------------------------------------------------
+def report_persona_used(
+    task_id: str,
+    *,
+    page: Optional[str] = None,
+    voice_persona_id: Optional[str] = None,
+    topic_persona_id: Optional[str] = None,
+    task_persona_id: Optional[str] = None,
+    blend_directive_sha: Optional[str] = None,
+    goal: Optional[str] = None,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Report the personas the copy step ACTUALLY wrote with, onto the card.
+
+    Posts ONE ``updated`` activity whose metadata is exactly::
+
+        {kind: 'persona_used', page, voice_persona_id, topic_persona_id,
+         task_persona_id, blend_directive_sha, goal}
+
+    ``kind: 'persona_used'`` is an explicit discriminator the Command Center
+    comparator keys on (never sniffs an arbitrary metadata shape). Call once
+    per page — a multi-page funnel reports each page's used voice as its copy
+    lands, independent of any deliverable()/artifact()/review() terminal call.
+
+    Args:
+        task_id:              CC task UUID returned by ingest_task.
+        page:                 Page name/slug this report is for (e.g. 'main',
+                              'upsell'). Omitted keys are never sent — a
+                              caller reporting only the voice still produces a
+                              valid, comparator-usable report.
+        voice_persona_id:     REQUIRED — the VOICE persona the copy was
+                              actually written in. Nothing is posted without it
+                              (there would be nothing for the comparator to
+                              compare).
+        topic_persona_id:     The topic/craft hint persona actually used.
+        task_persona_id:      The primary task-slot persona actually used.
+        blend_directive_sha:  sha of the {{BLEND_DIRECTIVE}} text actually
+                              rendered into the prompt (audit trail parity with
+                              persona-selection-log.md's blend_directive_sha
+                              line, B-U3/U17).
+        goal:                 The page's conversion goal, for the human-facing
+                              chip tooltip.
+        note:                 Optional extra human-readable text.
+        env:                  Override os.environ (for testing).
+
+    Returns:
+        True on 2xx, False on any failure (fail-soft — never blocks the build).
+    """
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("report_persona_used skipped — empty task_id.")
+        return False
+
+    vpid = (voice_persona_id or "").strip()
+    if not vpid:
+        _log("report_persona_used skipped — empty voice_persona_id (nothing to compare).")
+        return False
+
+    page_label = (page or "").strip()
+    message = f"Persona used: {page_label or 'page'} -> {vpid}"
+    if note and note.strip():
+        message += f" — {note.strip()}"
+
+    metadata: dict = {"kind": "persona_used", "voice_persona_id": vpid}
+    if page_label:
+        metadata["page"] = page_label
+    tpid = (topic_persona_id or "").strip()
+    if tpid:
+        metadata["topic_persona_id"] = tpid
+    tkpid = (task_persona_id or "").strip()
+    if tkpid:
+        metadata["task_persona_id"] = tkpid
+    sha = (blend_directive_sha or "").strip()
+    if sha:
+        metadata["blend_directive_sha"] = sha
+    goal_text = (goal or "").strip()
+    if goal_text:
+        metadata["goal"] = goal_text
+
+    return post_activity(tid, "updated", message, metadata=metadata, env=env)
+
+
+# ---------------------------------------------------------------------------
 # U9 §7.4 — Queue visibility. When the box-wide browser lock is held by another
 # run, the waiting build parks its card at 'pending_dispatch' with the HOLDER's
 # session name, so a wait is visible on the board, not mysterious.
@@ -1079,6 +1173,42 @@ class BuildPhaseDriver:
         return post_qc_score(
             self._task_id, score, gate,
             passed=passed, scorecard_path=scorecard_path, note=note, env=self._env,
+        )
+
+    # ------------------------------------------------------------------
+    def persona_used(
+        self,
+        *,
+        page: Optional[str] = None,
+        voice_persona_id: Optional[str] = None,
+        topic_persona_id: Optional[str] = None,
+        task_persona_id: Optional[str] = None,
+        blend_directive_sha: Optional[str] = None,
+        goal: Optional[str] = None,
+        note: str = "",
+    ) -> bool:
+        """Report the personas ACTUALLY used at the copy step (B-U6 / U20).
+
+        Declared-vs-used, never silent: delegates to report_persona_used().
+        Call once per page as its copy lands. Deliberately NOT gated on
+        _finished — persona-used reports are independent of the terminal
+        artifact()/review() calls and may continue after the card has moved
+        to review (e.g. a derived-pages pass that lands after the main page).
+        """
+        if not self._task_id:
+            return False
+        if not self._started:
+            self.start()
+        return report_persona_used(
+            self._task_id,
+            page=page,
+            voice_persona_id=voice_persona_id,
+            topic_persona_id=topic_persona_id,
+            task_persona_id=task_persona_id,
+            blend_directive_sha=blend_directive_sha,
+            goal=goal,
+            note=note,
+            env=self._env,
         )
 
     # ------------------------------------------------------------------
@@ -1702,6 +1832,130 @@ def _u9_selftest() -> int:
     return 0
 
 
+def _persona_used_selftest() -> int:
+    """B-U6 / U20 report_persona_used / BuildPhaseDriver.persona_used self-test —
+    no network. Returns 0 on pass."""
+    errors: list[str] = []
+    base_env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+
+    captured: list[dict] = []
+
+    def _fake_activity(task_id, activity_type, message, metadata=None, *, env=None):
+        captured.append(
+            {"task_id": task_id, "type": activity_type, "message": message, "metadata": metadata or {}}
+        )
+        return True
+
+    orig_activity = globals()["post_activity"]
+    globals()["post_activity"] = _fake_activity
+    try:
+        # 1. empty task_id → False, nothing posted.
+        captured.clear()
+        if report_persona_used("", voice_persona_id="hormozi-100m-offers", env=base_env) is not False:
+            errors.append("report_persona_used(empty task_id) should return False")
+        if captured:
+            errors.append("report_persona_used(empty task_id) must not post anything")
+
+        # 2. empty voice_persona_id → False, nothing posted (nothing to compare).
+        captured.clear()
+        if report_persona_used("t1", voice_persona_id="", env=base_env) is not False:
+            errors.append("report_persona_used(empty voice_persona_id) should return False")
+        if captured:
+            errors.append("report_persona_used(empty voice_persona_id) must not post anything")
+
+        # 3. full payload — every field lands in metadata with the 'kind' discriminator.
+        captured.clear()
+        ok = report_persona_used(
+            "t1",
+            page="main",
+            voice_persona_id="hormozi-100m-offers",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_id="hormozi-100m-offers",
+            blend_directive_sha="abc123def456",
+            goal="book-a-call",
+            env=base_env,
+        )
+        if not ok:
+            errors.append("report_persona_used(full payload) should return True")
+        if len(captured) != 1:
+            errors.append(f"report_persona_used should post exactly one activity, got {len(captured)}")
+        else:
+            act = captured[0]
+            if act["type"] != "updated":
+                errors.append(f"report_persona_used must post activity_type='updated', got {act['type']!r}")
+            md = act["metadata"]
+            if md.get("kind") != "persona_used":
+                errors.append(f"metadata must carry kind='persona_used', got {md.get('kind')!r}")
+            for k, v in (
+                ("page", "main"),
+                ("voice_persona_id", "hormozi-100m-offers"),
+                ("topic_persona_id", "miller-building-storybrand"),
+                ("task_persona_id", "hormozi-100m-offers"),
+                ("blend_directive_sha", "abc123def456"),
+                ("goal", "book-a-call"),
+            ):
+                if md.get(k) != v:
+                    errors.append(f"metadata[{k!r}] = {md.get(k)!r}, expected {v!r}")
+
+        # 4. partial payload (only page + voice) omits every unset optional key —
+        #    never a fabricated empty-string field.
+        captured.clear()
+        report_persona_used("t1", page="upsell", voice_persona_id="wiebe-copy-hackers", env=base_env)
+        md = captured[0]["metadata"] if captured else {}
+        for k in ("topic_persona_id", "task_persona_id", "blend_directive_sha", "goal"):
+            if k in md:
+                errors.append(f"partial-payload metadata must OMIT unset key {k!r}, got {md.get(k)!r}")
+        if md.get("page") != "upsell" or md.get("voice_persona_id") != "wiebe-copy-hackers":
+            errors.append(f"partial-payload metadata missing required fields: {md!r}")
+
+        # 5. BuildPhaseDriver.persona_used() delegates + auto-starts the driver.
+        captured.clear()
+        d = BuildPhaseDriver("t-driver", env=base_env)
+        if d._started:
+            errors.append("driver._started should be False before persona_used()")
+        rc = d.persona_used(page="main", voice_persona_id="hormozi-100m-offers")
+        if not rc:
+            errors.append("driver.persona_used() should return True (fake post_activity always True)")
+        if not d._started:
+            errors.append("driver.persona_used() must auto-start the driver")
+        persona_used_calls = [c for c in captured if (c["metadata"] or {}).get("kind") == "persona_used"]
+        if len(persona_used_calls) != 1:
+            errors.append(
+                f"driver.persona_used() should post exactly one persona_used activity, "
+                f"got {len(persona_used_calls)}"
+            )
+
+        # 6. driver.persona_used() with empty task_id → False, no post.
+        captured.clear()
+        d_empty = BuildPhaseDriver("", env=base_env)
+        if d_empty.persona_used(voice_persona_id="hormozi-100m-offers") is not False:
+            errors.append("driver.persona_used() with empty task_id should return False")
+        if captured:
+            errors.append("driver.persona_used() with empty task_id must not post anything")
+
+        # 7. persona_used() is callable AFTER the phase finished (review()) — a
+        #    derived-pages pass may report used personas after the main page
+        #    already moved the card to review.
+        captured.clear()
+        d_late = BuildPhaseDriver("t-late", env=base_env)
+        d_late.review()
+        if not d_late._finished:
+            errors.append("review() should finish the phase (precondition for check 7)")
+        rc_late = d_late.persona_used(page="thank-you", voice_persona_id="hormozi-100m-offers")
+        if not rc_late:
+            errors.append("driver.persona_used() must still post after the phase finished (not gated on _finished)")
+    finally:
+        globals()["post_activity"] = orig_activity
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[persona-used-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[persona-used-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
 def _demo(env: Optional[dict] = None) -> int:
     """Live demo — POST a test task to the board and print the result."""
     cfg = board_config(env)
@@ -1765,8 +2019,9 @@ if __name__ == "__main__":
         rc_activity = _activity_selftest()
         rc_phase = _phase_driver_selftest()
         rc_u9 = _u9_selftest()
+        rc_persona_used = _persona_used_selftest()
         sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0
-                       and rc_phase == 0 and rc_u9 == 0) else 1)
+                       and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0) else 1)
     elif args.status_selftest:
         sys.exit(_status_selftest())
     elif args.u9_selftest:
