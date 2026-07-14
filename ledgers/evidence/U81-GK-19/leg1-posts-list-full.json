@@ -1,0 +1,129 @@
+{
+  "success": true,
+  "statusCode": 201,
+  "total_posts_returned": 20,
+  "fixture_marker_searched": "GK-19/U81 QC FIXTURE",
+  "fixture_marker_hits": [],
+  "post_ids_and_summary_lengths_only": [
+    {
+      "_id": "6a53ebe471fc08c4d3b0dbb0",
+      "createdAt": "2026-07-12T19:32:52.256Z",
+      "summary_char_len": 1986,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebe464f715d074916a77",
+      "createdAt": "2026-07-12T19:32:52.833Z",
+      "summary_char_len": 972,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebe49c355d0e80e787da",
+      "createdAt": "2026-07-12T19:32:52.545Z",
+      "summary_char_len": 1133,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebc89c355d0e80e7740c",
+      "createdAt": "2026-07-12T19:32:24.336Z",
+      "summary_char_len": 1974,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebc89c355d0e80e77442",
+      "createdAt": "2026-07-12T19:32:24.608Z",
+      "summary_char_len": 1336,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebc8447549ea1d222fbe",
+      "createdAt": "2026-07-12T19:32:24.873Z",
+      "summary_char_len": 1364,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebab791b82e52bd82d35",
+      "createdAt": "2026-07-12T19:31:55.289Z",
+      "summary_char_len": 2042,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebabeaab96571b926cfb",
+      "createdAt": "2026-07-12T19:31:55.585Z",
+      "summary_char_len": 1385,
+      "deleted": false
+    },
+    {
+      "_id": "6a53ebab45087110f2399cec",
+      "createdAt": "2026-07-12T19:31:55.826Z",
+      "summary_char_len": 1337,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb8f45087110f239901c",
+      "createdAt": "2026-07-12T19:31:27.160Z",
+      "summary_char_len": 2033,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb8fee93cd8ca06432d6",
+      "createdAt": "2026-07-12T19:31:27.448Z",
+      "summary_char_len": 1191,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb8f248dfe49b5048c3e",
+      "createdAt": "2026-07-12T19:31:27.719Z",
+      "summary_char_len": 976,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb70447549ea1d220e9f",
+      "createdAt": "2026-07-12T19:30:56.318Z",
+      "summary_char_len": 1284,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb7064f715d074912dd5",
+      "createdAt": "2026-07-12T19:30:56.040Z",
+      "summary_char_len": 1485,
+      "deleted": false
+    },
+    {
+      "_id": "6a53eb6f64f715d074912db3",
+      "createdAt": "2026-07-12T19:30:55.843Z",
+      "summary_char_len": 2051,
+      "deleted": false
+    },
+    {
+      "_id": "6a54e1a700bdfc07a459bf08",
+      "createdAt": "2026-07-13T13:01:27.826Z",
+      "summary_char_len": 1179,
+      "deleted": false
+    },
+    {
+      "_id": "6a54e1b2253f62425d15bfd9",
+      "createdAt": "2026-07-13T13:01:38.598Z",
+      "summary_char_len": 2139,
+      "deleted": false
+    },
+    {
+      "_id": "6a54e1b2253f62425d15bfe2",
+      "createdAt": "2026-07-13T13:01:38.613Z",
+      "summary_char_len": 2139,
+      "deleted": false
+    },
+    {
+      "_id": "6a54e1b2253f62425d15bfdd",
+      "createdAt": "2026-07-13T13:01:38.606Z",
+      "summary_char_len": 2139,
+      "deleted": false
+    },
+    {
+      "_id": "6a54e1b2253f62425d15bfd7",
+      "createdAt": "2026-07-13T13:01:38.593Z",
+      "summary_char_len": 2139,
+      "deleted": false
+    }
+  ]
+}

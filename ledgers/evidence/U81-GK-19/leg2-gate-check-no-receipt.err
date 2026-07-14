@@ -1,0 +1,4 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+FATAL: prompt cleared FORM but has 1 quality/routing defect(s):
+  - AF-SM-INPUT-QC-GATE: --asset-source graphics-department but no --qc-receipt-file supplied. The planner REJECTS graphics-department assets lacking a SOP-GIP-02 QC receipt (P3-05 step 4i) instead of posting them.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
