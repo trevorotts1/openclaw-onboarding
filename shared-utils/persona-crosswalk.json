@@ -2,6 +2,20 @@
   "_doc": "Crosswalk that resolves every funnel-template + automation-template persona reference to a REAL canonical Skill-22 persona-categories.json id, so 'copy from the personas' always pulls a real persona-blueprint. Resolution order (most specific first): (1) the ref IS a canonical id; (2) exact slug_map hit; (3) ordered title/concept/author pattern scan. Validate with shared-utils/persona_crosswalk.py --validate. EVERY target below MUST exist in 22-book-to-persona-coaching-leadership-system/persona-categories.json (the validator enforces it).",
   "canonical_source": "22-book-to-persona-coaching-leadership-system/persona-categories.json",
   "_email_doc": "email_persona_styles crosswalks Skill-50's 12 self-contained email tone-STYLE ids to REAL canonical persona ids, so an email selection joins the persona adherence/learning loop (F4.3). Only styles with a genuine canonical counterpart are mapped — a style with no library persona (e.g. Tony Robbins != the library's Mel Robbins; Iyanla/Les Brown/Lisa Nichols/Gladwell/Brené have no library persona) is intentionally OMITTED and keeps its own style-tier behavior. Every mapped target MUST exist in persona-categories.json (persona_crosswalk.py --validate enforces it alongside slug_map/patterns).",
+  "_copy_craft_pool_doc": "copy_craft_pool (D5/B-D1, RATIFIED 2026-07-14) is the SINGLE source of truth for the copy-craft TASK slot named allowlist. D5 killed the old bare 5-surname cap (v2-autonomous-build-sop.md:292-293) with a two-part rule: (a) the VOICE persona may be ANY of the 99 catalog personas (audience-led, per D1/B-D1 — never restricted); (b) the copy-craft TASK slot ALONE stays restricted to this named pool, so funnel copy is always written WITH a proven direct-response method. Membership = the five (bly-copywriters-handbook, wiebe-copy-hackers, miller-building-storybrand, hormozi-100m-offers, cialdini-influence) + every edwards-* canonical id + every Brunson-family id already used as a crosswalk TARGET above (slug_map/patterns values containing 'brunson'). Referenced by BOTH 06-ghl-install-pages/v2-autonomous-build-sop.md (P2 step 2) and universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md (step 1) — never redefined in either document, only pointed at here. Every member MUST exist in persona-categories.json (persona_crosswalk.py --validate enforces it, and fails non-zero if a non-canonical member is ever seeded); scripts/guard-fab-qc-gate.sh separately asserts this key is present and non-empty so the pool itself can never be silently deleted.",
+  "copy_craft_pool": [
+    "bly-copywriters-handbook",
+    "wiebe-copy-hackers",
+    "miller-building-storybrand",
+    "hormozi-100m-offers",
+    "cialdini-influence",
+    "edwards-copywriting-secrets",
+    "brunson-marketing-secrets-blackbook",
+    "brunson-network-marketing-secrets",
+    "russell-brunson-lead-funnels",
+    "russell-brunson-the-funnel-hackers-cookbook",
+    "russell-brunson-traffic-secrets"
+  ],
   "email_persona_styles": {
     "persona-style-td-jakes": "jakes-instinct",
     "persona-style-simon-sinek": "sinek-start-with-why",

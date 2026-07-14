@@ -15,6 +15,13 @@ This module is the reconciliation. ``resolve()`` maps any persona ref to a REAL
 funnel + automation template (and that every crosswalk target actually exists in the canonical
 file). The CI guard + drift checker run ``--validate`` so the vocabulary can't drift again.
 
+D5/B-D1 (RATIFIED 2026-07-14) ALSO killed the old bare 5-surname copy-persona cap and replaced it
+with a two-part rule: VOICE is catalog-wide (any of the 99 personas); the copy-craft TASK slot
+stays restricted to the named ``copy_craft_pool`` key in ``persona-crosswalk.json`` (the five
+direct-response authorities + every ``edwards-*`` id + every Brunson-family crosswalk target).
+``--validate`` covers ``copy_craft_pool`` in the SAME ``bad_targets`` canonical check as
+``slug_map``/``patterns``/``email_persona_styles`` — one gate, every mapped target.
+
 Resolution order (most specific first):
   1. the ref already IS a canonical persona id  -> itself
   2. an exact ``slug_map`` hit (the short template slugs)
@@ -165,11 +172,14 @@ def scan(funnel_root: str = DEFAULT_FUNNEL_ROOT, auto_root: str = DEFAULT_AUTO_R
         _do(path, _persona_refs_auto(doc), "automation")
 
     # Also validate every crosswalk TARGET resolves to a real canonical persona.
-    # This covers slug_map + patterns AND the email_persona_styles crosswalk (F4.3),
-    # so `--validate` is the single gate for every mapped target.
+    # This covers slug_map + patterns, the email_persona_styles crosswalk (F4.3), AND
+    # copy_craft_pool (D5/B-D1 — the copy-craft TASK-slot allowlist), so `--validate`
+    # is the single gate for every mapped target, including the pool.
     bad_targets = sorted({t for t in crosswalk.get("slug_map", {}).values() if t not in canonical}
                          | {t for _, t in crosswalk.get("patterns", []) if t not in canonical}
                          | {t for t in (crosswalk.get("email_persona_styles") or {}).values()
+                            if t not in canonical}
+                         | {t for t in (crosswalk.get("copy_craft_pool") or [])
                             if t not in canonical})
     return {"counts": counts, "rows": rows, "bad_targets": bad_targets, "canonical": sorted(canonical)}
 

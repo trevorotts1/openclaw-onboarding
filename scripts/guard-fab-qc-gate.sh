@@ -63,6 +63,23 @@ if [ -f "$CROSSWALK_PY" ]; then
   fi
 fi
 
+# 1d. copy_craft_pool (D5/B-D1, RATIFIED 2026-07-14): the named copy-craft TASK-slot
+#     allowlist must exist and be non-empty — this is the ONLY thing standing between
+#     "the bare 5-surname cap is gone" and "the copy-craft discipline it encoded is gone
+#     too." Deleting the key must fail this guard, not just go unnoticed.
+if [ -f "$CROSSWALK_JSON" ]; then
+  if python3 -c "
+import json, sys
+d = json.load(open('$CROSSWALK_JSON'))
+pool = d.get('copy_craft_pool')
+sys.exit(0 if isinstance(pool, list) and len(pool) > 0 else 1)
+" 2>/dev/null; then
+    ok "copy_craft_pool present in persona-crosswalk.json (D5/B-U4 copy-craft task-slot pool)"
+  else
+    bad "copy_craft_pool MISSING or empty in persona-crosswalk.json (D5/B-U4 copy-craft pool regressed)"
+  fi
+fi
+
 # 2. Threshold == 8.5 in the scorer and the rubric (and not lowered).
 if has "$SCORER" "THRESHOLD = 8.5"; then ok "scorer THRESHOLD = 8.5"; else bad "scorer THRESHOLD is not 8.5"; fi
 if has "$RUBRIC" "8.5"; then ok "rubric cites the 8.5 threshold"; else bad "rubric does not cite 8.5"; fi

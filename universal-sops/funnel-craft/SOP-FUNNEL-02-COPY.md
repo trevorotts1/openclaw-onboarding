@@ -46,6 +46,15 @@ fail-closed gate — generation MUST NOT unlock without it.
    `voice_persona_id`, catalog-wide per D1/B-D1, never limited to a fixed surname list).
    `49-signature-funnel/scripts/copy_persona_blend_seam.py` is the machine-callable seam that
    renders the log entry + the `{{BLEND_DIRECTIVE}}` prompt variable from a bundle (below).
+   **Two-part rule (D5/B-D1, RATIFIED 2026-07-14):** VOICE (above) is catalog-wide and unrestricted;
+   the copy-craft **TASK slot** — the bundle's `task_persona` / the `{{BLEND_DIRECTIVE}}` TASK line —
+   stays restricted to the named `copy_craft_pool` in `shared-utils/persona-crosswalk.json` (the five
+   direct-response authorities `bly-copywriters-handbook`/`wiebe-copy-hackers`/
+   `miller-building-storybrand`/`hormozi-100m-offers`/`cialdini-influence` plus every `edwards-*` id
+   plus every Brunson-family crosswalk target), machine-validated by `persona_crosswalk.py --validate`.
+   This mirrors `v2-autonomous-build-sop.md` P2 step 2 exactly — the SAME pool key, one coherent gate
+   across both Standard Operating Procedures; the allowlist governs the TASK/CONVERSION slot ONLY
+   (D3/D-A3), never VOICE.
 2. **Log** the result to `persona-selection-log.md` in the run dir — the entry MUST keep naming a
    `selected_persona: <registered-slug>` (the bundle's VOICE persona id — back-compat, unchanged
    shape) and `selector_ran: true`, and ADDS `voice_persona:` / `topic_persona:` / `task_persona:` /

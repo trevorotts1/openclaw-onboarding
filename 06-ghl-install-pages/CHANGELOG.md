@@ -4,6 +4,50 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.60.0] - 2026-07-14 - P2 copy-persona gate converges on the D5/B-D1 two-part rule (kills the bare 5-surname cap)
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`).
+
+### Changed
+- **`v2-autonomous-build-sop.md` P2 step 2** — replaced the literal bare
+  5-surname copy-persona allowlist (`bly`/`wiebe`/`miller`/`hormozi`/`cialdini`)
+  with the operator-ratified two-part rule (D5/B-D1, 2026-07-14): (a) VOICE may
+  be any of the 99 catalog personas (D1/B-D1 — audience-led, unrestricted); (b)
+  the copy-craft TASK slot alone stays restricted to the new named
+  `copy_craft_pool` in `shared-utils/persona-crosswalk.json`. Consistent with
+  the D3/D-A3 ruling that the allowlist governs the TASK/CONVERSION slot ONLY,
+  never VOICE/SUBSTANCE.
+- **`universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md` step 1** — added the
+  matching copy-craft TASK-slot rule pointing at the SAME `copy_craft_pool` key,
+  so both Standard Operating Procedures reference one coherent gate (no
+  half-edit fracture).
+
+### Added
+- **`shared-utils/persona-crosswalk.json`** — new `copy_craft_pool` key: the
+  five direct-response authorities (`bly-copywriters-handbook`,
+  `wiebe-copy-hackers`, `miller-building-storybrand`, `hormozi-100m-offers`,
+  `cialdini-influence`) + `edwards-copywriting-secrets` + the five Brunson-family
+  crosswalk targets (`brunson-marketing-secrets-blackbook`,
+  `brunson-network-marketing-secrets`, `russell-brunson-lead-funnels`,
+  `russell-brunson-the-funnel-hackers-cookbook`, `russell-brunson-traffic-secrets`).
+  Defined ONCE, referenced by both SOPs above.
+- **`shared-utils/persona_crosswalk.py`** — `--validate` now also proves every
+  `copy_craft_pool` member resolves to a real `persona-categories.json` canonical
+  id (folded into the existing `bad_targets` check alongside `slug_map` /
+  `patterns` / `email_persona_styles`).
+- **`scripts/guard-fab-qc-gate.sh`** — new invariant: `copy_craft_pool` must be
+  present and non-empty in `persona-crosswalk.json`, or the guard fails
+  (`copy_craft_pool MISSING or empty...`). Proven both ways (present → PASS;
+  key deleted → FAIL) before merge.
+- **`tests/unit/persona-crosswalk.test.py`** — pool-membership/canonical tests
+  (structurally re-derived from the crosswalk's own Brunson-family targets, not
+  a duplicate hardcoded list), a CLI `--validate` fake-member-seeded failure
+  test, a bare-5-name-list absence proof against both SOPs (with a captured
+  pre-edit fixture proving the detector itself is not a tautology), and a
+  guard-deletion proof that mutates-and-restores the real crosswalk file.
+
 ## [v19.59.0] - 2026-07-13 - VERCEL_EMBED now archives to GitHub, non-blocking, with a reconciliation sweep
 
 > Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at

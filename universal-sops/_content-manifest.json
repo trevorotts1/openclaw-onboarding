@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-14T05:41:06Z",
+  "generated_at": "2026-07-14T15:33:57Z",
   "file_count": 103,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -193,8 +193,8 @@
       "bytes": 3225
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "0e1a5754c9adc8f4e9dadb36be63ed79a8bc0dd29e51ba54ff2f4d46966c9f95",
-      "bytes": 7306
+      "sha256": "9ba182974875529dde954623ec769c8a03357391ccb76d93f1101d8baf55b50f",
+      "bytes": 8129
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
       "sha256": "54b1afde1d66607d7c117ddaebcf0d9bfffe18c612d4732d96bc6c2e6a387539",
