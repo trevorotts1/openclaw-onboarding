@@ -143,6 +143,26 @@ jobs:
   persona-embeddings-wiring:
     name: "A-U8 — book-to-persona embeddings wiring (index write / deferral / index-verify / drift)"
     runs-on: ubuntu-latest
+    # The runner is a bare box: no ~/.openclaw (Mac marker) and no
+    # /data/.openclaw or /data/clawd (VPS markers) on disk, so
+    # get_openclaw_paths() (shared-utils/detect_platform.py,
+    # 23-ai-workforce-blueprint/lib/detect_platform.py) cannot resolve a
+    # platform and raises SystemExit("Cannot detect OpenClaw platform.").
+    # tests/unit/embedding-credential-error-classify.test.py's
+    # TestIndexerExitCodeRouting cases load 23-ai-workforce-blueprint/scripts/
+    # gemini-section-indexer.py's main(), which calls get_openclaw_paths()
+    # before reaching the credential-vs-generic exit-code branch under test,
+    # so both cases die on SystemExit(1) instead of asserting exit 4 / exit 6.
+    # OPENCLAW_PLATFORM is the same first-class override install.sh /
+    # update-skills.sh / lib-shared.sh already honor, and the same escape
+    # hatch qc-static.yml already uses for this exact bare-runner gap; setting
+    # it makes detection deterministic for the WHOLE job WITHOUT weakening
+    # real Mac/VPS detection (the override is only consulted when set, so a
+    # real box still auto-detects exactly as before). This job never touches
+    # a live install — it exercises the indexer/orchestrator/publish code
+    # against fixture dirs — so a forced platform is correct here.
+    env:
+      OPENCLAW_PLATFORM: mac
     steps:
       - name: Checkout
         uses: actions/checkout@v4
