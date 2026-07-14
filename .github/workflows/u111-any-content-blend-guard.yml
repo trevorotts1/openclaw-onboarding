@@ -1,0 +1,70 @@
+name: u111-any-content-blend-guard
+
+# U111 (E5-6, closes G4) — "Rewrite ANY content" proven, not assumed. Fails
+# the build if the D1 binding ruling (the blend GOVERNS voice + content-
+# writing in every engine, never advisory, no exemptions) regresses on any
+# of the named content engines:
+#   (a) email  (50-email-engine/tools/persona_canonical.py::blend_block) stops
+#       being able to call the U1 seam WITH blend=True and receive a governed
+#       bundle (blend_directive ending in the mandatory guardrail, voice
+#       attributes traceable to the bundle);
+#   (b) blog / newsletter (57-social-media-in-a-box/scripts/persona_adapter.py
+#       ::resolve(), the SAME canonical entry point both golden modes ride)
+#       loses its opt-in blend passthrough, or the pre-U111 blend-omitted
+#       shape stops being byte-identical (the additive/backward-compat
+#       contract);
+#   (c) the recorded text-message (SMS) NOT-FOUND finding goes stale — i.e.
+#       either named SMS-adjacent surface starts referencing
+#       persona_for_job/blend_directive without this test (and its routing
+#       decision to U116) being updated to match.
+#
+# Deps: U1/A-U1 (shared-utils/persona_for_job.py's blend=True seam) must stay
+# green — this guard also re-runs persona_for_job.py's own self-test so a
+# regression there is caught here too, not just in whatever guard (if any)
+# already covers U1 directly.
+
+on:
+  push:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "50-email-engine/tools/persona_canonical.py"
+      - "57-social-media-in-a-box/scripts/persona_adapter.py"
+      - tests/unit/u111-any-content-blend-proof.test.py
+      - .github/workflows/u111-any-content-blend-guard.yml
+  pull_request:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "50-email-engine/tools/persona_canonical.py"
+      - "57-social-media-in-a-box/scripts/persona_adapter.py"
+      - tests/unit/u111-any-content-blend-proof.test.py
+      - .github/workflows/u111-any-content-blend-guard.yml
+
+jobs:
+  u111-any-content-blend-guard:
+    name: "\"Any content\" blend-governance proof — email/blog/newsletter/SMS-NOT-FOUND"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the U1 seam + both engine call sites
+        run: |
+          python3 -m py_compile shared-utils/persona_for_job.py
+          python3 -m py_compile 50-email-engine/tools/persona_canonical.py
+          python3 -m py_compile 57-social-media-in-a-box/scripts/persona_adapter.py
+
+      - name: U1/A-U1 — persona_for_job.py self-test (18 cases, incl. blend mode)
+        run: python3 shared-utils/persona_for_job.py --self-test
+
+      - name: Skill 57 persona_adapter.py self-test (9 cases, incl. U111 blend passthrough)
+        run: python3 57-social-media-in-a-box/scripts/persona_adapter.py --self-test
+
+      - name: U111 — any-content blend-governance proof (email/blog/newsletter/SMS-NOT-FOUND)
+        run: python3 tests/unit/u111-any-content-blend-proof.test.py
