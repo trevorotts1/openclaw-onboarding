@@ -639,6 +639,18 @@ Source: `N8N-DRIVE-BROKER-FIX-SPEC.md` §6 (retired after this port).
 
 ---
 
+## 🔴 A self-hosted service (n8n, etc.) needs a public webhook — different SOP, hard guardrail
+
+If a client's own self-hosted service (a self-hosted n8n instance is the flagship case) needs to
+receive INBOUND webhooks over the public internet, do **not** run `cloudflared tunnel login` and do
+not improvise a Cloudflare tunnel — the fleet's Cloudflare zone is operator-owned, the client has no
+account on it, and that command can never succeed for a client box. Follow
+`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`: escalate to the operator for a
+hostname + origin port + an ingress-rule merge into the box's EXISTING tunnel (never a new tunnel/
+token/connector), then verify with the SOP's 404-vs-302 checks before calling it done.
+
+---
+
 ## Agent Operating Rules
 
 ### First Run
