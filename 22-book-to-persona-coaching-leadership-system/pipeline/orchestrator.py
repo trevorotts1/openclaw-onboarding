@@ -111,6 +111,16 @@ except ImportError:
 # working standalone on a box where skill 23 isn't (yet) installed; duality-tag
 # enrichment then degrades to a conservative structural-only check rather than
 # blocking the pipeline (see _validate_duality_tags's fallback branch).
+#
+# A-U3 (schema-1.4) extension: the SAME '## Duality Tags' block MAY also carry
+# three additive scalar fields — emotional_register / audience_resonance /
+# conversion_style — vocab-validated through the identical
+# persona_blend.validate_catalog_tags rulebook (now extended with the
+# emotionalRegisterTags/audienceResonanceTags/conversionStyleTags vocab
+# checks). Absence is still a NO-OP; a present-but-rejected value still
+# degrades to "registered without that field" rather than blocking core
+# registration — the never-to-zero contract is unchanged, just widened to
+# three more fields.
 _SKILL23_SCRIPTS = Path(__file__).resolve().parents[2] / "23-ai-workforce-blueprint" / "scripts"
 if str(_SKILL23_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SKILL23_SCRIPTS))
@@ -931,6 +941,15 @@ _DUALITY_BLOCK_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# A-U3 (schema-1.4): the ORIGINAL D6 fields are list/object-valued; A-U3 layers
+# three additive SCALAR (single-string) fields onto the SAME '## Duality Tags'
+# block — same parse/gate/stamp mechanics, just a different shape per field, so
+# both field sets are named here once and reused by every write site below
+# rather than repeating the field list at each call site (drift-proof).
+_DUALITY_LIST_FIELDS = ("audiences", "topics", "voice_style", "usable_as")
+_DUALITY_SCALAR_FIELDS = ("emotional_register", "audience_resonance", "conversion_style")
+_ALL_DUALITY_FIELDS = _DUALITY_LIST_FIELDS + _DUALITY_SCALAR_FIELDS
+
 # Folders whose '## Duality Tags' block was present but rejected (malformed
 # JSON or failed the persona_blend.validate_catalog_tags gate) this run.
 # Informational only — deliberately does NOT feed PHASE6_CATEGORIES_EXIT_CODE;
@@ -988,9 +1007,16 @@ def _validate_duality_tags(folder: str, entry_with_duality: dict, data: dict) ->
     """
     if _PERSONA_BLEND_AVAILABLE:
         mini_catalog = {
-            "schemaVersion": "1.3",
+            "schemaVersion": "1.4",
             "audienceTags": data.get("audienceTags", []) or [],
             "topicTags": data.get("topicTags", []) or [],
+            # A-U3 (schema-1.4): pass the LIVE scalar-field vocab through too,
+            # so an out-of-vocab emotional_register/audience_resonance/
+            # conversion_style is rejected by the SAME rulebook read-time
+            # enforces — never a second, silently-drifting copy of the check.
+            "emotionalRegisterTags": data.get("emotionalRegisterTags", []) or [],
+            "audienceResonanceTags": data.get("audienceResonanceTags", []) or [],
+            "conversionStyleTags": data.get("conversionStyleTags", []) or [],
             "personas": {folder: entry_with_duality},
         }
         result = _persona_blend.validate_catalog_tags(mini_catalog)
@@ -1009,17 +1035,30 @@ def _validate_duality_tags(folder: str, entry_with_duality: dict, data: dict) ->
     vs = entry_with_duality.get("voice_style")
     if vs is not None and (not isinstance(vs, dict) or not str(vs.get("summary", "")).strip()):
         errs.append(f"{folder}: voice_style.summary is required and missing")
+    # A-U3 (schema-1.4) scalar fields — required-non-empty-string when present.
+    # Vocab membership is NOT checked in this defensive fallback (no
+    # persona_blend module to read the vocab through); the round-trip through
+    # the real rulebook happens as soon as skill 23 is importable again.
+    for field in _DUALITY_SCALAR_FIELDS:
+        v = entry_with_duality.get(field)
+        if v is not None and (not isinstance(v, str) or not v.strip()):
+            errs.append(f"{folder}: '{field}' must be a non-empty string")
     return errs
 
 
 def _register_duality_tags(folder: str, data: dict) -> None:
     """Parse + gate the OPTIONAL '## Duality Tags' block out of folder's
     persona-blueprint.md and, when well-formed, merge audiences[]/topics[]/
-    voice_style{}/usable_as[] into data["personas"][folder] IN PLACE. Call
-    AFTER the base entry (domain/perspective/custom/…) has been assigned and
-    BEFORE _lint_persona_categories_write / json.dump. Never raises — see the
+    voice_style{}/usable_as[] — plus the A-U3 (schema-1.4) scalar fields
+    emotional_register/audience_resonance/conversion_style — into
+    data["personas"][folder] IN PLACE. Call AFTER the base entry
+    (domain/perspective/custom/…) has been assigned and BEFORE
+    _lint_persona_categories_write / json.dump. Never raises — see the
     module comment above _DUALITY_BLOCK_RE for the additive/never-to-zero
-    contract.
+    contract. All fields in the block are gated and written ATOMICALLY as one
+    group (a rejection on any single field — old or new — omits the WHOLE
+    block, matching the pre-A-U3 all-or-nothing behavior; never a half-valid
+    persona entry).
     """
     blueprint_path = PERSONAS_DIR / folder / "persona-blueprint.md"
     blueprint_text = blueprint_path.read_text(errors="ignore") if blueprint_path.exists() else ""
@@ -1035,7 +1074,7 @@ def _register_duality_tags(folder: str, data: dict) -> None:
         return  # no block present — pre-enrichment NO-OP, not a failure.
 
     candidate = dict(data["personas"][folder])
-    for f in ("audiences", "topics", "voice_style", "usable_as"):
+    for f in _ALL_DUALITY_FIELDS:
         if f in parsed:
             candidate[f] = parsed[f]
     gate_errors = _validate_duality_tags(folder, candidate, data)
@@ -1050,13 +1089,16 @@ def _register_duality_tags(folder: str, data: dict) -> None:
             _DUALITY_TAG_WRITE_FAILURES.append(folder)
         return
 
-    for f in ("audiences", "topics", "voice_style", "usable_as"):
+    for f in _ALL_DUALITY_FIELDS:
         if f in parsed:
             data["personas"][folder][f] = parsed[f]
     print(f"[orchestrator] {folder} enriched with duality tags "
           f"(audiences={len(parsed.get('audiences') or [])}, "
           f"topics={len(parsed.get('topics') or [])}, "
-          f"usable_as={parsed.get('usable_as')}).")
+          f"usable_as={parsed.get('usable_as')}, "
+          f"emotional_register={parsed.get('emotional_register')!r}, "
+          f"audience_resonance={parsed.get('audience_resonance')!r}, "
+          f"conversion_style={parsed.get('conversion_style')!r}).")
 
 
 def _append_persona_to_categories(book: dict, folder: str,
@@ -2037,24 +2079,29 @@ def _appendix_system()   -> str:  return _get_prompt("playbook-appendix-prompt.m
 
 def _synthesis_system() -> str:
     """Phase-3 synthesis system prompt, dynamically extended (D6 fix,
-    ONB22-DUALITY-TAGS) with the LIVE controlled audienceTags[]/topicTags[]
-    vocabulary read fresh from the canonical persona-categories.json.
+    ONB22-DUALITY-TAGS; widened by A-U3/schema-1.4) with the LIVE controlled
+    audienceTags[]/topicTags[]/emotionalRegisterTags[]/audienceResonanceTags[]/
+    conversionStyleTags[] vocabulary read fresh from the canonical
+    persona-categories.json.
 
     WHY dynamic (not baked into the static template): persona_blend's
-    validate_catalog_tags rejects an audiences[]/topics[] tag that is not
-    already a member of the vocab when that vocab is non-empty — unlike
-    domain[]/perspective[], there is no auto-extend allowance (by design; see
-    persona_fleet.py _validate_entry). So the model can only land clean
-    'vocab-first' duality tags (per agent-prompts/synthesis-agent-prompt.md) if
-    it actually SEES the real vocab at synthesis time. Deliberately NOT cached
-    in _PROMPT_CACHE (that cache is keyed by static filename) — the vocab can
-    grow between books in a batch run; each call re-reads the small JSON file.
+    validate_catalog_tags rejects an audiences[]/topics[] tag — or, since
+    A-U3, an emotional_register/audience_resonance/conversion_style value —
+    that is not already a member of the vocab when that vocab is non-empty —
+    unlike domain[]/perspective[], there is no auto-extend allowance (by
+    design; see persona_fleet.py _validate_entry). So the model can only land
+    clean 'vocab-first' duality tags (per
+    agent-prompts/synthesis-agent-prompt.md) if it actually SEES the real
+    vocab at synthesis time. Deliberately NOT cached in _PROMPT_CACHE (that
+    cache is keyed by static filename) — the vocab can grow between books in
+    a batch run; each call re-reads the small JSON file.
 
     Absent file / empty vocab (a pre-enrichment 1.2 catalog, or first-ever run)
     omits the vocab block entirely — the template's own instructions then tell
-    the model to leave audiences[]/topics[] empty rather than invent tags with
-    nothing to ground them, so schema-1.2 boxes behave exactly as before this
-    fix (matches persona_blend.py's own pre-enrichment NO-OP semantics).
+    the model to leave audiences[]/topics[] (and the A-U3 scalar fields) empty
+    rather than invent tags with nothing to ground them, so schema-1.2/1.3
+    boxes behave exactly as before this fix (matches persona_blend.py's own
+    pre-enrichment NO-OP semantics).
     """
     template = _get_prompt("synthesis-agent-prompt.md")
     try:
@@ -2072,6 +2119,28 @@ def _synthesis_system() -> str:
                     "tag not shown here):\n\n"
                     f"audienceTags ({len(aud)}): {', '.join(aud)}\n\n"
                     f"topicTags ({len(top)}): {', '.join(top)}\n"
+                )
+            # A-U3 (schema-1.4): the additive SCALAR-field vocab — same
+            # vocab-first contract as audiences/topics above, but ONE chosen
+            # value per field rather than a list.
+            reg = sorted(set(cat.get("emotionalRegisterTags") or []))
+            res = sorted(set(cat.get("audienceResonanceTags") or []))
+            close = sorted(set(cat.get("conversionStyleTags") or []))
+            if reg or res or close:
+                template = template + (
+                    "\n\n## Schema-1.4 Voice-Register Fields — Current Controlled "
+                    "Vocabulary (LIVE, read-only)\n\n"
+                    "The Duality Tags block MAY also carry three additive SCALAR "
+                    "(single value, not a list) fields — `emotional_register`, "
+                    "`audience_resonance`, `conversion_style` — synthesized from THIS "
+                    "book's actual voice (extraction/analysis notes), never invented "
+                    "from the author's name alone. Choose ONE value per field, ONLY "
+                    "from the vocab below (vocab-first — "
+                    "persona_blend.validate_catalog_tags rejects anything else; omit a "
+                    "field entirely rather than inventing a value not shown here):\n\n"
+                    f"emotionalRegisterTags ({len(reg)}): {', '.join(reg)}\n\n"
+                    f"audienceResonanceTags ({len(res)}): {', '.join(res)}\n\n"
+                    f"conversionStyleTags ({len(close)}): {', '.join(close)}\n"
                 )
     except Exception:
         # Best-effort — a vocab-injection failure must never block Phase 3 itself.

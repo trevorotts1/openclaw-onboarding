@@ -67,7 +67,19 @@ BLUEPRINT_NAME = "persona-blueprint.md"
 # catalog via these per-persona fields. They MUST survive the workspace→repo
 # categories sync intact — else a publish run would silently STRIP the enrichment
 # and drop the matcher back to a degraded schema-1.2 (topic-only) mode.
-_ENRICHMENT_FIELDS = ("audiences", "topics", "voice_style", "usable_as")
+#
+# A-U3 (schema-1.4): three additive SCALAR fields — emotional_register /
+# audience_resonance / conversion_style — layered on by the D6 pipeline the
+# same way audiences/topics/voice_style/usable_as are. VERIFIED gap this unit
+# closes: before this line, these three fields were NOT in
+# CANONICAL_ENTRY_FIELDS, so a workspace→repo publish would have silently
+# DROPPED them (the exact same failure mode the comment above warns about for
+# the v1.3 fields) even though orchestrator.py's D6 parser stamps them on the
+# workspace-side entry. "the publish path already carries whole-persona
+# fields... verify, don't assume" (A-U3 spec) — verified FALSE prior to this
+# fix; fixed here.
+_ENRICHMENT_FIELDS = ("audiences", "topics", "voice_style", "usable_as",
+                      "emotional_register", "audience_resonance", "conversion_style")
 CANONICAL_ENTRY_FIELDS = ("author", "book", "domain", "perspective", "custom",
                           "fallback") + _ENRICHMENT_FIELDS
 # usable_as enum (must mirror persona_blend.USABLE_AS_ENUM).
@@ -355,7 +367,8 @@ _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def _validate_entry(slug, entry, domain_vocab, perspective_vocab,
-                    audience_vocab=None, topic_vocab=None):
+                    audience_vocab=None, topic_vocab=None,
+                    register_vocab=None, resonance_vocab=None, closer_vocab=None):
     errs = []
     if not isinstance(entry, dict):
         return [f"{slug}: categories entry is not an object"]
@@ -425,6 +438,24 @@ def _validate_entry(slug, entry, domain_vocab, perspective_vocab,
             errs.append(f"{slug}: 'voice_style' must be an object")
         elif not str(vs.get("summary", "")).strip():
             errs.append(f"{slug}: voice_style.summary is required and missing")
+
+    # ── A-U3 additive enrichment layer (schema 1.4) ──────────────────────────
+    # Three additive SCALAR fields, same optional-but-well-formed-when-present
+    # contract as the v1.3 fields above; vocab-checked when the repo's
+    # controlled vocab for that field is populated (same subset pattern).
+    for field, vocab, vocab_name in (
+        ("emotional_register", register_vocab, "emotionalRegisterTags"),
+        ("audience_resonance", resonance_vocab, "audienceResonanceTags"),
+        ("conversion_style", closer_vocab, "conversionStyleTags"),
+    ):
+        v = entry.get(field)
+        if v is None:
+            continue
+        if not isinstance(v, str) or not v.strip():
+            errs.append(f"{slug}: '{field}' must be a non-empty string")
+        elif vocab and v not in vocab:
+            errs.append(f"{slug}: {field} '{v}' is not in the controlled "
+                        f"vocabulary {vocab_name}")
     return errs
 
 
@@ -444,6 +475,11 @@ def sync_categories(workspace_cat_path, repo_cat_path, slugs):
     # syncing 1.2 entries stays valid; a 1.3 seed enforces subset membership).
     audience_vocab = set(repo.get("audienceTags", []))
     topic_vocab = set(repo.get("topicTags", []))
+    # A-U3 (schema-1.4): the additive scalar-field controlled vocab — same
+    # empty-on-a-pre-1.4-seed / enforced-once-populated contract as above.
+    register_vocab = set(repo.get("emotionalRegisterTags", []))
+    resonance_vocab = set(repo.get("audienceResonanceTags", []))
+    closer_vocab = set(repo.get("conversionStyleTags", []))
 
     errors = []
     to_write = {}
@@ -453,7 +489,8 @@ def sync_categories(workspace_cat_path, repo_cat_path, slugs):
             errors.append(f"{slug}: no persona-categories.json entry in the workspace")
             continue
         errors.extend(_validate_entry(slug, entry, domain_vocab, perspective_vocab,
-                                      audience_vocab, topic_vocab))
+                                      audience_vocab, topic_vocab,
+                                      register_vocab, resonance_vocab, closer_vocab))
         # Ship only the canonical seed fields (drop workspace-only bookkeeping).
         clean = {}
         for f in CANONICAL_ENTRY_FIELDS:

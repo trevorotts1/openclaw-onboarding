@@ -134,6 +134,10 @@ mk_blueprint("case2-clean", duality_json={
     "topics": ["direct-response-marketing"],
     "voice_style": {"summary": "Blunt, plain-spoken, pragmatic."},
     "usable_as": ["audience", "topic", "task"],
+    # A-U3 (schema-1.4) scalar fields ride the SAME block:
+    "emotional_register": "tough-love",
+    "audience_resonance": "challenged-to-rise",
+    "conversion_style": "challenge-close",
 })
 outcome = o._phase6_register_categories(book, "case2-clean", appendix_status="COMPLETE")
 cats = read_cats()
@@ -144,7 +148,28 @@ check(entry is not None and entry.get("topics") == ["direct-response-marketing"]
 check(entry is not None and entry.get("voice_style", {}).get("summary") == "Blunt, plain-spoken, pragmatic.",
       "voice_style.summary landed")
 check(entry is not None and entry.get("usable_as") == ["audience", "topic", "task"], "usable_as landed")
+check(entry is not None and entry.get("emotional_register") == "tough-love", "emotional_register landed (A-U3)")
+check(entry is not None and entry.get("audience_resonance") == "challenged-to-rise", "audience_resonance landed (A-U3)")
+check(entry is not None and entry.get("conversion_style") == "challenge-close", "conversion_style landed (A-U3)")
 check(o.pipeline_had_duality_tag_failures() is False, "no duality failure recorded on a clean enrich")
+
+# ── Case 2b: A-U3 vocab-first — out-of-vocab emotional_register rejects the WHOLE block ──
+print("── Case 2b: A-U3 vocab-first, emotional_register NOT a vocab member -> whole block rejected ──")
+reset()  # empty vocab baseline, then hand-seed ONLY the schema-1.4 register vocab
+_c = read_cats()
+_c["emotionalRegisterTags"] = ["warm-encouragement"]  # does NOT include 'tough-love'
+catpath.write_text(json.dumps(_c, indent=2))
+mk_blueprint("case2b-badregister", duality_json={
+    "audiences": [], "topics": ["direct-response-marketing"],
+    "voice_style": {"summary": "x"},
+    "emotional_register": "tough-love",  # not in the seeded emotionalRegisterTags
+})
+outcome = o._phase6_register_categories(book, "case2b-badregister", appendix_status="COMPLETE")
+entry = read_cats()["personas"].get("case2b-badregister")
+check(outcome == "ok", "core registration must survive a schema-1.4 rejection")
+check(entry is not None and "emotional_register" not in entry, "emotional_register omitted after out-of-vocab rejection")
+check(entry is not None and "topics" not in entry, "all-or-nothing: in-vocab topics[] also omitted")
+check("case2b-badregister" in o._DUALITY_TAG_WRITE_FAILURES, "out-of-vocab register rejection recorded")
 
 # ── Case 3: vocab-first — tag IS in a populated vocab -> passes ───────────────
 print("── Case 3: vocab-first, tag IS a vocab member -> passes ──")
@@ -277,6 +302,36 @@ check(_LIVE_MARKER not in prompt_empty,
 # 'small-business-owners' as sample JSON — so we assert on the LIVE-only
 # marker (above), not on tag-string absence, to avoid a false positive here.
 check("Duality Tags" in prompt_empty,
+      "template's own Duality Tags instructions still present with empty vocab")
+
+# ── Case 11b: A-U3 — _synthesis_system() injects the schema-1.4 register vocab ──
+print("── Case 11b: _synthesis_system() dynamically injects the LIVE schema-1.4 vocab ──")
+reset()
+_c = read_cats()
+_c["emotionalRegisterTags"] = ["tough-love"]
+_c["audienceResonanceTags"] = ["challenged-to-rise"]
+_c["conversionStyleTags"] = ["challenge-close"]
+catpath.write_text(json.dumps(_c, indent=2))
+prompt_s14 = o._synthesis_system()
+check(_LIVE_MARKER in prompt_s14, "dynamic schema-1.4 vocab block present when populated")
+check("tough-love" in prompt_s14, "emotionalRegisterTags member present in the injected prompt")
+check("challenged-to-rise" in prompt_s14, "audienceResonanceTags member present in the injected prompt")
+check("challenge-close" in prompt_s14, "conversionStyleTags member present in the injected prompt")
+check("Schema-1.4 Voice-Register Fields" in prompt_s14, "the new heading is present")
+
+reset()  # empty vocab (including schema-1.4 fields)
+prompt_s14_empty = o._synthesis_system()
+# NOTE: the static template's OWN VOCAB-FIRST prose legitimately NAMES the
+# heading "Schema-1.4 Voice-Register Fields — Current Controlled Vocabulary"
+# (telling the model what to look for IF present) — exactly the same reason
+# Case 11 above asserts on the LIVE-only marker rather than "Duality Tags —
+# Current Controlled Vocabulary" bare text. Assert on the heading+marker
+# COMBINED (only the dynamic injection emits both together).
+check("Schema-1.4 Voice-Register Fields — Current Controlled Vocabulary (LIVE, read-only)"
+      not in prompt_s14_empty,
+      "schema-1.4 vocab block OMITTED when emotionalRegisterTags/audienceResonanceTags/"
+      "conversionStyleTags are all empty")
+check("Duality Tags" in prompt_s14_empty,
       "template's own Duality Tags instructions still present with empty vocab")
 
 print(f"\n{'='*60}")

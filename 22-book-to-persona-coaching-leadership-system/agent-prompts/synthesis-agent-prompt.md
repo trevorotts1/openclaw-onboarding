@@ -147,6 +147,17 @@ Coaching Mode / Task Mode as before, but INVISIBLE to that specific matcher.
   `audiences[]` is genuinely non-empty AND you are confident in that call —
   serving as an audience voice is a deliberate, explicit decision, never an
   inference from keyword overlap alone.
+- `emotional_register` (string, OPTIONAL) — the feeling-space this voice
+  operates in (e.g. `tough-love`, `warm-encouragement`, `data-calm`,
+  `righteous-fire`). Synthesized from the extraction/analysis notes and the
+  voice you just wrote — never invented from the author's name alone. Choose
+  ONE value.
+- `audience_resonance` (string, OPTIONAL) — what this voice makes its
+  audience FEEL when they read/hear it (e.g. `seen-and-understood`,
+  `challenged-to-rise`). Choose ONE value.
+- `conversion_style` (string, OPTIONAL) — how this voice closes when asking
+  for action: one of `story-close`, `stack-close`, `logic-close`,
+  `invitation-close`, `challenge-close`. Choose ONE value.
 
 **VOCAB-FIRST — read this before writing `audiences`/`topics`:** if a section
 below this one, titled "Duality Tags — Current Controlled Vocabulary", lists
@@ -158,6 +169,16 @@ earlier pipeline schema, or the very first persona built on a fresh box),
 leave `audiences`/`topics` empty rather than inventing unvetted tags — the
 one-time curated backfill / a later fleet-wide enrichment pass is the correct
 place to introduce genuinely new tags into the controlled vocabulary.
+
+**VOCAB-FIRST — read this before writing `emotional_register`/
+`audience_resonance`/`conversion_style`:** if a section below this one,
+titled "Schema-1.4 Voice-Register Fields — Current Controlled Vocabulary",
+lists the current `emotionalRegisterTags`/`audienceResonanceTags`/
+`conversionStyleTags`, choose ONE value per field ONLY from those lists — do
+not invent a new value. The validation gate rejects any value that isn't
+already a member of that live vocabulary. If no such vocabulary section is
+present below, omit these three fields entirely rather than inventing
+unvetted values.
 
 **Format** (note the 4-backtick fence below is just this instruction doc's way
 of showing you a fence-containing-a-fence — your actual output uses the
@@ -179,7 +200,10 @@ this prompt):
     "signature_moves": ["forces a specific niche", "demands a measurable offer"],
     "avoid": ["vague target-market claims", "unmeasured brand-awareness advice"]
   },
-  "usable_as": ["topic", "task"]
+  "usable_as": ["topic", "task"],
+  "emotional_register": "tough-love",
+  "audience_resonance": "challenged-to-rise",
+  "conversion_style": "challenge-close"
 }
 ```
 ````

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3",
+  "schemaVersion": "1.4",
   "created": "2026-03-22",
   "domainTags": [
     "marketing",
@@ -1235,6 +1235,43 @@
     "youtube-search-seo",
     "youtube-seo"
   ],
+  "emotionalRegisterTags": [
+    "analytical-detachment",
+    "bold-confrontation",
+    "compassionate-directness",
+    "data-calm",
+    "fierce-clarity",
+    "grounded-humility",
+    "playful-irreverence",
+    "reflective-stillness",
+    "righteous-fire",
+    "steady-reassurance",
+    "tough-love",
+    "urgent-drive",
+    "visionary-inspiration",
+    "warm-encouragement"
+  ],
+  "audienceResonanceTags": [
+    "awakened-to-blind-spots",
+    "calmed-and-grounded",
+    "challenged-to-rise",
+    "confronted-with-truth",
+    "equipped-and-capable",
+    "given-permission",
+    "inspired-to-dream-bigger",
+    "relieved-of-overwhelm",
+    "respected-as-smart",
+    "seen-and-understood",
+    "sparked-to-action",
+    "validated-not-alone"
+  ],
+  "conversionStyleTags": [
+    "challenge-close",
+    "invitation-close",
+    "logic-close",
+    "stack-close",
+    "story-close"
+  ],
   "personas": {
     "allan-dib-the-1-page-marketing-plan": {
       "author": "Allan Dib",
@@ -1306,7 +1343,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "attwood-passion-test": {
       "author": "Janet Attwood",
@@ -1374,7 +1414,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "invitation-close"
     },
     "bly-copywriters-handbook": {
       "author": "Robert Bly",
@@ -1443,7 +1486,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     },
     "brown-atlas-of-heart": {
       "author": "Brene Brown",
@@ -1526,7 +1572,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "compassionate-directness",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "story-close"
     },
     "charvet-words-change-minds": {
       "author": "Shelle Rose Charvet",
@@ -1599,7 +1648,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "cialdini-influence": {
       "author": "Robert Cialdini",
@@ -1669,7 +1721,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "clear-atomic-habits": {
       "author": "James Clear",
@@ -1743,7 +1798,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "collins-good-to-great": {
       "author": "Jim Collins",
@@ -1815,7 +1873,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "confronted-with-truth",
+      "conversion_style": "logic-close"
     },
     "collins-good-to-great-summary": {
       "author": "Jim Collins",
@@ -1885,7 +1946,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "confronted-with-truth",
+      "conversion_style": "logic-close"
     },
     "duhigg-power-of-habit": {
       "author": "Charles Duhigg",
@@ -1959,7 +2023,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "forte-building-second-brain": {
       "author": "Tiago Forte",
@@ -2036,7 +2103,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "invitation-close"
     },
     "forte-para-method": {
       "author": "Tiago Forte",
@@ -2110,7 +2180,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "invitation-close"
     },
     "godin-this-is-marketing": {
       "author": "Seth Godin",
@@ -2187,7 +2260,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "invitation-close"
     },
     "goggins-cant-hurt-me": {
       "author": "David Goggins",
@@ -2267,7 +2343,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "bold-confrontation",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "grenny-crucial-conversations": {
       "author": "Joseph Grenny",
@@ -2345,7 +2424,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "grover-relentless": {
       "author": "Tim Grover",
@@ -2422,7 +2504,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "bold-confrontation",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "hormozi-100m-leads": {
       "author": "Alex Hormozi",
@@ -2503,7 +2588,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "stack-close"
     },
     "hormozi-100m-offers": {
       "author": "Alex Hormozi",
@@ -2583,7 +2671,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "stack-close"
     },
     "jakes-instinct": {
       "author": "T.D. Jakes",
@@ -2665,7 +2756,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "story-close"
     },
     "jeremy-miner-the-nepq-black-book-of-questions": {
       "author": "Jeremy Miner",
@@ -2745,7 +2839,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "jones-exactly-what-to-say": {
       "author": "Phil Jones",
@@ -2821,7 +2918,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "kane-hook-point": {
       "author": "Brendan Kane",
@@ -2897,7 +2997,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "logic-close"
     },
     "lakhiani-extraordinary-mind": {
       "author": "Vishen Lakhiani",
@@ -2968,7 +3071,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "compassionate-directness",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "michalowicz-profit-first": {
       "author": "Mike Michalowicz",
@@ -3038,7 +3144,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "stack-close"
     },
     "moran-12-week-year": {
       "author": "Brian Moran",
@@ -3116,7 +3225,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "obama-becoming": {
       "author": "Michelle Obama",
@@ -3199,7 +3311,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "reflective-stillness",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "story-close"
     },
     "obama-light-we-carry": {
       "author": "Michelle Obama",
@@ -3284,7 +3399,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "calmed-and-grounded",
+      "conversion_style": "story-close"
     },
     "pink-drive": {
       "author": "Daniel Pink",
@@ -3360,7 +3478,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "pink-to-sell-is-human": {
       "author": "Daniel Pink",
@@ -3435,7 +3556,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "pink-when": {
       "author": "Daniel Pink",
@@ -3511,7 +3635,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "priestley-oversubscribed": {
       "author": "Daniel Priestley",
@@ -3589,7 +3716,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "logic-close"
     },
     "rackham-spin-selling": {
       "author": "Neil Rackham",
@@ -3665,7 +3795,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "robbins-five-second-rule": {
       "author": "Mel Robbins",
@@ -3741,7 +3874,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "challenge-close"
     },
     "robbins-let-them-theory": {
       "author": "Mel Robbins",
@@ -3822,7 +3958,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "invitation-close"
     },
     "russell-brunson-lead-funnels": {
       "author": "Russell Brunson",
@@ -3912,7 +4051,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "stack-close"
     },
     "russell-brunson-the-funnel-hackers-cookbook": {
       "author": "Russell Brunson",
@@ -4022,7 +4164,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     },
     "russell-brunson-traffic-secrets": {
       "author": "Russell Brunson",
@@ -4099,7 +4244,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "story-close"
     },
     "samit-disrupt-yourself": {
       "author": "Jay Samit",
@@ -4176,7 +4324,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "bold-confrontation",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "sharma-5am-club": {
       "author": "Robin Sharma",
@@ -4255,7 +4406,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "story-close"
     },
     "sinek-find-your-why": {
       "author": "Simon Sinek",
@@ -4331,7 +4485,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "sinek-start-with-why": {
       "author": "Simon Sinek",
@@ -4407,7 +4564,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "righteous-fire",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "story-close"
     },
     "tawwab-set-boundaries-find-peace": {
       "author": "Nedra Glover Tawwab",
@@ -4491,7 +4651,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "compassionate-directness",
+      "audience_resonance": "validated-not-alone",
+      "conversion_style": "invitation-close"
     },
     "voss-never-split-difference": {
       "author": "Chris Voss",
@@ -4564,7 +4727,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "vsevolod-pudovkin-film-technique": {
       "author": "Vsevolod Pudovkin",
@@ -4638,7 +4804,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "wiebe-copy-hackers": {
       "author": "Joanna Wiebe",
@@ -4711,7 +4880,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "logic-close"
     },
     "acuff-miner-new-model-of-selling": {
       "author": "Jerry Acuff & Jeremy Miner",
@@ -4796,7 +4968,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "brunson-marketing-secrets-blackbook": {
       "author": "Russell Brunson",
@@ -4889,7 +5064,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "story-close"
     },
     "brunson-network-marketing-secrets": {
       "author": "Russell Brunson",
@@ -4971,7 +5149,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "story-close"
     },
     "edwards-copywriting-secrets": {
       "author": "Jim Edwards",
@@ -5059,7 +5240,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     },
     "leland-brand-mapping-strategy": {
       "author": "Karen Tiber Leland",
@@ -5147,7 +5331,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "story-close"
     },
     "miller-building-storybrand": {
       "author": "Donald Miller",
@@ -5222,7 +5409,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "story-close"
     },
     "miller-coach-builder": {
       "author": "Donald Miller",
@@ -5303,7 +5493,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "rohde-the-sketchnote-workbook": {
       "author": "Mike Rohde",
@@ -5388,7 +5581,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "pedro-adao-challenge-secrets-masterclass": {
       "author": "Pedro Adao (with Russell Brunson & Richmond Dinh)",
@@ -5485,7 +5681,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "righteous-fire",
+      "audience_resonance": "inspired-to-dream-bigger",
+      "conversion_style": "challenge-close"
     },
     "cancel-conversational-marketing": {
       "author": "David Cancel (with Dave Gerhardt)",
@@ -5564,7 +5763,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "invitation-close"
     },
     "wickman-rocket-fuel": {
       "author": "Gino Wickman & Mark C. Winters",
@@ -5649,7 +5851,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     },
     "ries-lean-startup": {
       "author": "Eric Ries",
@@ -5730,7 +5935,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "kaufman-personal-mba": {
       "author": "Josh Kaufman",
@@ -5814,7 +6022,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "logic-close"
     },
     "budelmann-brand-identity-essentials": {
       "author": "Kevin Budelmann, Yang Kim, Curt Wozniak",
@@ -5913,7 +6124,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "opara-color-works": {
       "author": "Eddie Opara & John Cantwell",
@@ -6018,7 +6232,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "walker-launch": {
       "author": "Jeff Walker",
@@ -6109,7 +6326,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "given-permission",
+      "conversion_style": "story-close"
     },
     "miller-marketing-made-simple": {
       "author": "Donald Miller",
@@ -6187,7 +6407,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "suby-sell-like-crazy": {
       "author": "Sabri Suby",
@@ -6281,7 +6504,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "stack-close"
     },
     "erikson-surrounded-by-idiots": {
       "author": "Thomas Erikson",
@@ -6365,7 +6591,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "gitomer-sales-bible": {
       "author": "Jeffrey Gitomer",
@@ -6458,7 +6687,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "invitation-close"
     },
     "aliche-get-good-with-money": {
       "author": "Tiffany Aliche",
@@ -6538,7 +6770,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "validated-not-alone",
+      "conversion_style": "invitation-close"
     },
     "berger-contagious": {
       "author": "Jonah Berger",
@@ -6607,7 +6842,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "carnegie-how-to-win-friends-digital-age": {
       "author": "Dale Carnegie & Associates",
@@ -6686,7 +6924,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "charvet-words-that-change-minds": {
       "author": "Shelle Rose Charvet",
@@ -6760,7 +7001,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "compassionate-directness",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "covey-7-habits": {
       "author": "Stephen R. Covey",
@@ -6838,7 +7082,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "invitation-close"
     },
     "duckworth-grit": {
       "author": "Angela Duckworth",
@@ -6920,7 +7167,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "logic-close"
     },
     "gallo-talk-like-ted": {
       "author": "Carmine Gallo",
@@ -6999,7 +7249,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "visionary-inspiration",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "story-close"
     },
     "kahneman-thinking-fast-and-slow": {
       "author": "Daniel Kahneman",
@@ -7077,7 +7330,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "logic-close"
     },
     "kimbro-the-wealth-choice": {
       "author": "Dennis Kimbro",
@@ -7152,7 +7408,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "righteous-fire",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "kimbro-what-makes-great-great": {
       "author": "Dennis Kimbro",
@@ -7225,7 +7484,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "righteous-fire",
+      "audience_resonance": "challenged-to-rise",
+      "conversion_style": "challenge-close"
     },
     "king-read-people-like-a-book": {
       "author": "Patrick King",
@@ -7300,7 +7562,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "kleon-show-your-work": {
       "author": "Austin Kleon",
@@ -7373,7 +7638,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "michalowicz-clockwork": {
       "author": "Mike Michalowicz",
@@ -7447,7 +7715,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "stack-close"
     },
     "thiel-zero-to-one": {
       "author": "Peter Thiel",
@@ -7524,7 +7795,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "bold-confrontation",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "logic-close"
     },
     "tolle-the-power-of-now": {
       "author": "Eckhart Tolle",
@@ -7602,7 +7876,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "reflective-stillness",
+      "audience_resonance": "calmed-and-grounded",
+      "conversion_style": "invitation-close"
     },
     "wickman-traction": {
       "author": "Gino Wickman",
@@ -7679,7 +7956,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "tough-love",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "stack-close"
     },
     "blackceo-house-voice": {
       "author": "BlackCEO",
@@ -7738,7 +8018,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "hunt-thomas-pragmatic-programmer": {
       "author": "Andrew Hunt & David Thomas",
@@ -7849,7 +8132,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "grounded-humility",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "brian-mark-10-million-instagram-funnel": {
       "author": "Brian Mark",
@@ -7942,7 +8228,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "urgent-drive",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "challenge-close"
     },
     "butow-instagram-facebook-all-in-one": {
       "author": "Eric Butow, Amanda Robinson, et al.",
@@ -8039,7 +8328,10 @@
         "audience",
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "butow-ultimate-guide-social-media-marketing": {
       "author": "Eric Butow, Stephanie Garcia, Amanda Robinson, Roberto Blake",
@@ -8116,7 +8408,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     },
     "cialdini-pre-suasion": {
       "author": "Robert B. Cialdini",
@@ -8193,7 +8488,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "analytical-detachment",
+      "audience_resonance": "respected-as-smart",
+      "conversion_style": "logic-close"
     },
     "collins-turning-the-flywheel": {
       "author": "Jim Collins",
@@ -8269,7 +8567,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "confronted-with-truth",
+      "conversion_style": "logic-close"
     },
     "deziel-content-fuel-framework": {
       "author": "Melanie Deziel",
@@ -8350,7 +8651,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "relieved-of-overwhelm",
+      "conversion_style": "invitation-close"
     },
     "duhigg-smarter-faster-better": {
       "author": "Charles Duhigg",
@@ -8427,7 +8731,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "steady-reassurance",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "duhigg-supercommunicators": {
       "author": "Charles Duhigg",
@@ -8505,7 +8812,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "compassionate-directness",
+      "audience_resonance": "seen-and-understood",
+      "conversion_style": "invitation-close"
     },
     "ferri-growth-marketing": {
       "author": "Paolo Ferri",
@@ -8590,7 +8900,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "logic-close"
     },
     "flynn-superfans": {
       "author": "Pat Flynn",
@@ -8673,7 +8986,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "kane-one-million-followers": {
       "author": "Brendan Kane",
@@ -8753,7 +9069,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "data-calm",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "king-the-art-of-witty-banter": {
       "author": "Patrick King",
@@ -8828,7 +9147,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "given-permission",
+      "conversion_style": "invitation-close"
     },
     "landing-page-conversion-essentials": {
       "author": "Uncredited CRO Practitioner (Landing Page Agency Founder)",
@@ -8916,7 +9238,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "fierce-clarity",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "logic-close"
     },
     "thomas-instagram-performance-marketing": {
       "author": "Robert Thomas",
@@ -9016,7 +9341,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "playful-irreverence",
+      "audience_resonance": "awakened-to-blind-spots",
+      "conversion_style": "logic-close"
     },
     "thorne-youtube-unlocked": {
       "author": "Elias Thorne",
@@ -9115,7 +9443,10 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "righteous-fire",
+      "audience_resonance": "sparked-to-action",
+      "conversion_style": "challenge-close"
     },
     "video-funnels": {
       "author": "Unknown (PromoteLabs)",
@@ -9193,8 +9524,11 @@
       "usable_as": [
         "topic",
         "task"
-      ]
+      ],
+      "emotional_register": "warm-encouragement",
+      "audience_resonance": "equipped-and-capable",
+      "conversion_style": "invitation-close"
     }
   },
-  "lastUpdated": "2026-07-09"
+  "lastUpdated": "2026-07-14"
 }

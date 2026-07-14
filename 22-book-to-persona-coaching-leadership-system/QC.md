@@ -293,11 +293,15 @@ If automated check is not available, manually verify:
 
 `audiences[]` / `topics[]` / `voice_style{}` / `usable_as[]` are the ADDITIVE
 v1.3 fields the Skill-23 voice-first AUDIENCE+TOPIC blend matcher
-(`persona_blend.py`) reasons over to pick a job's VOICE. They are **OPTIONAL**
-— a persona without them still passes Sections 1-4B in full and is fully
-usable in Coaching Mode / Task Mode — but their absence means this persona is
-invisible to that specific matcher. This section is WARN-level, not a HARD
-FAIL, unless noted otherwise below.
+(`persona_blend.py`) reasons over to pick a job's VOICE. `emotional_register` /
+`audience_resonance` / `conversion_style` are the ADDITIVE v1.4 scalar fields
+(A-U3) layered on the SAME block — the feeling-space the voice operates in,
+what it makes its audience feel, and how it closes. All seven are
+**OPTIONAL** — a persona without them still passes Sections 1-4B in full and
+is fully usable in Coaching Mode / Task Mode — but their absence means this
+persona is invisible to that specific matcher (v1.3 fields) or unscoreable
+on register-fit (v1.4 fields). This section is WARN-level, not a HARD FAIL,
+unless noted otherwise below.
 
 ### Automated Check
 
@@ -310,16 +314,21 @@ entry = data.get("personas", {}).get(slug)
 if entry is None:
     print(f"DUALITY CHECK: '{slug}' is not a categories key at all — fix Section 4B/6 first.")
     sys.exit(1)
-present = [f for f in ("audiences", "topics", "voice_style", "usable_as") if f in entry]
+present = [f for f in ("audiences", "topics", "voice_style", "usable_as",
+                       "emotional_register", "audience_resonance", "conversion_style")
+          if f in entry]
 if not present:
     print(f"DUALITY CHECK: WARN — '{slug}' has no duality-tag enrichment "
           f"(invisible to the Skill-23 blend matcher; not a HARD FAIL).")
     sys.exit(0)
 sys.path.insert(0, "23-ai-workforce-blueprint/scripts")
 import persona_blend as pb
-mini = {"schemaVersion": "1.3",
+mini = {"schemaVersion": "1.4",
         "audienceTags": data.get("audienceTags", []),
         "topicTags": data.get("topicTags", []),
+        "emotionalRegisterTags": data.get("emotionalRegisterTags", []),
+        "audienceResonanceTags": data.get("audienceResonanceTags", []),
+        "conversionStyleTags": data.get("conversionStyleTags", []),
         "personas": {slug: entry}}
 result = pb.validate_catalog_tags(mini)
 if result["ok"]:
