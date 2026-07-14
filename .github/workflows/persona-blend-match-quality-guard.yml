@@ -37,6 +37,16 @@ name: persona-blend-match-quality-guard
 #       NOT silently strip them on workspace->repo sync — the exact gap this
 #       unit found and closed (persona_fleet.py was not previously watched by
 #       this workflow at all; added here because this unit touches it).
+#
+# A-U5 (per-page/scoped blends, master-spec v2 section A.6) adds a seventh
+# check:
+#   (G) build_bundle's additive `scope_hint` param resolves a stable, persist-
+#       able `scope` key + echoes scope_hint back verbatim, states WHY per
+#       page (rationale['scope'], the different-blends-allowed invariant),
+#       and NEVER changes output when scope_hint is omitted/None/empty — a
+#       fixture 3-page funnel run proves >=2 distinct blends + exactly N
+#       persona-selection-log.md entries (this unit's own binary acceptance
+#       (a)/(b)/(c)/(d)).
 
 on:
   push:
@@ -46,6 +56,7 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -67,6 +78,7 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -111,6 +123,9 @@ jobs:
 
       - name: A-U2 — Blend Directive v2 (structured voice-attribute block, byte-identical v1 degrade)
         run: python3 23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py
+
+      - name: A-U5 — per-page/scoped blends (scope_hint, fixture funnel, back-compat)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py
 
       - name: P4-01 — match-score-distribution logging (drift observability)
         run: python3 tests/unit/persona-match-score-log.test.py

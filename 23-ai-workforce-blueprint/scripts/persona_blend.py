@@ -955,11 +955,95 @@ def match_score_distribution(paths: dict, *, dimension: str = None,
             "min": min(scores), "max": max(scores), "buckets": buckets}
 
 
+# ── A-U5 — per-page / per-scope blends ─────────────────────────────────────────
+# Per-page blends are structurally impossible before this unit: build_bundle ran
+# once per TASK and the Command Center persisted ONE bundle per task
+# (`task_persona_bundle.task_id TEXT NOT NULL UNIQUE`). A 5-page funnel wrote its
+# opt-in, sales, and thank-you pages under one blend. The fix is additive: the
+# CALLER (Skill 6's per-page loop, A-U7) now MAY pass a `scope_hint` describing
+# the page it is about to write, and build_bundle folds it into topic matching +
+# echoes a stable `scope` key back for the Command Center's NEW
+# `task_persona_bundle_scope` table (keyed `(task_id, scope)` — migration 090's
+# unscoped `task_persona_bundle` table is never altered). Every existing
+# single-bundle caller (scope_hint omitted/None/empty) gets a bundle with NO
+# `scope`/`scope_hint` keys at all — byte-identical to pre-A-U5 output.
+#
+# scope_hint shape (all keys optional): {page_role, page_slug, conversion_goal,
+# part_id}. `part_id` is forward-compatible with U115's per-part / long-horizon
+# generalization of this same mechanism (Section E6) — this unit does not use it,
+# it only avoids colliding with it.
+def _resolve_scope_key(scope_hint: dict):
+    """The `(task_id, scope)` composite key's non-task-id half. Preference order:
+    an explicit `page_slug` (the stablest, URL-shaped identifier) > `page_role`
+    (e.g. 'opt-in', 'sales', 'thank-you') > `part_id` (U115's per-part id). None
+    when scope_hint is falsy/empty or names none of these — the caller then has
+    nothing scope-able and build_bundle behaves exactly as the unscoped path.
+    """
+    if not scope_hint or not isinstance(scope_hint, dict):
+        return None
+    for key in ("page_slug", "page_role", "part_id"):
+        v = scope_hint.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _scope_reason(scope_key: str, scope_hint: dict, *, shared_with: str = None) -> str:
+    """The different-blends-allowed invariant (A.6 build step 3): the per-page
+    log must state WHY pages share or differ a blend — a shared blend is legal
+    when the collapse rule fires per page; forced-identical with no logged
+    reason is a Quality-Control finding for the Section-B judge (A-U7's job to
+    enforce across a real funnel run). This unit emits the honest per-call
+    statement build_bundle already has evidence for; A-U7 threads it across
+    pages to detect the "forced-identical, no reason" case.
+    """
+    goal = (scope_hint or {}).get("conversion_goal") if isinstance(scope_hint, dict) else None
+    role = (scope_hint or {}).get("page_role") if isinstance(scope_hint, dict) else None
+    parts = [f"scope={scope_key}"]
+    if role:
+        parts.append(f"page_role={role}")
+    if goal:
+        parts.append(f"conversion_goal={goal}")
+    if shared_with:
+        parts.append(f"blend shared with scope={shared_with} (collapse/topic-match fired identically)")
+    return ", ".join(parts)
+
+
+def write_persona_selection_log_entry(run_dir, scope_key: str, bundle: dict, *,
+                                       reason: str = None) -> bool:
+    """Append ONE per-page entry to `persona-selection-log.md` in `run_dir`,
+    reusing the exact `- selected_persona: <slug>` line convention every other
+    Skill 6/49/56 build script already writes (see `run_sales_page_assets.py`,
+    the golden-momentum builder) so downstream readers (funnel_rubrics.py,
+    prove_sp_intake.py) parse it unchanged. One call per page; A-U7 is the real
+    per-page-loop caller in production, this unit only ships the writer +
+    proves it with a fixture funnel (its own binary acceptance criterion (a)).
+
+    Best-effort / non-fatal: a write failure returns False and never raises —
+    same observability-never-blocks posture as log_match_score above.
+    """
+    try:
+        rd = Path(run_dir)
+        rd.mkdir(parents=True, exist_ok=True)
+        log_path = rd / "persona-selection-log.md"
+        pid = bundle.get("persona_id") or "none"
+        lines = [f"- scope: {scope_key}", f"- selected_persona: {pid}"]
+        if reason:
+            lines.append(f"- reason: {reason}")
+        entry = "## page: " + scope_key + "\n" + "\n".join(lines) + "\n\n"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+        return True
+    except Exception:
+        return False
+
+
 # ── the bundle assembler ──────────────────────────────────────────────────────
 def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
                  use_llm: bool = True, record: bool = True,
                  max_task_personas: int = 10, variety: bool = True,
-                 topic_hint: str = "", audience_override: str = "") -> dict:
+                 topic_hint: str = "", audience_override: str = "",
+                 scope_hint: dict = None) -> dict:
     """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
 
     paths/db_path default to the live resolution when omitted; tests pass a
@@ -1020,6 +1104,18 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         }
 
     content_task = is_content_task(task)
+
+    # ── A-U5 scope_hint — bounded tie-breaker, additive-only ────────────────────
+    # A page's role (opt-in / sales / thank-you / ...) is a legitimate topic
+    # signal when the caller supplied no explicit topic_hint of its own. Never
+    # overrides an explicit topic_hint (explicit beats inferred, same precedence
+    # every other hint in this module already follows). scope_hint=None (the
+    # default) touches nothing here — topic_hint is used exactly as before.
+    scope_key = _resolve_scope_key(scope_hint)
+    if scope_key and not topic_hint and isinstance(scope_hint, dict):
+        _page_role = scope_hint.get("page_role")
+        if isinstance(_page_role, str) and _page_role.strip():
+            topic_hint = _page_role.strip()
 
     # ── AUDIENCE (voice decided first) ──────────────────────────────────────────
     ra = resolve_audience(catalog, company_cfg, soul_text, audience_override)
@@ -1209,4 +1305,14 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         bundle.setdefault("message",
                           "persona-categories.json not found — blend ran on the "
                           "semantic selector + fallbacks only.")
+
+    # ── A-U5 — echo the scope key + WHY back to the caller (additive-only) ──────
+    # Only present when the caller supplied a resolvable scope_hint; every
+    # existing single-bundle consumer (scope_hint omitted) gets a bundle dict
+    # with NEITHER key at all — byte-identical to the pre-A-U5 shape.
+    if scope_key:
+        bundle["scope"] = scope_key
+        bundle["scope_hint"] = dict(scope_hint)
+        rationale["scope"] = _scope_reason(scope_key, scope_hint) + f" — {rationale['collapse']}"
+
     return bundle
