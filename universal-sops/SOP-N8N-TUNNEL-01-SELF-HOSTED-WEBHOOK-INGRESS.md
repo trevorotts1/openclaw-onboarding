@@ -120,8 +120,21 @@ Rescue Rangers is normally framed as "a problem you cannot solve" — this is st
 shape (something on this box needs an operator-side action it cannot take itself), so it is the
 correct channel for a provisioning ask too, not only for a bug report.
 
-POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section), packing the
-five provisioning asks into `problem` and `alreadyTried`:
+Send exactly these five asks — packed into the `problem` field of the payload below, word for word:
+
+1. **A public hostname** for the service (e.g. `<client-slug>-n8n.zerohumanworkforce.com`).
+2. **The service's local origin port** — the port the service actually listens on, on THIS box (n8n
+   defaults to `5678`). Without this the operator cannot write the ingress rule at all; asking for it
+   up front avoids a round trip.
+3. **An ingress rule merged into this box's EXISTING tunnel**: `<hostname>` → `http://localhost:<PORT>`,
+   added via `GET` → merge → `PUT` per `shared-utils/cc-tunnel-ingress.sh` — never a full-replace
+   `PUT`. State plainly that this is **not** a request for a new tunnel or a new token.
+4. **Path-scoped Access "Bypass (Everyone)" applications** for the service's webhook paths only
+   (state the exact paths — for n8n: `/webhook`, `/webhook-test`, `/webhook-waiting`).
+5. Confirmation that the **root application** (UI / `/rest/*` / admin) stays behind Access — the
+   bypass is scoped, not a removal of Access from the whole hostname.
+
+POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section):
 
 ```bash
 _RR_SECRET_ARGS=()
