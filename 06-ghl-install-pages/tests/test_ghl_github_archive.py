@@ -76,6 +76,57 @@ class TestTokenResolution:
             gha.resolve_github_token({})
 
 
+# ── Token presence (U24/B-U10 item 4 — NAME only, never the value) ───────────
+
+class TestTokenPresence:
+    def test_reports_set_by_name_only(self):
+        report = gha.token_presence({"GH_TOKEN": "a-real-secret-value"})
+        assert report["GH_TOKEN"] == "SET"
+        assert report["GITHUB_TOKEN"] == "NOT-SET"
+        assert report["resolved"] is True
+
+    def test_reports_not_set_when_absent(self):
+        report = gha.token_presence({})
+        assert report["GH_TOKEN"] == "NOT-SET"
+        assert report["GITHUB_TOKEN"] == "NOT-SET"
+        assert report["resolved"] is False
+
+    def test_never_leaks_the_token_value(self):
+        secret = "ghp_totally-real-secret-do-not-leak-9f8e7d6c"
+        report = gha.token_presence({"GH_TOKEN": secret})
+        assert secret not in json.dumps(report)
+        assert secret not in repr(report)
+        assert set(report.values()) <= {"SET", "NOT-SET", True, False}
+
+    def test_falls_back_to_github_token_name(self):
+        report = gha.token_presence({"GITHUB_TOKEN": "b"})
+        assert report["GH_TOKEN"] == "NOT-SET"
+        assert report["GITHUB_TOKEN"] == "SET"
+        assert report["resolved"] is True
+
+
+# ── is_archive_verified — the ONE "verified" predicate (U24/B-U10) ───────────
+
+class TestIsArchiveVerified:
+    def test_none_is_false(self):
+        assert gha.is_archive_verified(None) is False
+
+    def test_failed_action_is_false_even_if_verify_ok(self):
+        assert gha.is_archive_verified({"action": "failed", "verify": {"ok": True}}) is False
+
+    def test_created_with_verify_ok_is_true(self):
+        assert gha.is_archive_verified({"action": "created", "verify": {"ok": True}}) is True
+
+    def test_reused_with_verify_ok_is_true(self):
+        assert gha.is_archive_verified({"action": "reused", "verify": {"ok": True}}) is True
+
+    def test_created_with_verify_not_ok_is_false(self):
+        assert gha.is_archive_verified({"action": "created", "verify": {"ok": False}}) is False
+
+    def test_missing_verify_key_is_false(self):
+        assert gha.is_archive_verified({"action": "created"}) is False
+
+
 # ── Staging (local disk only) ─────────────────────────────────────────────────
 
 class TestStageSource:
@@ -222,6 +273,60 @@ class TestRunArchiveTask:
         result = gha.run_archive_task(task, requester=boom, env={"GH_TOKEN": "tok"})
         assert result["receipt"]["action"] == "failed"
         assert "simulated network failure" in result["receipt"]["error"]
+
+    def test_archived_content_byte_matches_deployed_source(self, tmp_path):
+        """B-U10 acceptance (a) — the 'byte-match proof' half, proven
+        deterministically offline: capture every PUT body ``run_archive_task``
+        sends and assert each pushed file's base64-decoded content is
+        byte-for-byte IDENTICAL to the corresponding file on disk in the
+        deployed project directory (the same directory ``ghl_vercel`` deploys
+        from). This is the mechanism half of the live proof — the genuine
+        live-Vercel-URL leg still requires a real operator-box run."""
+        import base64
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        index_bytes = b"<html>\x00byte-match fixture \xe2\x9c\x93 non-ascii + binary-ish bytes</html>"
+        vercel_json_bytes = b'{"builds":[{"src":"index.html","use":"@vercel/static"}]}'
+        (project_dir / "index.html").write_bytes(index_bytes)
+        (project_dir / "vercel.json").write_bytes(vercel_json_bytes)
+
+        evidence_root = str(tmp_path / "evidence")
+        src_dir = gha.stage_source(str(project_dir), evidence_root, "M-BYTEMATCH")
+
+        pushed_bodies: dict[str, bytes] = {}
+
+        def capturing_requester(method, url, body, token):
+            if method == "GET" and url.endswith("/user"):
+                return 200, {"login": "fake-owner"}
+            if method == "GET" and "/repos/" in url and "/contents/" not in url:
+                return 404, {}
+            if method == "POST" and url.endswith("/user/repos"):
+                return 201, {"full_name": "fake-owner/zhc-page-bytematch",
+                              "html_url": "https://github.com/fake-owner/zhc-page-bytematch"}
+            if method == "GET" and "/contents/" in url:
+                return 404, {}
+            if method == "PUT" and "/contents/" in url:
+                filename = url.rsplit("/contents/", 1)[1]
+                pushed_bodies[filename] = base64.b64decode(body["content"])
+                return 201, {"content": {"sha": f"sha-{filename}"}}
+            raise AssertionError((method, url))
+
+        task = {"marker": "M-BYTEMATCH", "src_dir": src_dir, "evidence_root": evidence_root,
+                "deployment_url": "https://bytematch.vercel.app", "project_name": "zhc-bytematch"}
+        result = gha.run_archive_task(task, requester=capturing_requester, env={"GH_TOKEN": "tok"})
+
+        assert result["receipt"]["verify"]["ok"] is True
+        # Byte-for-byte: what was PUT to GitHub == what's on disk in the
+        # deployed project_dir (the exact source Vercel served), not merely
+        # "some content" or a re-encoded/normalized copy.
+        assert pushed_bodies["index.html"] == index_bytes
+        assert pushed_bodies["vercel.json"] == vercel_json_bytes
+        # The manifest itself is proof-bearing (marker + deployment url) but
+        # is generated, not sourced from disk — excluded from the byte-match
+        # assertion by design; every REAL source file (2 pushed here) matched.
+        assert "ARCHIVE-MANIFEST.json" in pushed_bodies
+        assert len(pushed_bodies) == 3
 
 
 # ── archive_async (the non-blocking entry point run_pipeline calls) ──────────

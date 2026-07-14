@@ -26,6 +26,8 @@ PRODUCER="$ROOT/shared-utils/fab_artifact.py"
 CROSSWALK_PY="$ROOT/shared-utils/persona_crosswalk.py"
 CROSSWALK_JSON="$ROOT/shared-utils/persona-crosswalk.json"
 PAGE_QC="$ROOT/shared-utils/page_qc.py"
+ARCHIVE_GATE="$ROOT/06-ghl-install-pages/tools/ghl_archive_receipt_gate.py"
+GITHUB_RECONCILE="$ROOT/06-ghl-install-pages/tools/ghl_github_reconcile.py"
 
 echo "═══ FAB-QC gate guard ═══"
 
@@ -110,6 +112,23 @@ if has "$FUNNEL_QC" "page_qc.py" && has "$FUNNEL_QC" "PAGE_QC_ENABLED"; then
   ok "Skill-6 qc-built-funnel.sh wires the Page-QC v2 overlay (flag-gated)"
 else
   bad "Skill-6 qc-built-funnel.sh no longer wires Page-QC v2 (page_qc.py / PAGE_QC_ENABLED missing)"
+fi
+
+# 7. U24/B-U10 — the shipped GitHub archival rail must stay proven + scheduled:
+#    the per-build FAB-QC archive-receipt gate exists and is wired (always-on,
+#    never flag-gated — it's a no-op for non-VERCEL_EMBED evidence), and the
+#    reconcile sweep still exposes the --sweep-base maintenance-window mode.
+[ -f "$ARCHIVE_GATE" ] && ok "GitHub archive-receipt gate present: 06-ghl-install-pages/tools/ghl_archive_receipt_gate.py" \
+                        || bad "MISSING 06-ghl-install-pages/tools/ghl_archive_receipt_gate.py (U24/B-U10 gate)"
+if has "$FUNNEL_QC" "ghl_archive_receipt_gate.py" && has "$FUNNEL_QC" "--gate"; then
+  ok "Skill-6 qc-built-funnel.sh wires the GitHub archive-receipt gate"
+else
+  bad "Skill-6 qc-built-funnel.sh no longer wires the GitHub archive-receipt gate (U24/B-U10 regressed)"
+fi
+if has "$GITHUB_RECONCILE" "sweep_base" && has "$GITHUB_RECONCILE" "--sweep-base"; then
+  ok "ghl_github_reconcile.py exposes the --sweep-base maintenance-window mode"
+else
+  bad "ghl_github_reconcile.py no longer exposes --sweep-base (U24/B-U10 scheduling regressed)"
 fi
 
 echo ""
