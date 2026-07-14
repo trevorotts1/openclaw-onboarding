@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """persona_canonical.py — crosswalk a Skill-50 email tone-STYLE id to a REAL
-canonical persona id (F4.3).
+canonical persona id (F4.3); also the Skill-50 GOVERNING-BLEND call site (U111).
 
 The Email Engine keeps its own mature tone-STYLE library + lexical matcher (the
 right tool to pick the style tier). What it lacked was a bridge from those 12
@@ -11,6 +11,20 @@ crosswalk mechanism skills 06/44 use for templates) and returns the canonical id
 + Section-4 governance excerpt when one exists. A style with no canonical
 counterpart returns ``None`` and the engine keeps its style-tier behavior — never
 a fabricated mapping.
+
+U111 (closes G4 — "any content" blend-governance proof): ``persona_block`` above
+resolves STRUCTURE (which of the 12 email tone-tiers a style maps to); it never
+asked the U1 seam for the GOVERNING blend. Per the D1 binding ruling (the blend
+GOVERNS voice + content-writing in every engine, never advisory), ``blend_block``
+below is the email engine's canonical entry point onto the U1 blend seam
+(``shared-utils/persona_for_job.py:247-266``, A-U1): it calls
+``persona_for_job(..., blend=True)`` and returns the bundle superset
+(``blend_directive`` ending in the mandatory GUARDRAIL_CLAUSE, ``voice``,
+``resolved_audience``, ``task_personas``) VERBATIM so the email write-path can
+adopt it without a shape migration — mirroring the exact call the funnel-copy
+seam (``49-signature-funnel/scripts/copy_persona_blend_seam.py``) already makes.
+``persona_block``'s style-tier crosswalk is untouched (STRUCTURE stays local);
+only the VOICE now has a genuine blend-mode path out of this module.
 
 stdlib-only; resolves the shared crosswalk across install layouts.
 """
@@ -82,6 +96,47 @@ def persona_block(style_id: str) -> "dict | None":
         "section4_excerpt": excerpt,
         "source": "email-style-crosswalk",
     }
+
+
+def _load_pfj():
+    """Import the shared U1 seam module across install layouts, or None."""
+    d = _shared_utils_dir()
+    if d is None:
+        return None
+    try:
+        import sys
+        sys.path.insert(0, str(d))
+        import persona_for_job as pfj  # type: ignore
+        return pfj
+    except Exception:
+        return None
+
+
+def blend_block(job_text: str, *, department: str = "marketing",
+                sop_slug: "str | None" = None,
+                topic_hint: "str | None" = None) -> "dict | None":
+    """U111 — the email engine's GOVERNING-BLEND call site (D1 ruling).
+
+    Calls the U1 seam's ``blend=True`` branch (A-U1) so an email write-path can
+    consume the governing blend directive + guardrail, exactly like the funnel-
+    copy seam does. ``department`` defaults to "marketing" — Skill 50's real,
+    seeded fleet department (``skill-department-map.json``; PRIMARY role
+    email-campaign-strategist; locked in by ``test_department_routing.py``) —
+    NEVER the unseeded literal "email".
+
+    Returns the bundle superset VERBATIM (``blend_directive``, ``voice``,
+    ``resolved_audience``, ``task_personas``, plus the back-compat
+    ``persona_id``/``persona_name`` mirror) when the seam is reachable and
+    resolves a bundle; returns the seam's own governed single-persona fallback
+    dict when the seam degrades (never naked — same fail-closed contract as
+    ``persona_for_job`` itself); returns ``None`` only when the seam module
+    cannot be imported at all (a bare box with no shared-utils reachable —
+    the caller then keeps today's style-tier-only behavior, never a crash)."""
+    pfj = _load_pfj()
+    if pfj is None:
+        return None
+    return pfj.persona_for_job(job_text, department, sop_slug=sop_slug,
+                               blend=True, topic_hint=topic_hint)
 
 
 if __name__ == "__main__":

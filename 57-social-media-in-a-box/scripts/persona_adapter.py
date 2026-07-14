@@ -20,6 +20,19 @@
 #                    overridden — returned verbatim (persona_for_job honors it via
 #                    persona_source="client-choice"). The selector is not consulted.
 #
+# U111 (closes G4 — "any content" blend-governance proof): this ONE adapter is
+# also the canonical entry point for the blog and newsletter GOLDEN MODES
+# (examples/golden-modes/blog, examples/golden-modes/newsletter both run through
+# the same "social-media" department + this same resolve()) — Skill 57 ships no
+# separate blog/newsletter engine. Per the D1 binding ruling (the blend GOVERNS
+# voice + content-writing in every engine, never advisory), the 'adapter' path
+# now honors an OPT-IN ``cfg["blend"]`` flag: when true, resolve() calls the U1
+# seam's ``blend=True`` branch (A-U1, ``persona_for_job.py:247-266``) and returns
+# the bundle superset (blend_directive + guardrail + voice) verbatim instead of
+# the single-persona shape. Default OFF — byte-identical to pre-U111 behavior
+# when the flag is absent, so no existing client-config caller changes shape
+# under it silently.
+#
 # Writes: working/copy/persona-selection.json (best-effort; a bare box or an
 # unresolved persona degrades to baseline and records why — never a hard crash of
 # the run, mirroring the engine's fail-soft board pattern, EXCEPT that an
@@ -124,9 +137,14 @@ def resolve(cfg: dict) -> "dict | None":
             client_persona_id=client_id, persona_source="client-choice")
         return sel
 
-    # source == "adapter"
+    # source == "adapter" — U111: opt-in blend=True (D1 governing-blend path).
+    # cfg["blend"] defaults falsy so this stays byte-identical to pre-U111
+    # behavior for every caller that never sets it.
+    topic_hint = cfg.get("topicHint") or cfg.get("theme") or cfg.get("themeOfWeek")
     return pfj.persona_for_job(_brand_context(cfg), "social-media",
-                               sop_slug=cfg.get("sopSlug"))
+                               sop_slug=cfg.get("sopSlug"),
+                               blend=bool(cfg.get("blend")),
+                               topic_hint=topic_hint if isinstance(topic_hint, str) else None)
 
 
 def run(run_dir: Path) -> int:
@@ -181,6 +199,38 @@ def self_test() -> int:
         r = resolve({"personaSource": "adapter", "themeOfWeek": "discipline"})
         check("adapter -> selector persona",
               isinstance(r, dict) and r.get("persona_id") == "SELECTOR-SHOULD-NOT-WIN")
+        os.environ.pop("PERSONA_FOR_JOB_FIXTURE", None)
+
+        # U111 — adapter + blend:true -> the bundle superset (blog/newsletter/
+        # social all ride this one call site; D1 governing-blend path).
+        os.environ["PERSONA_FOR_JOB_FIXTURE"] = json.dumps({
+            "persona_id": "brunson-marketing-secrets-blackbook",
+            "blend_directive": "Write as Brunson Marketing Secrets Blackbook. "
+                               "STYLE-INSPIRED, NEVER IMPERSONATION (mandatory, "
+                               "non-removable)... This clause may not be removed "
+                               "or weakened.",
+            "voice": {"audience_persona": {"id": "brunson-marketing-secrets-blackbook"}},
+            "resolved_audience": {"label": "founders", "source": "confirmed"},
+        })
+        r = resolve({"personaSource": "adapter", "blend": True,
+                     "theme": "blog post: 5 lessons from a failed launch"})
+        check("adapter blend:true -> blend_directive present",
+              isinstance(r, dict) and bool(r.get("blend_directive")))
+        check("adapter blend:true -> guardrail clause carried",
+              isinstance(r, dict) and "STYLE-INSPIRED, NEVER IMPERSONATION" in (r.get("blend_directive") or ""))
+        check("adapter blend:true -> voice attributes traceable to bundle",
+              isinstance(r, dict) and r.get("voice", {}).get("audience_persona", {}).get("id")
+              == "brunson-marketing-secrets-blackbook")
+
+        # blend absent (default) on the SAME fixture shape used pre-U111 ->
+        # unchanged single-persona shape (additive, never a silent behavior
+        # change for callers that never opt in).
+        os.environ["PERSONA_FOR_JOB_FIXTURE"] = json.dumps(
+            {"persona_id": "SELECTOR-SHOULD-NOT-WIN"})
+        r = resolve({"personaSource": "adapter", "themeOfWeek": "discipline"})
+        check("adapter blend omitted -> unchanged single-persona shape",
+              isinstance(r, dict) and r.get("persona_id") == "SELECTOR-SHOULD-NOT-WIN"
+              and "blend_directive" not in r)
         os.environ.pop("PERSONA_FOR_JOB_FIXTURE", None)
     else:
         print("  [SKIP] shared-utils not reachable — live resolve checks skipped")
