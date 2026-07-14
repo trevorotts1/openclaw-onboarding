@@ -10,12 +10,12 @@ presence of `pregen_prompt_gate.py`, `prompt-bands.json`, `prove_gip_prompt_floo
 by version stamp alone... per box: manifest sha matches main AND the three named files exist
 with matching hashes; the check command + output archived per box in the per-item ledger."
 
-**Box:** operator box, `/Users/blackceomacmini` (`.openclaw/skills/` = the live/deployed skill
+**Box:** operator box, `~` (`.openclaw/skills/` = the live/deployed skill
 root the agent actually runs against — distinct from the git checkout used to build).
 
 ---
 
-## 1. Manifest read-out (primary source: `/Users/blackceomacmini/.openclaw/skills/.onboarding-content-manifest.json`)
+## 1. Manifest read-out (primary source: `~/.openclaw/skills/.onboarding-content-manifest.json`)
 
 See `manifest-readout.json`. Key fields:
 
@@ -67,7 +67,7 @@ $ bash scripts/skill-content-hash.sh <clean checkout of origin/main HEAD 256c3a1
 45-design-intelligence-library|88826df8d6d77b52b6e35b44319104db3271bdb98eaec71cba5798fa759cb52e
 exit=0
 
-$ bash scripts/skill-content-hash.sh /Users/blackceomacmini/.openclaw/skills   # LIVE deployed box
+$ bash scripts/skill-content-hash.sh ~/.openclaw/skills   # LIVE deployed box
 35-social-media-planner|884865d1d0a5707234250f9014ddc50a5ff250ef6757905cf528060e979f840f
 45-design-intelligence-library|88826df8d6d77b52b6e35b44319104db3271bdb98eaec71cba5798fa759cb52e
 exit=0
