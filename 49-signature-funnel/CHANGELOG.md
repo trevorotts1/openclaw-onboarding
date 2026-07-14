@@ -1,5 +1,26 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.3.4 — 2026-07-13 — U17/B-U3: copy stage consumes the blended-persona bundle (Skill 6 Blended-Persona Kanban v2)
+
+### Added
+- **`scripts/copy_persona_blend_seam.py` (new).** Wires an acquired persona bundle
+  (from Skill 6's `persona_bundle_ladder.py`, U15) into the Signature Funnel's
+  copy stage: `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md` and
+  `prompts/funnel-copy-prompts.md` both gain a bundle-consumption seam so the
+  12-section Hero copy is written in the blended voice when a bundle is active,
+  and reproduces the pre-U17 single-persona prompt byte-for-byte when it is not.
+- The persona-selection-log write/parse format stays back-compatible — both the
+  legacy single-persona log line and the new bundle-aware line round-trip
+  through the existing regex parser unchanged (`test_copy_persona_blend_seam.py`,
+  10 cases, all passing).
+
+### Notes
+- Paired with U19/B-U5 (`shared-utils/fab_qc.py` D4 v2), which is the QC-side
+  half of this same seam — FAB-QC now scores voice grounding against the
+  bundle's blend voice when a bundle is active, not just the template's baked-in
+  persona name. Ledger-declared merge-paired; both units land in the same
+  `skill6-v2/chainA` train.
+
 ## 1.3.3 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
 
 ### Fixed
