@@ -1,10 +1,10 @@
 Command: git hash-object <file>  (git blob sha, content-addressed — byte-for-byte proof)
-Repo: /Users/blackceomacmini/clawd/openclaw-onboarding
+Repo: ~/clawd/openclaw-onboarding
 
 File: 45-design-intelligence-library/library/_system/prompt-bands.json
   at manifest src_git_sha (3dfa2c8c4c9ca77de1e624747147e0f41209dfcc): 3ccc6be88f8774f5fd12fe53b841357c0a2c9e01
   at origin/main HEAD    (256c3a196c6a685df7fba1ffcd002c7712c93833): 3ccc6be88f8774f5fd12fe53b841357c0a2c9e01
-  deployed on box (/Users/blackceomacmini/.openclaw/skills/...):      3ccc6be88f8774f5fd12fe53b841357c0a2c9e01
+  deployed on box (~/.openclaw/skills/...):      3ccc6be88f8774f5fd12fe53b841357c0a2c9e01
   VERDICT: byte-identical across all three.
 
 File: 45-design-intelligence-library/scripts/prove_gip_prompt_floor.py
