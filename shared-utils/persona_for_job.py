@@ -244,11 +244,21 @@ def _compose_query(job_text: str, sop_slug: "str | None", sop_hints) -> str:
     return ". ".join(p.strip() for p in parts if p and p.strip())[:1800]
 
 
-def _run_selector(query: str, department: str, record: bool, timeout: int) -> "dict | None":
+def _run_selector(query: str, department: str, record: bool, timeout: int, *,
+                  blend: bool = False, topic_hint: "str | None" = None) -> "dict | None":
     """Spawn the canonical selector and parse its JSON. A ``PERSONA_FOR_JOB_FIXTURE``
     env var (path to a JSON file, or inline JSON) short-circuits the spawn so the
     consumer contract can be exercised in CI without an OpenClaw install — same
-    escape-hatch pattern as the Command Center's PERSONA_FIXTURE_JSON."""
+    escape-hatch pattern as the Command Center's PERSONA_FIXTURE_JSON.
+
+    ``blend`` (A-U1) appends ``--blend`` (+ ``--topic`` when a topic hint is
+    supplied) so the selector emits the voice-first persona-bundle SUPERSET
+    (``persona-selector-v2.py``'s W7 branch, ``persona_blend.build_bundle``)
+    instead of the single-persona selection. Audience confirmation and any
+    other goal/context signalling travel as ENV (``OPENCLAW_AUDIENCE`` etc.) —
+    ``subprocess.run`` inherits the parent process environment unmodified, so
+    that passthrough needs no code here; this function only adds the argv
+    flags the blend branch itself requires."""
     fixture = os.environ.get("PERSONA_FOR_JOB_FIXTURE", "").strip()
     if fixture:
         try:
@@ -262,6 +272,10 @@ def _run_selector(query: str, department: str, record: bool, timeout: int) -> "d
         return None
     cmd = [sys.executable or "python3", selector,
            "--task", query, "--department", department, "--format", "json"]
+    if blend:
+        cmd.append("--blend")
+        if topic_hint:
+            cmd += ["--topic", topic_hint]
     if not record:
         cmd.append("--no-record")
     try:
@@ -333,15 +347,29 @@ def persona_for_job(job_text: str, department: str, *,
                     client_persona_id: "str | None" = None,
                     persona_source: "str | None" = None,
                     record: bool = True, timeout: int = 60,
-                    section4_chars: int = 1400) -> dict:
+                    section4_chars: int = 1400,
+                    blend: bool = False,
+                    topic_hint: "str | None" = None) -> dict:
     """Resolve the best persona for a content-engine job. See module docstring.
 
     Returns a normalized selection dict that is NEVER naked (see contract).
+
+    ``blend`` (A-U1, default-off): when True, resolve through the canonical
+    selector's ``--blend`` (voice-first AUDIENCE+TOPIC) branch and return the
+    persona-bundle SUPERSET verbatim — the dict carries ``blend_directive``,
+    ``voice``, ``resolved_audience``, ``task_personas``, ``rationale`` etc. as
+    TOP-LEVEL keys, plus a back-compat ``persona_id``/``persona_name`` mirror,
+    so every consumer can adopt it without a shape migration. ``topic_hint``
+    optionally names the topic explicitly (otherwise inferred from the job
+    text). Single-persona mode (``blend=False``, the default) is completely
+    untouched — same code path, same return shape, as before this parameter
+    existed.
     """
     department = (department or "general").strip() or "general"
     warnings: list = []
 
-    # 1) CLIENT SOVEREIGNTY — an express choice is FINAL; selector never runs.
+    # 1) CLIENT SOVEREIGNTY — an express choice is FINAL; selector never runs,
+    #    blend or not (a client-named voice is never blended or judged).
     if client_persona_id and (persona_source or "").strip().lower() in CLIENT_FINAL_SOURCES:
         uni = available_personas()
         if client_persona_id not in uni:
@@ -354,12 +382,44 @@ def persona_for_job(job_text: str, department: str, *,
                          department=department, sop_slug=sop_slug, job_text=job_text,
                          warnings=warnings, section4_chars=section4_chars)
 
-    # 2) Ask the canonical selector.
+    # 2) BLEND mode (A-U1) — ask the canonical selector for the bundle
+    #    superset instead of a single persona.
+    if blend:
+        query = _compose_query(job_text, sop_slug, sop_hints)
+        raw = _run_selector(query, department, record, timeout,
+                            blend=True, topic_hint=topic_hint)
+        if raw is not None and not raw.get("error") and raw.get("blend_directive"):
+            # Bundle superset, returned VERBATIM to the consumer (top-level
+            # blend_directive / voice / resolved_audience / task_personas /
+            # rationale / fallbacks / persona_id back-compat mirror — all as
+            # shipped by persona_blend.build_bundle). Only the job/department/
+            # sop context is normalized on top so it matches the single-
+            # persona shape's context fields.
+            bundle = dict(raw)
+            bundle.setdefault("department", department)
+            bundle.setdefault("sop_slug", sop_slug)
+            bundle["job_text"] = (job_text or "")[:400]
+            bundle.setdefault("warnings", [])
+            return bundle
+        # Selector unreachable / errored / degraded while blend was requested
+        # — fail closed the SAME way single-persona mode does (defense in
+        # depth atop FDN-1): never return a naked result, just be honest that
+        # the blend itself degraded to the single-persona fallback.
+        warnings.append(
+            "blend requested but selector unavailable/errored/returned no "
+            "bundle (%s); degrading to single-persona fallback"
+            % ((raw or {}).get("error") if raw else "no selector / no output"))
+        fid, source = _fallback_persona(available_personas())
+        return _finalize(fid, _persona_display_name(fid), None, 1, None, source,
+                         department=department, sop_slug=sop_slug, job_text=job_text,
+                         raw=raw, warnings=warnings, section4_chars=section4_chars)
+
+    # 3) Ask the canonical selector (single-persona mode — unchanged).
     query = _compose_query(job_text, sop_slug, sop_hints)
     raw = _run_selector(query, department, record, timeout)
 
     if raw is not None and not raw.get("error"):
-        # 2a) mechanical / operational — truthful null persona + governance frame (Q1)
+        # 3a) mechanical / operational — truthful null persona + governance frame (Q1)
         if raw.get("no_persona_required"):
             return _finalize(None, None, None, 1, None, "no-persona-required",
                              department=department, sop_slug=sop_slug, job_text=job_text,
@@ -384,7 +444,7 @@ def persona_for_job(job_text: str, department: str, *,
         warnings.append("selector unavailable or errored (%s); applying fallback"
                         % ((raw or {}).get("error") if raw else "no selector / no output"))
 
-    # 3) Fail-closed fallback — never naked (defense in depth atop FDN-1).
+    # 4) Fail-closed fallback — never naked (defense in depth atop FDN-1).
     fid, source = _fallback_persona(available_personas())
     return _finalize(fid, _persona_display_name(fid), None, 1, None, source,
                      department=department, sop_slug=sop_slug, job_text=job_text,
@@ -407,7 +467,8 @@ def persona_for_jobs(jobs: list) -> list:
             client_persona_id=spec.get("client_persona_id"),
             persona_source=spec.get("persona_source"),
             record=spec.get("record", True), timeout=spec.get("timeout", 60),
-            section4_chars=spec.get("section4_chars", 1400)))
+            section4_chars=spec.get("section4_chars", 1400),
+            blend=spec.get("blend", False), topic_hint=spec.get("topic_hint")))
     return out
 
 
@@ -429,6 +490,12 @@ def main(argv: list) -> int:
                     help="config|adapter|client-choice|locked (client-* is FINAL)")
     ap.add_argument("--no-record", dest="record", action="store_false")
     ap.add_argument("--timeout", type=int, default=60)
+    ap.add_argument("--blend", dest="blend", action="store_true",
+                    help="(A-U1) resolve the voice-first persona-BUNDLE "
+                         "superset instead of a single persona (default off; "
+                         "single-persona callers are completely unaffected).")
+    ap.add_argument("--topic-hint", dest="topic_hint", default=None,
+                    help="(--blend) optional explicit topic hint for the job.")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run the fail-closed consumer contract self-test")
     a = ap.parse_args(argv)
@@ -442,7 +509,7 @@ def main(argv: list) -> int:
     sel = persona_for_job(a.job, a.department, sop_slug=a.sop_slug, sop_hints=hints,
                           client_persona_id=a.client_persona_id,
                           persona_source=a.persona_source, record=a.record,
-                          timeout=a.timeout)
+                          timeout=a.timeout, blend=a.blend, topic_hint=a.topic_hint)
     print(json.dumps(sel, indent=2))
     # exit 0 always; the selection is guaranteed usable. Callers inspect JSON.
     return 0
@@ -501,6 +568,55 @@ def _self_test() -> int:
                         persona_source="client-choice")
     check("client-choice -> honored verbatim", s["persona_id"] == "td-jakes-instinct")
     check("client-choice -> source client-choice", s["source"] == "client-choice")
+    os.environ.pop("PERSONA_FOR_JOB_FIXTURE", None)
+
+    # ---- A-U1: blend=True bundle-superset mode ---------------------------- #
+
+    # blend job — selector returns the full bundle superset (fixture shaped
+    # exactly like persona_blend.build_bundle's real output).
+    _blend_fixture = {
+        "persona_id": "brunson-marketing-secrets-blackbook",
+        "persona_name": "Brunson Marketing Secrets Blackbook",
+        "mode": "blend",
+        "content_task": True,
+        "topic": "offers",
+        "resolved_audience": {"source": "confirmed", "candidates": [], "confidence": "high",
+                              "label": "founders", "ask": None, "confirm_required": False},
+        "confirm_required": False,
+        "voice": {"audience_persona": {"id": "brunson-marketing-secrets-blackbook", "why": "x"},
+                  "topic_persona": {"id": "brunson-marketing-secrets-blackbook", "why": "x"},
+                  "collapsed": True, "collapsed_persona_id": "brunson-marketing-secrets-blackbook",
+                  "topic_as_task_guidance": True},
+        "blend_directive": "Write as Brunson Marketing Secrets Blackbook. STYLE-INSPIRED, NEVER IMPERSONATION.",
+        "task_personas": [],
+        "rationale": {"collapse": "collapsed onto brunson-marketing-secrets-blackbook"},
+        "fallbacks": {"default_persona": "acuff-miner-new-model-of-selling",
+                      "governance": "covey-7-habits"},
+        "catalog_version": "1.3",
+    }
+    os.environ["PERSONA_FOR_JOB_FIXTURE"] = json.dumps(_blend_fixture)
+    s = persona_for_job("write sales page copy", "marketing", blend=True)
+    check("blend -> non-empty blend_directive", bool(s.get("blend_directive")))
+    check("blend -> non-empty voice", bool(s.get("voice")))
+    check("blend -> non-empty resolved_audience", bool(s.get("resolved_audience")))
+    check("blend -> persona_id back-compat mirror present", s.get("persona_id") == "brunson-marketing-secrets-blackbook")
+    check("blend -> governed", governed(s))
+
+    # blend requested but the selector is unavailable/errored — fail closed
+    # to the SAME never-naked fallback as single-persona mode, never a crash.
+    os.environ["PERSONA_FOR_JOB_FIXTURE"] = "not-json{{"
+    s = persona_for_job("write sales page copy", "marketing", blend=True)
+    check("blend degraded -> governed (never naked)", governed(s))
+    check("blend degraded -> honest warning recorded", any("blend" in w for w in s.get("warnings", [])))
+    os.environ.pop("PERSONA_FOR_JOB_FIXTURE", None)
+
+    # default (blend omitted) — byte-identical to the pre-A-U1 single-persona
+    # path; same fixture, same assertions as the very first case above proves
+    # the parameter is additive and default-off.
+    os.environ["PERSONA_FOR_JOB_FIXTURE"] = json.dumps(
+        {"persona_id": "covey-7-habits", "persona_name": "Covey", "score": 0.9})
+    s = persona_for_job("write a leadership email", "sales")
+    check("blend omitted -> unchanged single-persona shape", s["persona_id"] == "covey-7-habits" and s["source"] == "selector" and "blend_directive" not in s)
     os.environ.pop("PERSONA_FOR_JOB_FIXTURE", None)
 
     print("== persona_for_job self-test: %s ==" % ("ALL PASSED" if ok else "FAILED"))
