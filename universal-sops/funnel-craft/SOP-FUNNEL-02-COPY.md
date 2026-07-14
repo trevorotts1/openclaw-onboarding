@@ -37,19 +37,29 @@ a self-reported count is never trusted.
 Before writing a single section, ground the copy in the matched copywriter persona. This is a hard,
 fail-closed gate — generation MUST NOT unlock without it.
 
-1. **Select** the copy persona for this task against the CLIENT's providers:
-   `python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py --task "<page-type> <funnel-type> <ICP>" --department marketing`
-   (ranked selection — do NOT default by habit; the approved copy-persona pool is the registered
-   Skill-22 slugs, e.g. `hormozi-100m-offers`, `bly-copywriters-handbook`, `wiebe-copy-hackers`,
-   `edwards-copywriting-secrets`, `miller-building-storybrand`, `cialdini-influence`).
-2. **Log** the result to `persona-selection-log.md` in the run dir — the entry MUST name a
-   `selected_persona: <registered-slug>` and `selector_ran: true`.
+1. **Select** the copy VOICE for this task — consume the task's already-acquired persona bundle
+   (Skill 6's persona-bundle-acquisition ladder, B-U1/U15: `routing/persona-bundle-receipt.json` /
+   `task['persona_bundle']`) when one is present, or **run the selector WITH `--blend`** against the
+   CLIENT's providers when none was threaded:
+   `python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py --blend --task "<page-type> <funnel-type> <ICP>" --department marketing`
+   (voice-first blend selection — do NOT default by habit; the VOICE persona is the bundle's
+   `voice_persona_id`, catalog-wide per D1/B-D1, never limited to a fixed surname list).
+   `49-signature-funnel/scripts/copy_persona_blend_seam.py` is the machine-callable seam that
+   renders the log entry + the `{{BLEND_DIRECTIVE}}` prompt variable from a bundle (below).
+2. **Log** the result to `persona-selection-log.md` in the run dir — the entry MUST keep naming a
+   `selected_persona: <registered-slug>` (the bundle's VOICE persona id — back-compat, unchanged
+   shape) and `selector_ran: true`, and ADDS `voice_persona:` / `topic_persona:` / `task_persona:` /
+   `blend_directive_sha:` lines (B-U3/U17) so the full blend is auditable, not just the voice.
 3. **Load and apply** the matched persona-blueprint's **Section 4 "Agent Governance Framework"**
    (Execution Standard / Decision Logic / Definition of Done / Failure Patterns) via the copy seam in
-   `49-signature-funnel/prompts/funnel-copy-prompts.md` (`{{PERSONA_TASK_MODE}}` / `{{SELECTED_PERSONA_ID}}`)
-   — the persona's NAME alone does not load it; the copy is written TO that governance.
+   `49-signature-funnel/prompts/funnel-copy-prompts.md` (`{{PERSONA_TASK_MODE}}` / `{{SELECTED_PERSONA_ID}}`
+   / `{{BLEND_DIRECTIVE}}`) — the persona's NAME alone does not load it; the copy is written TO that
+   governance AND to the full audience+topic+task SYNERGY directive (B-U3/U17), guardrail included.
 4. **Enforcement:** `prove_sf_intake.py` fails closed with **AF-FUN-INTAKE-PERSONA-LOG** when the
    persona-selection-log is absent or names no registered slug (mirrors FAB-QC D4). No log → no generation.
+   The regex parses `selected_persona:` (or `applied_persona:` / `copy_persona:`) unmodified — the
+   ADDED `voice_persona:` / `topic_persona:` / `task_persona:` / `blend_directive_sha:` lines never
+   interfere with it.
 
 - **Harmony Chain** — the 12 sections are ONE escalating argument; carry a word/image/idea from
   section N−1 into N; never reset the topic.
