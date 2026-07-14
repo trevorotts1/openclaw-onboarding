@@ -279,7 +279,7 @@ resolved with the standard precedence (per-agent `main` override →
   own canonical**, resolved from **THIS box's own `openclaw.json`** — NEVER a
   hardcoded path and NEVER a cross-box / cross-account path. A client box links
   to the **client's own** files. The client is the USER. Never link a client
-  agent to Trevor's or another account's files.
+  agent to the operator's or another account's files.
 - **Nested workflow agent exemption:** internal workflow micro-agents — any workspace path
   matching `*/workflows/*/agents/*` — are **EXEMPT** and **never touched**.
 - 💾 **Non-destructive:** a real file is backed up to `<file>.bak-unify-<ts>`
@@ -616,6 +616,8 @@ Once a rescue agent helps you, you MUST cooperate with the resolution protocol s
 
 **File every bug (mandatory).** When any department hits a defect, FIRST write a Bug Ticket (schema in `templates/role-library/bugs/bug-ticket-schema.json`) to `working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json`, then keep stabilizing. An unfiled bug is a future repeat. The Bugs + Healer departments route and heal it; the same bug never happens twice.
 
+**Provisioning asks use this same channel.** Rescue Rangers is not only for bugs — any time a self-hosted service on this box (a self-hosted n8n instance is the flagship case) needs a NEW public hostname, the ask goes through this exact webhook, packed into the `problem`/`alreadyTried` fields above. See `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md` for the required fields and the guardrail against ever running `cloudflared tunnel login` on a client box.
+
 ---
 
 ## 🔴 n8n Anthology Drive Broker — standing rules (learned from the July 2026 outage)
@@ -641,13 +643,17 @@ Source: `N8N-DRIVE-BROKER-FIX-SPEC.md` §6 (retired after this port).
 
 ## 🔴 A self-hosted service (n8n, etc.) needs a public webhook — different SOP, hard guardrail
 
-If a client's own self-hosted service (a self-hosted n8n instance is the flagship case) needs to
-receive INBOUND webhooks over the public internet, do **not** run `cloudflared tunnel login` and do
-not improvise a Cloudflare tunnel — the fleet's Cloudflare zone is operator-owned, the client has no
-account on it, and that command can never succeed for a client box. Follow
-`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`: escalate to the operator for a
-hostname + origin port + an ingress-rule merge into the box's EXISTING tunnel (never a new tunnel/
-token/connector), then verify with the SOP's 404-vs-302 checks before calling it done.
+**This is unrelated to the `n8n-main` Anthology Drive Broker rules directly above.** That section is
+the OPERATOR's own internal n8n Kubernetes deployment; this section is about a CLIENT's own
+self-hosted service (a self-hosted n8n instance receiving inbound automation triggers is the flagship
+case) running on the client's box. If that self-hosted service needs to receive INBOUND webhooks over
+the public internet, do **not** run `cloudflared tunnel login` and do not improvise a Cloudflare
+tunnel — the fleet's Cloudflare zone is operator-owned, the client has no account on it, and that
+command can never succeed for a client box. Follow
+`universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`: escalate via the Rescue Rangers
+webhook above for a hostname + origin port + an ingress-rule merge into the box's EXISTING tunnel
+(never a new tunnel/token/connector), then verify with the SOP's 404-vs-302 checks before calling it
+done.
 
 ---
 

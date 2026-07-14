@@ -14,7 +14,9 @@ failing on a self-hosted service, not the OpenClaw gateway itself), `shared-util
 (ingress-array merge helper — prevents a full-replace PUT from deleting a sibling hostname rule on a
 shared tunnel), `32-command-center-setup/scripts/create-tunnel.sh` (the proven PM2-based
 connector-install pattern Section 4 mirrors), `32-command-center-setup/INSTALL.md` Phase 6b/6c (the
-same pattern narrated step-by-step, plus the PM2-persistence notes for Mac vs. Docker VPS).
+same pattern narrated step-by-step, plus the PM2-persistence notes for Mac vs. Docker VPS), `AGENTS.md`
+"Rescue Rangers — how to escalate + resolution / loop-stop" (the only supported box→operator channel;
+Section 3 below uses it).
 
 ---
 
@@ -24,10 +26,14 @@ A client agent that needs to expose a self-hosted service's webhook endpoint to 
 (most commonly: a self-hosted n8n instance receiving inbound automation triggers) does **not**
 provision its own Cloudflare tunnel the way a first-party OpenClaw gateway tunnel is provisioned. The
 fleet's Cloudflare zone is **operator-owned**, and every box that has completed Command Center setup
-already has exactly ONE tunnel and ONE connector running on it. This SOP is the one correct path from
-"the client's service needs a public webhook URL" to "the webhook URL works and the rest of the
-service stays locked down" — and the one hard guardrail that keeps an agent from wandering into a dead
-end that can never succeed.
+already has exactly ONE operator-owned tunnel and ONE connector serving it (carrying the Command
+Center dashboard, the OpenClaw gateway, and the podcast board as sibling hostnames — see Section 2).
+This SOP is the one correct path from "the client's service needs a public webhook URL" to "the
+webhook URL works and the rest of the service stays locked down" — and the one hard guardrail that
+keeps an agent from wandering into a dead end that can never succeed. (A box that has also completed
+Skill 38 additionally runs a SECOND, entirely separate connector for the client-owned GHL-inbound
+gateway tunnel — see Section 2's note on that. This SOP only ever touches the FIRST, operator-owned
+one.)
 
 ## 1. THE HARD GUARDRAIL — READ THIS FIRST
 
@@ -103,27 +109,45 @@ Internet  →  Cloudflare DNS  →  THIS BOX'S EXISTING cloudflared connector  �
 ## 3. ESCALATE TO THE OPERATOR (the only client-agent action in this SOP)
 
 The client agent's job here is to ask for the right things, correctly, once — not to attempt any of
-the provisioning itself. Send the operator a message with exactly these five asks:
+the provisioning itself. There is exactly ONE channel that crosses the box→operator boundary: the
+Rescue Rangers webhook, documented in `AGENTS.md` "Rescue Rangers — how to escalate + resolution /
+loop-stop." **Do not use `universal-sops/cross-dept-request-template.md`** — every field in that
+template routes through `{COMMAND_CENTER_URL}/api/tasks/...`, this box's own LOCAL Command Center; it
+never leaves the box and can never reach the operator. **Do not use
+`openclaw message send -t <group/chat>`** either — bots cannot read other bots' Telegram messages, so
+a bot-to-bot post never reaches the rescue agent (`AGENTS.md` line ~562 documents this explicitly).
+Rescue Rangers is normally framed as "a problem you cannot solve" — this is structurally the same
+shape (something on this box needs an operator-side action it cannot take itself), so it is the
+correct channel for a provisioning ask too, not only for a bug report.
 
-1. **A public hostname** for the service (e.g. `<client-slug>-n8n.zerohumanworkforce.com`).
-2. **The service's local origin port** — the port the service actually listens on, on THIS box (n8n
-   defaults to `5678`). Without this the operator cannot write the ingress rule at all; asking for it
-   up front avoids a round trip.
-3. **An ingress rule merged into this box's EXISTING tunnel**: `<hostname>` → `http://localhost:<PORT>`,
-   added via `GET` → merge → `PUT` per `shared-utils/cc-tunnel-ingress.sh` — never a full-replace
-   `PUT`, which would silently delete the CC dashboard / gateway / podcast rules already sharing that
-   tunnel. State plainly that this is **not** a request for a new tunnel or a new token, to head off
-   any ambiguity.
-4. **Path-scoped Access "Bypass (Everyone)" applications** for the service's webhook paths only
-   (state the exact paths — for n8n: `/webhook`, `/webhook-test`, `/webhook-waiting`; for another
-   self-hosted service, the equivalent inbound-callback path(s)).
-5. Confirmation that the **root application** (UI / `/rest/*` / admin) stays behind Access — i.e.
-   confirm the bypass is scoped, not a removal of Access from the whole hostname.
+POST the standard nine-field Rescue Rangers payload (`AGENTS.md` Rescue Rangers section), packing the
+five provisioning asks into `problem` and `alreadyTried`:
 
-Use the standard cross-department/operator request shape (`universal-sops/cross-dept-request-template.md`)
-if the fleet's request-logging convention applies on this box; otherwise a direct, specific Telegram
-message covering the five asks above is sufficient. Do not proceed past this step until the operator
-has confirmed all five are provisioned — there is nothing else for the agent to build in the meantime.
+```bash
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
+  -d '{
+    "action":         "escalate",
+    "person":         "<owner/end-user name>",
+    "clientName":     "<client slug matching the roster>",
+    "agentName":      "<sending agent persona name>",
+    "boxName":        "<hostname or box label>",
+    "boxType":        "<VPS | Mac Mini | MacBook Pro>",
+    "openclawVersion":"<output of: openclaw --version>",
+    "problem":        "Need public webhook ingress for a self-hosted <service, e.g. n8n> instance. (1) Public hostname requested: <client-slug>-n8n.zerohumanworkforce.com. (2) Local origin port: <PORT, e.g. 5678>. (3) Requesting an ingress rule MERGED into the existing tunnel already running on this box (<hostname> -> http://localhost:<PORT>) via GET->merge->PUT per shared-utils/cc-tunnel-ingress.sh -- this is NOT a request for a new tunnel, new token, or new connector. (4) Requesting path-scoped Access Bypass (Everyone) applications for webhook paths only: <exact paths, e.g. /webhook, /webhook-test, /webhook-waiting for n8n>. (5) Please confirm the root application (UI / /rest/* / admin) stays behind Access -- the bypass must be scoped to the webhook paths only, not a removal of Access from the whole hostname.",
+    "alreadyTried":   "1. Confirmed pm2 status cloudflare-tunnel shows the existing connector online (not the greenfield case). 2. Confirmed the client has no Cloudflare account on the operator zone and cannot self-serve this. 3. Did not run cloudflared tunnel login or any interactive Cloudflare auth (dead end for a client box).",
+    "returnTo":       "<this client Telegram chat id>"
+  }'
+```
+
+Do not proceed past this step until the operator has confirmed all five asks are provisioned — there
+is nothing else for the agent to build in the meantime. When the operator's reply comes back (posted to
+the Rescue Rangers webhook and relayed to `returnTo`), follow `AGENTS.md`'s resolution protocol: once
+it's confirmed live, POST `✅ RESOLVED: <what was provisioned>` to close the loop, then continue at
+Section 4.
 
 **What NOT to do while waiting:** do not attempt a workaround tunnel, do not install a second
 `cloudflared` connector or start a second PM2-managed `cloudflared` process (the box's existing
@@ -145,8 +169,20 @@ and `pm2 resurrect` on a Docker VPS — see `32-command-center-setup/INSTALL.md`
 operator's ingress-rule merge (Section 3, ask #3) attaches the new hostname to THIS existing tunnel —
 it is a server-side change against the Cloudflare API, not something installed on the box. There is
 nothing for the client agent to install, no new token to receive, no service to reinstall, and no
-`systemctl`/`launchctl service install` step anywhere in this case — the fleet does not run
-`cloudflared` under systemd or as a `launchd` service; it runs under PM2 on Mac and VPS alike.
+`systemctl`/`launchctl service install` step anywhere in this case — **for this specific,
+operator-owned Command Center tunnel** the fleet runs `cloudflared` under PM2 on Mac and VPS alike,
+never under systemd or as its own `launchd` service.
+
+> **Do not confuse this with Skill 38's tunnel.** A box can legitimately run a SECOND, genuinely
+> separate `cloudflared` connector at the same time: Skill 38's client-owned GHL-inbound gateway
+> tunnel, which IS installed as a real `com.cloudflare.cloudflared` launchd service on Mac
+> (`38-conversational-ai-system/scripts/14-install-cloudflared-service.sh`) or a real systemd unit on
+> Linux — on the CLIENT's own Cloudflare account, for a different hostname and purpose entirely. If
+> `38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md` has you checking
+> `launchctl list` / `systemctl is-active cloudflared`, that is the OTHER connector, not this one. Do
+> not run `cloudflared service install` for the Command Center tunnel this SOP provisions — see the
+> escalation row in Section 7 if an agent has already tried it and it errored or produced a second,
+> divergent connector.
 
 The client agent's only job here is to confirm the connector is up — the identical command on Mac and
 on a Docker VPS:
@@ -268,11 +304,12 @@ the only passing state. Either one alone is a defect.
 
 | Situation | Action |
 |---|---|
-| Need a public webhook URL for a self-hosted service | Section 3 — escalate to operator with the five asks. Never attempt `cloudflared tunnel login`, never provision a second tunnel or connector yourself. |
-| `pm2 status cloudflare-tunnel` / `pm2 list \| grep cloudflare-tunnel` shows nothing — the connector process does not exist at all | This box never completed Command Center's own tunnel setup — outside this SOP's normal scope (Section 4.1 assumes that tunnel already exists). Escalate to the operator and confirm before assuming Section 4.2 (greenfield) applies; do not hand-start a connector outside PM2 (e.g. `cloudflared service install` / a raw `cloudflared tunnel run` outside PM2) — that produces a second, unmanaged process the fleet's tooling and restart-persistence (`pm2 startup`/`pm2 resurrect`) don't track. |
-| Greenfield connector (Section 4.2) prompts for a Cloudflare login | Token is wrong/missing. Stop, report to operator, do not fall back to interactive auth. |
-| Check A returns 302 / an Access login page instead of 404 | Bypass application missing or misconfigured. Escalate to operator — do not edit Access policy from the client box. |
-| Check B returns anything other than 302 (200, 401, 404, ...) | Bypass scoped too broadly — the UI is unauthenticated. Escalate to operator immediately; this is an exposed-admin-surface defect, not a webhook problem. |
+| Need a public webhook URL for a self-hosted service | Section 3 — POST the Rescue Rangers escalation with the five asks in `problem`/`alreadyTried`. Never attempt `cloudflared tunnel login`, never provision a second tunnel or connector yourself. |
+| Box has no systemd, `cloudflared service install` fails (e.g. "service already installed"), or the box already runs `cloudflared` under PM2 — an agent tried to install a connector the fleet way and it didn't fit | Covers both Mac-PM2 and Docker-VPS. Do **NOT** install a second connector and do NOT fall back to a raw `cloudflared tunnel run` outside PM2 — that produces a second, unmanaged, divergent process the fleet's tooling (`shared-utils/cc-tunnel-ingress.sh`, `pm2 startup`/`pm2 resurrect`) does not track. Run `pm2 status cloudflare-tunnel` to confirm the box's EXISTING connector, report that status to the operator via Section 3, and request the ingress-rule merge instead — the box does not need a new connector, it needs a new ingress rule on the one it already has. |
+| `pm2 status cloudflare-tunnel` / `pm2 list \| grep cloudflare-tunnel` shows nothing — the connector process does not exist at all | This box never completed Command Center's own tunnel setup — outside this SOP's normal scope (Section 4.1 assumes that tunnel already exists). Escalate to the operator (Section 3) and confirm before assuming Section 4.2 (greenfield) applies; do not hand-start a connector outside PM2. |
+| Greenfield connector (Section 4.2) prompts for a Cloudflare login | Token is wrong/missing. Stop, report to operator via Section 3, do not fall back to interactive auth. |
+| Check A returns 302 / an Access login page instead of 404 | Bypass application missing or misconfigured. Escalate to operator (Section 3) — do not edit Access policy from the client box. |
+| Check B returns anything other than 302 (200, 401, 404, ...) | Bypass scoped too broadly — the UI is unauthenticated. Escalate to operator (Section 3) immediately; this is an exposed-admin-surface defect, not a webhook problem. |
 | Service still shows `localhost` in its own webhook URLs after setting the public hostname | `WEBHOOK_URL` (or equivalent) not picked up — see Section 5 for the exact env-var location and restart command for this box's install type (launchd plist vs. Docker `.env`/compose); re-check and restart before re-testing. |
 | A shared tunnel's ingress rule for this host disappears after another service's install script runs | Full-replace ingress PUT clobbered it. See `shared-utils/cc-tunnel-ingress.sh` — any tunnel-ingress writer must GET → merge → PUT, never a bare full-replace. |
 
@@ -280,11 +317,16 @@ the only passing state. Either one alone is a defect.
 
 An agent that hits a wall provisioning Cloudflare for a client — no token, no clear next step written
 down anywhere — has generic training knowledge of the `cloudflared` CLI, including `cloudflared tunnel
-login`, and generic training knowledge of `cloudflared service install` / systemd unit files that has
-nothing to do with how this fleet actually runs its connectors. Without an explicit guardrail and an
-explicit escalation path, the natural move under pressure is to try the command that "should" work. It
-will never work for a client box, it burns time chasing a browser flow that can't complete or a second
+login` and `cloudflared service install` / systemd unit files, plus (on this fleet specifically) a
+real but DIFFERENT reference point: Skill 38's own client-owned gateway tunnel genuinely does run as a
+launchd/systemd service. That similarity is exactly what makes this trap easy to fall into — an agent
+that has seen `cloudflared service install` work correctly for one tunnel on this same box can
+reasonably assume it applies to this one too. It does not: the Command Center tunnel this SOP touches
+runs under PM2, on a different Cloudflare account, and installing a second connector for it produces
+either an error or a divergent, un-modeled tunnel. Without an explicit guardrail and an explicit
+escalation path, the natural move under pressure is to try the command that "should" work. It will
+never work for a client box, it burns time chasing a browser flow that can't complete or a second
 connector process the fleet's tooling doesn't know about, and it can confuse the client if the agent
 narrates the dead end to them instead of escalating quietly. Section 1's guardrail plus Section 3's
 escalation path close that gap: there is always a next step, and the next step is never "log in to an
-account you don't have" or "install a connector the fleet doesn't use."
+account you don't have" or "install a second connector for a tunnel that already has one."
