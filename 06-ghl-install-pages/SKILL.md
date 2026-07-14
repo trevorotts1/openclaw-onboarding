@@ -580,12 +580,63 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > any that don't (`--retry`), re-runs the archive job synchronously from the
 > staged source under `<evidence_root>/vercel-github-archive/<marker>/` if it
 > is still present — or FLAGS the page (never fabricates source) if it is not.
-> Run it by hand or wire it into a periodic gate:
+> Run it by hand for one root:
 > `python3 tools/ghl_github_reconcile.py --evidence-root <dir> --retry`
 > (exit 0 = every page's code is confirmed in GitHub; exit 1 = attention
-> needed — see `missing_or_failed`/`flagged` in its output). This is a
-> straightforward per-root sweep, not a fleet-wide crawler; wiring it into a
-> cron / fleet-wide gate is left to the operator.
+> needed — see `missing_or_failed`/`flagged` in its output).
+>
+> **D6/B-D2 — RATIFIED.** The non-blocking archival rail above is the
+> permanent doctrine (operator ruling, D6): it ships exactly as fast as
+> before, every failure is an honest receipt a sweep can retry, and nothing
+> in this path can ever block or roll back a live page.
+>
+> **Scheduled maintenance-window sweep (U24/B-U10 item 2).** Reconciliation
+> is NOT a fleet-wide crawler by itself, but `--sweep-base` closes the
+> "wiring it into a periodic gate is left to the operator" gap: it sweeps
+> EVERY Skill-6 evidence run under a base directory (the same run-evidence
+> ledger roots `cc_board.py reconcile`/U27 already discovers; a bare
+> `--sweep-base` with no directory argument auto-resolves the base the exact
+> same way `cc_board.resolve_evidence_base()` does — env override
+> `SKILL6_EVIDENCE_BASE_DIR`, else `$HOME/clawd/skill6-fix`) and writes ONE
+> dated JSON log per pass under `<base>/github-archive-reconcile-logs/` —
+> proof-on-disk that the scheduled sweep actually ran, every time it runs,
+> including a pass that finds nothing to sweep yet (a fresh box is honestly
+> `applicable: false`, never a false alarm):
+> `python3 tools/ghl_github_reconcile.py --sweep-base --retry`
+> (exit 0 = every run's code is confirmed in GitHub, or nothing to sweep yet;
+> exit 1 = attention needed on at least one run). Install it as a daily
+> maintenance-window cron with
+> **`scripts/install-github-archive-reconcile-cron.sh`** — a real, tested,
+> idempotent installer (`tests/test_install_github_archive_reconcile_cron.py`
+> pins its exact `openclaw cron add` argv), not a paste-ready snippet: this
+> repo already had a prior, documented incident of exactly this class of bug
+> (`37-zhc-closeout/scripts/install-closeout-resume-cron.sh:85-90`,
+> FIX-XC-08a — `--schedule` is not a real CLI flag, the real one is `--cron`,
+> and an omitted `--no-deliver` announces cron output into the client's chat
+> nightly). The installer follows that same proven pattern: COMMAND-mode
+> payload (no agent/model needed), `--no-deliver` feature-detected against
+> `openclaw cron add --help` and always passed when available, idempotent
+> (skips if the cron already exists), and it never bakes a specific
+> operator's evidence-base path into the cron's argv (bare `--sweep-base`
+> resolves per-box at run time). Run once, after Skill 06 is installed on a
+> box:
+> ```
+> bash ~/.openclaw/skills/06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh
+> ```
+> Verify with `openclaw cron list | grep skill6-github-archive-reconcile-sweep`;
+> fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
+> log lands under `github-archive-reconcile-logs/`.
+>
+> **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
+> `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
+> runs on every per-build QC pass. It never fails a build over a transient
+> archive failure — an honest `failed` receipt stays open for the sweep above
+> to retry, per the non-blocking doctrine — but it DOES hard-fail the gate
+> when a `vercel_deploy` receipt exists with **no archive receipt of any
+> kind**: total silence is the one case "no receipt = not archived" must
+> never quietly pass. It also prints GitHub token presence **by name only**
+> (`GH_TOKEN` / `GITHUB_TOKEN` — `SET` or `NOT-SET`, never the value) so a
+> misconfigured build box is visible without ever printing a secret.
 >
 > **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
 > scorecards, and screenshots are written to a run-evidence root

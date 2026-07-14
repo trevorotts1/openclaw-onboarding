@@ -16,12 +16,13 @@ subprocess finished, etc.). This sweep is the honesty check:
         -> RETRY (if the staged source is still on disk under the evidence
            root) or FLAG (if it is not, or the retry itself fails).
 
-This is a STRAIGHTFORWARD sweep over ONE evidence root at a time (or a set of
-roots passed on the command line) — it is deliberately NOT a fleet-wide
-crawler/daemon that auto-discovers every run-evidence root on a box. Wiring
-this into a periodic cron / fleet-wide gate is an operator decision left open
-(see SKILL.md's Reconciliation section) — scoped out here to avoid building a
-new subsystem nobody asked for yet.
+``reconcile()`` is a STRAIGHTFORWARD sweep over ONE evidence root at a time —
+it is deliberately NOT a fleet-wide crawler/daemon on its own. ``sweep_base()``
+(U24/B-U10) is the maintenance-window mode: it reuses the ONE canonical
+evidence-root discovery ``cc_board.py``'s own reconcile (U27) already uses
+(``cc_board.list_evidence_runs`` over a base dir) to sweep every run in one
+pass and writes a dated JSON log proving each scheduled pass actually ran —
+see SKILL.md's Reconciliation section for the `openclaw cron create` wiring.
 
 Reuses ``ghl_receipts`` (the existing F6 store) for both reading the ledger
 and, on retry, writing the updated archive receipt — no new receipt schema.
@@ -29,15 +30,19 @@ and, on retry, writing the updated archive receipt — no new receipt schema.
 CLI
 ---
     python3 ghl_github_reconcile.py --evidence-root <dir> [--retry] [--json]
+    python3 ghl_github_reconcile.py --sweep-base [<dir>] [--retry] [--json] [--no-log]
+        (bare ``--sweep-base`` with no directory auto-resolves via
+        ``cc_board.resolve_evidence_base()`` — the scheduled cron uses this form)
 
-Exit code: 0 if every vercel_deploy page has a verified archive (after retry,
-if requested); 1 if one or more remain missing/failed/flagged.
+Exit code (both modes): 0 if every vercel_deploy page has a verified archive
+(after retry, if requested); 1 if one or more remain missing/failed/flagged.
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -47,6 +52,7 @@ if _TOOLS_DIR not in sys.path:
 
 import ghl_receipts  # noqa: E402
 import ghl_github_archive as gha  # noqa: E402
+import cc_board  # noqa: E402  (U24/B-U10 — the ONE evidence-root discovery U27 already uses)
 
 
 @dataclass
@@ -74,11 +80,11 @@ class ReconcileReport:
 
 
 def _archive_ok(receipt: Optional[dict]) -> bool:
-    if not receipt:
-        return False
-    if receipt.get("action") not in ("created", "reused"):
-        return False
-    return bool(receipt.get("verify", {}).get("ok"))
+    """Delegates to ``ghl_github_archive.is_archive_verified`` — the ONE
+    "verified" definition, shared with ``ghl_archive_receipt_gate.py``
+    (U24/B-U10) so the retry sweep and the per-build FAB-QC gate can never
+    silently disagree on what counts as archived."""
+    return gha.is_archive_verified(receipt)
 
 
 def reconcile(evidence_root: str, *, retry: bool = False,
@@ -143,6 +149,108 @@ def reconcile(evidence_root: str, *, retry: bool = False,
     return report
 
 
+# ── Multi-root sweep — the daily maintenance-window mode (U24/B-U10 item 2) ──
+#
+# ``reconcile()`` above is deliberately scoped to ONE evidence root at a time
+# (see the module docstring: "not a fleet-wide crawler"). That is still true —
+# ``sweep_base`` does not invent a new evidence-root discovery mechanism, it
+# reuses the ONE canonical one U27's ``cc_board.reconcile()`` already sweeps
+# (``cc_board.resolve_evidence_base`` / ``cc_board.list_evidence_runs`` — every
+# ``v2-<RUN_ID>`` directory under the base that carries an intake receipt) and
+# simply runs ``reconcile()`` over each one, so scheduling this as ONE cron
+# entry closes the doctrine gap without a second "where does evidence live"
+# definition to drift out of sync with U27's.
+
+_SWEEP_LOG_SUBDIR = "github-archive-reconcile-logs"
+
+
+@dataclass
+class SweepReport:
+    base_dir: str
+    applicable: bool = True
+    total_runs: int = 0
+    runs: list = field(default_factory=list)   # [{"run": <run_id>, "report": <ReconcileReport.as_dict()>}]
+    log_path: str = ""
+
+    def all_clean(self) -> bool:
+        # "not applicable" (no evidence base exists yet on this box) is NOT
+        # an attention-needed condition — it means there is nothing to sweep.
+        # Conflating the two was a genuine bug (fixed U24 rebuild): it made
+        # every fleet box that has never run a Skill-6 build alarm nightly.
+        # See TestSweepBase.test_missing_base_dir_is_not_an_alarm.
+        if not self.applicable:
+            return True
+        return all(r["report"]["all_clean"] for r in self.runs)
+
+    def as_dict(self) -> dict:
+        return {
+            "base_dir": self.base_dir,
+            "applicable": self.applicable,
+            "total_runs": self.total_runs,
+            "runs": self.runs,
+            "all_clean": self.all_clean(),
+            "log_path": self.log_path,
+        }
+
+
+def sweep_base(base_dir: Optional[str] = None, *, retry: bool = True,
+                requester=None, env: dict | None = None,
+                write_log: bool = True, clock=None) -> SweepReport:
+    """Run ``reconcile()`` over EVERY Skill-6 evidence run under ``base_dir``
+    and (by default) write ONE dated JSON log recording the pass — the
+    on-disk proof a scheduled maintenance-window cron actually fired, every
+    time it fires (never overwritten; one new timestamped file per sweep) —
+    including on a pass that finds nothing to sweep, so "first run writes a
+    dated log" (B-U10 acceptance d) holds on a box with zero Skill-6 history.
+
+    ``base_dir``: an explicit dir, OR omit/``None`` to auto-resolve via
+    ``cc_board.resolve_evidence_base(env)`` — the EXACT SAME canonical
+    resolver (env override ``SKILL6_EVIDENCE_BASE_DIR``, else
+    ``$HOME/clawd/skill6-fix``) the module docstring already claims this
+    reuses. Fixed U24 rebuild: the prior build only reused
+    ``list_evidence_runs``, never the resolver itself — a scheduled sweep
+    pointed at a literal path (rather than the env override) silently swept
+    the wrong directory on any box using the override. Passing an explicit
+    ``base_dir`` still works unchanged (tests rely on this).
+
+    Never raises. An unresolvable/absent/empty resolved base dir (a bare
+    checkout, a fresh box with no builds yet) is ``applicable=False`` —
+    nothing to sweep, not an error, and NOT an attention-needed condition
+    (see ``SweepReport.all_clean``).
+    """
+    resolved = (base_dir or "").strip() or cc_board.resolve_evidence_base(env)
+    report = SweepReport(base_dir=resolved)
+
+    if resolved and os.path.isdir(resolved):
+        report.applicable = True
+        for run_dir in cc_board.list_evidence_runs(resolved):
+            run_report = reconcile(run_dir, retry=retry, requester=requester, env=env)
+            report.runs.append({"run": os.path.basename(run_dir), "report": run_report.as_dict()})
+        report.total_runs = len(report.runs)
+    else:
+        report.applicable = False
+
+    # Write the dated log whenever there is a resolved path to write it
+    # under — applicable or not — so a fresh box's very first scheduled fire
+    # still leaves proof-on-disk that the cron ran (an empty/"not applicable"
+    # pass is honestly recorded, never silently skipped).
+    if write_log and resolved:
+        _now = clock or (lambda: time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+        log_dir = os.path.join(resolved, _SWEEP_LOG_SUBDIR)
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{_now()}.json")
+        report.log_path = log_path   # set BEFORE serializing so the log's own
+                                      # content self-references its own path
+        tmp_path = f"{log_path}.tmp-{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(report.as_dict(), fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, log_path)
+
+    return report
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main(argv: Optional[list] = None) -> int:
@@ -151,12 +259,41 @@ def main(argv: Optional[list] = None) -> int:
         prog="ghl_github_reconcile",
         description="Reconcile VERCEL_EMBED deployments against their GitHub archival receipts.",
     )
-    p.add_argument("--evidence-root", required=True,
-                   help="The run-evidence root to sweep (same root passed to ghl_vercel.run_pipeline).")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--evidence-root",
+                       help="Sweep ONE run-evidence root (same root passed to ghl_vercel.run_pipeline).")
+    mode.add_argument("--sweep-base", nargs="?", const="", default=None,
+                       help="U24/B-U10 daily maintenance-window mode: sweep EVERY evidence run under "
+                            "this base dir and write a dated log (see --no-log to suppress, testing only). "
+                            "Omit the value (bare --sweep-base) to auto-resolve via "
+                            "cc_board.resolve_evidence_base() — SKILL6_EVIDENCE_BASE_DIR env override, "
+                            "else $HOME/clawd/skill6-fix — the mode the scheduled cron entry uses.")
     p.add_argument("--retry", action="store_true",
                    help="Retry any missing/failed archive using its staged source, if still present.")
     p.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    p.add_argument("--no-log", action="store_true",
+                   help="--sweep-base only: skip writing the dated log file (testing).")
     args = p.parse_args(argv)
+
+    if args.sweep_base is not None:
+        sweep = sweep_base(args.sweep_base or None, retry=args.retry, write_log=not args.no_log)
+        d = sweep.as_dict()
+        if args.json:
+            print(json.dumps(d, indent=2))
+        else:
+            print(f"Base dir: {d['base_dir'] or '(unresolved — no SKILL6_EVIDENCE_BASE_DIR and no HOME)'}")
+            if not d["applicable"]:
+                print("Total evidence runs swept: 0")
+                print(f"Log written: {d['log_path'] or '(none — no resolvable base dir)'}")
+                print("RESULT: N/A (no evidence base found on this box yet — nothing to sweep, not an error)")
+            else:
+                print(f"Total evidence runs swept: {d['total_runs']}")
+                for r in d["runs"]:
+                    print(f"  {r['run']}: {'CLEAN' if r['report']['all_clean'] else 'ATTENTION NEEDED'} "
+                          f"(deploys={r['report']['total_deploys']})")
+                print(f"Log written: {d['log_path'] or '(none — --no-log)'}")
+                print("RESULT:", "CLEAN" if d["all_clean"] else "ATTENTION NEEDED")
+        return 0 if sweep.all_clean() else 1
 
     report = reconcile(args.evidence_root, retry=args.retry)
 
