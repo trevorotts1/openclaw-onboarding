@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-14T01:48:44Z",
+  "generated_at": "2026-07-14T04:19:52Z",
   "file_count": 103,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -173,8 +173,8 @@
       "bytes": 3690
     },
     "funnel-automation-build-quality-rubric.md": {
-      "sha256": "eee0b4a26f40304c3f5e2a0ea8201584228c57fa889039226baea18b1174d7d4",
-      "bytes": 7789
+      "sha256": "31b21a024db92aac834b9ac76685f54b82f985dcc234f485173a1bcd0bb1bb43",
+      "bytes": 9411
     },
     "funnel-craft/FUNNEL-PIPELINE-MANIFEST.json": {
       "sha256": "11b6bf6705e3e88cc2a11936b61a8470eab81a8b8c15751a06e68fb9507b9853",
@@ -193,8 +193,8 @@
       "bytes": 3225
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "c4a944b35d03811d3bb4a91fc1e25bac9321bb697c9d976e6eef3bb37c96841a",
-      "bytes": 6335
+      "sha256": "0e1a5754c9adc8f4e9dadb36be63ed79a8bc0dd29e51ba54ff2f4d46966c9f95",
+      "bytes": 7306
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
       "sha256": "54b1afde1d66607d7c117ddaebcf0d9bfffe18c612d4732d96bc6c2e6a387539",

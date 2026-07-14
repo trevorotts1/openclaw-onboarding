@@ -30,7 +30,16 @@ MUST NOT MERGE WITHOUT U19/B-U5 (FAB-QC D4 v2) — see B.0 item 5 of the
 master spec: wiring the blend without the D4 fix makes an honest blend-voice
 copy log HARD-MISS the legacy template-token check.
 
-stdlib-only, deterministic, no network.
+  * ``report_persona_used_to_card`` is the B-U6/U20 seam: AFTER the copy
+    lands, report the personas ACTUALLY used back onto the Command Center
+    card (declared-vs-used, never silent) by delegating to
+    ``06-ghl-install-pages/tools/cc_board.py``'s ``report_persona_used()``.
+    A divergence from the card's DECLARED voice renders a `persona_mismatch`
+    chip + one operator event; agreement renders nothing. Best-effort — a
+    failure here (no task_id, board unreachable) never blocks the build.
+
+stdlib-only except ``report_persona_used_to_card``, which does one
+best-effort network call via ``cc_board.py`` (already fail-soft internally).
 """
 from __future__ import annotations
 
@@ -142,6 +151,63 @@ def render_persona_selection_log(bundle: dict, *, header: Optional[str] = None,
     return "\n".join(lines) + "\n"
 
 
+def _load_cc_board_module():
+    """Lazy-load 06-ghl-install-pages/tools/cc_board.py so the ONE producer/
+    board-write path is reused verbatim rather than re-implemented (mirrors
+    ``_load_blend_module`` above). Returns None (best-effort no-op) when
+    unreachable — a missing/relocated cc_board.py must never block copy."""
+    try:
+        tools_dir = str(_REPO_ROOT / "06-ghl-install-pages" / "tools")
+        if tools_dir not in sys.path:
+            sys.path.insert(0, tools_dir)
+        import cc_board as _cb  # type: ignore
+        return _cb
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def report_persona_used_to_card(
+    task_id: str,
+    bundle: dict,
+    *,
+    page: Optional[str] = None,
+    goal: Optional[str] = None,
+    env: Optional[dict] = None,
+) -> bool:
+    """B-U6 / U20 — report the personas this copy step ACTUALLY used back onto
+    the Command Center card (declared-vs-used, never silent).
+
+    Extracts voice/topic/task persona ids from the SAME bundle already
+    consumed for the log + prompt seam (this module's single source), and
+    the SAME blend-directive text (and therefore the SAME sha) that was
+    actually rendered into the prompt — so the report can never drift from
+    what the copy step really saw.
+
+    Best-effort: a missing task_id, an unreachable cc_board module, or a
+    board write failure all return False without raising — this must never
+    block or fail the copy step it rides on.
+    """
+    tid = (task_id or "").strip()
+    if not tid:
+        return False
+    cb = _load_cc_board_module()
+    if cb is None:
+        return False
+
+    bundle = bundle if isinstance(bundle, dict) else {}
+    directive = render_blend_directive_variable(bundle)
+    return cb.report_persona_used(
+        tid,
+        page=page,
+        voice_persona_id=bundle.get("voice_persona_id"),
+        topic_persona_id=bundle.get("topic_persona_id"),
+        task_persona_id=_primary_task_persona_id(bundle),
+        blend_directive_sha=_sha(directive),
+        goal=goal,
+        env=env,
+    )
+
+
 def write_persona_selection_log(run_dir: str, bundle: dict, **kw) -> str:
     """Write ``persona-selection-log.md`` under ``run_dir``. Returns the path.
     Best-effort — a write failure raises (the SOP's Step 0 is a hard,
@@ -182,6 +248,15 @@ if __name__ == "__main__":
                     "(defaults to <run-dir>/routing/persona-bundle-receipt.json).")
     ap.add_argument("--print-directive", action="store_true",
                     help="Print the rendered {{BLEND_DIRECTIVE}} text and exit.")
+    ap.add_argument("--report-persona-used", dest="report_persona_used", action="store_true",
+                    help="B-U6/U20: after writing the log, report the personas ACTUALLY "
+                         "used back onto the Command Center card (declared-vs-used, never "
+                         "silent). Requires --task-id.")
+    ap.add_argument("--task-id", default="", help="CC task UUID (with --report-persona-used).")
+    ap.add_argument("--page", default="", help="Page name/slug this report is for, e.g. 'main' "
+                    "(with --report-persona-used).")
+    ap.add_argument("--goal", default="", help="This page's conversion goal, for the chip "
+                    "tooltip (with --report-persona-used).")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     a = ap.parse_args()
 
@@ -243,8 +318,44 @@ if __name__ == "__main__":
             path = write_persona_selection_log(td, bundle)
             check("write_persona_selection_log writes the file", os.path.isfile(path))
 
+        # (d) B-U6/U20 — report_persona_used_to_card: empty task_id -> False,
+        #     no-raise (never blocks copy). No network in this self-test (no
+        #     MISSION_CONTROL_URL), so a non-empty task_id also returns False
+        #     fail-soft, without raising.
+        try:
+            rc_empty = report_persona_used_to_card("", bundle, page="main", env={})
+            check("report_persona_used_to_card(empty task_id) returns False", rc_empty is False)
+            rc_noboard = report_persona_used_to_card("t1", bundle, page="main", env={})
+            check("report_persona_used_to_card(no board) returns False, no raise", rc_noboard is False)
+        except Exception as exc:  # noqa: BLE001
+            check(f"report_persona_used_to_card must never raise ({exc})", False)
+
+        # (e) the cc_board loader resolves to the real module (proves the
+        #     cross-skill-directory sys.path wiring, not just a None fallback).
+        _cb = _load_cc_board_module()
+        check("_load_cc_board_module resolves cc_board.py",
+              _cb is not None and hasattr(_cb, "report_persona_used"))
+
         print("== copy_persona_blend_seam self-test: %s ==" % ("ALL PASSED" if ok else "FAILED"))
         raise SystemExit(0 if ok else 1)
+
+    if a.report_persona_used:
+        if not a.task_id.strip():
+            ap.error("--report-persona-used requires --task-id")
+        if not a.run_dir:
+            ap.error("--report-persona-used requires --run-dir (to load the bundle)")
+        _bundle_path = a.bundle_file or os.path.join(a.run_dir, "routing", "persona-bundle-receipt.json")
+        try:
+            with open(_bundle_path, encoding="utf-8") as _f:
+                _bundle = json.load(_f)
+        except (OSError, ValueError):
+            _bundle = {}
+        _ok = report_persona_used_to_card(
+            a.task_id.strip(), _bundle,
+            page=(a.page.strip() or None), goal=(a.goal.strip() or None),
+        )
+        print(json.dumps({"reported": _ok}, indent=2))
+        raise SystemExit(0)  # fail-soft — a False report never fails the build step
 
     if not a.run_dir:
         ap.error("--run-dir is required (or use --self-test)")
