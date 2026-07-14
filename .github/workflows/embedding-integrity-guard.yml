@@ -34,16 +34,26 @@ on:
       - shared-utils/detect_platform.py
       - shared-utils/semantic_task_fit.py
       - shared-utils/embedding_health.py
+      - shared-utils/persona_embedding_drift_probe.py
+      - shared-utils/fleet_refresh_runner.py
       - shared-utils/prebuilt-index/**
       - 23-ai-workforce-blueprint/scripts/gemini-section-indexer.py
       - 23-ai-workforce-blueprint/lib/detect_platform.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
+      - tests/unit/embedding-credential-error-classify.test.py
+      - tests/unit/orchestrator-embed-fail-exit8.test.py
+      - tests/unit/orchestrator-phase5-deferred-receipt.test.py
+      - tests/unit/persona-fleet-index-verify.test.py
+      - tests/unit/persona-embedding-drift-probe.test.py
+      - tests/unit/publish-personas-to-fleet.test.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
@@ -60,16 +70,26 @@ on:
       - shared-utils/detect_platform.py
       - shared-utils/semantic_task_fit.py
       - shared-utils/embedding_health.py
+      - shared-utils/persona_embedding_drift_probe.py
+      - shared-utils/fleet_refresh_runner.py
       - shared-utils/prebuilt-index/**
       - 23-ai-workforce-blueprint/scripts/gemini-section-indexer.py
       - 23-ai-workforce-blueprint/lib/detect_platform.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
+      - tests/unit/embedding-credential-error-classify.test.py
+      - tests/unit/orchestrator-embed-fail-exit8.test.py
+      - tests/unit/orchestrator-phase5-deferred-receipt.test.py
+      - tests/unit/persona-fleet-index-verify.test.py
+      - tests/unit/persona-embedding-drift-probe.test.py
+      - tests/unit/publish-personas-to-fleet.test.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
       - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
       - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
@@ -119,6 +139,38 @@ jobs:
         run: |
           chmod +x tests/unit/orphan-process-prevention.test.sh
           bash tests/unit/orphan-process-prevention.test.sh
+
+  persona-embeddings-wiring:
+    name: "A-U8 — book-to-persona embeddings wiring (index write / deferral / index-verify / drift)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Credential-error classification (is_credential_error, exit 4 vs 6)
+        run: python3 tests/unit/embedding-credential-error-classify.test.py -v
+
+      - name: Orchestrator Phase-5 EMBED_FAILED exit-8 gate (regression, extended with DEFERRED)
+        run: python3 tests/unit/orchestrator-embed-fail-exit8.test.py -v
+
+      - name: Orchestrator Phase-5 classify + deferred receipt (keyless real-subprocess end-to-end)
+        run: python3 tests/unit/orchestrator-phase5-deferred-receipt.test.py -v
+
+      - name: persona_fleet.py index-verify (indexed OR honestly deferred, exit 7 on gap)
+        run: python3 tests/unit/persona-fleet-index-verify.test.py -v
+
+      - name: persona_embedding_drift_probe (one operator card per run, fleet_refresh_runner wiring)
+        run: python3 tests/unit/persona-embedding-drift-probe.test.py -v
+
+      - name: publish-personas-to-fleet.sh end-to-end (triad + index-verify gate + rollback)
+        run: |
+          chmod +x tests/unit/publish-personas-to-fleet.test.sh
+          bash tests/unit/publish-personas-to-fleet.test.sh
 
   universal-sops:
     name: "universal-sops content manifest"

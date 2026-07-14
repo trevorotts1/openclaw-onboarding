@@ -131,6 +131,17 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
         code = self._run_with_phase5("DONE")
         self.assertEqual(code, 0, "Phase-5 DONE must exit 0 (no false failure)")
 
+    def test_embed_deferred_exits_0(self):
+        # A-U8: DEFERRED (credential-shaped gap, honest receipt written) is
+        # NOT "FAILED" — the single-book tail's exit-8 gate must not fire.
+        code = self._run_with_phase5("DEFERRED")
+        self.assertEqual(code, 0,
+                         "Phase-5 DEFERRED must exit 0 — an honest, "
+                         "non-fatal credential gap is never EMBED_FAILED (8)")
+        # Invariant: the blueprint ships regardless (same as DONE/FAILED).
+        self.assertTrue((orch.PERSONAS_DIR / self.slug / "persona-blueprint.md").exists(),
+                        "blueprint must remain on disk after a DEFERRED embed")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

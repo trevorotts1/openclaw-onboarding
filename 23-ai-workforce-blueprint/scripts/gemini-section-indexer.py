@@ -53,6 +53,7 @@ from embedding_engine import (  # type: ignore
     COACHING_SECTION_NUMBER,
     get_embedder,
     get_embedding,
+    is_credential_error,
 )
 MIN_SECTION_WORDS = int(os.environ.get("OPENCLAW_MIN_SECTION_WORDS", "30"))
 
@@ -495,8 +496,20 @@ def main():
             print()
     except Exception as e:
         conn.close()
+        # A-U8: a credential-shaped failure discovered MID-RUN (key present
+        # but rejected by the API — revoked / wrong-project / malformed) is
+        # classified the SAME way as the upfront "no key" preflight refusal
+        # above (exit 4) — both are honest, expected, non-fatal states a
+        # caller (orchestrator.py Phase 5) may defer rather than block on.
+        # Any OTHER exception (corrupt content, a genuine bug) is NOT
+        # deferral-eligible: exit 6 keeps it fail-loud, distinct from 4, so
+        # a caller never silently treats a real defect as "just missing a
+        # key".
+        if is_credential_error(e):
+            print(f"ERROR: indexing aborted — credential rejected: {e}", file=sys.stderr)
+            return 4
         print(f"ERROR: indexing aborted — {e}", file=sys.stderr)
-        return 4
+        return 6
 
     conn.close()
 

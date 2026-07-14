@@ -86,6 +86,16 @@ PY
           printf '# %s\n\nWorkspace blueprint body.\n\n' "$s"
           printf '**Saved to:** `~/Downloads/openclaw-master-files/coaching-personas/personas/%s/persona-blueprint.md`\n' "$s"
         } > "$ws/personas/$s/persona-blueprint.md"
+        # A-U8: this fixture workspace has no Gemini key and no
+        # gemini-index.sqlite (this test is offline/hermetic, --no-asset) —
+        # an honest deferred receipt is what a REAL keyless box's Phase 5
+        # would have written, and is what index-verify (step 1.5) requires
+        # in place of an actual index row.
+        cat > "$ws/personas/$s/embedding-receipt.json" <<JSON
+{"persona_id": "$s", "status": "deferred",
+ "reason": "embedding: deferred (no key / key invalid)",
+ "indexer_exit_code": 4, "timestamp": "2026-06-30T00:00:00"}
+JSON
     done
 }
 
@@ -154,6 +164,45 @@ snap_after="$(tree_md5 "$RC")"
 [ ! -d "$RC/22-book-to-persona-coaching-leadership-system/personas/p-bad" ] && pass "no orphan p-bad blueprint dir left behind" || fail "orphan p-bad blueprint dir remains after rollback"
 after_c="$(triad_n "$RC")"
 [ "$after_c" = "2 2 2 2" ] && pass "repo triad still 2 2 2 2 after rollback" || fail "repo triad drifted after failure: $after_c"
+
+echo "=== (d) A-U8 index-verify: a persona with NEITHER an index entry NOR a deferred receipt blocks publish ==="
+RD="$SB/d-repo"; WD="$SB/d-ws"
+mk_repo "$RD" p-one p-two
+mk_ws   "$WD" p-one p-two p-unexplained
+# p-unexplained gets NO index row and NO honest receipt — an unexplained gap.
+rm -f "$WD/personas/p-unexplained/embedding-receipt.json"
+snap_before_d="$(tree_md5 "$RD")"
+rc=0; out_d="$("$PUBLISH" --repo "$RD" --workspace "$WD" --no-asset --yes 2>&1)" || rc=$?
+[ "$rc" -eq 7 ] && pass "publish exits 7 (index-verify FAILED)" || fail "publish exit was $rc (expected 7)"
+echo "$out_d" | grep -q "p-unexplained" && pass "index-verify names the offending slug" || fail "index-verify output missing offending slug"
+snap_after_d="$(tree_md5 "$RD")"
+[ "$snap_before_d" = "$snap_after_d" ] && pass "repo restored to EXACT pre-run state (rollback, no half-commit)" || fail "repo left half-committed after index-verify failure"
+[ ! -d "$RD/22-book-to-persona-coaching-leadership-system/personas/p-unexplained" ] && pass "no orphan p-unexplained blueprint dir left behind" || fail "orphan p-unexplained blueprint dir remains after rollback"
+
+echo "=== (e) A-U8 index-verify: an indexed persona (real index row, no receipt needed) passes ==="
+RE="$SB/e-repo"; WE="$SB/e-ws"
+mk_repo "$RE" p-one p-two
+mk_ws   "$WE" p-one p-two p-indexed
+rm -f "$WE/personas/p-indexed/embedding-receipt.json"
+python3 - "$WE" <<'PY'
+import sqlite3, sys
+db = sys.argv[1] + "/gemini-index.sqlite"
+conn = sqlite3.connect(db)
+conn.execute("""CREATE TABLE embeddings (id TEXT PRIMARY KEY, file_path TEXT,
+    chunk_index INTEGER, content TEXT, vector BLOB, last_updated REAL,
+    provider TEXT, model TEXT, dim INTEGER)""")
+# file_path must contain the literal "coaching-personas/personas/" substring —
+# the SAME filter embedding_engine.py's search()/keyword_fallback_search() use
+# (and persona_fleet.py::_indexed_slugs / persona_embedding_drift_probe.py
+# mirror), so a fixture path outside a coaching-personas/personas/ tree is
+# correctly NOT recognized as an index hit.
+conn.execute("INSERT INTO embeddings VALUES (?,?,?,?,?,?,?,?,?)",
+    ("row0", "/box/workspace/data/coaching-personas/personas/p-indexed/persona-blueprint.md",
+     0, "content", b"\x00" * 12288, 0.0, "gemini", "gemini-embedding-2", 3072))
+conn.commit(); conn.close()
+PY
+rc=0; "$PUBLISH" --repo "$RE" --workspace "$WE" --no-asset --yes >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] && pass "publish exit 0 (real index row satisfies index-verify with no receipt)" || fail "publish exit $rc (expected 0)"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
