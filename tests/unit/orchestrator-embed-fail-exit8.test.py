@@ -27,6 +27,45 @@ _REPO_ROOT = _HERE.parent.parent
 _PIPE = _REPO_ROOT / "22-book-to-persona-coaching-leadership-system" / "pipeline"
 sys.path.insert(0, str(_PIPE))
 
+# orchestrator.py's main() unconditionally builds an aiohttp.TCPConnector +
+# aiohttp.ClientSession as async-with infrastructure BEFORE dispatching to
+# preflight_providers/process_book (both stubbed below) — so even this
+# fixture-only, no-network test needs a real `aiohttp` name to import
+# cleanly. This test never calls a session method (process_book is replaced
+# with a stub that ignores `session`), so a minimal fake with working
+# async-context-manager support is enough. Matches the same
+# inject-a-fake-aiohttp-module pattern tests/unit/storm-guard.test.sh and
+# tests/unit/pipeline-provider-routing.test.sh already use for this exact
+# "aiohttp not installed on the bare CI runner" gap — injected unconditionally
+# (not gated on a real import failing) for deterministic behavior whether or
+# not the box running this test happens to have aiohttp installed.
+class _FakeClientTimeout:
+    def __init__(self, *a, **k):
+        pass
+
+
+class _FakeClientSession:
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _FakeTCPConnector:
+    def __init__(self, *a, **k):
+        pass
+
+
+_fake_aiohttp = types.ModuleType("aiohttp")
+_fake_aiohttp.ClientSession = _FakeClientSession
+_fake_aiohttp.ClientTimeout = _FakeClientTimeout
+_fake_aiohttp.TCPConnector = _FakeTCPConnector
+sys.modules["aiohttp"] = _fake_aiohttp
+
 _spec = importlib.util.spec_from_file_location("orchestrator", _PIPE / "orchestrator.py")
 orch = importlib.util.module_from_spec(_spec)
 sys.modules["orchestrator"] = orch

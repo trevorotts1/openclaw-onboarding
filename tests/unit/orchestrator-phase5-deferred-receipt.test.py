@@ -77,9 +77,21 @@ class TestWriteEmbeddingDeferredReceipt(unittest.TestCase):
         (base / "personas" / self.slug).mkdir(parents=True)
         self._orig_personas_dir = orch.PERSONAS_DIR
         orch.PERSONAS_DIR = base / "personas"
+        # log() (called by _write_embedding_deferred_receipt's except-branch
+        # warning in test_receipt_write_failure_does_not_raise) opens the
+        # module-level LOG_FILE directly with no mkdir. Left at its
+        # production default (BASE / "pipeline-log.txt", BASE resolved via
+        # get_openclaw_paths()) it points at a directory that does not exist
+        # on a bare CI runner, so the warning-log write itself raises
+        # FileNotFoundError. Redirect it into this test's own temp sandbox,
+        # matching the same LOG_FILE redirect
+        # tests/unit/orchestrator-embed-fail-exit8.test.py already does.
+        self._orig_log_file = orch.LOG_FILE
+        orch.LOG_FILE = base / "pipeline-log.txt"
 
     def tearDown(self):
         orch.PERSONAS_DIR = self._orig_personas_dir
+        orch.LOG_FILE = self._orig_log_file
         self.tmp.cleanup()
 
     def test_receipt_is_well_formed(self):
