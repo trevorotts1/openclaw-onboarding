@@ -143,6 +143,67 @@ class TestBoardContract:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 1b) B-U7 — INGEST PARITY: optional persona fields on ingest_task()
+# ─────────────────────────────────────────────────────────────────────────────
+class TestIngestPersonaParity:
+    """closes the Path-B structural divergence: cc_board.ingest_task() can now
+    hand the Command Center the producer's already-resolved persona bundle
+    (voice/topic/task ids + bundle sha) so the CC pins it instead of
+    re-matching. voice_persona_id gates the whole group — mirrors
+    report_persona_used's (B-U6) voice-required gate."""
+
+    def _ingest_payload(self, rec, **kwargs):
+        rec.calls.clear()
+        cc_board.ingest_task("Persona parity job", job_type="website", env=ENV, **kwargs)
+        (call,) = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")]
+        return call["payload"]
+
+    def test_legacy_call_omits_all_persona_keys(self, rec):
+        # B-U7 acceptance (b): absent fields → byte-identical legacy payload.
+        payload = self._ingest_payload(rec)
+        for key in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+            assert key not in payload, f"legacy payload must OMIT {key!r}, got {payload[key]!r}"
+
+    def test_full_persona_payload_carries_every_field_verbatim(self, rec):
+        # B-U7 acceptance (a): the producer's ids land on the wire verbatim.
+        payload = self._ingest_payload(
+            rec,
+            voice_persona_id="hormozi-100m-offers",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers", "wiebe-copy-hackers"],
+            bundle_sha="abc123def456",
+        )
+        assert payload["voice_persona_id"] == "hormozi-100m-offers"
+        assert payload["topic_persona_id"] == "miller-building-storybrand"
+        assert payload["task_persona_ids"] == ["hormozi-100m-offers", "wiebe-copy-hackers"]
+        assert payload["bundle_sha"] == "abc123def456"
+
+    def test_voice_persona_id_required_for_the_whole_group(self, rec):
+        # topic/task/sha with NO voice_persona_id → nothing to pin, so the
+        # entire persona-fields group is withheld (legacy payload).
+        payload = self._ingest_payload(
+            rec,
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers"],
+            bundle_sha="abc123def456",
+        )
+        for key in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+            assert key not in payload, f"no-voice payload must OMIT {key!r}, got {payload[key]!r}"
+
+    def test_task_persona_ids_cleaned_and_never_sent_empty(self, rec):
+        payload = self._ingest_payload(
+            rec,
+            voice_persona_id="hormozi-100m-offers",
+            task_persona_ids=["  wiebe-copy-hackers  ", "", "   ", "miller-building-storybrand"],
+        )
+        assert payload["task_persona_ids"] == ["wiebe-copy-hackers", "miller-building-storybrand"]
+
+        payload_empty = self._ingest_payload(rec, voice_persona_id="hormozi-100m-offers", task_persona_ids=[])
+        assert "task_persona_ids" not in payload_empty, (
+            "an empty task_persona_ids list must be omitted, never sent as []")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 2) FRONT-DOOR / NONCE ENTRY DISCIPLINE — ghl_gate.py
 # ─────────────────────────────────────────────────────────────────────────────
 def _write_evidence(root: Path, *, summary_over: dict | None = None,

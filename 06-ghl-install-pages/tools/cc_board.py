@@ -41,13 +41,26 @@ REQUEST CONTRACT (matched to POST /api/tasks/ingest live endpoint):
     body:    {title, description?, priority?,
               source:'funnel'|'web-development',
               department_slug:'web-development'|'funnels',
-              idempotency_key?}
+              idempotency_key?,
+              voice_persona_id?, topic_persona_id?, task_persona_ids?, bundle_sha?}
     return:  201 (created) / 200 (deduped) ->
              {ok, task_id, workspace_id, resolved_by, status}
 
   department_slug routing:
     'funnels'          — sales funnel / opt-in funnel / multi-step funnel
     'web-development'  — single page, website, landing page, standalone page
+
+  PERSONA FIELDS (B-U7 — ingest parity, closes the Path-B structural
+  divergence): OPTIONAL. The producer already resolved (or locally computed,
+  B-U1) its persona bundle by the time it creates the card, so it can hand
+  the Command Center the SAME field vocabulary ``report_persona_used`` (B-U6)
+  posts back later, and the Command Center PINS those personas directly onto
+  the new card instead of spawning its own selector match. voice_persona_id
+  is REQUIRED for the group to be sent at all (mirrors report_persona_used's
+  voice-required gate — there is nothing to pin without it); the other three
+  are independently optional. Omitting all four (the default) is byte-
+  identical to today: the Command Center falls back to its own async
+  resolvePersonaAndPin selector match exactly as before.
 
   Fields intentionally OMITTED (the ingest route ignores them and the CC
   TaskStatus enum does NOT include them):
@@ -263,6 +276,10 @@ def ingest_task(
     idempotency_key: Optional[str] = None,
     department_slug: Optional[str] = None,
     source: Optional[str] = None,
+    voice_persona_id: Optional[str] = None,
+    topic_persona_id: Optional[str] = None,
+    task_persona_ids: Optional[List[str]] = None,
+    bundle_sha: Optional[str] = None,
     env: Optional[dict] = None,
     evidence_root: Optional[str] = None,
 ) -> Optional[str]:
@@ -300,6 +317,28 @@ def ingest_task(
         source:           OPTIONAL explicit source-tag override (defaults to the
                           job_type-derived source, or to ``department_slug`` when
                           only the slug is overridden).
+        voice_persona_id: OPTIONAL (B-U7 — ingest parity). The producer's
+                          already-resolved VOICE persona id (B-U1's bundle, or a
+                          prior B-U6 report). REQUIRED for the persona-fields
+                          group to be sent at all — when empty/omitted,
+                          topic_persona_id / task_persona_ids / bundle_sha are
+                          silently withheld too (nothing to pin without a voice)
+                          and the Command Center falls back to its own async
+                          selector match, byte-identical to today.
+        topic_persona_id: OPTIONAL. The producer's resolved topic/craft-hint
+                          persona id. Omitted when empty or when
+                          voice_persona_id is empty.
+        task_persona_ids: OPTIONAL. List of the producer's resolved task-slot
+                          persona ids (the bundle receipt's ``task_personas[]``,
+                          B-U1 — pass the ``persona_id`` of each entry). Blank/
+                          whitespace-only entries are dropped; an empty result
+                          omits the key entirely (never an empty array on the
+                          wire). Omitted when voice_persona_id is empty.
+        bundle_sha:       OPTIONAL. The sha of the bundle the producer actually
+                          used (``routing/persona-bundle-receipt.json``'s
+                          ``bundle_sha``, B-U1) — audit-trail parity with
+                          ``report_persona_used``'s ``blend_directive_sha``.
+                          Omitted when empty or when voice_persona_id is empty.
         env:              Override os.environ (for testing).
         evidence_root:    OPTIONAL (U27). When given, ONE receipt is written to
                           ``<evidence_root>/routing/board-ingest-receipt.json``
@@ -394,6 +433,25 @@ def ingest_task(
         payload["description"] = description.strip()
     if priority and priority.strip():
         payload["priority"] = priority.strip()
+
+    # B-U7 — ingest parity. voice_persona_id GATES the whole group (mirrors
+    # report_persona_used's voice-required gate, B-U6): nothing is sent
+    # without it, so a caller passing only topic/task/sha with no voice sends
+    # a byte-identical legacy payload rather than a half-formed persona block
+    # the Command Center could misread as authoritative.
+    vpid = (voice_persona_id or "").strip()
+    if vpid:
+        payload["voice_persona_id"] = vpid
+        tpid = (topic_persona_id or "").strip()
+        if tpid:
+            payload["topic_persona_id"] = tpid
+        if task_persona_ids:
+            cleaned_task_ids = [str(p).strip() for p in task_persona_ids if str(p).strip()]
+            if cleaned_task_ids:
+                payload["task_persona_ids"] = cleaned_task_ids
+        sha = (bundle_sha or "").strip()
+        if sha:
+            payload["bundle_sha"] = sha
 
     url = f"{cfg['base_url']}/api/tasks/ingest"
     try:
@@ -2079,6 +2137,125 @@ def _persona_used_selftest() -> int:
     return 0
 
 
+def _ingest_persona_selftest() -> int:
+    """B-U7 — ingest parity self-test: optional persona fields on
+    ``ingest_task()``. Transport (``_post_json``) is monkeypatched to a
+    recorder so the EXACT payload the helper would put on the wire is
+    asserted — never a live board. Returns 0 on pass."""
+    errors: list[str] = []
+    base_env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+
+    captured: list[dict] = []
+
+    def _fake_post_json(url, payload, cfg, method="POST"):
+        captured.append({"url": url, "payload": payload, "method": method})
+        return 201, {"ok": True, "task_id": "fake-task-id", "resolved_by": "test", "status": "backlog"}
+
+    orig_post_json = globals()["_post_json"]
+    globals()["_post_json"] = _fake_post_json
+    try:
+        # 1. Legacy call (no persona kwargs) — payload carries ZERO persona
+        #    keys. Byte-identical to pre-B-U7 behavior (B-U7 acceptance b).
+        captured.clear()
+        result = ingest_task("Legacy job", job_type="website", env=base_env)
+        if result != "fake-task-id":
+            errors.append(f"legacy ingest_task should return the posted task_id, got {result!r}")
+        if not captured:
+            errors.append("legacy ingest_task should have posted")
+        else:
+            payload = captured[0]["payload"]
+            for k in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+                if k in payload:
+                    errors.append(f"legacy ingest_task payload must OMIT {k!r}, got {payload.get(k)!r}")
+
+        # 2. voice_persona_id only → carried verbatim; every other persona key
+        #    stays omitted.
+        captured.clear()
+        ingest_task("Voice-only job", job_type="website", voice_persona_id="hormozi-100m-offers", env=base_env)
+        payload = captured[0]["payload"] if captured else {}
+        if payload.get("voice_persona_id") != "hormozi-100m-offers":
+            errors.append(f"voice_persona_id not carried verbatim: {payload.get('voice_persona_id')!r}")
+        for k in ("topic_persona_id", "task_persona_ids", "bundle_sha"):
+            if k in payload:
+                errors.append(f"voice-only payload must OMIT {k!r}, got {payload.get(k)!r}")
+
+        # 3. full producer-persona payload — every field lands verbatim
+        #    (B-U7 acceptance a: "pinned persona ids equal the producer's
+        #    verbatim").
+        captured.clear()
+        ingest_task(
+            "Full persona job",
+            job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers", "wiebe-copy-hackers"],
+            bundle_sha="abc123def456",
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        for k, v in (
+            ("voice_persona_id", "hormozi-100m-offers"),
+            ("topic_persona_id", "miller-building-storybrand"),
+            ("task_persona_ids", ["hormozi-100m-offers", "wiebe-copy-hackers"]),
+            ("bundle_sha", "abc123def456"),
+        ):
+            if payload.get(k) != v:
+                errors.append(f"payload[{k!r}] = {payload.get(k)!r}, expected {v!r}")
+
+        # 4. topic/task/sha supplied WITHOUT voice_persona_id → the whole
+        #    group is withheld (voice is REQUIRED — mirrors
+        #    report_persona_used's voice-required gate, B-U6).
+        captured.clear()
+        ingest_task(
+            "No-voice job", job_type="website",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers"],
+            bundle_sha="abc123def456",
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        for k in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+            if k in payload:
+                errors.append(f"no-voice payload must OMIT {k!r} (voice REQUIRED), got {payload.get(k)!r}")
+
+        # 5. task_persona_ids with blank/whitespace entries — cleaned, empties
+        #    dropped, surrounding whitespace stripped.
+        captured.clear()
+        ingest_task(
+            "Messy ids job", job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            task_persona_ids=["  wiebe-copy-hackers  ", "", "   ", "miller-building-storybrand"],
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        expected_ids = ["wiebe-copy-hackers", "miller-building-storybrand"]
+        if payload.get("task_persona_ids") != expected_ids:
+            errors.append(f"task_persona_ids not cleaned: {payload.get('task_persona_ids')!r}, expected {expected_ids!r}")
+
+        # 6. empty task_persona_ids list → key omitted entirely (never an
+        #    empty array on the wire).
+        captured.clear()
+        ingest_task(
+            "Empty ids job", job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            task_persona_ids=[],
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        if "task_persona_ids" in payload:
+            errors.append(f"empty task_persona_ids list must be omitted, got {payload.get('task_persona_ids')!r}")
+    finally:
+        globals()["_post_json"] = orig_post_json
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[ingest-persona-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[ingest-persona-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # U27 — Skill-6 board reconcile (B-U13, shared with Section C — the same
 # fail-soft-producer pattern the Anthology Engine's ``mc_board.py reconcile``
@@ -2343,8 +2520,10 @@ if __name__ == "__main__":
         rc_phase = _phase_driver_selftest()
         rc_u9 = _u9_selftest()
         rc_persona_used = _persona_used_selftest()
+        rc_ingest_persona = _ingest_persona_selftest()
         sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0
-                       and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0) else 1)
+                       and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0
+                       and rc_ingest_persona == 0) else 1)
     elif args.status_selftest:
         sys.exit(_status_selftest())
     elif args.u9_selftest:
