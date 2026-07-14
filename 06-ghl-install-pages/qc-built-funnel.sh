@@ -172,6 +172,28 @@ python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
 [ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
 
+# ── U25/B-U11 — Page-QC v2: the semantic scorer FAB-QC cannot be (six dimensions,
+# client's own judge model via model_router's qc role, 8.5, SKIP-not-fabricate).
+# Runs AFTER FAB-QC on the SAME evidence tree, producing scorecard/page-qc.json.
+# Additive + flag-gated: PAGE_QC_ENABLED=1 turns it on; unset -> this block is a
+# no-op (scorer file stays inert — the revert path). Does NOT flip $rc: the
+# both-gates enforcement (FAB-QC PASS + Page-QC PASS required for review->done) is
+# B-U12/U26's job at the Command Center review gate, not this per-build wrapper.
+PAGE_QC="$REPO_ROOT/shared-utils/page_qc.py"
+if [ "${PAGE_QC_ENABLED:-0}" = "1" ] && [ -f "$PAGE_QC" ]; then
+  mkdir -p "$EVIDENCE/scorecard"
+  _pqc_json="$EVIDENCE/scorecard/page-qc.json"
+  python3 "$PAGE_QC" --evidence "$EVIDENCE" --json ${CC_TASK_ID:+--task-id "$CC_TASK_ID"} \
+    >"$_pqc_json" 2>"$_pqc_json.err" || true
+  if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$_pqc_json" >/dev/null 2>&1; then
+    _pqc_verdict="$(python3 -c "import json; print(json.load(open('$_pqc_json')).get('verdict','?'))" 2>/dev/null)"
+    echo "$_pqc_verdict (scorecard/page-qc.json)"
+  else
+    echo "Page-QC v2: scorer produced no valid JSON — see scorecard/page-qc.json.err"
+  fi
+  rm -f "$_pqc_json.err" 2>/dev/null || true
+fi
+
 # ── U9 §7.2 — emit the QC verdict onto the Command Center card (FAIL-SOFT, opt-in).
 # When CC_TASK_ID is exported, post the FAB-QC score to the card so the CC QC sweep
 # reads ONE source (no re-scoring drift). The numeric 0-10 'score' is read from a

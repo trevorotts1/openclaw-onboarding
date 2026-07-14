@@ -106,6 +106,28 @@ D5/D6 always have evidence to read.
 
 ---
 
+## Page-QC v2 (U25/B-U11) — the SEMANTIC layer, on top
+
+FAB-QC is structural: D2 counts words and checks for surviving placeholders. It cannot tell flat
+copy from moving copy. `shared-utils/page_qc.py` is the semantic scorer FAB-QC is blind to — six
+0-10 dimensions (weights sum 100): **S1** conversion likelihood (25), **S2** emotional strength
+(20), **S3** voice/persona fidelity (15, judged against the blend directive — the semantic
+upgrade of D4), **S4** image quality & congruence (15, vision judge + a deterministic
+broken-image sub-check), **S5** search-engine-optimization STRENGTH not presence (15), **S6**
+whole-page coherence (10). Same 8.5 threshold, never a new one. Judge: the client's OWN judge
+model via `06-ghl-install-pages/tools/model_router.py`'s `qc` role — never Anthropic. Hard
+misses: S1 ≤ 3; any S4 broken-image finding; S3 ≤ 3 on a task carrying a blend directive. A
+two-pass determinism guard (spread > 1.5 → third pass + median) keeps a single noisy call from
+deciding a build. **No judge key → the whole scorecard SKIPs honestly** (`available: false`,
+`score: null`, verdict `"page_qc: unavailable (no judge key)"`) — never a fabricated score.
+Invoked by `qc-built-funnel.sh` AFTER FAB-QC, on the SAME evidence tree, producing
+`scorecard/page-qc.json`; flag-gated behind `PAGE_QC_ENABLED=1` (unset = inert, the revert path).
+It **extends, never replaces** FAB-QC — `ghl_verify` and FAB-QC's six dimensions stay exactly as
+they are above. `scripts/guard-fab-qc-gate.sh` asserts the Page-QC v2 scorer exists, its
+threshold stays 8.5, and its weights still sum to 100.
+
+---
+
 *This rubric is fleet-wide. It is cited by `06-ghl-install-pages/QC.md`,
 `44-convert-and-flow-operator/QC.md`, and `SOP-07-Full-Funnel-Build-Orchestration.md`. The shared
 scorer is `shared-utils/fab_qc.py`; the shared matcher core it reads from is `flex.py`.*
