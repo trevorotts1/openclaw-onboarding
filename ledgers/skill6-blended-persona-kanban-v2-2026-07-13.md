@@ -6,7 +6,7 @@
 
 | id | description | [<Model> x<count>] label | status | evidence | timestamp |
 |---|---|---|---|---|---|
-| U1 | [A/A-U1] (ONB, P0) `persona_for_job` carries the blend (`--blend` mode through `_run_selector`; default-off; bundle superset to every consumer) |  | pending |  |  |
+| U1 | [A/A-U1] (ONB, P0) `persona_for_job` carries the blend (`--blend` mode through `_run_selector`; default-off; bundle superset to every consumer) | [Sonnet 5 x1] build U1 | verified | QC 9.35 (pass, gate 8.5). Merged `skill6-v2/U1` (6a31a7fe) into `main` via merge commit `292f4ee4` (clean, zero conflict markers per `git merge-tree` pre-check). Ripple commit `9f406872` (CHANGELOG.md v20.0.17 entry + all 11 repo version markers rolled v20.0.16→v20.0.17 via `scripts/bump-version.sh`, `--check` green). Pushed to `origin/main`; remote HEAD re-read via `git fetch origin main` and confirmed = `9f4068729102d17e6278721e19e1e5babb3a1f47`. Annotated tag `v20.0.17` (tag object `7ba7b9dc9ea7bae2c37e7b9341ddbe72a1c39fd2`, `git cat-file -t` = `tag`, confirming annotated not lightweight) pushed to origin. Test proof: `shared-utils/test-persona-for-job.sh` 24/24 PASS on merged `main` (11 single-persona self-test cases + 7 new blend-mode cases + 6 multi-slot cases), `python3 -m py_compile` clean. | 2026-07-13T22:17:04-04:00 |
 | U2 | [A/A-U2] (ONB, P0) Blend Directive v2 — structured voice attributes per slot from `voice_style{}` + voice-contract echo; guardrail byte-identical |  | pending |  |  |
 | U3 | [A/A-U3] (ONB, P1) Schema-1.4 enrichment: `emotional_register`/`audience_resonance`/`conversion_style` on all 99+ personas; D6-pipeline stamping |  | pending |  |  |
 | U4 | [A/A-U4] (both, P1) `conversion_goal` first-class input: kwarg + argv/env + source ladder + directive slot 5 + per-department confirm policy |  | pending |  |  |
@@ -124,4 +124,4 @@
 | U116 | [E6-2 (G8)] (both, P1) **Communication trigger + audience-confirmation prompt** (operator ruling ADD-2): every outside-world comms (page/blog/email/SMS/social) is blend-governed + topic-factored, PROMPTS for standard-vs-specific audience before writing, surfaces the chosen audience on the card |  | pending |  |  |
 | U117 | [E6-3 (G9)] (both, P1) **Comms-artifact QC + conformance invariant** (ADD-3): score comms on per-part governance, blend used, topic considered, audience confirmed (extends U25/U19/U26); per-part governance + audience prompt become part of the D1/FAB-QC invariant |  | pending |  |  |
 
-**Total: 117 units (U1-U117). U91 = `verified` (doc unit, no repo/branch, primary-source re-verified this pass). Remaining 116 units `pending`, labels/evidence blank pending dispatch.**
+**Total: 117 units (U1-U117). U1 = `verified` (merged `skill6-v2/U1` -> `main` @ `292f4ee4`, ripple @ `9f406872`, tag `v20.0.17`). U91 = `verified` (doc unit, no repo/branch, primary-source re-verified this pass). Remaining 115 units `pending`, labels/evidence blank pending dispatch.**
