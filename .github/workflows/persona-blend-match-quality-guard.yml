@@ -19,6 +19,14 @@ name: persona-blend-match-quality-guard
 # .github/workflows/*.yml referenced test-persona-blend-matcher.py or
 # persona_blend.py before this file). It is wired in here because this unit's
 # changes touch persona_blend.py directly.
+#
+# A-U2 (Blend Directive v2, master-spec v2 §A.3) adds a fifth check:
+#   (E) build_blend_directive's structured per-slot voice-attribute block
+#       (sourced ONLY from the catalog's voice_style{}) renders >=4 lines per
+#       populated slot on an enriched catalog AND is BYTE-IDENTICAL to the
+#       pre-A-U2 (v1) directive on a pre-enrichment (schema-1.2) catalog —
+#       plus the P4-02 four-slot synergy suite, which this unit's change must
+#       never disturb.
 
 on:
   push:
@@ -26,6 +34,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/persona_blend.py"
       - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
+      - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -40,6 +50,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/persona_blend.py"
       - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
+      - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -73,6 +85,12 @@ jobs:
 
       - name: P4-01 — 20-case match-quality regression corpus (>=90% gate, REAL catalog)
         run: python3 23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py
+
+      - name: P4-02 — four-slot SYNERGY directive contract (voice/audience/substance/task)
+        run: python3 23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py
+
+      - name: A-U2 — Blend Directive v2 (structured voice-attribute block, byte-identical v1 degrade)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py
 
       - name: P4-01 — match-score-distribution logging (drift observability)
         run: python3 tests/unit/persona-match-score-log.test.py
