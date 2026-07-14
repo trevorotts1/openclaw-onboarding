@@ -432,7 +432,7 @@ http://localhost:4000
 
 ## Phase 6b: Domain Registration + Tunnel Connection
 
-**Architecture:** Trevor owns the Cloudflare account. When the client registers, Trevor's system creates a DEDICATED tunnel inside Trevor's Cloudflare account, generates a machine-specific tunnel token, returns that token directly in the webhook HTTP response, and also sends Trevor a Telegram backup notification with the same token. The client runs cloudflared on their machine to connect their local dashboard to that tunnel. The client never touches Cloudflare's website or creates their own account.
+**Architecture:** The operator owns the Cloudflare account. When the client registers, the operator's system creates a DEDICATED tunnel inside the operator's Cloudflare account, generates a machine-specific tunnel token, returns that token directly in the webhook HTTP response, and also sends the operator a Telegram backup notification with the same token. The client runs cloudflared on their machine to connect their local dashboard to that tunnel. The client never touches Cloudflare's website or creates their own account.
 
 ### 6b.1 Choose the Client Subdomain Name
 
@@ -465,9 +465,9 @@ Check:
 cloudflared --version
 ```
 
-### 6b.3 Send Webhook to Trevor's System and Capture the Token Response
+### 6b.3 Send Webhook to the Operator's System and Capture the Token Response
 
-💬 Send Telegram message: "⏳ [Phase 6b] Registering your tunnel with Trevor's system..."
+💬 Send Telegram message: "⏳ [Phase 6b] Registering your tunnel with the operator's system..."
 
 The agent calls the n8n webhook. The webhook returns JSON: `{status, subdomain, tunnelToken}`. The agent reads the `tunnelToken` from the response and uses it to configure cloudflared. No manual token forwarding needed.
 
@@ -492,14 +492,14 @@ SUBDOMAIN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys
 }
 ```
 
-**Important note:** If the webhook returns the old format (`'Workflow was started'`), tell the owner: "The tunnel automation needs updating. Please ask Trevor to update the n8n workflow."
+**Important note:** If the webhook returns the old format (`'Workflow was started'`), tell the owner: "The tunnel automation needs updating. Please ask the operator to update the n8n workflow."
 
-**What Trevor's system does automatically:**
-1. Creates a dedicated Cloudflare tunnel for this client inside Trevor's Cloudflare account
+**What the operator's system does automatically:**
+1. Creates a dedicated Cloudflare tunnel for this client inside the operator's Cloudflare account
 2. Routes [clientName].zerohumanworkforce.com to that tunnel
 3. Generates a tunnel token specific to this client's machine
 4. Returns the token directly in the webhook response to the client agent
-5. Sends Trevor a Telegram backup notification with the same token
+5. Sends the operator a Telegram backup notification with the same token
 
 ### 6b.4 Save the Token Locally
 
@@ -534,7 +534,7 @@ sleep 15
 curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN"
 ```
 
-Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-tunnel process as online. If still failing after 2 minutes, message Trevor.
+Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-tunnel process as online. If still failing after 2 minutes, message the operator.
 
 💬 Send Telegram message: "✅ [Phase 6b] Command Center is live and responding!"
 
@@ -544,7 +544,7 @@ Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-
 
 ---
 
-**🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside Trevor's Cloudflare account. The token comes directly from Trevor's system in the webhook response.**
+**🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside the operator's Cloudflare account. The token comes directly from the operator's system in the webhook response.**
 
 ### Phase 6c — Make pm2 survive container restarts (added v10.13.22)
 
@@ -688,7 +688,7 @@ The agent verifies that each department workspace has the required memory archit
 4. memory-core semantic memory (built-in backend, no external dependencies)
 5. Cognee / graph layer when enabled for the workspace
 
-**Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with Trevor's private memory or another client's workspace.
+**Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with the operator's private memory or another client's workspace.
 
 ### 7.4 Test Dashboard
 The agent verifies:
