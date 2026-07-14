@@ -69,15 +69,23 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
 
         # Stub the network / heavy bits. init_storm_guard + preflight are no-ops;
         # process_book is replaced with a coroutine that records a controllable
-        # phase5 outcome (the thing under test).
+        # phase5 outcome (the thing under test). _assert_provider_route is also
+        # stubbed: it is a SEPARATE precondition main() checks before
+        # preflight_providers ever runs (no API key / no local Ollama daemon on
+        # a bare CI runner would otherwise raise ValueError before main() ever
+        # reaches the phase5 exit-code tail this test exercises) — this test
+        # is about the phase5-outcome-to-exit-code mapping, never about
+        # live provider-route availability.
         self._orig_pre = orch.preflight_providers
         self._orig_isg = orch.init_storm_guard
         self._orig_pb = orch.process_book
+        self._orig_apr = orch._assert_provider_route
 
         async def _no_preflight(*a, **k):
             return None
         orch.preflight_providers = _no_preflight
         orch.init_storm_guard = lambda *a, **k: None
+        orch._assert_provider_route = lambda: None
 
         # Neutralize orphan-guard lock/arm side effects if the module is present.
         try:
@@ -96,6 +104,7 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
         orch.preflight_providers = self._orig_pre
         orch.init_storm_guard = self._orig_isg
         orch.process_book = self._orig_pb
+        orch._assert_provider_route = self._orig_apr
         if self._og is not None:
             self._og.arm, self._og.acquire_slug_lock, self._og.run_dir_path = self._orig_og
         self.tmp.cleanup()
