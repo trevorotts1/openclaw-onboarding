@@ -21,6 +21,31 @@ export interface RelayResult {
 
 const RELAY_TIMEOUT_MS = 8000;
 
+/**
+ * Default allowlisted outbound webhook host suffixes (spec Section 20:
+ * "allowlist outbound provider hosts"). A resolved webhook URL's hostname
+ * must equal one of these, or be a subdomain of one of these, or this
+ * module refuses to relay.
+ */
+const DEFAULT_ALLOWED_HOST_SUFFIXES = ["leadconnectorhq.com", "gohighlevel.com"];
+
+/**
+ * Additive-only extension point for the default allowlist: a
+ * comma-separated list of extra host suffixes, read from
+ * `GHL_WEBHOOK_ALLOWED_HOSTS`. This exists so an operator can allow a
+ * client-specific relay domain or a mocked test-fixture host WITHOUT
+ * weakening the built-in GHL allowlist above — it never replaces it.
+ */
+function isAllowedHost(hostname: string): boolean {
+  const extra = (process.env.GHL_WEBHOOK_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+  const suffixes = [...DEFAULT_ALLOWED_HOST_SUFFIXES, ...extra];
+  const host = hostname.toLowerCase();
+  return suffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 export async function relayToGhlWebhook(
   webhookEnvVar: string,
   payload: Record<string, unknown>,
@@ -39,6 +64,12 @@ export async function relayToGhlWebhook(
   }
   if (parsed.protocol !== "https:") {
     return { ok: false, error: `env var "${webhookEnvVar}" must resolve to an https:// URL` };
+  }
+  if (!isAllowedHost(parsed.hostname)) {
+    return {
+      ok: false,
+      error: `env var "${webhookEnvVar}" resolves to a host not in the outbound provider allowlist`,
+    };
   }
 
   const controller = new AbortController();

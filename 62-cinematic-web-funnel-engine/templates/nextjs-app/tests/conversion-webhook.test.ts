@@ -10,9 +10,11 @@ import { relayToGhlWebhook } from "@/lib/conversion-webhook";
  */
 
 const ENV_VAR = "TEST_GHL_WEBHOOK_URL";
+const ALLOWED_HOSTS_VAR = "GHL_WEBHOOK_ALLOWED_HOSTS";
 
 afterEach(() => {
   delete process.env[ENV_VAR];
+  delete process.env[ALLOWED_HOSTS_VAR];
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -43,7 +45,36 @@ describe("relayToGhlWebhook", () => {
     expect(result.error).toContain("https://");
   });
 
+  it("fails closed when the env var resolves to a host outside the outbound provider allowlist", async () => {
+    // Default allowlist only covers GHL's own hosts — an https URL on any
+    // other host (mis-set or tampered env var) must never be POSTed to.
+    process.env[ENV_VAR] = "https://attacker.example.com/hooks/exfil";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await relayToGhlWebhook(ENV_VAR, { a: 1 });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("allowlist");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a subdomain of a default-allowlisted GHL host with no extra config", async () => {
+    process.env[ENV_VAR] = "https://services.leadconnectorhq.com/hooks/inbound";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await relayToGhlWebhook(ENV_VAR, { a: 1 });
+
+    expect(result).toEqual({ ok: true, status: 200 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("relays to a MOCKED GHL fixture endpoint and reports success — no live GHL call", async () => {
+    // The fixture host is not a real GHL domain, so it must be explicitly
+    // added via the additive allowlist extension var — the same mechanism
+    // an operator would use for a client-specific relay domain.
+    process.env[ALLOWED_HOSTS_VAR] = "ghl.example.invalid";
     process.env[ENV_VAR] = "https://ghl.example.invalid/hooks/mocked-fixture";
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -59,6 +90,7 @@ describe("relayToGhlWebhook", () => {
   });
 
   it("reports failure (never throws) when the mocked endpoint responds non-2xx", async () => {
+    process.env[ALLOWED_HOSTS_VAR] = "ghl.example.invalid";
     process.env[ENV_VAR] = "https://ghl.example.invalid/hooks/mocked-fixture";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
 
@@ -68,6 +100,7 @@ describe("relayToGhlWebhook", () => {
   });
 
   it("reports a timeout as a failure, never throws or hangs", async () => {
+    process.env[ALLOWED_HOSTS_VAR] = "ghl.example.invalid";
     process.env[ENV_VAR] = "https://ghl.example.invalid/hooks/mocked-fixture";
     vi.stubGlobal(
       "fetch",
@@ -88,6 +121,7 @@ describe("relayToGhlWebhook", () => {
   });
 
   it("reports a network error as a failure, never throws", async () => {
+    process.env[ALLOWED_HOSTS_VAR] = "ghl.example.invalid";
     process.env[ENV_VAR] = "https://ghl.example.invalid/hooks/mocked-fixture";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
 
