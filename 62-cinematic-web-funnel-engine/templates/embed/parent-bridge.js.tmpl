@@ -1,0 +1,64 @@
+/* parent-bridge.js — Skill 62 (Cinematic and Web Funnel Engine), U18 GHL
+ * iframe embed package. This is the PARENT half of spec 14.2's "postMessage
+ * child script for height updates and conversion events; parent script for
+ * dynamic height and event forwarding." The child half already ships with
+ * every generated site as templates/components/EmbedBridge.tsx (built in
+ * U15) — the two sides speak the same "cwfe" message namespace and the same
+ * message shapes ({type:"resize"|"scroll-progress"|"conversion-event"}), so
+ * do not change this protocol without also changing EmbedBridge.tsx.
+ *
+ * Security posture (spec Section 20 "validate iframe origins"):
+ *   - every inbound message is checked against CHILD_ORIGIN, an exact
+ *     origin string baked in at generation time from the project's own
+ *     deployment-receipt.json url. No wildcard, no substring match.
+ *   - a message whose event.origin does not match is silently ignored, not
+ *     merely logged — there is no fallback "trust it anyway" path.
+ *   - this script never evaluates, injects, or executes anything found
+ *     inside a message payload; it only reads a numeric height and a
+ *     string event name.
+ */
+(function () {
+  "use strict";
+
+  var CWFE_NAMESPACE = "cwfe";
+  var CHILD_ORIGIN = "__CWFE_CHILD_ORIGIN__";
+  var iframe = document.getElementById("cwfe-embed-iframe");
+  if (!iframe) {
+    return;
+  }
+
+  function onMessage(event) {
+    if (event.origin !== CHILD_ORIGIN) {
+      return; // spec 20: only ever act on an allowlisted, exact-match origin
+    }
+    var data = event.data;
+    if (!data || typeof data !== "object" || data.namespace !== CWFE_NAMESPACE) {
+      return;
+    }
+
+    if (data.type === "resize" && typeof data.height === "number" && isFinite(data.height) && data.height > 0) {
+      iframe.style.height = Math.ceil(data.height) + "px";
+      return;
+    }
+
+    if (data.type === "conversion-event" && typeof data.eventName === "string" && data.eventName.length > 0) {
+      if (window.dataLayer && typeof window.dataLayer.push === "function") {
+        window.dataLayer.push({ event: "cwfe:" + data.eventName, detail: data.detail || {} });
+      }
+      try {
+        window.dispatchEvent(new CustomEvent("cwfe:conversion", { detail: data }));
+      } catch (dispatchErr) {
+        /* browsers without a CustomEvent constructor: forwarding to
+           dataLayer above still ran, this is best-effort only */
+      }
+      return;
+    }
+
+    // "scroll-progress" and any future/unknown message type: no default
+    // parent-side action. Reserved for host pages that want to react to it
+    // by adding their own listener for the "cwfe:conversion" CustomEvent or
+    // a future dedicated event, without editing this generated file.
+  }
+
+  window.addEventListener("message", onMessage, false);
+})();

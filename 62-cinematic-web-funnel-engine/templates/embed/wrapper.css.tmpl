@@ -1,0 +1,45 @@
+/* wrapper.css — Skill 62 (Cinematic and Web Funnel Engine), U18 GHL iframe
+ * embed package. Governs ONLY the parent-side (GHL) wrapper around the
+ * embedded child iframe (spec 14.2 "responsive wrapper CSS").
+ *
+ * The one rule this file exists to enforce: never give the wrapper or the
+ * iframe a fixed full-viewport-height rule (spec 14.2 warns against a
+ * blind 100-vh-tall iframe on a GHL page). The iframe's height is instead
+ * kept in sync with the child page's real content height via postMessage
+ * (see parent-bridge.js) — that is what prevents a nested inner scrollbar
+ * from ever appearing, not a CSS trick.
+ */
+.cwfe-embed-root {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.cwfe-embed-iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  overflow: hidden;
+  height: __CWFE_DEFAULT_HEIGHT_PX__px; /* initial value only — replaced on first resize message */
+  transition: height 0.15s ease-out;
+}
+
+.cwfe-embed-fallback {
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #555555;
+  text-align: center;
+  margin: 8px 0 0 0;
+}
+
+.cwfe-embed-fallback a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .cwfe-embed-fallback {
+    font-size: 13px;
+  }
+}

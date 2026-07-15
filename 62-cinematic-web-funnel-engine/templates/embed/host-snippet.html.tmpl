@@ -1,0 +1,23 @@
+<!-- ============================================================
+     Cinematic and Web Funnel Engine — GHL whole-page iframe embed
+     Skill 62, U18 (spec Section 14.2)
+     Project: __CWFE_PROJECT_SLUG__
+     Generated: __CWFE_GENERATED_AT__
+
+     Paste this ENTIRE block into a GHL page's Custom HTML/Code element.
+     It is self-contained (style + markup + script) — nothing else needs
+     to be added to the GHL page for the embed itself to work.
+
+     Before publishing the GHL page, confirm the hosted (child) app's own
+     response headers include a `Content-Security-Policy: frame-ancestors`
+     directive naming this GHL domain — see csp-headers.json in this same
+     package. GHL cannot set that header for you.
+     ============================================================ -->
+<style>
+__CWFE_INLINE_WRAPPER_CSS__
+</style>
+__CWFE_INLINE_IFRAME_FRAGMENT__
+__CWFE_INLINE_FALLBACK_FRAGMENT__
+<script>
+__CWFE_INLINE_PARENT_BRIDGE_JS__
+</script>
