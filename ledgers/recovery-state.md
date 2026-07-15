@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T14:50:05Z
-openclaw-onboarding `origin/main` HEAD: `3d7aeae320374afd8e6294b906a5a22ccc337e0c`
+Generated: 2026-07-15T15:00:02Z
+openclaw-onboarding `origin/main` HEAD: `086e520478af4e81b80a2669259966d87b1516db`
 blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -101,6 +101,6 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U58, U95, U103, U105
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
