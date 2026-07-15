@@ -1,0 +1,26 @@
+{
+  "_comment": "GK-05/U67 canonical record of the podcast GHL golden snapshot. This is the repo-side half of the BINARY acceptance ('the v2 snapshot exists with its id recorded in trevorotts1/openclaw-onboarding'). Read/written by scripts/confirm-podcast-snapshot.py -- never hand-edit the snapshot_id fields; use --record-snapshot so the file stays schema-valid.",
+  "engine": "podcast",
+  "template_location_id": "CjxATjhv9Gt21qSqURIt",
+  "n8n_workflow_id": "ol9YLeCpvYdNsbsg",
+  "n8n_workflow_name": "Snapshot Provisioner (Podcast + Anthology)",
+  "n8n_env_var": "PODCAST_SNAPSHOT_ID",
+  "current": "v1",
+  "snapshots": {
+    "v1": {
+      "snapshot_id": "IEmFFkIngiskcfJk9MH6",
+      "cut_from": "CjxATjhv9Gt21qSqURIt (pre-2026-07-10 workflow fixes)",
+      "status": "live-in-n8n",
+      "blocked_on": [],
+      "superseded_by": "v2"
+    },
+    "v2": {
+      "snapshot_id": null,
+      "cut_from": "CjxATjhv9Gt21qSqURIt",
+      "status": "pending",
+      "blocked_on": ["GK-01/U63"],
+      "superseded_by": null,
+      "note": "Per GK-05 spec Deps: cut AFTER GK-01/U63 (publish-path fix) lands, so the golden snapshot bakes in the fix rather than the known image_url=null bug. U63 is operator-gated/deferred as of this build (2 of 3 legs blocked, branch skill6-v2/U63) -- see LEDGER U63. Do not cut v2, and do not flip 'current' to v2, until U63 clears. Once Trevor cuts the snapshot live in GHL (Settings -> Snapshots -- no public create API exists for this, per PODCAST-SNAPSHOT-BUILD-MANIFEST.md Section I Phase 5), record the id with: scripts/confirm-podcast-snapshot.py --record-snapshot v2 <snapshot_id>."
+    }
+  }
+}

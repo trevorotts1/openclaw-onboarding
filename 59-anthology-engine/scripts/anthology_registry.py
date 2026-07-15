@@ -517,7 +517,8 @@ def provision_fields(client, field_map_path: Path, location_id: str, *,
             jsonout.write("\n")
         return EX_MISMATCH
 
-    # All 24 resolved. Stamp in place.
+    # All 28 resolved (U70/GK-08: includes the two G10 chapter-rewrite-preservation
+    # pairs, rewrite1/rewrite2, alongside every other declared key). Stamp in place.
     save_field_map(field_map_path, fm)
     out.write("[provision-fields] OK (marker %s): %d newly created, %d verified-by-key, %d total resolved. "
               "field-map.json stamped.\n" % (masked, len(created), len(verified), len(verified) + len(created)))

@@ -3,7 +3,7 @@
 **Cluster:** Podcast-Craft Rules (`universal-sops/podcast-craft/`)
 **Master authority:** `project-prds/podcast-engine/PRD.md` Sections 3, 5 (Step 0), 14, 15 + `design/webhook-design.md` Section 8 + `design/cloudflare-design.md` Section 5 + `design/ghl-design.md` Sections 2, 3, 5
 **Owning role:** Operator. Every step here is operator-driven and runs on the client's OWN box against the client's OWN credentials. The client is never messaged by this SOP; the one welcome message carrying the dashboard link is sent by the standard Convert and Flow onboarding workflow, not by the engine.
-**Enforcement pointer (binding):** `58-podcast-production-engine/scripts/provision-podcast-client.sh` and its pass gate (Cloudflare 302-to-Access check, a signed test POST accepted on the hook, the smoke-test cron fired once); `58-podcast-production-engine/scripts/verify-t1-t9.sh`, the T1 to T9 onboarding verification executable, which must be EXECUTED and OBSERVED (through the real public URL for T9), never asserted; and `58-podcast-production-engine/scripts/ghl_credential_gate.py` in full mode, whose exit codes (0 pass, 2 credential missing, 3 isolation violation, 4 required custom fields missing, 5 rate floor not met) gate whether the client may go live. The state schema is created by `58-podcast-production-engine/scripts/podcast_state.py init`. No pass, no go-live.
+**Enforcement pointer (binding):** `58-podcast-production-engine/scripts/provision-podcast-client.sh` and its pass gate (Cloudflare 302-to-Access check, a signed test POST accepted on the hook, the smoke-test cron fired once); `58-podcast-production-engine/scripts/verify-t1-t9.sh`, the T1 to T9 onboarding verification executable, which must be EXECUTED and OBSERVED (through the real public URL for T9), never asserted; and `58-podcast-production-engine/scripts/ghl_credential_gate.py` in full mode, whose exit codes (0 pass, 2 credential missing, 3 isolation violation, 4 required custom fields missing, 5 rate floor not met) gate whether the client may go live. The state schema is created by `58-podcast-production-engine/scripts/podcast_state.py init`. No pass, no go-live. Section 2.9 (Facebook-ads workflow activation, timing-deferred per client) is enforced by `58-podcast-production-engine/scripts/activate-podcast-fb-workflows.py` plus its repo QC gate `58-podcast-production-engine/scripts/guard-runbook-fb-activation-checklist.py`, which fails closed if this checklist item ever drifts out of this SOP.
 **Stage:** Runs once per client, after the AI Workforce Interview gate and as part of podcast engine enablement.
 
 ---
@@ -53,6 +53,37 @@ The `book_teaser` custom field (Interview mode) may not exist in the client's ac
 ### 2.8 Upstream sender and sample payload
 
 Configure the ONE upstream sender the client actually uses (a Convert and Flow workflow webhook action, Make.com, or n8n): method POST, the public URL, header `Authorization: Bearer <secret>` (value pasted from the credential store, never from chat), a FLAT JSON body carrying the survey fields plus `contact_id`, `location_id`, `podcast_id`, mode, and style. Capture one real sample payload and add it to the mapper's test fixtures so the deterministic mapper stays covered for this pipeline family. Record route id, sessionKey, secret LOCATION (env var name or file path, never the value), upstream pipeline type, sample payload fixture path, and date in the setup notes.
+
+### 2.9 Facebook-ads workflow activation (per-client, once the client connects Facebook)
+
+The podcast snapshot ships four Facebook-ad workflows (01a Update FB audience,
+02 Fb Podcast Lead That DID NOT COMPLETE, 02a 2nd Fb Podcast Interview, 03
+Podcast LeadForm Fb Ad) structurally correct but DRAFT, with their Facebook
+account/audience/pixel/token fields blank, because the Facebook connection is
+inherently per-client and nothing about it can be fabricated in a fleet
+template. This step is NOT a go-live blocker (Section 5 does not gate on it):
+it runs whenever the client is ready to advertise, and it is recorded here so
+the fill-and-publish step is never tribal knowledge.
+
+Once the client has connected their Facebook Business account in Convert and
+Flow (Settings -> Integrations -> Facebook -> Connect) and supplied the
+ad-account id (act_...), the Custom Audience id(s), and the Pixel id plus
+Conversions API access token, run
+`58-podcast-production-engine/scripts/activate-podcast-fb-workflows.py` with
+no `--fb-*` flags first for a dry report (nothing written), then execute the
+real fill-and-publish with the client's real ids:
+
+    python3 58-podcast-production-engine/scripts/activate-podcast-fb-workflows.py --location <location-id> --execute --fb-account act_XXXX --fb-audience <audience-id> --fb-pixel <pixel-id> --fb-token <capi-token>
+
+The script fills the blank Facebook fields on all four workflows and publishes
+them; it prints its own per-client Facebook-ads connect checklist on every
+run. The Facebook Lead Form TRIGGER on workflows 02, 02a, and 03 still requires
+one manual step in the workflow builder (it must bind to the client's live
+connected Lead Form and cannot be scripted). Re-run
+`58-podcast-production-engine/scripts/verify-podcast-ghl-workflows.py`
+afterward and confirm the required 4 still PASS. Record the activation date
+and the Facebook ad-account id (never the token) in the per-client setup
+notes.
 
 ## 3. TEST-SUBMISSION VERIFICATION (T1 to T9; all must pass before go-live)
 

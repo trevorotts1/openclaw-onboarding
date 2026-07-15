@@ -76,7 +76,7 @@ FORBIDDEN_PREFIXES = (
 # Every layer (build-time dept default, task-time selector, repair sweep, gate)
 # obeys this exact ordering.
 #
-#   TIER 1 — Ollama Cloud   : ollama/*:cloud (baseUrl https://ollama.com)
+#   TIER 1 — Ollama Cloud   : ollama/*:cloud (baseUrl https://ollama.com/v1)
 #   TIER 2 — OpenRouter OSS  : openrouter/<oss-vendor>/* (open-weight only)
 #   TIER 3 — Free            : *:free / pricingModel == 'free'  (LAST RESORT)
 #

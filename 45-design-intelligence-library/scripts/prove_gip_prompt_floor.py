@@ -128,6 +128,35 @@ def rich_text_bearing(copy_line: str = "Stop Guessing. Start Closing.",
     return head + _distinct_body(n_sentences) + do_not_block
 
 
+def rich_text_bearing_medium(copy_line: str = "Stop Guessing. Start Closing.",
+                             with_spelling_lock: bool = True,
+                             with_style_ref_only: bool = True,
+                             do_not_block: str = _DO_NOT_BLOCK,
+                             n_sentences: int = 4) -> str:
+    """A text_bearing_medium PASS fixture (GK-20 band, Ideogram V3 DESIGN route):
+    >=1,600 chars, >=90 distinct words, the 8-class negative block, a spelling-lock,
+    verbatim copy, and (optionally) the style-ref directive -- comfortably under the
+    band's 4,500-char cap (itself sized to Ideogram's own verified 5,000-char API
+    cap, MODEL-SPECS.md). Reuses text_bearing_long's head/negative-block shape at a
+    much smaller body size, since the tight ceiling here rules out the 40-sentence
+    body text_bearing_long's PASS fixture uses."""
+    head = (
+        "ASSET: social post graphic with baked text | BAND: text_bearing_medium\n"
+        "Composition: rule of thirds grid, headline in the upper-third safe margin, focal point "
+        "in the right third. Palette anchored on brand hex #0A2540 with an accent of #F2B134.\n"
+    )
+    if with_spelling_lock:
+        head += (f'TYPOGRAPHY + VERBATIM COPY: render this exact string, letter-for-letter, '
+                 f'correctly spelled, with no added, dropped, doubled, or substituted characters: '
+                 f'"{copy_line}".\n')
+    else:
+        head += f'HEADLINE COPY: "{copy_line}".\n'
+    if with_style_ref_only:
+        head += ("REFERENCE DIRECTIVE: use the attached images only as style reference for color "
+                 "grading, lighting, and composition — do not copy their subjects, faces, or text.\n")
+    return head + _distinct_body(n_sentences) + do_not_block
+
+
 def rich_visual(n_sentences: int = 25) -> str:
     """A visual_long PASS fixture (non-text-bearing: min 2,500, no spelling-lock required)."""
     head = (
@@ -152,6 +181,31 @@ def _self_test() -> int:
                      "Stop Guessing. Start Closing.", False, True))
 
     fixtures.append(("visual-rich-pass", "visual_long", rich_visual(), None, False, True))
+
+    # --- GK-20: text_bearing_medium (the Ideogram V3 DESIGN route band) --------------
+    tbm = rich_text_bearing_medium()
+    fixtures.append(("text-bearing-medium-rich-pass", "text_bearing_medium", tbm,
+                     "Stop Guessing. Start Closing.", False, True))
+
+    # Under the text_bearing_medium floor (1,600) -> length fail.
+    fixtures.append(("text-bearing-medium-under-floor", "text_bearing_medium",
+                     "ASSET: social post graphic with baked text | BAND: text_bearing_medium\n"
+                     "A short prompt with no real spec.", None, False, False))
+
+    # Over the text_bearing_medium cap (4,500 -- Ideogram's own 5,000-char API cap
+    # minus the same ~10% safety margin the other bands keep) -> length fail.
+    tbm_over = rich_text_bearing_medium(n_sentences=14)
+    assert len(tbm_over.strip()) > 4500, "fixture must genuinely exceed the 4,500 cap"
+    fixtures.append(("text-bearing-medium-over-cap", "text_bearing_medium", tbm_over,
+                     None, False, False))
+
+    # Long enough for the floor, spelling-lock present, but NO spelling-lock directive
+    # variant (uses the no-lock negative block) -> quality fail, independent of length.
+    tbm_no_lock = rich_text_bearing_medium(with_spelling_lock=False,
+                                           do_not_block=_DO_NOT_BLOCK_NO_LOCK)
+    fixtures.append(("text-bearing-medium-no-spelling-lock", "text_bearing_medium",
+                     tbm_no_lock, "Stop Guessing. Start Closing.", False, False))
+    # --- end GK-20 fixtures -----------------------------------------------------------
 
     # Under the floor -> length fail.
     fixtures.append(("under-floor", "text_bearing_long", "a short prompt with no spec",
@@ -216,6 +270,48 @@ def _self_test() -> int:
     if not dv.band_quality_problems(qonly, band, "text_bearing_long"):
         failures.append("a quality-defective prompt cleared the quality gate")
 
+    # GK-20: same exit-code contract, proven on the NEW text_bearing_medium band.
+    band_tbm = _band("text_bearing_medium")
+    if not dv.band_length_problems("tiny", band_tbm, "text_bearing_medium"):
+        failures.append("band_length_problems did not flag an under-floor text_bearing_medium prompt")
+    qonly_tbm = "ASSET x | BAND y\n" + _distinct_body(8)  # clears 1,600 floor, no negative block/lock
+    if dv.band_length_problems(qonly_tbm, band_tbm, "text_bearing_medium"):
+        failures.append("a length-OK text_bearing_medium prompt wrongly flagged a length problem")
+    if not dv.band_quality_problems(qonly_tbm, band_tbm, "text_bearing_medium"):
+        failures.append("a quality-defective text_bearing_medium prompt cleared the quality gate")
+
+    # GK-20 acceptance: nano-banana-2/pro must be ABSENT from every text_bearing:true band
+    # (loaded from the SAME prompt-bands.json diu_validator reads at runtime -- not a
+    # separate/duplicated fixture, so this can never silently drift from the shipped file).
+    all_bands = dv.load_bands()
+    for bid, b in all_bands.items():
+        if b.get("text_bearing"):
+            endpoints = [str(e).lower() for e in (b.get("endpoints") or [])]
+            if any("nano-banana" in e for e in endpoints):
+                failures.append(
+                    f"GK-20 REGRESSION: text_bearing:true band {bid!r} still lists a "
+                    f"nano-banana endpoint ({b.get('endpoints')}) -- Nano Banana is refused "
+                    "for text everywhere else in the fleet (AF-SM-MODEL-ROUTING)")
+    # And the mandated Ideogram route MUST resolve to a legal text_bearing band whose MAX is
+    # achievable on Ideogram's own verified 5,000-char API cap (MODEL-SPECS.md) -- proves the
+    # routing rule and the band file are reconciled, not merely that nano-banana was removed.
+    ideogram_text_bands = [
+        bid for bid, b in all_bands.items()
+        if b.get("text_bearing")
+        and any("ideogram" in str(e).lower() for e in (b.get("endpoints") or []))
+    ]
+    if not ideogram_text_bands:
+        failures.append(
+            "GK-20 REGRESSION: no text_bearing:true band names an Ideogram endpoint -- the "
+            "mandatory quote-card/text-led route (_RULES.md) has no legal band")
+    for bid in ideogram_text_bands:
+        b = all_bands[bid]
+        if int(b.get("max", 0)) > 5000:
+            failures.append(
+                f"GK-20 REGRESSION: Ideogram-routed band {bid!r} has max={b.get('max')} "
+                "chars, OVER Ideogram V3's verified 5,000-char API cap (MODEL-SPECS.md) -- "
+                "Ideogram would truncate/reject prompts at this band's own ceiling")
+
     if failures:
         print("\nSELF-TEST FAILURES:", file=sys.stderr)
         for f in failures:
@@ -259,8 +355,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Prove the Graphics Image Protocol prompt-band gate.")
     ap.add_argument("prompts", nargs="*", help="prompt .txt file(s) to gate")
     ap.add_argument("--self-test", action="store_true", help="run the fixture gate (CI)")
-    ap.add_argument("--band", help="band id for file/dir mode (text_bearing_long | visual_long "
-                                    "| medium | short_draft)")
+    ap.add_argument("--band", help="band id for file/dir mode (text_bearing_long | "
+                                    "text_bearing_medium | visual_long | medium | short_draft)")
     ap.add_argument("--copy", action="append", default=[], help="verbatim copy string (repeatable)")
     ap.add_argument("--style-ref", action="store_true", help="style refs attached")
     ap.add_argument("--dir", help="gate every working/prompts/*.txt under this run dir")
