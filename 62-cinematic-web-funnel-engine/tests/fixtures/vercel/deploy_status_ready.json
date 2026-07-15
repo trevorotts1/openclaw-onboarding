@@ -1,0 +1,7 @@
+{
+  "_fixture_note": "Mocked Vercel GET /v13/deployments/{id} response once the build reaches READY. NOT a real Vercel response; no live/paid call was made to produce this file (spec 19.2).",
+  "id": "dpl_fixture_0000000000000001",
+  "url": "cwfe-fixture-abc123.vercel.app",
+  "readyState": "READY",
+  "projectId": "prj_fixture_0000000000000001"
+}
