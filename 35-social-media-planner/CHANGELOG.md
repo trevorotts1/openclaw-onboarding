@@ -1,5 +1,20 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.12 - 2026-07-15 — Skill 6 blended-persona-kanban v2, U88/GK-26: content→conversation loop OFFLINE/FIXTURE proof run
+
+### Added
+- **`scripts/prove_content_conversation_loop.py`** + **`scripts/test_prove_content_conversation_loop.py`** (master spec crosswalk G+K.6, GK-26; master id U88). The OFFLINE/CODE-MERGE tier of "the content→conversation loop, proven end-to-end once on the operator's own box" — per the master spec's ratified PER-REPO/OFFLINE ACCEPTANCE DOCTRINE (Section E.3, "OPERATOR RULINGS 2026-07-15"), which the same amendment states applies "on principle" to every other live/operator-box criterion in the spec, this unit's merge-gate proof is provable per-repo and offline with fixtures/stubs, while the genuine live-infra run (real `caf social create-post` write, real GHL Conversations round-trip, real Skill 38 brain reply) is deferred to the operator's own box as its own future LIVE-PROOF receipt — the same two-tier shape U22 (B-U8) and U84 (GK-22) already ship in this repo.
+  - Leg 1 — Skill 35 pre-generation prompt gate (`pregen_prompt_gate.check_prompt`, REAL call) + a fixture Section-19 QC receipt (standing in for the live, paid kie.ai generation this offline proof must never trigger) + a DM-first-with-comment-link-backup CTA shape check.
+  - Leg 2 — Skill 44 Tier-0 rail (`caf social create-post`) queue + read-back, driven through an injectable adapter seam: `FixtureAdapters` (default, zero network, proven here) vs a documented `LiveAdapters` stub that raises `NotImplementedError` naming the exact real call it stands in for — never a silently fabricated live result.
+  - Leg 3 — inbound DM → GHL Conversations → Skill 38's documented tier ladder. The RESOLUTION half (`playbook_engine.resolve_from_log`) is REAL, run against Skill 38's own already-proven fixture pair (`tools/tests/fixtures/sample-log.md` + `good-playbook.md`); the Conversations round-trip + brain reply run through the same adapter seam as leg 2.
+  - Leg 4 — Skill 35's real `comment_reader.run()` on a fixture prospect-comment event, asserting the fenced synthetic handoff (injection-fencing already proven by `test_comment_reader.py`) lands in `conversational-logs/`.
+  - Leg 5 — Gap C: Skill 6's real `funnel_matcher.match_funnel` against the real 38-template catalog, exercising both branches — no client link supplied (matcher invoked, fallback link resolved) and a client-supplied link (matcher never even called — sovereignty re-proven, mirroring the client-owned-token doctrine already governing every other client-supplied value in this fleet).
+  - A best-effort, environment-isolated call into Skill 38's own `00-verify-prerequisites.sh` STEP F build-path report (HOME/MASTER_FILES_DIR/OPENCLAW_SKILLS_DIR pointed at a private tempdir so this offline proof never reads the operator's real box) — never gates a leg, never fabricates a PASS when the sandbox legitimately can't reach it.
+  - One archived evidence bundle (JSON) with all five legs' pass/fail + read-backs (queued post id; conversation id + brain reply; fenced handoff file path; matcher receipt), `zero_client_visible_messages: true`, and an explicit `live_proof_tier_owed: true` flag. 22 tests, including fail-first regressions pinning that `FixtureAdapters` makes no network call and that `LiveAdapters` can never silently fabricate a live result.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.11 -> v2.9.12; SKILL.md frontmatter version v2.9.11 -> v2.9.12 (re-versioned from the branch's v2.9.11, which collided with U82/GK-20's already-landed v2.9.11 on main; must match the frontmatter-version-guard).
+
 ## v2.9.11 - 2026-07-15 — GK-20 regression proof: text_bearing_medium-band-floor-sized prompt clears pregen_prompt_gate.py on Ideogram V3 DESIGN
 
 ### Added
