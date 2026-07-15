@@ -62,3 +62,29 @@ Added, in the shared fleet registration files (outside this skill directory):
 
 Command Center generic-discovery no-change proof and any justified Command Center
 enhancement are separate, later build units (U23/U24) — not part of this entry.
+
+### QC fix — artifact-coverage SKILLS-COUNT gate (post-U22)
+
+An independent QC pass flagged that the artifact-coverage consistency gate
+(`23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only artifact`,
+the `SKILLS-COUNT` dimension, wired as a hard, non-`continue-on-error` step in
+`.github/workflows/qc-static.yml`) failed rc=6: `install.sh`'s two "active skill
+count" prose statements ("`(56 active + 5 archived)`" and "`The 56 active skills`")
+still read 56, while the skill-dir tree has carried 57 active skills since this
+unit added the `62-cinematic-web-funnel-engine/` client-facing registration. The
+drift pre-dated U22 (present since U2 created the folder) and was not part of this
+unit's original "Verified green" evidence list, which was an omission — the
+1.0.0/U22 entries above explicitly deferred it as install-wave-sequencing work,
+but the gate checks a simple count-of-active-skill-directories fact, unrelated to
+which install wave a skill is assigned to.
+
+Fixed: both `install.sh` prose occurrences bumped 56 → 57 (matching the tree and
+the already-correct `README.md` count). No install-wave assignment changed —
+Skill 62 is still not listed under any `Wave N` section; that remains a later
+merge/install unit decision (U25/U27), unchanged by this fix.
+
+Re-verified: `qc-assert-repo-consistency.py` (both the 5-dimension gate and
+`--only artifact`) → rc=0, 10/10 artifact dimensions OK; adversarial fixture
+suite `test-artifact-coverage.sh` → 10/10 passed; full skill test suite
+re-run clean: unit 672/672, integration 44/44, e2e 23/23,
+`prove_certificate.py --self-test` → PASS.
