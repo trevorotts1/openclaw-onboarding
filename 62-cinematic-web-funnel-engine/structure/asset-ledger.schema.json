@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/asset-ledger.schema.json",
+  "title": "Cinematic and Web Funnel Engine — asset-ledger.json (Skill 62, U11)",
+  "description": "P7-STILLS's artifact (CWFE-MANIFEST.json: 'asset-ledger.json (approved scene images)'). One entry per generated still image: a scene's own approval-tracked anchor still (whose hash is mirrored into journey/scene-plan.json's scenes[].anchor_asset_hash, spec 9.3) plus its first_frame_still/last_frame_still boundary pins (spec 9.2's camera start_state/end_state — the seed images a later unit's video generation pins its OWN clip's first-and-last-frame control to; NOT the connector boundary frames of spec 12.2, which ADR-9 requires be REAL ENCODED video frames extracted after encoding, never a generated still). Validated on every read/write by scripts/state_engine.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "assets", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "scene_id",
+          "purpose",
+          "model_id",
+          "provider_task_id",
+          "local_path",
+          "hash_sha256",
+          "prompt",
+          "aspect_ratio",
+          "resolution",
+          "generated_at",
+          "approval_status"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Deterministic: '{scene_id}:{purpose}' — a producer re-run never creates a second entry for the same (scene, purpose) pair."
+          },
+          "scene_id": { "type": "string", "minLength": 1 },
+          "purpose": {
+            "type": "string",
+            "enum": ["anchor_still", "first_frame_still", "last_frame_still"]
+          },
+          "model_id": { "type": "string", "minLength": 1 },
+          "provider_task_id": { "type": "string", "minLength": 1 },
+          "local_path": { "type": "string", "minLength": 1 },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "prompt": { "type": "string", "minLength": 1 },
+          "aspect_ratio": { "type": "string", "minLength": 1 },
+          "resolution": { "type": "string", "minLength": 1 },
+          "generated_at": { "type": "string", "minLength": 1 },
+          "approval_status": {
+            "type": "string",
+            "enum": ["proposed", "approved", "rejected", "regenerate"]
+          }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

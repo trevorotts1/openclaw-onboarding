@@ -433,6 +433,30 @@
       "execution_sops": ["sales-page-craft"]
     },
     {
+      "skill": "62",
+      "slug": "cinematic-web-funnel-engine",
+      "name": "cinematic-web-funnel-engine",
+      "client_facing": true,
+      "description": "Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels: AI-generated scroll-controlled scene sequences, frame-matched video transitions, a production Next.js site, Vercel deployment, and GoHighLevel/Convert and Flow integration. Delegates protected copy methodologies (Signature Funnel / direct-response) rather than duplicating them; owns cinematic experience planning, media generation, web assembly, scroll runtime, deployment, and cinematic-deliverable QC.",
+      "departments": ["web-development"],
+      "roles": [
+        { "dept": "web-development", "slug": "funnel-builder-specialist", "primary": true }
+      ],
+      "intent_triggers": [
+        "build me an animated website",
+        "create a cinematic landing page",
+        "make a scroll animation website",
+        "build an immersive funnel",
+        "create a cinematic squeeze page",
+        "make my website move as I scroll",
+        "build a premium interactive sales page",
+        "turn this brand story into a scroll experience",
+        "create a Vercel-hosted funnel connected to GoHighLevel",
+        "build a cinematic website with complete copy"
+      ],
+      "execution_sops": ["funnel-craft", "website-craft", "video-pipeline-craft"]
+    },
+    {
       "skill": "06",
       "slug": "ghl-install-pages",
       "name": "ghl-install-pages",

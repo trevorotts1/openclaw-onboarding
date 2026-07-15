@@ -1,0 +1,141 @@
+{
+  "$schema": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/intake-questions.schema.json",
+  "bank_version": "1.0.0",
+  "description": "Canonical 12-group client intake question bank for Skill 62 (Cinematic and Web Funnel Engine), spec Section 8.1. scripts/intake_engine.py asks these ONE AT A TIME, in group/order sequence, skipping straight to a yes/no known-context confirmation step (never a full re-ask) whenever known_context_key resolves in the caller-supplied known-context object. Questions whose type is 'claim_list' each spawn one dynamic truth-source follow-up question per claim the moment that question is answered (spec 8.2 truth-sources.json) — those dynamic questions are not listed here because their count depends on the answer.",
+  "groups": [
+    {
+      "slug": "project_goal",
+      "order": 1,
+      "title": "Project goal",
+      "questions": [
+        {"id": "project_goal.deliverable_type", "order": 1, "type": "enum", "enum": ["cinematic-website", "cinematic-landing-page", "cinematic-funnel", "scroll-story-page"], "required": true, "known_context_key": "project_goal.deliverable_type", "prompt": "What kind of deliverable is this? (cinematic-website / cinematic-landing-page / cinematic-funnel / scroll-story-page)"},
+        {"id": "project_goal.success_action", "order": 2, "type": "string", "required": true, "known_context_key": null, "prompt": "What single action defines success for a visitor? (this is the conversion action)"},
+        {"id": "project_goal.deadline", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "What is the deadline, or 'none' if there isn't one?"},
+        {"id": "project_goal.required_assets", "order": 4, "type": "list", "required": true, "known_context_key": null, "prompt": "List every asset required to build this deliverable (e.g. logo files, product photography, testimonial video)."}
+      ]
+    },
+    {
+      "slug": "audience",
+      "order": 2,
+      "title": "Audience",
+      "questions": [
+        {"id": "audience.identity", "order": 1, "type": "string", "required": true, "known_context_key": null, "prompt": "Who is the audience?"},
+        {"id": "audience.pain", "order": 2, "type": "string", "required": true, "known_context_key": null, "prompt": "What pain does this audience have?"},
+        {"id": "audience.aspiration", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "What does this audience aspire to?"},
+        {"id": "audience.awareness_level", "order": 4, "type": "enum", "enum": ["unaware", "problem-aware", "solution-aware", "product-aware", "most-aware"], "required": true, "known_context_key": null, "prompt": "What is the audience's awareness level?"}
+      ]
+    },
+    {
+      "slug": "offer",
+      "order": 3,
+      "title": "Offer",
+      "questions": [
+        {"id": "offer.name", "order": 1, "type": "string", "required": true, "known_context_key": null, "prompt": "What is the offer called?"},
+        {"id": "offer.promise", "order": 2, "type": "string", "required": true, "known_context_key": null, "prompt": "What is the core promise?"},
+        {"id": "offer.price", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "What is the price?"},
+        {"id": "offer.mechanism", "order": 4, "type": "string", "required": true, "known_context_key": null, "prompt": "What is the unique mechanism?"},
+        {"id": "offer.bonuses", "order": 5, "type": "list", "required": false, "known_context_key": null, "prompt": "List any bonuses (or leave empty)."},
+        {"id": "offer.objections", "order": 6, "type": "list", "required": false, "known_context_key": null, "prompt": "List the top objections to overcome (or leave empty)."},
+        {"id": "offer.proof", "order": 7, "type": "claim_list", "required": true, "known_context_key": null, "requires_truth_source": true, "prompt": "List every proof claim (results, testimonials, credentials) this offer will make. Each one will require a truth source before it can be locked."}
+      ]
+    },
+    {
+      "slug": "brand",
+      "order": 4,
+      "title": "Brand",
+      "questions": [
+        {"id": "brand.colors", "order": 1, "type": "list", "required": false, "known_context_key": "brand.colors", "prompt": "What are the brand colors?"},
+        {"id": "brand.typography", "order": 2, "type": "string", "required": false, "known_context_key": "brand.typography", "prompt": "What is the brand typography?"},
+        {"id": "brand.logo", "order": 3, "type": "string", "required": false, "known_context_key": "brand.logo", "prompt": "Where is the logo asset?"},
+        {"id": "brand.tone", "order": 4, "type": "string", "required": true, "known_context_key": "brand.tone", "prompt": "What is the brand tone?"},
+        {"id": "brand.visual_references", "order": 5, "type": "list", "required": false, "known_context_key": null, "prompt": "List any visual reference links or descriptions."},
+        {"id": "brand.prohibited_styles", "order": 6, "type": "list", "required": false, "known_context_key": null, "prompt": "List any prohibited visual styles."},
+        {"id": "brand.representation_requirements", "order": 7, "type": "list", "required": true, "known_context_key": null, "prompt": "List representation requirements: how must real people, the product, and the brand be depicted accurately (e.g. no fabricated depictions of named real people, product geometry must match reference photos)?"}
+      ]
+    },
+    {
+      "slug": "content_source",
+      "order": 5,
+      "title": "Content source",
+      "questions": [
+        {"id": "content_source.existing_copy", "order": 1, "type": "string", "required": false, "known_context_key": null, "prompt": "Is there existing copy to reuse? Paste it or say 'none'."},
+        {"id": "content_source.selected_methodology", "order": 2, "type": "enum", "enum": ["signature-funnel", "sales-page-assets", "cinematic-native"], "required": true, "known_context_key": null, "prompt": "Which content methodology should author the copy? (signature-funnel / sales-page-assets / cinematic-native)"},
+        {"id": "content_source.required_sections", "order": 3, "type": "list", "required": true, "known_context_key": null, "prompt": "List the required page sections."},
+        {"id": "content_source.claims", "order": 4, "type": "claim_list", "required": false, "known_context_key": null, "requires_truth_source": true, "prompt": "List any factual claims already present in the existing copy that need a truth source (or leave empty)."}
+      ]
+    },
+    {
+      "slug": "cinematic_direction",
+      "order": 6,
+      "title": "Cinematic direction",
+      "questions": [
+        {"id": "cinematic_direction.visual_world", "order": 1, "type": "string", "required": true, "known_context_key": null, "prompt": "Describe the visual world."},
+        {"id": "cinematic_direction.realism_level", "order": 2, "type": "enum", "enum": ["photoreal", "stylized-real", "illustrative", "abstract"], "required": true, "known_context_key": null, "prompt": "What realism level? (photoreal / stylized-real / illustrative / abstract)"},
+        {"id": "cinematic_direction.story_progression", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "Describe the story progression."},
+        {"id": "cinematic_direction.camera_language", "order": 4, "type": "string", "required": true, "known_context_key": null, "prompt": "Describe the camera language."},
+        {"id": "cinematic_direction.scene_count", "order": 5, "type": "integer", "required": true, "known_context_key": null, "prompt": "How many scenes?"}
+      ]
+    },
+    {
+      "slug": "conversion_infrastructure",
+      "order": 7,
+      "title": "Conversion infrastructure",
+      "questions": [
+        {"id": "conversion_infrastructure.ghl_location_id", "order": 1, "type": "string", "required": true, "known_context_key": "crm.location_id", "prompt": "What is the GHL location ID (or 'none')?"},
+        {"id": "conversion_infrastructure.form", "order": 2, "type": "string", "required": true, "known_context_key": null, "prompt": "What form is required (or 'none')?"},
+        {"id": "conversion_infrastructure.calendar", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "What calendar is required (or 'none')?"},
+        {"id": "conversion_infrastructure.payment", "order": 4, "type": "string", "required": true, "known_context_key": null, "prompt": "What payment integration is required (or 'none')?"},
+        {"id": "conversion_infrastructure.workflow", "order": 5, "type": "string", "required": true, "known_context_key": null, "prompt": "What workflow is required (or 'none')?"},
+        {"id": "conversion_infrastructure.tracking_attribution", "order": 6, "type": "string", "required": true, "known_context_key": null, "prompt": "What tracking/attribution is required (or 'none')?"}
+      ]
+    },
+    {
+      "slug": "hosting",
+      "order": 8,
+      "title": "Hosting",
+      "questions": [
+        {"id": "hosting.vercel_account", "order": 1, "type": "string", "required": false, "known_context_key": "hosting.vercel_account", "prompt": "What is the Vercel account (or leave empty)?"},
+        {"id": "hosting.vercel_project", "order": 2, "type": "string", "required": false, "known_context_key": "hosting.vercel_project", "prompt": "What is the Vercel project (or leave empty)?"},
+        {"id": "hosting.vercel_team", "order": 3, "type": "string", "required": false, "known_context_key": "hosting.vercel_team", "prompt": "What is the Vercel team (or leave empty)?"},
+        {"id": "hosting.custom_domain", "order": 4, "type": "string", "required": false, "known_context_key": null, "prompt": "Is there a custom domain (or leave empty)?"},
+        {"id": "hosting.alternate_host", "order": 5, "type": "string", "required": false, "known_context_key": null, "prompt": "If not Vercel, what is the alternate host (or leave empty)?"}
+      ]
+    },
+    {
+      "slug": "mobile_strategy",
+      "order": 9,
+      "title": "Mobile strategy",
+      "questions": [
+        {"id": "mobile_strategy.mode", "order": 1, "type": "enum", "enum": ["crop-safe", "dedicated-portrait", "reduced-cinematic"], "required": true, "known_context_key": null, "prompt": "What mobile strategy? (crop-safe / dedicated-portrait / reduced-cinematic)"}
+      ]
+    },
+    {
+      "slug": "accessibility",
+      "order": 10,
+      "title": "Accessibility",
+      "questions": [
+        {"id": "accessibility.reduced_motion_preference", "order": 1, "type": "enum", "enum": ["respect-system", "always-reduced", "never-reduced"], "required": true, "known_context_key": null, "prompt": "What is the reduced-motion preference? (respect-system / always-reduced / never-reduced)"},
+        {"id": "accessibility.transcript_alt_content", "order": 2, "type": "boolean", "required": true, "known_context_key": null, "prompt": "Is a transcript / alt-content requirement in effect?"}
+      ]
+    },
+    {
+      "slug": "budget",
+      "order": 11,
+      "title": "Budget",
+      "questions": [
+        {"id": "budget.max_media_spend_usd", "order": 1, "type": "number", "required": true, "known_context_key": null, "prompt": "What is the maximum media-generation spend, in USD?"},
+        {"id": "budget.premium_model_permission", "order": 2, "type": "boolean", "required": true, "known_context_key": null, "prompt": "Is premium-model spend permitted?"}
+      ]
+    },
+    {
+      "slug": "approval_workflow",
+      "order": 12,
+      "title": "Approval workflow",
+      "questions": [
+        {"id": "approval_workflow.anchor_approver", "order": 1, "type": "string", "required": true, "known_context_key": null, "prompt": "Who approves the anchor image?"},
+        {"id": "approval_workflow.draft_approver", "order": 2, "type": "string", "required": true, "known_context_key": null, "prompt": "Who approves drafts?"},
+        {"id": "approval_workflow.final_deployment_approver", "order": 3, "type": "string", "required": true, "known_context_key": null, "prompt": "Who approves final deployment?"}
+      ]
+    }
+  ]
+}

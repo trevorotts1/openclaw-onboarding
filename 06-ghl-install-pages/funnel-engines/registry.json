@@ -124,6 +124,71 @@
         ]
       },
       "notes": "Direct-Response sibling of Skill 49 sharing the same labeling grammar (56 OWNS it) and the same STEP-0 selector + delivery rail. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the eight fail-closed provers are deterministic and model-free. A/B variants come from two client models OR two persona prompts on one client model. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
+    },
+    {
+      "id": "cinematic-web-funnel-engine",
+      "skill": "62-cinematic-web-funnel-engine",
+      "name": "Cinematic and Web Funnel Engine",
+      "summary": "AI-generated, scroll-controlled cinematic scene sequences (anchor image -> image-to-video -> real encoded boundary frames -> scroll-position-to-currentTime binding) assembled into a production Next.js site, deployed to Vercel, with GoHighLevel/Convert and Flow forms/calendars/payments/workflows. Not a video-background generator: it owns cinematic experience planning, media generation, web assembly, scroll runtime, and deployment; it DELEGATES protected copy methodologies (Signature Funnel / Sales-Page-Assets) rather than duplicating them when the client names one of those explicitly.",
+      "entry": "62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh",
+      "entry_contract": "NOTHING plans a scene, calls Kie, runs FFmpeg, touches Vercel/GHL, or mints a certificate except THROUGH cinematic-web-funnel-entry.sh (deps -> version -> hash-pin -> bypass-scan -> run-scoped 0600 nonce). A direct orchestrator call without the front-door nonce dies AF-CWFE-FRONT-DOOR.",
+      "delivery_rail": "06-ghl-install-pages",
+      "delivery_delegation": "GHL forms/calendars/payments/workflows integrate into the Vercel-hosted page via Skill 6/44 rails (embeds, webhooks); when Signature Funnel or Sales-Page-Assets copy is requested it is delegated to Skill 49/56 and rendered through this engine's cinematic runtime rather than re-authored. This engine's PRIMARY host is Vercel (Skill 08), not the GHL page builder.",
+      "priority": 8,
+      "confidence_threshold": 0.55,
+      "match": {
+        "names": [
+          "cinematic website",
+          "cinematic funnel",
+          "cinematic web funnel engine",
+          "animated website",
+          "cinematic landing page",
+          "immersive funnel",
+          "scroll cinematic website"
+        ],
+        "keywords": [
+          "animated website",
+          "cinematic landing page",
+          "scroll animation website",
+          "immersive funnel",
+          "cinematic squeeze page",
+          "website that moves as i scroll",
+          "premium interactive sales page",
+          "scroll experience",
+          "vercel-hosted funnel",
+          "scroll-controlled website",
+          "cinematic scenes",
+          "scroll scrubbing",
+          "motion website",
+          "scroll-story page"
+        ],
+        "signals": [
+          "scroll",
+          "cinematic",
+          "animated",
+          "immersive",
+          "motion",
+          "vercel",
+          "scene",
+          "parallax",
+          "scrub"
+        ],
+        "anti_signals": [
+          "signature funnel",
+          "signature landing page",
+          "12-section hero",
+          "sales page assets",
+          "direct response sales page",
+          "vsl only",
+          "video only",
+          "just a video",
+          "plain website",
+          "static website",
+          "no animation",
+          "webinar registration only"
+        ]
+      },
+      "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; never Anthropic, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval)."
     }
   ]
 }

@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/boundary-frames.schema.json",
+  "title": "Cinematic and Web Funnel Engine — boundary-frames.json (Skill 62, U13)",
+  "description": "Output of scripts/extract_boundaries.py (spec Section 12.1 'extract actual first and last encoded frames'; ADR-9 'real encoded boundary frames are authoritative'). Each frame entry is grounded in a real ffmpeg decode of the exact indexed frame (never a container-level timestamp seek estimate) -- frame_index/timestamp_seconds come from ffmpeg's own showinfo pts_time for that decode.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_path", "source_probe", "frames", "created_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "source_path": { "type": "string", "minLength": 1 },
+    "source_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_seconds", "frame_count", "width", "height", "r_frame_rate"],
+      "properties": {
+        "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "frame_count": { "type": "integer", "minimum": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "r_frame_rate": { "type": "string", "minLength": 1 }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["position", "frame_index", "timestamp_seconds", "output_path", "width", "height", "hash_sha256"],
+        "properties": {
+          "position": { "type": "string", "enum": ["first", "last"] },
+          "frame_index": { "type": "integer", "minimum": 0 },
+          "timestamp_seconds": { "type": "number", "minimum": 0 },
+          "output_path": { "type": "string", "minLength": 1 },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/methodology-decision.schema.json",
+  "title": "Cinematic and Web Funnel Engine — methodology-decision.json (Skill 62, U8)",
+  "description": "The P2-METHODOLOGY phase artifact declared in CWFE-MANIFEST.json ('methodology-decision.json (content engine decision + delegation receipt)'). Produced by scripts/resolve_content_engine.route(). Records which of the spec 7.2 routing rules fired, the full scoring transparency for every candidate engine (never a black-box pick), and — when the decision delegates to Skill 49 or Skill 56 — a delegation_receipt naming the exact front-door entry contract this router intends to consume from, in accordance with ADR-10 (route content methodology, never duplicate it).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "generated_at",
+    "request",
+    "decision",
+    "delegation_receipt",
+    "status",
+    "af_code",
+    "failure_reasons"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "request": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Verbatim echo of the methodology-request.json this decision was computed from (evidence, not re-derivable state)."
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "methodology_source",
+        "rule_applied",
+        "engine_id",
+        "confidence_score",
+        "confidence_threshold",
+        "candidates",
+        "reason"
+      ],
+      "properties": {
+        "methodology_source": {
+          "type": "string",
+          "enum": ["signature-funnel", "sales-page-assets", "cinematic-native", "existing-funnel-selector"]
+        },
+        "rule_applied": {
+          "type": "string",
+          "enum": [
+            "rule-1-signature-funnel",
+            "rule-2-direct-response",
+            "rule-3-ordinary-no-cinematic-intent",
+            "rule-4-cinematic-native",
+            "rule-5-video-only",
+            "rule-6-static-no-cinematic"
+          ],
+          "description": "Which numbered rule in spec Section 7.2 fired. Every decision traces to exactly one rule — never an unexplained pick."
+        },
+        "engine_id": { "type": ["string", "null"] },
+        "confidence_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "confidence_threshold": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "candidates": {
+          "type": "array",
+          "description": "Full scoring transparency for every scored delegate engine (registry.json engines[] with id in signature-funnel/sales-page-assets), even the ones that did not win.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine_id", "skill", "priority", "score", "threshold", "cleared", "matched"],
+            "properties": {
+              "engine_id": { "type": "string", "minLength": 1 },
+              "skill": { "type": "string", "minLength": 1 },
+              "priority": { "type": "number" },
+              "score": { "type": "number", "minimum": 0, "maximum": 1 },
+              "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+              "cleared": { "type": "boolean" },
+              "matched": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["names", "keywords", "signals", "anti_signals"],
+                "properties": {
+                  "names": { "type": "array", "items": { "type": "string" } },
+                  "keywords": { "type": "array", "items": { "type": "string" } },
+                  "signals": { "type": "array", "items": { "type": "string" } },
+                  "anti_signals": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "delegation_receipt": {
+      "type": ["object", "null"],
+      "description": "Non-null only when decision.methodology_source is signature-funnel or sales-page-assets (ADR-10 delegation). Names the front-door entry contract this router intends to consume from; never a hand-rolled bypass of that skill's own fail-closed front door.",
+      "additionalProperties": false,
+      "required": [
+        "target_skill",
+        "target_skill_version",
+        "entry_script",
+        "entry_contract",
+        "decided_at"
+      ],
+      "properties": {
+        "target_skill": { "type": "string", "minLength": 1 },
+        "target_skill_version": { "type": "string", "minLength": 1 },
+        "entry_script": { "type": "string", "minLength": 1 },
+        "entry_contract": { "type": "string", "minLength": 1 },
+        "decided_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": { "type": "string", "enum": ["PASS", "FAIL"] },
+    "af_code": { "type": ["string", "null"] },
+    "failure_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

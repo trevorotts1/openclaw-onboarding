@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/process-certificate.schema.json",
+  "title": "Cinematic and Web Funnel Engine — PROCESS-CERTIFICATE.json (Skill 62, U20)",
+  "description": "The P16-CERTIFY signed certificate (spec Sections 16, 17.9). Emitted by scripts/prove_certificate.py ONLY when every one of the 16 upstream phase gates (P0-ENVIRONMENT..P15-PRODUCTION) independently re-evaluates PASS on the SAME run_dir and the run-scoped front-door nonce (ADR-6) is present. This schema validates SHAPE only — semantic rules (all 17 phases actually contiguous 0..16, every status literally 'PASS', all_phases_pass literally true, the HMAC signature verifying against a supplied nonce) are enforced in code by prove_certificate.verify()/evaluate(), matching this skill's existing doctrine (see structure/deployment-receipt.schema.json and prove_deployment.py's own docstring: schema validity is a DIFFERENT, structural pass from the semantic re-derivation a prove_*.py performs).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "certificate",
+    "skill",
+    "manifest_version",
+    "run_id",
+    "issued_at",
+    "nonce_fingerprint",
+    "phases",
+    "all_phases_pass",
+    "artifact_index",
+    "signature_algorithm",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "certificate": {
+      "type": "string",
+      "const": "cinematic-web-funnel-process-certificate",
+      "description": "Discriminator so a certificate from a different skill/schema can never be mistaken for this one."
+    },
+    "skill": { "type": "string", "minLength": 1 },
+    "manifest_version": { "type": "string", "minLength": 1 },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The locked project-manifest.json project_id when one exists under run_dir, else the run_dir's own basename."
+    },
+    "issued_at": { "type": "string", "minLength": 1 },
+    "nonce_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "sha256(run-scoped front-door nonce)[:16] hex. Binds the certificate to one specific front-door run WITHOUT ever storing the raw nonce value in an artifact (spec 20: secrets/sensitive material by reference only, never logged in full)."
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 17,
+      "maxItems": 17,
+      "description": "One entry per phase P0-ENVIRONMENT..P16-CERTIFY, contiguous order 0..16. A valid, unsigned-tamper-free certificate has every entry's status == 'PASS' and all_phases_pass == true; the enum below permits the other values ONLY so this same schema can also validate an in-progress or rejected aggregation snapshot (e.g. certificate-status.json) passed through the same shape-checker before its semantic verdict is read.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "order", "name", "af_code", "gate", "status", "detail", "checked_at"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "order": { "type": "integer", "minimum": 0, "maximum": 16 },
+          "name": { "type": "string" },
+          "af_code": { "type": "string", "minLength": 1 },
+          "gate": { "type": "string" },
+          "status": { "type": "string", "enum": ["PASS", "FAIL", "GATE-SCRIPT-MISSING"] },
+          "detail": { "type": "string" },
+          "checked_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "all_phases_pass": { "type": "boolean" },
+    "artifact_index": {
+      "type": "array",
+      "description": "The 'final artifact index' spec Section 16 requires for P16 — every P0-P15 produces_artifact filename that was actually found under run_dir at certification time, with a content hash so a later restart/redeploy or independent audit can prove nothing shifted underneath the signed certificate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "signature_algorithm": { "type": "string", "const": "HMAC-SHA256" },
+    "signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "hmac_sha256(key=run-scoped front-door nonce, message=canonical JSON of every OTHER field, sort_keys + tight separators).hexdigest()."
+    }
+  }
+}

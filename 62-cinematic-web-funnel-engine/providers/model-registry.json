@@ -1,0 +1,220 @@
+{
+  "$schema": "https://openclaw.ai/schemas/cinematic-web-funnel-model-registry/v1",
+  "registry": "cinematic-web-funnel-engine-model-registry",
+  "registry_version": "1.0.0",
+  "skill": "62-cinematic-web-funnel-engine",
+  "snapshot_date": "2026-07-15",
+  "description": "Capability-keyed model registry for the Cinematic and Web Funnel Engine (ADR-7, ADR-8). Every model is addressed everywhere else in this skill by its registry `model_id`, never by provider marketing name. Provider wire slugs and prices live ONLY here; resolve them through providers/base.py:ModelRegistry at build/run time. Never hardcode a slug or price in a script, prompt, or manifest.",
+
+  "pricing_disclaimer": "Prices below are the best evidence captured in this repository at snapshot_date. Where a model's `price.verified` is false or `price.amount` is null, no confirmed current price exists and the budget gate (U7, AF-CWFE-PAID-GATE) MUST query Kie.ai's live pricing/account surface before authorizing a paid call on that model — this registry snapshot is never itself the authorization. Spec section 10.5 budget-tier heuristics are illustrative planning figures only and must never be read into this file as a priced value.",
+
+  "capability_tiers": {
+    "concept_image": {
+      "description": "Cheap early-concept stills for client review before any production spend (spec 10.2 default policy).",
+      "capability": "text-to-image",
+      "select": "lowest_cost_active",
+      "candidates": ["kie-gpt-image-2-text-to-image"]
+    },
+    "production_scene_image": {
+      "description": "Reference-consistent production scene stills, 16:9 2K (spec 10.2 default policy; fleet-verified image pipeline).",
+      "capability": "image-to-image",
+      "select": "highest_quality_active",
+      "candidates": ["kie-gpt-image-2-image-to-image"]
+    },
+    "draft_motion": {
+      "description": "Lowest-cost Seedance-class draft clip for creative review before final render (spec 10.2 default policy).",
+      "capability": "image-to-video",
+      "select": "lowest_cost_active",
+      "resolution_hint": "480p",
+      "candidates": ["kie-bytedance-seedance-1.5-pro"]
+    },
+    "final_connected_motion": {
+      "description": "Seedance-class model with two-image input_urls frame pinning for seam-continuous final scene/connector renders (ADR-8, ADR-9).",
+      "capability": "first-and-last-frame-control",
+      "select": "lowest_cost_active",
+      "candidates": ["kie-bytedance-seedance-1.5-pro"]
+    },
+    "premium_photoreal_override": {
+      "description": "Veo-class premium override after explicit budget-cap approval and frame-control verification (spec 10.2 default policy; optional, never the default).",
+      "capability": "text-to-video",
+      "select": "operator_choice",
+      "requires_explicit_approval": true,
+      "candidates": ["kie-veo3-fast", "kie-veo3-quality"]
+    }
+  },
+
+  "models": [
+    {
+      "model_id": "kie-gpt-image-2-text-to-image",
+      "provider": "kie",
+      "provider_model_slug": "gpt-image-2-text-to-image",
+      "status": "active",
+      "integration_status": "implemented",
+      "delegate": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py (KieImage, _MODEL_TEXT)",
+      "capabilities": ["text-to-image"],
+      "reference_image_support": {"supported": false, "max_images": 0},
+      "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      "output_resolutions": ["2K", "1080p", "720p"],
+      "duration_limits": null,
+      "audio": {"supported": false},
+      "callback_support": true,
+      "output_formats": ["png", "jpg", "webp"],
+      "price": {
+        "unit": "usd_per_image",
+        "amount_by_resolution": {"2K": 0.05, "1080p": 0.03, "720p": 0.03},
+        "currency": "USD",
+        "verified": false,
+        "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py KieImage.estimate_cost() — an internal fleet operational estimate baked into the adapter, not a price confirmed against a Kie.ai published pricing page (kie-setup-full.md has no gpt-image-2 pricing section as of snapshot_date).",
+        "note": "Budget gate must re-verify against live Kie.ai pricing/account balance deltas before treating this as authoritative."
+      },
+      "verified_date": "2026-07-14",
+      "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1"
+    },
+    {
+      "model_id": "kie-gpt-image-2-image-to-image",
+      "provider": "kie",
+      "provider_model_slug": "gpt-image-2-image-to-image",
+      "status": "active",
+      "integration_status": "implemented",
+      "delegate": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py (KieImage, _MODEL_EDIT)",
+      "capabilities": ["image-to-image", "reference-image-generation"],
+      "reference_image_support": {"supported": true, "max_images": 8},
+      "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      "output_resolutions": ["2K", "1080p", "720p"],
+      "duration_limits": null,
+      "audio": {"supported": false},
+      "callback_support": true,
+      "output_formats": ["png", "jpg", "webp"],
+      "price": {
+        "unit": "usd_per_image",
+        "amount_by_resolution": {"2K": 0.05, "1080p": 0.03, "720p": 0.03},
+        "currency": "USD",
+        "verified": false,
+        "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py KieImage.estimate_cost() — an internal fleet operational estimate baked into the adapter, not a price confirmed against a Kie.ai published pricing page (kie-setup-full.md has no gpt-image-2 pricing section as of snapshot_date).",
+        "note": "Budget gate must re-verify against live Kie.ai pricing/account balance deltas before treating this as authoritative."
+      },
+      "verified_date": "2026-07-14",
+      "source": "47-movie-producer/kie-adapters/tools/graphics/kie_image.py; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1"
+    },
+    {
+      "model_id": "kie-gemini-omni-video",
+      "provider": "kie",
+      "provider_model_slug": "gemini-omni-video",
+      "status": "active",
+      "integration_status": "implemented",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, _DEFAULT_MODEL)",
+      "capabilities": ["text-to-video", "image-to-video", "image-guided-video"],
+      "reference_image_support": {"supported": true, "max_images": null, "note": "image-guided reference, not first-and-last-frame pinning"},
+      "first_frame_control": false,
+      "first_and_last_frame_control": false,
+      "aspect_ratios": ["16:9", "9:16"],
+      "output_resolutions": ["default"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 5, 6, 7, 8], "value_type": "string"},
+      "audio": {"supported": true, "default_enabled": true, "generate_audio_flag": true},
+      "callback_support": true,
+      "price": {
+        "unit": "usd_per_second",
+        "amount": 0.10,
+        "currency": "USD",
+        "verified": false,
+        "source": "47-movie-producer/kie-adapters/tools/video/kie_video.py KieVideo.estimate_cost() (0.10 * duration) — internal fleet operational estimate, not confirmed against a Kie.ai published pricing page (kie-setup-full.md has no gemini-omni-video pricing section as of snapshot_date).",
+        "note": "Budget gate must re-verify against live Kie.ai pricing/account balance deltas before treating this as authoritative."
+      },
+      "verified_date": "2026-07-14",
+      "source": "47-movie-producer/kie-adapters/tools/video/kie_video.py"
+    },
+    {
+      "model_id": "kie-bytedance-seedance-1.5-pro",
+      "provider": "kie",
+      "provider_model_slug": "bytedance/seedance-1.5-pro",
+      "status": "active",
+      "integration_status": "not_yet_integrated",
+      "integration_note": "Not yet reachable through 47-movie-producer/kie-adapters/tools/video/kie_video.py as of this snapshot — kie_video.py's model enum is limited to gemini-omni-video/veo3/veo3_fast. Extending kie_video.py (or adding this capability through the provider interface in lockstep with it, never a divergent client) is U5's scope, not this unit's.",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (extension target, U5)",
+      "capabilities": ["text-to-video", "image-to-video", "first-frame-control", "first-and-last-frame-control"],
+      "reference_image_support": {"supported": true, "max_images": 2},
+      "first_frame_control": true,
+      "first_and_last_frame_control": true,
+      "first_and_last_frame_field": "input_urls",
+      "aspect_ratios": ["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"],
+      "output_resolutions": ["480p", "720p", "1080p"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 12, "valid_values": [4, 8, 12], "value_type": "string"},
+      "audio": {"supported": true, "default_enabled": false, "generate_audio_flag": true, "note": "enabling audio increases cost per Kie docs"},
+      "callback_support": true,
+      "input_constraints": {
+        "prompt_min_chars": 3,
+        "prompt_max_chars": 2500,
+        "input_image_types": ["image/jpeg", "image/png", "image/webp"],
+        "input_image_max_size_mb": 10.0,
+        "input_urls_min": 0,
+        "input_urls_max": 2
+      },
+      "price": {
+        "unit": "usd_per_second",
+        "amount": null,
+        "currency": "USD",
+        "verified": false,
+        "source": "07-kie-setup/kie-setup-full.md §\"Seedance 1.5 Pro\" — states explicitly \"Pricing not listed on this page.\"",
+        "note": "NO CONFIRMED PRICE EXISTS for this model as of snapshot_date. Spec §10.5's ~$0.057/video-second figure is a non-binding illustrative planning heuristic from a source analysis, NOT a Kie.ai published price, and must never be substituted here. The budget gate (U7, AF-CWFE-PAID-GATE) MUST resolve a live price (Kie.ai pricing page or account credit-debit observation) before any paid call against this model_id, and must hard-stop if none can be established."
+      },
+      "verified_date": "2026-07-15",
+      "source": "07-kie-setup/kie-setup-full.md §\"Seedance 1.5 Pro\"; CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md §10.1, §10.2, §12.5"
+    },
+    {
+      "model_id": "kie-veo3-fast",
+      "provider": "kie",
+      "provider_model_slug": "veo3_fast",
+      "status": "active",
+      "integration_status": "implemented",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, _FALLBACK_MODEL)",
+      "capabilities": ["text-to-video", "image-to-video"],
+      "reference_image_support": {"supported": true, "max_images": 2, "note": "1 image = single reference frame; 2 images = first/last frame (FIRST_AND_LAST_FRAMES_2_VIDEO generation type)"},
+      "first_frame_control": true,
+      "first_and_last_frame_control": true,
+      "aspect_ratios": ["16:9", "9:16", "Auto"],
+      "output_resolutions": ["1080p", "4K"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "string", "note": "Veo 3.1 clips are limited to 8 seconds per Kie quickstart FAQ"},
+      "audio": {"supported": true, "default_enabled": true, "note": "background audio included by default; upstream may suppress in sensitive cases"},
+      "callback_support": true,
+      "price": {
+        "unit": "usd_per_clip",
+        "amount": 0.40,
+        "currency": "USD",
+        "verified": true,
+        "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\" → \"Important pricing note\": \"Veo 3.1 Fast tier: $0.40\".",
+        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested."
+      },
+      "verified_date": "2026-07-14",
+      "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\""
+    },
+    {
+      "model_id": "kie-veo3-quality",
+      "provider": "kie",
+      "provider_model_slug": "veo3",
+      "status": "active",
+      "integration_status": "implemented",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, model=\"veo3\")",
+      "capabilities": ["text-to-video", "image-to-video"],
+      "reference_image_support": {"supported": true, "max_images": 2, "note": "1 image = single reference frame; 2 images = first/last frame (FIRST_AND_LAST_FRAMES_2_VIDEO generation type)"},
+      "first_frame_control": true,
+      "first_and_last_frame_control": true,
+      "aspect_ratios": ["16:9", "9:16", "Auto"],
+      "output_resolutions": ["1080p", "4K"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "string", "note": "Veo 3.1 clips are limited to 8 seconds per Kie quickstart FAQ"},
+      "audio": {"supported": true, "default_enabled": true, "note": "background audio included by default; upstream may suppress in sensitive cases"},
+      "callback_support": true,
+      "price": {
+        "unit": "usd_per_clip",
+        "amount": 2.00,
+        "currency": "USD",
+        "verified": true,
+        "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\" → \"Important pricing note\": \"Veo 3.1 Quality tier: $2.00\".",
+        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested. Requires explicit budget-cap approval per capability_tiers.premium_photoreal_override."
+      },
+      "verified_date": "2026-07-14",
+      "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\""
+    }
+  ],
+
+  "deprecated_models": []
+}

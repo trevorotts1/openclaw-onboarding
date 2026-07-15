@@ -1,0 +1,16 @@
+<!-- iframe-fragment.html — Skill 62 (Cinematic and Web Funnel Engine), U18.
+     Spec 14.2 "iframe HTML". The bare, embeddable iframe markup — no inline
+     script/style, so it can be dropped into a page that already loads
+     wrapper.css and parent-bridge.js as separate files instead of the
+     all-in-one host-snippet.html. -->
+<div id="cwfe-embed-root" class="cwfe-embed-root">
+  <iframe
+    id="cwfe-embed-iframe"
+    class="cwfe-embed-iframe"
+    src="__CWFE_IFRAME_SRC__"
+    title="__CWFE_IFRAME_TITLE__"
+    loading="lazy"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allow="clipboard-write"
+  ></iframe>
+</div>

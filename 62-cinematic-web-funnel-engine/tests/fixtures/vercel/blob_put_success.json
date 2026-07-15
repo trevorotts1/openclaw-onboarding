@@ -1,0 +1,7 @@
+{
+  "_fixture_note": "Mocked PUT https://blob.vercel-storage.com/{pathname} success response body. Field names (url/pathname/contentType/contentDisposition) verified against vercel.com/docs/vercel-blob/using-blob-sdk's documented put() return shape; the raw HTTP header names this repo's VercelBlobAdapter sends (authorization/x-api-version/x-content-type/x-cache-control-max-age/access) are cross-checked against the open-source reference client github.com/SuryaSekhar14/vercel_blob (vercel_blob/blob_store.py put()) — see scripts/deploy_vercel.py's module docstring for the full sourcing note. NOT a real Vercel response; no live/paid call was made to produce this file (spec 19.2).",
+  "url": "https://fixturestore.public.blob.vercel-storage.com/u17-fixture-project/hero-open/hero-open.mp4",
+  "pathname": "u17-fixture-project/hero-open/hero-open.mp4",
+  "contentType": "video/mp4",
+  "contentDisposition": "inline; filename=\"hero-open.mp4\""
+}
