@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T09:40:02Z
-openclaw-onboarding `origin/main` HEAD: `c8e87fd1f25465397e91141374eca549bbdbc103`
+Generated: 2026-07-15T09:50:01Z
+openclaw-onboarding `origin/main` HEAD: `f81017aa966430ec4fe715ef96ac33a681e7522f`
 blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553b11e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -56,24 +56,24 @@ blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `467ce609`
+- branch tip: `708f0255`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 21
+- commits ahead of that merge-base (cinematic-specific work so far): 32
+  - `708f0255` merge(skill-62): integrate U18 — GHL whole-page iframe embed package (spec 14.2) (QC 9.0)
+  - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
+  - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
+  - `9dafcc22` merge(skill-62): integrate U11 — concept board, anchor approval, scene-image generation flow (P6-P7) (QC 9.0)
+  - `855b659a` fix(skill-62): U16 QC — resolve ghl-form-embed URL at real server boundary, not inside GhlFormEmbed
+  - `1f773027` fix(skill-62): U16 QC — resolve @/components in vitest.config.ts for both raw template and materialized site
+  - `86f509d7` fix(skill-62): U16 QC — enforce outbound-host allowlist in conversion-webhook relay
+  - `60f4d085` feat(skill-62): U11 — concept board, anchor approval, scene-image generation flow (P6-P7)
+  - `087d8e7f` feat(skill-62): U16 — conversion tracking + GHL form/webhook wiring (P12)
+  - `405aad85` feat(skill-62): U18 — GHL whole-page iframe embed package (spec 14.2)
+  - `4efebc96` feat(skill-62): U14 — real seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10)
   - `467ce609` merge(skill-62): integrate U15 — Next.js/TypeScript template + first-party scroll-scrub engine (P11) (QC 9.0)
   - `63ca6177` merge(skill-62): integrate U10 — visual journey and scene planner (P4) (QC 9.0)
   - `32a13608` merge(skill-62): integrate U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring (QC 9.2)
   - `50659ed4` fix(skill-62): U15 QC — escape attribute values in sanitize_copy_fragment to close quote-breakout XSS
-  - `3cd85d42` feat(skill-62): U15 — Next.js/TypeScript template + first-party scroll-scrub engine (P11)
-  - `5ade2ad8` feat(skill-62): U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring
-  - `ce13d737` feat(skill-62): U10 — visual journey and scene planner (P4)
-  - `2173f7d0` feat(skill-62): U13 — FFmpeg boundary-frame extraction + scrub-media re-encode (P10)
-  - `fc62db5a` merge(skill-62): integrate U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover (QC 9.0)
-  - `a7750652` merge(skill-62): integrate U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json (QC 9.0)
-  - `b3964461` merge(skill-62): integrate U7 — budget estimate, paid-call approval, and the 8-precondition AF-CWFE-PAID-GATE (QC 9.0)
-  - `e37ad14a` feat(skill-62): U7 — budget estimate, paid-call approval, and the 8-precondition AF-CWFE-PAID-GATE
-  - `71be0e45` feat(skill-62): U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json
-  - `10656928` feat(skill-62): U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover
-  - `7bd5992d` merge(skill-62): integrate U6 — project/content/scene/cost/deployment schemas + state engine (QC 9.0)
 - merged into `origin/main`: False
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
