@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T12:50:01Z
-openclaw-onboarding `origin/main` HEAD: `937591fc18c21838bbf37383382ed6b03b771897`
+Generated: 2026-07-15T13:00:03Z
+openclaw-onboarding `origin/main` HEAD: `40a74fe959a21c47a179c56cf9d1f9af88e921a2`
 blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa9c400`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -66,9 +66,10 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `334e42ac`
+- branch tip: `ea4a2565`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 43
+- commits ahead of that merge-base (cinematic-specific work so far): 44
+  - `ea4a2565` feat(skill-62): U22 — client-facing registration wiring
   - `334e42ac` fix(skill-62): reconcile U21 boundary test with U20 integration (P16-CERTIFY now tracked)
   - `e8ecd2fe` merge(skill-62): integrate U21 — consolidated E2E + adversarial break-it test suite (tests/e2e/) (QC 9.0)
   - `bb276b5e` merge(skill-62): integrate U20 — deterministic prover aggregation + signed PROCESS-CERTIFICATE (P16) (QC 8.5)
@@ -83,7 +84,6 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
   - `708f0255` merge(skill-62): integrate U18 — GHL whole-page iframe embed package (spec 14.2) (QC 9.0)
   - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
   - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
-  - `9dafcc22` merge(skill-62): integrate U11 — concept board, anchor approval, scene-image generation flow (P6-P7) (QC 9.0)
 - merged into `origin/main`: False
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
@@ -95,6 +95,6 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U49, U101
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
