@@ -1,6 +1,6 @@
 "use client";
 
-import type { SiteData } from "./types";
+import type { GhlEmbedResolution, SiteData } from "./types";
 import { useScrollScrub } from "./useScrollScrub";
 import { SceneVideoLayer } from "./SceneVideoLayer";
 import { ReducedMotionFallback } from "./ReducedMotionFallback";
@@ -10,6 +10,11 @@ import styles from "./scroll-stage.module.css";
 
 export interface ScrollScrubEngineProps {
   siteData: SiteData;
+  /** Server-resolved `"ghl-form-embed"` URLs, forwarded straight through to
+   * `ConversionSections` — see `GhlFormEmbed.tsx` and
+   * `lib/resolve-ghl-embeds.ts` (build unit U16 QC fix). This entire
+   * component is `"use client"`, so it must never resolve these itself. */
+  resolvedEmbeds: Record<string, GhlEmbedResolution>;
 }
 
 const VH_PER_SCENE = 150;
@@ -22,7 +27,7 @@ const VH_PER_SCENE = 150;
  * may depend solely on animation" — the skip link lets any user, motion
  * preference aside, reach the offer immediately).
  */
-export function ScrollScrubEngine({ siteData }: ScrollScrubEngineProps) {
+export function ScrollScrubEngine({ siteData, resolvedEmbeds }: ScrollScrubEngineProps) {
   const { containerRef, registerVideoRef, blends, debugState, reducedMotion } = useScrollScrub(
     siteData.scenes,
   );
@@ -63,7 +68,11 @@ export function ScrollScrubEngine({ siteData }: ScrollScrubEngineProps) {
       )}
 
       <div id="cwfe-conversion-start" className={styles.conversionAnchor} />
-      <ConversionSections sections={siteData.sections} />
+      <ConversionSections
+        sections={siteData.sections}
+        ctaMap={siteData.ctaMap}
+        resolvedEmbeds={resolvedEmbeds}
+      />
 
       <EmbedBridge debugState={debugState} embed={siteData.embed} />
     </>

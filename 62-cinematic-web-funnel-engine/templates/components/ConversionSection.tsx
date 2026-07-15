@@ -1,8 +1,24 @@
-import type { CopySection } from "./types";
+"use client";
+
+import { useMemo, useRef } from "react";
+import type { CopySection, GhlEmbedResolution } from "./types";
+import { parseConversionMap } from "./conversion-map";
+import { ConversionCtaWiring } from "./ConversionCtaWiring";
+import { GhlFormEmbed } from "./GhlFormEmbed";
 import styles from "./scroll-stage.module.css";
 
 export interface ConversionSectionsProps {
   sections: CopySection[];
+  /** Raw `SiteData.ctaMap` — parsed once here via `parseConversionMap`
+   * (build unit U16, P12-CRM) so every conversion component downstream
+   * shares one validated, fail-closed source of truth. */
+  ctaMap: Record<string, unknown>;
+  /** Every `kind: "ghl-form-embed"` action's env var already resolved to a
+   * URL (or an explicit failure), computed server-side in
+   * `lib/resolve-ghl-embeds.ts` and passed down from the Server Component
+   * `app/page.tsx` (build unit U16 QC fix — see `GhlFormEmbed.tsx` for why
+   * this can't be resolved inside this, or any, Client Component). */
+  resolvedEmbeds: Record<string, GhlEmbedResolution>;
 }
 
 /**
@@ -28,10 +44,33 @@ export interface ConversionSectionsProps {
  * component never receives markup it hasn't already had adversarial content
  * removed from, even though the source fragments are locked/approved and
  * not runtime user input.
+ *
+ * Conversion layer (build unit U16, P12-CRM): `ctaMap` is validated once via
+ * `parseConversionMap` (fail-closed — a malformed entry never becomes a
+ * silently-working default). `ConversionCtaWiring` attaches GHL-webhook
+ * behavior to any `data-cwfe-cta` element already present inside the copy
+ * fragments above; any resolved `"ghl-form-embed"` action additionally gets
+ * its own real GHL-hosted widget rendered below the copy via `GhlFormEmbed`
+ * — reachable, complete, and animation-independent either way.
+ *
+ * `resolvedEmbeds` is NOT computed in this component (this file is
+ * `"use client"`, so it and everything it renders — including
+ * `GhlFormEmbed` — are Client Components under RSC rules; a dynamic
+ * `process.env[...]` lookup anywhere in this tree would silently resolve to
+ * `undefined` in the browser). It is resolved once, server-side, in
+ * `app/page.tsx` via `lib/resolve-ghl-embeds.ts`, and simply passed through
+ * here as already-safe, already-resolved data.
  */
-export function ConversionSections({ sections }: ConversionSectionsProps) {
+export function ConversionSections({ sections, ctaMap, resolvedEmbeds }: ConversionSectionsProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { actions, errors } = useMemo(() => parseConversionMap(ctaMap), [ctaMap]);
+  const embeddedActions = useMemo(
+    () => Object.entries(actions).filter(([, action]) => action.kind === "ghl-form-embed"),
+    [actions],
+  );
+
   return (
-    <div className={styles.conversionStack} data-cwfe-conversion-sections="true">
+    <div ref={containerRef} className={styles.conversionStack} data-cwfe-conversion-sections="true">
       {sections.map((section) => (
         <section
           key={section.id}
@@ -40,6 +79,28 @@ export function ConversionSections({ sections }: ConversionSectionsProps) {
           dangerouslySetInnerHTML={{ __html: section.html }}
         />
       ))}
+
+      {embeddedActions.length > 0 && (
+        <div className={styles.conversionEmbeds} data-cwfe-conversion-embeds="true">
+          {embeddedActions.map(([ctaId]) => (
+            <GhlFormEmbed key={ctaId} ctaId={ctaId} resolution={resolvedEmbeds[ctaId]} />
+          ))}
+        </div>
+      )}
+
+      {errors.length > 0 &&
+        errors.map((error) => (
+          <p
+            key={error.ctaId}
+            className={styles.conversionErrorMessage}
+            data-cwfe-conversion-map-error={error.ctaId}
+            hidden
+          >
+            {error.ctaId}: {error.reason}
+          </p>
+        ))}
+
+      <ConversionCtaWiring containerRef={containerRef} actions={actions} />
     </div>
   );
 }
