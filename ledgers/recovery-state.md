@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T17:00:02Z
-openclaw-onboarding `origin/main` HEAD: `a3e8b7f3461c79137f4de8c8370296fb1e3fa96b`
+Generated: 2026-07-15T17:10:03Z
+openclaw-onboarding `origin/main` HEAD: `d82b07115b9e925e036bf4b004e4c8fcc0886421`
 blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -72,24 +72,10 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
 - branch tip: `ea4a2565`
-- merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 44
-  - `ea4a2565` feat(skill-62): U22 — client-facing registration wiring
-  - `334e42ac` fix(skill-62): reconcile U21 boundary test with U20 integration (P16-CERTIFY now tracked)
-  - `e8ecd2fe` merge(skill-62): integrate U21 — consolidated E2E + adversarial break-it test suite (tests/e2e/) (QC 9.0)
-  - `bb276b5e` merge(skill-62): integrate U20 — deterministic prover aggregation + signed PROCESS-CERTIFICATE (P16) (QC 8.5)
-  - `a8a38acf` feat(skill-62): U21 — consolidated E2E + adversarial break-it test suite (tests/e2e/)
-  - `6a89bcf4` feat(skill-62): U20 — deterministic prover aggregation + signed PROCESS-CERTIFICATE (P16)
-  - `bfeb0ac4` merge(skill-62): integrate U17 — Vercel deployment adapter + Blob storage adapter (P14-P15) (QC 9.0)
-  - `48906c06` merge(skill-62): integrate U19 — headless browser QC gate (a11y/mobile/reduced-motion/perf, P13)
-  - `c55b78c2` merge(skill-62): integrate U12 — draft/final scene+connector video generation + task recovery (P8-P9) (QC 9.0)
-  - `6057b8a0` feat(skill-62): U12 — draft/final scene+connector video generation + task recovery (P8-P9)
-  - `513aef0c` feat(skill-62): U19 — headless browser QC gate (a11y/mobile/reduced-motion/perf, P13)
-  - `e45b3403` feat(skill-62): U17 — Vercel deployment adapter + Blob storage adapter (P14-P15)
-  - `708f0255` merge(skill-62): integrate U18 — GHL whole-page iframe embed package (spec 14.2) (QC 9.0)
-  - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
-  - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
-- merged into `origin/main`: False
+- merge-base with `origin/main`: `ea4a2565`
+- commits ahead of that merge-base (cinematic-specific work so far): 0
+- merged into `origin/main`: True
+- merge commit: `2a8365a2`, nearest tag: v20.0.41
 - **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `fa479da6` is 3 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
