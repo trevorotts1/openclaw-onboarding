@@ -5,11 +5,13 @@ import { useConversionTracking } from "./useConversionTracking";
 import styles from "./scroll-stage.module.css";
 
 /**
- * GhlFormEmbedFrame.tsx — the client half of the "ghl-form-embed" conversion
- * kind (build unit U16, P12-CRM). The server half (`GhlFormEmbed.tsx`)
- * resolves the actual embed URL from an env var by name; this component
- * only ever receives the final, already-resolved, non-secret URL string as
- * a prop — it never touches `process.env` itself.
+ * GhlFormEmbedFrame.tsx — the interactive half of the "ghl-form-embed"
+ * conversion kind (build unit U16, P12-CRM). The actual embed URL is
+ * resolved from an env var by name in `lib/resolve-ghl-embeds.ts`, called
+ * only from the Server Component `app/page.tsx` and threaded down through
+ * `GhlFormEmbed.tsx`; this component only ever receives the final,
+ * already-resolved, non-secret URL string as a prop — it never touches
+ * `process.env` itself.
  *
  * Auto-resize listens for a `postMessage({height})` from the embedded GHL
  * widget (the common pattern GHL/LeadConnector hosted forms use) and

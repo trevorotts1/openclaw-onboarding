@@ -103,11 +103,16 @@ export interface ConversionAction {
   /**
    * Required when kind === "ghl-form-embed". The NAME (never the value) of
    * a server-resolved env var holding the client's GHL-hosted form or
-   * calendar widget embed URL. Resolved only inside the Server Component
-   * `GhlFormEmbed`, never inlined into the client bundle as a literal
-   * `NEXT_PUBLIC_*` access (Next.js only statically replaces literal
-   * `process.env.NEXT_PUBLIC_X` member expressions in client code, not a
-   * computed/dynamic lookup — so this must stay server-side by design).
+   * calendar widget embed URL. Resolved only inside `lib/resolve-ghl-embeds.ts`,
+   * called only from the Server Component `app/page.tsx`, and threaded down
+   * as an already-resolved `GhlEmbedResolution` prop — never inlined into
+   * the client bundle as a literal `NEXT_PUBLIC_*` access (Next.js only
+   * statically replaces literal `process.env.NEXT_PUBLIC_X` member
+   * expressions in client code, not a computed/dynamic lookup — so this
+   * must be resolved at a real server boundary, not merely inside a
+   * component file that lacks a `"use client"` directive of its own; a
+   * Client Component parent still forces its children into the client
+   * bundle under RSC rules).
    */
   embedUrlEnvVar?: string;
   /**
@@ -140,6 +145,22 @@ export interface ConversionMapError {
   ctaId: string;
   reason: string;
 }
+
+/**
+ * The result of resolving one `kind: "ghl-form-embed"` action's
+ * `embedUrlEnvVar` to an actual URL. Computed ONLY in `lib/resolve-ghl-embeds.ts`,
+ * which is imported ONLY from the Server Component `app/page.tsx` — the one
+ * real server/client boundary in this tree (build unit U16 QC fix,
+ * P12-CRM). `GhlFormEmbed` receives this as a plain prop; by the time it
+ * crosses the RSC boundary it is an already-resolved, non-secret value
+ * (or `ok: false`), never a `process.env` access itself, so it renders
+ * correctly regardless of which components between the two are Client
+ * Components. See `resolve-ghl-embeds.ts` for why this can no longer live
+ * inside `GhlFormEmbed.tsx` (that component's nearest parents all declare
+ * `"use client"`, which makes it a Client Component too under RSC rules —
+ * a dynamic `process.env[name]` lookup there silently resolves to
+ * `undefined` in the browser instead of failing loudly on the server). */
+export type GhlEmbedResolution = { ok: true; label: string; url: string } | { ok: false; label: string };
 
 /** Deterministic debug state the conversion tracking hook writes to
  * `window.__cwfeConversionDebug` (mirrors `ScrollDebugState` above) so

@@ -8,9 +8,9 @@
  * or partially trusts a malformed entry. A `ctaMap[id]` that isn't a
  * complete, well-typed `ConversionAction` is DROPPED from the returned
  * `actions` map and recorded in `errors` instead — callers (ConversionSection,
- * GhlFormEmbed, ConversionCtaWiring, the /api/conversion-event route) must
- * treat an id missing from `actions` as "not configured" and refuse to act,
- * never as "no requirement" or "skip validation".
+ * resolve-ghl-embeds, ConversionCtaWiring, the /api/conversion-event route)
+ * must treat an id missing from `actions` as "not configured" and refuse to
+ * act, never as "no requirement" or "skip validation".
  *
  * This module has no side effects and touches no network/env/DOM, so it is
  * safe to import from both server and client components, and from the

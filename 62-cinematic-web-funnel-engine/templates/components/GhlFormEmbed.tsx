@@ -1,4 +1,4 @@
-import type { ConversionAction } from "./types";
+import type { GhlEmbedResolution } from "./types";
 import { GhlFormEmbedFrame } from "./GhlFormEmbedFrame";
 import styles from "./scroll-stage.module.css";
 
@@ -9,24 +9,32 @@ import styles from "./scroll-stage.module.css";
  * grows its own GHL build client, Skill 6 already provisions the widget
  * this component only embeds it).
  *
- * DELIBERATELY a Server Component (no "use client" directive): resolving
- * `process.env[action.embedUrlEnvVar]` requires a DYNAMIC key lookup, which
- * only works correctly on the server. Next.js's client-bundle inliner only
- * replaces LITERAL `process.env.NEXT_PUBLIC_X` member expressions — a
- * computed/dynamic access in client code would silently evaluate to
- * `undefined` at runtime instead of failing loudly at build/request time,
- * which is exactly the "looks wired but isn't" failure mode the directive's
- * fail-closed requirement rules out. Resolving here means a missing/invalid
- * env var is caught on every request, server-side, before anything renders.
+ * Purely presentational (build unit U16 QC fix): this component NEVER reads
+ * `process.env` itself. It used to, guarded only by having no `"use client"`
+ * directive of its own — but under React Server Component rules a
+ * component's actual render boundary is decided by its nearest ancestor's
+ * `"use client"`, not its own file, and every caller on the path from here
+ * to the page (`ConversionSection.tsx`, `ScrollScrubEngine.tsx`) is a
+ * Client Component. That silently pulled the dynamic
+ * `process.env[action.embedUrlEnvVar]` lookup into the browser bundle,
+ * where it always resolves to `undefined`.
+ *
+ * The real env-var resolution now happens in `lib/resolve-ghl-embeds.ts`,
+ * called only from the Server Component `app/page.tsx`, and is threaded
+ * down through props as an already-resolved `GhlEmbedResolution` — this
+ * component only ever sees the final URL (or an explicit failure), never a
+ * secret name or a guessed fallback.
  *
  * Fail-closed: any resolution failure (wrong action kind, unset env var,
  * malformed URL) renders an explicit, visibly-marked unavailable message —
- * never a broken iframe, never a guessed fallback URL.
+ * never a broken iframe, never a guessed fallback URL. A missing
+ * `resolution` prop (a ctaId the caller never resolved) fails closed the
+ * same way as an explicit `{ ok: false }`.
  */
 
 export interface GhlFormEmbedProps {
   ctaId: string;
-  action: ConversionAction;
+  resolution: GhlEmbedResolution | undefined;
 }
 
 function unavailable(ctaId: string, label: string) {
@@ -41,32 +49,20 @@ function unavailable(ctaId: string, label: string) {
   );
 }
 
-export function GhlFormEmbed({ ctaId, action }: GhlFormEmbedProps) {
-  if (action.kind !== "ghl-form-embed" || !action.embedUrlEnvVar) {
+export function GhlFormEmbed({ ctaId, resolution }: GhlFormEmbedProps) {
+  if (!resolution) {
     // Operator diagnostic only; no secret value included.
-    console.error(`[cwfe-conversion] "${ctaId}" passed to GhlFormEmbed with kind "${action.kind}"`);
-    return unavailable(ctaId, action.label);
+    console.error(`[cwfe-conversion] "${ctaId}": no resolved GHL embed for this cta id`);
+    return unavailable(ctaId, ctaId);
   }
 
-  const embedUrl = process.env[action.embedUrlEnvVar];
-  if (!embedUrl || embedUrl.trim().length === 0) {
-    // Logs the env VAR NAME only, never a value (spec Section 20).
-    console.error(`[cwfe-conversion] "${ctaId}": env var "${action.embedUrlEnvVar}" is not set`);
-    return unavailable(ctaId, action.label);
-  }
-
-  let validUrl: string;
-  try {
-    validUrl = new URL(embedUrl).toString();
-  } catch {
-    // Logs the env VAR NAME only, never its (malformed) value.
-    console.error(`[cwfe-conversion] "${ctaId}": env var "${action.embedUrlEnvVar}" is not a valid URL`);
-    return unavailable(ctaId, action.label);
+  if (!resolution.ok) {
+    return unavailable(ctaId, resolution.label);
   }
 
   return (
     <div className={styles.conversionEmbedWrapper} data-cwfe-cta={ctaId}>
-      <GhlFormEmbedFrame ctaId={ctaId} src={validUrl} title={action.label} />
+      <GhlFormEmbedFrame ctaId={ctaId} src={resolution.url} title={resolution.label} />
     </div>
   );
 }

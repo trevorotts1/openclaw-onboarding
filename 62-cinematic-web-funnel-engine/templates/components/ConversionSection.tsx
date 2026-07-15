@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import type { CopySection } from "./types";
+import type { CopySection, GhlEmbedResolution } from "./types";
 import { parseConversionMap } from "./conversion-map";
 import { ConversionCtaWiring } from "./ConversionCtaWiring";
 import { GhlFormEmbed } from "./GhlFormEmbed";
@@ -13,6 +13,12 @@ export interface ConversionSectionsProps {
    * (build unit U16, P12-CRM) so every conversion component downstream
    * shares one validated, fail-closed source of truth. */
   ctaMap: Record<string, unknown>;
+  /** Every `kind: "ghl-form-embed"` action's env var already resolved to a
+   * URL (or an explicit failure), computed server-side in
+   * `lib/resolve-ghl-embeds.ts` and passed down from the Server Component
+   * `app/page.tsx` (build unit U16 QC fix — see `GhlFormEmbed.tsx` for why
+   * this can't be resolved inside this, or any, Client Component). */
+  resolvedEmbeds: Record<string, GhlEmbedResolution>;
 }
 
 /**
@@ -46,8 +52,16 @@ export interface ConversionSectionsProps {
  * fragments above; any resolved `"ghl-form-embed"` action additionally gets
  * its own real GHL-hosted widget rendered below the copy via `GhlFormEmbed`
  * — reachable, complete, and animation-independent either way.
+ *
+ * `resolvedEmbeds` is NOT computed in this component (this file is
+ * `"use client"`, so it and everything it renders — including
+ * `GhlFormEmbed` — are Client Components under RSC rules; a dynamic
+ * `process.env[...]` lookup anywhere in this tree would silently resolve to
+ * `undefined` in the browser). It is resolved once, server-side, in
+ * `app/page.tsx` via `lib/resolve-ghl-embeds.ts`, and simply passed through
+ * here as already-safe, already-resolved data.
  */
-export function ConversionSections({ sections, ctaMap }: ConversionSectionsProps) {
+export function ConversionSections({ sections, ctaMap, resolvedEmbeds }: ConversionSectionsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { actions, errors } = useMemo(() => parseConversionMap(ctaMap), [ctaMap]);
   const embeddedActions = useMemo(
@@ -68,8 +82,8 @@ export function ConversionSections({ sections, ctaMap }: ConversionSectionsProps
 
       {embeddedActions.length > 0 && (
         <div className={styles.conversionEmbeds} data-cwfe-conversion-embeds="true">
-          {embeddedActions.map(([ctaId, action]) => (
-            <GhlFormEmbed key={ctaId} ctaId={ctaId} action={action} />
+          {embeddedActions.map(([ctaId]) => (
+            <GhlFormEmbed key={ctaId} ctaId={ctaId} resolution={resolvedEmbeds[ctaId]} />
           ))}
         </div>
       )}

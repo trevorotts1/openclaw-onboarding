@@ -30,9 +30,10 @@ import styles from "./scroll-stage.module.css";
  *     `/api/conversion-event` server-side (this component never trusts its
  *     own validation to be the only gate);
  *   - `kind: "ghl-form-embed"` entries are never wired here (that kind is
- *     rendered by the dedicated `<GhlFormEmbed>` server component) — a bare
- *     element referencing one is treated as a misconfiguration, not
- *     silently ignored.
+ *     rendered by the dedicated `<GhlFormEmbed>` component, whose embed URL
+ *     is resolved server-side in `app/page.tsx`/`lib/resolve-ghl-embeds.ts`)
+ *     — a bare element referencing one is treated as a misconfiguration,
+ *     not silently ignored.
  */
 
 export interface ConversionCtaWiringProps {
