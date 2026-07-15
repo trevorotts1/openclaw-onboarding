@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T18:00:02Z
-openclaw-onboarding `origin/main` HEAD: `372cbc55db67efa9c07d586f966b5d837a405c1a`
+Generated: 2026-07-15T18:10:02Z
+openclaw-onboarding `origin/main` HEAD: `ece619cffba4448cf4013a9e64f0239112dd9e78`
 blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -33,6 +33,9 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | False | - | - | pending | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
+| U82 | `skill6-v2/U82` | `2e349833` | False | - | - | pending | - |
+| U83 | `skill6-v2/U83` | `cd6e51b0` | False | - | - | pending | - |
+| U85 | `skill6-v2/U85` | `fe21fdb6` | False | - | - | pending | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
