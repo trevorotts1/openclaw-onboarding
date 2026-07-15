@@ -307,6 +307,34 @@ class TestHistoryCarveout(unittest.TestCase):
         res = _run_guard(self.repo)
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
 
+    def test_version_marker_only_roll_of_historical_term_line_passes(self):
+        """U92 producer-fix regression: a pre-existing term-bearing doc line
+        whose ONLY change vs history is an inline version marker being rolled
+        (exactly what scripts/bump-version.sh does to a historical
+        '**NOTE (vX.Y.Z)**' README release line during the version-bump ripple)
+        is NOT new writing — carve-out (a) masks dotted version tokens on both
+        sides before comparing, so it PASSES. Without the mask this line is
+        byte-different from history and was flagged (the bug this unit fixed:
+        its own guard went RED on README.md:20/README.md:22 under the bump)."""
+        historical = (
+            f"> **NOTE (v20.0.39) - chore(release): the old {TERM} probe "
+            f"shipped in the v17.0.26 train, tag pushed before the PR.**"
+        )
+        _write(self.repo, "README.md", f"# Title\n\n{historical}\n")
+        _commit(self.repo, "base carries the term-bearing NOTE line at v20.0.39")
+
+        # A version bump rolls BOTH the (v20.0.39) marker and the inline v17.0.26
+        # citation; nothing else on the line changes.
+        rolled = (
+            f"> **NOTE (v20.0.40) - chore(release): the old {TERM} probe "
+            f"shipped in the v17.0.26 train, tag pushed before the PR.**"
+        )
+        _write(self.repo, "README.md", f"# Title\n\n{rolled}\n")
+        _commit(self.repo, "version bump rolls the inline markers on the historical line")
+
+        res = _run_guard(self.repo)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
 
 class TestCLIWiring(unittest.TestCase):
     def setUp(self):

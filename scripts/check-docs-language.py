@@ -28,7 +28,19 @@ ALLOWLIST (scripts/docs-language-allowlist.json), three carve-outs:
                            resurfacing because a file was moved, split, or
                            a paragraph above it was reflowed is not NEW
                            writing, even though the diff algorithm marks it
-                           as an added line.
+                           as an added line. Version-marker tolerance: dotted
+                           version tokens (v?X.Y.Z) are masked on BOTH the
+                           added line and the historical-corpus lines before
+                           this byte-identity comparison, so a pre-existing
+                           term-bearing line that a protocol version bump
+                           rewrites IN PLACE (only its inline vX.Y.Z marker
+                           changes — e.g. scripts/bump-version.sh rolling a
+                           historical "**NOTE (vX.Y.Z)**" release line) is
+                           still recognized as that same historical line, not
+                           mistaken for fresh writing. This never weakens real
+                           detection: genuinely new prose differs from every
+                           historical line by more than a version number, so
+                           masking can never make it collide with history.
   (b) vendor_literals    — literal, third-party-owned strings (e.g. an npm
                            pre-release distribution tag) that legitimately
                            contain the term. Subtracted from the line
@@ -64,6 +76,24 @@ DEFAULT_ALLOWLIST = Path(__file__).resolve().parent / "docs-language-allowlist.j
 _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+
+# A dotted version token (vX.Y.Z or X.Y.Z). Masked to a single sentinel on BOTH
+# the added line and the historical-corpus lines before the carve-out (a)
+# byte-identity comparison, so a pre-existing term-bearing doc line whose ONLY
+# change vs history is an inline version marker being rolled (e.g.
+# scripts/bump-version.sh advancing a historical "**NOTE (vX.Y.Z)**" release
+# line in README.md during a version bump) is still matched to that historical
+# line instead of being flagged as new writing. See carve-out (a) in the module
+# docstring. Deliberately not weakening: masking only ever collapses a
+# version-number-only delta, which by definition is not new prose.
+_VERSION_TOKEN_RE = re.compile(r"v?\d+\.\d+\.\d+", re.IGNORECASE)
+_VERSION_MASK = "\x00VER\x00"
+
+
+def mask_versions(line: str) -> str:
+    """Replace every dotted version token on `line` with a fixed sentinel, so
+    two lines that differ ONLY by version numbers compare equal."""
+    return _VERSION_TOKEN_RE.sub(_VERSION_MASK, line)
 
 
 class Occurrence(NamedTuple):
@@ -269,7 +299,9 @@ def build_historical_term_lines(base_ref: str, cwd: Path, doc_globs: Iterable[st
             continue
         for ln in show.stdout.splitlines():
             if allowlist.term_re.search(ln):
-                lines.add(ln.strip())
+                # Store the version-masked form so carve-out (a) tolerates an
+                # in-place version-marker roll of a pre-existing term line.
+                lines.add(mask_versions(ln.strip()))
     return lines
 
 
@@ -295,8 +327,9 @@ def scan(cwd: Path, base_ref_arg: str | None, allowlist_path: Path,
     for path, line_no, text in iter_added_lines(base_ref, cwd, changed):
         if not allowlist.term_re.search(text):
             continue
-        if text.strip() in historical:
+        if mask_versions(text.strip()) in historical:
             continue  # carve-out (a): not truly new, already in history
+            #          (version-marker-only roll of a historical line included)
         if allowlist.uncovered_matches(text):
             findings.append(Occurrence(path, line_no, text))
 
