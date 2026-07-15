@@ -1,0 +1,14 @@
+{
+  "_fixture_note": "Mocked 46-kie-callback-relay Worker GET /kv-read response shape (worker/src/index.js handleKvRead). submitId/taskId below are PLACEHOLDERS -- test_providers_kie.py overwrites them to match the submitId/task_id under test before use. perTaskSecretHmac is intentionally ABSENT from the response body (fix C: the Worker strips it before returning). NOT a real Worker response; no live call was made to produce this file.",
+  "found": true,
+  "result": {
+    "taskId": "PLACEHOLDER-TASK-ID",
+    "clientSlug": "fixture-client",
+    "submitId": "PLACEHOLDER-SUBMIT-ID",
+    "code": 200,
+    "msg": "success",
+    "resultUrls": ["https://tempfile.aiquickdraw.com/s/fixture-callback-result.mp4"],
+    "rawData": {"taskId": "PLACEHOLDER-TASK-ID"},
+    "receivedAt": "2026-07-15T12:00:00.000Z"
+  }
+}

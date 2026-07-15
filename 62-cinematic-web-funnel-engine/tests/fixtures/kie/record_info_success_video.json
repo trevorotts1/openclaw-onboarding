@@ -1,0 +1,10 @@
+{
+  "_fixture_note": "Mocked Kie.ai GET /api/v1/jobs/recordInfo success response for a video task. resultJson is a JSON-ENCODED STRING exactly as Kie returns it in production (the v14.1.2 fix this repo already carries in kie_video.py/kie_image.py) -- NOT an already-parsed object. NOT a real Kie response; no live/paid call was made to produce this file.",
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "fixture-task-seedance-frame-pin-0001",
+    "state": "success",
+    "resultJson": "{\"resultUrls\":[\"https://tempfile.aiquickdraw.com/s/fixture-seedance-connector-clip.mp4\"]}"
+  }
+}

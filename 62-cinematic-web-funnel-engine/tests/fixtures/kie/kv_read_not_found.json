@@ -1,0 +1,4 @@
+{
+  "_fixture_note": "Mocked 46-kie-callback-relay Worker GET /kv-read not-yet-available response shape (worker/src/index.js handleKvRead, empty KV lookup). NOT a real Worker response; no live call was made to produce this file.",
+  "found": false
+}
