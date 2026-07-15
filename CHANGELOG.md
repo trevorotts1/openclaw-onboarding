@@ -1,3 +1,13 @@
+## [v20.0.30]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U24/B-U10: execute D6, prove + schedule the GitHub archival rail (QC 9.0)
+
+v20.0.30 — Merges `skill6-v2/U24` (master unit U24, Section B id B-U10) of the Skill 6 Blended-Persona Kanban v2 build. Second unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
+
+- **Feature:** proves and schedules the previously-shipped GHL page GitHub archival rail — `06-ghl-install-pages/tools/ghl_archive_receipt_gate.py` (new, receipt-presence gate, never logs a token value), `ghl_github_archive.py` gains an async detached-spawn archive path, `ghl_github_reconcile.py` gains byte-match local-repo verification, and a new maintenance-schedule cron installer (`install-github-archive-reconcile-cron.sh` + `skill6-github-archive-reconcile-sweep.cron.json`) registers the periodic reconcile sweep.
+- **Re-land note:** this branch's first commit (`fd47921a`) was re-landed (`fc9e636e`) against the amended offline CODE-MERGE gate (operator ruling D6, 2026-07-15) per this ledger's own build-state tracking.
+- Test proof re-run independently on the merged tree: `test_ghl_archive_receipt_gate.py` 16/16 PASS, `test_ghl_github_archive.py` 30/30 PASS, `test_ghl_github_reconcile.py` 30/30 PASS, `test_github_archive_maintenance_schedule.py` 9/9 PASS (85/85 total via `pytest`).
+- Ledger: `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` U24 row set to `verified`.
+- No client names, no secret values, no box identifiers (token presence is checked, never a value logged — proven by `test_json_output_includes_token_presence_never_a_value`). No Anthropic model added/removed/substituted.
+
 ## [v20.0.29]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U8: book-to-persona embeddings wiring, root-cause bare-CI platform-detection fix (QC 8.9)
 
 v20.0.29 — Merges `skill6-v2/U8` (master unit U8, Section A.10 id A-U8) of the Skill 6 Blended-Persona Kanban v2 build (`ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md`), master spec v2 section A.8. First unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
