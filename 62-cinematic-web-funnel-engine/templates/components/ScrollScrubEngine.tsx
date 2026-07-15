@@ -63,7 +63,7 @@ export function ScrollScrubEngine({ siteData }: ScrollScrubEngineProps) {
       )}
 
       <div id="cwfe-conversion-start" className={styles.conversionAnchor} />
-      <ConversionSections sections={siteData.sections} />
+      <ConversionSections sections={siteData.sections} ctaMap={siteData.ctaMap} />
 
       <EmbedBridge debugState={debugState} embed={siteData.embed} />
     </>

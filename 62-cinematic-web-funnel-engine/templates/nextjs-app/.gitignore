@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# .env.example documents required env var NAMES only (no values) — see
+# components/GhlFormEmbed.tsx / app/api/conversion-event/route.ts.
+!.env.example
 
 # vercel
 .vercel

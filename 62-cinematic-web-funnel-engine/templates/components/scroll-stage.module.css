@@ -106,3 +106,37 @@
     transition: none;
   }
 }
+
+/*
+ * Conversion layer (build unit U16, P12-CRM). Always rendered in normal
+ * document flow, after the cinematic stage, in BOTH the motion and
+ * reduced-motion layouts — no conversion element ever depends on animation
+ * (spec 13.3).
+ */
+.conversionEmbeds {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.conversionEmbedWrapper {
+  width: 100%;
+}
+
+.conversionEmbedFrame {
+  display: block;
+  width: 100%;
+  border: 0;
+  min-height: 200px;
+}
+
+.conversionErrorMessage {
+  color: #b00020;
+  font-weight: 600;
+}
+
+.conversionSuccessMessage {
+  color: #0a6b2f;
+  font-weight: 600;
+}
