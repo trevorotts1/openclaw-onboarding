@@ -274,7 +274,7 @@ def resolve_authenticated_owner(token: str, *, requester: Requester | None = Non
     """GET /user -> login. Used as the default repo owner when the caller
     does not pass ``repo_owner`` explicitly."""
     _req = requester if requester is not None else _http_request
-    status, resp = _req("GET", f"{GITHUB_API_ORIGIN}/user", None, token)
+    status, resp = _req("GET", f"{GITHUB_API_ORIGIN}/user", None, token=token)
     if status != 200 or not isinstance(resp, dict) or not resp.get("login"):
         raise GithubArchiveError(f"GET /user failed (status={status}): {resp}")
     return resp["login"]
@@ -293,7 +293,7 @@ def ensure_repo(owner: str, name: str, token: str, *,
     an unrelated repo.
     """
     _req = requester if requester is not None else _http_request
-    status, resp = _req("GET", f"{GITHUB_API_ORIGIN}/repos/{owner}/{name}", None, token)
+    status, resp = _req("GET", f"{GITHUB_API_ORIGIN}/repos/{owner}/{name}", None, token=token)
     if status == 200:
         return resp, False
     if status != 404:
@@ -306,7 +306,7 @@ def ensure_repo(owner: str, name: str, token: str, *,
         "POST", f"{GITHUB_API_ORIGIN}/user/repos",
         {"name": name, "private": private, "description": description,
          "auto_init": False},
-        token,
+        token=token,
     )
     if status not in (200, 201):
         raise GithubArchiveError(f"POST /user/repos ({name}) failed (status={status}): {resp}")
@@ -322,7 +322,7 @@ def put_file(owner: str, repo: str, path: str, content_bytes: bytes, message: st
     contents_url = f"{GITHUB_API_ORIGIN}/repos/{owner}/{repo}/contents/{urllib.parse.quote(path)}"
 
     sha = None
-    status, resp = _req("GET", f"{contents_url}?ref={urllib.parse.quote(branch)}", None, token)
+    status, resp = _req("GET", f"{contents_url}?ref={urllib.parse.quote(branch)}", None, token=token)
     if status == 200 and isinstance(resp, dict):
         sha = resp.get("sha")
     elif status not in (404,):
@@ -336,7 +336,7 @@ def put_file(owner: str, repo: str, path: str, content_bytes: bytes, message: st
     if sha:
         body["sha"] = sha
 
-    status, resp = _req("PUT", contents_url, body, token)
+    status, resp = _req("PUT", contents_url, body, token=token)
     if status not in (200, 201):
         raise GithubArchiveError(f"PUT contents/{path} failed (status={status}): {resp}")
     return resp
