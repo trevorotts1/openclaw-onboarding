@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.39.
+> **Version:** see `/version` - this repo at v20.0.40.
 >
 > **NOTE (v20.0.39) - feat(podcast): Podcast Production Engine (Skill 58) capstone.** Lands the new **58-podcast-production-engine** skill: a per-client engine that turns ONE podcast intake survey into ONE fully produced, published episode end to end (OpenClaw inbound webhook intake, Research Assistant stage, script in the client's Style Engine and Production Mode, Fish Audio **s2.1-pro** render with the client's OWN `reference_id` and the free tier forbidden, Kie.ai GPT-image cover art, Episode Package + Speech Script documents, Podbean publish, and the Convert and Flow custom-field write-back via **Skill 44 caf + Skill 29 REST**, never MCP in the pipeline). It **wires into the EXISTING `podcast` department** (universal floor), never duplicated, with persona pickup by `sessionKey` and kanban placement via the state ledger; the `podcast` owning-role "Skills You Operate" blocks, the department DEPT_SKILLS guide, and the `SKILL_INTENT_ROUTING_REFLEX_V1` catalog are all stamped from the ONE map (client-facing skills now **26**). **TWO SEPARATE QC gates**: the 8.5 build rubric, and the 16-Tier1 + rubric>=8 + three-strike EPISODE gate. Runtime content runs on CLIENT providers only, **never Anthropic** (`guard-no-anthropic-runtime.py` hard-fails any Anthropic id): Ollama Cloud Kimi 2.6, then GLM 5.2, then OpenRouter, then Gemini 3.1 Flash Lite (high reasoning reserved for the primary Ollama Cloud lane). Per-client Cloudflare dashboard + hooks provisioning with a full revocation runbook and furnace-bounded daily spend; all operator paths, emails, and Cloudflare account/zone ids are environment-driven placeholders (no operator PII ships). Integrated via the serial merge train (31 slice branches off `feat/podcast-engine-v18-base`). Repo-only; fleet fan-out HELD. No client names. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -89,7 +89,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.39** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.40** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
