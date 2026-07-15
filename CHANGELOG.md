@@ -1,3 +1,12 @@
+## [v20.0.42]  -  2026-07-15  -  Ollama Cloud routing doctrine: baseUrl gains the `/v1` OpenAI-completions suffix (docs + selector comment)
+
+v20.0.42 — Fixes the Tier-1 Ollama Cloud `baseUrl` recorded in the model-routing doctrine so it carries the `/v1` OpenAI-completions path. `https://ollama.com` (no `/v1`) points the OpenAI-completions client at the marketing HTML site, which returns non-JSON and silently fails the turn; `https://ollama.com/v1` is the correct OpenAI-compatible chat-completions base.
+
+- **Fix (`docs/MODEL-ROUTING.md`):** Universal Fallback Order table, Tier 1 — Ollama Cloud row — `baseUrl=https://ollama.com` -> `baseUrl=https://ollama.com/v1`.
+- **Fix (`shared-utils/select_model.py`):** PREFERENCE CASCADE comment, TIER 1 line — `(baseUrl https://ollama.com)` -> `(baseUrl https://ollama.com/v1)`. The edit is inside a comment block; no selector logic changed.
+- **Deliberately left unchanged:** the native `ollama` provider standard in `docs/OLLAMA-PROVIDER-BY-PLATFORM.md` and its enforcer `scripts/qc-assert-ollama-provider-platform.sh` use `api: "ollama"` (the native Ollama client, not the OpenAI-completions client), for which `https://ollama.com` with no `/v1` is correct. No provider config template hardcodes an OpenAI-completions ollama-cloud baseUrl. No live box runtime config touched — repo source only.
+- **Ripple:** `scripts/bump-version.sh v20.0.42` rolled all 11 tracked repo version markers v20.0.41 -> v20.0.42 plus the repo-lockstepped Skill-06 browser-manager/reaper/guard version strings and the 06/23 skill-version.txt files. Annotated tag `v20.0.42` (`git tag -a`; `git cat-file -t` == `tag`). No client names, no secret values, no Anthropic models added/removed/substituted.
+
 ## [v20.0.41]  -  2026-07-15  -  Skill 62: Cinematic and Web Funnel Engine — new client-facing engine (U1–U23, ONB)
 
 v20.0.41 — Merges `skill62/cinematic-engine` (the engine-build-QC'd Cinematic and Web Funnel Engine, build units U1–U23) as the new skill **62-cinematic-web-funnel-engine**. The engine turns ONE intake brief into a deployed, conversion-capable, scroll-controlled website/funnel whose visual story is AI-generated, driven by a deterministic P0–P16 fail-closed phase spine.

@@ -18,7 +18,7 @@ Three tiers, strict priority — every role, every rung, no exceptions:
 
 | Tier | Provider | Condition |
 |---|---|---|
-| **1 — Ollama Cloud** | `:cloud` suffix; `baseUrl=https://ollama.com`; client's own `id_ed25519` device key | Always attempt first |
+| **1 — Ollama Cloud** | `:cloud` suffix; `baseUrl=https://ollama.com/v1`; client's own `id_ed25519` device key | Always attempt first |
 | **2 — OpenRouter equivalent** | Same model family, OpenRouter open-weight route | Only if Ollama Cloud fails (capacity / key absent / ECONNREFUSED) |
 | **Last — OpenRouter `google/gemini-3.5-flash`** | OpenRouter; no probe gate | Appended to every ladder; fires only when both Tier 1 and Tier 2 fail and credits are live |
 
