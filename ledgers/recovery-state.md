@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T10:40:01Z
-openclaw-onboarding `origin/main` HEAD: `1c83aedc66e7bd066c5fefa4594a1c454fb2f067`
+Generated: 2026-07-15T10:50:01Z
+openclaw-onboarding `origin/main` HEAD: `ce32e44c53dae8f9e83591c71c897822e332aeed`
 blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553b11e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -29,6 +29,7 @@ blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
+| U90 | `skill6-v2/U90` | `2057aefd` | False | - | - | pending | - |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
 
@@ -60,9 +61,15 @@ blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `708f0255`
+- branch tip: `bfeb0ac4`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 32
+- commits ahead of that merge-base (cinematic-specific work so far): 38
+  - `bfeb0ac4` merge(skill-62): integrate U17 — Vercel deployment adapter + Blob storage adapter (P14-P15) (QC 9.0)
+  - `48906c06` merge(skill-62): integrate U19 — headless browser QC gate (a11y/mobile/reduced-motion/perf, P13)
+  - `c55b78c2` merge(skill-62): integrate U12 — draft/final scene+connector video generation + task recovery (P8-P9) (QC 9.0)
+  - `6057b8a0` feat(skill-62): U12 — draft/final scene+connector video generation + task recovery (P8-P9)
+  - `513aef0c` feat(skill-62): U19 — headless browser QC gate (a11y/mobile/reduced-motion/perf, P13)
+  - `e45b3403` feat(skill-62): U17 — Vercel deployment adapter + Blob storage adapter (P14-P15)
   - `708f0255` merge(skill-62): integrate U18 — GHL whole-page iframe embed package (spec 14.2) (QC 9.0)
   - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
   - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
@@ -72,14 +79,7 @@ blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553
   - `86f509d7` fix(skill-62): U16 QC — enforce outbound-host allowlist in conversion-webhook relay
   - `60f4d085` feat(skill-62): U11 — concept board, anchor approval, scene-image generation flow (P6-P7)
   - `087d8e7f` feat(skill-62): U16 — conversion tracking + GHL form/webhook wiring (P12)
-  - `405aad85` feat(skill-62): U18 — GHL whole-page iframe embed package (spec 14.2)
-  - `4efebc96` feat(skill-62): U14 — real seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10)
-  - `467ce609` merge(skill-62): integrate U15 — Next.js/TypeScript template + first-party scroll-scrub engine (P11) (QC 9.0)
-  - `63ca6177` merge(skill-62): integrate U10 — visual journey and scene planner (P4) (QC 9.0)
-  - `32a13608` merge(skill-62): integrate U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring (QC 9.2)
-  - `50659ed4` fix(skill-62): U15 QC — escape attribute values in sanitize_copy_fragment to close quote-breakout XSS
 - merged into `origin/main`: False
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `bfeb0ac4` is 6 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
