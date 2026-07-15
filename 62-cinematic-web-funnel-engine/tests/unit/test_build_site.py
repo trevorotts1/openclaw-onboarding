@@ -115,6 +115,31 @@ class TestSanitizeCopyFragment(unittest.TestCase):
         out = bs.sanitize_copy_fragment(html)
         self.assertNotIn("javascript:", out)
 
+    def test_attribute_value_quote_breakout_cannot_smuggle_event_handler(self) -> None:
+        # QC U15 finding: a single-quoted source attribute whose value
+        # contains a literal `"` was being re-serialized into a
+        # double-quoted attribute WITHOUT escaping that embedded quote,
+        # letting the value break out and append a live on*= handler that
+        # the on*= strip (which only inspects attribute names HTMLParser
+        # surfaced, never the re-serialized string) never sees.
+        payload = '<a title=\'x" onmouseover="alert(document.cookie)\'>hover me</a>'
+        out = bs.sanitize_copy_fragment(payload)
+        # `onmouseover` may still appear as inert escaped text inside the
+        # title value — what matters is that it is NOT a live attribute:
+        # the embedded `"` must be escaped, not left to break the
+        # name="value" wrapper open into a second, real attribute.
+        self.assertNotIn('title="x" onmouseover="', out)
+        self.assertNotIn(" onmouseover=\"alert", out)
+        self.assertIn("title=\"x&quot; onmouseover=&quot;alert(document.cookie)\"", out)
+        self.assertIn("hover me", out)
+
+    def test_attribute_value_embedded_quote_is_escaped_not_dropped(self) -> None:
+        # A benign value containing a double-quote must still round-trip
+        # as inert text inside the attribute, not vanish or break parsing.
+        html = '<span title=\'say "hi" now\'>x</span>'
+        out = bs.sanitize_copy_fragment(html)
+        self.assertIn("title=\"say &quot;hi&quot; now\"", out)
+
 
 class TestScanPlaceholdersAndSecrets(unittest.TestCase):
     def _make_site_dir_with_generated(self, ts_source: str, extra_files: dict[str, str] | None = None) -> Path:

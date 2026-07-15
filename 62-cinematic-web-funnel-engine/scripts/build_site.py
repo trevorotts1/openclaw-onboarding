@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -172,7 +173,13 @@ class _FragmentSanitizer(HTMLParser):
             if value is None:
                 safe_attrs.append(name)
             else:
-                safe_attrs.append(f'{name}="{value}"')
+                # html.escape(..., quote=True) escapes embedded `"` (and `'`,
+                # `<`, `>`, `&`) so a source value that itself contains a
+                # double-quote (e.g. from a single-quoted source attribute,
+                # `title='x" onmouseover="...'`) cannot break out of the
+                # `name="value"` wrapper re-serialized below and smuggle a
+                # live attribute (event handler) past the on*= strip above.
+                safe_attrs.append(f'{name}="{html.escape(value, quote=True)}"')
         attr_str = (" " + " ".join(safe_attrs)) if safe_attrs else ""
         self._out.append(f"<{tag}{attr_str}{' /' if self_closing else ''}>")
 
