@@ -88,3 +88,64 @@ Re-verified: `qc-assert-repo-consistency.py` (both the 5-dimension gate and
 suite `test-artifact-coverage.sh` → 10/10 passed; full skill test suite
 re-run clean: unit 672/672, integration 44/44, e2e 23/23,
 `prove_certificate.py --self-test` → PASS.
+
+## Unreleased — Command Center ZERO-CHANGE discovery proof (build unit U23, branch `skill62/cinematic-engine`)
+
+Proves the spec §2.2 "Default ruling" / §21.2 "Conditional Command Center changes"
+requirement: Command Center's existing generic skill matcher (`matchSkillsForTask()`
+in `blackceo-command-center/src/lib/context-pack.ts`) discovers and correctly ranks
+this engine's real, unmodified, shipped `SKILL.md` with **zero changes to the Command
+Center repository**. On-branch only — not merged, no version/tag ripple.
+
+Added:
+
+- `scripts/prove_command_center_discovery.py` — standalone prover (not a
+  `CWFE-MANIFEST.json` phase gate; same family as `funnel_engine_selector.py
+  --self-test`, U22). `--self-test` runs fully offline (no Node, no network, no
+  external checkout). `--cc-repo <path> --run-dir <dir>` is the live mode: builds a
+  fixture skill root from this skill's real `SKILL.md` plus two real neighbor skills
+  (`49-signature-funnel`, `25-video-creator`) and a real copy of
+  `23-ai-workforce-blueprint/skill-department-map.json`, points the operator-supplied
+  Command Center checkout at that fixture via its already-documented env overrides
+  (`CC_SKILL_ROOTS` / `CC_SKILL_DEPARTMENT_MAP`), and writes
+  `cc-discovery-evidence.json` on either outcome. Never clones, assumes, or mutates
+  the external repository — the caller supplies a throwaway checkout with its own
+  `npm install` already run.
+- `scripts/lib/cc_discovery_harness.mjs` — the Node/`tsx` harness the Python prover
+  shells out to for live mode. Imports the target checkout's real
+  `matchSkillsForTask()` / `renderMatchedSkillsSection()` / `buildContextPack()` /
+  `renderContextPackSection()` by absolute path (read-only; never writes under
+  `CC_REPO_PATH`) and runs 23 checks: all 10 real spec-3.4 intent triggers surface
+  the skill (department-scoped to `web-development`), a keyword-disjoint task returns
+  no match, and the strongest positive match round-trips through both the manual-
+  dispatch ("SKILLS AVAILABLE FOR THIS TASK" block) and auto-dispatch
+  (`buildContextPack`/`renderContextPackSection`) paths with a resolvable on-disk
+  `SKILL.md` location. Also records two non-gating, pre-existing, catalog-wide
+  observations (not this registration's defect, not asserted pass/fail): the real
+  `skill-department-map.json` ships `skills` as an array of skill-record objects,
+  a shape `context-pack.ts`'s `loadSkillDeptMap()` doesn't recognize, so department
+  scoping is currently a no-op for all ~30 client-facing skills; and the zero-config
+  keyword-overlap fallback can co-match genuinely video-adjacent tasks across skills.
+- `tests/unit/test_prove_command_center_discovery.py` — 27 fast, fully offline unit
+  tests covering `onboarding_repo_root()`, `sha256_file()`, `build_fixture()` (byte-
+  identical real-file copies plus three independent fail-closed paths: bogus root,
+  missing department map, missing neighbor skill), `validate_cc_repo()`'s five
+  fail-closed checks (nonexistent path, missing `context-pack.ts`, missing
+  `package.json`, wrong package name, missing `node`/`tsx`) plus one pass-path
+  variant, `run_harness()`'s stdout/JSON parsing and pass/fail rollup (driven by a
+  fake `subprocess.run`, including an embedding-key env-leak check), and
+  `evaluate()`'s usage-error / pass / fail / evidence-write paths.
+
+Verified: `python3 scripts/prove_command_center_discovery.py --self-test` → `RESULT:
+PASS` (12 offline checks). Live proof against a fresh, throwaway clone of
+`trevorotts1/blackceo-command-center` (`git clone --depth 1`, `npm install`, never
+`~/command-center/app`): `python3 scripts/prove_command_center_discovery.py --cc-repo
+<throwaway-clone> --run-dir <dir>` → `[PASS] Command Center discovery — 23/23 checks
+passed; overall=PASS`; `git status --porcelain` in the throwaway clone confirmed zero
+tracked-file changes before and after the run. Full skill test suite re-run clean
+with the new tests included: unit 699/699 (was 672), integration 44/44, e2e 23/23.
+No Command Center change was made or is justified by this proof — no real gap was
+found (spec §2.2 lists the qualifying gap conditions; none apply). Build unit U24
+(independent QC) and any separately-justified Command Center enhancement (U25 per
+the checklist's item 25, deferred unless a future unit proves a real gap) are not
+part of this entry.
