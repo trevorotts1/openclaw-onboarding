@@ -26,6 +26,18 @@ const VH_PER_SCENE = 150;
  * (spec 13.4 "keyboard-accessible controls"; "no critical conversion action
  * may depend solely on animation" — the skip link lets any user, motion
  * preference aside, reach the offer immediately).
+ *
+ * Build unit U19 (P13-BROWSER-QC) hardening: the `#cwfe-conversion-start`
+ * anchor below carries `tabIndex={-1}`. Verified via a live Playwright
+ * Tab+Enter sequence against the real built fixture: WITHOUT it, activating
+ * the skip link scrolls the viewport but leaves keyboard/AT focus on
+ * `<body>` — WCAG technique G1 requires the skip target to actually receive
+ * focus, not just scroll into view. `tabIndex={-1}` makes the div
+ * programmatically focusable (never adds it to the normal Tab order) so
+ * fragment navigation focuses it, exactly as it would a real element. This
+ * is the one template change U19 makes — additive, a11y-scoped, and
+ * verified end-to-end by `scripts/run_browser_qc.py`'s desktop category on
+ * every project this gate audits, not just this unit's own fixture.
  */
 export function ScrollScrubEngine({ siteData, resolvedEmbeds }: ScrollScrubEngineProps) {
   const { containerRef, registerVideoRef, blends, debugState, reducedMotion } = useScrollScrub(
@@ -67,7 +79,7 @@ export function ScrollScrubEngine({ siteData, resolvedEmbeds }: ScrollScrubEngin
         </div>
       )}
 
-      <div id="cwfe-conversion-start" className={styles.conversionAnchor} />
+      <div id="cwfe-conversion-start" className={styles.conversionAnchor} tabIndex={-1} />
       <ConversionSections
         sections={siteData.sections}
         ctaMap={siteData.ctaMap}
