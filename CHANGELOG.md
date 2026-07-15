@@ -1,3 +1,12 @@
+## [v20.0.33]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U21/B-U7: ingest parity, CC pins producer personas (QC 9.0, ONB half)
+
+v20.0.33 — Merges `skill6-v2/U21` (master unit U21, Section-B id B-U7) of the Skill 6 Blended-Persona Kanban v2 build, ONB (`openclaw-onboarding`) half of a both-repo unit. Fifth and final unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
+
+- **Feature:** `cc_board.ingest_task()` gains optional `voice_persona_id` / `topic_persona_id` / `task_persona_ids` (list) / `bundle_sha` — the same field vocabulary `report_persona_used` (B-U6) already posts back after the fact, now available at card-creation time so a producer that already resolved its bundle can hand that resolution to the Command Center instead of triggering a re-match. `voice_persona_id` gates the whole group; omitting all four is byte-identical to the pre-U21 payload.
+- Test proof re-run independently on the merged tree: `06-ghl-install-pages/tests/test_cc_rail_contract.py` -> `21 passed`.
+- Ledger: `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` U21 row (ONB half) set to `verified`; the CC half (`createTaskCore`'s `pinProducerPersonaBundle` skip-branch) lands separately on `blackceo-command-center`.
+- No client names, no secret values, no box identifiers. No Anthropic model added/removed/substituted.
+
 ## [v20.0.32]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U5/A-U5: per-page scoped persona blends (QC 8.9, ONB half)
 
 v20.0.32 — Merges `skill6-v2/U5` (master unit U5, Section-A id A-U5) of the Skill 6 Blended-Persona Kanban v2 build, ONB (`openclaw-onboarding`) half of a both-repo unit. Fourth unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
