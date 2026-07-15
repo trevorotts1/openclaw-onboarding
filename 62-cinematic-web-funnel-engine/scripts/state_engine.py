@@ -81,6 +81,10 @@ SCHEMA_FILES: Dict[str, str] = {
     # every other manifest kind in this skill already uses (spec 11.2).
     "anchor-approval": "anchor-approval.schema.json",
     "asset-ledger": "asset-ledger.schema.json",
+    # U12 additions (P8-DRAFT / P9-FINAL-MEDIA artifacts). Same additive-only
+    # extension pattern as U11's anchor-approval/asset-ledger above.
+    "draft-media-receipt": "draft-media-receipt.schema.json",
+    "video-asset-ledger": "video-asset-ledger.schema.json",
 }
 
 # Per-run-dir artifact locations. Matches the paths CWFE-MANIFEST.json's
@@ -101,6 +105,10 @@ ARTIFACT_RELPATHS: Dict[str, str] = {
     # produces_artifact paths for P6-ANCHOR / P7-STILLS exactly.
     "anchor-approval": "anchor-approval.json",
     "asset-ledger": "asset-ledger.json",
+    # U12 additions — root-level, matching CWFE-MANIFEST.json's declared
+    # produces_artifact naming convention for P8-DRAFT / P9-FINAL-MEDIA.
+    "draft-media-receipt": "draft-media-receipt.json",
+    "video-asset-ledger": "video-asset-ledger.json",
 }
 
 TASK_STATUSES = ("queued", "submitted", "in_progress", "complete", "failed", "cancelled")

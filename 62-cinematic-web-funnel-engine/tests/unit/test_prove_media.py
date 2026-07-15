@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_prove_media.py — unit + break-it test suite for build unit U11
-(scripts/prove_media.py): the P6-ANCHOR / P7-STILLS phase gates.
+"""test_prove_media.py — unit + break-it test suite for build units U11+U12
+(scripts/prove_media.py): the P6-ANCHOR / P7-STILLS / P8-DRAFT /
+P9-FINAL-MEDIA phase gates.
 
 Builds minimal, HAND-CRAFTED, disk-backed fixture artifacts directly via
 state_engine.ProjectState.save() (mirrors prove_budget.py's own
 _self_test_scene_plan() precedent) rather than driving generate_images.py's
-full paid-call pipeline — a gate test proves the gate's EVALUATION logic;
-generate_images.py's own test suite (test_generate_images.py) already covers
-the producer pipeline end-to-end against mocked Kie fixtures.
+/ generate_videos.py's full paid-call pipeline — a gate test proves the
+gate's EVALUATION logic; test_generate_images.py / test_generate_videos.py
+already cover their producer pipelines end-to-end against mocked Kie
+fixtures. The P9-FINAL-MEDIA fixtures below are the one exception: they
+synthesize a REAL short ffmpeg clip and run it through the REAL
+encode_scrub_media.py -> extract_boundaries.py pipeline, because
+evaluate_final()'s own job is verifying that exact real on-disk chain — a
+hand-faked encoded/boundary_frames record would not exercise the check it
+exists to prove.
 
 stdlib unittest only. Run with:
   python3 -m unittest discover -s tests/unit -v
@@ -34,6 +41,9 @@ for p in (_SKILL_DIR, _SCRIPTS_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+import encode_scrub_media as esm  # noqa: E402
+import extract_boundaries as eb  # noqa: E402
+import media_ffmpeg as mf  # noqa: E402
 import prove_media as pm  # noqa: E402
 import state_engine as se  # noqa: E402
 
@@ -152,6 +162,107 @@ class ProveMediaTestCase(unittest.TestCase):
                 scene["anchor_asset_hash"] = still["hash_sha256"]
         self.state.save("scene-plan", scene_plan)
         return scene_plan
+
+    def _write_fully_valid_p7(self, scene_ids=("scene-01-hero",)):
+        """Composes every P6/P7 helper above into one fully-valid,
+        evaluate_stills()-passing fixture — the common precondition every
+        P8/P9 test below needs."""
+        self._write_locked_anchor()
+        scene_plan = self._write_scene_plan(scene_ids=scene_ids)
+        ledger = self._write_full_ledger(scene_ids=scene_ids, approved=True)
+        self._mirror_scene_plan_from_ledger(scene_plan, ledger)
+        return scene_plan, ledger
+
+    def _write_draft(self, scene_id="scene-01-hero", *, review_status="approved"):
+        """Accumulates into any existing draft-media-receipt.json (never
+        overwrites a previously-written scene's draft) — mirrors the real
+        producer's incremental-save behavior so multi-scene fixtures work."""
+        now = _now()
+        draft = _asset(
+            self.media_dir / "video" / "drafts" / f"{scene_id}.mp4", f"DRAFT-{scene_id}".encode("utf-8"),
+            model_id="kie-bytedance-seedance-1.5-pro",
+        )
+        draft.update(
+            scene_id=scene_id, duration_seconds=8.0,
+            input_urls=["https://fixtures.example/first.png", "https://fixtures.example/last.png"],
+            review_status=review_status,
+        )
+        if self.state.exists("draft-media-receipt"):
+            receipt = self.state.load("draft-media-receipt")
+            receipt["drafts"] = [d for d in receipt["drafts"] if d["scene_id"] != scene_id] + [draft]
+            receipt["updated_at"] = now
+        else:
+            receipt = {
+                "schema_version": "1.0.0", "project_id": "proj-prove-media-tests",
+                "drafts": [draft], "created_at": now, "updated_at": now,
+            }
+        self.state.save("draft-media-receipt", receipt)
+        return receipt
+
+    def _make_real_final_asset(self, label: str, *, approval_status="approved") -> Dict[str, Any]:
+        """Synthesizes a REAL short ffmpeg clip and runs it through the REAL
+        encode_scrub_media.py -> extract_boundaries.py pipeline, so
+        evaluate_final()'s hash/provenance checks are exercised against
+        genuinely decodable, genuinely distinct encoded media."""
+        binaries = mf.require_binaries()
+        raw_dir = self.media_dir / "video" / "final" / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        raw_path = raw_dir / f"{label}.mp4"
+        cmd = [
+            binaries["ffmpeg"], "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=10:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(raw_path),
+        ]
+        proc = mf.run_cmd(cmd, label="ffmpeg-test-fixture")
+        assert proc.returncode == 0 and raw_path.exists(), proc.stderr
+
+        asset_id = f"{label}-final"
+        encode_out_dir = self.media_dir / "video" / "final" / "encoded" / asset_id
+        media_receipt = esm.encode_scrub_media(raw_path, encode_out_dir, asset_id=asset_id, variant_names=["desktop"])
+        variant = media_receipt["variants"][0]
+        boundaries_out_dir = self.media_dir / "video" / "final" / "boundaries" / asset_id
+        variant_path = Path(variant["output_path"])
+        boundary_receipt = eb.extract_boundaries(variant_path, boundaries_out_dir)
+        by_pos = {f["position"]: f for f in boundary_receipt["frames"]}
+
+        asset = _asset(raw_path, raw_path.read_bytes(), model_id="kie-bytedance-seedance-1.5-pro", provider_task_id=f"fixture-{label}-task")
+        asset.update(
+            asset_id=f"{label}:final", kind="scene_final", scene_id=label, from_scene_id=None, to_scene_id=None,
+            duration_seconds=2.0, input_urls=["https://fixtures.example/first.png", "https://fixtures.example/last.png"],
+            encoded={
+                "media_processing_receipt_path": str(encode_out_dir / f"{asset_id}.media-processing-receipt.json"),
+                "variant_name": variant["variant_name"], "output_path": variant["output_path"],
+                "width": variant["width"], "height": variant["height"],
+                "duration_seconds": variant["duration_seconds"], "hash_sha256": variant["hash_sha256"],
+            },
+            boundary_frames={
+                "boundary_frames_receipt_path": str(boundaries_out_dir / f"{variant_path.stem}.boundary-frames.json"),
+                "first": {
+                    "frame_index": by_pos["first"]["frame_index"], "timestamp_seconds": by_pos["first"]["timestamp_seconds"],
+                    "output_path": by_pos["first"]["output_path"], "hash_sha256": by_pos["first"]["hash_sha256"],
+                },
+                "last": {
+                    "frame_index": by_pos["last"]["frame_index"], "timestamp_seconds": by_pos["last"]["timestamp_seconds"],
+                    "output_path": by_pos["last"]["output_path"], "hash_sha256": by_pos["last"]["hash_sha256"],
+                },
+            },
+            approval_status=approval_status,
+        )
+        return asset
+
+    def _write_full_p9(self, scene_ids=("scene-01-hero",)):
+        self._write_fully_valid_p7(scene_ids=scene_ids)
+        for sid in scene_ids:
+            self._write_draft(sid, review_status="approved")
+        assets = [self._make_real_final_asset(sid) for sid in scene_ids]
+        now = _now()
+        vledger = {
+            "schema_version": "1.0.0", "project_id": "proj-prove-media-tests",
+            "assets": assets, "created_at": now, "updated_at": now,
+        }
+        self.state.save("video-asset-ledger", vledger)
+        return vledger
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +423,180 @@ class EvaluateStillsTests(ProveMediaTestCase):
 
 
 # ---------------------------------------------------------------------------
+# evaluate_draft
+# ---------------------------------------------------------------------------
+class EvaluateDraftTests(ProveMediaTestCase):
+    def test_fails_when_p7_stills_not_yet_passed(self) -> None:
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("P7-STILLS", detail)
+
+    def test_fails_when_draft_media_receipt_missing(self) -> None:
+        self._write_fully_valid_p7()
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("draft-media-receipt.json does not exist", detail)
+
+    def test_fails_when_draft_not_approved(self) -> None:
+        self._write_fully_valid_p7()
+        self._write_draft(review_status="proposed")
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("review_status", detail)
+
+    def test_fails_when_a_scene_has_no_draft_entry(self) -> None:
+        self._write_fully_valid_p7(scene_ids=("scene-01-hero", "scene-02-cta"))
+        self._write_draft("scene-01-hero", review_status="approved")
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("scene-02-cta", detail)
+        self.assertIn("missing draft-media-receipt entry", detail)
+
+    def test_passes_on_fully_valid_fixture(self) -> None:
+        self._write_fully_valid_p7()
+        self._write_draft(review_status="approved")
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertTrue(passed, detail)
+        self.assertTrue((self.tmp / "draft-gate-receipt.json").exists())
+
+    def test_detects_tampered_draft_file(self) -> None:
+        self._write_fully_valid_p7()
+        receipt = self._write_draft(review_status="approved")
+        Path(receipt["drafts"][0]["local_path"]).write_bytes(b"TAMPERED-DRAFT")
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("hash", detail)
+
+    def test_multi_scene_all_required(self) -> None:
+        scene_ids = ("scene-01-hero", "scene-02-cta")
+        self._write_fully_valid_p7(scene_ids=scene_ids)
+        for sid in scene_ids:
+            self._write_draft(sid, review_status="approved")
+        passed, detail = pm.evaluate_draft(self.tmp)
+        self.assertTrue(passed, detail)
+
+
+# ---------------------------------------------------------------------------
+# evaluate_final
+# ---------------------------------------------------------------------------
+class EvaluateFinalTests(ProveMediaTestCase):
+    def test_fails_when_p8_draft_not_yet_passed(self) -> None:
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("P8-DRAFT", detail)
+
+    def test_fails_when_video_asset_ledger_missing(self) -> None:
+        self._write_fully_valid_p7()
+        self._write_draft(review_status="approved")
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("video-asset-ledger.json does not exist", detail)
+
+    def test_fails_when_final_clip_not_approved(self) -> None:
+        self._write_fully_valid_p7()
+        self._write_draft(review_status="approved")
+        asset = self._make_real_final_asset("scene-01-hero", approval_status="proposed")
+        now = _now()
+        self.state.save("video-asset-ledger", {
+            "schema_version": "1.0.0", "project_id": "proj-prove-media-tests",
+            "assets": [asset], "created_at": now, "updated_at": now,
+        })
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("approval_status", detail)
+
+    def test_passes_on_fully_valid_real_fixture(self) -> None:
+        self._write_full_p9()
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertTrue(passed, detail)
+        self.assertTrue((self.tmp / "final-media-gate-receipt.json").exists())
+
+    def test_fails_when_a_scene_has_no_final_entry(self) -> None:
+        scene_ids = ("scene-01-hero", "scene-02-cta")
+        self._write_fully_valid_p7(scene_ids=scene_ids)
+        for sid in scene_ids:
+            self._write_draft(sid, review_status="approved")
+        # Only scene-01-hero gets a real P9 final asset; scene-02-cta's is
+        # deliberately missing, so P6/P7/P8 all pass and this isolates the
+        # exact check under test.
+        asset = self._make_real_final_asset("scene-01-hero")
+        now = _now()
+        self.state.save("video-asset-ledger", {
+            "schema_version": "1.0.0", "project_id": "proj-prove-media-tests",
+            "assets": [asset], "created_at": now, "updated_at": now,
+        })
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("scene-02-cta", detail)
+        self.assertIn("missing video-asset-ledger kind='scene_final' entry", detail)
+
+    def test_detects_tampered_encoded_output(self) -> None:
+        vledger = self._write_full_p9()
+        Path(vledger["assets"][0]["encoded"]["output_path"]).write_bytes(b"TAMPERED-ENCODED")
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("encoded output file hash mismatch", detail)
+
+    def test_detects_tampered_raw_clip(self) -> None:
+        vledger = self._write_full_p9()
+        Path(vledger["assets"][0]["local_path"]).write_bytes(b"TAMPERED-RAW")
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("hash", detail)
+
+    def test_detects_boundary_first_last_collision(self) -> None:
+        vledger = self._write_full_p9()
+        asset = vledger["assets"][0]
+        first_path = Path(asset["boundary_frames"]["first"]["output_path"])
+        last_path = Path(asset["boundary_frames"]["last"]["output_path"])
+        last_path.write_bytes(first_path.read_bytes())
+        asset["boundary_frames"]["last"]["hash_sha256"] = asset["boundary_frames"]["first"]["hash_sha256"]
+        self.state.save("video-asset-ledger", vledger)
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("hash identically", detail)
+
+    def test_fails_when_connector_required_but_no_connector_entry(self) -> None:
+        vledger = self._write_full_p9()
+        scene_plan = self.state.load("scene-plan")
+        scene_plan["scenes"][0]["connector_required"] = True
+        self.state.save("scene-plan", scene_plan)
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("no video-asset-ledger kind='connector' entry", detail)
+
+    def test_detects_miswired_connector_adjacency(self) -> None:
+        vledger = self._write_full_p9()
+        scene_plan = self.state.load("scene-plan")
+        scene_plan["scenes"][0]["connector_required"] = True
+        self.state.save("scene-plan", scene_plan)
+
+        bogus_connector = self._make_real_final_asset("scene-01-hero-connector")
+        bogus_connector.update(kind="connector", scene_id=None, from_scene_id="scene-99-bogus", to_scene_id="scene-01-hero")
+        vledger["assets"].append(bogus_connector)
+        self.state.save("video-asset-ledger", vledger)
+
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertFalse(passed)
+        self.assertIn("scene-plan adjacency", detail)
+
+    def test_passes_with_correctly_wired_connector(self) -> None:
+        vledger = self._write_full_p9()
+        scene_plan = self.state.load("scene-plan")
+        scene_plan["scenes"][0]["connector_required"] = True  # index 0 -> expected_from=None
+        self.state.save("scene-plan", scene_plan)
+
+        connector = self._make_real_final_asset("scene-01-hero-connector")
+        connector.update(kind="connector", scene_id=None, from_scene_id=None, to_scene_id="scene-01-hero")
+        vledger["assets"].append(connector)
+        self.state.save("video-asset-ledger", vledger)
+
+        passed, detail = pm.evaluate_final(self.tmp)
+        self.assertTrue(passed, detail)
+        self.assertIn("1 connector clip(s)", detail)
+
+
+# ---------------------------------------------------------------------------
 # CLI dispatch (CWFE_MEDIA_CHECK env var / --check flag)
 # ---------------------------------------------------------------------------
 class CliDispatchTests(ProveMediaTestCase):
@@ -342,6 +627,23 @@ class CliDispatchTests(ProveMediaTestCase):
         result = subprocess.run([PY, str(SCRIPT), "--run-dir", str(self.tmp)], capture_output=True, text=True, env=env)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("P7-STILLS", result.stdout)
+
+    def test_explicit_check_flag_draft_fails_without_p8_fixture(self) -> None:
+        # this test class's setUp only builds a P6/P7 fixture -- P8 correctly
+        # fails. A FAILing gate's [FAIL] line goes to stderr (main()'s own
+        # convention — only a [PASS] line goes to stdout).
+        result = subprocess.run(
+            [PY, str(SCRIPT), "--run-dir", str(self.tmp), "--check", "draft"], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+        self.assertIn("P8-DRAFT", result.stderr)
+
+    def test_explicit_check_flag_final_fails_without_p9_fixture(self) -> None:
+        result = subprocess.run(
+            [PY, str(SCRIPT), "--run-dir", str(self.tmp), "--check", "final"], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+        self.assertIn("P9-FINAL-MEDIA", result.stderr)
 
     def test_usage_error_missing_run_dir(self) -> None:
         result = subprocess.run([PY, str(SCRIPT)], capture_output=True, text=True)
