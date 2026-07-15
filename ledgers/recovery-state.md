@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T10:30:01Z
-openclaw-onboarding `origin/main` HEAD: `843ac24efc36ad6339acac40b671f8e4a20118fe`
+Generated: 2026-07-15T10:40:01Z
+openclaw-onboarding `origin/main` HEAD: `1c83aedc66e7bd066c5fefa4594a1c454fb2f067`
 blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553b11e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -79,6 +79,7 @@ blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553
   - `32a13608` merge(skill-62): integrate U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring (QC 9.2)
   - `50659ed4` fix(skill-62): U15 QC — escape attribute values in sanitize_copy_fragment to close quote-breakout XSS
 - merged into `origin/main`: False
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `bfeb0ac4` is 6 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
