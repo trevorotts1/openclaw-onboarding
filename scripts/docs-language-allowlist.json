@@ -13,11 +13,7 @@
     ]
   },
   "vendor_literals": {
-    "$comment": "Third-party-owned literal strings that legitimately contain the term (e.g. an npm pre-release distribution tag). Quoted only when load-bearing and always attributed to the vendor per MASTER SPEC v2 X.1.2 Class C; never adopted as our own vocabulary. Matched as exact substrings (case-insensitive), same subtraction rule as legacy_filenames. Empty by default in this repo (U91's scrub found zero surviving vendor-literal citations in v2) — populate here, never inline in a doc, the next time a real one must be quoted.",
-    "entries": [
-      "@canary",
-      "dist-tag canary",
-      "canary channel release"
-    ]
+    "$comment": "Third-party-owned literal strings that legitimately contain the term (e.g. an npm pre-release distribution tag). Quoted only when load-bearing and always attributed to the vendor per MASTER SPEC v2 X.1.2 Class C; never adopted as our own vocabulary. Matched as exact substrings (case-insensitive), same subtraction rule as legacy_filenames. Empty by default in this repo (U91's scrub found zero surviving vendor-literal citations in v2) — populate here, never inline in a doc, the next time a real one must be quoted. Keep entries NARROW literal citations (e.g. an exact npm dist-tag string), never a natural-English phrase — a broad phrase here silently amnesties genuinely new prose that happens to contain it.",
+    "entries": []
   }
 }

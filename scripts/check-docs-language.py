@@ -176,7 +176,24 @@ def list_changed_doc_files(base_ref: str, cwd: Path, doc_globs: Iterable[str]) -
 
 def iter_added_lines(base_ref: str, cwd: Path, files: list[str]):
     """Yield (path, line_no_in_new_file, content) for every '+' line in a
-    zero-context unified diff of `files` between base_ref and HEAD."""
+    zero-context unified diff of `files` between base_ref and HEAD.
+
+    Per-file diff text has two disjoint regions: a HEADER (`diff --git`,
+    `index`, `---`, `+++`, rename/mode lines — metadata, no leading +/-/space
+    marker) followed by zero or more HUNKS (each opened by an `@@ -a,b +c,d
+    @@` line, then body lines that always start with a leading +/-/space
+    diff marker). `+++ `/`--- `/`@@` are ONLY metadata while still in the
+    header region for the current file (`in_hunk` False). Once a hunk has
+    opened, every body line's *only* significant character is its leading
+    marker — the rest of the line is arbitrary added/removed doc content and
+    MUST NOT be pattern-matched against header syntax again. Without this
+    split, a new doc line whose content begins with '++ ' is emitted by git
+    as '+++ <content>' (the '+' diff marker followed by the line's own
+    literal '++ ' prefix) and is indistinguishable, by string prefix alone,
+    from a genuine '+++ b/<path>' new-file header — so it was being
+    misparsed as a header (silently resetting current_file) and skipped
+    instead of yielded as an added line.
+    """
     if not files:
         return
     diff_text = run_git(
@@ -184,15 +201,31 @@ def iter_added_lines(base_ref: str, cwd: Path, files: list[str]):
     )
     current_file: str | None = None
     line_no: int | None = None
+    in_hunk = False
     for raw in diff_text.splitlines():
         if raw.startswith("diff --git "):
             current_file = None
             line_no = None
+            in_hunk = False
             continue
-        if raw.startswith("+++ "):
-            target = raw[4:]
-            current_file = None if target == "/dev/null" else target[2:] if target.startswith("b/") else target
+        if not in_hunk:
+            # Header region for the current file: only metadata lines are
+            # expected here, never hunk-body content.
+            if raw.startswith("+++ "):
+                target = raw[4:]
+                current_file = None if target == "/dev/null" else target[2:] if target.startswith("b/") else target
+                continue
+            if raw.startswith("@@"):
+                m = _HUNK_RE.match(raw)
+                if m:
+                    line_no = int(m.group("start"))
+                    in_hunk = True
+                continue
+            # "--- a/<path>", "index ..", mode/rename/similarity lines, etc.
             continue
+        # in_hunk: hunk-body region. A bare "@@ ... @@" line (no leading
+        # +/-/space marker) opens the next hunk in the same file; anything
+        # else is content and is typed ONLY by its leading marker character.
         if raw.startswith("@@"):
             m = _HUNK_RE.match(raw)
             if m:

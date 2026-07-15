@@ -36,7 +36,17 @@ _ALLOWLIST = _REPO_ROOT / "scripts" / "docs-language-allowlist.json"
 _ALLOWLIST_DATA = json.loads(_ALLOWLIST.read_text(encoding="utf-8"))
 TERM = _ALLOWLIST_DATA["term"]
 LEGACY_FILENAME = _ALLOWLIST_DATA["legacy_filenames"]["entries"][0]["path"]
-VENDOR_LITERAL = _ALLOWLIST_DATA["vendor_literals"]["entries"][0]
+
+# vendor_literals is EMPTY by default in the real allowlist (U91's scrub
+# found zero surviving vendor-literal citations in v2 — see that file's own
+# $comment). The vendor-literal carve-out mechanism therefore cannot be
+# exercised against the real allowlist; tests that need a populated
+# vendor_literals entry build a disposable, hermetic FIXTURE allowlist
+# (see `_write_fixture_allowlist` below) instead of depending on real
+# repo content — a real allowlist entry could grow, shrink, or be reworded
+# for legitimate reasons without that being this guard-mechanism test's
+# business.
+_FIXTURE_VENDOR_LITERAL = f"acme-widgets@{TERM}"  # narrow, npm-dist-tag-shaped, never a natural-English phrase
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
@@ -73,11 +83,26 @@ def _commit(repo: Path, msg: str) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _run_guard(repo: Path, base_ref: str | None = None) -> subprocess.CompletedProcess:
+def _write_fixture_allowlist(tmp_path: Path, *, vendor_literals: list[str]) -> Path:
+    """A disposable, hermetic allowlist JSON — same shape as the real repo
+    allowlist but with a caller-controlled vendor_literals list, so the
+    vendor-literal carve-out mechanism can be tested without depending on
+    (or requiring) real, currently-populated vendor_literals content."""
+    path = tmp_path / "fixture-allowlist.json"
+    path.write_text(json.dumps({
+        "term": TERM,
+        "legacy_filenames": _ALLOWLIST_DATA["legacy_filenames"],
+        "vendor_literals": {"entries": vendor_literals},
+    }), encoding="utf-8")
+    return path
+
+
+def _run_guard(repo: Path, base_ref: str | None = None,
+                allowlist: Path | None = None) -> subprocess.CompletedProcess:
     cmd = [
         sys.executable, str(_SCRIPT),
         "--repo-root", str(repo),
-        "--allowlist", str(_ALLOWLIST),
+        "--allowlist", str(allowlist or _ALLOWLIST),
     ]
     if base_ref:
         cmd += ["--base-ref", base_ref]
@@ -190,12 +215,18 @@ class TestAllowlistCarveouts(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_passes_when_only_vendor_literal_cited(self):
+        """Exercises the vendor_literals carve-out mechanism itself via a
+        hermetic FIXTURE allowlist (the real allowlist ships this list empty
+        by default — see TestVendorLiteralsEmptyByDefault below)."""
+        fixture_allowlist = _write_fixture_allowlist(
+            Path(self._tmp.name), vendor_literals=[_FIXTURE_VENDOR_LITERAL]
+        )
         _write(self.repo, "README.md",
                "# Title\n\nOriginal line.\n\n"
-               f"Upstream publishes a pre-release under {VENDOR_LITERAL}, a name we do not own.\n")
+               f"Upstream publishes a pre-release under {_FIXTURE_VENDOR_LITERAL}, a name we do not own.\n")
         _commit(self.repo, "cite a vendor literal")
 
-        res = _run_guard(self.repo)
+        res = _run_guard(self.repo, allowlist=fixture_allowlist)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_stray_occurrence_alongside_allowed_filename_still_fails(self):
@@ -208,6 +239,38 @@ class TestAllowlistCarveouts(unittest.TestCase):
         _commit(self.repo, "legacy filename plus a stray extra occurrence")
 
         res = _run_guard(self.repo)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+
+    def test_stray_occurrence_alongside_vendor_literal_still_fails(self):
+        """Same span-precision requirement for the vendor_literals carve-out:
+        an allowed vendor-literal citation does NOT amnesty a separate,
+        unexplained mention on the same line."""
+        fixture_allowlist = _write_fixture_allowlist(
+            Path(self._tmp.name), vendor_literals=[_FIXTURE_VENDOR_LITERAL]
+        )
+        _write(self.repo, "README.md",
+               "# Title\n\nOriginal line.\n\n"
+               f"Upstream ships {_FIXTURE_VENDOR_LITERAL}, and separately this unrelated {TERM} usage.\n")
+        _commit(self.repo, "vendor literal plus a stray extra occurrence")
+
+        res = _run_guard(self.repo, allowlist=fixture_allowlist)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+
+    def test_qc_reported_bypass_phrase_no_longer_silently_passes(self):
+        """Regression for the QC finding: the real allowlist previously
+        shipped 'canary channel release' as a vendor_literals entry — a
+        natural-English phrase broad enough that ordinary new operator
+        doctrine prose could organically contain it, silently amnestying a
+        genuinely new occurrence (reproduced: this exact sentence used to
+        exit 0). Runs against the REAL (default) allowlist, not a fixture,
+        to pin that the shipped file no longer carries this or any other
+        bypass phrase."""
+        _write(self.repo, "README.md",
+               "# Title\n\nOriginal line.\n\n"
+               f"Our fleet does a {TERM} channel release to the operator box before clients.\n")
+        _commit(self.repo, "reproduce the QC-reported bypass sentence")
+
+        res = _run_guard(self.repo)  # default (real, shipped) allowlist
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
 
 
@@ -265,6 +328,82 @@ class TestCLIWiring(unittest.TestCase):
         self.assertIn("legacy_filenames", _ALLOWLIST_DATA)
         self.assertIn("vendor_literals", _ALLOWLIST_DATA)
         self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 6)
+
+    def test_vendor_literals_empty_by_default(self):
+        """Pins the allowlist's own stated default (its $comment: 'Empty by
+        default in this repo ... U91's scrub found zero surviving
+        vendor-literal citations'). A previous version of this file shipped
+        three pre-populated entries — including the natural-English phrase
+        'canary channel release', broad enough to silently amnesty genuinely
+        new prose (see TestAllowlistCarveouts.
+        test_qc_reported_bypass_phrase_no_longer_silently_passes) — directly
+        contradicting that stated default. This assertion fails loudly the
+        next time someone reintroduces a pre-populated entry without also
+        updating the $comment and reasoning through whether it is a narrow,
+        genuinely-cited literal rather than a broad phrase."""
+        self.assertEqual(_ALLOWLIST_DATA["vendor_literals"]["entries"], [])
+
+
+class TestHunkBodyNeverReparsedAsHeader(unittest.TestCase):
+    """Regression for the QC finding: iter_added_lines() must bound
+    hunk-body consumption to the header/body split established by the
+    '@@ -a,b +c,d @@' line, never re-pattern-match '+++ '/'--- '/'@@'
+    against hunk-BODY content. Without that split, a new doc line whose
+    content begins with '++ ' is rendered by git as '+++ <content>' inside
+    the hunk body (indistinguishable, by prefix alone, from a genuine
+    '+++ b/<path>' new-file header) and was being silently skipped instead
+    of scanned."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = _init_repo(Path(self._tmp.name))
+        _write(self.repo, "README.md", "# Title\n\nOriginal line.\n")
+        _commit(self.repo, "base")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_added_line_starting_with_double_plus_is_not_swallowed_as_a_header(self):
+        _write(self.repo, "README.md",
+               f"# Title\n\nOriginal line.\n\n++ {TERM} team ships this weekend\n")
+        _commit(self.repo, "inject a line that begins with '++ '")
+
+        res = _run_guard(self.repo)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("README.md", res.stdout)
+        self.assertIn("NEW unexplained occurrence", res.stdout)
+
+    def test_added_line_starting_with_triple_plus_is_not_swallowed_as_a_header(self):
+        """One more '+' of diff-marker ambiguity than the minimal repro,
+        proving the fix isn't a special case pinned to exactly two."""
+        _write(self.repo, "README.md",
+               f"# Title\n\nOriginal line.\n\n+++ {TERM} again, three pluses this time\n")
+        _commit(self.repo, "inject a line that begins with '+++ '")
+
+        res = _run_guard(self.repo)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("README.md", res.stdout)
+
+    def test_second_hunk_in_same_file_still_correctly_scanned(self):
+        """A '++'-prefixed added line sits in the file's FIRST hunk; a
+        genuinely new line sits in a SECOND, separate hunk far below. Proves
+        the header/body state resets correctly at each new '@@' without
+        losing track of `current_file`."""
+        base_lines = ["line %d" % i for i in range(1, 21)]
+        _write(self.repo, "README.md", "\n".join(base_lines) + "\n")
+        _commit(self.repo, "20-line base")
+
+        edited = list(base_lines)
+        edited[0] = f"++ {TERM} injected near the top"
+        edited[19] = f"a second, separate {TERM} occurrence near the bottom"
+        _write(self.repo, "README.md", "\n".join(edited) + "\n")
+        _commit(self.repo, "edit two far-apart lines, two separate hunks")
+
+        res = _run_guard(self.repo)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        # Both occurrences must be reported — not just the one that happens
+        # to follow a clean header parse.
+        self.assertEqual(res.stdout.count(f"README.md:"), 2)
 
 
 if __name__ == "__main__":
