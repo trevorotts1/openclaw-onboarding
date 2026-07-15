@@ -1,5 +1,21 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.11 - 2026-07-15 — GK-20 regression proof: text_bearing_medium-band-floor-sized prompt clears pregen_prompt_gate.py on Ideogram V3 DESIGN
+
+### Added
+- **`scripts/test_pregen_prompt_gate.py` case 6.** Skill 45's `prompt-bands.json` gained a NEW
+  `text_bearing_medium` band (GK-20 band<->routing reconciliation — the band the mandatory
+  Ideogram V3 DESIGN quote-card/text-led route now resolves to). This gate's own routing logic
+  (`TEXT_CAPABLE_MODELS`/`NON_TEXT_MODELS`) needed no code change — it already routes
+  `ideogram-v3-design` correctly — but a new regression case proves the SAME reconciled-band-floor
+  prompt (>=1,600 chars, the new GIP band's own floor) clears BOTH `diu_validator.py prompt-band`
+  (Skill 45's `test_prompt_band_cli.py` case 5) AND this gate (exit 0), closing the loop on GK-20's
+  BINARY acceptance criterion end-to-end rather than proving each gate in isolation.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.10 → v2.9.11; SKILL.md frontmatter version
+  v2.9.10 → v2.9.11 (must match the frontmatter-version-guard).
+
 ## v2.9.10 - 2026-07-12 — P3-08 merge (renumbered v2.9.9→v2.9.10): QC-fix — CTA lockstep completed in example templates + comment-reader injection fencing
 
 ### Changed

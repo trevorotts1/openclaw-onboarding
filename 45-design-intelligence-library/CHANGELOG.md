@@ -1,5 +1,65 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [v1.3.4] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
+
+### Why
+`prompt-bands.json` (P3-05, v1.3.3) listed `nano-banana-2` as a `text_bearing_long` endpoint and
+named NO Ideogram endpoint in any text-bearing band, while the fleet's mandatory routing rule
+(`social-media-designs/_RULES.md`) and Skill 35's `pregen_prompt_gate.py` both REFUSE Nano Banana
+for any text-overlay deliverable and REQUIRE Ideogram V3 DESIGN for every quote-card/text-led
+post. A Graphics-authored text-bearing social asset written to its own band's guidance (>=5,000
+chars, nano-banana-listed) was refused by Skill 35's routing gate; re-routing it to the mandated
+Ideogram endpoint put it in the `medium` band whose cap (2,800) plus MODEL-SPECS.md's own verified
+Ideogram V3 API cap (5,000 chars, LONG tier NOT SUPPORTED on this endpoint) meant the floors and
+the routing rule could never both be satisfied as written.
+
+### Changed
+- **`library/_system/prompt-bands.json` (v1 -> v2):** `nano-banana-2` REMOVED from
+  `text_bearing_long.endpoints` (it is refused for text everywhere else in the fleet — the JSON
+  was the outlier). Added a NEW `text_bearing_medium` band (MIN 1,600 / MAX 4,500 /
+  min_distinct_words 90 / `text_bearing: true` / `endpoints: ["ideogram/v3-text-to-image"]`) — the
+  ONLY text-bearing band naming an Ideogram endpoint, sized to Ideogram V3's own verified
+  5,000-char API cap (MODEL-SPECS.md) minus the same ~10% safety margin every other band keeps
+  under its endpoint's real cap; MIN=1,600 is measured as 2x the non-text-bearing `medium` band's
+  own floor (800), mirroring the established text-bearing/non-text-bearing 2x ratio between
+  `text_bearing_long` (5,000) and `visual_long` (2,500). `social post graphic with baked text`
+  moved from `text_bearing_long.applies_to` to `text_bearing_medium.applies_to`.
+- **`library/social-media-designs/_RULES.md`:** the model-routing section now names
+  `text_bearing_medium` explicitly as the band the mandated Ideogram route resolves to, closing
+  the loop between the routing rule and the band file (single authoritative reconciliation point).
+- **`scripts/diu_validator.py`:** docstring + `--band` help text updated to list
+  `text_bearing_medium` alongside the existing three bands (band resolution itself is already
+  fully data-driven from `prompt-bands.json` — no gate-logic change was needed).
+- **`scripts/prove_gip_prompt_floor.py`:** added `rich_text_bearing_medium()` fixture builder + 4
+  new `--self-test` fixtures (rich pass, under-floor, over-cap, no-spelling-lock quality fail) plus
+  a dedicated exit-code-contract assertion for the new band. Added a machine-checked regression
+  assertion, read from the SAME `prompt-bands.json` the validator loads at runtime, that (a) no
+  `text_bearing: true` band ever lists a `nano-banana` endpoint and (b) the Ideogram-routed
+  text-bearing band's MAX never exceeds Ideogram V3's verified 5,000-char cap — so this exact
+  contradiction can never silently regress.
+- **`scripts/test_prompt_band_cli.py`:** added two new real-CLI (subprocess) cases proving a
+  genuinely compliant `text_bearing_medium` prompt clears the gate (exit 0) and an under-floor one
+  is refused (exit 3, `AF-GIP-PROMPT-FLOOR`) — the same fail-first discipline as the existing
+  `text_bearing_long` cases.
+- **15 graphics role docs + 2 dept-level SOPs** (`ad-creative-specialist`,
+  `ai-image-generator-specialist`, `book-cover-designer`, `brand-identity-specialist-logo-color-type`,
+  `course-slide-designer`, `deck-systems-specialist`, `email-designer`, `generation-operator`,
+  `infographic-specialist`, `motion-systems-specialist`, `photo-shoot-director`,
+  `presentation-designer-slides-decks`, `print--asset-design-specialist`,
+  `social-media-graphics-specialist`, `style-analyst`, `thumbnail--cover-designer`,
+  `sops/SOP-DIU-601.md`, `sops/SOP-GIP-01-PROMPT-ANATOMY.md`): the "GIP Prompt-Band Compliance"
+  band-selection guidance is corrected fleet-wide — `text_bearing_long` is now scoped to GPT-Image 2
+  T2I/I2I copy-bearing deliverables, `text_bearing_medium` is named as the band for the mandatory
+  Ideogram V3 DESIGN quote-card/text-led route, and `medium` is now explicitly scoped
+  non-text-bearing (Seedream only). `SOP-GIP-01-PROMPT-ANATOMY.md`'s band table gained the new row
+  and its library-version pin bumped to `prompt-bands.json v2`. Role-library `_index.json`
+  content_sha/content_version restamped via `hash-content-manifest.py` for all 18 touched
+  artifacts; `--check` passes clean.
+
+### Version
+- **Skill 45 independent line:** skill-version.txt 1.3.3 → 1.3.4; SKILL.md frontmatter version
+  1.3.3 → 1.3.4 (must match the frontmatter-version-guard).
+
 ## [v1.3.3] - 2026-07-12 - P3-05: GIP prompt-band floor wired into 15 graphics role docs, CLI-level fail-first prover, social-media-designs _RULES.md enriched
 
 ### Added
