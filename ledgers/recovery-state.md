@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T15:30:03Z
-openclaw-onboarding `origin/main` HEAD: `7e398af95f2ef44a412aeea81b3608fe9ffe8c7a`
+Generated: 2026-07-15T15:40:02Z
+openclaw-onboarding `origin/main` HEAD: `c40ca231bdb6e100c734d7cea8873a24432b54c0`
 blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -90,7 +90,7 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
   - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
   - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
 - merged into `origin/main`: False
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `e56fef49` is 2 commit(s) ahead of what's pushed to origin. Push before ending the session.
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `fa479da6` is 3 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
@@ -101,6 +101,6 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U92
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
