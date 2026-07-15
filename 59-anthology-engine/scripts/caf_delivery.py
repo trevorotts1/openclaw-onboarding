@@ -1239,6 +1239,19 @@ class _StubCaf:
             "contact.anthology_active_id": "cf_active",
             "contact.anthology_stage": "cf_stage",
             "contact.anthology_rewrite_count": "cf_rw",
+            # G10 (U70/GK-08): the base chapter pair + BOTH chapter-rewrite-preservation
+            # pairs, so the stub can stand in for a location that has actually run
+            # `anthology_registry.py provision-fields` end to end (all 28 keys), not
+            # just the avatar pair. Without these three pairs present here, no self-test
+            # can ever exercise write_and_verify() against rewrite1/rewrite2 -- the exact
+            # deliverable this unit is about -- because resolve_field_ids() would refuse
+            # them as NOT PROVISIONED before a single byte is written.
+            "contact.anthology_chapter_doc_url": "cf_ch_doc",
+            "contact.anthology_chapter_pdf_url": "cf_ch_pdf",
+            "contact.anthology_chapter_rewrite1_doc_url": "cf_rw1_doc",
+            "contact.anthology_chapter_rewrite1_pdf_url": "cf_rw1_pdf",
+            "contact.anthology_chapter_rewrite2_doc_url": "cf_rw2_doc",
+            "contact.anthology_chapter_rewrite2_pdf_url": "cf_rw2_pdf",
         }
         self.media = {}
         self.opps = {}              # contact_id -> {id, pipelineId, pipelineStageId}
@@ -1563,6 +1576,28 @@ def self_test():
         check("unprovisioned field refused", False)
     except DeliveryError as e:
         check("unprovisioned field exit 2", e.code == EX_TENANT)
+
+    # ---- G10 (U70/GK-08) smoke check: the "fully-provisioned location" stub is now
+    # ACTUALLY fully provisioned (the fix above), so a rewrite1 write through the
+    # real runtime engine resolves + writes + reads back byte-for-byte instead of
+    # raising "NOT PROVISIONED". This is a narrow fixture-honesty smoke check only;
+    # the full multi-version G10 preservation proof (base chapter survives rewrite1,
+    # rewrite1 survives rewrite2, all three coexist) already lives end-to-end at
+    # tests/test_rewrite_preservation.py::test_delivery_preserves_original_across_two_rewrites
+    # -- not duplicated here. The remaining GK-08 leg (create these fields on a real
+    # Convert and Flow location via `anthology_registry.py provision-fields`, then
+    # repeat a write/read-back against a real test contact) is a live, per-client-
+    # token action explicitly out of scope for this branch/repo-only pass -- owed as
+    # its own live-proof tier, exactly like U22/U84 before it, never claimed done here.
+    if DEFAULT_FIELD_MAP.exists():
+        fm_rw = FieldMap.load(DEFAULT_FIELD_MAP)
+        slot1 = fm_rw.deliverable_for_artifact_type("rewrite", rewrite_number=1)
+        r1_key_doc, r1_key_pdf = fm_rw.deliverable_keys(slot1)
+        r1_results = write_and_verify(
+            client, "contactG10RW1",
+            [(r1_key_doc, "REWRITE 1 DOC"), (r1_key_pdf, "REWRITE 1 PDF")])
+        check("G10 rewrite1 write+read-back resolves against the now-complete stub",
+              all(x["match"] for x in r1_results) and len(r1_results) == 2)
 
     # media upload + list-verify via stub
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
