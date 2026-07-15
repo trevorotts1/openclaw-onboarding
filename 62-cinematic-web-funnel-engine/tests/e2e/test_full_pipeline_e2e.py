@@ -39,12 +39,16 @@ per-unit suite combines:
      through ONE continuous run_dir; every per-unit suite builds its own
      isolated fixture per phase.
 
-P12-CRM (scripts/prove_conversion.py) and P16-CERTIFY
-(scripts/prove_certificate.py) are correctly and verifiably ABSENT from this
-build unit's scope (owned by a later, unassigned build unit per the live
+P12-CRM (scripts/prove_conversion.py) is correctly and verifiably ABSENT from
+this lineage's scope (owned by a later, unassigned build unit per the live
 ledger) — PipelineBoundaryTests below asserts this precisely, matching
 CWFE-MANIFEST.json's own declared gate paths, so the boundary is proven
-rather than assumed.
+rather than assumed. P16-CERTIFY (scripts/prove_certificate.py) was absent
+when this suite (U21) was authored but is now committed to this lineage via
+the sibling U20 build unit's merge (deterministic prover aggregation +
+signed PROCESS-CERTIFICATE, P16) — the boundary test below reads
+`git ls-files` at run time, not a fixed authoring-time snapshot, so it
+correctly tracks that P16-CERTIFY moved from untracked to tracked.
 
 Run with:
   python3 -m unittest discover -s 62-cinematic-web-funnel-engine/tests/e2e -v
@@ -201,13 +205,16 @@ class ConsolidatedPhaseProofSequenceTests(unittest.TestCase):
 
 class PipelineBoundaryTests(unittest.TestCase):
     """Proves — rather than assumes — exactly where the real, currently
-    buildable pipeline ends: CWFE-MANIFEST.json declares gate scripts for
-    P12-CRM (scripts/prove_conversion.py) and P16-CERTIFY
-    (scripts/prove_certificate.py) that do not exist on disk in this build
-    unit (they are owned by a later, unassigned unit per the live ledger).
-    This is the real "missing gate" state of the pipeline today, not a
-    fabricated break-it fixture — see test_breakit_adversarial.py for both
-    this real case and a synthetic one proving the mechanism is generic."""
+    buildable pipeline ends: CWFE-MANIFEST.json declares a gate script for
+    P12-CRM (scripts/prove_conversion.py) that does not exist on disk in
+    this lineage (it is owned by a later, unassigned unit per the live
+    ledger). P16-CERTIFY's gate (scripts/prove_certificate.py) was also
+    absent when U21 was authored but is now present and git-tracked via the
+    sibling U20 build unit, integrated into this same lineage ahead of
+    P12-CRM. This is the real "missing gate" state of the pipeline today,
+    not a fabricated break-it fixture — see test_breakit_adversarial.py for
+    both the P12-CRM real case and a synthetic one proving the mechanism is
+    generic."""
 
     def test_manifest_declares_seventeen_phases_p0_through_p16(self) -> None:
         manifest = json.loads(sup.MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -223,15 +230,19 @@ class PipelineBoundaryTests(unittest.TestCase):
         directory ahead of their own commits (observed live during this
         unit's build: an untracked scripts/prove_certificate.py appeared on
         disk mid-session). A gate script only counts as "implemented" for
-        this suite once it is committed to the branch's own history."""
+        this suite once it is committed to the branch's own history. As of
+        the U20 merge into this lineage, P16-CERTIFY's gate
+        (scripts/prove_certificate.py) is committed; only P12-CRM
+        (scripts/prove_conversion.py, owned by a later, unassigned unit)
+        remains untracked."""
         manifest = json.loads(sup.MANIFEST_PATH.read_text(encoding="utf-8"))
         tracked, untracked = sup.git_tracked_gate_paths(manifest["phases"])
         self.assertEqual(
             sorted(untracked),
-            ["P12-CRM", "P16-CERTIFY"],
-            msg=f"expected exactly P12-CRM/P16-CERTIFY untracked; got untracked={untracked}, tracked={tracked}",
+            ["P12-CRM"],
+            msg=f"expected exactly P12-CRM untracked; got untracked={untracked}, tracked={tracked}",
         )
-        self.assertEqual(len(tracked), 15)
+        self.assertEqual(len(tracked), 16)
 
 
 # ---------------------------------------------------------------------------
