@@ -5,10 +5,22 @@ orchestrator (Skill 62).
 
 A no-skip, manifest-driven state machine. It loads CWFE-MANIFEST.json, walks the
 phase spine P0..P16 IN ORDER, and for each phase shells that phase's declared
-`gate` script if it exists on disk. Only when EVERY mandatory phase passes does
-it emit a signed PROCESS-CERTIFICATE.json. A missing or failing gate aborts the
+`gate` script if it exists on disk. A missing or failing gate aborts the
 run (fail-closed) and NO certificate is written, so an incomplete or
 non-compliant run can never reach Certified.
+
+CERTIFICATE OWNERSHIP (ONE signed certificate, ONE signing scheme): the
+P16-CERTIFY gate — scripts/prove_certificate.py — is the SOLE emitter of the
+signed PROCESS-CERTIFICATE.json. When the orchestrator runs P16 as a phase gate
+(`prove_certificate.py --run-dir <run_dir>`), that prover re-aggregates the
+whole spine and, only on a fully-clean run, writes the REAL HMAC-SHA256-signed
+certificate (keyed by the run-scoped front-door nonce). This orchestrator must
+therefore NEVER mint its own certificate: after the phase loop finishes green it
+only PRESERVES and independently re-verifies the prover's certificate (through
+`prove_certificate.py --verify`), never overwriting it with a placeholder. An
+earlier build of this file signed its own weak nonce-keyed sha256 "seed" hash
+here and clobbered the real certificate; that reconciliation is now done — the
+finale is `_finalize_certificate()`, not a second signer.
 
 FRONT-DOOR NONCE (ADR-6, required): the canonical entry shell
 (cinematic-web-funnel-entry.sh) writes a run-scoped 0600 nonce file
@@ -33,7 +45,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import subprocess
 import sys
@@ -144,21 +155,37 @@ def _write_phase_status(run_dir: Path, results: List[Dict[str, Any]]) -> None:
     )
 
 
-def _emit_certificate(run_dir: Path, manifest: Dict[str, Any], nonce: str, results: List[Dict[str, Any]]) -> None:
-    digest_src = json.dumps(results, sort_keys=True).encode("utf-8") + nonce.encode("utf-8")
-    signature = hashlib.sha256(digest_src).hexdigest()
-    cert = {
-        "skill": manifest.get("skill"),
-        "manifest_version": manifest.get("manifest_version"),
-        "certified_at": _now(),
-        "phases": results,
-        "signature_sha256_hmac_seed": "nonce-keyed sha256 over the phase result ledger; "
-        "upgraded to a proper HMAC scheme when the certificate prover lands (P16-CERTIFY gate)",
-        "signature": signature,
-    }
-    (run_dir / "PROCESS-CERTIFICATE.json").write_text(
-        json.dumps(cert, indent=2, sort_keys=False), encoding="utf-8"
+_CERT_PROVER = _SCRIPT_DIR / "scripts" / "prove_certificate.py"
+
+
+def _finalize_certificate(run_dir: Path) -> Tuple[bool, str]:
+    """Preserve + independently re-verify the certificate the P16-CERTIFY gate
+    (scripts/prove_certificate.py) already wrote during the phase loop.
+
+    This orchestrator NEVER signs or overwrites the certificate itself — the
+    P16 prover is the sole emitter of the real HMAC-SHA256-signed
+    PROCESS-CERTIFICATE.json (keyed by the run-scoped front-door nonce). Here we
+    only confirm that certificate is on disk and re-verify it through the
+    prover's own standalone ``--verify`` path (nonce read from
+    <run_dir>/.cwfe_run_nonce), so there is exactly ONE certificate and ONE
+    signing scheme. Fail-closed: a missing certificate, or one that fails
+    re-verification, aborts the run WITHOUT fabricating a placeholder."""
+    cert_path = run_dir / "PROCESS-CERTIFICATE.json"
+    if not cert_path.exists():
+        return False, (
+            "every phase passed but the P16-CERTIFY gate left no PROCESS-CERTIFICATE.json on disk — "
+            "refusing to fabricate a placeholder certificate (the prover is the sole certificate emitter)"
+        )
+    proc = subprocess.run(
+        [PY, str(_CERT_PROVER), "--verify", str(cert_path), "--run-dir", str(run_dir)],
+        capture_output=True,
+        text=True,
     )
+    tail = (proc.stdout or proc.stderr or "").strip().splitlines()
+    detail = tail[-1] if tail else f"rc={proc.returncode}"
+    if proc.returncode != 0:
+        return False, f"the emitted PROCESS-CERTIFICATE.json failed independent re-verification :: {detail}"
+    return True, detail
 
 
 def run_pipeline(run_dir: Path, nonce: str) -> int:
@@ -189,9 +216,12 @@ def run_pipeline(run_dir: Path, nonce: str) -> int:
     _write_phase_status(run_dir, results)
 
     if overall_ok and len(results) == len(phases):
-        _emit_certificate(run_dir, manifest, nonce, results)
-        print("RESULT: CERTIFIED — PROCESS-CERTIFICATE.json written.")
-        return EXIT_OK
+        finalized, detail = _finalize_certificate(run_dir)
+        if finalized:
+            print(f"RESULT: CERTIFIED — PROCESS-CERTIFICATE.json (HMAC-SHA256, prover-signed) preserved and re-verified. {detail}")
+            return EXIT_OK
+        print(f"RESULT: NOT CERTIFIED — {detail}", file=sys.stderr)
+        return EXIT_GATE_FAIL
 
     print("RESULT: NOT CERTIFIED — a phase gate failed or is not yet implemented.", file=sys.stderr)
     return EXIT_GATE_FAIL

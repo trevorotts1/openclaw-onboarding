@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/crm-integration-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — crm-integration-receipt.json (Skill 62, P12-CRM)",
+  "description": "The P12-CRM artifact CWFE-MANIFEST.json declares ('crm-integration-receipt.json (GHL forms/calendars/workflows event proof)'). Produced by the GHL delegation rail (06-ghl-install-pages + 44-convert-and-flow-operator, spec 14.1) for a live run, or by an approved offline mock (spec 17.6/19.2). scripts/prove_conversion.py (the P12 gate) treats this as EVIDENCE, never as the verdict — it re-derives every conversion decision from the LOCKED content-manifest.json cta_map and the materialized site's own conversion wiring on disk, exactly like every other prove_*.py in this skill. Records secret presence by NAME only (spec 14.3/20): env var NAMES and safe resource identifiers, never a secret VALUE.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "crm",
+    "conversion_actions",
+    "conversion_event_proof",
+    "cleanup",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "crm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "location_id", "delegated_to", "secret_names"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["gohighlevel"],
+          "description": "GoHighLevel, branded Convert and Flow for clients (spec 14.1). The one GHL delivery rail is Skill 6; this engine never grows its own GHL build client."
+        },
+        "location_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+          "description": "GHL location identified by SAFE identifier only (spec 14.3 'location ID by safe identifier'). Alnum/_/- so a path-traversal or secret-shaped value cannot pass; prove_conversion additionally secret-scans the whole receipt."
+        },
+        "delegated_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The GHL delivery/automation skills this receipt's work was delegated to (spec 14.1: 06-ghl-install-pages + 44-convert-and-flow-operator)."
+        },
+        "secret_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80,
+            "pattern": "^[A-Z][A-Z0-9_]{2,79}$"
+          },
+          "description": "Names ONLY of the env vars holding the client's GHL webhook/embed secrets (spec 20 'record secret presence by name only'). Never a value."
+        }
+      }
+    },
+    "conversion_actions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every wired conversion CTA. prove_conversion cross-checks each against the LOCKED content-manifest.json cta_map's own parsed ConversionAction (kind + env var NAME / href + required fields must all agree) and against the materialized site's site-data.generated.ts — a receipt claiming a CTA the locked map does not validly wire is rejected fail-closed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cta_id", "kind", "required_fields", "satisfies", "ghl_resource"],
+        "properties": {
+          "cta_id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": ["ghl-form-embed", "ghl-webhook", "external-link"]
+          },
+          "env_var_name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80,
+            "pattern": "^[A-Z][A-Z0-9_]{2,79}$",
+            "description": "Required for kind ghl-form-embed / ghl-webhook: the env var NAME (never the URL/value) the site resolves server-side (lib/resolve-ghl-embeds.ts / app/api/conversion-event/route.ts)."
+          },
+          "href": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required for kind external-link."
+          },
+          "required_fields": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "satisfies": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["form", "calendar", "payment"] },
+            "description": "Which content-manifest.conversion_requirements this CTA fulfils. prove_conversion asserts every required capability is covered by a valid, wired action."
+          },
+          "ghl_resource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "id"],
+            "description": "The GHL form/calendar/workflow/webhook/payment resource id this CTA drives (spec 14.3 'form/calendar/widget IDs; workflow/webhook IDs'). A safe identifier, never a secret.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["form", "calendar", "workflow", "webhook", "payment-link", "none"]
+              },
+              "id": { "type": "string", "minLength": 1, "maxLength": 128 }
+            }
+          }
+        }
+      }
+    },
+    "conversion_event_proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "success", "error_state"],
+      "description": "Spec 17.6: prove 'success state, and error state through real E2E tests or approved mocks'. UTM propagation (spec 13.3) is proven on the success path.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["approved-mock", "live-e2e"],
+          "description": "'approved-mock' for an offline deterministic run (spec 19.2 mocked fixtures, no live paid/CRM call); 'live-e2e' for a real sandbox conversion."
+        },
+        "success": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cta_id", "submitted_fields", "utm", "utm_propagated", "response_status", "succeeded"],
+          "properties": {
+            "cta_id": { "type": "string", "minLength": 1 },
+            "submitted_fields": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "utm": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "The UTM params that rode through to the conversion event (spec 13.3 'UTM preservation'). Keys are the canonical utm_source/medium/campaign/term/content set."
+            },
+            "utm_propagated": { "type": "boolean" },
+            "response_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+            "succeeded": { "type": "boolean" }
+          }
+        },
+        "error_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cta_id", "submitted_fields", "response_status", "rejected"],
+          "description": "A deliberately-invalid submission (a required field withheld) that the conversion wiring rejects fail-closed (the /api/conversion-event route's 400 path) — proving the error state, not just the happy path.",
+          "properties": {
+            "cta_id": { "type": "string", "minLength": 1 },
+            "submitted_fields": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "response_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+            "rejected": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cleaned_up"],
+      "description": "Spec 14.3: 'test contact ID created during E2E test, if allowed; cleanup result'.",
+      "properties": {
+        "test_contact_id": { "type": ["string", "null"] },
+        "cleaned_up": { "type": "boolean" }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

@@ -39,16 +39,15 @@ per-unit suite combines:
      through ONE continuous run_dir; every per-unit suite builds its own
      isolated fixture per phase.
 
-P12-CRM (scripts/prove_conversion.py) is correctly and verifiably ABSENT from
-this lineage's scope (owned by a later, unassigned build unit per the live
-ledger) — PipelineBoundaryTests below asserts this precisely, matching
-CWFE-MANIFEST.json's own declared gate paths, so the boundary is proven
-rather than assumed. P16-CERTIFY (scripts/prove_certificate.py) was absent
-when this suite (U21) was authored but is now committed to this lineage via
-the sibling U20 build unit's merge (deterministic prover aggregation +
-signed PROCESS-CERTIFICATE, P16) — the boundary test below reads
-`git ls-files` at run time, not a fixed authoring-time snapshot, so it
-correctly tracks that P16-CERTIFY moved from untracked to tracked.
+Pipeline completeness (whole-engine blocker fix): every one of the 17
+CWFE-MANIFEST.json phase gates now has a committed gate script on disk.
+P12-CRM (scripts/prove_conversion.py) — the last missing gate, whose absence
+made the orchestrator break at P12 so a run could never reach certificate
+emission — is now built and committed; PipelineBoundaryTests below asserts
+that NO declared gate path is untracked, matching CWFE-MANIFEST.json's own
+declared gate paths, so pipeline completeness is proven rather than assumed.
+The boundary test reads `git ls-files` at run time, not a fixed authoring-
+time snapshot, so it tracks the real committed state of the lineage.
 
 Run with:
   python3 -m unittest discover -s 62-cinematic-web-funnel-engine/tests/e2e -v
@@ -185,6 +184,7 @@ class ConsolidatedPhaseProofSequenceTests(unittest.TestCase):
         ("P6-ANCHOR .. P9-FINAL-MEDIA", [sup.PY, "scripts/prove_media.py", "--self-test"]),
         ("P10-ENCODE-SEAM", [sup.PY, "scripts/verify_seams.py", "--self-test"]),
         ("P11-SITE-BUILD", [sup.PY, "scripts/prove_site.py", "--self-test"]),
+        ("P12-CRM", [sup.PY, "scripts/prove_conversion.py", "--self-test"]),
         ("P13-BROWSER-QC", [sup.PY, "scripts/run_browser_qc.py", "--self-test"]),
         ("P14-PREVIEW / P15-PRODUCTION", [sup.PY, "scripts/prove_deployment.py", "--self-test"]),
     ]
@@ -204,17 +204,16 @@ class ConsolidatedPhaseProofSequenceTests(unittest.TestCase):
 
 
 class PipelineBoundaryTests(unittest.TestCase):
-    """Proves — rather than assumes — exactly where the real, currently
-    buildable pipeline ends: CWFE-MANIFEST.json declares a gate script for
-    P12-CRM (scripts/prove_conversion.py) that does not exist on disk in
-    this lineage (it is owned by a later, unassigned unit per the live
-    ledger). P16-CERTIFY's gate (scripts/prove_certificate.py) was also
-    absent when U21 was authored but is now present and git-tracked via the
-    sibling U20 build unit, integrated into this same lineage ahead of
-    P12-CRM. This is the real "missing gate" state of the pipeline today,
-    not a fabricated break-it fixture — see test_breakit_adversarial.py for
-    both the P12-CRM real case and a synthetic one proving the mechanism is
-    generic."""
+    """Proves — rather than assumes — that the pipeline is now COMPLETE:
+    every one of CWFE-MANIFEST.json's 17 declared phase gate scripts is
+    committed to this lineage. The last missing gate, P12-CRM
+    (scripts/prove_conversion.py) — whose earlier absence made the
+    orchestrator break at P12 so a run could never reach certificate
+    emission — is now built and committed. Ground truth is `git ls-files`
+    at run time, matching CWFE-MANIFEST.json's own declared gate paths, so
+    completeness is proven rather than assumed — see
+    test_breakit_adversarial.py for a synthetic missing-gate fixture that
+    still proves the fail-closed mechanism is generic."""
 
     def test_manifest_declares_seventeen_phases_p0_through_p16(self) -> None:
         manifest = json.loads(sup.MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -223,26 +222,23 @@ class PipelineBoundaryTests(unittest.TestCase):
         self.assertEqual(phases[0]["id"], "P0-ENVIRONMENT")
         self.assertEqual(phases[-1]["id"], "P16-CERTIFY")
 
-    def test_every_phase_gate_except_p12_and_p16_is_committed_to_this_lineage(self) -> None:
-        """Ground truth is `git ls-files`, not a raw filesystem scan — this
-        build unit's workspace is shared with concurrently running sibling
-        build units that write directly into this same on-disk skill
-        directory ahead of their own commits (observed live during this
-        unit's build: an untracked scripts/prove_certificate.py appeared on
-        disk mid-session). A gate script only counts as "implemented" for
-        this suite once it is committed to the branch's own history. As of
-        the U20 merge into this lineage, P16-CERTIFY's gate
-        (scripts/prove_certificate.py) is committed; only P12-CRM
-        (scripts/prove_conversion.py, owned by a later, unassigned unit)
-        remains untracked."""
+    def test_every_phase_gate_is_committed_to_this_lineage(self) -> None:
+        """Ground truth is `git ls-files`, not a raw filesystem scan — a gate
+        script only counts as "implemented" for this suite once it is
+        committed to the branch's own history (an untracked working-tree
+        file dropped in by a concurrent process must never make a phase read
+        as implemented when it is not part of any commit). As of the P12-CRM
+        gate build, ALL 17 declared gate paths are committed: nothing is
+        untracked, so the manifest's phase spine and the on-disk lineage
+        agree completely."""
         manifest = json.loads(sup.MANIFEST_PATH.read_text(encoding="utf-8"))
         tracked, untracked = sup.git_tracked_gate_paths(manifest["phases"])
         self.assertEqual(
             sorted(untracked),
-            ["P12-CRM"],
-            msg=f"expected exactly P12-CRM untracked; got untracked={untracked}, tracked={tracked}",
+            [],
+            msg=f"expected every phase gate committed; got untracked={untracked}, tracked={tracked}",
         )
-        self.assertEqual(len(tracked), 16)
+        self.assertEqual(len(tracked), 17)
 
 
 # ---------------------------------------------------------------------------

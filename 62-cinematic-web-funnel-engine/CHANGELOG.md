@@ -89,6 +89,64 @@ suite `test-artifact-coverage.sh` → 10/10 passed; full skill test suite
 re-run clean: unit 672/672, integration 44/44, e2e 23/23,
 `prove_certificate.py --self-test` → PASS.
 
+## Unreleased — whole-engine QC blocker fixes (branch `skill62/cinematic-engine`)
+
+Closes the five whole-engine blockers an independent QC pass found (engine
+scored 6.5; gate is 8.5). On-branch only — no version/tag ripple (frontmatter /
+`skill-version.txt` stay at `1.0.0`; behavior/blocker fixes, no new public
+surface). No live paid call and no live deploy (the U26 canary stays held).
+
+Fixed:
+
+- **P12-CRM gate was missing** (the orchestrator broke at P12, so a run could
+  never reach certificate emission). Added `scripts/prove_conversion.py` — the
+  17th and final phase gate (`py_symbol prove_conversion.evaluate`,
+  `AF-CWFE-P12-CRM`), consistent with the other 16 gates (uniform
+  `--run-dir` exit-code contract, `--self-test`, `crm-integration-status.json`
+  evidence on every invocation). It re-derives the conversion verdict from the
+  LOCKED `content-manifest.json` `cta_map` (parsed with exact parity to
+  `templates/components/conversion-map.ts`) and the materialized site's own
+  wiring + `site-data.generated.ts` `ctaMap`, never trusting the receipt's own
+  booleans (spec 17.6 / 14.3): every wired CTA, required conversion capability,
+  UTM propagation, success AND fail-closed error state, and a no-secret-values
+  scan (reusing `build_site.SECRET_PATTERNS`). Added
+  `structure/crm-integration-receipt.schema.json` for the P12 artifact.
+- **Broken certificate emission** — `run_cinematic_web_funnel.py` signed its own
+  weak nonce-keyed sha256 "seed" hash after the phase loop and OVERWROTE the
+  real HMAC-SHA256-signed certificate the P16 prover
+  (`scripts/prove_certificate.py`) had already written. Replaced
+  `_emit_certificate()` with `_finalize_certificate()`: the prover is now the
+  SOLE certificate emitter, and the orchestrator only PRESERVES + independently
+  re-verifies it through the prover's own `--verify` path. ONE certificate, ONE
+  signing scheme.
+- **Front-door self-test check #4 was stale** —
+  `cinematic-web-funnel-entry.sh --self-test` grepped for `GATE-SCRIPT-MISSING`,
+  an outdated skeleton-era condition (all 17 gates now exist). It now validates
+  the real current behavior: a bare run-dir fail-closes at P0-ENVIRONMENT
+  (`AF-CWFE-P0-ENVIRONMENT`) and emits no certificate. Self-test exits 0.
+- **Stale manifest** — `CWFE-MANIFEST.json` `build_status` said `SKELETON` /
+  "every phase resolves GATE-SCRIPT-MISSING"; updated to reflect the complete
+  offline pipeline (all 17 gates present, one prover-signed certificate) while
+  explicitly recording that the live U26 canary remains held.
+- **End-to-end certification never proven** — added
+  `tests/e2e/test_certified_funnel_e2e.py`: drives the REAL front door +
+  orchestrator + prover to produce ONE genuine HMAC-SHA256-signed
+  PROCESS-CERTIFICATE for a passing run (offline, all-pass fixture phase gates
+  per spec 19.2), proves the finale preserves (not overwrites) it, and
+  independently re-verifies the signature — the regression guard for the
+  clobbering-placeholder bug. Updated `tests/e2e/test_full_pipeline_e2e.py`
+  (P12 now committed → all 17 gates tracked; P12-CRM added to the consolidated
+  phase-self-test sequence) and `tests/e2e/test_breakit_adversarial.py`
+  (missing-gate framing → synthetic-only, since no gate is genuinely absent).
+  Added `tests/unit/test_prove_conversion.py` (29 offline unit tests).
+
+Verified: `prove_conversion.py --self-test` PASS (1 consistent-pass proof + 11
+fail-closed proofs); `run_cinematic_web_funnel.py --self-test` PASS;
+`cinematic-web-funnel-entry.sh --self-test` PASS; `prove_certificate.py
+--self-test` PASS; the offline certified-funnel e2e emits a genuine HMAC-SHA256
+PROCESS-CERTIFICATE that `prove_certificate.py --verify` accepts. Full unit
+suite: 728/728 (was 699).
+
 ## Unreleased — Command Center ZERO-CHANGE discovery proof (build unit U23, branch `skill62/cinematic-engine`)
 
 Proves the spec §2.2 "Default ruling" / §21.2 "Conditional Command Center changes"

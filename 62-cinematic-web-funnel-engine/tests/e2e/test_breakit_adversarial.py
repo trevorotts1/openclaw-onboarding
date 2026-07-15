@@ -9,13 +9,15 @@ seam-discontinuity, broken build — plus empty intake, already covered by
 test_full_pipeline_e2e.FrontDoorRealChainTests.test_empty_run_dir_fails_
 closed_at_p1_intake_after_p0_passes).
 
-Every case here either (a) exercises the REAL current build state (e.g. the
-real, currently-missing P12/P16 gates) or (b) reuses a real, already-proven
-production function/fixture-builder from the unit that owns it, invoked
-through a NEW vantage point (a mutated skill-dir copy, the real subprocess
-CLI, or a deliberately hostile input) that no existing per-unit suite
-already covers — never a re-implementation of another suite's fixture or
-assertion logic.
+Every case here either (a) exercises the REAL current build state (e.g. a
+bare run-dir fail-closing at the first phase) or (b) reuses a real,
+already-proven production function/fixture-builder from the unit that owns
+it, invoked through a NEW vantage point (a mutated skill-dir copy, the real
+subprocess CLI, or a deliberately hostile input) that no existing per-unit
+suite already covers — never a re-implementation of another suite's fixture
+or assertion logic. (All 17 phase gate scripts now exist and are committed,
+so the "missing gate" fail-closed path is exercised via the synthetic
+mutated-manifest fixture below, not a genuinely absent gate.)
 
 Run with:
   python3 -m unittest discover -s 62-cinematic-web-funnel-engine/tests/e2e -v
@@ -62,13 +64,15 @@ def _mint_nonce(run_dir: Path) -> str:
 # 1) MISSING GATE
 # ---------------------------------------------------------------------------
 class MissingGateBreakItTests(unittest.TestCase):
-    """Real case: the P12-CRM gate genuinely does not exist yet in this
-    build unit's lineage (see test_full_pipeline_e2e.PipelineBoundaryTests).
+    """Real case: a bare run-dir driven through the real front door fail-closes
+    at the FIRST phase and never emits a certificate (all 17 gates now exist,
+    so this stops on a missing upstream ARTIFACT, not a missing gate script).
     Synthetic case: a copied skill dir with an EARLIER phase's gate path
     rewritten to a nonexistent file, proving GATE-SCRIPT-MISSING fail-closed
-    behavior is generic to the mechanism, not incidental to P12 specifically."""
+    behavior is still generic to the mechanism, exercised even though no real
+    gate is actually absent anymore."""
 
-    def test_real_no_skip_orchestrator_run_halts_at_first_untracked_gate(self) -> None:
+    def test_real_no_skip_orchestrator_run_never_certifies_a_bare_run_dir(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cwfe-e2e-breakit-missinggate-real-") as tmp:
             run_dir = Path(tmp) / "run"
             run_dir.mkdir()
@@ -81,12 +85,11 @@ class MissingGateBreakItTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((run_dir / "PROCESS-CERTIFICATE.json").exists())
-            # An empty run_dir fails at P0 (no environment-receipt yet), which
-            # is itself a real, earlier fail-closed stop — not GATE-SCRIPT-
-            # MISSING. The point this case proves is narrower and stronger:
-            # no certificate is EVER emitted while the manifest's own
-            # git-tracked gate paths leave a gap, regardless of which phase a
-            # given run happens to fail on first.
+            # An empty run_dir fails at P0 (no environment-receipt yet), a
+            # real, early fail-closed stop. The point this case proves is
+            # narrower and stronger: no certificate is EVER emitted from a
+            # bare run-dir that carries none of the real upstream artifacts,
+            # regardless of which phase a given run happens to fail on first.
             phase_status = json.loads((run_dir / "phase-status.json").read_text(encoding="utf-8"))
             self.assertFalse(
                 any(p["status"] == "CERTIFIED" for p in phase_status["phases"]),

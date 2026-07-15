@@ -128,15 +128,24 @@ self_test() {
     echo "  [FAIL] run_cinematic_web_funnel.py --self-test"; sed 's/^/         /' /tmp/cwfe_orch.log; fails=$((fails + 1))
   fi
 
-  # 4) A real front-door pipeline run against an empty run-dir must fail-closed at P0
-  #    with GATE-SCRIPT-MISSING (no phase gate scripts exist yet in this skeleton) and
-  #    must NOT emit PROCESS-CERTIFICATE.json.
+  # 4) A real front-door pipeline run against a bare run-dir must fail-closed at
+  #    the FIRST phase and emit NO certificate. All 17 phase gate scripts now
+  #    exist, so a bare run no longer stops at GATE-SCRIPT-MISSING — with no
+  #    resolved model environment it fail-closes at P0-ENVIRONMENT
+  #    (AF-CWFE-P0-ENVIRONMENT). The CWFE_MODEL_* / CWFE_ENVIRONMENT vars are
+  #    unset for this one check so the outcome stays deterministic regardless of
+  #    the operator's own shell (a shell that HAS them set would instead stop
+  #    fail-closed at P1-INTAKE on a bare run-dir; either way, no certificate).
   local run_rd; run_rd="$(mktemp -d)"
-  if run_pipeline "$run_rd" >/tmp/cwfe_pipeline.log 2>&1; then
-    echo "  [FAIL] full pipeline run CERTIFIED with zero phase gate scripts implemented — impossible, investigate"; fails=$((fails + 1))
+  if ( unset CWFE_MODEL_ARCHITECT_JUDGE CWFE_MODEL_BUILDER CWFE_MODEL_MECHANICAL_VERIFIER CWFE_ENVIRONMENT CWFE_RUN_NONCE
+       run_pipeline "$run_rd" ) >/tmp/cwfe_pipeline.log 2>&1; then
+    echo "  [FAIL] full pipeline run CERTIFIED against a bare run-dir — impossible, investigate"; fails=$((fails + 1))
   else
-    if grep -q "GATE-SCRIPT-MISSING" /tmp/cwfe_pipeline.log && [ ! -f "$run_rd/PROCESS-CERTIFICATE.json" ]; then
-      echo "  [PASS] full pipeline run correctly fail-closes at P0-ENVIRONMENT (GATE-SCRIPT-MISSING, no certificate emitted)"
+    if grep -qF "[FAIL] P0-ENVIRONMENT" /tmp/cwfe_pipeline.log \
+       && grep -q "AF-CWFE-P0-ENVIRONMENT" /tmp/cwfe_pipeline.log \
+       && grep -q "RESULT: NOT CERTIFIED" /tmp/cwfe_pipeline.log \
+       && [ ! -f "$run_rd/PROCESS-CERTIFICATE.json" ]; then
+      echo "  [PASS] full pipeline run correctly fail-closes at P0-ENVIRONMENT (AF-CWFE-P0-ENVIRONMENT, no certificate emitted)"
     else
       echo "  [FAIL] full pipeline run failed for the wrong reason, or a certificate leaked out"; sed 's/^/         /' /tmp/cwfe_pipeline.log; fails=$((fails + 1))
     fi
