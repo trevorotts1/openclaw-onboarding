@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/content-handoff.schema.json",
+  "title": "Cinematic and Web Funnel Engine — content-handoff.json (Skill 62, U8 — delegate consumption contract)",
+  "description": "The interchange file scripts/resolve_content_engine.py reads from a COMPLETED Skill 49 (Signature Funnel) or Skill 56 (Sales-Page-Assets) run when P2-METHODOLOGY has delegated to one of them (ADR-10). This schema is OWNED by Skill 62 (it describes what 62 requires as input, not an internal artifact of Skill 49/56) and is deliberately near-isomorphic to content-manifest.schema.json's content-bearing fields so mapping one to the other at P3-CONTENT is a lossless passthrough, never a rewrite. approved_copy_paths MUST be filesystem paths to the delegate skill's OWN copy artifacts (its copy_ledger.json / funnel-manifest.json / pages/*.fragment.html family) — never inlined text — which is what makes 'never rewrite the delegated sacred copy' mechanically checkable: scripts/prove_content.assert_delegated_methodology() rejects any path that resolves inside the consuming project's run_dir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_skill",
+    "source_skill_version",
+    "generated_at",
+    "certificate_ref",
+    "page_profiles",
+    "section_order",
+    "approved_copy_paths",
+    "cta_map",
+    "offer_ledger",
+    "conversion_requirements",
+    "claims",
+    "qc_receipt"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "source_skill": {
+      "type": "string",
+      "enum": ["49-signature-funnel", "56-sales-page-assets"]
+    },
+    "source_skill_version": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "certificate_ref": {
+      "type": ["object", "null"],
+      "description": "Pointer to the delegate skill's OWN PROCESS-CERTIFICATE.json proving its sacred gates passed. Null is only legal when the delegate run has no certificate yet (e.g. a preview-only handoff); prove_content.py records this as a lower-trust receipt but does not itself fabricate a certificate.",
+      "additionalProperties": false,
+      "required": ["path", "skill"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "skill": { "type": "string", "minLength": 1 }
+      }
+    },
+    "page_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["profile_id", "sections"],
+        "properties": {
+          "profile_id": { "type": "string", "minLength": 1 },
+          "sections": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "section_order": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "approved_copy_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "cta_map": { "type": "object", "additionalProperties": true },
+    "offer_ledger": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "conversion_requirements": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "form": { "type": "boolean" },
+        "calendar": { "type": "boolean" },
+        "payment": { "type": "boolean" }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["claim", "truth_source"],
+        "properties": {
+          "claim": { "type": "string", "minLength": 1 },
+          "truth_source": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "qc_receipt": { "type": "object", "additionalProperties": true }
+  }
+}
