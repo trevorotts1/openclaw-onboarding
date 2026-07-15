@@ -3,11 +3,16 @@
 test-persona-match-regression-corpus.py — P4-01 step 2: "strengthen matching
 quality measurably: add a persona-match regression corpus (20 labeled
 request->expected-persona cases, drafted ... from real board history) as a
-test the matcher must score >=90% on".
+test the matcher must score >=90% on". Grown 20 -> 40 cases by A-U13 (Skill 6
+v2 master-spec section A, ONB, P2, dep A-U3): +10 emotional-register-intent
+cases (C21-C30) and +10 conversion-style-intent cases (C31-C40), each tagged
+`intent_tag` in the corpus JSON and each individually verified against the
+live matcher before being locked in (see corpus `_doc` for the full A-U13
+rationale). The original 20 cases (C01-C20) are untouched.
 
 WHAT THIS PROVES
 -----------------
-Loads testdata/persona-match-regression-corpus.json (20 cases) and the REAL,
+Loads testdata/persona-match-regression-corpus.json (40 cases) and the REAL,
 shipped 99-persona catalog at
 22-book-to-persona-coaching-leadership-system/persona-categories.json (never
 a synthetic fixture — this measures actual production match quality, not a
@@ -118,12 +123,13 @@ def score_corpus(catalog, match_topic_fn, match_audience_fn):
 
 
 # ── 1. Corpus shape sanity ──────────────────────────────────────────────────
-section("SHAPE  corpus has exactly 20 cases, each with the required fields")
+section("SHAPE  corpus has >=40 cases (A-U13 floor), each with the required fields")
 required = {"id", "dimension", "request", "expected_persona_id"}
-if len(CASES) == 20:
-    ok(f"corpus has exactly 20 cases (got {len(CASES)})")
+MIN_CORPUS = 40
+if len(CASES) >= MIN_CORPUS:
+    ok(f"corpus has >= {MIN_CORPUS} cases (got {len(CASES)})")
 else:
-    bad(f"corpus expected 20 cases, got {len(CASES)}")
+    bad(f"corpus expected >= {MIN_CORPUS} cases (A-U13 floor), got {len(CASES)}")
 missing_fields = [c["id"] for c in CASES if not required.issubset(c.keys())] \
     if all("id" in c for c in CASES) else ["<case missing id>"]
 if not missing_fields:
@@ -135,6 +141,28 @@ if len(set(ids)) == len(ids):
     ok("every case id is unique")
 else:
     bad(f"duplicate case ids found: {ids}")
+
+# A-U13 accept (d): >=5 cases must assert emotional-register intent and >=5
+# must assert conversion-style intent, each TAGGED in the corpus JSON via
+# `intent_tag` (not inferred) — this is the binding acceptance criterion, so
+# it is asserted here as a hard gate, not left to eyeballing the JSON.
+section("A-U13  >=5 emotional-register-intent + >=5 conversion-style-intent "
+        "cases, tagged via intent_tag")
+MIN_INTENT = 5
+emo_count = sum(1 for c in CASES if c.get("intent_tag") == "emotional-register")
+conv_count = sum(1 for c in CASES if c.get("intent_tag") == "conversion-style")
+if emo_count >= MIN_INTENT:
+    ok(f"{emo_count} case(s) tagged intent_tag='emotional-register' "
+       f"(>= {MIN_INTENT} required)")
+else:
+    bad(f"only {emo_count} case(s) tagged intent_tag='emotional-register' "
+        f"(need >= {MIN_INTENT})")
+if conv_count >= MIN_INTENT:
+    ok(f"{conv_count} case(s) tagged intent_tag='conversion-style' "
+       f"(>= {MIN_INTENT} required)")
+else:
+    bad(f"only {conv_count} case(s) tagged intent_tag='conversion-style' "
+        f"(need >= {MIN_INTENT})")
 # every expected_persona_id must be a REAL persona in the live catalog (never
 # a fabricated id — the corpus must be grounded in the shipped catalog).
 live_personas = pb._persona_meta(CATALOG)
@@ -147,7 +175,7 @@ else:
 
 # ── 2. THE GATE — matcher must score >=90% on the corpus, against the REAL
 #    shipped catalog ─────────────────────────────────────────────────────────
-section(f"GATE  matcher scores >= {GATE:.0%} on the 20-case corpus "
+section(f"GATE  matcher scores >= {GATE:.0%} on the {len(CASES)}-case corpus "
         f"(REAL shipped 99-persona catalog)")
 hits, total, results = score_corpus(CATALOG, pb.match_topic_persona,
                                      pb.match_audience_persona)
