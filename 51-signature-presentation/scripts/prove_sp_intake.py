@@ -57,8 +57,11 @@
 """Fail-closed deterministic prover for the Signature Presentation intake gate."""
 
 import argparse
+import hashlib
+import hmac
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 # ---- exit codes -------------------------------------------------------------
@@ -72,6 +75,25 @@ AF_SPLIT = "AF-SP-8Q-SPLIT"
 AF_FRAME = "AF-SP-FRAME-UNSET"
 AF_TYPE = "AF-SP-TYPE-MISMATCH"
 AF_OFFER = "AF-SP-OFFER-UNDECLARED"
+AF_UNPACED = "AF-SP-INTAKE-UNPACED"
+
+# ---- GK-23 / D18 — turn-ledger provenance (record-layer pacing gate) --------
+# See deck-intake-driver.py's matching comment block for the full threat-model
+# note. TURN_LEDGER_KEY MUST match that file byte-for-byte — it is a published
+# integrity key (not a secrecy boundary: evaluate() takes only the assembled
+# dict, exactly like every other call site here including build_deck.py's
+# _sp_delegate, so no out-of-band secret channel exists to thread a per-run
+# secret through). It binds the turn array + deck_type + commit id together so
+# the block cannot be edited piecemeal without invalidating the signature.
+TURN_LEDGER_KEY = b"skill51-sp-intake-turn-ledger-provenance-v1"
+
+# GK-D3-ratified migration window (Recommendation A's accepted cost: "one
+# migration window for pre-stamp records"). A runtime record with NO
+# turn_ledger_provenance block at all is grandfathered through this date;
+# after it, an unstamped record hard-fails AF-SP-INTAKE-UNPACED too. REMOVE
+# this exception in a dated follow-up line item once the fleet has rolled the
+# driver's turn-ledger stamp (do not silently extend the date in place).
+GRACE_WINDOW_UNTIL = date(2026, 8, 15)
 
 # ---- contract constants -----------------------------------------------------
 DECK_TYPE = "signature_presentation"
@@ -204,9 +226,114 @@ def _missing_questions(intake):
     return [q for q in REQUIRED_QUESTIONS if not _nonempty_str(defined.get(q))]
 
 
+# ---- turn-ledger provenance (AF-SP-INTAKE-UNPACED, GK-23 / D18) -------------
+def _canonical_turns_payload(turns, deck_type, commit_id):
+    """Must match deck-intake-driver.py's _canonical_turns_payload() exactly."""
+    payload = {"deck_type": deck_type, "record_commit_ids": commit_id, "turns": turns}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _sign_turn_ledger(turns, deck_type, commit_id):
+    return hmac.new(TURN_LEDGER_KEY, _canonical_turns_payload(turns, deck_type, commit_id),
+                     hashlib.sha256).hexdigest()
+
+
+def _evaluate_turn_pacing(intake, today=None):
+    """AF-SP-INTAKE-UNPACED — the record-layer half of GK-23/D18: refuses an
+    intake record lacking valid driver turn-ledger provenance, or whose ledger
+    shows two questions sharing one turn (batch-dumped, not paced one at a
+    time). Says NOTHING about the conversation itself (that stays scanned by
+    intake_trace_check.py / AF-INTAKE-BATCH, which never gates the build).
+
+    Only meaningful for a RUNTIME record (carries an `answers` dict) — the
+    static sp-8-questions.json spec/contract shape has no ledger and is exempt.
+    `today` is an injectable override (default: real date) so the dated grace
+    window is deterministically testable on both sides of its cutoff."""
+    if not isinstance(intake.get("answers"), dict):
+        return []
+
+    as_of = today or date.today()
+    prov = intake.get("turn_ledger_provenance")
+
+    if prov is None:
+        if as_of <= GRACE_WINDOW_UNTIL:
+            return []  # pre-stamp / --record-assembled record: grandfathered (GK-D3 accepted cost)
+        return [(AF_UNPACED,
+                 "intake record carries no turn_ledger_provenance — the driver's turn-gate stamp "
+                 "(per-question turn id + asked_at/validated_at) is required after the %s migration "
+                 "window closed; assemble the intake through deck-intake-driver.py --signature "
+                 "--next/--answer, never by hand or via a bare --record with no ledger behind it."
+                 % GRACE_WINDOW_UNTIL.isoformat())]
+
+    if not isinstance(prov, dict):
+        return [(AF_UNPACED, "turn_ledger_provenance is present but not a JSON object")]
+
+    turns = prov.get("turns")
+    if not isinstance(turns, list) or not turns:
+        return [(AF_UNPACED, "turn_ledger_provenance.turns is missing/empty")]
+
+    fails = []
+    seen_turns = {}
+    ordered_ids = []
+    turn_seq = []
+    for t in turns:
+        if not isinstance(t, dict):
+            fails.append((AF_UNPACED, "a turn_ledger_provenance.turns entry is not an object"))
+            continue
+        qid = t.get("question_id")
+        turn_no = t.get("turn")
+        if not _nonempty_str(qid) or not isinstance(turn_no, int) or isinstance(turn_no, bool):
+            fails.append((AF_UNPACED, "turn entry %r is missing a valid question_id/turn" % (t,)))
+            continue
+        ordered_ids.append(qid)
+        turn_seq.append(turn_no)
+        seen_turns.setdefault(turn_no, set()).add(qid)
+
+    dup_turns = {k: sorted(v) for k, v in seen_turns.items() if len(v) > 1}
+    if dup_turns:
+        fails.append((AF_UNPACED,
+                      "ledger shows multi-question turns (batch-dumped, not paced one at a time): %s"
+                      % dup_turns))
+
+    if turn_seq and (turn_seq != sorted(turn_seq) or len(set(turn_seq)) != len(turn_seq)):
+        fails.append((AF_UNPACED,
+                      "turn ids are not strictly increasing across the recorded questions (got %r) — "
+                      "a genuinely paced ledger assigns one ascending id per turn" % turn_seq))
+
+    # Completeness: every ANSWERED required question must carry a turn-ledger
+    # entry — an answer with no turn id could not have come from the real
+    # turn gate (cmd_sp_answer never writes `turn`; only cmd_sp_next does).
+    answers = intake.get("answers") or {}
+    answered_ids = {q for q in REQUIRED_QUESTIONS if _answered(answers.get(q))}
+    missing_turns = sorted(answered_ids - set(ordered_ids))
+    if missing_turns:
+        fails.append((AF_UNPACED,
+                      "answered question(s) %s carry no turn-ledger entry — answered outside the "
+                      "driver's turn gate" % missing_turns))
+
+    if fails:
+        return fails
+
+    sig = prov.get("signature")
+    if not _nonempty_str(sig):
+        fails.append((AF_UNPACED, "turn_ledger_provenance has no signature"))
+    else:
+        expected = _sign_turn_ledger(turns, intake.get("deck_type"), _resolve_commit_ids(intake))
+        if not hmac.compare_digest(expected, sig):
+            fails.append((AF_UNPACED,
+                          "turn_ledger_provenance.signature does not match its recomputed digest — "
+                          "the block was tampered or copied from a different record"))
+    return fails
+
+
 # ---- core evaluation --------------------------------------------------------
-def evaluate(intake):
-    """Return a list of (AF_CODE, message) failures. Empty list == PASS."""
+def evaluate(intake, today=None):
+    """Return a list of (AF_CODE, message) failures. Empty list == PASS.
+
+    `today` is an optional override for the AF-SP-INTAKE-UNPACED dated grace
+    window (default: real date). Every existing call site (build_deck.py's
+    _sp_delegate, this file's own self-test) calls evaluate(intake) with a
+    single positional argument and is unaffected."""
     failures = []
 
     if not isinstance(intake, dict):
@@ -282,6 +409,9 @@ def evaluate(intake):
         if not (isinstance(ledger, list) and any(_nonempty_str(x) for x in ledger)):
             failures.append((AF_OFFER, "offer_token_ledger missing/empty — q7 offer(s) not declared"))
 
+    # --- one-question-at-a-time UNFAKEABLE record-layer gate (AF-SP-INTAKE-UNPACED) ---
+    failures.extend(_evaluate_turn_pacing(intake, today=today))
+
     return failures
 
 
@@ -290,8 +420,11 @@ def decide_exit(failures):
 
 
 # ---- runner -----------------------------------------------------------------
-def prove(path, as_json=False):
-    """Load the intake JSON at `path`, evaluate the gate, print, return exit code."""
+def prove(path, as_json=False, as_of=None):
+    """Load the intake JSON at `path`, evaluate the gate, print, return exit code.
+    `as_of` (YYYY-MM-DD) overrides "today" for the AF-SP-INTAKE-UNPACED dated
+    grace window — evidence runs can pin a date to prove the check has teeth
+    on either side of the cutoff without waiting for the calendar."""
     p = Path(path)
     if not p.is_file():
         _emit("USAGE", [("USAGE", "intake file not found: %s" % p)], as_json)
@@ -302,7 +435,15 @@ def prove(path, as_json=False):
         _emit("USAGE", [("USAGE", "cannot read/parse intake JSON: %s" % exc)], as_json)
         return EXIT_USAGE
 
-    failures = evaluate(intake)
+    today = None
+    if as_of:
+        try:
+            today = date.fromisoformat(as_of)
+        except ValueError as exc:
+            _emit("USAGE", [("USAGE", "--as-of must be YYYY-MM-DD: %s" % exc)], as_json)
+            return EXIT_USAGE
+
+    failures = evaluate(intake, today=today)
     exit_code = decide_exit(failures)
     _emit(str(p), failures, as_json)
     return exit_code
@@ -365,23 +506,49 @@ def _valid_spec_fixture():
     }
 
 
+def _valid_turn_ledger_provenance(deck_type, commit_id, question_ids=None):
+    """Build a well-formed turn_ledger_provenance block exactly the way the
+    driver would (strictly-ascending turn ids, one per question, in order) —
+    used to prove the record-layer PASS side of AF-SP-INTAKE-UNPACED."""
+    ids = list(question_ids) if question_ids is not None else list(REQUIRED_QUESTIONS)
+    turns = [
+        {
+            "question_id": qid,
+            "turn": i + 1,
+            "asked_at": "2026-07-15T12:%02d:00" % i,
+            "validated_at": "2026-07-15T12:%02d:30" % i,
+        }
+        for i, qid in enumerate(ids)
+    ]
+    return {"turns": turns, "signature": _sign_turn_ledger(turns, deck_type, commit_id)}
+
+
+def _valid_runtime_fixture_paced():
+    """Fixture A (GK-23/D18 BINARY acceptance): a driver-paced interview —
+    the base valid runtime record PLUS a genuine, correctly-signed turn-ledger
+    provenance block. Must PASS every gate including AF-SP-INTAKE-UNPACED."""
+    f = _valid_runtime_fixture()
+    f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])
+    return f
+
+
 def self_test():
     """Construct a VALID fixture (assert PASS) and each VIOLATION fixture
     (assert NONZERO). Returns 0 iff every assertion holds, else 1."""
     ok = True
 
-    def check_pass(name, fixture):
+    def check_pass(name, fixture, today=None):
         nonlocal ok
-        failures = evaluate(fixture)
+        failures = evaluate(fixture, today=today)
         code = decide_exit(failures)
         good = (not failures) and code == EXIT_PASS
         ok = ok and good
         print("  [%s] VALID %-22s -> exit %d %s"
               % ("PASS" if good else "MISS", name, code, "" if good else ("(unexpected: %r)" % failures)))
 
-    def check_fail(name, fixture, expect_code):
+    def check_fail(name, fixture, expect_code, today=None):
         nonlocal ok
-        failures = evaluate(fixture)
+        failures = evaluate(fixture, today=today)
         codes = [c for c, _ in failures]
         exit_code = decide_exit(failures)
         good = bool(failures) and exit_code != EXIT_PASS and expect_code in codes
@@ -440,6 +607,49 @@ def self_test():
     f = _valid_runtime_fixture(); f["offer_token_ledger"] = []
     check_fail("offer-undeclared", f, AF_OFFER)
 
+    # ---- GK-23 / D18 — AF-SP-INTAKE-UNPACED (one-question-at-a-time UNFAKEABLE
+    # at the record layer). Named to match the unit's own BINARY acceptance text.
+    print("== self-test: GK-23/D18 turn-ledger provenance (AF-SP-INTAKE-UNPACED) ==")
+
+    # Fixture A: a driver-paced interview (one turn per question, valid HMAC
+    # signature) -> record PASSES.
+    check_pass("GK-23-fixtureA-driver-paced", _valid_runtime_fixture_paced())
+
+    # Fixture B: IDENTICAL answers assembled WITHOUT the driver / batch-dumped
+    # (no turn_ledger_provenance at all) -> REFUSED with AF-SP-INTAKE-UNPACED
+    # once the dated migration window has closed. `today` is pinned past the
+    # cutoff so this is deterministic today, not dependent on the calendar.
+    check_fail("GK-23-fixtureB-batch-dumped-post-grace", _valid_runtime_fixture(),
+               AF_UNPACED, today=date(2026, 9, 1))
+
+    # 10) the SAME unstamped record still PASSES *within* the migration window
+    # (GK-D3 recommendation A's accepted, ratified cost) — proves the grace
+    # window is real and dated, not merely theoretical.
+    check_pass("unpaced-no-provenance-within-grace", _valid_runtime_fixture(),
+               today=date(2026, 7, 20))
+
+    # 11) a forged provenance block claiming two questions on the SAME turn
+    # (the literal "ledger shows multi-question turns" case) fails regardless
+    # of the grace window — this is direct evidence of batching, not merely
+    # an old-shape record.
+    f = _valid_runtime_fixture_paced()
+    f["turn_ledger_provenance"]["turns"][1]["turn"] = f["turn_ledger_provenance"]["turns"][0]["turn"]
+    check_fail("unpaced-multi-question-turn", f, AF_UNPACED)
+
+    # 12) a tampered/forged signature (turns look fine but don't match the
+    # HMAC) — must fail even though the shape is otherwise well-formed.
+    f = _valid_runtime_fixture_paced()
+    f["turn_ledger_provenance"]["signature"] = "0" * 64
+    check_fail("unpaced-bad-signature", f, AF_UNPACED)
+
+    # 13) an answered required question with no corresponding turn-ledger entry
+    # (answered outside the turn gate, e.g. direct --answer with no --next).
+    f = _valid_runtime_fixture_paced()
+    f["turn_ledger_provenance"]["turns"] = [
+        t for t in f["turn_ledger_provenance"]["turns"] if t["question_id"] != "q3"
+    ]
+    check_fail("unpaced-missing-turn-for-answered-q", f, AF_UNPACED)
+
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -458,11 +668,14 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--self-test", dest="self_test", action="store_true",
                         help="Run built-in VALID + VIOLATION fixtures and exit.")
+    parser.add_argument("--as-of", dest="as_of", metavar="YYYY-MM-DD",
+                        help="Override 'today' for the AF-SP-INTAKE-UNPACED dated grace window "
+                             "(GK-23/D18). Evidence/proof runs only — omit for real enforcement.")
     args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()
-    return prove(args.intake, as_json=args.json)
+    return prove(args.intake, as_json=args.json, as_of=args.as_of)
 
 
 if __name__ == "__main__":

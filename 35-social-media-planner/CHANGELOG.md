@@ -1,6 +1,6 @@
 # Changelog - Social Media Planner (Skill 35)
 
-## v2.9.11 - 2026-07-15 — Skill 6 blended-persona-kanban v2, U88/GK-26: content→conversation loop OFFLINE/FIXTURE proof run
+## v2.9.12 - 2026-07-15 — Skill 6 blended-persona-kanban v2, U88/GK-26: content→conversation loop OFFLINE/FIXTURE proof run
 
 ### Added
 - **`scripts/prove_content_conversation_loop.py`** + **`scripts/test_prove_content_conversation_loop.py`** (master spec crosswalk G+K.6, GK-26; master id U88). The OFFLINE/CODE-MERGE tier of "the content→conversation loop, proven end-to-end once on the operator's own box" — per the master spec's ratified PER-REPO/OFFLINE ACCEPTANCE DOCTRINE (Section E.3, "OPERATOR RULINGS 2026-07-15"), which the same amendment states applies "on principle" to every other live/operator-box criterion in the spec, this unit's merge-gate proof is provable per-repo and offline with fixtures/stubs, while the genuine live-infra run (real `caf social create-post` write, real GHL Conversations round-trip, real Skill 38 brain reply) is deferred to the operator's own box as its own future LIVE-PROOF receipt — the same two-tier shape U22 (B-U8) and U84 (GK-22) already ship in this repo.
@@ -11,6 +11,25 @@
   - Leg 5 — Gap C: Skill 6's real `funnel_matcher.match_funnel` against the real 38-template catalog, exercising both branches — no client link supplied (matcher invoked, fallback link resolved) and a client-supplied link (matcher never even called — sovereignty re-proven, mirroring the client-owned-token doctrine already governing every other client-supplied value in this fleet).
   - A best-effort, environment-isolated call into Skill 38's own `00-verify-prerequisites.sh` STEP F build-path report (HOME/MASTER_FILES_DIR/OPENCLAW_SKILLS_DIR pointed at a private tempdir so this offline proof never reads the operator's real box) — never gates a leg, never fabricates a PASS when the sandbox legitimately can't reach it.
   - One archived evidence bundle (JSON) with all five legs' pass/fail + read-backs (queued post id; conversation id + brain reply; fenced handoff file path; matcher receipt), `zero_client_visible_messages: true`, and an explicit `live_proof_tier_owed: true` flag. 22 tests, including fail-first regressions pinning that `FixtureAdapters` makes no network call and that `LiveAdapters` can never silently fabricate a live result.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.11 -> v2.9.12; SKILL.md frontmatter version v2.9.11 -> v2.9.12 (re-versioned from the branch's v2.9.11, which collided with U82/GK-20's already-landed v2.9.11 on main; must match the frontmatter-version-guard).
+
+## v2.9.11 - 2026-07-15 — GK-20 regression proof: text_bearing_medium-band-floor-sized prompt clears pregen_prompt_gate.py on Ideogram V3 DESIGN
+
+### Added
+- **`scripts/test_pregen_prompt_gate.py` case 6.** Skill 45's `prompt-bands.json` gained a NEW
+  `text_bearing_medium` band (GK-20 band<->routing reconciliation — the band the mandatory
+  Ideogram V3 DESIGN quote-card/text-led route now resolves to). This gate's own routing logic
+  (`TEXT_CAPABLE_MODELS`/`NON_TEXT_MODELS`) needed no code change — it already routes
+  `ideogram-v3-design` correctly — but a new regression case proves the SAME reconciled-band-floor
+  prompt (>=1,600 chars, the new GIP band's own floor) clears BOTH `diu_validator.py prompt-band`
+  (Skill 45's `test_prompt_band_cli.py` case 5) AND this gate (exit 0), closing the loop on GK-20's
+  BINARY acceptance criterion end-to-end rather than proving each gate in isolation.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.10 → v2.9.11; SKILL.md frontmatter version
+  v2.9.10 → v2.9.11 (must match the frontmatter-version-guard).
 
 ## v2.9.10 - 2026-07-12 — P3-08 merge (renumbered v2.9.9→v2.9.10): QC-fix — CTA lockstep completed in example templates + comment-reader injection fencing
 

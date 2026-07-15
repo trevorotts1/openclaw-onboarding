@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T17:50:01Z
-openclaw-onboarding `origin/main` HEAD: `cf56f01ff4eb6b6f65793cbaec26d081854b51aa`
-blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
+Generated: 2026-07-15T23:40:02Z
+openclaw-onboarding `origin/main` HEAD: `0d05b6109ece67319a19bc5a1866344a9663412f`
+blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -28,11 +28,15 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
-| U67 | `skill6-v2/U67` | `c35bec2e` | False | - | - | pending | - |
-| U68 | `skill6-v2/U68` | `10f88c01` | False | - | - | pending | - |
+| U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
+| U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
-| U70 | `skill6-v2/U70` | `5fdbe35d` | False | - | - | pending | - |
+| U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
+| U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
+| U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
+| U85 | `skill6-v2/U85` | `fe21fdb6` | False | - | - | pending | - |
+| U88 | `skill6-v2/U88` | `21ebb5bc` | False | - | - | pending | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
@@ -54,19 +58,19 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 |
-| U37 | `skill6-v2/U37` | `88db8a74` | False | - | - |
+| U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 |
 | U42 | `skill6-v2/U42` | `b50987cb` | True | `4b983a13` | v6.0.21 |
-| U43 | `skill6-v2/U43` | `4a4e7680` | False | - | - |
+| U43 | `skill6-v2/U43` | `4a4e7680` | True | `751fa8ad` | v6.0.35 |
 | U46 | `skill6-v2/U46` | `e28ea4b4` | True | `fd064907` | v6.0.8 |
 | U47 | `skill6-v2/U47` | `2944303f` | True | `169355ef` | v6.0.22 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 |
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 |
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 |
-| U50 | `skill6-v2/U50` | `478c98e8` | False | - | - |
-| U53 | `skill6-v2/U53` | `c8086c73` | False | - | - |
+| U50 | `skill6-v2/U50` | `5059cc35` | False | - | - |
+| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 |
@@ -83,7 +87,7 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 - commits ahead of that merge-base (cinematic-specific work so far): 0
 - merged into `origin/main`: True
 - merge commit: `2a8365a2`, nearest tag: v20.0.41
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `fa479da6` is 3 commit(s) ahead of what's pushed to origin. Push before ending the session.
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `ce6aab7a` is 4 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
@@ -94,6 +98,6 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U83
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
