@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/seam-report.schema.json",
+  "title": "Cinematic and Web Funnel Engine — seam-report.json (Skill 62, U14, CWFE-MANIFEST.json P10-ENCODE-SEAM)",
+  "description": "Output of scripts/verify_seams.py (spec Section 12.3: SSIM plus at least one complementary perceptual metric -- PSNR here -- classified per seam into a three-tier 'high-confidence pass; review band; fail/regenerate band' policy). A report is only ever written after every listed seam has an independently computed, real-ffmpeg SSIM+PSNR measurement between the two ACTUAL encoded boundary frames named in the seam-sequence's extract_boundaries.py receipts -- its existence on disk is evidence a real comparison ran, never a placeholder or an agent's claim. overall_status is 'fail' if ANY seam is 'fail', else 'review' if ANY seam is 'review', else 'pass'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "af_code", "clip_count", "seam_count", "thresholds", "seams", "counts", "overall_status", "created_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "af_code": { "type": "string", "const": "AF-CWFE-P10-ENCODE-SEAM" },
+    "clip_count": { "type": "integer", "minimum": 2 },
+    "seam_count": { "type": "integer", "minimum": 1 },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssim_pass_min", "ssim_review_min", "psnr_pass_min", "psnr_review_min"],
+      "properties": {
+        "ssim_pass_min": { "type": "number", "minimum": -1, "maximum": 1 },
+        "ssim_review_min": { "type": "number", "minimum": -1, "maximum": 1 },
+        "psnr_pass_min": { "type": "number", "minimum": 0 },
+        "psnr_review_min": { "type": "number", "minimum": 0 }
+      }
+    },
+    "seams": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "seam_id", "left_clip_id", "right_clip_id", "left_frame_path", "right_frame_path",
+          "left_frame_hash_sha256", "right_frame_hash_sha256", "ssim", "psnr_db", "status"
+        ],
+        "properties": {
+          "seam_id": { "type": "string", "minLength": 1 },
+          "left_clip_id": { "type": "string", "minLength": 1 },
+          "right_clip_id": { "type": "string", "minLength": 1 },
+          "left_frame_path": { "type": "string", "minLength": 1 },
+          "right_frame_path": { "type": "string", "minLength": 1 },
+          "left_frame_hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "right_frame_hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "ssim": { "type": "number", "minimum": -1, "maximum": 1 },
+          "psnr_db": { "type": "number", "minimum": 0 },
+          "status": { "type": "string", "enum": ["pass", "review", "fail"] }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "review", "fail"],
+      "properties": {
+        "pass": { "type": "integer", "minimum": 0 },
+        "review": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "overall_status": { "type": "string", "enum": ["pass", "review", "fail"] },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}
