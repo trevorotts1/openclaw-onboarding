@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/video-asset-ledger.schema.json",
+  "title": "Cinematic and Web Funnel Engine — video-asset-ledger.json (Skill 62, U12)",
+  "description": "P9-FINAL-MEDIA's asset-tracking artifact (CWFE-MANIFEST.json names cost-ledger.json as P9's task-ledger produce_artifact; this ledger is the analogous asset/hash/boundary-frame record P7-STILLS' asset-ledger.json already establishes, extended to final scene clips and connector clips). Two kinds of entries: 'scene_final' -- a scene's own approved-tier clip, generated with two-image first/last frame pinning off that scene's OWN P7-STILLS boundary stills (spec 9.2), then immediately encoded (scripts/encode_scrub_media.py) and boundary-extracted (scripts/extract_boundaries.py) so its REAL encoded first/last frames exist (ADR-9); 'connector' -- a clip bridging two ADJACENT already-final-and-encoded scenes, generated with two-image frame pinning off the actual encoded LAST frame of the preceding scene and the actual encoded FIRST frame of the following scene (spec 12.2, ADR-9 'the next clip or connector starts from the actual final frame extracted from the encoded preceding clip, not from the original still'). Validated on every read/write by scripts/state_engine.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "assets", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "kind",
+          "scene_id",
+          "from_scene_id",
+          "to_scene_id",
+          "model_id",
+          "provider_task_id",
+          "local_path",
+          "hash_sha256",
+          "prompt",
+          "duration_seconds",
+          "aspect_ratio",
+          "resolution",
+          "input_urls",
+          "generated_at",
+          "encoded",
+          "boundary_frames",
+          "approval_status"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Deterministic: '{scene_id}:final' for kind=scene_final, or '{from_scene_id}->{to_scene_id}:connector' for kind=connector. A producer re-run never creates a second entry for the same asset_id."
+          },
+          "kind": { "type": "string", "enum": ["scene_final", "connector"] },
+          "scene_id": {
+            "type": ["string", "null"],
+            "description": "Set for kind=scene_final; null for kind=connector."
+          },
+          "from_scene_id": {
+            "type": ["string", "null"],
+            "description": "Set for kind=connector (the preceding scene); null for kind=scene_final."
+          },
+          "to_scene_id": {
+            "type": ["string", "null"],
+            "description": "Set for kind=connector (the following scene); null for kind=scene_final."
+          },
+          "model_id": { "type": "string", "minLength": 1 },
+          "provider_task_id": { "type": "string", "minLength": 1 },
+          "local_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The raw provider-downloaded clip, before encode_scrub_media.py normalization."
+          },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "prompt": { "type": "string", "minLength": 1 },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "aspect_ratio": { "type": "string", "minLength": 1 },
+          "resolution": { "type": "string", "minLength": 1 },
+          "input_urls": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "[first frame-pin URL, last frame-pin URL] actually submitted -- order-significant (spec 12.2/ADR-8).",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "generated_at": { "type": "string", "minLength": 1 },
+          "encoded": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "media_processing_receipt_path", "variant_name", "output_path",
+              "width", "height", "duration_seconds", "hash_sha256"
+            ],
+            "properties": {
+              "media_processing_receipt_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Path to the full scripts/encode_scrub_media.py media-processing-receipt.json for this asset."
+              },
+              "variant_name": { "type": "string", "enum": ["desktop", "mobile", "desktop-webm", "mobile-webm"] },
+              "output_path": { "type": "string", "minLength": 1 },
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 },
+              "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+              "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
+          "boundary_frames": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["boundary_frames_receipt_path", "first", "last"],
+            "properties": {
+              "boundary_frames_receipt_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Path to the full scripts/extract_boundaries.py boundary-frames.json for this asset's encoded variant -- REAL encoded frames (ADR-9), never a generated still."
+              },
+              "first": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["frame_index", "timestamp_seconds", "output_path", "hash_sha256"],
+                "properties": {
+                  "frame_index": { "type": "integer", "minimum": 0 },
+                  "timestamp_seconds": { "type": "number", "minimum": 0 },
+                  "output_path": { "type": "string", "minLength": 1 },
+                  "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+                }
+              },
+              "last": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["frame_index", "timestamp_seconds", "output_path", "hash_sha256"],
+                "properties": {
+                  "frame_index": { "type": "integer", "minimum": 0 },
+                  "timestamp_seconds": { "type": "number", "minimum": 0 },
+                  "output_path": { "type": "string", "minLength": 1 },
+                  "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+                }
+              }
+            }
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": ["proposed", "approved", "rejected", "regenerate"]
+          }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

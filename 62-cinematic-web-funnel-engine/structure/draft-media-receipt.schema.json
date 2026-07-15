@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/draft-media-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — draft-media-receipt.json (Skill 62, U12)",
+  "description": "P8-DRAFT's artifact (CWFE-MANIFEST.json: 'draft-media-receipt.json (draft clips + review receipt)'). One entry per scene: a lowest-cost draft_motion-tier clip (spec 10.2) generated with TWO-IMAGE first/last frame pinning off that scene's OWN approved P7-STILLS boundary stills (asset-ledger.json's first_frame_still/last_frame_still, spec 9.2) so a client can review motion/continuity before any final-tier spend. Never a connector -- drafts are single-scene review clips only (spec 9.2: draft motion precedes final scene/connector clips). Validated on every read/write by scripts/state_engine.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "drafts", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "drafts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scene_id",
+          "model_id",
+          "provider_task_id",
+          "local_path",
+          "hash_sha256",
+          "prompt",
+          "duration_seconds",
+          "aspect_ratio",
+          "resolution",
+          "input_urls",
+          "generated_at",
+          "review_status"
+        ],
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Deterministic key: one draft entry per scene_id. A producer re-run never creates a second entry for the same scene."
+          },
+          "model_id": { "type": "string", "minLength": 1 },
+          "provider_task_id": { "type": "string", "minLength": 1 },
+          "local_path": { "type": "string", "minLength": 1 },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "prompt": { "type": "string", "minLength": 1 },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "aspect_ratio": { "type": "string", "minLength": 1 },
+          "resolution": { "type": "string", "minLength": 1 },
+          "input_urls": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "[first_frame_still upload URL, last_frame_still upload URL] -- order-significant two-image frame pinning (spec 12.2 / ADR-8's bytedance/seedance-1.5-pro input_urls contract), seeded from this scene's OWN approved P7-STILLS boundary stills.",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "generated_at": { "type": "string", "minLength": 1 },
+          "review_status": {
+            "type": "string",
+            "enum": ["proposed", "approved", "rejected", "regenerate"]
+          }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}
