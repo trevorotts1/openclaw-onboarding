@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/build-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — build-receipt.json (Skill 62, U15)",
+  "description": "The P11-SITE-BUILD artifact CWFE-MANIFEST.json declares ('Next.js project and build receipt'). Written by scripts/build_site.py after materializing templates/nextjs-app + templates/components into a concrete project directory. scripts/prove_site.py (the P11 gate) treats this as EVIDENCE, never as the verdict itself — it independently re-runs lint/typecheck/build against site_dir and re-derives every pass/fail decision from disk, exactly like every other prove_*.py in this skill.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "project_slug",
+    "site_dir",
+    "template_source",
+    "content_hash",
+    "scenes",
+    "sections",
+    "routes",
+    "steps",
+    "checks",
+    "status",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "project_slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Sanitized, path-traversal-safe slug (spec Section 20) — the ONLY thing ever used to build a filesystem path under site_dir."
+    },
+    "site_dir": { "type": "string", "minLength": 1 },
+    "template_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nextjs_app_hash", "components_hash"],
+      "properties": {
+        "nextjs_app_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "components_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "content-manifest.json's own immutable content_hash, carried through so a generated site is always traceable to the exact locked copy it was built from."
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scene_id", "video_path", "poster_path", "video_sha256", "poster_sha256", "video_bytes", "poster_bytes"],
+        "properties": {
+          "scene_id": { "type": "string", "minLength": 1 },
+          "video_path": { "type": "string", "minLength": 1 },
+          "poster_path": { "type": "string", "minLength": 1 },
+          "video_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "poster_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "video_bytes": { "type": "integer", "minimum": 1 },
+          "poster_bytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "routes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install", "lint", "typecheck", "build"],
+      "description": "json_schema_lite.py does not implement $ref (by design — see its module docstring), so the identical 'step' shape is inlined four times below rather than referenced.",
+      "properties": {
+        "install": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ran", "exit_code", "duration_seconds"],
+          "properties": {
+            "ran": { "type": "boolean" },
+            "exit_code": { "type": ["integer", "null"] },
+            "duration_seconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "lint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ran", "exit_code", "duration_seconds"],
+          "properties": {
+            "ran": { "type": "boolean" },
+            "exit_code": { "type": ["integer", "null"] },
+            "duration_seconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "typecheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ran", "exit_code", "duration_seconds"],
+          "properties": {
+            "ran": { "type": "boolean" },
+            "exit_code": { "type": ["integer", "null"] },
+            "duration_seconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ran", "exit_code", "duration_seconds"],
+          "properties": {
+            "ran": { "type": "boolean" },
+            "exit_code": { "type": ["integer", "null"] },
+            "duration_seconds": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_placeholders", "no_hardcoded_secrets", "media_references_resolve"],
+      "properties": {
+        "no_placeholders": { "type": "boolean" },
+        "no_hardcoded_secrets": { "type": "boolean" },
+        "media_references_resolve": { "type": "boolean" }
+      }
+    },
+    "status": { "type": "string", "enum": ["pass", "failed"] },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}
