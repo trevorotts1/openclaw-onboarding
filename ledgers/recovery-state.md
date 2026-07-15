@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T14:20:02Z
-openclaw-onboarding `origin/main` HEAD: `825465d190f83c805af1d0165d05750dc0811807`
+Generated: 2026-07-15T14:30:03Z
+openclaw-onboarding `origin/main` HEAD: `81725ec9f8cd6c4e497e3e051479c89a3f172e4e`
 blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa9c400`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -63,7 +63,7 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 |
-| U58 | `skill6-v2/U58` | `33dd63c5` | False | - | - |
+| U58 | `skill6-v2/U58` | `b2d272c1` | False | - | - |
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 |
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 |
@@ -90,7 +90,7 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
   - `9ec71c82` merge(skill-62): integrate U16 — conversion tracking + GHL form/webhook wiring (P12) (QC 8.8)
   - `936fc2a4` merge(skill-62): integrate U14 — seam-continuity QC (SSIM+PSNR) across boundary-frame receipts (P10) (QC 9.0)
 - merged into `origin/main`: False
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `2a8365a2` is 1 commit(s) ahead of what's pushed to origin. Push before ending the session.
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `e56fef49` is 2 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
