@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T07:01:08Z
-openclaw-onboarding `origin/main` HEAD: `abd1bfcf99abf91c144c7f88f65f975e25f60d09`
+Generated: 2026-07-15T07:10:01Z
+openclaw-onboarding `origin/main` HEAD: `386ed6e4589c1aff15560ceaa03a22e7bbe1104e`
 blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf878605456bd00`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -53,17 +53,18 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
 Branch `skill62/cinematic-engine` not found on `origin`.
-- isolated build clone `~/cinematic-engine-build` has branch `skill62/cinematic-engine` at `de6f1157`, identical to its origin/main fork point — no cinematic-specific commits made yet, nothing at risk.
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` has 1 local commit(s) on `skill62/cinematic-engine` NEVER pushed to origin (local tip `3bde5a3d`). If that clone is lost, these commits are lost. Push to origin as soon as QC-passed per the merge-queue protocol.
+  - `3bde5a3d` feat(skill-62): U2 skeleton — Cinematic and Web Funnel Engine
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
-- writer lock held at gather time: True
+- writer lock held at gather time: False
 - ready tickets in `tickets/`: 0
 - completed in `done/`: 0
 
 ## This run
 
-- ledger-edit permitted this run (merge-queue lock was free): False
+- ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
