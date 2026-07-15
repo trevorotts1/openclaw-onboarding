@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T23:20:03Z
-openclaw-onboarding `origin/main` HEAD: `7cd6b69726ee3600e79d44d033ec5bdb8f69d8d3`
+Generated: 2026-07-15T23:30:03Z
+openclaw-onboarding `origin/main` HEAD: `0405c137704c2e2749e94d44ccc6f64a646d7ca8`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -31,9 +31,9 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
-| U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
-| U82 | `skill6-v2/U82` | `2e349833` | False | - | - | pending | - |
+| U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | False | - | - | pending | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | False | - | - | pending | - |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | False | - | - | pending | - |
@@ -98,6 +98,6 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U43, U53, U68, U70
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U82
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
