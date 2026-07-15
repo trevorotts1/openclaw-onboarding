@@ -28,3 +28,37 @@ planner, image/video generation flow, FFmpeg pipeline, seam QC, Next.js template
 integration, Vercel deployment adapter, iframe embed package, accessibility/performance
 paths, tests, and every registry/department-map registration (`skill-department-map.json`,
 `06-ghl-install-pages/funnel-engines/registry.json`, `cc-compat.json`).
+
+## Unreleased — registration wiring (build unit U22, branch `skill62/cinematic-engine`)
+
+Closes the "every registry/department-map registration" gap named in the 1.0.0 entry
+above. On-branch only — not merged, not deployed, no version/tag ripple (deferred to
+U25/U27 per the ledger). Frontmatter/`skill-version.txt` stay at `1.0.0` (no engine
+behavior changed, wiring-only).
+
+Added, in the shared fleet registration files (outside this skill directory):
+
+- `23-ai-workforce-blueprint/skill-department-map.json` — Skill 62 client-facing entry:
+  `departments: ["web-development"]`, primary role `funnel-builder-specialist`,
+  10 plain-language intent triggers (spec §3.4), `execution_sops: ["funnel-craft",
+  "website-craft", "video-pipeline-craft"]`. Closes the orphan check
+  (`check-skill-department-map.py`: skill folder 62 existed on disk but was not in the
+  map; now 0 violations, 62 skills / 28 client-facing).
+- `06-ghl-install-pages/funnel-engines/registry.json` — third STEP-0 funnel-engine
+  selector entry (`cinematic-web-funnel-engine`, priority 8, confidence_threshold 0.55),
+  following the exact template Skills 49/56 already used. Proven not to hijack ordinary
+  funnel/webinar/static requests or the other two engines' explicit names, and to route
+  cinematic/animated/immersive/scroll requests correctly (see U22 ledger evidence).
+- `cc-compat.json` — standard registration note: NO new Command Center endpoint, NO
+  `mission-control.db` schema change, minVersion/pinnedTag UNCHANGED (v4.59.1 / v6.0.2).
+- Generated/re-stamped from the map (idempotent, marker-guarded; no hand edits):
+  `templates/role-library/web-development/funnel-builder-specialist.md` ("Skills You
+  Operate" block), `templates/role-library/web-development/how-to-use-this-department.md`
+  ("Skills This Department Can Operate For You" block), and the Intent-triggers headers
+  in `universal-sops/funnel-craft/README.md`, `universal-sops/website-craft/README.md`
+  (new block), and `universal-sops/video-pipeline-craft/README.md`. Content-hash
+  manifests re-stamped clean (`23-ai-workforce-blueprint/scripts/hash-content-manifest.py`,
+  `scripts/hash-universal-sops-manifest.py`).
+
+Command Center generic-discovery no-change proof and any justified Command Center
+enhancement are separate, later build units (U23/U24) — not part of this entry.
