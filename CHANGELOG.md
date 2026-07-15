@@ -1,3 +1,12 @@
+## [v20.0.43]  -  2026-07-15  -  Skill 6 U67 (GK-05): podcast golden snapshot v2 + PODCAST_SNAPSHOT_ID confirmation (no-409 dry run)
+
+v20.0.43 — Merges `skill6-v2/U67` (GK-05, QC-passed) into the **58-podcast-production-engine** skill. Ships a deterministic podcast golden-snapshot-v2 confirmation mechanism that verifies the snapshot registry and `PODCAST_SNAPSHOT_ID` are internally consistent and that re-importing the golden snapshot would not 409-conflict, run entirely offline as a no-409 dry run (no live GoHighLevel call).
+
+- **Feature (58-podcast-production-engine):** new `scripts/confirm-podcast-snapshot.py` (snapshot v2 + `PODCAST_SNAPSHOT_ID` confirmation, no-409 dry run), `config/podcast-snapshot-registry.json` (snapshot registry), and `PODCAST-SNAPSHOT-BUILD-MANIFEST.md` (build manifest). No live credentials required; the check is deterministic and offline.
+- **Test proof (merged tree):** `58-podcast-production-engine/scripts/tests/test_confirm_podcast_snapshot.py` 34/34 PASS; `python3 -m py_compile` clean; registry JSON valid.
+- **Gates green (merged tree):** `scripts/bump-version.sh --check` 11/11 markers agree at v20.0.43; `scripts/qc-assert-no-client-names.sh` PASS (structural); `scripts/qc-assert-skill-version-newline.sh` PASS (62); `scripts/qc-assert-skill-frontmatter-version.sh` PASS (21); `scripts/check-docs-language.py` 0 new occurrences.
+- **Ripple:** `scripts/bump-version.sh v20.0.43` rolled all 11 tracked repo version markers v20.0.42 -> v20.0.43. Merged via `git merge --no-ff`. Annotated tag `v20.0.43` (`git tag -a`; `git cat-file -t` == `tag`). No client names, no secret values, no Anthropic model added/removed/substituted; client skills/engines still run only on the client's own providers.
+
 ## [v20.0.42]  -  2026-07-15  -  Ollama Cloud routing doctrine: baseUrl gains the `/v1` OpenAI-completions suffix (docs + selector comment)
 
 v20.0.42 — Fixes the Tier-1 Ollama Cloud `baseUrl` recorded in the model-routing doctrine so it carries the `/v1` OpenAI-completions path. `https://ollama.com` (no `/v1`) points the OpenAI-completions client at the marketing HTML site, which returns non-JSON and silently fails the turn; `https://ollama.com/v1` is the correct OpenAI-compatible chat-completions base.
