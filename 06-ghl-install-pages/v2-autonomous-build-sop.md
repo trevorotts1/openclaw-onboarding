@@ -289,10 +289,20 @@ APPROVED). The dept agent MUST:
 
 2. **Verify copy persona log.** Read `working/funnels/<slug>/persona-selection-log.md`.
    Confirm an entry exists for the copy task (distinct from the P1 funnel-spec
-   entry). The copy persona must be one of: `bly`, `wiebe`, `miller`, `hormozi`,
-   `cialdini`. If the copy persona log entry is missing, HALT and return a
-   structured handback — the Conversion Copywriter's Gate 1 requires this entry and
-   its absence means copy QC was incomplete.
+   entry). Per **D5/B-D1 (RATIFIED 2026-07-14 — kills the old 5-surname copy-persona
+   cap)** a two-part rule governs the entry:
+   **(a) VOICE** — `voice_persona:` / `selected_persona:` may be ANY of the 99
+   catalog personas (audience-led, the entire point of the blend), catalog-wide,
+   never limited to a fixed surname list;
+   **(b) copy-craft TASK slot** — the `task_persona:` feeding the copy-craft
+   discipline must be a member of `copy_craft_pool` (the original five
+   craft-discipline surnames' canonical ids, plus every `edwards-*` id, plus the
+   Brunson-family crosswalk targets), defined ONCE in
+   `shared-utils/persona-crosswalk.json` and machine-validated by
+   `persona_crosswalk.py --validate`.
+   If the copy persona log entry is missing, HALT and return a structured
+   handback — the Conversion Copywriter's Gate 1 requires this entry and its
+   absence means copy QC was incomplete.
 
 3. **Write P2 attach receipt.** `routing/p2-persona-attach.json`:
    `{copy_status: "APPROVED", copy_persona_verified: true,

@@ -65,6 +65,15 @@ def _ref_text(ref) -> str:
     return str(ref or "")
 
 
+def load_copy_craft_pool(crosswalk: dict | None = None) -> list[str]:
+    """The D5/B-D1 copy-craft TASK-slot pool (kills the old 5-surname cap). Returns the
+    canonical persona ids allowed to fill the copy-craft TASK slot — VOICE stays catalog-wide
+    (any of the 99); this pool governs the craft-discipline slot only."""
+    if crosswalk is None:
+        crosswalk = load_crosswalk()
+    return list(crosswalk.get("copy_craft_pool") or [])
+
+
 def resolve_email_style(style_id: str, crosswalk: dict | None = None) -> str | None:
     """Resolve a Skill-50 email tone-STYLE id (e.g. ``persona-style-td-jakes``) to a
     canonical persona id via the ``email_persona_styles`` crosswalk, so an email
@@ -171,7 +180,15 @@ def scan(funnel_root: str = DEFAULT_FUNNEL_ROOT, auto_root: str = DEFAULT_AUTO_R
                          | {t for _, t in crosswalk.get("patterns", []) if t not in canonical}
                          | {t for t in (crosswalk.get("email_persona_styles") or {}).values()
                             if t not in canonical})
-    return {"counts": counts, "rows": rows, "bad_targets": bad_targets, "canonical": sorted(canonical)}
+
+    # D5/B-D1 — copy_craft_pool: every pool member must itself be a real canonical persona id
+    # (same discipline as slug_map/patterns targets above), and the pool must exist/be non-empty
+    # so `--validate` fails closed if the pool is ever deleted (guard-fab-qc-gate.sh B-U4 check).
+    copy_craft_pool = load_copy_craft_pool(crosswalk)
+    bad_pool_members = sorted({p for p in copy_craft_pool if p not in canonical})
+
+    return {"counts": counts, "rows": rows, "bad_targets": bad_targets, "canonical": sorted(canonical),
+            "copy_craft_pool": copy_craft_pool, "bad_pool_members": bad_pool_members}
 
 
 def main(argv: list[str]) -> int:
@@ -180,6 +197,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--validate", action="store_true",
                     help="scan all templates; exit non-zero if any ref is unresolved or a target is not canonical")
     ap.add_argument("--list", action="store_true", help="print every ref -> target resolution")
+    ap.add_argument("--list-pool", action="store_true",
+                    help="print the D5/B-D1 copy_craft_pool (the copy-craft TASK-slot pool)")
     ap.add_argument("--funnel-root", default=DEFAULT_FUNNEL_ROOT)
     ap.add_argument("--auto-root", default=DEFAULT_AUTO_ROOT)
     ap.add_argument("--crosswalk", default=DEFAULT_CROSSWALK)
@@ -195,9 +214,16 @@ def main(argv: list[str]) -> int:
             flag = "ok " if r["ok"] else "!! "
             print(f"  {flag}[{r['kind']:<10}] {r['target'] or 'UNRESOLVED':<42} <- {r['ref']!r} ({r['how']})")
 
+    if a.list_pool:
+        for p in res["copy_craft_pool"]:
+            flag = "ok " if p not in res["bad_pool_members"] else "!! "
+            print(f"  {flag}{p}")
+
     print(f"persona crosswalk: {c['funnel_templates']} funnel + {c['automation_templates']} automation "
           f"templates, {c['refs']} persona refs, {c['unresolved']} unresolved, "
-          f"{len(res['bad_targets'])} non-canonical targets")
+          f"{len(res['bad_targets'])} non-canonical targets, "
+          f"{len(res['copy_craft_pool'])} copy_craft_pool members "
+          f"({len(res['bad_pool_members'])} non-canonical)")
 
     if a.validate:
         if res["bad_targets"]:
@@ -205,12 +231,27 @@ def main(argv: list[str]) -> int:
             for t in res["bad_targets"]:
                 print(f"  ✗ {t}")
             return 1
+        # D5/B-D1 — the copy-craft TASK-slot pool must exist, be non-empty, and every member
+        # must be a real canonical persona id. Fails closed if the pool is ever deleted or a
+        # fake member is seeded (B-U4 acceptance (a); guard-fab-qc-gate.sh B-U4 check).
+        if not res["copy_craft_pool"]:
+            print("COPY-CRAFT POOL ERROR — copy_craft_pool is missing or empty in "
+                  "shared-utils/persona-crosswalk.json (D5/B-D1 — kills the old 5-surname cap; "
+                  "the copy-craft TASK slot has no pool to draw from).")
+            return 1
+        if res["bad_pool_members"]:
+            print("COPY-CRAFT POOL ERROR — these copy_craft_pool members are not in "
+                  "persona-categories.json:")
+            for t in res["bad_pool_members"]:
+                print(f"  ✗ {t}")
+            return 1
         if unresolved:
             print("UNRESOLVED PERSONA REFS — FAIL:")
             for r in unresolved:
                 print(f"  ✗ [{r['kind']}] {r['template']}: {r['ref']!r} -> {r['how']}")
             return 1
-        print(f"OK — 0 unresolved persona refs; all {c['refs']} resolve to real persona-categories.json entries.")
+        print(f"OK — 0 unresolved persona refs; all {c['refs']} resolve to real persona-categories.json "
+              f"entries; copy_craft_pool has {len(res['copy_craft_pool'])} members, all canonical.")
     return 0
 
 
