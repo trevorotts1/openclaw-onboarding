@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/embed-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — embed-receipt.json (Skill 62, U18)",
+  "description": "Written by scripts/build_embed_package.py after materializing templates/embed/ into a concrete per-project GHL iframe embed package (spec Section 14.2). Any future embed-specific gate script would treat this as EVIDENCE only and independently re-derive checks from disk, matching every other build-vs-prove split already in this skill (e.g. build_site.py / prove_site.py) — this unit ships the producer + its own inline fail-closed checks; wiring a dedicated phase gate is left to the phase-spine registration unit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "project_slug",
+    "embed_dir",
+    "hosted_url",
+    "environment",
+    "commit_sha",
+    "child_origin",
+    "allowed_ancestor_origins",
+    "files",
+    "checks",
+    "status",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "project_slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+    },
+    "embed_dir": { "type": "string", "minLength": 1 },
+    "hosted_url": { "type": "string", "pattern": "^https://" },
+    "environment": { "type": "string", "enum": ["preview", "production"] },
+    "commit_sha": { "type": "string", "minLength": 1 },
+    "child_origin": { "type": "string", "pattern": "^https://" },
+    "allowed_ancestor_origins": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^https://" }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "no_nested_scroll_trap",
+        "has_iframe_title",
+        "has_fallback_link",
+        "no_leftover_placeholders",
+        "no_wildcard_or_invalid_origin",
+        "no_hardcoded_secrets",
+        "valid_json_outputs",
+        "child_origin_matches_deployment"
+      ],
+      "properties": {
+        "no_nested_scroll_trap": { "type": "boolean" },
+        "has_iframe_title": { "type": "boolean" },
+        "has_fallback_link": { "type": "boolean" },
+        "no_leftover_placeholders": { "type": "boolean" },
+        "no_wildcard_or_invalid_origin": { "type": "boolean" },
+        "no_hardcoded_secrets": { "type": "boolean" },
+        "valid_json_outputs": { "type": "boolean" },
+        "child_origin_matches_deployment": { "type": "boolean" }
+      }
+    },
+    "status": { "type": "string", "enum": ["pass", "failed"] },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}

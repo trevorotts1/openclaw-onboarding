@@ -1,0 +1,16 @@
+<!-- fallback-fragment.html — Skill 62 (Cinematic and Web Funnel Engine), U18.
+     Spec 14.2 "fallback direct URL" and spec 13.4 "iframe mode has a
+     meaningful title and fallback link". Always visible (not only on
+     failure) so a client can always escape the iframe to the full page,
+     and duplicated inside <noscript> for browsers with JavaScript
+     disabled, where the iframe's own postMessage height sync cannot run. -->
+<p class="cwfe-embed-fallback">
+  Having trouble viewing this experience?
+  <a href="__CWFE_FALLBACK_URL__" target="_top" rel="noopener">Open it directly</a>.
+</p>
+<noscript>
+  <p class="cwfe-embed-fallback">
+    This experience requires JavaScript.
+    <a href="__CWFE_FALLBACK_URL__">Open it directly</a>.
+  </p>
+</noscript>
