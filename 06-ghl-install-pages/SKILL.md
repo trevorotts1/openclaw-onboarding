@@ -617,6 +617,20 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
 > log lands under `github-archive-reconcile-logs/`.
 >
+> **The schedule ENTRY ships as a file, not just doctrine text (B-U10 CODE-MERGE
+> gate acceptance (c), amended 2026-07-15).** `schedule/skill6-github-archive-
+> reconcile-sweep.cron.json` is the single source of truth for the name/
+> schedule/tz/command above — both this doctrine text and `scripts/install-
+> github-archive-reconcile-cron.sh` (the idempotent installer that registers
+> it via `openclaw cron add`, by name, never duplicating) read from it, so the
+> two can never silently drift apart. Run the installer once per box (after
+> Skill 06 is installed) instead of typing the `openclaw cron create` command
+> by hand:
+> `bash scripts/install-github-archive-reconcile-cron.sh [evidence-base-dir]`
+> Proven offline in `tests/test_github_archive_maintenance_schedule.py`
+> (entry-file well-formedness + installer idempotency against a fake CLI, no
+> network); the LIVE registration + first live dated log are DEFERRED TO U22.
+>
 > **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
 > `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
 > runs on every per-build QC pass. It never fails a build over a transient

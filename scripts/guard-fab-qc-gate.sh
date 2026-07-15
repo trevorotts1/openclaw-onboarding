@@ -28,6 +28,8 @@ CROSSWALK_JSON="$ROOT/shared-utils/persona-crosswalk.json"
 PAGE_QC="$ROOT/shared-utils/page_qc.py"
 ARCHIVE_GATE="$ROOT/06-ghl-install-pages/tools/ghl_archive_receipt_gate.py"
 GITHUB_RECONCILE="$ROOT/06-ghl-install-pages/tools/ghl_github_reconcile.py"
+SCHEDULE_ENTRY="$ROOT/06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json"
+SCHEDULE_INSTALLER="$ROOT/06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh"
 
 echo "═══ FAB-QC gate guard ═══"
 
@@ -130,6 +132,16 @@ if has "$GITHUB_RECONCILE" "sweep_base" && has "$GITHUB_RECONCILE" "--sweep-base
 else
   bad "ghl_github_reconcile.py no longer exposes --sweep-base (U24/B-U10 scheduling regressed)"
 fi
+if has "$GITHUB_RECONCILE" "verify_repo_byte_match" && has "$GITHUB_RECONCILE" "--verify-local-repo"; then
+  ok "ghl_github_reconcile.py exposes the local-fixture-repo byte-match proof (B-U10 (b), amended)"
+else
+  bad "ghl_github_reconcile.py no longer exposes --verify-local-repo (U24/B-U10 amended acceptance (b) regressed)"
+fi
+[ -f "$SCHEDULE_ENTRY" ] && has "$SCHEDULE_ENTRY" "--retry" \
+  && ok "maintenance-window schedule ENTRY present, by name: schedule/skill6-github-archive-reconcile-sweep.cron.json" \
+  || bad "MISSING/incomplete maintenance-window schedule entry (U24/B-U10 amended acceptance (c) regressed)"
+[ -x "$SCHEDULE_INSTALLER" ] && ok "schedule-entry installer present + executable: scripts/install-github-archive-reconcile-cron.sh" \
+                             || bad "MISSING/non-executable scripts/install-github-archive-reconcile-cron.sh"
 
 echo ""
 if [ "$FAIL" -ne 0 ]; then

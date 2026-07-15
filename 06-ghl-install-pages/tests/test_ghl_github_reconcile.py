@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 
 _TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "tools"))
@@ -254,11 +255,14 @@ class TestSweepBase:
         assert report.runs[0]["report"]["retried_ok"] == ["PAGE-C"]
 
     def test_writes_a_dated_log_by_default(self, tmp_path):
-        """B-U10 acceptance (d): 'the maintenance-window schedule entry ...
-        its first run writes a dated log' — proven here at the mechanism
-        level: sweep_base's own default behavior writes one timestamped JSON
-        log file under <base>/github-archive-reconcile-logs/ whose content
-        matches the returned report."""
+        """Mechanism-level proof for DEFERRED-TO-U22 live-proof item (iii)
+        ('the schedule's first live dated log'): sweep_base's own default
+        behavior writes one timestamped JSON log file under
+        <base>/github-archive-reconcile-logs/ whose content matches the
+        returned report. The genuine live proof (an actual cron firing on an
+        operator box) is deferred to U22; the schedule ENTRY itself (this
+        unit's own offline acceptance (c)) is proven separately in
+        test_github_archive_maintenance_schedule.py."""
         base = str(tmp_path)
         self._seed_run(base, "v2-RUN1", tmp_path)
 
@@ -314,7 +318,17 @@ class TestSweepBase:
         assert data["log_path"] == ""
 
 
-# ── B-U10 acceptance (b) — deliberately-broken token, then restored, retries ─
+# ── DEFERRED-TO-U22 live-proof (ii) mechanism — deliberately-broken token, ──
+# then restored, retries. NOTE (OPERATOR RULINGS 2026-07-15 amendment): the
+# genuine live proof for this scenario — a REAL broken GH_TOKEN on an
+# operator box, a REAL GitHub API 401, a REAL restored-token retry — is
+# DEFERRED to U22 per the per-repo/offline doctrine (this unit's merge gate
+# is offline-only). This test is NOT that live proof; it proves the SAME
+# mechanism (honest FAILED receipt -> never touches the live page -> retry
+# recovers from staged source, never fabricates) fully offline via an
+# injected fake requester, which is as far as an offline single-branch
+# sandbox can go. Kept as mechanism-level coverage, not cited as the U22
+# live-proof deliverable.
 
 class TestBrokenTokenThenRestoredRetry:
     def test_no_token_then_restored_token_retry_succeeds(self, tmp_path):
@@ -370,6 +384,113 @@ class TestBrokenTokenThenRestoredRetry:
                                    requester=_good_requester(), env={"GH_TOKEN": "restored-token"})
         assert "PAGE-BROKEN" in recovered.retried_ok
         assert recovered.all_clean() is True
+
+
+# ── B-U10 CODE-MERGE gate acceptance (b), amended 2026-07-15 ────────────────
+# "ghl_github_reconcile.py run against a LOCAL FIXTURE git repo (seeded on
+# disk, no network/GitHub) exits 0 and the fixture repo's index.html
+# byte-matches the fixture deployed source; a seeded byte-mismatch exits
+# non-zero." This is THIS UNIT'S offline merge-gate proof for the byte-match
+# mechanism — the live leg (a REAL pushed GitHub repo, fetched over the
+# network) is deferred to U22 per the per-repo/offline doctrine.
+
+class TestVerifyLocalRepoByteMatch:
+    def _init_fixture_git_repo(self, repo_dir, index_bytes):
+        """Seed a REAL local git repository on disk — `git init` + a commit —
+        no network, no GitHub API. This stands in for a clone of the per-page
+        archive repo `ghl_github_archive.py` pushes to."""
+        os.makedirs(repo_dir, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=repo_dir, check=True)
+        subprocess.run(["git", "config", "user.email", "fixture@example.invalid"],
+                        cwd=repo_dir, check=True)
+        subprocess.run(["git", "config", "user.name", "fixture"], cwd=repo_dir, check=True)
+        with open(os.path.join(repo_dir, "index.html"), "wb") as fh:
+            fh.write(index_bytes)
+        subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "fixture archive commit"],
+                        cwd=repo_dir, check=True)
+
+    def test_matching_fixture_repo_byte_matches_and_function_reports_match(self, tmp_path):
+        content = b"<html>\x00fixture index \xe2\x9c\x93 non-ascii + binary-ish bytes</html>"
+        repo_dir = str(tmp_path / "fixture-repo")
+        self._init_fixture_git_repo(repo_dir, content)
+
+        deployed = tmp_path / "deployed-source"
+        deployed.mkdir()
+        (deployed / "index.html").write_bytes(content)
+
+        result = rec.verify_repo_byte_match(repo_dir, str(deployed))
+        assert result["match"] is True
+        assert result["file"] == "index.html"
+
+    def test_cli_verify_local_repo_exits_zero_on_byte_match(self, tmp_path, capsys):
+        content = b"<html>CLI byte-match fixture</html>"
+        repo_dir = str(tmp_path / "fixture-repo")
+        self._init_fixture_git_repo(repo_dir, content)
+
+        deployed = tmp_path / "deployed-source"
+        deployed.mkdir()
+        (deployed / "index.html").write_bytes(content)
+
+        rc = rec.main(["--verify-local-repo", repo_dir, "--deployed-source", str(deployed), "--json"])
+        assert rc == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["match"] is True
+
+    def test_seeded_byte_mismatch_exits_nonzero(self, tmp_path):
+        repo_dir = str(tmp_path / "fixture-repo")
+        self._init_fixture_git_repo(repo_dir, b"<html>ORIGINAL archived content</html>")
+
+        deployed = tmp_path / "deployed-source"
+        deployed.mkdir()
+        # Seeded mismatch: the deployed source has since changed but the
+        # archived fixture repo was never re-pushed.
+        (deployed / "index.html").write_bytes(b"<html>MUTATED deployed content -- seeded mismatch</html>")
+
+        rc = rec.main(["--verify-local-repo", repo_dir, "--deployed-source", str(deployed)])
+        assert rc == 1
+
+        result = rec.verify_repo_byte_match(repo_dir, str(deployed))
+        assert result["match"] is False
+        assert "mismatch" in result["reason"].lower()
+
+    def test_non_git_directory_is_refused_not_silently_trusted(self, tmp_path):
+        """A directory that is NOT a git checkout must never be treated as an
+        archived repo, even if its file content happens to match — silently
+        trusting an arbitrary directory would defeat the whole point of
+        proving the archive actually landed in a repo."""
+        not_a_repo = tmp_path / "not-a-repo"
+        not_a_repo.mkdir()
+        (not_a_repo / "index.html").write_bytes(b"same bytes")
+
+        deployed = tmp_path / "deployed-source"
+        deployed.mkdir()
+        (deployed / "index.html").write_bytes(b"same bytes")
+
+        result = rec.verify_repo_byte_match(str(not_a_repo), str(deployed))
+        assert result["match"] is False
+        assert "not a git repository" in result["reason"]
+
+    def test_missing_file_in_fixture_repo_is_a_non_match(self, tmp_path):
+        repo_dir = str(tmp_path / "fixture-repo")
+        os.makedirs(repo_dir)
+        subprocess.run(["git", "init", "-q"], cwd=repo_dir, check=True)
+
+        deployed = tmp_path / "deployed-source"
+        deployed.mkdir()
+        (deployed / "index.html").write_bytes(b"<html>deployed</html>")
+
+        result = rec.verify_repo_byte_match(repo_dir, str(deployed))
+        assert result["match"] is False
+        assert "not found in repo" in result["reason"]
+
+    def test_cli_verify_local_repo_requires_deployed_source(self, tmp_path):
+        with pytest.raises(SystemExit):
+            rec.main(["--verify-local-repo", str(tmp_path)])
+
+    def test_cli_verify_local_repo_is_mutually_exclusive_with_evidence_root(self, tmp_path):
+        with pytest.raises(SystemExit):
+            rec.main(["--verify-local-repo", str(tmp_path), "--evidence-root", str(tmp_path)])
 
 
 if __name__ == "__main__":

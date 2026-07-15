@@ -31,9 +31,15 @@ CLI
 ---
     python3 ghl_github_reconcile.py --evidence-root <dir> [--retry] [--json]
     python3 ghl_github_reconcile.py --sweep-base <dir> [--retry] [--json] [--no-log]
+    python3 ghl_github_reconcile.py --verify-local-repo <repo-dir> --deployed-source <dir> [--json]
 
-Exit code (both modes): 0 if every vercel_deploy page has a verified archive
-(after retry, if requested); 1 if one or more remain missing/failed/flagged.
+Exit code (evidence-root / sweep-base modes): 0 if every vercel_deploy page
+has a verified archive (after retry, if requested); 1 if one or more remain
+missing/failed/flagged.
+
+Exit code (--verify-local-repo mode, B-U10 acceptance (b) — the offline
+byte-match proof): 0 if the compared file byte-matches; 1 on any mismatch or
+missing file. See ``verify_repo_byte_match`` below.
 """
 from __future__ import annotations
 
@@ -223,6 +229,62 @@ def sweep_base(base_dir: str, *, retry: bool = True,
     return report
 
 
+# ── Local-fixture-repo byte-match — the offline proof mechanism (B-U10 (b)) ──
+#
+# The OPERATOR RULINGS 2026-07-15 amendment split B-U10's acceptance into a
+# CODE-MERGE gate (this unit's merge bar, offline) and a LIVE-PROOF gate
+# (deferred to U22). The offline gate proves the byte-match logic against a
+# LOCAL FIXTURE git repo — no network, no GitHub — while the genuine live
+# leg (a REAL pushed GitHub repo, cloned/fetched over the network) stays
+# deferred. ``verify_repo_byte_match`` is that proof mechanism: it treats
+# ``repo_dir`` as a git-repo checkout (in production, a clone of the per-page
+# archive repo ``ghl_github_archive.py`` pushes to; in tests, a fixture
+# seeded on disk with a real ``git init``) and byte-compares ``filename``
+# against the deployed source directory ``ghl_vercel`` actually served from —
+# the SAME comparison a live reconcile run performs, just pointed at a repo
+# that happens to be local instead of remote.
+
+def verify_repo_byte_match(repo_dir: str, deployed_source_dir: str, *,
+                            filename: str = "index.html") -> dict:
+    """Byte-compare ``filename`` between a git-repo checkout (``repo_dir``)
+    and the deployed source directory. Never raises: a repo_dir that is not
+    a git checkout, or a missing file on either side, is a non-match with a
+    ``reason``, not a crash — reconciliation must never fabricate a result.
+
+    Returns:
+        {"match": bool, "file": filename,
+         "repo_path"/"source_path": <set on both paths present>,
+         "reason": <set whenever match is False>}
+    """
+    if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        return {"match": False, "file": filename,
+                "reason": f"{repo_dir} is not a git repository (no .git — refusing to treat an "
+                          f"arbitrary directory as an archived repo)"}
+
+    repo_file = os.path.join(repo_dir, filename)
+    source_file = os.path.join(deployed_source_dir, filename)
+
+    if not os.path.isfile(repo_file):
+        return {"match": False, "file": filename,
+                "reason": f"{filename} not found in repo {repo_dir}"}
+    if not os.path.isfile(source_file):
+        return {"match": False, "file": filename,
+                "reason": f"{filename} not found in deployed source {deployed_source_dir}"}
+
+    with open(repo_file, "rb") as fh:
+        repo_bytes = fh.read()
+    with open(source_file, "rb") as fh:
+        source_bytes = fh.read()
+
+    if repo_bytes == source_bytes:
+        return {"match": True, "file": filename,
+                "repo_path": repo_file, "source_path": source_file}
+    return {"match": False, "file": filename,
+            "repo_path": repo_file, "source_path": source_file,
+            "reason": f"byte mismatch ({len(repo_bytes)} bytes in repo vs "
+                      f"{len(source_bytes)} bytes in deployed source)"}
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main(argv: Optional[list] = None) -> int:
@@ -237,12 +299,34 @@ def main(argv: Optional[list] = None) -> int:
     mode.add_argument("--sweep-base",
                        help="U24/B-U10 daily maintenance-window mode: sweep EVERY evidence run under "
                             "this base dir and write a dated log (see --no-log to suppress, testing only).")
+    mode.add_argument("--verify-local-repo",
+                       help="B-U10 acceptance (b) offline proof: path to a LOCAL git-repo checkout "
+                            "(seeded on disk, no network/GitHub) whose --filename is byte-compared "
+                            "against --deployed-source. Exit 0 on match, 1 on mismatch/missing.")
     p.add_argument("--retry", action="store_true",
                    help="Retry any missing/failed archive using its staged source, if still present.")
     p.add_argument("--json", action="store_true", help="Print the report as JSON.")
     p.add_argument("--no-log", action="store_true",
                    help="--sweep-base only: skip writing the dated log file (testing).")
+    p.add_argument("--deployed-source",
+                   help="--verify-local-repo only: the deployed source directory to compare against.")
+    p.add_argument("--filename", default="index.html",
+                   help="--verify-local-repo only: which file to byte-compare (default index.html).")
     args = p.parse_args(argv)
+
+    if args.verify_local_repo:
+        if not args.deployed_source:
+            p.error("--verify-local-repo requires --deployed-source")
+        result = verify_repo_byte_match(args.verify_local_repo, args.deployed_source,
+                                         filename=args.filename)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"Local fixture repo: {args.verify_local_repo}")
+            print(f"Deployed source:    {args.deployed_source}")
+            print(f"File:               {result['file']}")
+            print("RESULT:", "MATCH" if result["match"] else f"MISMATCH ({result.get('reason', '')})")
+        return 0 if result["match"] else 1
 
     if args.sweep_base:
         sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log)

@@ -91,7 +91,8 @@ jobs:
             06-ghl-install-pages/tests/test_ghl_github_reconcile.py \
             06-ghl-install-pages/tests/test_ghl_archive_receipt_gate.py \
             06-ghl-install-pages/tests/test_ghl_vercel.py \
-            06-ghl-install-pages/tests/test_cc_board_reconcile.py
+            06-ghl-install-pages/tests/test_cc_board_reconcile.py \
+            06-ghl-install-pages/tests/test_github_archive_maintenance_schedule.py
 
       - name: run_pipeline is actually wired (evidence_root param + github_archive field)
         shell: bash
@@ -118,11 +119,15 @@ jobs:
           import ghl_github_reconcile as rec
           import ghl_archive_receipt_gate as gate
           assert callable(rec.sweep_base), 'ghl_github_reconcile missing sweep_base'
+          assert callable(rec.verify_repo_byte_match), 'ghl_github_reconcile missing verify_repo_byte_match (B-U10 amended acceptance (b))'
           assert 'check' in dir(gate) and callable(gate.check), 'ghl_archive_receipt_gate missing check()'
           import ghl_github_archive as gha
           assert callable(gha.is_archive_verified), 'ghl_github_archive missing is_archive_verified'
           assert callable(gha.token_presence), 'ghl_github_archive missing token_presence'
-          print('✓ sweep_base / archive_receipt_gate.check / is_archive_verified / token_presence all present')
+          import os
+          assert os.path.isfile('06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json'), 'maintenance-window schedule entry file missing (B-U10 amended acceptance (c))'
+          assert os.access('06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh', os.X_OK), 'schedule-entry installer missing or non-executable'
+          print('✓ sweep_base / verify_repo_byte_match / archive_receipt_gate.check / is_archive_verified / token_presence / schedule entry all present')
           "
           bash scripts/guard-fab-qc-gate.sh
 
