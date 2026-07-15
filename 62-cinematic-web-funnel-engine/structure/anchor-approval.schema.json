@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/anchor-approval.schema.json",
+  "title": "Cinematic and Web Funnel Engine — anchor-approval.json (Skill 62, U11)",
+  "description": "P6-ANCHOR's artifact (CWFE-MANIFEST.json: 'anchor-approval.json (approved anchor + style contract)'). Implements spec Section 9.3's two-stage approval for the PROJECT-WIDE visual anchor: (1) a low-cost concept board of multiple distinct art directions, (2) one final anchor image at production quality. No full scene or video batch may begin (P7-STILLS) until status='anchor_approved' and final_anchor.hash_sha256 is recorded. Validated on every read/write by scripts/state_engine.py, same as every other U6-family manifest kind.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "status",
+    "style_contract",
+    "concept_candidates",
+    "approved_candidate_id",
+    "final_anchor",
+    "approved_by",
+    "approved_at",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "concept_approved", "anchor_approved", "rejected", "regenerate"],
+      "description": "Mirrors scene-plan.schema.json's per-scene approval_status enum (spec 9.3), applied here at the project-wide anchor level."
+    },
+    "style_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "visual_world",
+        "realism_level",
+        "palette",
+        "material_language",
+        "lighting_logic",
+        "lens_family",
+        "composition_system",
+        "prohibited_styles",
+        "negative_prompt"
+      ],
+      "description": "spec 9.4 consistency rules (characters, architecture, product geometry, palette, material language, lighting logic, lens family, composition system) plus spec 8.1 group 4 brand fields (prohibited styles). Every scene still generated in P7-STILLS must be prompted consistently with this contract.",
+      "properties": {
+        "visual_world": { "type": "string", "minLength": 1 },
+        "realism_level": {
+          "type": "string",
+          "enum": ["photoreal", "stylized-real", "illustrative", "abstract"]
+        },
+        "palette": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "material_language": { "type": "string", "minLength": 1 },
+        "lighting_logic": { "type": "string", "minLength": 1 },
+        "lens_family": { "type": "string", "minLength": 1 },
+        "composition_system": { "type": "string", "minLength": 1 },
+        "prohibited_styles": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "negative_prompt": { "type": "string" }
+      }
+    },
+    "concept_candidates": {
+      "type": "array",
+      "description": "Stage 1 (spec 9.3): the low-cost concept board. Must be non-empty before final_anchor may ever be populated — this is the mechanical proof the two-stage approval was actually followed, never skipped.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "model_id",
+          "provider_task_id",
+          "local_path",
+          "hash_sha256",
+          "prompt",
+          "aspect_ratio",
+          "resolution",
+          "generated_at"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string", "minLength": 1 },
+          "model_id": { "type": "string", "minLength": 1 },
+          "provider_task_id": { "type": "string", "minLength": 1 },
+          "local_path": { "type": "string", "minLength": 1 },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "prompt": { "type": "string", "minLength": 1 },
+          "aspect_ratio": { "type": "string", "minLength": 1 },
+          "resolution": { "type": "string", "minLength": 1 },
+          "generated_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "approved_candidate_id": {
+      "type": ["string", "null"],
+      "description": "Must reference a concept_candidates[].candidate_id. Non-null once status is concept_approved or anchor_approved."
+    },
+    "final_anchor": {
+      "type": ["object", "null"],
+      "description": "Stage 2 (spec 9.3): the one final anchor image at production quality, generated as an image-to-image reference off approved_candidate_id. Required non-null once status='anchor_approved'.",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "provider_task_id",
+        "local_path",
+        "hash_sha256",
+        "prompt",
+        "aspect_ratio",
+        "resolution",
+        "generated_at"
+      ],
+      "properties": {
+        "model_id": { "type": "string", "minLength": 1 },
+        "provider_task_id": { "type": "string", "minLength": 1 },
+        "local_path": { "type": "string", "minLength": 1 },
+        "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "aspect_ratio": { "type": "string", "minLength": 1 },
+        "resolution": { "type": "string", "minLength": 1 },
+        "generated_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "approved_by": { "type": ["string", "null"] },
+    "approved_at": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}
