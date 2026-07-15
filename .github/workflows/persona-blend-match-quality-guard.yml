@@ -3,9 +3,10 @@ name: persona-blend-match-quality-guard
 # P4-01 — persona matching + book-to-persona (strengthen). Fails the build if:
 #   (A) the Skill-23 voice-first AUDIENCE+TOPIC blend matcher (persona_blend.py)
 #       regresses any of its 46 existing contract tests,
-#   (B) match quality on the 20-case, REAL-catalog regression corpus drops
-#       below the 90% gate (persona-match-regression-corpus.json) — this is
-#       the drift lock for silent _tag_hit/_stem/ranking regressions,
+#   (B) match quality on the 40-case (A-U13, grown from 20), REAL-catalog
+#       regression corpus drops below the 90% gate
+#       (persona-match-regression-corpus.json) — this is the drift lock for
+#       silent _tag_hit/_stem/ranking regressions,
 #   (C) the match-score-distribution logger (log_match_score /
 #       match_score_distribution — "log match score distributions so drift is
 #       observable") stops writing or stops summarizing correctly,
@@ -133,7 +134,7 @@ jobs:
       - name: W7 blend-matcher contract suite (46 tests, hermetic fixtures)
         run: python3 23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py
 
-      - name: P4-01 — 20-case match-quality regression corpus (>=90% gate, REAL catalog)
+      - name: P4-01/A-U13 — 40-case match-quality regression corpus (>=90% gate, REAL catalog)
         run: python3 23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py
 
       - name: P4-02 — four-slot SYNERGY directive contract (voice/audience/substance/task)
