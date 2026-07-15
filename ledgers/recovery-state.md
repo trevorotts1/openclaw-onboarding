@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T07:30:03Z
-openclaw-onboarding `origin/main` HEAD: `c6997fc57b094867ebe6b2cfe2b271c4a69465e1`
-blackceo-command-center `origin/main` HEAD: `c2a06275fec08d5d7fbf03b87ce54e7b272cf1f0`
+Generated: 2026-07-15T07:40:02Z
+openclaw-onboarding `origin/main` HEAD: `b44e1e0e51a87e5a5e84f60bd0b1b5ef17dd2f21`
+blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce305c819`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -34,7 +34,7 @@ blackceo-command-center `origin/main` HEAD: `c2a06275fec08d5d7fbf03b87ce54e7b272
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag |
 |---|---|---|---|---|---|
 | U20 | `skill6-v2/U20` | `5e5c3bb9` | True | `ae80043b` | v6.0.4 |
-| U21 | `skill6-v2/U21` | `5374c4fd` | False | - | - |
+| U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 |
 | U22 | `skill6-v2/U22` | `f4f933ff` | False | - | - |
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 |
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
@@ -73,6 +73,6 @@ blackceo-command-center `origin/main` HEAD: `c2a06275fec08d5d7fbf03b87ce54e7b272
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U5, U21
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
