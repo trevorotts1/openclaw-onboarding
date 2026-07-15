@@ -75,6 +75,12 @@ SCHEMA_FILES: Dict[str, str] = {
     "scene-plan": "scene-plan.schema.json",
     "cost-ledger": "cost-ledger.schema.json",
     "deployment-receipt": "deployment-receipt.schema.json",
+    # U11 additions (P6-ANCHOR / P7-STILLS artifacts). Additive-only extension
+    # of the U6 schema-validated manifest-kind registry — every read/write of
+    # either kind goes through the SAME atomic-write + schema-validate path
+    # every other manifest kind in this skill already uses (spec 11.2).
+    "anchor-approval": "anchor-approval.schema.json",
+    "asset-ledger": "asset-ledger.schema.json",
 }
 
 # Per-run-dir artifact locations. Matches the paths CWFE-MANIFEST.json's
@@ -91,6 +97,10 @@ ARTIFACT_RELPATHS: Dict[str, str] = {
     # an append-only JSON array where every element independently validates
     # against the singular schema.
     "deployment-receipt": "deployment-receipts.json",
+    # U11 additions — root-level, matching CWFE-MANIFEST.json's declared
+    # produces_artifact paths for P6-ANCHOR / P7-STILLS exactly.
+    "anchor-approval": "anchor-approval.json",
+    "asset-ledger": "asset-ledger.json",
 }
 
 TASK_STATUSES = ("queued", "submitted", "in_progress", "complete", "failed", "cancelled")
