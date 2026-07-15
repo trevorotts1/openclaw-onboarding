@@ -1,0 +1,10 @@
+{
+  "_fixture_note": "Mocked Kie.ai GET /api/v1/jobs/recordInfo failed-task response. NOT a real Kie response; no live/paid call was made to produce this file.",
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "taskId": "fixture-task-failed-0001",
+    "state": "fail",
+    "failMsg": "content policy violation"
+  }
+}
