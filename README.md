@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.44.
+> **Version:** see `/version` - this repo at v20.0.45.
+>
+> **NOTE (v20.0.45) — fix(anthology): Skill 6 U70 (GK-08) — honest fully-provisioned stub for the `chapter_rewrite1`/`chapter_rewrite2` fields + stale-comment fix (repo-only; live per-client-token provisioning owed).** Merges `skill6-v2/U70` into the **59-anthology-engine** skill. Makes the offline `_StubCaf` fixture honestly stand in for a location that has actually run `anthology_registry.py provision-fields` end to end (all 28 declared keys, including the base chapter pair and both G10 chapter-rewrite-preservation pairs `rewrite1`/`rewrite2`), so `caf_delivery.py`'s `self-test` can now exercise `write_and_verify()` against `rewrite1`/`rewrite2` instead of hitting a false "NOT PROVISIONED"; corrects a stale `24`→`28` field-count comment in `anthology_registry.py`. Proof (merged tree): `caf_delivery.py self-test` ALL PASS (incl. the new G10 rewrite1 write+read-back check), `anthology_registry.py self-test` OK (28-field inventory incl. the 4 G10 rewrite fields), full `59-anthology-engine/tests/` suite **162/162 PASS** (incl. the end-to-end G10 preservation proof `test_rewrite_preservation.py`). **Live leg OWED (not claimed):** creating these fields on a real Convert and Flow location via the client's own Private Integration Token and repeating a write/read-back against a live test contact is a per-client, client-owned live action (per the 2026-07-14 operator decision on U69/U70/U71) — owed as its own live-proof tier, exactly like U22/U84. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.44) — feat(podcast): Skill 6 U68 (GK-06) — Facebook-workflow activation is now a runbook checklist item with a QC-gate assertion.** Merges `skill6-v2/U68` into the **58-podcast-production-engine** skill. The Facebook-workflow activation step is promoted into `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` as an explicit runbook checklist item, and a new deterministic guard (`scripts/guard-runbook-fb-activation-checklist.py`) asserts the checklist item is present and well-formed so the step can no longer be silently skipped. Covered by a 5-case unit suite (`scripts/tests/test_guard_runbook_fb_activation_checklist.py`, 5/5 PASS on the merged tree); the universal-sops content manifest was re-stamped in lockstep with the SOP edit. No client names, no secret values, no Anthropic models. Repo-only. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -95,7 +97,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.44** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.45** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
