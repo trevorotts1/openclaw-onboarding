@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.43.
+> **Version:** see `/version` - this repo at v20.0.44.
+>
+> **NOTE (v20.0.44) — feat(podcast): Skill 6 U68 (GK-06) — Facebook-workflow activation is now a runbook checklist item with a QC-gate assertion.** Merges `skill6-v2/U68` into the **58-podcast-production-engine** skill. The Facebook-workflow activation step is promoted into `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` as an explicit runbook checklist item, and a new deterministic guard (`scripts/guard-runbook-fb-activation-checklist.py`) asserts the checklist item is present and well-formed so the step can no longer be silently skipped. Covered by a 5-case unit suite (`scripts/tests/test_guard_runbook_fb_activation_checklist.py`, 5/5 PASS on the merged tree); the universal-sops content manifest was re-stamped in lockstep with the SOP edit. No client names, no secret values, no Anthropic models. Repo-only. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.43) — feat(podcast): Skill 6 U67 (GK-05) — podcast golden snapshot v2 + `PODCAST_SNAPSHOT_ID` confirmation (no-409 dry run).** Merges `skill6-v2/U67` into the **58-podcast-production-engine** skill. Adds a deterministic snapshot-confirmation mechanism (`scripts/confirm-podcast-snapshot.py`) plus a `config/podcast-snapshot-registry.json` registry and a `PODCAST-SNAPSHOT-BUILD-MANIFEST.md` build manifest: it confirms the podcast golden snapshot v2 and its `PODCAST_SNAPSHOT_ID` are internally consistent and that re-importing the golden snapshot would not 409-conflict, run entirely offline as a no-409 dry run (no live GoHighLevel call, no credentials required). Covered by a 34-case unit suite (`scripts/tests/test_confirm_podcast_snapshot.py`, 34/34 PASS on the merged tree). No client names, no secret values, no Anthropic models. Repo-only. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -93,7 +95,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.43** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.44** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

@@ -1,3 +1,13 @@
+## [v20.0.44]  -  2026-07-15  -  Skill 6 U68 (GK-06): Facebook-workflow activation as a runbook checklist item + QC-gate assertion
+
+v20.0.44 — Merges `skill6-v2/U68` (GK-06, QC-passed) into the **58-podcast-production-engine** skill. Promotes the Facebook-workflow activation step into the client-onboarding runbook as an explicit, checkable item and adds a deterministic QC guard so the step can no longer be silently skipped.
+
+- **Feature (58-podcast-production-engine):** `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` gains the Facebook-workflow activation runbook checklist item; new `scripts/guard-runbook-fb-activation-checklist.py` asserts the checklist item is present and well-formed (QC-gate assertion); `SKILL.md` registers the guard.
+- **Test proof (merged tree):** `58-podcast-production-engine/scripts/tests/test_guard_runbook_fb_activation_checklist.py` 5/5 PASS; `python3 -m py_compile` clean.
+- **Manifest lockstep:** the universal-sops content manifest (`universal-sops/_content-manifest.json`) was re-stamped in lockstep with the SOP edit (mechanical sha256 update, zero functional change); `scripts/hash-universal-sops-manifest.py --check` PASS (104 files).
+- **Gates green (merged tree):** `scripts/bump-version.sh --check` 11/11 markers agree at v20.0.44; `scripts/qc-assert-no-client-names.sh` PASS (structural); `scripts/qc-assert-skill-version-newline.sh` PASS; `scripts/qc-assert-skill-frontmatter-version.sh` PASS; `scripts/check-docs-language.py` 0 new occurrences.
+- **Ripple:** `scripts/bump-version.sh v20.0.44` rolled all 11 tracked repo version markers v20.0.43 -> v20.0.44. Merged via `git merge --no-ff`. Annotated tag `v20.0.44` (`git tag -a`; `git cat-file -t` == `tag`). No client names, no secret values, no Anthropic model added/removed/substituted; client skills/engines still run only on the client's own providers.
+
 ## [v20.0.43]  -  2026-07-15  -  Skill 6 U67 (GK-05): podcast golden snapshot v2 + PODCAST_SNAPSHOT_ID confirmation (no-409 dry run)
 
 v20.0.43 — Merges `skill6-v2/U67` (GK-05, QC-passed) into the **58-podcast-production-engine** skill. Ships a deterministic podcast golden-snapshot-v2 confirmation mechanism that verifies the snapshot registry and `PODCAST_SNAPSHOT_ID` are internally consistent and that re-importing the golden snapshot would not 409-conflict, run entirely offline as a no-409 dry run (no live GoHighLevel call).
