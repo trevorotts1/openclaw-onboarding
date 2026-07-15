@@ -2,35 +2,43 @@
 """
 test-a-u5-scoped-bundle.py — A-U5 (Per-page/scoped blends) contract lock.
 
-Proves the master-spec v2, Section A.6 build (unit A-U5) against its own
-BINARY acceptance criteria verbatim (Section A.10):
+Proves the master-spec v2, Section A.6 build (unit A-U5) against its OWN
+BINARY acceptance criteria as REWRITTEN by the OPERATOR RULINGS 2026-07-15
+per-repo/offline doctrine (Section A.10, "A-U5" block, verbatim):
 
-  (a) a fixture funnel build produces N pages with >=2 DISTINCT blends and
-      exactly N per-page selection-log entries;
-  (b) `task_persona_bundle_scope` rows persist per (task_id, scope) and
-      render as chips — the ONB half of this is proving `build_bundle` emits
-      a stable, persistable `scope` key + `scope_hint` echo; the Command
-      Center table/persist/render half is proven on that repo's own suite
-      (this unit lands on BOTH trains — see the master spec crosswalk);
-  (c) all existing single-bundle consumers pass unmodified (back-compat) —
-      scope_hint omitted/None produces a bundle with NEITHER `scope` nor
-      `scope_hint` keys, and every field that WAS present stays byte-identical
-      to the pre-A-U5 shape;
-  (d) the 090 table's schema is untouched by this unit — not applicable on
-      the Python side (this module never touches CC migrations); asserted
-      instead: NOTHING in this unit's code path writes/reads
-      `task_persona_bundle` (the unscoped table) — scope_hint is a pure
-      additive parameter to build_bundle, never a rewrite of the unscoped
-      path.
+  ACCEPT — ONB half (offline, `openclaw-onboarding` branch only): (a)
+  `build_bundle(..., scope_hint={page_role, page_slug, conversion_goal})`
+  ECHOES the scope into the returned bundle and derives a STABLE composite
+  scope key from `(page_role|page_slug)` — the same `scope_hint` yields the
+  same key across repeated calls (determinism asserted); an ABSENT
+  `scope_hint` returns the unscoped task-level bundle byte-identical to
+  pre-change (golden diff = empty, back-compat).
 
-Also locks the A.6 build steps this unit owns directly (Section A.6 "Build
-(A-U5)" items 1, 3, 4-adjacent (the ONB-side scope key + rationale), 5):
-  1. scope_hint is additive-only; a fixture funnel run through it produces a
-     stable per-page `scope` key.
-  3. the different-blends-allowed invariant — each page's bundle carries a
-     `rationale['scope']` stating WHY (the collapse/blend outcome for that
-     page), so a downstream (A-U7) comparator can tell "shared, collapse
-     fired the same way" from "forced-identical, no reason".
+  The CC half — (b) the NEW `task_persona_bundle_scope` migration +
+  from-seed chip rendering, (c) existing single-bundle consumers unmodified,
+  (d) the 090 schema byte-identical — is proven on that repo's own suite
+  (`tests/unit/a-u5-scoped-persona-bundle.test.ts` +
+  `tests/unit/a-u5-persona-scope-chips-render.test.tsx` in
+  `blackceo-command-center`; this unit lands on BOTH trains).
+
+  MOVED TO A-U7 (per the amendment, NOT this unit's acceptance): "a fixture
+  funnel build produces N pages with >=2 DISTINCT blends and exactly N
+  per-page persona-selection-log entries" — that criterion exercises A-U7's
+  per-page blend-SELECTION machinery (a per-page loop calling build_bundle
+  once per page and deciding what each page's blend should be), which this
+  unit does not build. A-U5 builds the scope-key/echo MECHANISM a caller
+  like A-U7 uses; it proves the mechanism deterministically on ONE call at a
+  time, never a multi-page selection fixture.
+
+Also locks the A.6 build steps this unit owns directly (items 1, 3-partial,
+5 of Section A.6 "Build (A-U5)"):
+  1. scope_hint is additive-only; deriving a stable `scope` key never
+     mutates any other resolution input (topic_hint precedence, audience,
+     department, catalog).
+  3. the different-blends-allowed invariant's ONB-side half — a scope-
+     carrying bundle's `rationale['scope']` states WHY (the collapse/blend
+     outcome for THIS call), the per-call evidence a downstream (A-U7)
+     multi-page comparator reads; this unit does not build that comparator.
   5. `_resolve_scope_key` accepts `part_id` without colliding with
      `page_slug`/`page_role` — the forward-compatible hook U115 (Section E6)
      reuses.
@@ -45,9 +53,7 @@ never reads/writes a live persona DB or the operator's own workspace.
 """
 import importlib.util
 import json
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
@@ -121,15 +127,9 @@ def _hermetic(catalog_path, company_cfg):
 ICP_FOUNDERS = {"company": {"ideal_customer": "Black women entrepreneurs building wealth"}}
 ICP_SINGLE = {"company": {"ideal_customer": "Black women"}}
 
-TMP = Path(tempfile.mkdtemp(prefix="a-u5-fixture-funnel-"))
-
-
-def _cleanup():
-    shutil.rmtree(TMP, ignore_errors=True)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
-section("A-U5 ACCEPT (c)  BACK-COMPAT — scope_hint omitted is byte-identical to pre-A-U5")
+section("A-U5 ACCEPT (a)  BACK-COMPAT — absent scope_hint is byte-identical to pre-A-U5")
 
 paths, db = _hermetic(FIXTURE_13, ICP_FOUNDERS)
 b_no_scope = pb.build_bundle(
@@ -178,97 +178,62 @@ else:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-section("A-U5 ACCEPT (a) + (b)  fixture funnel: N pages, >=2 distinct blends, N log entries")
+section("A-U5 ACCEPT (a)  scope_hint ECHOES + a STABLE composite scope key (single call)")
 
-PAGES = [
-    {
-        "task": "write a budgeting and debt payoff email for our members",
-        "icp": ICP_SINGLE,
-        "scope_hint": {"page_role": "opt-in", "page_slug": "opt-in", "conversion_goal": "lead-capture"},
-    },
-    {
-        "task": "write a marketing funnel email sequence to launch our fund",
-        "icp": ICP_FOUNDERS,
-        "scope_hint": {"page_role": "sales", "page_slug": "sales", "conversion_goal": "book-a-call"},
-    },
-    {
-        "task": "write a marketing funnel email sequence to launch our fund",
-        "icp": ICP_FOUNDERS,
-        "scope_hint": {"page_role": "thank-you", "page_slug": "thank-you", "conversion_goal": "confirm-booking"},
-    },
-]
+paths_p, db_p = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+SALES_HINT = {"page_role": "sales", "page_slug": "sales", "conversion_goal": "book-a-call"}
+b_sales = pb.build_bundle(
+    "write a marketing funnel email sequence to launch our fund", "marketing",
+    paths=paths_p, db_path=db_p, use_llm=False, record=False, scope_hint=SALES_HINT)
 
-page_bundles = []
-for page in PAGES:
-    pg_paths, pg_db = _hermetic(FIXTURE_13, page["icp"])
-    bundle = pb.build_bundle(
-        page["task"], "marketing", paths=pg_paths, db_path=pg_db,
-        use_llm=False, record=False, scope_hint=page["scope_hint"])
-    page_bundles.append((page["scope_hint"]["page_slug"], bundle))
-
-if len(page_bundles) == len(PAGES):
-    ok(f"fixture funnel produced exactly N={len(PAGES)} page bundles")
+if b_sales.get("scope") == "sales":
+    ok("scope_hint {page_role, page_slug} -> composite scope key = page_slug ('sales')")
 else:
-    bad(f"expected {len(PAGES)} page bundles, got {len(page_bundles)}")
+    bad(f"expected scope='sales', got {b_sales.get('scope')!r}")
 
-distinct_voice_ids = {b["persona_id"] for _, b in page_bundles}
-if len(distinct_voice_ids) >= 2:
-    ok(f"fixture funnel: >=2 DISTINCT voice blends across N pages ({sorted(distinct_voice_ids)})")
+if b_sales.get("scope_hint") == SALES_HINT:
+    ok("the bundle echoes scope_hint back verbatim (persist-layer round trip)")
 else:
-    bad(f"fixture funnel produced only {len(distinct_voice_ids)} distinct voice(s): {distinct_voice_ids}")
+    bad(f"scope_hint did not echo back verbatim: {b_sales.get('scope_hint')!r}")
 
-# Every page bundle carries its own stable scope key, matching its page_slug.
-if all(b.get("scope") == slug for slug, b in page_bundles):
-    ok("every page bundle's 'scope' key equals its page_slug (stable, persistable)")
+if "rationale" in b_sales and b_sales["rationale"].get("scope"):
+    ok("the scoped bundle's rationale states WHY (scope + collapse/blend outcome for this call)")
 else:
-    bad(f"scope key mismatch: {[(slug, b.get('scope')) for slug, b in page_bundles]}")
+    bad("scoped bundle is missing rationale['scope']")
 
-# Every page bundle's scope_hint round-trips (echoed back for the CC persist layer).
-if all(b.get("scope_hint") == page["scope_hint"] for (slug, b), page in zip(page_bundles, PAGES)):
-    ok("every page bundle echoes its scope_hint back verbatim (persist-layer round trip)")
+# ── (a) DETERMINISM — the SAME scope_hint yields the SAME key across repeated calls ──
+paths_r1, db_r1 = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+b_repeat_1 = pb.build_bundle(
+    "write a marketing funnel email sequence to launch our fund", "marketing",
+    paths=paths_r1, db_path=db_r1, use_llm=False, record=False, scope_hint=SALES_HINT)
+paths_r2, db_r2 = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+b_repeat_2 = pb.build_bundle(
+    "write a marketing funnel email sequence to launch our fund", "marketing",
+    paths=paths_r2, db_path=db_r2, use_llm=False, record=False, scope_hint=SALES_HINT)
+paths_r3, db_r3 = _hermetic(FIXTURE_13, ICP_FOUNDERS)
+b_repeat_3 = pb.build_bundle(
+    "write a marketing funnel email sequence to launch our fund", "marketing",
+    paths=paths_r3, db_path=db_r3, use_llm=False, record=False, scope_hint=SALES_HINT)
+if b_repeat_1["scope"] == b_repeat_2["scope"] == b_repeat_3["scope"] == "sales":
+    ok("DETERMINISM: the same scope_hint yields the same composite scope key across 3 repeated calls")
 else:
-    bad("scope_hint echo did not round-trip on one or more pages")
+    bad(f"determinism failed: {b_repeat_1['scope']!r}, {b_repeat_2['scope']!r}, {b_repeat_3['scope']!r}")
 
-# Different-blends-allowed invariant: each page states WHY (rationale['scope']).
-if all("rationale" in b and "scope" in b["rationale"] and b["rationale"]["scope"] for _, b in page_bundles):
-    ok("every page bundle's rationale states WHY (scope + collapse/blend outcome)")
+# A DIFFERENT scope_hint (different page) legally yields a DIFFERENT key — proves the
+# key is actually derived from the hint, not a constant.
+paths_optin, db_optin = _hermetic(FIXTURE_13, ICP_SINGLE)
+OPTIN_HINT = {"page_role": "opt-in", "page_slug": "opt-in", "conversion_goal": "lead-capture"}
+b_optin = pb.build_bundle(
+    "write a budgeting and debt payoff email for our members", "marketing",
+    paths=paths_optin, db_path=db_optin, use_llm=False, record=False, scope_hint=OPTIN_HINT)
+if b_optin.get("scope") == "opt-in" and b_optin["scope"] != b_sales["scope"]:
+    ok("a DIFFERENT scope_hint (different page) derives a DIFFERENT composite scope key")
 else:
-    bad("one or more page bundles is missing rationale['scope']")
-
-# Write exactly N persona-selection-log.md entries (one per page), reusing the
-# existing repo-wide log convention.
-log_count = 0
-for slug, bundle in page_bundles:
-    wrote = pb.write_persona_selection_log_entry(TMP, slug, bundle, reason=bundle["rationale"]["scope"])
-    if wrote:
-        log_count += 1
-
-log_path = TMP / "persona-selection-log.md"
-log_text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-entry_count = log_text.count("## page: ")
-
-if log_count == len(PAGES):
-    ok(f"write_persona_selection_log_entry succeeded for all N={len(PAGES)} pages")
-else:
-    bad(f"only {log_count}/{len(PAGES)} log writes succeeded")
-
-if entry_count == len(PAGES):
-    ok(f"persona-selection-log.md carries exactly N={len(PAGES)} per-page entries")
-else:
-    bad(f"expected {len(PAGES)} log entries, found {entry_count}")
-
-for slug, bundle in page_bundles:
-    pid = bundle.get("persona_id") or "none"
-    if f"scope: {slug}" in log_text and f"selected_persona: {pid}" in log_text:
-        ok(f"log entry for scope={slug} names selected_persona={pid}")
-    else:
-        bad(f"log entry for scope={slug} missing/incorrect (expected selected_persona={pid})")
-
-_cleanup()
+    bad(f"scope key did not vary with scope_hint: opt-in call got {b_optin.get('scope')!r}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-section("A-U5 ACCEPT (d)  scope_hint never touches the unscoped bundle assembly path")
+section("A-U5 ACCEPT (a)  scope_hint is additive-only — never mutates other resolution inputs")
 
 # NO-WEAKENING: the same task/ICP with vs without a scope_hint of {page_role
 # equal to what topic_hint would have been anyway} still reaches the SAME
@@ -302,6 +267,25 @@ if key == "sales-v2":
     ok("_resolve_scope_key: page_slug wins over page_role when both are present")
 else:
     bad(f"_resolve_scope_key precedence wrong: {key!r}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+section("SUPPLEMENTARY (not an A-U5 acceptance criterion) — write_persona_selection_log_entry "
+        "smoke test: this unit ships the writer, A-U7's per-page loop is its real caller")
+
+import shutil as _shutil
+import tempfile as _tempfile
+
+_tmp = Path(_tempfile.mkdtemp(prefix="a-u5-log-writer-smoke-"))
+try:
+    wrote = pb.write_persona_selection_log_entry(_tmp, "sales", b_sales, reason=b_sales["rationale"]["scope"])
+    log_text = (_tmp / "persona-selection-log.md").read_text(encoding="utf-8") if wrote else ""
+    if wrote and "scope: sales" in log_text and f"selected_persona: {b_sales.get('persona_id')}" in log_text:
+        ok("write_persona_selection_log_entry appends a well-formed single entry (helper works)")
+    else:
+        bad(f"write_persona_selection_log_entry smoke test failed: wrote={wrote} text={log_text!r}")
+finally:
+    _shutil.rmtree(_tmp, ignore_errors=True)
 
 
 print("=" * 72)
