@@ -467,6 +467,55 @@ def _extract_icp_descriptors(company_cfg: dict, soul_text: str = "") -> list:
     return descriptors
 
 
+# ── A-U4 — conversion_goal as a first-class input (master-spec v2 §A.5) ───────
+# The exact question we ASK when the conversion goal is unknown — content-gated
+# identically to AUDIENCE_CONFIRM_PROMPT above (same ALWAYS-confirm shape).
+CONVERSION_GOAL_CONFIRM_PROMPT = "What must this page make the reader DO?"
+
+# goal_source values that are already an explicit, operator-visible answer (an
+# operator/task field, or a Skill-6 intake question actually asked and answered)
+# — these never re-ask. A TEMPLATE-INFERRED goal is a guess, not a confirmation,
+# so it still gates (ALWAYS-confirm doctrine, parity with resolve_audience's
+# single-ICP-descriptor rung).
+_GOAL_SOURCES_NO_CONFIRM = ("operator_confirmed", "skill6_intake")
+_GOAL_SOURCES = ("operator_confirmed", "skill6_intake", "template_inferred")
+
+
+def resolve_conversion_goal(conversion_goal: str = "", goal_source: str = "") -> dict:
+    """Resolve the conversion goal + whether it still needs operator confirmation.
+
+    The source ladder itself — 1) explicit operator/task field, 2) Skill 6
+    intake ("What must this page make the reader DO?"), 3) the funnel
+    template's offer/call-to-action framing, 4) ASK — is walked by the CALLER
+    (today: persona-selector-v2.py's `--conversion-goal` argv / the
+    OPENCLAW_CONVERSION_GOAL env passthrough; tomorrow: Skill 6's per-page
+    dispatch, A-U7) which supplies the resolved `conversion_goal` value AND
+    which rung produced it (`goal_source`). This function is the single place
+    that turns that pair into the ALWAYS-confirm-doctrine decision, mirroring
+    `resolve_audience`: an explicit operator field or an already-answered
+    intake question never re-asks; an INFERRED template goal still needs a
+    confirm prompt; nothing resolved yields the exact ASK, content-gated
+    identically to the audience ask. Never fabricates a goal (value='' when
+    nothing resolves).
+
+    Returns {value, source, ask, confirm_required}.
+    """
+    value = str(conversion_goal).strip() if conversion_goal else ""
+    if not value:
+        return {"value": "", "source": "asked",
+                "ask": CONVERSION_GOAL_CONFIRM_PROMPT, "confirm_required": True}
+
+    source = goal_source if goal_source in _GOAL_SOURCES else "operator_confirmed"
+    if source in _GOAL_SOURCES_NO_CONFIRM:
+        return {"value": value, "source": source, "ask": None,
+                "confirm_required": False}
+    return {
+        "value": value, "source": source, "confirm_required": True,
+        "ask": (f'The funnel template implies the goal is "{value}". Confirm '
+                f"this goal before I write, or tell me the goal."),
+    }
+
+
 def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
                      audience_override: str = "") -> dict:
     """Resolve the audience + whether the operator must confirm before writing.
@@ -720,19 +769,33 @@ def _voice_attr_block(label: str, pid, personas: dict):
     return lines
 
 
+def _choose_closer_pid(task_persona_pid, collapsed, collapsed_pid, audience_pid, topic_pid):
+    """A-U4 slot 5 (A.6): the CONVERSION slot reuses an EXISTING blend slot as
+    the 'closer' whose conversion_style governs the close — it never invents a
+    fifth persona pick. Preference: the TASK-side persona (the work's own
+    process persona, already independent per DEP-5) -> the resolved VOICE
+    (collapsed or audience) -> TOPIC (last-resort expertise). Returns None when
+    no slot is populated (mechanical/empty bundles never reach here)."""
+    return (task_persona_pid or (collapsed_pid if collapsed else None)
+            or audience_pid or topic_pid)
+
+
 # ── blend directive (carries the mandatory guardrail) ─────────────────────────
 def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
                           collapsed_pid, content_task: bool,
                           audience_label: str = "", task_persona_pid=None,
-                          catalog: dict = None) -> str:
-    """Compose the writer's SYNERGY instruction — up to FOUR slots working
-    together (P4-02 step 7):
+                          catalog: dict = None, conversion_goal: str = "",
+                          chosen_closer_pid=None) -> str:
+    """Compose the writer's SYNERGY instruction — up to FIVE slots working
+    together (P4-02 step 7 + A-U4 slot 5):
 
         1. VOICE     — the audience persona's cadence/devices/register.
         2. AUDIENCE  — who the content is FOR (the resolved audience label).
         3. SUBSTANCE — the topic persona's expertise/frameworks.
         4. TASK      — the task-side persona (DEP-5), an INDEPENDENT dimension
                        guiding HOW the work is executed (its process/method).
+        5. CONVERSION — the resolved conversion goal + the chosen closer
+                       persona's conversion_style (A-U4, master-spec v2 §A.5).
 
     Every slot populates when available and DEGRADES GRACEFULLY when not
     (voice-only, topic-only, task-only, or the neutral house voice). The
@@ -746,6 +809,13 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
     ADDITIVE: `catalog=None` (the default), a schema-1.2 catalog, or a persona
     with no voice_style all degrade to the identical v1 prose-only directive —
     the guardrail remains the trailing, non-removable clause in every case.
+
+    A-U4 (conversion_goal as a first-class input): slot 5 appears ONLY for
+    content tasks with a resolved `conversion_goal` (content-gated exactly
+    like slot 4) and never invents a new persona pick — it reuses whichever
+    slot `_choose_closer_pid` resolved as the closer. Additive: an empty
+    `conversion_goal` (the default) leaves the directive byte-identical to
+    pre-A-U4 behavior.
     """
     def _name(pid):
         return pid.replace("-", " ").title() if pid else None
@@ -799,8 +869,28 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
         block = _voice_attr_block(label, pid, personas)
         if block:
             attr_blocks.append("\n".join(block))
-    if attr_blocks:
-        body = body + "\n\n" + "\n".join(attr_blocks) + (
+
+    # ── A-U4 slot 5 — CONVERSION GOAL. Content-gated exactly like slot 4; reuses
+    # an existing slot's persona as the closer (never a fifth persona pick). The
+    # closer's conversion_style is sourced ONLY from the catalog (A-U3), never
+    # invented — gracefully omitted when the closer or its conversion_style is
+    # unavailable (e.g. a schema<1.4 catalog).
+    conversion_line = None
+    if content_task and conversion_goal:
+        closer_style = None
+        closer_info = personas.get(chosen_closer_pid) if chosen_closer_pid else None
+        if isinstance(closer_info, dict):
+            closer_style = closer_info.get("conversion_style")
+        conversion_line = (
+            f"CONVERSION GOAL: {conversion_goal}. Close in {closer_style}."
+            if closer_style else f"CONVERSION GOAL: {conversion_goal}.")
+
+    trailer_blocks = list(attr_blocks)
+    if conversion_line:
+        trailer_blocks.append(conversion_line)
+
+    if trailer_blocks:
+        body = body + "\n\n" + "\n".join(trailer_blocks) + (
             "\nVOICE CONTRACT: echo one line into persona-selection-log "
             "confirming the register you wrote in.")
 
@@ -1060,11 +1150,17 @@ def validate_blend_invariant(bundle: dict) -> dict:
 def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
                  use_llm: bool = True, record: bool = True,
                  max_task_personas: int = 10, variety: bool = True,
-                 topic_hint: str = "", audience_override: str = "") -> dict:
+                 topic_hint: str = "", audience_override: str = "",
+                 conversion_goal: str = "", goal_source: str = "") -> dict:
     """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
 
     paths/db_path default to the live resolution when omitted; tests pass a
     hermetic paths dict and monkeypatch the selector/decompose functions.
+
+    A-U4: `conversion_goal` (+ `goal_source`) is the resolved conversion-goal
+    input — additive, default-empty, degrades byte-identically to pre-A-U4
+    behavior when unused. See `resolve_conversion_goal` for the source-ladder
+    contract and confirm-doctrine.
     """
     sel = _selector()
     if paths is None:
@@ -1110,6 +1206,12 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             "blend_directive": ("Operational/mechanical task — no persona voice "
                                 "required. " + GUARDRAIL_CLAUSE),
             "task_personas": [],
+            # A-U4: mechanical tasks never carry a conversion goal (no content write).
+            "conversion_goal": "",
+            "goal_source": "n/a",
+            "goal_confirm_required": False,
+            "resolved_goal": {"value": "", "source": "n/a", "ask": None,
+                              "confirm_required": False},
             "rationale": {"note": "mechanical task — governance persona attached, "
                                   "no audience/topic blend."},
             "funnel": {"pool": 0, "category": 0, "semantic": 0, "mechanical": True},
@@ -1226,6 +1328,15 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         confirm_required = bool(ra.get("confirm_required", True))
     ra["confirm_required"] = confirm_required
 
+    # ── A-U4 — conversion goal (resolved by the caller's source ladder; see
+    # resolve_conversion_goal). `goal_confirm_required` is a SEPARATE, additive
+    # gate signal (never folded into the audience-only `confirm_required` above,
+    # so every pre-A-U4 consumer that never supplies a goal is byte-identical) —
+    # a write path that cares about the conversion goal (Skill 6's dispatcher,
+    # A-U7) ORs it into its own gate check alongside `confirm_required`.
+    rg = resolve_conversion_goal(conversion_goal, goal_source)
+    goal_confirm_required = bool(rg.get("confirm_required", False)) if content_task else False
+
     # ── TASK personas (up to 10) ────────────────────────────────────────────────
     # Computed BEFORE the directive (P4-02 step 7) so the primary task-side
     # persona can populate the directive's fourth synergy slot.
@@ -1242,9 +1353,18 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         None,
     )
 
+    # A-U4 slot 5: the closer reuses an existing slot (never a fifth pick) —
+    # only meaningful for content tasks (mechanical/non-content never gets a
+    # conversion goal to close).
+    closer_pid = (_choose_closer_pid(primary_task_pid, collapsed, collapsed_pid,
+                                     audience_pid, topic_pid)
+                  if content_task else None)
+
     blend_directive = build_blend_directive(
         audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
-        voice_audience_label, task_persona_pid=primary_task_pid, catalog=catalog)
+        voice_audience_label, task_persona_pid=primary_task_pid, catalog=catalog,
+        conversion_goal=(rg["value"] if content_task else ""),
+        chosen_closer_pid=closer_pid)
 
     funnel = semantic_funnel if isinstance(semantic_funnel, dict) else {
         "pool": len(_persona_meta(catalog)),
@@ -1279,6 +1399,13 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             f"{combined.get('distinct_persona_count', 0)} distinct persona(s) "
             f"[{combined.get('decomposition_method', 'n/a')}] — topic persona "
             f"doubles as task guidance"),
+        # A-U4 decision receipt (master-spec v2 §A.5 item 4).
+        "conversion_goal": rg["value"],
+        "goal_source": rg["source"],
+        "chosen_closer": closer_pid,
+        "conversion_goal_resolution": (
+            f"source={rg['source']}, confirm_required={goal_confirm_required}"
+            + ("" if not rg.get("ask") else f" — ASK: {rg['ask']}")),
     }
 
     bundle = {
@@ -1299,6 +1426,12 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         "voice": voice,
         "blend_directive": blend_directive,
         "task_personas": task_personas[:10],
+        # A-U4 — conversion_goal as a first-class input (additive superset keys;
+        # empty/False when unused, so every pre-A-U4 consumer is unaffected).
+        "conversion_goal": rg["value"],
+        "goal_source": rg["source"],
+        "goal_confirm_required": goal_confirm_required,
+        "resolved_goal": rg,
         "rationale": rationale,
         "fallbacks": fallbacks,
         "catalog_version": str(catalog.get("schemaVersion", "")) or "unknown",
