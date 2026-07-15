@@ -1,3 +1,12 @@
+## [v20.0.31]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U4/A-U4: conversion_goal first-class persona-blend input (QC 8.9, ONB half)
+
+v20.0.31 — Merges `skill6-v2/U4` (master unit U4, Section A id A-U4) of the Skill 6 Blended-Persona Kanban v2 build, ONB (`openclaw-onboarding`) half of a both-repo unit. Third unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
+
+- **Feature:** `conversion_goal` becomes a first-class input to the persona-blend bundle — accepted as a kwarg, via `--conversion-goal` argv (wins), or `OPENCLAW_CONVERSION_GOAL` env fallback; a source ladder records `goal_source`; directive slot 5 renders for content tasks with a resolved goal; a per-department confirm policy adds a separate `goal_confirm_required` signal that never retroactively gates legacy callers (no-contamination guarantee for every pre-A-U4 call site).
+- Test proof re-run independently on the merged tree: `23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py` — `RESULTS: 37 passed, 0 failed`.
+- Ledger: `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` U4 row (ONB half) set to `verified`; the CC half lands separately on `blackceo-command-center`.
+- No client names, no secret values, no box identifiers. No Anthropic model added/removed/substituted.
+
 ## [v20.0.30]  -  2026-07-15  -  Skill 6 blended-persona Wave One Stage B — U24/B-U10: execute D6, prove + schedule the GitHub archival rail (QC 9.0)
 
 v20.0.30 — Merges `skill6-v2/U24` (master unit U24, Section B id B-U10) of the Skill 6 Blended-Persona Kanban v2 build. Second unit landed by the Wave One Stage B serial merge train (U8 -> U24 -> U4 -> U5 -> U21).
