@@ -1,0 +1,8 @@
+{
+  "_fixture_note": "Mocked Vercel GET /v13/deployments/{id} response for a failed build (readyState=ERROR is one of the documented terminal states per vercel.com/docs/deployments/deployment-states). NOT a real Vercel response; no live/paid call was made to produce this file (spec 19.2).",
+  "id": "dpl_fixture_0000000000000002",
+  "url": "cwfe-fixture-failed-0002.vercel.app",
+  "readyState": "ERROR",
+  "errorMessage": "Build failed: fixture-induced error",
+  "projectId": "prj_fixture_0000000000000001"
+}
