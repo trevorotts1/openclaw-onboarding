@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T08:40:02Z
-openclaw-onboarding `origin/main` HEAD: `23bb35c0287450d2df8426b8cce9dd3b052b7480`
+Generated: 2026-07-15T08:50:03Z
+openclaw-onboarding `origin/main` HEAD: `87efbfc73cf9e240d4dd11b2dddcd8436327c048`
 blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50d64ff`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -17,6 +17,7 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
 | U20 | `skill6-v2/U20` | `1bbfe0f0` | True | `ea371000` | v20.0.23 | verified | 9.1 |
 | U21 | `skill6-v2/U21` | `ad92145d` | True | `0d3f31a0` | v20.0.33 | verified (ONB half) | - |
 | U22 | `skill6-v2/U22` | `50ff2e79` | False | - | - | pending | - |
+| U22-offline | `skill6-v2/U22-offline` | `8195fb4c` | False | - | - | (no row) | - |
 | U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
 | U27 | `skill6-v2/U27` | `cba9065a` | True | `6234014b` | v20.0.25 | verified | 9.0 |
@@ -37,6 +38,7 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
 | U20 | `skill6-v2/U20` | `5e5c3bb9` | True | `ae80043b` | v6.0.4 |
 | U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 |
 | U22 | `skill6-v2/U22` | `f4f933ff` | False | - | - |
+| U22-offline | `skill6-v2/U22-offline` | `41e3b890` | False | - | - |
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 |
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 |
@@ -71,6 +73,7 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
   - `40ec574e` feat(skill-62): U4 — provider abstraction (MediaProvider + capability-keyed model registry)
   - `3bde5a3d` feat(skill-62): U2 skeleton — Cinematic and Web Funnel Engine
 - merged into `origin/main`: False
+- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `467ce609` is 8 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
