@@ -480,3 +480,55 @@ This work — **including the four §K.6/§K.8 resolutions** — lands AFTER the
 doctrine the operator re-syncs the SAME snapshot id (`IEmFFkIngiskcfJk9MH6`) after the re-cut.
 Repo changes are branch-only pending QC >= 8.5 (single-writer onboarding train); the repo version
 roll + fleet rollout are deferred to the train, not done per-fix.
+
+---
+
+## SECTION L - GK-05/U67: SNAPSHOT v2 + `PODCAST_SNAPSHOT_ID` CONFIRMATION (mechanism)
+
+**Spec:** GK-05 — P1 — Podcast golden snapshot v2 + `PODCAST_SNAPSHOT_ID` confirmation. **Deps:
+GK-01/U63** (the publish-path fix must land BEFORE the golden snapshot bakes in the current
+`image_url = null` failure as "golden"). As of this build U63 is **operator-gated/deferred**
+(2 of 3 legs blocked; branch `skill6-v2/U63`; see LEDGER U63) — so this unit's live half cannot
+proceed yet. This section ships the repo-side mechanism only, structurally gated on that
+dependency, so the operator's live step (mirroring GK-04/U66, which Trevor executed personally
+once GK-04's repo half was ready) is a single command once U63 clears.
+
+**Canonical record:** `config/podcast-snapshot-registry.json` — the repo-side half of the BINARY
+acceptance ("the v2 snapshot exists with its id recorded in `trevorotts1/openclaw-onboarding`").
+Tracks `template_location_id` (`CjxATjhv9Gt21qSqURIt`), the Snapshot Provisioner n8n workflow id
+(`ol9YLeCpvYdNsbsg`) and its env var name (`PODCAST_SNAPSHOT_ID`), and one row per snapshot
+version (`v1` = live today at `IEmFFkIngiskcfJk9MH6`; `v2` = `snapshot_id: null`, `status:
+pending`, `blocked_on: ["GK-01/U63"]` until cut). Per §K.7 precedent, a "v2 re-cut" may land
+under the SAME snapshot id (operator doctrine re-syncs in place) rather than a newly-minted one —
+the registry does not require v2's id to differ from v1's; that is the operator's call at cut
+time, not a constraint this mechanism enforces.
+
+**Gate:** `scripts/confirm-podcast-snapshot.py` (read `--help` for the full contract; unit-tested
+in `scripts/tests/test_confirm_podcast_snapshot.py`, 34 tests, no network).
+- `--record-snapshot v2 <id>` — repo-only write-back once the operator cuts the live snapshot
+  (there is no public create-snapshot API — see Section I Phase 5; it is a hand-built GHL UI
+  action, same class as every other snapshot cut in this manifest). Clears `blocked_on`, sets
+  `status: cut-pending-n8n-confirm`. Never flips `current` — that stays a deliberate operator step
+  taken only after the two proofs below both pass.
+- `--confirm-n8n-value <value>` — compares a `PODCAST_SNAPSHOT_ID` value the operator already read
+  back from the n8n deployment (its own channel — n8n exposes no REST endpoint for reading an
+  arbitrary OS-level `$env.*` value by design, the same surface `N8N_BLOCK_ENV_ACCESS_IN_NODE`
+  gates per `59-anthology-engine/config/n8n/README.md`) against the registry's recorded id,
+  byte-for-byte.
+- `--dry-run-provision` — fires ONE real request at the production `provision-snapshot` webhook
+  via the already-proven `shared-utils/fire-provision-snapshot.sh` against a clearly-labeled
+  SCRATCH client slug (`gk05-scratch-confirm`, never a real client), and classifies the response:
+  PASS only on a clean 2xx accept; a literal 409 (`PODCAST_SNAPSHOT_ID` unset/stale) FAILs, and so
+  does any other non-2xx outcome — "does not 409" names the known failure mode, not a license to
+  accept a different live error. This is a genuine live side effect on production n8n; it is
+  opt-in only and was not invoked by this build.
+
+**Operator runbook (once GK-01/U63 clears):**
+1. Cut (or re-sync) the v2 snapshot from `CjxATjhv9Gt21qSqURIt` in the GHL UI.
+2. `scripts/confirm-podcast-snapshot.py --record-snapshot v2 <snapshot_id>`
+3. Read `PODCAST_SNAPSHOT_ID` back from the Snapshot Provisioner deployment (n8n host/container),
+   then `scripts/confirm-podcast-snapshot.py --confirm-n8n-value <value>` — must PASS.
+4. `scripts/confirm-podcast-snapshot.py --confirm-n8n-value <value> --dry-run-provision` — must
+   PASS (no 409).
+5. Only then flip `"current": "v2"` in the registry (hand-edit or a follow-up script) and record
+   the live-proof evidence, mirroring GK-04/U66's evidence pattern.
