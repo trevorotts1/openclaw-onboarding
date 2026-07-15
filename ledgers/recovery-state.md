@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T07:50:05Z
-openclaw-onboarding `origin/main` HEAD: `4ed0d249d271209d3105793fb87ef9961f34da85`
+Generated: 2026-07-15T08:00:03Z
+openclaw-onboarding `origin/main` HEAD: `14068ff8de8e578a0ad73b9630bf0420b287cd65`
 blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce305c819`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -25,6 +25,7 @@ blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce30
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
+| U7 | `skill6-v2/U7` | `f06ce74c` | False | - | - | pending | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
@@ -49,12 +50,19 @@ blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce30
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 |
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 |
+| U7 | `skill6-v2/U7` | `ece5ae36` | False | - | - |
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `7bd5992d`
+- branch tip: `fc62db5a`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 7
+- commits ahead of that merge-base (cinematic-specific work so far): 13
+  - `fc62db5a` merge(skill-62): integrate U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover (QC 9.0)
+  - `a7750652` merge(skill-62): integrate U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json (QC 9.0)
+  - `b3964461` merge(skill-62): integrate U7 — budget estimate, paid-call approval, and the 8-precondition AF-CWFE-PAID-GATE (QC 9.0)
+  - `e37ad14a` feat(skill-62): U7 — budget estimate, paid-call approval, and the 8-precondition AF-CWFE-PAID-GATE
+  - `71be0e45` feat(skill-62): U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json
+  - `10656928` feat(skill-62): U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover
   - `7bd5992d` merge(skill-62): integrate U6 — project/content/scene/cost/deployment schemas + state engine (QC 9.0)
   - `32d70b06` merge(skill-62): integrate U4 — provider abstraction MediaProvider + capability-keyed model registry (QC 8.8)
   - `5d129261` merge(skill-62): integrate U3 — Claude Code / Codex environment and model resolver (QC 9.3)
