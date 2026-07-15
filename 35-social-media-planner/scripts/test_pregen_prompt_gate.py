@@ -15,6 +15,12 @@ Cases (mirror the P3-05 (e) QC break-it probes verbatim):
      AF-SM-INPUT-QC-GATE); the SAME asset with a >=8.5 SOP-GIP-02 receipt -> passes.
   5. A non-text (no --text-overlay) prompt on Nano Banana 2 -> passes (routing rule only
      applies to text-overlay deliverables — Nano Banana stays legitimate for photoreal work).
+  6. GK-20 (band<->routing reconciliation, 2026-07-15): a text-overlay prompt SIZED TO the
+     Graphics department's `text_bearing_medium` GIP band floor (prompt-bands.json, the
+     ONLY text-bearing band naming an Ideogram endpoint) routed to `ideogram-v3-design`
+     -> PASSES this gate too (exit 0) -- proves the BINARY acceptance criterion that the
+     SAME reconciled-band prompt clears BOTH `diu_validator.py prompt-band` (see
+     test_prompt_band_cli.py case 5) AND `pregen_prompt_gate.py check`, not just one.
 
 Run:  python3 test_pregen_prompt_gate.py
 Exit: 0 = every assertion passed; 1 = a case failed.
@@ -162,6 +168,49 @@ def main() -> int:
         )
         check("exit code is 0 (no text overlay -> Nano Banana stays legitimate)",
               r5.returncode == 0, f"got {r5.returncode}, stderr={r5.stderr!r}")
+
+        print("\n=== 6. GK-20: text_bearing_medium-band-floor-sized prompt, routed to Ideogram V3 DESIGN -> exit 0 ===")
+        # A genuinely rich body (>=1,600 chars to clear the Graphics text_bearing_medium GIP
+        # floor) carrying the SAME baked headline this gate checks for, plus the mandatory
+        # FORM fields and brand-safety clause -- proving the reconciled band and this gate
+        # agree on the identical asset, not two independently-tuned thresholds.
+        p6_body = (
+            "A quote-card graphic for a mid-market services brand, brand-appropriate, "
+            "appropriate for the client's audience, no suggestive content. Centered "
+            "headline composition with generous negative space reserved for the text "
+            "zone; deep forest green and warm cream palette matching the locked brand "
+            "style block; brass accent detailing; clean editorial background with no "
+            "competing visual elements. On-image text reads exactly: "
+            "\"Three Moves That Doubled Our Pipeline\". Spelling lock: render this exact "
+            "string, letter-for-letter, correctly spelled, with no added, dropped, "
+            "doubled, or substituted characters. Typography set bold serif, centered, "
+            "96pt weight 700, generous line height for mobile legibility. Platform crop "
+            "safety: the headline sits fully inside the safe zone for a 4:5 crop so no "
+            "letterform is clipped on a narrower feed slot. Style reference only: any "
+            "attached reference image guides style and mood alone; do not copy "
+            "composition or literal content from the reference. Negative block: do not "
+            "render any misspelled or garbled text; do not redraw, recolor, or "
+            "reinterpret the logo or tagline lockup; do not produce anatomical "
+            "artifacts such as a fused hand or extra limb; do not let a cluttered "
+            "background compete behind the text zone; do not lighten or desaturate any "
+            "deep skin tone; do not add a watermark, emoji, or system default font; do "
+            "not drift off-brand or off-palette. Final check: the composition resolves "
+            "to one coherent quote-card graphic with no collage or split-frame layout, "
+            "and every visible material renders with photographic plausibility rather "
+            "than a flat, illustrated look, matching the client's established "
+            "photographic house style across the last six months of campaign creative."
+        )
+        assert len(p6_body.strip()) >= 1600, "fixture must clear the text_bearing_medium GIP floor"
+        p6 = _write(tmp, "p6.txt", p6_body)
+        r6 = run_gate(
+            "--prompt-file", str(p6), "--model", "ideogram-v3-design",
+            "--ratio", "4:5", "--pixels", "1080x1350",
+            "--brand-colors", "#0B3D2E,#F5EFE0,#C9A24B",
+            "--text-overlay", "Three Moves That Doubled Our Pipeline",
+            "--avoid-list-file", str(avoid_file),
+        )
+        check("exit code is 0", r6.returncode == 0, f"got {r6.returncode}, stderr={r6.stderr!r}")
+        check("stdout confirms OK", r6.stdout.strip().startswith("OK:"), r6.stdout)
 
     print()
     if FAILURES:

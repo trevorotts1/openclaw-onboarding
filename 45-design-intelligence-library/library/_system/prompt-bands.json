@@ -1,6 +1,6 @@
 {
-  "_comment": "Graphics Image Protocol (GIP) prompt bands. MIN is a HARD floor (AF-GIP-PROMPT-FLOOR): a prompt under its band floor is NOT submitted. MAX mirrors MODEL-SPECS tier caps (AF-DIU-PROMPT-CAP). Bands are per asset class x tier, because graphics surfaces differ (a photoreal draft is not a text-bearing ad). Numbers are operator-ratifiable (see CROSS-TOPIC open question 5); rationale cited inline. Enforced by 45-design-intelligence-library/scripts/diu_validator.py prompt-band and SOP-GIP-01.",
-  "version": 1,
+  "_comment": "Graphics Image Protocol (GIP) prompt bands. MIN is a HARD floor (AF-GIP-PROMPT-FLOOR): a prompt under its band floor is NOT submitted. MAX mirrors MODEL-SPECS tier caps (AF-DIU-PROMPT-CAP). Bands are per asset class x tier, because graphics surfaces differ (a photoreal draft is not a text-bearing ad). Numbers are operator-ratifiable (see CROSS-TOPIC open question 5); rationale cited inline. Enforced by 45-design-intelligence-library/scripts/diu_validator.py prompt-band and SOP-GIP-01. GK-20 (P3-05 band<->routing reconciliation, 2026-07-15): a band's 'endpoints' list is the AUTHORITATIVE routing guidance role docs must follow -- an endpoint refused for text everywhere else (Skill 35's pregen_prompt_gate.py NON_TEXT_MODELS / social-media-designs/_RULES.md) must never appear in a text_bearing:true band, and the fleet's mandatory text-rendering route (Ideogram V3 DESIGN) must always resolve to a text_bearing:true band whose MAX is achievable on that endpoint's own verified API cap (MODEL-SPECS.md).",
+  "version": 2,
   "bands": {
     "text_bearing_long": {
       "tier": "LONG",
@@ -8,9 +8,19 @@
       "max": 18000,
       "min_distinct_words": 150,
       "text_bearing": true,
-      "applies_to": ["ad creative", "book cover", "magazine cover", "banner with copy", "social post graphic with baked text", "infographic", "email hero with copy"],
-      "endpoints": ["gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "nano-banana-2"],
-      "_rationale": "Skill 49/56 already prove 5,000-19,000-char image prompts under fail-closed provers (social-media how-to:232-233); GPT-Image 2 is strongest on long structured prompts (MODEL-SPECS section 4); 18,000 keeps the presentations-standard 2,000-char safety margin under the 20,000 API cap."
+      "applies_to": ["ad creative", "book cover", "magazine cover", "banner with copy", "infographic", "email hero with copy"],
+      "endpoints": ["gpt-image-2-text-to-image", "gpt-image-2-image-to-image"],
+      "_rationale": "Skill 49/56 already prove 5,000-19,000-char image prompts under fail-closed provers (social-media how-to:232-233); GPT-Image 2 is strongest on long structured prompts (MODEL-SPECS section 4); 18,000 keeps the presentations-standard 2,000-char safety margin under the 20,000 API cap. GK-20: `nano-banana-2` REMOVED from this band's endpoints (2026-07-15) -- Nano Banana 2/Pro is refused for ANY text-overlay deliverable everywhere else in the fleet (pregen_prompt_gate.py NON_TEXT_MODELS; social-media-designs/_RULES.md model routing) and 20,000-char Nano Banana capacity was never the reason this band existed; `social post graphic with baked text` moved to `text_bearing_medium` below, which is now the ONLY band a text-led social asset can legally target."
+    },
+    "text_bearing_medium": {
+      "tier": "MEDIUM",
+      "min": 1600,
+      "max": 4500,
+      "min_distinct_words": 90,
+      "text_bearing": true,
+      "applies_to": ["social post graphic with baked text", "quote-card / text-led post", "carousel slide with baked headline"],
+      "endpoints": ["ideogram/v3-text-to-image"],
+      "_rationale": "GK-20 fix (P3-05 band<->routing contradiction, 2026-07-15): every quote-card/text-led social post MUST route to Ideogram V3 DESIGN, never Nano Banana (social-media-designs/_RULES.md model routing, enforced mechanically by Skill 35's pregen_prompt_gate.py AF-SM-MODEL-ROUTING) -- but no text_bearing band named an Ideogram endpoint, and text_bearing_long's own floor (5,000) already exceeds Ideogram V3's verified real API prompt cap of 5,000 chars with ZERO margin (MODEL-SPECS.md 'Ideogram V3' row + section-3 TIER<->ENDPOINT table: Ideogram is MEDIUM-compatible only, LONG tier is NOT SUPPORTED on this endpoint). MAX=4,500 keeps the same ~10% safety margin under Ideogram's 5,000-char cap that text_bearing_long/visual_long keep under GPT-Image 2/Nano Banana's 20,000-char cap. MIN=1,600 is 2x the non-text-bearing `medium` band's floor (800) -- the same 2x text-bearing/non-text-bearing floor ratio already established between text_bearing_long (5,000) and visual_long (2,500) -- and is a MEASURED floor: a genuinely rich, fully-compliant text-bearing prompt carrying every SOP-GIP-01 element (spelling-lock, verbatim baked copy, style-reference-only directive, the 8-class negative block) with only 4-6 descriptive body sentences already runs 1,600-2,300 characters (measured via `prove_gip_prompt_floor.py`'s own fixture builder), so this floor forces genuine per-asset richness without demanding content the tight 4,500-char ceiling cannot hold."
     },
     "visual_long": {
       "tier": "LONG",

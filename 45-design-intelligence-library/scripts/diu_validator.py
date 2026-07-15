@@ -35,6 +35,12 @@ WHAT IT ENFORCES (three sub-commands)
           clear the band floor (anti-padding); and when style reference images are
           attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
           (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
+          Two text-bearing bands exist because one endpoint cannot serve both:
+          `text_bearing_long` (5,000-18,000) targets GPT-Image 2 T2I/I2I; the
+          mandatory Ideogram V3 DESIGN quote-card/text-led route (see
+          social-media-designs/_RULES.md) targets `text_bearing_medium`
+          (1,600-4,500) instead, sized to Ideogram's own verified 5,000-char API
+          cap (MODEL-SPECS.md) — GK-20 band<->routing reconciliation.
 
   route-check  — DIU ROUTING INTERLOCK (SOP-DIU-611 §D.1 "coded hard stop").
       An audience / webinar / funnel / sales / virtual-event deck CANNOT proceed on
@@ -80,6 +86,8 @@ USAGE
     python3 diu_validator.py prompt-caps --tier LONG --prompt-file assembled.txt
     python3 diu_validator.py prompt-caps --tier SHORT --prompt "…inline…"
     python3 diu_validator.py prompt-band --band text_bearing_long \
+                --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
+    python3 diu_validator.py prompt-band --band text_bearing_medium \
                 --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
     python3 diu_validator.py prompt-band --band medium --prompt "…inline…" [--run-dir RUN]
     python3 diu_validator.py route-check --deck-kind webinar
@@ -674,8 +682,8 @@ def _band_receipts_path(run_dir: Path) -> Path:
 def cmd_prompt_band(args) -> int:
     band_id = (args.band or "").strip()
     if not band_id:
-        print("FATAL: --band is required (e.g. text_bearing_long | visual_long | medium | "
-              "short_draft).", file=sys.stderr)
+        print("FATAL: --band is required (e.g. text_bearing_long | text_bearing_medium | "
+              "visual_long | medium | short_draft).", file=sys.stderr)
         return 2
     try:
         bands = load_bands(args.bands_file)
@@ -774,7 +782,8 @@ def main(argv=None) -> int:
                         help="enforce the GIP per-asset-class prompt band (MIN floor + MAX cap "
                              "+ quality teeth)")
     pb.add_argument("--band", required=True,
-                    help="text_bearing_long | visual_long | medium | short_draft")
+                    help="text_bearing_long | text_bearing_medium | visual_long | medium | "
+                         "short_draft")
     pb.add_argument("--prompt-file", help="path to the assembled prompt")
     pb.add_argument("--prompt", help="inline prompt string")
     pb.add_argument("--copy", action="append", default=[],

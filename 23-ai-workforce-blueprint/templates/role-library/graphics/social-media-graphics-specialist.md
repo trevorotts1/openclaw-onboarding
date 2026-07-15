@@ -303,7 +303,8 @@ If this graphic is produced via AI image generation, you do NOT self-author or s
 Every AI-generated graphic that leaves for an EXTERNAL surface (published social post, ad, email, funnel)
 runs 100% through SOP-GIP-02 (mandatory vision pass + AF-G auto-fail battery + average >= 8.5 gate; writes
 `<job>/qc/image_qc_report.json`). Prompts for these graphics use band `text_bearing_long` when copy is
-baked in, `medium` for Seedream/Ideogram quick posts (SOP-GIP-01). The 10% random-sample review below
+baked in via GPT-Image 2 T2I/I2I, `text_bearing_medium` for the Ideogram V3 DESIGN route mandatory on
+every quote-card/text-led post, `medium` for non-text-bearing Seedream quick posts (SOP-GIP-01). The 10% random-sample review below
 survives ONLY for INTERNAL drafts and non-generated template assets, reviewed by a senior team member for:
 - [ ] Does this graphic feel like it belongs to {{COMPANY_NAME}}'s social media presence?
 - [ ] Is the design quality consistent with or exceeding the team's established bar?
