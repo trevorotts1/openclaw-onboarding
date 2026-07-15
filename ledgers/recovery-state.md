@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T13:10:01Z
-openclaw-onboarding `origin/main` HEAD: `9a493a0031194d2ff61a025eb85bb20e69c01011`
+Generated: 2026-07-15T13:20:03Z
+openclaw-onboarding `origin/main` HEAD: `92c935f252d71b77e4eba02a964092400b474ea1`
 blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa9c400`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -31,6 +31,7 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
+| U92 | `skill6-v2/U92` | `398956ac` | False | - | - | pending | - |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
 
@@ -39,7 +40,9 @@ blackceo-command-center `origin/main` HEAD: `a5ab24c45aa8dac15d2dd63377a6e9e57fa
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag |
 |---|---|---|---|---|---|
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 |
+| U103 | `skill6-v2/U103` | `7831aeb8` | False | - | - |
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 |
+| U105 | `skill6-v2/U105` | `0711f092` | False | - | - |
 | U20 | `skill6-v2/U20` | `5e5c3bb9` | True | `ae80043b` | v6.0.4 |
 | U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 |
 | U22 | `skill6-v2/U22` | `f4f933ff` | True | `ae972738` | v6.0.20 |
