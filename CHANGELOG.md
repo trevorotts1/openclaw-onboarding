@@ -1,3 +1,25 @@
+## [v20.0.27]  -  2026-07-15  -  Skill 6 blended-persona Wave One — U6: min-2/max-4 persona-count invariant (`validate_blend_invariant`, D2/D-A2 ratified, QC 9.0)
+
+Merges `skill6-v2/U6`: `23-ai-workforce-blueprint/scripts/persona_blend.py` gains
+`validate_blend_invariant(bundle)`, a pure function that counts the blend
+directive's ROLE slots (voice/topic/task) and records the reading as
+`bundle["rationale"]["invariant"]` on every CONTENT bundle assembled by
+`build_bundle()`.
+
+- **D2 (D-A2) ratified 2026-07-14 — role count, not persona-id count.** A
+  COLLAPSED blend (one persona id filling BOTH the voice role and the topic
+  role) satisfies the min-2 invariant by ROLE COUNT — `collapsed=true` (plus
+  the reason) is recorded on the reading so every collapse stays auditable.
+- **Bounds:** `MIN_BLEND_PERSONAS = 2`, `MAX_BLEND_PERSONAS = 4`. Below-min and
+  above-max readings are honest audit signals (`reason` = `below-min`,
+  `below-min (house-voice pending audience confirm)`, or `above-max`) — the
+  validator RECORDS and ALERTS, it NEVER BLOCKS the write path.
+- Non-content bundles (mechanical tasks, A.7) are exempt — always
+  `ok=true, reason="exempt-non-content"`.
+- Test proof: `23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py`
+  57/57 PASS (11 new A-U6 cases, T13), re-run independently on the merged
+  `main` tree post-merge.
+
 ## [v20.0.26]  -  2026-07-14  -  n8n/self-hosted webhook tunnel SOP: ingress-rule merge into the box's existing tunnel, kills the impossible cloudflared tunnel login + second-connector dead ends (SOP-N8N-TUNNEL-01, QC 8.7)
 
 v20.0.26 — Merges `fix/n8n-tunnel-sop-round2`: a new universal SOP for any client agent operating a
