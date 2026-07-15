@@ -60,6 +60,9 @@
 #   4  controlled-vocabulary violation (rolled back)
 #   5  triad did not agree at the end (rolled back)
 #   6  asset build/publish failed (rolled back)
+#   7  INDEX-VERIFY FAILED (A-U8) — a workspace persona is neither indexed in
+#      the live gemini-index.sqlite nor covered by an honest
+#      embedding-receipt.json deferred marker (checked before any repo write)
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -157,6 +160,21 @@ echo "→ [1/5] workspace persona set: $N_WS personas"
 MISSING=(); while IFS= read -r _l; do [ -n "$_l" ] && MISSING+=("$_l"); done \
     < <(python3 "$PF" diff-slugs --workspace "$WORKSPACE" --repo-root "$REPO_ROOT")
 echo "     personas missing from the repo library: ${#MISSING[@]}"
+
+# ── 1.5) INDEX-VERIFY (A-U8) — every publishable persona is indexed OR ──────
+#         honestly deferred. Checks THIS box's live gemini-index.sqlite (the
+#         same DB Skill-22's Phase 5 writes at synthesis time and
+#         embedding_engine.search() reads) against $WORKSPACE/personas/<slug>/
+#         embedding-receipt.json deferred markers. This is orthogonal to
+#         --no-asset / --dry-run (both operate on a SEPARATE staged/hermetic
+#         DB for the fleet release asset) — it runs in every mode, catching a
+#         persona that is semantically INVISIBLE on this box before it ships.
+LIVE_GEMINI_INDEX="$WORKSPACE/gemini-index.sqlite"
+echo "→ [1.5/5] index-verify: every persona indexed or honestly deferred (db=$LIVE_GEMINI_INDEX)"
+if ! python3 "$PF" index-verify --workspace "$WORKSPACE" --db "$LIVE_GEMINI_INDEX" \
+        --slugs "$(IFS=,; echo "${WS_SLUGS[*]}")"; then
+    die "index-verify FAILED — a workspace persona is neither indexed nor honestly deferred; see above" 7
+fi
 
 # ── 2) Sync repo blueprint dirs (SANITIZED) ──────────────────────────────────
 echo "→ [2/5] syncing repo blueprint dirs (sanitized of operator-local paths)"

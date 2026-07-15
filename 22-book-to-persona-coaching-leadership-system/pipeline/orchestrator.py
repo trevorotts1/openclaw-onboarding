@@ -1336,6 +1336,61 @@ def mark_phase(status, folder, phase, state, error=None):
         status[folder]["errors"].append({"phase": phase, "error": error, "time": str(datetime.datetime.now())})
     save_status(status)
 
+
+# ─── A-U8: Phase-5 (embedding) result classification + deferred receipt ─────
+# Exit codes from gemini-section-indexer.py / gemini-indexer.py that mean an
+# EXPECTED, non-fatal credential gap (missing/invalid Gemini key) rather than
+# a genuine indexing bug. Mirrors the D6 fallback posture (shared-utils/
+# sop-embed-once): a client box without its own working key yet is a normal,
+# honest state — never a blocked persona, never a silent success. Any OTHER
+# non-zero exit (e.g. 6 = generic indexing failure) stays FATAL, unchanged
+# from the pre-A-U8 behavior (F1.2 / FDN-5).
+EMBED_CREDENTIAL_DEFER_EXIT_CODES = frozenset({4})
+
+
+def classify_phase5_result(returncode: int, stderr: str = "") -> tuple:
+    """Pure classification of a Phase-5 indexer subprocess result.
+
+    Returns (status, message):
+      "DONE"     — returncode == 0, persona is indexed and searchable.
+      "DEFERRED" — a credential-shaped failure (no key / key invalid).
+                   Non-fatal: the blueprint ships as-is, an honest
+                   embedding-receipt.json is written, and the NEXT pipeline
+                   run (re-embed-only re-entry) or a fleet re-embed retries.
+      "FAILED"   — any other non-zero exit: a genuine indexing bug. Fatal
+                   end-to-end (F1.2 / FDN-5) — unchanged from prior behavior.
+    """
+    if returncode == 0:
+        return "DONE", "indexed"
+    if returncode in EMBED_CREDENTIAL_DEFER_EXIT_CODES:
+        return "DEFERRED", "embedding: deferred (no key / key invalid)"
+    detail = (stderr or "").strip()[:500]
+    return "FAILED", f"indexer exit {returncode}: {detail}"
+
+
+def _write_embedding_deferred_receipt(folder: str, reason: str, exit_code: int) -> None:
+    """Write an honest, non-blocking receipt when Phase-5 embedding is
+    DEFERRED for a credential-shaped reason (missing/invalid Gemini key on
+    THIS box — the client's own key, per standing doctrine; the operator
+    never substitutes keys). The persona blueprint ships regardless.
+
+    This receipt is the primary-source artifact publish-personas-to-fleet.sh
+    (persona_fleet.py index-verify) and the operator-box drift probe
+    (shared-utils/persona-embedding-drift-probe.py) both read to confirm a
+    disk-vs-index gap is KNOWN and honest, not a silent hole (A-U8)."""
+    try:
+        receipt_path = PERSONAS_DIR / folder / "embedding-receipt.json"
+        receipt_path.write_text(json.dumps({
+            "persona_id": folder,
+            "status": "deferred",
+            "reason": reason,
+            "indexer_exit_code": exit_code,
+            "timestamp": datetime.datetime.now().isoformat(),
+        }, indent=2))
+    except Exception as e:
+        log(f"  WARNING: could not write embedding-receipt.json for {folder}: {e}")
+
+
 # ─── MULTI-FORMAT TEXT EXTRACTION ────────────────────────────────────────────
 SUPPORTED_FORMATS = {
     ".pdf":  "PDF",
@@ -2768,19 +2823,33 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 text=True,
                 check=False
             )
-            if result_proc.returncode != 0:
-                _err = (result_proc.stderr or "").strip()
-                log(f"  [PHASE 5 FAILED] gemini-indexer.py ({indexer_path}) exited "
-                    f"with code {result_proc.returncode}: {_err[:1000]}")
-                mark_phase(status, folder, 5, "FAILED",
-                           f"indexer exit {result_proc.returncode}: {_err[:500]}")
-                # NOTE: deliberately NOT printing "Re-indexing complete" — the
-                # embed did not happen; the persona blueprint is NOT searchable.
-            else:
+            # A-U8: classify the outcome into DONE / DEFERRED / FAILED — a
+            # credential-shaped failure (no key / key invalid) is an honest,
+            # non-fatal DEFERRED state (receipt written, blueprint ships,
+            # next run retries), never a blocked persona. Any other failure
+            # stays FAILED (fail-loud, F1.2 / FDN-5 — unchanged).
+            _p5_status, _p5_msg = classify_phase5_result(
+                result_proc.returncode, result_proc.stderr)
+            if _p5_status == "DONE":
                 if (result_proc.stdout or "").strip():
                     log(f"  [PHASE 5] {result_proc.stdout.strip()[:500]}")
                 mark_phase(status, folder, 5, "DONE")
                 log("Phase 5: Re-indexing complete.")
+            elif _p5_status == "DEFERRED":
+                _write_embedding_deferred_receipt(
+                    folder, _p5_msg, result_proc.returncode)
+                log(f"  [PHASE 5 DEFERRED] gemini-indexer.py ({indexer_path}) "
+                    f"exited {result_proc.returncode} — {_p5_msg}. Blueprint "
+                    f"ships as-is; embedding-receipt.json written; the next "
+                    f"pipeline run (or a fleet re-embed) retries.")
+                mark_phase(status, folder, 5, "DEFERRED", _p5_msg)
+            else:
+                _err = (result_proc.stderr or "").strip()
+                log(f"  [PHASE 5 FAILED] gemini-indexer.py ({indexer_path}) exited "
+                    f"with code {result_proc.returncode}: {_err[:1000]}")
+                mark_phase(status, folder, 5, "FAILED", _p5_msg)
+                # NOTE: deliberately NOT printing "Re-indexing complete" — the
+                # embed did not happen; the persona blueprint is NOT searchable.
         else:
             _all_probed = [str(c) for c in section_candidates + indexer_candidates]
             log(f"  [PHASE 5 FAILED] no indexer found in any of "
@@ -3108,7 +3177,7 @@ async def main(args=None):
             f"  P5={final.get('phase5', 'PENDING')}")
         log("="*60)
 
-        # F1.2 (FDN-5): Phase-5 (embedding) failure is FATAL end-to-end. A
+        # F1.2 (FDN-5): Phase-5 (embedding) FAILURE is FATAL end-to-end. A
         # persona whose blueprint exists but whose vectors are missing is
         # "registered but not embedded" — matchable by keyword only, invisible
         # to Layer-5 semantic retrieval (exactly the failure class N38 guards
@@ -3118,6 +3187,11 @@ async def main(args=None):
         # quarantines/retries instead of logging a false success. The blueprint
         # is deliberately LEFT ON DISK so an idempotent retry re-embeds only
         # (see run_synthesis `_phase3_already` re-entry above).
+        #
+        # A-U8: phase5 == "DEFERRED" (a credential-shaped gap — no key / key
+        # invalid) is intentionally EXCLUDED from this gate. It is an honest,
+        # non-fatal, receipted state (embedding-receipt.json), not a failure —
+        # the pipeline exits 0, the blueprint ships, and the next run retries.
         if final.get("phase5") == "FAILED":
             log(f"[PIPELINE FAILED — EMBED_FAILED (8)] {args.slug}: Phase 5 "
                 f"embedding FAILED — persona is registered but NOT searchable "
@@ -3216,11 +3290,19 @@ async def main(args=None):
     # class too, so surface Phase-5 failures in the batch report as well.
     embed_failed = [b["folder"] for b in BOOKS
                     if final_status[b["folder"]].get("phase5") == "FAILED"]
+    # A-U8: DEFERRED is an honest, non-fatal state (credential gap, receipted)
+    # — surfaced for operator visibility but NEVER folded into embed_failed /
+    # the exit-8 gate below.
+    embed_deferred = [b["folder"] for b in BOOKS
+                      if final_status[b["folder"]].get("phase5") == "DEFERRED"]
     log(f"\nCompleted: {complete_count}/{len(BOOKS)}")
     log(f"Failed: {failed_count}")
     if embed_failed:
         log(f"EMBED_FAILED (Phase 5, registered but NOT searchable): "
             f"{len(embed_failed)} -> {', '.join(embed_failed)}")
+    if embed_deferred:
+        log(f"EMBED_DEFERRED (Phase 5, honest receipt written — retries next "
+            f"run): {len(embed_deferred)} -> {', '.join(embed_deferred)}")
     log(f"\nPersona blueprints saved to: {PERSONAS_DIR}")
     log(f"Status file: {STATUS_FILE}")
     log(f"Full log: {LOG_FILE}")

@@ -31,7 +31,7 @@ Usage:
         GEMINI_MODEL, STALE_GEMINI_MODELS, OPENAI_EMBED_MODEL,
         get_embedder, get_embedding, init_db, chunk_text,
         keyword_fallback_search, search, cmd_index, cmd_status,
-        get_db_index_provider,
+        get_db_index_provider, is_credential_error,
     )
 """
 
@@ -275,6 +275,27 @@ def _is_quota_or_timeout(exc: Exception) -> bool:
     return ("429" in msg or "quota" in msg or "rate" in msg
             or "resource_exhausted" in msg or "timed out" in msg
             or "timeout" in msg)
+
+
+def is_credential_error(exc: Exception) -> bool:
+    """
+    A-U8: return True when an exception raised during an embed call looks
+    like an API-key / auth rejection (missing, revoked, wrong-project key)
+    rather than a generic bug. Mirrors the detection already used by
+    search() (below) so query-time and index-time credential failures are
+    classified identically from ONE place.
+
+    Callers (e.g. gemini-section-indexer.py) use this to route a credential
+    problem into the honest 'embedding: deferred (no key / key invalid)'
+    outcome — never a blocked persona, never a silent success — while a
+    genuine non-credential failure still fails loud. Mirrors the D6
+    GitHub-archival fallback posture (shared-utils/sop-embed-once): a
+    client box without its own working key yet is an expected, non-fatal
+    state, not a code defect.
+    """
+    msg = str(exc).lower()
+    return ("api key" in msg or "permission" in msg
+            or "401" in msg or "403" in msg or "unauthenticated" in msg)
 
 
 def _assert_vector_dim(vec, expected_dim: int, provider: str, model_id: str):
@@ -806,8 +827,7 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
     try:
         query_vector = embed_query(embedder, query)
     except Exception as e:
-        if ("api key" in str(e).lower() or "permission" in str(e).lower()
-                or "401" in str(e) or "403" in str(e)):
+        if is_credential_error(e):
             print(
                 f"WARNING [embedding-engine]: embedder rejected credentials ({e}). "
                 f"Falling back to KEYWORD search.",

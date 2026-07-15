@@ -1140,6 +1140,69 @@ def step_embedding_health(
     return emb_result
 
 
+def step_persona_embedding_drift(
+    paths: dict,
+    shared_utils: Path,
+    res: BoxResult,
+) -> dict:
+    """
+    Step 8b (A-U8): scheduled live drift check — personas/ directory count on
+    disk vs. indexed-persona count in gemini-index.sqlite, on the operator's
+    own box. A persona carrying an honest embedding-receipt.json (status
+    'deferred' — written by 22-.../pipeline/orchestrator.py Phase 5 when this
+    box's own Gemini key is absent/invalid) is NOT drift; only an UNEXPLAINED
+    disk-vs-index gap is flagged. Emits exactly ONE advisory record per run
+    (never one per persona) — res.steps["persona-embedding-drift"] is what the
+    fleet summary / operator card ingestion reads.
+
+    READ-ONLY (no mutations). Runs alongside step_embedding_health in EVERY
+    mode (Wave-5 apply pass + Sunday cron --verify-only pass). NON-GATING: a
+    divergence is surfaced as an advisory ("degraded:...", never containing
+    the substring "failed") — it never marks the box refresh itself failed
+    (mirrors A-U12's non-gating posture for persona-observability advisories).
+    """
+    sys.path.insert(0, str(shared_utils))
+    try:
+        from persona_embedding_drift_probe import run_drift_check  # type: ignore
+    except ImportError as exc:
+        msg = f"persona_embedding_drift_probe.py not found in shared-utils: {exc}"
+        res.steps["persona-embedding-drift"] = f"skip:{msg}"
+        _warn(f"  persona-embedding-drift: SKIP — {msg}")
+        return {"verdict": "n/a", "reason": msg}
+
+    workspace = paths.get("workspace")
+    if not workspace:
+        msg = "no workspace path resolved for this box"
+        res.steps["persona-embedding-drift"] = f"skip:{msg}"
+        _warn(f"  persona-embedding-drift: SKIP — {msg}")
+        return {"verdict": "n/a", "reason": msg}
+
+    personas_dir = Path(workspace) / "data" / "coaching-personas" / "personas"
+    db_path = Path(workspace) / "data" / "coaching-personas" / "gemini-index.sqlite"
+
+    try:
+        result = run_drift_check(personas_dir=personas_dir, db_path=db_path, box=res.box)
+    except Exception as exc:
+        msg = f"persona_embedding_drift_probe.run_drift_check raised: {exc}"
+        res.steps["persona-embedding-drift"] = f"skip:{msg}"
+        _warn(f"  persona-embedding-drift: SKIP — {msg}")
+        return {"verdict": "n/a", "reason": msg}
+
+    verdict = result.get("verdict", "n/a")
+    if verdict == "healthy":
+        res.steps["persona-embedding-drift"] = "pass"
+        _ok(f"  persona-embedding-drift: PASS — {result.get('message', '')}")
+    elif verdict == "degraded":
+        # Advisory, non-gating: intentionally NOT "failed:..." — see docstring.
+        res.steps["persona-embedding-drift"] = f"degraded:{result.get('message', '')[:200]}"
+        _warn(f"  persona-embedding-drift: DEGRADED (operator card) — {result.get('message', '')}")
+    else:
+        res.steps["persona-embedding-drift"] = f"n/a:{result.get('reason', '')[:200]}"
+        _info(f"  persona-embedding-drift: N/A — {result.get('reason', '')}")
+
+    return result
+
+
 def step_log(paths: dict, res: BoxResult, dry_run: bool,
              pinned_onboarding_tag: str, cc_tag: str) -> None:
     """Step 9: append result to .fleet-refresh-log.json."""
@@ -1291,6 +1354,16 @@ def run_box(
         step_embedding_health(paths, shared_utils, res)
     except Exception as e:
         res.step_fail("embedding-health", str(e))
+
+    # Step 8b (A-U8): persona-embedding-drift — always runs (read-only, NON-
+    # GATING advisory; Wave-5 pass + Sunday cron --verify-only pass). Never
+    # raises the box's overall result to "failed" (see docstring).
+    try:
+        step_persona_embedding_drift(paths, shared_utils, res)
+    except Exception as e:
+        # Deliberately step_skip (not step_fail) — this is a NON-GATING
+        # advisory probe; a probe-internal exception must never fail the box.
+        res.step_skip("persona-embedding-drift", f"probe raised: {e}")
 
     # Step 9: log (skipped in verify-only as it's read-only mode)
     if not verify_only:

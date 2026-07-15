@@ -45,6 +45,8 @@ EXIT CODES
   2   usage / IO error (missing file, unreadable json)
   4   controlled-vocabulary violation (a tag is out of the allowed set / shape)
   5   TRIAD DISAGREES (the count invariant is broken)
+  7   INDEX-VERIFY FAILED (A-U8) — a publishable persona is neither indexed
+      nor covered by an honest embedding-receipt.json deferred marker
 """
 
 import argparse
@@ -52,6 +54,7 @@ import datetime
 import hashlib
 import json
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -361,6 +364,112 @@ def cmd_diff_slugs(args):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# INDEX-VERIFY (A-U8) — every publishable persona is indexed OR deferred
+#
+# Closes the "book-to-persona embeddings wiring" gap: a persona can be
+# blend-selectable (Skill 23 tags) yet invisible to the semantic layer
+# (Stage-C retrieval / Layer-5 semantic_task_fit) until someone embeds it.
+# publish-personas-to-fleet.sh calls this BEFORE shipping so a workspace
+# persona that is neither embedded NOR carries an honest
+# embedding-receipt.json deferred marker (orchestrator.py Phase 5, written
+# when the box's own Gemini key is absent/invalid — A-U8) blocks the
+# publish rather than silently shipping a semantically-invisible persona.
+# ─────────────────────────────────────────────────────────────────────────────
+def _persona_name_from_file_path(file_path: str) -> str:
+    """Parent-folder-name extraction, mirroring shared-utils/embedding_engine.py's
+    get_persona_name() WITHOUT importing that module — persona_fleet.py stays
+    pure-stdlib / hermetic (its own documented design tenet); embedding_engine.py
+    optionally imports google-genai/numpy/openai, which this file must not
+    drag in just to read a persona slug out of a path string."""
+    return Path(file_path).parent.name
+
+
+def _indexed_slugs(db_path) -> set:
+    """Distinct persona slugs present in the embeddings table of the given
+    gemini-index.sqlite. Returns an empty set if the DB or table is absent
+    (e.g. a box that has never indexed anything) — not an error; the caller
+    combines this with deferred receipts to decide pass/fail."""
+    db_path = Path(db_path)
+    if not db_path.is_file():
+        return set()
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT file_path FROM embeddings "
+            "WHERE file_path LIKE '%coaching-personas/personas/%'"
+        )
+        rows = cur.fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return set()
+    return {_persona_name_from_file_path(r[0]) for r in rows}
+
+
+def _deferred_slugs(workspace_dir) -> set:
+    """Workspace persona slugs carrying an honest embedding-receipt.json with
+    status='deferred' (A-U8: written by orchestrator.py Phase 5 when the
+    box's Gemini key is absent/invalid)."""
+    personas_dir = Path(workspace_dir) / "personas"
+    out = set()
+    if not personas_dir.is_dir():
+        return out
+    for p in personas_dir.iterdir():
+        receipt = p / "embedding-receipt.json"
+        if not receipt.is_file():
+            continue
+        try:
+            data = json.loads(receipt.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("status") == "deferred":
+            out.add(p.name)
+    return out
+
+
+def index_verify(workspace_dir, db_path, slugs):
+    """For every slug in `slugs`, require it be EITHER (a) present in the
+    embedding index at `db_path`, OR (b) covered by an honest workspace-side
+    embedding-receipt.json deferred marker. Returns
+    (ok: bool, missing: list[str], counts: dict) — `missing` is the sorted
+    list of slugs satisfying NEITHER condition (an unexplained gap: never
+    indexed AND never honestly receipted)."""
+    indexed = _indexed_slugs(db_path)
+    deferred = _deferred_slugs(workspace_dir)
+    accounted = indexed | deferred
+    missing = sorted(s for s in slugs if s not in accounted)
+    return (len(missing) == 0), missing, {
+        "indexed_count": len(indexed),
+        "deferred_count": len(deferred),
+    }
+
+
+def cmd_index_verify(args):
+    slugs = [s for s in (args.slugs or "").split(",") if s]
+    if not slugs:
+        pub, _, _ = workspace_slugs(args.workspace)
+        slugs = pub
+    ok, missing, counts = index_verify(args.workspace, args.db, slugs)
+    if ok:
+        sys.stderr.write(
+            f"index-verify: OK — {len(slugs)} persona(s) all indexed or "
+            f"honestly deferred (indexed={counts['indexed_count']} "
+            f"deferred={counts['deferred_count']} in-scope={len(slugs)})\n")
+        return 0
+    sys.stderr.write(
+        f"index-verify FAILED: {len(missing)}/{len(slugs)} persona(s) are "
+        f"neither indexed in {args.db}\nNOR covered by an honest "
+        f"embedding-receipt.json deferred marker in {args.workspace}/personas/:\n")
+    for s in missing:
+        sys.stderr.write(f"  ✗ {s}\n")
+    sys.stderr.write(
+        "  Fix: run the Skill-22 pipeline for these slugs (writes a real "
+        "index entry, or an honest deferred receipt if the box's Gemini key "
+        "is absent/invalid), then re-publish.\n")
+    return 7
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SYNC CATEGORIES (controlled-vocabulary validated)
 # ─────────────────────────────────────────────────────────────────────────────
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -595,6 +704,14 @@ def main(argv=None):
     s.add_argument("--workspace", required=True)
     s.add_argument("--repo-root", required=True)
     s.set_defaults(func=cmd_diff_slugs)
+
+    s = sub.add_parser("index-verify")
+    s.add_argument("--workspace", required=True)
+    s.add_argument("--db", required=True)
+    s.add_argument("--slugs", default="",
+                    help="comma-separated slugs (default: full workspace "
+                         "publishable set)")
+    s.set_defaults(func=cmd_index_verify)
 
     s = sub.add_parser("sync-categories")
     s.add_argument("--workspace-cat", required=True)
