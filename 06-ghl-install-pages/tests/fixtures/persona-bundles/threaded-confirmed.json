@@ -1,0 +1,23 @@
+{
+  "_comment": "B-U8/U22 fixture — a threaded bundle already resolved+confirmed (confirm_required=false). Shape matches persona_blend.build_bundle()'s nested SUPERSET (voice{} + resolved_audience{} + task_personas[]) per persona_bundle_ladder.py's own docstring.",
+  "persona_id": "hormozi-100m-offers",
+  "voice": {
+    "audience_persona": {"id": "hormozi-100m-offers", "why": "fixture: solo-founder coach audience"},
+    "topic_persona": {"id": "miller-building-storybrand", "why": "fixture: offer architecture topic"},
+    "collapsed": false,
+    "collapsed_persona_id": null
+  },
+  "resolved_audience": {
+    "source": "operator_confirmed",
+    "candidates": ["solo-founder coaches"],
+    "confidence": 1.0,
+    "label": "solo-founder coaches",
+    "id": null
+  },
+  "confirm_required": false,
+  "blend_directive": "Write in Hormozi's VOICE while carrying Miller's EXPERTISE on offer architecture. STYLE-INSPIRED, NEVER IMPERSONATION.",
+  "task_personas": [
+    {"seq": 1, "persona_id": "hormozi-100m-offers", "why": "fixture: primary voice"}
+  ],
+  "catalog_version": "1.4"
+}
