@@ -1,0 +1,227 @@
+{
+  "_comment": "U23/B-U9 decision-engine hardening -- committed routing regression corpus. Each entry feeds page_spec straight into ghl_method.classify_page and asserts the resulting method (and, where present, the detected widget kinds). Consumed by both tests/test_routing_corpus.py (pytest) and scripts/guard-ghl-method-decision.sh --corpus (CI guard). Every score/threshold arithmetic below was verified against tools/ghl_method.py's actual classify_page logic, not assumed.",
+  "threshold": 3,
+  "entries": [
+    {
+      "name": "plain_static_hero",
+      "description": "Plain hero section, no scripts, no advanced CSS -- zero signals.",
+      "page_spec": {
+        "html": "<section><h1>Welcome</h1><p>A simple hero with copy text.</p></section>"
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "long_copy_no_signals_still_direct",
+      "description": "A long static page (well under the byte cap) with no advanced markup.",
+      "page_spec": {
+        "html": "<section><h1>Our Story</h1><p>We help small businesses grow through better systems and support.</p><p>Founded in 2019, our team has served hundreds of clients.</p></section>"
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "one_third_party_lib_stays_direct",
+      "description": "A single third-party lib does not trigger the soft signal (needs >1).",
+      "page_spec": {
+        "html": "<section><h1>Testimonials</h1></section>",
+        "third_party_js": ["jquery"]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "two_third_party_libs_alone_stays_direct",
+      "description": "Two third-party libs score 2 (weight of the soft signal), below threshold 3.",
+      "page_spec": {
+        "html": "<section><h1>Interactive gallery</h1></section>",
+        "third_party_js": ["gsap", "three.js"]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "two_third_party_libs_plus_interactive_escalates",
+      "description": "Two third-party libs (score 2) + interactive fetch (score 2) = score 4 >= threshold 3 -> VERCEL_EMBED.",
+      "page_spec": {
+        "html": "<section><h1>Live dashboard</h1></section>",
+        "third_party_js": ["gsap", "three.js"],
+        "interactive": ["fetch"]
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "explicit_complexity_advanced_hard_signal",
+      "description": "complexity:'advanced' is a hard signal (weight 3) that alone forces VERCEL_EMBED.",
+      "page_spec": {
+        "html": "<section><h1>Configurator</h1></section>",
+        "complexity": "advanced"
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "explicit_complexity_advanced_case_insensitive",
+      "description": "The complexity check is case-insensitive.",
+      "page_spec": {
+        "html": "<section><h1>Configurator</h1></section>",
+        "complexity": "ADVANCED"
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "js_framework_react_hard_signal",
+      "description": "A non-empty js_frameworks list is a hard signal (weight 3) -> VERCEL_EMBED.",
+      "page_spec": {
+        "html": "<div id='root'></div>",
+        "js_frameworks": ["react"]
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "js_framework_vue_hard_signal",
+      "description": "Any framework name triggers the same hard signal -- not react-specific.",
+      "page_spec": {
+        "html": "<div id='app'></div>",
+        "js_frameworks": ["vue"]
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "payload_over_max_bytes_hard_signal",
+      "description": "An HTML fragment over MAX_DIRECT_BYTES (256KB) forces VERCEL_EMBED regardless of any other field.",
+      "page_spec": {
+        "html_repeat": {"unit": "<p>Lorem ipsum dolor sit amet consectetur adipiscing elit.</p>", "min_bytes": 270000}
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "important_storm_alone_stays_direct",
+      "description": "A single css_fighting sub-signal contributes weight 1 (capped) -- below threshold 3.",
+      "page_spec": {
+        "html": "<section><h1>Styled section</h1></section>",
+        "css_fighting": {"important_storms": 5}
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "global_selectors_alone_stays_direct",
+      "description": "Global-selector count alone is weight 1 -- below threshold.",
+      "page_spec": {
+        "html": "<section><h1>Legacy CSS</h1></section>",
+        "css_fighting": {"global_selectors": 2}
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "font_face_alone_stays_direct",
+      "description": "font-face block count alone is weight 1 -- below threshold.",
+      "page_spec": {
+        "html": "<section><h1>Custom typography</h1></section>",
+        "css_fighting": {"font_face_blocks": 4}
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "two_of_three_css_signals_stays_direct",
+      "description": "Two of the three css_fighting sub-signals = weight 1+1=2, still below threshold 3.",
+      "page_spec": {
+        "html": "<section><h1>Fighting CSS</h1></section>",
+        "css_fighting": {"important_storms": 3, "global_selectors": 1}
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "three_css_signals_reach_threshold",
+      "description": "All three css_fighting sub-signals fire = weight 1+1+1=3 >= threshold 3 -> VERCEL_EMBED.",
+      "page_spec": {
+        "html": "<section><h1>Legacy stylesheet war</h1></section>",
+        "css_fighting": {"important_storms": 2, "global_selectors": 1, "font_face_blocks": 3}
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "interactive_fetch_alone_stays_direct",
+      "description": "A single interactive behavior scores 2, below threshold 3.",
+      "page_spec": {
+        "html": "<section><h1>Live pricing</h1></section>",
+        "interactive": ["fetch"]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "interactive_websocket_alone_stays_direct",
+      "description": "Same as fetch -- one behavior scores 2, below threshold.",
+      "page_spec": {
+        "html": "<section><h1>Live chat</h1></section>",
+        "interactive": ["websocket"]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "interactive_plus_one_css_signal_escalates",
+      "description": "interactive (score 2) + one css_fighting sub-signal (score 1) = 3 >= threshold -> VERCEL_EMBED.",
+      "page_spec": {
+        "html": "<section><h1>Interactive canvas</h1></section>",
+        "interactive": ["canvas"],
+        "css_fighting": {"important_storms": 1}
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": []
+    },
+    {
+      "name": "form_widget_on_simple_page_stays_direct",
+      "description": "A form block is detected as a WIDGET regardless of the page method; a simple page with a form block still routes DIRECT for its own content.",
+      "page_spec": {
+        "html": "<section><h1>Contact us</h1></section>",
+        "form_blocks": [{"key": "contact_form"}]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": ["form"]
+    },
+    {
+      "name": "calendar_widget_on_simple_page_stays_direct",
+      "description": "A calendar block is detected as a WIDGET (kind 'booking') regardless of page method.",
+      "page_spec": {
+        "html": "<section><h1>Book a call</h1></section>",
+        "calendar_blocks": [{"key": "discovery_call"}]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": ["booking"]
+    },
+    {
+      "name": "form_and_calendar_widgets_on_advanced_page",
+      "description": "Widgets are orthogonal to the page method: an ADVANCED page (hard signal) still detects both widget kinds, in form-then-calendar order.",
+      "page_spec": {
+        "html": "<section><h1>Book a consult</h1></section>",
+        "complexity": "advanced",
+        "form_blocks": [{"key": "intake_form"}],
+        "calendar_blocks": [{"key": "consult_calendar"}]
+      },
+      "expected_method": "vercel_embed",
+      "expected_widget_kinds": ["form", "booking"]
+    },
+    {
+      "name": "multiple_form_blocks_two_widgets",
+      "description": "Two form blocks in one spec produce two widget entries, both kind 'form'.",
+      "page_spec": {
+        "html": "<section><h1>Multi-step signup</h1></section>",
+        "form_blocks": [{"key": "step1"}, {"key": "step2"}]
+      },
+      "expected_method": "direct",
+      "expected_widget_kinds": ["form", "form"]
+    }
+  ]
+}

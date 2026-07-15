@@ -41,14 +41,35 @@ NOT `settings.pageStyles` which is empty) — a `:root{}` string that maps every
 
 `defaultSettings.colors` does NOT exist in any fetched page blob. Do not invent that path.
 
-## How B1 uses these
+## How B1 uses these (reconciled 2026-07 — U23/B-U9 golden/SKILL.md drift closure)
 
-`tools/ghl_rest_canvas.py` `new_page_blob()` loads `funnel-optin.page-data.json` as the
-structural template for funnel pages and `website-page.page-data.json` for website pages.
-The content element (`rawCustomCode`) is replaced with the build's actual HTML fragment.
-The `general.general.colors`, `pageStyles` (top-level), and
-`settings.settings.typography.colors` blocks are carried over unchanged — they are what
-makes the page renderable.
+**`new_page_blob()` does NOT load these files at build time.** It is a **pure,
+self-contained** function (`tools/ghl_rest_canvas.py`, see the `_FLAT_*`
+constants and the function's own docstring: "ASSEMBLED FROM THE INLINED
+`_FLAT_*` / `_CC_*` constants (NOT loaded from a golden file — `_load_golden`
+is a separate function...)") — no file I/O, no `references/golden/` read, on
+every build. This is the SAME statement `SKILL.md`'s Phase-5 section makes
+("pure, self-contained function... does NOT load from `references/golden/`
+at build time") — this file previously said the opposite ("loads
+`funnel-optin.page-data.json` as the structural template"), which was STALE
+and is corrected here so the two docs agree.
+
+What these files actually ARE, and how they're actually used:
+- **Provenance record.** The `_FLAT_THEME_COLORS` / `_FLAT_PAGE_STYLES` /
+  `_FLAT_SECTION_*` constants `new_page_blob()` assembles from were
+  originally EXTRACTED from these exact live-captured blobs (see "CRITICAL:
+  Where colors lives" above) — this directory is the audit trail proving
+  those inlined constants trace back to a real, render-verified GoHighLevel
+  page, not an invented shape.
+- **`tools/ghl_rest_canvas.py::_load_golden(surface)`** is a separate,
+  independent helper that CAN load either file from disk on demand (e.g. for
+  a future re-capture/regen or comparison tool) — it exists in the module but
+  is not called by `new_page_blob()` or anywhere else in the production build
+  path today.
+- **Re-capture reference.** If the live GoHighLevel page-data shape ever
+  changes, this directory (plus the 5-step capture procedure `_load_golden`'s
+  own error message points to) is where a fresh golden gets captured and
+  the `_FLAT_*` constants get re-derived from it.
 
 ## Render verification protocol
 

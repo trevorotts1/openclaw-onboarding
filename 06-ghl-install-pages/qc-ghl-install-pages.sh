@@ -117,6 +117,19 @@ else
     "[ -f \"$GUARD_MD\" ]"
 fi
 
+# U23/B-U9: the committed routing regression corpus must classify exactly as
+# declared -- a decision-engine regression (threshold/signal-weight drift)
+# ships silently otherwise. Runs the pure classify_page path only (no
+# network, no browser); safe to assert (hard fail), not warn_only.
+CORPUS_FILE="$SKILL_DIR/tests/fixtures/routing_corpus.json"
+if [ -f "$GUARD_MD" ] && [ -f "$CORPUS_FILE" ]; then
+  assert "U23: routing regression corpus classifies as expected (no decision-engine drift)" \
+    "bash \"$GUARD_MD\" --corpus \"$CORPUS_FILE\""
+else
+  warn_only "U23 routing regression corpus available (tests/fixtures/routing_corpus.json)" \
+    "[ -f \"$CORPUS_FILE\" ]"
+fi
+
 if [ -f "$GUARD_VU" ]; then
   assert "B8: verify-layer cannot be faked (VerifyContradiction + no storage-marker pass)" \
     "bash \"$GUARD_VU\""
