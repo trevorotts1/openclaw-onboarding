@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T23:00:02Z
-openclaw-onboarding `origin/main` HEAD: `752cf9d72cbc422511f337a6d57e9850f70acbee`
-blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
+Generated: 2026-07-15T23:10:03Z
+openclaw-onboarding `origin/main` HEAD: `06183505d6a2e50316e9c1ae111378804a24970f`
+blackceo-command-center `origin/main` HEAD: `a42a4921fc53b7b76917eb274bbf693fb28b6e6a`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -28,7 +28,7 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
-| U67 | `skill6-v2/U67` | `c35bec2e` | False | - | - | pending | - |
+| U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | False | - | - | pending | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | False | - | - | pending | - |
@@ -58,7 +58,7 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 |
-| U37 | `skill6-v2/U37` | `88db8a74` | False | - | - |
+| U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 |
@@ -98,6 +98,6 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U37, U67
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
