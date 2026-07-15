@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T08:50:03Z
-openclaw-onboarding `origin/main` HEAD: `87efbfc73cf9e240d4dd11b2dddcd8436327c048`
+Generated: 2026-07-15T09:00:05Z
+openclaw-onboarding `origin/main` HEAD: `b64c81669ed48b2d29ac197ae2da355b563298b7`
 blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50d64ff`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -16,7 +16,7 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
 | U2 | `skill6-v2/U2` | `1cb2c874` | True | `86420ff7` | v20.0.18 | verified | 8.9 |
 | U20 | `skill6-v2/U20` | `1bbfe0f0` | True | `ea371000` | v20.0.23 | verified | 9.1 |
 | U21 | `skill6-v2/U21` | `ad92145d` | True | `0d3f31a0` | v20.0.33 | verified (ONB half) | - |
-| U22 | `skill6-v2/U22` | `50ff2e79` | False | - | - | pending | - |
+| U22 | `skill6-v2/U22` | `50ff2e79` | True | `b64c8166` | - | pending | - |
 | U22-offline | `skill6-v2/U22-offline` | `8195fb4c` | False | - | - | (no row) | - |
 | U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
@@ -56,9 +56,17 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `fc62db5a`
+- branch tip: `467ce609`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 13
+- commits ahead of that merge-base (cinematic-specific work so far): 21
+  - `467ce609` merge(skill-62): integrate U15 — Next.js/TypeScript template + first-party scroll-scrub engine (P11) (QC 9.0)
+  - `63ca6177` merge(skill-62): integrate U10 — visual journey and scene planner (P4) (QC 9.0)
+  - `32a13608` merge(skill-62): integrate U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring (QC 9.2)
+  - `50659ed4` fix(skill-62): U15 QC — escape attribute values in sanitize_copy_fragment to close quote-breakout XSS
+  - `3cd85d42` feat(skill-62): U15 — Next.js/TypeScript template + first-party scroll-scrub engine (P11)
+  - `5ade2ad8` feat(skill-62): U5 — Kie video Seedance frame pinning + skill-local provider + callback relay wiring
+  - `ce13d737` feat(skill-62): U10 — visual journey and scene planner (P4)
+  - `2173f7d0` feat(skill-62): U13 — FFmpeg boundary-frame extraction + scrub-media re-encode (P10)
   - `fc62db5a` merge(skill-62): integrate U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover (QC 9.0)
   - `a7750652` merge(skill-62): integrate U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json (QC 9.0)
   - `b3964461` merge(skill-62): integrate U7 — budget estimate, paid-call approval, and the 8-precondition AF-CWFE-PAID-GATE (QC 9.0)
@@ -66,14 +74,7 @@ blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50
   - `71be0e45` feat(skill-62): U8 — content methodology router (STEP-0) + delegation receipts + locked content-manifest.json
   - `10656928` feat(skill-62): U9 — client intake engine: 12 groups, one question at a time, truth-source capture, brief lock, deterministic intake prover
   - `7bd5992d` merge(skill-62): integrate U6 — project/content/scene/cost/deployment schemas + state engine (QC 9.0)
-  - `32d70b06` merge(skill-62): integrate U4 — provider abstraction MediaProvider + capability-keyed model registry (QC 8.8)
-  - `5d129261` merge(skill-62): integrate U3 — Claude Code / Codex environment and model resolver (QC 9.3)
-  - `e163ca55` feat(skill-62): U6 — project/content/scene/cost/deployment schemas + state engine
-  - `2acb3015` feat(skill-62): U3 — Claude Code / Codex environment and model resolver
-  - `40ec574e` feat(skill-62): U4 — provider abstraction (MediaProvider + capability-keyed model registry)
-  - `3bde5a3d` feat(skill-62): U2 skeleton — Cinematic and Web Funnel Engine
 - merged into `origin/main`: False
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` local tip `467ce609` is 8 commit(s) ahead of what's pushed to origin. Push before ending the session.
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
