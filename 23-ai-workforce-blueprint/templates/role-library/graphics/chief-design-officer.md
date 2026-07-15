@@ -344,6 +344,27 @@ This role contributes to the company revenue cascade by: **converting audience a
 **Hand to:** Deck Systems Specialist (for DIU-routed decks - manifest assembly may begin); Director of Presentations (for Presentations-routed decks - brief forwarded).
 **Failure mode:** If a deck has been incorrectly routed to the DIU and generation has already begun, halt immediately. The cost of stopping is always less than the cost of delivering a strategy-(b)-assembled deck when text-in-image was required. Log the routing failure, determine root cause (brief incomplete, decision table row ambiguous, Deck Systems Specialist error), and implement a corrective measure before the next deck brief is processed.
 
+### SOP 9.9 -- GIP Prompt-Authoring Dispatch (Prompt Author + Prompt QC, per decision GK-D2)
+
+**When to run:** Any time a producing role in this department (Ad Creative Specialist, Social Media Graphics Specialist, Book Cover Designer, Infographic Specialist, Email Designer, Print / Asset Design Specialist, Thumbnail / Cover Designer, Brand Identity Specialist, Course Slide Designer, Deck Systems Specialist, Motion Systems Specialist, Presentation Designer (Slides/Decks), Photo Shoot Director, Style Analyst, or the AI Image Generator Specialist) needs an AI-image-generation prompt assembled for a creative brief. Every such request routes through this SOP -- no producing role self-authors or self-certifies its own final prompt text (the Presentation-mirror, implementing decision GK-D2's ratified Option A phased shape).
+
+**Frequency:** On-demand, per asset requiring AI-image generation.
+
+**Inputs:** The producing role's completed creative brief (asset class, band selection, STYLE BLOCK, verbatim copy, casting direction, reference images, target endpoint/aspect ratio).
+
+**Steps:**
+
+1. The producing role hands its completed creative brief to the Prompt Author (`prompt-author-graphics.md`) -- never assembles the raw prompt text itself.
+2. The Prompt Author assembles one band-compliant prompt per the ten-element anatomy (`SOP-GIP-01-PROMPT-ANATOMY.md`) and hands it to the Prompt QC Specialist (`qc-specialist-prompt-graphics.md`) -- an INDEPENDENT role that never grades a prompt it authored.
+3. The Prompt QC Specialist grades the prompt against `diu_validator.py prompt-band` (the deterministic band + quality gate) and the ten-element structural standard, and writes `working/qc/gip_prompt_qc_report.json`.
+4. On a Prompt-QC PASS: forward the prompt + report to the Generation Operator. The Operator's own SOP-DIU-601 preflight independently re-runs the same mechanical band gate as the final backstop before any paid API call -- this is intentional belt-and-suspenders, not redundant duplication.
+5. On a Prompt-QC FAIL: the report returns to the Prompt Author (never to the original producing role) for remediation of only the failing elements. The CDO is notified on any loop exceeding 3 cycles for the same asset.
+6. This dispatch order is fixed: producing role -> Prompt Author -> Prompt QC Specialist -> Generation Operator. No step may be skipped, and no producing role may hand a raw prompt directly to the Generation Operator.
+
+**Outputs:** A band-compliant, independently-graded prompt at `working/prompts/<asset-id>.txt` plus a PASS `gip_prompt_qc_report.json`, ready for the Generation Operator's preflight.
+**Hand to:** Prompt Author (step 1); Generation Operator (step 4, on PASS).
+**Failure mode:** If a producing role attempts to hand a self-assembled prompt directly to the Generation Operator, the CDO redirects it through the Prompt Author first -- the Operator's SOP-DIU-601 preflight is a mechanical backstop, not a substitute for the independent Prompt-QC judgment layer this SOP establishes.
+
 ---
 
 ## 10. Quality Gates

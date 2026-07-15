@@ -2,8 +2,8 @@
 
 **ID:** SOP-GIP-01
 **Classification:** ZHC SOP — Graphics Image Protocol (GIP)
-**Owner Role:** Generation Operator (authored with Brand Systems Specialist verification)
-**Version:** 1.0 | **Date:** 2026-07-10
+**Owner Role:** Prompt Author (authoring, per decision GK-D2) + Prompt QC Specialist (independent grading, judge != writer) + Generation Operator (mechanical preflight backstop, brand verification via Brand Systems Specialist)
+**Version:** 1.1 | **Date:** 2026-07-15
 **Status:** CANONICAL
 **Library-version pin:** MODEL-SPECS v1.4, prompt-bands.json v2 (§-refs verified 2026-07-15, GK-20 band<->routing reconciliation)
 
@@ -94,3 +94,10 @@ floor can never become a length-only rubber stamp.
 **Handoff:** on a floor/cap/quality failure, return the itemized problem list to the prompt author
 (the Generation Operator does not improvise fixes). On pass, proceed to SOP-DIU-601 preflight steps
 3–10, then submit.
+
+**Authoring + independent grading (GK-21, decision GK-D2 — Option A phased):** production prompts are
+assembled by the dedicated Prompt Author (`prompt-author-graphics.md`), never self-authored by the 15
+producing roles, and independently graded by the Prompt QC Specialist (`qc-specialist-prompt-graphics.md`,
+judge != writer) BEFORE the Generation Operator's own preflight re-runs this same gate as a mechanical
+backstop — dispatched per `chief-design-officer.md` SOP 9.9. The gate above is unchanged; only WHO runs
+it first and WHO authors the prompt text has moved off the 15 self-authoring roles onto this dedicated pair.
