@@ -955,6 +955,107 @@ def match_score_distribution(paths: dict, *, dimension: str = None,
             "min": min(scores), "max": max(scores), "buckets": buckets}
 
 
+# ── A-U6: min-2/max-4 persona-count invariant (D-A2 ratified 2026-07-14) ──────
+# Every CONTENT blend must engage AT LEAST 2 and AT MOST 4 named personas
+# across the directive's ROLE slots (voice, topic, task) — the up-to-10 TASK
+# PERSONA DECOMPOSITION (build_task_personas, above) is a SEPARATE, unbound
+# dimension: decomposed PARTS may repeat a persona id, so this invariant binds
+# the DISTINCT persona identities the blend actually NAMES to the writer
+# (voice/topic/task roles), never the raw count of decomposed parts.
+#
+# D-A2 (RATIFIED by the operator, 2026-07-14 — verbatim in MASTER SPEC E.3):
+# a COLLAPSED blend satisfies min-2 by ROLE COUNT — the single collapsed
+# persona fills BOTH the voice-role and the topic-role, so it counts as 2
+# roles even though only ONE distinct persona id is named. This honors the
+# min-2 invariant AND the operator-confirmed 2026-07-08 collapse design
+# literally — neither silently deprecates the other. The receipt records
+# collapsed=True (plus the reason) so every collapse stays auditable.
+#
+# The validator RECORDS and ALERTS; it NEVER BLOCKS a write path — a
+# below-min/above-max reading is an honest audit signal, not a gate. The
+# Command Center's board-hygiene Rule 6 companion count reads this same
+# reading (via rationale.invariant, persisted in task_persona_bundle.bundle_json)
+# to raise a persona_blend_regression alert when a CONFIRMED bundle is still
+# below-min in the trailing window (CC repo, board-hygiene.ts).
+MIN_BLEND_PERSONAS = 2
+MAX_BLEND_PERSONAS = 4
+
+
+def validate_blend_invariant(bundle: dict) -> dict:
+    """Validate the min-2/max-4 persona-count invariant against a bundle's
+    directive ROLE slots. Pure — reads the bundle, never mutates it, never
+    touches the catalog/DB/network. Returns
+    {ok, count, roles, collapsed, reason}.
+
+    Non-content bundles (mechanical tasks, or plain non-content tasks — no
+    audience-voice blend by design, A.7) are EXEMPT: always ok=True,
+    reason='exempt-non-content'.
+
+    ROLE COUNTING (roles, NOT distinct persona ids — D-A2):
+      - 'voice' — the audience persona, or the collapsed persona when the
+                  blend collapsed onto one persona covering both roles.
+      - 'topic' — the topic-expertise persona, or the SAME collapsed persona
+                  counted as its OWN role per D-A2's ratified rule (one
+                  persona id can legally fill two roles).
+      - 'task'  — every task-side persona (from task_personas, the up-to-10
+                  decomposition) that is genuinely DISTINCT from every
+                  persona id already occupying a role — mirrors
+                  build_blend_directive's own slot-4 redundancy rule so the
+                  receipt never double-counts a repeated or redundant id.
+    """
+    if not bundle.get("content_task"):
+        return {"ok": True, "count": 0, "roles": [], "collapsed": False,
+                "reason": "exempt-non-content"}
+
+    voice = bundle.get("voice") or {}
+    collapsed = bool(voice.get("collapsed"))
+    collapsed_pid = voice.get("collapsed_persona_id")
+    audience_persona = voice.get("audience_persona") or {}
+    audience_pid = audience_persona.get("id")
+    topic_persona = voice.get("topic_persona") or {}
+    topic_pid = topic_persona.get("id")
+
+    roles = []
+    if collapsed and collapsed_pid:
+        # D-A2: one persona, two roles.
+        roles.append({"role": "voice", "persona_id": collapsed_pid})
+        roles.append({"role": "topic", "persona_id": collapsed_pid})
+    else:
+        if audience_pid:
+            roles.append({"role": "voice", "persona_id": audience_pid})
+        if topic_pid:
+            roles.append({"role": "topic", "persona_id": topic_pid})
+
+    seen_ids = {r["persona_id"] for r in roles}
+    for tp in bundle.get("task_personas") or []:
+        pid = tp.get("persona_id")
+        if pid and not tp.get("no_persona_required") and pid not in seen_ids:
+            roles.append({"role": "task", "persona_id": pid})
+            seen_ids.add(pid)
+
+    count = len(roles)
+
+    if count < MIN_BLEND_PERSONAS:
+        # The unconfirmed-audience house-voice state is a LEGAL pending state,
+        # not a violation (A.7) — the invariant binds the POST-CONFIRM bundle.
+        # Emit an honest, distinguishable reason rather than fabricating a
+        # persona to close the gap.
+        pending_house_voice = (bool(bundle.get("confirm_required"))
+                                and not audience_pid and not collapsed_pid)
+        reason = ("below-min (house-voice pending audience confirm)"
+                  if pending_house_voice else "below-min")
+        ok_flag = False
+    elif count > MAX_BLEND_PERSONAS:
+        ok_flag = False
+        reason = "above-max"
+    else:
+        ok_flag = True
+        reason = "collapsed" if collapsed else "ok"
+
+    return {"ok": ok_flag, "count": count, "roles": roles,
+            "collapsed": collapsed, "reason": reason}
+
+
 # ── the bundle assembler ──────────────────────────────────────────────────────
 def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
                  use_llm: bool = True, record: bool = True,
@@ -1204,6 +1305,12 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         "task_id": combined.get("task_id"),
         "db": db_field,
     }
+    # A-U6: min-2/max-4 invariant, recorded on every CONTENT bundle (A.7). The
+    # validator reads the bundle we just assembled (voice/task_personas/
+    # confirm_required are already final) and RECORDS/ALERTS only — it never
+    # blocks this write path.
+    if content_task:
+        bundle["rationale"]["invariant"] = validate_blend_invariant(bundle)
     if not catalog:
         bundle["warning"] = "NO_CATALOG"
         bundle.setdefault("message",
