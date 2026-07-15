@@ -1,3 +1,29 @@
+## [v20.0.28]  -  2026-07-15  -  Skill 6 blended-persona Wave One — U18: execute D5, kill the 5-surname copy-craft cap (QC 9.3)
+
+v20.0.28 — Merges `skill6-v2/U18`: executes the operator-ratified 2026-07-14 D5 decision
+(`D5 (B-D1) — RATIFIED: KILL the 5-surname copy cap`). VOICE for the copy-craft task slot may now
+be any of the 99 catalog personas; the copy-craft TASK slot itself draws from a single
+machine-validated `copy_craft_pool` (the original five plus `edwards-*` plus the Brunson-family
+crosswalk targets), defined once in `shared-utils/persona-crosswalk.json` and referenced by both
+Standard Operating Procedures.
+
+- **`shared-utils/persona-crosswalk.json`:** new `copy_craft_pool` array, single source of truth for
+  the copy-craft task-slot allowlist.
+- **`shared-utils/persona_crosswalk.py`:** pool-loading + `--validate` CLI path; fails closed on a
+  deleted pool key, an empty pool, or a fake pool member.
+- **`06-ghl-install-pages/v2-autonomous-build-sop.md`:** gate text converged on the new pool
+  reference, replacing the old hard-coded 5-surname cap.
+- **`universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`:** copy-craft slot instructions updated to
+  reference the shared pool.
+- **`scripts/guard-fab-qc-gate.sh`:** guard check extended to confirm the pool is present and
+  non-empty before the FAB-QC gate runs.
+- **Tests.** `tests/unit/persona-crosswalk.test.py` (new, 15/15 PASS): pool presence/non-emptiness,
+  every pool member resolves to a canonical persona id, coverage of the original five craft
+  disciplines plus `edwards-*` plus the Brunson-family crosswalk targets, `--validate` exits 0 on a
+  real pool and non-zero on a deleted/empty/fake pool.
+- No secret values, no client names, no box identifiers. No Anthropic model added/removed/substituted
+  anywhere in the shipped code.
+
 ## [v20.0.27]  -  2026-07-15  -  Skill 6 blended-persona Wave One — U6: min-2/max-4 persona-count invariant (`validate_blend_invariant`, D2/D-A2 ratified, QC 9.0)
 
 Merges `skill6-v2/U6`: `23-ai-workforce-blueprint/scripts/persona_blend.py` gains
