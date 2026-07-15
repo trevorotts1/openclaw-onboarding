@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/scene-plan.schema.json",
+  "title": "Cinematic and Web Funnel Engine — journey/scene-plan.json (Skill 62, U6)",
+  "description": "The visual journey and scene architecture artifact (spec Section 9.2). No full scene or video batch may begin until every scene's final anchor is approved and its asset hash recorded (spec 9.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "architecture", "scenes", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "architecture": {
+      "type": "string",
+      "enum": ["continuous-forward-journey", "scene-dives-plus-connectors", "hybrid"],
+      "description": "spec 9.1 A/B/C."
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scene_id",
+          "page_section",
+          "narrative_purpose",
+          "conversion_purpose",
+          "visual_motif",
+          "anchor_inputs",
+          "camera",
+          "duration_seconds",
+          "crop_rules",
+          "copy_overlay_timing",
+          "cta_relationship",
+          "generation_model",
+          "generation_tier",
+          "connector_required",
+          "expected_generation_count",
+          "estimated_cost_usd",
+          "approval_status"
+        ],
+        "properties": {
+          "scene_id": { "type": "string", "minLength": 1 },
+          "page_section": { "type": "string", "minLength": 1 },
+          "narrative_purpose": { "type": "string", "minLength": 1 },
+          "conversion_purpose": { "type": "string", "minLength": 1 },
+          "visual_motif": { "type": "string", "minLength": 1 },
+          "anchor_inputs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "camera": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start_state", "end_state", "motion_direction", "motion_speed"],
+            "properties": {
+              "start_state": { "type": "string", "minLength": 1 },
+              "end_state": { "type": "string", "minLength": 1 },
+              "motion_direction": { "type": "string", "minLength": 1 },
+              "motion_speed": { "type": "string", "enum": ["slow", "medium", "fast"] }
+            }
+          },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "crop_rules": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["desktop", "mobile"],
+            "properties": {
+              "desktop": { "type": "string", "minLength": 1 },
+              "mobile": { "type": "string", "minLength": 1 }
+            }
+          },
+          "copy_overlay_timing": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "cta_relationship": { "type": "string" },
+          "generation_model": { "type": "string", "minLength": 1 },
+          "generation_tier": { "type": "string", "enum": ["concept", "production-anchor", "draft-motion", "final-motion", "premium-override"] },
+          "connector_required": { "type": "boolean" },
+          "expected_generation_count": { "type": "integer", "minimum": 0 },
+          "estimated_cost_usd": { "type": "number", "minimum": 0 },
+          "approval_status": { "type": "string", "enum": ["proposed", "concept_approved", "anchor_approved", "rejected", "regenerate"] },
+          "anchor_asset_hash": {
+            "type": ["string", "null"],
+            "pattern": "^([0-9a-f]{64})?$",
+            "description": "Required non-null (sha256 hex) once approval_status is anchor_approved (spec 9.3)."
+          }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}
