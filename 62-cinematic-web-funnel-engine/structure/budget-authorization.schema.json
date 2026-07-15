@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/budget-authorization.schema.json",
+  "title": "Cinematic and Web Funnel Engine — intake/budget-authorization.json (Skill 62, U9)",
+  "description": "The client-stated maximum media-generation spend and premium-model permission captured during intake (spec Section 8.1 group 11 / Section 8.2 intake/budget-authorization.json). This is the CLIENT'S REQUEST captured at intake time, not the P5 spend approval itself — approved/approved_by/approved_at are filled in later by the P5 budget-approval phase (a later build unit) reading this file, never by intake_engine.py, so intake can never self-approve its own spend.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "locked", "locked_at", "max_media_spend_usd", "premium_model_permission", "approved", "approved_by", "approved_at", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "locked": { "type": "boolean" },
+    "locked_at": { "type": ["string", "null"] },
+    "max_media_spend_usd": { "type": "number", "minimum": 0 },
+    "premium_model_permission": { "type": "boolean" },
+    "approved": { "type": "boolean" },
+    "approved_by": { "type": ["string", "null"] },
+    "approved_at": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}
