@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T17:30:05Z
-openclaw-onboarding `origin/main` HEAD: `540ce27435086c2bc5161cec73b85a119fac7c70`
+Generated: 2026-07-15T17:40:01Z
+openclaw-onboarding `origin/main` HEAD: `88b3bc09df82c377ff81ee00c3f160a79ce29670`
 blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d87451c20f`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -51,15 +51,19 @@ blackceo-command-center `origin/main` HEAD: `b67c77da2a3c7a93f2547fc3875de6d8745
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 |
+| U37 | `skill6-v2/U37` | `88db8a74` | False | - | - |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 |
 | U42 | `skill6-v2/U42` | `b50987cb` | True | `4b983a13` | v6.0.21 |
+| U43 | `skill6-v2/U43` | `4a4e7680` | False | - | - |
 | U46 | `skill6-v2/U46` | `e28ea4b4` | True | `fd064907` | v6.0.8 |
 | U47 | `skill6-v2/U47` | `2944303f` | True | `169355ef` | v6.0.22 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 |
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 |
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 |
+| U50 | `skill6-v2/U50` | `478c98e8` | False | - | - |
+| U53 | `skill6-v2/U53` | `c8086c73` | False | - | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 |
