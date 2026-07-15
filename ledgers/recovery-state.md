@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T07:20:02Z
-openclaw-onboarding `origin/main` HEAD: `27d4cf470c8576e960026b262c2028d849996729`
-blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf878605456bd00`
+Generated: 2026-07-15T07:30:03Z
+openclaw-onboarding `origin/main` HEAD: `c6997fc57b094867ebe6b2cfe2b271c4a69465e1`
+blackceo-command-center `origin/main` HEAD: `c2a06275fec08d5d7fbf03b87ce54e7b272cf1f0`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -15,14 +15,14 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 | U18 | `skill6-v2/U18` | `0b72ee80` | True | `706aff5d` | v20.0.27 | verified | 9.3 |
 | U2 | `skill6-v2/U2` | `1cb2c874` | True | `86420ff7` | v20.0.18 | verified | 8.9 |
 | U20 | `skill6-v2/U20` | `1bbfe0f0` | True | `ea371000` | v20.0.23 | verified | 9.1 |
-| U21 | `skill6-v2/U21` | `ad92145d` | False | - | - | pending | - |
+| U21 | `skill6-v2/U21` | `ad92145d` | True | `0d3f31a0` | v20.0.33 | verified (ONB half) | - |
 | U22 | `skill6-v2/U22` | `50ff2e79` | False | - | - | pending | - |
 | U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
 | U27 | `skill6-v2/U27` | `cba9065a` | True | `6234014b` | v20.0.25 | verified | 9.0 |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
-| U5 | `skill6-v2/U5` | `616084f2` | False | - | - | pending | - |
+| U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
@@ -39,12 +39,12 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 |
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 |
-| U4 | `skill6-v2/U4` | `ca647283` | False | - | - |
+| U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 |
 | U46 | `skill6-v2/U46` | `e28ea4b4` | True | `fd064907` | v6.0.8 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 |
-| U5 | `skill6-v2/U5` | `89229982` | False | - | - |
+| U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 |
@@ -52,9 +52,15 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-- branch tip: `3bde5a3d`
+- branch tip: `7bd5992d`
 - merge-base with `origin/main`: `de6f1157`
-- commits ahead of that merge-base (cinematic-specific work so far): 1
+- commits ahead of that merge-base (cinematic-specific work so far): 7
+  - `7bd5992d` merge(skill-62): integrate U6 — project/content/scene/cost/deployment schemas + state engine (QC 9.0)
+  - `32d70b06` merge(skill-62): integrate U4 — provider abstraction MediaProvider + capability-keyed model registry (QC 8.8)
+  - `5d129261` merge(skill-62): integrate U3 — Claude Code / Codex environment and model resolver (QC 9.3)
+  - `e163ca55` feat(skill-62): U6 — project/content/scene/cost/deployment schemas + state engine
+  - `2acb3015` feat(skill-62): U3 — Claude Code / Codex environment and model resolver
+  - `40ec574e` feat(skill-62): U4 — provider abstraction (MediaProvider + capability-keyed model registry)
   - `3bde5a3d` feat(skill-62): U2 skeleton — Cinematic and Web Funnel Engine
 - merged into `origin/main`: False
 
@@ -67,6 +73,6 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U4, U24
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U5, U21
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
