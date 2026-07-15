@@ -5,7 +5,7 @@
 **Owner Role:** Generation Operator (authored with Brand Systems Specialist verification)
 **Version:** 1.0 | **Date:** 2026-07-10
 **Status:** CANONICAL
-**Library-version pin:** MODEL-SPECS v1.4, prompt-bands.json v1 (§-refs verified 2026-07-10)
+**Library-version pin:** MODEL-SPECS v1.4, prompt-bands.json v2 (§-refs verified 2026-07-15, GK-20 band<->routing reconciliation)
 
 ---
 
@@ -29,9 +29,20 @@ Band floors/caps live in `45-design-intelligence-library/library/_system/prompt-
 | Band | Tier | MIN (floor) | MAX (cap) | Distinct-word floor | Text-bearing |
 |---|---|---|---|---|---|
 | `text_bearing_long` | LONG | 5,000 | 18,000 | 150 | yes |
+| `text_bearing_medium` | MEDIUM | 1,600 | 4,500 | 90 | yes |
 | `visual_long` | LONG | 2,500 | 18,000 | 120 | no |
 | `medium` | MEDIUM | 800 | 2,800 | 60 | no |
 | `short_draft` | SHORT | 200 | 500 | 25 | no (NEVER a client deliverable) |
+
+**GK-20 (2026-07-15, band<->routing reconciliation):** `text_bearing_long` targets GPT-Image 2
+T2I/I2I only — `nano-banana-2` was removed from its endpoints (Nano Banana is refused for ANY
+text-overlay deliverable everywhere else in the fleet). The fleet's mandatory text-rendering
+route, Ideogram V3 DESIGN (`social-media-designs/_RULES.md` — every quote-card/text-led post),
+targets the NEW `text_bearing_medium` band instead: `text_bearing_long`'s own 5,000-char floor
+already exceeds Ideogram V3's verified real API prompt cap (5,000 chars, MODEL-SPECS.md) with
+zero margin, so it was never a legal band for this route. `text_bearing_medium` is the ONLY band
+whose `endpoints` list names an Ideogram endpoint — declare it on the prompt's first line for
+every quote-card/text-led social asset.
 
 ---
 

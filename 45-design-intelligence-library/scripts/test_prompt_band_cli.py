@@ -22,6 +22,12 @@ rather than only described in a QC report:
      now PASS (exit 0). This proves the two refusals above are actually caused
      by the shipped prompt-bands.json floors, not by an unrelated failure mode
      (a test that can't fail is not a test).
+  5. GK-20 (band<->routing reconciliation): a genuinely compliant `text_bearing_medium`
+     prompt — the band the mandatory Ideogram V3 DESIGN quote-card/text-led route
+     resolves to (social-media-designs/_RULES.md) — PASSES (exit 0), proving the
+     BINARY acceptance criterion (a text-bearing social prompt at the reconciled
+     band's floor, routed to Ideogram V3 DESIGN, clears diu_validator.py prompt-band)
+     end-to-end through the real CLI, not just the internal functions.
 
 Run:  python3 test_prompt_band_cli.py
 Exit: 0 = every assertion passed; 1 = a case failed (prints which one).
@@ -115,6 +121,35 @@ def _rich_compliant_prompt() -> str:
     return "\n\n".join(clauses)
 
 
+def _rich_compliant_prompt_medium() -> str:
+    """A fully-compliant text_bearing_medium fixture (GK-20 -- the Ideogram V3 DESIGN
+    route band): >=90 distinct words, every quality tooth present, sized comfortably
+    inside [1,600, 4,500] -- Ideogram V3's own verified 5,000-char API cap minus the
+    standard ~10% safety margin (MODEL-SPECS.md). Distinct clauses only, no padding."""
+    clauses = [
+        "ASSET: social post graphic with baked text | BAND: text_bearing_medium",
+        "ARCHETYPE: a quote-card text-led post for a mid-market services brand, routed to Ideogram V3 DESIGN per social-media-designs/_RULES.md.",
+        "SCENE: a clean editorial background with generous negative space reserved for the headline zone.",
+        "COMPOSITION: centered headline block, subhead directly beneath, brand mark bottom-right.",
+        "COLOR PALETTE: deep forest green, warm cream, brushed brass accent, matching the locked brand STYLE BLOCK exactly.",
+        "COPY BAKED VERBATIM ON IMAGE: the headline reads exactly \"Stop Guessing. Start Closing.\" in a bold serif, centered, 96pt weight 700.",
+        "SPELLING LOCK: render this exact string, letter-for-letter, correctly spelled, with no added, dropped, doubled, or substituted characters: \"Stop Guessing. Start Closing.\"",
+        "STYLE REFERENCE ONLY: any attached reference image guides style and mood only; do not copy composition or literal content from the reference.",
+        "TYPOGRAPHY: headline weight 700 at 96pt, centered, generous line height for mobile legibility.",
+        "NEGATIVE BLOCK — DO NOT: do not render any misspelled or garbled text; render every quoted letter-for-letter.",
+        "Do not redraw, recolor, or reinterpret the logo, monogram, or tagline lockup.",
+        "Do not produce anatomical artifacts such as a fused hand, extra limb, or malformed fingers.",
+        "Do not let a cluttered background compete behind any text zone; keep the negative space clean.",
+        "Do not lighten, ashen, or desaturate any deep skin tone; preserve skin-tone fidelity.",
+        "Do not add a watermark, emoji, clipart, or Calibri/Arial system default font.",
+        "Do not drift off-brand or off-palette; stay inside the style card.",
+        "Do not place any bracketed placeholder or TBD build note anywhere in the render.",
+        "PLATFORM CROP SAFETY: the headline sits fully inside the safe zone for a 4:5 crop, so no letterform is clipped on a narrower feed slot.",
+        "FINAL CHECK: the composition resolves to one coherent quote-card graphic -- no collage, no split-frame, no floating disconnected elements.",
+    ]
+    return "\n\n".join(clauses)
+
+
 def main() -> int:
     print("=== 1. under-floor: 300-char \"logo pls\" through the `medium` band -> exit 3 ===")
     # Trim so it is genuinely ~300 chars and clearly a stub, not accidentally >= the floor.
@@ -180,6 +215,27 @@ def main() -> int:
               "distinct words" not in r2p.stderr, r2p.stderr)
     finally:
         permissive_path.unlink(missing_ok=True)
+
+    print("\n=== 5. GK-20: genuinely compliant text_bearing_medium prompt (Ideogram V3 DESIGN route) -> exit 0 ===")
+    rich_medium = _rich_compliant_prompt_medium()
+    r5 = run_prompt_band(
+        "text_bearing_medium", rich_medium,
+        copy=["Stop Guessing. Start Closing."],
+        style_ref=True,
+    )
+    check("exit code is 0", r5.returncode == 0,
+          f"got {r5.returncode}, stdout={r5.stdout!r}, stderr={r5.stderr!r}")
+    check("stdout confirms OK", r5.stdout.strip().startswith("OK:"), r5.stdout)
+    check("prompt is within the band's real cap margin (<=4,500 chars, Ideogram's own "
+          "5,000-char API cap minus safety margin)",
+          len(rich_medium.strip()) <= 4500, f"{len(rich_medium.strip())} chars")
+
+    print("\n=== 6. GK-20: the SAME under-floor discipline holds on text_bearing_medium -> exit 3 ===")
+    stub_medium = ("logo pls, make it look nice, modern branding, " * 6)[:300]
+    r6 = run_prompt_band("text_bearing_medium", stub_medium)
+    check("exit code is 3 (AF-GIP-PROMPT-FLOOR)", r6.returncode == 3,
+          f"got {r6.returncode}, stderr={r6.stderr!r}")
+    check("stderr names AF-GIP-PROMPT-FLOOR", "AF-GIP-PROMPT-FLOOR" in r6.stderr, r6.stderr)
 
     print()
     if FAILURES:
