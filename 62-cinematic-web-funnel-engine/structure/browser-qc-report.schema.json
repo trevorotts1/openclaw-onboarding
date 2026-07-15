@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/browser-qc-report.schema.json",
+  "title": "Cinematic and Web Funnel Engine — browser-qc-report.json (Skill 62, U19)",
+  "description": "The P13-BROWSER-QC artifact CWFE-MANIFEST.json declares ('desktop/mobile/reduced-motion/accessibility/performance'). Written by scripts/run_browser_qc.py after driving a real headless Chromium (Playwright) against the P11 build-receipt.json's materialized site_dir served by a real `next start` production server — never a template scan, never a claim, real browser evidence for every category.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "site_dir",
+    "server_url",
+    "categories",
+    "overall_status",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "site_dir": { "type": "string", "minLength": 1 },
+    "server_url": { "type": "string", "minLength": 1 },
+    "categories": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desktop", "mobile", "reduced_motion", "accessibility", "performance"],
+      "properties": {
+        "desktop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed", "violations"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "violations": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "mobile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed", "violations"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "violations": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "reduced_motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed", "violations"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "violations": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed", "violations"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "violations": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "performance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["passed", "violations", "measurements", "budgets", "lcp_status"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "violations": { "type": "array", "items": { "type": "string" } },
+            "measurements": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "initial_js_bytes",
+                "initial_media_bytes",
+                "total_media_bytes_after_full_scroll",
+                "first_contentful_paint_ms",
+                "cumulative_layout_shift",
+                "max_mounted_video_elements"
+              ],
+              "properties": {
+                "initial_js_bytes": { "type": "integer", "minimum": 0 },
+                "initial_media_bytes": { "type": "integer", "minimum": 0 },
+                "total_media_bytes_after_full_scroll": { "type": "integer", "minimum": 0 },
+                "first_contentful_paint_ms": { "type": "number", "minimum": 0 },
+                "cumulative_layout_shift": { "type": "number", "minimum": 0 },
+                "max_mounted_video_elements": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "budgets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "initial_js_bytes",
+                "initial_media_bytes",
+                "total_media_bytes",
+                "first_contentful_paint_ms",
+                "cumulative_layout_shift",
+                "max_mounted_video_elements"
+              ],
+              "properties": {
+                "initial_js_bytes": { "type": "integer", "minimum": 0 },
+                "initial_media_bytes": { "type": "integer", "minimum": 0 },
+                "total_media_bytes": { "type": "integer", "minimum": 0 },
+                "first_contentful_paint_ms": { "type": "number", "minimum": 0 },
+                "cumulative_layout_shift": { "type": "number", "minimum": 0 },
+                "max_mounted_video_elements": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "lcp_status": {
+              "type": "string",
+              "description": "Honest disclosure of the LCP substitution: 'unavailable_in_headless_harness_fcp_used' is the expected/normal value (see module docstring for the investigation that established this); 'observed' would mean a real largest-contentful-paint entry was captured in a given run."
+            }
+          }
+        }
+      }
+    },
+    "overall_status": { "type": "string", "enum": ["pass", "failed"] },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}
