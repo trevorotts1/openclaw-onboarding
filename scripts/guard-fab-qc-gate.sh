@@ -63,6 +63,22 @@ if [ -f "$CROSSWALK_PY" ]; then
   fi
 fi
 
+# 1d. D5/B-D1 (B-U4) — copy_craft_pool: the copy-craft TASK-slot pool that replaced the old
+#     5-surname cap must exist, be non-empty, and validate. Checked directly (not just via the
+#     --validate call above) so a deleted `copy_craft_pool` key fails with an unambiguous message.
+if [ -f "$CROSSWALK_JSON" ]; then
+  if python3 -c "
+import json, sys
+d = json.load(open('$CROSSWALK_JSON'))
+pool = d.get('copy_craft_pool') or []
+sys.exit(0 if len(pool) > 0 else 1)
+" 2>/dev/null; then
+    ok "copy_craft_pool present + non-empty in persona-crosswalk.json (D5/B-U4)"
+  else
+    bad "copy_craft_pool MISSING or EMPTY in persona-crosswalk.json (D5/B-U4 copy-craft task-slot pool deleted/regressed)"
+  fi
+fi
+
 # 2. Threshold == 8.5 in the scorer and the rubric (and not lowered).
 if has "$SCORER" "THRESHOLD = 8.5"; then ok "scorer THRESHOLD = 8.5"; else bad "scorer THRESHOLD is not 8.5"; fi
 if has "$RUBRIC" "8.5"; then ok "rubric cites the 8.5 threshold"; else bad "rubric does not cite 8.5"; fi
