@@ -1,0 +1,13 @@
+{
+  "_comment": "U24/B-U10 item 2 -- the maintenance-window schedule ENTRY (B-U10 CODE-MERGE gate acceptance (c), amended 2026-07-15: 'the maintenance-window schedule ENTRY exists (schedule file / plist / cron entry present, asserted by name) and its scheduled command is the reconcile sweep with --retry'). This file IS that entry -- the single source of truth both SKILL.md's doctrine text and scripts/install-github-archive-reconcile-cron.sh read from, so the two can never drift out of sync. Registering it live (openclaw cron create) is the LIVE-PROOF leg, deferred to U22.",
+  "name": "skill6-github-archive-reconcile-sweep",
+  "schedule": "0 4 * * *",
+  "tz": "America/New_York",
+  "mode": "command",
+  "script_relpath": "tools/ghl_github_reconcile.py",
+  "args": ["--sweep-base", "${SKILL6_EVIDENCE_BASE}", "--retry", "--json"],
+  "command": "python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_github_reconcile.py --sweep-base \"${SKILL6_EVIDENCE_BASE}\" --retry --json",
+  "description": "Daily maintenance-window sweep of the Skill-6 GitHub archival rail. Confirms every VERCEL_EMBED page's source code actually landed in GitHub (D6/B-D2 non-blocking archival doctrine) and retries any missing/failed archive from its staged source. Never blocks or rolls back a live page -- this is a reconcile/retry pass only.",
+  "evidence_base_env_var": "SKILL6_EVIDENCE_BASE",
+  "evidence_base_default": "$HOME/clawd/skill6-fix"
+}

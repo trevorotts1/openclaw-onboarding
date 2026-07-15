@@ -16,6 +16,17 @@ name: Vercel-embed GitHub archive guard
 #   - tools/ghl_vercel.py::run_pipeline: wired to call the above (opt-in via
 #     evidence_root=, fully backward compatible when omitted).
 #
+#   - tools/ghl_archive_receipt_gate.py (U24/B-U10, new): the per-build FAB-QC
+#     archive-receipt presence gate, wired into qc-built-funnel.sh — never
+#     blocks over a transient archive failure (D6/B-D2 non-blocking
+#     doctrine), only flags a VERCEL_EMBED deploy with NO archive receipt at
+#     all (silence). Also reports GH_TOKEN/GITHUB_TOKEN presence by NAME
+#     only, never a value.
+#   - tools/ghl_github_reconcile.py::sweep_base (U24/B-U10, new): the daily
+#     maintenance-window mode — sweeps every Skill-6 evidence run under a
+#     base dir (reusing cc_board.py's own U27 evidence-root discovery) and
+#     writes a dated JSON log per pass.
+#
 # All tests are MOCK-ONLY (no live GitHub, no live Vercel, no real subprocess
 # spawn) — same discipline as the rest of Skill 6's GHL-agnostic test suite.
 #
@@ -46,6 +57,7 @@ jobs:
           set -euo pipefail
           for f in 06-ghl-install-pages/tools/ghl_github_archive.py \
                    06-ghl-install-pages/tools/ghl_github_reconcile.py \
+                   06-ghl-install-pages/tools/ghl_archive_receipt_gate.py \
                    06-ghl-install-pages/tools/ghl_vercel.py; do
             python3 -c "import ast; ast.parse(open('$f').read())" || { echo "✗ syntax: $f"; exit 1; }
           done
@@ -57,13 +69,19 @@ jobs:
           set -euo pipefail
           python3 06-ghl-install-pages/tools/ghl_github_archive.py --selftest
 
+      - name: ghl_archive_receipt_gate self-test (U24/B-U10, no network)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 06-ghl-install-pages/tools/ghl_archive_receipt_gate.py --selftest
+
       - name: ghl_receipts self-test (F6 store this feature reuses)
         shell: bash
         run: |
           set -euo pipefail
           python3 06-ghl-install-pages/tools/ghl_receipts.py --selftest
 
-      - name: pytest — archive + reconcile + run_pipeline wiring (mock-only)
+      - name: pytest — archive + reconcile + archive-receipt gate + run_pipeline wiring (mock-only)
         shell: bash
         run: |
           set -euo pipefail
@@ -71,7 +89,10 @@ jobs:
           python3 -m pytest -q \
             06-ghl-install-pages/tests/test_ghl_github_archive.py \
             06-ghl-install-pages/tests/test_ghl_github_reconcile.py \
-            06-ghl-install-pages/tests/test_ghl_vercel.py
+            06-ghl-install-pages/tests/test_ghl_archive_receipt_gate.py \
+            06-ghl-install-pages/tests/test_ghl_vercel.py \
+            06-ghl-install-pages/tests/test_cc_board_reconcile.py \
+            06-ghl-install-pages/tests/test_github_archive_maintenance_schedule.py
 
       - name: run_pipeline is actually wired (evidence_root param + github_archive field)
         shell: bash
@@ -88,6 +109,36 @@ jobs:
           print('✓ run_pipeline wired to non-blocking GitHub archival')
           "
 
+      - name: sweep_base + archive-receipt gate are actually wired (U24/B-U10)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import sys, inspect
+          sys.path.insert(0, '06-ghl-install-pages/tools')
+          import ghl_github_reconcile as rec
+          import ghl_archive_receipt_gate as gate
+          assert callable(rec.sweep_base), 'ghl_github_reconcile missing sweep_base'
+          assert callable(rec.verify_repo_byte_match), 'ghl_github_reconcile missing verify_repo_byte_match (B-U10 amended acceptance (b))'
+          assert 'check' in dir(gate) and callable(gate.check), 'ghl_archive_receipt_gate missing check()'
+          import ghl_github_archive as gha
+          assert callable(gha.is_archive_verified), 'ghl_github_archive missing is_archive_verified'
+          assert callable(gha.token_presence), 'ghl_github_archive missing token_presence'
+          import os
+          assert os.path.isfile('06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json'), 'maintenance-window schedule entry file missing (B-U10 amended acceptance (c))'
+          assert os.access('06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh', os.X_OK), 'schedule-entry installer missing or non-executable'
+          print('✓ sweep_base / verify_repo_byte_match / archive_receipt_gate.check / is_archive_verified / token_presence / schedule entry all present')
+          "
+          bash scripts/guard-fab-qc-gate.sh
+
+      - name: qc-built-funnel.sh actually calls the archive-receipt gate (bash syntax + grep-wired)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 06-ghl-install-pages/qc-built-funnel.sh
+          grep -q 'ghl_archive_receipt_gate.py' 06-ghl-install-pages/qc-built-funnel.sh || { echo "✗ qc-built-funnel.sh no longer calls ghl_archive_receipt_gate.py"; exit 1; }
+          echo "✓ qc-built-funnel.sh wires the archive-receipt gate"
+
       - name: SKILL.md regression guard — must NOT claim VERCEL_EMBED is 'NOT GitHub'
         shell: bash
         run: |
@@ -98,7 +149,10 @@ jobs:
           fi
           grep -q 'ghl_github_archive' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not mention ghl_github_archive"; exit 1; }
           grep -q 'ghl_github_reconcile' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not mention ghl_github_reconcile"; exit 1; }
-          echo "✓ SKILL.md documents the non-blocking GitHub archive + reconciliation sweep, and no longer bans it"
+          grep -q -- '--sweep-base' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not document the --sweep-base maintenance-window mode (U24/B-U10)"; exit 1; }
+          grep -q 'ghl_archive_receipt_gate' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not mention ghl_archive_receipt_gate (U24/B-U10)"; exit 1; }
+          grep -q 'D6/B-D2 — RATIFIED' 06-ghl-install-pages/SKILL.md || { echo "✗ SKILL.md does not record the D6/B-D2 ratification"; exit 1; }
+          echo "✓ SKILL.md documents the non-blocking GitHub archive + reconciliation sweep + U24/B-U10 scheduling/gate, and no longer bans it"
 
       - name: Negative test — a re-introduced blocking archive call must be caught by review, not silently pass
         shell: bash

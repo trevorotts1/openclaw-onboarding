@@ -107,6 +107,21 @@ DEPLOY_RECEIPT_TYPE = "vercel_deploy"
 ARCHIVE_SUBDIR = "vercel-github-archive"
 
 
+# ── Receipt verdict (shared by ghl_github_reconcile + ghl_archive_receipt_gate) ─
+
+def is_archive_verified(receipt: Optional[dict]) -> bool:
+    """True iff an F6 ``vercel_github_archive`` receipt proves the code
+    actually landed in GitHub (``action`` created/reused + ``verify.ok``
+    True). ONE definition of "verified", shared by ``ghl_github_reconcile``
+    (the retry sweep) and ``ghl_archive_receipt_gate`` (the per-build FAB-QC
+    presence check, U24/B-U10) so neither can silently drift from the other."""
+    if not receipt:
+        return False
+    if receipt.get("action") not in ("created", "reused"):
+        return False
+    return bool(receipt.get("verify", {}).get("ok"))
+
+
 # ── Errors ────────────────────────────────────────────────────────────────────
 
 class GithubArchiveError(RuntimeError):
@@ -137,6 +152,21 @@ def resolve_github_token(env: dict | None = None) -> str:
         + ", ".join(GITHUB_TOKEN_ENV_CANDIDATES)
         + " (CREDENTIALS.md 'GitHub Token' — Skill 10's own setup output)."
     )
+
+
+def token_presence(env: dict | None = None) -> dict:
+    """Report GH_TOKEN/GITHUB_TOKEN presence by NAME only — NEVER the value.
+
+    U24/B-U10 item 4: "Confirm token presence by NAME only on each build box
+    ... never print a value." The token strings are read only long enough to
+    decide SET vs NOT-SET; neither is ever placed in the returned dict,
+    printed, or logged by any caller of this function.
+    """
+    env = env if env is not None else os.environ
+    report = {name: ("SET" if (env.get(name) or "").strip() else "NOT-SET")
+              for name in GITHUB_TOKEN_ENV_CANDIDATES}
+    report["resolved"] = any(v == "SET" for v in report.values())
+    return report
 
 
 # ── Naming ────────────────────────────────────────────────────────────────────
@@ -618,6 +648,29 @@ def _selftest() -> int:
             errors.append("archive_async did not call the injected popen")
         if spawned and "--run-task" not in spawned[0]:
             errors.append(f"spawned command missing --run-task: {spawned[0] if spawned else None}")
+
+        # 9. is_archive_verified — the ONE shared "verified" predicate (U24/B-U10).
+        if is_archive_verified(None):
+            errors.append("is_archive_verified(None) must be False")
+        if is_archive_verified({"action": "failed", "verify": {"ok": True}}):
+            errors.append("is_archive_verified must require action in (created, reused)")
+        if not is_archive_verified({"action": "created", "verify": {"ok": True}}):
+            errors.append("is_archive_verified must be True for created + verify.ok")
+        if is_archive_verified({"action": "reused", "verify": {"ok": False}}):
+            errors.append("is_archive_verified must be False when verify.ok is False")
+
+        # 10. token_presence — SET/NOT-SET by name only, value NEVER leaks (U24/B-U10 item 4).
+        secret = "super-secret-token-value-must-never-leak-ABC123"
+        tok = token_presence(env={"GH_TOKEN": secret})
+        if secret in json.dumps(tok):
+            errors.append("token_presence leaked the token VALUE into its return value")
+        if tok.get("GH_TOKEN") != "SET" or tok.get("GITHUB_TOKEN") != "NOT-SET":
+            errors.append(f"token_presence SET/NOT-SET mismatch: {tok}")
+        if not tok.get("resolved"):
+            errors.append("token_presence.resolved must be True when GH_TOKEN is set")
+        tok_none = token_presence(env={})
+        if tok_none.get("resolved"):
+            errors.append("token_presence.resolved must be False when neither var is set")
 
     if errors:
         for e in errors:
