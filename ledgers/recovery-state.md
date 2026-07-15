@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T09:30:02Z
-openclaw-onboarding `origin/main` HEAD: `486dee69f6ab47b8a3f7fb20a97d475a36cb5782`
+Generated: 2026-07-15T09:40:02Z
+openclaw-onboarding `origin/main` HEAD: `c8e87fd1f25465397e91141374eca549bbdbc103`
 blackceo-command-center `origin/main` HEAD: `2a9b39bdd5d81bc1eeaca1c0a97615d3553b11e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
