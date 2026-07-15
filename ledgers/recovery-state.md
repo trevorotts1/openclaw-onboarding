@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T08:10:02Z
-openclaw-onboarding `origin/main` HEAD: `41f64bad19c4a9447c7dc9193b986736b1da971b`
-blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce305c819`
+Generated: 2026-07-15T08:20:21Z
+openclaw-onboarding `origin/main` HEAD: `cd4fbce44856a5d5ec87febe9de004f80ef849b8`
+blackceo-command-center `origin/main` HEAD: `8cc7ba88cca6c6c4f66168ae51c024a0b50d64ff`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -25,7 +25,7 @@ blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce30
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
-| U7 | `skill6-v2/U7` | `f06ce74c` | False | - | - | pending | - |
+| U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
@@ -50,7 +50,7 @@ blackceo-command-center `origin/main` HEAD: `010e4d8067c2a2680272d921115429fce30
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 |
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 |
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 |
-| U7 | `skill6-v2/U7` | `ece5ae36` | False | - | - |
+| U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 |
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
