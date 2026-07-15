@@ -32,6 +32,7 @@ import pytest
 
 import v2_dispatcher as disp
 import ghl_verify as gv
+import persona_bundle_ladder  # noqa: E402 — U22/B-U8 CC/local-rung dispatcher-integration tests
 
 
 FAKE_TASK = {"id": "taskFAKE", "brand": "Fictional Soap Co",
@@ -886,3 +887,91 @@ class TestPersonaBundleAcquisition:
         )
         assert res.state == disp.STATE_VERIFIED, "a raising ladder must never block the build"
         assert calls == ["built"]
+
+    # ── U22/B-U8 — closes the dispatcher-INTEGRATION-level matrix gap: the
+    # 4 tests above cover threaded (confirmed/pending) + absent + a raising
+    # ladder, but never exercise the CC-fetch or local --blend rungs THROUGH
+    # dispatch_one itself (persona_bundle_ladder.py's own __main__ self-test
+    # covers them at the unit level; these prove the SAME rungs fire when
+    # driven end-to-end through the real dispatcher, not just the module).
+
+    def test_cc_rung_fires_through_dispatcher_when_no_threaded_bundle(self, tmp_path, monkeypatch):
+        # Rung 2 (CC fetch) must win over rung 3 (local) when reachable, and
+        # must flow through dispatch_one exactly like the threaded rung does.
+        def _fake_cc_fetch(board_id, *, env=None):
+            assert board_id  # the ladder must have derived a board id from the task
+            return {"voice_persona_id": "wiebe-copy-hackers", "confirm_required": False}
+        def _must_not_run_local(*_a, **_k):
+            raise AssertionError("local rung must not run when the cc rung hits")
+        monkeypatch.setattr(persona_bundle_ladder, "_default_cc_fetch", _fake_cc_fetch)
+        monkeypatch.setattr(persona_bundle_ladder, "_default_selector_runner", _must_not_run_local)
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="ccRungTask", board_task_id="cc-board-task-1"), str(tmp_path),
+            builder=self._tracking_builder(calls), verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED
+        assert calls == ["built"]
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["source"] == "cc"
+        assert receipt["voice_persona_id"] == "wiebe-copy-hackers"
+        assert receipt["confirm_state"] == "confirmed"
+        assert receipt["hold"] is False
+
+    def test_local_rung_fires_through_dispatcher_when_cc_unreachable(self, tmp_path, monkeypatch):
+        # Rung 3 (local --blend engine) must win when threaded is absent and
+        # the CC fetch rung is unreachable — a standalone/offline box still
+        # unifies onto the ONE persona system, driven end-to-end.
+        def _cc_unreachable(*_a, **_k):
+            return None
+        def _fake_local(task, *, env=None):
+            return {"persona_id": "miller-storybrand", "confirm_required": False,
+                    "voice": {"topic_persona": {"id": "miller-storybrand"}}}
+        monkeypatch.setattr(persona_bundle_ladder, "_default_cc_fetch", _cc_unreachable)
+        monkeypatch.setattr(persona_bundle_ladder, "_default_selector_runner", _fake_local)
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="localRungTask"), str(tmp_path),
+            builder=self._tracking_builder(calls), verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED
+        assert calls == ["built"]
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["source"] == "local"
+        assert receipt["voice_persona_id"] == "miller-storybrand"
+
+    def test_local_rung_standalone_pending_confirm_degrades_never_holds_through_dispatcher(
+        self, tmp_path, monkeypatch,
+    ):
+        # A standalone run (no CC connection to HOLD against) with a pending
+        # audience confirmation must DEGRADE to the neutral house voice and
+        # keep building — never silently, never a HOLD (HOLD is reserved for
+        # a Command-Center-CONNECTED run, proven by
+        # test_threaded_bundle_pending_confirm_holds_never_builds above).
+        def _cc_unreachable(*_a, **_k):
+            return None
+        def _fake_local_pending(task, *, env=None):
+            return {"persona_id": "miller-storybrand", "confirm_required": True,
+                    "voice": {"topic_persona": {"id": "miller-storybrand"}}}
+        monkeypatch.setattr(persona_bundle_ladder, "_default_cc_fetch", _cc_unreachable)
+        monkeypatch.setattr(persona_bundle_ladder, "_default_selector_runner", _fake_local_pending)
+        calls = []
+        res = disp.dispatch_one(
+            dict(FAKE_TASK, id="localRungPendingTask"), str(tmp_path),
+            builder=self._tracking_builder(calls), verifier=_fake_verifier(True), live=False,
+        )
+        assert res.state == disp.STATE_VERIFIED, (
+            "a standalone run with no CC connection must degrade and keep building, never HOLD"
+        )
+        assert calls == ["built"]
+        receipt_path = os.path.join(str(tmp_path), "routing", "persona-bundle-receipt.json")
+        with open(receipt_path) as f:
+            receipt = json.load(f)
+        assert receipt["source"] == "local"
+        assert receipt["confirm_state"] == "pending"
+        assert receipt["hold"] is False
+        assert receipt["degradation"], "the degradation must be NAMED in the receipt, never silent"

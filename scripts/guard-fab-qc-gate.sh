@@ -30,6 +30,8 @@ ARCHIVE_GATE="$ROOT/06-ghl-install-pages/tools/ghl_archive_receipt_gate.py"
 GITHUB_RECONCILE="$ROOT/06-ghl-install-pages/tools/ghl_github_reconcile.py"
 SCHEDULE_ENTRY="$ROOT/06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json"
 SCHEDULE_INSTALLER="$ROOT/06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh"
+BUNDLE_LADDER="$ROOT/06-ghl-install-pages/tools/persona_bundle_ladder.py"
+COPY_SEAM="$ROOT/49-signature-funnel/scripts/copy_persona_blend_seam.py"
 
 echo "═══ FAB-QC gate guard ═══"
 
@@ -158,6 +160,52 @@ fi
   || bad "MISSING/incomplete maintenance-window schedule entry (U24/B-U10 amended acceptance (c) regressed)"
 [ -x "$SCHEDULE_INSTALLER" ] && ok "schedule-entry installer present + executable: scripts/install-github-archive-reconcile-cron.sh" \
                              || bad "MISSING/non-executable scripts/install-github-archive-reconcile-cron.sh"
+
+# 8. U22/B-U8 — the persona-bundle-acquisition ladder (B-U1/U15) must keep
+#    writing its receipt in the ONE canonical schema every downstream
+#    consumer (funnel_matcher B-U2/U16, copy_persona_blend_seam B-U3/U17,
+#    fab_qc D4 B-U5/U19) reads. A field silently renamed/dropped here breaks
+#    the whole unification block without any single unit's own guard
+#    catching it (each one only asserts the fields IT reads).
+[ -f "$BUNDLE_LADDER" ] && ok "persona-bundle ladder present: 06-ghl-install-pages/tools/persona_bundle_ladder.py" \
+                        || bad "MISSING 06-ghl-install-pages/tools/persona_bundle_ladder.py (B-U1/U15)"
+if [ -f "$BUNDLE_LADDER" ]; then
+  _BUNDLE_SCHEMA_CHECK=$(python3 - "$BUNDLE_LADDER" <<'PYEOF'
+import importlib.util, sys, tempfile, os
+path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("persona_bundle_ladder", path)
+mod = importlib.util.module_from_spec(spec)
+sys.modules["persona_bundle_ladder"] = mod
+spec.loader.exec_module(mod)
+REQUIRED = {"task_id", "source", "bundle_sha", "voice_persona_id", "topic_persona_id",
+            "task_personas", "confirm_state", "degradation", "hold", "generated_at"}
+with tempfile.TemporaryDirectory() as td:
+    task = {"id": "guard-schema-check", "persona_bundle": {
+        "voice_persona_id": "hormozi-100m-offers", "confirm_required": False}}
+    receipt = mod.resolve_persona_bundle(task, td)
+missing = REQUIRED - set(receipt.keys())
+if missing:
+    print("MISSING:" + ",".join(sorted(missing)))
+    sys.exit(1)
+sys.exit(0)
+PYEOF
+)
+  if [ $? -eq 0 ]; then
+    ok "persona-bundle-receipt schema carries all required fields (task_id/source/bundle_sha/voice_persona_id/topic_persona_id/task_personas/confirm_state/degradation/hold/generated_at)"
+  else
+    bad "persona-bundle-receipt schema regressed — $_BUNDLE_SCHEMA_CHECK"
+  fi
+fi
+[ -f "$COPY_SEAM" ] && ok "copy-stage blend seam present: 49-signature-funnel/scripts/copy_persona_blend_seam.py" \
+                     || bad "MISSING 49-signature-funnel/scripts/copy_persona_blend_seam.py (B-U3/U17)"
+
+# NOTE (U22/B-U8 merge-writer, 2026-07-15): the U22 branch's own section "7b"
+# (a D5/B-U4/U18 forward-compat WARN hook for copy_craft_pool) is dropped here
+# as redundant, not silently lost — by the time this branch reached `main`,
+# U18/B-U4 had ALREADY landed (verified, ledger row U18) and section 1d above
+# (added by that same U18 merge) already performs the HARD `bad()` check this
+# hook was written to eventually become. Keeping both would just re-check the
+# identical condition twice under two different section numbers.
 
 echo ""
 if [ "$FAIL" -ne 0 ]; then
