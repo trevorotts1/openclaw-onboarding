@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-15T07:10:01Z
-openclaw-onboarding `origin/main` HEAD: `386ed6e4589c1aff15560ceaa03a22e7bbe1104e`
+Generated: 2026-07-15T07:20:02Z
+openclaw-onboarding `origin/main` HEAD: `27d4cf470c8576e960026b262c2028d849996729`
 blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf878605456bd00`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -17,15 +17,15 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 | U20 | `skill6-v2/U20` | `1bbfe0f0` | True | `ea371000` | v20.0.23 | verified | 9.1 |
 | U21 | `skill6-v2/U21` | `ad92145d` | False | - | - | pending | - |
 | U22 | `skill6-v2/U22` | `50ff2e79` | False | - | - | pending | - |
-| U24 | `skill6-v2/U24` | `fc9e636e` | False | - | - | pending | - |
+| U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
 | U27 | `skill6-v2/U27` | `cba9065a` | True | `6234014b` | v20.0.25 | verified | 9.0 |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
-| U4 | `skill6-v2/U4` | `ee42a22a` | False | - | - | pending | - |
+| U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
 | U5 | `skill6-v2/U5` | `616084f2` | False | - | - | pending | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
-| U8 | `skill6-v2/U8` | `2034ad79` | False | - | - | blocked (CI red — fail-closed, not merged) | - |
+| U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
 
@@ -52,9 +52,11 @@ blackceo-command-center `origin/main` HEAD: `8fe4c0b57881124a87492daffbf87860545
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
-Branch `skill62/cinematic-engine` not found on `origin`.
-- **AT RISK**: isolated build clone `~/cinematic-engine-build` has 1 local commit(s) on `skill62/cinematic-engine` NEVER pushed to origin (local tip `3bde5a3d`). If that clone is lost, these commits are lost. Push to origin as soon as QC-passed per the merge-queue protocol.
+- branch tip: `3bde5a3d`
+- merge-base with `origin/main`: `de6f1157`
+- commits ahead of that merge-base (cinematic-specific work so far): 1
   - `3bde5a3d` feat(skill-62): U2 skeleton — Cinematic and Web Funnel Engine
+- merged into `origin/main`: False
 
 ## Merge queue snapshot (`onboarding-merge-queue/`)
 
@@ -65,6 +67,6 @@ Branch `skill62/cinematic-engine` not found on `origin`.
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U4, U24
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
