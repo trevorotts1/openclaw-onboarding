@@ -4,7 +4,7 @@
 MOCK-ONLY: no network, no browser, no live GoHighLevel of any kind. Every
 funnel/page/media "read" here is a plain Python fake callable injected into
 `ghl_inventory`'s dependency-injection seams — the same discipline as
-`ghl_selector_canary.py`'s `finder`/`page_fetcher`. These tests both wrap the
+`ghl_selector_drift_probe.py`'s `finder`/`page_fetcher`. These tests both wrap the
 module's own `--selftest` AND add direct behavioural assertions per the
 BINARY acceptance criteria (a)-(e) in the master spec (B-U17):
 

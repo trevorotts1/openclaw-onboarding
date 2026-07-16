@@ -32,6 +32,8 @@ SCHEDULE_ENTRY="$ROOT/06-ghl-install-pages/schedule/skill6-github-archive-reconc
 SCHEDULE_INSTALLER="$ROOT/06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh"
 BUNDLE_LADDER="$ROOT/06-ghl-install-pages/tools/persona_bundle_ladder.py"
 COPY_SEAM="$ROOT/49-signature-funnel/scripts/copy_persona_blend_seam.py"
+ANTI_COPY="$ROOT/shared-utils/anti_copy_guard.py"
+ANTI_COPY_TEST="$ROOT/tests/unit/u10-anti-copy-guard.test.py"
 
 echo "═══ FAB-QC gate guard ═══"
 
@@ -198,6 +200,47 @@ PYEOF
 fi
 [ -f "$COPY_SEAM" ] && ok "copy-stage blend seam present: 49-signature-funnel/scripts/copy_persona_blend_seam.py" \
                      || bad "MISSING 49-signature-funnel/scripts/copy_persona_blend_seam.py (B-U3/U17)"
+
+# 9. U10/A-U10 — the anti-copy guard (deterministic similarity ceiling vs
+#    injected exemplars, key-free, hard-miss) must stay wired into the FAB-QC
+#    hard-miss family: the module exists, its calibrated ceiling has not
+#    drifted, it degrades to a true no-op (weight 0, excluded from `dims`)
+#    when no exemplar_packs are supplied so pre-A-U10 scorecards stay
+#    byte-identical, and fab_qc.py actually resolves real injected exemplars
+#    from A-U9's own routing/exemplar-injection.json receipt (never a
+#    fabricated comparison set).
+[ -f "$ANTI_COPY" ] && ok "anti-copy guard present: shared-utils/anti_copy_guard.py" \
+                     || bad "MISSING shared-utils/anti_copy_guard.py (U10/A-U10 guard)"
+[ -f "$ANTI_COPY_TEST" ] && ok "anti-copy guard CI proof present: tests/unit/u10-anti-copy-guard.test.py" \
+                          || bad "MISSING tests/unit/u10-anti-copy-guard.test.py (U10/A-U10 acceptance proof)"
+if python3 -c "import sys; sys.path.insert(0,'$ROOT/shared-utils'); import anti_copy_guard as m; assert m.SIMILARITY_CEILING == 0.55 and m.CHAR_SHINGLE_K == 5" 2>/dev/null; then
+  ok "anti-copy guard imports + SIMILARITY_CEILING=0.55 + CHAR_SHINGLE_K=5 (calibrated values intact)"
+else
+  bad "anti-copy guard failed import / ceiling or shingle-size drifted (U10/A-U10 regressed)"
+fi
+if has "$SCORER" "score_anti_copy" && has "$SCORER" "exemplar_packs" && has "$SCORER" "_load_exemplar_packs_from_receipt"; then
+  ok "fab_qc.py wires the anti-copy guard into the hard-miss family (score_anti_copy / exemplar_packs / receipt resolver)"
+else
+  bad "fab_qc.py no longer wires the anti-copy guard (U10/A-U10 regressed)"
+fi
+if python3 -c "
+import sys
+sys.path.insert(0, '$ROOT/shared-utils')
+import fab_qc
+# No exemplar_packs supplied -> the anti-copy dim must be a true no-op
+# (excluded from dims entirely), so pre-A-U10 scorecards stay byte-identical.
+inp = {'kind': 'funnel', 'match_decision': {'flex_decision': 'CREATE_NEW'},
+       'template': None, 'artifact': {'pages': [{'copy': {'hero': 'irrelevant'}}]},
+       'verify': {'overall_pass': True, 'pages': [{'status': 200}]},
+       'persona_log': 'selected_persona: x'}
+r = fab_qc.grade(inp)
+assert 'D-anti-copy Anti-copy guard' not in [d['name'] for d in r['dimensions']]
+assert sum(fab_qc.W.values()) == 100
+" 2>/dev/null; then
+  ok "anti-copy guard degrades to a true no-op with no exemplar_packs (byte-identical pre-A-U10 scorecards); weights still sum to 100"
+else
+  bad "anti-copy guard degrade posture regressed (U10/A-U10 no-op contract broken) or weights != 100"
+fi
 
 # NOTE (U22/B-U8 merge-writer, 2026-07-15): the U22 branch's own section "7b"
 # (a D5/B-U4/U18 forward-compat WARN hook for copy_craft_pool) is dropped here

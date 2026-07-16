@@ -1,7 +1,7 @@
 {
   "$schema": "https://openclaw.ai/schemas/tone-writing-core/v1",
   "contract": "shared-tone-writing-core",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "stable_path": "shared-utils/tone-writing-core",
   "description": "Canonical, provider-agnostic tone/writing core shared by the BlackCEO writing skills (52 brand, 53 book, 54 anthology). Blended tone + four tone-style analyzers + shared writing rails. ZERO Anthropic model ids; the client's own TIER models resolve these at runtime.",
   "consumers": ["52-avatar-alchemist", "53-book-writer", "54-anthology-writer"],
@@ -9,7 +9,11 @@
   "na_autopick_resolver": {
     "script": "tone_persona_autopick.py",
     "entry_point": "shared-utils/persona_for_job.py",
-    "rule": "F4.3 — an N/A tone slot is routed through the canonical 5-layer selector (deterministic, avatar/task-aware, LOGGED to persona_selection_log), NOT a raw prompt-level 'pick a well-known person' instruction. CLIENT-NAMED slots are NEVER touched (client sovereignty). The 4-slot blend at stage 08 is unchanged. Skill 53's fictional palette is an explicit fallback tier."
+    "rule": "F4.3 — an N/A tone slot is routed through the canonical 5-layer selector (deterministic, avatar/task-aware, LOGGED to persona_selection_log), NOT a raw prompt-level 'pick a well-known person' instruction. CLIENT-NAMED slots are NEVER touched (client sovereignty). The 4-slot blend at stage 08 is unchanged. Skill 53's fictional palette is an explicit fallback tier.",
+    "blend_governance": {
+      "unit": "Skill 6 U98 (D1 binding ruling — anthology leg, reconciled LAST)",
+      "rule": "An N/A slot's selector call now runs WITH blend=True (default; ANTHOLOGY_BLEND_GOVERNS=0 reverts byte-for-byte to the pre-U98 blend=False call). The resolved voice for that slot is GOVERNED by the blend directive (guardrail-carrying, traceable to the bundle) instead of an independently-picked persona. The 4-slot STRUCTURE and the prompts/04..08 tone-stage assets are unchanged by this — voice-path only, never structural."
+    }
   },
   "tone_stages": [
     {"stage_id": "04-tone-style-1", "prompt_dir": "prompts/04-tone-style-1", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #1)", "na_autopick": true, "internal_feeder": true},

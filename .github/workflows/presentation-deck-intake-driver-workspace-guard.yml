@@ -1,0 +1,56 @@
+name: presentation-deck-intake-driver-workspace-guard
+
+# U86 [GK-24] guard -- the DRIVER leg of the binary acceptance:
+# "driver invoked from an alien cwd with --workspace writes ONLY under the named
+# workspace (filesystem diff proves zero writes elsewhere)."
+#
+# deck-intake-driver.py is safe today because --run-dir is MANDATORY and resolved
+# absolute before any write -- containment is an emergent property of that flag,
+# not of an explicit test. This workflow pins it, so a later change that gives
+# --run-dir a default (e.g. default="working") -- silently restoring the exact
+# wrong-live-workspace defect class GK-24 exists to kill -- fails the build.
+#
+# It runs tests/unit/presentation-deck-intake-driver-workspace.test.sh, which
+# asserts:
+#   (A) from an ALIEN cwd with --run-dir, a full before/after filesystem diff of
+#       that cwd (paths AND content hashes) is EMPTY -- zero writes elsewhere --
+#       while the named workspace demonstrably receives the ledger (so the empty
+#       diff is meaningful, never vacuous),
+#   (B) with NO --run-dir, from a cwd that HAS a working/ dir sitting in it (the
+#       precise defect scenario), the driver REFUSES fail-honestly and writes
+#       NOTHING -- no reachable bare-`working/` CWD default,
+#   (C) statically, --run-dir carries no default= and the driver gains no
+#       ambient (getenv/environ/cwd) workspace source.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - tests/unit/presentation-deck-intake-driver-workspace.test.sh
+      - .github/workflows/presentation-deck-intake-driver-workspace-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - tests/unit/presentation-deck-intake-driver-workspace.test.sh
+      - .github/workflows/presentation-deck-intake-driver-workspace-guard.yml
+
+jobs:
+  deck-intake-driver-workspace-guard:
+    name: deck-intake-driver.py workspace-containment guard (Skill 23, U86)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Driver workspace-containment guard (filesystem diff)
+        shell: bash
+        run: |
+          chmod +x tests/unit/presentation-deck-intake-driver-workspace.test.sh
+          bash tests/unit/presentation-deck-intake-driver-workspace.test.sh

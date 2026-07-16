@@ -355,7 +355,13 @@ class TestCLIWiring(unittest.TestCase):
         self.assertIn("term", _ALLOWLIST_DATA)
         self.assertIn("legacy_filenames", _ALLOWLIST_DATA)
         self.assertIn("vendor_literals", _ALLOWLIST_DATA)
-        self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 6)
+        # Floor, not a fixed count: this list only ever SHRINKS as each owning
+        # unit lands its rename (never grows -- see the $comment doctrine
+        # above). It shipped at 6 (4 U30-owned + 2 U93-owned). U30/B-U16
+        # (2026-07-16) landed and correctly removed its 4 entries, leaving the
+        # 2 U93-owned ones -- so the floor drops to 2 here in the SAME commit
+        # that removed them (never left stale/orphaned once a rename lands).
+        self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 2)
 
     def test_vendor_literals_empty_by_default(self):
         """Pins the allowlist's own stated default (its $comment: 'Empty by
