@@ -254,7 +254,14 @@ def check_grounding_layers(paths: dict) -> dict:
         semantic_available = bool(getattr(sel, "SEMANTIC_AVAILABLE", False))
         llm_available = bool(getattr(sel, "LLM_AVAILABLE", False))
     except Exception as exc:
-        reasons.append(f"selector module unavailable/failed to load: {exc}")
+        # Wording note: deliberately "could not load", never "failed to load".
+        # fleet_refresh_runner.run_box decides a box's verdict with a substring
+        # test for "failed" over every step value, so an advisory reason that
+        # merely used that word would flip the box to partial/failed. The
+        # runner scrubs the token defensively too (_scrub_gating_token — {exc}
+        # is arbitrary text and can contain anything); this keeps the common
+        # case honest and readable rather than silently rewritten.
+        reasons.append(f"selector module unavailable/could not load: {exc}")
 
     layers = {
         "company_config_present": company_config_present,

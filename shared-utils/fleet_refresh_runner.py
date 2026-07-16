@@ -28,12 +28,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+# The exact token run_box's verdict test keys on — see _scrub_gating_token().
+_GATING_TOKEN_RE = re.compile("failed", re.IGNORECASE)
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 RED    = "\033[0;31m"
@@ -1203,6 +1207,28 @@ def step_persona_embedding_drift(
     return result
 
 
+def _scrub_gating_token(text: str) -> str:
+    """Strip the one token that would turn an ADVISORY step value into a
+    GATING one.
+
+    run_box decides the box's verdict with a plain SUBSTRING test —
+    `any("failed" in str(v) for v in res.steps.values())` — over every step
+    value, with no notion of which steps are advisory. A-U12's non-gating
+    contract (ACCEPT (a): "the box's health status is UNCHANGED by any value
+    of it") therefore cannot rest on wording discipline upstream: this step's
+    reason text is FREE-FORM and interpolates arbitrary exception messages
+    (e.g. the probe's own "selector module unavailable/could not load: {exc}",
+    where {exc} is whatever Python raised). Any reason that merely MENTIONS
+    the word would flip the box to partial/failed — a false failure fleet-wide
+    on every box where the probe degrades for a reason worded that way.
+
+    So scrub at the boundary that writes res.steps, where the guarantee is
+    actually enforceable. Case-insensitive for future-proofing; run_box's
+    current test is lowercase-exact, so lowercase alone is what gates today.
+    """
+    return _GATING_TOKEN_RE.sub("errored", text)
+
+
 def step_persona_grounding_health(
     paths: dict,
     shared_utils: Path,
@@ -1247,7 +1273,7 @@ def step_persona_grounding_health(
     if grounding.get("degraded"):
         # Advisory, non-gating: intentionally NOT "failed:..." — see docstring.
         reasons = "; ".join(grounding.get("reasons", []))[:200]
-        res.steps["persona-grounding-health"] = f"degraded:{reasons}"
+        res.steps["persona-grounding-health"] = f"degraded:{_scrub_gating_token(reasons)}"
         _warn(f"  persona-grounding-health: DEGRADED (advisory) — {reasons}")
     else:
         res.steps["persona-grounding-health"] = "pass"

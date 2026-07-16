@@ -427,6 +427,77 @@ class TestFleetRefreshRunnerWiring(unittest.TestCase):
                          "the advisory must NEVER contain 'failed' — it must "
                          "not trip fleet_refresh_runner's has_failures check")
 
+    def _run_box_has_failures(self, res) -> bool:
+        """The EXACT verdict expression run_box uses (fleet_refresh_runner.py:
+        `has_failures = any("failed" in str(v) for v in res.steps.values())`).
+        Asserted against directly so this contract is proven end-to-end
+        against the real gate, not against a paraphrase of it."""
+        return any("failed" in str(v) for v in res.steps.values())
+
+    def _degrade_via_selector_load_failure(self, res):
+        """Force the ONE degrade path whose reason text interpolates an
+        arbitrary exception message — a box where the selector module cannot
+        be loaded at all (e.g. 23-ai-workforce-blueprint not installed).
+
+        NOTE: step_persona_grounding_health imports the probe under its
+        CANONICAL name ('persona_grounding_health_probe'), which is a distinct
+        module object from this file's `probe` (loaded under a _under_test
+        alias). Patch the instance the RUNNER will actually resolve — importing
+        it here first so the runner's own `from ... import run_probe` reuses
+        this already-patched sys.modules entry."""
+        sys.path.insert(0, str(_SHARED_UTILS))
+        import persona_grounding_health_probe as runner_probe
+
+        old_loader = runner_probe._load_selector
+        old_cache = runner_probe._SELECTOR_MODULE
+
+        def _boom():
+            # An exception whose OWN message contains the gating token — the
+            # probe cannot control what upstream exceptions say.
+            raise FileNotFoundError("persona-selector-v2.py: open failed")
+
+        runner_probe._load_selector, runner_probe._SELECTOR_MODULE = _boom, None
+        self.addCleanup(
+            lambda: setattr(runner_probe, "_SELECTOR_MODULE", old_cache))
+        self.addCleanup(
+            lambda: setattr(runner_probe, "_load_selector", old_loader))
+        return self.runner.step_persona_grounding_health(
+            {"company_config": self.tmp / "does-not-exist.json"},
+            _SHARED_UTILS, res)
+
+    def test_selector_load_failure_advisory_never_gates_the_box(self):
+        """REGRESSION (A-U12 ACCEPT (a): "the box's health status is UNCHANGED
+        by ANY value of it"). The selector-unloadable degrade path builds its
+        reason from an arbitrary exception message. If that text reaches
+        res.steps carrying the substring "failed", run_box's substring verdict
+        test flips the box to partial/failed — an ADVISORY probe silently
+        gating the box's health. Proven here against the real gate."""
+        res = self.runner.BoxResult(box="test-box", dry_run=False)
+        result = self._degrade_via_selector_load_failure(res)
+
+        self.assertTrue(result["grounding"]["degraded"],
+                        "selector-unloadable must still be reported degraded")
+        recorded = res.steps["persona-grounding-health"]
+        self.assertTrue(recorded.startswith("degraded:"))
+        self.assertNotIn(
+            "failed", recorded,
+            "an advisory step value must never carry run_box's gating token, "
+            "however the underlying exception happened to be worded")
+        self.assertFalse(
+            self._run_box_has_failures(res),
+            "A-U12 non-gating contract: a degraded grounding advisory must "
+            "leave run_box's has_failures False (box verdict stays 'ok')")
+
+    def test_scrub_gating_token_is_case_insensitive_and_keeps_text(self):
+        """The scrub removes ONLY the gating token and leaves the reason
+        legible — an advisory that gates is broken, but an advisory scrubbed
+        into uselessness is also broken."""
+        scrub = self.runner._scrub_gating_token
+        self.assertNotIn("failed", scrub("selector Failed to load").lower())
+        self.assertIn("selector", scrub("selector Failed to load"))
+        self.assertEqual(scrub("company-config.json absent/unreadable"),
+                         "company-config.json absent/unreadable")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
