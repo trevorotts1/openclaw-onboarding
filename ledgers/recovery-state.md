@@ -2,17 +2,13 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T06:30:05Z
-openclaw-onboarding `origin/main` HEAD: `4e58f50dfa333d4c38b82cf4f4cddecea367cac2`
+Generated: 2026-07-16T06:40:06Z
+openclaw-onboarding `origin/main` HEAD: `200e122baa3ca4a6b5d642e4871d9d53f7f67108`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-**1 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
-
-| unit | unmerged repo leg | branch | tip | shared ledger status |
-|---|---|---|---|---|
-| U53 | openclaw-onboarding | `skill6-v2/U53` | `1afb5690` | verified |
+No mismatches found this run.
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -41,15 +37,16 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
 | U44 | `skill6-v2/U44` | `fbd8cb3e` | False | - | - | pending | - |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
-| U53 | `skill6-v2/U53` | `1afb5690` | False | - | - | **MISMATCH (fail-closed): verified** — see Integrity Alarms | - |
+| U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
 | U59 | `skill6-v2/U59` | `985935c4` | False | - | - | pending | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
-| U63 | `skill6-v2/U63` | `bf601e7a` | False | - | - | deferred (operator-gated) | - |
+| U63 | `skill6-v2/U63` | `253ea9b1` | False | - | - | deferred (operator-gated) | - |
+| U64 | `skill6-v2/U64` | `a1f52194` | False | - | - | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
-| U71 | `skill6-v2/U71` | `449f589a` | False | - | - | pending | - |
+| U71 | `skill6-v2/U71` | `16a6441c` | False | - | - | pending | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
@@ -70,7 +67,7 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 | verified | 9.4 |
-| U102 | `skill6-v2/U102` | `1e3dc4cb` | False | - | - | pending | - |
+| U102 | `skill6-v2/U102` | `014932f7` | False | - | - | pending | - |
 | U103 | `skill6-v2/U103` | `7831aeb8` | True | `20935e91` | v6.0.32 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 | verified | 9.2 |
 | U105 | `skill6-v2/U105` | `0711f092` | True | `737eb62c` | v6.0.33 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -81,6 +78,7 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 | verified | 8.8 |
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 | verified | 9.0 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 | verified | 8.9 |
+| U33 | `skill6-v2/U33` | `57c8305c` | False | - | - | pending | - |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
 | U38 | `skill6-v2/U38` | `73e57dde` | False | - | - | pending | - |
@@ -96,7 +94,7 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 | verified | 9.0 |
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (ONB half) | - |
 | U50 | `skill6-v2/U50` | `8d0c480a` | False | - | - | pending | - |
-| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified | - |
+| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
 | U54 | `skill6-v2/U54` | `806b98c8` | False | - | - | pending | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
@@ -106,7 +104,9 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 | verified | 9.7 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 | verified | - |
 | U77 | `skill6-v2/U77` | `c34cbe9b` | False | - | - | pending | - |
+| U94 | `skill6-v2/U94` | `82d70f68` | False | - | - | pending | - |
 | U95 | `skill6-v2/U95` | `86004117` | True | `d8f46fb4` | v6.0.31 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U99 | `skill6-v2/U99` | `21898e7d` | False | - | - | pending | - |
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
@@ -127,6 +127,6 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 
 - ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 1 (U53-openclaw-onboarding)
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
