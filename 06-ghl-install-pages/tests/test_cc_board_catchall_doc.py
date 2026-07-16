@@ -39,6 +39,41 @@ def _read_source() -> str:
         return f.read()
 
 
+def _funnel_branch_note() -> str:
+    """The contiguous ``#`` comment block immediately preceding the funnel
+    branch's ``department_slug = "funnels"`` assignment — i.e. THE producer
+    NOTE that documents where a funnel card actually lands.
+
+    Site-anchored on purpose: a file-global substring check would still pass
+    if this NOTE were deleted outright (the sibling docstring site mentions
+    the same tokens), which would silently un-document the exact code path
+    C-13(e) exists to correct.
+    """
+    src = _read_source()
+    anchor = src.index('        department_slug = "funnels"')
+    block = []
+    for line in reversed(src[:anchor].splitlines()):
+        if line.strip().startswith("#"):
+            block.append(line)
+        else:
+            break
+    assert block, (
+        "the funnel branch's producer NOTE (the contiguous comment block above "
+        '`department_slug = "funnels"`) is MISSING — C-13(e)/U44 requires that '
+        "code path document the real INGEST-06 general-task routing"
+    )
+    return "\n".join(reversed(block))
+
+
+def _department_slug_docstring() -> str:
+    """The ``department_slug:`` kwarg's docstring section (up to the next
+    ``source:`` kwarg) — the second site the C-13(e) correction touches."""
+    src = _read_source()
+    start = src.index("        department_slug: ")
+    end = src.index("        source:  ", start)
+    return src[start:end]
+
+
 class TestCatchAllProducerDocConformance:
     def test_stale_ceo_catch_all_claim_is_gone(self):
         """The bare, unqualified claim that an unrecognized department_slug
@@ -64,10 +99,13 @@ class TestCatchAllProducerDocConformance:
         catch-all (general-task / 'General Stuff') and the REAL resolvedBy
         tag INGEST-06 actually stamps, so the producer's own comment matches
         the consumer's real behavior."""
-        src = _read_source()
-        assert "general-task" in src
-        assert "unrecognized-slug->general" in src
-        assert "INGEST-06" in src
+        note = _funnel_branch_note()
+        for token in ("general-task", "unrecognized-slug->general", "INGEST-06"):
+            assert token in note, (
+                f"the funnel branch's producer NOTE does not mention {token!r} — "
+                "C-13(e)/U44 requires THAT site (not merely some other comment "
+                "elsewhere in the file) describe the real INGEST-06 routing"
+            )
 
     def test_department_slug_docstring_updated_to_match(self):
         """The department_slug kwarg's docstring cites 'funnels' as a sibling
@@ -75,17 +113,28 @@ class TestCatchAllProducerDocConformance:
         sentence must also point at the honest general-task catch-all, not
         the CEO's, and must name D-C2 (the 'General Stuff' display-name
         decision) so a future reader lands on the right spec section."""
-        src = _read_source()
-        assert '"General Stuff"' in src
-        assert "D-C2" in src
+        doc = _department_slug_docstring()
+        for token in ("general-task", '"General Stuff"', "D-C2"):
+            assert token in doc, (
+                f"the department_slug kwarg docstring does not mention {token!r} "
+                "— C-13(e)/U44 requires THAT site carry the correction too"
+            )
 
     def test_ceo_master_orchestrator_distinction_is_explicit(self):
-        """Both corrected sites must explicitly say the CEO/master-orchestrator
+        """BOTH corrected sites must explicitly say the CEO/master-orchestrator
         fallback is a DIFFERENT, later tier than the general-task catch-all
         an unrecognized-but-explicit department_slug actually hits — the
-        exact distinction whose absence made the original comment wrong."""
-        src = _read_source()
-        assert src.count("master-orchestrator") >= 1
+        exact distinction whose absence made the original comment wrong.
+        Asserted per-site: a file-global count would stay green if either
+        site silently lost the distinction."""
+        assert "master-orchestrator" in _funnel_branch_note(), (
+            "the funnel branch's producer NOTE lost the CEO/master-orchestrator "
+            "vs general-task tier distinction"
+        )
+        assert "master-orchestrator" in _department_slug_docstring(), (
+            "the department_slug kwarg docstring lost the CEO/master-orchestrator "
+            "vs general-task tier distinction"
+        )
 
     def test_module_still_compiles_clean(self):
         """Doc-only change must not have touched executable code."""
