@@ -1,10 +1,11 @@
 {
   "_comment": "P3-04 (c)4 — weekly iframe-survival check target list, consumed by ghl_selector_canary.py's load_iframe_survival_targets() / run_iframe_survival_check(). Ships EMPTY (no live client URLs belong in this repo — repo is fleet-wide, no client identifiers per policy). The operator (or the weekly cron on the box that runs it) populates real published-page URLs from the operator TEST sub-account before the check does anything meaningful; an empty list is a valid, clean (zero-target) run, never an error.",
+  "_u106_addition": "U106 (E5-1, closes G1) added community | course | channel as valid object_type values below — the community/course/channel builders (ghl_community_builder.py, ghl_course_builder.py) are now in-scope for this weekly survival probe, the same as form/survey/funnel/page. Real target entries (a community portal URL, a course preview URL, a channel's parent-community portal URL) only exist AFTER a live create — that live-create + populate step is the companion unit's LIVE-PROOF-tier leg, deferred from this (code/offline) build; this array intentionally still ships EMPTY here, same discipline as every other object_type above. notify_once() (also U106, see ghl_selector_canary.py) makes a repeated miss on any populated target — of ANY object_type — file exactly ONE board card across repeated runs, never a duplicate.",
   "_schema": {
     "id": "a stable, human-readable identifier for the target (e.g. 'survey.p2.published')",
     "url": "the PUBLIC published-page URL (no auth required for a published GHL preview/live page — the 2026-06-27 probe this check makes continuous)",
-    "object_type": "one of: form | survey | funnel | page (matches VALID_OBJECT_TYPES, informational only — the check itself does not branch on it)"
+    "object_type": "one of: form | survey | funnel | page | community | course | channel (informational only — the check itself does not branch on it)"
   },
-  "version": "v1.0.0",
+  "version": "v1.1.0",
   "targets": []
 }

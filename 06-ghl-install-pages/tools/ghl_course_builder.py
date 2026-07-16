@@ -296,6 +296,62 @@ def _add_lesson(session: str, sels: dict, module: dict, lesson: dict,
                     verify={"present_in_outline": True, "method": "snapshot"})
 
 
+def _build_outline(session: str, sels: dict, plan: dict, evidence_root: str,
+                   shot_n: List[int], gov, keep, resume: bool, done_lessons: set, *,
+                   add_lesson=None, write_receipt=None, log=None) -> dict:
+    """U106 — smoke-first gated outline bulk-add (companion to U30's smoke_first
+    on the iframe/page-code drag surfaces). The FIRST not-yet-done lesson across
+    the plan is the ONE proof-create (ghl_run_state.smoke_first): only a
+    PASSING store-delta verify (the lesson actually present in the outline)
+    unlocks the rest of the — potentially many-lesson — walk. A failing smoke
+    raises SmokeFirstFailed BEFORE any further module/lesson is attempted.
+
+    `add_lesson`/`write_receipt`/`log` are dependency-injected (default: the
+    real `_add_lesson` / `_write_receipt` / `_log`) so this is directly
+    unit-testable without a live browser. Module creation + resume-skip
+    bookkeeping is unchanged from the original inline walk."""
+    _add = add_lesson or _add_lesson
+    _wr = write_receipt or _write_receipt
+    _lg = log or _log
+    steps_done: List[str] = []
+
+    first_ref = None
+    for m in plan["modules"]:
+        for l in m["lessons"]:
+            if l["slug"] not in done_lessons:
+                first_ref = (m["slug"], l["slug"])
+                break
+        if first_ref:
+            break
+
+    smoked = False
+    for m in plan["modules"]:
+        if not (resume and all(l["slug"] in done_lessons for l in m["lessons"])):
+            _ex_click(session, sels, "course.outline.add_module")
+            _ex_fill(session, sels, "course.outline.module_title_input", m["title"])
+            _ex_wait_text(session, m["title"][:18], timeout=15)
+        for l in m["lessons"]:
+            if l["slug"] in done_lessons:
+                steps_done.append(f"M4:resume-skip:{l['title'][:20]}")
+                continue
+            if (not smoked) and first_ref == (m["slug"], l["slug"]):
+                def _create_smoke(_m=m, _l=l) -> dict:
+                    return _add(session, sels, _m, _l, evidence_root, shot_n, gov, keep)
+
+                def _verify_smoke(rc: dict) -> dict:
+                    return {"ok": bool((rc.get("verify") or {}).get("present_in_outline")),
+                            "receipt": rc}
+
+                rc = ghl_run_state.smoke_first(f"M4:smoke:{l['slug']}", _create_smoke,
+                                               _verify_smoke, log=_lg)
+                smoked = True
+            else:
+                rc = _add(session, sels, m, l, evidence_root, shot_n, gov, keep)
+            _wr(evidence_root, rc)
+            steps_done.append(f"M4:lesson:{l['title'][:20]}")
+    return {"steps_done": steps_done}
+
+
 def _verify_outline(session: str, plan: dict) -> dict:
     """Read-back: every module + lesson title present in the live outline (list-scan)."""
     missing: List[str] = []
@@ -396,18 +452,10 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         steps_done.append(f"M3:{action}")
 
         # M4 — outline: modules → lessons (resumable, per-lesson receipt).
-        for m in plan["modules"]:
-            if not (resume and all(l["slug"] in done_lessons for l in m["lessons"])):
-                _ex_click(session, sels, "course.outline.add_module")
-                _ex_fill(session, sels, "course.outline.module_title_input", m["title"])
-                _ex_wait_text(session, m["title"][:18], timeout=15)
-            for l in m["lessons"]:
-                if l["slug"] in done_lessons:
-                    steps_done.append(f"M4:resume-skip:{l['title'][:20]}")
-                    continue
-                rc = _add_lesson(session, sels, m, l, evidence_root, shot_n, gov, keep)
-                _write_receipt(evidence_root, rc)
-                steps_done.append(f"M4:lesson:{l['title'][:20]}")
+        # U106: smoke-first gated — see _build_outline().
+        outline_res = _build_outline(session, sels, plan, evidence_root, shot_n, gov, keep,
+                                     resume, done_lessons)
+        steps_done.extend(outline_res["steps_done"])
 
         # M5 — verify outline + capture preview.
         outline = _verify_outline(session, plan)
