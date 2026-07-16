@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T12:10:02Z
-openclaw-onboarding `origin/main` HEAD: `75ffe19223dfd630418bd4c17672d5eba2eb8813`
-blackceo-command-center `origin/main` HEAD: `c2960cdf9237b2c0680f6b4460d34c5b9a689f6f`
+Generated: 2026-07-16T12:20:02Z
+openclaw-onboarding `origin/main` HEAD: `92b916b2b44bc4d12e8b5f92e0ecce75ffcb9d1a`
+blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
@@ -80,7 +80,7 @@ No mismatches found this run.
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 | verified | 9.4 |
-| U102 | `skill6-v2/U102` | `1ebe050b` | True | `fe7fb9f8` | - | pending | - |
+| U102 | `skill6-v2/U102` | `1ebe050b` | True | `fe7fb9f8` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U103 | `skill6-v2/U103` | `7831aeb8` | True | `20935e91` | v6.0.32 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 | verified | 9.2 |
 | U105 | `skill6-v2/U105` | `0711f092` | True | `737eb62c` | v6.0.33 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -94,13 +94,13 @@ No mismatches found this run.
 | U33 | `skill6-v2/U33` | `57c8305c` | True | `20773b64` | v6.0.38 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
-| U38 | `skill6-v2/U38` | `f1621b0d` | True | `c2960cdf` | - | pending | - |
+| U38 | `skill6-v2/U38` | `f1621b0d` | True | `c2960cdf` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (ONB half) | - |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 | verified | 8.9 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
 | U42 | `skill6-v2/U42` | `b50987cb` | True | `4b983a13` | v6.0.21 | verified | 9.2 |
 | U43 | `skill6-v2/U43` | `4a4e7680` | True | `751fa8ad` | v6.0.35 | verified | - |
-| U45 | `skill6-v2/U45` | `9dfc8fe9` | True | `c69996cd` | - | pending | - |
+| U45 | `skill6-v2/U45` | `9dfc8fe9` | True | `c69996cd` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U46 | `skill6-v2/U46` | `e28ea4b4` | True | `fd064907` | v6.0.8 | verified | 8.9 |
 | U47 | `skill6-v2/U47` | `2944303f` | True | `169355ef` | v6.0.22 | verified | 9.0 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 | verified | 9.2 |
@@ -108,7 +108,7 @@ No mismatches found this run.
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (ONB half) | - |
 | U50 | `skill6-v2/U50` | `8d0c480a` | True | `28e91598` | v6.0.37 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
-| U54 | `skill6-v2/U54` | `806b98c8` | True | `7b6642ac` | - | pending | - |
+| U54 | `skill6-v2/U54` | `806b98c8` | True | `7b6642ac` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 | verified | 9.0 |
@@ -116,10 +116,10 @@ No mismatches found this run.
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 | verified | 9.0 |
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 | verified | 9.7 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 | verified | - |
-| U77 | `skill6-v2/U77` | `033c0641` | False | - | - | pending | - |
-| U94 | `skill6-v2/U94` | `02cb757f` | True | `1eceeca2` | - | pending | - |
+| U77 | `skill6-v2/U77` | `033c0641` | True | `d9758456` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U94 | `skill6-v2/U94` | `02cb757f` | True | `1eceeca2` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U95 | `skill6-v2/U95` | `86004117` | True | `d8f46fb4` | v6.0.31 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U99 | `skill6-v2/U99` | `21898e7d` | True | `ad297f3d` | - | pending | - |
+| U99 | `skill6-v2/U99` | `21898e7d` | True | `ad297f3d` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 
 ## Skill 62 — cinematic-web-funnel-engine (`skill62/cinematic-engine`)
 
@@ -139,7 +139,7 @@ No mismatches found this run.
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U10, U12, U44, U59, U86, U96, U97, U107, U112, U115, U116
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U38, U45, U54, U77, U94, U99, U102
 - fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
