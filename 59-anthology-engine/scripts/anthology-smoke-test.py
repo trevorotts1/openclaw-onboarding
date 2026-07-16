@@ -466,9 +466,26 @@ def reconcile_board(scripts_dir, environ=None, runner=None):
     that held at Drive) is recovered. mc_board is FAIL-SOFT by construction: it always
     exits 0 even with the board down, so this step never fails the tick. Kept separate
     from the funded-reachability probe so a probe failure never suppresses the
-    reconcile and vice versa."""
+    reconcile and vice versa.
+
+    GK-17/A7 (converging repair, not just detection): exit 0 alone is NOT proof the
+    sweep actually converged -- mc_board.py's own exit code is fail-soft-always-0,
+    so a bare rc check (this function's shape at finding A2) cannot tell "every
+    card landed" apart from "the sweep ran but some cards are still wrong", and a
+    caller watching only this step's `status` would see "reconciled" in BOTH
+    cases -- exactly the gap that leaves a drift-detector banner disconnected from
+    whether a repair actually happened. mc_board.py reconcile's JSON now carries a
+    `converged` boolean; this function reads it back and reports status
+    "unconverged" -- the ONLY signal a drift-detector banner should escalate on --
+    when the sweep ran (exit 0) but did not fully converge. `runner` may return
+    either the legacy 2-tuple (rc, err) -- kept for callers that never see stdout,
+    in which case convergence is unknown (`converged: None`, status stays the
+    pre-existing "reconciled" so no caller's exit-code-only assertion breaks -- see
+    the self-test) -- or the 3-tuple (rc, stdout, stderr) a capture-style runner
+    (the default, and the shape a real subprocess call now uses) returns, which is
+    required to actually observe `converged`."""
     env = environ if environ is not None else os.environ
-    run = runner or _run_subprocess
+    run = runner or _default_capture_subprocess
     mc = Path(scripts_dir) / "mc_board.py"
     if not mc.exists():
         return {"status": "skipped", "reason": "mc_board.py not present (W3.1 not yet integrated)"}
@@ -476,13 +493,31 @@ def reconcile_board(scripts_dir, environ=None, runner=None):
     state_dir = (env.get("ANTHOLOGY_STATE_DIR") or "").strip()
     if state_dir:
         argv += ["--state-dir", state_dir]
-    rc, err = run(argv)
-    if rc == 0:
-        return {"status": "reconciled", "exit": rc}
-    # mc_board.py is fail-soft (exit 0 on any board condition); a non-zero here is a
-    # local wiring refusal (2) or an unexpected error (1) -- surfaced, never fatal.
-    return {"status": "error", "exit": rc, "reason": "mc_board.py reconcile returned %s" % rc,
-            "detail": (err or "")[:200]}
+    raw = run(argv)
+    if len(raw) == 3:
+        rc, out, err = raw
+    else:
+        rc, err = raw
+        out = ""
+    if rc != 0:
+        # mc_board.py is fail-soft (exit 0 on any board condition); a non-zero here
+        # is a local wiring refusal (2) or an unexpected error (1) -- surfaced, never fatal.
+        return {"status": "error", "exit": rc, "reason": "mc_board.py reconcile returned %s" % rc,
+                "detail": (err or "")[:200]}
+    converged = None
+    counts = None
+    try:
+        parsed = json.loads(out) if out else None
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict) and "converged" in parsed:
+        converged = bool(parsed["converged"])
+        counts = parsed.get("counts")
+    status = "unconverged" if converged is False else "reconciled"
+    result = {"status": status, "exit": rc, "converged": converged}
+    if counts is not None:
+        result["counts"] = counts
+    return result
 
 
 def _default_capture_subprocess(argv):
@@ -1004,6 +1039,34 @@ def self_test():
     check("run_smoke invokes the board reconcile step", rs_calls["reconcile"] == 1)
     check("report carries the board_reconcile block",
           _rep.get("board_reconcile") is not None and _rep["board_reconcile"]["status"] == "reconciled")
+
+    # --- GK-17/A7: legacy 2-tuple runner (no stdout) never manufactures a false --
+    # escalation: convergence is simply unknown, and status STAYS the pre-existing
+    # "reconciled" on exit 0 -- every assertion above (rec_ok, run_smoke's own
+    # _rs_runner) already proves this by construction; make it explicit here too.
+    check("legacy 2-tuple runner keeps pre-existing status + unknown convergence",
+          rec_ok["status"] == "reconciled" and rec_ok.get("converged") is None)
+
+    # --- GK-17/A7: a capture-style runner (rc, stdout, stderr) lets this function
+    # read mc_board.py's OWN `converged` signal back, converting "the subprocess
+    # exited 0" into "did the repair actually converge" -- the exact distinction
+    # finding A2's original exit-code-only shape could not make.
+    def _rec_capture_converged(argv):
+        return 0, json.dumps({"ok": True, "converged": True,
+                              "counts": {"synced": 2, "deferred": 0, "error": 0,
+                                         "not_mirrored": 0, "unknown": 0}}), ""
+    rec_converged = reconcile_board(SCRIPTS_DIR, {}, runner=_rec_capture_converged)
+    check("fully-converged reconcile (exit 0, converged=True) reports status reconciled",
+          rec_converged["status"] == "reconciled" and rec_converged["converged"] is True)
+
+    def _rec_capture_unconverged(argv):
+        return 0, json.dumps({"ok": True, "converged": False,
+                              "counts": {"synced": 1, "deferred": 1, "error": 0,
+                                         "not_mirrored": 0, "unknown": 0}}), ""
+    rec_unconverged = reconcile_board(SCRIPTS_DIR, {}, runner=_rec_capture_unconverged)
+    check("unconverged reconcile (exit 0, converged=False) reports status unconverged -- "
+          "the ONLY condition a drift-detector banner should escalate on",
+          rec_unconverged["status"] == "unconverged" and rec_unconverged["converged"] is False)
 
     # --- E8: stale non-terminal-job sweep (stuck-job detection) ------------------
     # absent anthology_state.py -> skipped (fail-soft), never fatal.
