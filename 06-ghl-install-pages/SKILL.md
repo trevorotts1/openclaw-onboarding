@@ -648,6 +648,74 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
 > history. Any new tool MUST keep durable run state out of the skill dir.
 >
+> **Page inventory + staged lifecycle — nothing auto-deletes client content
+> (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted
+> in B.11 claim #19 (no GHL-side page inventory/lifecycle/retention existed
+> anywhere in this skill). Three independent, individually-callable stages:
+>
+>   1. **FLAG** (read-only, pure) — `flag_lifecycle_candidates` classifies an
+>      already-enumerated inventory into STALE (draft, unpublished past a
+>      threshold — default 30 days), SUPERSEDED (an older page in the same
+>      funnel/name-family than the newest verified one), and DUPLICATE (2+
+>      pages sharing one build marker — the EXACT ambiguity
+>      `ghl_method.resolve_install_target` would itself refuse with
+>      `InstallTargetError`; reused here, never re-derived, so the two rules
+>      can never drift apart).
+>   2. **CARD** — `post_lifecycle_card` posts ONE operator card per distinct
+>      candidate set, deduped against an on-disk event-ledger so a repeated
+>      maintenance-window run never spams a second card for the same
+>      unresolved candidates; a genuinely new/changed candidate set gets its
+>      own fresh card, and a failed notify is retried (never permanently
+>      lost) on the next run.
+>   3. **EXECUTE** — `execute_approved_deletes` is fail-closed BY
+>      CONSTRUCTION: it refuses (raises `LifecycleGuardError`, deletes
+>      nothing, anywhere in the batch) unless every id being deleted was
+>      flagged, carded, DELIVERED, and explicitly named in `approved_ids`.
+>      Every real delete follows present -> pre-delete RESTORABLE export ->
+>      delete -> absent RECEIPT — "no receipt = not deleted", the same F6
+>      discipline `ghl_receipts.py` established for creates, mirrored here
+>      for removals.
+>
+> Evidence-root **RETENTION** (`prune_evidence_roots`) is a fourth,
+> independent concern, reusing `cc_board.list_evidence_runs` (evidence-root
+> discovery is never re-derived): keeps the newest N (default 10)
+> `v2-<RUN_ID>` roots per funnel-slug group plus every root an OPEN card
+> still references, never even considers a root a `blocked` card references,
+> and only ever COMPRESSES older roots — it never deletes a run-evidence root
+> outright. `pages_total`/`drafts_stale`/`superseded`/`orphan_media` reduce
+> into the `/api/health/deep` advisory shape (`inventory_advisory`) the same
+> way `cc_board.reconcile()`'s output already does (B-U13/U27, verified).
+>
+> **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
+> SET of funnel ids for a location. Neither the official GHL public API (no
+> Funnels endpoint exists there — checked against Skill 44's own
+> `endpoints.py`) nor the proven internal SPA-canvas REST family
+> (`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
+> list-pages-within-a-known-funnel) documents a "list every funnel for a
+> location" call. `funnel_lister` is a REQUIRED caller-supplied dependency
+> with no default live implementation (`live_funnel_lister_over_browser_
+> manager` raises `NotImplementedError` rather than ever fabricate a funnel
+> list) — wiring + proving a live discovery route (most likely a DOM-snapshot
+> walk of the Sites -> Funnels list, same discipline as
+> `ghl_selector_canary.py`'s `finder`) is a live leg owed to the operator,
+> parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
+> known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
+> list` step, ready the moment a funnel id is available.
+>
+> **Scheduled maintenance-window sweep (U31/B-U17).** The retention half
+> above is entirely live-wiring-free today (compress-only, zero live
+> GoHighLevel calls) and ships its own schedule ENTRY file
+> (`schedule/skill6-page-inventory-lifecycle.cron.json` — single source of
+> truth, same "entry ships as a file, not just doctrine text" discipline as
+> B-U10's amended acceptance) plus an idempotent installer:
+> `bash scripts/install-page-inventory-lifecycle-cron.sh [evidence-base-dir]`
+> Proven offline in `tests/test_page_inventory_lifecycle_schedule.py` (entry
+> well-formedness + installer idempotency + the mandatory `--no-deliver` flag
+> against a fake CLI, no network — a maintenance-window retention tick must
+> never fan out as a client-facing announcement). The live registration + the
+> live page-enumeration half (blocked on the funnel-discovery gap above) are
+> DEFERRED TO the operator.
+>
 > **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
 > `update_status`/`ingest_task`, plus the step-visibility trio `move_task`/
 > `post_activity`/`register_deliverable` and the `BuildPhaseDriver` sequencer)
