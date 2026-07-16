@@ -1,0 +1,12 @@
+{
+  "$comment": "U91 (X/U-X1) whole-document scrub-verification supplement. scripts/docs-language-allowlist.json (owned by U92) is deliberately scoped to files literally present in THIS repo's own tree, cited by their full repo-root-relative path — correct for a diff-scoped ONB CI guard. MASTER SPEC v2 is a cross-repo planning document: it (a) also cites the tracked legacy filenames by basename alone inside paragraphs that have already established the directory context, and (b) cites one legacy filename that lives in the blackceo-command-center repo (out of scope for ONB's own CI allowlist), tracked under Decision D13 (Section X.1.3 / X.1.4). Both are legitimate Class B legacy-filename citations per MASTER SPEC v2 X.1.2 and X.1.3 — this file lets the whole-document verifier (scripts/verify-master-spec-scrub.py) recognize them without touching U92's already-shipped, repo-scoped allowlist.",
+  "legacy_filenames": {
+    "entries": [
+      {
+        "path": "scripts/reset-canary.sh",
+        "repo": "blackceo-command-center",
+        "owner": "D13"
+      }
+    ]
+  }
+}

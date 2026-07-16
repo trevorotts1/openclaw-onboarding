@@ -1,0 +1,6 @@
+verify-master-spec-scrub: /Users/blackceomacmini/Downloads/skill6-blended-persona-kanban-MASTER-SPEC-v2-2026-07-13.md: 14 line(s) contain the retired term.
+  defining sentence: 1 line(s) [12]
+  legacy filename / vendor literal citations: 13 line(s) [365, 777, 984, 1047, 1271, 1501, 2223, 2224, 2225, 2226, 2227, 2228, 2232]
+  UNEXPLAINED (violations): 0 line(s)
+verify-master-spec-scrub: PASS — binary scrub target MET.
+exit=0
