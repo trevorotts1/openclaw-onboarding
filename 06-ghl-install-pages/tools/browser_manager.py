@@ -10,9 +10,23 @@ WHY THIS IS EMITTER-ONLY
 ``ghl_builder.py`` and ``ghl_rest_canvas.py`` are pure EMITTERS: they build the
 agent-browser command STRINGS / argv lists the agent runs, but they hold NO live
 browser handle and spawn nothing (verified: no ``chromium.launch`` /
-``launchPersistentContext`` anywhere in the repo Python). The live-process
-lifecycle (lock, lease, TTL self-kill, pool ceiling, breaker, host reaper) lives
-in ``browser_manager.sh`` and ``scripts/agent-browser-reaper.sh``. This module's
+``launchPersistentContext`` in EITHER module). The live-process lifecycle
+(lock, lease, TTL self-kill, pool ceiling, breaker, host reaper) lives in
+``browser_manager.sh`` and ``scripts/agent-browser-reaper.sh``.
+
+CORRECTION (U28 / B-U14 headless-guard coverage audit, 2026-07): the prior
+version of this claim said no ``chromium.launch`` / ``launchPersistentContext``
+call existed "anywhere in the repo Python" — that was STALE. One real site
+exists: ``ghl_iframe_drag.py``'s offline cross-origin-drag self-test
+(``_live_selftest``) spins up its own throwaway, fully-local Playwright
+Chromium (two ``127.0.0.1``/``localhost`` HTTP fixtures, no agent-browser CLI,
+no GHL location, no chokepoint involvement) to prove the drag mechanism
+end-to-end. It hardcodes ``headless=True`` as a Python literal — it can never
+read ``AGENT_BROWSER_HEADED`` and open a headed window — so it is
+COMPLIANT-BY-CONSTRUCTION, not a D6 gap. It is still a REAL exception to the
+"spawns nothing" claim above, which is why the U28 audit tool
+(``headless_guard_audit.py``) sweeps for raw ``chromium.launch*`` sites on
+every run instead of trusting this docstring going forward. This module's own
 job is narrow but essential:
 
   1. Refuse to EMIT a browser command outside an active ``browser_session()``
