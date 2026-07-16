@@ -37,7 +37,7 @@ sys.path.insert(0, TOOLS)
 import ghl_run_state as run_state  # noqa: E402
 import ghl_community_builder as cb  # noqa: E402
 import ghl_course_builder as course  # noqa: E402
-import ghl_selector_canary as canary  # noqa: E402
+import ghl_selector_drift_probe as canary  # noqa: E402  (module renamed from ghl_selector_canary by U30/B-U16)
 
 
 @contextlib.contextmanager

@@ -504,7 +504,8 @@ def smoke_first(
     ``{"ok": bool}`` for a richer verdict recorded in the failure. This
     function does no browser/network I/O of its own: both callables are
     caller-injected, exactly like every other Skill-6 dependency-injected
-    helper (``ghl_selector_canary``'s ``finder``/``page_fetcher``).
+    helper (``ghl_selector_drift_probe``'s ``finder``/``page_fetcher`` — module
+    renamed from ``ghl_selector_canary`` by U30/B-U16).
 
     On a PASS, returns ``create_fn()``'s result unchanged so the caller can
     fold the smoke step's own object straight into its results/receipts.
