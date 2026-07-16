@@ -189,6 +189,25 @@ class TestFabQc(unittest.TestCase):
         d4 = next(d for d in r["dimensions"] if d["name"] == "D4 Persona grounding")
         self.assertEqual(d4["score"], 0.0)
 
+    # ── U117 (E6-3/G9) — voice_persona_grounded() extraction ────────────────
+    # score_d4's bundle-aware token-match rule is now a standalone reusable
+    # predicate (page_qc.py's comms-conformance "blend actually used" check
+    # calls this SAME function rather than re-deriving the match rule). Pure
+    # refactor: the two tests above (already passing unmodified) prove
+    # score_d4's OWN behavior is byte-identical; these two prove the
+    # extracted helper itself is correct in isolation.
+    def test_voice_persona_grounded_direct_hit_and_miss(self):
+        self.assertTrue(fab_qc.voice_persona_grounded(
+            "selected_persona: hormozi-100m-offers\n", "hormozi-100m-offers"))
+        self.assertFalse(fab_qc.voice_persona_grounded(
+            "selected_persona: russell-brunson-the-funnel-hackers-cookbook\n",
+            "hormozi-100m-offers"))
+
+    def test_voice_persona_grounded_blank_inputs_never_crash(self):
+        self.assertFalse(fab_qc.voice_persona_grounded("", ""))
+        self.assertFalse(fab_qc.voice_persona_grounded("some log text", ""))
+        self.assertFalse(fab_qc.voice_persona_grounded("", "hormozi-100m-offers"))
+
     def test_load_inputs_from_evidence_reads_persona_bundle_receipt(self):
         import tempfile
         with tempfile.TemporaryDirectory() as td:

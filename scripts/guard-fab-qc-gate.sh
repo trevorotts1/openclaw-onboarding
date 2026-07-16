@@ -26,6 +26,8 @@ PRODUCER="$ROOT/shared-utils/fab_artifact.py"
 CROSSWALK_PY="$ROOT/shared-utils/persona_crosswalk.py"
 CROSSWALK_JSON="$ROOT/shared-utils/persona-crosswalk.json"
 PAGE_QC="$ROOT/shared-utils/page_qc.py"
+COMMS_QC_TEST="$ROOT/tests/unit/u117-comms-qc-conformance.test.py"
+COMMS_QC_GUARD_TEST="$ROOT/tests/unit/u117-comms-qc-guard.test.sh"
 ARCHIVE_GATE="$ROOT/06-ghl-install-pages/tools/ghl_archive_receipt_gate.py"
 GITHUB_RECONCILE="$ROOT/06-ghl-install-pages/tools/ghl_github_reconcile.py"
 SCHEDULE_ENTRY="$ROOT/06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json"
@@ -241,6 +243,96 @@ assert sum(fab_qc.W.values()) == 100
 else
   bad "anti-copy guard degrade posture regressed (U10/A-U10 no-op contract broken) or weights != 100"
 fi
+
+# 10. U117 (E6-3/G9) — the comms-artifact QC + per-part-governance /
+#     audience-prompt conformance invariant must stay wired: the four added
+#     checks (per-part governance, blend actually used, topic considered,
+#     audience confirmed) exist on Page-QC v2, the standing 8.5 threshold is
+#     untouched (no new bar), the FAB-QC voice-grounding predicate (U19) is
+#     genuinely REUSED (not re-derived), and the acceptance-proof test files
+#     are present + wired.
+if has "$SCORER" "voice_persona_grounded"; then
+  ok "fab_qc.py exposes voice_persona_grounded() (U19 grounding predicate, reused by U117)"
+else
+  bad "fab_qc.py no longer exposes voice_persona_grounded() (U117's comms blend-used check has nothing to reuse)"
+fi
+if has "$PAGE_QC" "fab_qc.voice_persona_grounded"; then
+  ok "page_qc.py's comms blend-used check REUSES fab_qc.voice_persona_grounded (mechanism reuse, not re-derived)"
+else
+  bad "page_qc.py no longer reuses fab_qc.voice_persona_grounded — U117 blend-used check may have re-derived its own name-match rule"
+fi
+# BEHAVIORAL (not just grep-presence): actually CALL each of the four checks
+# by name with a real fixture under the flag ON. A deleted/renamed function
+# raises AttributeError here (grep-presence alone can't catch that — a
+# residual call-site string keeps matching even after the def is gone), and
+# a "skip the audience prompt"/"skip the topic slot" regression is caught by
+# the actual hard-miss verdict flipping, not by a name existing somewhere.
+_U117_BEHAVIOR_CHECK=$(python3 - <<PYEOF
+import sys
+sys.path.insert(0, "$ROOT/shared-utils")
+import page_qc
+
+assert page_qc.THRESHOLD == 8.5, "threshold drifted off 8.5"
+
+# flag-off -> true no-op (byte-identical revert path)
+r = page_qc.grade_comms_conformance({}, env={})
+assert r["applicable"] is False and r["passed"] is None, "flag-off no-op contract broken"
+
+good_map = [{"part_id": "sales-page", "voice_persona_id": "hormozi-100m-offers"}]
+good = {"part_id": "sales-page", "part_persona_map": good_map,
+        "used_voice_persona_id": "hormozi-100m-offers",
+        "topic": "Q3 relaunch", "audience_source": "standard"}
+judge = lambda dim, payload: {"score": 9.0, "reasoning": "ok"}
+env_on = {"COMMS_QC_CONFORMANCE": "1"}
+
+# each check function must exist, be callable, and return a real Dim.
+c1 = page_qc.check_part_governance(good)
+assert c1.hard_miss is False, "healthy per-part governance must not hard-miss"
+c2 = page_qc.check_topic_considered(good)
+assert c2.hard_miss is False, "healthy topic-considered must not hard-miss"
+c3 = page_qc.check_audience_confirmed(good)
+assert c3.hard_miss is False, "healthy audience-confirmed must not hard-miss"
+c4 = page_qc.score_blend_used(good, judge)
+assert c4 is not None and c4.hard_miss is False, "healthy blend-used must not hard-miss"
+
+r_good = page_qc.grade_comms_conformance(good, judge_fn=judge, env=env_on)
+assert r_good["passed"] is True, "fully-governed comms fixture must PASS"
+
+# the literal ADD-2 "skip the audience prompt" regression: no audience
+# decision recorded -> must HARD-MISS the audience-confirmed check.
+no_audience = dict(good); no_audience["audience_source"] = ""
+r_no_aud = page_qc.grade_comms_conformance(no_audience, judge_fn=judge, env=env_on)
+assert r_no_aud["passed"] is False, "unrecorded audience must FAIL the gate (ADD-2 regression)"
+assert "C3 Audience confirmed" in r_no_aud["hard_misses"]
+
+# the literal ADD-2 "skip the topic slot" regression: topic never factored
+# -> must HARD-MISS the topic-considered check.
+no_topic = dict(good); no_topic["topic"] = ""
+r_no_topic = page_qc.grade_comms_conformance(no_topic, judge_fn=judge, env=env_on)
+assert r_no_topic["passed"] is False, "un-factored topic must FAIL the gate (ADD-2 regression)"
+assert "C2 Topic considered" in r_no_topic["hard_misses"]
+
+# wrong part's blend -> must HARD-MISS per-part governance (U115 extension).
+wrong_part = dict(good); wrong_part["used_voice_persona_id"] = "wiebe-copy-hackers"
+r_wrong = page_qc.grade_comms_conformance(wrong_part, judge_fn=judge, env=env_on)
+assert r_wrong["passed"] is False, "wrong part blend must FAIL the gate"
+assert "C1 Per-part persona governance" in r_wrong["hard_misses"]
+
+# no judge key -> blend-used SKIPs honestly, deterministic three still run.
+r_skip = page_qc.grade_comms_conformance(good, judge_fn=None, env=dict(env_on))
+assert r_skip["checks"]["blend_used"]["available"] is False
+assert r_skip["passed"] is True, "a SKIP must never block the deterministic three"
+PYEOF
+)
+if [ $? -eq 0 ]; then
+  ok "U117 comms conformance BEHAVIORAL proof: all four checks fire, ADD-2 audience/topic regressions are caught live"
+else
+  bad "U117 comms conformance invariant REGRESSED — behavioral proof failed: $_U117_BEHAVIOR_CHECK"
+fi
+[ -f "$COMMS_QC_TEST" ] && ok "U117 comms-conformance acceptance proof present: tests/unit/u117-comms-qc-conformance.test.py" \
+                        || bad "MISSING tests/unit/u117-comms-qc-conformance.test.py (U117 acceptance a/b/c/f proof)"
+[ -f "$COMMS_QC_GUARD_TEST" ] && ok "U117 CI mutation-proof guard test present: tests/unit/u117-comms-qc-guard.test.sh" \
+                              || bad "MISSING tests/unit/u117-comms-qc-guard.test.sh (U117 acceptance e mutation proof)"
 
 # NOTE (U22/B-U8 merge-writer, 2026-07-15): the U22 branch's own section "7b"
 # (a D5/B-U4/U18 forward-compat WARN hook for copy_craft_pool) is dropped here

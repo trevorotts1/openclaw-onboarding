@@ -383,6 +383,28 @@ def _bundle_active(bundle) -> bool:
     return isinstance(bundle, dict) and bundle.get("source") not in (None, "", "absent")
 
 
+def voice_persona_grounded(text: str, voice_persona_id: str) -> bool:
+    """U117 (E6-3/G9) extension point: the exact "is this persona id named in
+    this text" token-match rule ``score_d4``'s bundle-aware branch has always
+    used, extracted as a standalone reusable predicate (previously inlined
+    only inside ``score_d4``). Pure function, no state, no I/O — a sibling
+    module (``page_qc.py``'s comms-conformance "blend actually used" check,
+    U117) reuses this SAME predicate as its deterministic evidence input
+    instead of re-deriving the token-match rule a second time (one canonical
+    definition of "is this persona id named in this text", not two that can
+    drift apart). ``score_d4`` below now calls this helper verbatim — a pure
+    refactor, zero behavior change (proven by the existing D4 regression
+    suite in ``tests/unit/fab-qc.test.py`` staying green unmodified, plus a
+    new direct test of this helper).
+    """
+    pid = (voice_persona_id or "").strip()
+    if not pid:
+        return False
+    low = (text or "").lower()
+    toks = [t for t in re.split(r"[^a-z0-9]+", pid.lower()) if len(t) > 3]
+    return bool(toks) and any(t in low for t in toks)
+
+
 def score_d4(inp: dict) -> Dim:
     """D4 — Persona grounding (fail-closed).
 
@@ -406,9 +428,7 @@ def score_d4(inp: dict) -> Dim:
     bundle = inp.get("persona_bundle")
     if _bundle_active(bundle):
         voice_pid = (bundle.get("voice_persona_id") or "").strip()
-        low = log.lower()
-        toks = [t for t in re.split(r"[^a-z0-9]+", voice_pid.lower()) if len(t) > 3]
-        voice_hit = bool(toks) and any(t in low for t in toks)
+        voice_hit = voice_persona_grounded(log, voice_pid)
         score = 10.0 if voice_hit else 3.0
         hard = not voice_hit
         observed = f"bundle source={bundle.get('source')}; blend voice persona {voice_pid!r} named in log: {voice_hit}"
