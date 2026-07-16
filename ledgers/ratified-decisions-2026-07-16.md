@@ -231,6 +231,22 @@ D4 and D12 were closable at zero cost because the recommended option was **alrea
 
 *Scope note:* this pass did not audit every `both` unit for the same defect — U44 and U59 surfaced because D8/D9/D15 pointed at them. Whoever next touches the reconciler should sweep all `both`-marked units against both remotes; the count above (fourteen open decisions) may itself be masking more half-built units.
 
+### D15 in detail — the one decision that is a genuine operator call
+
+A follow-up verification pass (findings below independently re-derived from `origin/main`, not accepted from the sub-agent that surfaced them) establishes D15's real state:
+
+**1. The gated steps never merged — confirmed at the code.** `src/app/api/da-challenges/route.ts` on Command Center `origin/main` exports exactly one handler: `['GET']`. There is no `POST` and no `PATCH`. U55c *is* the POST/PATCH write path, so its absence is direct proof the D15-gated work did not land. The route predates the D-J1 spec entirely (`8b7dc74`, `5bd9ba3`).
+
+**2. The onboarding half shipped a bridge with no landing pad — a dangling cross-repo integration.** U59's merged ONB slice includes U55d, `shared-utils/devils-advocate-bridge.py`, whose stated job is to POST the generator's JSON to the Command Center's `POST /api/da-challenges`. That endpoint accepts no POST. So the half of U59 that *is* merged and marked `verified` cannot function end-to-end today — it posts to a handler that does not exist. This is the concrete cost of the half-built-unit blind spot recorded above.
+
+**3. The visibility question has real client blast radius — it is not theoretical.** `src/components/ceo-board/DevilsAdvocateFeed.tsx` fetches `GET /api/da-challenges` and is mounted directly in `src/app/ceo-board/page.tsx`. It is **default-on with no feature flag** gating it, and the Command Center *is* the client's own dashboard (per `src/middleware.ts`'s own doctrine: the dashboard is "the closeout reveal" to the client, not an operator-only console; there is no operator-vs-client role split inside the app). So if challenge content flows, it reaches a client-reachable surface by default.
+
+**4. Migration 065's "[INTERNAL]" label does NOT settle the question.** What it provably enforces is: the agent's *description string* stays operator-facing; the agent is excluded from client-facing agent pickers/rosters; and `ensureWorkspaceHeadAgents()` never promotes a trio agent to department head. It does **not** state that challenge *content* must be hidden. The ambiguity D-J1 was written to resolve is real and unresolved — which is exactly why the spec says *"hence ratification, not silent interpretation."*
+
+**5. Unproven-but-flagged (recorded honestly as a hypothesis, NOT a finding):** the GET route's own demo-seed `INSERT INTO da_challenges` names the columns `id, department_id, challenge_text, response_text, status, created_at, response_deadline, resolved_at`, while the only migration that creates that table (id `'020'`) creates `id, task_id, campaign_id, trigger_type, challenge, specific_concern, assumptions, severity, confidence, status, dismissal_reason, outcome, created_at, resolved_at`. Four of the insert's columns (`department_id`, `challenge_text`, `response_text`, `response_deadline`) do not exist in the schema; migration `024` is commented as "reserved" to reconcile this and was never implemented. **This is static analysis of code + migrations only — it was NOT executed against a live database this pass, so it is a hypothesis, not a proven runtime defect.** If correct, the feed would error rather than surface content. Whoever builds U55c must resolve this schema question first regardless of how D15 is ruled.
+
+**Net:** D15 cannot be closed by ratifying the status quo (the status quo is the pre-spec state, and it contradicts the recommendation on the lifecycle sub-part). Both sub-parts gate unbuilt work. Sub-part (i) is a genuine product-policy call about what a client sees, on a surface that is client-reachable by default — the one item in this entire pass that is properly the operator's to decide rather than an agent's.
+
 ## Files touched recording these decisions
 
 - `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` — U65 row, U64 row (edited in place, old evidence preserved verbatim).
