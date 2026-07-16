@@ -4,6 +4,15 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.61.0] - 2026-07-16 - GK-27/U89: relationship lattice pointer + citation tripwire
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`). This unit does not touch `skill-version.txt`.
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map). `qc-ghl-install-pages.sh` now asserts that pointer is present AND that this skill's own owned edges — the funnel_matcher tooling backing Gap C, the "Full-Funnel Pipeline Integration (Skill 44 seam)" heading, and the four-file browser build-rail set — still cite real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No code/behavior change to page building itself.
+
 ## [v19.60.0] - 2026-07-14 - U22/B-U8: guards + fixtures + operator-box block proof for the persona-unification block
 
 > Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at

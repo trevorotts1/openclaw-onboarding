@@ -1,5 +1,13 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.13 - 2026-07-16 — Skill 6 blended-persona-kanban v2, U89/GK-27: relationship lattice pointer + citation tripwire
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map). `qc-skill35.sh` now asserts that pointer is present AND that every edge this skill owns — the posting-rail tier ladder (INSTALL.md), the Gap C weekly-landing-page citation (CHANGELOG.md), the reciprocal inbound-ownership cross-reference (SKILL.md Phase 4), and the Graphics-department image-handoff gate (INSTRUCTIONS.md) — still cite real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No behavior change to campaign publishing itself.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.12 -> v2.9.13; SKILL.md frontmatter version v2.9.12 -> v2.9.13 (must match the frontmatter-version-guard).
+
 ## v2.9.12 - 2026-07-15 — Skill 6 blended-persona-kanban v2, U88/GK-26: content→conversation loop OFFLINE/FIXTURE proof run
 
 ### Added
