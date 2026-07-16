@@ -43,7 +43,7 @@ Spec: `skill58-podbean-server-side-publish-SPEC-v1-2026-07-16.md` (Section 5 = u
 | U9 | Scheduling-status truth check (`draft` vs `future`) proven live | — | pending | GREENFIELD — **DEFECT CONFIRMED PRESENT ON LIVE**. Fresh re-read of `Podbean — Publish Episode` (httpRequest) body param: `status = ={{ $json.publish_timestamp > Math.floor(Date.now() / 1000) ? 'draft' : 'publish' }}` → future dates STILL send `draft`, while the repo script uses Podbean's documented `future`. Unfixed. Feeds D2 (drafts census). | 2026-07-16T12:35Z |
 | U10 | Notification routing for refusals → OPERATOR only | — | pending | GREENFIELD. Live graph has `Gmail — Entry Guard Refused Notification` on the refusal path (emails the CLIENT today per spec 1.4) — U10 rewires it to the operator. | 2026-07-16T12:35Z |
 | U11 | Media preflight (HEAD audio_url + image_url before OAuth) | — | pending | GREENFIELD. No preflight node in the 24-node graph; Download nodes fire without a HEAD check. | 2026-07-16T12:35Z |
-| U12 | Cutover + sanitized archive + gate-test cleanup (HYBRID: n8n leg + REPO leg) | — | pending | GREENFIELD. `aN6MrIJ4zLeKS047` "Podbean Gate Test (TEMP - delete at cutover)" fresh re-read: HTTP 200, ACTIVE, 2 nodes, updatedAt 2026-07-10T17:42:54Z — NOT deleted. Repo leg target file not yet present. | 2026-07-16T12:35Z |
+| U12 | Cutover + sanitized archive + gate-test cleanup (HYBRID: n8n leg + REPO leg) | [Sonnet 5 x1] S58-U12-repo build | in_progress | **n8n leg VERIFIED (live-API state).** Fresh `n8n_get_workflow(aN6MrIJ4zLeKS047, mode=minimal)` this pass returned `{"success":false,"error":"Not Found","code":"NOT_FOUND"}` — the gate-test workflow is DELETED (supersedes the 12:35Z row above, which predates the cutover). Live `TkL0rn2SH3q32SeB` re-read this pass (`mode=structure` then `mode=full`; never `mode=active`/`filtered` on the two NEVER-PRINT workflows, and those two were not touched): `active:true`, `activeVersionId`/`versionId` `e13b18be-2b37-49a8-b935-39a0520625bd`, `updatedAt 2026-07-16T14:29:30.615Z`, 51 nodes, 35 connections — matches the operator-supplied audit figures (spec-claim cross-checked against live, not assumed). **Repo leg IN PROGRESS this commit**: sanitized export committed to `58-podcast-production-engine/config/n8n/podbean-publish.workflow.json` (pinData removed — the live pinned example carried a real client name/email/channel id, none of it committed; credentials present only as the API's native `{id,name}` reference pairs, e.g. `Podcast Publish Gate` id `8HTB7khC7fDcRVhN`, value never read or printed) + `config/n8n/README.md` updated to describe the export and correct its now-stale "two hardening gaps open" section (both closed live). Verified locally with `scripts/qc-assert-no-n8n-plaintext-secrets.sh` (PASS) and `scripts/qc-assert-no-client-names.sh` (PASS, structural mode — no roster on this box) before commit. Branch `ledger/skill58-podbean-proxy`, rebased onto `origin/main` tip `a7ca430f` (past `v20.0.65`). Repo leg becomes `verified` only once this exact SHA is an ancestor of `origin/main` per this ledger's own definition — that merge is the serial merge-writer's action, not this pass's. | 2026-07-16T19:55Z |
 | U13 | NEW workflow `podcast-standing-check` (webhook + header cred + roster lookup + respond) | — | pending | GREENFIELD. Name scan across ALL 286 live workflows (paged, HTTP 200): no standing-check workflow exists. No Podbean broker workflow exists either (consistent with the dormant-asset history). | 2026-07-16T12:35Z |
 | U14 | `publish-proxy` transport in `podbean_publish.sh` (proxy → broker → local) | — | pending | GREENFIELD — **THE "IN-FLIGHT" BRANCH DOES NOT EXIST**. `git for-each-ref refs/` over local + remote after `git fetch --prune`: ZERO refs matching `publish-proxy` / `for-real` / `skill58` / `proxy`. Content scan of `origin/main:58-podcast-production-engine/scripts/podbean_publish.sh` (594 lines) @ a2c425da: `PODBEAN_PUBLISH_WEBHOOK_URL`=0, `publish-proxy`=0, `publish_proxy`=0, `PODBEAN_PUBLISH_TOKEN`=0; `PODBEAN_BROKER_WEBHOOK_URL`=5, `PODBEAN_CLIENT_ID`=7 → transport chain is still broker → local ONLY. | 2026-07-16T12:35Z |
 | U15 | Identity + endpoint provisioning (install.sh injection + credential checklist + validators) | — | pending | PARTIAL SUBSTRATE (unit still greenfield): the broker-pair injection at install.sh lines 1146-1169 + credential list lines 2086-2100 is the REUSE POINT per spec 1.3. New proxy vars not present (0 occurrences on origin/main). | 2026-07-16T12:35Z |
@@ -105,3 +105,34 @@ Consequences the orchestrator must act on:
 4. Every episode published through this path today bypasses the entire security model this
    spec exists to build. That is the argument FOR flipping fast — and the reason the flip must
    be paired with same-session provisioning.
+
+---
+
+## FRESH LIVE RE-READ FINDING (2026-07-16T19:50Z) — U4-U11's GREENFIELD rows above are STALE
+
+This pass's assignment was S58-U12-repo only (Lane 1 unit 1: the repo leg of U12). While
+verifying U12's n8n leg (confirming the gate-test workflow's deletion), a fresh
+`n8n_get_workflow(TkL0rn2SH3q32SeB, mode=structure)` then `mode=full` read (never
+`mode=active`/`filtered`, and the two NEVER-PRINT workflows `BqRLOn8TP1wPaAzn` /
+`COfgxe6HXRcWOleV` were not touched) shows the live workflow already carries, by node/graph
+inspection: header-auth on the webhook (`Podcast Publish Gate` credential — U4 shape), a
+"Standing Gate" node chain doing roster lookup + `effective_channel_id` routing (U5 shape), the
+GK-01 guard extended with `contract_version`/`client_last_name`/`idempotency_key`/https-only/
+length checks (U6 shape), `responseMode: responseNode` + four `Respond to Webhook` nodes on
+every branch (U7 shape), an "Idempotency" node chain against a data table (U8 shape), a
+`Podbean — Publish Episode` node whose status expression now reads
+`publish_timestamp > now() ? 'future' : 'publish'` with an inline comment citing "U9 fix
+2026-07-16" (U9 shape — supersedes the U9 row's "DEFECT CONFIRMED PRESENT" evidence, which
+predates this), refusal-path Gmail nodes hardcoded to `trevor@blackceo.com` rather than the
+client (U10 shape), and a "Media Preflight" HEAD-check node pair before the OAuth call (U11
+shape). `versionCounter: 79` on the live read (i.e. 79 recorded edits) is consistent with a
+completed multi-unit build, not a single edit.
+
+**This is graph-shape evidence, not each unit's own accept-criteria proof** (e.g. U9's own
+acceptance needs quoted before/after Podbean API reads of a real scheduled episode; U5's needs
+three live refusal executions; U10's needs a refusal execution showing zero client email). The
+rows above are deliberately left `pending` rather than flipped to `verified` — that determination
+is each unit's own owner's job, done against its own numbered accept-criteria, not inferred from
+this session's structural read. Flagging here only so the next agent does not re-build what
+graph inspection shows already exists, and re-verifies against real executions before closing
+any of U4-U11.

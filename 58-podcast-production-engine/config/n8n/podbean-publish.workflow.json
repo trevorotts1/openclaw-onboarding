@@ -1,0 +1,964 @@
+{
+  "id": "TkL0rn2SH3q32SeB",
+  "name": "create podcast episode from openclaw",
+  "description": null,
+  "active": true,
+  "createdAt": "2026-04-13T13:31:51.487Z",
+  "updatedAt": "2026-07-16T14:29:30.615Z",
+  "versionId": "e13b18be-2b37-49a8-b935-39a0520625bd",
+  "activeVersionId": "e13b18be-2b37-49a8-b935-39a0520625bd",
+  "tags": [],
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "podbean-publish",
+        "options": {},
+        "authentication": "headerAuth",
+        "responseMode": "responseNode"
+      },
+      "id": "9a1c8140-c6c0-4dc2-be47-615c2bd3a5c7",
+      "name": "Webhook — Receive Podcast Payload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [-4976, 1536],
+      "webhookId": "bc-podbean-publisher-v2",
+      "notesInFlow": true,
+      "notes": "ENTRY POINT — Receives POST from client OpenClaw/Skynet instance.\nU7 (2026-07-16): SYNCHRONOUS response (responseMode=responseNode). The caller's HTTP connection is held open until a Respond to Webhook node fires on whichever branch this execution takes (entry-guard refusal 422, standing/identity refusal 403, publish success 200, publish failure 500). No longer fire-and-forget.\n\nREQUIRED FIELDS IN BODY:\n- podcast_id      : Podbean channel identifier\n- audio_url       : GHL Media Library URL for episode MP3\n- image_url       : GHL Media Library URL for cover art (JPEG or PNG only, square 1:1, min 1400x1400px)\n- title           : Episode title\n- description     : Show notes (plain text or HTML)\n- publish_date    : ISO format e.g. 2025-01-28T09:00:00\n- client_email    : Where to send the success or failure notification\n\nOPTIONAL FIELDS (defaults applied if omitted):\n- episode_type    : full | trailer | bonus  (default: full)\n- explicit        : clean | explicit        (default: clean)\n\nIMAGE FORMAT RULES:\nJPEG (.jpg) and PNG (.png) are the only accepted formats.\nWebP, GIF, and all other formats will be rejected at the Prepare Image Upload node\nbefore any Podbean API calls are made.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8HTB7khC7fDcRVhN",
+          "name": "Podcast Publish Gate"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Convert ISO publish_date string to Unix timestamp (seconds)\n// Podbean publish_timestamp field requires Unix epoch integer, not ISO string\n// Also builds a human-readable EST date string for the client confirmation email\n\nconst wh = $('Webhook — Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst dateStr = body.publish_date;\n\nif (!dateStr) {\n  throw new Error('Missing required field: publish_date. Expected ISO format: 2025-01-28T09:00:00. Received keys: ' + Object.keys(body).join(', '));\n}\n\nconst dt = new Date(dateStr);\nconst publish_timestamp = Math.floor(dt.getTime() / 1000);\n\nif (isNaN(publish_timestamp)) {\n  throw new Error('Invalid publish_date value: ' + dateStr + '. Use ISO format: 2025-01-28T09:00:00');\n}\n\nconst publish_date_readable = dt.toLocaleString('en-US', {\n  timeZone: 'America/New_York',\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit',\n  timeZoneName: 'short'\n});\n\nreturn [{ json: { publish_timestamp, publish_date_readable } }];"
+      },
+      "id": "9ee80fad-fbe8-441f-9076-ba69184d4367",
+      "name": "Compute Timestamp — Convert Publish Date to Unix",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4688, 1536],
+      "notes": "Converts ISO publish_date from webhook to Unix epoch seconds.\nPodbean requires Unix timestamp for scheduled publishing via publish_timestamp field.\nAlso produces a formatted EST date string used in the client notification email."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/oauth/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "grant_type", "value": "client_credentials" },
+            { "name": "podcast_id", "value": "={{ $('Standing Gate — Determine Verdict').item.json.effective_channel_id }}" }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "07c0a06d-ab1b-42bb-bec4-28535f881afb",
+      "name": "Podbean OAuth — Get Access Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-4416, 1536],
+      "notes": "Authenticates with Podbean API using BlackCEO platform credentials.\nThe podcast_id parameter scopes this access token to the specific client channel.\nToken is short-lived and required for all subsequent Podbean API calls in this workflow.\nCredentials are held here — clients never see the client_id or client_secret.",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "EZApXhsHExXctBrB",
+          "name": "Podbean BlackCEO (client_credentials)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.podbean.com/v1/episodes",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $json.access_token }}" },
+            { "name": "offset", "value": "0" },
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55448e28-246b-4cf2-b041-f12bdcd4350f",
+      "name": "Podbean — Fetch Recent Episodes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-4128, 1536],
+      "notes": "Fetches the 10 most recent episodes from the client Podbean channel.\nUsed to determine the highest existing episode number for sequential numbering.\nFetches 10 rather than 1 to account for episodes that may have been published out of chronological order.\nEliminates the need for a separate tracking table in n8n."
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Determine the next sequential episode number from the Podbean episode list\n// Scans all returned episodes for the highest episode_number value\n// Falls back to total episode count if no episode_number values are set on existing episodes\n// Edge case: starts at 1 for brand new channels with zero published episodes\n\nconst data = $input.first().json;\nconst episodes = data.episodes || [];\nlet maxEpisodeNumber = 0;\n\nfor (const ep of episodes) {\n  const num = parseInt(ep.episode_number || '0', 10);\n  if (!isNaN(num) && num > maxEpisodeNumber) {\n    maxEpisodeNumber = num;\n  }\n}\n\nlet nextNumber;\n\nif (maxEpisodeNumber > 0) {\n  // Use highest found episode_number + 1\n  nextNumber = maxEpisodeNumber + 1;\n} else {\n  // No episode numbers set on existing episodes — fall back to total count\n  nextNumber = (parseInt(data.total || '0', 10)) + 1;\n}\n\n// Safety net: brand new channel with no episodes starts at 1\nif (!nextNumber || isNaN(nextNumber) || nextNumber <= 0) {\n  nextNumber = 1;\n}\n\nreturn [{ json: { next_episode_number: nextNumber } }];"
+      },
+      "id": "f854d530-ecb5-42cb-b9aa-477e74ea32e3",
+      "name": "Compute Next Episode Number — Increment From Last",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3856, 1536],
+      "notes": "Scans fetched episodes for the highest episode_number and adds 1.\nFallback: uses total episode count + 1 if no episode numbers are set.\nEdge case: starts at 1 for brand new channels with no episodes.\nPulls directly from Podbean so the count is always accurate — no drift from manual publishes."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "cfg-01", "name": "podcast_id", "value": "={{ $('Standing Gate — Determine Verdict').item.json.effective_channel_id }}", "type": "string" },
+            { "id": "cfg-02", "name": "audio_url", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.body.audio_url }}", "type": "string" },
+            { "id": "cfg-03", "name": "image_url", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.body.image_url }}", "type": "string" },
+            { "id": "cfg-04", "name": "title", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.body.title }}", "type": "string" },
+            { "id": "cfg-05", "name": "description", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.body.description }}", "type": "string" },
+            { "id": "cfg-06", "name": "client_email", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.body.client_email }}", "type": "string" },
+            { "id": "cfg-07", "name": "episode_type", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.episode_type || 'full' }}", "type": "string" },
+            { "id": "cfg-08", "name": "explicit", "value": "={{ $('Webhook — Receive Podcast Payload').item.json.explicit || 'clean' }}", "type": "string" },
+            { "id": "cfg-09", "name": "publish_timestamp", "value": "={{ $('Compute Timestamp — Convert Publish Date to Unix').item.json.publish_timestamp }}", "type": "number" },
+            { "id": "cfg-10", "name": "publish_date_readable", "value": "={{ $('Compute Timestamp — Convert Publish Date to Unix').item.json.publish_date_readable }}", "type": "string" },
+            { "id": "cfg-11", "name": "episode_number", "value": "={{ $('Compute Next Episode Number — Increment From Last').item.json.next_episode_number }}", "type": "number" },
+            { "id": "cfg-12", "name": "access_token", "value": "={{ $('Podbean OAuth — Get Access Token').item.json.access_token }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "afc0fcef-67b5-41ef-a103-07fa38947e63",
+      "name": "Set Config — Consolidate Workflow Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-3568, 1536],
+      "notes": "SINGLE SOURCE OF TRUTH for all variables used throughout this workflow.\nPulls from: webhook payload, computed timestamp, episode number calculation, and OAuth token.\nAll downstream nodes reference this node for metadata rather than reaching back to individual upstream nodes.\nDefaults applied here: episode_type defaults to 'full', explicit defaults to 'clean'."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.audio_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "audio" } } }
+      },
+      "id": "400f5f95-d15c-4086-a795-cda8a3cdad36",
+      "name": "Download Audio — Fetch From GHL URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-3296, 1536],
+      "notes": "Downloads the episode audio file as binary from the GHL Media Library URL.\nGHL Media Library URLs are publicly accessible without auth headers — reliable for direct binary download.\nOutput is stored as binary property 'audio' for use in the Podbean S3 upload chain."
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Package audio binary for Podbean S3 upload\n// Calculates actual byte filesize — Podbean requires this upfront in uploadAuthorize\n// to pre-allocate the correct amount of S3 storage space\n// Builds a zero-padded filename for consistent channel organization\n\nconst audioBinary = $input.first().binary?.audio;\n\nif (!audioBinary) {\n  throw new Error('No audio binary found. Verify the GHL audio_url is publicly accessible and returns a valid MP3 file.');\n}\n\nconst episode_number = $('Set Config — Consolidate Workflow Variables').first().json.episode_number;\nconst access_token = $('Set Config — Consolidate Workflow Variables').first().json.access_token;\n\n// Calculate byte size from base64 binary for Podbean storage pre-allocation\nconst buffer = Buffer.from(audioBinary.data, 'base64');\nconst filesize = buffer.length;\n\n// Zero-pad episode number for consistent filename ordering across the channel\nconst paddedEpisode = String(episode_number).padStart(4, '0');\n\nreturn [{\n  json: {\n    audioFilename: `episode_${paddedEpisode}.mp3`,\n    audioFilesize: filesize,\n    audioContentType: 'audio/mpeg',\n    access_token\n  },\n  binary: { audio: audioBinary }\n}];"
+      },
+      "id": "bc50b869-4824-48ea-a769-4f2391a64d86",
+      "name": "Prepare Audio Upload — Package for Podbean S3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3008, 1536],
+      "notes": "Packages audio binary for S3 upload.\nCalculates byte filesize — Podbean requires this to pre-allocate S3 storage in the uploadAuthorize step.\nBuilds zero-padded filename (episode_0001.mp3) for consistent channel organization.\nPasses binary through explicitly to prevent data loss when flowing into the next JSON node."
+    },
+    {
+      "parameters": {
+        "url": "https://api.podbean.com/v1/files/uploadAuthorize",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $json.access_token }}" },
+            { "name": "filename", "value": "={{ $json.audioFilename }}" },
+            { "name": "filesize", "value": "={{ $json.audioFilesize }}" },
+            { "name": "content_type", "value": "audio/mpeg" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8377eff9-66ac-4a0c-966c-7250167c24a9",
+      "name": "Podbean — uploadAuthorize Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-2736, 1536],
+      "notes": "Requests a presigned S3 upload URL from Podbean for the audio file.\nPodbean pre-allocates S3 storage using the filename and filesize provided.\nReturns:\n  presigned_url — the S3 URL where we PUT the file\n  file_key      — Podbean's internal S3 identifier, becomes media_key in the publish call"
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Reattach audio binary to the presigned URL data\n// n8n HTTP Request nodes drop binary data when they return a JSON response\n// This node retrieves the audio binary from Prepare Audio Upload and reunites it\n// with the presigned URL from uploadAuthorize so the PUT node has both\n\nconst authData = $input.first().json;\nconst audioBinary = $('Prepare Audio Upload — Package for Podbean S3').first().binary?.audio;\n\nif (!audioBinary) {\n  throw new Error('Audio binary lost in transit. Check Prepare Audio Upload node output.');\n}\n\nif (!authData.presigned_url) {\n  throw new Error('No presigned_url returned from Podbean uploadAuthorize Audio. Check access token validity and file parameters.');\n}\n\nreturn [{\n  json: {\n    presigned_url: authData.presigned_url,\n    file_key: authData.file_key\n  },\n  binary: { audio: audioBinary }\n}];"
+      },
+      "id": "b63d5173-dc59-4218-b194-401283d056bc",
+      "name": "Merge Audio Binary — Reattach to Presigned URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2448, 1536],
+      "notes": "n8n HTTP Request nodes drop binary data when processing JSON responses.\nRetrieves audio binary from Prepare Audio Upload and reunites it with the presigned URL from uploadAuthorize.\nWithout this merge the PUT node would have a target URL but no file content to upload."
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.presigned_url }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "audio/mpeg" } ] },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "audio",
+        "options": {}
+      },
+      "id": "44f938af-43db-4902-8e0d-2a7bdf95185e",
+      "name": "PUT Audio — Upload to Podbean S3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-2176, 1536],
+      "notes": "Uploads episode MP3 binary directly to Podbean S3 via the presigned URL.\nThis is a direct S3 PUT — authentication is encoded in the presigned URL itself, no additional auth headers needed.\nA successful 200 or 204 response means the file_key from uploadAuthorize is now a valid media_key for publishing."
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Config — Consolidate Workflow Variables').item.json.image_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "image" } } }
+      },
+      "id": "872a9699-1a3f-4a44-810f-e585b5c40b03",
+      "name": "Download Image — Fetch From GHL URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1888, 1536],
+      "notes": "Downloads the cover art binary from the GHL Media Library URL.\nPodbean cannot accept external image URLs for episode artwork — the image must be uploaded to Podbean's own S3 and referenced by a logo_key.\nThis download initiates that upload chain."
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Package cover image binary for Podbean S3 upload\n// Detects image format (JPEG or PNG) from binary mimeType — does NOT assume JPEG\n// Podbean + Apple Podcasts accept JPEG and PNG only. WebP, GIF, and other formats\n// are rejected by Apple Podcasts downstream so we fail fast here with a clear message.\n// Calculates byte filesize for the uploadAuthorize request.\n// Captures and carries forward the audio file_key as media_key so Set Upload Keys\n// can access it cleanly without a long back-reference chain.\n\nconst imageOutput = $input.first();\nconst imageBinary = imageOutput.binary?.image;\n\nif (!imageBinary) {\n  throw new Error('No image binary found. Verify the GHL image_url is publicly accessible and returns a valid image file.');\n}\n\n// Detect format from MIME type reported by the download\nconst mimeType = (imageBinary.mimeType || '').toLowerCase();\n\nlet imageContentType;\nlet imageExtension;\n\nif (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {\n  imageContentType = 'image/jpeg';\n  imageExtension = 'jpg';\n} else if (mimeType === 'image/png') {\n  imageContentType = 'image/png';\n  imageExtension = 'png';\n} else {\n  // WebP, GIF, TIFF, BMP, AVIF etc. are all rejected by Apple Podcasts\n  // Podbean enforces Apple's spec — these will fail at distribution\n  throw new Error(\n    'Unsupported image format: ' + mimeType + '. ' +\n    'Podbean and Apple Podcasts accept JPEG (.jpg) and PNG (.png) only. ' +\n    'WebP, GIF, and other formats will be rejected. Please re-export the cover art as JPEG or PNG and re-upload to GHL.'\n  );\n}\n\nconst episode_number = $('Set Config — Consolidate Workflow Variables').first().json.episode_number;\nconst access_token = $('Set Config — Consolidate Workflow Variables').first().json.access_token;\n\n// Carry audio file_key forward — it becomes media_key in the publish call\nconst media_key = $('Podbean — uploadAuthorize Audio').first().json.file_key;\n\n// Calculate byte size from base64 binary\nconst buffer = Buffer.from(imageBinary.data, 'base64');\nconst filesize = buffer.length;\n\nconst paddedEpisode = String(episode_number).padStart(4, '0');\n\nreturn [{\n  json: {\n    imageFilename: `episode_${paddedEpisode}_cover.${imageExtension}`,\n    imageFilesize: filesize,\n    imageContentType,\n    access_token,\n    media_key\n  },\n  binary: { image: imageBinary }\n}];"
+      },
+      "id": "e49c8579-594e-4069-99b4-dab9fcd0450c",
+      "name": "Prepare Image Upload — Package for Podbean S3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1616, 1536],
+      "notes": "Packages cover image binary for Podbean S3 upload.\nDetects image format from the binary mimeType — dynamically handles JPEG and PNG.\nREJECTS WebP, GIF, and all other formats with a clear error message — Apple Podcasts only accepts JPEG and PNG and Podbean enforces this downstream.\nCalculates byte filesize for Podbean uploadAuthorize pre-allocation.\nCaptures audio file_key from uploadAuthorize Audio and carries it forward as media_key to keep Set Upload Keys clean."
+    },
+    {
+      "parameters": {
+        "url": "https://api.podbean.com/v1/files/uploadAuthorize",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $json.access_token }}" },
+            { "name": "filename", "value": "={{ $json.imageFilename }}" },
+            { "name": "filesize", "value": "={{ $json.imageFilesize }}" },
+            { "name": "content_type", "value": "={{ $json.imageContentType }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "77baa125-6bef-403e-9ad4-9d0dd9670662",
+      "name": "Podbean — uploadAuthorize Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1328, 1536],
+      "notes": "Requests a presigned S3 URL from Podbean for the cover image upload.\nSame pattern as uploadAuthorize Audio.\nReturns:\n  presigned_url — the S3 URL where we PUT the image\n  file_key      — Podbean's internal S3 identifier, becomes logo_key in the publish call"
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: Reattach image binary to presigned URL data\n// Same pattern as Merge Audio Binary — HTTP Request nodes drop binaries on JSON responses\n// Retrieves image binary from Prepare Image Upload and reunites it with\n// the presigned URL from uploadAuthorize Image for the S3 PUT upload\n\nconst authData = $input.first().json;\nconst imageBinary = $('Prepare Image Upload — Package for Podbean S3').first().binary?.image;\n\nif (!imageBinary) {\n  throw new Error('Image binary lost in transit. Check Prepare Image Upload node output.');\n}\n\nif (!authData.presigned_url) {\n  throw new Error('No presigned_url returned from Podbean uploadAuthorize Image. Check access token and file parameters.');\n}\n\nreturn [{\n  json: {\n    presigned_url: authData.presigned_url,\n    file_key: authData.file_key\n  },\n  binary: { image: imageBinary }\n}];"
+      },
+      "id": "99038894-e5b3-4f93-8ab0-0957856da2bb",
+      "name": "Merge Image Binary — Reattach to Presigned URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1056, 1536],
+      "notes": "Retrieves image binary from Prepare Image Upload and reattaches it to the presigned URL from uploadAuthorize Image.\nIdentical pattern to the audio merge — required because binary data does not survive HTTP Request JSON response nodes.\nWithout this merge the PUT node has a target URL but no image content."
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.presigned_url }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "={{ $('Prepare Image Upload — Package for Podbean S3').item.json.imageContentType }}" } ] },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "image",
+        "options": {}
+      },
+      "id": "76c774a8-702b-41a5-926d-5fa6937fc0d6",
+      "name": "PUT Image — Upload to Podbean S3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-768, 1536],
+      "notes": "Uploads cover image to Podbean S3 via presigned URL.\nContent-Type header is dynamic — set from the detected format in Prepare Image Upload (image/jpeg or image/png).\nAfter successful upload, the file_key from uploadAuthorize Image is a valid logo_key for the episode publish call."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "keys-01", "name": "media_key", "value": "={{ $('Prepare Image Upload — Package for Podbean S3').item.json.media_key }}", "type": "string" },
+            { "id": "keys-02", "name": "logo_key", "value": "={{ $('Podbean — uploadAuthorize Image').item.json.file_key }}", "type": "string" },
+            { "id": "keys-03", "name": "access_token", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.access_token }}", "type": "string" },
+            { "id": "keys-04", "name": "podcast_id", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.podcast_id }}", "type": "string" },
+            { "id": "keys-05", "name": "title", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.title }}", "type": "string" },
+            { "id": "keys-06", "name": "description", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.description }}", "type": "string" },
+            { "id": "keys-07", "name": "episode_number", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.episode_number }}", "type": "number" },
+            { "id": "keys-08", "name": "publish_timestamp", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.publish_timestamp }}", "type": "number" },
+            { "id": "keys-09", "name": "publish_date_readable", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.publish_date_readable }}", "type": "string" },
+            { "id": "keys-10", "name": "episode_type", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.episode_type }}", "type": "string" },
+            { "id": "keys-11", "name": "explicit", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.explicit }}", "type": "string" },
+            { "id": "keys-12", "name": "client_email", "value": "={{ $('Set Config — Consolidate Workflow Variables').item.json.client_email }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8181d800-bc64-4c08-b983-e26b7a5f2fc4",
+      "name": "Set Upload Keys — Assemble Publish Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-496, 1536],
+      "notes": "Consolidates everything needed for the Podbean publish API call into one clean object.\nmedia_key = Podbean S3 identifier for the uploaded audio file (from uploadAuthorize Audio)\nlogo_key  = Podbean S3 identifier for the uploaded cover image (from uploadAuthorize Image)\nBoth keys are only available AFTER their respective file uploads complete, which is why this Set node exists here rather than in Set Config."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "check-publish-success",
+              "leftValue": "={{ $json.episode?.id || $json.id || '' }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ba1f21d8-2806-4f15-88c6-73122e0b34c7",
+      "name": "IF — Episode Created Successfully",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-16, 1568],
+      "notes": "Checks for a valid episode ID in the Podbean response. Works for BOTH published episodes AND scheduled drafts.\nOutput 0 (True)  — episode ID present: create succeeded.\nOutput 1 (False) — no episode ID: create failed."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Upload Keys — Assemble Publish Payload').item.json.client_email }}",
+        "subject": "={{ '\\u274C Podcast Publish Failed — Episode #' + $('Set Upload Keys — Assemble Publish Payload').item.json.episode_number }}",
+        "message": "(HTML notification template — reads all fields via expressions off 'Set Upload Keys — Assemble Publish Payload' and the Podbean response; contains no literal client data)",
+        "options": {}
+      },
+      "id": "a9a6339e-bc4c-48e2-8fec-1f4c39ec3f48",
+      "name": "Gmail — Failure Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [352, 1792],
+      "webhookId": "e826cfa5-e894-4cea-9bb9-8584f9b76926",
+      "credentials": {
+        "gmailOAuth2": { "id": "I2d9UsGSGeMXbitw", "name": "trevor@blackceo.com" }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Sends failure notification when Podbean returns no valid episode ID."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/episodes",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/x-www-form-urlencoded" } ] },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $json.access_token }}" },
+            { "name": "podcast_id", "value": "={{ $json.podcast_id }}" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "content", "value": "={{ $json.description }}" },
+            { "name": "status", "value": "={{ $json.publish_timestamp > Math.floor(Date.now() / 1000) ? 'future' : 'publish' }}" },
+            { "name": "type", "value": "public" },
+            { "name": "media_key", "value": "={{ $json.media_key }}" },
+            { "name": "logo_key", "value": "={{ $json.logo_key }}" },
+            { "name": "publish_timestamp", "value": "={{ $json.publish_timestamp }}" },
+            { "name": "episode_number", "value": "={{ $json.episode_number }}" },
+            { "name": "apple_episode_type", "value": "={{ $json.episode_type }}" },
+            { "name": "content_explicit", "value": "={{ $json.explicit }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "009dd5ea-aca9-4d47-aa91-79ecbd95e9de",
+      "name": "Podbean — Publish Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-256, 1552],
+      "notes": "STATUS LOGIC (U9 fix 2026-07-16 — was 'draft', which Podbean's own API doc + Help Center confirm does NOT auto-publish; a scheduled episode must use 'future'):\nFuture timestamp: status='future' (Podbean auto-publishes at publish_timestamp)\nPast/now timestamp: status='publish' (immediate release)\nParity with repo script 58-podcast-production-engine/scripts/podbean_publish.sh (lines 419-431), which already used 'future' correctly."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Upload Keys — Assemble Publish Payload').item.json.client_email }}",
+        "subject": "={{ $json.episode?.permalink_url ? '\\u2705 Episode #' + $('Set Upload Keys — Assemble Publish Payload').item.json.episode_number + ' Is Live — ' + $('Set Upload Keys — Assemble Publish Payload').item.json.title : '\\u2705 Episode #' + $('Set Upload Keys — Assemble Publish Payload').item.json.episode_number + ' Scheduled — ' + $('Set Upload Keys — Assemble Publish Payload').item.json.title }}",
+        "message": "(HTML notification template — reads all fields via expressions off 'Set Upload Keys — Assemble Publish Payload' and the Podbean response; contains no literal client data)",
+        "options": {}
+      },
+      "id": "868f7d97-845c-4811-a1e1-058fef592897",
+      "name": "Gmail — Success Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [384, 1488],
+      "webhookId": "0c7a8727-0701-4b41-a690-cb6f0cc0752a",
+      "credentials": {
+        "gmailOAuth2": { "id": "I2d9UsGSGeMXbitw", "name": "trevor@blackceo.com" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "3acd4e8a-0c68-4270-b0f1-5cad58cde176",
+      "name": "Guard — Validate Required Payload Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4850, 1420],
+      "parameters": {
+        "jsCode": "// PURPOSE: Fail-closed entry guard (GK-01 / U63). Runs immediately after the webhook,\n// before ANY Podbean API call (OAuth, fetch, upload, publish), so a payload missing a\n// required field -- most notably image_url, the root cause of the 2026-07-12T03:04Z\n// failure -- never reaches Podbean and audio is never uploaded ahead of a later crash.\n// Replaces the old failure mode where the workflow crashed deep in the pipeline\n// (Download Image node, after audio was already uploaded to Podbean S3).\n//\n// U6 EXTENSION (2026-07-16): upgrades the entry guard to payload contract v2 (spec\n// Section 3). Appended to this lineage, not a rewrite. Adds on top of the original\n// seven required fields: (1) contract_version must be the literal string \"2\" -- wrong\n// or missing value is refused with its own distinct reason so v3 payloads can be\n// introduced later without silently passing this guard; (2) client_last_name and\n// idempotency_key are now REQUIRED (client_last_name feeds U5's roster lookup;\n// idempotency_key feeds U8's server-side idempotency ledger -- both are already read\n// directly off the webhook body by downstream nodes; this guard now also refuses early\n// if either is absent); (3) audio_url/image_url must be https:// specifically -- plain\n// http:// is no longer tolerated (was previously accepted by the ^https?:// check);\n// (4) title <= 200 chars, description <= 3000 chars (spec Section 3 rows 6-7). Output\n// shape for existing consumers is UNCHANGED (guard_ok, guard_error,\n// guard_missing_fields, guard_bad_url_fields, client_email, title) with two new keys\n// appended: guard_contract_version_mismatch, guard_length_errors.\n\nconst wh = $('Webhook — Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\n\nconst REQUIRED = ['podcast_id', 'audio_url', 'image_url', 'title', 'description', 'publish_date', 'client_email', 'client_last_name', 'idempotency_key'];\nconst missing = REQUIRED.filter((key) => {\n  const v = body[key];\n  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\n});\n\nconst URL_FIELDS = ['audio_url', 'image_url'];\nconst badUrls = URL_FIELDS.filter((key) => {\n  const v = body[key];\n  return typeof v === 'string' && v.trim() !== '' && !/^https:\\/\\//i.test(v);\n});\n\n// U6: contract_version is checked separately from \"missing\" so a WRONG value (present\n// but not \"2\") gets its own refusal reason distinct from an ABSENT field.\nconst cv = body.contract_version;\nconst cvPresent = !(cv === null || cv === undefined || (typeof cv === 'string' && cv.trim() === ''));\nconst contractVersionMismatch = cvPresent && String(cv).trim() !== '2';\nif (!cvPresent && !missing.includes('contract_version')) missing.push('contract_version');\n\n// U6: title/description length caps (spec Section 3 rows 6-7).\nconst lengthErrors = [];\nif (typeof body.title === 'string' && body.title.length > 200) {\n  lengthErrors.push('title exceeds 200 chars (' + body.title.length + ')');\n}\nif (typeof body.description === 'string' && body.description.length > 3000) {\n  lengthErrors.push('description exceeds 3000 chars (' + body.description.length + ')');\n}\n\nconst guard_ok = missing.length === 0 && badUrls.length === 0 && !contractVersionMismatch && lengthErrors.length === 0;\n\nlet guard_error = '';\nif (!guard_ok) {\n  const parts = [];\n  if (missing.length) parts.push('missing required field(s): ' + missing.join(', '));\n  if (badUrls.length) parts.push('invalid (must be https://) URL in field(s): ' + badUrls.join(', '));\n  if (contractVersionMismatch) parts.push('unsupported contract_version: \"' + cv + '\" (only \"2\" is accepted)');\n  if (lengthErrors.length) parts.push(lengthErrors.join('; '));\n  guard_error = 'Podcast publish REFUSED at entry guard: ' + parts.join('; ') + '. No Podbean call was made; no audio or image was uploaded.';\n}\n\nreturn [{\n  json: {\n    guard_ok,\n    guard_error,\n    guard_missing_fields: missing,\n    guard_bad_url_fields: badUrls,\n    guard_contract_version_mismatch: contractVersionMismatch,\n    guard_length_errors: lengthErrors,\n    client_email: body.client_email || '',\n    title: body.title || '(untitled)'\n  }\n}];"
+      }
+    },
+    {
+      "id": "38271127-1e51-457c-99e6-1391cb02b076",
+      "name": "IF — Entry Guard Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-4700, 1420],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "check-guard-ok", "leftValue": "={{ $json.guard_ok }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b925d6cf-223f-49d0-8b49-25348ade5fb7",
+      "name": "Gmail — Entry Guard Refused Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-4700, 1680],
+      "parameters": {
+        "sendTo": "trevor@blackceo.com",
+        "subject": "={{ 'Podcast Publish Refused at Entry Guard - ' + $json.title }}",
+        "message": "(HTML notification template — reads all fields via expressions off the entry-guard verdict; contains no literal client data)",
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "I2d9UsGSGeMXbitw", "name": "trevor@blackceo.com" }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "69696d6b-884a-4c64-b568-70d51c2f6b79"
+    },
+    {
+      "id": "35c2bbe0-9ae3-44f4-b93e-e864a0c860ea",
+      "name": "Standing Gate — Normalize Lookup Keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4560, 1250],
+      "parameters": {
+        "jsCode": "// U5 — GOOD-STANDING + IDENTITY GATE (authoritative). Normalizes the roster lookup key pair\n// (client_last_name, client_email) from the webhook payload BEFORE querying\n// podcast_publish_roster, so the Data table node's exact-match filter finds the row\n// regardless of payload casing/whitespace. Runs immediately after the GK-01/U63 entry guard\n// passes and BEFORE any Podbean OAuth/download call (spec Section 5 U5). Email compare is\n// lowercase (roster stores email lowercase); last_name compare is case-insensitive\n// (roster stores last_name trimmed, original case) — handled downstream in the verdict node.\n\nconst wh = $('Webhook — Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\n\nconst raw_last_name = (body.client_last_name || '').toString();\nconst raw_email = (body.client_email || '').toString();\nconst raw_podcast_id = (body.podcast_id || '').toString();\n\nreturn [{\n  json: {\n    lookup_email: raw_email.trim().toLowerCase(),\n    lookup_last_name_lc: raw_last_name.trim().toLowerCase(),\n    raw_podcast_id: raw_podcast_id.trim()\n  }\n}];"
+      }
+    },
+    {
+      "id": "55307a42-2d28-438d-a1ce-efac504e98b4",
+      "name": "Standing Gate — Roster Lookup By Email",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-4400, 1250],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": { "mode": "id", "value": "UWjpksxU2b6TjKow" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "email", "condition": "eq", "keyValue": "={{$json.lookup_email}}" } ] },
+        "returnAll": true,
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "76df6758-940b-4b51-b294-75d525e7e44f",
+      "name": "Standing Gate — Determine Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4240, 1250],
+      "parameters": {
+        "jsCode": "// U5 — GOOD-STANDING + IDENTITY GATE — verdict. Classifies exactly one of:\n// pass | identity_unknown | identity_mismatch | not_in_good_standing.\n// Fail-closed: the roster lookup node has onError=continueRegularOutput, so ANY table-read\n// error surfaces here as zero matched rows, which classifies as identity_unknown (refuse) —\n// never pass. On pass, effective_channel_id is set from the ROSTER row; every downstream\n// Podbean call (OAuth podcast_id, Set Config podcast_id -> Publish Episode podcast_id) is\n// patched to read effective_channel_id, NEVER the raw payload podcast_id (spec Section 5 U5,\n// Section 6 never-co-mingle).\n\nconst keys = $('Standing Gate — Normalize Lookup Keys').first().json;\nconst rows = $input.all().map(item => item.json);\n\nconst matched = rows.filter(r => (r.last_name || '').toString().trim().toLowerCase() === keys.lookup_last_name_lc);\n\nlet verdict, reason_detail, roster_channel_id = '', effective_channel_id = '';\n\nif (matched.length === 0) {\n  verdict = 'identity_unknown';\n  reason_detail = 'no roster row for the given (last_name,email) pair';\n} else {\n  const row = matched[0];\n  roster_channel_id = (row.podbean_channel_id || '').toString().trim();\n  if (!roster_channel_id || roster_channel_id !== keys.raw_podcast_id) {\n    verdict = 'identity_mismatch';\n    reason_detail = 'roster row channel id does not match the payload podcast_id';\n  } else if ((row.good_standing || '').toString() !== 'YES') {\n    verdict = 'not_in_good_standing';\n    reason_detail = 'you are not in good standing';\n  } else {\n    verdict = 'pass';\n    reason_detail = '';\n    effective_channel_id = roster_channel_id;\n  }\n}\n\nreturn [{\n  json: {\n    standing_gate_verdict: verdict,\n    standing_gate_passed: verdict === 'pass',\n    standing_gate_reason_detail: reason_detail,\n    roster_channel_id,\n    payload_channel_id: keys.raw_podcast_id,\n    effective_channel_id\n  }\n}];"
+      }
+    },
+    {
+      "id": "95b40dcf-5659-470e-bb26-efa358ce0ceb",
+      "name": "IF — Standing Identity Gate Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-4080, 1250],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "check-standing-gate-passed", "leftValue": "={{ $json.standing_gate_passed }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f135a9ec-53ae-49cc-bd95-e50369965a01",
+      "name": "Gmail — Standing Identity Gate Refused Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-4080, 1050],
+      "parameters": {
+        "sendTo": "trevor@blackceo.com",
+        "subject": "={{ 'Podcast Publish Refused at Standing/Identity Gate - ' + $json.standing_gate_verdict }}",
+        "message": "(HTML notification template — reads all fields via expressions off the standing-gate verdict; contains no literal client data)",
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "I2d9UsGSGeMXbitw", "name": "trevor@blackceo.com" }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "b05bf806-0d58-40c0-881a-e81d3d156f71"
+    },
+    {
+      "id": "95e34101-1f59-46fd-8a42-1b66c27d2d4e",
+      "name": "Respond — Entry Guard Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-4550, 1800],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: 'invalid_payload', missing: $json.guard_missing_fields, bad_urls: $json.guard_bad_url_fields, message: $json.guard_error } }}",
+        "options": { "responseCode": 422 }
+      }
+    },
+    {
+      "id": "2aff35f9-bb94-4ac9-b2ec-0a32455c4ca6",
+      "name": "Respond — Standing Identity Gate Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-3920, 1050],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: $json.standing_gate_verdict, message: $json.standing_gate_verdict === 'not_in_good_standing' ? 'you are not in good standing' : undefined } }}",
+        "options": { "responseCode": 403 }
+      }
+    },
+    {
+      "id": "1e38636f-6409-45ea-9d22-d3bfcaaadb9c",
+      "name": "Respond — Publish Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [600, 1400],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, permalink_url: $json.episode?.permalink_url || '', episode_id: $json.episode?.id || $json.id || '', episode_number: $('Set Upload Keys — Assemble Publish Payload').item.json.episode_number, scheduled: $('Set Upload Keys — Assemble Publish Payload').item.json.publish_timestamp > Math.floor(Date.now() / 1000), idempotent_replay: false } }}",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "f36a9cc3-b37b-452d-b31b-4d9fa330fcb2",
+      "name": "Respond — Publish Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [600, 1850],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: 'publish_failed', detail: JSON.stringify($json).slice(0, 500) } }}",
+        "options": { "responseCode": 500 }
+      }
+    },
+    {
+      "id": "f67ab861-7f85-4a89-bd4f-33c4db956e6b",
+      "name": "Idempotency — Lookup By Key",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-4700, 850],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Webhook — Receive Podcast Payload').first().json.body.idempotency_key }}" } ] },
+        "returnAll": true,
+        "options": {}
+      },
+      "notes": "U8 — SERVER-SIDE IDEMPOTENCY. Placed after the U6 entry guard, before the U5 standing/identity gate (spec Section 5 U8). Looks up podcast_publish_ledger by idempotency_key. onError=continueRegularOutput + alwaysOutputData=true (same fix required by U5/U13) so a no-match or table error always yields exactly one output item, never a silently-halted execution.",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "687a1f29-1a4f-489b-985a-e9da07d633cd",
+      "name": "Idempotency — Determine Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4540, 850],
+      "parameters": {
+        "jsCode": "// U8 — SERVER-SIDE IDEMPOTENCY (spec Section 5 U8 / Section 8). Runs AFTER the U6 entry\n// guard, BEFORE the U5 standing/identity gate -- earliest possible point once the payload\n// is known well-formed, so a duplicate idempotency_key never reaches the roster lookup or\n// any Podbean call. Classifies exactly one of: replay | in_flight | proceed.\n// Fail-open on a genuine table-read error (the lookup node has onError=continueRegularOutput\n// + alwaysOutputData=true, so an error surfaces here as zero matched rows, same as\n// \"never seen this key before\") -- the box's own client-side ledger-permalink skip\n// (podbean_publish.sh lines 363-377) is the SECOND, independent guard against a true\n// double-publish (spec Section 8); refusing a legitimate new publish because the ledger\n// table briefly errored would be worse than the rare risk this covers.\n\nconst wh = $('Webhook — Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst idempotency_key = (body.idempotency_key || '').toString().trim();\n\nconst rows = $input.all().map(item => item.json).filter(r => r && r.idempotency_key);\n\nlet verdict = 'proceed';\nlet stored_permalink_url = '';\nlet stored_episode_number = '';\n\nif (rows.length > 0) {\n  const row = rows[0];\n  const status = (row.status || '').toString();\n  if (status === 'completed') {\n    verdict = 'replay';\n    stored_permalink_url = row.permalink_url || '';\n    stored_episode_number = row.episode_number || '';\n  } else if (status === 'received' || status === 'in_flight') {\n    verdict = 'in_flight';\n  } else {\n    // 'failed' / 'refused' / unknown status: safe to retry with the same key\n    // (spec Section 8: \"Podbean 5xx: workflow fails -> ledger failed -> box retries same key (safe)\").\n    verdict = 'proceed';\n  }\n}\n\nreturn [{\n  json: {\n    idempotency_key,\n    idempotency_verdict: verdict,\n    idempotency_is_replay: verdict === 'replay',\n    idempotency_is_in_flight: verdict === 'in_flight',\n    stored_permalink_url,\n    stored_episode_number,\n    raw_channel_id: (body.podcast_id || '').toString().trim(),\n    raw_source: (body.source || 'unknown').toString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "6df6d8fd-9987-421c-913f-0abd2175e13b",
+      "name": "IF — Idempotency Already Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-4380, 850],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "check-idempotency-replay", "leftValue": "={{ $json.idempotency_is_replay }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1ca562ba-8a3b-4899-9f67-382458e39ae1",
+      "name": "Respond — Idempotent Replay",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-4380, 650],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, idempotent_replay: true, permalink_url: $json.stored_permalink_url } }}",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "cf8a6db3-8d5f-4a28-bd09-609c7ca4c63d",
+      "name": "IF — Idempotency In Flight",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-4220, 850],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "check-idempotency-inflight", "leftValue": "={{ $json.idempotency_is_in_flight }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c9031154-1772-4324-9e0a-7a3535c963c0",
+      "name": "Respond — Idempotency In Flight",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-4220, 650],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: 'in_flight' } }}",
+        "options": { "responseCode": 409 }
+      }
+    },
+    {
+      "id": "c682828c-39a5-450b-a93c-ebfb11b91a16",
+      "name": "Idempotency — Upsert Row Received",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-4060, 850],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $json.idempotency_key }}" } ] },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "idempotency_key": "={{ $json.idempotency_key }}",
+            "channel_id": "={{ $json.raw_channel_id }}",
+            "episode_number": 0,
+            "permalink_url": "",
+            "status": "received",
+            "reason": "",
+            "source": "={{ $json.raw_source }}",
+            "completed_at": ""
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "5619645b-7bbb-4691-b938-607fb6b99ff9",
+      "name": "Idempotency — Mark In Flight",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-3900, 850],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Idempotency — Determine Verdict').item.json.idempotency_key }}" } ] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "in_flight" } },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "09843737-418c-4cd3-9a70-38f2919381ee",
+      "name": "Idempotency — Mark Refused (Standing Gate)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-3760, 1150],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Idempotency — Determine Verdict').item.json.idempotency_key }}" } ] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "refused", "reason": "={{ $json.standing_gate_verdict }}" } },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "3d31d7b4-5d95-4135-82d2-0cda81af725b",
+      "name": "Idempotency — Mark Completed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [600, 1250],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Idempotency — Determine Verdict').item.json.idempotency_key }}" } ] },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "completed",
+            "permalink_url": "={{ $json.episode?.permalink_url || '' }}",
+            "episode_number": "={{ $('Set Upload Keys — Assemble Publish Payload').item.json.episode_number }}",
+            "completed_at": "={{ new Date().toISOString() }}",
+            "reason": ""
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "d6b095a8-6243-4ccf-9d69-4fa13f55a33d",
+      "name": "Idempotency — Mark Failed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [600, 2050],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Idempotency — Determine Verdict').item.json.idempotency_key }}" } ] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "failed", "reason": "={{ JSON.stringify($json).slice(0, 500) }}" } },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f77ff6bc-a68a-430c-af43-4012df48e823",
+      "name": "Media Preflight — HEAD Check Audio URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-3920, 1250],
+      "parameters": {
+        "method": "HEAD",
+        "url": "={{ ($('Webhook — Receive Podcast Payload').first().json.body || $('Webhook — Receive Podcast Payload').first().json).audio_url }}",
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } }, "timeout": 10000 }
+      },
+      "notes": "U11 — MEDIA PREFLIGHT (spec Section 5 U11). HEAD-checks audio_url before ANY Podbean call (extends the GK-01 principle: refuse before ANY Podbean byte moves). fullResponse:true + neverError:true so a 4xx/5xx surfaces as a normal item (statusCode inspected downstream) instead of throwing; onError=continueRegularOutput covers genuine connection-level failures (DNS/timeout/refused) the same way, matching the alwaysOutputData pattern U5/U8/U13 already established for this workflow. Reads the URL from the raw webhook payload, same source Set Config — Consolidate Workflow Variables uses.",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "5ce69d78-9dd6-4c7a-ba3c-80f88469ee0e",
+      "name": "Media Preflight — HEAD Check Image URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-3760, 1250],
+      "parameters": {
+        "method": "HEAD",
+        "url": "={{ ($('Webhook — Receive Podcast Payload').first().json.body || $('Webhook — Receive Podcast Payload').first().json).image_url }}",
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } }, "timeout": 10000 }
+      },
+      "notes": "U11 — MEDIA PREFLIGHT (spec Section 5 U11). HEAD-checks image_url before ANY Podbean call. Same tolerant-of-errors pattern as the audio check; runs sequentially after it so the verdict node can report BOTH failing URLs together, not just the first.",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "2dfef8ad-bf7d-4156-92fc-7c0ccac4ceb0",
+      "name": "Media Preflight — Determine Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3600, 1250],
+      "parameters": {
+        "jsCode": "// U11 — MEDIA PREFLIGHT (spec Section 5 U11). Runs AFTER the U5 good-standing/identity\n// gate, BEFORE Compute Timestamp / Podbean OAuth (the first Podbean API call in this\n// workflow) -- extends the GK-01 principle (refuse before ANY Podbean byte moves) to\n// dead or empty media URLs, keeping partial-upload waste at zero.\n// Criteria (spec Section 5 U11): 2xx status + content-length header present and > 0 for\n// BOTH audio_url and image_url; audio_url additionally requires content-type audio/* OR\n// application/octet-stream (both tolerated -- many CDNs serve audio as octet-stream). No\n// content-type check on image_url (not specified by the spec text).\n\nconst wh = $('Webhook — Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\n\nconst audioItem = $('Media Preflight — HEAD Check Audio URL').first();\nconst imageItem = $('Media Preflight — HEAD Check Image URL').first();\n\nfunction getHeader(headers, name) {\n  if (!headers) return undefined;\n  const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());\n  return key ? headers[key] : undefined;\n}\n\nfunction checkResponse(item, url, label, requireAudioContentType) {\n  const j = item ? item.json : null;\n  if (!j || typeof j.statusCode !== 'number') {\n    let errMsg = 'request failed or timed out';\n    if (j && j.error) {\n      errMsg = typeof j.error === 'string' ? j.error : (j.error.message || j.error.description || JSON.stringify(j.error));\n    }\n    return { ok: false, url, detail: label + ' (' + url + ') unreachable: ' + errMsg };\n  }\n  const status = j.statusCode;\n  if (status < 200 || status >= 300) {\n    return { ok: false, url, detail: label + ' (' + url + ') returned HTTP ' + status };\n  }\n  const headers = j.headers || {};\n  const clRaw = getHeader(headers, 'content-length');\n  const cl = parseInt(clRaw || '', 10);\n  if (!clRaw || isNaN(cl) || cl <= 0) {\n    return { ok: false, url, detail: label + ' (' + url + ') has missing or zero content-length' };\n  }\n  if (requireAudioContentType) {\n    const ct = (getHeader(headers, 'content-type') || '').toLowerCase();\n    const toleratedAudio = ct.startsWith('audio/') || ct.startsWith('application/octet-stream');\n    if (!toleratedAudio) {\n      return { ok: false, url, detail: label + ' (' + url + ') has non-audio content-type: ' + (ct || '(none)') };\n    }\n  }\n  return { ok: true, url, detail: '' };\n}\n\nconst audioUrl = body.audio_url || '';\nconst imageUrl = body.image_url || '';\n\nconst audioResult = checkResponse(audioItem, audioUrl, 'audio_url', true);\nconst imageResult = checkResponse(imageItem, imageUrl, 'image_url', false);\n\nconst failing = [audioResult, imageResult].filter((r) => !r.ok);\nconst media_preflight_passed = failing.length === 0;\nconst media_preflight_failing_urls = failing.map((r) => r.url);\nconst media_preflight_reason = failing.length\n  ? failing.map((r) => r.detail).join('; ')\n  : '';\n\nreturn [{\n  json: {\n    media_preflight_passed,\n    media_preflight_failing_urls,\n    media_preflight_reason\n  }\n}];"
+      }
+    },
+    {
+      "id": "05a63859-722a-4cc7-821e-c47ea7cc5628",
+      "name": "IF — Media Preflight Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-3440, 1250],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "check-media-preflight-passed", "leftValue": "={{ $json.media_preflight_passed }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "39ca16dc-b6ed-4616-a24c-7d1a1c90ffea",
+      "name": "Gmail — Media Preflight Refused Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-3440, 1050],
+      "parameters": {
+        "sendTo": "trevor@blackceo.com",
+        "subject": "={{ 'Podcast Publish Refused at Media Preflight - ' + $json.media_preflight_failing_urls.join(', ') }}",
+        "message": "(HTML notification template — reads all fields via expressions off the media-preflight verdict; contains no literal client data)",
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "I2d9UsGSGeMXbitw", "name": "trevor@blackceo.com" }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "4a0f15e9-1b77-4569-ab8e-631f42b74e86"
+    },
+    {
+      "id": "18f8ec55-1e3b-4303-8d0c-ff8c45a24da7",
+      "name": "Respond — Media Preflight Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-3280, 1050],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: 'media_unreachable', failing_urls: $json.media_preflight_failing_urls, message: $json.media_preflight_reason } }}",
+        "options": { "responseCode": 422 }
+      }
+    },
+    {
+      "id": "12787f96-37ae-4b6f-ab8e-7f767d0982eb",
+      "name": "Idempotency — Mark Refused (Media Preflight)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-3280, 1150],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": { "mode": "id", "value": "3anOzegbKtLcgVud" },
+        "matchType": "allConditions",
+        "filters": { "conditions": [ { "keyName": "idempotency_key", "condition": "eq", "keyValue": "={{ $('Idempotency — Determine Verdict').item.json.idempotency_key }}" } ] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "refused", "reason": "media_unreachable" } },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Compute Timestamp — Convert Publish Date to Unix": { "main": [[{ "node": "Podbean OAuth — Get Access Token", "type": "main", "index": 0 }]] },
+    "Podbean OAuth — Get Access Token": { "main": [[{ "node": "Podbean — Fetch Recent Episodes", "type": "main", "index": 0 }]] },
+    "Podbean — Fetch Recent Episodes": { "main": [[{ "node": "Compute Next Episode Number — Increment From Last", "type": "main", "index": 0 }]] },
+    "Compute Next Episode Number — Increment From Last": { "main": [[{ "node": "Set Config — Consolidate Workflow Variables", "type": "main", "index": 0 }]] },
+    "Set Config — Consolidate Workflow Variables": { "main": [[{ "node": "Download Audio — Fetch From GHL URL", "type": "main", "index": 0 }]] },
+    "Download Audio — Fetch From GHL URL": { "main": [[{ "node": "Prepare Audio Upload — Package for Podbean S3", "type": "main", "index": 0 }]] },
+    "Prepare Audio Upload — Package for Podbean S3": { "main": [[{ "node": "Podbean — uploadAuthorize Audio", "type": "main", "index": 0 }]] },
+    "Podbean — uploadAuthorize Audio": { "main": [[{ "node": "Merge Audio Binary — Reattach to Presigned URL", "type": "main", "index": 0 }]] },
+    "Merge Audio Binary — Reattach to Presigned URL": { "main": [[{ "node": "PUT Audio — Upload to Podbean S3", "type": "main", "index": 0 }]] },
+    "PUT Audio — Upload to Podbean S3": { "main": [[{ "node": "Download Image — Fetch From GHL URL", "type": "main", "index": 0 }]] },
+    "Download Image — Fetch From GHL URL": { "main": [[{ "node": "Prepare Image Upload — Package for Podbean S3", "type": "main", "index": 0 }]] },
+    "Prepare Image Upload — Package for Podbean S3": { "main": [[{ "node": "Podbean — uploadAuthorize Image", "type": "main", "index": 0 }]] },
+    "Podbean — uploadAuthorize Image": { "main": [[{ "node": "Merge Image Binary — Reattach to Presigned URL", "type": "main", "index": 0 }]] },
+    "Merge Image Binary — Reattach to Presigned URL": { "main": [[{ "node": "PUT Image — Upload to Podbean S3", "type": "main", "index": 0 }]] },
+    "PUT Image — Upload to Podbean S3": { "main": [[{ "node": "Set Upload Keys — Assemble Publish Payload", "type": "main", "index": 0 }]] },
+    "Set Upload Keys — Assemble Publish Payload": { "main": [[{ "node": "Podbean — Publish Episode", "type": "main", "index": 0 }]] },
+    "IF — Episode Created Successfully": {
+      "main": [
+        [
+          { "node": "Gmail — Success Notification", "type": "main", "index": 0 },
+          { "node": "Respond — Publish Success", "type": "main", "index": 0 },
+          { "node": "Idempotency — Mark Completed", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Gmail — Failure Notification", "type": "main", "index": 0 },
+          { "node": "Respond — Publish Failure", "type": "main", "index": 0 },
+          { "node": "Idempotency — Mark Failed", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Podbean — Publish Episode": { "main": [[{ "node": "IF — Episode Created Successfully", "type": "main", "index": 0 }]] },
+    "Webhook — Receive Podcast Payload": { "main": [[{ "node": "Guard — Validate Required Payload Fields", "type": "main", "index": 0 }]] },
+    "Guard — Validate Required Payload Fields": { "main": [[{ "node": "IF — Entry Guard Passed", "type": "main", "index": 0 }]] },
+    "IF — Entry Guard Passed": {
+      "main": [
+        [ { "node": "Idempotency — Lookup By Key", "type": "main", "index": 0 } ],
+        [
+          { "node": "Gmail — Entry Guard Refused Notification", "type": "main", "index": 0 },
+          { "node": "Respond — Entry Guard Refused", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Standing Gate — Normalize Lookup Keys": { "main": [[{ "node": "Standing Gate — Roster Lookup By Email", "type": "main", "index": 0 }]] },
+    "Standing Gate — Roster Lookup By Email": { "main": [[{ "node": "Standing Gate — Determine Verdict", "type": "main", "index": 0 }]] },
+    "Standing Gate — Determine Verdict": { "main": [[{ "node": "IF — Standing Identity Gate Passed", "type": "main", "index": 0 }]] },
+    "IF — Standing Identity Gate Passed": {
+      "main": [
+        [ { "node": "Media Preflight — HEAD Check Audio URL", "type": "main", "index": 0 } ],
+        [
+          { "node": "Gmail — Standing Identity Gate Refused Notification", "type": "main", "index": 0 },
+          { "node": "Respond — Standing Identity Gate Refused", "type": "main", "index": 0 },
+          { "node": "Idempotency — Mark Refused (Standing Gate)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Idempotency — Lookup By Key": { "main": [[{ "node": "Idempotency — Determine Verdict", "type": "main", "index": 0 }]] },
+    "Idempotency — Determine Verdict": { "main": [[{ "node": "IF — Idempotency Already Completed", "type": "main", "index": 0 }]] },
+    "IF — Idempotency Already Completed": {
+      "main": [
+        [ { "node": "Respond — Idempotent Replay", "type": "main", "index": 0 } ],
+        [ { "node": "IF — Idempotency In Flight", "type": "main", "index": 0 } ]
+      ]
+    },
+    "IF — Idempotency In Flight": {
+      "main": [
+        [ { "node": "Respond — Idempotency In Flight", "type": "main", "index": 0 } ],
+        [ { "node": "Idempotency — Upsert Row Received", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Idempotency — Upsert Row Received": { "main": [[{ "node": "Idempotency — Mark In Flight", "type": "main", "index": 0 }]] },
+    "Idempotency — Mark In Flight": { "main": [[{ "node": "Standing Gate — Normalize Lookup Keys", "type": "main", "index": 0 }]] },
+    "Media Preflight — HEAD Check Audio URL": { "main": [[{ "node": "Media Preflight — HEAD Check Image URL", "type": "main", "index": 0 }]] },
+    "Media Preflight — HEAD Check Image URL": { "main": [[{ "node": "Media Preflight — Determine Verdict", "type": "main", "index": 0 }]] },
+    "Media Preflight — Determine Verdict": { "main": [[{ "node": "IF — Media Preflight Passed", "type": "main", "index": 0 }]] },
+    "IF — Media Preflight Passed": {
+      "main": [
+        [ { "node": "Compute Timestamp — Convert Publish Date to Unix", "type": "main", "index": 0 } ],
+        [
+          { "node": "Gmail — Media Preflight Refused Notification", "type": "main", "index": 0 },
+          { "node": "Respond — Media Preflight Refused", "type": "main", "index": 0 },
+          { "node": "Idempotency — Mark Refused (Media Preflight)", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
