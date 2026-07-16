@@ -360,7 +360,36 @@
           "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID",
           "name": "BlackCEO Anthology Drive (connect me)"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "f6a5c4b3-2d1e-4f90-8a7b-6c5d4e3f2a10",
+      "name": "Retry Share Book To Producer With Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2280,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Book Resolved').item.json.folderId }}/permissions?sendNotificationEmail=true&supportsAllDrives=true&fields=id,role,type",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ role: 'writer', type: 'user', emailAddress: $('Authorize & Dispatch').item.json.producer_email }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_CREDENTIAL_ID",
+          "name": "BlackCEO Anthology Drive (connect me)"
+        }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4",
@@ -368,11 +397,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2280,
+        2500,
         -100
       ],
       "parameters": {
-        "jsCode": "const a = $('Authorize & Dispatch').item.json;\nreturn [{ json: {\n  ok: true, action: 'create_book_tree', via: 'n8n_broker',\n  client_key: a.client_key, producer_email: a.producer_email, book_title: a.book_title,\n  root_folder_id: a.root_folder_id,\n  client_folder_id: $('Client Resolved').item.json.folderId,\n  producer_folder_id: $('Producer Resolved').item.json.folderId,\n  book_folder_id: $('Book Resolved').item.json.folderId,\n  producer_editor_shared: true\n} }];"
+        "jsCode": "const a = $('Authorize & Dispatch').item.json;\nconst share = $input.first().json || {};\nconst shared = Boolean(share.id && share.role === 'writer' && share.type === 'user');\nconst response = {\n  ok: true, action: 'create_book_tree', via: 'n8n_broker',\n  client_key: a.client_key, producer_email: a.producer_email, book_title: a.book_title,\n  root_folder_id: a.root_folder_id,\n  client_folder_id: $('Client Resolved').item.json.folderId,\n  producer_folder_id: $('Producer Resolved').item.json.folderId,\n  book_folder_id: $('Book Resolved').item.json.folderId,\n  producer_editor_shared: shared\n};\nif (!shared) {\n  response.warning = {\n    code: 'producer_editor_share_failed',\n    message: 'Book folder created, but editor sharing failed after retrying with notification email enabled.'\n  };\n}\nreturn [{ json: response }];"
       }
     },
     {
@@ -381,7 +410,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        2480,
+        2720,
         -100
       ],
       "parameters": {
@@ -1475,6 +1504,31 @@
     },
     "Share Book To Producer": {
       "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Share Book To Producer With Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Share Book To Producer With Notification": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Build Response",

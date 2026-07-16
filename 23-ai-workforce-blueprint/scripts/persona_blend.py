@@ -50,6 +50,7 @@ decompose functions it calls are monkeypatched in the test, so it never reads or
 writes a live persona DB).
 """
 import importlib.util
+import json
 import os
 import re
 from pathlib import Path
@@ -1235,7 +1236,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                  max_task_personas: int = 10, variety: bool = True,
                  topic_hint: str = "", audience_override: str = "",
                  conversion_goal: str = "", goal_source: str = "",
-                 scope_hint: dict = None) -> dict:
+                 scope_hint: dict = None, force_content_task: bool = False) -> dict:
     """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
 
     paths/db_path default to the live resolution when omitted; tests pass a
@@ -1245,6 +1246,17 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
     input — additive, default-empty, degrades byte-identically to pre-A-U4
     behavior when unused. See `resolve_conversion_goal` for the source-ladder
     contract and confirm-doctrine.
+
+    U116 (E6-2, ADD-2): `force_content_task` (additive, default False) lets a
+    caller that ALREADY KNOWS this is an outside-world communication (a page,
+    blog, email, text/SMS, or social post — the five comms types U116's own
+    `shared-utils/comms_audience_trigger.py` enumerates) route around the
+    `is_content_task()` keyword heuristic entirely, so a comms artifact whose
+    task text happens not to contain one of that heuristic's signal words
+    (e.g. a bare "opt-in page" brief with none of "page"/"landing"/"sales" in
+    it) is never mistakenly treated as non-content and left ungoverned. A
+    caller that never sets it is byte-identical to pre-U116 behavior — the
+    heuristic runs exactly as before.
     """
     sel = _selector()
     if paths is None:
@@ -1306,7 +1318,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                         f"(governance persona '{gov_pid}' attached for oversight)."),
         }
 
-    content_task = is_content_task(task)
+    content_task = is_content_task(task) or bool(force_content_task)
 
     # ── A-U5 scope_hint — bounded tie-breaker, additive-only ────────────────────
     # A page's role (opt-in / sales / thank-you / ...) is a legitimate topic
@@ -1503,6 +1515,16 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             f"source={rg['source']}, confirm_required={goal_confirm_required}"
             + ("" if not rg.get("ask") else f" — ASK: {rg['ask']}")),
     }
+    # U116 (E6-2, ADD-2): record WHY content_task fired when it was the
+    # force flag (not the keyword heuristic) that decided it — an honest,
+    # auditable receipt line, never a silent behavior change (rationale is
+    # additive; every non-forced call gets no such key, byte-identical).
+    if force_content_task and not is_content_task(task):
+        rationale["comms_governance"] = (
+            "content_task forced True — mandatory outside-world-communication "
+            "governance (U116/ADD-2), independent of the is_content_task() "
+            "keyword heuristic (which alone would have read this task as "
+            "non-content).")
 
     bundle = {
         # ── back-compat single-persona mirror (existing consumers) ──
@@ -1556,3 +1578,376 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         rationale["scope"] = _scope_reason(scope_key, scope_hint) + f" — {rationale['collapse']}"
 
     return bundle
+
+
+# ── U115 (E6-1, Section E6; implements operator ruling ADD-1; closes G7) ──────
+# Per-part / per-persona governance across multi-item & long-horizon tasks.
+#
+# Before this unit, the blend is selected per single content PIECE:
+# build_bundle runs once per TASK, and A-U5 (above) generalised that to once
+# per PAGE of one funnel via `scope_hint`. U115 generalises the SAME
+# mechanism one step further — from "per page of one funnel" to "per PART of
+# any multi-part or long-horizon task" (a campaign's sales page + a 3-email
+# nurture sequence + social posts; each stage of a launch sequence; …).
+#
+# Reuses, never replaces: the scope key A-U5 already derives from `part_id`
+# (see `_resolve_scope_key` above — that unit's own docstring calls `part_id`
+# "forward-compatible with U115"). This section adds (1) a mechanical/
+# ASK-gated task-decomposition step that NEVER invents parts, (2) a
+# per-part `build_bundle` loop keyed `(task_id, part_id)`, (3) the
+# `routing/part-persona-map.json` cross-horizon tracking record, and (4) the
+# different-blends-allowed diversity check the U117 QC judge consumes.
+#
+# Flag-gated (revert path): the decomposition + per-part loop only run when
+# `PER_PART_GOVERNANCE=1` is set in the environment; unset (default), or a
+# task with no declared parts, degrades byte-identically to a single
+# unscoped `build_bundle` call — today's pre-U115 behavior (BINARY
+# acceptance (d)). No new schema: this reuses A-U5's `scope`/`scope_hint`
+# echo, which the Command Center persists into the EXISTING
+# `task_persona_bundle_scope` table (migration 090) it already ships for
+# A-U5 — U115 adds no ONB-side schema of its own.
+#
+# The Command Center leg (Kanban board card + task-detail modal rendering
+# one per-part persona-assignment row — BINARY acceptance (c)) is OUT OF
+# SCOPE for this (openclaw-onboarding) repo and is NOT built or faked here;
+# it is logged as owed in this unit's PR/commit trail for the
+# blackceo-command-center train.
+
+PER_PART_GOVERNANCE_FLAG = "PER_PART_GOVERNANCE"
+
+
+def _per_part_governance_enabled() -> bool:
+    """Revert switch (spec `revert:`): flip `PER_PART_GOVERNANCE=1` off (or
+    never set it) and every caller of `govern_task_parts` collapses straight
+    back to the single per-task `build_bundle` call — no code revert needed
+    to disable the new behavior in production.
+    """
+    return os.environ.get(PER_PART_GOVERNANCE_FLAG, "0") == "1"
+
+
+def _slugify_part_id(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", str(text or "").strip().lower()).strip("-")
+    return s or "part"
+
+
+def parts_from_page_structure(page_structure: list) -> list:
+    """MECHANICAL decomposition source #1: a funnel template's `pageStructure`
+    (the `order`/`page`/`purpose`/`blocks` shape used across
+    06-ghl-install-pages/funnel-templates/**) already declares the funnel's
+    pages — read directly, never reinterpreted or guessed at. A malformed or
+    empty `pageStructure` yields `[]` (falls through to the ASK-gated /
+    back-compat path in `decompose_task_parts`, never a guess).
+
+    Returns the generic part shape `decompose_task_parts` produces:
+    `{part_id, part_role, audience_hint, topic_hint, stage}`.
+    """
+    parts = []
+    if not isinstance(page_structure, list):
+        return parts
+    for entry in page_structure:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("page") or entry.get("page_role") or entry.get("role")
+        if not name:
+            continue
+        role = entry.get("page_role") or entry.get("role") or _slugify_part_id(name)
+        order = entry.get("order")
+        part_id = entry.get("page_slug") or entry.get("slug") or _slugify_part_id(name)
+        parts.append({
+            "part_id": str(part_id),
+            "part_role": str(role),
+            "audience_hint": entry.get("audience_hint") or entry.get("audience") or "",
+            "topic_hint": entry.get("topic_hint") or entry.get("topic") or entry.get("purpose") or "",
+            "stage": str(order) if order is not None else "",
+        })
+    return parts
+
+
+def parts_from_campaign_manifest(campaign_manifest: dict) -> list:
+    """MECHANICAL decomposition source #2: a campaign/launch manifest's
+    declared `parts` (or `stages`) list — read directly, never invented. A
+    manifest with no `parts`/`stages` list yields `[]` (falls through, same
+    as `parts_from_page_structure`).
+
+    Returns the generic part shape `decompose_task_parts` produces:
+    `{part_id, part_role, audience_hint, topic_hint, stage}`.
+    """
+    parts = []
+    if not isinstance(campaign_manifest, dict):
+        return parts
+    raw = campaign_manifest.get("parts") or campaign_manifest.get("stages") or []
+    if not isinstance(raw, list):
+        return parts
+    for i, p in enumerate(raw):
+        if not isinstance(p, dict):
+            continue
+        part_id = p.get("part_id") or p.get("id") or p.get("slug") or f"part-{i + 1}"
+        parts.append({
+            "part_id": str(part_id),
+            "part_role": str(p.get("part_role") or p.get("role") or ""),
+            "audience_hint": p.get("audience_hint") or p.get("audience") or "",
+            "topic_hint": p.get("topic_hint") or p.get("topic") or "",
+            "stage": str(p.get("stage") or p.get("sequence") or (i + 1)),
+        })
+    return parts
+
+
+def decompose_task_parts(task: str, *, page_structure: list = None,
+                          campaign_manifest: dict = None) -> list:
+    """U115 (E6-1; ADD-1) — split a multi-part / long-horizon task into its
+    communication PARTS (e.g. sales page, nurture emails, social posts, each
+    stage of a launch sequence).
+
+    MECHANICAL when a source already declares parts: a campaign manifest's
+    declared `parts`/`stages` (`campaign_manifest=`, checked first — the
+    more explicit, purpose-built source) or a funnel's `pageStructure`
+    (`page_structure=`) are read directly via the two adapters above, never
+    reinterpreted or guessed at.
+
+    ASK-GATED otherwise: with neither source supplied (or both empty/
+    malformed) this returns `[]` — it NEVER invents parts. The caller then
+    either asks the operator/client how the task decomposes, or treats the
+    task as single-part — which is also this function's BACK-COMPAT degrade
+    path: `govern_task_parts` reads an empty return here as "no declared
+    parts" and falls straight back to ONE unscoped `build_bundle` call,
+    byte-identical to pre-U115 output (BINARY acceptance (d)).
+
+    Returns a list of `{part_id, part_role, audience_hint, topic_hint,
+    stage}` dicts (all string values; `part_id` always non-empty when the
+    list is non-empty).
+    """
+    if campaign_manifest is not None:
+        parts = parts_from_campaign_manifest(campaign_manifest)
+        if parts:
+            return parts
+    if page_structure is not None:
+        parts = parts_from_page_structure(page_structure)
+        if parts:
+            return parts
+    return []
+
+
+def write_part_persona_map(run_dir, records: list, *, merge: bool = True) -> bool:
+    """Persist/refresh `routing/part-persona-map.json` under `run_dir` — the
+    per-part/stage tracking record (U115 build step 3) so a multi-stage /
+    long-horizon project knows which blend governs each part ACROSS THE
+    WHOLE HORIZON, not just the call that just ran.
+
+    One record per part: `{part_id, part_role, voice_persona_id,
+    topic_persona_id, audience_label, audience_source, stage}` (+ an
+    additive `reason` field carrying the different-blends-allowed WHY —
+    tolerated by any reader that only looks at the six spec-named keys).
+
+    `merge=True` (default, and the mechanism BINARY acceptance (b)'s
+    "tracks the assignment across ALL stages" needs): an existing map for
+    this `run_dir` is READ first and records sharing a `part_id` are
+    UPDATED in place — a later stage of the same long-horizon project
+    revising its own governing blend never clobbers sibling parts already
+    tracked; new `part_id`s are appended. `merge=False` replaces the file
+    wholesale.
+
+    Best-effort / non-fatal — same observability-never-blocks posture as
+    `write_persona_selection_log_entry` / `log_match_score` above: a write
+    failure returns False and never raises.
+    """
+    try:
+        rd = Path(run_dir)
+        routing_dir = rd / "routing"
+        routing_dir.mkdir(parents=True, exist_ok=True)
+        map_path = routing_dir / "part-persona-map.json"
+
+        existing = []
+        if merge and map_path.exists():
+            try:
+                loaded = json.loads(map_path.read_text(encoding="utf-8"))
+                existing = loaded if isinstance(loaded, list) else []
+            except Exception:
+                existing = []
+
+        by_id = {}
+        order = []
+        for r in existing:
+            if isinstance(r, dict) and r.get("part_id"):
+                pid = r["part_id"]
+                if pid not in by_id:
+                    order.append(pid)
+                by_id[pid] = dict(r)
+
+        for rec in records:
+            if not isinstance(rec, dict) or not rec.get("part_id"):
+                continue
+            pid = rec["part_id"]
+            clean = {k: rec.get(k) for k in
+                     ("part_id", "part_role", "voice_persona_id", "topic_persona_id",
+                      "audience_label", "audience_source", "stage", "reason")}
+            if pid not in by_id:
+                order.append(pid)
+            by_id[pid] = clean
+
+        ordered = [by_id[pid] for pid in order]
+        map_path.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def _annotate_shared_blend_reasons(map_records: list) -> None:
+    """The A.6 different-blends-allowed invariant, extended to parts (U115
+    build step 4 / Section E6 closing paragraph): when 2+ parts land on the
+    SAME `voice_persona_id`, each of their records must state WHY they
+    share it. Every part built through `govern_task_parts` already carries
+    a real reason (build_bundle's own `rationale['scope']`, echoed onto
+    `reason` below) — this only ADDS the explicit "shared with part(s) ..."
+    clause when it is not already present, so a downstream reader (U117's
+    QC judge) sees the sharing relationship, not just the individual
+    collapse rationale. In-place mutation of `map_records`; never raises.
+    """
+    groups = {}
+    for rec in map_records:
+        pid = rec.get("voice_persona_id")
+        if pid:
+            groups.setdefault(pid, []).append(rec)
+    for pid, recs in groups.items():
+        if len(recs) < 2:
+            continue
+        peers = [r.get("part_id") for r in recs]
+        for rec in recs:
+            others = ", ".join(p for p in peers if p != rec.get("part_id"))
+            existing_reason = rec.get("reason") or ""
+            if "shared with part" not in existing_reason:
+                rec["reason"] = (
+                    existing_reason + (" — " if existing_reason else "") +
+                    f"blend shared with part(s) {others} (collapse/topic-match fired identically)")
+
+
+def validate_part_blend_diversity(map_records: list) -> dict:
+    """U115 BINARY acceptance (e): a shared blend across 2+ parts with NO
+    logged reason is FLAGGED — the data-level signal `U117`'s QC judge
+    consumes to hand back as a build finding; a legitimately shared blend
+    that carries a logged reason PASSES (not flagged), matching the A.6
+    different-blends-allowed invariant ("forced-identical across all parts
+    with no logged reason is a QC finding (U117)"). This function only
+    COMPUTES and RETURNS the flag — it never blocks a build itself; U117 is
+    the enforcement point.
+
+    `map_records`: a list of `{part_id, voice_persona_id, reason, ...}`
+    dicts — either `govern_task_parts`' own `part_persona_map` output or any
+    externally-supplied map with the same shape (so a caller/tester can
+    exercise this in isolation from the build_bundle pipeline).
+    """
+    if len(map_records) < 2:
+        return {"ok": True, "forced_identical": False, "flagged_groups": [],
+                "reason": "fewer than 2 parts — nothing to compare"}
+
+    persona_ids = [r.get("voice_persona_id") for r in map_records]
+    all_identical = bool(persona_ids[0]) and len(set(persona_ids)) == 1
+
+    flagged_groups = []
+    groups = {}
+    for rec in map_records:
+        pid = rec.get("voice_persona_id")
+        groups.setdefault(pid, []).append(rec)
+    for pid, recs in groups.items():
+        if pid is None or len(recs) < 2:
+            continue
+        unreasoned = [r.get("part_id") for r in recs if not (r.get("reason") or "").strip()]
+        if unreasoned:
+            flagged_groups.append({"persona_id": pid,
+                                   "part_ids": [r.get("part_id") for r in recs],
+                                   "unreasoned_part_ids": unreasoned})
+
+    flagged = bool(flagged_groups)
+    return {
+        "ok": not flagged,
+        "forced_identical": all_identical,
+        "flagged_groups": flagged_groups,
+        "reason": ("forced-identical blend across parts with no logged reason "
+                  "— hands to U117" if flagged else
+                  "every shared blend (if any) carries a logged reason, or all parts differ"),
+    }
+
+
+def govern_task_parts(task: str, department: str, *, parts: list = None,
+                       page_structure: list = None, campaign_manifest: dict = None,
+                       run_dir=None, paths: dict = None, db_path=None,
+                       use_llm: bool = True, record: bool = True,
+                       max_task_personas: int = 10, variety: bool = True,
+                       audience_override: str = "") -> dict:
+    """U115 (E6-1; ADD-1) orchestrator — decomposes `task` into parts
+    (mechanical / ASK-gated, never invented — see `decompose_task_parts`)
+    and calls `build_bundle` ONCE PER PART with a `scope_hint={part_id:
+    ...}` tie-breaker, so different parts may legally carry DIFFERENT
+    governing blends, each with its own audience + topic (BINARY
+    acceptance (a)). Writes the cross-horizon `routing/part-persona-map.json`
+    tracking record when `run_dir` is supplied (BINARY acceptance (b)).
+
+    Flag-gated (revert path, BINARY acceptance (d)): with
+    `PER_PART_GOVERNANCE` unset/`!= "1"`, OR with no parts decomposed
+    (`parts=` omitted and `decompose_task_parts` returns `[]`), this makes
+    exactly ONE unscoped `build_bundle` call and returns it — byte-identical
+    to calling `build_bundle` directly, today's pre-U115 behavior.
+
+    Returns:
+      `{"mode": "single", "bundle": <build_bundle() dict>, "parts": [],
+        "part_persona_map": []}` — the back-compat / flag-off path, OR
+      `{"mode": "per_part", "parts": [{"part_id", "part_role", "stage",
+        "bundle"}, ...], "part_persona_map": [...]}` — one bundle per
+        decomposed part.
+    """
+    def _single():
+        bundle = build_bundle(task, department, paths=paths, db_path=db_path,
+                              use_llm=use_llm, record=record,
+                              max_task_personas=max_task_personas,
+                              variety=variety, audience_override=audience_override)
+        return {"mode": "single", "bundle": bundle, "parts": [], "part_persona_map": []}
+
+    if not _per_part_governance_enabled():
+        return _single()
+
+    if parts is None:
+        parts = decompose_task_parts(task, page_structure=page_structure,
+                                     campaign_manifest=campaign_manifest)
+
+    if not parts:
+        return _single()
+
+    part_results = []
+    map_records = []
+    for p in parts:
+        if not isinstance(p, dict) or not p.get("part_id"):
+            continue
+        part_id = str(p["part_id"])
+        part_role = str(p.get("part_role") or "")
+        audience_hint = p.get("audience_hint") or ""
+        topic_hint = p.get("topic_hint") or ""
+        stage = str(p.get("stage") or "")
+
+        bundle = build_bundle(
+            task, department, paths=paths, db_path=db_path, use_llm=use_llm,
+            record=record, max_task_personas=max_task_personas, variety=variety,
+            topic_hint=topic_hint, audience_override=(audience_hint or audience_override),
+            scope_hint={"part_id": part_id})
+
+        part_results.append({"part_id": part_id, "part_role": part_role,
+                             "stage": stage, "bundle": bundle})
+
+        voice = bundle.get("voice") or {}
+        topic_persona = voice.get("topic_persona") or {}
+        resolved_audience = bundle.get("resolved_audience") or {}
+        map_records.append({
+            "part_id": part_id,
+            "part_role": part_role,
+            "voice_persona_id": bundle.get("persona_id"),
+            "topic_persona_id": topic_persona.get("id"),
+            "audience_label": resolved_audience.get("label"),
+            "audience_source": resolved_audience.get("source"),
+            "stage": stage,
+            "reason": (bundle.get("rationale") or {}).get("scope"),
+        })
+
+    _annotate_shared_blend_reasons(map_records)
+
+    if run_dir is not None:
+        write_part_persona_map(run_dir, map_records)
+
+    return {"mode": "per_part", "parts": part_results, "part_persona_map": map_records}
