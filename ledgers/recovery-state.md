@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T12:20:02Z
-openclaw-onboarding `origin/main` HEAD: `92b916b2b44bc4d12e8b5f92e0ecce75ffcb9d1a`
+Generated: 2026-07-16T12:30:02Z
+openclaw-onboarding `origin/main` HEAD: `e734ef6ae4d0cc5aeeedcc8f480703ee854eb661`
 blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -18,6 +18,7 @@ No mismatches found this run.
 | U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U106 | `skill6-v2/U106` | `c28f75b8` | False | - | - | pending | - |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U11 | `skill6-v2/U11` | `f3d751f5` | False | - | - | pending | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
 | U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -139,7 +140,7 @@ No mismatches found this run.
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U38, U45, U54, U77, U94, U99, U102
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
