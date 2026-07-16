@@ -1,5 +1,18 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.14 - 2026-07-16 — Skill 6 blended-persona-kanban v2, U98 (E4-1/v1 U28): blend GOVERNS the content voice — per-day blend via U5 scoped bundles
+
+### Added
+- **`scripts/daily_blend_bundle.py`** (master spec crosswalk E4-1, master id U98 — D1 binding ruling: "THE BLENDED PERSONA GOVERNS EVERY ENGINE — NO EXEMPTIONS, NEVER ADVISORY"). Replaces playbook.md Step 0a.5's single-persona-per-week pick with a per-DAY governed blend, resolved via the SAME scoped-bundle mechanism U5 already shipped for per-page funnel copy (`persona_blend.build_bundle(..., scope_hint={"page_role": "day-N"})`) — never a re-implementation of the blend logic. Each of the 7 posting days gets its own governing `blend_directive` (guardrail-carrying, traceable to that day's own bundle) and its own log entry in `persona-selection-log.md` (one per day, replacing the old single weekly entry).
+  - `build_daily_bundle` / `build_week_bundles` — resolve + log one week's 7 day-scoped bundles.
+  - `prove_daily_governance` — the fixture-run receipt: every day governed + 7 genuinely distinct scope keys.
+  - Flag-guarded (`SKILL35_BLEND_GOVERNS`, default `"1"`): `"0"` raises `LegacyWeeklyPersonaRequired`, an explicit, logged revert to the pre-U98 prose-level single-persona-per-week selection — never a silent half-migration.
+  - Hermetic `--self-test` (14 checks, all PASS) exercises the REAL `persona_blend.build_bundle` end to end (real selector, real seed catalog, real collapse/decompose logic) against this repo's own shipped seed catalog — never a live `~/.openclaw` workspace, never a live DB.
+- `references/playbook.md` Step 0a.5 rewritten: per-day blend selection via scoped bundles, the audience/topic override flow, and the flag-guarded revert note — replaces the old "5-Layer Alignment, one persona for the week" prose.
+
+### Version
+- **Skill 35 independent line:** skill-version.txt v2.9.13 -> v2.9.14; SKILL.md frontmatter version v2.9.13 -> v2.9.14 (re-versioned from the branch's own v2.9.13, which collided with U89/GK-27's already-landed v2.9.13 on main — same collision-handling precedent as the v2.9.11->v2.9.12 case below; must match the frontmatter-version-guard).
+
 ## v2.9.13 - 2026-07-16 — Skill 6 blended-persona-kanban v2, U89/GK-27: relationship lattice pointer + citation tripwire
 
 ### Added

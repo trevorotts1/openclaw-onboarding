@@ -1,0 +1,115 @@
+name: u98-blend-governs-product-voice-engines-guard
+
+# U98 (E4-1, v1 U28) — Blend GOVERNS the product-voice engines (D1 binding
+# ruling). Fails the build if the reconciliation regresses on any of the
+# four named engines (Skill 35 -> Skill 51 -> Skill 58 -> Anthology 54/59,
+# the spec's required order):
+#   (a) Skill 35 (social-media-planner) stops resolving 7 DISTINCT per-day
+#       governed blend bundles via the U5 scoped-bundle mechanism, or the
+#       per-day persona-selection-log entries stop carrying the guardrail;
+#   (b) Skill 51 (signature-presentation) stops governing each of the 4
+#       sacred phases' voice, OR its SACRED structure (MASTERDOC.md, the 4
+#       frame-templates, structure/sp_structure.json) drifts from the
+#       pinned golden hash set (sacred-structure-hashes.json);
+#   (c) Skill 58 (podcast-production-engine) stops governing each of the 4
+#       style engines' script voice, OR the style-engines/*.md FORMAT files
+#       drift from the pinned golden hash set (style-engine-format-hashes.json);
+#   (d) the anthology (Skills 54/59, via the shared tone-writing-core)
+#       stops routing an N/A tone slot through the blend-governed seam, a
+#       CLIENT-NAMED slot becomes blend-governed (a client-sovereignty
+#       regression), or ANY of the three tone-core consumers' (52/53/54)
+#       byte-for-byte prompts/04..08 sync check goes red.
+#
+# Deps: U5 (A-U5 per-scope build_bundle) and U7 (Skill 6 convergence) must
+# stay green — this guard also re-compiles persona_blend.py and
+# persona_for_job.py so a regression there is caught here too.
+
+on:
+  push:
+    paths:
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/tone-writing-core/tone_persona_autopick.py"
+      - "shared-utils/tone-writing-core/prompts/**"
+      - "35-social-media-planner/scripts/daily_blend_bundle.py"
+      - "51-signature-presentation/scripts/blend_voice_governance.py"
+      - "51-signature-presentation/scripts/sacred-structure-hashes.json"
+      - "51-signature-presentation/MASTERDOC.md"
+      - "51-signature-presentation/frame-templates/**"
+      - "51-signature-presentation/structure/sp_structure.json"
+      - "58-podcast-production-engine/scripts/blend_voice_governance.py"
+      - "58-podcast-production-engine/scripts/style-engine-format-hashes.json"
+      - "58-podcast-production-engine/style-engines/**"
+      - "52-avatar-alchemist/scripts/verify_tone_core_sync.py"
+      - "53-book-writer/scripts/verify_tone_core_sync.py"
+      - "54-anthology-writer/scripts/verify_tone_core_sync.py"
+      - tests/unit/u98-blend-governs-product-voice-engines.test.py
+      - .github/workflows/u98-blend-governs-product-voice-engines-guard.yml
+  pull_request:
+    paths:
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/tone-writing-core/tone_persona_autopick.py"
+      - "shared-utils/tone-writing-core/prompts/**"
+      - "35-social-media-planner/scripts/daily_blend_bundle.py"
+      - "51-signature-presentation/scripts/blend_voice_governance.py"
+      - "51-signature-presentation/scripts/sacred-structure-hashes.json"
+      - "51-signature-presentation/MASTERDOC.md"
+      - "51-signature-presentation/frame-templates/**"
+      - "51-signature-presentation/structure/sp_structure.json"
+      - "58-podcast-production-engine/scripts/blend_voice_governance.py"
+      - "58-podcast-production-engine/scripts/style-engine-format-hashes.json"
+      - "58-podcast-production-engine/style-engines/**"
+      - "52-avatar-alchemist/scripts/verify_tone_core_sync.py"
+      - "53-book-writer/scripts/verify_tone_core_sync.py"
+      - "54-anthology-writer/scripts/verify_tone_core_sync.py"
+      - tests/unit/u98-blend-governs-product-voice-engines.test.py
+      - .github/workflows/u98-blend-governs-product-voice-engines-guard.yml
+
+jobs:
+  u98-blend-governs-product-voice-engines-guard:
+    name: "Blend GOVERNS the product-voice engines — Skill 35/51/58/Anthology(54/59)"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the U1/U5 seams + all four engine call sites
+        run: |
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/persona_blend.py
+          python3 -m py_compile shared-utils/persona_for_job.py
+          python3 -m py_compile shared-utils/tone-writing-core/tone_persona_autopick.py
+          python3 -m py_compile 35-social-media-planner/scripts/daily_blend_bundle.py
+          python3 -m py_compile 51-signature-presentation/scripts/blend_voice_governance.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/blend_voice_governance.py
+
+      - name: U1 — persona_for_job.py self-test (incl. blend mode)
+        run: python3 shared-utils/persona_for_job.py --self-test
+
+      - name: Skill 35 — daily_blend_bundle.py self-test (7 distinct day scopes)
+        run: python3 35-social-media-planner/scripts/daily_blend_bundle.py --self-test
+
+      - name: Skill 51 — blend_voice_governance.py self-test (4 phases, sacred structure pinned)
+        run: python3 51-signature-presentation/scripts/blend_voice_governance.py --self-test
+
+      - name: Skill 58 — blend_voice_governance.py self-test (4 style engines, format pinned)
+        run: python3 58-podcast-production-engine/scripts/blend_voice_governance.py --self-test
+
+      - name: Anthology — tone_persona_autopick.py self-test (N/A governed, client-named untouched)
+        run: python3 shared-utils/tone-writing-core/tone_persona_autopick.py --self-test
+
+      - name: Anthology structure — tone-core sync (52/53/54, byte-for-byte)
+        run: |
+          python3 52-avatar-alchemist/scripts/verify_tone_core_sync.py
+          python3 53-book-writer/scripts/verify_tone_core_sync.py
+          python3 54-anthology-writer/scripts/verify_tone_core_sync.py
+
+      - name: U98 — blend-GOVERNS product-voice-engines proof (all four legs)
+        run: python3 tests/unit/u98-blend-governs-product-voice-engines.test.py

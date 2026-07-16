@@ -46,17 +46,26 @@ Each style stage: grade-level analysis first ("communicates at the 10th-grade / 
 `[TONE]` explanation + mimic-without-plagiarizing instructions + one example paragraph; on `N/A`
 the stage MUST auto-pick a real, well-known person in harmony with the avatar's 32 answers.
 
-### N/A auto-pick is deterministic (F4.3)
+### N/A auto-pick is deterministic (F4.3) — and BLEND-GOVERNED (Skill 6 U98, D1 ruling)
 
 The N/A auto-pick is no longer a bare prompt-level guess. `tone_persona_autopick.py` routes each
 **N/A** slot through the ONE shared entry point `shared-utils/persona_for_job.py` (the canonical
 5-layer selector), so the pick is avatar/task-aware, **deterministic**, and **LOGGED** to the
 persona learning loop — and its blueprint Section-4 governance excerpt seeds the tone analysis.
 
-- **CLIENT-NAMED slots are NEVER touched** — the selector is consulted for N/A slots only
-  (client sovereignty is absolute).
-- **The 4-slot blend is unchanged** — each N/A slot is resolved independently; stage `08` blends the
-  four analyses exactly as before.
+As of Skill 6 U98 (the D1 binding ruling — "the blend GOVERNS every engine, no exemptions, never
+advisory") the N/A call runs `persona_for_job(..., blend=True)`: the resolved voice for that slot
+now carries the **governing `blend_directive`** (the mandatory, non-removable
+STYLE-INSPIRED-NEVER-IMPERSONATION guardrail included) traceable to the bundle, replacing the
+prior independently-picked single persona as the slot's voice authority. `ANTHOLOGY_BLEND_GOVERNS=0`
+reverts to the pre-U98 single-persona resolution byte-for-byte (the decommissioned call path is
+retained behind this flag, per U98's revert plan).
+
+- **CLIENT-NAMED slots are NEVER touched** — the selector (blended or not) is consulted for N/A
+  slots only (client sovereignty is absolute).
+- **The 4-slot blend STRUCTURE is unchanged** — each N/A slot is resolved independently; stage `08`
+  blends the four analyses exactly as before, and the `prompts/04..08` tone-stage assets this
+  reconciliation feeds are byte-identical (voice-path only, never structural).
 - **Skill 53's fictional palette** is an explicit *fallback tier* (only when a fictional voice is
   wanted), not the default for N/A.
 

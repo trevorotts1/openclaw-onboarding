@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
-version: 1.0.9
+version: 1.0.10
 ---
 
 # Signature Presentation (Skill 51)
@@ -131,6 +131,22 @@ as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
   `sync_check.py` stays green.
 - Command Center — one keyword (`signature presentation`) + one `sops` row; no schema change, no new
   lane, no new persona table.
+
+## Voice governance (Skill 6 U98, D1 binding ruling)
+
+The deck's **written voice** (word choice, cadence, register) is GOVERNED by the blended persona
+directive — never advisory, no exemptions, per the D1 ruling. `scripts/blend_voice_governance.py`
+resolves one governing blend bundle PER PHASE (all four: Avatar Section, Signature Story,
+Transformational Teaching, Purpose Pitch) through the shared U1 seam
+(`shared-utils/persona_for_job.py`, `blend=True`) before slide authoring. This is **additive
+governance**, never a structural change: `MASTERDOC.md`, the four `frame-templates/*.md`, and
+`structure/sp_structure.json` remain SACRED and byte-identical (pinned in
+`scripts/sacred-structure-hashes.json`, re-hashed and diffed by
+`blend_voice_governance.py --hash-structure` / `--prove`) — the N.E.E.I.T./4-Quadrant methodology,
+the phase bands, and the per-quadrant "Tone:" craft notes baked into MASTERDOC.md are untouched;
+only WHO governs the actual written voice changes. Flag-guarded: `SKILL51_BLEND_GOVERNS=0` reverts
+to intake-tone-only governance (director-of-presentations-sops.md's pre-existing rule — nothing to
+re-implement, it was never removed).
 
 ## Install / Wire / Verify
 
