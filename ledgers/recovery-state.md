@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T15:40:02Z
-openclaw-onboarding `origin/main` HEAD: `97c52ed4a5fde56ba02883b6113ec60dd5e0d51b`
+Generated: 2026-07-16T15:50:04Z
+openclaw-onboarding `origin/main` HEAD: `01f4af152dadfaeb32b07e3cd23b06a99e9d4faf`
 blackceo-command-center `origin/main` HEAD: `c46c5fcb1be699aca47b932abb4e3dd4fab5e8cc`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -96,6 +96,7 @@ No mismatches found this run.
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 | verified | 9.2 |
 | U105 | `skill6-v2/U105` | `0711f092` | True | `737eb62c` | v6.0.33 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U109 | `skill6-v2/U109` | `b1f8f99f` | False | - | - | pending | - |
+| U110 | `skill6-v2/U110` | `eec30044` | False | - | - | pending | - |
 | U20 | `skill6-v2/U20` | `5e5c3bb9` | True | `ae80043b` | v6.0.4 | verified | 9.1 |
 | U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 | verified (ONB half) | - |
 | U22 | `skill6-v2/U22` | `f4f933ff` | True | `ae972738` | v6.0.20 | merged (OFFLINE/CODE-MERGE tier, both repos) — LIVE-PROOF tier pending, own receipt | - |
@@ -125,7 +126,7 @@ No mismatches found this run.
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 | verified | 9.0 |
 | U58 | `skill6-v2/U58` | `b2d272c1` | True | `0e40db1c` | v6.0.30 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U59-cc-d15 | `skill6-v2/U59-cc-d15` | `6490fe8a` | False | - | - | (no row) | - |
+| U59-cc-d15 | `skill6-v2/U59-cc-d15` | `d0f3558c` | False | - | - | (no row) | - |
 | U6 | `skill6-v2/U6` | `d6fc0509` | True | `2d82fd6a` | v6.0.15 | verified | 9.0 |
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 | verified | 9.7 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 | verified | - |
