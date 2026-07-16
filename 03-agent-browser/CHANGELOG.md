@@ -4,6 +4,11 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.6.2] - July 16, 2026 (merge-train fix: GK-27 tripwire wrongly hard-failed staged/installed runs)
+
+### Fixed
+- **GK-27 lattice-citation tripwire no longer hard-fails outside a full repo checkout.** The check resolves its repo root as `SKILL_DIR`'s parent, which is only the real repo root (with a `docs/` sibling) when `qc-agent-browser.sh` runs from a plain checkout. Run against a STAGED or INSTALLED copy of just this skill directory — including the P3-06 regression fixtures' `cp -R` staging, and a real `~/.openclaw/skills/03-agent-browser/` install — `docs/tools/check_lattice_citation.py` itself is absent, so the gate hard-FAILed every such run permanently, not merely reporting drift. Surfaced when a preceding, unrelated `QC static invariants` step (the Skill-23 how-to-use-department guide) that had been failing on 7 consecutive main commits was fixed, unmasking this second failure in the same job (the earlier failure had short-circuited the job before the Skill 03 P3-06 regression steps ever ran). Now WARN-only SKIPS when the checker script isn't found (staged/installed context), and still hard-asserts exactly as before when it is (a plain repo checkout) — same "absent skips cleanly" convention as the neighboring GK-28/U90 on-box drift gate. `qc-agent-browser-reaper-assert.test.sh`'s "well-behaved close" fixture (and the other two P3-06 regression suites) now PASS again.
+
 ## [v6.6.1] - July 16, 2026 (GK-27/U89)
 
 ### Added

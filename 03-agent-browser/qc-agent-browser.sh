@@ -67,12 +67,31 @@ warn_only "TOOLS.md references agent-browser" "grep -qiE 'agent.browser' \"$WORK
 # skill owns (its own backstop-consumer acknowledgment, GK-28/U90) still cite
 # real, unchanged ground truth. Drift (a moved/edited/deleted cited line) or a
 # missing pointer both FAIL this check — see docs/tools/check_lattice_citation.py.
+#
+# This is a REPO-integrity check, not a runtime/installed-skill check: it
+# needs docs/tools/check_lattice_citation.py + docs/lattice-citations.json,
+# which live at the repo root as SIBLINGS of 03-agent-browser/, not inside
+# it. When qc-agent-browser.sh runs from a plain repo checkout, SKILL_DIR's
+# parent IS that repo root and the checker is found. When this script runs
+# against a STAGED/INSTALLED copy of just this skill directory (an installed
+# ~/.openclaw/skills/03-agent-browser/, or the P3-06 regression fixtures'
+# `cp -R` staging) SKILL_DIR's parent has no docs/ sibling at all -- the
+# checker script itself is absent, not merely reporting drift. Hard-FAILing
+# in that case would wrongly redden every staged/installed run forever (a
+# permanently-red gate), so this SKIPS (warn_only) when the checker isn't
+# present, and only hard-asserts when it is -- same "absent skips cleanly"
+# convention as the GK-28/U90 on-box drift gate below.
 echo ""
 echo "═══ Relationship lattice pointer + citation tripwire (GK-27) ═══"
 echo ""
 REPO_ROOT_LATTICE="$(cd "$SKILL_DIR/.." && pwd)"
-assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
-  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 03-agent-browser -q"
+if [ -f "$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py" ]; then
+  assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+    "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 03-agent-browser -q"
+else
+  yellow "  ⚠ WARN — GK-27 lattice citation tripwire SKIPPED — docs/tools/check_lattice_citation.py not found at $REPO_ROOT_LATTICE (running against a staged/installed skill copy, not a full repo checkout)"
+  WARN=$((WARN+1))
+fi
 
 # ── Archive drift gate (P3-06 step (c)2) ─────────────────────────────────────
 echo ""
