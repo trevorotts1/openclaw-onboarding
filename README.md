@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.56.
+> **Version:** see `/version` - this repo at v20.0.57.
+>
+> **NOTE (v20.0.57) — feat(skill6): Skill 6 U53 (HL/U68) ONB leg — crown-executor single-path static regression lock; D12 decision + live loop-proof still owed.** Merges the openclaw-onboarding leg of the both-repo U53 self-updater unit: `.github/workflows/u53-crown-executor-single-path-guard.yml` + `tests/probe/test-u53-hl-u68-crown-executor-single-path.sh` — a static, spec-referenced regression lock that fails the build if `update-skills.sh`'s two D5 call sites or `run-full-install.sh`'s Phase 6 caller ever inline their own CC checkout mutation instead of delegating through the single crowned executor (`cc_route_update_through_canonical_path()` -> the pulled CC's own `update.sh`, `CC_APP_DIR` pinned). The crowning itself already landed via P1-07 (2026-07-11); this adds the missing invariant lock at both call-site layers. Both-repo unit: the CC leg (canonical-path + AGENTS.md cleanup) is already on blackceo-command-center v6.0.36. The D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run remain gated on the operator, not resolved here. Merging this clears the reconciler's fail-closed integrity alarm (this ONB leg was the unmerged-but-verified mismatch). Proof (merged tree): the crown-executor single-path probe PASS; full gate battery GREEN incl. agent-browser guard exit 0. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.56) — fix(ledger-reconciler): canonical git-tracked fail-closed core + regression test.** Merges `skill6-v2/fix-reconciler-failclosed` into `shared-utils/ledger_reconciler_core.py` — the canonical data/logic engine the operator-local reconciler cron wrapper invokes (the box-specific wrapper stays out of this fleet-wide template). The module does no git writes; it reads git state read-only and renders `recovery-state.md`, patches ONLY exactly-"pending" rows with a proven merge-parent + containing tag, appends session-log blocks, and — the fix — detects + loudly surfaces "verified-but-unmerged leg" mismatches as a fail-closed ALARM (`detect_failclosed_mismatches()` + an Integrity Alarms section), never a silent cell, and never auto-corrects a verified/deferred/other row. Fail-first regression test (`tests/unit/ledger-reconciler-failclosed.test.py`) reproduces the exact U53 shape (ONB leg unmerged / CC leg merged / one shared "verified" row) and proves the alarm fires. Proof (merged tree): `py_compile` clean; the reconciler-failclosed test ALL PASS; full gate battery GREEN incl. agent-browser guard exit 0. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -119,7 +121,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.56** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.57** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
