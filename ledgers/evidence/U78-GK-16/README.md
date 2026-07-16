@@ -23,7 +23,7 @@ both agree with what is reported here.
 ## T1 — Command Center build version (PROVED, unchanged)
 
 ```
-$ git rev-parse HEAD               # /Users/blackceomacmini/command-center/app, local read, no fetch
+$ git rev-parse HEAD               # <OPERATOR_HOME>/command-center/app, local read, no fetch
 cdfc9090ac6e7af9e9902871b69d509e6dde7e66
 $ git describe --tags --exact-match HEAD
 v6.0.25
@@ -59,7 +59,7 @@ $ sqlite3 -readonly ~/.anthology-engine/state/anthology_state.db "SELECT COUNT(*
 5
 $ sqlite3 -readonly ~/.anthology-engine/state/anthology_state.db "SELECT COUNT(*) FROM anthologies;"
 2
-$ sqlite3 -readonly /Users/blackceomacmini/command-center/data/mission-control.db "SELECT COUNT(*) FROM tasks WHERE lower(source)='anthology';"
+$ sqlite3 -readonly <OPERATOR_HOME>/command-center/data/mission-control.db "SELECT COUNT(*) FROM tasks WHERE lower(source)='anthology';"
 7
 ```
 
@@ -85,7 +85,7 @@ must.**
 ### ADDITION 4 — `checkAnthologyBoardProjection()` is structurally blind to the drift class it is cited for, not merely "a low bar"
 
 Read directly, this pass, at the live path:
-`/Users/blackceomacmini/command-center/app/src/lib/health/deep-checks.ts:937-1053`.
+`<OPERATOR_HOME>/command-center/app/src/lib/health/deep-checks.ts:937-1053`.
 
 The full control flow:
 - ledger DB absent → `pass: true` ("not provisioned... not applicable") — line 948-954
@@ -117,7 +117,7 @@ criterion asks for.
 ## T3a — Department seeded (PROVED, unchanged)
 
 ```
-$ sqlite3 -readonly /Users/blackceomacmini/command-center/data/mission-control.db \
+$ sqlite3 -readonly <OPERATOR_HOME>/command-center/data/mission-control.db \
   "SELECT id,slug,name FROM workspaces WHERE lower(slug) LIKE '%anthology%';"
 anthology|anthology|Anthology
 $ sqlite3 -readonly ... "SELECT COUNT(*) FROM workspaces WHERE lower(slug) LIKE '%anthology%';"
