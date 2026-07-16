@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T07:00:02Z
-openclaw-onboarding `origin/main` HEAD: `121d729a1690027c8a45aa03c7c5a2bd3e1197b1`
-blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
+Generated: 2026-07-16T07:10:03Z
+openclaw-onboarding `origin/main` HEAD: `b14c0e996bc95bb21d88e5056602a8b8cb8d3db9`
+blackceo-command-center `origin/main` HEAD: `7244d257acc33faf3ffb4f20bdc3229825c2369d`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
@@ -15,7 +15,10 @@ No mismatches found this run.
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
+| U10 | `skill6-v2/U10` | `d2c26e1f` | False | - | - | pending | - |
+| U107 | `skill6-v2/U107` | `4e43ff80` | False | - | - | pending | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
+| U115 | `skill6-v2/U115` | `670043c5` | False | - | - | pending | - |
 | U12 | `skill6-v2/U12` | `d332ee72` | False | - | - | pending | - |
 | U13 | `skill6-v2/U13` | `5fec8cf9` | True | `59c472b9` | v20.0.38 | verified | 9.3 |
 | U14 | `skill6-v2/U14` | `ab4b5aff` | True | `c6f865fe` | v20.0.51 | verified | - |
@@ -47,7 +50,7 @@ No mismatches found this run.
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
-| U71 | `skill6-v2/U71` | `16a6441c` | False | - | - | pending | - |
+| U71 | `skill6-v2/U71` | `16a6441c` | True | `144d2e88` | v20.0.59 | verified (repo leg; live snapshot-chain run owed) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
@@ -79,7 +82,7 @@ No mismatches found this run.
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 | verified | 8.8 |
 | U27 | `skill6-v2/U27` | `92beccab` | True | `6dfb8bf7` | v6.0.11 | verified | 9.0 |
 | U32 | `skill6-v2/U32` | `6c442dfd` | True | `2da17734` | v6.0.5 | verified | 8.9 |
-| U33 | `skill6-v2/U33` | `57c8305c` | False | - | - | pending | - |
+| U33 | `skill6-v2/U33` | `57c8305c` | True | `20773b64` | v6.0.38 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
 | U38 | `skill6-v2/U38` | `73e57dde` | False | - | - | pending | - |
@@ -94,7 +97,7 @@ No mismatches found this run.
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 | verified | 9.2 |
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 | verified | 9.0 |
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (ONB half) | - |
-| U50 | `skill6-v2/U50` | `8d0c480a` | False | - | - | pending | - |
+| U50 | `skill6-v2/U50` | `8d0c480a` | True | `28e91598` | v6.0.37 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
 | U54 | `skill6-v2/U54` | `806b98c8` | False | - | - | pending | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
@@ -127,7 +130,7 @@ No mismatches found this run.
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U33, U50, U71
 - fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
