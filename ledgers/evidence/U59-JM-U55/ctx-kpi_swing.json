@@ -1,0 +1,8 @@
+{
+  "task_id": "U59-PROOF-kpi-swing-001",
+  "title": "Email open rate on the campaign-tied metric moved -24% week over week",
+  "department": "marketing",
+  "kpi_name": "email_open_rate",
+  "kpi_delta_pct": -24.0,
+  "campaign_tied": true
+}
