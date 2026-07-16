@@ -1,0 +1,30 @@
+{
+  "status": "in_progress",
+  "started_at": "2026-07-16T13:03:16.684332",
+  "entries": {
+    "presentation_type": {
+      "asked_at": "2026-07-16T13:03:16.684399",
+      "turn": 1,
+      "answer": "signature",
+      "normalized": "signature",
+      "validated": true,
+      "validated_at": "2026-07-16T13:03:16.732945"
+    },
+    "recipient_name": {
+      "validated": true,
+      "validated_at": "2026-07-16T13:03:16.732971",
+      "skipped": true,
+      "answer": "(not applicable)"
+    },
+    "signature_source": {
+      "asked_at": "2026-07-16T13:03:16.781492",
+      "turn": 2,
+      "answer": "from_scratch",
+      "normalized": "from_scratch",
+      "validated": true,
+      "validated_at": "2026-07-16T13:03:16.830222"
+    }
+  },
+  "turns": 2,
+  "budget_overrun": false
+}
