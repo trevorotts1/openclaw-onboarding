@@ -180,6 +180,105 @@ ok("T4: explicitly-declined department is dropped") \
 ok("T4: every OTHER floor department survives (decline is the ONLY drop path)") \
     if (FULL_SLUGS - {"legal"}) <= after4 else bad(f"T4: unexplained drop(s): {sorted((FULL_SLUGS - {'legal'}) - after4)}")
 
+# ─────────────────────────────────────────────────────────────────────────
+# QC re-review hardening (2026-07-16): the first pass's merge guard had three
+# holes that each let the shipped suite stay green while the floor still
+# shrank. T5-T7 close them; each reproduces its hole then proves the fix.
+# ─────────────────────────────────────────────────────────────────────────
+
+print("== T5: a CORRUPT/truncated artifact must fail safe (recover from build-state), never be trusted as 'nothing was here' ==")
+tmp5 = tempfile.mkdtemp()
+state5 = fresh_state(tmp5)
+comp5 = os.path.join(tmp5, "acme")
+os.makedirs(comp5)
+
+bw.write_chosen_departments_artifact(FULL, company_dir=comp5, source="t5-full-build")
+before5 = set(bw.read_chosen_departments(company_dir=comp5))
+
+# Truncate the on-disk artifact mid-write (simulates a crash/kill during the
+# PRE-fix non-atomic write, or disk corruption) -- the file EXISTS but is not
+# valid JSON. This must never be treated the same as "no prior departments".
+art5 = os.path.join(comp5, "departments.json")
+with open(art5, "w") as f:
+    f.write('[{"id": "dept-market')   # deliberately truncated / invalid JSON
+
+bw.write_chosen_departments_artifact({"marketing": FULL["marketing"]},
+                                      company_dir=comp5, source="t5-partial-after-corruption")
+after5 = set(bw.read_chosen_departments(company_dir=comp5))
+lost5 = before5 - after5
+if lost5:
+    print(f"   [REPRO] *** CORRUPT-ARTIFACT WIPE: {sorted(lost5)} were present before the "
+          f"corruption and are GONE after the next write -- the damaged read was silently "
+          f"trusted instead of failing safe. ***")
+ok("T5: a corrupt artifact recovers the prior floor from build-state (no silent disarm)") \
+    if not lost5 else bad(f"T5: corrupt-artifact wipe -- lost {sorted(lost5)}")
+
+print("== T6: a FALSY company_dir on the production call path must not wipe build-state's record ==")
+tmp6 = tempfile.mkdtemp()
+state6 = fresh_state(tmp6)
+comp6 = os.path.join(tmp6, "acme")
+os.makedirs(comp6)
+
+bw.write_chosen_departments_artifact(FULL, company_dir=comp6, source="t6-full-build")
+before6 = set(bw.read_chosen_departments(company_dir=comp6))
+
+# Simulate build_from_config's two production call sites, which never pass
+# company_dir explicitly -- they rely on the module-level COMPANY_DIR global,
+# which that SAME function's own `if COMPANY_DIR:` guard (build-workforce.py,
+# one line after each call site) proves can be falsy. Force that exact
+# condition: COMPANY_DIR falsy AND no company_dir argument.
+saved_company_dir = bw.COMPANY_DIR
+bw.COMPANY_DIR = None
+try:
+    bw.write_chosen_departments_artifact({"marketing": FULL["marketing"]},
+                                          source="t6-partial-falsy-cdir")
+finally:
+    bw.COMPANY_DIR = saved_company_dir
+
+# The on-disk artifact at comp6 was correctly skipped (no cdir to write to) --
+# read the RECOVERY-RELEVANT source directly: build-state itself, which the
+# falsy-cdir call unconditionally re-stamps regardless of the file write.
+after6 = set(read_state(state6).get("canonicalReconciliation", {}).get("chosenDepartments", {}).get("slugs", []))
+lost6 = before6 - after6
+if lost6:
+    print(f"   [REPRO] *** FALSY-cdir WIPE: {sorted(lost6)} were in build-state before the "
+          f"falsy-company_dir call and are GONE from build-state after it. ***")
+ok("T6: a falsy company_dir recovers build-state's prior record instead of wiping it") \
+    if not lost6 else bad(f"T6: falsy-cdir wipe of build-state -- lost {sorted(lost6)}")
+
+print("== T7: a legacy id-only prior entry must DEDUP against this call's bare-slug entry, never duplicate ==")
+tmp7 = tempfile.mkdtemp()
+state7 = fresh_state(tmp7)
+comp7 = os.path.join(tmp7, "acme")
+os.makedirs(comp7)
+
+bw.write_chosen_departments_artifact(FULL, company_dir=comp7, source="t7-full-build")
+
+# Hand-edit the artifact to the LEGACY shape for 'marketing': id-only, no
+# "slug" key (the pre-"slug"-field format). A later call that ALSO selects
+# 'marketing' (bare-slug, from generate_departments_json) must merge onto
+# ONE department, not two.
+art7 = os.path.join(comp7, "departments.json")
+legacy = json.load(open(art7))
+for entry in legacy:
+    if entry.get("slug") == "marketing":
+        del entry["slug"]   # now id-only: {"id": "dept-marketing", ...}
+with open(art7, "w") as f:
+    json.dump(legacy, f)
+
+bw.write_chosen_departments_artifact({"marketing": FULL["marketing"]},
+                                      company_dir=comp7, source="t7-partial-legacy-dedup")
+final7 = json.load(open(art7))
+marketing_count = sum(
+    1 for e in final7
+    if isinstance(e, dict) and (e.get("slug") == "marketing" or e.get("id") == "dept-marketing")
+)
+if marketing_count > 1:
+    print(f"   [REPRO] *** DUPLICATE: 'marketing' appears {marketing_count} times in the merged "
+          f"artifact -- the legacy id-only entry survived the dedup check unnormalized. ***")
+ok("T7: legacy id-only entry dedups against the bare-slug entry (exactly one 'marketing')") \
+    if marketing_count == 1 else bad(f"T7: 'marketing' appears {marketing_count} times (expected 1)")
+
 print()
 print("===================================================")
 print(f"  test-u109-floor-wipe-regression: PASS={PASS} FAIL={FAIL}")
