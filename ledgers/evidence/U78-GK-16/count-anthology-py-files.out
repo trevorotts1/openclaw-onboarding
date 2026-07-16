@@ -1,0 +1,24 @@
+
+=== LIVE_BOX: /Users/blackceomacmini/.openclaw/skills/59-anthology-engine (exists=True) ===
+  scripts/ (top-level .py)         = 40
+  tests/ (top-level .py)            = 15
+  fixtures/golden (top-level .py)   = 1
+  RECURSIVE total .py (os.walk)     = 56
+  ENGINE-MANIFEST.json script_inventory entries = 39
+  sum(scripts+tests+fixtures/golden) = 56  (matches RECURSIVE total: True)
+
+=== REPO_SRC: /private/tmp/claude-501/-Users-blackceomacmini/99fa9f44-783c-445c-ad88-4a1c119bbb19/scratchpad/u78-worktree/59-anthology-engine (exists=True) ===
+  scripts/ (top-level .py)         = 40
+  tests/ (top-level .py)            = 16
+  fixtures/golden (top-level .py)   = 1
+  RECURSIVE total .py (os.walk)     = 57
+  ENGINE-MANIFEST.json script_inventory entries = 39
+  sum(scripts+tests+fixtures/golden) = 57  (matches RECURSIVE total: True)
+
+=== STALE_WT: /Users/blackceomacmini/clawd/_wt/anthology-drive-n8n-broker/59-anthology-engine (exists=True) ===
+  scripts/ (top-level .py)         = 39
+  tests/ (top-level .py)            = 8
+  fixtures/golden (top-level .py)   = 1
+  RECURSIVE total .py (os.walk)     = 48
+  ENGINE-MANIFEST.json script_inventory entries = 37
+  sum(scripts+tests+fixtures/golden) = 48  (matches RECURSIVE total: True)
