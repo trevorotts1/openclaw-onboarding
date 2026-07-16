@@ -1,0 +1,19 @@
+{
+  "unit": "U22 / B-U8",
+  "run_kind": "LIVE-TIER operator-box fixture funnel run (persistent evidence)",
+  "evidence_root": "/private/tmp/claude-501/-Users-blackceomacmini/99fa9f44-783c-445c-ad88-4a1c119bbb19/scratchpad/u22-live/evidence-live-run",
+  "bundle_voice_persona_id": "hormozi-100m-offers",
+  "bundle_topic_persona_id": "miller-building-storybrand",
+  "receipt_source": "threaded",
+  "receipt_hold": false,
+  "pages_total": 2,
+  "pages_guardrail_terminated": 2,
+  "persona_mismatch_events": 0,
+  "log_voice_equals_bundle_voice": true,
+  "fab_qc_d4_score": 10.0,
+  "fab_qc_overall_passed": true,
+  "declared_voice": "hormozi-100m-offers",
+  "used_voice": "hormozi-100m-offers",
+  "mismatch_free": true,
+  "all_checks_ok": true
+}

@@ -1,0 +1,26 @@
+{
+  "pages": [
+    {
+      "page": "optin",
+      "path": "optin",
+      "order": 1,
+      "voice_persona_id": "hormozi-100m-offers",
+      "topic_persona_id": "brunson-marketing-secrets-blackbook",
+      "declared_bundle_voice_persona_id": "hormozi-100m-offers",
+      "guardrail_terminated": true,
+      "persona_mismatch": false,
+      "blend_directive_sha256_len": 667
+    },
+    {
+      "page": "thankyou",
+      "path": "thankyou",
+      "order": 2,
+      "voice_persona_id": "hormozi-100m-offers",
+      "topic_persona_id": "brunson-marketing-secrets-blackbook",
+      "declared_bundle_voice_persona_id": "hormozi-100m-offers",
+      "guardrail_terminated": true,
+      "persona_mismatch": false,
+      "blend_directive_sha256_len": 666
+    }
+  ]
+}
