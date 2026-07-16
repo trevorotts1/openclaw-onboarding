@@ -2,13 +2,17 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T11:10:03Z
-openclaw-onboarding `origin/main` HEAD: `818d823caa7a17ed07f43215d821803c28f17fb1`
-blackceo-command-center `origin/main` HEAD: `45822df9dba41073a872e57514c5d082689ea739`
+Generated: 2026-07-16T11:40:03Z
+openclaw-onboarding `origin/main` HEAD: `5d123880cc544cd9cc89c8abc51269f866731eeb`
+blackceo-command-center `origin/main` HEAD: `0276093ca4558f15bc608316be7b49a4a26aff71`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-No mismatches found this run.
+**1 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
+
+| unit | unmerged repo leg | branch | tip | shared ledger status |
+|---|---|---|---|---|
+| U91 | openclaw-onboarding | `skill6-v2/U91` | `4ba11988` | verified |
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -16,10 +20,13 @@ No mismatches found this run.
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
 | U10 | `skill6-v2/U10` | `d2c26e1f` | False | - | - | pending | - |
-| U107 | `skill6-v2/U107` | `4e43ff80` | False | - | - | pending | - |
+| U106 | `skill6-v2/U106` | `c28f75b8` | False | - | - | pending | - |
+| U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | - | pending | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
+| U112 | `skill6-v2/U112` | `4fcfa01c` | False | - | - | pending | - |
 | U115 | `skill6-v2/U115` | `670043c5` | False | - | - | pending | - |
-| U12 | `skill6-v2/U12` | `63f10f63` | False | - | - | pending | - |
+| U116 | `skill6-v2/U116` | `cef6c474` | False | - | - | pending | - |
+| U12 | `skill6-v2/U12` | `5f3c7321` | False | - | - | pending | - |
 | U13 | `skill6-v2/U13` | `5fec8cf9` | True | `59c472b9` | v20.0.38 | verified | 9.3 |
 | U14 | `skill6-v2/U14` | `ab4b5aff` | True | `c6f865fe` | v20.0.51 | verified | - |
 | U18 | `skill6-v2/U18` | `0b72ee80` | True | `706aff5d` | v20.0.27 | verified | 9.3 |
@@ -38,14 +45,14 @@ No mismatches found this run.
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | True | `ebef2f72` | v20.0.54 | verified | - |
 | U39 | `skill6-v2/U39` | `3ca7edae` | False | - | - | pending | - |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
-| U44 | `skill6-v2/U44` | `3a1bc8c4` | False | - | - | pending | - |
+| U44 | `skill6-v2/U44` | `c6aca95f` | False | - | - | pending | - |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
 | U59 | `skill6-v2/U59` | `985935c4` | False | - | - | pending | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
-| U63 | `skill6-v2/U63` | `5cac4738` | False | - | - | deferred (operator-gated) | - |
-| U64 | `skill6-v2/U64` | `a1f52194` | False | - | - | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
-| U65 | `skill6-v2/U65` | `8a7a213a` | False | - | - | deferred (operator-gated) | - |
+| U63 | `skill6-v2/U63` | `c3d13ec5` | False | - | - | deferred (operator-gated) | - |
+| U64 | `skill6-v2/U64` | `a1f52194` | True | `4736b19b` | - | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
+| U65 | `skill6-v2/U65` | `8a7a213a` | True | `8e556638` | - | deferred (operator-gated) | - |
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
@@ -55,12 +62,17 @@ No mismatches found this run.
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
-| U86 | `skill6-v2/U86` | `e6e8cf83` | False | - | - | pending | - |
+| U86 | `skill6-v2/U86` | `919b195d` | False | - | - | pending | - |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | True | `a3a42e1d` | v20.0.49 | verified (OFFLINE/FIXTURE tier; LIVE operator-box leg OWED) | - |
+| U89 | `skill6-v2/U89` | `1acd1769` | False | - | - | pending | - |
 | U9 | `skill6-v2/U9` | `b4b58f1e` | True | `ceaac642` | v20.0.50 | verified | - |
 | U9-sonnet5-b | `skill6-v2/U9-sonnet5-b` | `89345db2` | False | - | - | (no row) | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
+| U91 | `skill6-v2/U91` | `4ba11988` | False | - | - | **MISMATCH (fail-closed): verified** — see Integrity Alarms | - |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
+| U96 | `skill6-v2/U96` | `889b13ab` | False | - | - | pending | - |
+| U97 | `skill6-v2/U97` | `fa1cdba7` | False | - | - | pending | - |
+| U98 | `skill6-v2/U98` | `d980209f` | False | - | - | pending | - |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
 | fix-agent-browser-guard-red | `skill6-v2/fix-agent-browser-guard-red` | `f947b12d` | True | `980e8a9b` | v20.0.55 | (no row) | - |
@@ -108,7 +120,7 @@ No mismatches found this run.
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 | verified | 9.7 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 | verified | - |
 | U77 | `skill6-v2/U77` | `c34cbe9b` | False | - | - | pending | - |
-| U94 | `skill6-v2/U94` | `82d70f68` | False | - | - | pending | - |
+| U94 | `skill6-v2/U94` | `02cb757f` | False | - | - | pending | - |
 | U95 | `skill6-v2/U95` | `86004117` | True | `d8f46fb4` | v6.0.31 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U99 | `skill6-v2/U99` | `21898e7d` | True | `ad297f3d` | - | pending | - |
 
@@ -131,6 +143,6 @@ No mismatches found this run.
 
 - ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 1 (U91-openclaw-onboarding)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 

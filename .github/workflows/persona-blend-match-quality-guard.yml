@@ -62,6 +62,24 @@ name: persona-blend-match-quality-guard
 #       fixture 3-page funnel run proves >=2 distinct blends + exactly N
 #       persona-selection-log.md entries (this unit's own binary acceptance
 #       (a)/(b)/(c)/(d)).
+#
+# U115 (E6-1, Section E6; operator ruling ADD-1; ONB leg — the Command
+# Center board-card/task-detail-modal leg is a separate, owed unit on that
+# repo's own train) adds a ninth check:
+#   (I) `decompose_task_parts` mechanically reads a declared campaign
+#       manifest or funnel pageStructure into communication PARTS and NEVER
+#       invents parts from prose alone (ASK-gated); `govern_task_parts`
+#       calls build_bundle ONCE PER PART reusing A-U5's `scope_hint`/
+#       `part_id` mechanism verbatim (no new bundle store), producing >=2
+#       DISTINCT per-part blends on a fixture multi-part campaign
+#       (part count == bundle-scope count); `routing/part-persona-map.json`
+#       tracks the governing blend per part/stage and ACCUMULATES across a
+#       long-horizon fixture's multiple stages/calls; a task with no
+#       declared parts degrades BYTE-IDENTICALLY to today's single
+#       task-level bundle behind the `PER_PART_GOVERNANCE=1` revert flag;
+#       and `validate_part_blend_diversity` flags a forced-identical blend
+#       across parts with no logged reason while passing a legitimately
+#       shared, reasoned blend (hands the flag to U117, never gates here).
 
 on:
   push:
@@ -74,6 +92,7 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
       - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -98,6 +117,7 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
       - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -145,6 +165,9 @@ jobs:
 
       - name: A-U5 — per-page/scoped blends (scope_hint, fixture funnel, back-compat)
         run: python3 23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py
+
+      - name: U115 — per-part/per-persona governance (ONB leg — decompose, per-part loop, part-persona-map, back-compat)
+        run: python3 23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py
 
       - name: P4-01 — match-score-distribution logging (drift observability)
         run: python3 tests/unit/persona-match-score-log.test.py
