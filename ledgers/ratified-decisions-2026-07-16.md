@@ -206,6 +206,31 @@ Plus two non-Skill-6 operational items the handoff doc carries under "DECISIONS 
 
 The tracking docs' own framing of the five decision gates is *"an OPEN, non-unit DECISION gate (noted) — that's a ratification, not a build blocker"* (`skill6-SESSION-LOG-and-CHECKLIST.md:152`), and none of the three files attaches the phrase "waiting on Trevor" to any of them. **This file records the discrepancy rather than silently resolving it:** the correct count of open decision gates is not 1, and the summary tables saying otherwise should be corrected by whoever next touches them. These five are NOT ratified by this file — they are named here so they stop being invisible.
 
+**The master register's own count is larger still.** Section E.3's controlling heading reads: *"D1 = BINDING RULING; D2, D3, D5 = RATIFIED 2026-07-14; D6, D23 = RATIFIED 2026-07-15 … remaining open items D4, D7–D22 = §0 questions, one at a time, BEFORE the run"*. Subtracting D4 and D12 (ratified above) and D20 (ratified earlier in this file) leaves **fourteen decisions still formally unratified: D7, D8, D9, D10, D11, D13, D14, D15, D16, D17, D18, D19, D21, D22.**
+
+### The critical distinction — "ratify what shipped" does NOT apply to all of them
+
+D4 and D12 were closable at zero cost because the recommended option was **already built and proven**. That is NOT true of every remaining decision. Verified from code on `origin/main` this pass:
+
+| Decision | What it gates | Recommendation shipped? | Evidence (re-derived this pass) |
+|---|---|---|---|
+| **D8** (D-C2) | catch-all's client-facing name | **NO** | `src/lib/routing/departments.config.ts` on CC `origin/main` still ships display name **"General Task"**; the string "General Stuff" is absent. |
+| **D9** (D-C3) | dedicated `funnels` department | **NO** | no `slug: 'funnels'` anywhere in that file — funnel cards still fall through to the catch-all (the INGEST-06 behaviour D9 exists to fix). |
+| **D15** (D-J1) | Devil's Advocate content visibility + status lifecycle | **NO** | `src/app/api/da-challenges/route.ts` on CC `origin/main` ships the **legacy** enum (`open`/`responded`/`escalated`); the PRD lifecycle (`pending`/`approved`/`rejected`) is absent. That route predates U59 entirely (shipped by `8b7dc74`, `5bd9ba3`). |
+
+**These three gate real, unbuilt work.** They cannot be closed by ratifying the status quo, because the status quo *contradicts* the recommendation.
+
+### Integrity finding — two units read `verified` while only half-built (and the reconciler cannot see it)
+
+**U44** and **U59** both carry `repo/surface: both` in the E.2 decomposition, meaning each owes an onboarding leg AND a Command Center leg. Both are recorded `verified` and both are merged **on the onboarding side only**:
+
+- **U59** (Devil's Advocate): its own merged ONB commit `985935c4` states the split in its message — *"This commit covers the openclaw-onboarding half only: U55a (operator-box proof of the generator) and U55d (the thin bridge). The Command Center half (U55b demo purge, U55c POST/PATCH write path, U55e PRD-conform surfaces, U55f PRD fix) lands on its own blackceo-command-center train."* U55c and U55e are exactly the two sub-steps its dependency line gates on D15 (*"D-J1 ratified before U55c/U55e merge"*). **There is no U59 branch on the Command Center remote at all**, and the code above proves that half is not built.
+- **U44** (catch-all conformance): **no U44 branch on the Command Center remote**, and its two CC-leg subjects (D8's display name, D9's funnels department) are both provably absent from `departments.config.ts`.
+
+**Why the fail-closed alarm missed this:** `recovery-state.md`'s integrity check compares a branch's tip against `main` — it can only fire for a branch that **exists**. A second repo leg that was never started has no branch to compare, so the unit reads as fully `verified` off its first leg alone. This is a fail-OPEN blind spot in an otherwise fail-closed reconciler: it catches "verified but unmerged", never "verified but never started". A unit whose E.2 row says `both` should be checked against **both** remotes.
+
+*Scope note:* this pass did not audit every `both` unit for the same defect — U44 and U59 surfaced because D8/D9/D15 pointed at them. Whoever next touches the reconciler should sweep all `both`-marked units against both remotes; the count above (fourteen open decisions) may itself be masking more half-built units.
+
 ## Files touched recording these decisions
 
 - `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` — U65 row, U64 row (edited in place, old evidence preserved verbatim).
