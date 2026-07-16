@@ -2,13 +2,18 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T12:40:20Z
-openclaw-onboarding `origin/main` HEAD: `a2c425da5d488b0d00705e26e67a5676da8d8601`
+Generated: 2026-07-16T12:50:02Z
+openclaw-onboarding `origin/main` HEAD: `8d16ca5f21bc844a898113105a72113416ce9cb5`
 blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-No mismatches found this run.
+**2 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
+
+| unit | unmerged repo leg | branch | tip | shared ledger status |
+|---|---|---|---|---|
+| U38 | blackceo-command-center | `skill6-v2/U38` | `6971f6ab` | verified (auto-reconciled, needs test-proof confirmation) |
+| U102 | blackceo-command-center | `skill6-v2/U102` | `77e5643e` | verified (auto-reconciled, needs test-proof confirmation) |
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -83,7 +88,7 @@ No mismatches found this run.
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 | verified | 9.4 |
-| U102 | `skill6-v2/U102` | `1ebe050b` | True | `fe7fb9f8` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U102 | `skill6-v2/U102` | `77e5643e` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
 | U103 | `skill6-v2/U103` | `7831aeb8` | True | `20935e91` | v6.0.32 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 | verified | 9.2 |
 | U105 | `skill6-v2/U105` | `0711f092` | True | `737eb62c` | v6.0.33 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -97,7 +102,7 @@ No mismatches found this run.
 | U33 | `skill6-v2/U33` | `57c8305c` | True | `20773b64` | v6.0.38 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
-| U38 | `skill6-v2/U38` | `f1621b0d` | True | `c2960cdf` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U38 | `skill6-v2/U38` | `6971f6ab` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (ONB half) | - |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 | verified | 8.9 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
@@ -143,6 +148,6 @@ No mismatches found this run.
 
 - ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U38-blackceo-command-center, U102-blackceo-command-center)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
