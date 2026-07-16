@@ -35,7 +35,7 @@ Spec: `skill58-podbean-server-side-publish-SPEC-v1-2026-07-16.md` (Section 5 = u
 | U1 | Prove n8n API WRITE capability (POST/GET/DELETE scratch workflow) or record manual-UI fallback | [Opus 4.8 x1] bootstrap survey (unit unstarted) | pending | READ leg only proven this pass: `GET /api/v1/workflows/TkL0rn2SH3q32SeB` HTTP 200 and full 286-workflow paged listing HTTP 200, key by name `N8N_API_KEY` (SET, value never printed). WRITE capability still UNPROVEN — that is U1's actual job. | 2026-07-16T12:35Z |
 | U2 | Create + seed `podcast_publish_roster` data table (6 cols, all good_standing=YES, + OPERATOR TEST row) | — | pending | GREENFIELD. Fresh `GET /api/v1/data-tables` HTTP 200 → 6 tables exist; `podcast_publish_roster` is ABSENT. Reuse pattern: `snapshot_provision_ledger` (FCb16RvM2l7f4HKl). | 2026-07-16T12:35Z |
 | U3 | Create `podcast_publish_ledger` data table (8 cols), empty at creation | — | pending | GREENFIELD. Same live re-read: `podcast_publish_ledger` ABSENT from the 6 existing tables. | 2026-07-16T12:35Z |
-| U4 | Snapshot workflow JSON, then add webhook header auth (`Podcast Publish Gate`, `X-Podcast-Publish-Token`) | — | pending | GREENFIELD — **LIVE SECURITY HOLE OPEN**. Fresh API re-read of `TkL0rn2SH3q32SeB` webhook node: `authentication` key ABSENT, `credentials: NONE`, `path: podbean-publish`, `httpMethod: POST`. Webhook is publicly postable. Pattern source `aN6MrIJ4zLeKS047` still ACTIVE (2 nodes). | 2026-07-16T12:35Z |
+| U4 | Snapshot workflow JSON, then add webhook header auth (`Podcast Publish Gate`, `X-Podcast-Publish-Token`) | — | pending | GREENFIELD — **LIVE SECURITY HOLE OPEN AND CARRYING REAL TRAFFIC**. Fresh API re-read of `TkL0rn2SH3q32SeB` webhook node: `authentication` key ABSENT, `credentials: NONE`, `path: podbean-publish`, `httpMethod: POST`. Webhook is publicly postable. Pattern source `aN6MrIJ4zLeKS047` still ACTIVE (2 nodes). **SEE THE LIVE-CALLER FINDING BELOW — execution 91115 published a real episode at 2026-07-16T12:38:08Z, DURING this bootstrap. U4 will 401 that caller unless it is provisioned first. This is now the central input to D1.** | 2026-07-16T12:41Z |
 | U5 | Good-standing + identity gate (roster lookup; downstream uses roster's `effective_channel_id`) | — | pending | GREENFIELD. Fresh re-read: ZERO dataTable nodes in the 24-node graph. No roster lookup exists. | 2026-07-16T12:35Z |
 | U6 | Extend entry field guard to contract v2 | — | pending | PARTIAL SUBSTRATE (unit still greenfield): live v1 guard `Guard — Validate Required Payload Fields` (Code) + `IF — Entry Guard Passed` EXIST (GK-01/U63 lineage, 7 required fields). U6 EXTENDS this code, does not rebuild it. Preserve the GK-01 header comment lineage (append, never rewrite). | 2026-07-16T12:35Z |
 | U7 | Synchronous response (`responseMode: responseNode`) returning permalink JSON | — | pending | GREENFIELD. Fresh re-read: webhook `responseMode` ABSENT (= default fire-and-forget); ZERO `respondToWebhook` nodes in the graph. Permalink cannot reach the caller today → Step 16 is starved. | 2026-07-16T12:35Z |
@@ -69,3 +69,39 @@ No workflow is being edited. The `TkL0rn2SH3q32SeB` queue is free to claim.
 
 **Live security hole is OPEN right now:** `/webhook/podbean-publish` is ACTIVE and
 UNAUTHENTICATED. This raises the urgency of D1 (auth-cutover window).
+
+---
+
+## LIVE-CALLER FINDING (2026-07-16T12:41Z) — SPEC SECTION 7's MIGRATION-RISK PREMISE IS FALSE
+
+`GET /executions?workflowId=TkL0rn2SH3q32SeB` (fresh, HTTP 200) returned 3 retained executions:
+
+| execution | startedAt | status | meaning |
+|---|---|---|---|
+| 91115 | 2026-07-16T12:38:08.877Z | success | **fired DURING this bootstrap pass, ~3 min after the survey began** |
+| 87423 | 2026-07-14T01:28:23.054Z | success | prior live publish |
+| 85051 | 2026-07-12T03:04:33.531Z | error | the `image_url = null` failure that spawned the GK-01 guard (matches spec 1.4) |
+
+Execution 91115 node-run list (names only; no payload, no client data read) shows the
+**FULL publish path ran to completion**: Webhook → Guard → IF passed → Compute Timestamp →
+Podbean OAuth → Fetch Recent Episodes → Compute Next Episode Number → Set Config →
+Download Audio → uploadAuthorize Audio → PUT Audio → Download Image → uploadAuthorize Image →
+PUT Image → Set Upload Keys → **Podbean — Publish Episode** → IF Episode Created Successfully →
+`lastNodeExecuted: Gmail — Success Notification`. Duration 12:38:08.877Z → 12:38:12.553Z.
+
+**A real episode was published to Podbean minutes ago through an unauthenticated webhook,
+with no standing gate, no identity check, and routing on the CALLER's raw `podcast_id`.**
+
+Consequences the orchestrator must act on:
+1. **Spec Section 7's "migration risk is near zero by construction" is CONTRADICTED.** Its
+   reasoning covers Skill 58's `podbean_publish.sh` (which indeed publishes via no n8n
+   transport). But the Skill 35 caller family fires `/webhook/podbean-publish` DIRECTLY and
+   is demonstrably LIVE. There IS live client traffic to break.
+2. **U4 (auth) is now a breaking change to a live, working caller.** Flipping auth without
+   provisioning that caller first produces a 401 on a real episode publish. D1 is no longer a
+   theoretical window — it is a live cutover. This is Trevor's decision (D1); do not self-decide.
+3. **Executions are pruned** (only 3 retained), so this is a floor on traffic volume, not a
+   census. A true caller census needs a retention-independent method.
+4. Every episode published through this path today bypasses the entire security model this
+   spec exists to build. That is the argument FOR flipping fast — and the reason the flip must
+   be paired with same-session provisioning.
