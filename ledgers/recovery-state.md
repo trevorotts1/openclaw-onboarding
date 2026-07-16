@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T14:42:38Z
-openclaw-onboarding `origin/main` HEAD: `9c1e09b27dcc8d608eef03c8c46f99a3967ab4cb`
+Generated: 2026-07-16T15:00:01Z
+openclaw-onboarding `origin/main` HEAD: `800072307e62a1227e2b244f5161231ba3ab3243`
 blackceo-command-center `origin/main` HEAD: `87ef1ffe8dd8d90c0972cc371522c43f976a6ef4`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -155,7 +155,7 @@ blackceo-command-center `origin/main` HEAD: `87ef1ffe8dd8d90c0972cc371522c43f976
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U79, U80, U93, U100, U113, U114
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
 - fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U93-blackceo-command-center, U100-blackceo-command-center)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
