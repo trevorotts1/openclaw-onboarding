@@ -43,6 +43,21 @@ name: Skill-23 provisioning tests
 #                                           canonicalReconciliation.chosenDepartments)
 #                                           at reconciliation end, and department-floor
 #                                           reads them authoritatively (never fabricated).
+#   9. test-vertical-derivation-guard.sh — U107 (E5-2, closes G2a): a vertical is
+#                                           NEVER force-added to a client who is not
+#                                           that vertical. Independently audits
+#                                           provisioned (disk-truth) vertical-specific
+#                                           departments against declared verticals
+#                                           (build-state verticalPacks record, or
+#                                           re-derived from core_answers), asserts
+#                                           provisioned ⊆ declared, fails closed on
+#                                           unexplained provenance, and proves a
+#                                           --check-add refusal primitive returns a
+#                                           NAMED error (VERTICAL_NOT_DECLARED) instead
+#                                           of silently adding. Also proves its keyword
+#                                           match stays in lockstep with
+#                                           department-floor.py's (no silent drift
+#                                           between the two independent copies).
 #
 # All are hermetic: each builds its own mktemp sandbox and pins
 # ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
@@ -68,7 +83,7 @@ on:
 
 jobs:
   skill23-provisioning-tests:
-    name: Skill-23 provisioning tests (8 hermetic suites)
+    name: Skill-23 provisioning tests (9 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -95,6 +110,7 @@ jobs:
             prove-web-parity.sh
             test-phantom-dept-collision-gate.sh
             test-chosen-departments-artifact.sh
+            test-vertical-derivation-guard.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do

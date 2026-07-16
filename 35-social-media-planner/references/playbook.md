@@ -2270,6 +2270,8 @@ This section documents what the playbook covers, confirms completeness, and iden
 
 This playbook does not include a full worked example of a complete day's output (showing a finished Day 1 Facebook post with all zones filled in, the comment below it, the image prompt, etc.). This was intentionally omitted to prevent the document from becoming bloated. The zone system, pitch examples, comment examples, and content flow rules provide enough guidance for the AI to produce correct output without a full example. If a full example is needed in the future, it can be added as an appendix.
 
+**Partial closure (master spec v2 A-U9 / master unit U9, 2026-07-15):** a first worked example now ships as an exemplar pack — `../exemplars/social-caption/founder-story-carousel-caption/` (gold output + `WHY-GOOD.md` rationale + `provenance.json`) — a complete, fictional-brand carousel caption (hook, body, swipe bridge, soft CTA) with the register/structure/close named explicitly, wrapped in a CALIBRATION-ONLY clause at write time so it calibrates the writer without ever being copied verbatim (`shared-utils/exemplar_injection.py`). This covers the CAPTION zone only, not a full day's output across every deliverable (image prompt, podcast script, video) — the broader gap named below is honestly still open; additional packs can be authored under the same convention as they're prioritized.
+
 ### Self-Rating: 9/10
 
 The one point gap is the lack of a full worked example. Every other system, process, specification, checklist, and instruction is documented, verified, and cross-referenced. The AI has everything it needs to execute the full weekly production workflow from heartbeat to scheduling.

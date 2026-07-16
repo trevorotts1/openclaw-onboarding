@@ -1,0 +1,70 @@
+name: u10-anti-copy-guard
+
+# U10 (A-U10, master-spec v2 A.9) — Anti-copy guard: deterministic
+# similarity ceiling vs injected exemplars, key-free, hard-miss. Fails the
+# build if:
+#   (a) a copy-through fixture (an exemplar with cosmetic edits) is no
+#       longer hard-failed by the guard;
+#   (b) a genuinely fresh fixture on the same topic no longer passes;
+#   (c) the guard stops running key-free / network-free (a non-stdlib
+#       import sneaks into shared-utils/anti_copy_guard.py);
+#   (d) SIMILARITY_CEILING (or the shingle size the calibration depends on)
+#       drifts from its calibrated, reviewed value without a matching
+#       change to tests/unit/u10-anti-copy-guard.test.py — THIS is the
+#       ceiling-cannot-drift-silently guard the unit's own acceptance (d)
+#       requires.
+#
+# Also re-runs the standing FAB-QC gate guard (scripts/guard-fab-qc-gate.sh)
+# so the anti-copy guard's wiring into "the fab-QC hard-miss family" (the
+# A.9 build text) stays asserted alongside every other FAB-QC invariant.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface in the run steps.
+
+on:
+  push:
+    paths:
+      - "shared-utils/anti_copy_guard.py"
+      - "shared-utils/fab_qc.py"
+      - "shared-utils/exemplar_injection.py"
+      - "06-ghl-install-pages/exemplars/**"
+      - "tests/unit/u10-anti-copy-guard.test.py"
+      - "scripts/guard-fab-qc-gate.sh"
+      - ".github/workflows/u10-anti-copy-guard.yml"
+  pull_request:
+    paths:
+      - "shared-utils/anti_copy_guard.py"
+      - "shared-utils/fab_qc.py"
+      - "shared-utils/exemplar_injection.py"
+      - "06-ghl-install-pages/exemplars/**"
+      - "tests/unit/u10-anti-copy-guard.test.py"
+      - "scripts/guard-fab-qc-gate.sh"
+      - ".github/workflows/u10-anti-copy-guard.yml"
+
+jobs:
+  u10-anti-copy-guard:
+    name: Anti-copy guard — ceiling locked, copy-through hard-fails, fresh passes, key-free
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: anti_copy_guard.py compiles
+        run: python3 -m py_compile shared-utils/anti_copy_guard.py shared-utils/fab_qc.py
+
+      - name: anti_copy_guard.py self-test (offline, no network/key)
+        run: python3 shared-utils/anti_copy_guard.py
+
+      - name: U10 — copy-through hard-fails, fresh passes, ceiling locked, key-free, wired into fab_qc
+        run: python3 tests/unit/u10-anti-copy-guard.test.py
+
+      - name: fab_qc.py regression suite unaffected (byte-identical when no exemplar_packs)
+        run: python3 tests/unit/fab-qc.test.py
+
+      - name: FAB-QC gate guard — anti-copy guard wiring asserted alongside every other invariant
+        run: bash scripts/guard-fab-qc-gate.sh
