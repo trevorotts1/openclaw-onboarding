@@ -29,9 +29,18 @@ echo "=== page-qc-gate-guard.test.sh (U25/B-U11 acceptance item e) ==="
 TMP_TREE="$(mktemp -d)"
 trap 'rm -rf "$TMP_TREE"' EXIT
 
-for d in universal-sops shared-utils scripts \
+# NOTE (U117/E6-3/G9 merge-writer, 2026-07-16): this directory list had
+# drifted stale against guard-fab-qc-gate.sh's OWN growth — the guard picked
+# up checks reading 49-signature-funnel/ and tests/unit/ (U10's anti-copy
+# guard proof, U117's own two new proof files) that this list never copied,
+# so "Case 1: unmodified copy -> PASS" was silently failing before this fix
+# (proof: `git stash && bash tests/unit/page-qc-gate-guard.test.sh` on the
+# pre-U117 tree reproduces the failure). Corrected to the full union of
+# every top-level dir any `$ROOT/...` reference in guard-fab-qc-gate.sh
+# resolves into, same derivation tests/unit/u117-comms-qc-guard.test.sh uses.
+for d in universal-sops shared-utils scripts tests \
          06-ghl-install-pages 44-convert-and-flow-operator \
-         22-book-to-persona-coaching-leadership-system; do
+         49-signature-funnel 22-book-to-persona-coaching-leadership-system; do
   mkdir -p "$TMP_TREE/$d"
   cp -a "$REPO_ROOT/$d/." "$TMP_TREE/$d/"
 done

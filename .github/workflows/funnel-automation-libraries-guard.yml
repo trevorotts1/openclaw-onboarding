@@ -44,6 +44,11 @@ on:
       - "tests/unit/fab-qc.test.py"
       - "tests/unit/fab-artifact.test.py"
       - "tests/unit/persona-crosswalk.test.py"
+      - "shared-utils/page_qc.py"
+      - "tests/unit/page-qc.test.py"
+      - "tests/unit/page-qc-gate-guard.test.sh"
+      - "tests/unit/u117-comms-qc-conformance.test.py"
+      - "tests/unit/u117-comms-qc-guard.test.sh"
       - "scripts/check-funnel-automation-library-drift.py"
       - "scripts/guard-fab-qc-gate.sh"
       - ".github/workflows/funnel-automation-libraries-guard.yml"
@@ -82,6 +87,11 @@ on:
       - "tests/unit/fab-qc.test.py"
       - "tests/unit/fab-artifact.test.py"
       - "tests/unit/persona-crosswalk.test.py"
+      - "shared-utils/page_qc.py"
+      - "tests/unit/page-qc.test.py"
+      - "tests/unit/page-qc-gate-guard.test.sh"
+      - "tests/unit/u117-comms-qc-conformance.test.py"
+      - "tests/unit/u117-comms-qc-guard.test.sh"
       - "scripts/check-funnel-automation-library-drift.py"
       - "scripts/guard-fab-qc-gate.sh"
       - ".github/workflows/funnel-automation-libraries-guard.yml"
@@ -138,6 +148,19 @@ jobs:
           python3 tests/unit/fab-qc.test.py
           python3 tests/unit/fab-artifact.test.py
           python3 tests/unit/persona-crosswalk.test.py
+
+      # U25/B-U11 (Page-QC v2) + U117 (E6-3/G9, comms-artifact QC + per-part-
+      # governance / audience-prompt conformance invariant): these suites
+      # existed (U25) or are new (U117) but were never wired into any CI
+      # job — closed here so a page_qc.py regression, or an ADD-2 "skip the
+      # audience prompt"/"skip the topic slot" regression, is caught on
+      # every push/PR, not just by a manual local run.
+      - name: Page-QC v2 (U25) + comms-conformance (U117) suites + mutation-proof guards
+        run: |
+          python3 tests/unit/page-qc.test.py
+          bash tests/unit/page-qc-gate-guard.test.sh
+          python3 tests/unit/u117-comms-qc-conformance.test.py
+          bash tests/unit/u117-comms-qc-guard.test.sh
 
       # A-U9 (master unit U9): exemplar convention + write-time injection.
       # Module self-test (no network/key) + the unittest acceptance suite

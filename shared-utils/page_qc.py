@@ -354,6 +354,255 @@ _SCORERS = (score_s1, score_s2, score_s3, score_s4, score_s5, score_s6)
 
 
 # --------------------------------------------------------------------------- #
+# U117 (E6-3/G9) — Comms-artifact QC + per-part-governance / audience-prompt
+# conformance invariant. Extends Page-QC v2 (this module, U25) AND the FAB-QC
+# voice-grounding gate (fab_qc.py, U19 — via its extracted, reused
+# `voice_persona_grounded` predicate) with FOUR ADDITIONAL checks specific to
+# an outside-world COMMUNICATION artifact (U116's five `comms_type`s: page,
+# blog, email, sms, social): correct PER-PART persona governance (U115),
+# blend ACTUALLY USED (semantic — the upgrade of D4/S3), TOPIC CONSIDERED,
+# and AUDIENCE CONFIRMED (U116). Each is a HARD-MISS-ONLY check (weight 0,
+# same "excluded from the weighted S1-S6 total, never disturbs weights-sum-
+# to-100" posture the anti-copy guard uses in fab_qc.py) — this module's own
+# six-dimension weighted score is UNTOUCHED by any of this.
+#
+# Additive / flag-gated behind COMMS_QC_CONFORMANCE=1 (this unit's own
+# `revert:` clause — unset/non-"1" degrades `grade_comms_conformance` to a
+# pure no-op: `applicable=False`, no checks run, byte-identical to pre-U117
+# page_qc.py for every existing caller).
+#
+# Three of the four checks are DETERMINISTIC and run KEY-FREE regardless of
+# judge availability (part->blend match, topic slot populated, audience
+# recorded — BINARY acceptance (f)); only "blend actually used" is SEMANTIC
+# and needs a judge — it SKIPs honestly (never a fabricated score) with no
+# judge key, and a SKIP never blocks the other three (same SKIP-not-
+# fabricate / SKIP-never-blocks doctrine as the rest of this module).
+# --------------------------------------------------------------------------- #
+COMMS_QC_CONFORMANCE_FLAG = "COMMS_QC_CONFORMANCE"
+
+
+def comms_qc_enabled(env: Optional[dict] = None) -> bool:
+    """Revert switch (this unit's `revert:` clause): the four comms checks
+    only run when `COMMS_QC_CONFORMANCE=1`; unset (or any other value)
+    degrades `grade_comms_conformance` to a no-op — QC returns to plain
+    U25/U26/U19 behavior, no code revert needed."""
+    e = env if env is not None else os.environ
+    return str(e.get(COMMS_QC_CONFORMANCE_FLAG, "0")).strip() == "1"
+
+
+def check_part_governance(inp: dict) -> Dim:
+    """C1 — per-part persona governance (extends U115): the artifact's
+    declared `part_id` must be governed by ITS OWN assigned blend — the
+    `routing/part-persona-map.json` record (U115's `write_part_persona_map`
+    shape: `{part_id, part_role, voice_persona_id, topic_persona_id,
+    audience_label, audience_source, stage, reason}`) for that `part_id` —
+    never another part's blend. A comms artifact carries the persona it was
+    ACTUALLY written under as `inp['used_voice_persona_id']` (or, absent
+    that, `inp['bundle']['persona_id']` — the governing bundle's own voice
+    persona field).
+
+    N/A (pass, scored 10, `hard_miss=False`) when no per-part context is
+    supplied at all (`part_id` blank or `part_persona_map` empty) — a
+    single-part / non-multi-part comms artifact has no per-part invariant to
+    violate; this mirrors every other N/A-scores-10 dimension in this
+    module (S1-S6) and in `fab_qc.py`.
+    """
+    part_id = str(inp.get("part_id") or "").strip()
+    part_map = inp.get("part_persona_map") or []
+    if not part_id or not part_map:
+        return Dim("C1 Per-part persona governance", 0, 10.0, False,
+                   "no per-part context supplied (part_id/part_persona_map absent) — N/A, scored 10")
+
+    used_persona = str(inp.get("used_voice_persona_id")
+                       or (inp.get("bundle") or {}).get("persona_id") or "").strip()
+    record = next((r for r in part_map
+                   if isinstance(r, dict) and str(r.get("part_id")) == part_id), None)
+    if record is None:
+        return Dim("C1 Per-part persona governance", 0, 0.0, True,
+                   f"part_id {part_id!r} has no entry in part_persona_map — HARD MISS "
+                   f"(cannot prove per-part governance)")
+    if not used_persona:
+        return Dim("C1 Per-part persona governance", 0, 0.0, True,
+                   f"no used_voice_persona_id recorded for part {part_id!r} — HARD MISS")
+
+    assigned = str(record.get("voice_persona_id") or "").strip()
+    match = bool(assigned) and assigned == used_persona
+    observed = (f"part {part_id!r}: assigned persona {assigned!r}; artifact written under "
+                f"{used_persona!r}; match={match}")
+    if not match:
+        observed += " — HARD MISS (written under the wrong part's blend)"
+    return Dim("C1 Per-part persona governance", 0, 10.0 if match else 0.0, not match, observed)
+
+
+def check_topic_considered(inp: dict) -> Dim:
+    """C2 — topic considered: the topic slot was populated for this comms
+    artifact before writing (U116's `_derive_topic`/`topic_factored`
+    contract). Deterministic, key-free — reads `inp['topic']` (falling back
+    to the governing `bundle`'s own `topic` field)."""
+    topic = str(inp.get("topic") or (inp.get("bundle") or {}).get("topic") or "").strip()
+    if topic:
+        return Dim("C2 Topic considered", 0, 10.0, False, f"topic slot populated: {topic!r}")
+    return Dim("C2 Topic considered", 0, 0.0, True,
+               "topic slot empty/unpopulated — HARD MISS (topic not factored before writing)")
+
+
+def check_audience_confirmed(inp: dict) -> Dim:
+    """C3 — audience confirmed: `audience_source` recorded `standard` or
+    `specific` (U116's `resolve_comms_audience` contract — the ADD-2 prompt
+    having fired). Deterministic, key-free — reads `inp['audience_source']`
+    (falling back to the governing `bundle`'s own `audience_source` field,
+    the same key `comms_audience_trigger.build_comms_trigger` stamps onto
+    the returned bundle)."""
+    src = str(inp.get("audience_source")
+             or (inp.get("bundle") or {}).get("audience_source") or "").strip()
+    if src in ("standard", "specific"):
+        return Dim("C3 Audience confirmed", 0, 10.0, False, f"audience_source={src!r} recorded")
+    return Dim("C3 Audience confirmed", 0, 0.0, True,
+               f"no valid audience_source recorded (got {src!r}) — HARD MISS "
+               f"(audience-confirmation prompt did not fire / was not recorded)")
+
+
+def score_blend_used(inp: dict, judge_fn: Optional[JudgeFn]) -> Optional[Dim]:
+    """C4 — blend ACTUALLY USED: the semantic upgrade of FAB-QC D4 (name-
+    match in a log line) and this module's own S3 (general voice/persona
+    fidelity) — the bundle's declared voice ATTRIBUTES (`voice_style` /
+    `voice_attributes` on the `blend_directive`) must semantically trace
+    through into the copy, judged by the client's own judge, not merely
+    matched by name.
+
+    Reuses `fab_qc.voice_persona_grounded` (U19's extracted predicate) as a
+    DETERMINISTIC evidence signal handed to the judge alongside the voice
+    attributes — real reuse of the grounding mechanism, never a second
+    independent name-match rule — but the PASS/FAIL verdict itself is the
+    judge's semantic call, not the deterministic signal alone (a copy body
+    could name-match the persona id yet still fail to reflect its actual
+    voice attributes, or vice-versa on a paraphrased/pseudonymous byline).
+
+    Returns `None` (SKIP, never a fabricated score) when no `judge_fn` is
+    available — the caller MUST treat `None` as "unavailable", never as a
+    pass or a hard miss (SKIP-not-fabricate, same as every other judged
+    dimension in this module)."""
+    if judge_fn is None:
+        return None
+    blend = inp.get("blend_directive") or (inp.get("bundle") or {}).get("blend_directive") or {}
+    voice_persona_id = str(inp.get("used_voice_persona_id")
+                           or (inp.get("bundle") or {}).get("persona_id") or "")
+    copy_text = inp.get("copy")
+    if copy_text is None:
+        copy_text = _all_copy_text(inp)
+    elif isinstance(copy_text, str):
+        copy_text = [copy_text]
+    joined = " ".join(str(t) for t in copy_text)
+    name_grounded = fab_qc.voice_persona_grounded(joined, voice_persona_id)
+
+    payload = {
+        "dimension": "C4 blend actually used",
+        "criteria": ("the bundle's declared voice attributes (voice_style) must trace "
+                     "through into the copy — a SEMANTIC check, not a name match"),
+        "voice_persona_id": voice_persona_id,
+        "voice_style": blend.get("voice_style") or blend.get("voice_attributes") or {},
+        "name_grounded_deterministic_signal": name_grounded,
+        "copy": copy_text,
+    }
+    r = _score_via_judge("C4", payload, judge_fn)
+    if r["score"] is None:
+        return Dim("C4 Blend actually used", 0, 0.0, True,
+                   f"judge unavailable/unparseable — fail-closed HARD MISS: {r['reasoning']}")
+    hard = r["score"] <= 3.0
+    observed = f"judge score={r['score']}/10; name_grounded={name_grounded}; {r['reasoning']}"
+    if hard:
+        observed += " — HARD MISS (C4 <= 3, voice attributes do not trace to the bundle)"
+    return Dim("C4 Blend actually used", 0, r["score"], hard, observed)
+
+
+def validate_comms_schema(result: dict) -> bool:
+    """Hand-rolled structural validation (stdlib-only, mirrors `validate_schema`
+    above). Raises AssertionError naming the violation; returns True on a
+    valid document."""
+    assert result.get("tool") == "page_qc_comms", "tool must be 'page_qc_comms'"
+    if not result.get("applicable"):
+        assert result.get("passed") is None, "not-applicable result must carry no passed verdict"
+        assert result.get("checks") == {}, "not-applicable result carries no checks"
+        return True
+    assert result.get("threshold") == THRESHOLD, "threshold must be 8.5 (never a new one)"
+    assert isinstance(result.get("passed"), bool), "applicable result must carry a bool passed"
+    checks = result.get("checks") or {}
+    for key in ("part_governance", "topic_considered", "audience_confirmed", "blend_used"):
+        assert key in checks, f"comms conformance missing check {key!r}"
+    bu = checks["blend_used"]
+    assert isinstance(bu.get("available"), bool), "blend_used.available must be bool"
+    if not bu["available"]:
+        assert bu.get("score") is None, "unavailable blend_used must never carry a numeric score"
+        assert bu.get("passed") is None, "unavailable blend_used must never carry a passed verdict"
+    return True
+
+
+def grade_comms_conformance(inp: dict, *, judge_fn: Optional[JudgeFn] = None,
+                            env: Optional[dict] = None) -> dict:
+    """U117 (E6-3/G9) — the public entry point for the comms-artifact QC +
+    per-part-governance / audience-prompt conformance invariant. Scores a
+    COMMUNICATION artifact on the four checks above and returns a structured
+    scorecard a review-lane gate (the CC-side U26 QC-contract, out of scope
+    for this repo leg) can read `passed` from directly.
+
+    `inp` keys (all optional, degrade honestly — see each check's own
+    docstring): `part_id`, `part_persona_map` (U115's routing/part-persona-
+    map.json shape), `used_voice_persona_id`, `bundle` (U116's governed
+    bundle — `build_comms_trigger(...)['bundle']`), `topic`,
+    `audience_source`, `blend_directive`, `copy`.
+
+    `applicable=False` (no checks run) when `COMMS_QC_CONFORMANCE` is not
+    `"1"` — the additive/flag-gated revert path, byte-identical to pre-U117
+    `page_qc.py` for every existing caller.
+    """
+    if not comms_qc_enabled(env):
+        return {"tool": "page_qc_comms", "applicable": False,
+                "verdict": "comms conformance: not applicable (COMMS_QC_CONFORMANCE off)",
+                "checks": {}, "hard_misses": [], "passed": None}
+
+    active_judge = judge_fn
+    if active_judge is None and has_judge_key(env):
+        active_judge = _default_http_judge_factory(env)
+
+    c1 = check_part_governance(inp)
+    c2 = check_topic_considered(inp)
+    c3 = check_audience_confirmed(inp)
+    c4 = score_blend_used(inp, active_judge)   # None -> SKIP, never blocks
+
+    hard_misses = [d.name for d in (c1, c2, c3) if d.hard_miss]
+    det_passed = not hard_misses
+
+    if c4 is None:
+        blend_used_result = {"available": False, "score": None, "passed": None, "hard_miss": False,
+                             "observed": "blend_used: unavailable (no judge key) — SKIP, not scored"}
+        overall_passed = det_passed   # a SKIP never blocks (this module's own SKIP doctrine)
+    else:
+        blend_used_result = {"available": True, "score": c4.score, "passed": not c4.hard_miss,
+                             "hard_miss": c4.hard_miss, "observed": c4.observed}
+        if c4.hard_miss:
+            hard_misses.append(c4.name)
+        overall_passed = det_passed and not c4.hard_miss
+
+    checks = {
+        "part_governance": asdict(c1) | {"earned": c1.earned},
+        "topic_considered": asdict(c2) | {"earned": c2.earned},
+        "audience_confirmed": asdict(c3) | {"earned": c3.earned},
+        "blend_used": blend_used_result,
+    }
+    result = {
+        "tool": "page_qc_comms",
+        "applicable": True,
+        "threshold": THRESHOLD,
+        "verdict": "comms conformance: PASS" if overall_passed else "comms conformance: FAIL",
+        "checks": checks,
+        "hard_misses": hard_misses,
+        "passed": overall_passed,
+    }
+    validate_comms_schema(result)
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # schema-lite validator (BINARY acceptance (a): scorecard/page-qc.json validates)
 # --------------------------------------------------------------------------- #
 def validate_schema(result: dict) -> bool:
@@ -736,6 +985,10 @@ def main(argv: list) -> int:
                      help="exit 1 when AVAILABLE and score<8.5/hard-miss; a SKIP never blocks")
     ap.add_argument("--task-id", default="",
                      help="CC task UUID; posts one qc_starved event on SKIP (fail-soft)")
+    ap.add_argument("--comms", action="store_true",
+                     help="U117 (E6-3/G9): score --inputs as a comms conformance check "
+                          "instead of the six-dimension page scorecard (needs "
+                          "COMMS_QC_CONFORMANCE=1)")
     a = ap.parse_args(argv)
 
     if a.inputs:
@@ -745,6 +998,18 @@ def main(argv: list) -> int:
     else:
         ap.error("one of --evidence or --inputs is required")
         return 2
+
+    if a.comms:
+        result = grade_comms_conformance(inp)
+        if a.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(result["verdict"])
+            for name, chk in result.get("checks", {}).items():
+                print(f"  {name:<20} {chk}")
+        if a.gate and result["applicable"] and not result["passed"]:
+            return 1
+        return 0
 
     result = grade(inp)
 
