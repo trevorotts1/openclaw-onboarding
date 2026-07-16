@@ -247,6 +247,18 @@ A follow-up verification pass (findings below independently re-derived from `ori
 
 **Net:** D15 cannot be closed by ratifying the status quo (the status quo is the pre-spec state, and it contradicts the recommendation on the lifecycle sub-part). Both sub-parts gate unbuilt work. Sub-part (i) is a genuine product-policy call about what a client sees, on a surface that is client-reachable by default — the one item in this entire pass that is properly the operator's to decide rather than an agent's.
 
+> **⚠️ UPDATE, same day — D15 was subsequently ratified by a COORDINATING AGENT, not by Trevor.**
+> Recorded in **`ledgers/agent-ratified-decisions-2026-07-16.md`** — a deliberately separate
+> file, because THIS file is titled "Trevor's RATIFIED DECISIONS" and its header states it
+> records decisions **Trevor** made. D15 is not one of them: **Trevor has not seen it and has
+> not approved it.** The agent's ruling (Option A — challenge content is client-visible, the
+> agent stays internal) and the work built on it (Command Center branch `skill6-v2/U59-cc-d15`,
+> draft PR #193, CI green 20/20, not merged) are all recorded there, with the reversal path.
+> The schema hypothesis flagged above is settled there too: it is now a **CONFIRMED defect** —
+> the Devil's Advocate feed has never rendered on a canonically migrated box. Do not read the
+> D15 entry in that file as Trevor's ruling, and do not move it into this file unless he
+> ratifies it himself.
+
 ## Files touched recording these decisions
 
 - `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` — U65 row, U64 row (edited in place, old evidence preserved verbatim).
