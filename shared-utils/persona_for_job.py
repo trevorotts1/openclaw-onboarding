@@ -169,23 +169,68 @@ def _blueprint_path(persona_id: str) -> "Path | None":
 
 _SECTION_HEAD_RE = re.compile(r"^##\s+Section\s+(\d+)\b", re.IGNORECASE)
 
+# U14 (A-U14, D-A4 Option A) — the section-map crosswalk fixing the Section-4
+# load-contract hazard (master-spec v2 §A.1.3): the Command Center dispatch
+# contract orders "Internalize Section 4 (A-D) and §7B", but the section
+# NUMBER that actually carries the Agent Governance Framework (the lettered
+# A-D subsections) differs by template generation — Section 4 under Template
+# B, Section 8 under Template A. This map is additive and OPTIONAL: its
+# absence (older/back-compat checkout) degrades `section4_excerpt` to its
+# pre-U14 behavior byte-for-byte (a literal "## Section 4" grab).
+_SEED_SECTION_MAP = _SEED_PERSONA_ROOT / "_section-map.json"
+_SECTION_MAP_CACHE: "dict | None" = None
 
-def section4_excerpt(persona_id: str, max_chars: int = 1400) -> str:
-    """Return the persona blueprint's Section-4 governance excerpt (the
-    key-principles / governance section the dispatch contract loads), truncated.
-    Empty string if the blueprint is not resolvable on this box."""
-    bp = _blueprint_path(persona_id)
-    if bp is None:
-        return ""
-    try:
-        text = bp.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    lines = text.splitlines()
+
+def _load_section_map() -> dict:
+    """Cached load of the section-map crosswalk. Returns {} (empty, honest)
+    on any missing/unreadable/malformed file — callers treat that exactly
+    like "no crosswalk entry for this persona" and fall back to literal
+    Section 4, never raise."""
+    global _SECTION_MAP_CACHE
+    if _SECTION_MAP_CACHE is not None:
+        return _SECTION_MAP_CACHE
+    paths = _live_paths()
+    candidates = []
+    if paths and paths.get("coaching_personas"):
+        candidates.append(Path(paths["coaching_personas"]) / "personas" / "_section-map.json")
+    candidates.append(_SEED_SECTION_MAP)
+    data: dict = {}
+    for cand in candidates:
+        try:
+            if cand.exists():
+                loaded = json.loads(cand.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict) and isinstance(loaded.get("personas"), dict):
+                    data = loaded
+                    break
+        except Exception:
+            continue
+    _SECTION_MAP_CACHE = data
+    return data
+
+
+def _governance_section_number(persona_id: str) -> "int | None":
+    """The section number carrying persona_id's Agent Governance Framework
+    (A-D lettered subsections), per the section-map. None when the map is
+    absent, the persona is not in it, or that persona's blueprint has no
+    resolvable A-D governance section (documented edge case; see the map's
+    _meta notes) — callers fall back to literal Section 4 in every None
+    case, so behavior never regresses to a crash or an empty excerpt where
+    the pre-U14 code would have found something."""
+    entry = _load_section_map().get("personas", {}).get(persona_id)
+    if not isinstance(entry, dict):
+        return None
+    num = entry.get("governance_section")
+    return int(num) if isinstance(num, int) else None
+
+
+def _extract_section(lines: list, section_num: int) -> str:
+    """Return the raw body of ``## Section <section_num>`` (heading line
+    through, but not including, the next ``## Section`` heading). Empty
+    string if that section number is not present."""
     start = None
     for i, ln in enumerate(lines):
         m = _SECTION_HEAD_RE.match(ln.strip())
-        if m and m.group(1) == "4":
+        if m and m.group(1) == str(section_num):
             start = i
             break
     if start is None:
@@ -196,7 +241,39 @@ def section4_excerpt(persona_id: str, max_chars: int = 1400) -> str:
         if m:  # next Section heading -> stop
             break
         body.append(ln)
-    excerpt = "\n".join(body).strip()
+    return "\n".join(body).strip()
+
+
+def section4_excerpt(persona_id: str, max_chars: int = 1400) -> str:
+    """Return the persona blueprint's GOVERNANCE excerpt (the dispatch
+    contract's "Section 4 (A-D)" load target — the key-principles /
+    Agent-Governance-Framework material), truncated. Empty string if the
+    blueprint is not resolvable on this box.
+
+    U14 fix (D-A4 Option A): the section NUMBER actually loaded is resolved
+    per-persona via `_section-map.json` (Template A -> Section 8, Template B
+    -> Section 4), not hardcoded to a literal "Section 4" — the field name
+    stays `section4_excerpt` for consumer back-compat (every existing caller
+    reads this key), but the CONTENT is now the real governance framework
+    under BOTH template generations. A persona absent from the map, or the
+    map itself absent, falls back to literal Section 4 — byte-identical to
+    pre-U14 behavior."""
+    bp = _blueprint_path(persona_id)
+    if bp is None:
+        return ""
+    try:
+        text = bp.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = text.splitlines()
+
+    target_section = _governance_section_number(persona_id)
+    excerpt = _extract_section(lines, target_section) if target_section else ""
+    if not excerpt:
+        # No crosswalk entry, or that section wasn't actually present in the
+        # file (defensive) — honest fallback to the pre-U14 literal grab.
+        excerpt = _extract_section(lines, 4)
+
     if len(excerpt) > max_chars:
         excerpt = excerpt[:max_chars].rstrip() + " …"
     return excerpt
