@@ -1,0 +1,5440 @@
+[
+ {
+  "name": "1MLT Speaker Quiz - Contact + Email",
+  "id": "FLTASpOvJelzbI3H",
+  "active": false,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Create GHL Contact",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Send GHL Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Quiz Webhook\"",
+    "node": "Quiz Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"1MLT Speaker Quiz - Contact + Email\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "1MLT Speaker Quiz - Contact + Email",
+  "id": "NorcPNC4T3dCYjhF",
+  "active": true,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "Mark Email Sent",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Create GHL Contact",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Send GHL Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Mark Email Sent",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Quiz Webhook\"",
+    "node": "Quiz Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"1MLT Speaker Quiz - Contact + Email\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "1MLT Speaker Quiz - Contact + Email",
+  "id": "ggfDH6BuPM88AoQj",
+  "active": false,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Create GHL Contact",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Send GHL Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Quiz Webhook\"",
+    "node": "Quiz Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"1MLT Speaker Quiz - Contact + Email\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "1MLT Speaker Quiz - Contact + Email",
+  "id": "w0ggoGsVrEr8jiNa",
+  "active": false,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Create GHL Contact",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Send GHL Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Mark Email Sent in Supabase",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Quiz Webhook\"",
+    "node": "Quiz Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"1MLT Speaker Quiz - Contact + Email\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "All In One Sales Page Assets",
+  "id": "szAK4uQ34hNhPDHP",
+  "active": true,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"GHL Trigger\"",
+    "node": "GHL Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"All In One Sales Page Assets\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "All In One Sales Page Assets PiAPI",
+  "id": "PZjOMYDhAMWDHfIB",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload2",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 00 - Sales Page Assets Image/Claude Branch",
+  "id": "NcgzLyL38rHsNSbG",
+  "active": false,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger\"",
+    "node": "GHL Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 00 - Sales Page Assets Image/Claude Branch\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "GHL API Test",
+  "id": "m7ccEmtzi4vhoZlb",
+  "active": false,
+  "declared_count": 11,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "LocationID from Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "All Location IDs",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-006",
+    "severity": "Critical",
+    "finding": "Hardcoded jwt_token detected",
+    "node": "HTTP Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "LocationID from Email",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-005",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "All Location IDs",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-007",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "HTTP Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-008",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "HTTP Request1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-009",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "HTTP Request2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "LocationID from Email",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-010",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "HighLevel1",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"GHL API Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI",
+  "id": "PfjXx6Cy1v5DQVLf",
+  "active": false,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload2",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD",
+  "id": "hwSmVpxGXrbC71hw",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD copy",
+  "id": "wbKGfGHcizepLj1A",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Image Branch 1A Sales Page Assets PiAPI UPD copy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD copy 2",
+  "id": "Egqu5u0QkN9kxPMO",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Image Branch 1A Sales Page Assets PiAPI UPD copy 2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD copy 3",
+  "id": "t7hF656a7uhVXPI7",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD copy 4",
+  "id": "H3az5X572iB3p0bK",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD NEW Docs",
+  "id": "88rfHnmP8N91gqs0",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1A Sales Page Assets PiAPI UPD No Clean",
+  "id": "4murSds8XQMSw1SO",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "LinkedIn Custom Scraper",
+  "id": "QZDtI0OrH6oG07mz",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded google_api_key detected",
+    "node": "Search Google",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"LinkedIn Custom Scraper\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "OLD Sales Page Assets BR PiAPI",
+  "id": "HYkB18Hhv6hvDWYq",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-002",
+    "severity": "Critical",
+    "finding": "Hardcoded anthropic_key detected",
+    "node": "Claude Copy",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Gmail",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger\"",
+    "node": "GHL Trigger",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Quiz Landing Page - GitHub Pages + GHL Custom Values",
+  "id": "zcoeE62zRQSzsWij",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded url_with_auth detected",
+    "node": "copy Set Node 1 (4-Image Path)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Critical",
+    "finding": "Hardcoded url_with_auth detected",
+    "node": "copy Set Node 2 (6-Image Path)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Quiz Landing Page - GitHub Pages + GHL Custom Values\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Quiz Landing Page Generator v2",
+  "id": "dFQzKX41ZHM20tpO",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded url_with_auth detected",
+    "node": "Set Node 2 (6-Image Path)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Critical",
+    "finding": "Hardcoded url_with_auth detected",
+    "node": "Set Node 1 (4-Image Path)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Quiz Landing Page Generator v2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "TREVORS LinkedIn EMAIL scraper",
+  "id": "zb0KliQmcSkxg7tF",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Critical",
+    "finding": "Hardcoded google_api_key detected",
+    "node": "Search Google",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"TREVORS LinkedIn EMAIL scraper\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\ud83c\udfaf Trevor Speaks Bot - Welcome + Alerts",
+  "id": "AjKob0e5T8aEn09o",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Telegram Events\"",
+    "node": "Telegram Events",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"\ud83c\udfaf Trevor Speaks Bot - Welcome + Alerts\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\ud83d\udd10 n8n Self-Backup -> Google Drive (nightly)",
+  "id": "EmtrZVxg0Ok59x77",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Backup Ready (from host script)\"",
+    "node": "Backup Ready (from host script)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"\ud83d\udd10 n8n Self-Backup -> Google Drive (nightly)\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "01-Social media in a box main orchestrator",
+  "id": "S8rFFVv6OE5fKhPo",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook Trigger\"",
+    "node": "Webhook Trigger",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "4x3x3 w Book Writer",
+  "id": "KF6PCxzSzKWeOwN6",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Abundance Broadcast System",
+  "id": "GrzxRlJzhBfQ9mR5",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Lovable Webhook\"",
+    "node": "Lovable Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Abundance Broadcast System\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Anthology Drive Broker (51-node, staged - GK-02)",
+  "id": "S8E6c41WfB8fAGiL",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook anthology-drive\"",
+    "node": "Webhook anthology-drive",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Anthology Drive Broker (51-node, staged - GK-02)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Anthology Writer - Ben",
+  "id": "62EeUqT5Da63U4Kh",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Anthology Writer - Ben\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Avatar Alchemist Brand Intelligence",
+  "id": "lEDCuz11DZMfzWyT",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Avatar Alchemist Brand Intelligence\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Avatar Quiz - Segments 1 and 2 Complete",
+  "id": "qdJGtJkqZEntz6Fx",
+  "active": true,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"N8N Form Trigger\"",
+    "node": "N8N Form Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook - GHL Convert and Flow\"",
+    "node": "Webhook - GHL Convert and Flow",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook - Loveable\"",
+    "node": "Webhook - Loveable",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "N8N Form Trigger",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Avatar Quiz - Segments 1 and 2 Complete\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "BLACKCEO LIVE - Command Center Client Registration",
+  "id": "i0P3OWCEsXZxVo0N",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook: Client Registration\"",
+    "node": "Webhook: Client Registration",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"BLACKCEO LIVE - Command Center Client Registration\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Book Writer",
+  "id": "4d50PNmVOyE9GJWz",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Bot-to-Bot Bridge (Stefanie \u2194 Curtis)",
+  "id": "elLNGimbKoShrkCU",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Process Message",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Bot-to-Bot Bridge (Stefanie \u2194 Curtis)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1A - Sales Page Assets Gemini",
+  "id": "clIxY2Qvvvlgfmzs",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1A - Sales Page Assets Gemini\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1B - Sales Page Assets Upsell",
+  "id": "iKqzc1kjcfJbXV9y",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1B - Sales Page Assets Upsell\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1C - Sales Page Assets Upsell B",
+  "id": "j3aavSISsnWc9z8F",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1C - Sales Page Assets Upsell B\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1D - Sales Page Assets Downsell",
+  "id": "HbsKXYxqnKwnwXxg",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1D - Sales Page Assets Downsell\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1E - Sales Page Assets High Ticket",
+  "id": "vEcz5dNLWDL9A3E7",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1E - Sales Page Assets High Ticket\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Branch 1F - Sales Page Assets Bump Sale",
+  "id": "KGKwjJYCPQCuxoqG",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Branch 1F - Sales Page Assets Bump Sale\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Chapter Rewriter for [CLIENT]",
+  "id": "MD1TQHPm34KVi1X1",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"chapter rewriter\"",
+    "node": "chapter rewriter",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Chapter Rewriter for [CLIENT]\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Cinematic Car Ads Generator (VEO 3.1 + n8n)",
+  "id": "7fxuZp0oLDIP7Lkp",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Sticky Note1",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Cinematic Car Ads Generator (VEO 3.1 + n8n)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Client Data Extractor - Clients Bceo",
+  "id": "qFtysUwL2yw4NZzn",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Client Data Extractor - Clients Bceo\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Delete Social Media Posts",
+  "id": "nybi2MzHkige82jT",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Delete Social Media Posts\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "everthing webinar system",
+  "id": "0l0QRNbtjGS8ovLj",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-002",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Update contact fields1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Facebook Workflow v14",
+  "id": "viHP0WVH29a2Ogjt",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Full Funnel STEP 00 Sales Page Writer Main",
+  "id": "ODWjW6NMvA8CkxpC",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload1",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Girl, I Got You | FEI",
+  "id": "9dmzvrHtGItUWIOo",
+  "active": true,
+  "declared_count": 13,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook3\"",
+    "node": "Webhook3",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-004",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook4\"",
+    "node": "Webhook4",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-005",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook5\"",
+    "node": "Webhook5",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-006",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook6\"",
+    "node": "Webhook6",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message1",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message2",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message3",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-005",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message4",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-006",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message5",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Girl, I Got You",
+    "node": "FEI\"",
+    "fix": "\u2014 | Review"
+   }
+  ]
+ },
+ {
+  "name": "GitHub Pages - Push Quiz Landing Pages",
+  "id": "QBpbgWthVLLSjoLH",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Form Trigger - Avatar Quiz Intake\"",
+    "node": "Form Trigger - Avatar Quiz Intake",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Form Trigger - Avatar Quiz Intake",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"GitHub Pages - Push Quiz Landing Pages\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "High Ticket Manual",
+  "id": "jFJOfgZMEQJSIda5",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1B Sales Page Assets PiAPI",
+  "id": "Ua6aHyfLTJYcgJXM",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1C Sales Page Assets PiAPI",
+  "id": "2ufZWUitI0DaAUdJ",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Branch 1D Sales Page Assets PiAPI",
+  "id": "qPQg2kngVyFc6tkl",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Image Test",
+  "id": "dmbwJVXUAE6GQJrF",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "image to video with groq class",
+  "id": "QvBTvsARbchm2LAq",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"form\"",
+    "node": "form",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"image to video with groq class\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "ImageMan Agent BR",
+  "id": "yMPaAd0zEA3VpYyi",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "ImageMan2",
+  "id": "FuCJNphftSVsauYF",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"ImageMan2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Midjourney Image  Creator part 1 FOR SLIDES AND AD LAST UPDATE DEC 10 2025",
+  "id": "8yoZVqwMCuB6712s",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Midjourney Image  Creator part 1 FOR SLIDES AND AD LAST UPDATE DEC 10 2025\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Midjourney prompt writer",
+  "id": "t3lIhaKbMMa7HPSr",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Midjourney prompt writer\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 2",
+  "id": "NBtPhHmuXTUoBmnM",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 3",
+  "id": "nEofM8v2fgx7B7zN",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "HTTP Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "oneness wellness Voice Ai part 1 Check calendar & book appointments",
+  "id": "hRJk1OvOzMObem7d",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "oneness wellness Voice Ai Part 2 the BCEO analysis system",
+  "id": "g41PwIB9uRJ54V7I",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"oneness wellness Voice Ai Part 2 the BCEO analysis system\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Orientation Video Tracking - 30% & 75%",
+  "id": "JMnsK3O6wfFX7S3m",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook 30% Watched\"",
+    "node": "Webhook 30% Watched",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook 75% Watched\"",
+    "node": "Webhook 75% Watched",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Orientation Video Tracking - 30% & 75%\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "PowerPoint / slide creator part 2",
+  "id": "i4yDQzMS20dCGo3i",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Product bio, October 26, 2026",
+  "id": "nmzwhJfzlbpTE07X",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Rescue Rangers -- Trevor Group Inbound",
+  "id": "tIymOP0KtvfiqQgv",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Telegram Webhook Receiver\"",
+    "node": "Telegram Webhook Receiver",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Filter Trevor in RR Group",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Rescue Rangers Relay",
+  "id": "GdymshUbNb9eaOAC",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook (rescue-rangers)\"",
+    "node": "Webhook (rescue-rangers)",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Relay Brain",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "\u2014",
+    "fix": "Review"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"Rescue Rangers Relay\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "retell template",
+  "id": "2opQXZAhYIfBsMk6",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Samanthas Voice AI Dec 1 25 UPDATE",
+  "id": "TMgfzU6PYxODp8mL",
+  "active": true,
+  "declared_count": 8,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "HTTP Request retellai",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "High",
+    "finding": "Hardcoded credit_card detected",
+    "node": "get transcript",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"trigger call in retellai.com\"",
+    "node": "trigger call in retellai.com",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-004",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get transcript\"",
+    "node": "get transcript",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-005",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "get transcript",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Single Chapter Cover Image Gen",
+  "id": "nWdDNoGTvIhIhdiw",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Single Chapter Cover Image Gen CC",
+  "id": "irZy6pWKmYaX71nI",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Image Generation (OpenAI Image 1)",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Single Page STEP 00 Sales Page Writer Main SD",
+  "id": "z8spdUtYz6AhFUg7",
+  "active": false,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-003",
+    "severity": "High",
+    "finding": "Hardcoded credit_card detected",
+    "node": "Wait",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload1",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Wait",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Single Page STEP 00 Sales Page Writer Main SD Image",
+  "id": "fyz7xmbkDISDUXOg",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "sms agent",
+  "id": "pGfCMGFEJbmG41Yf",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"sms agent\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "SMS Workflow",
+  "id": "Ma1DlqrrSLdyhxKs",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Snapshot Provisioner (Podcast + Anthology)",
+  "id": "ol9YLeCpvYdNsbsg",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook \u2014 Receive Provision Request\"",
+    "node": "Webhook \u2014 Receive Provision Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"Snapshot Provisioner (Podcast + Anthology)\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "Social Media Planner - Sheet Creator",
+  "id": "INyGjT8jQ6JjrZSh",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook: Create Sheet\"",
+    "node": "Webhook: Create Sheet",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "social-planner-row-append",
+  "id": "myXde6jbIIkaG5zW",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook: Append Row\"",
+    "node": "Webhook: Append Row",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"social-planner-row-append\"",
+    "node": "\u2014",
+    "fix": "Review"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"social-planner-row-append\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "sora video creator | [CLIENT]",
+  "id": "9g6bB2VzGIts5CmV",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"C&F Webhook for Video Submission1\"",
+    "node": "C&F Webhook for Video Submission1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"sora video creator",
+    "node": "[CLIENT]\"",
+    "fix": "\u2014 | Review"
+   }
+  ]
+ },
+ {
+  "name": "star auto webinar updater",
+  "id": "Vm4Q9XRRmS0m5TTW",
+  "active": true,
+  "declared_count": 8,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Send a message",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "High",
+    "finding": "Hardcoded credit_card detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Update contact fields1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-006",
+    "severity": "High",
+    "finding": "Hardcoded credit_card detected",
+    "node": "Update contact fields1",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-005",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Update contact fields1",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"star auto webinar updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Star Speaker Clinic Date Updater",
+  "id": "Oep5MSMbdLWAGTkX",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Update Speaker Clinic Date in GHL",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "High",
+    "finding": "Hardcoded credit_card detected",
+    "node": "Update Speaker Clinic Date in GHL",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Update Speaker Clinic Date in GHL",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Star Speaker Clinic Date Updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Star Voiceai Pt 1",
+  "id": "YgjqTE7eipf6rIeo",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Star Voiceai pt 2",
+  "id": "Wu6WPJd98i9ywb5k",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Status Update",
+  "id": "QHNr4LTxNPAzg8lY",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "STEP 01A Make Branch Low Ticket B",
+  "id": "GT6lvuK0KQMeZAN7",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 01A Make Branch Low Ticket B\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STEP 01A Make Branch Low Ticket B Single Page",
+  "id": "PmdlnjGGYjgerDLY",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 01A Make Branch Low Ticket B Single Page\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Step 01B Make Branch Upsell A",
+  "id": "ApRnOUJ1p2NHRz7Z",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Step 01B Make Branch Upsell A\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Step 01C Make Branch Upsell B",
+  "id": "37gYsFywmPUocD8f",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Step 01C Make Branch Upsell B\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STEP 01D Make Branch Downsell A",
+  "id": "3U8Snl7TjaE9jpSW",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 01D Make Branch Downsell A\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STEP 01E Make Branch Downsell B",
+  "id": "1vajIXqF8IS7aW4W",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 01E Make Branch Downsell B\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Step 01F Make Branch Bumpsell",
+  "id": "tUU56wTMCREECbpC",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Step 01F Make Branch Bumpsell\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Step 03A Branch High Ticket A",
+  "id": "QsAJGcijcSE6NJ9W",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Step 03A Branch High Ticket A\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STEP 03B Branch High Ticket B",
+  "id": "gYQpVorkOKQEoRct",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 03B Branch High Ticket B\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Super Bot Remix",
+  "id": "idsIpsmdIUB9ujPk",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Template social media posting",
+  "id": "uYkpV1F6qKOY1DSL",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "template upload to convert and flow ghl",
+  "id": "k7OKMMPAungp2BJP",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "High",
+    "finding": "Hardcoded bearer_token detected",
+    "node": "Get all folder in convert and flow media storage",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "tonya wise Voice AI Dec 1 25 UPDATE copy",
+  "id": "z7cMtZStiZzLEeAv",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get transcript\"",
+    "node": "get transcript",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-004",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Transcript (Call End)",
+  "id": "WtDN3LRerlMyD00o",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Trevor/Ben Retell Book Appointment",
+  "id": "jttrrIIZzhZIKJKG",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Trevor/Ben Retell Get Slots",
+  "id": "gOksjBrIl9yOIUkS",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Trevor/Ben Retell Get Slots\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Ultimate Prompt Creator For Slides part 1",
+  "id": "y3yZuA79ebJpLo1b",
+  "active": true,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Prompt Request Form\"",
+    "node": "Prompt Request Form",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Prompt Request Form",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send Prompts Email",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Ultimate Prompt Creator For Slides part 1\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "UPD Pin Webhook",
+  "id": "3eb8Xy5Almly4ZpL",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Validate user",
+  "id": "XAbzhH1Egzjyns0g",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Validate user\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Voice ai prompt creator",
+  "id": "Ywm2tMRW7NQci6xW",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Voice ai prompt creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Voice Ai TEMPLATE part 1 Check calendar & book appointments JAN 8 2026",
+  "id": "b17VVFd5e9tigXys",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Webhook version of ImageMan 3 nano",
+  "id": "zgwCua2E0wF5PMFO",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "High",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Webhook version of ImageMan 3 nano\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\u26a0\ufe0f WALLET ALERT \u2192 Telegram (Trevor)",
+  "id": "7ErmXvNM9c88Y4ID",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"\u26a0\ufe0f WALLET ALERT \u2192 Telegram (Trevor)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\ud83d\udc64 Trevor Speaks - Private Welcome (30s delay)",
+  "id": "dh5EPzTsS4A0n6ye",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Bot Start Webhook\"",
+    "node": "Bot Start Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"\ud83d\udc64 Trevor Speaks - Private Welcome (30s delay)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\ud83d\udce2 Telegram Channel Join Alert \u2192 Trevor",
+  "id": "6lcR8zqOX1fYeGvX",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Telegram Webhook\"",
+    "node": "Telegram Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"\ud83d\udce2 Telegram Channel Join Alert \u2192 Trevor\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "\ud83e\udd16 Trevor Speaks - All Events (Welcome + Join Alerts)",
+  "id": "YH4nkPgwI4HgtBPP",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Telegram Webhook\"",
+    "node": "Telegram Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"\ud83e\udd16 Trevor Speaks - All Events (Welcome + Join Alerts)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "01-Sub-Workflow - Image Quiz Image Generator v10",
+  "id": "qmFCHWuX2cZg6QTncV1PI",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"01-Sub-Workflow - Image Quiz Image Generator v10\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "02-Combined Image Creator",
+  "id": "c5K1ihIUKXF1fNZClRrCP",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"02-Combined Image Creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "02-Social Media in a Box Content Generator",
+  "id": "T2GNL2AS3qbcms8S",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"02-Social Media in a Box Content Generator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "17 - AI LinkedIn Responder",
+  "id": "ze93axxRd6OsBnlm",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"17 - AI LinkedIn Responder\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "4x3x3 Test",
+  "id": "EX9eLB6GZ95Xv65U",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "advanced grok video",
+  "id": "kECUDtMMwYWGsKV5",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Agent Samantha's Test",
+  "id": "Dz86rYCQZfSxUqrM",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Agent Samantha's Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"Agent Samantha's Test\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "Agent Samantha's Test",
+  "id": "Ef1NBhbCrL66QDGT",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Agent Samantha's Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"Agent Samantha's Test\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "Airtable Test",
+  "id": "UDnxApPYfCmtWkUZ",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Airtable Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Anthology Drive Broker",
+  "id": "F2X3SxZVhWRDxHOV",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook anthology-drive\"",
+    "node": "Webhook anthology-drive",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Anthology Drive Broker\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "anthology writer",
+  "id": "LtCloLuM1SOi4wpU",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GoHighLevel Webhook\"",
+    "node": "GoHighLevel Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Producer Approval\"",
+    "node": "Producer Approval",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"anthology writer\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Anthology Writer - Ben CC",
+  "id": "D3I9ylvwXIWRd7NE",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Anthology Writer - Ben CC\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Avatar Alchemist Test Flow",
+  "id": "kNA5M2xorQJXoGKD",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook2\"",
+    "node": "Webhook2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Avatar Quiz Engagement System - Full",
+  "id": "QFkrQzSBpPSxRzC3",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook Trigger\"",
+    "node": "Webhook Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook - Selections\"",
+    "node": "Webhook - Selections",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Avatar Quiz Engagement System - Full\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Avatar Quiz Engagement System v3",
+  "id": "NEOVLiBxOlyIyHDL",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook Trigger - Quiz Intake\"",
+    "node": "Webhook Trigger - Quiz Intake",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook Trigger - Receive Selections\"",
+    "node": "Webhook Trigger - Receive Selections",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Avatar Quiz Engagement System v3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "BlackCEO voice AI system",
+  "id": "RxiPAKSpwXsartAh",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "HTTP Request",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "HTTP Request",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"BlackCEO voice AI system\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Book Writer Fail",
+  "id": "jrHCWGIxSSIPgtv1",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Gmail",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "CLASS LinkedIn EMAIL scraper copy",
+  "id": "o1o835CQNRNkjpyx",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"CLASS LinkedIn EMAIL scraper copy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Class on AI agent",
+  "id": "myvk0G4ORN0gVtdS",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Class on AI agent\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Client Data Extractor - Clients Bceo",
+  "id": "JcxdLjFa5qmgKlLe",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Client Data Extractor - Clients Bceo\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Convert Avatar document into a beautiful PDF",
+  "id": "1NujvcZyfmHgPxga",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Upload file in Google Drive",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Convert Avatar document into a beautiful PDF\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "copy slide Image Creator Part 3 copy",
+  "id": "Xc7CM7UMWmqCTYMT",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"copy slide Image Creator Part 3 copy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "create podcast episode from openclaw",
+  "id": "TkL0rn2SH3q32SeB",
+  "active": true,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Gmail \u2014 Entry Guard Refused Notification",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Gmail \u2014 Standing Identity Gate Refused Notification",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Gmail \u2014 Media Preflight Refused Notification",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Custom Field Updater",
+  "id": "d8869A9AxcjMZpwb",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Custom Field Updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Document man slack",
+  "id": "R65mb0g2itI2pX4x",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Document man slack\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "dummy",
+  "id": "tQhHDTCDTSqUQBlq",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"dummy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "error workflow",
+  "id": "QMNXZrNvXG0nn2U7",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message1",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Explore Growth - Social Media Content Generator v4 Cory and Andrea",
+  "id": "qoAuSsAfXPDxWeNJ",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Explore Growth - Social Media Content Generator v4 Cory and Andrea\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Gdrive To PineCone Template",
+  "id": "Cwb0Ax6kS5I3fgZ9",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Gdrive To PineCone Template\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Generate Video Ads with Gemini 2.5 Flash Images & FAL WAN Animation",
+  "id": "crW2sMAoZaodwHJ4",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Photo Upload Form\"",
+    "node": "Photo Upload Form",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Generate Video Ads with Gemini 2.5 Flash Images & FAL WAN Animation\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Get Appointment Slots - Black CEO (Template)",
+  "id": "khjgAqCUwyimk60Z",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "GHL Agent",
+  "id": "yUT4FNIFRGN85qlY",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"GHL Agent\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "GHL API Test V5",
+  "id": "mWOm62CCW0XmnOVo",
+  "active": true,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "1. Validate User",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"GHL API Test V5\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Google Doc HTML Render",
+  "id": "iKcW1lRxZEv2tJbc",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Google Doc HTML Render\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "grok video",
+  "id": "mWUtV3kSQNms1huR",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"form\"",
+    "node": "form",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"grok video\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "How to Generate UGC ads with Nano banana (The AI Edge)",
+  "id": "h5ez06NuEl70j4AM",
+  "active": false,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"T2I Trigger\"",
+    "node": "T2I Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"I2V Trigger\"",
+    "node": "I2V Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"I2I Trigger\"",
+    "node": "I2I Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"How to Generate UGC ads with Nano banana (The AI Edge)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Ideogram Test",
+  "id": "g41PQXAZmPzwKnEq",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "HTTP Request7",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Ideogram Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Image Man 3 Webhook version backup",
+  "id": "j71qEtQcBjj9zNdc",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Image Man 3 Webhook version backup\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Image Quiz Builder - Complete v39",
+  "id": "XdhU1YDmhKBU0ebGeYASZ",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Form Trigger - Image Quiz Intake",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Form Trigger - Image Quiz Intake\"",
+    "node": "Form Trigger - Image Quiz Intake",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Image Quiz Builder - Complete v39\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Imageman 3 slack verion",
+  "id": "2qx8eMXeb2gvgsv1",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Imageman 3 slack verion\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "ImageMan Agent BR copy (attempt 2 fix errors) by trevor",
+  "id": "Nmzrz6gpPpT7XyPi",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Joke bot. Joke agent",
+  "id": "qQfkNGweT5dSNbBz",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "AI Agent1",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Joke bot. Joke agent\"",
+    "node": "\u2014",
+    "fix": "Review"
+   },
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"Joke bot. Joke agent\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ },
+ {
+  "name": "lead magnet generator",
+  "id": "BPLmsKak4tzssX7Y",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"lead magnet generator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "leanne pine cone",
+  "id": "Ly9324XxbrkTwQ5D",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"leanne pine cone\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "main image workflow",
+  "id": "hMOLVmSnCperst59",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Get Request\"",
+    "node": "Get Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"main image workflow\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "mark1",
+  "id": "72X9nBwGkPO8TDdM",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"mark1\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "MCP Test",
+  "id": "pe33WIv59XZoSmhM",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"MCP Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "merge small video clips into one longer video (FFMPEG)",
+  "id": "rlpeWhj7KQTI7h08",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"merge small video clips into one longer video (FFMPEG)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Midjourney Image Creator",
+  "id": "O6MvuR8K5PuTlvjS",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Midjourney Image Creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Midjourney Image Creator copy",
+  "id": "XyszlONKNKiVlmk1",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Midjourney Image Creator copy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "midjourney Part 2 subworkflow image creator",
+  "id": "0qtaTpe86MtOeThT",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"midjourney Part 2 subworkflow image creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Movie creator  New",
+  "id": "G7nekONkjmTReVJn",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Movie creator  New\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Movie creator  ver 2",
+  "id": "gHSxfCB2lT2fjL7D",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Movie creator  ver 2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Movie creator  ver 3 copy",
+  "id": "7hw3ZQv2CQVGPYPA",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Movie creator  ver 3 copy\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 11",
+  "id": "cuFd6pGDG2ydhuxe",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 11\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 12",
+  "id": "CWtTZWWO35CD1QTZ",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 12\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 15",
+  "id": "uIG6mJGw02XNEvNE",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 15\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 17",
+  "id": "ou0646kpFxFteUdc",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "Analyze image",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 18",
+  "id": "Xcfk6LqgkL2tOqOH",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 18\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 20",
+  "id": "sIn72YZECmtRz1Zz",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 20\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 21",
+  "id": "rdE69uffMSO5ggXF",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 21\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 22",
+  "id": "Del5d7Rm8jWAhJsR",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send a message",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 22\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 24",
+  "id": "cWBRtKI4WxQ5DlxI",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 24\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 25",
+  "id": "codHgrgzi51SyXH4",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 26",
+  "id": "PEpwKjH7dpe47vI2",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 26\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 27",
+  "id": "1566VP5HDszafvn-HTZS8",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 27\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 5",
+  "id": "bZczGYdcfdk6qctZ",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 5\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 8",
+  "id": "Xiju5WvZslJjzkr3",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 8\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "My workflow 9",
+  "id": "ofyqM1AEJGG9b9vl",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"My workflow 9\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "N8n Backup Program",
+  "id": "3pavvSks7wjdNEER",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"N8n Backup Program\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "n8n library updater V14 - Custom Chunk Iterator",
+  "id": "TGfLV5CUluvPzV45",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"n8n library updater V14 - Custom Chunk Iterator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "old version prompt creator  dec14   2025",
+  "id": "1fiJ4yGTsLdxn16f",
+  "active": false,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Prompt Request Form",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Send Prompts Email",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Prompt Request Form\"",
+    "node": "Prompt Request Form",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"old version prompt creator  dec14   2025\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "OpenRouter HTTP template",
+  "id": "v8LT0AHDTn0xCJFX",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"OpenRouter HTTP template\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "OUTDATED midjourney Part 2 subworkflow image creator",
+  "id": "Ev44c9vyiFSyW8eX",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"OUTDATED midjourney Part 2 subworkflow image creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Page Mockup Generator v1",
+  "id": "RTnr2qvnIeiQIybv",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Form Trigger",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Form Trigger\"",
+    "node": "Form Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Page Mockup Generator v1\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Part 2 Kie.ai VEO3 fast image to video subworkflow",
+  "id": "Ucj8YNTBPbE9iJTH",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Part 2 Kie.ai VEO3 fast image to video subworkflow\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Part 3 Fal.ai ffmpeg merge videos",
+  "id": "Ii2R8R06ZHxg2JaZ",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Part 3 Fal.ai ffmpeg merge videos\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Part 4 - Google Slides Creator",
+  "id": "8I3G8pU9oz62KYME",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Part 4 - Google Slides Creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Part 5 - Timeout Watcher",
+  "id": "tLGKFFIu2liA65Fu",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Part 5 - Timeout Watcher\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Part 6 - Weekly Cleanup",
+  "id": "5yGydhzBsupnTJcn",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Part 6 - Weekly Cleanup\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Path B - Safe Bulk SMS via GHL (TEMPLATE)",
+  "id": "7A1k5hCA3MmKnwm8",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook - Campaign Request\"",
+    "node": "Webhook - Campaign Request",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Path B - Safe Bulk SMS via GHL (TEMPLATE)\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "PiAPI Image Gen.",
+  "id": "QOxUM4qs8SXPe0bP",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"PiAPI Image Gen.\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Pinecone Part 1 New Files Processor",
+  "id": "fs4mQTkcNA5yxY7u",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Pinecone Part 1 New Files Processor\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Pinned Webhook Sales Page Creator",
+  "id": "L72LuKYAqsHD7qSR",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger\"",
+    "node": "GHL Trigger",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Podbean - GET CLIENT CHANNEL ID",
+  "id": "BqRLOn8TP1wPaAzn",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Podbean - GET CLIENT CHANNEL ID\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Presentation and ad man",
+  "id": "KNl4C9NEy6PYoBuB",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Presentation and ad man\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Retell AI",
+  "id": "3o7pvNypvlEFFEaG",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "HTTP Request",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "HTTP Request",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Samantha Porter Social Media in a Box",
+  "id": "RYBmX3frEBRDHdy5",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Samantha Porter Social Media in a Box\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Send Remaining Christmas Emails",
+  "id": "7xbitHJ8STaTTdVq",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Send Remaining Christmas Emails\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Shifab Social Media in a Box Oneness Wellness",
+  "id": "SEX9M1dL1D9eZYo4",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Shifab Social Media in a Box Oneness Wellness\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Single Page STEP 00 Sales Page Writer Main",
+  "id": "wmb53gbRt7bAb93Y",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded phone detected",
+    "node": "ImgBB Upload1",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger2\"",
+    "node": "GHL Trigger2",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Slack ID Sync Updater",
+  "id": "UXtDy9hpsHLfb6xq",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Slack ID Sync Updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "slackbot byclaude code doc updater",
+  "id": "NkDmD8oE3xCL6MUv",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"slackbot byclaude code doc updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "slide Image Creator Part 3",
+  "id": "wb2OhPgDdvFe8BV2",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"slide Image Creator Part 3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social media in a box part 3 Content Writer",
+  "id": "w6w48NI48EkcdPg2",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social media in a box part 3 Content Writer\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social media in a box part 5 fb/ig carousel creator",
+  "id": "PnCHOzl1eQdReMIe",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social media in a box part 5 fb/ig carousel creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social media in a box part 6: Carousel Image Creator",
+  "id": "JKK3wVqurjlBK0tt",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social media in a box part 6: Carousel Image Creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social media in a box part 7: LinkedIn Carousel",
+  "id": "beu3SatkuetT1di2",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social media in a box part 7: LinkedIn Carousel\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social Media In A Box Part 9: podcast Image Creator",
+  "id": "UJkGg13KsY4ZwLfh",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social Media In A Box Part 9: podcast Image Creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Social media in a box. Agency version. Template - FIXED v3",
+  "id": "1w3pPmH3QzVQ0rfa",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Social media in a box. Agency version. Template - FIXED v3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "sora 15 sec version and 25 sec video chainer",
+  "id": "TZvWkuxt2Bn8C3mL",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"sora 15 sec version and 25 sec video chainer\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "sora video creator",
+  "id": "csq7nQq0qZGdT1mb",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"sora video creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "sora video creator class version",
+  "id": "jHMYxzzoW5sMrx8C",
+  "active": false,
+  "declared_count": 4,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"C&F Webhook for Video Submission1\"",
+    "node": "C&F Webhook for Video Submission1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-003",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook1\"",
+    "node": "Webhook1",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-004",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Star VoiceAi Pt 3",
+  "id": "KT0LNuY2lC6dwqmy",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Star VoiceAi Pt 3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STEP 02 High Ticket Images APIFRAME",
+  "id": "qXtT00ktXlfrvtrs",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook1\"",
+    "node": "Webhook1",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "STEP 02 High Ticket Images PiAPI",
+  "id": "baWn3i6GVfNAycUz",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook1\"",
+    "node": "Webhook1",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "STEP 03C Branch High Ticket C",
+  "id": "rJHCYKbHizJUQ8Jg",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STEP 03C Branch High Ticket C\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "[CLIENT] Book Rewriter",
+  "id": "XbqMuPB6g547Uwmj",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"[CLIENT] Book Rewriter\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "STUFF IM TESTING",
+  "id": "IMuMSGWhtdPU1I7J",
+  "active": false,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Set Email",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Google Workspace Agent",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Create an event in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get many events in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-005",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get availability in a calendar in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"STUFF IM TESTING\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Sub workflow to create videos using veo",
+  "id": "tDD6PDVRXEkTnzGu",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Sub workflow to create videos using veo\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Subworkflow: Edit Image using Seed Dream or Nano Banana",
+  "id": "4u2cdQduqGfZViP6",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Subworkflow: Edit Image using Seed Dream or Nano Banana\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "SUPERBOT FOR CLASS",
+  "id": "x91WGueVZ54bIua8",
+  "active": true,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Create an event in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get availability in a calendar in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get many events in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "bceo system email address",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"SUPERBOT FOR CLASS\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Superbot Multi-Agent v3.0",
+  "id": "ou8jGf0iltfy6Nau",
+  "active": false,
+  "declared_count": 6,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Set Email",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Google Workspace Agent",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Create an event in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get many events in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-005",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get availability in a calendar in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Superbot Multi-Agent v3.0\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Template - Google sheet updates",
+  "id": "GOjDtPwm1SZQ027Z",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Template - Google sheet updates\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Template - Gotenberg pdf creator",
+  "id": "z1c2SdLnkclDFTax",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook Trigger\"",
+    "node": "Webhook Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Template - Gotenberg pdf creator\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Template - NCA Toolkit",
+  "id": "R5rT2TH7Na3isFHi",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Template - NCA Toolkit\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Template - NCA Toolkit with ffmpeg video and audio template",
+  "id": "OnIlGaZeOmPaayIW",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Template - NCA Toolkit with ffmpeg video and audio template\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "template Easiest way to generate images with nano banana pro",
+  "id": "u9KmifQJ1Ybg9ONc",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"On form submission\"",
+    "node": "On form submission",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"template Easiest way to generate images with nano banana pro\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Template Voiceai Pt 1",
+  "id": "iy888GgBYmze0nYg",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"get a calendar availability\"",
+    "node": "get a calendar availability",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Template Voiceai pt 2",
+  "id": "2gd2aao8nFma9JaV",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Book appointment\"",
+    "node": "Book appointment",
+    "fix": "Auto-fix"
+   }
+  ]
+ },
+ {
+  "name": "Template VoiceAi Pt 3",
+  "id": "J20x65Ta4WzdFVmY",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Template VoiceAi Pt 3\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "template-ffmpeg test",
+  "id": "6FIxaCq5sBhRKizl",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"template-ffmpeg test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "test 2",
+  "id": "w5rwXMA303LdrQRp",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"test 2\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "TEST Make Test",
+  "id": "vuzXoYtMLn8a8fVn",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"GHL Trigger\"",
+    "node": "GHL Trigger",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"TEST Make Test\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "TREVORS PINECONE CREATOR AND DATABASE / INDEX UPDATER",
+  "id": "4J3SnDf76y3PaqJd",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"TREVORS PINECONE CREATOR AND DATABASE / INDEX UPDATER\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Trevors Pinecone creator and updater",
+  "id": "I9bZu4o2QaXu9JoK",
+  "active": true,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Trevors Pinecone creator and updater\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Trevors SUPERBOT Part 1  not ready no telegram",
+  "id": "ggqcH0xP8LhZC3nY",
+  "active": false,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Append row in sheet in Google Sheets",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Create an event in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get availability in a calendar in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get many events in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Trevors SUPERBOT Part 1  not ready no telegram\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Trevors Superbot Part 2 THE TOOL BOX",
+  "id": "aRQRSKgSYQz1r50t",
+  "active": false,
+  "declared_count": 5,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Append row in sheet in Google Sheets",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-002",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Create an event in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-003",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get availability in a calendar in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "CRED-004",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Get many events in Google Calendar",
+    "fix": "Review"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Trevors Superbot Part 2 THE TOOL BOX\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "ultimate gmail agent outdated",
+  "id": "9Um9vvMNX4e9dbv2",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"ultimate gmail agent outdated\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Ultimate Sales Ai",
+  "id": "J9jrE2ZjigZ2BOQP",
+  "active": false,
+  "declared_count": 2,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Ultimate Sales Ai\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Update Your RAG Database",
+  "id": "UnSUty49tLGjMgBP",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Update Your RAG Database\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "video and audio merger FFMPEG",
+  "id": "jGyACQePgUA5Crjc",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Merge Video\"",
+    "node": "Merge Video",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "WEBHOOK-002",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Merge Audio\"",
+    "node": "Merge Audio",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"video and audio merger FFMPEG\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "Video Merge - Native Nodes Only",
+  "id": "KdSUx4GX9l2CtZSm",
+  "active": false,
+  "declared_count": 3,
+  "rows": [
+   {
+    "id": "CRED-001",
+    "severity": "Medium",
+    "finding": "Hardcoded email detected",
+    "node": "Sticky Note",
+    "fix": "Review"
+   },
+   {
+    "id": "WEBHOOK-001",
+    "severity": "Medium",
+    "finding": "Unauthenticated webhook: \"Webhook\"",
+    "node": "Webhook",
+    "fix": "Auto-fix"
+   },
+   {
+    "id": "ERR-001",
+    "severity": "Medium",
+    "finding": "No error handling in workflow \"Video Merge - Native Nodes Only\"",
+    "node": "\u2014",
+    "fix": "Review"
+   }
+  ]
+ },
+ {
+  "name": "n8n-mcp Test Workflow",
+  "id": "QaWYmA1OSxZGkaAN",
+  "active": false,
+  "declared_count": 1,
+  "rows": [
+   {
+    "id": "RETENTION-001",
+    "severity": "Low",
+    "finding": "Excessive data retention in workflow \"n8n-mcp Test Workflow\"",
+    "node": "\u2014",
+    "fix": "User action"
+   }
+  ]
+ }
+]
