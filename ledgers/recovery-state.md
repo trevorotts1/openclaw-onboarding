@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T13:10:05Z
-openclaw-onboarding `origin/main` HEAD: `85996770cb8301279b2bd499b96d2476becac70e`
+Generated: 2026-07-16T13:20:05Z
+openclaw-onboarding `origin/main` HEAD: `cf03b647b3fe6bcb9318a063bfe77fae068c9e92`
 blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -21,15 +21,16 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
 | U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U106 | `skill6-v2/U106` | `c28f75b8` | False | - | - | pending | - |
+| U106 | `skill6-v2/U106` | `c28f75b8` | True | `b5f24e62` | - | pending | - |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U108 | `skill6-v2/U108` | `eac10193` | False | - | - | pending | - |
+| U108 | `skill6-v2/U108` | `eac10193` | True | `2bb9cbe4` | - | pending | - |
 | U11 | `skill6-v2/U11` | `f3d751f5` | True | `93e4c1ed` | - | pending | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
 | U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U114 | `skill6-v2/U114` | `aa4a5ad1` | False | - | - | pending | - |
 | U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U116 | `skill6-v2/U116` | `cef6c474` | True | `48359b40` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U117 | `skill6-v2/U117` | `252d6cce` | False | - | - | pending | - |
+| U117 | `skill6-v2/U117` | `252d6cce` | True | `ab6344c6` | - | pending | - |
 | U12 | `skill6-v2/U12` | `5f3c7321` | True | `1e04f9e4` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U13 | `skill6-v2/U13` | `5fec8cf9` | True | `59c472b9` | v20.0.38 | verified | 9.3 |
 | U14 | `skill6-v2/U14` | `ab4b5aff` | True | `c6f865fe` | v20.0.51 | verified | - |
@@ -75,6 +76,7 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
 | U91 | `skill6-v2/U91` | `4ba11988` | True | `2f23e2e0` | v20.0.60 | verified | - |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
+| U93 | `skill6-v2/U93` | `623196c0` | False | - | - | pending | - |
 | U96 | `skill6-v2/U96` | `889b13ab` | True | `381b5093` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U97 | `skill6-v2/U97` | `fa1cdba7` | True | `2a5855f5` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U98 | `skill6-v2/U98` | `d980209f` | True | `0510c6b5` | - | pending | - |
