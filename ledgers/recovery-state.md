@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T04:40:01Z
-openclaw-onboarding `origin/main` HEAD: `fdd25afccbddfb35907c8007622fa8445fe68292`
+Generated: 2026-07-16T04:50:02Z
+openclaw-onboarding `origin/main` HEAD: `15eb0cd4ae34c5d344880538689229e2486e15af`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -25,10 +25,10 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
 | U27 | `skill6-v2/U27` | `cba9065a` | True | `6234014b` | v20.0.25 | verified | 9.0 |
-| U28 | `skill6-v2/U28` | `12fe834c` | False | - | - | pending | - |
-| U29 | `skill6-v2/U29` | `14e63cef` | False | - | - | pending | - |
+| U28 | `skill6-v2/U28` | `46ed631d` | False | - | - | pending | - |
+| U29 | `skill6-v2/U29` | `cffa32b7` | False | - | - | pending | - |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
-| U31 | `skill6-v2/U31` | `3918b745` | False | - | - | pending | - |
+| U31 | `skill6-v2/U31` | `e7c3cbb5` | False | - | - | pending | - |
 | U39 | `skill6-v2/U39` | `49015cfc` | False | - | - | pending | - |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
 | U44 | `skill6-v2/U44` | `fbd8cb3e` | False | - | - | pending | - |
@@ -48,7 +48,7 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
 | U86 | `skill6-v2/U86` | `57003f18` | False | - | - | pending | - |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | True | `a3a42e1d` | v20.0.49 | verified (OFFLINE/FIXTURE tier; LIVE operator-box leg OWED) | - |
-| U9 | `skill6-v2/U9` | `157ed0bf` | False | - | - | pending | - |
+| U9 | `skill6-v2/U9` | `b4b58f1e` | False | - | - | pending | - |
 | U9-sonnet5-b | `skill6-v2/U9-sonnet5-b` | `edc1a92c` | False | - | - | (no row) | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
