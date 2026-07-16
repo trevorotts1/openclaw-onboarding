@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.54.
+> **Version:** see `/version` - this repo at v20.0.55.
+>
+> **NOTE (v20.0.55) — fix(agent-browser-guard): exempt Skill 3's own raw-CLI backstop-conformance battery (exact-path) — main-scan greens (exit 0).** Merges `skill6-v2/fix-agent-browser-guard-red` into `scripts/guard-agent-browser-managed.sh`. The managed-only scan had been exiting 1 on 4 PRE-EXISTING false-positive violations in `03-agent-browser/scripts/lib-backstop-conformance.sh` (lines 94/105/116/128) — Skill 3's OWN raw-CLI conformance battery, which must exercise the raw `agent-browser` binary to prove the primitive contract that `browser_manager.sh` and Skill 44's Tier-4 fallback are built on. Exempts ONLY that exact path (never directory-wide) in both the bash `is_exempt()` and the batched-python hot-path `EXEMPT` set, plus a new negative-fixture test (`guard-agent-browser-managed-backstop-conformance-exempt.test.sh`, wired into CI) proving any OTHER unmanaged spawn under `03-agent-browser/` is still caught. Proof (merged tree): guard main-scan now **exits 0**; backstop-exempt + scan-roots + all-skill-dirs fixtures ALL PASS; `qc-assert-repo-consistency.py` rc=0, content-manifest 435, version 11/11, frontmatter + newline PASS. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.54) — feat(skill6): Skill 6 U31 (B-U17) — GHL page inventory + staged lifecycle (flag → operator card → fail-closed execute) + evidence-root retention.** Merges `skill6-v2/U31` into **06-ghl-install-pages** (Skill 6). Ships `tools/ghl_inventory.py` (1,229 LOC): a page-inventory + staged-lifecycle engine whose destructive actions run through a **fail-closed staged ladder** — a page is first FLAGGED, then surfaced on an operator card for an explicit decision, and only then executed (never auto-destructive; absent an approval it fails closed), with an evidence-root retention policy for the inventory receipts. A scheduled sweep is shipped via `schedule/skill6-page-inventory-lifecycle.cron.json` + `scripts/install-page-inventory-lifecycle-cron.sh`, and `SKILL.md` (+68) documents the lifecycle doctrine. Proof (merged tree): `ghl_inventory.py --selftest` PASS (no network / no browser); `test_ghl_inventory.py` + `test_page_inventory_lifecycle_schedule.py` **69 passed** (staged flag→card→execute ladder, fail-closed default, evidence-root retention, and the schedule-presence check); `py_compile` clean, cron installer `bash -n` clean, cron JSON valid; `qc-assert-repo-consistency.py` rc=0, content-manifest 435, version 11/11, frontmatter + newline PASS. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -115,7 +117,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.54** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.55** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
