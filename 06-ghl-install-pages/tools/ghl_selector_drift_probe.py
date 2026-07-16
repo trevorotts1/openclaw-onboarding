@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""ghl_selector_canary.py — selector-drift canary + STOP-with-snapshot resolver (U2 / F3).
+"""ghl_selector_drift_probe.py — selector-drift canary + STOP-with-snapshot resolver (U2 / F3).
+
+RENAMED (U30/B-U16, 2026-07-16): this module shipped as ``ghl_selector_canary.py``
+through U29; the file is renamed here to retire the operator-banned coded term
+from the identifier (see ``scripts/docs-language-allowlist.json``'s U30-owned
+``legacy_filenames`` entries, now removed). ONLY the file's OWN NAME changed —
+internal identifiers (``CanaryReport``, ``run_canary()``, ``BOARD_NOTE_SELECTOR_MISS``,
+the conventional ``import ... as canary`` alias, etc.) are UNCHANGED; the docs-language
+CI guard only scans doc prose (*.md/*.mdx/*.rst/*.txt), never Python identifiers, so
+there is no cross-cutting rename obligation here beyond the file's own name and the
+handful of doc/tooling cross-references that name it by path (updated in this same
+commit — ``ENV-MATRIX.md``, ``SKILL.md``, ``scripts/vps-mount-proof.sh``,
+``tests/test_b_u15_env_matrix_live_proof.py``, ``tests/test_ghl_inventory.py``,
+``tools/ghl_inventory.py``, ``tools/iframe-survival-targets.json``,
+``tools/selectors-live.json``, ``scripts/probe/p304-agent-browser-conformance-probe.py``,
+``scripts/docs-language-allowlist.json``). CHANGELOG.md history is NOT rewritten
+(standing doctrine — see check-docs-language.py's own module docstring).
 
 WHY THIS EXISTS
 ----------------
@@ -56,7 +72,7 @@ network, no browser, no GHL writes.
 
 USAGE
 -----
-    import ghl_selector_canary as canary
+    import ghl_selector_drift_probe as canary
     data = canary.load_selectors()
     anchor = canary.get_anchor(data, "form.builder.save")
     ref = canary.resolve_anchor(anchor, finder=my_snapshot_finder)
@@ -70,11 +86,11 @@ USAGE
     print(report2.summary())
 
     # CLI
-    python3 ghl_selector_canary.py --matrix                  # print anchor counts
-    python3 ghl_selector_canary.py --matrix --object-type form
-    python3 ghl_selector_canary.py --canary --evidence-root /tmp/canary --selftest
-    python3 ghl_selector_canary.py --iframe-survival --evidence-root /tmp/canary --selftest-finder
-    python3 ghl_selector_canary.py --selftest
+    python3 ghl_selector_drift_probe.py --matrix                  # print anchor counts
+    python3 ghl_selector_drift_probe.py --matrix --object-type form
+    python3 ghl_selector_drift_probe.py --canary --evidence-root /tmp/canary --selftest
+    python3 ghl_selector_drift_probe.py --iframe-survival --evidence-root /tmp/canary --selftest-finder
+    python3 ghl_selector_drift_probe.py --selftest
 """
 
 from __future__ import annotations
@@ -85,9 +101,15 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-CANARY_VERSION = "v1.1.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-survival
+CANARY_VERSION = "v1.2.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-survival
+                            # v1.2.0 (U30/B-U16): module renamed from
+                            # ghl_selector_canary.py; + dedupe_board_notifier /
+                            # clear_dedupe_state_for_resolved (idempotent
+                            # SELECTOR-MISS card across the daily probe's
+                            # repeat runs); scheduled daily via
+                            # schedule/skill6-selector-drift-probe.cron.json
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SELECTORS_PATH = os.path.join(_HERE, "selectors-live.json")
@@ -338,6 +360,96 @@ def run_canary(data: Dict[str, Any],
         report.results_path = out_path  # type: ignore[attr-defined]
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# IDEMPOTENT board-notify wrapper (U30/B-U16 item 4) — a PERSISTENT
+# (not-yet-fixed) drift must produce EXACTLY ONE SELECTOR-MISS card across
+# REPEAT scheduled runs of the daily maintenance-window probe (see
+# schedule/skill6-selector-drift-probe.cron.json), never a fresh duplicate
+# card every time the SAME unresolved miss is re-scanned. run_canary()'s own
+# board_notifier is called once per MISS per RUN (correct, run-scoped); this
+# wrapper adds a persisted, cross-RUN ledger on top so the CALLER gets
+# idempotent behavior without run_canary() itself needing any cross-run
+# state (it stays a pure, dependency-injected, single-run scan).
+# ---------------------------------------------------------------------------
+def _load_dedupe_state(state_path: str) -> Set[str]:
+    """Fail-soft read: a missing/corrupt state file is 'nothing notified
+    yet' — never raises."""
+    try:
+        with open(state_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return set(data.get("notified", []))
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _save_dedupe_state(state_path: str, ids: Iterable[str]) -> None:
+    """Fail-soft write: persistence is best-effort and must NEVER block the
+    underlying board notification it wraps."""
+    try:
+        parent = os.path.dirname(state_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(state_path, "w", encoding="utf-8") as fh:
+            json.dump({"notified": sorted(set(ids))}, fh, indent=2, sort_keys=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def dedupe_board_notifier(
+    board_notifier: Callable[[Dict[str, Any]], None],
+    *,
+    state_path: str,
+) -> Callable[[Dict[str, Any]], None]:
+    """Wrap ``board_notifier`` (the callable passed to ``run_canary(...,
+    board_notifier=...)`` / ``run_iframe_survival_check(..., board_notifier=
+    ...)``) with a persisted 'already notified' ledger keyed by the miss's
+    own id (``anchor_id`` for a selector miss, ``target`` for an iframe-
+    survival miss), so a PERSISTENT drift produces EXACTLY ONE SELECTOR-MISS
+    (or VERIFY-FAIL) card across repeat daily probe runs — 'a seeded probe
+    failure produces exactly ONE SELECTOR-MISS-prefixed card (idempotent
+    across repeat runs)' (B-U16 item 4 acceptance (c)). An id that stops
+    appearing in a miss payload (the drift healed) simply never gets
+    re-checked here — see :func:`clear_dedupe_state_for_resolved` to
+    positively clear it so a FUTURE regression on that same id re-notifies
+    instead of being silenced forever by a stale ledger entry.
+
+    ``state_path``: a small JSON file at a caller-owned location (e.g. under
+    the daily probe's own evidence/park directory). Every read/write here is
+    fail-soft (:func:`_load_dedupe_state` / :func:`_save_dedupe_state`) — a
+    corrupt or missing state file never crashes the probe, and a persistence
+    failure never blocks the underlying ``board_notifier`` call.
+
+    The RETURNED callable has the SAME shape as ``board_notifier`` — drop it
+    straight into ``run_canary(..., board_notifier=dedupe_board_notifier(...))``
+    unchanged."""
+    def _wrapped(payload: Dict[str, Any]) -> None:
+        key = str(payload.get("anchor_id") or payload.get("target") or "")
+        notified = _load_dedupe_state(state_path)
+        if key and key in notified:
+            return  # an OPEN card already exists for this exact miss — no duplicate
+        board_notifier(payload)
+        if key:
+            notified.add(key)
+            _save_dedupe_state(state_path, notified)
+
+    return _wrapped
+
+
+def clear_dedupe_state_for_resolved(*, state_path: str,
+                                    still_missing_ids: Iterable[str]) -> None:
+    """Drop any dedupe-ledger id NOT present in ``still_missing_ids`` — call
+    this once per probe run with the CURRENT run's full miss-id set so an
+    anchor/target that stopped missing (the drift healed) is cleared from the
+    ledger, letting a FUTURE regression on that same id re-notify instead of
+    being permanently silenced by a stale entry. Fail-soft (best-effort,
+    same discipline as :func:`dedupe_board_notifier`'s own persistence);
+    never raises."""
+    notified = _load_dedupe_state(state_path)
+    remaining = notified & set(still_missing_ids)
+    if remaining != notified:
+        _save_dedupe_state(state_path, remaining)
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +723,29 @@ def _selftest() -> int:
     fetcher = live_page_fetcher_over_http()
     assert callable(fetcher)
 
+    # 12. dedupe_board_notifier (U30/B-U16 item 4): a seeded, PERSISTENT miss
+    #     notifies exactly ONCE across repeat runs; a board_notifier failure
+    #     is never recorded as a successful notify.
+    import tempfile
+    with tempfile.TemporaryDirectory() as dtmp:
+        dstate = os.path.join(dtmp, "dedupe.json")
+        dnotified = []
+        dwrapped = dedupe_board_notifier(lambda p: dnotified.append(p), state_path=dstate)
+        for _ in range(3):
+            run_canary(data, _mixed, object_types=["form"], board_notifier=dwrapped)
+        assert len(dnotified) == 1, "repeat runs of the SAME miss must yield exactly one card"
+
+        def _boom_notifier(p):
+            raise RuntimeError("board down")
+        dstate2 = os.path.join(dtmp, "dedupe2.json")
+        dwrapped2 = dedupe_board_notifier(_boom_notifier, state_path=dstate2)
+        try:
+            dwrapped2({"anchor_id": "form.builder.save", "prefix": BOARD_NOTE_SELECTOR_MISS})
+            raise AssertionError("expected the underlying notifier's RuntimeError to propagate")
+        except RuntimeError:
+            pass
+        assert _load_dedupe_state(dstate2) == set(), "a failed notify must not be recorded"
+
     return 0
 
 
@@ -654,7 +789,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.selftest:
         rc = _selftest()
-        print("OK — ghl_selector_canary selftest passed" if rc == 0 else "FAILED")
+        print("OK — ghl_selector_drift_probe selftest passed" if rc == 0 else "FAILED")
         return rc
 
     if args.iframe_survival:

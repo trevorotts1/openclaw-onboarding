@@ -844,6 +844,19 @@ else
   report_fail "qc-client-test-mode.sh not found (looked in scripts/)"
 fi
 
+section "Relationship lattice pointer + citation tripwire (qc-lattice-pointer.sh, GK-27/U89)"
+QC_LATTICE="$SCRIPT_DIR/qc-lattice-pointer.sh"
+[ -f "$QC_LATTICE" ] || QC_LATTICE="$SKILL38_ROOT/scripts/qc-lattice-pointer.sh"
+if [ -f "$QC_LATTICE" ]; then
+  if bash "$QC_LATTICE" >/dev/null 2>&1; then
+    report_pass "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations (inbound ownership, build-path ladder) still hold"
+  else
+    report_fail "qc-lattice-pointer.sh found a missing pointer or a stale/drifted citation - run it directly for detail"
+  fi
+else
+  report_fail "qc-lattice-pointer.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

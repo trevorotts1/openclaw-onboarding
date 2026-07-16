@@ -1,9 +1,13 @@
 # Cross-origin iframe drag capability (`ghl_iframe_drag.py`)
 
-**Status:** LIVE (v1.1.0). Shared, reusable, builder-agnostic. Wired into the FORM
-builder and the SURVEY builder; ready to wire into the PAGE/FUNNEL "Code" element
-drag. v1.1.0 adds (a) scroll-into-view + category-hint locate (the `F5.locate:City`
-below-the-fold fix) and (b) frame-scoped INLINE-TITLE read/set (the F3 rename fix).
+**Status:** LIVE (v1.5.0). Shared, reusable, builder-agnostic. Wired into the FORM
+builder and the SURVEY builder; the PAGE/FUNNEL "Code" element drag is FLAG-WIRED
+(v1.5.0, `GHL_PAGE_CODE_DRAG=1`, OFF by default — see below). v1.1.0 added
+(a) scroll-into-view + category-hint locate (the `F5.locate:City` below-the-fold
+fix) and (b) frame-scoped INLINE-TITLE read/set (the F3 rename fix). v1.5.0
+(U30/B-U16) adds `frame_click`/`drive_frame_click` (the click counterpart to the
+drag primitive), `smoke_first()` (generalized single-proof-drag-before-a-bulk-run),
+and the flag-gated page/funnel Code-element drag fallback.
 
 ## The problem this solves
 
@@ -89,6 +93,21 @@ snapshots). Playwright's ONLY job is the frame-scoped coordinate-drag step:
 - `IframeDragError` — fail-closed exception (unlocatable source/target, null box,
   missing page/frame, Playwright absent, or an unverified placement/rename). NEVER
   fakes an outcome.
+- `frame_click(cdp_url, *, iframe_selector, target, url_marker=None,
+  verify_text=None, verify_absent=False, ...)` — **v1.5.0** the CLICK counterpart
+  to `coordinate_drag`, same frame-locator machinery + CDP attach/detach. Returns a
+  receipt; fail-closed (`target-not-found`, `click-failed`, `click-not-verified`).
+- `drive_frame_click(page, ...)` — the load-bearing core (mirrors `drive_drag`).
+- `smoke_first(cdp_url, *, iframe_selector, source, target, verify_text,
+  url_marker=None, undo=False, ...)` — **v1.5.0** ONE proof-drag before trusting a
+  bulk run (generalized from the survey builder's `_p2_smoke_test_drag`). NEVER
+  raises — returns `{"ok", "receipt", "error", "code"}` so a caller gates a bulk
+  run on `smoke_first(...)["ok"]`.
+- `page_code_drag_enabled(env=None)` / `GHL_PAGE_CODE_DRAG_ENV` — **v1.5.0** the
+  `GHL_PAGE_CODE_DRAG=1` flag gate (default OFF).
+- `_place_code_element_via_drag(cdp_url, *, target, ...)` — **v1.5.0** the
+  flag-gated page/funnel Code-element drag fallback; fail-closed
+  (`page-code-drag-disabled`) unless the flag is set.
 
 Locator spec grammar (small on purpose — GHL tiles are located by visible text):
 `text=Foo` (default), `exact=Foo`, `re:PATTERN` (regex), `css=SEL`, or a bare
@@ -165,9 +184,23 @@ never `headless=False`.
 |---|---|---|
 | Form builder Quick-Add / Object fields | YES | **FIXED** (wired) |
 | Survey builder Object fields | YES (same host) | **FIXED** (wired) |
-| Page/Funnel "Code" element tile | YES (`page-builder.leadconnectorhq.com`) | NOTED — page/funnel CONTENT is created via `ghl_rest_canvas.py` (REST JSON, no drag), so there is no active live-drag call today. gates.json documents the Code-element drag as a Playwright-fallback recipe; wire it to `coordinate_drag(iframe_selector=iframe_selector_for("page_code"), ...)` when that path goes live. |
+| Page/Funnel "Code" element tile | YES (`page-builder.leadconnectorhq.com`) | **FLAG-WIRED (v1.5.0, U30/B-U16 item 1)** — page/funnel CONTENT stays PRIMARY via `ghl_rest_canvas.py` (REST JSON, no drag, no browser — see that module's "GLUE, NOT THE CLICKER" boundary). `_place_code_element_via_drag()` is the fallback: OFF by default, fail-closed (`page-code-drag-disabled`) unless `GHL_PAGE_CODE_DRAG=1`; wired to `coordinate_drag(iframe_selector=iframe_selector_for("page_code"), ...)` via `smoke_first()` exactly as this doc's prior note asked. Ready for a page/funnel caller the day the REST path regresses. |
 | Inline TITLE rename (form "Form <n>" / survey "Survey <n>") | Not drag — the same cross-origin element-reach limitation | **FIXED (v1.1.0)** — `set_inline_title` / `read_inline_title`, wired into the FORM builder's F3 (fail-closed via `rename_required`, with the actual-title read-back feeding cleanup) and the SURVEY builder's Phase B. |
-| In-iframe field PROPERTY panel edits, builder TAB switches | Not drag — a related cross-origin element-reach limitation | NOTED (out of scope). Handled today as `[runtime-capture]` best-effort via the a11y snapshot; if a future need requires reliable reach, the same CDP+Playwright frame-scoped `frame_locator` approach in this module can locate/click them (extend with a `frame_click` helper). |
+| In-iframe field PROPERTY panel edits, builder TAB switches | Not drag — a related cross-origin element-reach limitation | **FIXED (v1.5.0, U30/B-U16 item 2)** — `frame_click` / `drive_frame_click` (the click counterpart to the drag primitive, same frame-locator machinery). Wired into the FORM builder's `_bind_field_props` (Required/Hidden property-panel checkboxes — `_click_property_checkbox`, exactly ONE click per toggle, never a blind retry that would silently undo a checkbox) and `_ensure_quick_add_panel` (the Quick-Add TAB switch — frame-scoped click preferred, top-frame click as the fallback on a miss). Remaining genuinely icon-only surfaces with no documented text anchor (the '+' add-element toggle, the Styles/Custom-CSS toolbar toggle) are still NOTED [runtime-capture] — D8 ("never invent a selector") applies to `frame_click` targets exactly as it does to drag sources. |
+
+## Smoke-first (v1.5.0, U30/B-U16 item 3)
+
+`smoke_first()` (this module) generalizes the survey builder's own
+`_p2_smoke_test_drag` (`ghl_survey_builder.py`, unchanged/still production) into a
+SHARED primitive: one `coordinate_drag` call whose `verify_text` count-delta proof
+IS the honest arbiter — "a CLI '✓ Done' that placed nothing is a FALSE PASS; the
+snapshot/store delta is the only honest arbiter" (shipped doctrine). The FORM
+builder calls it (`_perform_smoke_first`) once before trusting the F5/F6 bulk
+Quick-Add/Object-Field drag run — a failed smoke aborts the walk BEFORE any of the
+plan's real fields are touched. The PAGE/FUNNEL fallback
+(`_place_code_element_via_drag`) calls it too — for a single Code-element drop
+there is no separate "bulk" phase, so the doctrine is honored by gating that ONE
+real placement on its own honest count-delta verify.
 
 ## Smoke-test labeling convention (for the separate live verifier)
 

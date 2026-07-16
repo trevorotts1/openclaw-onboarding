@@ -231,13 +231,28 @@ class TestDocsLanguageAllowlistShrunk(unittest.TestCase):
         self.assertNotIn("scripts/loop-protection-canary.sh", self.paths)
 
     def test_u30_owned_entries_untouched(self):
-        expected_u30 = {
+        """U93 must not disturb U30's entries — but it must NOT pin them as an
+        exact set either. U30/B-U16 owns those four rows and removes them when
+        it lands its own rename; the two units ride independent branches and
+        either order is legal. An assertEqual against the full U30 set encodes
+        a merge-order assumption, not a U93 invariant, and goes red the moment
+        U30 lands first (proven: it did, 2026-07-16) even though U93 is
+        correct. The real invariant is directional and order-free: every path
+        still listed is one of U30's, so U93 neither removed one of U30's rows
+        early nor added a row of its own."""
+        u30_owned = {
             "06-ghl-install-pages/scripts/run-selector-canary.sh",
             "06-ghl-install-pages/tests/test_ghl_selector_canary.py",
             "06-ghl-install-pages/tests/test_iframe_survival_canary.py",
             "06-ghl-install-pages/tools/ghl_selector_canary.py",
         }
-        self.assertEqual(self.paths, expected_u30)
+        self.assertTrue(
+            self.paths <= u30_owned,
+            f"allowlist carries entries U93 does not expect: {sorted(self.paths - u30_owned)}",
+        )
+        # Whatever survives must still be attributed to U30, never re-owned.
+        for entry in self.data["legacy_filenames"]["entries"]:
+            self.assertEqual(entry["owner"], "U30", f"unexpected owner on {entry['path']}")
 
 
 class TestDocsLanguageGuardLiveFireOnRealDiff(unittest.TestCase):

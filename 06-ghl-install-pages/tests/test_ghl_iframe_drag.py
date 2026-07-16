@@ -65,12 +65,17 @@ class _MockLoc:
     pre-drag baseline — the tile itself already matches the verify text) and,
     when the placement 'landed' (present), 2 on later reads. A failed placement
     stays at the baseline forever — which must read as NOT placed.
-    v1.2.0: also exposes nth()/is_visible() for the visible-match scan."""
-    def __init__(self, frame, box, present=True):
+    v1.2.0: also exposes nth()/is_visible() for the visible-match scan.
+    v1.5.0 (B-U16): also exposes click() for drive_frame_click — fails when
+    constructed with click_should_fail=True (frame_click's own fail-closed
+    'click-failed' case)."""
+    def __init__(self, frame, box, present=True, click_should_fail=False):
         self._frame = frame
         self._box = box
         self._present = present
         self.scrolled = 0
+        self.click_should_fail = click_should_fail
+        self.clicked = 0
 
     @property
     def first(self):
@@ -94,6 +99,12 @@ class _MockLoc:
     def bounding_box(self):
         return self._box
 
+    def click(self, timeout=0):
+        if self.click_should_fail:
+            raise RuntimeError("mock: click failed")
+        self.clicked += 1
+        self._frame.clicks.append(self)
+
     def count(self):
         self._frame.count_reads += 1
         if self._frame.count_reads == 1:
@@ -102,16 +113,20 @@ class _MockLoc:
 
 
 class _MockFrame:
-    def __init__(self, boxes, verify_present=True):
+    def __init__(self, boxes, verify_present=True, click_fail_texts=()):
         self._boxes = boxes
         self._verify_present = verify_present
         self.count_reads = 0
+        self._click_fail_texts = set(click_fail_texts)
+        self.clicks = []
 
     def get_by_text(self, text, exact=False):
-        return _MockLoc(self, self._boxes.get(text), present=self._verify_present)
+        return _MockLoc(self, self._boxes.get(text), present=self._verify_present,
+                        click_should_fail=(text in self._click_fail_texts))
 
     def locator(self, sel):
-        return _MockLoc(self, self._boxes.get(sel))
+        return _MockLoc(self, self._boxes.get(sel),
+                        click_should_fail=(sel in self._click_fail_texts))
 
 
 class _MockPage:
@@ -217,8 +232,272 @@ def test_coordinate_drag_reports_when_playwright_absent(monkeypatch):
 def test_iframe_selector_presets():
     assert idg.iframe_selector_for("form") == 'iframe[src*="form-builder-v2"]'
     assert idg.iframe_selector_for("survey") == 'iframe[src*="survey-builder-v2"]'
+    assert idg.iframe_selector_for("page_code") == 'iframe[src*="page-builder"]'
     with pytest.raises(idg.IframeDragError):
         idg.iframe_selector_for("nope")
+
+
+# ---------------------------------------------------------------------------
+# 1b. frame_click / drive_frame_click (hermetic) — B-U16 item 2
+# ---------------------------------------------------------------------------
+def test_drive_frame_click_clicks_and_verifies():
+    boxes = {"Required": {"x": 10, "y": 20, "width": 30, "height": 15}}
+    frame = _MockFrame(boxes, verify_present=True)
+    page = _MockPage(frame)
+    rec = idg.drive_frame_click(page, iframe_selector='iframe[src*="form-builder-v2"]',
+                                target="text=Required", verify_text="Required")
+    assert rec["ok"] is True
+    assert rec["verified"] is True
+    assert len(frame.clicks) == 1, "exactly ONE click — never a blind retry"
+
+
+def test_drive_frame_click_no_verify_text_just_clicks():
+    boxes = {"Quick Add": {"x": 0, "y": 0, "width": 40, "height": 12}}
+    frame = _MockFrame(boxes)
+    page = _MockPage(frame)
+    rec = idg.drive_frame_click(page, iframe_selector="iframe", target="text=Quick Add")
+    assert rec["ok"] is True
+    assert rec["verified"] is None
+    assert len(frame.clicks) == 1
+
+
+def test_drive_frame_click_fail_closed_target_not_found():
+    frame = _MockFrame({"Required": None})
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_frame_click(page, iframe_selector="iframe", target="text=Required",
+                              timeout_ms=0)
+    assert ei.value.code == "target-not-found"
+    assert frame.clicks == [], "an unlocatable target must never be clicked"
+
+
+def test_drive_frame_click_fail_closed_missing_target_box():
+    """Mirrors drive_drag's own test_fail_closed_missing_source_box: the
+    mock's is_visible()/wait_for() both key off `box is not None`, so a
+    None-boxed target is caught as unlocatable (either code is the SAME
+    fail-closed family the drag primitive already accepts here)."""
+    frame = _MockFrame({"Required": None})
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_frame_click(page, iframe_selector="iframe", target="text=Required",
+                              timeout_ms=0)
+    assert ei.value.code in ("target-not-found", "target-no-box")
+
+
+def test_drive_frame_click_fail_closed_click_raises():
+    boxes = {"Required": {"x": 0, "y": 0, "width": 10, "height": 10}}
+    frame = _MockFrame(boxes, click_fail_texts=("Required",))
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_frame_click(page, iframe_selector="iframe", target="text=Required")
+    assert ei.value.code == "click-failed"
+
+
+def test_drive_frame_click_fail_closed_unverified_appear():
+    boxes = {"Required": {"x": 0, "y": 0, "width": 10, "height": 10}}
+    frame = _MockFrame(boxes, verify_present=False)  # count never increases
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_frame_click(page, iframe_selector="iframe", target="text=Required",
+                              verify_text="Required", timeout_ms=0)
+    assert ei.value.code == "click-not-verified"
+
+
+def test_drive_frame_click_verify_absent_mode_confirms_dismissal():
+    """verify_absent=True: the click DISMISSES the target (e.g. a tooltip
+    closing) — count() flips 1 -> 0 the moment click() fires, and that flip
+    IS the honest arbiter (never a bare 'clicked, so it must be gone')."""
+    class _ToggleLoc(_MockLoc):
+        def __init__(self, frame):
+            super().__init__(frame, {"x": 0, "y": 0, "width": 5, "height": 5})
+
+        def click(self, timeout=0):
+            self.clicked += 1
+            self._frame.dismissed = True
+
+        def count(self):
+            return 0 if self._frame.dismissed else 1
+
+    class _ToggleFrame(_MockFrame):
+        def __init__(self):
+            super().__init__({})
+            self.dismissed = False
+
+        def get_by_text(self, text, exact=False):
+            return _ToggleLoc(self)
+
+    frame = _ToggleFrame()
+    page = _MockPage(frame)
+    rec = idg.drive_frame_click(page, iframe_selector="iframe", target="text=Tooltip",
+                                verify_text="Tooltip", verify_absent=True, timeout_ms=0)
+    assert rec["ok"] is True
+    assert rec["verified"] is True
+
+
+def test_drive_frame_click_verify_absent_mode_fails_closed_when_still_present():
+    boxes = {"Tooltip": {"x": 0, "y": 0, "width": 5, "height": 5}}
+    frame = _MockFrame(boxes, verify_present=True)  # stays present forever
+    page = _MockPage(frame)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.drive_frame_click(page, iframe_selector="iframe", target="text=Tooltip",
+                              verify_text="Tooltip", verify_absent=True, timeout_ms=0)
+    assert ei.value.code == "click-not-verified"
+
+
+def test_frame_click_reports_when_playwright_absent(monkeypatch):
+    monkeypatch.setattr(idg, "PLAYWRIGHT_AVAILABLE", False)
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.frame_click("ws://x", iframe_selector="iframe", target="text=Required")
+    assert ei.value.code == "playwright-unavailable"
+
+
+def test_frame_click_requires_cdp_url():
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg.frame_click("", iframe_selector="iframe", target="text=Required")
+    assert ei.value.code == "no-cdp-url"
+
+
+def test_frame_click_failure_codes_classify_as_verify_fail_taxonomy():
+    """B-U16 item 2 acceptance (b): the failure-taxonomy test suite gains
+    frame_click fail-closed cases. click-failed/click-not-verified are 'the
+    control WAS resolved and clicked but didn't commit/verify' — the SAME
+    VERIFY-FAIL bucket as remove-click-failed/not-placed, never a new 7th
+    taxonomy value; target-not-found/target-no-box default to SELECTOR-MISS
+    like the drag primitive's own target-not-found/target-no-box."""
+    assert idg.classify_board_reason("click-failed") == "VERIFY-FAIL"
+    assert idg.classify_board_reason("click-not-verified") == "VERIFY-FAIL"
+    assert idg.classify_board_reason("target-not-found") == "SELECTOR-MISS"
+    assert idg.classify_board_reason("target-no-box") == "SELECTOR-MISS"
+    assert idg.classify_board_reason("empty-iframe-selector") == "SELECTOR-MISS"
+
+
+def test_frame_click_board_note_carries_frame_origin():
+    exc = idg.IframeDragError("click-not-verified", "did not verify")
+    note = idg.board_note(exc, iframe_selector='iframe[src*="page-builder"]')
+    assert note.startswith("VERIFY-FAIL:")
+    assert 'iframe[src*="page-builder"]' in note
+
+
+# ---------------------------------------------------------------------------
+# 1c. smoke_first (hermetic, monkeypatched coordinate_drag) — B-U16 item 3
+# ---------------------------------------------------------------------------
+def test_smoke_first_never_raises_reports_ok_true_on_verified_drag(monkeypatch):
+    def fake_coordinate_drag(cdp_url, **kwargs):
+        assert kwargs["verify_text"] == "Email"
+        return {"ok": True, "placed": True, "verify_text": "Email"}
+
+    monkeypatch.setattr(idg, "coordinate_drag", fake_coordinate_drag)
+    result = idg.smoke_first("ws://x", iframe_selector="iframe", source="text=Email",
+                             target="role=button:Submit", verify_text="Email")
+    assert result["ok"] is True
+    assert result["error"] is None
+    assert result["receipt"]["placed"] is True
+
+
+def test_smoke_first_never_raises_reports_ok_false_on_iframe_drag_error(monkeypatch):
+    def fake_coordinate_drag(cdp_url, **kwargs):
+        raise idg.IframeDragError("not-placed", "count never increased")
+
+    monkeypatch.setattr(idg, "coordinate_drag", fake_coordinate_drag)
+    # Must NOT raise — the whole point is a caller can gate on ["ok"] without
+    # its own try/except.
+    result = idg.smoke_first("ws://x", iframe_selector="iframe", source="text=Email",
+                             target="role=button:Submit", verify_text="Email")
+    assert result["ok"] is False
+    assert result["receipt"] is None
+    assert result["code"] == "not-placed"
+    assert "SELECTOR-MISS" in result["error"] or "VERIFY-FAIL" in result["error"]
+
+
+def test_smoke_first_ok_false_when_drag_ran_but_did_not_verify(monkeypatch):
+    """placed=False without an IframeDragError (defensive belt-and-suspenders
+    — coordinate_drag today always raises on placed=False, but smoke_first
+    must not silently report ok=True on any falsy 'placed')."""
+    def fake_coordinate_drag(cdp_url, **kwargs):
+        return {"ok": True, "placed": False}
+
+    monkeypatch.setattr(idg, "coordinate_drag", fake_coordinate_drag)
+    result = idg.smoke_first("ws://x", iframe_selector="iframe", source="text=Email",
+                             target="role=button:Submit", verify_text="Email")
+    assert result["ok"] is False
+
+
+def test_smoke_first_undo_best_effort_never_affects_the_result(monkeypatch):
+    def fake_coordinate_drag(cdp_url, **kwargs):
+        return {"ok": True, "placed": True}
+
+    def boom_undo(cdp_url, *, url_marker, iframe_selector):
+        raise RuntimeError("undo CDP attach failed")
+
+    monkeypatch.setattr(idg, "coordinate_drag", fake_coordinate_drag)
+    monkeypatch.setattr(idg, "_best_effort_undo", boom_undo)
+    result = idg.smoke_first("ws://x", iframe_selector="iframe", source="text=Email",
+                             target="role=button:Submit", verify_text="Email", undo=True)
+    assert result["ok"] is True, "an undo failure must never flip a verified smoke to failed"
+
+
+def test_smoke_first_undo_only_fires_on_success(monkeypatch):
+    calls = []
+
+    def fake_coordinate_drag(cdp_url, **kwargs):
+        raise idg.IframeDragError("not-placed", "never landed")
+
+    def spy_undo(cdp_url, *, url_marker, iframe_selector):
+        calls.append(1)
+
+    monkeypatch.setattr(idg, "coordinate_drag", fake_coordinate_drag)
+    monkeypatch.setattr(idg, "_best_effort_undo", spy_undo)
+    idg.smoke_first("ws://x", iframe_selector="iframe", source="text=Email",
+                    target="role=button:Submit", verify_text="Email", undo=True)
+    assert calls == [], "undo must never fire when the smoke probe itself failed"
+
+
+# ---------------------------------------------------------------------------
+# 1d. Page/funnel Code-element DRAG fallback (hermetic) — B-U16 item 1
+# ---------------------------------------------------------------------------
+def test_page_code_drag_disabled_by_default(monkeypatch):
+    monkeypatch.delenv(idg.GHL_PAGE_CODE_DRAG_ENV, raising=False)
+    assert idg.page_code_drag_enabled() is False
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg._place_code_element_via_drag("ws://x", target="role=button:Submit")
+    assert ei.value.code == "page-code-drag-disabled"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("1", True), ("true", True), ("TRUE", True), ("yes", True),
+    ("0", False), ("false", False), ("", False), ("no", False),
+])
+def test_page_code_drag_enabled_flag_values(value, expected):
+    assert idg.page_code_drag_enabled({idg.GHL_PAGE_CODE_DRAG_ENV: value}) is expected
+
+
+def test_place_code_element_via_drag_enabled_uses_page_code_selector_and_smoke_first(monkeypatch):
+    calls = []
+
+    def fake_smoke_first(cdp_url, *, iframe_selector, source, target, verify_text,
+                         url_marker=None, undo=False, **kw):
+        calls.append({"iframe_selector": iframe_selector, "source": source,
+                      "target": target, "verify_text": verify_text})
+        return {"ok": True, "receipt": {"placed": True}, "error": None, "code": None}
+
+    monkeypatch.setattr(idg, "smoke_first", fake_smoke_first)
+    env = {idg.GHL_PAGE_CODE_DRAG_ENV: "1"}
+    rec = idg._place_code_element_via_drag("ws://x", target="role=button:Submit", env=env)
+    assert rec == {"placed": True}
+    assert len(calls) == 1
+    assert calls[0]["iframe_selector"] == idg.iframe_selector_for("page_code")
+    assert calls[0]["source"] == "text=Code"
+
+
+def test_place_code_element_via_drag_raises_when_smoke_fails(monkeypatch):
+    def fake_smoke_first(cdp_url, **kw):
+        return {"ok": False, "receipt": None, "error": "SELECTOR-MISS: nope", "code": "not-placed"}
+
+    monkeypatch.setattr(idg, "smoke_first", fake_smoke_first)
+    env = {idg.GHL_PAGE_CODE_DRAG_ENV: "1"}
+    with pytest.raises(idg.IframeDragError) as ei:
+        idg._place_code_element_via_drag("ws://x", target="role=button:Submit", env=env)
+    assert ei.value.code == "not-placed"
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +551,231 @@ def test_form_builder_drag_stops_when_no_cdp(monkeypatch):
     with pytest.raises(fb.StopAndReport) as ei:
         fb._perform_iframe_drag("s", "State", "Submit", verify_text="State")
     assert ei.value.step == "iframe-drag.cdp"
+
+
+# ---------------------------------------------------------------------------
+# 2b. FORM builder wiring — frame_click (B-U16 item 2: property-panel + tab)
+# ---------------------------------------------------------------------------
+def test_form_builder_frame_click_seam_stops_when_primitive_absent(monkeypatch):
+    monkeypatch.setattr(fb, "ghl_iframe_drag", None)
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_frame_click("s", "text=Required")
+    assert ei.value.step == "frame-click.dep"
+
+
+def test_form_builder_frame_click_seam_stops_when_no_cdp(monkeypatch):
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "")
+    assert fb.ghl_iframe_drag is not None
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_frame_click("s", "text=Required")
+    assert ei.value.step == "frame-click.cdp"
+
+
+def test_form_builder_frame_click_seam_routes_through_shared_primitive(monkeypatch):
+    calls = []
+
+    def fake_frame_click(cdp_url, *, iframe_selector, target, url_marker=None,
+                         timeout_ms=15000, verify_text=None, verify_absent=False):
+        calls.append((iframe_selector, target, url_marker, verify_text, verify_absent))
+        return {"ok": True}
+
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "ws://fake")
+    monkeypatch.setattr(fb.ghl_iframe_drag, "frame_click", fake_frame_click)
+    rec = fb._perform_frame_click("s", "text=Required")
+    assert rec == {"ok": True}
+    assert len(calls) == 1
+    assert calls[0][0] == fb.GHL_FORM_IFRAME_SELECTOR
+    assert calls[0][1] == "text=Required"
+
+
+def test_form_builder_property_checkbox_click_exactly_once_via_frame_click(monkeypatch):
+    """_click_property_checkbox must fire the frame-scoped click and NEVER
+    also fire the top-frame agent-browser click when the frame-click succeeds
+    — a checkbox is a TOGGLE, so a double-click would silently undo itself."""
+    frame_calls, top_calls = [], []
+    monkeypatch.setattr(fb, "_perform_frame_click",
+                        lambda session, spec, **kw: frame_calls.append(spec) or {"ok": True})
+    monkeypatch.setattr(fb, "_click",
+                        lambda session, text, timeout=15: top_calls.append(text))
+    warnings: List[str] = []
+    fb._click_property_checkbox("s", "Required", warnings, "Field")
+    assert frame_calls == ["text=Required"]
+    assert top_calls == [], "the top-frame click must NOT also fire on a frame-click success"
+    assert warnings == []
+
+
+def test_form_builder_property_checkbox_falls_back_to_top_frame_click_on_miss(monkeypatch):
+    """A frame-click miss degrades to a WARNING + the existing top-frame
+    click — never both mechanisms silently, never a hard stop (cosmetic
+    surface, same doctrine as the Label bind)."""
+    top_calls = []
+
+    def fake_frame_click(session, spec, **kw):
+        raise fb.StopAndReport("frame-click:target-not-found", "SELECTOR-MISS: nope")
+
+    monkeypatch.setattr(fb, "_perform_frame_click", fake_frame_click)
+    monkeypatch.setattr(fb, "_click",
+                        lambda session, text, timeout=15: top_calls.append(text))
+    warnings: List[str] = []
+    fb._click_property_checkbox("s", "Hidden", warnings, "Field")
+    assert top_calls == ["Hidden"], "must fall back to the top-frame click on a frame-click miss"
+    assert len(warnings) == 1 and "Hidden" in warnings[0]
+
+
+def test_form_builder_property_checkbox_falls_back_when_primitive_absent(monkeypatch):
+    top_calls = []
+    monkeypatch.setattr(fb, "ghl_iframe_drag", None)
+    monkeypatch.setattr(fb, "_click",
+                        lambda session, text, timeout=15: top_calls.append(text))
+    warnings: List[str] = []
+    fb._click_property_checkbox("s", "Required", warnings, "Field")
+    assert top_calls == ["Required"]
+    assert warnings == [], "no primitive at all is not itself a warning-worthy MISS"
+
+
+def test_form_builder_bind_field_props_routes_required_through_property_checkbox(monkeypatch):
+    calls = []
+    monkeypatch.setattr(fb, "_fill", lambda *a, **k: subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(fb, "_click_property_checkbox",
+                        lambda session, text, warnings, tag: calls.append(text))
+    field = {"label": "State", "source": "standard", "query_key": "state",
+             "width_pct": 100, "required": True, "hidden": False}
+    fb._bind_field_props("s", field, [])
+    assert calls == ["Required"]
+
+
+def test_form_builder_bind_field_props_routes_hidden_through_property_checkbox(monkeypatch):
+    calls = []
+    monkeypatch.setattr(fb, "_fill", lambda *a, **k: subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(fb, "_click_property_checkbox",
+                        lambda session, text, warnings, tag: calls.append(text))
+    field = {"label": "State", "source": "standard", "query_key": "state",
+             "width_pct": 100, "required": False, "hidden": True}
+    fb._bind_field_props("s", field, [])
+    assert calls == ["Hidden"]
+
+
+def test_form_builder_quick_add_tab_prefers_frame_click_and_never_double_clicks(monkeypatch):
+    top_calls = []
+    frame_calls = []
+    monkeypatch.setattr(fb, "_snapshot", lambda session, timeout=20: "Quick Add panel here")
+    monkeypatch.setattr(fb, "_perform_frame_click",
+                        lambda session, spec, **kw: frame_calls.append(spec) or {"ok": True})
+    monkeypatch.setattr(fb, "_click",
+                        lambda session, text, timeout=15: top_calls.append(text))
+    fb._ensure_quick_add_panel("s")
+    assert frame_calls == ["text=Quick Add"]
+    assert top_calls == [], "must NOT also fire the top-frame click on a frame-click success"
+
+
+def test_form_builder_quick_add_tab_falls_back_to_top_frame_click_on_miss(monkeypatch):
+    top_calls = []
+
+    def fake_frame_click(session, spec, **kw):
+        raise fb.StopAndReport("frame-click:target-not-found", "SELECTOR-MISS: nope")
+
+    monkeypatch.setattr(fb, "_snapshot", lambda session, timeout=20: "Quick Add panel here")
+    monkeypatch.setattr(fb, "_perform_frame_click", fake_frame_click)
+    monkeypatch.setattr(fb, "_click",
+                        lambda session, text, timeout=15: top_calls.append(text))
+    fb._ensure_quick_add_panel("s")
+    assert top_calls == ["Quick Add"]
+
+
+def test_form_builder_quick_add_tab_noop_when_panel_not_present(monkeypatch):
+    """No 'Quick Add' text in the snapshot -> neither click mechanism fires
+    (a fresh scratch builder already has it open, CLICK-MAP Step 9)."""
+    frame_calls, top_calls = [], []
+    monkeypatch.setattr(fb, "_snapshot", lambda session, timeout=20: "no panel text here")
+    monkeypatch.setattr(fb, "_perform_frame_click",
+                        lambda session, spec, **kw: frame_calls.append(spec))
+    monkeypatch.setattr(fb, "_click", lambda session, text, timeout=15: top_calls.append(text))
+    fb._ensure_quick_add_panel("s")
+    assert frame_calls == [] and top_calls == []
+
+
+# ---------------------------------------------------------------------------
+# 2c. FORM builder wiring — smoke_first() gates the F5/F6 bulk run (item 3)
+# ---------------------------------------------------------------------------
+def test_form_builder_perform_smoke_first_stops_when_primitive_absent(monkeypatch):
+    monkeypatch.setattr(fb, "ghl_iframe_drag", None)
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_smoke_first("s")
+    assert ei.value.step == "smoke-first.dep"
+
+
+def test_form_builder_perform_smoke_first_stops_when_no_cdp(monkeypatch):
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "")
+    assert fb.ghl_iframe_drag is not None
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_smoke_first("s")
+    assert ei.value.step == "smoke-first.cdp"
+
+
+def test_form_builder_perform_smoke_first_routes_through_shared_primitive(monkeypatch):
+    calls = []
+
+    def fake_smoke_first(cdp_url, *, iframe_selector, source, target, verify_text,
+                         url_marker=None, undo=False, **kw):
+        calls.append((iframe_selector, source, target, verify_text, undo))
+        return {"ok": True, "receipt": {"placed": True}, "error": None, "code": None}
+
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "ws://fake")
+    monkeypatch.setattr(fb, "_canvas_drop_anchor", lambda session, snap="": "role=button:Submit")
+    monkeypatch.setattr(fb.ghl_iframe_drag, "smoke_first", fake_smoke_first)
+    fb._perform_smoke_first("s")
+    assert len(calls) == 1
+    iframe_selector, source, target, verify_text, undo = calls[0]
+    assert iframe_selector == fb.GHL_FORM_IFRAME_SELECTOR
+    assert source == "text=Email"
+    assert target == "role=button:Submit"
+    assert verify_text == "Email"
+    assert undo is True, "smoke probe must undo itself so it never pollutes the real build"
+
+
+def test_form_builder_perform_smoke_first_stops_when_probe_does_not_verify(monkeypatch):
+    def fake_smoke_first(cdp_url, **kw):
+        return {"ok": False, "receipt": None, "error": "SELECTOR-MISS: nope", "code": "not-placed"}
+
+    monkeypatch.setattr(fb, "_get_cdp_url", lambda session: "ws://fake")
+    monkeypatch.setattr(fb, "_canvas_drop_anchor", lambda session, snap="": "role=button:Submit")
+    monkeypatch.setattr(fb.ghl_iframe_drag, "smoke_first", fake_smoke_first)
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._perform_smoke_first("s")
+    assert ei.value.step == "smoke-first"
+
+
+def test_form_builder_walk_click_list_smoke_first_aborts_before_any_f5_drag(monkeypatch):
+    """Acceptance (d): a failed smoke_first() aborts BEFORE any bulk F5/F6
+    drag is attempted — the walk must STOP at the smoke gate, never reach
+    _place_quick_add_field for a single one of the plan's real fields."""
+    drag_calls = []
+
+    def fake_drag(session, source_text, drop_spec, *, verify_text,
+                  iframe_selector=fb.GHL_FORM_IFRAME_SELECTOR, source_scroll_hint=""):
+        drag_calls.append(source_text)
+        return {"ok": True, "placed": True}
+
+    def failing_smoke_first(session, **kw):
+        raise fb.StopAndReport("smoke-first", "SELECTOR-MISS: probe tile not found")
+
+    snap = ("Form Element Quick Add Submit Email First Name Last Name Phone "
+            "Label Query Key Field Width Required Hidden")
+    monkeypatch.setattr(fb, "_ab", _snap_ab(snap))
+    monkeypatch.setattr(fb, "_perform_iframe_drag", fake_drag)
+    monkeypatch.setattr(fb, "_perform_smoke_first", failing_smoke_first)
+    monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
+
+    plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
+            "default_fields_keep": [],
+            "fields": [{"source": "standard", "element": "Phone", "label": "Phone",
+                        "query_key": "phone", "width_pct": 100, "required": False,
+                        "hidden": False, "quick_add_category": "Personal Info"}]}
+    click_list = {"steps": [{"phase": "F5", "action": "drag", "target": "Phone → form canvas"}]}
+    with pytest.raises(fb.StopAndReport) as ei:
+        fb._walk_click_list("s", click_list, plan, "/tmp/x-smoke-abort", [0], [], [])
+    assert ei.value.step == "smoke-first"
+    assert drag_calls == [], "the real F5 drag must never run past a failed smoke probe"
 
 
 def test_survey_builder_uses_shared_primitive_and_selector():
@@ -1325,6 +1829,7 @@ def test_form_builder_f4_deletes_defaults_before_the_drag(monkeypatch):
     monkeypatch.setattr(fb, "_ab", _snap_ab(snap))
     monkeypatch.setattr(fb, "_perform_iframe_field_remove", fake_remove)
     monkeypatch.setattr(fb, "_perform_iframe_drag", fake_drag)
+    monkeypatch.setattr(fb, "_perform_smoke_first", lambda *a, **k: {"ok": True})
     monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
 
     plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
@@ -1361,6 +1866,7 @@ def test_form_builder_f4_keeps_kept_defaults_untouched(monkeypatch):
 
     monkeypatch.setattr(fb, "_ab", _snap_ab("Form Element Quick Add Submit Email"))
     monkeypatch.setattr(fb, "_perform_iframe_field_remove", fake_remove)
+    monkeypatch.setattr(fb, "_perform_smoke_first", lambda *a, **k: {"ok": True})
     monkeypatch.setattr(fb, "_screenshot", lambda session, path: None)
     plan = {"location_id": "TESTLOCATION12345678", "form_name": "ZHC Test Form",
             "default_fields_keep": ["First Name", "Last Name", "Email"],

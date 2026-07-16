@@ -62,6 +62,16 @@ echo "════════════════════════�
 echo "  Skill 35 — Social Media Planner — Install QC"
 echo "═══════════════════════════════════════════════"
 echo "  Platform: ${OPENCLAW_PLATFORM:-unknown}"
+
+# ── Relationship lattice pointer + citation tripwire (U89/GK-27) ─────────────
+# Static/offline, repo-relative. Asserts SKILL.md carries its one-line
+# pointer to docs/CONTENT-CONVERSATION-LATTICE.md and that every edge this
+# skill owns (posting rail, Gap C weekly landing page, the reciprocal
+# inbound-ownership cross-reference, the Graphics image-handoff gate) still
+# cites real, unchanged ground truth. See docs/tools/check_lattice_citation.py.
+REPO_ROOT_LATTICE="$(cd "$(dirname "$0")/.." && pwd)"
+assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 35-social-media-planner -q"
 echo "  Date:     $(date)"
 echo ""
 

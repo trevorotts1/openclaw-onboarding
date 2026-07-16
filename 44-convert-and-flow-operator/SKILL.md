@@ -357,3 +357,5 @@ discoverability.
 18. references/workflow-quality-rubric.md — 8-dimension weighted quality rubric (SUPERSET overlay
     on WF-1..21; each dimension cites its WF evidence; ≥ 8.5 to ship; computed at Step 9 AFTER
     WF-1..21)
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's build path relates to Skill 38 and its backstop rail relates to Skill 3.

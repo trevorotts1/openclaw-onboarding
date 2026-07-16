@@ -1,5 +1,10 @@
 """Offline tests for P3-04 (c)4 — the weekly iframe-survival check wired into
-the existing selector-canary machinery (ghl_selector_canary.py).
+the existing selector-drift-probe machinery (ghl_selector_drift_probe.py).
+
+RENAMED (U30/B-U16, 2026-07-16): this file shipped as
+``test_iframe_survival_canary.py`` through U29 (module under test renamed
+``ghl_selector_canary.py`` -> ``ghl_selector_drift_probe.py`` in the same
+commit — see that module's docstring for the full rename note).
 
 THE RESIDUAL (Skill-6 spec §(b), 2026-07-11): iframe SURVIVAL in published GHL
 pages/surveys/forms is proven ONCE (2026-06-27 probe: GHL preview does not
@@ -31,7 +36,7 @@ _TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 if _TOOLS not in sys.path:
     sys.path.insert(0, _TOOLS)
 
-import ghl_selector_canary as canary  # noqa: E402
+import ghl_selector_drift_probe as canary  # noqa: E402
 
 
 SURVIVED_HTML = """
