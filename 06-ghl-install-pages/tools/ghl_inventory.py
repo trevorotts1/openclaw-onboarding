@@ -49,12 +49,12 @@ older roots — it never deletes a run-evidence root outright.
 WHAT THIS MODULE IS *NOT*
 --------------------------
 This module performs NO GHL I/O and opens NO browser of its own — same
-isolation discipline as `ghl_selector_canary.py` / `ghl_object_router.py`.
+isolation discipline as `ghl_selector_drift_probe.py` / `ghl_object_router.py`.
 Every live read (which funnels/pages exist, whether an id is still present)
 and every live write (delete) is a caller-injected callable. Production
 wiring sketches (`live_page_lister_over_rest_canvas`, ...) are provided but
 deliberately NOT exercised by CI — they need a real seeded agent-browser
-session, same discipline as `ghl_selector_canary.live_finder_over_browser_
+session, same discipline as `ghl_selector_drift_probe.live_finder_over_browser_
 manager`.
 
 **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
@@ -102,7 +102,7 @@ INVENTORY_VERSION = "v1.0.0"
 # (not imported from ghl_builder) so this read-only, network-free module
 # carries zero import-time coupling to ghl_builder's much larger surface —
 # same "performs no GHL I/O, imports nothing GHL-specific it doesn't have to"
-# isolation discipline as ghl_receipts.py / ghl_selector_canary.py. The
+# isolation discipline as ghl_receipts.py / ghl_selector_drift_probe.py. The
 # pattern itself is intentionally byte-identical to ghl_builder.ZHC_PREFIX_RE
 # (single naming convention, two independent, decoupled call sites).
 ZHC_PREFIX_RE = re.compile(r"^\s*zhc\b", re.IGNORECASE)
@@ -256,7 +256,7 @@ def enumerate_zhc_inventory(
     write-capable code path at all; `funnel_lister(location_id)` and
     `page_lister(funnel_id, location_id)` are the ONLY I/O it performs, both
     caller-injected reads (same DI discipline as
-    ghl_selector_canary.run_canary's `finder`). A page inherits ZHC
+    ghl_selector_drift_probe.run_canary's `finder`). A page inherits ZHC
     ownership from either its OWN name or its parent funnel's ZHC-prefixed
     name (a page can be un-renamed even when its funnel carries the
     provenance prefix) — the fleet invariant (every ZHC object is
@@ -786,7 +786,7 @@ def find_orphan_media(
 # ---------------------------------------------------------------------------
 # Live wiring sketches — NOT exercised by CI (need a real seeded session).
 # Kept so a live-proof pass wires this module without re-deriving the
-# contract. Same discipline as ghl_selector_canary.live_finder_over_browser_
+# contract. Same discipline as ghl_selector_drift_probe.live_finder_over_browser_
 # manager / live_page_fetcher_over_http.
 # ---------------------------------------------------------------------------
 def live_page_lister_over_rest_canvas(

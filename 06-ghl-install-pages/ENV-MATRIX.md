@@ -108,7 +108,7 @@ prose-only before now:
   upgraded to a PASS on a `post=None` partial). `scripts/vps-mount-proof.sh`
   is the live orchestration wrapper (`--live --path ... --run-id ...
   --compose-file ...`: marker → `docker compose up -d --force-recreate` →
-  marker verify → receipt) — mirrors `run-selector-canary.sh`'s
+  marker verify → receipt) — mirrors `run-selector-drift-probe.sh`'s
   offline-default / `--live`-is-operator-run shape exactly, and REFUSES
   (exit 3) rather than fabricate a pass when no real `docker` binary or
   compose file is reachable. **Owed**: the actual live run on a real VPS
