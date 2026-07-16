@@ -1235,7 +1235,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                  max_task_personas: int = 10, variety: bool = True,
                  topic_hint: str = "", audience_override: str = "",
                  conversion_goal: str = "", goal_source: str = "",
-                 scope_hint: dict = None) -> dict:
+                 scope_hint: dict = None, force_content_task: bool = False) -> dict:
     """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
 
     paths/db_path default to the live resolution when omitted; tests pass a
@@ -1245,6 +1245,17 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
     input — additive, default-empty, degrades byte-identically to pre-A-U4
     behavior when unused. See `resolve_conversion_goal` for the source-ladder
     contract and confirm-doctrine.
+
+    U116 (E6-2, ADD-2): `force_content_task` (additive, default False) lets a
+    caller that ALREADY KNOWS this is an outside-world communication (a page,
+    blog, email, text/SMS, or social post — the five comms types U116's own
+    `shared-utils/comms_audience_trigger.py` enumerates) route around the
+    `is_content_task()` keyword heuristic entirely, so a comms artifact whose
+    task text happens not to contain one of that heuristic's signal words
+    (e.g. a bare "opt-in page" brief with none of "page"/"landing"/"sales" in
+    it) is never mistakenly treated as non-content and left ungoverned. A
+    caller that never sets it is byte-identical to pre-U116 behavior — the
+    heuristic runs exactly as before.
     """
     sel = _selector()
     if paths is None:
@@ -1306,7 +1317,7 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                         f"(governance persona '{gov_pid}' attached for oversight)."),
         }
 
-    content_task = is_content_task(task)
+    content_task = is_content_task(task) or bool(force_content_task)
 
     # ── A-U5 scope_hint — bounded tie-breaker, additive-only ────────────────────
     # A page's role (opt-in / sales / thank-you / ...) is a legitimate topic
@@ -1503,6 +1514,16 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             f"source={rg['source']}, confirm_required={goal_confirm_required}"
             + ("" if not rg.get("ask") else f" — ASK: {rg['ask']}")),
     }
+    # U116 (E6-2, ADD-2): record WHY content_task fired when it was the
+    # force flag (not the keyword heuristic) that decided it — an honest,
+    # auditable receipt line, never a silent behavior change (rationale is
+    # additive; every non-forced call gets no such key, byte-identical).
+    if force_content_task and not is_content_task(task):
+        rationale["comms_governance"] = (
+            "content_task forced True — mandatory outside-world-communication "
+            "governance (U116/ADD-2), independent of the is_content_task() "
+            "keyword heuristic (which alone would have read this task as "
+            "non-content).")
 
     bundle = {
         # ── back-compat single-persona mirror (existing consumers) ──
