@@ -1060,7 +1060,11 @@ PYEOF
 # (chmod 600) + openclaw.json env.vars block.
 #
 # Operator setup (one-time, in ~/.zshrc on operator's Mac):
-#   # PREFERRED for client boxes — the n8n Podbean broker (no app secret on the box):
+#   # FLEET DEFAULT — the n8n publish-proxy (n8n does the WHOLE Podbean publish;
+#   # this box never touches a Podbean credential or a Podbean API endpoint):
+#   export OPENCLAW_PODBEAN_PUBLISH_URL="https://main.blackceoautomations.com/webhook/podbean-publish"  # non-secret; this IS the shipped default below
+#   export OPENCLAW_PODBEAN_PUBLISH_TOKEN="..."   # the PODBEAN_PUBLISH_TOKEN header secret set inside n8n
+#   # PREFERRED FALLBACK for client boxes — the n8n Podbean broker (no app secret on the box):
 #   export OPENCLAW_PODBEAN_BROKER_URL="https://main.blackceoautomations.com/webhook/podbean-broker"
 #   export OPENCLAW_PODBEAN_BROKER_TOKEN="..."   # the PODBEAN_BROKER_TOKEN set inside n8n
 #   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean app):
@@ -1068,9 +1072,15 @@ PYEOF
 #   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
 #
-# Per-client install:
-#   OPENCLAW_OWNER_NAME="Sample Client" curl ...install.sh | bash
-#   (vars from operator's ~/.zshrc inherited automatically)
+# Per-client install (this client's Podbean publish-proxy identity - the
+# operator sets these on the command line for THIS install only, not in
+# ~/.zshrc, since each client has a different last name/email; values are
+# runtime data and are NEVER committed to this repo, only the variable NAMES
+# are):
+#   OPENCLAW_OWNER_NAME="Sample Client" \
+#   OPENCLAW_PODCAST_CLIENT_LAST_NAME="..." OPENCLAW_PODCAST_CLIENT_EMAIL="..." \
+#   curl ...install.sh | bash
+#   (broker/proxy webhook vars from operator's ~/.zshrc inherited automatically)
 inject_shared_operator_secrets() {
     local injected_count=0
     local mode_oc_json_ready="no"
@@ -1137,12 +1147,64 @@ json.dump(d, open(p, 'w'), indent=2)
 PYEOF
     }
 
-    # Podbean credential BROKER pair (PREFERRED for client boxes): inject only the
-    # broker webhook URL + a low-privilege shared token. BlackCEO's Podbean app
-    # client_id/client_secret then stay INSIDE n8n and never land on a client box.
-    # The engine (58-podcast-production-engine/scripts/podbean_publish.sh) runs in
-    # broker mode whenever both of these resolve. The client still supplies only
-    # their Podbean Channel ID. See 58-podcast-production-engine/config/n8n/README.md.
+    # Podbean PUBLISH-PROXY pair (v19.30.1 publish-proxy fix; FLEET DEFAULT,
+    # outranks the broker pair below): the webhook URL is NON-SECRET (it is the
+    # operator's one production n8n publish endpoint - same shape as the Rescue
+    # Rangers webhook URL below, so it ships with a committed default and needs
+    # no operator env at all) and the header token IS secret (only injected when
+    # the operator's env carries it). The engine
+    # (58-podcast-production-engine/scripts/podbean_publish.sh) runs in proxy
+    # mode whenever both resolve; n8n does the ENTIRE publish (mint, download,
+    # upload, create) and this box never holds a Podbean credential or uploads
+    # media to Podbean directly. See 58-podcast-production-engine/config/n8n/README.md.
+    local PODBEAN_PUBLISH_URL_DEFAULT="https://main.blackceoautomations.com/webhook/podbean-publish"
+    local PODBEAN_PUBLISH_URL="${OPENCLAW_PODBEAN_PUBLISH_URL:-$PODBEAN_PUBLISH_URL_DEFAULT}"
+    _shared_write_env "PODBEAN_PUBLISH_WEBHOOK_URL" "$PODBEAN_PUBLISH_URL"
+    _shared_write_ocjson "PODBEAN_PUBLISH_WEBHOOK_URL" "$PODBEAN_PUBLISH_URL"
+    success "Podbean publish-proxy webhook URL seeded (PODBEAN_PUBLISH_WEBHOOK_URL=$PODBEAN_PUBLISH_URL)"
+    injected_count=$((injected_count + 1))
+    if [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
+        _shared_write_env "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        _shared_write_ocjson "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        success "Podbean publish-proxy header token injected from operator env (PODBEAN_PUBLISH_TOKEN; chmod 600)"
+        injected_count=$((injected_count + 1))
+    else
+        warn "OPENCLAW_PODBEAN_PUBLISH_TOKEN not in operator env — this box will fall back to broker/local mode for Podbean publishing (PODBEAN_PUBLISH_WEBHOOK_URL alone is not enough; podbean_publish.sh requires BOTH the URL and the token to select proxy mode)."
+    fi
+
+    # Podbean publish-proxy per-box IDENTITY (the roster-lookup key the n8n
+    # good-standing + identity gate uses): PODCAST_CLIENT_LAST_NAME + EMAIL are
+    # REQUIRED together whenever the proxy pair above is set - podbean_publish.sh
+    # fails LOUDLY at Step 15 if either is unset in proxy mode rather than
+    # guessing. These are PER-CLIENT values the operator sets on the install
+    # command line for THIS box (not persisted in ~/.zshrc); the VALUES are
+    # runtime data and never enter this repo, only the variable NAMES do.
+    if [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] && [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        _shared_write_env "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+        _shared_write_env "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+        _shared_write_ocjson "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+        _shared_write_ocjson "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+        success "Podcast client identity injected for the publish-proxy roster lookup (PODCAST_CLIENT_LAST_NAME + PODCAST_CLIENT_EMAIL)"
+        injected_count=$((injected_count + 2))
+        if [ -n "${OPENCLAW_PODCAST_CLIENT_FIRST_NAME:-}" ]; then
+            _shared_write_env "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+            _shared_write_ocjson "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+            injected_count=$((injected_count + 1))
+        fi
+    elif [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] || [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        warn "Only one of OPENCLAW_PODCAST_CLIENT_LAST_NAME / OPENCLAW_PODCAST_CLIENT_EMAIL set — both required for the publish-proxy identity gate. Skipping podcast client identity injection; podbean_publish.sh will fail loudly at Step 15 in proxy mode until both are provisioned."
+    else
+        warn "OPENCLAW_PODCAST_CLIENT_LAST_NAME / OPENCLAW_PODCAST_CLIENT_EMAIL not in operator env — this box has no publish-proxy identity yet. Required before this client's Step 15 can use proxy mode; set both on the install command line for this client (values are runtime data, per-client, never in ~/.zshrc)."
+    fi
+
+    # Podbean credential BROKER pair (dormant fallback, kept for back-compat):
+    # inject only the broker webhook URL + a low-privilege shared token.
+    # BlackCEO's Podbean app client_id/client_secret then stay INSIDE n8n and
+    # never land on a client box. The engine
+    # (58-podcast-production-engine/scripts/podbean_publish.sh) runs in broker
+    # mode whenever both of these resolve AND the proxy pair above does not. The
+    # client still supplies only their Podbean Channel ID. See
+    # 58-podcast-production-engine/config/n8n/README.md.
     if [ -n "${OPENCLAW_PODBEAN_BROKER_URL:-}" ] && [ -n "${OPENCLAW_PODBEAN_BROKER_TOKEN:-}" ]; then
         _shared_write_env "PODBEAN_BROKER_WEBHOOK_URL" "$OPENCLAW_PODBEAN_BROKER_URL"
         _shared_write_env "PODBEAN_BROKER_TOKEN" "$OPENCLAW_PODBEAN_BROKER_TOKEN"
@@ -1254,7 +1316,7 @@ PYEOF
     if [ "$injected_count" -gt 0 ]; then
         note "Shared operator secrets: $injected_count value(s) written to $OC_SECRETS_ENV"
     else
-        note "Shared operator secrets: none in env. For client boxes set OPENCLAW_PODBEAN_BROKER_URL + OPENCLAW_PODBEAN_BROKER_TOKEN in ~/.zshrc (preferred; keeps the Podbean app secret in n8n). OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET are the operator/legacy fallback only."
+        note "Shared operator secrets: none in env. For client boxes set OPENCLAW_PODBEAN_PUBLISH_TOKEN in ~/.zshrc (fleet default; the URL ships with a built-in default) plus OPENCLAW_PODCAST_CLIENT_LAST_NAME + OPENCLAW_PODCAST_CLIENT_EMAIL per-client on the install command line. OPENCLAW_PODBEAN_BROKER_URL + OPENCLAW_PODBEAN_BROKER_TOKEN are the dormant fallback; OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET are the operator/legacy fallback only."
     fi
 }
 
@@ -2082,7 +2144,18 @@ discover_all_credentials() {
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
     CRED_LIST="$CRED_LIST|ELEVENLABS_API_KEY:ElevenLabs"
-    # v19.16.1: Podbean publishing goes through BlackCEO's n8n credential BROKER.
+    # publish-proxy fix: Podbean publishing goes through BlackCEO's n8n
+    # publish-proxy by fleet default. A proxy-mode client box holds ONLY the
+    # proxy pair (PODBEAN_PUBLISH_WEBHOOK_URL + PODBEAN_PUBLISH_TOKEN) plus the
+    # per-client identity (PODCAST_CLIENT_LAST_NAME + PODCAST_CLIENT_EMAIL) and
+    # the per-client Podbean Channel ID (podcast_id) below. The Podbean OAuth
+    # app credentials never touch this box in proxy mode; n8n also does the
+    # media upload (this box never uploads to Podbean directly).
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_WEBHOOK_URL:Podbean n8n publish-proxy webhook URL (proxy mode, fleet default)"
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_TOKEN:Podbean n8n publish-proxy header token (proxy mode, fleet default)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_LAST_NAME:Podcast client last name (proxy mode identity gate, per-client)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_EMAIL:Podcast client email (proxy mode identity gate, per-client)"
+    # v19.16.1: Podbean publishing (dormant fallback) goes through BlackCEO's n8n credential BROKER.
     # A client box holds ONLY the broker pair (PODBEAN_BROKER_WEBHOOK_URL +
     # PODBEAN_BROKER_TOKEN) plus the per-client Podbean Channel ID (podcast_id).
     # The Podbean OAuth app client_id/client_secret are BlackCEO's SINGLE shared

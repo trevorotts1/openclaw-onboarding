@@ -13,23 +13,53 @@ does its own upload + create-episode so it still captures the permalink
 synchronously (Step 15/16). A compromised client box cannot leak the Podbean app
 credentials because they were never there.
 
-## Why this exists (and why not the other Podbean workflows)
+## Status update (publish-proxy fix): a third, now-preferred transport exists
+
+`podbean_publish.sh` (Step 15) as of the publish-proxy fix supports THREE
+transports, tried in this precedence order: **publish-proxy** (new, fleet
+default), then **broker** (this document's asset), then **local** (operator-box
+fallback). Proxy mode POSTs a JSON payload (contract v2: identity, title,
+description, `audio_url`/`image_url`, `idempotency_key`, ...) to
+`https://main.blackceoautomations.com/webhook/podbean-publish` with an
+`X-Podcast-Publish-Token` header and expects a **synchronous** response carrying
+the permalink - resolving the exact gap the next paragraph describes. The repo
+leg (the script's payload builder, response handling, retry/idempotency logic,
+and `install.sh` provisioning of `PODBEAN_PUBLISH_WEBHOOK_URL` +
+`PODBEAN_PUBLISH_TOKEN`) is built and covered by
+`58-podcast-production-engine/scripts/tests/test_podbean_publish_proxy.py`.
+
+**Not yet true on the live n8n side** (separate, n8n-only units, not done by this
+pass): the live workflow `TkL0rn2SH3q32SeB` does not yet require the
+`X-Podcast-Publish-Token` header, does not yet understand contract v2's fields,
+does not yet run the good-standing/identity gate, and still responds
+fire-and-forget (no synchronous permalink). Do **not** provision
+`PODBEAN_PUBLISH_TOKEN` on a real client box and expect a real publish to
+succeed until those n8n-side units land - until then, leave proxy-mode
+provisioning off and every box keeps using broker/local exactly as before (the
+precedence check requires BOTH `PODBEAN_PUBLISH_WEBHOOK_URL` and
+`PODBEAN_PUBLISH_TOKEN` to be set, so an unprovisioned box is entirely
+unaffected by this fix).
+
+## Why the broker asset exists (and why not the live full-publish workflow, historically)
 
 Trevor's n8n already has a live Podbean workflow, **"create podcast episode from
 openclaw"** (`POST /webhook/podbean-publish`), which injects his creds server-side
-and publishes an episode from `podcast_id` + media URLs. That one is
-**fire-and-forget**: it returns `200` immediately and emails the result — it does
+and publishes an episode from `podcast_id` + media URLs. Historically that one was
+**fire-and-forget**: it returns `200` immediately and emails the result - it did
 **not** return the episode permalink synchronously. The Skill 58 engine needs the
 permalink back at Step 15 to (a) write it to the GHL episode-URL field (which
 field-triggers the downstream "podcast is completed" workflow at Step 16) and
-(b) store it in the idempotency ledger. So Skill 58 uses a **token broker** (mint
-a Channel-scoped token; the box keeps the synchronous publish), not the
-full-publish proxy.
+(b) store it in the idempotency ledger. So Skill 58 used a **token broker** (mint
+a Channel-scoped token; the box keeps the synchronous publish) instead of the
+full-publish proxy. The publish-proxy fix above is what finally resolves this by
+adding a synchronous response to the proxy path (once the matching n8n-side unit
+lands) - until then, the broker (or local) transport is what actually runs on any
+box that is not proxy-provisioned.
 
 This asset also closes two gaps that exist on the live full-publish workflow (see
-"Operator: harden the live workflow" below): it **requires a shared-token auth
-gate**, and it keeps the app credentials in n8n's **credential vault** instead of
-plaintext in the workflow JSON.
+"Operator: finish the live full-publish workflow" below): it **requires a
+shared-token auth gate**, and it keeps the app credentials in n8n's **credential
+vault** instead of plaintext in the workflow JSON.
 
 ## Import (manual — required)
 
@@ -146,14 +176,34 @@ a credential directly), import it through the authorized operator path, and
 verify that a fresh export passes the repository guard. That live application
 and verification remain explicitly owed.
 
-## Operator: harden the live full-publish workflow (out of scope for the repo)
+## Operator: finish the live full-publish workflow (n8n-only, out of scope for the repo)
 
-The live **"create podcast episode from openclaw"** (`/webhook/podbean-publish`)
-has two gaps found during this build (fix in n8n, never in the repo):
+The live **"create podcast episode from openclaw"** (`/webhook/podbean-publish`,
+workflow `TkL0rn2SH3q32SeB`) needs the following before the repo's new
+publish-proxy transport (above) can be provisioned on any real box. None of this
+is a repo change; it is entirely n8n-side (workflow edits + n8n data tables +
+live proof), tracked as separate units:
 
-1. **No auth gate** — anyone with the URL can POST and trigger a real publish to
-   any `podcast_id`. Add a shared-token check like this broker's
-   `X-Podbean-Broker-Token` / `$env.PODBEAN_BROKER_TOKEN` gate.
-2. **Plaintext credentials** — the Podbean `client_id`/`client_secret` are literals
-   in the workflow JSON (readable via the API). Move them into an n8n vault
-   credential (as this broker does).
+1. **No auth gate today** - anyone with the URL can POST and trigger a real
+   publish to any `podcast_id`. Add an `httpHeaderAuth` credential
+   (`X-Podcast-Publish-Token`) on the webhook node, mirroring this broker's
+   `X-Podbean-Broker-Token` gate (the live workflow `aN6MrIJ4zLeKS047` already
+   demonstrates this exact pattern).
+2. **No contract v2 support today** - the guard node only reads the legacy
+   seven fields; it does not require `contract_version`, `client_last_name`, or
+   `idempotency_key`, and does not run a good-standing/identity gate.
+3. **Fire-and-forget response today** - the webhook returns `200` immediately
+   with no permalink; it needs a `Respond to Webhook` node wired after episode
+   creation (and after each refusal path) so `podbean_publish.sh`'s proxy mode
+   gets the synchronous JSON it already parses.
+4. **Plaintext credentials on two SIBLING workflows** - `BqRLOn8TP1wPaAzn` and
+   `COfgxe6HXRcWOleV` still carry the Podbean `client_id`/`client_secret` as
+   literals (Trevor has ratified leaving these as-is; do not vault or print
+   them). `TkL0rn2SH3q32SeB` itself already uses a vaulted `httpBasicAuth`
+   credential for its own Podbean OAuth mint, so this item does not block
+   provisioning proxy mode.
+
+Full detail (payload contract, good-standing/identity gate design, data table
+schema, and the numbered n8n-side units): see the master spec this fix
+implements, section 1.4 and Section 5 Phase 1-2 (kept outside this repo per the
+runtime-data rule; ask the operator for the current spec location).
