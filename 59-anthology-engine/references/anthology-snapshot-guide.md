@@ -236,3 +236,30 @@ and Flow private-integration token, and so are DEFERRED until the token is resto
 - **The canary** — running `provision-anthology-client.sh` end-to-end on the operator's own
   box against a real imported snapshot, and confirming a release tag fires the notification
   automation.
+
+### GK-09 (U71) — the WAF/edge 403 on `verify-imported`
+
+`verify-imported`'s read of `services.leadconnectorhq.com` was VERIFIED to hit an HTTP 403
+that does not match Convert and Flow's own scope-denial JSON signature — an edge/WAF block
+(`UpstreamBlockedError` in `anthology_registry.py`), not a proven token problem. The request
+already carried a browser `User-Agent`, but it was a reuse of `cover_render.py`'s Kie-CDN
+constant (a malformed 3-segment Chrome build string); `CAF_BROWSER_UA` is now its own
+constant, ported byte-for-byte from the Podcast gate's proven-live string
+(`verify-podcast-ghl-workflows.py`).
+
+If the edge block persists even with the corrected UA, `verify_imported`'s pipeline read
+automatically falls back to the Firebase-JWT internal rail — also ported from the Podcast
+gate's proven pattern — PROVIDED the client's own Firebase refresh token is exported under
+one of `ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN` / `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` /
+`GHL_FIREBASE_REFRESH_TOKEN` (per-client, client-owned — never a shared operator token, per
+the 2026-07-14 ruling on U69/U70/U71). Without that token configured, behavior is unchanged:
+HELD, retryable, with the same honest surface as before. The custom-fields read has NO such
+fallback — no internal-API path for it has been proven live anywhere in this repo, so
+inventing one would violate the Skill 44 doctrine against un-verified endpoints; it stays on
+the corrected-UA public v2 (PIT) surface only.
+
+This clears the CODE/offline tier of GK-09. The LIVE tier — actually running
+`verify-imported --location-id 2HIKGNgsixWx0yds7Qnx` against the real template location and
+completing the full cut → import → verify-imported → provision-custom-values chain for the
+first time — needs a live, client/operator-owned credential and is operator-gated; it is not
+run from an offline repo build.

@@ -64,7 +64,29 @@ Response (200):
 
 Behaviour: idempotent get-or-create of `root/client_key/producer_email/book_title`
 (re-runs return the same ids), then a named-user **editor** (writer) share of the book
-folder to `producer_email`. Bad/absent token → `401`; missing fields → `400`.
+folder to `producer_email`. The first permissions request uses
+`sendNotificationEmail=false`. If Google returns a non-2xx response (including the
+consumer/non-Workspace-domain `400` case), the workflow follows the HTTP Request
+node's error output and retries the same writer share once with
+`sendNotificationEmail=true`.
+
+If either permissions request succeeds, the response above contains
+`producer_editor_shared: true` and no warning. If the notification-enabled retry also
+fails, folder creation remains successful and the webhook still returns `200`, but it
+truthfully reports the non-fatal share failure:
+
+```
+{ "ok": true, "action": "create_book_tree", "via": "n8n_broker",
+  "root_folder_id": "...", "client_folder_id": "...",
+  "producer_folder_id": "...", "book_folder_id": "...",
+  "producer_editor_shared": false,
+  "warning": {
+    "code": "producer_editor_share_failed",
+    "message": "Book folder created, but editor sharing failed after retrying with notification email enabled."
+  } }
+```
+
+Bad/absent token → `401`; missing fields → `400`.
 
 **Implemented — the per-participant tree + the four per-Doc actions.** These close the
 E9 gap so the WHOLE S0..S8 Drive path runs on a pure client box through the broker:

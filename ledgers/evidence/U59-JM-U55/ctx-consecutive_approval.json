@@ -1,0 +1,7 @@
+{
+  "task_id": "U59-PROOF-consecutive-approval-001",
+  "title": "Fifth consecutive approved social post without revision",
+  "department": "marketing",
+  "consecutive_approvals": 5,
+  "recent_task_ids": ["t1", "t2", "t3", "t4", "t5"]
+}

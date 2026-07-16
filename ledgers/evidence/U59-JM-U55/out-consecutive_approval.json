@@ -1,0 +1,9 @@
+{
+  "trigger_type": "consecutive_approval",
+  "challenge": "What would have to be true for \"Fifth consecutive approved social post without revision\" to succeed exactly as currently scoped?",
+  "specific_concern": "This was flagged by the consecutive_approval trigger but no LLM model was available to generate\na specific data-cited challenge. Treat with skepticism until a human reviews.",
+  "assumptions": "- All upstream inputs are accurate\n- The target audience matches the assumptions in the brief\n- The KPI signal you're tracking is the right signal\n- No major competitor is doing the same thing within the same time window\n- The owner's stated values still match the approach",
+  "severity": "medium",
+  "confidence": 0.5,
+  "raw_response": "## Challenge\nWhat would have to be true for \"Fifth consecutive approved social post without revision\" to succeed exactly as currently scoped?\n\n## Specific Concern\nThis was flagged by the consecutive_approval trigger but no LLM model was available to generate\na specific data-cited challenge. Treat with skepticism until a human reviews.\n\n## What Would Have to Be True\n- All upstream inputs are accurate\n- The target audience matches the assumptions in the brief\n- The KPI signal you're tracking is the right signal\n- No major competitor is doing the same thing within the same time window\n- The owner's stated values still match the approach\n\n## Severity\nmedium\n\n## Confidence\n0.5\n"
+}

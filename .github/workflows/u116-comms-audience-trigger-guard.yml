@@ -1,0 +1,76 @@
+name: u116-comms-audience-trigger-guard
+
+# U116 (E6-2, closes G8) — communication trigger + audience-confirmation
+# prompt. Fails the build if the ADD-2 mandatory-governance contract
+# regresses for any of the five outside-world comms types (page, blog,
+# email, text/SMS, social post):
+#   (a) each comms type stops producing a governed, topic-populated
+#       artifact (blend_directive ending in the mandatory guardrail);
+#   (b) the no-override default stops recording audience_source=standard;
+#   (c) a per-message override stops recording audience_source=specific
+#       under the chosen audience;
+#   (d) an un-factored topic or an unrecorded audience decision stops
+#       being refused (a silent write regression);
+#   (e) the SMS routing decision goes stale (either named SMS-adjacent
+#       surface starts referencing persona_for_job/blend_directive without
+#       this guard's own test being updated to match).
+#
+# Also re-runs persona_for_job.py's own self-test (the U1/A-U1 seam this
+# unit's trigger rides) and persona_blend.py's existing regression suites,
+# so a force_content_task regression there is caught here too.
+
+on:
+  push:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/comms_audience_trigger.py"
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - tests/unit/u116-comms-audience-trigger-proof.test.py
+      - .github/workflows/u116-comms-audience-trigger-guard.yml
+  pull_request:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/comms_audience_trigger.py"
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
+      - "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - tests/unit/u116-comms-audience-trigger-proof.test.py
+      - .github/workflows/u116-comms-audience-trigger-guard.yml
+
+jobs:
+  u116-comms-audience-trigger-guard:
+    name: "Communication trigger + audience-confirmation prompt — page/blog/email/SMS/social"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the seam + the comms trigger + persona_blend.py
+        run: |
+          python3 -m py_compile shared-utils/persona_for_job.py
+          python3 -m py_compile shared-utils/comms_audience_trigger.py
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/persona_blend.py
+
+      - name: U1/A-U1 — persona_for_job.py self-test
+        run: python3 shared-utils/persona_for_job.py --self-test
+
+      - name: comms_audience_trigger.py self-test
+        run: python3 shared-utils/comms_audience_trigger.py --self-test
+
+      - name: persona_blend.py regression suite (T1-T13, must stay green)
+        run: python3 23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py
+
+      - name: A-U5 scoped-bundle regression suite (force_content_task must not disturb scope_hint)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py
+
+      - name: U116 — communication trigger + audience-confirmation proof
+        run: python3 tests/unit/u116-comms-audience-trigger-proof.test.py
