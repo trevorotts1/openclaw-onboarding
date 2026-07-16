@@ -1,3 +1,13 @@
+## [v20.0.54]  -  2026-07-16  -  Skill 6 U31 (B-U17): GHL page inventory + staged lifecycle (flag -> operator card -> fail-closed execute) + evidence-root retention
+
+v20.0.54 — Merges `skill6-v2/U31` (B-U17, QC-passed) into **06-ghl-install-pages** (Skill 6). Adds a page-inventory engine whose lifecycle actions run through a fail-closed staged approval ladder.
+
+- **Feature (06-ghl-install-pages):** new `tools/ghl_inventory.py` (1,229 LOC) — a page-inventory + staged-lifecycle engine. Every potentially-destructive lifecycle action runs through a **flag -> operator card -> fail-closed execute** ladder: a page is first FLAGGED, then surfaced on an operator card for an explicit human decision, and only then executed — never auto-destructive, and absent an approval it fails closed. Inventory receipts are kept under an evidence-root retention policy.
+- **Scheduling:** `schedule/skill6-page-inventory-lifecycle.cron.json` + `scripts/install-page-inventory-lifecycle-cron.sh` install a scheduled inventory sweep; `SKILL.md` (+68) documents the lifecycle doctrine.
+- **Test proof (merged tree):** `ghl_inventory.py --selftest` PASS (no network / no browser); `test_ghl_inventory.py` + `test_page_inventory_lifecycle_schedule.py` **69 passed** (staged flag->card->execute ladder, fail-closed default, evidence-root retention, and the schedule-presence check); `python3 -m py_compile` clean; `install-page-inventory-lifecycle-cron.sh` `bash -n` clean; cron JSON valid.
+- **Gates green (merged tree):** `scripts/bump-version.sh --check` 11/11 (06 SKILL.md version marker intact at v20.0.53 through the merge, then rolled to v20.0.54); `qc-assert-repo-consistency.py` rc=0 (28/28 depts, 10/10 dimensions); `hash-content-manifest.py --check` 435 roles + 132 sops + 19 personas; `hash-universal-sops-manifest.py --check` 104 files; `qc-assert-skill-frontmatter-version.sh` PASS; `qc-assert-skill-version-newline.sh` PASS.
+- **Ripple:** `scripts/bump-version.sh v20.0.54` rolled all 11 tracked repo version markers v20.0.53 -> v20.0.54. Merged via `git merge --no-ff`. Annotated tag `v20.0.54` (`git tag -a`; `git cat-file -t` == `tag`). No client names, no secret values, no Anthropic model added/removed/substituted; client skills/engines still run only on the client's own providers.
+
 ## [v20.0.53]  -  2026-07-16  -  Skill 6 U29 (B-U15): ENV-MATRIX live-proof mechanism — ASSUMED VPS mount row + first-hour ground-truth comparator + stale-env preflight; live Mac+VPS run OWED
 
 v20.0.53 — Merges `skill6-v2/U29` (B-U15, QC-passed) into **06-ghl-install-pages** (Skill 6). Turns the previously-ASSUMED ENV-MATRIX VPS mount row into a ground-truth-provable fact and adds a stale-env preflight.
