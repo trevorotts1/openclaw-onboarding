@@ -62,6 +62,24 @@ name: persona-blend-match-quality-guard
 #       fixture 3-page funnel run proves >=2 distinct blends + exactly N
 #       persona-selection-log.md entries (this unit's own binary acceptance
 #       (a)/(b)/(c)/(d)).
+#
+# A-U12 (Blend observability, master-spec v2 §A.10, master id U12 — ONB half
+# of the "CC (+ ONB probe)" both-repo unit) adds a ninth check:
+#   (I) shared-utils/persona_grounding_health_probe.py reads
+#       persona_blend.match_score_distribution() VERBATIM (closing "the JSONL
+#       log currently has NO reader") into a non-gating `persona_match`
+#       advisory ({count, mean, min, max, buckets}), and independently
+#       detects the 5-layer selector's grounding layers falling back to
+#       their neutral floor (company-config.json absent, or the
+#       semantic_task_fit module not importable) as
+#       `persona_grounding_degraded` — proven never to false-positive on
+#       llm_score unavailability alone (a supported heuristic-scoring mode,
+#       not a neutral floor). The probe's CLI always exits 0 (advisory,
+#       never a health gate) and fleet_refresh_runner.py's
+#       step_persona_grounding_health() records the verdict as
+#       "pass"/"degraded:..." — never "failed:...". The Command Center's
+#       deep-health response shape and the board chip/event render are the
+#       OTHER half of this unit, on the `blackceo-command-center` train.
 
 on:
   push:
@@ -82,11 +100,14 @@ on:
       - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
+      - "shared-utils/persona_grounding_health_probe.py"
+      - "shared-utils/fleet_refresh_runner.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
       - tests/unit/schema14-enrichment-complete.test.py
       - tests/unit/persona-fleet-schema14-sync.test.py
+      - tests/unit/persona-grounding-health-probe.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
   pull_request:
     paths:
@@ -106,11 +127,14 @@ on:
       - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
+      - "shared-utils/persona_grounding_health_probe.py"
+      - "shared-utils/fleet_refresh_runner.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
       - tests/unit/schema14-enrichment-complete.test.py
       - tests/unit/persona-fleet-schema14-sync.test.py
+      - tests/unit/persona-grounding-health-probe.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
 
 jobs:
@@ -168,3 +192,12 @@ jobs:
 
       - name: A-U4 — conversion_goal first-class input (source ladder, slot 5, decision receipt, no-contamination)
         run: python3 23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py
+
+      - name: persona_grounding_health_probe.py compiles
+        run: python3 -m py_compile shared-utils/persona_grounding_health_probe.py
+
+      - name: fleet_refresh_runner.py compiles
+        run: python3 -m py_compile shared-utils/fleet_refresh_runner.py
+
+      - name: A-U12 — blend observability probe (persona_match advisory, persona_grounding_degraded, non-gating)
+        run: python3 tests/unit/persona-grounding-health-probe.test.py
