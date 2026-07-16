@@ -15,14 +15,14 @@ No mismatches found this run.
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
-| U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | - | pending | - |
+| U10 | `skill6-v2/U10` | `d2c26e1f` | True | `4d0a93a6` | v20.0.60 | verified | 9.5 |
 | U106 | `skill6-v2/U106` | `c28f75b8` | False | - | - | pending | - |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | - | pending | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
-| U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | - | pending | - |
-| U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | - | pending | - |
-| U116 | `skill6-v2/U116` | `cef6c474` | True | `48359b40` | - | pending | - |
-| U12 | `skill6-v2/U12` | `5f3c7321` | True | `1e04f9e4` | - | pending | - |
+| U112 | `skill6-v2/U112` | `4fcfa01c` | True | `1a7f98d0` | v20.0.60 | verified (ONB repo/code leg; LIVE operator-box GHL leg owed) | 9.0 |
+| U115 | `skill6-v2/U115` | `670043c5` | True | `c3962251` | v20.0.60 | verified (ONB leg; CC kanban-card per-part row owed) | 9.5 |
+| U116 | `skill6-v2/U116` | `cef6c474` | True | `f9ddcf29` | v20.0.60 | verified (ONB leg; CC board-card audience chip, BINARY e, owed) | 9.0 |
+| U12 | `skill6-v2/U12` | `5f3c7321` | True | `4411c87b` | v20.0.60 | verified (ONB half; CC deep-health HTTP folding + board chip owed) | 8.8 |
 | U13 | `skill6-v2/U13` | `5fec8cf9` | True | `59c472b9` | v20.0.38 | verified | 9.3 |
 | U14 | `skill6-v2/U14` | `ab4b5aff` | True | `c6f865fe` | v20.0.51 | verified | - |
 | U18 | `skill6-v2/U18` | `0b72ee80` | True | `706aff5d` | v20.0.27 | verified | 9.3 |
@@ -42,12 +42,12 @@ No mismatches found this run.
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | True | `ebef2f72` | v20.0.54 | verified | - |
 | U39 | `skill6-v2/U39` | `3ca7edae` | False | - | - | pending | - |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
-| U44 | `skill6-v2/U44` | `c6aca95f` | True | `0ecbcebe` | - | pending | - |
+| U44 | `skill6-v2/U44` | `c6aca95f` | True | `7ff8de63` | v20.0.60 | verified (ONB repo leg only; fleet-wide C-05 audit + CC-side D-C2/INGEST-06/recurrence items owed) | 9.0 |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
 | U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
-| U59 | `skill6-v2/U59` | `985935c4` | True | `5c51fb96` | - | pending | - |
+| U59 | `skill6-v2/U59` | `985935c4` | True | `c119c484` | v20.0.60 | verified (ONB-side slice U55a/U55d; CC-side U55b/U55c/U55e/U55f + live cross-repo POST owed) | 9.5 |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
-| U63 | `skill6-v2/U63` | `c3d13ec5` | True | `5a55f459` | - | deferred (operator-gated) | - |
+| U63 | `skill6-v2/U63` | `c3d13ec5` | True | `c1516701` | v20.0.60 | verified (REPO LEG ONLY, operator-gated; LIVE legs (b)/(c) owed, never deployed) | 8.8 |
 | U64 | `skill6-v2/U64` | `a1f52194` | True | `4736b19b` | - | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
 | U65 | `skill6-v2/U65` | `8a7a213a` | True | `8e556638` | - | deferred (operator-gated) | - |
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
@@ -59,16 +59,16 @@ No mismatches found this run.
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
-| U86 | `skill6-v2/U86` | `919b195d` | True | `411f9b34` | - | pending | - |
+| U86 | `skill6-v2/U86` | `919b195d` | True | `641a7127` | v20.0.60 | verified (ONB repo half; operator-box live run owed) | 8.7 |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | True | `a3a42e1d` | v20.0.49 | verified (OFFLINE/FIXTURE tier; LIVE operator-box leg OWED) | - |
 | U89 | `skill6-v2/U89` | `1acd1769` | False | - | - | pending | - |
 | U9 | `skill6-v2/U9` | `b4b58f1e` | True | `ceaac642` | v20.0.50 | verified | - |
 | U9-sonnet5-b | `skill6-v2/U9-sonnet5-b` | `89345db2` | False | - | - | (no row) | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
-| U91 | `skill6-v2/U91` | `4ba11988` | True | `2f23e2e0` | - | verified | - |
+| U91 | `skill6-v2/U91` | `4ba11988` | True | `2d6e03d3` | v20.0.60 | verified | 9.5 |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
-| U96 | `skill6-v2/U96` | `889b13ab` | True | `381b5093` | - | pending | - |
-| U97 | `skill6-v2/U97` | `fa1cdba7` | True | `2a5855f5` | - | pending | - |
+| U96 | `skill6-v2/U96` | `889b13ab` | True | `36d5ed2d` | v20.0.60 | verified | 9.3 |
+| U97 | `skill6-v2/U97` | `fa1cdba7` | True | `26ab3f74` | v20.0.60 | verified | 8.8 |
 | U98 | `skill6-v2/U98` | `d980209f` | False | - | - | pending | - |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
