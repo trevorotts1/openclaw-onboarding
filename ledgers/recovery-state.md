@@ -2,13 +2,17 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T17:00:02Z
-openclaw-onboarding `origin/main` HEAD: `a4f3cb7be87a3385e5c80a3f8e9a8dbfea09fb09`
+Generated: 2026-07-16T17:20:44Z
+openclaw-onboarding `origin/main` HEAD: `fbc297c3da3d3b7949d8cdc933247ae48e2fcf53`
 blackceo-command-center `origin/main` HEAD: `d2f3ac124179c75c34139dfb3d8241dea7ea195e`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-No mismatches found this run.
+**1 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
+
+| unit | unmerged repo leg | branch | tip | shared ledger status |
+|---|---|---|---|---|
+| U39 | blackceo-command-center | `skill6-v2/U39` | `163e75eb` | verified (auto-reconciled, needs test-proof confirmation) |
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -63,6 +67,7 @@ No mismatches found this run.
 | U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
 | U71 | `skill6-v2/U71` | `16a6441c` | True | `144d2e88` | v20.0.59 | verified (repo leg; live snapshot-chain run owed) | - |
 | U74 | `skill6-v2/U74` | `ce01769d` | False | - | - | pending | - |
+| U78 | `skill6-v2/U78` | `3bb3b2e5` | False | - | - | pending | - |
 | U79 | `skill6-v2/U79` | `3be48c21` | True | `b62455b1` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
 | U80 | `skill6-v2/U80` | `bb5cf95c` | True | `84cfbf88` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -109,6 +114,7 @@ No mismatches found this run.
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
 | U38 | `skill6-v2/U38` | `6971f6ab` | True | `b9b20b9e` | v6.0.40 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U39 | `skill6-v2/U39` | `163e75eb` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (ONB half) | - |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 | verified | 8.9 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
@@ -156,6 +162,6 @@ No mismatches found this run.
 
 - ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 1 (U39-blackceo-command-center)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
