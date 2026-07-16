@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.55.
+> **Version:** see `/version` - this repo at v20.0.56.
+>
+> **NOTE (v20.0.56) — fix(ledger-reconciler): canonical git-tracked fail-closed core + regression test.** Merges `skill6-v2/fix-reconciler-failclosed` into `shared-utils/ledger_reconciler_core.py` — the canonical data/logic engine the operator-local reconciler cron wrapper invokes (the box-specific wrapper stays out of this fleet-wide template). The module does no git writes; it reads git state read-only and renders `recovery-state.md`, patches ONLY exactly-"pending" rows with a proven merge-parent + containing tag, appends session-log blocks, and — the fix — detects + loudly surfaces "verified-but-unmerged leg" mismatches as a fail-closed ALARM (`detect_failclosed_mismatches()` + an Integrity Alarms section), never a silent cell, and never auto-corrects a verified/deferred/other row. Fail-first regression test (`tests/unit/ledger-reconciler-failclosed.test.py`) reproduces the exact U53 shape (ONB leg unmerged / CC leg merged / one shared "verified" row) and proves the alarm fires. Proof (merged tree): `py_compile` clean; the reconciler-failclosed test ALL PASS; full gate battery GREEN incl. agent-browser guard exit 0. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.55) — fix(agent-browser-guard): exempt Skill 3's own raw-CLI backstop-conformance battery (exact-path) — main-scan greens (exit 0).** Merges `skill6-v2/fix-agent-browser-guard-red` into `scripts/guard-agent-browser-managed.sh`. The managed-only scan had been exiting 1 on 4 PRE-EXISTING false-positive violations in `03-agent-browser/scripts/lib-backstop-conformance.sh` (lines 94/105/116/128) — Skill 3's OWN raw-CLI conformance battery, which must exercise the raw `agent-browser` binary to prove the primitive contract that `browser_manager.sh` and Skill 44's Tier-4 fallback are built on. Exempts ONLY that exact path (never directory-wide) in both the bash `is_exempt()` and the batched-python hot-path `EXEMPT` set, plus a new negative-fixture test (`guard-agent-browser-managed-backstop-conformance-exempt.test.sh`, wired into CI) proving any OTHER unmanaged spawn under `03-agent-browser/` is still caught. Proof (merged tree): guard main-scan now **exits 0**; backstop-exempt + scan-roots + all-skill-dirs fixtures ALL PASS; `qc-assert-repo-consistency.py` rc=0, content-manifest 435, version 11/11, frontmatter + newline PASS. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -117,7 +119,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.55** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.56** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
