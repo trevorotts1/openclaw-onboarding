@@ -2,13 +2,18 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T14:30:03Z
-openclaw-onboarding `origin/main` HEAD: `60fa01eb1a9163d0d7f8b24227444143aa1e854a`
+Generated: 2026-07-16T14:42:38Z
+openclaw-onboarding `origin/main` HEAD: `9c1e09b27dcc8d608eef03c8c46f99a3967ab4cb`
 blackceo-command-center `origin/main` HEAD: `87ef1ffe8dd8d90c0972cc371522c43f976a6ef4`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-No mismatches found this run.
+**2 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
+
+| unit | unmerged repo leg | branch | tip | shared ledger status |
+|---|---|---|---|---|
+| U93 | blackceo-command-center | `skill6-v2/U93` | `c063dd9b` | verified (auto-reconciled, needs test-proof confirmation) |
+| U100 | blackceo-command-center | `skill6-v2/U100` | `9eb12a45` | verified (auto-reconciled, needs test-proof confirmation) |
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -16,15 +21,15 @@ No mismatches found this run.
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
 | U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U100 | `skill6-v2/U100` | `07031a47` | True | `785dd532` | - | pending | - |
+| U100 | `skill6-v2/U100` | `07031a47` | True | `785dd532` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U106 | `skill6-v2/U106` | `c28f75b8` | True | `b5f24e62` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U108 | `skill6-v2/U108` | `eac10193` | True | `2bb9cbe4` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U11 | `skill6-v2/U11` | `f3d751f5` | True | `93e4c1ed` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
 | U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U113 | `skill6-v2/U113` | `87125b24` | True | `7ae6ab3f` | - | pending | - |
-| U114 | `skill6-v2/U114` | `69899ae7` | True | `2daa54fc` | - | pending | - |
+| U113 | `skill6-v2/U113` | `87125b24` | True | `7ae6ab3f` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
+| U114 | `skill6-v2/U114` | `69899ae7` | True | `2daa54fc` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U116 | `skill6-v2/U116` | `cef6c474` | True | `48359b40` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U117 | `skill6-v2/U117` | `252d6cce` | True | `ab6344c6` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -61,9 +66,9 @@ No mismatches found this run.
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
 | U71 | `skill6-v2/U71` | `16a6441c` | True | `144d2e88` | v20.0.59 | verified (repo leg; live snapshot-chain run owed) | - |
-| U79 | `skill6-v2/U79` | `3be48c21` | True | `b62455b1` | - | pending | - |
+| U79 | `skill6-v2/U79` | `3be48c21` | True | `b62455b1` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
-| U80 | `skill6-v2/U80` | `bb5cf95c` | True | `84cfbf88` | - | pending | - |
+| U80 | `skill6-v2/U80` | `bb5cf95c` | True | `84cfbf88` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
@@ -75,7 +80,7 @@ No mismatches found this run.
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
 | U91 | `skill6-v2/U91` | `4ba11988` | True | `2f23e2e0` | v20.0.60 | verified | - |
 | U92 | `skill6-v2/U92` | `1bed45fa` | True | `73e73846` | v20.0.40 | verified | 9.4 |
-| U93 | `skill6-v2/U93` | `f1e245d8` | True | `60fa01eb` | - | pending | - |
+| U93 | `skill6-v2/U93` | `f1e245d8` | True | `60fa01eb` | v20.0.63 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U96 | `skill6-v2/U96` | `889b13ab` | True | `381b5093` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U97 | `skill6-v2/U97` | `fa1cdba7` | True | `2a5855f5` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U98 | `skill6-v2/U98` | `d980209f` | True | `0510c6b5` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -88,7 +93,7 @@ No mismatches found this run.
 
 | unit | branch | headSha | mergedIntoMain | mergeSha | tag | ledgerStatus | qcScore(prose) |
 |---|---|---|---|---|---|---|---|
-| U100 | `skill6-v2/U100` | `9eb12a45` | False | - | - | pending | - |
+| U100 | `skill6-v2/U100` | `9eb12a45` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 | verified | 9.4 |
 | U102 | `skill6-v2/U102` | `77e5643e` | True | `cdd03617` | v6.0.40 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U103 | `skill6-v2/U103` | `7831aeb8` | True | `20935e91` | v6.0.32 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -127,7 +132,7 @@ No mismatches found this run.
 | U60 | `skill6-v2/U60` | `803a8807` | True | `5e2f8b9a` | v6.0.10 | verified | 9.7 |
 | U7 | `skill6-v2/U7` | `ece5ae36` | True | `e96d745b` | v6.0.19 | verified | - |
 | U77 | `skill6-v2/U77` | `033c0641` | True | `d9758456` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U93 | `skill6-v2/U93` | `c063dd9b` | False | - | - | pending | - |
+| U93 | `skill6-v2/U93` | `c063dd9b` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
 | U94 | `skill6-v2/U94` | `02cb757f` | True | `1eceeca2` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U95 | `skill6-v2/U95` | `86004117` | True | `d8f46fb4` | v6.0.31 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U99 | `skill6-v2/U99` | `21898e7d` | True | `ad297f3d` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -150,7 +155,7 @@ No mismatches found this run.
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U79, U80, U93, U100, U113, U114
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U93-blackceo-command-center, U100-blackceo-command-center)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
