@@ -78,6 +78,65 @@ README as the header-auth pattern source has been deleted from the live
 instance (confirmed `NOT_FOUND` on a fresh `GET`) now that its pattern is
 live on the production workflow above.
 
+## Canonical publish path (GK-D4/D19 — Trevor-ratified 2026-07-16)
+
+There are two live n8n workflows that can each call the real Podbean publish API
+against BlackCEO's shared Podbean account:
+
+- **`TkL0rn2SH3q32SeB`** — **"create podcast episode from openclaw"**
+  (`POST /webhook/podbean-publish`), described above. **This is the single
+  canonical publish path.** As of tag `v20.0.43` (GK-05/U67) its live graph
+  carries an idempotency ledger (lookup → in-flight → completed/failed/refused,
+  with an idempotent-replay short-circuit before any Podbean call), a
+  standing-gate identity check (roster lookup by email, refuses and notifies
+  before any publish work begins), and a media preflight (`HEAD` on both the
+  audio and image URLs, refuses before the OAuth/upload/publish chain runs).
+  This is the ONLY path the Skill 58 engine's Step 15 (and this repo's
+  `podbean_publish.sh` broker-mode client, above) is ever wired to call.
+- **`COfgxe6HXRcWOleV`** — **"Podbean Channel IDs to Google Doc."** This
+  workflow's stated purpose (per its name and the Google-Doc/Google-Sheets
+  export nodes in its graph) is unrelated to episode publishing, but it also
+  contains its **own independent, ungoverned Podbean publish chain** — OAuth,
+  audio/image upload, `Publish Episode` — behind an entry-point node that is an
+  `executeWorkflowTrigger`, meaning any other n8n workflow's "Execute Workflow"
+  node, or a manual trigger click in the n8n UI, can fire a real publish through
+  it at any time, with none of the three governance layers above. That is a
+  live double-publish risk on a real client's public podcast feed, not a
+  theoretical one — it is a second real path to the same account. **It is
+  retired: deactivated (`active: false`) as of 2026-07-16, and permanently so
+  by ruling — never deleted.** Deactivation is reversible; deletion is not, and
+  reversibility is the point of deactivating instead.
+
+**Why keep it instead of deleting it.** Preserving a deactivated workflow costs
+nothing and keeps its node graph available for reference or future audit; deleting
+it would foreclose that option irreversibly for no operational gain. **Why it lost
+and the other won:** `COfgxe6HXRcWOleV` had gone dormant (no code change since
+2026-04-13, last execution 2026-07-05, and its complete execution history — 4 runs
+total — was 2 successes and 2 errors) with a structurally reachable
+`executeWorkflowTrigger` entry point and zero governance on its publish chain,
+while `TkL0rn2SH3q32SeB` is the actively maintained, gated, furnace-governed path
+the engine already depends on, hardened the same week this ruling was made.
+
+**The decision record.** This ruling resolves the decision named **GK-D4** ("which
+podcast pipeline is canonical," per U74's own spec) and **D19** (U74/GK-12's
+ledger-row decision number, "Canonicalize the podcast pipeline... kill the
+double-publish risk") — two labels for the same question. Trevor's ratification,
+the live evidence behind it, and the full reasoning are recorded in
+`ledgers/ratified-decisions-2026-07-16.md` on branch
+`chore/ratified-decisions-2026-07-16-d12-d4` (commit `41d2d1f9`), section
+"GK-D4 (D19) — RATIFIED BY TREVOR = Option A". **Someone reading this file in six
+months:** if you are wondering why two Podbean-publishing workflows exist on this
+n8n instance, that section is the full "why," and the answer to "which one fires"
+is: only `TkL0rn2SH3q32SeB`, permanently, by ruling — `COfgxe6HXRcWOleV` stays
+inactive unless a future, equally explicit operator ruling reverses this one.
+
+**Unchanged by this ruling.** Per the separate, already-closed `D-U65` ruling in
+the same ledger file, the Podbean OAuth plaintext credentials inside both
+`BqRLOn8TP1wPaAzn` and `COfgxe6HXRcWOleV` remain **NEVER-PRINT, NEVER-VAULT,
+NEVER-ROTATE** — permanent and closed, and untouched by this pass. This ruling is
+only about which workflow is allowed to fire, never about the credential inside
+either one.
+
 ## Import (manual — required)
 
 The n8n management API key on this fleet has historically failed to authenticate
@@ -192,6 +251,20 @@ set the reported deployment env references where a Code/Set node cannot consume
 a credential directly), import it through the authorized operator path, and
 verify that a fresh export passes the repository guard. That live application
 and verification remain explicitly owed.
+
+**Status update, 2026-07-16 — both dispositions have since been superseded by
+explicit operator ruling, recorded in `ledgers/ratified-decisions-2026-07-16.md`
+(branch `chore/ratified-decisions-2026-07-16-d12-d4`), and the "owed" vaulting
+above is not being carried forward for either ID:**
+
+- `BqRLOn8TP1wPaAzn` — per ruling **`D-U65`**, this plaintext credential is
+  **closed / won't-do, permanently.** Trevor decided it stays in plaintext; do
+  not propose vaulting it, do not re-open this.
+- `COfgxe6HXRcWOleV` — per ruling **`GK-D4` / `D19`** (see the "Canonical
+  publish path" section above), this workflow is **retired** (deactivated,
+  `active: false`, 2026-07-16) rather than vaulted — vaulting a workflow that
+  no longer fires is moot. The plaintext credential inside it is unchanged and
+  is covered by the same `D-U65` NEVER-VAULT ruling above.
 
 ## Operator: live full-publish workflow hardening — CLOSED
 
