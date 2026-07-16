@@ -54,6 +54,7 @@ import re
 import signal
 import subprocess
 import sys
+from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
@@ -429,3 +430,178 @@ def supervisor(env: Optional[dict] = None) -> str:
     anything else -> 'pm2-or-systemd' (Skill 6 does not itself need to
     disambiguate pm2 vs systemd; it never restarts a supervised service)."""
     return "launchd" if sys.platform == "darwin" else "pm2-or-systemd"
+
+
+# ── B-U15 item 3: stale-env preflight (WARN-only, VPS/Docker-only) ────────────
+# ENV-MATRIX.md documents two Docker operational traps as prose only
+# ("Operational doctrine, not code inside this skill"). This unit folds ONE of
+# them — `docker compose restart` SKIPPING `env_file` re-read, so a changed
+# `/docker/<project>/.env` can leave a running container on STALE
+# credentials/config with no error anywhere — into an automated preflight
+# check, not prose. It is advisory ONLY (WARN, never REFUSE): matches the
+# matrix's own framing of this trap as an operational doctrine item, and this
+# unit's BINARY acceptance criterion (d) requires it to "fire on a seeded
+# stale .env and stay silent otherwise" — a hard REFUSE here would turn an
+# advisory doctrine note into an unplanned new build-blocking gate, which is
+# out of scope for B-U15.
+#
+# Fail-soft by construction: every input this needs (are we on a VPS, is
+# docker reachable, does the container exist, can its StartedAt be read, does
+# the env path exist) can be legitimately absent — on a Mac there IS no
+# container to be stale relative to, and on a bare CI/dev checkout there is no
+# docker socket at all. Any of those absences returns None (silent), NEVER a
+# guessed answer and NEVER an exception.
+
+
+def hostinger_env_path(project: Optional[str] = None, env: Optional[dict] = None) -> str:
+    """Return the Hostinger-convention HOST env path for a project:
+    ``/docker/<project>/.env`` (ENV-MATRIX.md's "Env stores" row). `project`
+    defaults to `CLIENT_SLUG` / `GHL_LOCATION_ID`, same resolution order and
+    slug-sanitizing as `session_name()`, so the two never drift apart."""
+    env = env if env is not None else os.environ
+    raw = project or env.get("CLIENT_SLUG") or env.get("GHL_LOCATION_ID") or "default"
+    raw = raw.lower()
+    raw = re.sub(r"[^a-z0-9-]", "-", raw)
+    raw = re.sub(r"-{2,}", "-", raw).strip("-") or "default"
+    return f"/docker/{raw}/.env"
+
+
+def _docker_inspect_started_at(container: str) -> Optional[str]:
+    """Shell out to ``docker inspect --format {{.State.StartedAt}} <container>``.
+
+    Returns the raw RFC3339Nano timestamp string, or None on ANY failure —
+    docker binary absent, no socket reachable, unknown container, timeout.
+    Never raises: an undeterminable answer must silence the preflight, not
+    crash the caller that folded it into its own startup path."""
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        out = result.stdout.strip()
+        return out or None
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _file_mtime(path: str) -> Optional[float]:
+    """Return a file's mtime as a unix timestamp, or None if it does not
+    exist / is not stat-able (never raises)."""
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return None
+
+
+_DOCKER_TS_RE = re.compile(
+    r"^(?P<base>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+    r"(?P<frac>\.\d+)?"
+    r"(?P<tz>[+-]\d{2}:\d{2})?Z?$"
+)
+
+
+def _parse_docker_timestamp(raw: str) -> Optional[float]:
+    """Parse Docker's `.State.StartedAt` RFC3339Nano string (e.g.
+    ``2026-07-15T05:20:11.123456789Z``) into a UTC unix timestamp.
+
+    Docker emits up to 9 fractional digits (nanoseconds); Python's
+    `datetime.fromisoformat` accepts at most 6 (microseconds) — the excess
+    precision is truncated. That is fine here: this comparison is against an
+    env file's mtime, which is second-granularity on every filesystem this
+    skill runs on, so sub-microsecond precision was never meaningful. Returns
+    None (never raises) on any unparseable input, e.g. Docker not installed
+    and `raw` is empty/garbage."""
+    if not raw:
+        return None
+    m = _DOCKER_TS_RE.match(raw.strip())
+    if not m:
+        return None
+    base, frac, tz = m.group("base"), m.group("frac"), m.group("tz")
+    iso = base + (frac[:7] if frac else "") + (tz or "+00:00")
+    try:
+        return datetime.fromisoformat(iso).timestamp()
+    except ValueError:
+        return None
+
+
+def stale_env_preflight(
+    container: Optional[str] = None,
+    env_path: Optional[str] = None,
+    *,
+    env: Optional[dict] = None,
+    inspect_fn: Optional[Callable[[str], Optional[str]]] = None,
+    mtime_fn: Optional[Callable[[str], Optional[float]]] = None,
+    isvps_fn: Optional[Callable[[], bool]] = None,
+) -> Optional[str]:
+    """B-U15 item 3 — the automated stale-env preflight.
+
+    Returns a human-readable WARN string when the host `.env` file's mtime is
+    AFTER the running container's `StartedAt` (the `docker compose restart`
+    trap: a changed env was never picked up), else None.
+
+    Silent (returns None, never raises) when:
+      * this box is not VPS/Docker (`is_vps()` false — a Mac has no container
+        to be stale relative to);
+      * docker/the container/the env path cannot be determined at all (never
+        guesses "stale" from an absence — that would be a false positive on
+        every non-Docker/offline box, defeating acceptance criterion (d)).
+    """
+    env = env if env is not None else os.environ
+    _isvps = isvps_fn if isvps_fn is not None else (lambda: is_vps(env))
+    if not _isvps():
+        return None
+
+    # Resolved from the injected `env` dict (never real os.environ directly)
+    # so callers can fully hermetically test this function — mirrors
+    # session_name()'s slug resolution without session_name()'s own hard
+    # dependency on the real process environment.
+    resolved_container = container or env.get("GHL_DOCKER_CONTAINER") or session_name(
+        env.get("CLIENT_SLUG") or env.get("GHL_LOCATION_ID")
+    )
+    resolved_env_path = env_path or hostinger_env_path(env=env)
+
+    _inspect = inspect_fn if inspect_fn is not None else _docker_inspect_started_at
+    _mtime = mtime_fn if mtime_fn is not None else _file_mtime
+
+    started_raw = _inspect(resolved_container)
+    env_mtime = _mtime(resolved_env_path)
+    if started_raw is None or env_mtime is None:
+        return None
+
+    started_ts = _parse_docker_timestamp(started_raw)
+    if started_ts is None:
+        return None
+
+    if env_mtime > started_ts:
+        return (
+            f"WARN (stale-env preflight, B-U15): {resolved_env_path} was "
+            f"modified AFTER container '{resolved_container}' last started "
+            f"({started_raw}). `docker compose restart` SKIPS env_file "
+            f"re-read — the running container may be on STALE credentials/"
+            f"config. Run `docker compose up -d --force-recreate` to pick up "
+            f"the change."
+        )
+    return None
+
+
+if __name__ == "__main__":  # pragma: no cover - thin CLI, exercised via subprocess in tests
+    import argparse
+
+    _parser = argparse.ArgumentParser(description="browser_manager.py standalone CLI")
+    _parser.add_argument(
+        "--stale-env-preflight", action="store_true",
+        help="B-U15 item 3: print a WARN line to stdout if the host .env is "
+             "stale relative to the container's StartedAt; prints nothing "
+             "(and always exits 0 — advisory only) otherwise.",
+    )
+    _args = _parser.parse_args()
+    if _args.stale_env_preflight:
+        _msg = stale_env_preflight()
+        if _msg:
+            print(_msg)
+        sys.exit(0)
+    else:
+        _parser.print_help()
+        sys.exit(0)
