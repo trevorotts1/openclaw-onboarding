@@ -1,3 +1,8 @@
+## [1.9.2] - 2026-07-16 - GK-27/U89: relationship lattice pointer + citation tripwire
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map, which now canonicalizes and replaces the five partial cross-references this and other skills carried). A new `scripts/qc-lattice-pointer.sh`, wired into `scripts/11-run-qc-checklist.sh`, asserts the pointer is present AND that this skill's own owned edges — the inbound-ownership statement ("Skill 38 OWNS every inbound conversation those CTAs generate...") and the build-path-ladder statements (caf-direct PRIMARY route + "NOT a hard prereq") — still cite real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No behavior change to the inbound pipeline itself.
+
 ## [1.9.1] - 2026-07-12 - P3-08 merge (renumbered [1.8.3]→[1.9.1] — branch cut at 1.8.2, [1.9.0] P3-07 landed on main first): Skill 35 named as an inbound SOURCE (DM-CTA + comment handoff)
 
 ### Added

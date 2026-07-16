@@ -1,5 +1,10 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.10] - 2026-07-16 — GK-27/U89: relationship lattice pointer + citation tripwire
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map). `qc-convert-and-flow.sh` Section S now asserts that pointer is present AND that this skill's own owned edge citation — the Tier-4 agent-browser backstop line in its own frontmatter description — still matches real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No behavior change to workflow builds themselves.
+
 ## [1.3.9] - 2026-07-12 — P3-08 QC-fix: Tier-4 "designated path" is now IMPLEMENTED (no longer a promise to a missing file)
 
 ### Changed

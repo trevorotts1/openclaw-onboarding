@@ -91,6 +91,39 @@ def test_terminal_router_and_responders(wf, names):
     assert {"Respond OK", "Respond Rejected"} <= names
 
 
+def test_book_share_retries_with_notification_and_reports_double_failure(wf, names):
+    first_name = "Share Book To Producer"
+    retry_name = "Retry Share Book To Producer With Notification"
+    assert {first_name, retry_name} <= names
+
+    nodes = {n["name"]: n for n in wf["nodes"]}
+    first = nodes[first_name]
+    retry = nodes[retry_name]
+    assert first["type"] == retry["type"] == "n8n-nodes-base" ".httpRequest"
+    assert first["parameters"]["method"] == retry["parameters"]["method"] == "POST"
+    assert "sendNotificationEmail=false" in first["parameters"]["url"]
+    assert "sendNotificationEmail=true" in retry["parameters"]["url"]
+    assert first["parameters"]["jsonBody"] == retry["parameters"]["jsonBody"]
+    assert first["credentials"] == retry["credentials"]
+
+    # n8n's second main output is the error output when this setting is enabled.
+    assert first.get("onError") == "continueErrorOutput"
+    assert retry.get("onError") == "continueErrorOutput"
+    first_outputs = wf["connections"][first_name]["main"]
+    assert first_outputs[0][0]["node"] == "Build Response"
+    assert first_outputs[1][0]["node"] == retry_name
+
+    # Whether the retry succeeds or fails, response construction remains non-fatal.
+    retry_outputs = wf["connections"][retry_name]["main"]
+    assert retry_outputs[0][0]["node"] == "Build Response"
+    assert retry_outputs[1][0]["node"] == "Build Response"
+    response_js = nodes["Build Response"]["parameters"]["jsCode"]
+    assert "producer_editor_shared: true" not in response_js
+    assert "producer_editor_shared: shared" in response_js
+    assert "response.warning" in response_js
+    assert "producer_editor_share_failed" in response_js
+
+
 def test_no_dangling_connections_or_node_references(wf, names, blob):
     for src, spec in wf["connections"].items():
         assert src in names, "connection from unknown node %r" % src

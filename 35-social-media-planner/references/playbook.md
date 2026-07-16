@@ -251,27 +251,49 @@ The AI must follow these steps in this exact order:
 **Step 0a: Review Brand Guidelines (First Run / Weekly Check)**
 Before any content production begins, the AI must review the [Brand Name] core .md files on OpenClaw. Confirm brand colors, tone, voice, mission, values, and target audience. If any core .md file has been updated since the last review, re-read it. If core files are missing or incomplete, notify the client and request the missing brand information before proceeding. Do not generate any content without full brand context.
 
-**Step 0a.5: Select Content Persona (5-Layer Alignment)**
-Before writing any content, the AI selects a persona to govern this week's content style using the 5-layer alignment check:
+**Step 0a.5: Select the Content Blend — PER DAY, via Scoped Bundles (D1 binding ruling, Skill 6 U98)**
+Before writing any content, the blended persona GOVERNS each day's voice — never advisory, no
+exemptions. This replaced the old single-persona-per-week pick: a week is 7 distinct posting
+days, and each day gets its OWN governing blend bundle, resolved via the same scoped-bundle
+mechanism Skill 6's per-page funnel copy already uses (`persona_blend.build_bundle(...,
+scope_hint={"page_role": "day-N"})`, U5). Call `scripts/daily_blend_bundle.py` for the cycle:
 
-1. Layer 1 (Company Mission): Does this persona's philosophy align with the brand?
-2. Layer 2 (Owner Values): Does this persona match the owner's communication style?
-3. Layer 3 (Company Goals): Does this persona support current business objectives?
-4. Layer 4 (Department Goals): Is this persona right for marketing/content work?
-5. Layer 5 (Task Fit): Is this persona ideal for social media content about this specific weekly theme?
+```
+python3 scripts/daily_blend_bundle.py --theme "<weekly theme>" --run-dir <DEPT_WORKSPACE>
+```
 
-Search persona-categories.json for marketing-tagged personas (Seth Godin, Gary Vee, Donald Miller, Brendan Kane, Alex Hormozi). Run all 5 layers. Select the best fit. Log the selection to persona-selection-log.md in the department workspace.
+This resolves all 7 days' bundles in one pass and logs ONE entry per day (never one entry for
+the whole week) to `persona-selection-log.md` in the department workspace — each entry carries
+its own `scope` key (`day-1` … `day-7`), its own `blend_directive` (ending in the mandatory
+STYLE-INSPIRED-NEVER-IMPERSONATION guardrail clause), and the WHY (collapse reasoning or a
+shared-blend note when two days legitimately land on the same voice). A day's blend directive —
+not a locally-picked persona — governs that day's word choice, cadence, and devices; the
+Television Show Framework (Day 1 hooks, escalating pitch intensity 4/10 → 10/10, Day 7 grand
+finale) is untouched by this — it governs VOICE, never the show's structure.
 
-**Persona Override Option:**
-After selecting the recommended persona, present the choice to the client:
+**Audience/Topic Override Option:**
+The blend resolves the AUDIENCE voice from the client's onboarding ICP and the TOPIC from the
+weekly theme + each day's angle; present the resolved voice to the client before the cycle
+starts, the same ALWAYS-confirm doctrine `persona_blend.resolve_audience` already enforces
+elsewhere:
 
-"For this week's content about [theme], I recommend using [Persona Name]'s approach. [One sentence explaining why.] Would you like me to use this style, or would you prefer I write in your personal brand tone from your soul.md instead?"
+"For this week's content about [theme], the blend resolves to [Persona Name]'s voice for
+[audience]. [One sentence why.] Would you like me to use this, or would you prefer your
+personal brand tone from soul.md governs instead?"
 
-If the client says to use their personal tone: skip the persona and write using ONLY the client's soul.md tone, voice, and style.
-If the client says to use the recommended persona: proceed with the Act As If Protocol.
-If the client names a different persona: use that persona instead.
+If the client says to use their personal tone: pass `--audience-override <label>` naming the
+client's own house voice; the blend still runs (never skipped — never advisory) but resolves to
+the client's named voice for every day.
+If the client names a different audience or persona: pass that as the override; the blend
+re-resolves around it.
 
-All content this week (posts, comments, blog, email, podcast) follows the selected style consistently.
+All content this week (posts, comments, blog, email, podcast) is governed by that day's blend —
+consistently within a day, deliberately varied ACROSS days when the theme's daily angle calls
+for a different topic emphasis (never a forced-identical week with no logged reason).
+
+Flag-guarded: `SKILL35_BLEND_GOVERNS=0` reverts to the pre-U98 single-persona-per-week selection
+(the exact prose this note replaced — preserved in git history, not re-implemented in code) —
+the flag defaults to governing (`1`), per the D1 ruling's "never advisory" mandate.
 
 **Step 0b: Request the Weekly Theme (Heartbeat Task)**
 This step is automated via the heartbeat.md file. Every Saturday, the AI reaches out to the client (owner/founder) to get the weekly theme. See Section 24: Heartbeat.md Configuration for the full schedule and message flow. Once the theme is received, the AI immediately begins Step 1.
@@ -1256,7 +1278,8 @@ The agent does NOT publish directly to Podbean. Publishing goes through an n8n w
 2. Agent uploads the audio file to the GHL Media Library. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL first.
 3. Agent generates the podcast cover image via kie.ai Nano Banana 2 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
 4. Agent uploads the cover image to the GHL Media Library.
-5. Agent sends the following JSON payload to the webhook:
+5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies all 7 required fields below are present and non-null/non-empty in the payload — especially `image_url` and `client_email`. A 2026-07-12 production incident sent a payload missing both, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real GHL `image_url`, or the client email is not known, DO NOT send the webhook request — finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete payload before making any Podbean call and sends an honest refusal email (entry guard, GK-01/U63), but the agent must not rely on it as the primary check — it is a backstop, not a substitute for sending a complete payload.
+6. Agent sends the following JSON payload to the webhook:
 
 **Webhook Endpoint:**
 ```
@@ -1306,6 +1329,7 @@ Content-Type: application/json
 - If webhook returns non-200: retry once after 30 seconds. If still failing, notify client via Telegram.
 - If you get no confirmation email within 15 minutes: notify client that podcast publishing may have failed and to check Podbean manually.
 - Image format rejection: re-export the cover image as JPEG (not WebP) and re-send.
+- If you receive a "Podcast Publish Refused at Entry Guard" email instead of a success or failure email: the payload was missing or had an invalid value for one of the 7 required fields (the email names which one(s)) and no Podbean call was made — treat it the same as a failure, fix the named field per the Field Rules above, and resend the complete payload.
 
 ---
 

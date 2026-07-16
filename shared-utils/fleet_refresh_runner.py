@@ -28,12 +28,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+# The exact token run_box's verdict test keys on — see _scrub_gating_token().
+_GATING_TOKEN_RE = re.compile("failed", re.IGNORECASE)
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 RED    = "\033[0;31m"
@@ -1203,6 +1207,82 @@ def step_persona_embedding_drift(
     return result
 
 
+def _scrub_gating_token(text: str) -> str:
+    """Strip the one token that would turn an ADVISORY step value into a
+    GATING one.
+
+    run_box decides the box's verdict with a plain SUBSTRING test —
+    `any("failed" in str(v) for v in res.steps.values())` — over every step
+    value, with no notion of which steps are advisory. A-U12's non-gating
+    contract (ACCEPT (a): "the box's health status is UNCHANGED by any value
+    of it") therefore cannot rest on wording discipline upstream: this step's
+    reason text is FREE-FORM and interpolates arbitrary exception messages
+    (e.g. the probe's own "selector module unavailable/could not load: {exc}",
+    where {exc} is whatever Python raised). Any reason that merely MENTIONS
+    the word would flip the box to partial/failed — a false failure fleet-wide
+    on every box where the probe degrades for a reason worded that way.
+
+    So scrub at the boundary that writes res.steps, where the guarantee is
+    actually enforceable. Case-insensitive for future-proofing; run_box's
+    current test is lowercase-exact, so lowercase alone is what gates today.
+    """
+    return _GATING_TOKEN_RE.sub("errored", text)
+
+
+def step_persona_grounding_health(
+    paths: dict,
+    shared_utils: Path,
+    res: BoxResult,
+) -> dict:
+    """
+    Step 8c (A-U12, master id U12): "Blend observability" ONB probe — reads
+    persona_blend.py's match-score-distribution log (previously had NO
+    reader — this closes that gap) and detects the 5-layer selector's
+    grounding layers falling back to their neutral floor (company-config.json
+    absent, or the semantic_task_fit / llm_score modules not importable).
+    Emits exactly ONE advisory record per run — res.steps[
+    "persona-grounding-health"] is what the fleet summary / Command Center's
+    deep-health check reads (this is the "(+ ONB probe)" half of the
+    both-repo unit; the Command Center owns the deep-health RESPONSE shape
+    and the persona_grounding_degraded board chip/event on its own train).
+
+    READ-ONLY (no mutations). Runs alongside step_persona_embedding_drift.
+    NON-GATING BY DESIGN (see persona_grounding_health_probe.py's own
+    ADVISORY DOCTRINE): a degraded grounding verdict is surfaced as an
+    advisory ("degraded:...", never containing the substring "failed") — it
+    never marks the box refresh itself failed.
+    """
+    sys.path.insert(0, str(shared_utils))
+    try:
+        from persona_grounding_health_probe import run_probe  # type: ignore
+    except ImportError as exc:
+        msg = f"persona_grounding_health_probe.py not found in shared-utils: {exc}"
+        res.steps["persona-grounding-health"] = f"skip:{msg}"
+        _warn(f"  persona-grounding-health: SKIP — {msg}")
+        return {"grounding": {"degraded": False}, "reason": msg}
+
+    try:
+        result = run_probe(paths=paths, box=res.box)
+    except Exception as exc:
+        msg = f"persona_grounding_health_probe.run_probe raised: {exc}"
+        res.steps["persona-grounding-health"] = f"skip:{msg}"
+        _warn(f"  persona-grounding-health: SKIP — {msg}")
+        return {"grounding": {"degraded": False}, "reason": msg}
+
+    grounding = result.get("grounding", {})
+    if grounding.get("degraded"):
+        # Advisory, non-gating: intentionally NOT "failed:..." — see docstring.
+        reasons = "; ".join(grounding.get("reasons", []))[:200]
+        res.steps["persona-grounding-health"] = f"degraded:{_scrub_gating_token(reasons)}"
+        _warn(f"  persona-grounding-health: DEGRADED (advisory) — {reasons}")
+    else:
+        res.steps["persona-grounding-health"] = "pass"
+        pm = result.get("persona_match", {})
+        _ok(f"  persona-grounding-health: PASS — persona_match count={pm.get('count', 0)}")
+
+    return result
+
+
 def step_log(paths: dict, res: BoxResult, dry_run: bool,
              pinned_onboarding_tag: str, cc_tag: str) -> None:
     """Step 9: append result to .fleet-refresh-log.json."""
@@ -1364,6 +1444,16 @@ def run_box(
         # Deliberately step_skip (not step_fail) — this is a NON-GATING
         # advisory probe; a probe-internal exception must never fail the box.
         res.step_skip("persona-embedding-drift", f"probe raised: {e}")
+
+    # Step 8c (A-U12): persona-grounding-health — always runs (read-only,
+    # NON-GATING advisory; Wave-5 pass + Sunday cron --verify-only pass).
+    # Never raises the box's overall result to "failed" (see docstring).
+    try:
+        step_persona_grounding_health(paths, shared_utils, res)
+    except Exception as e:
+        # Deliberately step_skip (not step_fail) — this is a NON-GATING
+        # advisory probe; a probe-internal exception must never fail the box.
+        res.step_skip("persona-grounding-health", f"probe raised: {e}")
 
     # Step 9: log (skipped in verify-only as it's read-only mode)
     if not verify_only:
