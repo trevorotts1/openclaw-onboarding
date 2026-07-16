@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T06:40:06Z
-openclaw-onboarding `origin/main` HEAD: `200e122baa3ca4a6b5d642e4871d9d53f7f67108`
+Generated: 2026-07-16T06:50:02Z
+openclaw-onboarding `origin/main` HEAD: `82fbc2baabb50bb0006d6a9851c02ec9ea377bf4`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -42,6 +42,7 @@ No mismatches found this run.
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `253ea9b1` | False | - | - | deferred (operator-gated) | - |
 | U64 | `skill6-v2/U64` | `a1f52194` | False | - | - | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
+| U65 | `skill6-v2/U65` | `8a7a213a` | False | - | - | deferred (operator-gated) | - |
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
