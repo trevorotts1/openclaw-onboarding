@@ -2,18 +2,13 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T14:10:02Z
-openclaw-onboarding `origin/main` HEAD: `b62455b1a38a63be3905cc7b0192f6a4d83d4418`
-blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1d047e`
+Generated: 2026-07-16T14:20:03Z
+openclaw-onboarding `origin/main` HEAD: `2daa54fceb5a9eaf35cfc67b8bce99ee6b8e74a4`
+blackceo-command-center `origin/main` HEAD: `87ef1ffe8dd8d90c0972cc371522c43f976a6ef4`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
-**2 mismatch(es) found this run.** A repo leg below is NOT merged into that repo's main, yet the shared skill6 ledger's status cell for that unit reads a `verified` status. Treat the flagged repo's leg as **NOT actually complete** until a build/merge-writer session confirms and, if needed, corrects the ledger row. This reconciler never auto-corrects a verified/deferred/other row on its own (that would just trade one fail-open bug for another) -- it only refuses to let the mismatch go unflagged.
-
-| unit | unmerged repo leg | branch | tip | shared ledger status |
-|---|---|---|---|---|
-| U38 | blackceo-command-center | `skill6-v2/U38` | `6971f6ab` | verified (auto-reconciled, needs test-proof confirmation) |
-| U102 | blackceo-command-center | `skill6-v2/U102` | `77e5643e` | verified (auto-reconciled, needs test-proof confirmation) |
+No mismatches found this run.
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
 
@@ -21,15 +16,15 @@ blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
 | U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U100 | `skill6-v2/U100` | `07031a47` | False | - | - | pending | - |
+| U100 | `skill6-v2/U100` | `07031a47` | True | `785dd532` | - | pending | - |
 | U106 | `skill6-v2/U106` | `c28f75b8` | True | `b5f24e62` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U108 | `skill6-v2/U108` | `eac10193` | True | `2bb9cbe4` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U11 | `skill6-v2/U11` | `f3d751f5` | True | `93e4c1ed` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
 | U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U113 | `skill6-v2/U113` | `87125b24` | False | - | - | pending | - |
-| U114 | `skill6-v2/U114` | `69899ae7` | False | - | - | pending | - |
+| U113 | `skill6-v2/U113` | `87125b24` | True | `7ae6ab3f` | - | pending | - |
+| U114 | `skill6-v2/U114` | `69899ae7` | True | `2daa54fc` | - | pending | - |
 | U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U116 | `skill6-v2/U116` | `cef6c474` | True | `48359b40` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U117 | `skill6-v2/U117` | `252d6cce` | True | `ab6344c6` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -68,7 +63,7 @@ blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1
 | U71 | `skill6-v2/U71` | `16a6441c` | True | `144d2e88` | v20.0.59 | verified (repo leg; live snapshot-chain run owed) | - |
 | U79 | `skill6-v2/U79` | `3be48c21` | True | `b62455b1` | - | pending | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
-| U80 | `skill6-v2/U80` | `bb5cf95c` | False | - | - | pending | - |
+| U80 | `skill6-v2/U80` | `bb5cf95c` | True | `84cfbf88` | - | pending | - |
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
@@ -95,7 +90,7 @@ blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1
 |---|---|---|---|---|---|---|---|
 | U100 | `skill6-v2/U100` | `9eb12a45` | False | - | - | pending | - |
 | U101 | `skill6-v2/U101` | `3a69a3e6` | True | `42751a16` | v6.0.29 | verified | 9.4 |
-| U102 | `skill6-v2/U102` | `77e5643e` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
+| U102 | `skill6-v2/U102` | `77e5643e` | True | `cdd03617` | v6.0.40 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U103 | `skill6-v2/U103` | `7831aeb8` | True | `20935e91` | v6.0.32 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U104 | `skill6-v2/U104` | `38c59b5f` | True | `1bbbd26f` | v6.0.27 | verified | 9.2 |
 | U105 | `skill6-v2/U105` | `0711f092` | True | `737eb62c` | v6.0.33 | verified (auto-reconciled, needs test-proof confirmation) | - |
@@ -109,7 +104,7 @@ blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1
 | U33 | `skill6-v2/U33` | `57c8305c` | True | `20773b64` | v6.0.38 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U34-U35 | `skill6-v2/U34-U35` | `ccfe9847` | True | `8a5369e0` | v6.0.26 | (no row) | - |
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
-| U38 | `skill6-v2/U38` | `6971f6ab` | False | - | - | **MISMATCH (fail-closed): verified (auto-reconciled, needs test-proof confirmation)** — see Integrity Alarms | - |
+| U38 | `skill6-v2/U38` | `6971f6ab` | True | `b9b20b9e` | v6.0.40 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (ONB half) | - |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 | verified | 8.9 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
@@ -156,6 +151,6 @@ blackceo-command-center `origin/main` HEAD: `9ced9460d5eb05c18c1f9d566df9b58ecb1
 
 - ledger-edit permitted this run (merge-queue lock was free): True
 - units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U38-blackceo-command-center, U102-blackceo-command-center)
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 0 (none)
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
