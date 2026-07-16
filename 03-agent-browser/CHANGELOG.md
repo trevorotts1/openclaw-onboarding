@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.6.1] - July 16, 2026 (GK-27/U89)
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map). `qc-agent-browser.sh` now asserts that pointer is present AND that this skill's own owned edge citation — its backstop-consumer acknowledgment in `scripts/lib-backstop-conformance.sh` ("Skill 44's Tier-4 fallback and Skill 6's browser_manager.sh assume...") — still matches real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No behavior change to agent-browser itself.
+
+### Fixed
+- **Regenerated `agent-browser.skill`** via `scripts/pack-agent-browser-skill.sh` to pick up the SKILL.md pointer line above (the P3-06 archive drift gate correctly caught the stale packaged copy).
+
 ## [v6.6.0] - July 15, 2026 (GK-28/U90)
 
 ### Added

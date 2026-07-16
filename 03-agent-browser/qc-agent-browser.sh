@@ -61,6 +61,19 @@ assert "agent-browser CLI on PATH" "command -v agent-browser || npm list -g --de
 warn_only "agent-browser --help responds" "agent-browser --help 2>&1 | grep -qiE 'agent.browser|usage|command'"
 warn_only "TOOLS.md references agent-browser" "grep -qiE 'agent.browser' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
 
+# ── Relationship lattice pointer + citation tripwire (U89/GK-27) ─────────────
+# Static/offline, repo-relative — asserts SKILL.md carries its one-line
+# pointer to docs/CONTENT-CONVERSATION-LATTICE.md and that the edge(s) this
+# skill owns (its own backstop-consumer acknowledgment, GK-28/U90) still cite
+# real, unchanged ground truth. Drift (a moved/edited/deleted cited line) or a
+# missing pointer both FAIL this check — see docs/tools/check_lattice_citation.py.
+echo ""
+echo "═══ Relationship lattice pointer + citation tripwire (GK-27) ═══"
+echo ""
+REPO_ROOT_LATTICE="$(cd "$SKILL_DIR/.." && pwd)"
+assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 03-agent-browser -q"
+
 # ── Archive drift gate (P3-06 step (c)2) ─────────────────────────────────────
 echo ""
 echo "═══ Bundled archive drift gate ═══"

@@ -450,6 +450,82 @@ def run_phase(
 
 
 # ---------------------------------------------------------------------------
+# U106 — smoke_first(): the shared one-proof-create-before-a-bulk-run gate.
+#
+# The community/course builders each drive a potentially LONG bulk walk after
+# a single object is created — community: create ONE group, then add N
+# channels; course: create ONE course, then add N modules/lessons. Nothing
+# proved the FIRST bulk item actually landed before the walk committed to the
+# rest of a long (and, on a live account, expensive) run. This is the shared
+# gate: run ONE proof-create, verify it with a STORE-DELTA assertion (never a
+# CLI "✓ Done" — that is a FALSE PASS if it created nothing; the snapshot/
+# store delta is the only honest arbiter), and ONLY on a PASS let the caller
+# proceed into the rest of the bulk walk. A FAILING smoke raises
+# ``SmokeFirstFailed`` before a single additional bulk item is attempted.
+#
+# Generalized here (U106) for the community/course/channel builders; the same
+# shape (create_fn + verify_fn, no I/O of its own) is what U30 lifts from the
+# survey builder for the iframe/page-code drag surfaces — whichever unit lands
+# first, the other's call sites are meant to converge on this ONE helper
+# rather than each builder growing its own ad hoc "create the first one, then
+# loop" gate.
+# ---------------------------------------------------------------------------
+class SmokeFirstFailed(RuntimeError):
+    """Raised when the ONE proof-create step's store-delta verification fails.
+    The caller MUST NOT enter the bulk run — carries the create_fn() result and
+    the verify_fn() verdict for diagnostics (never swallowed, never retried
+    silently)."""
+
+    def __init__(self, step: str, reason: str, *, result: Any = None, verdict: Any = None):
+        self.step = step
+        self.reason = reason
+        self.result = result
+        self.verdict = verdict
+        super().__init__(f"SMOKE-FIRST FAILED @ {step}: {reason} — STOP before the bulk run.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"step": self.step, "reason": self.reason,
+                "result": _jsonable(self.result), "verdict": _jsonable(self.verdict)}
+
+
+def smoke_first(
+    step: str,
+    create_fn: Callable[[], Any],
+    verify_fn: Callable[[Any], Any],
+    *,
+    log: Optional[Callable[[str], None]] = None,
+) -> Any:
+    """Run ONE proof-create, then gate the caller's bulk run on its verify.
+
+    ``create_fn()`` performs the single real proof-create (e.g. add the FIRST
+    channel / FIRST lesson) and returns whatever the caller needs to keep (a
+    receipt, an identity dict, ...). ``verify_fn(result)`` performs the
+    STORE-DELTA assertion — return a plain bool, or a dict carrying at least
+    ``{"ok": bool}`` for a richer verdict recorded in the failure. This
+    function does no browser/network I/O of its own: both callables are
+    caller-injected, exactly like every other Skill-6 dependency-injected
+    helper (``ghl_selector_drift_probe``'s ``finder``/``page_fetcher`` — module
+    renamed from ``ghl_selector_canary`` by U30/B-U16).
+
+    On a PASS, returns ``create_fn()``'s result unchanged so the caller can
+    fold the smoke step's own object straight into its results/receipts.
+    On a FAIL, raises ``SmokeFirstFailed`` — the caller's bulk loop (every
+    item after the smoke) must never be reached; this function itself never
+    loops or retries, it runs the ONE proof exactly once.
+    """
+    result = create_fn()
+    verdict = verify_fn(result)
+    ok = bool(verdict.get("ok")) if isinstance(verdict, dict) else bool(verdict)
+    if log:
+        log(f"smoke_first[{step}]: {'PASS' if ok else 'FAIL'}")
+    if not ok:
+        raise SmokeFirstFailed(
+            step, "store-delta assertion failed on the proof-create — bulk run aborted",
+            result=result, verdict=verdict)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # U10 — the uniform RUN REPORT
 # ---------------------------------------------------------------------------
 RUN_REPORT_WIDTH = 78
@@ -785,6 +861,33 @@ def _selftest() -> int:  # pragma: no cover - exercised by tests/ too
             errors.append("RUN REPORT block missing its header / resume row")
         if st2.run_id not in block:
             errors.append("RUN REPORT does not print the run id in the resume command")
+
+    # U106 — smoke_first(): PASS returns the create_fn() result unchanged.
+    calls: List[str] = []
+    result = smoke_first(
+        "demo:smoke", lambda: (calls.append("create"), "created-thing")[1],
+        lambda r: {"ok": r == "created-thing"})
+    if result != "created-thing" or calls != ["create"]:
+        errors.append(f"smoke_first PASS path wrong: result={result!r} calls={calls!r}")
+
+    # U106 — smoke_first(): FAIL raises SmokeFirstFailed BEFORE any bulk item,
+    # and the exception carries the create result + verdict for diagnostics.
+    try:
+        smoke_first("demo:smoke-fail", lambda: "half-made", lambda r: False)
+        errors.append("smoke_first with a failing verify_fn did not raise")
+    except SmokeFirstFailed as sf:
+        if sf.step != "demo:smoke-fail" or sf.result != "half-made":
+            errors.append(f"SmokeFirstFailed carried wrong step/result: {sf.to_dict()}")
+
+    # U106 — smoke_first(): a dict verdict with ok=False also fails, and its
+    # richer verdict is preserved on the exception (not just a bare bool).
+    try:
+        smoke_first("demo:smoke-dict", lambda: "x",
+                    lambda r: {"ok": False, "present_in_nav": False})
+        errors.append("smoke_first with a dict verdict ok=False did not raise")
+    except SmokeFirstFailed as sf:
+        if sf.verdict.get("present_in_nav") is not False:
+            errors.append(f"SmokeFirstFailed dropped the rich verdict: {sf.to_dict()}")
 
     for e in errors:
         print(f"FAIL: {e}", file=sys.stderr)

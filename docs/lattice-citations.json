@@ -1,0 +1,106 @@
+{
+  "_doc": "docs/CONTENT-CONVERSATION-LATTICE.md",
+  "_purpose": "Machine-readable source of truth for the U89/GK-27 QC citation tripwires wired into each of the five skills' QC gates (03-agent-browser, 06-ghl-install-pages, 35-social-media-planner, 38-conversational-ai-system, 44-convert-and-flow-operator). docs/tools/check_lattice_citation.py reads this file. Every 'line' citation is 1-indexed and must match the CURRENT content of the named file at that exact line -- if the cited file drifts (line moves, quote changes, or file is deleted), the owning skill's QC gate fails until this manifest AND the lattice doc's edge table are both updated to match the new ground truth. Keep this file and the lattice doc's G+K.1 edge table in lockstep -- they describe the same edges.",
+  "skill_pointers": {
+    "03-agent-browser": { "file": "SKILL.md", "must_contain": "docs/CONTENT-CONVERSATION-LATTICE.md" },
+    "06-ghl-install-pages": { "file": "SKILL.md", "must_contain": "docs/CONTENT-CONVERSATION-LATTICE.md" },
+    "35-social-media-planner": { "file": "SKILL.md", "must_contain": "docs/CONTENT-CONVERSATION-LATTICE.md" },
+    "38-conversational-ai-system": { "file": "SKILL.md", "must_contain": "docs/CONTENT-CONVERSATION-LATTICE.md" },
+    "44-convert-and-flow-operator": { "file": "SKILL.md", "must_contain": "docs/CONTENT-CONVERSATION-LATTICE.md" }
+  },
+  "edges": [
+    {
+      "id": "E1-posting-rail",
+      "label": "Skill 35 -> Skill 44 (posting tier ladder: Tier 0 caf social create-post -> Tier 1 -> Tier 2 -> direct API)",
+      "owner_skill": "35-social-media-planner",
+      "citations": [
+        { "file": "35-social-media-planner/INSTALL.md", "line": 240, "must_contain": "Tier 0 `caf social create-post`" }
+      ]
+    },
+    {
+      "id": "E2-weekly-landing-page",
+      "label": "Skill 35 -> Skill 6 (Gap C: optional themed weekly landing page via funnel_matcher; client-provided link ALWAYS wins)",
+      "owner_skill": "35-social-media-planner",
+      "citations": [
+        { "file": "35-social-media-planner/CHANGELOG.md", "line": 59, "must_contain": "funnel_matcher.py --match" }
+      ]
+    },
+    {
+      "id": "E2-companion-funnel-matcher-tooling",
+      "label": "Skill 6's funnel_matcher tooling backing Gap C exists on disk (companion to E2)",
+      "owner_skill": "06-ghl-install-pages",
+      "citations": [
+        { "file": "06-ghl-install-pages/tools/funnel_matcher.py", "exists": true },
+        { "file": "06-ghl-install-pages/tools/funnel_matcher_cli.py", "exists": true }
+      ]
+    },
+    {
+      "id": "E3-inbound-ownership",
+      "label": "Inbound ownership: Skill 38 owns EVERY inbound conversation Skill 35's CTAs generate; Skill 35 never answers a conversation itself",
+      "owner_skill": "38-conversational-ai-system",
+      "citations": [
+        { "file": "38-conversational-ai-system/SKILL.md", "line": 35, "must_contain": "Skill 38 OWNS every inbound conversation those CTAs generate; Skill 35 never answers a conversation itself." }
+      ]
+    },
+    {
+      "id": "E3-reciprocal-inbound",
+      "label": "Skill 35's reciprocal cross-reference acknowledging Skill 38's inbound ownership",
+      "owner_skill": "35-social-media-planner",
+      "citations": [
+        { "file": "35-social-media-planner/SKILL.md", "line": 131, "must_contain": "Skill 38 owns the conversations these CTAs generate" }
+      ]
+    },
+    {
+      "id": "E4-build-path-ladder",
+      "label": "Build-path ladder: Skill 38 -> Skill 44 (caf-direct Option 1 PRIMARY) -> manual Build-with-AI paste (Option 2) when caf/Firebase token absent",
+      "owner_skill": "38-conversational-ai-system",
+      "citations": [
+        { "file": "38-conversational-ai-system/SKILL.md", "line": 33, "must_contain": "workflow BUILDS route through Skill 44" },
+        { "file": "38-conversational-ai-system/SKILL.md", "line": 55, "must_contain": "NOT a hard prereq" }
+      ]
+    },
+    {
+      "id": "E5-funnel-seam",
+      "label": "Funnel seam: Skill 6 -> Skill 44 (Full-Funnel Pipeline Integration)",
+      "owner_skill": "06-ghl-install-pages",
+      "citations": [
+        { "file": "06-ghl-install-pages/SKILL.md", "line": 81, "must_contain": "Full-Funnel Pipeline Integration (Skill 44 seam)" }
+      ]
+    },
+    {
+      "id": "E6-backstop-44-to-3",
+      "label": "Backstop rail: Skill 44 -> Skill 3 (agent-browser Tier 4 fallback when the Firebase refresh token is absent)",
+      "owner_skill": "44-convert-and-flow-operator",
+      "citations": [
+        { "file": "44-convert-and-flow-operator/SKILL.md", "line": 3, "must_contain": "Tier 4 agent-browser as the backstop" }
+      ]
+    },
+    {
+      "id": "E7-backstop-6-to-3",
+      "label": "Backstop rail: Skill 6 -> Skill 3 (browser-driven page-build path)",
+      "owner_skill": "06-ghl-install-pages",
+      "citations": [
+        { "file": "06-ghl-install-pages/ghl-browser-builder-full.md", "exists": true },
+        { "file": "06-ghl-install-pages/TECHNIQUES-cross-origin-iframe-dragdrop.md", "exists": true },
+        { "file": "06-ghl-install-pages/v2-autonomous-build-sop.md", "exists": true },
+        { "file": "06-ghl-install-pages/tools/SELECTORS-LIVE-funnel.md", "exists": true }
+      ]
+    },
+    {
+      "id": "E8-skill3-backstop-ack",
+      "label": "Skill 3's own acknowledgment of being Skill 44's and Skill 6's backstop consumer contract",
+      "owner_skill": "03-agent-browser",
+      "citations": [
+        { "file": "03-agent-browser/scripts/lib-backstop-conformance.sh", "line": 5, "must_contain": "Skill 44's Tier-4 fallback and Skill 6's browser_manager.sh assume" }
+      ]
+    },
+    {
+      "id": "E9-graphics-image-handoff",
+      "label": "Graphics department <-> Skill 45 <-> Skill 35 image handoff (Section 19a input-quality gate)",
+      "owner_skill": "35-social-media-planner",
+      "citations": [
+        { "file": "35-social-media-planner/INSTRUCTIONS.md", "line": 105, "must_contain": "Graphics department" }
+      ]
+    }
+  ]
+}
