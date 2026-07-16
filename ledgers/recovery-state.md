@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T05:10:02Z
-openclaw-onboarding `origin/main` HEAD: `42f4cb8eb4424307e92f82a5b56a765cc69802f7`
+Generated: 2026-07-16T05:20:03Z
+openclaw-onboarding `origin/main` HEAD: `072ba676c3107d46c72cf62d8de202bc84773a72`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)
@@ -25,8 +25,8 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 | U24 | `skill6-v2/U24` | `fc9e636e` | True | `1de2099a` | v20.0.30 | verified | 9.0 |
 | U25 | `skill6-v2/U25` | `f95e3fe3` | True | `d177e7e7` | v20.0.21 | verified | - |
 | U27 | `skill6-v2/U27` | `cba9065a` | True | `6234014b` | v20.0.25 | verified | 9.0 |
-| U28 | `skill6-v2/U28` | `46ed631d` | False | - | - | pending | - |
-| U29 | `skill6-v2/U29` | `cffa32b7` | False | - | - | pending | - |
+| U28 | `skill6-v2/U28` | `46ed631d` | True | `78f73b1a` | v20.0.52 | verified | - |
+| U29 | `skill6-v2/U29` | `cffa32b7` | True | `a2f4dc67` | v20.0.53 | verified | - |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | False | - | - | pending | - |
 | U39 | `skill6-v2/U39` | `49015cfc` | False | - | - | pending | - |
@@ -111,6 +111,6 @@ blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U9, U14
+- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: U28, U29
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
