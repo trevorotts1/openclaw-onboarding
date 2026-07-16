@@ -308,12 +308,21 @@ def ingest_task(
                           the FIX-COPY-01 copy-dependency card to route a P2-COPY
                           job to ``'marketing'`` (the Conversion Copywriter's
                           department, per SOP-07 Step 3) rather than the builder's
-                          own web-development / funnels column. NOTE: like
+                          own web-development / funnels column. NOTE (C-13/U44 —
+                          corrected 2026-07; was stale "CEO catch-all"): like
                           ``'funnels'``, a ``'marketing'`` slug that the Command
                           Center's departments.config.ts has not yet registered
-                          resolves to the CEO catch-all column server-side —
-                          visible, never lost; the LOCAL waiting_on_dependency
-                          receipt is the binding gate, the card is visibility only.
+                          resolves server-side to the honest ``general-task``
+                          catch-all ("General Stuff", D-C2) — tagged
+                          ``resolved_by='unrecognized-slug->general'`` by
+                          INGEST-06 (``ingest/route.ts``'s ``resolveWorkspaceId``,
+                          the "EXPLICIT-but-unrecognized department slug" tier) —
+                          NOT the CEO/master-orchestrator workspace, which is a
+                          separate, later fallback tier that only fires for a
+                          BARE task with no department_slug supplied at all.
+                          Visible, never lost either way; the LOCAL
+                          waiting_on_dependency receipt is the binding gate, the
+                          card is visibility only.
         source:           OPTIONAL explicit source-tag override (defaults to the
                           job_type-derived source, or to ``department_slug`` when
                           only the slug is overridden).
@@ -390,11 +399,20 @@ def ingest_task(
     # Map job_type -> department_slug.
     job_type_norm = (job_type or "funnel").lower().strip()
     if job_type_norm in ("funnel", "sales-funnel", "optin", "opt-in", "multistep"):
-        # NOTE: department_slug='funnels' currently mis-resolves to the CEO catch-all
-        # in the Command Center (departments.config.ts has no 'funnels' dept; only
-        # 'web-development' resolves at :457). Option 2 (fast-follow) will add a
-        # dedicated 'funnels'/'surveys' dept + workspace-seed migration. Until then
-        # funnels land in the catch-all column — visible, not lost.
+        # NOTE (C-13(e)/U44 — corrected 2026-07; was stale "CEO catch-all"):
+        # department_slug='funnels' has no registered department in the Command
+        # Center (departments.config.ts has no 'funnels' dept; only
+        # 'web-development' resolves at :457). At CC main, INGEST-06
+        # (ingest/route.ts's resolveWorkspaceId, the "EXPLICIT-but-unrecognized
+        # department slug" tier) routes it to the honest 'general-task'
+        # catch-all ("General Stuff", D-C2) — tagged
+        # resolved_by='unrecognized-slug->general' — NOT the CEO/
+        # master-orchestrator workspace (that fallback is a separate, later
+        # tier that only fires for a BARE task with no department_slug at
+        # all). Option 2 (D-C3, fast-follow) would add a dedicated
+        # 'funnels'/'surveys' dept + workspace-seed migration. Until then
+        # funnels land in the honest general-task catch-all column — visible,
+        # not lost, not mis-labeled as the CEO's.
         department_slug = "funnels"
         source = "funnel"
     elif job_type_norm in ("survey", "form", "quiz"):

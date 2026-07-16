@@ -14,7 +14,12 @@
 #                            exists BY KEY. A missing pipeline STOPs setup with the
 #                            AF-AE-SNAPSHOT-PIPELINE-MISSING surface (import the
 #                            snapshot); a missing field STOPs with
-#                            AF-AE-SNAPSHOT-FIELD-MISSING.
+#                            AF-AE-SNAPSHOT-FIELD-MISSING. GK-09 (U71): the pipeline
+#                            read falls back to the Podcast gate's proven
+#                            Firebase-JWT internal rail if the public v2 (PIT)
+#                            surface hits an edge/WAF block AND a Firebase refresh
+#                            token is configured for this client; unconfigured
+#                            clients see the exact same HELD behavior as before.
 #   provision-custom-values  FILL the four per-client location custom VALUES the
 #                            snapshot ships as REPLACE-ME placeholders
 #                            (anthology_webhook_url, anthology_hook_secret,
@@ -274,8 +279,45 @@ def _contract_field_keys(contract: dict):
     return [f["intended_key"] for f in ((contract.get("custom_fields") or {}).get("fields") or [])]
 
 
+def _pipelines_with_fallback(client, location_id: str, *, out, internal_rail_factory=None):
+    """GK-09 (U71): read pipelines via the public v2 (PIT) surface; on an
+    UpstreamBlockedError (edge/WAF 403 that does NOT match GHL's own
+    scope-denial signature -- never a proven token problem) fall back to the
+    Firebase-JWT internal rail PORTED from the Podcast gate's proven pattern,
+    IF the client has a Firebase refresh token configured. Returns the
+    pipeline list on success. Raises reg.UpstreamBlockedError (unchanged, for
+    the existing HELD path) when the fallback could not be attempted or did
+    not clear either -- so a caller with no Firebase token configured sees
+    EXACTLY the same HELD behavior as before this fallback existed."""
+    try:
+        return client.list_pipelines(location_id)
+    except reg.UpstreamBlockedError as exc:
+        factory = internal_rail_factory or reg.InternalRailClient
+        label, refresh = reg.resolve_firebase_refresh_token()
+        if not refresh:
+            out.write(
+                "[snapshot verify] public-surface edge block (%s). No Firebase refresh "
+                "token is SET for the internal-rail fallback (checked: %s) -- export the "
+                "client's OWN Convert and Flow Token Grabber value under one of those "
+                "labels to enable it, or re-run from the operator's own authenticated "
+                "Convert and Flow session.\n" % (exc, ", ".join(reg.FIREBASE_REFRESH_LABELS)))
+            raise
+        try:
+            rail = factory(refresh)
+            pipelines = rail.list_pipelines(location_id)
+        except reg.InternalRailUnavailable as rail_exc:
+            out.write("[snapshot verify] public-surface edge block (%s); the Firebase-JWT "
+                      "internal-rail fallback (label %s) also did not clear: %s\n"
+                      % (exc, label, rail_exc))
+            raise exc
+        out.write("[snapshot verify] public-surface edge block cleared via the Firebase-JWT "
+                  "internal rail (label %s).\n" % label)
+        return pipelines
+
+
 def verify_imported(client, location_id: str, contract: dict, field_map: dict, *,
-                    dry_run: bool = False, out=None, jsonout=None) -> int:
+                    dry_run: bool = False, out=None, jsonout=None,
+                    internal_rail_factory=None) -> int:
     out = out or sys.stderr
     masked = reg._mask_location(location_id)
     if dry_run:
@@ -295,7 +337,8 @@ def verify_imported(client, location_id: str, contract: dict, field_map: dict, *
 
     # ---- pipeline present BY NAME with every stage ----
     try:
-        pipelines = client.list_pipelines(location_id)
+        pipelines = _pipelines_with_fallback(client, location_id, out=out,
+                                             internal_rail_factory=internal_rail_factory)
     except reg.ScopeDenied:
         reg._stop(out, "The Convert and Flow token cannot READ pipelines on this location.",
                   ["Location marker: %s" % masked,
@@ -464,6 +507,38 @@ class _FakeCaf:
         return {"id": cv_id, "name": name}
 
 
+class _FakeCafBlocked:
+    """GK-09: a CafClient stand-in whose pipeline read is edge/WAF-blocked (an
+    UpstreamBlockedError, not a scope denial) -- exercises the
+    _pipelines_with_fallback ladder in verify_imported without any network."""
+
+    def __init__(self, *, fields=None):
+        self._fields = fields if fields is not None else []
+
+    def list_pipelines(self, location_id):
+        raise reg.UpstreamBlockedError(
+            "HTTP 403 did NOT match a Convert and Flow scope-denial signature (fixture)")
+
+    def list_custom_fields(self, location_id):
+        return list(self._fields)
+
+
+class _FakeInternalRail:
+    """GK-09: injected in place of reg.InternalRailClient via
+    internal_rail_factory. Constructed with the resolved refresh token
+    (mirrors the real factory signature); `outcome` selects the fixture path."""
+
+    def __init__(self, refresh_token, *, outcome="ok", pipelines=None):
+        self._refresh_token = refresh_token
+        self._outcome = outcome
+        self._pipelines = pipelines if pipelines is not None else []
+
+    def list_pipelines(self, location_id):
+        if self._outcome == "unavailable":
+            raise reg.InternalRailUnavailable("fixture: internal rail also blocked")
+        return list(self._pipelines)
+
+
 def _fixture_pipeline(contract, *, drop_stage=None):
     pl = contract["pipeline"]
     stages = [{"name": s["name"], "id": "stg-%d" % s["position"]}
@@ -558,6 +633,42 @@ def self_test() -> int:
                        fields=_fixture_fields(field_map, drop="contact.anthology_cover_choice"))
     assert verify_imported(nofield, "loc_QcDX", contract, field_map, out=dev) == EX_STOP, "missing field must STOP"
 
+    # -- GK-09 (U71): WAF/edge-403 fallback ladder on verify-imported ----------------
+    blocked = _FakeCafBlocked(fields=_fixture_fields(field_map))
+    good_pipelines = [_fixture_pipeline(contract)]
+
+    # (a) edge block + NO Firebase refresh token configured -> unchanged HELD
+    #     behavior (exact regression proof: this fallback must never turn an
+    #     unconfigured client into a silent failure or a false pass).
+    _fb_saved = {n: os.environ.pop(n, None) for n in reg.FIREBASE_REFRESH_LABELS}
+    try:
+        rc = verify_imported(blocked, "loc_QcDX", contract, field_map, out=dev)
+        assert rc == EX_HELD, "edge block with no Firebase token configured must HELD, got %s" % rc
+        assert "internal-rail fallback" in dev.getvalue() or "No Firebase refresh" in dev.getvalue()
+
+        # (b) edge block + Firebase token configured + internal rail SUCCEEDS -> OK
+        os.environ["ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN"] = "rt-fixture"
+        dev2 = io.StringIO()
+        rc = verify_imported(
+            blocked, "loc_QcDX", contract, field_map, out=dev2,
+            internal_rail_factory=lambda rt: _FakeInternalRail(rt, outcome="ok", pipelines=good_pipelines))
+        assert rc == EX_OK, "internal-rail fallback success must clear verify-imported, got %s" % rc
+        assert "cleared via the Firebase-JWT internal rail" in dev2.getvalue()
+
+        # (c) edge block + Firebase token configured + internal rail ALSO blocked -> HELD
+        dev3 = io.StringIO()
+        rc = verify_imported(
+            blocked, "loc_QcDX", contract, field_map, out=dev3,
+            internal_rail_factory=lambda rt: _FakeInternalRail(rt, outcome="unavailable"))
+        assert rc == EX_HELD, "internal-rail fallback failure must still HELD (never a false pass), got %s" % rc
+        assert "also did not clear" in dev3.getvalue()
+    finally:
+        for n, v in _fb_saved.items():
+            if v is None:
+                os.environ.pop(n, None)
+            else:
+                os.environ[n] = v
+
     # -- stamp_version writes a marker ------------------------------------------------
     td = Path(tempfile.mkdtemp(prefix="ae-snap-"))
     assert stamp_version(contract, td, out=dev) == EX_OK
@@ -567,7 +678,9 @@ def self_test() -> int:
 
     print("anthology_snapshot self-test: OK "
           "(contract<->field-map coherence, contract-driven fill, create/update idempotency, "
-          "secret never printed, scope STOP, require-live HELD, verify pipeline/stage/field, stamp-version)")
+          "secret never printed, scope STOP, require-live HELD, verify pipeline/stage/field, "
+          "GK-09 WAF/edge-403 fallback ladder (no-token HELD unchanged / internal-rail-clears OK / "
+          "internal-rail-also-blocked HELD), stamp-version)")
     return EX_OK
 
 
