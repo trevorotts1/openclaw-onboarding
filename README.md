@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.57.
+> **Version:** see `/version` - this repo at v20.0.58.
+>
+> **NOTE (v20.0.58) — ledger hygiene: footer roll-call regenerated from git truth + ONB roll-call gap-fill (13 units); U8 no longer blocked.** Ledger-only pass on the Skill 6 blended-persona kanban (no code change). Regenerates the stale footer tally ("23 verified / 1 blocked / 88 pending") from a machine-parse of all 117 rows — 63 verified, 1 merged-offline [U22], 2 deferred [U63/U65], 1 partial [U64], 50 pending = 117; U8's stale "blocked" note corrected to `verified` (zero blocked units remain). Back-fills git-truth roll-call notes (merge sha + tag) for the 13 ONB units merged since the last snapshot (U9/U14/U28/U29/U31/U53/U67/U68/U70/U82/U83/U85/U88). U53's row already reflects both legs (CC v6.0.36 + ONB v20.0.57), D12 decision + live loop-proof still owed to the operator. The auto-reconciled rows (U58/U95/U103/U105, all Command Center) already read honestly; U92 stays `verified` (independently judge-verified, not auto-reconciled). No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.57) — feat(skill6): Skill 6 U53 (HL/U68) ONB leg — crown-executor single-path static regression lock; D12 decision + live loop-proof still owed.** Merges the openclaw-onboarding leg of the both-repo U53 self-updater unit: `.github/workflows/u53-crown-executor-single-path-guard.yml` + `tests/probe/test-u53-hl-u68-crown-executor-single-path.sh` — a static, spec-referenced regression lock that fails the build if `update-skills.sh`'s two D5 call sites or `run-full-install.sh`'s Phase 6 caller ever inline their own CC checkout mutation instead of delegating through the single crowned executor (`cc_route_update_through_canonical_path()` -> the pulled CC's own `update.sh`, `CC_APP_DIR` pinned). The crowning itself already landed via P1-07 (2026-07-11); this adds the missing invariant lock at both call-site layers. Both-repo unit: the CC leg (canonical-path + AGENTS.md cleanup) is already on blackceo-command-center v6.0.36. The D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run remain gated on the operator, not resolved here. Merging this clears the reconciler's fail-closed integrity alarm (this ONB leg was the unmerged-but-verified mismatch). Proof (merged tree): the crown-executor single-path probe PASS; full gate battery GREEN incl. agent-browser guard exit 0. No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -121,7 +123,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.57** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.58** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
