@@ -52,12 +52,12 @@ escalated), and never client-facing.
    proposal-only everywhere until a per-box stamp. A healer that loops is stopped by
    its OWN breaker, never by discovering the damage later. **Burn-in exit gate:**
    before any `arm`, confirm `collect_windows` yields non-zero `paid_tokens` on the
-   operator canary's real trajectory — a silently-zero token feed (a schema field-name
+   operator box's real trajectory — a silently-zero token feed (a schema field-name
    drift the multi-candidate reader did not cover) would make D2 blind again, the exact
    Star-furnace blind spot, so a live non-zero reading is the arming precondition.
-8. **CANARY, THEN HOLD.** The full install plus drill battery is proven on the
-   OPERATOR box first; fleet rollout is HELD at repo-only until the operator's
-   explicit word. The system obeys the laws it enforces.
+8. **PROVE ON THE OPERATOR BOX, THEN HOLD.** The full install plus drill battery is
+   proven on the OPERATOR box first; fleet rollout is HELD at repo-only until the
+   operator's explicit word. The system obeys the laws it enforces.
 
 ## Reuse before rebuild (this skill integrates, it does not reinvent)
 

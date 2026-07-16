@@ -355,7 +355,10 @@ class TestCLIWiring(unittest.TestCase):
         self.assertIn("term", _ALLOWLIST_DATA)
         self.assertIn("legacy_filenames", _ALLOWLIST_DATA)
         self.assertIn("vendor_literals", _ALLOWLIST_DATA)
-        self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 6)
+        # U93 (X/U-X3) landed its two-file rename and shrank this list from 6
+        # to 4 per the D20 dependency note ("guard allowlist shrinks in the
+        # same PR") — the remaining 4 are U30's, until that unit lands too.
+        self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 4)
 
     def test_vendor_literals_empty_by_default(self):
         """Pins the allowlist's own stated default (its $comment: 'Empty by

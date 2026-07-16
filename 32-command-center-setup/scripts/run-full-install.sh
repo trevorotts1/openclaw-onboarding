@@ -342,7 +342,7 @@ _cc_model_is_reasoning_judge() {
 # SAME model naming the client's own agents already route through (whatever that
 # endpoint is). We deliberately do NOT rewrite '<m>:cloud' -> 'ollama-cloud/<m>':
 # that would strip the ':cloud' tag some endpoints require (verified on the
-# operator canary — the local Ollama proxy 404s on the bare id, 200s on <m>:cloud).
+# operator's own box — the local Ollama proxy 404s on the bare id, 200s on <m>:cloud).
 _cc_normalize_judge_id() {
   local id="${1:-}"
   id="${id#ollama-cloud/}"
@@ -557,7 +557,7 @@ cc_write_env_local() {
   #
   # JUDGE != WRITER design note: the CC scorer only enforces judge!=writer when the
   # WRITER model is known (input.writerModel). Today every agents.model column is
-  # blank fleet-wide (verified on the operator canary: 0 of 290 agents carry a
+  # blank fleet-wide (verified on the operator's own box: 0 of 290 agents carry a
   # model), so writerModel is null and the equality guard is SKIPPED — therefore
   # ANY eligible client-owned reasoning model is a safe judge. When agent models
   # are later populated, cc_resolve_judge_model's family precedence still picks a
@@ -566,7 +566,7 @@ cc_write_env_local() {
   # Idempotent: an operator-set QC_JUDGE_MODEL is PRESERVED, never overwritten.
   # NOTE (endpoint dependency, flagged separately): scoring ALSO requires the box's
   # Ollama Cloud connector to reach a working endpoint with the client's key. On
-  # the operator canary the default https://ollama.com returned 401 for every
+  # the operator's own box the default https://ollama.com returned 401 for every
   # stored key and the working sovereign path was the box's local Ollama proxy
   # (OLLAMA_CLOUD_BASE_URL). Provisioning that endpoint is intentionally OUT OF
   # SCOPE here (per-box; never guess another box's endpoint) — this block sets

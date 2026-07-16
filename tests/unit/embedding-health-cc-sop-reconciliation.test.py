@@ -5,7 +5,7 @@ tests/unit/embedding-health-cc-sop-reconciliation.test.py
 P4-03 step 5 — proves shared-utils/embedding_health.py::check_cc_sop_index()
 no longer reports a false PASS on a box that has SOP content loaded (`sops`
 table populated) but ZERO sop_embeddings rows — the exact "two health surfaces
-disagree" bug: 32-command-center-setup/scripts/heartbeat-canary-probe.py
+disagree" bug: 32-command-center-setup/scripts/heartbeat-embedding-probe.py
 correctly screams `dark` for this state (sops_total>0, sop_embeddings empty),
 while embedding_health.py::check_cc_sop_index previously treated
 `leg_b_stamp_match is None` (no stamp table — CC never creates one) as NOT a
@@ -102,7 +102,7 @@ class TestDarkBoxNowFails(unittest.TestCase):
 
     @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
     def test_agrees_with_heartbeat_probe_dark_semantics(self, _mock_smoke):
-        """heartbeat-canary-probe.py's own dark_reason for this exact state is
+        """heartbeat-embedding-probe.py's own dark_reason for this exact state is
         'sop_embeddings table exists but is empty — embeddings never ran'.
         Both surfaces must now independently conclude failure for the SAME box."""
         cc_dir = _make_cc_dir(sops_rows=10, embedded_rows=0)

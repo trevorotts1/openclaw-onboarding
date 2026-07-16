@@ -58,9 +58,10 @@ anything, and (by default) not an auto-healer.
    the rule is satisfied vacuously at runtime AND enforced statically over every
    shipped file. NEVER ship a `claude-*` / `anthropic/*` / `us.anthropic.*` runtime
    identifier; the signature catalog names those families only as deny data.
-8. CANARY, THEN HOLD. The full install plus drill battery is proven on the OPERATOR
-   box first; fleet rollout is HELD at repo-only until the operator's explicit word.
-   A repo merge is not a roll. The system obeys the laws it enforces.
+8. PROVE ON THE OPERATOR BOX, THEN HOLD. The full install plus drill battery is
+   proven on the OPERATOR box first; fleet rollout is HELD at repo-only until the
+   operator's explicit word. A repo merge is not a roll. The system obeys the laws
+   it enforces.
 
 ## Reuse before rebuild (this skill integrates, it does not reinvent)
 

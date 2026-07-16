@@ -14,7 +14,7 @@ pipeline. System 2 (corpora 5–6, TypeScript, the Command Center repo) was
 **broken as a fleet pipeline** before P4-03 — every client box burned its OWN
 key re-embedding an IDENTICAL shared SOP library, the table was never wired
 into install at all, and two health surfaces (`embedding_health.py` here vs.
-`heartbeat-canary-probe.py` in the CC repo) disagreed about the SAME box
+`heartbeat-embedding-probe.py` in the CC repo) disagreed about the SAME box
 state. P4-03 closes the gap: corpus 5 now has its own embed-once pipeline
 mirroring corpus 1's, and corpus 6's per-department vectors are cached
 instead of re-embedded on every dispatch. See
@@ -238,7 +238,7 @@ key ONLY on genuinely client-specific content — custom SOPs from
   disagree — `shared-utils/embedding_health.py::check_cc_sop_index` (leg-b
   now reads REAL row counts via `_read_cc_sop_row_counts`, not a stamp table
   CC's migrations never create) and the CC repo's own
-  `32-command-center-setup/scripts/heartbeat-canary-probe.py` (row-count/
+  `32-command-center-setup/scripts/heartbeat-embedding-probe.py` (row-count/
   coverage gate, cron'd every 6h). See `tests/unit/embedding-health-cc-sop-reconciliation.test.py`.
 - **Standing guard (EMBED-3/EMBED-8 analog)**: the client-box import path
   asserts `embedding_model`+`dims` match between the shipped asset and the

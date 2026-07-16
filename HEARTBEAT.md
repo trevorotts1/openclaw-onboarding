@@ -125,14 +125,17 @@ A gateway restart is recommended for changes to take effect.
 
 ---
 
-## FLEET EMBEDDING CANARY — Every 6 Hours
+## FLEET EMBEDDING HEALTH PROBE — Every 6 Hours
 
-The embedding canary probe checks that the Skill 32 Command Center's semantic
+The embedding health probe checks that the Skill 32 Command Center's semantic
 search layer is alive on every box that has a Command Center installed. It
 runs as a lightweight database read (no API calls, no model inference) and
 writes one row into the `system_status` table in `mission-control.db`.
 
-Script: `32-command-center-setup/scripts/heartbeat-canary-probe.py`
+Script: `32-command-center-setup/scripts/heartbeat-embedding-probe.py`
+(the previous script filename still resolves for one release — it is now a
+thin compatibility shim in the same directory that execs the file above,
+unchanged)
 
 ### What the probe checks
 
@@ -142,7 +145,7 @@ Script: `32-command-center-setup/scripts/heartbeat-canary-probe.py`
 | Persona-index count | `persona_index` / `personas` / side-car `persona-index.db` | count = 0 or table missing |
 | Embedding coverage | `sop_embeddings_count / sops_total` | coverage < 40% |
 | Embedding staleness | `MAX(updated_at)` in sop_embeddings | age > 30 days = dark; age > 7 days = degraded |
-| Semantic vs keyword recall | canary phrase "onboard" against both indexes | recall_ratio < 0.5 = degraded |
+| Semantic vs keyword recall | probe phrase "onboard" against both indexes | recall_ratio < 0.5 = degraded |
 
 ### Status levels
 
@@ -154,17 +157,17 @@ Script: `32-command-center-setup/scripts/heartbeat-canary-probe.py`
 
 On a Mac client box:
 ```bash
-python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-canary-probe.py
+python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py
 ```
 
 Dry-run (no DB write, no Rescue Rangers alert):
 ```bash
-python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-canary-probe.py --dry-run
+python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py --dry-run
 ```
 
 On a Hostinger VPS (inside the container):
 ```bash
-docker exec <container> python3 /data/.openclaw/skills/32-command-center-setup/scripts/heartbeat-canary-probe.py
+docker exec <container> python3 /data/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py
 ```
 
 ### Reading the system_status table
@@ -212,7 +215,7 @@ When a box goes dark the probe calls:
 ```bash
 openclaw message send --channel telegram \
   -t "${RESCUE_RANGERS_HELP_CHAT_ID}" \
-  -m "[heartbeat-canary / <hostname>] EMBEDDING DARK
+  -m "[heartbeat-embedding-probe / <hostname>] EMBEDDING DARK
 Reason: <reason>
 Time: <ISO timestamp>
 Action: SSH in; run ingest-sop-library.sh <client-slug> <version>"
@@ -222,25 +225,25 @@ The `RESCUE_RANGERS_HELP_CHAT_ID` env var must be set on every box that has
 a Command Center installed. Use `~/clawd/fleet-heartbeat/scripts/propagate-rescue-chat-id.sh`
 to push it fleet-wide.
 
-### How to wire the canary as an OpenClaw cron
+### How to wire the probe as an OpenClaw cron
 
 Run this once per box after Skill 32 is installed:
 
 ```bash
 openclaw cron create \
-  --name heartbeat-embedding-canary \
+  --name heartbeat-embedding-probe \
   --schedule "0 */6 * * *" \
   --tz "America/New_York" \
   --agent main \
   --session isolated \
   --model "ollama/deepseek-v4-flash:cloud" \
   --tools exec \
-  --message "Run the fleet embedding canary probe: exec python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-canary-probe.py && echo CANARY_OK || echo CANARY_FAIL"
+  --message "Run the fleet embedding health probe: exec python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py && echo PROBE_OK || echo PROBE_FAIL"
 ```
 
 Verify the cron was created:
 ```bash
-openclaw cron list | grep heartbeat-embedding-canary
+openclaw cron list | grep heartbeat-embedding-probe
 ```
 
 Fire it immediately to confirm it works end-to-end:
@@ -250,7 +253,7 @@ openclaw cron run <cron-id-from-list>
 
 Expected output in the cron log:
 ```
-[heartbeat-canary] v1.0.0  box=<hostname>  db=/data/projects/command-center/mission-control.db
+[heartbeat-embedding-probe] v1.1.0  box=<hostname>  db=/data/projects/command-center/mission-control.db
   sops_total:           2555
   sop_embeddings_count: 2448
   persona_index_count:  142
@@ -261,7 +264,7 @@ Expected output in the cron log:
   semantic_recall_ratio:1.00
   status:               healthy
   wrote system_status id=<hex>
-CANARY_OK
+PROBE_OK
 ```
 
 ### Recovery when a box is dark
@@ -282,15 +285,15 @@ CANARY_OK
    python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/gemini-search.py \
        --rebuild-index
    ```
-5. Re-run the canary to confirm recovery (exit 0 = healthy):
+5. Re-run the probe to confirm recovery (exit 0 = healthy):
    ```bash
-   python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-canary-probe.py
+   python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py
    ```
 6. Reply to the Rescue Rangers alert with the resolution summary.
 
 ### Anti-patterns
 
 - Do NOT re-embed the persona corpus per-department (memory-bloat guard — see INSTALL.md Phase 4.2).
-- Do NOT run the canary with `--dry-run` on the live heartbeat cron — the cron must write to system_status or the dashboard has no data.
+- Do NOT run the probe with `--dry-run` on the live heartbeat cron — the cron must write to system_status or the dashboard has no data.
 - Do NOT ignore `degraded` status indefinitely — degraded converts to dark when embeddings exceed 30 days old.
 - Do NOT manually insert into `system_status` to fake health — the probe is the only writer.
