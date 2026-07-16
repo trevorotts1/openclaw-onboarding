@@ -87,11 +87,24 @@ from pathlib import Path
 # W0.6 (cover_render.py): services.leadconnectorhq.com is Cloudflare-fronted and
 # 403s urllib's default "Python-urllib/x.y" User-Agent at the WAF edge (CF error
 # 1010) BEFORE the request ever reaches Convert and Flow -- so a browser User-Agent
-# is REQUIRED on every request here too. Reuse the SINGLE constant of record rather
-# than re-typing the string (the sibling-import convention already used for the
-# delivery_report import in caf_delivery.py).
+# is REQUIRED on every request here too.
+#
+# GK-09 (U71): this module PREVIOUSLY reused cover_render.MOZILLA_UA (added for the
+# unrelated Kie result-CDN 403) rather than a dedicated constant. That string's
+# Chrome build segment is malformed ("Chrome/124.0" -- real Chrome UAs are always
+# four-segment, e.g. "124.0.0.0") and the WAF/edge 403 on
+# `anthology_snapshot.py verify-imported` was VERIFIED-IN-AUDIT-DOC to persist even
+# with that constant already wired in. `CAF_BROWSER_UA` below is instead PORTED
+# BYTE-FOR-BYTE from the Podcast gate's proven-live string (the pattern that passes
+# -- 58-podcast-production-engine/scripts/verify-podcast-ghl-workflows.py /
+# verify-podcast-smiq.py), so the Convert and Flow edge gets its own dedicated,
+# well-formed UA rather than a cross-purpose reuse.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cover_render import MOZILLA_UA  # noqa: E402  (sibling import after path bootstrap)
+
+CAF_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 # ---- exit codes -------------------------------------------------------------
 EX_OK, EX_ERR, EX_STOP, EX_HELD, EX_MISMATCH = 0, 1, 2, 3, 5
@@ -257,10 +270,10 @@ class CafClient:
             "Authorization": "Bearer %s" % self._token,
             "Version": CAF_VERSION_HEADER,
             "Accept": "application/json",
-            # W0.6: the Cloudflare edge fronting services.leadconnectorhq.com 403s
-            # urllib's default UA (CF 1010) before the request reaches Convert and
-            # Flow. A browser UA is REQUIRED for the request to be scope-checked.
-            "User-Agent": MOZILLA_UA,
+            # W0.6 / GK-09: the Cloudflare edge fronting services.leadconnectorhq.com
+            # 403s urllib's default UA (CF 1010) before the request reaches Convert
+            # and Flow. A browser UA is REQUIRED for the request to be scope-checked.
+            "User-Agent": CAF_BROWSER_UA,
         }
         data = None
         if body is not None:
@@ -290,8 +303,12 @@ class CafClient:
                     raise ScopeDenied("token not authorized for this scope (HTTP %s)" % code)
                 raise UpstreamBlockedError(
                     "HTTP %s did NOT match a Convert and Flow scope-denial signature "
-                    "-- likely a Cloudflare/WAF edge block (verify the browser "
-                    "User-Agent), NOT a token-scope problem" % code)
+                    "-- likely a Cloudflare/WAF edge block, NOT a token-scope problem. "
+                    "The request already carries a proven browser User-Agent "
+                    "(CAF_BROWSER_UA); if this persists, verify_imported's caller falls "
+                    "back to the Firebase-JWT internal rail (GK-09) where a refresh "
+                    "token is configured, or re-run from the operator's own "
+                    "authenticated Convert and Flow session" % code)
             if code in (400, 409, 422):
                 raise CafValidation("Convert and Flow rejected the request (HTTP %s)" % code)
             raise CafUnreachable("Convert and Flow HTTP %s on %s" % (code, method))
@@ -347,6 +364,129 @@ class CafClient:
                             % (urllib.parse.quote(location_id, safe=""), urllib.parse.quote(cv_id, safe="")),
                             body={"name": name, "value": value})
         return out.get("customValue") or out
+
+
+# ---------------------------------------------------------------------------
+# GK-09 (U71) -- Firebase-JWT internal rail. FALLBACK ONLY, attempted when the
+# public v2 (PIT) surface above hits an UpstreamBlockedError (edge/WAF 403, not
+# a proven scope problem). Ported byte-for-byte from the PROVEN Podcast-gate
+# pattern -- 58-podcast-production-engine/scripts/verify-podcast-ghl-workflows.py
+# and verify-podcast-smiq.py's _mint()/_get(): Firebase refresh-token -> id_token
+# exchange against securetoken.googleapis.com, then token-id/channel/source/
+# version/browser-UA headers against backend.leadconnectorhq.com.
+#
+# SCOPE, DELIBERATELY NARROW: only pipeline listing is ported here. That is the
+# ONE internal endpoint this repo has ALREADY proven live --
+# verify-podcast-smiq.py's `/opportunities/pipelines?locationId=` check. No
+# custom-fields internal path has been proven live anywhere in this repo;
+# inventing one here would violate the Skill 44 doctrine ("Do NOT add new
+# endpoints without verifying against the live backend") -- custom-fields reads
+# stay on the public v2 (PIT) surface, now with the corrected CAF_BROWSER_UA.
+#
+# CREDENTIAL SOVEREIGNTY: a Firebase refresh token is a DIFFERENT credential
+# from the PIT (a browser-session-derived token, not a Private Integration
+# Token), but it is STILL the CLIENT's own -- never a shared/pooled operator
+# token, per the 2026-07-14 operator ruling binding U69/U70/U71. The value is
+# NEVER printed (SET / NOT SET only), same as every other credential in this
+# module.
+# ---------------------------------------------------------------------------
+FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token?key=%s" % FIREBASE_API_KEY
+INTERNAL_API_BASE = "https://backend.leadconnectorhq.com"
+INTERNAL_VERSION_HEADER = "2021-07-28"
+
+FIREBASE_REFRESH_LABELS = (
+    "ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN",
+    "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN",
+    "GHL_FIREBASE_REFRESH_TOKEN",
+)
+
+
+def resolve_firebase_refresh_token():
+    """(label, token) or (None, None), first non-empty wins. NEVER printed."""
+    return _env_first(FIREBASE_REFRESH_LABELS)
+
+
+class InternalRailUnavailable(Exception):
+    """The internal-rail fallback could not be attempted or did not clear --
+    the Firebase exchange failed, returned an empty id_token, or the internal
+    HTTP call itself errored. The caller HELDs exactly as it did before this
+    fallback existed; this is never mistaken for a scope denial."""
+
+
+def _internal_request_headers(token_id: str) -> dict:
+    """Pure header builder (no I/O) so the exact header set is unit-testable
+    without a network call. Mirrors the Podcast gate's _get() headers exactly."""
+    return {
+        "token-id": token_id,
+        "channel": "APP",
+        "source": "WEB_USER",
+        "version": INTERNAL_VERSION_HEADER,
+        "Accept": "application/json",
+        "User-Agent": CAF_BROWSER_UA,
+    }
+
+
+class InternalRailClient:
+    """Minimal Firebase-JWT client against backend.leadconnectorhq.com, covering
+    ONLY the one internal surface this repo has proven live: pipeline listing.
+
+    `mint_fn`/`get_fn` are injectable so the self-test can exercise the full
+    ladder (mint failure, empty token, HTTP error, success) with zero network
+    and zero real secrets. Real callers omit them and get the actual Firebase
+    exchange + HTTP GET, exactly as verify-podcast-ghl-workflows.py performs it.
+    """
+
+    def __init__(self, refresh_token: str, timeout: int = 15, *, mint_fn=None, get_fn=None):
+        self._refresh_token = refresh_token
+        self._timeout = timeout
+        self._id_token = None
+        self._mint_fn = mint_fn
+        self._get_fn = get_fn
+
+    def _mint(self) -> str:
+        try:
+            if self._mint_fn is not None:
+                return self._mint_fn(self._refresh_token)
+            body = ("grant_type=refresh_token&refresh_token=%s" % self._refresh_token).encode()
+            req = urllib.request.Request(
+                FIREBASE_TOKEN_URL, data=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("id_token") or ""
+        except InternalRailUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- never leak transport detail w/ a token
+            raise InternalRailUnavailable(
+                "Firebase refresh-token exchange failed: %s" % type(exc).__name__) from exc
+
+    def _token(self) -> str:
+        if not self._id_token:
+            self._id_token = self._mint()
+            if not self._id_token:
+                raise InternalRailUnavailable("Firebase exchange returned an empty id_token.")
+        return self._id_token
+
+    def _get(self, path: str):
+        tok = self._token()
+        if self._get_fn is not None:
+            return self._get_fn(path, tok)
+        req = urllib.request.Request(INTERNAL_API_BASE + path, headers=_internal_request_headers(tok))
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                raw = resp.read().decode("utf-8") or "{}"
+                return json.loads(raw) if raw.strip() else {}
+        except urllib.error.HTTPError as exc:
+            raise InternalRailUnavailable(
+                "internal rail HTTP %s on %s" % (exc.code, path)) from exc
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise InternalRailUnavailable(
+                "internal rail transport error: %s" % type(exc).__name__) from exc
+
+    def list_pipelines(self, location_id: str):
+        out = self._get("/opportunities/pipelines?locationId=%s" % urllib.parse.quote(location_id, safe=""))
+        return out.get("pipelines") or []
 
 
 # ---------------------------------------------------------------------------
@@ -1317,8 +1457,16 @@ def self_test() -> int:
             return _FakeResp(b'{"pipelines": []}')
         urllib.request.urlopen = _ok_open
         CafClient("tok_probe").list_pipelines("loc_test_QcDX")
-        assert captured_ua.get("ua") == MOZILLA_UA, \
+        assert captured_ua.get("ua") == CAF_BROWSER_UA, \
             "browser User-Agent not sent on the request: %r" % captured_ua.get("ua")
+        # GK-09 regression pin: this is the Podcast gate's OWN proven-live UA
+        # string (byte-for-byte), NOT a reuse of cover_render's Kie-CDN-oriented
+        # constant (whose malformed 3-segment Chrome version was the leading
+        # suspect for the WAF/edge 403 persisting after a UA was already sent).
+        assert CAF_BROWSER_UA == (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ), "CAF_BROWSER_UA drifted from the Podcast gate's proven-live string"
 
         # (b) a GENUINE scope denial (W0.5 JSON signature) -> ScopeDenied
         def _scope_open(req, timeout=None):
@@ -1366,6 +1514,72 @@ def self_test() -> int:
     assert _auth_denial_kind(b'{"message": "Rate limit exceeded"}') == "blocked"
     assert _auth_denial_kind(b"") == "blocked"
 
+    # -- GK-09: Firebase refresh-token alias resolution (SET/NOT-SET only) --
+    _fb_saved = {n: os.environ.pop(n, None) for n in FIREBASE_REFRESH_LABELS}
+    try:
+        assert resolve_firebase_refresh_token() == (None, None)
+        os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "rt-legacy"
+        assert resolve_firebase_refresh_token() == ("GHL_FIREBASE_REFRESH_TOKEN", "rt-legacy")
+        os.environ["ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN"] = "rt-canonical"
+        # canonical alias wins over legacy when both are set (declared order).
+        assert resolve_firebase_refresh_token() == ("ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN", "rt-canonical")
+    finally:
+        for n, v in _fb_saved.items():
+            if v is None:
+                os.environ.pop(n, None)
+            else:
+                os.environ[n] = v
+
+    # -- GK-09: internal-rail header shape (pure function, no I/O) ----------
+    hdrs = _internal_request_headers("id-tok-xyz")
+    assert hdrs["token-id"] == "id-tok-xyz" and hdrs["channel"] == "APP"
+    assert hdrs["source"] == "WEB_USER" and hdrs["version"] == INTERNAL_VERSION_HEADER
+    assert hdrs["User-Agent"] == CAF_BROWSER_UA
+
+    # -- GK-09: InternalRailClient ladder (mint failure / empty token / HTTP
+    #    error / success), fully injected -- zero network, zero real secrets --
+    rc_fail = InternalRailClient("rt", mint_fn=lambda rt: (_ for _ in ()).throw(RuntimeError("boom")))
+    try:
+        rc_fail.list_pipelines("loc_test_QcDX")
+        assert False, "a mint failure must raise InternalRailUnavailable"
+    except InternalRailUnavailable:
+        pass
+
+    rc_empty = InternalRailClient("rt", mint_fn=lambda rt: "")
+    try:
+        rc_empty.list_pipelines("loc_test_QcDX")
+        assert False, "an empty id_token must raise InternalRailUnavailable"
+    except InternalRailUnavailable:
+        pass
+
+    def _get_403(path, tok):
+        raise InternalRailUnavailable("internal rail HTTP 403 on %s" % path)
+    rc_http_err = InternalRailClient("rt", mint_fn=lambda rt: "id-ok", get_fn=_get_403)
+    try:
+        rc_http_err.list_pipelines("loc_test_QcDX")
+        assert False, "an internal HTTP error must raise InternalRailUnavailable"
+    except InternalRailUnavailable:
+        pass
+
+    _seen = {}
+    _mint_calls = {"n": 0}
+    def _mint_ok(rt):
+        _mint_calls["n"] += 1
+        return "id-ok"
+    def _get_ok(path, tok):
+        _seen["path"], _seen["tok"] = path, tok
+        return {"pipelines": [{"id": "pipe-1", "name": "Anthology Engine"}]}
+    rc_ok = InternalRailClient("rt", mint_fn=_mint_ok, get_fn=_get_ok)
+    pls = rc_ok.list_pipelines("loc_test_QcDX")
+    assert pls == [{"id": "pipe-1", "name": "Anthology Engine"}]
+    assert _seen["path"] == "/opportunities/pipelines?locationId=loc_test_QcDX"
+    assert _seen["tok"] == "id-ok"
+    # the minted token is cached per-instance (a second call reuses it rather than
+    # re-exchanging the refresh token) -- mirrors InternalTransport's cache intent
+    # at the granularity this class owns.
+    rc_ok.list_pipelines("loc_test_QcDX")
+    assert _mint_calls["n"] == 1, "id_token must be cached, not re-minted per call"
+
     # -- binding round-trip on p6 (pipeline resolved) ----------------------
     regdir = Path(tempfile.mkdtemp(prefix="ae-reg-bind-"))
     regp = regdir / "registry.json"
@@ -1390,7 +1604,10 @@ def self_test() -> int:
           "browser-control create: bind-on-verified-read / fail-closed STOP / "
           "lying-builder STOP / verify-read HELD / opt-out / dry-run-no-attempt / "
           "missing-builder receipt / exact-name argv, probe-scope read feasibility, "
-          "browser-UA + scope-vs-Cloudflare discrimination, binding round-trip)")
+          "browser-UA + scope-vs-Cloudflare discrimination, "
+          "GK-09 Firebase refresh-token alias resolution + internal-rail header shape "
+          "+ InternalRailClient mint/empty-token/HTTP-error/success+cache ladder, "
+          "binding round-trip)")
     return EX_OK
 
 

@@ -1,0 +1,13 @@
+{
+  "_comment": "U31/B-U17 -- the daily maintenance-window schedule ENTRY for the page-inventory + evidence-root retention sweep ('read-only; runs in the daily maintenance window' -- items 1 and 3 of the spec). This file IS that entry -- the single source of truth both this repo's doctrine (SKILL.md) and scripts/install-page-inventory-lifecycle-cron.sh read from, so the two can never drift out of sync. The scheduled command below is the evidence-root RETENTION sweep only (tools/ghl_inventory.py --prune) -- fully live-wiring-free and safe to run today (compress-only, never deletes a run-evidence root, never touches a live GoHighLevel object). The live PAGE ENUMERATION half (funnel_lister/page_lister wired to a real seeded browser session) is the live-proof leg, deferred to the operator (parallel to U22) -- see ghl_inventory.py's module docstring 'ONE LIVE GAP' note. Registering this entry live (openclaw cron add) is itself part of that same deferred live-proof leg.",
+  "name": "skill6-page-inventory-lifecycle",
+  "schedule": "0 3 * * *",
+  "tz": "America/New_York",
+  "mode": "command",
+  "script_relpath": "tools/ghl_inventory.py",
+  "args": ["--prune", "--base-dir", "${SKILL6_EVIDENCE_BASE}"],
+  "command": "python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_inventory.py --prune --base-dir \"${SKILL6_EVIDENCE_BASE}\"",
+  "description": "Daily maintenance-window evidence-root retention sweep: keeps the newest N (default 10) v2-<RUN_ID> run-evidence roots per funnel-slug group plus every root an open lifecycle card still references, and COMPRESSES (never deletes) older roots. Never touches a live GoHighLevel object -- this entry runs the retention half only; the live page-inventory enumeration + flag/card/execute lifecycle is DEFERRED to the live-proof leg (funnel-id discovery is unproven -- see ghl_inventory.py's module docstring). Non-blocking, read-only w.r.t. any live client page.",
+  "evidence_base_env_var": "SKILL6_EVIDENCE_BASE",
+  "evidence_base_default": "$HOME/clawd/skill6-fix"
+}
