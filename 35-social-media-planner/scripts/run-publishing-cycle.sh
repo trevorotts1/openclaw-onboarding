@@ -621,16 +621,34 @@ except Exception:
 fi
 if [ -n "$CC_TASK_ID" ]; then
   printf '%s\n' "$CC_TASK_ID" > "$CC_TASK_FILE"
-  # Record the id in the manifest too (fail-soft).
-  python3 - "$MANIFEST" "$CC_TASK_ID" <<'PYEOF' 2>/dev/null || true
+fi
+# U100 — the producer-reconcile pattern generalized from B-U13/U27: ALWAYS
+# record this run's board-ingest attempt outcome into the cycle manifest, not
+# just on success, so `cycle_manifest_reconcile.py reconcile` can later tell
+# "no card because nothing to build" apart from "no card because the board
+# was unreachable/unconfigured and the cycle silently continued unregistered"
+# — the same SKILL.md:607-608-style blindness B-U13 closed for Skill 6.
+# Fail-soft: any error writing this is swallowed; NEVER blocks the cycle.
+python3 - "$MANIFEST" "$CC_TASK_ID" "$CC_TOKEN" <<'PYEOF' 2>/dev/null || true
 import json, sys
-p, tid = sys.argv[1], sys.argv[2]
+p, tid, token = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    d = json.load(open(p)); d["cc_task_id"] = tid
+    d = json.load(open(p))
+except Exception:
+    d = {}
+if tid:
+    d["cc_task_id"] = tid
+d["cc_board_attempt"] = {
+    "mc_token_resolved": bool(token),
+    "ok": bool(tid),
+    "task_id": tid or None,
+}
+try:
     json.dump(d, open(p, "w"), indent=2)
 except Exception:
     pass
 PYEOF
+if [ -n "$CC_TASK_ID" ]; then
   cc_call PATCH "/api/tasks/$CC_TASK_ID" \
     "{\"status\":\"in_progress\",\"updated_by_agent_id\":\"$CC_AGENT_ID\"}" >/dev/null
   log "Command Center: task $CC_TASK_ID created and moved to in_progress."
