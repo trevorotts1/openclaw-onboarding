@@ -264,6 +264,18 @@ def check_sticky_assignment(department_id: str, task_category: str, db_path: Pat
     return None
 
 
+def resolve_conversion_goal_arg(argv_value, env_value: str) -> str:
+    """A-U4 — --conversion-goal argv / OPENCLAW_CONVERSION_GOAL env precedence
+    (mirrors the OPENCLAW_AUDIENCE pattern, but with an argv transport too):
+    an explicit `--conversion-goal` (even an intentionally-empty '' override)
+    wins; otherwise the env var is read. Pure + independently testable so the
+    precedence rule itself is locked without exercising the full CLI/DB path.
+    """
+    if argv_value is not None:
+        return argv_value
+    return env_value or ""
+
+
 def find_selection_log() -> Path:
     """Locate persona-selection-log.md. Returns Path (may not exist)."""
     if "PERSONA_SELECTION_LOG_PATH" in os.environ:
@@ -2497,6 +2509,11 @@ def _blend_human(bundle: dict) -> str:
     lines.append(f"  audience_persona: {ap.get('id') if ap else '(pending/none)'}")
     lines.append(f"  topic_persona:    {tp.get('id') if tp else '(none)'}")
     lines.append(f"  collapsed: {v.get('collapsed')} -> {v.get('collapsed_persona_id')}")
+    if bundle.get("content_task"):
+        lines.append(
+            f"  conversion_goal: {bundle.get('conversion_goal') or '(unresolved)'!r} "
+            f"source={bundle.get('goal_source')} "
+            f"goal_confirm_required={bundle.get('goal_confirm_required')}")
     lines.append(f"  task_personas ({len(bundle.get('task_personas', []))}):")
     for tpp in bundle.get("task_personas", []):
         lines.append(f"    {tpp.get('seq')}. {tpp.get('persona_id')} "
@@ -2705,6 +2722,20 @@ def main():
                         help="(--blend) optional explicit topic hint for the job "
                              "(otherwise inferred from the task text). Folds into "
                              "topic matching + the emitted `topic`.")
+    # A-U4 — conversion_goal as a first-class input (master-spec v2 §A.5). Unlike
+    # OPENCLAW_AUDIENCE (env-only), the goal is accepted BOTH as an explicit CLI
+    # flag and as an env passthrough (mirrors the audience pattern otherwise):
+    # an argv value wins when both are supplied. Either transport resolves
+    # goal_source='operator_confirmed' (rung 1 of the source ladder — an
+    # explicit operator/task field); the Skill 6 intake / funnel-template rungs
+    # are walked by the CALLER before invoking --blend (this selector has no
+    # intake/template data of its own to reason over).
+    parser.add_argument("--conversion-goal", default=None,
+                        help="(--blend) the resolved conversion goal for this "
+                             "content task (\"what must this page make the "
+                             "reader DO\"). Populates directive slot 5. Also "
+                             "settable via OPENCLAW_CONVERSION_GOAL env "
+                             "(argv wins when both are set).")
     parser.add_argument("--sop-slots", default=None,
                         help="(--combined) JSON array of SOP persona_slot objects "
                              "({slot, task_category, domains, audience_from, "
@@ -2864,6 +2895,11 @@ def main():
                                        "persona-selector-v2.py (set "
                                        "PERSONA_BLEND_PATH to override)."}, indent=2))
             return 2
+        # A-U4: argv --conversion-goal wins over OPENCLAW_CONVERSION_GOAL when both
+        # are set; either resolves goal_source='operator_confirmed' (build_bundle
+        # default when no goal_source is passed) — an explicit rung-1 value.
+        _conversion_goal = resolve_conversion_goal_arg(
+            args.conversion_goal, os.environ.get("OPENCLAW_CONVERSION_GOAL", ""))
         bundle = _pb.build_bundle(
             args.task, args.department,
             paths=paths, db_path=db_path,
@@ -2873,6 +2909,7 @@ def main():
             variety=not args.no_variety,
             topic_hint=(args.topic or ""),
             audience_override=os.environ.get("OPENCLAW_AUDIENCE", ""),
+            conversion_goal=(_conversion_goal or ""),
         )
         bundle.setdefault("db", db_field)
         print(json.dumps(bundle, indent=2) if args.format == "json"

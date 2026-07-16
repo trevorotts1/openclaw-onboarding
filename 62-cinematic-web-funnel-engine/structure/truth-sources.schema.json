@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/truth-sources.schema.json",
+  "title": "Cinematic and Web Funnel Engine — intake/truth-sources.json (Skill 62, U9)",
+  "description": "One entry per proof/factual claim captured during intake (spec Section 8.2), each pointing at the source that backs the claim. scripts/intake_engine.py generates one dynamic follow-up question per claim in a claim_list-typed base question (offer.proof, content_source.claims) the moment that base question is answered, and refuses to lock the brief until every claim has exactly one entry here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "locked", "locked_at", "sources", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "locked": { "type": "boolean" },
+    "locked_at": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question_id", "claim_id", "claim_text", "source_type", "reference", "provided_by", "captured_at"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "question_id": { "type": "string", "minLength": 1 },
+          "claim_id": { "type": "string", "minLength": 1 },
+          "claim_text": { "type": "string", "minLength": 1 },
+          "source_type": {
+            "type": "string",
+            "enum": ["testimonial", "case-study", "data-report", "document", "url", "client-confirmed", "internal-record"]
+          },
+          "reference": { "type": "string", "minLength": 1 },
+          "provided_by": { "type": "string", "minLength": 1 },
+          "captured_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "_fixture_note": "Mocked Kie.ai GET /api/v1/jobs/recordInfo success response for an image task (gpt-image-2-image-to-image). resultJson is a JSON-ENCODED STRING exactly as Kie returns it in production. NOT a real Kie response; no live/paid call was made to produce this file.",
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "fixture-task-image-0001",
+    "state": "success",
+    "resultJson": "{\"resultUrls\":[\"https://tempfile.aiquickdraw.com/s/fixture-scene-still.png\"]}"
+  }
+}

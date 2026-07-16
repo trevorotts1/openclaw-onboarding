@@ -30,7 +30,7 @@ instead of re-embedded on every dispatch. See
 | 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057) | real-vector hard gate (`embed_sop_library.py --verify`) + sha256 asset gate + dual-surface row-count reconciliation |
 | 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
-## Non-negotiable invariants (EMBED-1..8)
+## Non-negotiable invariants (EMBED-1..9)
 
 1. **ONE DB path (EMBED-1).** The persona index is
    `<workspace>/data/coaching-personas/gemini-index.sqlite` — the file
@@ -66,8 +66,11 @@ instead of re-embedded on every dispatch. See
 5. **Section indexer is the build path (EMBED-5).** Skill-22 orchestrator
    Phase 5 prefers `23-ai-workforce-blueprint/scripts/gemini-section-indexer.py
    --persona-id <slug>`; the chunk wrapper is fallback only. Phase 5 is
-   fail-loud (non-zero exit or wrapper-not-found ⇒ `FAILED` in
-   pipeline-status.json, never "Re-indexing complete").
+   fail-loud for a GENUINE indexing bug (non-zero exit outside the
+   credential family, or wrapper-not-found ⇒ `FAILED` in
+   pipeline-status.json, never "Re-indexing complete", `EMBED_FAILED` exit
+   8 end-to-end). See EMBED-9 for the ONE deliberate non-fatal exception
+   (a missing/invalid key).
 6. **Publishing is hermetic (EMBED-6).** `shared-utils/prebuilt-index/
    build-and-publish.sh` stages base asset + repo blueprints in a temp dir —
    it never touches a live workspace. Refuses to publish unless: base sha256
@@ -80,6 +83,30 @@ instead of re-embedded on every dispatch. See
 8. **Health checks the real DB (EMBED-8).** `embedding_health.py` leg-b reads
    provider/model/dim from the actual embeddings table (and flags rows whose
    blob length disagrees with the stamped dim = fake/corrupt).
+9. **A missing/invalid key is DEFERRED, never a blocked persona (EMBED-9,
+   A-U8).** `gemini-section-indexer.py` returns exit 4 for BOTH the upfront
+   "no usable Gemini embedder" preflight refusal AND a mid-run
+   credential-shaped exception (`embedding_engine.is_credential_error()` —
+   401/403/permission/API-key-rejected); any OTHER mid-run exception returns
+   exit 6 (still fail-loud — EMBED-3/EMBED-5 unchanged). Orchestrator Phase 5
+   classifies exit 4 as `DEFERRED` (`classify_phase5_result`): it writes an
+   honest `personas/<slug>/embedding-receipt.json`
+   (`{"status":"deferred","reason":"embedding: deferred (no key / key
+   invalid)", ...}`), does NOT propagate `EMBED_FAILED`, and the blueprint
+   ships as-is — the pipeline's re-embed-only re-entry retries automatically
+   on the next run once a key resolves. This is the client's OWN key per
+   standing doctrine (the operator never substitutes keys) — a client box
+   without one yet is an expected, honest state, not a defect. Two
+   consumers close the loop so a deferred persona is never a silent hole:
+   `persona_fleet.py index-verify` (wired into
+   `publish-personas-to-fleet.sh` step 1.5, exit 7) requires every
+   publishable persona be EITHER indexed OR carry a `status:"deferred"`
+   receipt before the fleet asset ships; and
+   `shared-utils/persona_embedding_drift_probe.py` (wired into
+   `fleet_refresh_runner.py` as a NON-GATING advisory, alongside
+   `embedding_health.py`) compares `personas/` on disk vs. the index vs.
+   receipts on the operator's own box and flags an UNEXPLAINED gap (never a
+   receipted deferral) as one advisory record per run.
 
 ## Corpus 1 — coaching personas: build → embed → register → ship
 
@@ -90,7 +117,8 @@ instead of re-embedded on every dispatch. See
   `## Section N`; `mode` from `embedding_engine.{COACHING,LEADERSHIP}_SECTION_NUMBER`
   (3=coaching, 4=leadership); md5 HASH-SKIP prevents re-embedding unchanged
   blueprints; provider/model/dim stamped on every row; post-write verification
-  aborts on any contract violation.
+  aborts on any contract violation. A missing/invalid key `DEFERS` rather
+  than blocking the persona — see EMBED-9.
 - **Register (Phase 6)**: `_append_persona_to_categories()` updates the
   canonical `persona-categories.json`
   (`<workspace>/data/coaching-personas/persona-categories.json`; the skill
@@ -106,7 +134,11 @@ instead of re-embedded on every dispatch. See
 ### Landing a delta (N new personas) — the canonical runbook
 
 1. Finish the builds; confirm live embed + registration (Phase 5/6 logs, or
-   `python3 shared-utils/embedding_engine.py --verify` + `--status`).
+   `python3 shared-utils/embedding_engine.py --verify` + `--status`). If any
+   persona's Phase 5 reads `DEFERRED` (no key yet — check
+   `personas/<slug>/embedding-receipt.json`), resolve the key and re-run the
+   pipeline (idempotent re-embed-only re-entry) BEFORE step 4 —
+   `persona_fleet.py index-verify` (step 4b below) will otherwise refuse.
 2. Add to the REPO: blueprint dirs under
    `22-book-to-persona-coaching-leadership-system/personas/` + matching keys
    in `22-…/persona-categories.json` (count triad: dirs == keys).

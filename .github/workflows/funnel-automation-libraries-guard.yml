@@ -14,17 +14,31 @@ on:
       - "06-ghl-install-pages/funnel-templates/**"
       - "06-ghl-install-pages/tools/funnel_matcher*.py"
       - "06-ghl-install-pages/tools/v2_dispatcher.py"
+      - "06-ghl-install-pages/tools/persona_bundle_ladder.py"
+      - "06-ghl-install-pages/tools/cc_board.py"
       - "06-ghl-install-pages/tools/catalog-index.json"
       - "06-ghl-install-pages/qc-built-funnel.sh"
       - "06-ghl-install-pages/tests/test_funnel_matcher.py"
       - "06-ghl-install-pages/tests/test_v2_dispatcher.py"
+      - "06-ghl-install-pages/scripts/prove_skill6_block_u22.py"
+      - "06-ghl-install-pages/tests/test_prove_skill6_block_u22.py"
+      - "06-ghl-install-pages/tools/skill6_convergence.py"
+      - "06-ghl-install-pages/tests/test_a_u7_convergence.py"
+      - "06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py"
+      - "06-ghl-install-pages/exemplars/**"
+      - "35-social-media-planner/exemplars/**"
       - "44-convert-and-flow-operator/automation-templates/**"
       - "44-convert-and-flow-operator/qc-built-workflow.sh"
       - "44-convert-and-flow-operator/tests/test_automation_matcher.py"
+      - "49-signature-funnel/scripts/copy_persona_blend_seam.py"
+      - "49-signature-funnel/scripts/test_copy_persona_blend_seam.py"
       - "shared-utils/fab_qc.py"
       - "shared-utils/fab_artifact.py"
       - "shared-utils/persona_crosswalk.py"
       - "shared-utils/persona-crosswalk.json"
+      - "shared-utils/exemplar_injection.py"
+      - "shared-utils/test_exemplar_injection.py"
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
       - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
       - "universal-sops/funnel-automation-build-quality-rubric.md"
       - "tests/unit/fab-qc.test.py"
@@ -38,17 +52,31 @@ on:
       - "06-ghl-install-pages/funnel-templates/**"
       - "06-ghl-install-pages/tools/funnel_matcher*.py"
       - "06-ghl-install-pages/tools/v2_dispatcher.py"
+      - "06-ghl-install-pages/tools/persona_bundle_ladder.py"
+      - "06-ghl-install-pages/tools/cc_board.py"
       - "06-ghl-install-pages/tools/catalog-index.json"
       - "06-ghl-install-pages/qc-built-funnel.sh"
       - "06-ghl-install-pages/tests/test_funnel_matcher.py"
       - "06-ghl-install-pages/tests/test_v2_dispatcher.py"
+      - "06-ghl-install-pages/scripts/prove_skill6_block_u22.py"
+      - "06-ghl-install-pages/tests/test_prove_skill6_block_u22.py"
+      - "06-ghl-install-pages/tools/skill6_convergence.py"
+      - "06-ghl-install-pages/tests/test_a_u7_convergence.py"
+      - "06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py"
+      - "06-ghl-install-pages/exemplars/**"
+      - "35-social-media-planner/exemplars/**"
       - "44-convert-and-flow-operator/automation-templates/**"
       - "44-convert-and-flow-operator/qc-built-workflow.sh"
       - "44-convert-and-flow-operator/tests/test_automation_matcher.py"
+      - "49-signature-funnel/scripts/copy_persona_blend_seam.py"
+      - "49-signature-funnel/scripts/test_copy_persona_blend_seam.py"
       - "shared-utils/fab_qc.py"
       - "shared-utils/fab_artifact.py"
       - "shared-utils/persona_crosswalk.py"
       - "shared-utils/persona-crosswalk.json"
+      - "shared-utils/exemplar_injection.py"
+      - "shared-utils/test_exemplar_injection.py"
+      - "23-ai-workforce-blueprint/scripts/persona_blend.py"
       - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
       - "universal-sops/funnel-automation-build-quality-rubric.md"
       - "tests/unit/fab-qc.test.py"
@@ -89,11 +117,40 @@ jobs:
           python3 44-convert-and-flow-operator/automation-templates/_matcher/cli.py --selftest
           python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --selftest
 
+      # U22/B-U8: these two selftests existed since U15/U17/U19 but were NEVER
+      # wired into any CI job — a regression in the bundle-acquisition ladder
+      # or the copy-stage blend seam could land on main undetected. Closes
+      # that gap.
+      - name: Persona-bundle ladder + copy-stage blend-seam selftests (B-U1/B-U3/B-U6)
+        run: |
+          python3 06-ghl-install-pages/tools/persona_bundle_ladder.py
+          python3 49-signature-funnel/scripts/copy_persona_blend_seam.py --self-test
+
       - name: Matcher + FAB-QC + producer + crosswalk pytest suites
         run: |
           python3 -m pytest 06-ghl-install-pages/tests/test_funnel_matcher.py \
                             06-ghl-install-pages/tests/test_v2_dispatcher.py \
-                            44-convert-and-flow-operator/tests/test_automation_matcher.py -q
+                            06-ghl-install-pages/tests/test_prove_skill6_block_u22.py \
+                            06-ghl-install-pages/tests/test_a_u7_convergence.py \
+                            06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py \
+                            44-convert-and-flow-operator/tests/test_automation_matcher.py \
+                            49-signature-funnel/scripts/test_copy_persona_blend_seam.py -q
           python3 tests/unit/fab-qc.test.py
           python3 tests/unit/fab-artifact.test.py
           python3 tests/unit/persona-crosswalk.test.py
+
+      # A-U9 (master unit U9): exemplar convention + write-time injection.
+      # Module self-test (no network/key) + the unittest acceptance suite
+      # (a)-(d) against the actually-shipped exemplar packs.
+      - name: Exemplar-injection selftest + acceptance suite (A-U9)
+        run: |
+          python3 shared-utils/exemplar_injection.py
+          python3 06-ghl-install-pages/tools/skill6_convergence.py
+          python3 -m pytest shared-utils/test_exemplar_injection.py -q
+
+      # U22/B-U8 acceptance (b)+(c): the ONE end-to-end operator-box fixture
+      # proof run for the whole unification block (also exercised via pytest
+      # above; run standalone too so its own exit code + printed checklist is
+      # a first-class, independently-readable CI signal).
+      - name: U22/B-U8 — Skill-6 persona-unification block operator-box proof run
+        run: python3 06-ghl-install-pages/scripts/prove_skill6_block_u22.py

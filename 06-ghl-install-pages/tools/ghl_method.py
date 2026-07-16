@@ -630,6 +630,500 @@ def decide_and_record(page_spec: Any, page_name: str, run_dir: str, *,
     return decision
 
 
+# ── Signal derivation from raw HTML (U23/B-U9 decision-engine hardening) ──────
+#
+# ``classify_page`` only ever sees what the CALLER declares in ``page_spec`` --
+# an HTML-only page that never declares ``js_frameworks``/``interactive``/
+# ``third_party_js``/``css_fighting`` silently scores SIMPLE by default even
+# when its markup obviously carries an external framework or heavy
+# interactivity. ``derive_page_signals`` closes that gap: a PURE, read-only
+# analyzer over the raw HTML string that infers the SAME page_spec keys
+# ``classify_page`` already understands. It never calls ``classify_page``
+# itself and never raises for merely "boring" HTML (a page with no advanced
+# markup simply derives an empty/near-empty partial spec).
+#
+# The derived signals are ALWAYS merged UNDER an explicit spec
+# (``merge_derived_under_explicit``) -- a caller/build-system field that IS
+# declared is always trusted over the inference; the inference only fills
+# GAPS the caller left silent.
+
+import re as _re
+
+# Known JS-framework fingerprints. A hit forces a HARD signal via
+# ``js_frameworks`` (mirrors classify_page's existing hard-signal rule).
+_FRAMEWORK_MARKERS: tuple[tuple[str, str], ...] = (
+    ("react", "data-reactroot"),
+    ("react", "react-dom"),
+    ("react", "ReactDOM.render"),
+    ("react", "_reactRootContainer"),
+    ("next.js", "__NEXT_DATA__"),
+    ("next.js", "/_next/static"),
+    ("vue", "data-v-"),
+    ("vue", "new Vue("),
+    ("vue", "Vue.createApp"),
+    ("nuxt", "__NUXT__"),
+    ("nuxt", "/_nuxt/"),
+    ("angular", "ng-app"),
+    ("angular", "ng-controller"),
+    ("angular", "angular.module("),
+    ("svelte", "svelte-"),
+    ("svelte", "SvelteComponent"),
+)
+
+# Known third-party JS libraries recognized from a <script src="..."> URL.
+# These are SOFT signals (classify_page's multiple-third-party-lib rule) --
+# distinct from a framework, which is a hard signal.
+_THIRD_PARTY_LIB_MARKERS: tuple[str, ...] = (
+    "jquery", "gsap", "three.js", "threejs", "chart.js", "chartjs",
+    "d3.js", "d3.min.js", "swiper", "aos.js", "lottie", "anime.min.js",
+    "alpine.js", "alpinejs", "framer-motion",
+)
+
+_SCRIPT_SRC_RE = _re.compile(r'<script\b[^>]*\bsrc=["\']([^"\']+)["\']', _re.IGNORECASE)
+_STYLE_BLOCK_RE = _re.compile(r'<style\b[^>]*>(.*?)</style>', _re.IGNORECASE | _re.DOTALL)
+_GLOBAL_SELECTOR_RE = _re.compile(r'(?:^|[}\s])(?:html|body|\*)\s*\{', _re.IGNORECASE)
+_FONT_FACE_RE = _re.compile(r'@font-face\b', _re.IGNORECASE)
+
+# A <script src="...react.production.min.js"> style CDN filename names the
+# framework directly in its path even with no inline marker present. Matches
+# the framework name immediately followed by '.', '-', or '@' in the path
+# (e.g. "/react.production.min.js", "/vue.global.js", "/angular.min.js",
+# "/svelte.js") without false-positiving on unrelated words merely containing
+# the substring (e.g. "reactive-forms.js" does NOT match — no boundary).
+_FRAMEWORK_SRC_FILENAME_RE = _re.compile(
+    r'(?:^|/)(react|vue|angular|svelte)[.\-@]', _re.IGNORECASE
+)
+
+
+def derive_page_signals(html: str) -> dict:
+    """Infer a PARTIAL page_spec from raw HTML — pure, read-only, no I/O.
+
+    Detects, purely from the markup text:
+      * script-tag / library fingerprints — populates ``js_frameworks``
+        (hard signal: react/vue/angular/svelte/next.js/nuxt) and
+        ``third_party_js`` (soft signal: jquery/gsap/three.js/etc., matched
+        against ``<script src="...">`` URLs only).
+      * fetch/WebSocket/canvas/WebGL/client-routing usage — populates
+        ``interactive`` with the same behavior tokens ``classify_page``
+        already recognizes (``fetch``, ``websocket``, ``canvas``, ``webgl``,
+        ``routing``).
+      * ``!important`` density + global selectors (bare ``html{``/``body{``/
+        ``*{``) + ``@font-face`` block count — populates ``css_fighting``.
+      * the raw HTML itself under ``html`` — so the payload-size hard signal
+        still fires correctly for a caller with no explicit ``html``/
+        ``content`` field of its own (an explicit field, if present, wins in
+        ``merge_derived_under_explicit`` regardless).
+
+    Returns only the keys it actually detected something for (an entirely
+    "boring" HTML string with no matches returns just ``{"html": html}``) —
+    it never invents a false-positive default. NEVER calls ``classify_page``;
+    NEVER raises for boring/simple HTML; PURE (no network, no filesystem).
+
+    Args:
+        html: The raw HTML string to analyze.
+
+    Returns:
+        A partial page_spec dict, ready to be merged under an explicit spec
+        via ``merge_derived_under_explicit`` and passed to ``classify_page``.
+
+    Raises:
+        ``MethodDecisionError``: if ``html`` is not a string.
+    """
+    if not isinstance(html, str):
+        raise MethodDecisionError(
+            f"derive_page_signals: html must be a str, got {type(html).__name__!r}."
+        )
+
+    derived: dict[str, Any] = {}
+
+    script_srcs = _SCRIPT_SRC_RE.findall(html)
+    combined_src_lower = " ".join(script_srcs).lower()
+
+    # ── framework detection (script src filename, script src substring, OR
+    #    inline body markers) ────────────────────────────────────────────────
+    frameworks_found: list[str] = []
+    for src in script_srcs:
+        fname_match = _FRAMEWORK_SRC_FILENAME_RE.search(src)
+        if fname_match:
+            fw_name = fname_match.group(1).lower()
+            if fw_name not in frameworks_found:
+                frameworks_found.append(fw_name)
+    for fw_name, marker in _FRAMEWORK_MARKERS:
+        if marker.lower() in combined_src_lower or marker in html:
+            if fw_name not in frameworks_found:
+                frameworks_found.append(fw_name)
+    if frameworks_found:
+        derived["js_frameworks"] = frameworks_found
+
+    # ── third-party JS library detection (script src only) ────────────────────
+    third_party_found: list[str] = []
+    for src in script_srcs:
+        src_lower = src.lower()
+        for lib in _THIRD_PARTY_LIB_MARKERS:
+            if lib in src_lower and lib not in third_party_found:
+                third_party_found.append(lib)
+    if third_party_found:
+        derived["third_party_js"] = third_party_found
+
+    # ── interactive behaviour detection ────────────────────────────────────────
+    interactive_found: list[str] = []
+    if "fetch(" in html:
+        interactive_found.append("fetch")
+    if "WebSocket(" in html:
+        interactive_found.append("websocket")
+    if _re.search(r'<canvas\b', html, _re.IGNORECASE):
+        interactive_found.append("canvas")
+    if "getContext(" in html and "webgl" in html.lower():
+        interactive_found.append("webgl")
+    if ("history.pushState(" in html or "react-router" in html.lower()
+            or "vue-router" in html.lower()):
+        interactive_found.append("routing")
+    if interactive_found:
+        derived["interactive"] = interactive_found
+
+    # ── CSS-fighting density: !important, global selectors, @font-face ────────
+    important_count = html.count("!important")
+    style_blocks = _STYLE_BLOCK_RE.findall(html)
+    style_text = "\n".join(style_blocks)
+    global_selector_count = len(_GLOBAL_SELECTOR_RE.findall(style_text))
+    font_face_count = len(_FONT_FACE_RE.findall(html))
+    if important_count or global_selector_count or font_face_count:
+        derived["css_fighting"] = {
+            "important_storms": important_count,
+            "global_selectors": global_selector_count,
+            "font_face_blocks": font_face_count,
+        }
+
+    # ── payload bytes carrier: the raw HTML, so an explicit-html-less caller ──
+    #    still gets the payload-size hard signal. explicit wins in the merge.
+    derived["html"] = html
+
+    return derived
+
+
+def merge_derived_under_explicit(explicit_spec: dict | None, derived_spec: dict) -> dict:
+    """Merge ``derived_spec`` (from ``derive_page_signals``) UNDER
+    ``explicit_spec`` — explicit ALWAYS wins, key for key.
+
+    A key present in BOTH keeps the explicit value untouched (the derived
+    value for that key is discarded entirely — no element-wise list merging,
+    no partial dict merging within a key; explicit is authoritative at the
+    key level). A key present only in ``derived_spec`` is carried through
+    unchanged. A key present only in ``explicit_spec`` is carried through
+    unchanged. Neither input is mutated.
+
+    Args:
+        explicit_spec: The caller-declared page_spec (may be ``None`` or
+            ``{}`` — an explicit spec that declares nothing).
+        derived_spec: The output of ``derive_page_signals`` (or any partial
+            page_spec dict).
+
+    Returns:
+        A new merged dict, ready for ``classify_page``.
+
+    Raises:
+        ``MethodDecisionError``: if ``explicit_spec`` (when not ``None``) or
+            ``derived_spec`` is not a dict.
+    """
+    if explicit_spec is not None and not isinstance(explicit_spec, dict):
+        raise MethodDecisionError(
+            f"explicit_spec must be a dict or None, got {type(explicit_spec).__name__!r}."
+        )
+    if not isinstance(derived_spec, dict):
+        raise MethodDecisionError(
+            f"derived_spec must be a dict, got {type(derived_spec).__name__!r}."
+        )
+    merged: dict[str, Any] = dict(derived_spec)
+    if explicit_spec:
+        merged.update(explicit_spec)
+    return merged
+
+
+def classify_page_from_html(html: str, explicit_spec: dict | None = None, *,
+                            threshold: int = ADVANCED_THRESHOLD,
+                            max_direct_bytes: int = MAX_DIRECT_BYTES) -> MethodDecision:
+    """Convenience wrapper: derive signals from ``html``, merge them UNDER
+    ``explicit_spec`` (explicit wins), then classify. Pure — no I/O.
+
+    Equivalent to::
+
+        classify_page(
+            merge_derived_under_explicit(explicit_spec, derive_page_signals(html)),
+            threshold=threshold, max_direct_bytes=max_direct_bytes,
+        )
+
+    Args:
+        html: The raw HTML to derive signals from.
+        explicit_spec: Optional caller-declared page_spec fields that always
+            win over the derived inference.
+        threshold: Override ``ADVANCED_THRESHOLD``.
+        max_direct_bytes: Override ``MAX_DIRECT_BYTES``.
+
+    Returns:
+        A ``MethodDecision`` exactly like ``classify_page`` returns.
+
+    Raises:
+        ``MethodDecisionError``: on invalid ``html``/``explicit_spec``, or
+            (from ``classify_page``) on an invalid merged spec.
+    """
+    derived = derive_page_signals(html)
+    merged = merge_derived_under_explicit(explicit_spec, derived)
+    return classify_page(merged, threshold=threshold, max_direct_bytes=max_direct_bytes)
+
+
+# ── Site-level routing aggregation (U23/B-U9 decision-engine hardening) ───────
+#
+# ``classify_page`` decides PER PAGE only. A complex site can split, e.g.,
+# 3 pages DIRECT + 2 VERCEL — split hosting/styling that is a real production
+# headache (two different rendering surfaces backing one "site"). This
+# section adds the SITE-LEVEL aggregation rule: when at least
+# ``SITE_ADVANCED_RATIO_THRESHOLD`` (default 50%) of a site's pages score
+# ADVANCED (VERCEL_EMBED), OR the caller declares a navigation-linked
+# interactive core (e.g. a persistent app shell/nav that itself needs
+# client-side routing), the WHOLE SITE routes VERCEL_EMBED as one Vercel
+# project — never a per-page mix. Skill-44 WIDGET routing (form/calendar
+# blocks detected inside any page) is completely unaffected by this rule;
+# widgets are orthogonal to the DIRECT-vs-VERCEL_EMBED page-hosting choice.
+#
+# ADDITIVE + FLAG-GUARDED: this rule only takes effect when
+# ``GHL_SITE_LEVEL_ROUTING=1`` is set (or ``enabled=True`` is passed
+# explicitly). Unset the flag to revert to today's per-page-only behavior —
+# the default path when the flag is absent.
+
+SITE_LEVEL_ROUTING_ENV_VAR = "GHL_SITE_LEVEL_ROUTING"
+SITE_ADVANCED_RATIO_THRESHOLD = 0.5
+
+
+def site_level_routing_enabled(env: dict | None = None) -> bool:
+    """True when the ``GHL_SITE_LEVEL_ROUTING`` flag is set to ``"1"``.
+
+    Args:
+        env: Optional env dict override (default ``os.environ``).
+    """
+    _env = env if env is not None else os.environ
+    return str(_env.get(SITE_LEVEL_ROUTING_ENV_VAR, "")).strip() == "1"
+
+
+@dataclass
+class SiteMethodDecision:
+    """The output of ``decide_site_method`` for a whole site.
+
+    ``overridden``: True when the site-level rule fired and every page is
+        routed VERCEL_EMBED as one project, regardless of its own per-page
+        decision. False means each page keeps its own per-page method.
+    ``method``: ``PageMethod.VERCEL_EMBED`` when overridden, else ``None``
+        (per-page routing stands — there is no single site method to name).
+    ``advanced_page_count`` / ``total_page_count`` / ``advanced_page_ratio``:
+        the raw counts and ratio the rule was evaluated against.
+    ``nav_linked_interactive_core``: the caller-declared flag as evaluated.
+    ``ratio_threshold``: the threshold used at decision time.
+    ``per_page_methods``: ``{page_name: method_value}`` snapshot of each
+        page's OWN classify_page decision (audit trail — always recorded,
+        whether or not the override fires).
+    ``reason``: human-readable sentence explaining the decision.
+    ``decided_at``: ISO-8601 timestamp string.
+    """
+    overridden: bool
+    method: PageMethod | None
+    advanced_page_count: int
+    total_page_count: int
+    advanced_page_ratio: float
+    nav_linked_interactive_core: bool
+    ratio_threshold: float
+    per_page_methods: dict[str, str]
+    reason: str
+    decided_at: str = field(default_factory=lambda: _now())
+
+
+def decide_site_method(
+    page_decisions: dict[str, "MethodDecision"],
+    *,
+    nav_linked_interactive_core: bool = False,
+    ratio_threshold: float = SITE_ADVANCED_RATIO_THRESHOLD,
+    enabled: bool | None = None,
+    env: dict | None = None,
+) -> SiteMethodDecision:
+    """Decide whether a whole site routes VERCEL_EMBED as one project.
+
+    ``page_decisions`` MUST be a non-empty dict of ``page_name ->
+    MethodDecision`` (i.e. every page's own ``classify_page`` output —
+    caller classifies each page first, this function only aggregates).
+
+    Trigger: ``enabled`` AND (``advanced_page_ratio >= ratio_threshold`` OR
+    ``nav_linked_interactive_core``). When disabled (the default — see
+    ``site_level_routing_enabled``), this function still computes and
+    returns the full ratio/audit picture but ``overridden`` is always False
+    and ``method`` is always None — a caller inspecting the decision can see
+    exactly what WOULD have happened without the flag changing behavior.
+
+    Args:
+        page_decisions: ``{page_name: MethodDecision}`` for every page in
+            the site (from ``classify_page``/``classify_page_from_html``).
+        nav_linked_interactive_core: True when the caller has determined the
+            site has a persistent navigation-linked interactive core.
+        ratio_threshold: Override ``SITE_ADVANCED_RATIO_THRESHOLD``.
+        enabled: Override the ``GHL_SITE_LEVEL_ROUTING`` flag explicitly
+            (``None`` reads the flag via ``site_level_routing_enabled``).
+        env: Optional env dict override, forwarded to
+            ``site_level_routing_enabled`` when ``enabled`` is ``None``.
+
+    Returns:
+        A ``SiteMethodDecision``.
+
+    Raises:
+        ``MethodDecisionError``: if ``page_decisions`` is not a non-empty
+            dict of ``MethodDecision`` values.
+    """
+    if not isinstance(page_decisions, dict) or not page_decisions:
+        raise MethodDecisionError(
+            "page_decisions must be a non-empty dict of page_name -> "
+            "MethodDecision (from classify_page) — cannot make a site-level "
+            "routing decision with zero pages."
+        )
+    for name, dec in page_decisions.items():
+        if not isinstance(dec, MethodDecision):
+            raise MethodDecisionError(
+                f"page_decisions[{name!r}] must be a MethodDecision (from "
+                f"classify_page), got {type(dec).__name__!r}."
+            )
+
+    is_enabled = site_level_routing_enabled(env) if enabled is None else bool(enabled)
+
+    per_page_methods = {name: dec.method.value for name, dec in page_decisions.items()}
+    total = len(page_decisions)
+    advanced = sum(
+        1 for dec in page_decisions.values() if dec.method == PageMethod.VERCEL_EMBED
+    )
+    ratio = advanced / total
+
+    if not is_enabled:
+        return SiteMethodDecision(
+            overridden=False,
+            method=None,
+            advanced_page_count=advanced,
+            total_page_count=total,
+            advanced_page_ratio=ratio,
+            nav_linked_interactive_core=bool(nav_linked_interactive_core),
+            ratio_threshold=ratio_threshold,
+            per_page_methods=per_page_methods,
+            reason=(
+                f"site-level routing disabled ({SITE_LEVEL_ROUTING_ENV_VAR} not set) — "
+                f"{advanced}/{total} pages scored ADVANCED ({ratio:.0%}); each page "
+                "keeps its own per-page method decision. Skill-44 widget routing is "
+                "unaffected either way."
+            ),
+        )
+
+    ratio_trigger = ratio >= ratio_threshold
+    trigger = ratio_trigger or nav_linked_interactive_core
+
+    if not trigger:
+        return SiteMethodDecision(
+            overridden=False,
+            method=None,
+            advanced_page_count=advanced,
+            total_page_count=total,
+            advanced_page_ratio=ratio,
+            nav_linked_interactive_core=bool(nav_linked_interactive_core),
+            ratio_threshold=ratio_threshold,
+            per_page_methods=per_page_methods,
+            reason=(
+                f"no site-level override — {advanced}/{total} pages ({ratio:.0%}) "
+                f"scored ADVANCED, below the {ratio_threshold:.0%} threshold, and no "
+                "navigation-linked interactive core was declared. Each page keeps "
+                "its own per-page method decision."
+            ),
+        )
+
+    if ratio_trigger and nav_linked_interactive_core:
+        why = (
+            f"{advanced}/{total} pages ({ratio:.0%}) scored ADVANCED >= "
+            f"{ratio_threshold:.0%} threshold, AND a navigation-linked interactive "
+            "core was declared"
+        )
+    elif ratio_trigger:
+        why = f"{advanced}/{total} pages ({ratio:.0%}) scored ADVANCED >= {ratio_threshold:.0%} threshold"
+    else:
+        why = "a navigation-linked interactive core was declared"
+
+    return SiteMethodDecision(
+        overridden=True,
+        method=PageMethod.VERCEL_EMBED,
+        advanced_page_count=advanced,
+        total_page_count=total,
+        advanced_page_ratio=ratio,
+        nav_linked_interactive_core=bool(nav_linked_interactive_core),
+        ratio_threshold=ratio_threshold,
+        per_page_methods=per_page_methods,
+        reason=(
+            f"SITE-LEVEL OVERRIDE -> VERCEL_EMBED for the whole site ({why}); "
+            "split hosting/styling across DIRECT + VERCEL pages is avoided by "
+            "routing the whole site as one Vercel project. Skill-44 widget "
+            "routing (form/calendar blocks) is unaffected."
+        ),
+    )
+
+
+def decide_and_record_site(
+    page_decisions: dict[str, "MethodDecision"],
+    run_dir: str,
+    *,
+    nav_linked_interactive_core: bool = False,
+    ratio_threshold: float = SITE_ADVANCED_RATIO_THRESHOLD,
+    enabled: bool | None = None,
+    env: dict | None = None,
+) -> SiteMethodDecision:
+    """Decide the site-level routing override and write the audit record to
+    ``<run_dir>/routing/site-method-decision.json``.
+
+    Args:
+        page_decisions: Same as ``decide_site_method``.
+        run_dir: The run evidence root directory. The routing subdirectory
+            is created if absent.
+        nav_linked_interactive_core / ratio_threshold / enabled / env: Same
+            as ``decide_site_method``.
+
+    Returns:
+        The ``SiteMethodDecision`` (also written to disk for the audit
+        trail).
+
+    Raises:
+        ``MethodDecisionError``: on invalid ``page_decisions``.
+        ``ValueError``: if ``run_dir`` is empty.
+    """
+    if not run_dir or not str(run_dir).strip():
+        raise ValueError("run_dir is required (the run evidence root directory).")
+
+    decision = decide_site_method(
+        page_decisions,
+        nav_linked_interactive_core=nav_linked_interactive_core,
+        ratio_threshold=ratio_threshold,
+        enabled=enabled,
+        env=env,
+    )
+
+    routing_dir = os.path.join(str(run_dir), "routing")
+    os.makedirs(routing_dir, exist_ok=True)
+    record_path = os.path.join(routing_dir, "site-method-decision.json")
+
+    record = {
+        "overridden": decision.overridden,
+        "method": decision.method.value if decision.method is not None else None,
+        "advanced_page_count": decision.advanced_page_count,
+        "total_page_count": decision.total_page_count,
+        "advanced_page_ratio": decision.advanced_page_ratio,
+        "nav_linked_interactive_core": decision.nav_linked_interactive_core,
+        "ratio_threshold": decision.ratio_threshold,
+        "per_page_methods": decision.per_page_methods,
+        "reason": decision.reason,
+        "decided_at": decision.decided_at,
+    }
+    with open(record_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+
+    return decision
+
+
 # ── Per-client brand/theme (parameterize general.general.colors) ──────────────
 #
 # GoHighLevel's renderer reads ``blob['general']['general']['colors']`` — an
@@ -952,6 +1446,17 @@ __all__ = [
     "iframe_embed_snippet",
     "widget_embed_snippet",
     "decide_and_record",
+    # Signal derivation from raw HTML (U23/B-U9).
+    "derive_page_signals",
+    "merge_derived_under_explicit",
+    "classify_page_from_html",
+    # Site-level routing aggregation (U23/B-U9).
+    "SITE_LEVEL_ROUTING_ENV_VAR",
+    "SITE_ADVANCED_RATIO_THRESHOLD",
+    "site_level_routing_enabled",
+    "SiteMethodDecision",
+    "decide_site_method",
+    "decide_and_record_site",
     # Per-client brand/theme (parameterize general.general.colors).
     "THEME_COLOR_LABELS",
     "ThemeError",

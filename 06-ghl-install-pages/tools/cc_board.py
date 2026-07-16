@@ -41,13 +41,26 @@ REQUEST CONTRACT (matched to POST /api/tasks/ingest live endpoint):
     body:    {title, description?, priority?,
               source:'funnel'|'web-development',
               department_slug:'web-development'|'funnels',
-              idempotency_key?}
+              idempotency_key?,
+              voice_persona_id?, topic_persona_id?, task_persona_ids?, bundle_sha?}
     return:  201 (created) / 200 (deduped) ->
              {ok, task_id, workspace_id, resolved_by, status}
 
   department_slug routing:
     'funnels'          — sales funnel / opt-in funnel / multi-step funnel
     'web-development'  — single page, website, landing page, standalone page
+
+  PERSONA FIELDS (B-U7 — ingest parity, closes the Path-B structural
+  divergence): OPTIONAL. The producer already resolved (or locally computed,
+  B-U1) its persona bundle by the time it creates the card, so it can hand
+  the Command Center the SAME field vocabulary ``report_persona_used`` (B-U6)
+  posts back later, and the Command Center PINS those personas directly onto
+  the new card instead of spawning its own selector match. voice_persona_id
+  is REQUIRED for the group to be sent at all (mirrors report_persona_used's
+  voice-required gate — there is nothing to pin without it); the other three
+  are independently optional. Omitting all four (the default) is byte-
+  identical to today: the Command Center falls back to its own async
+  resolvePersonaAndPin selector match exactly as before.
 
   Fields intentionally OMITTED (the ingest route ignores them and the CC
   TaskStatus enum does NOT include them):
@@ -74,12 +87,32 @@ import hmac
 import json
 import os
 import sys
+import time
 import uuid
 import urllib.error
 import urllib.request
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 _DEFAULT_TIMEOUT = 8
+
+# ---------------------------------------------------------------------------
+# U27 (Skill-6 board reconcile) — evidence-root layout constants.
+#
+# Skill 6 evidence roots live at ``<base>/v2-<RUN_ID>/`` (never /tmp;
+# v2-autonomous-build-sop.md documents ``<OPERATOR_HOME>/clawd/skill6-fix/`` as
+# the operator-box base). ``routing/intake-receipt.json`` (written by
+# v2_dispatcher._run_intake) is the "this run went through intake" signal;
+# ``routing/board-ingest-receipt.json`` (written below, U27) is the NEW
+# "this run's board card either landed or was recorded as never having tried"
+# signal that closes the SKILL.md:607-608 blindness — today ingest_task()
+# fail-softs with only a stderr line when the board is unconfigured/unreachable,
+# leaving NO on-disk trace that the card never landed.
+# ---------------------------------------------------------------------------
+_ROUTING_SUBDIR = "routing"
+_INTAKE_RECEIPT_FILENAME = "intake-receipt.json"
+_BOARD_INGEST_RECEIPT_FILENAME = "board-ingest-receipt.json"
+_EVIDENCE_RUN_PREFIX = "v2-"
 
 # Valid CC TaskStatus enum values (full 10-value enum from src/lib/types.ts:5 and
 # migration 076). move_task() and update_status() both refuse anything outside
@@ -183,6 +216,54 @@ def _post_json(url: str, payload: dict, cfg: dict, method: str = "POST"):
     return status, parsed
 
 
+def _ts() -> str:
+    """UTC timestamp, matches v2_dispatcher.py's ``_ts()`` byte-for-byte."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _write_board_ingest_receipt(
+    evidence_root: Optional[str],
+    *,
+    mission_control_url_set: bool,
+    ok: bool,
+    task_id: Optional[str],
+    department_slug: Optional[str] = None,
+    source: Optional[str] = None,
+    reason: str = "",
+) -> None:
+    """U27 — close the SKILL.md:607-608 blindness: persist ONE receipt per
+    ``ingest_task()`` call recording whether the board was even configured and
+    whether the card landed, so ``cc_board.py reconcile`` can later distinguish
+    "no card because nothing to build" from "no card because the board was
+    unreachable/unconfigured and the build silently continued unregistered".
+
+    Best-effort / fail-soft: ``evidence_root=None`` (the default — every
+    EXISTING caller is unaffected) is a clean no-op; any OSError writing the
+    receipt is swallowed. NEVER raises; NEVER changes ``ingest_task()``'s
+    return value.
+    """
+    if not evidence_root:
+        return
+    try:
+        receipt_dir = os.path.join(evidence_root, _ROUTING_SUBDIR)
+        os.makedirs(receipt_dir, exist_ok=True)
+        record = {
+            "attempted_at": _ts(),
+            "mission_control_url_set": bool(mission_control_url_set),
+            "ok": bool(ok),
+            "task_id": task_id,
+            "department_slug": department_slug,
+            "source": source,
+            "reason": reason,
+        }
+        with open(
+            os.path.join(receipt_dir, _BOARD_INGEST_RECEIPT_FILENAME), "w", encoding="utf-8"
+        ) as f:
+            json.dump(record, f, indent=2)
+    except OSError:
+        pass  # receipt is best-effort; ingest_task()'s return value is unaffected
+
+
 # ---------------------------------------------------------------------------
 # PUBLIC API — ingest_task is the one call Skill-6 makes.
 # ---------------------------------------------------------------------------
@@ -195,7 +276,12 @@ def ingest_task(
     idempotency_key: Optional[str] = None,
     department_slug: Optional[str] = None,
     source: Optional[str] = None,
+    voice_persona_id: Optional[str] = None,
+    topic_persona_id: Optional[str] = None,
+    task_persona_ids: Optional[List[str]] = None,
+    bundle_sha: Optional[str] = None,
     env: Optional[dict] = None,
+    evidence_root: Optional[str] = None,
 ) -> Optional[str]:
     """POST one funnel/website job to /api/tasks/ingest.
 
@@ -222,16 +308,56 @@ def ingest_task(
                           the FIX-COPY-01 copy-dependency card to route a P2-COPY
                           job to ``'marketing'`` (the Conversion Copywriter's
                           department, per SOP-07 Step 3) rather than the builder's
-                          own web-development / funnels column. NOTE: like
+                          own web-development / funnels column. NOTE (C-13/U44 —
+                          corrected 2026-07; was stale "CEO catch-all"): like
                           ``'funnels'``, a ``'marketing'`` slug that the Command
                           Center's departments.config.ts has not yet registered
-                          resolves to the CEO catch-all column server-side —
-                          visible, never lost; the LOCAL waiting_on_dependency
-                          receipt is the binding gate, the card is visibility only.
+                          resolves server-side to the honest ``general-task``
+                          catch-all ("General Stuff", D-C2) — tagged
+                          ``resolved_by='unrecognized-slug->general'`` by
+                          INGEST-06 (``ingest/route.ts``'s ``resolveWorkspaceId``,
+                          the "EXPLICIT-but-unrecognized department slug" tier) —
+                          NOT the CEO/master-orchestrator workspace, which is a
+                          separate, later fallback tier that only fires for a
+                          BARE task with no department_slug supplied at all.
+                          Visible, never lost either way; the LOCAL
+                          waiting_on_dependency receipt is the binding gate, the
+                          card is visibility only.
         source:           OPTIONAL explicit source-tag override (defaults to the
                           job_type-derived source, or to ``department_slug`` when
                           only the slug is overridden).
+        voice_persona_id: OPTIONAL (B-U7 — ingest parity). The producer's
+                          already-resolved VOICE persona id (B-U1's bundle, or a
+                          prior B-U6 report). REQUIRED for the persona-fields
+                          group to be sent at all — when empty/omitted,
+                          topic_persona_id / task_persona_ids / bundle_sha are
+                          silently withheld too (nothing to pin without a voice)
+                          and the Command Center falls back to its own async
+                          selector match, byte-identical to today.
+        topic_persona_id: OPTIONAL. The producer's resolved topic/craft-hint
+                          persona id. Omitted when empty or when
+                          voice_persona_id is empty.
+        task_persona_ids: OPTIONAL. List of the producer's resolved task-slot
+                          persona ids (the bundle receipt's ``task_personas[]``,
+                          B-U1 — pass the ``persona_id`` of each entry). Blank/
+                          whitespace-only entries are dropped; an empty result
+                          omits the key entirely (never an empty array on the
+                          wire). Omitted when voice_persona_id is empty.
+        bundle_sha:       OPTIONAL. The sha of the bundle the producer actually
+                          used (``routing/persona-bundle-receipt.json``'s
+                          ``bundle_sha``, B-U1) — audit-trail parity with
+                          ``report_persona_used``'s ``blend_directive_sha``.
+                          Omitted when empty or when voice_persona_id is empty.
         env:              Override os.environ (for testing).
+        evidence_root:    OPTIONAL (U27). When given, ONE receipt is written to
+                          ``<evidence_root>/routing/board-ingest-receipt.json``
+                          recording whether MISSION_CONTROL_URL was even set and
+                          whether the card landed — regardless of outcome. This
+                          closes the SKILL.md:607-608 blindness ("the card just
+                          never lands / never moves ... unregistered") by giving
+                          ``cc_board.py reconcile`` an on-disk trail to sweep.
+                          Omit (the default) for byte-identical legacy behavior —
+                          no receipt is written and nothing else changes.
 
     Returns:
         task_id (str) on success — the CC UUID for this board card.
@@ -240,10 +366,28 @@ def ingest_task(
     cfg = board_config(env)
     if cfg is None:
         _log("MISSION_CONTROL_URL unset — board disabled (no-op); build continues.")
+        _write_board_ingest_receipt(
+            evidence_root,
+            mission_control_url_set=False,
+            ok=False,
+            task_id=None,
+            department_slug=department_slug,
+            source=source,
+            reason="MISSION_CONTROL_URL unset — board disabled",
+        )
         return None
 
     if not title or not title.strip():
         _log("ingest_task skipped — title is empty.")
+        _write_board_ingest_receipt(
+            evidence_root,
+            mission_control_url_set=True,
+            ok=False,
+            task_id=None,
+            department_slug=department_slug,
+            source=source,
+            reason="title empty — ingest not attempted",
+        )
         return None
 
     # Capture explicit routing overrides BEFORE the job_type mapping below
@@ -255,11 +399,20 @@ def ingest_task(
     # Map job_type -> department_slug.
     job_type_norm = (job_type or "funnel").lower().strip()
     if job_type_norm in ("funnel", "sales-funnel", "optin", "opt-in", "multistep"):
-        # NOTE: department_slug='funnels' currently mis-resolves to the CEO catch-all
-        # in the Command Center (departments.config.ts has no 'funnels' dept; only
-        # 'web-development' resolves at :457). Option 2 (fast-follow) will add a
-        # dedicated 'funnels'/'surveys' dept + workspace-seed migration. Until then
-        # funnels land in the catch-all column — visible, not lost.
+        # NOTE (C-13(e)/U44 — corrected 2026-07; was stale "CEO catch-all"):
+        # department_slug='funnels' has no registered department in the Command
+        # Center (departments.config.ts has no 'funnels' dept; only
+        # 'web-development' resolves at :457). At CC main, INGEST-06
+        # (ingest/route.ts's resolveWorkspaceId, the "EXPLICIT-but-unrecognized
+        # department slug" tier) routes it to the honest 'general-task'
+        # catch-all ("General Stuff", D-C2) — tagged
+        # resolved_by='unrecognized-slug->general' — NOT the CEO/
+        # master-orchestrator workspace (that fallback is a separate, later
+        # tier that only fires for a BARE task with no department_slug at
+        # all). Option 2 (D-C3, fast-follow) would add a dedicated
+        # 'funnels'/'surveys' dept + workspace-seed migration. Until then
+        # funnels land in the honest general-task catch-all column — visible,
+        # not lost, not mis-labeled as the CEO's.
         department_slug = "funnels"
         source = "funnel"
     elif job_type_norm in ("survey", "form", "quiz"):
@@ -299,11 +452,39 @@ def ingest_task(
     if priority and priority.strip():
         payload["priority"] = priority.strip()
 
+    # B-U7 — ingest parity. voice_persona_id GATES the whole group (mirrors
+    # report_persona_used's voice-required gate, B-U6): nothing is sent
+    # without it, so a caller passing only topic/task/sha with no voice sends
+    # a byte-identical legacy payload rather than a half-formed persona block
+    # the Command Center could misread as authoritative.
+    vpid = (voice_persona_id or "").strip()
+    if vpid:
+        payload["voice_persona_id"] = vpid
+        tpid = (topic_persona_id or "").strip()
+        if tpid:
+            payload["topic_persona_id"] = tpid
+        if task_persona_ids:
+            cleaned_task_ids = [str(p).strip() for p in task_persona_ids if str(p).strip()]
+            if cleaned_task_ids:
+                payload["task_persona_ids"] = cleaned_task_ids
+        sha = (bundle_sha or "").strip()
+        if sha:
+            payload["bundle_sha"] = sha
+
     url = f"{cfg['base_url']}/api/tasks/ingest"
     try:
         status, body = _post_json(url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"POST {url} failed ({type(exc).__name__}: {exc}); build continues unregistered.")
+        _write_board_ingest_receipt(
+            evidence_root,
+            mission_control_url_set=True,
+            ok=False,
+            task_id=None,
+            department_slug=department_slug,
+            source=source,
+            reason=f"POST failed: {type(exc).__name__}: {exc}",
+        )
         return None
 
     if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
@@ -315,9 +496,27 @@ def ingest_task(
             f"department={department_slug} resolved_by={resolved_by} "
             f"status={body.get('status', '?')} http={status}"
         )
+        _write_board_ingest_receipt(
+            evidence_root,
+            mission_control_url_set=True,
+            ok=True,
+            task_id=task_id,
+            department_slug=department_slug,
+            source=source,
+            reason=f"{'deduped' if deduped else 'created'} (http={status})",
+        )
         return task_id
 
     _log(f"POST /api/tasks/ingest non-OK (HTTP {status}): {body}; build continues unregistered.")
+    _write_board_ingest_receipt(
+        evidence_root,
+        mission_control_url_set=True,
+        ok=False,
+        task_id=None,
+        department_slug=department_slug,
+        source=source,
+        reason=f"non-OK response (http={status}): {body}",
+    )
     return None
 
 
@@ -1956,6 +2155,318 @@ def _persona_used_selftest() -> int:
     return 0
 
 
+def _ingest_persona_selftest() -> int:
+    """B-U7 — ingest parity self-test: optional persona fields on
+    ``ingest_task()``. Transport (``_post_json``) is monkeypatched to a
+    recorder so the EXACT payload the helper would put on the wire is
+    asserted — never a live board. Returns 0 on pass."""
+    errors: list[str] = []
+    base_env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+
+    captured: list[dict] = []
+
+    def _fake_post_json(url, payload, cfg, method="POST"):
+        captured.append({"url": url, "payload": payload, "method": method})
+        return 201, {"ok": True, "task_id": "fake-task-id", "resolved_by": "test", "status": "backlog"}
+
+    orig_post_json = globals()["_post_json"]
+    globals()["_post_json"] = _fake_post_json
+    try:
+        # 1. Legacy call (no persona kwargs) — payload carries ZERO persona
+        #    keys. Byte-identical to pre-B-U7 behavior (B-U7 acceptance b).
+        captured.clear()
+        result = ingest_task("Legacy job", job_type="website", env=base_env)
+        if result != "fake-task-id":
+            errors.append(f"legacy ingest_task should return the posted task_id, got {result!r}")
+        if not captured:
+            errors.append("legacy ingest_task should have posted")
+        else:
+            payload = captured[0]["payload"]
+            for k in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+                if k in payload:
+                    errors.append(f"legacy ingest_task payload must OMIT {k!r}, got {payload.get(k)!r}")
+
+        # 2. voice_persona_id only → carried verbatim; every other persona key
+        #    stays omitted.
+        captured.clear()
+        ingest_task("Voice-only job", job_type="website", voice_persona_id="hormozi-100m-offers", env=base_env)
+        payload = captured[0]["payload"] if captured else {}
+        if payload.get("voice_persona_id") != "hormozi-100m-offers":
+            errors.append(f"voice_persona_id not carried verbatim: {payload.get('voice_persona_id')!r}")
+        for k in ("topic_persona_id", "task_persona_ids", "bundle_sha"):
+            if k in payload:
+                errors.append(f"voice-only payload must OMIT {k!r}, got {payload.get(k)!r}")
+
+        # 3. full producer-persona payload — every field lands verbatim
+        #    (B-U7 acceptance a: "pinned persona ids equal the producer's
+        #    verbatim").
+        captured.clear()
+        ingest_task(
+            "Full persona job",
+            job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers", "wiebe-copy-hackers"],
+            bundle_sha="abc123def456",
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        for k, v in (
+            ("voice_persona_id", "hormozi-100m-offers"),
+            ("topic_persona_id", "miller-building-storybrand"),
+            ("task_persona_ids", ["hormozi-100m-offers", "wiebe-copy-hackers"]),
+            ("bundle_sha", "abc123def456"),
+        ):
+            if payload.get(k) != v:
+                errors.append(f"payload[{k!r}] = {payload.get(k)!r}, expected {v!r}")
+
+        # 4. topic/task/sha supplied WITHOUT voice_persona_id → the whole
+        #    group is withheld (voice is REQUIRED — mirrors
+        #    report_persona_used's voice-required gate, B-U6).
+        captured.clear()
+        ingest_task(
+            "No-voice job", job_type="website",
+            topic_persona_id="miller-building-storybrand",
+            task_persona_ids=["hormozi-100m-offers"],
+            bundle_sha="abc123def456",
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        for k in ("voice_persona_id", "topic_persona_id", "task_persona_ids", "bundle_sha"):
+            if k in payload:
+                errors.append(f"no-voice payload must OMIT {k!r} (voice REQUIRED), got {payload.get(k)!r}")
+
+        # 5. task_persona_ids with blank/whitespace entries — cleaned, empties
+        #    dropped, surrounding whitespace stripped.
+        captured.clear()
+        ingest_task(
+            "Messy ids job", job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            task_persona_ids=["  wiebe-copy-hackers  ", "", "   ", "miller-building-storybrand"],
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        expected_ids = ["wiebe-copy-hackers", "miller-building-storybrand"]
+        if payload.get("task_persona_ids") != expected_ids:
+            errors.append(f"task_persona_ids not cleaned: {payload.get('task_persona_ids')!r}, expected {expected_ids!r}")
+
+        # 6. empty task_persona_ids list → key omitted entirely (never an
+        #    empty array on the wire).
+        captured.clear()
+        ingest_task(
+            "Empty ids job", job_type="website",
+            voice_persona_id="hormozi-100m-offers",
+            task_persona_ids=[],
+            env=base_env,
+        )
+        payload = captured[0]["payload"] if captured else {}
+        if "task_persona_ids" in payload:
+            errors.append(f"empty task_persona_ids list must be omitted, got {payload.get('task_persona_ids')!r}")
+    finally:
+        globals()["_post_json"] = orig_post_json
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[ingest-persona-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[ingest-persona-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# U27 — Skill-6 board reconcile (B-U13, shared with Section C — the same
+# fail-soft-producer pattern the Anthology Engine's ``mc_board.py reconcile``
+# / the Command Center's ``checkAnthologyBoardProjection()`` clone). SKILL.md
+# :607-608 names the blindness verbatim: "cc_board.py fail-softs (the card
+# just never lands / never moves) and the build continues unregistered".
+#
+# This sweep compares the LOCAL evidence trail Skill 6 already writes on
+# every run:
+#   * ``routing/intake-receipt.json``       — "this run went through intake"
+#     (v2_dispatcher._run_intake, existing, unmodified by this unit).
+#   * ``routing/board-ingest-receipt.json`` — "this run's board card either
+#     landed or was recorded as never having tried" (NEW, U27, written by
+#     ingest_task() above when called with evidence_root=).
+# against every ``v2-<RUN_ID>`` root under a base directory, and reports
+# DRIFT for any run that completed intake but whose board-ingest receipt
+# shows the card never landed (board disabled, or a configured-but-failed
+# ingest). A run with NO board-ingest receipt at all (built before this unit
+# shipped, or by a caller that has not threaded evidence_root= through yet)
+# is reported separately as ``unwired`` — informational only, NEVER counted
+# as drift, so upgrading this file never turns a quiet historical box red.
+#
+# Non-gating by design (per B-U13): this is a read-only sweep. It never
+# mutates a card, never blocks a build, and the CLI always exits 0 (mirrors
+# mc_board.py's cmd_reconcile: "reconcile stays exit 0 even with the board
+# down (fail-soft daily tick)") — the JSON `drift` field carries the verdict
+# for the Command Center's `/api/health/deep` advisory probe to read.
+# ---------------------------------------------------------------------------
+
+
+def resolve_evidence_base(env: Optional[dict] = None) -> str:
+    """Resolve the Skill-6 evidence-root base directory to sweep.
+
+    Resolution order (mirrors the Command Center's
+    ``resolveSkill6EvidenceBaseDir()`` in ``src/lib/health/deep-checks.ts``
+    EXACTLY so both sides of the reconcile agree on where the evidence lives):
+      1. ``SKILL6_EVIDENCE_BASE_DIR`` env override (explicit, highest precedence).
+      2. ``$HOME/clawd/skill6-fix`` — the operator-box convention documented in
+         ``v2-autonomous-build-sop.md`` (``<OPERATOR_HOME>/clawd/skill6-fix/``).
+      3. ``""`` — no resolvable base (CI / a bare checkout with no HOME); callers
+         treat this as "not applicable", never as an error.
+
+    Never raises; never touches the network; does no I/O beyond the env read.
+    """
+    env = env if env is not None else os.environ
+    explicit = (env.get("SKILL6_EVIDENCE_BASE_DIR") or "").strip()
+    if explicit:
+        return explicit
+    home = (env.get("HOME") or "").strip()
+    if home:
+        return os.path.join(home, "clawd", "skill6-fix")
+    return ""
+
+
+def list_evidence_runs(base_dir: str) -> List[str]:
+    """Every immediate ``v2-*`` subdirectory of ``base_dir`` that carries an
+    intake receipt (``routing/intake-receipt.json``) — "the run-evidence
+    ledger roots" B-U13 names. Read-only; never raises (an unreadable base_dir
+    yields an empty list, never an exception)."""
+    runs: List[str] = []
+    try:
+        if not base_dir or not os.path.isdir(base_dir):
+            return runs
+        for name in sorted(os.listdir(base_dir)):
+            if not name.startswith(_EVIDENCE_RUN_PREFIX):
+                continue
+            run_dir = os.path.join(base_dir, name)
+            receipt_path = os.path.join(run_dir, _ROUTING_SUBDIR, _INTAKE_RECEIPT_FILENAME)
+            if os.path.isfile(receipt_path):
+                runs.append(run_dir)
+    except OSError:
+        return runs
+    return runs
+
+
+def _read_json(path: str) -> Optional[dict]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+@dataclass
+class ReconcileReport:
+    base_dir: str
+    applicable: bool = True
+    total_runs: int = 0
+    clean: list = field(default_factory=list)      # run ids: board-ingest receipt present + landed OK
+    drift: list = field(default_factory=list)       # [{run, reason}]
+    unwired: list = field(default_factory=list)      # run ids: no board-ingest receipt (legacy/unwired)
+
+    def all_clean(self) -> bool:
+        return not self.drift
+
+    def as_dict(self) -> dict:
+        return {
+            "base_dir": self.base_dir,
+            "applicable": self.applicable,
+            "total_runs": self.total_runs,
+            "clean": self.clean,
+            "drift": self.drift,
+            "unwired": self.unwired,
+            "all_clean": self.all_clean(),
+        }
+
+
+def reconcile(base_dir: Optional[str] = None, *, env: Optional[dict] = None) -> ReconcileReport:
+    """Run ONE reconciliation pass (B-U13 / U27).
+
+    Never raises; never mutates anything; never blocks a build — this is a
+    read-only diagnostic sweep, safe to run repeatedly (idempotent) in the
+    daily maintenance window or ad hoc from the CLI.
+    """
+    resolved = (base_dir or "").strip() or resolve_evidence_base(env)
+    report = ReconcileReport(base_dir=resolved)
+
+    if not resolved or not os.path.isdir(resolved):
+        report.applicable = False
+        return report
+
+    for run_dir in list_evidence_runs(resolved):
+        run_id = os.path.basename(run_dir)
+        report.total_runs += 1
+        receipt_path = os.path.join(run_dir, _ROUTING_SUBDIR, _BOARD_INGEST_RECEIPT_FILENAME)
+        receipt = _read_json(receipt_path)
+
+        if receipt is None:
+            # No board-ingest receipt at all: either a pre-U27 run, or a caller
+            # that has not threaded evidence_root= through to ingest_task() yet.
+            # Informational only — never a drift finding (see module note above).
+            report.unwired.append(run_id)
+            continue
+
+        if not receipt.get("mission_control_url_set"):
+            report.drift.append({
+                "run": run_id,
+                "reason": "MISSION_CONTROL_URL unset at ingest — card never landed "
+                           "(SKILL.md:607-608 blindness)",
+            })
+            continue
+
+        if not receipt.get("ok") or not receipt.get("task_id"):
+            report.drift.append({
+                "run": run_id,
+                "reason": f"board configured but ingest failed: {receipt.get('reason', 'unknown')}",
+            })
+            continue
+
+        report.clean.append(run_id)
+
+    return report
+
+
+def _reconcile_cli(argv: Optional[list] = None) -> int:
+    """``cc_board.py reconcile [--base-dir DIR] [--json]`` (U27).
+
+    ALWAYS exits 0 — this is a non-gating, fail-soft, read-only sweep (mirrors
+    ``mc_board.py``'s ``cmd_reconcile``: "reconcile stays exit 0 even with the
+    board down"). The verdict lives in the printed report's ``all_clean`` /
+    ``drift`` fields for the caller (operator, cron, or the Command Center's
+    health probe) to read — never in the process exit code.
+    """
+    import argparse
+
+    p = argparse.ArgumentParser(
+        prog="cc_board.py reconcile",
+        description="U27 — sweep Skill-6 evidence roots for board-ingest drift "
+                     "(non-gating; never flips a box red).",
+    )
+    p.add_argument("--base-dir", default="",
+                    help="Evidence-root base directory to sweep "
+                         "(default: SKILL6_EVIDENCE_BASE_DIR env, else $HOME/clawd/skill6-fix).")
+    p.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    args = p.parse_args(argv)
+
+    report = reconcile(args.base_dir or None)
+    d = report.as_dict()
+
+    if args.json:
+        print(json.dumps(d, indent=2))
+    else:
+        print(f"Base dir: {d['base_dir']} (applicable={d['applicable']})")
+        print(f"Total runs (with intake receipt): {d['total_runs']}")
+        print(f"  Clean:   {len(d['clean'])} {d['clean']}")
+        print(f"  Drift:   {len(d['drift'])} {d['drift']}")
+        print(f"  Unwired: {len(d['unwired'])} {d['unwired']}")
+        print("RESULT:", "CLEAN" if d["all_clean"] else "ATTENTION NEEDED (non-gating)")
+
+    return 0  # non-gating — always exit 0, per B-U13
+
+
 def _demo(env: Optional[dict] = None) -> int:
     """Live demo — POST a test task to the board and print the result."""
     cfg = board_config(env)
@@ -1988,6 +2499,13 @@ def _demo(env: Optional[dict] = None) -> int:
 
 
 if __name__ == "__main__":
+    # U27 — literal ``cc_board.py reconcile [--base-dir DIR] [--json]`` subcommand
+    # (B-U13's exact CLI form). Handled BEFORE the flag-style parser below so the
+    # existing --selftest/--demo/--emit-qc flags are completely untouched; a bare
+    # "reconcile" first positional arg routes to its own small parser instead.
+    if len(sys.argv) > 1 and sys.argv[1] == "reconcile":
+        sys.exit(_reconcile_cli(sys.argv[2:]))
+
     import argparse
 
     parser = argparse.ArgumentParser(description="Skill-6 Command Center board producer")
@@ -2020,8 +2538,10 @@ if __name__ == "__main__":
         rc_phase = _phase_driver_selftest()
         rc_u9 = _u9_selftest()
         rc_persona_used = _persona_used_selftest()
+        rc_ingest_persona = _ingest_persona_selftest()
         sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0
-                       and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0) else 1)
+                       and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0
+                       and rc_ingest_persona == 0) else 1)
     elif args.status_selftest:
         sys.exit(_status_selftest())
     elif args.u9_selftest:

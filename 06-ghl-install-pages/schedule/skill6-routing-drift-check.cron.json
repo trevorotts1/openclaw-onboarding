@@ -1,0 +1,15 @@
+{
+  "_comment": "U23/B-U9 item -- the monthly maintenance-window schedule ENTRY for the routing-drift live proof (B-U9 acceptance (d): 'a monthly scheduled live proof on the operator's own box: deploy the golden ADVANCED fixture to Vercel, assert_embeddable, embed in the operator-authorized test location, render_check PASS'). This file IS that entry -- the single source of truth both this repo's doctrine and scripts/install-routing-drift-check-cron.sh read from, so the two can never drift out of sync. Registering it live (openclaw cron add) is the LIVE-PROOF leg, deferred to U22 -- same doctrine as schedule/skill6-github-archive-reconcile-sweep.cron.json (U24/B-U10).",
+  "name": "skill6-routing-drift-check",
+  "schedule": "0 5 1 * *",
+  "tz": "America/New_York",
+  "mode": "command",
+  "script_relpath": "tools/ghl_routing_drift_check.py",
+  "args": ["--evidence-root", "${SKILL6_EVIDENCE_BASE}", "--project-dir", "${SKILL6_ROUTING_DRIFT_CHECK_PROJECT_DIR}"],
+  "command": "python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_routing_drift_check.py --evidence-root \"${SKILL6_EVIDENCE_BASE}\" --project-dir \"${SKILL6_ROUTING_DRIFT_CHECK_PROJECT_DIR}\"",
+  "description": "Monthly (1st of month, 05:00 ET) live proof that the decision engine's VERCEL_EMBED routing path still actually works on real infrastructure: classifies the golden ADVANCED fixture (self-check), deploys it to Vercel, and proves it is embeddable. Writes a dated receipt to routing/routing-drift-check-<YYYYMMDD>.json. The GHL-embed + render_check leg is recorded honestly as deferred_to_live_run until U22's end-to-end operator-box run exercises it. Never blocks or affects any live client page -- this is a proof-only run against a throwaway fixture.",
+  "evidence_base_env_var": "SKILL6_EVIDENCE_BASE",
+  "evidence_base_default": "$HOME/clawd/skill6-fix",
+  "project_dir_env_var": "SKILL6_ROUTING_DRIFT_CHECK_PROJECT_DIR",
+  "project_dir_default": "$HOME/clawd/skill6-fix/routing-drift-check-project"
+}

@@ -1,0 +1,63 @@
+name: docs-language-guard
+
+# U92 (X/U-X2) — fails the build when a changed documentation file
+# introduces a NEW occurrence of the operator-banned coded term that U91
+# verified scrubbed out of MASTER SPEC v2 (see that document's LANGUAGE
+# CONFORMANCE header for the one authorized citation of the literal word).
+#
+# Scope: only lines ADDED by this push/PR's diff, in *.md/*.mdx/*.rst/*.txt
+# files, are scanned — scripts/check-docs-language.py never touches the
+# repo's existing footprint (CHANGELOG history, HEARTBEAT.md doctrine
+# prose, the six legacy filenames pending U30/U93 renames). Full rationale
+# and the allowlist carve-outs (git-history resurfacing, vendor literals,
+# legacy filenames) live in scripts/check-docs-language.py's own docstring
+# and scripts/docs-language-allowlist.json.
+#
+# Uses fetch-depth: 0 so the merge-base / previous-commit diff and the
+# historical-corpus read (git show <base>:<path>) both have the objects
+# they need.
+
+on:
+  push:
+    paths:
+      - '**/*.md'
+      - '**/*.mdx'
+      - '**/*.rst'
+      - '**/*.txt'
+      - scripts/check-docs-language.py
+      - scripts/docs-language-allowlist.json
+      - .github/workflows/docs-language-guard.yml
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '**/*.mdx'
+      - '**/*.rst'
+      - '**/*.txt'
+      - scripts/check-docs-language.py
+      - scripts/docs-language-allowlist.json
+      - .github/workflows/docs-language-guard.yml
+  workflow_dispatch:
+
+jobs:
+  docs-language-guard:
+    name: Docs-language guard (no NEW occurrences of the retired term)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the guard script
+        run: python3 -m py_compile scripts/check-docs-language.py
+
+      - name: Run the docs-language guard
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: python3 scripts/check-docs-language.py

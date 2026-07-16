@@ -6,8 +6,20 @@ DEFAULT model:   gemini-omni-video (image-guided, 4-8s, aspect_ratio always
                  required, duration MUST be a STRING — the verified 422 fix).
 FALLBACK model:  veo3_fast (text-to-video, durations 4/6/8s only, different
                  endpoint and poll URL).
+ALSO SUPPORTED:  bytedance/seedance-1.5-pro (Skill 62 U5 extension, added
+                 2026-07-15) — text-to-video (input_urls omitted) or
+                 image-to-video with 1-2 `input_urls`. TWO images
+                 (`input_urls[0]` = first frame, `input_urls[1]` = last
+                 frame) pin BOTH endpoints of the clip ("frame pinning"),
+                 the capability the Cinematic and Web Funnel Engine (Skill 62)
+                 needs for seam-continuous connector clips between scenes
+                 (spec §10.1/§10.2, CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md).
+                 Uses the SAME /api/v1/jobs/createTask + /api/v1/jobs/
+                 recordInfo endpoint pair as gemini-omni-video — no new HTTP
+                 surface. Verified against 07-kie-setup/kie-setup-full.md
+                 §"Seedance 1.5 Pro" (2026-07-15).
 
-Both model paths are verified against the fleet script:
+Both original model paths are verified against the fleet script:
   37-zhc-closeout/scripts/generate-celebration-video.sh
 (lines 420-612, the Gemini Omni submit/poll + Veo submit/poll functions,
 including the string-duration 422 fix, the aspect_ratio always-inject rule,
@@ -87,6 +99,27 @@ _DEFAULT_DURATION = "8"   # STRING — the 422 fix
 # Valid aspect ratios for KIE Gemini Omni (generate-celebration-video.sh line 425)
 _VALID_ASPECT_RATIOS = {"16:9", "9:16"}
 
+# ---------------------------------------------------------------------------
+# bytedance/seedance-1.5-pro constants (Skill 62 U5 extension, 2026-07-15)
+# Verified against 07-kie-setup/kie-setup-full.md §"Seedance 1.5 Pro":
+#   prompt: string, min 3 / max 2500 chars
+#   input_urls: array of 0-2 image URLs (frame pinning; 0=first, 1=last frame)
+#   aspect_ratio: required, one of 1:1/4:3/3:4/16:9/9:16/21:9
+#   resolution: 480p/720p/1080p
+#   duration: 4, 8, or 12 seconds (as a STRING, mirroring the gemini-omni fix)
+#   fixed_lens: bool, default false
+#   generate_audio: bool, default false (enabling audio increases cost)
+# ---------------------------------------------------------------------------
+_SEEDANCE_MODEL              = "bytedance/seedance-1.5-pro"
+_SEEDANCE_VALID_DURATIONS    = {"4", "8", "12"}
+_SEEDANCE_DEFAULT_DURATION   = "8"
+_SEEDANCE_VALID_RESOLUTIONS  = {"480p", "720p", "1080p"}
+_SEEDANCE_DEFAULT_RESOLUTION = "720p"
+_SEEDANCE_VALID_ASPECT_RATIOS = {"1:1", "4:3", "3:4", "16:9", "9:16", "21:9"}
+_SEEDANCE_PROMPT_MIN_CHARS    = 3
+_SEEDANCE_PROMPT_MAX_CHARS    = 2500
+_SEEDANCE_MAX_INPUT_URLS      = 2  # 0=text-to-video, 1=first-frame, 2=first+last frame pin
+
 
 def _decode_result_json(raw: Any) -> dict[str, Any]:
     """Normalise KIE's ``resultJson`` field into a parsed dict.
@@ -134,6 +167,12 @@ class KieVideo(BaseTool):
     The gemini-omni-video path accepts reference image URLs so brand visuals
     (org-chart, logo) carry through into the rendered clip — the same pattern
     used for ZHC celebration videos across the fleet (Skill 37).
+
+    bytedance/seedance-1.5-pro (Skill 62 U5 extension) additionally supports
+    TWO-IMAGE `input_urls` FRAME PINNING: passing exactly two images pins the
+    first frame AND the last frame of the generated clip, which is what the
+    Cinematic and Web Funnel Engine (Skill 62) needs to render seam-continuous
+    connector clips between two already-approved scene stills.
     """
 
     name = "kie_video"
@@ -158,6 +197,8 @@ class KieVideo(BaseTool):
         "text_to_video",
         "image_to_video",
         "image_guided_video",
+        "first_frame_control",
+        "first_and_last_frame_control",
     ]
     supports = {
         "image_to_video": True,
@@ -165,17 +206,25 @@ class KieVideo(BaseTool):
         "image_guided_video": True,   # gemini-omni-video reference images
         "native_audio": True,
         "generate_audio": True,
+        "first_frame_pinning": True,           # bytedance/seedance-1.5-pro, 1 input_urls entry
+        "first_and_last_frame_pinning": True,  # bytedance/seedance-1.5-pro, 2 input_urls entries
     }
     best_for = [
         "brand-consistent videos with reference images (gemini-omni-video)",
         "image-to-video generation from org charts and infographics",
         "fleet-standard production video via KIE.ai at ~$0.50-$1.00/clip",
         "text-to-video fallback via veo3_fast",
+        "seam-continuous scene/connector clips via bytedance/seedance-1.5-pro "
+        "two-image first/last-frame pinning (input_urls)",
     ]
     not_good_for = [
         "free/zero-key generation (requires KIE_API_KEY)",
         "offline generation",
-        "durations outside 4/6/8s (Veo) or 4-8s (Gemini Omni)",
+        "durations outside 4/6/8s (Veo), 4-8s (Gemini Omni), or 4/8/12s (Seedance)",
+        "paid Seedance calls before a live price is confirmed — Kie.ai's own "
+        "docs state pricing is not listed for bytedance/seedance-1.5-pro "
+        "(07-kie-setup/kie-setup-full.md); the caller's budget gate must "
+        "resolve a live price before any paid call, this adapter does not",
     ]
     fallback_tools = ["kie_video"]  # internal fallback: gemini-omni -> veo3_fast
 
@@ -193,37 +242,83 @@ class KieVideo(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["gemini-omni-video", "veo3", "veo3_fast"],
+                "enum": ["gemini-omni-video", "veo3", "veo3_fast", _SEEDANCE_MODEL],
                 "default": "gemini-omni-video",
                 "description": (
                     "KIE model to use.  gemini-omni-video is the default and "
                     "supports reference images (image-guided generation).  "
                     "veo3 / veo3_fast use a different endpoint; they are "
-                    "text-to-video only (no image references)."
+                    "text-to-video only (no image references).  "
+                    "bytedance/seedance-1.5-pro (Skill 62 U5) supports 0-2 "
+                    "`input_urls` -- 2 images pins BOTH the first and last "
+                    "frame of the clip."
                 ),
             },
             "duration": {
                 "type": "string",
                 "description": (
                     "Clip duration in seconds as a STRING.  "
-                    "gemini-omni-video accepts '4'-'8'; veo3/veo3_fast accept '4', '6', or '8'.  "
+                    "gemini-omni-video accepts '4'-'8'; veo3/veo3_fast accept '4', '6', or '8'; "
+                    "bytedance/seedance-1.5-pro accepts '4', '8', or '12'.  "
                     "MUST be a string, not an integer (422 fix, verified 2026-05-27)."
                 ),
                 "default": "8",
             },
             "aspect_ratio": {
                 "type": "string",
-                "enum": ["16:9", "9:16"],
+                "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
                 "default": "16:9",
                 "description": (
                     "Output aspect ratio.  ALWAYS included in the request body "
-                    "for gemini-omni-video (KIE 422 fix, v10.X.4)."
+                    "for gemini-omni-video (KIE 422 fix, v10.X.4) and REQUIRED "
+                    "for bytedance/seedance-1.5-pro.  gemini-omni-video/veo3/"
+                    "veo3_fast only accept 16:9 or 9:16; other values snap to "
+                    "16:9 for those models but are valid as-is for Seedance "
+                    "(1:1/4:3/3:4/16:9/9:16/21:9)."
                 ),
             },
             "generate_audio": {
                 "type": "boolean",
                 "default": True,
-                "description": "Include synchronized audio in the generated clip.",
+                "description": (
+                    "Include synchronized audio in the generated clip.  For "
+                    "bytedance/seedance-1.5-pro the KIE default is false and "
+                    "enabling it increases cost (07-kie-setup/kie-setup-full.md)."
+                ),
+            },
+            "resolution": {
+                "type": "string",
+                "enum": ["480p", "720p", "1080p"],
+                "default": "720p",
+                "description": (
+                    "Output resolution -- bytedance/seedance-1.5-pro only.  "
+                    "Ignored for gemini-omni-video/veo3/veo3_fast, which use "
+                    "their own fixed defaults."
+                ),
+            },
+            "fixed_lens": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Lock the camera position -- bytedance/seedance-1.5-pro "
+                    "only (KIE `fixed_lens` field). Ignored for other models."
+                ),
+            },
+            "input_urls": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "bytedance/seedance-1.5-pro FRAME PINNING.  0-2 public "
+                    "image URLs, order-significant: index 0 = FIRST frame, "
+                    "index 1 (optional) = LAST frame.  0 entries = pure "
+                    "text-to-video; 1 entry = image-to-video from that start "
+                    "frame; 2 entries = the clip is pinned to begin on the "
+                    "first image and end on the second (spec §10.1/§10.2 "
+                    "'two-image input_urls frame pinning').  Each URL must be "
+                    "publicly reachable by KIE servers -- upload local files "
+                    "first (see kie_image._upload_local_image).  Ignored for "
+                    "every other model (they use image_urls/image_url instead)."
+                ),
             },
             "image_urls": {
                 "type": "array",
@@ -232,7 +327,9 @@ class KieVideo(BaseTool):
                     "Reference image URLs for gemini-omni-video.  Each URL must "
                     "be publicly reachable by KIE/Gemini servers.  Upload local "
                     "files first (see kie_image._upload_local_image).  "
-                    "Ignored for veo3/veo3_fast (text-to-video only)."
+                    "Ignored for veo3/veo3_fast (text-to-video only) and for "
+                    "bytedance/seedance-1.5-pro (use `input_urls` instead, "
+                    "which preserves first/last-frame order)."
                 ),
             },
             "image_url": {
@@ -262,6 +359,11 @@ class KieVideo(BaseTool):
             "kie_task_id": {"type": "string", "description": "KIE task ID (render proof receipt)"},
             "kie_result_url": {"type": "string", "description": "Remote KIE result URL (render proof receipt)"},
             "has_audio": {"type": "boolean"},
+            "input_urls": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Echo of the frame-pin input_urls actually submitted (bytedance/seedance-1.5-pro only; empty otherwise).",
+            },
         },
     }
 
@@ -273,7 +375,7 @@ class KieVideo(BaseTool):
         backoff_seconds=10.0,
         retryable_errors=["rate_limit", "timeout", "image_fetch_failed"],
     )
-    idempotency_key_fields = ["prompt", "model", "duration", "aspect_ratio"]
+    idempotency_key_fields = ["prompt", "model", "duration", "aspect_ratio", "resolution", "input_urls"]
     side_effects = [
         "calls api.kie.ai createTask or veo/generate API",
         "downloads generated video to output_path",
@@ -347,11 +449,25 @@ class KieVideo(BaseTool):
 
         gemini-omni-video: accepts 4-8 (passed as STRING per 422 fix).
         veo3 / veo3_fast: accepts 4, 6, 8 (as STRING).
+        bytedance/seedance-1.5-pro: accepts 4, 8, 12 (as STRING).
         """
         if model == "gemini-omni-video":
             if raw in _GEMINI_VALID_DURATIONS:
                 return raw
             return _DEFAULT_DURATION
+        elif model == _SEEDANCE_MODEL:
+            if raw in _SEEDANCE_VALID_DURATIONS:
+                return raw
+            try:
+                n = int(raw)
+            except ValueError:
+                return _SEEDANCE_DEFAULT_DURATION
+            # Snap to nearest valid Seedance duration (4, 8, 12)
+            if n <= 4:
+                return "4"
+            if n <= 8:
+                return "8"
+            return "12"
         else:
             if raw in _VEO_VALID_DURATIONS:
                 return raw
@@ -366,10 +482,42 @@ class KieVideo(BaseTool):
             except ValueError:
                 return _DEFAULT_DURATION
 
-    def _snap_aspect(self, raw: str) -> str:
-        if raw in _VALID_ASPECT_RATIOS:
-            return raw
-        return "16:9"
+    def _snap_aspect(self, raw: str, model: str = "gemini-omni-video") -> str:
+        """Snap aspect ratio to a model-valid value.
+
+        bytedance/seedance-1.5-pro accepts a much wider set
+        (1:1/4:3/3:4/16:9/9:16/21:9 -- kie-setup-full.md 'Seedance 1.5 Pro')
+        than gemini-omni-video/veo3/veo3_fast (16:9/9:16 only).
+        """
+        if model == _SEEDANCE_MODEL:
+            return raw if raw in _SEEDANCE_VALID_ASPECT_RATIOS else "16:9"
+        return raw if raw in _VALID_ASPECT_RATIOS else "16:9"
+
+    def _snap_resolution(self, raw: str) -> str:
+        """Snap output resolution to a valid bytedance/seedance-1.5-pro value
+        (480p/720p/1080p). Not used by gemini-omni-video/veo3/veo3_fast,
+        which have no user-selectable resolution field."""
+        return raw if raw in _SEEDANCE_VALID_RESOLUTIONS else _SEEDANCE_DEFAULT_RESOLUTION
+
+    def _resolve_input_urls(self, inputs: dict[str, Any]) -> list[str]:
+        """Ordered frame-pin URLs for bytedance/seedance-1.5-pro.
+
+        Index 0 is the FIRST frame, index 1 (optional) is the LAST frame.
+        Unlike `_resolve_image_urls` (gemini-omni's reference-image merge
+        across several alias keys), frame identity here depends on POSITION,
+        so this reads ONLY `inputs["input_urls"]` and preserves its exact
+        order -- no merge, no re-sort. Capped at
+        `_SEEDANCE_MAX_INPUT_URLS` (2); non-http(s)/non-string entries are
+        dropped (fail-soft on a malformed entry, not a hard request error).
+        """
+        raw = inputs.get("input_urls") or []
+        urls: list[str] = []
+        for u in raw:
+            if isinstance(u, str) and (u.startswith("https://") or u.startswith("http://")):
+                urls.append(u)
+            if len(urls) >= _SEEDANCE_MAX_INPUT_URLS:
+                break
+        return urls
 
     # ------------------------------------------------------------------
     # Gemini Omni Video path (POST /api/v1/jobs/createTask)
@@ -429,11 +577,20 @@ class KieVideo(BaseTool):
             raise RuntimeError(f"kie_video gemini-omni-video submit: no taskId: {data}")
         return task_id
 
-    def _poll_gemini_omni(self, task_id: str, api_key: str) -> str:
+    def _poll_jobs_task(self, task_id: str, api_key: str, *, model_label: str) -> str:
         """Poll GET /api/v1/jobs/recordInfo until success; return result URL.
 
-        Handles transient image-fetch failures (rc=2 signal in the fleet script)
-        by raising a retriable error so the caller can re-submit.
+        SHARED poll path for every model submitted through
+        POST /api/v1/jobs/createTask. gemini-omni-video AND
+        bytedance/seedance-1.5-pro (Skill 62 U5) use the IDENTICAL
+        createTask/recordInfo endpoint pair — verified against
+        07-kie-setup/kie-setup-full.md "Common create task endpoint" +
+        "Seedance 1.5 Pro" (2026-07-15) — so one poll implementation serves
+        both; only `model_label` changes, purely for attributing error/
+        exception text to the model that actually ran.
+
+        Handles transient image-fetch failures (rc=2 signal in the fleet
+        script) by raising a retriable error so the caller can re-submit.
 
         Verified against generate-celebration-video.sh poll_gemini_omni(),
         lines 486-529.
@@ -480,7 +637,7 @@ class KieVideo(BaseTool):
                 if video_url:
                     return video_url
                 raise RuntimeError(
-                    f"kie_video: gemini-omni-video task {task_id} succeeded "
+                    f"kie_video: {model_label} task {task_id} succeeded "
                     f"but no result URL found: {result_json}"
                 )
 
@@ -493,18 +650,106 @@ class KieVideo(BaseTool):
                     "failed to download", "failed to load",
                 )):
                     raise _ImageFetchError(
-                        f"kie_video: gemini-omni-video transient image-fetch "
+                        f"kie_video: {model_label} transient image-fetch "
                         f"failure for task {task_id}: {fail_msg}"
                     )
                 raise RuntimeError(
-                    f"kie_video: gemini-omni-video task {task_id} failed: {fail_msg}"
+                    f"kie_video: {model_label} task {task_id} failed: {fail_msg}"
                 )
             # Pending / processing — keep polling
 
         raise RuntimeError(
-            f"kie_video: gemini-omni-video task {task_id} timed out "
+            f"kie_video: {model_label} task {task_id} timed out "
             f"after {_POLL_TIMEOUT_SECONDS}s"
         )
+
+    def _poll_gemini_omni(self, task_id: str, api_key: str) -> str:
+        """Poll a gemini-omni-video task. Thin wrapper over the shared
+        `_poll_jobs_task` (kept as a distinct method so existing callers/
+        tests calling `_poll_gemini_omni(task_id, api_key)` are unaffected)."""
+        return self._poll_jobs_task(task_id, api_key, model_label="gemini-omni-video")
+
+    def _poll_seedance(self, task_id: str, api_key: str) -> str:
+        """Poll a bytedance/seedance-1.5-pro task (Skill 62 U5). Same
+        createTask/recordInfo endpoint pair as gemini-omni-video — see
+        `_poll_jobs_task`."""
+        return self._poll_jobs_task(task_id, api_key, model_label=_SEEDANCE_MODEL)
+
+    # ------------------------------------------------------------------
+    # Seedance path (POST /api/v1/jobs/createTask, same endpoint as
+    # gemini-omni-video — Skill 62 U5 extension, 2026-07-15)
+    # ------------------------------------------------------------------
+
+    def _submit_seedance(
+        self,
+        prompt: str,
+        duration: str,
+        aspect_ratio: str,
+        resolution: str,
+        input_urls: list[str],
+        generate_audio: bool,
+        fixed_lens: bool,
+        api_key: str,
+    ) -> str:
+        """Submit a bytedance/seedance-1.5-pro job; return the taskId.
+
+        Uses the SAME endpoint as gemini-omni-video
+        (POST /api/v1/jobs/createTask) — verified against
+        07-kie-setup/kie-setup-full.md §"Seedance 1.5 Pro" (2026-07-15) — so
+        no new HTTP surface is introduced.
+
+        Body shape (per kie-setup-full.md curl example):
+
+          {
+            "model": "bytedance/seedance-1.5-pro",
+            "input": {
+              "prompt": <str>,
+              "input_urls": [<first_frame_url>, <last_frame_url>],  # 0-2 images
+              "aspect_ratio": <str>,   # REQUIRED
+              "resolution": <str>,     # 480p / 720p / 1080p
+              "duration": "<str>",     # "4" | "8" | "12"
+              "fixed_lens": <bool>,
+              "generate_audio": <bool>
+            }
+          }
+
+        FRAME PINNING (spec §10.1/§10.2 "two-image input_urls frame
+        pinning"): when `input_urls` has exactly 2 entries, index 0 is the
+        FIRST frame and index 1 is the LAST frame of the generated clip.
+        1 entry = image-to-video from that single start frame. 0 entries =
+        pure text-to-video (`input_urls` is omitted from the body entirely,
+        matching kie-setup-full.md: "Text to video if input_urls is omitted").
+        """
+        import requests
+
+        task_input: dict[str, Any] = {
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,  # REQUIRED for Seedance (kie-setup-full.md)
+            "resolution": resolution,
+            "duration": duration,          # STRING, mirrors the gemini-omni 422-fix pattern
+            "fixed_lens": fixed_lens,
+            "generate_audio": generate_audio,
+        }
+        if input_urls:
+            task_input["input_urls"] = input_urls
+
+        body = {"model": _SEEDANCE_MODEL, "input": task_input}
+
+        resp = requests.post(
+            _GEMINI_CREATE_URL,  # shared /api/v1/jobs/createTask endpoint
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
+        if not task_id:
+            raise RuntimeError(f"kie_video seedance submit: no taskId: {data}")
+        return task_id
 
     # ------------------------------------------------------------------
     # Veo fallback path (POST /api/v1/veo/generate)
@@ -725,7 +970,7 @@ class KieVideo(BaseTool):
         prompt = inputs.get("prompt", "")
         model = inputs.get("model", _DEFAULT_MODEL)
         raw_duration = str(inputs.get("duration", _DEFAULT_DURATION))
-        aspect_ratio = self._snap_aspect(inputs.get("aspect_ratio", "16:9"))
+        aspect_ratio = self._snap_aspect(inputs.get("aspect_ratio", "16:9"), model)
         generate_audio = bool(inputs.get("generate_audio", True))
         output_path = Path(inputs.get("output_path", "kie_video_output.mp4"))
 
@@ -735,9 +980,40 @@ class KieVideo(BaseTool):
         task_id: str = ""
         result_url: str = ""
         used_model = model
+        used_input_urls: list[str] = []
+
+        # --- bytedance/seedance-1.5-pro (Skill 62 U5: text-to-video or
+        #     1-2 image `input_urls` frame pinning) ---
+        if model == _SEEDANCE_MODEL:
+            seedance_prompt = prompt.strip()
+            if not (_SEEDANCE_PROMPT_MIN_CHARS <= len(seedance_prompt) <= _SEEDANCE_PROMPT_MAX_CHARS):
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"kie_video: {_SEEDANCE_MODEL} prompt must be "
+                        f"{_SEEDANCE_PROMPT_MIN_CHARS}-{_SEEDANCE_PROMPT_MAX_CHARS} "
+                        f"characters (got {len(seedance_prompt)})"
+                    ),
+                )
+            resolution = self._snap_resolution(inputs.get("resolution", _SEEDANCE_DEFAULT_RESOLUTION))
+            fixed_lens = bool(inputs.get("fixed_lens", False))
+            input_urls = self._resolve_input_urls(inputs)
+            try:
+                task_id = self._submit_seedance(
+                    seedance_prompt, duration, aspect_ratio, resolution,
+                    input_urls, generate_audio, fixed_lens, api_key,
+                )
+                result_url = self._poll_seedance(task_id, api_key)
+                used_model = _SEEDANCE_MODEL
+                used_input_urls = input_urls
+            except Exception as exc:
+                return ToolResult(
+                    success=False,
+                    error=f"kie_video: {_SEEDANCE_MODEL} failed: {exc}",
+                )
 
         # --- Attempt gemini-omni-video (primary) ---
-        if model == "gemini-omni-video":
+        elif model == "gemini-omni-video":
             max_gemini_attempts = 2
             for attempt in range(1, max_gemini_attempts + 1):
                 try:
@@ -833,6 +1109,7 @@ class KieVideo(BaseTool):
                 "has_audio": generate_audio,
                 "duration": duration,
                 "aspect_ratio": aspect_ratio,
+                "input_urls": used_input_urls,   # frame-pin echo (Seedance only; [] otherwise)
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost({**inputs, "model": used_model}),

@@ -1,0 +1,20 @@
+# Pinned sha256 baseline for the on-box "source of truth" agent-browser
+# SKILL.md this skill's own SKILL.md defers to when present:
+#   ~/clawd/skills/agent-browser/SKILL.md
+# (see 03-agent-browser/SKILL.md — "If that path exists, treat it as the
+# source of truth.")
+#
+# That file lives OUTSIDE this repo and is box-local, so it cannot be
+# byte-diffed against on-disk repo source the way agent-browser.skill's four
+# packaged docs are (lib-archive-diff.sh). Instead this is a PINNED baseline:
+# captured explicitly, once, by scripts/pin-onbox-source-of-truth.sh — never
+# auto-updated, never captured silently as a side effect of a QC run.
+#
+# UNCAPTURED = no baseline has ever been recorded on this box. qc-agent-
+# browser.sh treats that as a FAIL (fail-closed — an unknown state is a gap
+# to close, not a silent pass), naming the exact fix: run
+# `scripts/pin-onbox-source-of-truth.sh` once the on-box copy is reviewed and
+# accepted as known-good.
+#
+# Format once captured: <sha256>  <byte-count>  <captured-date>
+UNCAPTURED

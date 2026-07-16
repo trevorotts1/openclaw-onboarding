@@ -141,3 +141,17 @@ Per the operator's notes: CF Access PIN emails to some operator domains can be s
 this skill's Command Center handoff, use a known-deliverable address (e.g. a Gmail) for fleet
 operator-access, NOT the suppressed operator-domain addresses.
 
+## A self-hosted service (n8n, etc.) needs its own public webhook URL — this is a DIFFERENT SOP
+
+The four layers above are about the OpenClaw gateway's own GHL-inbound tunnel, which this skill
+provisions with the client's own `CLOUDFLARE_API_TOKEN` (per the field guide, Part 4). If instead a
+department needs to expose a **separate self-hosted service** on the client box — most commonly a
+self-hosted n8n instance that needs to receive inbound webhooks — do NOT reuse this skill's
+client-owns-the-account flow, and do NOT run `cloudflared tunnel login` to "just get it working." That
+service's tunnel is a DIFFERENT tunnel on the OPERATOR's zone, not the client's own Cloudflare account,
+and it needs a Cloudflare Access policy split by path (webhook paths bypassed, UI/admin paths still
+gated) or every inbound webhook will silently 302 to a login page.
+
+Full procedure, the exact guardrail, the operator-escalation request format, and the required
+404-vs-302 verification: `universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md`.
+

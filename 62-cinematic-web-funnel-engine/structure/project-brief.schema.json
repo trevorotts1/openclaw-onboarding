@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/project-brief.schema.json",
+  "title": "Cinematic and Web Funnel Engine — intake/project-brief.json (Skill 62, U9)",
+  "description": "The locked client brief spec Section 8.2 names as intake/project-brief.json. Assembled by scripts/intake_engine.py from the 12 intake groups (spec 8.1) once every required question is answered. brief_hash is computed deterministically over the groups payload ONLY (never over locked_at/locked_by/timestamps), so the same answers always lock to the same brief_hash regardless of wall-clock time or which run_dir the intake happened in (the U9 'same answers -> same locked brief' determinism requirement).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "locked", "locked_at", "locked_by",
+    "brief_hash", "groups", "truth_source_ids", "created_at", "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "locked": { "type": "boolean" },
+    "locked_at": { "type": ["string", "null"] },
+    "locked_by": { "type": ["string", "null"] },
+    "brief_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "truth_source_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "groups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_goal", "audience", "offer", "brand", "content_source",
+        "cinematic_direction", "conversion_infrastructure", "hosting",
+        "mobile_strategy", "accessibility", "budget", "approval_workflow"
+      ],
+      "properties": {
+        "project_goal": {
+          "type": "object", "additionalProperties": false,
+          "required": ["deliverable_type", "success_action", "deadline", "required_assets"],
+          "properties": {
+            "deliverable_type": { "type": "string", "enum": ["cinematic-website", "cinematic-landing-page", "cinematic-funnel", "scroll-story-page"] },
+            "success_action": { "type": "string", "minLength": 1 },
+            "deadline": { "type": "string", "minLength": 1 },
+            "required_assets": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "audience": {
+          "type": "object", "additionalProperties": false,
+          "required": ["identity", "pain", "aspiration", "awareness_level"],
+          "properties": {
+            "identity": { "type": "string", "minLength": 1 },
+            "pain": { "type": "string", "minLength": 1 },
+            "aspiration": { "type": "string", "minLength": 1 },
+            "awareness_level": { "type": "string", "enum": ["unaware", "problem-aware", "solution-aware", "product-aware", "most-aware"] }
+          }
+        },
+        "offer": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "promise", "price", "mechanism", "bonuses", "objections", "proof"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "promise": { "type": "string", "minLength": 1 },
+            "price": { "type": "string", "minLength": 1 },
+            "mechanism": { "type": "string", "minLength": 1 },
+            "bonuses": { "type": "array", "items": { "type": "string" } },
+            "objections": { "type": "array", "items": { "type": "string" } },
+            "proof": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["claim_id", "claim_text"],
+                "properties": {
+                  "claim_id": { "type": "string", "minLength": 1 },
+                  "claim_text": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "brand": {
+          "type": "object", "additionalProperties": false,
+          "required": ["colors", "typography", "logo", "tone", "visual_references", "prohibited_styles", "representation_requirements"],
+          "properties": {
+            "colors": { "type": "array", "items": { "type": "string" } },
+            "typography": { "type": ["string", "null"] },
+            "logo": { "type": ["string", "null"] },
+            "tone": { "type": "string", "minLength": 1 },
+            "visual_references": { "type": "array", "items": { "type": "string" } },
+            "prohibited_styles": { "type": "array", "items": { "type": "string" } },
+            "representation_requirements": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "content_source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["existing_copy", "selected_methodology", "required_sections", "claims"],
+          "properties": {
+            "existing_copy": { "type": ["string", "null"] },
+            "selected_methodology": { "type": "string", "enum": ["signature-funnel", "sales-page-assets", "cinematic-native"] },
+            "required_sections": { "type": "array", "items": { "type": "string" } },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["claim_id", "claim_text"],
+                "properties": {
+                  "claim_id": { "type": "string", "minLength": 1 },
+                  "claim_text": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "cinematic_direction": {
+          "type": "object", "additionalProperties": false,
+          "required": ["visual_world", "realism_level", "story_progression", "camera_language", "scene_count"],
+          "properties": {
+            "visual_world": { "type": "string", "minLength": 1 },
+            "realism_level": { "type": "string", "enum": ["photoreal", "stylized-real", "illustrative", "abstract"] },
+            "story_progression": { "type": "string", "minLength": 1 },
+            "camera_language": { "type": "string", "minLength": 1 },
+            "scene_count": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "conversion_infrastructure": {
+          "type": "object", "additionalProperties": false,
+          "required": ["ghl_location_id", "form", "calendar", "payment", "workflow", "tracking_attribution"],
+          "properties": {
+            "ghl_location_id": { "type": "string", "minLength": 1 },
+            "form": { "type": "string", "minLength": 1 },
+            "calendar": { "type": "string", "minLength": 1 },
+            "payment": { "type": "string", "minLength": 1 },
+            "workflow": { "type": "string", "minLength": 1 },
+            "tracking_attribution": { "type": "string", "minLength": 1 }
+          }
+        },
+        "hosting": {
+          "type": "object", "additionalProperties": false,
+          "required": ["vercel_account", "vercel_project", "vercel_team", "custom_domain", "alternate_host"],
+          "properties": {
+            "vercel_account": { "type": ["string", "null"] },
+            "vercel_project": { "type": ["string", "null"] },
+            "vercel_team": { "type": ["string", "null"] },
+            "custom_domain": { "type": ["string", "null"] },
+            "alternate_host": { "type": ["string", "null"] }
+          }
+        },
+        "mobile_strategy": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": { "type": "string", "enum": ["crop-safe", "dedicated-portrait", "reduced-cinematic"] }
+          }
+        },
+        "accessibility": {
+          "type": "object", "additionalProperties": false,
+          "required": ["reduced_motion_preference", "transcript_alt_content"],
+          "properties": {
+            "reduced_motion_preference": { "type": "string", "enum": ["respect-system", "always-reduced", "never-reduced"] },
+            "transcript_alt_content": { "type": "boolean" }
+          }
+        },
+        "budget": {
+          "type": "object", "additionalProperties": false,
+          "required": ["max_media_spend_usd", "premium_model_permission"],
+          "properties": {
+            "max_media_spend_usd": { "type": "number", "minimum": 0 },
+            "premium_model_permission": { "type": "boolean" }
+          }
+        },
+        "approval_workflow": {
+          "type": "object", "additionalProperties": false,
+          "required": ["anchor_approver", "draft_approver", "final_deployment_approver"],
+          "properties": {
+            "anchor_approver": { "type": "string", "minLength": 1 },
+            "draft_approver": { "type": "string", "minLength": 1 },
+            "final_deployment_approver": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

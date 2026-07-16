@@ -47,7 +47,7 @@
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v20.0.24"
+BROWSER_MANAGER_VERSION="v20.0.59"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -521,11 +521,35 @@ bm_require_current_guard() {
   return 0
 }
 
+# ── B-U15 item 3: stale-env preflight (WARN-only, VPS/Docker-only) ────────────
+# Folds the documented `docker compose restart`-skips-`env_file` trap into an
+# AUTOMATED preflight check (ENV-MATRIX.md's "Docker env-file / workdir" row —
+# previously prose-only doctrine). ADVISORY ONLY: prints a WARN to stderr when
+# it can positively confirm the host `.env` is newer than the container's
+# StartedAt; stays completely silent otherwise (Mac box, no docker socket,
+# unknown container — never guesses). NEVER fails `bm_ensure` — a warning must
+# not become an unplanned new build-blocking gate. The actual staleness
+# detection lives once, in Python (`browser_manager.py::stale_env_preflight`),
+# so the shell and Python sides never carry two drifting implementations of
+# the same RFC3339-timestamp-vs-mtime comparison.
+bm_stale_env_preflight() {
+  local py="$(command -v python3 || true)"
+  [ -z "$py" ] && return 0   # no python3 on PATH — silent, advisory only
+  local self_dir
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  [ -f "$self_dir/browser_manager.py" ] || return 0
+  local warn
+  warn="$("$py" "$self_dir/browser_manager.py" --stale-env-preflight 2>/dev/null)" || return 0
+  [ -n "$warn" ] && echo "$warn" >&2
+  return 0
+}
+
 # ── bm_ensure — the one entrypoint callers use before the first open ──────────
 # breaker-check → acquire lock → write lease → start TTL timer → open canonical
 # session → register the EXIT/INT/TERM/HUP teardown trap.
 bm_ensure() {
   bm_require_current_guard || return $?   # B1: refuse old-guard / headed launch
+  bm_stale_env_preflight                  # B-U15 item 3: advisory, never fails ensure
   local session
   session="$(bm_session_name)"
   bm_assert_session "$session"

@@ -1,0 +1,204 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/project-manifest.schema.json",
+  "title": "Cinematic and Web Funnel Engine — project-manifest.json (Skill 62, U6)",
+  "description": "The durable source of truth for one generated project (spec Section 11). Validated on every read and every write by scripts/state_engine.py. Never contains secret values — credentials are referenced by NAME only (execution_environment.secret_names[] / crm.secret_names[] / hosting.secret_names[]).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "client_slug",
+    "project_slug",
+    "deliverable_type",
+    "status",
+    "content_methodology",
+    "execution_environment",
+    "hosting",
+    "crm",
+    "budget",
+    "scenes",
+    "connectors",
+    "assets",
+    "tasks",
+    "quality",
+    "deployment",
+    "approvals",
+    "status_history",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1, "pattern": "^[a-zA-Z0-9_-]+$" },
+    "client_slug": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9-]+$" },
+    "project_slug": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9-]+$" },
+    "deliverable_type": {
+      "type": "string",
+      "enum": ["cinematic-website", "cinematic-landing-page", "cinematic-funnel", "scroll-story-page"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "created",
+        "intake",
+        "methodology",
+        "content",
+        "journey",
+        "budget_pending",
+        "budget_approved",
+        "anchor",
+        "stills",
+        "draft_media",
+        "final_media",
+        "encode_seam",
+        "site_build",
+        "crm",
+        "browser_qc",
+        "preview_deployed",
+        "production_deployed",
+        "certified",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "content_methodology": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": { "type": "string", "enum": ["signature-funnel", "sales-page-assets", "cinematic-native", "existing-funnel-selector", "unset"] },
+        "source_skill": { "type": "string" },
+        "source_skill_version": { "type": "string" },
+        "content_manifest_hash": { "type": ["string", "null"] }
+      }
+    },
+    "execution_environment": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "resolved_at": { "type": ["string", "null"] },
+        "secret_names": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "hosting": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": { "type": "string", "enum": ["vercel", "cloudflare-pages", "netlify", "self-hosted", "static-export", "unset"] },
+        "secret_names": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "crm": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": { "type": "string", "enum": ["ghl", "none", "unset"] },
+        "location_id": { "type": ["string", "null"] },
+        "secret_names": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["cap_usd", "approved"],
+      "properties": {
+        "cap_usd": { "type": "number", "minimum": 0 },
+        "approved": { "type": "boolean" },
+        "approved_by": { "type": ["string", "null"] },
+        "approved_at": { "type": ["string", "null"] },
+        "cumulative_spend_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["scene_id"],
+        "properties": {
+          "scene_id": { "type": "string", "minLength": 1 },
+          "approval_status": { "type": "string", "enum": ["proposed", "approved", "rejected", "regenerate"] }
+        }
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["asset_id", "kind"],
+        "properties": {
+          "asset_id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["image", "video", "audio", "other"] },
+          "hash_sha256": { "type": ["string", "null"] },
+          "superseded_by": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["task_id", "kind", "status", "request_hash"],
+        "properties": {
+          "task_id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "submitted", "in_progress", "complete", "failed", "cancelled"]
+          },
+          "request_hash": { "type": "string", "minLength": 8 },
+          "provider_task_id": { "type": ["string", "null"] },
+          "retry_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "preview": { "type": ["object", "null"] },
+        "production": { "type": ["object", "null"] }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["kind", "approved_by", "approved_at"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "approved_by": { "type": "string", "minLength": 1 },
+          "approved_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "status_history": {
+      "type": "array",
+      "description": "Every status transition this project has undergone (spec 11.2: 'record every status transition'). Append-only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_status", "to_status", "at", "reason"],
+        "properties": {
+          "from_status": { "type": ["string", "null"] },
+          "to_status": { "type": "string", "minLength": 1 },
+          "at": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

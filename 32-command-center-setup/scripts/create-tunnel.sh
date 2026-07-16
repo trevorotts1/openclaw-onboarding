@@ -19,7 +19,7 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   fi
 fi
 
-echo "[1/5] Requesting tunnel from Trevor's system..."
+echo "[1/5] Requesting tunnel from the operator's system..."
 # Build the JSON body with python3 so embedded quotes/spaces/special chars in
 # the company name or email are escaped correctly. The previous inline
 # double-quoted heredoc-style body (-d "{"clientName":...}") collapsed the
@@ -41,14 +41,22 @@ for _delay in 0 2 4; do
     -d "$REQUEST_BODY" 2>/dev/null) && [ -n "$RESPONSE" ] && break
 done
 if [ -z "$RESPONSE" ]; then
-  echo "ERROR: tunnel registration webhook unreachable after ${_attempt} attempt(s) (no response)"
+  echo "ERROR: tunnel registration webhook unreachable after ${_attempt} attempt(s) (no response)" >&2
+  echo "ESCALATE: message the operator with this client slug ($CLIENT_SLUG) and note the webhook" >&2
+  echo "  at $WEBHOOK_URL did not respond. Do NOT attempt to create a Cloudflare tunnel any other" >&2
+  echo "  way — do NOT run 'cloudflared tunnel login', do NOT create a Cloudflare account. The" >&2
+  echo "  tunnel can only be issued by the operator's n8n system; wait for the operator to confirm" >&2
+  echo "  the webhook is back up, then re-run this script." >&2
   exit 1
 fi
 
 STATUS=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
 if [ "$STATUS" != "success" ]; then
-  echo "ERROR: webhook failed"
-  echo "$RESPONSE"
+  echo "ERROR: webhook failed" >&2
+  echo "$RESPONSE" >&2
+  echo "ESCALATE: message the operator with this client slug ($CLIENT_SLUG) and the response body" >&2
+  echo "  above. Do NOT attempt to create a Cloudflare tunnel any other way — do NOT run" >&2
+  echo "  'cloudflared tunnel login', do NOT create a Cloudflare account." >&2
   exit 1
 fi
 

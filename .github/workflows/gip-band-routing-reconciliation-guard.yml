@@ -1,0 +1,101 @@
+name: gip-band-routing-reconciliation-guard
+
+# GK-20 (Skill 6 Blended-Persona Kanban v2, master-spec U82) — locks the fix for a
+# real config/doctrine contradiction found in the P3-05 Graphics<->Social pass:
+# `prompt-bands.json` listed `nano-banana-2` as a `text_bearing_long` endpoint and
+# named NO Ideogram endpoint in any text_bearing band, while the fleet's mandatory
+# routing rule (social-media-designs/_RULES.md) and Skill 35's pregen_prompt_gate.py
+# both REQUIRE every quote-card/text-led post to route to Ideogram V3 DESIGN and
+# REFUSE Nano Banana for any text-overlay deliverable. A Graphics-authored
+# text-bearing asset written to its own band's guidance could never simultaneously
+# satisfy its band floor and the mandated route.
+#
+# This workflow fails the build if:
+#   (A) prove_gip_prompt_floor.py --self-test regresses (incl. the new
+#       text_bearing_medium fixtures + the nano-banana/Ideogram-band assertions
+#       read live from prompt-bands.json — never a separate/duplicated fixture);
+#   (B) test_prompt_band_cli.py regresses (incl. the new real-CLI text_bearing_medium
+#       pass/floor cases — GK-20's own BINARY acceptance, proven through the actual
+#       `diu_validator.py` subprocess, not an internal-function shortcut);
+#   (C) test_pregen_prompt_gate.py (Skill 35) regresses (incl. the new case proving
+#       the SAME reconciled-band-floor prompt clears pregen_prompt_gate.py too, on
+#       Ideogram V3 DESIGN — the "passes BOTH gates" half of GK-20's acceptance);
+#   (D) prompt-bands.json becomes invalid JSON or the manifest drifts
+#       (hash-content-manifest.py --check) for the touched graphics role docs/SOPs.
+
+on:
+  push:
+    paths:
+      - "45-design-intelligence-library/library/_system/prompt-bands.json"
+      - "45-design-intelligence-library/library/social-media-designs/_RULES.md"
+      - "45-design-intelligence-library/scripts/diu_validator.py"
+      - "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py"
+      - "45-design-intelligence-library/scripts/test_prompt_band_cli.py"
+      - "35-social-media-planner/scripts/pregen_prompt_gate.py"
+      - "35-social-media-planner/scripts/test_pregen_prompt_gate.py"
+      - "23-ai-workforce-blueprint/templates/role-library/graphics/**"
+      - "23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+      - .github/workflows/gip-band-routing-reconciliation-guard.yml
+  pull_request:
+    paths:
+      - "45-design-intelligence-library/library/_system/prompt-bands.json"
+      - "45-design-intelligence-library/library/social-media-designs/_RULES.md"
+      - "45-design-intelligence-library/scripts/diu_validator.py"
+      - "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py"
+      - "45-design-intelligence-library/scripts/test_prompt_band_cli.py"
+      - "35-social-media-planner/scripts/pregen_prompt_gate.py"
+      - "35-social-media-planner/scripts/test_pregen_prompt_gate.py"
+      - "23-ai-workforce-blueprint/templates/role-library/graphics/**"
+      - "23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+      - .github/workflows/gip-band-routing-reconciliation-guard.yml
+
+jobs:
+  gip-band-routing-reconciliation-guard:
+    name: GIP band<->routing reconciliation — prompt-bands.json v2 + Ideogram text-bearing band + no-nano-banana lock
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: prompt-bands.json is valid JSON with the reconciled bands present
+        run: |
+          python3 -c "
+          import json
+          d = json.load(open('45-design-intelligence-library/library/_system/prompt-bands.json'))
+          bands = d['bands']
+          assert 'text_bearing_medium' in bands, 'text_bearing_medium band missing'
+          tbm = bands['text_bearing_medium']
+          assert tbm['text_bearing'] is True
+          assert any('ideogram' in e.lower() for e in tbm['endpoints']), 'text_bearing_medium must name an Ideogram endpoint'
+          assert tbm['max'] <= 5000, 'text_bearing_medium max must respect Ideogram V3 real API cap'
+          for bid, b in bands.items():
+              if b.get('text_bearing'):
+                  assert not any('nano-banana' in str(e).lower() for e in b.get('endpoints', [])), f'{bid} still lists a nano-banana endpoint'
+          print('OK: prompt-bands.json v2 reconciled shape confirmed')
+          "
+
+      - name: diu_validator.py / prove_gip_prompt_floor.py / test_prompt_band_cli.py compile
+        run: |
+          python3 -m py_compile 45-design-intelligence-library/scripts/diu_validator.py
+          python3 -m py_compile 45-design-intelligence-library/scripts/prove_gip_prompt_floor.py
+          python3 -m py_compile 45-design-intelligence-library/scripts/test_prompt_band_cli.py
+
+      - name: GIP prompt-band self-test (fixture gate, incl. text_bearing_medium + nano-banana/Ideogram assertions)
+        run: python3 45-design-intelligence-library/scripts/prove_gip_prompt_floor.py --self-test
+
+      - name: GIP prompt-band CLI fail-first proof (real subprocess, incl. GK-20 cases 5/6)
+        run: python3 45-design-intelligence-library/scripts/test_prompt_band_cli.py
+
+      - name: pregen_prompt_gate.py compiles
+        run: python3 -m py_compile 35-social-media-planner/scripts/pregen_prompt_gate.py
+
+      - name: Skill 35 pre-generation gate fail-first proof (real subprocess, incl. GK-20 case 6)
+        run: python3 35-social-media-planner/scripts/test_pregen_prompt_gate.py
+
+      - name: Role-library content-manifest check (touched graphics role docs/SOPs re-stamped)
+        run: python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py --check

@@ -1,0 +1,47 @@
+name: U53 [HL/U68] crown-executor single-path guard
+
+# MASTER SPEC v2 — U53 [HL/U68] Self-updater: crown ONE executor
+# (Decision D-HL-3, D12). Fails the build if either of update-skills.sh's
+# D5 call sites, or run-full-install.sh's Phase 6 (--update-only) caller,
+# ever regresses into inlining its own npm/pm2/git mutation of the
+# Command Center checkout instead of delegating through the single
+# crowned executor (cc_route_update_through_canonical_path() ->
+# the freshly-pulled CC's own update.sh, CC_APP_DIR pinned).
+#
+# tests/probe/test-u53-hl-u68-crown-executor-single-path.sh does pure
+# static text-extraction/assertion against the repo's own tracked files —
+# no live box, no real git remote, no real pm2/npm.
+#
+# Security note: consumes only repo file content (no untrusted GitHub
+# event fields), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh"
+      - ".github/workflows/u53-crown-executor-single-path-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh"
+      - ".github/workflows/u53-crown-executor-single-path-guard.yml"
+
+jobs:
+  crown-executor-single-path-guard:
+    name: D5 call sites stay thin wrappers; build+restart stays owned by the crowned executor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run U53/D-HL-3 crown-executor single-path regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/probe/test-u53-hl-u68-crown-executor-single-path.sh
+          echo "u53-crown-executor-single-path-guard: PASS"

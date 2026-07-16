@@ -285,7 +285,7 @@ Before any output ships, it must pass these gates:
 
 ### Gate 0 -- GIP Prompt-Band Gate (BEFORE generation, AI-generated assets only)
 
-If this graphic is produced via AI image generation, the assembled prompt MUST clear `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <band> --prompt-file <path>` BEFORE it is handed to the Generation Operator — see this department's `generation-operator.md` SOP 9.4 preflight and the shared "GIP Prompt-Band Compliance" note carried by the other AI-generation-heavy roles in this department. A floor breach (exit 3, AF-GIP-PROMPT-FLOOR) or quality-teeth failure (exit 6, AF-GIP-PROMPT-QUALITY) is refused before the paid generation call — never hand a gate-failed prompt forward.
+If this graphic is produced via AI image generation, you do NOT self-author or self-certify the prompt (per decision GK-D2, the Presentation-mirror, Option A phased — social-media text-bearing is one of the two highest-volume classes this pair covers first). Hand your creative brief (asset class + band, STYLE BLOCK, verbatim copy, casting direction, reference images) to the Prompt Author (`prompt-author-graphics.md`), who assembles the full ten-element prompt per `SOP-GIP-01-PROMPT-ANATOMY.md` and hands it to the independent Prompt QC Specialist (`qc-specialist-prompt-graphics.md`) for grading against `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <band> --prompt-file <path>` — see this department's `chief-design-officer.md` SOP 9.9 (GIP Prompt-Authoring Dispatch). Only a Prompt-QC PASS proceeds to the Generation Operator, whose own `generation-operator.md` SOP 9.4 preflight independently re-runs the same band gate as the final mechanical backstop. A floor breach (exit 3, AF-GIP-PROMPT-FLOOR) or quality-teeth failure (exit 6, AF-GIP-PROMPT-QUALITY) at either layer routes back to the Prompt Author — never hand a gate-failed prompt forward, and never author or patch the prompt text yourself.
 
 ### Gate 1 -- Self-check
 
@@ -303,7 +303,8 @@ If this graphic is produced via AI image generation, the assembled prompt MUST c
 Every AI-generated graphic that leaves for an EXTERNAL surface (published social post, ad, email, funnel)
 runs 100% through SOP-GIP-02 (mandatory vision pass + AF-G auto-fail battery + average >= 8.5 gate; writes
 `<job>/qc/image_qc_report.json`). Prompts for these graphics use band `text_bearing_long` when copy is
-baked in, `medium` for Seedream/Ideogram quick posts (SOP-GIP-01). The 10% random-sample review below
+baked in via GPT-Image 2 T2I/I2I, `text_bearing_medium` for the Ideogram V3 DESIGN route mandatory on
+every quote-card/text-led post, `medium` for non-text-bearing Seedream quick posts (SOP-GIP-01). The 10% random-sample review below
 survives ONLY for INTERNAL drafts and non-generated template assets, reviewed by a senior team member for:
 - [ ] Does this graphic feel like it belongs to {{COMPANY_NAME}}'s social media presence?
 - [ ] Is the design quality consistent with or exceeding the team's established bar?

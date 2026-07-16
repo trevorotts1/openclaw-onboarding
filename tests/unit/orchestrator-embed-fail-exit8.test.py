@@ -27,6 +27,45 @@ _REPO_ROOT = _HERE.parent.parent
 _PIPE = _REPO_ROOT / "22-book-to-persona-coaching-leadership-system" / "pipeline"
 sys.path.insert(0, str(_PIPE))
 
+# orchestrator.py's main() unconditionally builds an aiohttp.TCPConnector +
+# aiohttp.ClientSession as async-with infrastructure BEFORE dispatching to
+# preflight_providers/process_book (both stubbed below) — so even this
+# fixture-only, no-network test needs a real `aiohttp` name to import
+# cleanly. This test never calls a session method (process_book is replaced
+# with a stub that ignores `session`), so a minimal fake with working
+# async-context-manager support is enough. Matches the same
+# inject-a-fake-aiohttp-module pattern tests/unit/storm-guard.test.sh and
+# tests/unit/pipeline-provider-routing.test.sh already use for this exact
+# "aiohttp not installed on the bare CI runner" gap — injected unconditionally
+# (not gated on a real import failing) for deterministic behavior whether or
+# not the box running this test happens to have aiohttp installed.
+class _FakeClientTimeout:
+    def __init__(self, *a, **k):
+        pass
+
+
+class _FakeClientSession:
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _FakeTCPConnector:
+    def __init__(self, *a, **k):
+        pass
+
+
+_fake_aiohttp = types.ModuleType("aiohttp")
+_fake_aiohttp.ClientSession = _FakeClientSession
+_fake_aiohttp.ClientTimeout = _FakeClientTimeout
+_fake_aiohttp.TCPConnector = _FakeTCPConnector
+sys.modules["aiohttp"] = _fake_aiohttp
+
 _spec = importlib.util.spec_from_file_location("orchestrator", _PIPE / "orchestrator.py")
 orch = importlib.util.module_from_spec(_spec)
 sys.modules["orchestrator"] = orch
@@ -69,15 +108,23 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
 
         # Stub the network / heavy bits. init_storm_guard + preflight are no-ops;
         # process_book is replaced with a coroutine that records a controllable
-        # phase5 outcome (the thing under test).
+        # phase5 outcome (the thing under test). _assert_provider_route is also
+        # stubbed: it is a SEPARATE precondition main() checks before
+        # preflight_providers ever runs (no API key / no local Ollama daemon on
+        # a bare CI runner would otherwise raise ValueError before main() ever
+        # reaches the phase5 exit-code tail this test exercises) — this test
+        # is about the phase5-outcome-to-exit-code mapping, never about
+        # live provider-route availability.
         self._orig_pre = orch.preflight_providers
         self._orig_isg = orch.init_storm_guard
         self._orig_pb = orch.process_book
+        self._orig_apr = orch._assert_provider_route
 
         async def _no_preflight(*a, **k):
             return None
         orch.preflight_providers = _no_preflight
         orch.init_storm_guard = lambda *a, **k: None
+        orch._assert_provider_route = lambda: None
 
         # Neutralize orphan-guard lock/arm side effects if the module is present.
         try:
@@ -96,6 +143,7 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
         orch.preflight_providers = self._orig_pre
         orch.init_storm_guard = self._orig_isg
         orch.process_book = self._orig_pb
+        orch._assert_provider_route = self._orig_apr
         if self._og is not None:
             self._og.arm, self._og.acquire_slug_lock, self._og.run_dir_path = self._orig_og
         self.tmp.cleanup()
@@ -130,6 +178,17 @@ class TestOrchestratorEmbedFailExit8(unittest.TestCase):
     def test_embed_done_exits_0(self):
         code = self._run_with_phase5("DONE")
         self.assertEqual(code, 0, "Phase-5 DONE must exit 0 (no false failure)")
+
+    def test_embed_deferred_exits_0(self):
+        # A-U8: DEFERRED (credential-shaped gap, honest receipt written) is
+        # NOT "FAILED" — the single-book tail's exit-8 gate must not fire.
+        code = self._run_with_phase5("DEFERRED")
+        self.assertEqual(code, 0,
+                         "Phase-5 DEFERRED must exit 0 — an honest, "
+                         "non-fatal credential gap is never EMBED_FAILED (8)")
+        # Invariant: the blueprint ships regardless (same as DONE/FAILED).
+        self.assertTrue((orch.PERSONAS_DIR / self.slug / "persona-blueprint.md").exists(),
+                        "blueprint must remain on disk after a DEFERRED embed")
 
 
 if __name__ == "__main__":

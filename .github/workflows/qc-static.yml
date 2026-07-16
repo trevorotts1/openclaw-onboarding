@@ -1457,6 +1457,55 @@ jobs:
           bash 03-agent-browser/scripts/tests/qc-agent-browser-reaper-assert.test.sh
           echo "✓ qc-agent-browser.sh: archive drift gate fails naming the file, ambient AGENT_BROWSER_HEADED is refused (exit-75 class), and a session leaked past the smoke test now FAILS QC (was warn_only) while a pre-existing session stays warn_only -- all four proven fail-first against the pre-fix script where a fixture exists"
 
+      - name: Skill 03 on-box source-of-truth drift gate (GK-28/U90)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # SKILL.md defers to ~/clawd/skills/agent-browser/SKILL.md as "the
+          # source of truth" when present, but nothing checked whether that
+          # box-local copy had silently changed. Proves the PINNED sha256
+          # baseline mechanism (scripts/lib-onbox-drift.sh +
+          # scripts/pin-onbox-source-of-truth.sh): absent on-box file skips
+          # cleanly, a present-but-never-pinned file FAILS closed, a pinned
+          # file that matches PASSES, and a pinned file DELIBERATELY DRIFTED
+          # afterward FAILS naming the drift -- both at the lib level and
+          # end-to-end through qc-agent-browser.sh itself.
+          bash 03-agent-browser/scripts/tests/onbox-drift-gate.test.sh
+          echo "✓ on-box source-of-truth drift gate: fail-closed on an unpinned copy, fails naming a deliberate drift, passes a pinned+unchanged copy"
+
+      - name: Skill 03 CLI version pin (GK-28/U90)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The agent-browser NPM PACKAGE version was never pinned anywhere
+          # in this skill -- a fresh `npm install -g agent-browser` could
+          # silently land any current registry release. Proves
+          # agent-browser-cli.pin + CLI-VERSION-PIN.md stay in agreement
+          # (scripts/bump-agent-browser-cli-pin.sh --check), that a hand-edit
+          # drift between them is caught, that a bump updates both files
+          # atomically with a dated bump-log row, and that
+          # qc-agent-browser.sh itself FAILS when the installed CLI version
+          # (a stub) does not match the pin, naming both versions.
+          bash 03-agent-browser/scripts/tests/cli-version-pin.test.sh
+          echo "✓ CLI version pin: pin/doc agreement enforced, atomic bump proven, qc-agent-browser.sh fails closed on a version mismatch naming both versions"
+
+      - name: Skill 03 backstop conformance battery (GK-28/U90)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Skill 44's Tier-4 fallback and Skill 6's browser_manager.sh
+          # assume agent-browser gives them ref-based click/fill, snapshot
+          # stability, and a guaranteed session close -- nothing tested those
+          # assumptions from the CONSUMER side. Proves
+          # scripts/lib-backstop-conformance.sh's run_conformance_battery
+          # PASSES clean against a well-behaved stub CLI, and FAILS --
+          # naming the specific broken leg -- when ANY ONE of the five
+          # capabilities is stubbed out (open / ref-based snapshot /
+          # snapshot-ref stability / fill-by-ref / guaranteed close), one at
+          # a time (fail-first, per leg).
+          bash 03-agent-browser/scripts/tests/backstop-conformance.test.sh
+          echo "✓ backstop conformance battery: clean run passes all five legs; each of the five capabilities independently fails the battery when broken"
+
       - name: Skill 42 Personal Assistant Library install QC (simulated install)
         shell: bash
         run: |
@@ -2457,10 +2506,26 @@ jobs:
           #   2. No tracked env file has an uncommented WHATSAPP_NUMBER= line
           fail=0
 
-          # 1. JSON: plugins.entries.whatsapp.enabled must not be true
-          # Use a one-liner to avoid multi-line Python indentation issues in YAML.
+          # 1. JSON: plugins.entries.whatsapp.enabled must not be true.
+          # A file that FAILS TO PARSE (0-byte evidence artifact, truncated,
+          # non-JSON) is NOT a whatsapp violation — it is simply unassessable.
+          # The old inline one-liner let json.load()'s exception (JSONDecodeError,
+          # UnicodeDecodeError, etc.) propagate as an uncaught traceback, which
+          # made python3 exit non-zero for ANY unparseable file — indistinguishable
+          # from the real "enabled: true" exit(1) signal. That misread every
+          # unparseable tracked .json (e.g. a 0-byte failed-API-call evidence
+          # artifact) as a WhatsApp fleet-ban violation: a guard crash was being
+          # reported as a product violation. Fixed by extracting the check into a
+          # real, independently-testable script (scripts/qc-check-whatsapp-json.py)
+          # instead of an inline multi-line `python3 -c "..."` string embedded in
+          # this YAML — the inline form is exactly the "multi-line Python
+          # indentation issues in YAML" pitfall this file used to warn about
+          # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
+          # fragility for. The script catches the parse failure and treats "can't
+          # parse" as pass/skip (exit 0) — only an ACTUALLY parsed dict with
+          # plugins.entries.whatsapp.enabled == true fails (exit 1).
           while IFS= read -r f; do
-            if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(1 if isinstance(d, dict) and d.get('plugins',{}).get('entries',{}).get('whatsapp',{}).get('enabled') else 0)" "$f" 2>/dev/null; then
+            if ! python3 scripts/qc-check-whatsapp-json.py "$f" 2>/dev/null; then
               echo "✗ $f: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
               fail=1
             fi

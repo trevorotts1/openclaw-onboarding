@@ -53,6 +53,7 @@ from embedding_engine import (  # type: ignore
     COACHING_SECTION_NUMBER,
     get_embedder,
     get_embedding,
+    is_credential_error,
 )
 MIN_SECTION_WORDS = int(os.environ.get("OPENCLAW_MIN_SECTION_WORDS", "30"))
 
@@ -384,12 +385,30 @@ def main():
                              "default live index can never receive fake vectors.")
     args = parser.parse_args()
 
-    paths = get_openclaw_paths()
+    # get_openclaw_paths() requires a detectable OpenClaw install (the
+    # /data/.openclaw VPS marker, the ~/.openclaw or ~/clawd Mac markers, or
+    # an explicit OPENCLAW_PLATFORM override) and SystemExit(1)s when none of
+    # those are present — e.g. on a bare CI runner. When the caller supplies
+    # BOTH --db and --personas-root explicitly, this script never reads
+    # anything derived from get_openclaw_paths(), so it must not pay that
+    # detection cost (or that failure mode) at all. Resolve it lazily and
+    # memoize the result so, when it IS needed, detection still runs exactly
+    # once — identical to the prior unconditional call — and both consumers
+    # below see the same dict.
+    _paths = None
+
+    def _resolved_paths() -> dict:
+        nonlocal _paths
+        if _paths is None:
+            _paths = get_openclaw_paths()
+        return _paths
+
     if args.db:
         db_path = Path(args.db)
     else:
         # EMBED-1: paths["gemini_index"] is now the SAME file the search path
         # reads (workspace/data/coaching-personas/gemini-index.sqlite).
+        paths = _resolved_paths()
         db_path = Path(paths["gemini_index"])
         # EMBED-2 sandbox hard gate: a build targeting the DEFAULT live DB
         # must not silently land in a sandboxed HOME.
@@ -423,7 +442,7 @@ def main():
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     personas_root = Path(args.personas_root) if args.personas_root \
-        else (Path(paths["coaching_personas"]) / "personas")
+        else (Path(_resolved_paths()["coaching_personas"]) / "personas")
 
     if not personas_root.exists():
         print(f"No personas directory at {personas_root}. Run Skill 22 first.")
@@ -495,8 +514,20 @@ def main():
             print()
     except Exception as e:
         conn.close()
+        # A-U8: a credential-shaped failure discovered MID-RUN (key present
+        # but rejected by the API — revoked / wrong-project / malformed) is
+        # classified the SAME way as the upfront "no key" preflight refusal
+        # above (exit 4) — both are honest, expected, non-fatal states a
+        # caller (orchestrator.py Phase 5) may defer rather than block on.
+        # Any OTHER exception (corrupt content, a genuine bug) is NOT
+        # deferral-eligible: exit 6 keeps it fail-loud, distinct from 4, so
+        # a caller never silently treats a real defect as "just missing a
+        # key".
+        if is_credential_error(e):
+            print(f"ERROR: indexing aborted — credential rejected: {e}", file=sys.stderr)
+            return 4
         print(f"ERROR: indexing aborted — {e}", file=sys.stderr)
-        return 4
+        return 6
 
     conn.close()
 

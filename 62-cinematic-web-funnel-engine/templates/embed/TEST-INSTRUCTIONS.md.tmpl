@@ -1,0 +1,57 @@
+# GHL Iframe Embed — Test Instructions
+
+Skill 62 (Cinematic and Web Funnel Engine), build unit U18, spec Section 14.2.
+
+- Project: `__CWFE_PROJECT_SLUG__`
+- Hosted (child) origin: `__CWFE_CHILD_ORIGIN__`
+- Allowed parent (ancestor) origins: `__CWFE_ALLOWED_ORIGINS_JSON__`
+- Fallback URL: `__CWFE_FALLBACK_URL__`
+- Package generated: `__CWFE_GENERATED_AT__`
+
+## Before you start
+
+1. Paste `host-snippet.html` into a GHL page's Custom HTML/Code element.
+2. Confirm the Vercel-hosted (child) deployment's own response headers
+   include `Content-Security-Policy: frame-ancestors ...` for exactly the
+   allowed origins above — see `csp-headers.json` in this package for the
+   exact header value and a ready-to-merge `vercel.json` fragment. GHL
+   cannot set this header for you; it must be configured on the hosted app.
+
+## Desktop
+
+- [ ] Page loads with no nested/inner scrollbar on the iframe.
+- [ ] Scrolling the GHL page scrolls the embedded experience — no scroll
+      trap, no place where the page appears "stuck".
+- [ ] The iframe's height grows/shrinks to track content as you scroll
+      (watch for clipped content at the bottom of any section — that would
+      mean a resize message was missed).
+- [ ] Every CTA inside the iframe is fully visible and clickable.
+- [ ] Browser devtools console shows no cross-origin postMessage errors and
+      no CSP `frame-ancestors` violation.
+
+## Mobile (representative viewport, e.g. 390x844)
+
+- [ ] No horizontal scrollbar appears on the GHL page.
+- [ ] No independent vertical scrollbar appears inside the iframe itself.
+- [ ] The always-visible fallback link below the iframe opens the direct
+      hosted URL (`__CWFE_FALLBACK_URL__`).
+
+## Fallback path
+
+- [ ] With JavaScript disabled, the `<noscript>` fallback link is visible
+      and points to `__CWFE_FALLBACK_URL__`.
+- [ ] Blocking/erroring the iframe request (devtools network throttling)
+      still leaves the always-visible fallback link functional.
+
+## Automated (Playwright GHL-iframe harness, spec 19.3)
+
+Run the skill's Playwright suite against a host page that embeds
+`host-snippet.html` and assert:
+
+- no element on the host page produces its own scrollbar for the iframe
+  content (`overflow-y` computed style on `.cwfe-embed-iframe` is never
+  `scroll`/`auto` while its `scrollHeight` exceeds `clientHeight`);
+- `window.__cwfeScrollDebug` (exposed by the embedded child page per spec
+  13.2) advances as the harness scrolls the host page;
+- a simulated `postMessage` from an origin NOT in the allowed list above is
+  ignored (no height change, no `cwfe:conversion` event fires).

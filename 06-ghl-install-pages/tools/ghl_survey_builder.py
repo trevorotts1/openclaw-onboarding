@@ -4463,6 +4463,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     if status == ghl_run_state.STATUS_FAILED:
+        # U28 (B-U14): a D6 headless-guard refusal keeps the promised exit 75
+        # (ENV-MATRIX.md; ghl_builder.py's `headless-guard` subcommand) rather
+        # than the generic exit-1 an ordinary build failure gets. build_survey()
+        # catches the guard's RuntimeError internally and folds it into
+        # result["error"] (never re-raises), so this check on the final `error`
+        # string is what actually closes the gap for this builder.
+        if ghl_run_state.is_d6_headless_refusal(error):
+            return 75
         return 1
     return 0 if result.get("location_gate_ok", True) else 1
 

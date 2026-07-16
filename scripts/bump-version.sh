@@ -333,28 +333,36 @@ open(p, "w").write(new)
 PYEOF
 fi
 
-# 6. /README.md (this repo at vX.Y.Z + any other v10.x.y headings) — v10.14.34
+# 6. /README.md — roll ONLY the two TRACKED README version markers:
+#    #6 "this repo at vX.Y.Z" and #9 "Current Version: vX.Y.Z". — v10.14.34;
+#    narrowed U92.
+#    U92 CO-FIX: earlier revisions ALSO rewrote EVERY inline "(vX.Y.Z)" in the
+#    first 200 lines as a heading heuristic. That silently rolled the version
+#    marker embedded in historical "**NOTE (vX.Y.Z)**" release lines at the top
+#    of the README — rewriting released, changelog-style prose that the standing
+#    "git history / released entries are never rewritten" doctrine forbids, and
+#    (because two of those historical NOTE lines legitimately carry the retired
+#    coded term inside them) turning those pre-existing lines into "added" lines
+#    on every bump. That made the docs-language guard
+#    (scripts/check-docs-language.py) go RED on its OWN version-bump ripple
+#    (README.md:20 / README.md:22). Those NOTE lines are NOT tracked version
+#    markers (they are not in scripts/version-markers.json), so freezing them
+#    cannot drift /version or trip any version gate. Only the two tracked
+#    markers are rolled now; the inline "(vX.Y.Z)" heuristic is removed.
 if [ -f "$F_README" ]; then
   python3 - <<PYEOF
 import re
 p = "$F_README"
 target = "$TARGET"
 content = open(p).read()
-# Replace "this repo at vX.Y.Z." patterns
+# Marker #6: "this repo at vX.Y.Z." prose line.
 new = re.sub(r'(this repo at )v[0-9]+\.[0-9]+\.[0-9]+',
              r'\1' + target, content)
-# Marker #9 (v10.15.16): "Current Version: vX.Y.Z" prose line. This is a
-# SECOND, independent version marker in README.md. It silently drifted to
-# v10.15.15 (one patch behind /version) because no script rolled it. Roll it
-# here on every bump so it can never drift again.
+# Marker #9 (v10.15.16): "Current Version: vX.Y.Z" prose line. A SECOND,
+# independent version marker in README.md; roll it in lockstep so it can never
+# drift again (it silently drifted to v10.15.15 before it was tracked here).
 new = re.sub(r'(Current Version: )v[0-9]+\.[0-9]+\.[0-9]+',
              r'\1' + target, new)
-# Replace any "(vX.Y.Z)" heading suffix that matches the prior version
-# (heuristic: only first 200 lines, to avoid rewriting CHANGELOG entries)
-lines = new.split('\n')
-for i in range(min(200, len(lines))):
-    lines[i] = re.sub(r'\(v[0-9]+\.[0-9]+\.[0-9]+\)', '(' + target + ')', lines[i])
-new = '\n'.join(lines)
 open(p, "w").write(new)
 PYEOF
 fi

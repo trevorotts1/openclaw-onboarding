@@ -54,7 +54,9 @@
 #
 # WHAT THIS GUARD ENFORCES (fails the build / QC on any violation):
 #   (1) MANAGED-ONLY — no tracked *.sh / *.py UNDER ANY of the scan roots
-#       (EXCLUDING browser_manager.sh itself + the reaper) may invoke
+#       (EXCLUDING browser_manager.sh itself + the reaper + Skill 3's own
+#       raw-CLI conformance battery, 03-agent-browser/scripts/lib-backstop-
+#       conformance.sh — see EXEMPT below for why) may invoke
 #       `agent-browser ... (open|eval|click|fill|type|snapshot|wait|find)` or a
 #       bare `AB --session` UNLESS it is routed through the manager (the bm_*/AB()
 #       helpers inside browser_manager.sh, or browser_cmd/agent_browser_eval_cmd
@@ -98,7 +100,7 @@
 set -uo pipefail
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-GUARD_AGENT_BROWSER_MANAGED_VERSION="v20.0.24"
+GUARD_AGENT_BROWSER_MANAGED_VERSION="v20.0.59"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -116,6 +118,27 @@ TOOLS_DIR="$SKILL_DIR/tools"
 MANAGER_SH="$TOOLS_DIR/browser_manager.sh"
 MANAGER_PY="$TOOLS_DIR/browser_manager.py"
 REAPER_SH="$REPO_ROOT/scripts/agent-browser-reaper.sh"
+
+# ── ci-guard-red fix (2026-07-16) — Skill 3's own raw-CLI conformance battery
+# is exempt from check (1), by exact path, for the SAME reason MANAGER_SH/
+# MANAGER_PY/REAPER_SH are exempt: it does not CONSUME agent-browser through
+# Skill 6's gateway, it PROVES the underlying binary's own contract (open /
+# ref-based snapshot / snapshot-ref stability / fill-by-ref / guaranteed
+# close) that browser_manager.sh and Skill 44's Tier-4 fallback both assume —
+# GK-28/U90 (commit 2057aefd), "Skill 3: harden agent-browser backstop rail".
+# Routing it through 06's browser_manager.sh would (a) invert the dependency
+# (03-agent-browser is a lower-level primitive skill that 06/44 depend ON,
+# never the reverse) and (b) defeat the file's entire purpose — it would then
+# be testing the GATEWAY, not the raw CLI the gateway is built on. Like the
+# gateway/reaper, it is already single-session, always --headed false, and
+# guaranteed-close with a read-back-verified zero-leak check (leg 5, sharing
+# scripts/lib-scoped-chrome-scan.sh with the reaper's own tripwire) — it
+# satisfies the doctrine's SPIRIT without reusing browser_manager.sh's code.
+# Exact path only (never a directory-wide carve-out): any OTHER file under
+# 03-agent-browser/ that plants a raw, unmanaged agent-browser call is still
+# caught (proven by tests/unit/guard-agent-browser-managed-scan-roots.test.sh
+# fixture (B) and the new -backstop-conformance-exempt.test.sh below).
+BACKSTOP_CONFORMANCE_SH="$REPO_ROOT/03-agent-browser/scripts/lib-backstop-conformance.sh"
 
 # ── AUD-25 (P3-04) — auto-discover EVERY top-level skill directory ───────────
 # Supersedes P3-08's hand-enumerated 4th root (44-convert-and-flow-operator):
@@ -159,11 +182,16 @@ REQUIRED_SENTINEL_DOCS=(
   "$SKILL_DIR/CORE_UPDATES.md"
 )
 
-# ── Files that are EXEMPT from the managed-only scan (they ARE the gateway) ────
-# Match by absolute path.
+# ── Files that are EXEMPT from the managed-only scan (they ARE the gateway,
+# the reaper, or Skill 3's own raw-CLI conformance battery — see
+# BACKSTOP_CONFORMANCE_SH above) ───────────────────────────────────────────────
+# Match by absolute path. NOTE: the actual scan (AUD-26, below) runs inside one
+# batched python3 process and carries its own identical EXEMPT set — this bash
+# function is kept in sync for anyone reading/reusing it, not called in the hot
+# path.
 is_exempt() {
   case "$1" in
-    "$MANAGER_SH"|"$MANAGER_PY"|"$REAPER_SH") return 0 ;;
+    "$MANAGER_SH"|"$MANAGER_PY"|"$REAPER_SH"|"$BACKSTOP_CONFORMANCE_SH") return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -210,7 +238,7 @@ HEADLESS_REPORT="$SCAN_TMP/headless_report.txt"
 MANAGED_FAIL_COUNT="$SCAN_TMP/managed_fail_count"
 HEADLESS_FAIL_COUNT="$SCAN_TMP/headless_fail_count"
 
-python3 - "$REPO_ROOT" "$MANAGER_SH" "$MANAGER_PY" "$REAPER_SH" \
+python3 - "$REPO_ROOT" "$MANAGER_SH" "$MANAGER_PY" "$REAPER_SH" "$BACKSTOP_CONFORMANCE_SH" \
          "$MANAGED_REPORT" "$HEADLESS_REPORT" "$MANAGED_FAIL_COUNT" "$HEADLESS_FAIL_COUNT" \
          "$ALL_SCAN_FILES" <<'PY'
 import io, os, re, sys, tokenize, ast
@@ -225,11 +253,11 @@ import io, os, re, sys, tokenize, ast
 # the negative-fixture tests (guard-agent-browser-managed-scan-roots.test.sh /
 # -all-skill-dirs.test.sh) going from PASS to FAIL when a planted spawn
 # stopped being caught. Fixed by opening the list file directly below.
-(repo_root, manager_sh, manager_py, reaper_sh,
+(repo_root, manager_sh, manager_py, reaper_sh, backstop_conformance_sh,
  managed_report_path, headless_report_path,
- managed_count_path, headless_count_path, all_scan_files_path) = sys.argv[1:10]
+ managed_count_path, headless_count_path, all_scan_files_path) = sys.argv[1:11]
 
-EXEMPT = {manager_sh, manager_py, reaper_sh}
+EXEMPT = {manager_sh, manager_py, reaper_sh, backstop_conformance_sh}
 
 RED = "\033[31m%s\033[0m"
 

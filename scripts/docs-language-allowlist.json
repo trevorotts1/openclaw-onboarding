@@ -1,0 +1,19 @@
+{
+  "$comment": "U92 (X/U-X2) docs-language CI guard allowlist. The guarded term is defined once, in full, in MASTER SPEC v2's LANGUAGE CONFORMANCE header (U91, verified scrub) and is never spelled out in prose comments in this repo outside that authorized citation and the legacy filenames below. This file spells it out because a denylist scanner cannot function without the literal string it is matching.",
+  "term": "canary",
+  "legacy_filenames": {
+    "$comment": "Exact filenames (with extension) that may still carry the term until renamed. Citing one of these verbatim in doc prose (e.g. in backticks) is allowed; the checker subtracts the matched filename span before deciding whether anything else on the line is an unexplained occurrence. Source: MASTER SPEC v2 Section X.1.3 (onboarding-repo footprint), each annotated with its owning rename unit.",
+    "entries": [
+      { "path": "06-ghl-install-pages/scripts/run-selector-canary.sh", "owner": "U30" },
+      { "path": "06-ghl-install-pages/tests/test_ghl_selector_canary.py", "owner": "U30" },
+      { "path": "06-ghl-install-pages/tests/test_iframe_survival_canary.py", "owner": "U30" },
+      { "path": "06-ghl-install-pages/tools/ghl_selector_canary.py", "owner": "U30" },
+      { "path": "32-command-center-setup/scripts/heartbeat-canary-probe.py", "owner": "U93" },
+      { "path": "scripts/loop-protection-canary.sh", "owner": "U93" }
+    ]
+  },
+  "vendor_literals": {
+    "$comment": "Third-party-owned literal strings that legitimately contain the term (e.g. an npm pre-release distribution tag). Quoted only when load-bearing and always attributed to the vendor per MASTER SPEC v2 X.1.2 Class C; never adopted as our own vocabulary. Matched as exact substrings (case-insensitive), same subtraction rule as legacy_filenames. Empty by default in this repo (U91's scrub found zero surviving vendor-literal citations in v2) — populate here, never inline in a doc, the next time a real one must be quoted. Keep entries NARROW literal citations (e.g. an exact npm dist-tag string), never a natural-English phrase — a broad phrase here silently amnesties genuinely new prose that happens to contain it.",
+    "entries": []
+  }
+}

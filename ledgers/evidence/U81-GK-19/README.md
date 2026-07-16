@@ -17,7 +17,7 @@ gate files byte-identical to `origin/main`), so this leg exercises current conte
 bytes.
 
 **Live rail used:** `caf social create-post` = the actual installed `caf` CLI at
-`/Users/blackceomacmini/.local/bin/caf` (Skill 44 / convert-and-flow-operator engine),
+`~/.local/bin/caf` (Skill 44 / convert-and-flow-operator engine),
 targeting the OPERATOR'S OWN GHL sub-account — `locationId=Mct54Bwi1KlNouGXQcDX`, "BlackCEO
 LLC" (verified via `caf locations get`, see `leg1-gate-check.out`-adjacent evidence below —
 first/last name Trevor Otts, `trevor@reply.blackceonow.com`; NOT a client location — safe for

@@ -3,9 +3,10 @@ name: persona-blend-match-quality-guard
 # P4-01 — persona matching + book-to-persona (strengthen). Fails the build if:
 #   (A) the Skill-23 voice-first AUDIENCE+TOPIC blend matcher (persona_blend.py)
 #       regresses any of its 46 existing contract tests,
-#   (B) match quality on the 20-case, REAL-catalog regression corpus drops
-#       below the 90% gate (persona-match-regression-corpus.json) — this is
-#       the drift lock for silent _tag_hit/_stem/ranking regressions,
+#   (B) match quality on the 40-case (A-U13, grown from 20), REAL-catalog
+#       regression corpus drops below the 90% gate
+#       (persona-match-regression-corpus.json) — this is the drift lock for
+#       silent _tag_hit/_stem/ranking regressions,
 #   (C) the match-score-distribution logger (log_match_score /
 #       match_score_distribution — "log match score distributions so drift is
 #       observable") stops writing or stops summarizing correctly,
@@ -37,6 +38,66 @@ name: persona-blend-match-quality-guard
 #       NOT silently strip them on workspace->repo sync — the exact gap this
 #       unit found and closed (persona_fleet.py was not previously watched by
 #       this workflow at all; added here because this unit touches it).
+#
+# A-U4 (conversion_goal as a first-class input, master-spec v2 §A.5) adds a
+# seventh check:
+#   (G) resolve_conversion_goal's source ladder (explicit operator/task field
+#       -> Skill 6 intake -> funnel-template-inferred -> ASK) resolves each
+#       rung's confirm-doctrine correctly; directive slot 5 is content-gated
+#       and never invents a fifth persona pick (_choose_closer_pid); a
+#       resolved goal lands as {conversion_goal, goal_source} on the bundle
+#       AND in the rationale decision receipt; an unresolved goal on a
+#       content task carries a goal ASK and gates a fixture write (no
+#       artifact); and — the regression this unit must never introduce — a
+#       caller that never supplies a goal (every pre-A-U4 call site) keeps
+#       its existing `confirm_required` behavior byte-for-byte
+#       (`goal_confirm_required` is additive, never folded into it).
+#
+# A-U5 (per-page/scoped blends, master-spec v2 section A.6) adds an eighth
+# check:
+#   (H) build_bundle's additive `scope_hint` param resolves a stable, persist-
+#       able `scope` key + echoes scope_hint back verbatim, states WHY per
+#       page (rationale['scope'], the different-blends-allowed invariant),
+#       and NEVER changes output when scope_hint is omitted/None/empty — a
+#       fixture 3-page funnel run proves >=2 distinct blends + exactly N
+#       persona-selection-log.md entries (this unit's own binary acceptance
+#       (a)/(b)/(c)/(d)).
+#
+# U115 (E6-1, Section E6; operator ruling ADD-1; ONB leg — the Command
+# Center board-card/task-detail-modal leg is a separate, owed unit on that
+# repo's own train) adds a ninth check:
+#   (I) `decompose_task_parts` mechanically reads a declared campaign
+#       manifest or funnel pageStructure into communication PARTS and NEVER
+#       invents parts from prose alone (ASK-gated); `govern_task_parts`
+#       calls build_bundle ONCE PER PART reusing A-U5's `scope_hint`/
+#       `part_id` mechanism verbatim (no new bundle store), producing >=2
+#       DISTINCT per-part blends on a fixture multi-part campaign
+#       (part count == bundle-scope count); `routing/part-persona-map.json`
+#       tracks the governing blend per part/stage and ACCUMULATES across a
+#       long-horizon fixture's multiple stages/calls; a task with no
+#       declared parts degrades BYTE-IDENTICALLY to today's single
+#       task-level bundle behind the `PER_PART_GOVERNANCE=1` revert flag;
+#       and `validate_part_blend_diversity` flags a forced-identical blend
+#       across parts with no logged reason while passing a legitimately
+#       shared, reasoned blend (hands the flag to U117, never gates here).
+#
+# A-U12 (Blend observability, master-spec v2 §A.10, master id U12 — ONB half
+# of the "CC (+ ONB probe)" both-repo unit) adds a tenth check:
+#   (J) shared-utils/persona_grounding_health_probe.py reads
+#       persona_blend.match_score_distribution() VERBATIM (closing "the JSONL
+#       log currently has NO reader") into a non-gating `persona_match`
+#       advisory ({count, mean, min, max, buckets}), and independently
+#       detects the 5-layer selector's grounding layers falling back to
+#       their neutral floor (company-config.json absent, or the
+#       semantic_task_fit module not importable) as
+#       `persona_grounding_degraded` — proven never to false-positive on
+#       llm_score unavailability alone (a supported heuristic-scoring mode,
+#       not a neutral floor). The probe's CLI always exits 0 (advisory,
+#       never a health gate) and fleet_refresh_runner.py's
+#       step_persona_grounding_health() records the verdict as
+#       "pass"/"degraded:..." — never "failed:...". The Command Center's
+#       deep-health response shape and the board chip/event render are the
+#       OTHER half of this unit, on the `blackceo-command-center` train.
 
 on:
   push:
@@ -46,6 +107,10 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
+      - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -54,11 +119,14 @@ on:
       - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
+      - "shared-utils/persona_grounding_health_probe.py"
+      - "shared-utils/fleet_refresh_runner.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
       - tests/unit/schema14-enrichment-complete.test.py
       - tests/unit/persona-fleet-schema14-sync.test.py
+      - tests/unit/persona-grounding-health-probe.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
   pull_request:
     paths:
@@ -67,6 +135,10 @@ on:
       - "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py"
       - "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py"
       - "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py"
+      - "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+      - "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py"
+      - "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json"
       - "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json"
@@ -75,11 +147,14 @@ on:
       - "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py"
       - "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py"
+      - "shared-utils/persona_grounding_health_probe.py"
+      - "shared-utils/fleet_refresh_runner.py"
       - tests/unit/persona-match-score-log.test.py
       - tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py
       - tests/unit/persona-duality-tags-pipeline.test.sh
       - tests/unit/schema14-enrichment-complete.test.py
       - tests/unit/persona-fleet-schema14-sync.test.py
+      - tests/unit/persona-grounding-health-probe.test.py
       - .github/workflows/persona-blend-match-quality-guard.yml
 
 jobs:
@@ -103,7 +178,7 @@ jobs:
       - name: W7 blend-matcher contract suite (46 tests, hermetic fixtures)
         run: python3 23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py
 
-      - name: P4-01 — 20-case match-quality regression corpus (>=90% gate, REAL catalog)
+      - name: P4-01/A-U13 — 40-case match-quality regression corpus (>=90% gate, REAL catalog)
         run: python3 23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py
 
       - name: P4-02 — four-slot SYNERGY directive contract (voice/audience/substance/task)
@@ -111,6 +186,12 @@ jobs:
 
       - name: A-U2 — Blend Directive v2 (structured voice-attribute block, byte-identical v1 degrade)
         run: python3 23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py
+
+      - name: A-U5 — per-page/scoped blends (scope_hint, fixture funnel, back-compat)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py
+
+      - name: U115 — per-part/per-persona governance (ONB leg — decompose, per-part loop, part-persona-map, back-compat)
+        run: python3 23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py
 
       - name: P4-01 — match-score-distribution logging (drift observability)
         run: python3 tests/unit/persona-match-score-log.test.py
@@ -128,3 +209,18 @@ jobs:
 
       - name: A-U3 — persona_fleet.py publish path carries the new fields (fail-first proven)
         run: python3 tests/unit/persona-fleet-schema14-sync.test.py
+
+      - name: persona-selector-v2.py compiles
+        run: python3 -m py_compile 23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+
+      - name: A-U4 — conversion_goal first-class input (source ladder, slot 5, decision receipt, no-contamination)
+        run: python3 23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py
+
+      - name: persona_grounding_health_probe.py compiles
+        run: python3 -m py_compile shared-utils/persona_grounding_health_probe.py
+
+      - name: fleet_refresh_runner.py compiles
+        run: python3 -m py_compile shared-utils/fleet_refresh_runner.py
+
+      - name: A-U12 — blend observability probe (persona_match advisory, persona_grounding_degraded, non-gating)
+        run: python3 tests/unit/persona-grounding-health-probe.test.py

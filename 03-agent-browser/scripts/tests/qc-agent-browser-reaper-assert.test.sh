@@ -33,6 +33,13 @@ PRE_PIDFILE="$WORK/pre-existing.pid"
 cleanup() {
   kill_stub_pidfile "$PIDFILE"
   kill_stub_pidfile "$PRE_PIDFILE"
+  # GK-28/U90: qc-agent-browser.sh now runs TWO open/close cycles per
+  # invocation (Step-4 smoke test + the backstop conformance battery), both
+  # against the same stub's single pidfile -- a deliberately leaked process
+  # from ONE cycle can be clobbered out of that pidfile by the OTHER cycle's
+  # own `open`. A pattern sweep is the only reliable belt-and-suspenders
+  # cleanup (see lib-stub-agent-browser.sh for the full rationale).
+  kill_all_agent_browser_chrome_stubs
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -60,6 +67,7 @@ if [[ -f "$PRE_FIX_FIXTURE" ]]; then
   fi
   rm -f /tmp/p306-prefix-reaper-out.$$
   kill_stub_pidfile "$PIDFILE"
+  kill_all_agent_browser_chrome_stubs   # GK-28/U90: see lib-stub-agent-browser.sh
 else
   echo "  SKIP: pre-fix fixture not found at $PRE_FIX_FIXTURE"
 fi
@@ -80,6 +88,15 @@ if echo "$OUT2" | grep -qE "⚠ WARN.*this smoke test's own Chromium"; then
   fail "the leaked-session line is still WARN-worded -- assert upgrade did not actually happen"
 fi
 kill_stub_pidfile "$PIDFILE"
+# GK-28/U90: case (2) deliberately leaks (LEAK_MODE=1) — a hard sweep here is
+# load-bearing, not cosmetic: qc-agent-browser.sh now runs a SECOND
+# open/close cycle (the conformance battery) after Step-4 within the SAME
+# run, which clobbers this stub's single pidfile with its own (cleanly
+# closed) pid — so Step-4's genuinely leaked process is no longer reachable
+# via $PIDFILE by the time this line runs. Without this sweep it survives
+# into case (3)/(4) and inflates their pre-existing-process counts (see
+# lib-stub-agent-browser.sh for the full rationale).
+kill_all_agent_browser_chrome_stubs
 
 # ── (3) Negative: a well-behaved close (stub actually kills) -- clean PASS ──
 CLEAN_BIN="$WORK/clean-bin"
@@ -94,6 +111,7 @@ else
   fail "expected a clean PASS for a well-behaved close; rc=$RC3, output: $OUT3"
 fi
 kill_stub_pidfile "$PIDFILE"
+kill_all_agent_browser_chrome_stubs
 
 # ── (4) A session pre-existing BEFORE this run -- WARN, never FAIL ──────────
 PREEXIST_BIN="$WORK/preexist-bin"

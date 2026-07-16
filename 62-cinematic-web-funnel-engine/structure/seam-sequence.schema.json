@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/seam-sequence.schema.json",
+  "title": "Cinematic and Web Funnel Engine — seam-sequence.json (Skill 62, U14)",
+  "description": "Input to scripts/verify_seams.py. An ORDERED list of clips (scenes and/or connectors, per spec Section 9.1's architectures A/B/C) whose adjacent boundary-frame continuity (ADR-9) must be checked. Each entry names a clip_id and the path to that clip's own extract_boundaries.py (U13) boundary-frames.json receipt -- that receipt must include BOTH 'first' and 'last' frame entries (extract_boundaries.py run with --position both, the default). The seam at sequence position i is clips[i]'s LAST frame vs clips[i+1]'s FIRST frame -- i.e. the actual encoded hand-off a browser will play across, not a provider preview or the original still (ADR-9).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["clips"],
+  "properties": {
+    "clips": {
+      "type": "array",
+      "minItems": 2,
+      "description": "At least 2 clips are required for there to be any seam to verify.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clip_id", "boundary_frames_path"],
+        "properties": {
+          "clip_id": { "type": "string", "minLength": 1 },
+          "boundary_frames_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Path to a boundary-frames.json receipt written by scripts/extract_boundaries.py for this exact clip."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["scene", "connector"],
+            "description": "Optional bookkeeping only -- verify_seams.py treats every entry identically regardless of role."
+          }
+        }
+      }
+    }
+  }
+}

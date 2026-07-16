@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  conformance-fixture.html — GK-28/U90 backstop conformance battery target.
+
+  A tiny, offline, bundled static page (opened via file://) so the battery
+  never depends on network reachability or on an external site's DOM shape
+  (example.com has no fillable form elements — the Step-4 smoke test in
+  qc-agent-browser.sh only needs it to render SOMETHING with a ref, but the
+  conformance battery additionally exercises fill-by-ref, which needs a real
+  <input>). One heading, one textbox, one button — enough surface for the
+  battery's five legs (open / ref-based snapshot / snapshot-ref stability /
+  fill-by-ref / guaranteed close) without any external dependency.
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Skill 3 backstop-conformance fixture</title></head>
+<body>
+  <h1>Skill 3 backstop-conformance fixture</h1>
+  <input id="conformance-text-input" type="text" placeholder="fill me" aria-label="fill me">
+  <button id="conformance-submit-btn" type="button">Submit</button>
+</body>
+</html>
