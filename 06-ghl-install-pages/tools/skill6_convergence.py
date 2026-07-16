@@ -61,10 +61,12 @@ from typing import Any, Optional
 
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.normpath(os.path.join(_TOOLS_DIR, "..", ".."))
+_SKILL6_DIR = os.path.dirname(_TOOLS_DIR)
 
 _BLEND_CACHE: "Any | bool | None" = None
 _CROSSWALK_CACHE: "Any | bool | None" = None
 _CATALOG_CACHE: "dict | bool | None" = None
+_EXEMPLAR_INJECTION_CACHE: "Any | bool | None" = None
 
 _TRUE_VALUES = ("1", "true", "yes", "on")
 _FALSE_VALUES = ("0", "false", "no", "off")
@@ -129,6 +131,74 @@ def _load_catalog() -> "dict | None":
     except Exception:  # noqa: BLE001
         _CATALOG_CACHE = False
     return _CATALOG_CACHE or None
+
+
+def _load_exemplar_injection_module():
+    """A-U9 (master unit U9) — lazy loader for shared-utils/exemplar_injection.py,
+    mirroring the crosswalk/blend loader pattern above. Missing/broken module
+    degrades to ``None`` (never raises) — the exemplar seam is advisory glue
+    exactly like every other optional seam in this file."""
+    global _EXEMPLAR_INJECTION_CACHE
+    if _EXEMPLAR_INJECTION_CACHE is not None:
+        return _EXEMPLAR_INJECTION_CACHE or None
+    try:
+        shared = os.path.join(_REPO_ROOT, "shared-utils")
+        if shared not in sys.path:
+            sys.path.insert(0, shared)
+        import exemplar_injection as _exi  # type: ignore
+        _EXEMPLAR_INJECTION_CACHE = _exi
+    except Exception:  # noqa: BLE001
+        _EXEMPLAR_INJECTION_CACHE = False
+    return _EXEMPLAR_INJECTION_CACHE or None
+
+
+def _group_from_qkey(key: "str | None") -> str:
+    if isinstance(key, str) and "/" in key:
+        group = key.split("/", 1)[0].strip()
+        if group:
+            return group
+    return ""
+
+
+def _deliverable_type_for_task(task: dict, evidence_root: "str | None" = None) -> str:
+    """A-U9 — best-effort resolution of the funnel-template CATEGORY (the
+    exemplar-pack ``deliverable_type``) ahead of this convergence pass.
+    Order: (1) an explicit ``task['category']``; (2) the group half of
+    ``task['template_match']['matched_template_key']`` when a caller already
+    populated one (``funnel_matcher._qkey`` = ``'group/id'``, e.g.
+    ``'lead/hero'``); (3) the SAME field read from
+    ``<evidence_root>/routing/funnel-match.json`` — the real
+    ``funnel_matcher.step0_match`` writes this receipt (with
+    ``matched_template_key``) to the SAME evidence tree just before this
+    convergence pass runs, but does NOT copy that key onto
+    ``task['template_match']`` itself, so this is the real flow's actual
+    source of truth. Never raises; returns ``''`` when unresolved so
+    ``exemplar_injection.select_exemplars`` correctly finds no applicable
+    pack and degrades to no-injection — never fabricates a category."""
+    task = task if isinstance(task, dict) else {}
+    cat = task.get("category")
+    if isinstance(cat, str) and cat.strip():
+        return cat.strip()
+
+    tm = task.get("template_match")
+    if isinstance(tm, dict):
+        group = _group_from_qkey(tm.get("matched_template_key"))
+        if group:
+            return group
+
+    if evidence_root:
+        match_path = os.path.join(evidence_root, "routing", "funnel-match.json")
+        try:
+            with open(match_path, encoding="utf-8") as f:
+                decision = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            decision = None
+        if isinstance(decision, dict):
+            group = _group_from_qkey(decision.get("matched_template_key"))
+            if group:
+                return group
+
+    return ""
 
 
 def _crosswalk_tuple():
@@ -361,12 +431,44 @@ def write_selection_log(evidence_root: str, page_blends: list, *,
 # Per-page bundle receipts (A-U7 acceptance (a): "per-page bundle receipts
 # (blend + goal + exemplar refs) for 100% of pages").
 # --------------------------------------------------------------------------- #
-def write_per_page_bundle_receipts(evidence_root: str, page_blends: list) -> list:
+def write_per_page_bundle_receipts(evidence_root: str, page_blends: list, *,
+                                   deliverable_type: str = "") -> list:
+    """``deliverable_type`` defaults to ``''`` (back-compat: every pre-A-U9
+    call site — including this module's own ``__main__`` self-test and
+    ``test_a_u7_convergence.py``'s direct calls — keeps its exact prior
+    behavior: ``exemplar_injection.select_exemplars`` finds no applicable
+    pack for an empty deliverable_type, so ``exemplar_refs`` stays the same
+    honest empty list it always was). A-U9 (master unit U9) populates this
+    seam for real once ``run_convergence`` threads a resolved
+    ``deliverable_type`` through (below)."""
     out_dir = os.path.join(evidence_root, "routing", "persona-bundle-receipts")
     os.makedirs(out_dir, exist_ok=True)
+    _exi = _load_exemplar_injection_module()
     paths = []
     for pb in page_blends:
         slug = _slugify(pb.get("page_slug") or pb.get("page"))
+
+        exemplar_refs: list = []
+        if _exi is not None and deliverable_type:
+            try:
+                packs = _exi.select_exemplars(
+                    _SKILL6_DIR, deliverable_type,
+                    persona_register=pb.get("voice_persona_id") or "")
+            except Exception:  # noqa: BLE001 — exemplar selection is advisory glue
+                packs = []
+            if packs:
+                exemplar_refs = [
+                    {"exemplar_id": p["exemplar_id"], "content_hash": p["gold_output_hash"]}
+                    for p in packs
+                ]
+                try:
+                    _exi.write_injection_receipt(
+                        evidence_root, packs, deliverable_type=deliverable_type,
+                        persona_register=pb.get("voice_persona_id") or "",
+                        page=pb.get("page"))
+                except Exception:  # noqa: BLE001 — receipt-writing never blocks the build
+                    pass
+
         receipt = {
             "page": pb.get("page"),
             "page_slug": pb.get("page_slug"),
@@ -375,10 +477,10 @@ def write_per_page_bundle_receipts(evidence_root: str, page_blends: list) -> lis
             "collapsed": pb.get("collapsed"),
             "blend_directive_sha": _sha(pb.get("blend_directive") or ""),
             "conversion_goal": pb.get("conversion_goal"),
-            # A-U9 (exemplar injection) has not landed yet — an honest empty
-            # list, never a fabricated ref. write_per_page_bundle_receipts
-            # is the seam A-U9 will populate this from, once it ships.
-            "exemplar_refs": [],
+            # A-U9: real exemplar refs when a shipped pack matches this
+            # page's deliverable_type + voice register; an honest empty
+            # list otherwise — never a fabricated ref.
+            "exemplar_refs": exemplar_refs,
             "selection_source": pb.get("source"),
             "why": pb.get("why"),
             "generated_at": _ts(),
@@ -492,12 +594,18 @@ def run_convergence(task: dict, evidence_root: str, *, env: "dict | None" = None
         return result
 
     conversion_goal = str(task.get("conversion_goal") or bundle.get("conversion_goal") or "")
+    # A-U9 (master unit U9): resolve the funnel-template CATEGORY so the
+    # per-page exemplar-injection seam below has a real deliverable_type to
+    # select against. '' when unresolved -> no applicable pack -> honest
+    # no-injection, exactly like every other degrade path in this module.
+    deliverable_type = _deliverable_type_for_task(task, evidence_root)
 
     try:
         page_blends = select_page_blends(pages, bundle, conversion_goal=conversion_goal)
         annotate_pages(pages, page_blends)
         log_path = write_selection_log(evidence_root, page_blends)
-        receipt_paths = write_per_page_bundle_receipts(evidence_root, page_blends)
+        receipt_paths = write_per_page_bundle_receipts(
+            evidence_root, page_blends, deliverable_type=deliverable_type)
         template_ref = (pages[0].get("copy_persona") if pages else "") or ""
         p2_receipt = write_p2_persona_attach_receipt(
             evidence_root, bundle, template_persona_ref=template_ref)
@@ -509,6 +617,7 @@ def run_convergence(task: dict, evidence_root: str, *, env: "dict | None" = None
             "selection_log_path": log_path,
             "per_page_receipt_count": len(receipt_paths),
             "p2_persona_attach": p2_receipt,
+            "deliverable_type": deliverable_type or None,
         })
     except Exception as exc:  # noqa: BLE001 — convergence is advisory glue, never blocks
         result["reason"] = f"convergence raised: {type(exc).__name__}: {exc}"
