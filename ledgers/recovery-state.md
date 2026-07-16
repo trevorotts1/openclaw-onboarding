@@ -2,9 +2,9 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T07:30:01Z
-openclaw-onboarding `origin/main` HEAD: `9ff22afc0d9f83a4175117885cca368be028a9b4`
-blackceo-command-center `origin/main` HEAD: `212ffd3f7125cf75f62b65afac9920f4865a429b`
+Generated: 2026-07-16T07:40:02Z
+openclaw-onboarding `origin/main` HEAD: `3dd010b3ff22dd5b737a9a9660558987791492e1`
+blackceo-command-center `origin/main` HEAD: `45822df9dba41073a872e57514c5d082689ea739`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
@@ -91,7 +91,7 @@ No mismatches found this run.
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
 | U42 | `skill6-v2/U42` | `b50987cb` | True | `4b983a13` | v6.0.21 | verified | 9.2 |
 | U43 | `skill6-v2/U43` | `4a4e7680` | True | `751fa8ad` | v6.0.35 | verified | - |
-| U45 | `skill6-v2/U45` | `9dfc8fe9` | False | - | - | pending | - |
+| U45 | `skill6-v2/U45` | `9dfc8fe9` | True | `c69996cd` | - | pending | - |
 | U46 | `skill6-v2/U46` | `e28ea4b4` | True | `fd064907` | v6.0.8 | verified | 8.9 |
 | U47 | `skill6-v2/U47` | `2944303f` | True | `169355ef` | v6.0.22 | verified | 9.0 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 | verified | 9.2 |
@@ -99,7 +99,7 @@ No mismatches found this run.
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (ONB half) | - |
 | U50 | `skill6-v2/U50` | `8d0c480a` | True | `28e91598` | v6.0.37 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
-| U54 | `skill6-v2/U54` | `806b98c8` | False | - | - | pending | - |
+| U54 | `skill6-v2/U54` | `806b98c8` | True | `7b6642ac` | - | pending | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
 | U57 | `skill6-v2/U57` | `eeb61852` | True | `2d2f90f4` | v6.0.23 | verified | 9.0 |
