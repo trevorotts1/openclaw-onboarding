@@ -22,3 +22,5 @@ The full operational skill docs live on the machine at:
 - `~/clawd/skills/agent-browser/SKILL.md`
 
 If that path exists, treat it as the source of truth.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill backstops Skill 44 and Skill 6.

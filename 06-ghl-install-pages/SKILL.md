@@ -729,3 +729,5 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > CC repo at or above that version; if its enum, route path, or auth changes,
 > `cc_board.py` fail-softs (the card just never lands / never moves) and the
 > build continues unregistered.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's funnel seam and backstop rail relate to Skill 44 and Skill 3.
