@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T13:20:05Z
-openclaw-onboarding `origin/main` HEAD: `cf03b647b3fe6bcb9318a063bfe77fae068c9e92`
+Generated: 2026-07-16T13:20:05Z; manually corrected immediately after by the ONB serial merge-writer for the 8-unit v20.0.61 ripple below (the 10-min cron's OWN next run will re-derive this file fully from git truth and should reproduce these same 8 corrected rows)
+openclaw-onboarding `origin/main` HEAD: pending — set to this ripple's version-bump+CHANGELOG+ledger-sync commit (parent `cf03b647b3fe6bcb9318a063bfe77fae068c9e92`, U117's merge) once pushed
 blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -21,16 +21,16 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 |---|---|---|---|---|---|---|---|
 | U1 | `skill6-v2/U1` | `6a31a7fe` | True | `292f4ee4` | v20.0.17 | verified | 9.35 |
 | U10 | `skill6-v2/U10` | `d2c26e1f` | True | `51559d32` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U106 | `skill6-v2/U106` | `c28f75b8` | True | `b5f24e62` | - | pending | - |
+| U106 | `skill6-v2/U106` | `c28f75b8` | True | `c7c4f64d` | v20.0.61 | partial (code/offline leg merged 2026-07-16 by ONB merge-writer; LIVE-PROOF live-create leg OWED) | 8.7 |
 | U107 | `skill6-v2/U107` | `4e43ff80` | True | `d69f4cc7` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U108 | `skill6-v2/U108` | `eac10193` | True | `2bb9cbe4` | - | pending | - |
-| U11 | `skill6-v2/U11` | `f3d751f5` | True | `93e4c1ed` | - | pending | - |
+| U108 | `skill6-v2/U108` | `eac10193` | True | `80fcd9a2` | v20.0.61 | partial (ONB leg merged 2026-07-16 by ONB merge-writer; CC board-column leg U110 pending) | 8.7 |
+| U11 | `skill6-v2/U11` | `f3d751f5` | True | `89414746` | v20.0.61 | verified (ONB leg, merged 2026-07-16 by ONB merge-writer; CC leg — operator board Approve click — OWED) | 9.1 |
 | U111 | `skill6-v2/U111` | `6b24b2b8` | True | `f2be7dcd` | v20.0.24 | verified | 8.9 |
 | U112 | `skill6-v2/U112` | `4fcfa01c` | True | `4b4e3afa` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U114 | `skill6-v2/U114` | `aa4a5ad1` | False | - | - | pending | - |
 | U115 | `skill6-v2/U115` | `670043c5` | True | `f5506853` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U116 | `skill6-v2/U116` | `cef6c474` | True | `48359b40` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U117 | `skill6-v2/U117` | `252d6cce` | True | `ab6344c6` | - | pending | - |
+| U117 | `skill6-v2/U117` | `252d6cce` | True | `cf03b647` | v20.0.61 | verified (ONB leg, merged 2026-07-16 by ONB merge-writer; CC review-done gate wiring — acceptance d — OWED) | 9.2 |
 | U12 | `skill6-v2/U12` | `5f3c7321` | True | `1e04f9e4` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U13 | `skill6-v2/U13` | `5fec8cf9` | True | `59c472b9` | v20.0.38 | verified | 9.3 |
 | U14 | `skill6-v2/U14` | `ab4b5aff` | True | `c6f865fe` | v20.0.51 | verified | - |
@@ -47,9 +47,9 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 | U28 | `skill6-v2/U28` | `46ed631d` | True | `78f73b1a` | v20.0.52 | verified | - |
 | U29 | `skill6-v2/U29` | `cffa32b7` | True | `a2f4dc67` | v20.0.53 | verified | - |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
-| U30 | `skill6-v2/U30` | `d3b4d0de` | True | `7e1a07e4` | - | pending | - |
+| U30 | `skill6-v2/U30` | `d3b4d0de` | True | `85996770` | v20.0.61 | verified (repo/OFFLINE leg, merged 2026-07-16 by ONB merge-writer; LIVE operator-box drag proof on form+survey+page-code OWED) | 9.0 |
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | True | `ebef2f72` | v20.0.54 | verified | - |
-| U39 | `skill6-v2/U39` | `3ca7edae` | True | `1eb670d9` | - | pending | - |
+| U39 | `skill6-v2/U39` | `3ca7edae` | True | `dd5d18f9` | v20.0.61 | partial (ONB-half merged 2026-07-16 by ONB merge-writer; CC-half — consumer 403 + runQCOnReview promote path — pending; unit stays OPEN) | 9.0 |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
 | U44 | `skill6-v2/U44` | `c6aca95f` | True | `0ecbcebe` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
@@ -70,7 +70,7 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
 | U86 | `skill6-v2/U86` | `919b195d` | True | `411f9b34` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | True | `a3a42e1d` | v20.0.49 | verified (OFFLINE/FIXTURE tier; LIVE operator-box leg OWED) | - |
-| U89 | `skill6-v2/U89` | `1acd1769` | True | `0fae9ee7` | - | pending | - |
+| U89 | `skill6-v2/U89` | `1acd1769` | True | `b8011a2f` | v20.0.61 | verified (merged 2026-07-16 by ONB merge-writer; single-repo unit, no CC leg owed) | 9.4 |
 | U9 | `skill6-v2/U9` | `b4b58f1e` | True | `ceaac642` | v20.0.50 | verified | - |
 | U9-sonnet5-b | `skill6-v2/U9-sonnet5-b` | `89345db2` | False | - | - | (no row) | - |
 | U90 | `skill6-v2/U90` | `2057aefd` | True | `c7359410` | v20.0.37 | verified | 9.2 |
@@ -79,7 +79,7 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 | U93 | `skill6-v2/U93` | `623196c0` | False | - | - | pending | - |
 | U96 | `skill6-v2/U96` | `889b13ab` | True | `381b5093` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U97 | `skill6-v2/U97` | `fa1cdba7` | True | `2a5855f5` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U98 | `skill6-v2/U98` | `d980209f` | True | `0510c6b5` | - | pending | - |
+| U98 | `skill6-v2/U98` | `d980209f` | True | `f1ba3fb2` | v20.0.61 | verified (merged 2026-07-16 by ONB merge-writer; single-repo unit; criterion (d) fleet-wide zero-surviving-voice-path sweep coordinated with U114 — OWED, U114 not landed) | 9.1 |
 | chainA | `skill6-v2/chainA` | `3161e8fa` | True | `f6636fc0` | v20.0.19 | (no row) | - |
 | chainB | `skill6-v2/chainB` | `2e9907d7` | True | `7de4a73e` | v20.0.20 | (no row) | - |
 | fix-agent-browser-guard-red | `skill6-v2/fix-agent-browser-guard-red` | `f947b12d` | True | `980e8a9b` | v20.0.55 | (no row) | - |
@@ -150,7 +150,7 @@ blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678
 ## This run
 
 - ledger-edit permitted this run (merge-queue lock was free): True
-- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: none
-- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U38-blackceo-command-center, U102-blackceo-command-center)
+- units manually synced this run by the ONB serial merge-writer (git showed merged, ledger still said pending/carried a mis-attributed intermediate mergeSha): 8 — U11, U39, U89, U98, U30, U106, U108, U117. For each: corrected mergeSha from the reconciler's previously-picked intermediate "merge origin/main into work-XXX" commit to the TRUE branch->main merge-into-main commit (same mis-attribution class already fixed in the v20.0.60 batch), added tag v20.0.61, added qcScore from the QC ticket, corrected ledgerStatus to name the OWED leg honestly (U39/U106/U108 stay `partial`, not `verified`, pending their CC/live legs).
+- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): 2 (U38-blackceo-command-center, U102-blackceo-command-center) — BOTH ARE blackceo-command-center-repo legs, out of scope for the ONB (openclaw-onboarding) serial merge-writer; not resolved by this session, not blocking any ONB merge.
 - journal corroboration hits scanned: 25 (informational only, never authoritative)
 
