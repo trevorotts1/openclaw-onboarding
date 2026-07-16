@@ -552,18 +552,23 @@ T16_STATE="$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json"
 mkdir -p "$(dirname "$T16_STATE")"
 rm -f "$COMPANY_DIR/departments.json"
 python3 - "$SKILL_DIR" "$COMPANY_DIR" "$T16_STATE" >"$TMP/t16.log" 2>&1 <<'PY'
-import builtins, importlib.util, json, sys
+import importlib.util, json, os as _os, sys
 SKILL, COMPANY, STATE = sys.argv[1], sys.argv[2], sys.argv[3]
 spec = importlib.util.spec_from_file_location("bw", f"{SKILL}/scripts/build-workforce.py")
 bw = importlib.util.module_from_spec(spec); spec.loader.exec_module(bw)
 bw._build_state_path = lambda: STATE
-_real_open = builtins.open
-def _boom(path, *a, **k):
-    # Fail exactly the durable artifact write — the REAL OSError branch.
-    if str(path).endswith("departments.json"):
+# U109 hardening made the durable artifact write ATOMIC (temp file +
+# os.replace), so the fault-injection point moves from open() (which now
+# only ever touches a *.tmp file) to the atomic commit itself — os.replace
+# is where "did departments.json actually land" is decided either way.
+_real_replace = _os.replace
+def _boom(src, dst, *a, **k):
+    # Fail exactly the durable artifact write's atomic commit — the REAL
+    # OSError branch.
+    if str(dst).endswith("departments.json"):
         raise OSError(28, "No space left on device")
-    return _real_open(path, *a, **k)
-builtins.open = _boom
+    return _real_replace(src, dst, *a, **k)
+_os.replace = _boom
 try:
     sel = {"marketing": {"name": "Marketing", "emoji": "\U0001F4E3", "head": "CMO"},
            "sales": {"name": "Sales", "emoji": "\U0001F4B0", "head": "CRO"},
@@ -571,8 +576,8 @@ try:
            "publishing-studio": {"name": "Publishing Studio", "emoji": "\U0001F4DA", "head": "Head"}}
     bw.write_chosen_departments_artifact(sel, company_dir=COMPANY, source="failed-write-fixture")
 finally:
-    builtins.open = _real_open
-rec = json.load(_real_open(STATE))["canonicalReconciliation"]["chosenDepartments"]
+    _os.replace = _real_replace
+rec = json.load(open(STATE))["canonicalReconciliation"]["chosenDepartments"]
 print("ARTIFACT_PATH", rec.get("artifactPath"))
 print("ARTIFACT_WRITTEN", rec.get("artifactWritten"))
 print("COMPANY_DIR", rec.get("companyDir"))
