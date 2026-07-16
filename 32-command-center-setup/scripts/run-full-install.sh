@@ -1392,6 +1392,53 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 3b — Vertical-derivation guard (U107, E5-2/G2a): a vertical is NEVER
+# force-added to a client who is not that vertical.
+# ----------------------------------------------------------------------
+# Independently audits the departments just materialized in Phase 3
+# ($OC_ROOT/workspace/departments, on disk — never trusts a JSON self-report)
+# against the verticals the interview DECLARED (build-workforce.py's
+# verticalPacks.detectedPacks record in $STATE_FILE). Asserts provisioned
+# (subset) declared for every vertical-specific department (universal-primary
+# depts, e.g. saas/engineering, are excluded by design — they ship to every
+# client). On a healthy install this NEVER fires (apply_vertical_packs already
+# only adds a pack department when its keywords matched the interview), so
+# this is defense-in-depth, not a behavior change for correct installs — it
+# only blocks the exact defect this unit exists to catch.
+log "INFO" "phase=3b vertical-derivation-guard: starting"
+if [[ "$(state_get '.commandCenterPhase3bDone')" == "true" ]]; then
+  log "INFO" "phase=3b vertical-derivation-guard: already done — skipping"
+else
+  VERTICAL_GUARD=""
+  for _vg_cand in \
+    "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py"; do
+    if [[ -f "$_vg_cand" ]]; then VERTICAL_GUARD="$_vg_cand"; break; fi
+  done
+  if [[ -z "$VERTICAL_GUARD" ]]; then
+    log "WARN" "phase=3b vertical-derivation-guard: script not found in any skill-23 location — skipping (update the Skill 23 install to a version that ships U107)"
+  elif [[ ! -d "$OC_ROOT/workspace/departments" ]]; then
+    log "WARN" "phase=3b vertical-derivation-guard: $OC_ROOT/workspace/departments missing — nothing to audit yet, skipping"
+  else
+    VG_OUT="$(python3 "$VERTICAL_GUARD" --departments-dir "$OC_ROOT/workspace/departments" \
+      --build-state "$STATE_FILE" \
+      --out "$OC_ROOT/workspace/provisioning/vertical-derivation.json" --json 2>>"$LOG_FILE")"
+    VG_RC=$?
+    printf '%s\n' "$VG_OUT" >> "$LOG_FILE"
+    if [[ "$VG_RC" -eq 0 ]]; then
+      state_set '.commandCenterPhase3bDone = true'
+      log "INFO" "phase=3b vertical-derivation-guard: PASS — provisioned vertical-specific departments all declared by the interview (receipt: $OC_ROOT/workspace/provisioning/vertical-derivation.json)"
+    elif [[ "$VG_RC" -eq 3 ]]; then
+      VG_REASON="$(printf '%s' "$VG_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("; ".join(v["reason"] for v in d.get("violations", [])) or "unknown violation")' 2>/dev/null)"
+      fail_install "phase=3b: vertical-derivation-guard found a vertical-specific department provisioned without a matching interview declaration — ${VG_REASON:-see $LOG_FILE}"
+    else
+      log "WARN" "phase=3b vertical-derivation-guard: rc=$VG_RC (unresolved departments dir / non-fatal) — see $LOG_FILE"
+    fi
+  fi
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 4 — Materialize dept agents into agents.list[] (v10.14.19)
 # ----------------------------------------------------------------------
 log "INFO" "phase=4 materialize-agents: starting"
