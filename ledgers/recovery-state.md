@@ -6,6 +6,8 @@ Generated: 2026-07-16T12:20:02Z
 openclaw-onboarding `origin/main` HEAD: `92b916b2b44bc4d12e8b5f92e0ecce75ffcb9d1a`
 blackceo-command-center `origin/main` HEAD: `7fbae0b6a840efe109bc448130487279678cf13a`
 
+**See `ledgers/ratified-decisions-2026-07-16.md` for Trevor's 2026-07-16 ratified decisions (U65 closed, U64 verified, U74/U93 unblocked, D20 ratified, U22/U26/U63 authorized, fleet-roll removed as a blocker everywhere).** This note is manually added on branch `chore/ratified-decisions-2026-07-16` and will be superseded by the next automated reconciler run on `main` (this file is machine-regenerated every 10 minutes from git + ledger truth) — the permanent record lives in the ratified-decisions file, not here.
+
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
 No mismatches found this run.
@@ -48,8 +50,8 @@ No mismatches found this run.
 | U59 | `skill6-v2/U59` | `985935c4` | True | `5c51fb96` | v20.0.60 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `c3d13ec5` | True | `5a55f459` | v20.0.60 | deferred (operator-gated) | - |
-| U64 | `skill6-v2/U64` | `a1f52194` | True | `4736b19b` | v20.0.60 | partial (env cluster-access unconfirmed via kubectl — live-proven functionally) | - |
-| U65 | `skill6-v2/U65` | `8a7a213a` | True | `8e556638` | v20.0.60 | deferred (operator-gated) | - |
+| U64 | `skill6-v2/U64` | `a1f52194` | True | `4736b19b` | v20.0.60 | verified (Trevor-ratified 2026-07-16 — see `ledgers/ratified-decisions-2026-07-16.md` D-U64) | - |
+| U65 | `skill6-v2/U65` | `8a7a213a` | True | `8e556638` | v20.0.60 | closed / won't-do (PERMANENT — Trevor-ratified 2026-07-16) | - |
 | U67 | `skill6-v2/U67` | `c35bec2e` | True | `f24713a3` | v20.0.43 | verified | - |
 | U68 | `skill6-v2/U68` | `10f88c01` | True | `ee20f234` | v20.0.44 | verified | - |
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
