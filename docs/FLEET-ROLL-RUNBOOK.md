@@ -18,6 +18,25 @@ on every commit by `.githooks/pre-commit`).
 
 ---
 
+## Routed hand-off items (scope-boundary decisions landed in this run)
+
+Items below were explicitly ROUTED to this run by another spec's scope-boundary
+decision — never silently absorbed, never left unowned. Each row names the
+mechanism that already exists in the repo and any deadline context the roll
+must respect.
+
+| Item | Mechanism (already built) | Deadline context | Routed by |
+|---|---|---|---|
+| **push-client-embeddings** — publish the `shared-utils/sop-embed-once/` + `shared-utils/prebuilt-index/` release assets; per-box read-only pull; per-box verify | `shared-utils/sop-embed-once/build-and-publish.sh:1-17` (embed the canonical SOP library ONCE with the operator's key; every client box pulls a versioned asset read-only — the fix for the prior broken state where the only writer of `sop_embeddings` was a per-client backfill burning the CLIENT's own key) | `gemini-embedding-001` hard shutdown 2026-07-14 (code-verified: `scripts/pre-july14-embedding-migration-check.sh`) | Skill 6 blended-persona-kanban v2, decision D21 (X.3) — recommendation: FLEET-ROLL scope, ROUTED not dropped |
+
+**What this run owns:** DISTRIBUTION only — publishing the versioned release
+asset(s) and, on each box's payload pass, a per-box read-only pull + verify
+(Section 5's payload, Section 7's health gate). **What this run does NOT own:**
+the operator-box-only embed-once BUILD step (`build-and-publish.sh` itself) —
+that can run any time before the roll and is not part of any box's payload.
+
+---
+
 ## 0. What a fleet roll IS (and is NOT)
 
 A fleet roll is an **in-place UPDATE of already-provisioned boxes**. It is **NOT
