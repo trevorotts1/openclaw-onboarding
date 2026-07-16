@@ -179,6 +179,42 @@ So a live run today would: delete the two running demo processes; leave `cc-prod
 
 ---
 
+## D15 (D-J1) — RATIFIED BY TREVOR = Option A
+
+**Trevor's ruling:** the Devil's Advocate's challenge **CONTENT surfaces on client boards; the AGENT stays internal** — off client rosters, off agent pickers, never promoted to department head, description stays operator-facing. Sub-part (ii) rules with it: the product-doc status lifecycle (`pending` / `approved` / `rejected` / `escalated`) is canonical.
+
+**What this decides, in plain English:** the "Devil's Advocate" is an internal challenger that stress-tests a department's plans by surfacing assumptions and counter-arguments. The question was whether the *text of its challenges* may appear on a board a client can see — because the database migration that creates the role labels it `[INTERNAL — not surfaced to client]`, while the product requirements document specifies a client-visible challenge feed. Both texts are real. Trevor's answer: the content is client-visible; the agent itself stays invisible.
+
+**Provenance — the full trail, deliberately not compressed.** This decision did not arrive here directly, and the route it took is the record working, so it is preserved:
+
+1. A **coordinating agent ratified Option A on Trevor's behalf** under a claimed standing autonomy directive, and disclosed plainly that Trevor had not seen it.
+2. That ruling was **quarantined into `ledgers/agent-ratified-decisions-2026-07-16.md`** rather than filed here — because this file is titled "Trevor's RATIFIED DECISIONS" and its header states it records decisions *Trevor* made, so an agent's ruling filed here would read as his to anyone skimming. The quarantine carried a standing instruction: never migrate an entry into this file unless Trevor ratifies it himself.
+3. The **Command Center merge-writer then refused to land the work**, partly on that same provenance gap: it read the disclosure in the commit message and judged that merging is the act which makes challenge content reach a client board — not a technical call to wave through on an agent's say-so.
+4. **The coordinator took it to Trevor**, presenting it as its own ruling that he had never seen, with the reversal option stated and the consequence spelled out in advance: merging is what puts that content on a client board for the first time, because the feed 500s on every request today.
+5. **Trevor ratified Option A himself.** The quarantine's condition was satisfied, and the entry was migrated here.
+
+**Attestation, stated precisely.** Trevor's ratification is recorded here on the **coordinating agent's attestation**. The agent writing this ledger entry has no direct channel to Trevor, did not witness the ratification, and cannot independently verify it — exactly as it could not verify the earlier claim of a standing autonomy directive. This is recorded not as doubt but as provenance hygiene: this file's whole value is that a reader can tell whose decision a thing is, and that guarantee is worth nothing if the evidence behind an entry is left implicit. **If this attribution is wrong, Trevor can correct it in one line, and this note is what makes the error findable.** The same standard applied to every other claim in this pass (e.g. the HTTP 500 recorded below was proven by exact reproduction, never observed live, and says so).
+
+**Reasoning on record:**
+- Migration 065's `[INTERNAL]` label provably enforces exactly four things, verified in code: (a) the agent's description string is operator-facing; (b) it is excluded from client-facing agent pickers/rosters; (c) `ensureWorkspaceHeadAgents()` never promotes a trio agent to department head; (d) the CHANGELOG confirms the trio is excluded from the client-facing agent roster. **Content-hiding is not among them.** Nothing in the shipped branch touches any of those four.
+- Option B would leave a client-reachable feed — mounted with no feature flag — whose sole purpose is displaying content it is forbidden to display. That is a dead route, and it would make the product document a lie.
+- Option A honors both texts as written. They do not conflict; they are **silent**, and the spec's own instruction ("ratification, not silent interpretation") means silence is filled by a decision on the record.
+
+**Effect:** D15's gate is REMOVED. Unit 59's Command Center leg is buildable and built — branch `skill6-v2/U59-cc-d15` on `trevorotts1/blackceo-command-center` (draft PR #193, CI green). **Still not merged**: the Command Center's single serial merge-writer owns that, and Trevor alone times any fleet roll. His ratification unblocks the merge decision; it does not perform it.
+
+**The confirmed defect this unblocks (independent of the ruling).** The Devil's Advocate feed has **never rendered on a canonically migrated box** — it is a dead HTTP 500, not a feature awaiting data. `GET /api/da-challenges` seeds demo rows naming four columns (`department_id`, `challenge_text`, `response_text`, `response_deadline`) that **no migration has ever created**; the table is empty, so the seed fires on every request and raises `no such column: department_id`, which the route catches into a 500. Root cause: migration 020 defers the reconciliation to migration **024**, which was reserved by PR #11 and **never implemented** (the id sequence jumps `021 → 025`) — two separate code comments describe a migration that does not exist.
+
+**Recorded honestly: the defect fix was never actually hostage to this decision.** If Trevor had ruled Option B, the migration and write path should still have shipped — they fix a defect that exists regardless of who may read the feed. Option B would gate or remove the **feed**, which renders from `src/app/ceo-board/page.tsx:402` — a file the branch never touches. Verified this pass.
+
+**Correction to D15's own text, recorded rather than smoothed over.** D15 framed sub-part (ii) as "the code's `open/responded/escalated`" vs the PRD's four, and so missed the constraint actually enforced on every canonically migrated box. The accurate picture is **three distinct vocabularies across four declaration sites**:
+1. PRD — `pending|approved|rejected|escalated` (the target).
+2. `open|responded|escalated` — declared **twice**: as a **real CHECK constraint** in the legacy `schema.ts` (verified at commit `5bd9ba3`) *and* as route.ts's TypeScript interface.
+3. Migration 020's CHECK — `open|accepted|dismissed|overridden` (real, and the one D15 never mentions).
+
+An earlier note in this session claimed site 2 was "the TypeScript interface, never a DB constraint" — **that was wrong**, and is corrected here: it is a real constraint on a legacy box. A reviewer who caught this relayed it as making a *fourth* vocabulary; that does not survive counting — sites 2a and 2b declare the identical set, so it is a fourth **site**, not a fourth vocabulary. Migration 024 maps both real constraints so neither box class loses a row.
+
+---
+
 ## Net effect on the "buildable now" set
 
 - **U65:** CLOSED (terminal state — not buildable, not pending; done).
@@ -247,17 +283,20 @@ A follow-up verification pass (findings below independently re-derived from `ori
 
 **Net:** D15 cannot be closed by ratifying the status quo (the status quo is the pre-spec state, and it contradicts the recommendation on the lifecycle sub-part). Both sub-parts gate unbuilt work. Sub-part (i) is a genuine product-policy call about what a client sees, on a surface that is client-reachable by default — the one item in this entire pass that is properly the operator's to decide rather than an agent's.
 
-> **⚠️ UPDATE, same day — D15 was subsequently ratified by a COORDINATING AGENT, not by Trevor.**
-> Recorded in **`ledgers/agent-ratified-decisions-2026-07-16.md`** — a deliberately separate
-> file, because THIS file is titled "Trevor's RATIFIED DECISIONS" and its header states it
-> records decisions **Trevor** made. D15 is not one of them: **Trevor has not seen it and has
-> not approved it.** The agent's ruling (Option A — challenge content is client-visible, the
-> agent stays internal) and the work built on it (Command Center branch `skill6-v2/U59-cc-d15`,
-> draft PR #193, CI green 20/20, not merged) are all recorded there, with the reversal path.
-> The schema hypothesis flagged above is settled there too: it is now a **CONFIRMED defect** —
-> the Devil's Advocate feed has never rendered on a canonically migrated box. Do not read the
-> D15 entry in that file as Trevor's ruling, and do not move it into this file unless he
-> ratifies it himself.
+> **⚠️ SUPERSEDED, same day — D15 is now RATIFIED BY TREVOR. See the "D15 (D-J1) — RATIFIED BY
+> TREVOR = Option A" section below.**
+>
+> The analysis above stands as written: at the time it was recorded, D15 was genuinely open and
+> was correctly identified as the one item properly the operator's to decide. What followed, in
+> order: a coordinating agent ratified it on Trevor's behalf → it was quarantined into
+> `ledgers/agent-ratified-decisions-2026-07-16.md` because this file records only Trevor's own
+> decisions → the Command Center merge-writer refused to land the work, partly on that
+> provenance gap → the coordinator took it to Trevor → **Trevor ratified Option A himself**,
+> satisfying the quarantine's stated condition. The trail is preserved deliberately in both
+> files; it is the record working, not noise to compress away.
+>
+> The schema hypothesis flagged above is also settled: it is now a **CONFIRMED defect** — the
+> Devil's Advocate feed has never rendered on a canonically migrated box.
 
 ## Files touched recording these decisions
 
