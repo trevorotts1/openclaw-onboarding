@@ -1742,7 +1742,19 @@ def _atomic_write_json(path, obj):
     tmp = _tf.mktemp(dir=directory, prefix=".u109.", suffix=".tmp")
     with open(tmp, "w") as f:
         json.dump(obj, f, indent=2)
-    os.replace(tmp, path)
+    try:
+        os.replace(tmp, path)
+    except OSError:
+        # The commit step failed (disk full, permissions, etc.) -- the
+        # original file at `path` is untouched (that is the whole point of
+        # the atomic swap). Clean up the orphaned temp file best-effort and
+        # re-raise so the caller's existing fail-soft handling runs exactly
+        # as it did before this write became atomic.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
