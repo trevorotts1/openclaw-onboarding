@@ -697,7 +697,7 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > manager` raises `NotImplementedError` rather than ever fabricate a funnel
 > list) — wiring + proving a live discovery route (most likely a DOM-snapshot
 > walk of the Sites -> Funnels list, same discipline as
-> `ghl_selector_canary.py`'s `finder`) is a live leg owed to the operator,
+> `ghl_selector_drift_probe.py`'s `finder`) is a live leg owed to the operator,
 > parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
 > known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
 > list` step, ready the moment a funnel id is available.

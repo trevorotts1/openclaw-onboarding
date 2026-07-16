@@ -64,8 +64,11 @@ GENERAL / DURABLE — NOT A FORMS-ONLY ONE-OFF
 source locator, target locator) so ANY current or future Skill-6 script can import
 and call it. It is wired into the FORM builder (``ghl_form_builder.py``) and the
 SURVEY builder (``ghl_survey_builder.py``) by this fix; the PAGE/FUNNEL "Code"
-element drag (gates.json recipe, currently REST-served so not yet a live drag) can
-be wired to the SAME primitive when that path goes live.
+element drag (gates.json recipe) stays REST-served (``ghl_rest_canvas.py``) as the
+PRIMARY path — v1.5.0 (U30/B-U16) adds ``_place_code_element_via_drag`` as a
+FLAG-GATED (``GHL_PAGE_CODE_DRAG=1``) fallback wired to this SAME primitive, ready
+for the day the REST path regresses (see the "PAGE/FUNNEL CODE-ELEMENT DRAG
+FALLBACK" section below).
 
 SCROLL-INTO-VIEW + CATEGORY-HINT LOCATE (v1.1.0 — the ``F5.locate:City`` fix)
 -----------------------------------------------------------------------------
@@ -219,6 +222,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import time
@@ -242,10 +246,16 @@ except Exception:  # noqa: BLE001
 # playwright_fallback_recipes.code_element_drag_drop). A single down->up move does
 # NOT trip GHL's pointer-distance drag sensor; >= 20 interpolated moves do.
 # ---------------------------------------------------------------------------
-IFRAME_DRAG_VERSION = "v1.4.0"   # v1.4.0 (P3-04 c4): CC failure-taxonomy classification
+IFRAME_DRAG_VERSION = "v1.5.0"   # v1.4.0 (P3-04 c4): CC failure-taxonomy classification
                                   # (classify_board_reason/board_note/IframeDragStop) —
                                   # iframe failures now carry a SELECTOR-MISS/VERIFY-FAIL
                                   # board-note prefix + frame-origin context
+                                  # v1.5.0 (U30/B-U16): frame_click/drive_frame_click (the
+                                  # click counterpart to the drag primitive), smoke_first()
+                                  # (generalized single-proof-drag-before-a-bulk-run, lifted
+                                  # from the survey builder's _p2_smoke_test_drag), and the
+                                  # flag-gated page/funnel Code-element drag fallback
+                                  # (GHL_PAGE_CODE_DRAG=1, _place_code_element_via_drag)
 DEFAULT_INTERPOLATED_MOVES = 24     # >= gates.json interpolated_moves_min (20)
 DEFAULT_MOVE_INTERVAL_MS = 16       # gates.json move_interval_ms (~16ms / 60fps)
 DEFAULT_SETTLE_MS = 250             # settle at the target before releasing
@@ -304,6 +314,9 @@ IFRAME_VERIFY_FAIL_CODES = frozenset({
     "remove-click-failed", "select-all-failed", "title-commit-failed",
     "title-not-clickable", "title-not-editable", "title-not-readable",
     "title-not-set",
+    # v1.5.0 (U30/B-U16) — frame_click: the control WAS resolved and clicked,
+    # but the click itself errored or its expected effect never verified.
+    "click-failed", "click-not-verified",
 })
 
 
@@ -1749,6 +1762,357 @@ def iframe_selector_for(kind: str) -> str:
             "unknown-iframe-kind",
             f"no known iframe selector for kind {kind!r}; known: "
             f"{sorted(IFRAME_SELECTORS)}") from exc
+
+
+# ===========================================================================
+# FRAME-SCOPED CLICK (v1.5.0 — B-U16 item 2) — the click counterpart to
+# ``drive_drag``/``coordinate_drag``, sharing the EXACT SAME frame-locator
+# machinery (``_resolve_visible``, scroll-into-view, CDP attach/detach). Built
+# to replace the two best-effort ``[runtime-capture]`` sites named in
+# ``references/iframe-drag-capability.md``'s audit table ("In-iframe field
+# PROPERTY panel edits, builder TAB switches ... extend with a frame_click
+# helper"): the FORM builder's property-panel binds (``_bind_field_props`` —
+# Required/Hidden checkboxes) and its Quick-Add-panel TAB switch
+# (``_ensure_quick_add_panel``). Both wirings use ONLY anchors already
+# DOCUMENTED in SELECTORS-LIVE-form.md (never an invented selector — same D8
+# discipline as the drag primitive).
+# ===========================================================================
+def _verify_absent(frame: Any, text: str, timeout_ms: int) -> bool:
+    """Best-effort confirmation that NO match of ``text`` remains inside the
+    iframe within the budget — the opposite-direction mirror of
+    :func:`_verify_placed` (a click that DISMISSES/CLOSES something, e.g. a
+    tooltip or an already-open panel toggling shut). Never raises for a plain
+    'still present' (the caller decides)."""
+    deadline = time.monotonic() + max(0.0, timeout_ms / 1000.0)
+    loc = frame.get_by_text(text, exact=False)
+    while True:
+        try:
+            if int(loc.count()) == 0:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.25)
+
+
+def drive_frame_click(
+    page: Any,
+    *,
+    iframe_selector: str,
+    target: str,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    verify_text: Optional[str] = None,
+    verify_absent: bool = False,
+) -> Dict[str, Any]:
+    """Click ONE element INSIDE a (possibly cross-origin) builder iframe and
+    return a receipt. Resolves ``target`` to a VISIBLE match
+    (:func:`_resolve_visible` — robust to an ambiguous text spec, same as the
+    drag path), scrolls it into view, then clicks it via Playwright's
+    frame-scoped locator (reaches non-ref-clickable ``StaticText``/icon
+    controls a top-frame agent-browser click cannot bind to — the exact
+    reach limitation the module docstring documents for drag SOURCE tiles
+    applies equally to these controls).
+
+    FAIL-CLOSED: an unlocatable/unscrollable/unclickable target raises
+    :class:`IframeDragError` — this NEVER falls back to a top-frame click or a
+    guessed coordinate.
+
+    ``verify_text``/``verify_absent`` (optional): when given, the click's
+    effect is confirmed by re-querying the iframe — either the text now
+    APPEARS (default: ``verify_text`` alone, e.g. a panel that opened —
+    count-delta proof past the pre-click baseline, same discipline as
+    :func:`drive_drag`'s placement proof) or it now DISAPPEARS
+    (``verify_absent=True``, e.g. a dismissed control). A click that does not
+    verify raises ``click-not-verified`` rather than reporting a fake success
+    — 'a CLI "✓ Done" that placed nothing is a FALSE PASS; the snapshot/store
+    delta is the only honest arbiter' (shipped doctrine, same as the drag
+    path's count-delta proof)."""
+    if not iframe_selector or not str(iframe_selector).strip():
+        raise IframeDragError("empty-iframe-selector", "iframe_selector must be non-empty")
+
+    frame = page.frame_locator(iframe_selector)
+
+    pre_count = 0
+    if verify_text:
+        try:
+            pre_count = int(frame.get_by_text(verify_text, exact=False).count())
+        except Exception:  # noqa: BLE001
+            pre_count = 0
+
+    try:
+        loc, n_matches = _resolve_visible(frame, target, timeout_ms=timeout_ms)
+    except IframeDragError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        n_attached = _safe_count(_resolve_locator_all(frame, target))
+        raise IframeDragError(
+            "target-not-found",
+            f"click TARGET {target!r} was not found/visible inside the cross-origin "
+            f"iframe {iframe_selector!r} within {timeout_ms}ms ({type(exc).__name__}; "
+            f"{max(n_attached, 0)} attached match(es), none visible). STOP — no "
+            "element to click.") from exc
+
+    _scroll_into_view(loc, what="click-target", spec=target, timeout_ms=timeout_ms)
+
+    box = loc.bounding_box()
+    if box is None:
+        raise IframeDragError(
+            "target-no-box",
+            f"click TARGET {target!r} resolved but has no bounding box inside "
+            f"{iframe_selector!r} (not laid out / zero-size). STOP.")
+
+    try:
+        loc.click(timeout=timeout_ms)
+    except Exception as exc:  # noqa: BLE001
+        raise IframeDragError(
+            "click-failed",
+            f"click TARGET {target!r} resolved and was scrolled into view inside "
+            f"{iframe_selector!r}, but the click itself raised "
+            f"({type(exc).__name__}: {exc}). STOP.") from exc
+
+    verified: Optional[bool] = None
+    if verify_text:
+        verified = (_verify_absent(frame, verify_text, timeout_ms) if verify_absent
+                   else _verify_placed(frame, verify_text, timeout_ms, min_count=pre_count + 1))
+
+    receipt = {
+        "ok": True,
+        "iframe_selector": iframe_selector,
+        "target": target,
+        "target_matches": n_matches,
+        "target_box": box,
+        "verify_text": verify_text,
+        "verify_absent": verify_absent,
+        "verify_pre_count": pre_count if verify_text else None,
+        "verified": verified,
+    }
+    if verify_text and verified is False:
+        raise IframeDragError(
+            "click-not-verified",
+            f"clicked {target!r} inside the iframe but the expected effect on "
+            f"{verify_text!r} never verified within {timeout_ms}ms "
+            f"({'still present' if verify_absent else 'no new match past pre-click baseline ' + str(pre_count)}) "
+            f"— STOP (never report a fake success). receipt={receipt}")
+    return receipt
+
+
+def frame_click(
+    cdp_url: str,
+    *,
+    iframe_selector: str,
+    target: str,
+    url_marker: Optional[str] = None,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    verify_text: Optional[str] = None,
+    verify_absent: bool = False,
+) -> Dict[str, Any]:
+    """Attach Playwright to the ALREADY-RUNNING agent-browser Chromium over CDP
+    and CLICK one element inside a (cross-origin) builder iframe — the click
+    counterpart to :func:`coordinate_drag` (B-U16 item 2), sharing the exact
+    same frame-locator machinery (attach/detach, :func:`_resolve_visible`,
+    scroll-into-view). See :func:`drive_frame_click` for the full contract.
+
+    Args:
+        cdp_url: The CDP websocket endpoint from ``agent-browser get cdp-url``.
+        iframe_selector: CSS selector for the builder iframe on the top frame
+            (see :data:`IFRAME_SELECTORS` / :func:`iframe_selector_for`).
+        target: Locator spec for the element to click inside the iframe (see
+            :func:`_resolve_locator`; default is visible-text).
+        url_marker: Substring to pick the builder page among open tabs.
+        verify_text / verify_absent: see :func:`drive_frame_click`.
+
+    Raises:
+        IframeDragError: fail-closed on any unavailable Playwright, missing
+            page/frame, unlocatable/unclickable target, or an unverified click
+            effect. NEVER fakes success. The underlying agent-browser Chromium
+            is NOT closed — only the Playwright CDP connection is detached."""
+    _require_playwright("frame-click")
+    _require_cdp_url(cdp_url)
+
+    with sync_playwright() as p:  # type: ignore[union-attr]
+        browser = _attach_over_cdp(p, cdp_url)
+        try:
+            page = _select_page(browser, url_marker, iframe_selector)
+            return drive_frame_click(
+                page,
+                iframe_selector=iframe_selector,
+                target=target,
+                timeout_ms=timeout_ms,
+                verify_text=verify_text,
+                verify_absent=verify_absent,
+            )
+        finally:
+            # Detach the Playwright CDP connection WITHOUT killing agent-browser's
+            # Chromium (same discipline as coordinate_drag).
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ===========================================================================
+# SMOKE-FIRST (v1.5.0 — B-U16 item 3) — generalized out of the survey
+# builder's ``_p2_smoke_test_drag`` (``ghl_survey_builder.py``) into this
+# SHARED module so the FORM and PAGE/FUNNEL paths can call the IDENTICAL
+# primitive before trusting a bulk/real run. Shipped doctrine (survey
+# builder's own docstring, carried forward verbatim): "a CLI '✓ Done' that
+# placed nothing is a FALSE PASS; the snapshot/store delta is the only
+# honest arbiter." One :func:`coordinate_drag` call — with its count-delta
+# ``verify_text`` proof — IS the smoke probe; no separate mechanism is
+# needed. The survey builder's OWN ``_p2_smoke_test_drag`` (a lower-level
+# ``ghl_iframe_dragdrop`` adapter call, proven in production) is left
+# UNCHANGED by this generalization — only NEW form/page call sites adopt
+# this shared helper (see ``_perform_smoke_first`` in ghl_form_builder.py
+# and ``_place_code_element_via_drag`` below).
+# ===========================================================================
+def _best_effort_undo(cdp_url: str, *, url_marker: Optional[str],
+                      iframe_selector: str) -> None:
+    """Send a best-effort Ctrl/Cmd+Z to the builder page after a successful
+    smoke probe, so the throwaway smoke element does not pollute the real
+    build (mirrors the survey builder's own best-effort undo in
+    ``_p2_smoke_test_drag``). Swallows EVERY exception — this is cosmetic
+    cleanup, never load-bearing; the smoke probe's PASS/FAIL already happened
+    before this is called."""
+    with sync_playwright() as p:  # type: ignore[union-attr]
+        browser = _attach_over_cdp(p, cdp_url)
+        try:
+            page = _select_page(browser, url_marker, iframe_selector)
+            page.keyboard.press("Meta+z")
+            page.keyboard.press("Control+z")
+        finally:
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def smoke_first(
+    cdp_url: str,
+    *,
+    iframe_selector: str,
+    source: str,
+    target: str,
+    verify_text: str,
+    url_marker: Optional[str] = None,
+    undo: bool = False,
+    **drag_kwargs: Any,
+) -> Dict[str, Any]:
+    """Run ONE proof-drag BEFORE trusting a full/bulk run of drags inside this
+    iframe (B-U16 item 3). Generalized from the survey builder's
+    ``_p2_smoke_test_drag`` — same doctrine, shared primitive: a single
+    :func:`coordinate_drag` call whose ``verify_text`` count-delta proof is
+    the honest arbiter the doctrine names (never a bare CLI "done").
+
+    NEVER RAISES — always returns a dict so a caller can gate a bulk run on
+    ``smoke_first(...)["ok"]`` without its own try/except:
+
+        {"ok": bool, "receipt": <coordinate_drag receipt or None>,
+         "error": <classified board note or None>, "code": <str or None>}
+
+    On a verified success with ``undo=True``, a best-effort undo
+    (:func:`_best_effort_undo`) is sent afterwards so the smoke element does
+    not pollute the real build — undo failures never affect the returned
+    ``ok``/``receipt`` (cosmetic cleanup only, same discipline as the survey
+    builder's own best-effort undo)."""
+    try:
+        receipt = coordinate_drag(
+            cdp_url,
+            iframe_selector=iframe_selector,
+            source=source,
+            target=target,
+            url_marker=url_marker,
+            verify_text=verify_text,
+            **drag_kwargs,
+        )
+    except IframeDragError as exc:
+        return {"ok": False, "receipt": None,
+                "error": board_note(exc, iframe_selector=iframe_selector),
+                "code": exc.code}
+    ok = bool(receipt.get("placed"))
+    if ok and undo:
+        try:
+            _best_effort_undo(cdp_url, url_marker=url_marker, iframe_selector=iframe_selector)
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": ok, "receipt": receipt, "error": None, "code": None}
+
+
+# ===========================================================================
+# PAGE/FUNNEL CODE-ELEMENT DRAG FALLBACK (v1.5.0 — B-U16 item 1) —
+# FLAG-WIRED, OFF by default. ``ghl_rest_canvas.py`` (Family A, "canvas-REST")
+# is the PRIMARY page/funnel content path — pure REST JSON splice, no drag, no
+# browser (see that module's own "GLUE, NOT THE CLICKER" boundary; it makes
+# NO network calls and drives NO browser of its own). Per
+# ``references/iframe-drag-capability.md``'s audit ("there is no active
+# live-drag call today ... wire it to coordinate_drag(iframe_selector=
+# iframe_selector_for('page_code'), ...) when that path goes live"), THIS is
+# that wiring: a small, general, reusable fallback ready for a page/funnel
+# caller to invoke IF the REST path ever regresses and an agent must fall
+# back to UI-driving the page builder — "nothing exists beneath it" (the
+# spec's own framing) no longer holds once this lands.
+# ===========================================================================
+GHL_PAGE_CODE_DRAG_ENV = "GHL_PAGE_CODE_DRAG"
+
+
+def page_code_drag_enabled(env: Optional[Dict[str, str]] = None) -> bool:
+    """True when the page/funnel Quick-Add 'Code' element DRAG fallback is
+    deliberately enabled via ``GHL_PAGE_CODE_DRAG=1``. Default OFF —
+    ``ghl_rest_canvas.py``'s REST JSON splice stays PRIMARY; this flag exists
+    so an operator can flip to the UI-driving fallback if the REST path ever
+    regresses."""
+    env = env if env is not None else os.environ
+    return str(env.get(GHL_PAGE_CODE_DRAG_ENV, "")).strip().lower() in ("1", "true", "yes")
+
+
+def _place_code_element_via_drag(
+    cdp_url: str,
+    *,
+    target: str,
+    url_marker: Optional[str] = None,
+    tile_text: str = "Code",
+    verify_text: str = "Code",
+    env: Optional[Dict[str, str]] = None,
+    **drag_kwargs: Any,
+) -> Dict[str, Any]:
+    """Page/funnel Quick-Add 'Code' element DRAG fallback (item 1, B-U16).
+
+    FLAG-GATED: fail-closed with ``page-code-drag-disabled`` unless
+    :func:`page_code_drag_enabled` is True — this is a deliberate FALLBACK,
+    never a silent replacement of ``ghl_rest_canvas.py``'s REST-primary path.
+
+    Runs :func:`smoke_first` as the placement itself — for a single
+    Code-element drop there is no separate "bulk" phase, so the smoke-first
+    doctrine is honored by gating this ONE real placement on its own honest
+    count-delta verify (never a bare CLI "✓ Done"). Raises
+    :class:`IframeDragError` on a failed smoke/placement — never returns a
+    fake success. Uses the ``page_code`` selector preset
+    (:func:`iframe_selector_for`) — never an invented selector."""
+    if not page_code_drag_enabled(env):
+        raise IframeDragError(
+            "page-code-drag-disabled",
+            "GHL_PAGE_CODE_DRAG is not set to 1 — the page/funnel Code-element "
+            "drag fallback is OFF by default (ghl_rest_canvas.py's REST JSON "
+            "splice is the primary path; see that module's docstring). Set "
+            "GHL_PAGE_CODE_DRAG=1 to deliberately enable this UI-driving "
+            "fallback.")
+    iframe_selector = iframe_selector_for("page_code")
+    smoke = smoke_first(
+        cdp_url,
+        iframe_selector=iframe_selector,
+        source=f"text={tile_text}",
+        target=target,
+        verify_text=verify_text,
+        url_marker=url_marker,
+        **drag_kwargs,
+    )
+    if not smoke["ok"]:
+        raise IframeDragError(
+            smoke.get("code") or "page-code-smoke-failed",
+            "smoke_first() proof-drag for the page/funnel Code element did not "
+            "verify — STOP (never trust a placement past a failed smoke probe). "
+            + (smoke.get("error") or ""))
+    return smoke["receipt"]
 
 
 # ===========================================================================

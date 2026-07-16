@@ -10,7 +10,7 @@
 # via `ghl_vps_mount_proof.py --selftest` (hermetic, no Docker). The `--live`
 # mode requires a REAL `docker` binary AND an actual compose project on THIS
 # box — when either is missing it REFUSES with a clear message (exit 3),
-# mirroring `run-selector-canary.sh`'s "operator-run live step, not a cron
+# mirroring `run-selector-drift-probe.sh`'s "operator-run live step, not a cron
 # default" pattern. This is the correct, honest shape for an operator-gated
 # live leg: the mechanism ships now, the live round trip runs when an operator
 # is actually on a real VPS.

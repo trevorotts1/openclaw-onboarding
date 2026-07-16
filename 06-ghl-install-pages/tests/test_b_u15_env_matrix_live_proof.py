@@ -333,8 +333,8 @@ class TestVpsMountProofMechanism:
 class TestVpsMountProofLiveWrapperRefusesCleanly:
     """`scripts/vps-mount-proof.sh` must NEVER fabricate a live pass when no
     real Docker/VPS is reachable — it refuses loudly with a distinct exit
-    code, exactly like the existing `run-selector-canary.sh --live` pattern
-    this unit's wrapper deliberately mirrors."""
+    code, exactly like the existing `run-selector-drift-probe.sh --live`
+    pattern this unit's wrapper deliberately mirrors."""
 
     def test_offline_default_runs_the_selftest_and_exits_0(self):
         res = subprocess.run(

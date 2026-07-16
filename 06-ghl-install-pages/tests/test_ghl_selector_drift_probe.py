@@ -1,4 +1,9 @@
-"""Offline tests for U2 (F3) — selector-drift canary + STOP-with-snapshot resolver.
+"""Offline tests for U2 (F3) — selector-drift probe + STOP-with-snapshot resolver.
+
+RENAMED (U30/B-U16, 2026-07-16): this file shipped as
+``test_ghl_selector_canary.py`` through U29 (module under test renamed
+``ghl_selector_canary.py`` -> ``ghl_selector_drift_probe.py`` in the same
+commit — see that module's docstring for the full rename note).
 
 No network, no browser, no GHL writes: every finder in this file is a fake
 callable. These wrap the module's own --selftest AND add direct behavioural
@@ -17,7 +22,7 @@ _TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 if _TOOLS not in sys.path:
     sys.path.insert(0, _TOOLS)
 
-import ghl_selector_canary as canary  # noqa: E402
+import ghl_selector_drift_probe as canary  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +244,133 @@ def test_run_canary_gap_anchor_never_counted_as_miss():
     summary = report.summary()
     assert "page.builder.chrome" in summary["gaps"]
     assert "page.builder.chrome" not in summary["misses"]
+
+
+# ---------------------------------------------------------------------------
+# dedupe_board_notifier / clear_dedupe_state_for_resolved — U30/B-U16 item 4
+# acceptance (c): "a seeded probe failure produces exactly ONE SELECTOR-MISS
+# -prefixed card (idempotent across repeat runs)".
+# ---------------------------------------------------------------------------
+def test_dedupe_board_notifier_seeded_failure_produces_exactly_one_card_across_repeat_runs(tmp_path):
+    data = canary.load_selectors()
+    state_path = str(tmp_path / "dedupe-state.json")
+
+    def only_save_misses(a, candidate):
+        return None if a["id"] == "form.builder.save" else "ref"
+
+    notified = []
+    wrapped = canary.dedupe_board_notifier(
+        lambda payload: notified.append(payload), state_path=state_path)
+
+    # Run 1 — the SAME seeded failure, three times in a row (simulating three
+    # daily probe fires while the drift stays unresolved).
+    for _ in range(3):
+        canary.run_canary(data, only_save_misses, object_types=["form"],
+                          board_notifier=wrapped)
+
+    assert len(notified) == 1, (
+        f"a persistent, unresolved drift must produce exactly ONE card across "
+        f"repeat runs, got {len(notified)}")
+    assert notified[0]["prefix"] == canary.BOARD_NOTE_SELECTOR_MISS
+    assert notified[0]["anchor_id"] == "form.builder.save"
+
+
+def test_dedupe_board_notifier_state_file_persists_the_notified_id(tmp_path):
+    data = canary.load_selectors()
+    state_path = str(tmp_path / "dedupe-state.json")
+
+    def only_save_misses(a, candidate):
+        return None if a["id"] == "form.builder.save" else "ref"
+
+    wrapped = canary.dedupe_board_notifier(lambda payload: None, state_path=state_path)
+    canary.run_canary(data, only_save_misses, object_types=["form"], board_notifier=wrapped)
+
+    assert os.path.isfile(state_path)
+    with open(state_path) as fh:
+        on_disk = json.load(fh)
+    assert on_disk["notified"] == ["form.builder.save"]
+
+
+def test_dedupe_board_notifier_different_misses_each_get_their_own_card(tmp_path):
+    """The dedupe key is per-anchor — a DIFFERENT drift must still notify,
+    never suppressed by an unrelated already-notified id."""
+    data = canary.load_selectors()
+    state_path = str(tmp_path / "dedupe-state.json")
+    notified = []
+    wrapped = canary.dedupe_board_notifier(
+        lambda payload: notified.append(payload["anchor_id"]), state_path=state_path)
+
+    def miss_save(a, candidate):
+        return None if a["id"] == "form.builder.save" else "ref"
+
+    def miss_list_search(a, candidate):
+        return None if a["id"] == "form.list.search" else "ref"
+
+    canary.run_canary(data, miss_save, object_types=["form"], board_notifier=wrapped)
+    canary.run_canary(data, miss_list_search, object_types=["form"], board_notifier=wrapped)
+    assert sorted(notified) == ["form.builder.save", "form.list.search"]
+
+
+def test_dedupe_board_notifier_missing_state_file_is_fail_soft_not_a_crash(tmp_path):
+    """A corrupt/unreadable state file must never crash the probe — it
+    degrades to 'nothing notified yet' (an extra card in the worst case,
+    NEVER a swallowed real miss)."""
+    state_path = str(tmp_path / "nested" / "does-not-exist-yet" / "state.json")
+    notified = []
+    wrapped = canary.dedupe_board_notifier(
+        lambda payload: notified.append(payload), state_path=state_path)
+    wrapped({"anchor_id": "form.builder.save", "prefix": canary.BOARD_NOTE_SELECTOR_MISS})
+    assert len(notified) == 1
+    assert os.path.isfile(state_path), "a fail-soft write must still create the state file"
+
+
+def test_dedupe_board_notifier_corrupt_state_file_degrades_to_notify_not_crash(tmp_path):
+    state_path = tmp_path / "dedupe-state.json"
+    state_path.write_text("{ not valid json")
+    notified = []
+    wrapped = canary.dedupe_board_notifier(
+        lambda payload: notified.append(payload), state_path=str(state_path))
+    wrapped({"anchor_id": "form.builder.save", "prefix": canary.BOARD_NOTE_SELECTOR_MISS})
+    assert len(notified) == 1, "a corrupt ledger must not swallow a real miss notification"
+
+
+def test_dedupe_board_notifier_underlying_notifier_failure_never_persists_a_false_notified(tmp_path):
+    """If the WRAPPED board_notifier itself raises (board outage), the id
+    must NOT be recorded as notified — otherwise a genuine miss would go
+    silently unreported forever once the board comes back up."""
+    state_path = str(tmp_path / "dedupe-state.json")
+
+    def boom(payload):
+        raise RuntimeError("board unreachable")
+
+    wrapped = canary.dedupe_board_notifier(boom, state_path=state_path)
+    with pytest.raises(RuntimeError):
+        wrapped({"anchor_id": "form.builder.save", "prefix": canary.BOARD_NOTE_SELECTOR_MISS})
+    assert canary._load_dedupe_state(state_path) == set(), (
+        "a board_notifier failure must not be recorded as a successful notify")
+
+
+def test_clear_dedupe_state_for_resolved_drops_healed_ids_reenabling_future_notify(tmp_path):
+    state_path = str(tmp_path / "dedupe-state.json")
+    canary._save_dedupe_state(state_path, {"form.builder.save", "form.list.search"})
+
+    # form.builder.save healed (no longer missing); form.list.search still is.
+    canary.clear_dedupe_state_for_resolved(state_path=state_path,
+                                           still_missing_ids=["form.list.search"])
+    assert canary._load_dedupe_state(state_path) == {"form.list.search"}
+
+    # A FUTURE regression on the healed anchor must re-notify (not suppressed).
+    notified = []
+    wrapped = canary.dedupe_board_notifier(
+        lambda payload: notified.append(payload), state_path=state_path)
+    wrapped({"anchor_id": "form.builder.save", "prefix": canary.BOARD_NOTE_SELECTOR_MISS})
+    assert len(notified) == 1
+
+
+def test_clear_dedupe_state_for_resolved_is_fail_soft_on_missing_file(tmp_path):
+    state_path = str(tmp_path / "does-not-exist.json")
+    canary.clear_dedupe_state_for_resolved(state_path=state_path, still_missing_ids=[])
+    # Must not raise; no file is created either (nothing to clear).
 
 
 # ---------------------------------------------------------------------------

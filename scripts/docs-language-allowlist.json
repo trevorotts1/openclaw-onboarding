@@ -1,13 +1,9 @@
 {
-  "$comment": "U92 (X/U-X2) docs-language CI guard allowlist. The guarded term is defined once, in full, in MASTER SPEC v2's LANGUAGE CONFORMANCE header (U91, verified scrub) and is never spelled out in prose comments in this repo outside that authorized citation and the legacy filenames below. This file spells it out because a denylist scanner cannot function without the literal string it is matching.",
+  "$comment": "U92 (X/U-X2) docs-language CI guard allowlist. The guarded term is defined once, in full, in MASTER SPEC v2's LANGUAGE CONFORMANCE header (U91, verified scrub) and is never spelled out in prose comments in this repo outside that authorized citation and the legacy filenames below. This file spells it out because a denylist scanner cannot function without the literal string it is matching. U30/B-U16 (2026-07-16) landed its four owned renames (see the removed entries below) and correctly SHRANK this list -- see scripts/tests/docs-language-guard.test.py's floor-check comment for why a shrink here is expected, not a regression.",
   "term": "canary",
   "legacy_filenames": {
-    "$comment": "Exact filenames (with extension) that may still carry the term until renamed. Citing one of these verbatim in doc prose (e.g. in backticks) is allowed; the checker subtracts the matched filename span before deciding whether anything else on the line is an unexplained occurrence. Source: MASTER SPEC v2 Section X.1.3 (onboarding-repo footprint), each annotated with its owning rename unit.",
+    "$comment": "Exact filenames (with extension) that may still carry the term until renamed. Citing one of these verbatim in doc prose (e.g. in backticks) is allowed; the checker subtracts the matched filename span before deciding whether anything else on the line is an unexplained occurrence. Source: MASTER SPEC v2 Section X.1.3 (onboarding-repo footprint), each annotated with its owning rename unit. U30's four entries (run-selector-canary.sh, test_ghl_selector_canary.py, test_iframe_survival_canary.py, ghl_selector_canary.py) were REMOVED here on landing (2026-07-16) -- those files no longer carry the term (renamed to run-selector-drift-probe.sh / test_ghl_selector_drift_probe.py / test_iframe_survival_probe.py / ghl_selector_drift_probe.py), so the carve-out is no longer needed for them.",
     "entries": [
-      { "path": "06-ghl-install-pages/scripts/run-selector-canary.sh", "owner": "U30" },
-      { "path": "06-ghl-install-pages/tests/test_ghl_selector_canary.py", "owner": "U30" },
-      { "path": "06-ghl-install-pages/tests/test_iframe_survival_canary.py", "owner": "U30" },
-      { "path": "06-ghl-install-pages/tools/ghl_selector_canary.py", "owner": "U30" },
       { "path": "32-command-center-setup/scripts/heartbeat-canary-probe.py", "owner": "U93" },
       { "path": "scripts/loop-protection-canary.sh", "owner": "U93" }
     ]

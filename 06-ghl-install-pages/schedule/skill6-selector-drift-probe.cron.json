@@ -1,0 +1,13 @@
+{
+  "_comment": "U30/B-U16 item 4 -- the daily maintenance-window schedule ENTRY for the selector-drift probe (tools/ghl_selector_drift_probe.py + scripts/run-selector-drift-probe.sh, renamed from ghl_selector_canary.py / run-selector-canary.sh by this same unit). 'Drift is caught on the operator's own box before a client build hits it' (unit doctrine). This file IS that entry -- the single source of truth both this repo's doctrine text and scripts/install-selector-drift-probe-cron.sh read from, so the two can never drift out of sync. Registering it live (openclaw cron create) is the LIVE-PROOF leg, deferred to the operator -- same doctrine as schedule/skill6-github-archive-reconcile-sweep.cron.json (U24/B-U10) and schedule/skill6-routing-drift-check.cron.json (U23/B-U9), whose pattern this file mirrors.",
+  "name": "skill6-selector-drift-probe",
+  "schedule": "0 5 * * *",
+  "tz": "America/New_York",
+  "mode": "command",
+  "script_relpath": "scripts/run-selector-drift-probe.sh",
+  "args": [],
+  "command": "bash $HOME/.openclaw/skills/06-ghl-install-pages/scripts/run-selector-drift-probe.sh",
+  "description": "Daily maintenance-window OFFLINE gate for the selector-drift probe (selectors-live.json schema + STOP-with-snapshot resolver selftest, run-selector-drift-probe.sh's default no-args mode -- never opens a browser from cron). A regression here is exactly the drift class B-U16 exists to catch on the operator's own box BEFORE a client build hits it: failure prints a SELECTOR-MISS-prefixed log line (cc_board.py's taxonomy), and once a live finder is wired (operator-gated -- see ghl_selector_drift_probe.live_finder_over_browser_manager) a seeded probe failure produces exactly ONE idempotent SELECTOR-MISS board card via dedupe_board_notifier() -- never a duplicate card on repeat daily runs of the SAME unresolved drift. A probe that cannot even run (missing python3, missing selectors-live.json) is reported PARKED, never silently green.",
+  "evidence_base_env_var": null,
+  "evidence_base_default": null
+}
