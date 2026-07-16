@@ -76,6 +76,13 @@ jobs:
           bash tests/unit/guard-agent-browser-managed-all-skill-dirs.test.sh
           echo "✓ guard-agent-browser-managed.sh now AUTO-DISCOVERS every NN-*/ skill directory (44-convert-and-flow-operator/ and any future skill), not a fixed 3-entry list"
 
+      - name: Guard backstop-conformance exemption negative fixture (ci-guard-red fix -- exact-path only, never directory-wide)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/guard-agent-browser-managed-backstop-conformance-exempt.test.sh
+          echo "✓ guard-agent-browser-managed.sh exempts ONLY 03-agent-browser/scripts/lib-backstop-conformance.sh (Skill 3's own raw-CLI conformance battery) by exact path, and still bites any other unmanaged spawn under 03-agent-browser/"
+
       - name: Run static singleton + iframe-taxonomy tests
         shell: bash
         run: |
