@@ -99,6 +99,53 @@ client boxes (no Podbean secret lands on them). The legacy `OPENCLAW_PODBEAN_CLI
 / `OPENCLAW_PODBEAN_CLIENT_SECRET` injection is kept for the operator's own box /
 backward compatibility only.
 
+## Repository secret-vaulting guard and offline transformer
+
+Run the repository-wide static guard before committing an n8n workflow export:
+
+```bash
+bash scripts/qc-assert-no-n8n-plaintext-secrets.sh
+```
+
+It discovers every `*.workflow.json` file and rejects literal `client_id` /
+`client_secret` assignments without printing the rejected value. The shipped
+broker passes because `Podbean Token` uses an `httpBasicAuth` credential
+reference with a placeholder ID.
+
+For a workflow exported to a local file, the offline transformer removes
+supported Code/Set/HTTP Request literals without accepting or displaying a
+credential value:
+
+```bash
+python3 58-podcast-production-engine/scripts/vault_n8n_credential.py \
+  /path/to/offline-export.workflow.json \
+  "Podbean BlackCEO (client_credentials)" \
+  --output /path/to/offline-export.vaulted.workflow.json
+```
+
+Code and Set assignments become `$env.PODBEAN_CLIENT_ID` /
+`$env.PODBEAN_CLIENT_SECRET` references and are listed in the redacted report.
+HTTP Request assignments are removed and the node receives the same placeholder
+credential-reference shape used by the repository's broker assets. After an
+import, replace the placeholder ID by selecting the named n8n credential on the
+node. Re-run the static guard against the transformed export before import.
+
+### OWED — live application was not done by this pass
+
+This repository-only pass made no n8n API calls and did not read, export, modify,
+or activate either live-only workflow. The later live operator must apply and
+verify the vaulting by these workflow ID references:
+
+- `BqRLOn8TP1wPaAzn` — `Podbean - GET CLIENT CHANNEL ID`
+- `COfgxe6HXRcWOleV` — `Podbean Channel IDs to Google Doc`
+
+For each ID, export the workflow through the authorized operator path, run the
+offline transformer on that export, connect the existing named credential (or
+set the reported deployment env references where a Code/Set node cannot consume
+a credential directly), import it through the authorized operator path, and
+verify that a fresh export passes the repository guard. That live application
+and verification remain explicitly owed.
+
 ## Operator: harden the live full-publish workflow (out of scope for the repo)
 
 The live **"create podcast episode from openclaw"** (`/webhook/podbean-publish`)
