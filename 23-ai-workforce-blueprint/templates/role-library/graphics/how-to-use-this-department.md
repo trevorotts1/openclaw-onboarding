@@ -96,6 +96,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Style Librarian** | Style Librarian for the company's Design Intelligence Unit - the role responsible for every style asset's findability. |
 | **Style Steward** | Style Steward - "The Broker" - for the company's Design Intelligence Unit inside the Graphics department. |
 | **Thumbnail Cover Designer** | Thumbnail / Cover Designer of the company, the specialist responsible for the small-scale visual assets that determine. |
+| **Prompt Author** | Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation. |
 
 ### What each specialist is for, with an example request
 
@@ -218,6 +219,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Thumbnail / Cover Designer of the company, the specialist responsible for the small-scale visual assets that determine.
 - *Example request:* "Have the Thumbnail Cover Designer take this on: Thumbnail / Cover Designer of the company, the specialist responsible."
+
+**Prompt Author**
+
+- *What it is for:* Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation.
+- *Example request:* "Have the Prompt Author take this on: Prompt Author for the company's Graphics department  -  the ONE role that assembles."
 
 
 ---
