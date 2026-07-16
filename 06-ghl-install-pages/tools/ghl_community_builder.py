@@ -554,6 +554,49 @@ def _add_channel(session: str, sels: dict, ch: dict, evidence_root: str,
                     verify={"present_in_nav": True, "method": "list-scan"})
 
 
+def _build_channels(session: str, sels: dict, plan: dict, evidence_root: str,
+                    shot_n: List[int], gov, keep, *,
+                    add_channel=None, write_receipt=None, log=None) -> dict:
+    """U106 — smoke-first gated channel bulk-add (companion to U30's smoke_first
+    on the iframe/page-code drag surfaces). The FIRST channel in the plan is
+    the ONE proof-create (ghl_run_state.smoke_first): only a PASSING
+    store-delta verify (the channel actually present in the group nav) unlocks
+    the rest of the — potentially long — channel walk. A failing smoke raises
+    SmokeFirstFailed BEFORE any further channel is attempted; the shipped drag
+    doctrine applies here too — a CLI '✓ Done' that created nothing is a FALSE
+    PASS, the snapshot/store delta is the only honest arbiter.
+
+    `add_channel`/`write_receipt`/`log` are dependency-injected (default: the
+    real `_add_channel` / `_write_receipt` / `_log`) so this is directly
+    unit-testable without a live browser."""
+    _add = add_channel or _add_channel
+    _wr = write_receipt or _write_receipt
+    _lg = log or _log
+    steps_done: List[str] = []
+    channels = plan["channels"]
+    if not channels:
+        return {"channels": 0, "steps_done": steps_done}
+
+    first, rest = channels[0], channels[1:]
+
+    def _create_first() -> dict:
+        return _add(session, sels, first, evidence_root, shot_n, gov, keep)
+
+    def _verify_first(rc: dict) -> dict:
+        return {"ok": bool((rc.get("verify") or {}).get("present_in_nav")), "receipt": rc}
+
+    first_rc = ghl_run_state.smoke_first(f"C4:smoke:{first['slug']}", _create_first,
+                                         _verify_first, log=_lg)
+    _wr(evidence_root, first_rc)
+    steps_done.append(f"C4:{first_rc['action']}:{first['name'][:20]}")
+
+    for ch in rest:
+        rc = _add(session, sels, ch, evidence_root, shot_n, gov, keep)
+        _wr(evidence_root, rc)
+        steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
+    return {"channels": len(channels), "steps_done": steps_done}
+
+
 def _receipt(object_type: str, slug: str, action: str, *,
              response_id: Optional[str] = None, verify: Optional[dict] = None,
              request_shape: Any = None, rail=None, error: Optional[str] = None) -> dict:
@@ -710,13 +753,12 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
         group_id = identity.get("slug", "")            # groups are keyed by SLUG (fix c)
         group_url = identity.get("portal_url", "")
 
-        # C4 — channels (idempotent, per-channel receipt).
+        # C4 — channels (idempotent, per-channel receipt). U106: smoke-first
+        # gated — see _build_channels().
         def _do_c4() -> dict:
-            for ch in plan["channels"]:
-                rc = _add_channel(session, sels, ch, evidence_root, shot_n, gov, keep)
-                _write_receipt(evidence_root, rc)
-                steps_done.append(f"C4:{rc['action']}:{ch['name'][:20]}")
-            return {"channels": len(plan["channels"])}
+            res = _build_channels(session, sels, plan, evidence_root, shot_n, gov, keep)
+            steps_done.extend(res["steps_done"])
+            return {"channels": res["channels"]}
 
         run_phase(state, "c4_channels", _do_c4, log=_log)
 

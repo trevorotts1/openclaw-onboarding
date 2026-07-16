@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""ghl_selector_canary.py — selector-drift canary + STOP-with-snapshot resolver (U2 / F3).
+"""ghl_selector_drift_probe.py — selector-drift canary + STOP-with-snapshot resolver (U2 / F3).
+
+RENAMED (U30/B-U16, 2026-07-16): this module shipped as ``ghl_selector_canary.py``
+through U29; the file is renamed here to retire the operator-banned coded term
+from the identifier (see ``scripts/docs-language-allowlist.json``'s U30-owned
+``legacy_filenames`` entries, now removed). ONLY the file's OWN NAME changed —
+internal identifiers (``CanaryReport``, ``run_canary()``, ``BOARD_NOTE_SELECTOR_MISS``,
+the conventional ``import ... as canary`` alias, etc.) are UNCHANGED; the docs-language
+CI guard only scans doc prose (*.md/*.mdx/*.rst/*.txt), never Python identifiers, so
+there is no cross-cutting rename obligation here beyond the file's own name and the
+handful of doc/tooling cross-references that name it by path (updated in this same
+commit — ``ENV-MATRIX.md``, ``SKILL.md``, ``scripts/vps-mount-proof.sh``,
+``tests/test_b_u15_env_matrix_live_proof.py``, ``tests/test_ghl_inventory.py``,
+``tools/ghl_inventory.py``, ``tools/iframe-survival-targets.json``,
+``tools/selectors-live.json``, ``scripts/probe/p304-agent-browser-conformance-probe.py``,
+``scripts/docs-language-allowlist.json``). CHANGELOG.md history is NOT rewritten
+(standing doctrine — see check-docs-language.py's own module docstring).
 
 WHY THIS EXISTS
 ----------------
@@ -34,16 +50,29 @@ MACHINE-READABLE, ORDERED fallback chain (``selectors-live.json``, loaded by
 
   3. ``run_iframe_survival_check()`` / the ``--iframe-survival`` CLI (P3-04 c4)
      — a READ-ONLY weekly companion check that a set of PUBLISHED GHL pages/
-     surveys/forms still embed their cross-origin (``*.leadconnectorhq.com``)
-     iframe. Iframe survival was proven ONCE (2026-06-27 probe: GHL preview
-     does not strip iframes) but never continuously guarded — this closes that
-     gap in the same read-only, dependency-injected, fail-soft-board-notify
-     shape as ``run_canary()`` (a caller-supplied ``page_fetcher`` does the
-     real HTTP GET / agent-browser snapshot; this module performs no network
-     I/O of its own). A stripped iframe reuses cc_board.py's existing
-     ``VERIFY-FAIL`` taxonomy value (a post-publish render/verification check
-     failing is exactly F6's shape) — it deliberately never invents a 7th
-     cc_board taxonomy value.
+     surveys/forms/communities/courses/channels still embed their cross-origin
+     (``*.leadconnectorhq.com``) iframe. Iframe survival was proven ONCE
+     (2026-06-27 probe: GHL preview does not strip iframes) but never
+     continuously guarded — this closes that gap in the same read-only,
+     dependency-injected, fail-soft-board-notify shape as ``run_canary()`` (a
+     caller-supplied ``page_fetcher`` does the real HTTP GET / agent-browser
+     snapshot; this module performs no network I/O of its own). A stripped
+     iframe reuses cc_board.py's existing ``VERIFY-FAIL`` taxonomy value (a
+     post-publish render/verification check failing is exactly F6's shape) —
+     it deliberately never invents a 7th cc_board taxonomy value. U106 added
+     ``community``/``course``/``channel`` as valid target ``object_type``
+     values (see ``iframe-survival-targets.json``'s ``_schema``) — the check
+     itself never branches on object_type, so this is purely additive.
+
+  4. ``notify_once()`` (U106) — an idempotent board-card gate wrapping any
+     ``board_notifier`` call: a REPEATED scan of the SAME still-drifted target
+     (a selector miss, a stripped iframe) must file EXACTLY ONE open card, not
+     a fresh duplicate on every re-run of a weekly/pre-build check. Persists a
+     tiny on-disk "seen cards" ledger under ``<evidence_root>/routing/
+     board-cards-seen.json`` when an evidence_root is given (best-effort — a
+     missing/unwritable evidence_root just means no dedup memory; the notifier
+     still fires, this NEVER blocks the scan). ``run_iframe_survival_check()``
+     routes its board notifications through it automatically.
 
 This module performs NO GHL I/O of its own (same discipline as ghl_object_router):
 callers inject a ``finder`` / ``page_fetcher`` callable. In production a finder
@@ -56,7 +85,7 @@ network, no browser, no GHL writes.
 
 USAGE
 -----
-    import ghl_selector_canary as canary
+    import ghl_selector_drift_probe as canary
     data = canary.load_selectors()
     anchor = canary.get_anchor(data, "form.builder.save")
     ref = canary.resolve_anchor(anchor, finder=my_snapshot_finder)
@@ -70,11 +99,11 @@ USAGE
     print(report2.summary())
 
     # CLI
-    python3 ghl_selector_canary.py --matrix                  # print anchor counts
-    python3 ghl_selector_canary.py --matrix --object-type form
-    python3 ghl_selector_canary.py --canary --evidence-root /tmp/canary --selftest
-    python3 ghl_selector_canary.py --iframe-survival --evidence-root /tmp/canary --selftest-finder
-    python3 ghl_selector_canary.py --selftest
+    python3 ghl_selector_drift_probe.py --matrix                  # print anchor counts
+    python3 ghl_selector_drift_probe.py --matrix --object-type form
+    python3 ghl_selector_drift_probe.py --canary --evidence-root /tmp/canary --selftest
+    python3 ghl_selector_drift_probe.py --iframe-survival --evidence-root /tmp/canary --selftest-finder
+    python3 ghl_selector_drift_probe.py --selftest
 """
 
 from __future__ import annotations
@@ -85,9 +114,21 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-CANARY_VERSION = "v1.1.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-survival
+CANARY_VERSION = "v1.3.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-survival
+                            # v1.2.0 (U30/B-U16): module renamed from
+                            # ghl_selector_canary.py; + dedupe_board_notifier /
+                            # clear_dedupe_state_for_resolved (idempotent
+                            # SELECTOR-MISS card across the daily probe's
+                            # repeat runs); scheduled daily via
+                            # schedule/skill6-selector-drift-probe.cron.json
+                            # v1.3.0 (U106/E5-1): + notify_once (generic
+                            # caller-keyed idempotent card gate, independent
+                            # of dedupe_board_notifier's anchor/target-keyed
+                            # wrapper) + community/course/channel targets +
+                            # flatten_community_course_anchors /
+                            # probe_community_course_selectors
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SELECTORS_PATH = os.path.join(_HERE, "selectors-live.json")
@@ -341,6 +382,175 @@ def run_canary(data: Dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# U106 — notify_once(): idempotent board-card gate.
+#
+# A weekly/pre-build check re-runs on the SAME still-drifted target every time
+# it fires (that is the point of a continuous check). Left unguarded, calling
+# board_notifier on every run would file a fresh duplicate card each pass — the
+# operator would see the SAME miss re-carded weekly instead of ONE open card
+# they can track to resolution. This wraps any board_notifier call with a tiny
+# on-disk "seen cards" ledger keyed by a caller-supplied stable card_key, so a
+# repeated miss on the SAME target files exactly ONE card; a NEW target (or the
+# same target after its ledger entry is cleared / a fresh evidence_root) still
+# cards normally.
+# ---------------------------------------------------------------------------
+_BOARD_CARDS_SEEN_FILENAME = "board-cards-seen.json"
+
+
+def _load_seen_cards(evidence_root: Optional[str]) -> Dict[str, Any]:
+    if not evidence_root:
+        return {}
+    path = os.path.join(evidence_root, "routing", _BOARD_CARDS_SEEN_FILENAME)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001 - missing/corrupt ledger = no dedup memory, never a crash
+        return {}
+
+
+def _save_seen_cards(evidence_root: Optional[str], seen: Dict[str, Any]) -> None:
+    if not evidence_root:
+        return
+    try:
+        routing_dir = os.path.join(evidence_root, "routing")
+        os.makedirs(routing_dir, exist_ok=True)
+        path = os.path.join(routing_dir, _BOARD_CARDS_SEEN_FILENAME)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(seen, fh, indent=2, sort_keys=True)
+    except Exception:  # noqa: BLE001 - best-effort persistence, never blocks the caller
+        pass
+
+
+def notify_once(
+    evidence_root: Optional[str],
+    card_key: str,
+    notifier: Optional[Callable[[Dict[str, Any]], None]],
+    payload: Dict[str, Any],
+) -> bool:
+    """Fire ``notifier(payload)`` at most ONCE per distinct ``card_key`` across
+    repeated calls that share the same ``evidence_root`` — the idempotent
+    board-card gate (U106). Returns True iff the notifier was actually invoked
+    THIS call (a fresh card); False when this ``card_key`` was already carded
+    (a repeat — deliberately skipped so the board never sees a duplicate) or
+    when ``notifier`` is None.
+
+    ``evidence_root=None`` disables the dedup memory entirely (every call
+    fires, matching ``run_canary``/``run_iframe_survival_check``'s existing
+    behaviour when called without an evidence_root) — this keeps the change
+    fully backward compatible with every existing caller/test.
+
+    Fail-soft like every board call in this module: a notifier that raises is
+    swallowed (never blocks the scan), and a ledger that cannot be
+    read/written just means no dedup memory for this run, never a crash."""
+    if notifier is None:
+        return False
+    seen = _load_seen_cards(evidence_root)
+    if card_key in seen:
+        return False
+    fired = False
+    try:
+        notifier(payload)
+        fired = True
+    except Exception:  # noqa: BLE001 - board calls are fail-soft
+        pass
+    seen[card_key] = {"first_notified_at": time.time(),
+                      "prefix": payload.get("prefix")}
+    _save_seen_cards(evidence_root, seen)
+    return fired
+
+
+# ---------------------------------------------------------------------------
+# IDEMPOTENT board-notify wrapper (U30/B-U16 item 4) — a PERSISTENT
+# (not-yet-fixed) drift must produce EXACTLY ONE SELECTOR-MISS card across
+# REPEAT scheduled runs of the daily maintenance-window probe (see
+# schedule/skill6-selector-drift-probe.cron.json), never a fresh duplicate
+# card every time the SAME unresolved miss is re-scanned. run_canary()'s own
+# board_notifier is called once per MISS per RUN (correct, run-scoped); this
+# wrapper adds a persisted, cross-RUN ledger on top so the CALLER gets
+# idempotent behavior without run_canary() itself needing any cross-run
+# state (it stays a pure, dependency-injected, single-run scan).
+# ---------------------------------------------------------------------------
+def _load_dedupe_state(state_path: str) -> Set[str]:
+    """Fail-soft read: a missing/corrupt state file is 'nothing notified
+    yet' — never raises."""
+    try:
+        with open(state_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return set(data.get("notified", []))
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _save_dedupe_state(state_path: str, ids: Iterable[str]) -> None:
+    """Fail-soft write: persistence is best-effort and must NEVER block the
+    underlying board notification it wraps."""
+    try:
+        parent = os.path.dirname(state_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(state_path, "w", encoding="utf-8") as fh:
+            json.dump({"notified": sorted(set(ids))}, fh, indent=2, sort_keys=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def dedupe_board_notifier(
+    board_notifier: Callable[[Dict[str, Any]], None],
+    *,
+    state_path: str,
+) -> Callable[[Dict[str, Any]], None]:
+    """Wrap ``board_notifier`` (the callable passed to ``run_canary(...,
+    board_notifier=...)`` / ``run_iframe_survival_check(..., board_notifier=
+    ...)``) with a persisted 'already notified' ledger keyed by the miss's
+    own id (``anchor_id`` for a selector miss, ``target`` for an iframe-
+    survival miss), so a PERSISTENT drift produces EXACTLY ONE SELECTOR-MISS
+    (or VERIFY-FAIL) card across repeat daily probe runs — 'a seeded probe
+    failure produces exactly ONE SELECTOR-MISS-prefixed card (idempotent
+    across repeat runs)' (B-U16 item 4 acceptance (c)). An id that stops
+    appearing in a miss payload (the drift healed) simply never gets
+    re-checked here — see :func:`clear_dedupe_state_for_resolved` to
+    positively clear it so a FUTURE regression on that same id re-notifies
+    instead of being silenced forever by a stale ledger entry.
+
+    ``state_path``: a small JSON file at a caller-owned location (e.g. under
+    the daily probe's own evidence/park directory). Every read/write here is
+    fail-soft (:func:`_load_dedupe_state` / :func:`_save_dedupe_state`) — a
+    corrupt or missing state file never crashes the probe, and a persistence
+    failure never blocks the underlying ``board_notifier`` call.
+
+    The RETURNED callable has the SAME shape as ``board_notifier`` — drop it
+    straight into ``run_canary(..., board_notifier=dedupe_board_notifier(...))``
+    unchanged."""
+    def _wrapped(payload: Dict[str, Any]) -> None:
+        key = str(payload.get("anchor_id") or payload.get("target") or "")
+        notified = _load_dedupe_state(state_path)
+        if key and key in notified:
+            return  # an OPEN card already exists for this exact miss — no duplicate
+        board_notifier(payload)
+        if key:
+            notified.add(key)
+            _save_dedupe_state(state_path, notified)
+
+    return _wrapped
+
+
+def clear_dedupe_state_for_resolved(*, state_path: str,
+                                    still_missing_ids: Iterable[str]) -> None:
+    """Drop any dedupe-ledger id NOT present in ``still_missing_ids`` — call
+    this once per probe run with the CURRENT run's full miss-id set so an
+    anchor/target that stopped missing (the drift healed) is cleared from the
+    ledger, letting a FUTURE regression on that same id re-notify instead of
+    being permanently silenced by a stale entry. Fail-soft (best-effort,
+    same discipline as :func:`dedupe_board_notifier`'s own persistence);
+    never raises."""
+    notified = _load_dedupe_state(state_path)
+    remaining = notified & set(still_missing_ids)
+    if remaining != notified:
+        _save_dedupe_state(state_path, remaining)
+
+
+# ---------------------------------------------------------------------------
 # Weekly iframe-survival check (P3-04 c4) — same read-only / DI discipline as
 # run_canary() above, checking a different property: does a PUBLISHED page
 # still embed its cross-origin iframe (2026-06-27 probe: GHL preview does not
@@ -385,17 +595,27 @@ def run_iframe_survival_check(
     REUSED VERIFY-FAIL taxonomy value (never a 7th cc_board category).
 
     targets: ``[{"id": "...", "url": "https://...", "object_type": "survey"}, ...]``
-    — see load_iframe_survival_targets() / iframe-survival-targets.json for the
+    (``object_type`` also accepts ``community``/``course``/``channel`` as of
+    U106 — this function never branches on it) — see
+    load_iframe_survival_targets() / iframe-survival-targets.json for the
     on-disk schema this list is normally loaded from.
 
     A target whose page_fetcher call raises is recorded as a "fetch-error"
     MISS (also board-notified) rather than crashing the whole weekly run —
-    one unreachable page must never hide the rest of the report."""
+    one unreachable page must never hide the rest of the report.
+
+    U106: every board notification routes through ``notify_once()`` keyed on
+    the target id, so a target that stays broken across REPEATED runs (with
+    the same ``evidence_root``) files exactly ONE card, never a fresh
+    duplicate on every re-run — pass ``evidence_root=None`` (the default) to
+    keep the old un-deduped behaviour (every call fires; matches every
+    existing caller/test)."""
     report = IframeSurvivalReport(started_at=time.time())
     for t in targets:
         entry: Dict[str, Any] = {
             "target": t["id"], "object_type": t.get("object_type", ""), "url": t["url"],
         }
+        card_key = f"{BOARD_NOTE_IFRAME_SURVIVAL_MISS}:{t['id']}"
         try:
             html = page_fetcher(t["url"]) or ""
         except Exception as exc:
@@ -403,11 +623,8 @@ def run_iframe_survival_check(
             entry["error"] = str(exc)
             report.results.append(entry)
             report.misses.append(entry)
-            if board_notifier is not None:
-                try:
-                    board_notifier({"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
-                except Exception:
-                    pass  # board calls are fail-soft, never block the check
+            notify_once(evidence_root, card_key, board_notifier,
+                       {"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
             continue
 
         survived = ("<iframe" in html) and (iframe_src_marker in html)
@@ -415,17 +632,112 @@ def run_iframe_survival_check(
         report.results.append(entry)
         if not survived:
             report.misses.append(entry)
-            if board_notifier is not None:
-                try:
-                    board_notifier({"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
-                except Exception:
-                    pass  # board calls are fail-soft, never block the check
+            notify_once(evidence_root, card_key, board_notifier,
+                       {"prefix": BOARD_NOTE_IFRAME_SURVIVAL_MISS, **entry})
     report.finished_at = time.time()
 
     if evidence_root:
         os.makedirs(evidence_root, exist_ok=True)
         out_path = os.path.join(evidence_root,
                                  f"iframe-survival-{int(report.started_at)}.json")
+        with open(out_path, "w", encoding="utf-8") as fh:
+            json.dump(report.to_dict(), fh, indent=2, sort_keys=True)
+        report.results_path = out_path  # type: ignore[attr-defined]
+
+    return report
+
+
+# ---------------------------------------------------------------------------
+# U106 — community/course/channel selector-drift probe (E5-1, closes G1).
+#
+# ghl_community_builder.py / ghl_course_builder.py ship their OWN nested
+# selector map (selectors-live-communities-courses.json — a different shape
+# than this module's flat objects.<type>.anchors[] selectors-live.json) and
+# already gate every in-area click/fill on a D8 STOP-and-report when an
+# anchor's status is not "locked"/"verified-shared-rail" (see
+# ghl_community_builder.anchor()). That STOP is a per-build-time discovery —
+# nothing scans the CAPTURED map itself, read-only, to catch a regression
+# (an anchor that USED to be "locked" flipping back to "capture-pending" after
+# a live re-capture finds it broken) before a client build hits it. This is
+# that scan: purely a JSON-shape walk (no browser, no live DOM — the drift
+# signal IS the anchor's own recorded status), reusing run_canary()'s exact
+# SELECTOR-MISS taxonomy value and notify_once()'s idempotent card gate.
+# ---------------------------------------------------------------------------
+_COMMUNITY_COURSE_OK_STATUS = {"verified-shared-rail", "locked"}
+
+
+def flatten_community_course_anchors(selectors: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Flatten the nested `community`/`course` selector map (the shape
+    ghl_community_builder.load_selectors() / selectors-live-communities-
+    courses.json ships — NOT this module's own selectors-live.json shape)
+    into a flat list of {"id": "community.group_nav.add_channel_control",
+    "status": "...", "anchor": "...", "object_type": "community"} records —
+    the same flat shape run_canary() already works with for the other four
+    object types (form/survey/funnel/page).
+
+    Purely a JSON-shape walk: a leaf is any dict carrying a "status" key;
+    every other key is a nesting level. Meta keys (leading underscore, e.g.
+    "_doc", "_idempotency", "_cleanup_reality") are skipped, matching the
+    convention already used throughout this selector doc."""
+    out: List[Dict[str, Any]] = []
+
+    def _walk(node: Any, path: List[str], object_type: str) -> None:
+        if not isinstance(node, dict):
+            return
+        if "status" in node:
+            out.append({"id": ".".join(path), "status": node.get("status"),
+                       "anchor": node.get("anchor"), "object_type": object_type})
+            return
+        for k, v in node.items():
+            if k.startswith("_"):
+                continue
+            _walk(v, path + [k], object_type)
+
+    for top in ("community", "course"):
+        if top in selectors:
+            _walk(selectors[top], [top], top)
+    return out
+
+
+def probe_community_course_selectors(
+    selectors: Dict[str, Any],
+    evidence_root: Optional[str] = None,
+    board_notifier: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> CanaryReport:
+    """READ-ONLY companion probe (U106) for the community/course/channel
+    builders: classify every in-area anchor already captured in
+    selectors-live-communities-courses.json as drifted (status is neither
+    "locked" nor "verified-shared-rail") or actionable — WITHOUT touching a
+    live DOM. Same read-only / dependency-injected / fail-soft-board-notify
+    shape as run_canary(), reusing the SAME BOARD_NOTE_SELECTOR_MISS taxonomy
+    value (never an 8th cc_board category), and every notification routes
+    through notify_once() so a still-drifted anchor across REPEATED probes
+    (same evidence_root) files exactly ONE card, never a duplicate — the scan
+    itself still reports the ongoing miss on every call; only the CARD is
+    deduped.
+
+    `selectors` is the already-loaded dict (caller supplies it — usually
+    `ghl_community_builder.load_selectors()`; a test supplies a seeded
+    deepcopy), keeping this function itself import-light and offline-only."""
+    report = CanaryReport(started_at=time.time(), object_types=["community", "course"])
+    for a in flatten_community_course_anchors(selectors):
+        ok = a["status"] in _COMMUNITY_COURSE_OK_STATUS
+        entry: Dict[str, Any] = {
+            "anchor_id": a["id"], "object_type": a["object_type"], "target": a["id"],
+            "status": "primary" if ok else "missing",
+            "used_candidate": {"status": a["status"], "anchor": a.get("anchor")},
+        }
+        report.results.append(entry)
+        if not ok:
+            report.misses.append(entry)
+            notify_once(evidence_root, f"{BOARD_NOTE_SELECTOR_MISS}:{a['id']}",
+                       board_notifier, {"prefix": BOARD_NOTE_SELECTOR_MISS, **entry})
+    report.finished_at = time.time()
+
+    if evidence_root:
+        os.makedirs(evidence_root, exist_ok=True)
+        out_path = os.path.join(
+            evidence_root, f"community-course-selector-probe-{int(report.started_at)}.json")
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump(report.to_dict(), fh, indent=2, sort_keys=True)
         report.results_path = out_path  # type: ignore[attr-defined]
@@ -611,6 +923,90 @@ def _selftest() -> int:
     fetcher = live_page_fetcher_over_http()
     assert callable(fetcher)
 
+    # 12. dedupe_board_notifier (U30/B-U16 item 4): a seeded, PERSISTENT miss
+    #     notifies exactly ONCE across repeat runs; a board_notifier failure
+    #     is never recorded as a successful notify.
+    import tempfile
+    with tempfile.TemporaryDirectory() as dtmp:
+        dstate = os.path.join(dtmp, "dedupe.json")
+        dnotified = []
+        dwrapped = dedupe_board_notifier(lambda p: dnotified.append(p), state_path=dstate)
+        for _ in range(3):
+            run_canary(data, _mixed, object_types=["form"], board_notifier=dwrapped)
+        assert len(dnotified) == 1, "repeat runs of the SAME miss must yield exactly one card"
+
+        def _boom_notifier(p):
+            raise RuntimeError("board down")
+        dstate2 = os.path.join(dtmp, "dedupe2.json")
+        dwrapped2 = dedupe_board_notifier(_boom_notifier, state_path=dstate2)
+        try:
+            dwrapped2({"anchor_id": "form.builder.save", "prefix": BOARD_NOTE_SELECTOR_MISS})
+            raise AssertionError("expected the underlying notifier's RuntimeError to propagate")
+        except RuntimeError:
+            pass
+        assert _load_dedupe_state(dstate2) == set(), "a failed notify must not be recorded"
+
+    # 13. U106 — notify_once(): a repeated card on the SAME key (same
+    #     evidence_root) fires exactly once; a different key always fires;
+    #     no evidence_root disables dedup entirely (backward compatible).
+    with tempfile.TemporaryDirectory() as tmp:
+        fired: List[Any] = []
+        r1 = notify_once(tmp, "SELECTOR-MISS:x", lambda p: fired.append(p), {"prefix": "SELECTOR-MISS"})
+        r2 = notify_once(tmp, "SELECTOR-MISS:x", lambda p: fired.append(p), {"prefix": "SELECTOR-MISS"})
+        r3 = notify_once(tmp, "SELECTOR-MISS:y", lambda p: fired.append(p), {"prefix": "SELECTOR-MISS"})
+        assert (r1, r2, r3) == (True, False, True), f"notify_once dedup wrong: {(r1, r2, r3)}"
+        assert len(fired) == 2, f"notify_once fired count wrong: {len(fired)} (want 2)"
+    fired2: List[Any] = []
+    r4 = notify_once(None, "SELECTOR-MISS:x", lambda p: fired2.append(p), {"prefix": "x"})
+    r5 = notify_once(None, "SELECTOR-MISS:x", lambda p: fired2.append(p), {"prefix": "x"})
+    assert r4 and r5 and len(fired2) == 2, \
+        "notify_once with evidence_root=None should fire every call (no dedup)"
+
+    # 14. U106 — flatten_community_course_anchors / probe_community_course_selectors:
+    #     a seeded drift (one LOCKed anchor flipped back to capture-pending)
+    #     reports exactly one miss and, across REPEATED probes on the same
+    #     evidence_root, files exactly ONE SELECTOR-MISS card (idempotent).
+    fake_sels = {
+        "community": {
+            "_idempotency": {"note": "skip me"},
+            "group_nav": {
+                "add_channel_control": {"status": "locked", "anchor": "getByRole(...)"},
+                "channel_name_input": {"status": "locked", "anchor": "getByPlaceholder(...)"},
+            },
+        },
+        "course": {
+            "outline": {"add_lesson": {"status": "locked", "anchor": "getByRole(...)"}},
+        },
+    }
+    flat = flatten_community_course_anchors(fake_sels)
+    ids = {a["id"] for a in flat}
+    assert ids == {"community.group_nav.add_channel_control", "community.group_nav.channel_name_input",
+                   "course.outline.add_lesson"}, f"flatten_community_course_anchors wrong ids: {ids}"
+
+    clean_report = probe_community_course_selectors(fake_sels)
+    assert clean_report.summary()["clean"], \
+        "probe_community_course_selectors should be clean with all-locked anchors"
+
+    import copy
+    drifted = copy.deepcopy(fake_sels)
+    drifted["community"]["group_nav"]["add_channel_control"]["status"] = "capture-pending"
+    with tempfile.TemporaryDirectory() as tmp2:
+        cards: List[Any] = []
+
+        def _notifier(payload):
+            cards.append(payload)
+
+        rep1 = probe_community_course_selectors(drifted, evidence_root=tmp2, board_notifier=_notifier)
+        rep2 = probe_community_course_selectors(drifted, evidence_root=tmp2, board_notifier=_notifier)
+        assert not rep1.summary()["clean"] and not rep2.summary()["clean"], \
+            "seeded drift should report NOT clean on every repeated probe"
+        assert "community.group_nav.add_channel_control" in rep1.summary()["misses"], \
+            "seeded drift anchor missing from the miss list"
+        assert len(cards) == 1, \
+            f"seeded drift across 2 repeated probes should file exactly 1 card, got {len(cards)}"
+        assert cards[0]["prefix"] == BOARD_NOTE_SELECTOR_MISS, \
+            f"seeded drift card used the wrong taxonomy prefix: {cards[0]['prefix']}"
+
     return 0
 
 
@@ -644,6 +1040,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--selftest-finder", action="store_true",
                      help="with --canary/--iframe-survival: use an always-hit fake finder/fetcher "
                           "(offline dry run of the report path)")
+    ap.add_argument("--community-course-probe", action="store_true",
+                     help="U106: read-only drift scan of selectors-live-communities-courses.json's "
+                          "already-captured statuses (no live finder needed — always offline-safe)")
     ap.add_argument("--object-type", action="append", choices=VALID_OBJECT_TYPES,
                      help="restrict to one or more object types (repeatable)")
     ap.add_argument("--evidence-root", default=None, help="write the canary report JSON here")
@@ -654,7 +1053,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.selftest:
         rc = _selftest()
-        print("OK — ghl_selector_canary selftest passed" if rc == 0 else "FAILED")
+        print("OK — ghl_selector_drift_probe selftest passed" if rc == 0 else "FAILED")
         return rc
 
     if args.iframe_survival:
@@ -669,6 +1068,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             '<html><iframe src="https://forms.leadconnectorhq.com/widget/survey/x"></iframe></html>'
         )
         report = run_iframe_survival_check(targets, fetcher, evidence_root=args.evidence_root)
+        print(json.dumps(report.summary(), indent=2, sort_keys=True))
+        return 0 if report.summary()["clean"] else 1
+
+    if args.community_course_probe:
+        try:
+            import ghl_community_builder as _cb_mod  # lazy — keeps this module import-light
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR: --community-course-probe needs ghl_community_builder importable "
+                  f"({type(exc).__name__}: {exc}).", file=sys.stderr)
+            return 2
+        cc_selectors = _cb_mod.load_selectors()
+        report = probe_community_course_selectors(cc_selectors, evidence_root=args.evidence_root)
         print(json.dumps(report.summary(), indent=2, sort_keys=True))
         return 0 if report.summary()["clean"] else 1
 

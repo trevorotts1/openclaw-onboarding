@@ -98,6 +98,15 @@ echo "════════════════════════�
 echo ""
 echo "── Section S: Static branch checks ──"
 
+# Relationship lattice pointer + citation tripwire (U89/GK-27). Static/
+# offline, repo-relative — asserts SKILL.md carries its one-line pointer to
+# docs/CONTENT-CONVERSATION-LATTICE.md and that this skill's owned edge (the
+# Skill 3 backstop-rail citation in its own frontmatter description) still
+# cites real, unchanged ground truth. See docs/tools/check_lattice_citation.py.
+REPO_ROOT_LATTICE="$(cd "$SKILL44_DIR/.." && pwd)"
+assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 44-convert-and-flow-operator -q"
+
 assert "tools/engine/setup.py present" \
   "[ -f \"$SKILL44_DIR/tools/engine/setup.py\" ]"
 assert "tools/engine/cli_anything/gohighlevel/ present" \

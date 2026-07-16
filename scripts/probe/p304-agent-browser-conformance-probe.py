@@ -51,7 +51,7 @@ WHAT THIS CHECKS (verbatim from the spec's P3-04 (c)5 line)
                                       local -A / ${var,,} / ${var^^} / wait -n).
 
 This module performs NO GHL/browser I/O and NEVER kills a process — read-only,
-same discipline as ghl_selector_canary.py / scripts/probe/p207-*.py. Every
+same discipline as ghl_selector_drift_probe.py / scripts/probe/p207-*.py. Every
 live-system read (cron list, `ps`, the 3 source files) is dependency-injected
 via a CLI override so this probe is fully unit-testable offline; only the
 CLI's DEFAULTS touch the real box (openclaw cron list / ps / disk reads).

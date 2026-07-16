@@ -1153,6 +1153,74 @@ def _perform_iframe_field_remove(session: str, field_spec: str,
         raise sr from exc
 
 
+# ── FRAME-SCOPED CLICK (B-U16 item 2) — the click counterpart to the drag/
+# remove seams above, replacing the two best-effort `[runtime-capture]`
+# property-panel/tab sites named in references/iframe-drag-capability.md's
+# audit ("extend with a frame_click helper"): _bind_field_props's Required/
+# Hidden checkbox binds and _ensure_quick_add_panel's Quick-Add TAB switch.
+def _perform_frame_click(session: str, target_spec: str, *,
+                         iframe_selector: str = GHL_FORM_IFRAME_SELECTOR,
+                         verify_text: Optional[str] = None,
+                         verify_absent: bool = False) -> dict:
+    """Click ONE control (`target_spec`) INSIDE the cross-origin builder iframe
+    via the shared frame-scoped primitive (``ghl_iframe_drag.frame_click`` —
+    B-U16 item 2), the click counterpart to ``_perform_iframe_drag`` above.
+    Same dep/CDP fail-closed shell; CALLERS decide whether a failure here is
+    fatal (required surface) or a recorded warning (cosmetic — property-panel
+    binds, tab switches both fall in the cosmetic bucket today). FAIL-CLOSED:
+    raises StopAndReport (never a fake success) when the shared primitive is
+    unavailable, the CDP url can't be read, or the click/verify does not
+    land."""
+    if ghl_iframe_drag is None:
+        raise StopAndReport(
+            "frame-click.dep",
+            "the shared frame-scoped primitive (ghl_iframe_drag) is not "
+            "importable, and agent-browser 0.27.0 alone cannot reliably reach "
+            "every non-ref-clickable control across the cross-origin builder "
+            "iframe. Ship ghl_iframe_drag.py + Playwright (scoped to Skill 6) "
+            "— STOP, do not brute-force.")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise StopAndReport(
+            "frame-click.cdp",
+            "could not read the agent-browser session's CDP url (`get cdp-url`) "
+            "to hand the click off to Playwright on the SAME logged-in "
+            "Chromium. STOP.")
+    try:
+        return ghl_iframe_drag.frame_click(  # type: ignore[union-attr]
+            cdp_url,
+            iframe_selector=iframe_selector,
+            target=target_spec,
+            url_marker="form-builder",
+            verify_text=verify_text,
+            verify_absent=verify_absent,
+        )
+    except ghl_iframe_drag.IframeDragError as exc:  # type: ignore[union-attr]
+        reason = ghl_iframe_drag.board_note(  # type: ignore[union-attr]
+            exc, iframe_selector=iframe_selector)
+        raise StopAndReport(f"frame-click:{exc.code}", reason) from exc
+
+
+def _click_property_checkbox(session: str, text: str, warnings: List[str],
+                             tag: str) -> None:
+    """Click a property-panel checkbox (Required/Hidden — SELECTORS-LIVE-
+    form.md §10) EXACTLY ONCE: via the frame-scoped primitive when available
+    (real cross-origin reach, replacing the prior top-frame-only best-effort
+    attempt), else the existing agent-browser click. NEVER both — a checkbox
+    is a TOGGLE, so clicking it twice would silently undo the very state this
+    function is trying to set. A frame-click miss degrades to a recorded
+    WARNING and the top-frame fallback, never a hard stop (cosmetic/optional
+    surface, same doctrine as the Label bind above)."""
+    if ghl_iframe_drag is not None:
+        try:
+            _perform_frame_click(session, f"text={text}")
+            return
+        except StopAndReport as sr:
+            warnings.append(f"{tag!r}: {text} checkbox frame-click miss "
+                            f"({sr.step}) — falling back to the top-frame click")
+    _click(session, text)
+
+
 # ── in-SPA navigation — $router.push ONLY (never open/reload) ────────────────
 _ROUTER_PUSH_JS = (
     "(async () => {"
@@ -1868,6 +1936,52 @@ _CANVAS_DROP_ANCHORS: Tuple[Tuple[str, str], ...] = (
 )
 
 
+def _perform_smoke_first(session: str, *, iframe_selector: str = GHL_FORM_IFRAME_SELECTOR,
+                         tile_text: str = "Email",
+                         drop_spec: Optional[str] = None) -> dict:
+    """Run ONE proof-drag (``ghl_iframe_drag.smoke_first`` — B-U16 item 3,
+    generalized from the survey builder's ``_p2_smoke_test_drag``) BEFORE
+    trusting the F5/F6 bulk Quick-Add/Object-Field drag run. Uses a
+    UNIVERSAL, always-present Quick-Add tile (``'Email'`` — SELECTORS-LIVE-
+    form.md's Personal Info category, present on every form) as the probe —
+    NEVER one of the plan's own fields, so the probe can never collide with
+    or duplicate a real placement — and undoes itself on success
+    (``undo=True``) so the canvas is left exactly as it was. FAIL-CLOSED:
+    raises StopAndReport BEFORE any bulk drag is attempted when the smoke
+    probe does not verify — 'a CLI "✓ Done" that placed nothing is a FALSE
+    PASS; the snapshot/store delta is the only honest arbiter' (shipped
+    doctrine)."""
+    if ghl_iframe_drag is None:
+        raise StopAndReport(
+            "smoke-first.dep",
+            "the shared frame-scoped primitive (ghl_iframe_drag) is not "
+            "importable — cannot run the one-proof-drag-before-a-bulk-run "
+            "smoke test. STOP, do not brute-force a blind bulk run.")
+    cdp_url = _get_cdp_url(session)
+    if not cdp_url:
+        raise StopAndReport(
+            "smoke-first.cdp",
+            "could not read the agent-browser session's CDP url (`get "
+            "cdp-url`) to run the pre-bulk-run smoke probe. STOP.")
+    spec = drop_spec or _canvas_drop_anchor(session)
+    smoke = ghl_iframe_drag.smoke_first(  # type: ignore[union-attr]
+        cdp_url,
+        iframe_selector=iframe_selector,
+        source=f"text={tile_text}",
+        target=spec,
+        verify_text=tile_text,
+        url_marker="form-builder",
+        undo=True,
+    )
+    if not smoke["ok"]:
+        raise StopAndReport(
+            "smoke-first",
+            "the pre-bulk-run smoke probe (one proof-drag of "
+            f"{tile_text!r} onto {spec!r}) did not verify — STOP before "
+            f"attempting the real F5/F6 field drags. {smoke.get('error') or ''}")
+    return smoke
+
+
 def _canvas_drop_anchor(session: str, snap: str = "") -> str:
     """The frame-scoped locator SPEC of a landmark ON the form canvas to drop a
     dragged tile onto. A fresh scratch form always carries Submit + the default
@@ -1986,19 +2100,31 @@ def _bind_field_props(session: str, field: dict, warnings: List[str]) -> None:
     if int(field.get("width_pct", 100)) != 100:
         _fill(session, "Field Width", str(int(field["width_pct"])))
     if field.get("required"):
-        _click(session, "Required")
+        _click_property_checkbox(session, "Required", warnings, tag)
     elif field.get("hidden"):
-        _click(session, "Hidden")
+        _click_property_checkbox(session, "Hidden", warnings, tag)
 
 
 def _ensure_quick_add_panel(session: str) -> str:
     """Ensure the left Form-Element ▸ Quick Add panel is open; return the live snapshot.
     A fresh scratch builder opens with it already visible (CLICK-MAP Step 9). If the
-    'Quick Add' tab text is present we click it to be explicit; the '+' add-element
-    toggle is icon-only [runtime-capture] and is deliberately NOT brute-forced."""
+    'Quick Add' tab text is present, it is switched to via the frame-scoped primitive
+    when available (B-U16 item 2 — real cross-origin reach for this TAB switch,
+    replacing the prior top-frame-only best-effort attempt), falling back to the
+    existing agent-browser click on a miss (never both — see
+    _click_property_checkbox's same discipline). The '+' add-element toggle is
+    icon-only [runtime-capture] and is deliberately NOT brute-forced."""
     snap = _snapshot(session)
     if "Quick Add" in snap:
-        _click(session, "Quick Add")
+        clicked_via_frame = False
+        if ghl_iframe_drag is not None:
+            try:
+                _perform_frame_click(session, "text=Quick Add")
+                clicked_via_frame = True
+            except StopAndReport:
+                pass  # fall through to the existing top-frame click
+        if not clicked_via_frame:
+            _click(session, "Quick Add")
         snap = _snapshot(session)
     return snap
 
@@ -2143,6 +2269,7 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
     embed = ""
     f5_done = [False]   # place ALL standard fields on the first F5 step, then skip
     f6_done = [False]   # place ALL pre-created custom fields on the first F6 step
+    smoke_done = [False]   # ONE proof-drag before trusting the F5/F6 bulk run (B-U16 item 3)
     keep_defaults = set(plan.get("default_fields_keep", []))
 
     # F5 uniform keepalive + pre-phase re-mint (SKILL-6-BULLETPROOF-SPEC-v1 F5):
@@ -2358,6 +2485,13 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
         # already present as a KEPT DEFAULT is not re-dragged (no duplicates). A genuine
         # unplaceable field STOPs-and-reports — never the default path, never invented CSS.
         if phase == "F5":
+            if not smoke_done[0]:
+                # B-U16 item 3: ONE proof-drag before trusting the bulk F5/F6
+                # run — "a CLI '✓ Done' that placed nothing is a FALSE PASS"
+                # (shipped doctrine). A failed smoke aborts HERE, before any
+                # of the plan's real fields are touched.
+                _perform_smoke_first(session)
+                smoke_done[0] = True
             if not f5_done[0]:
                 for f in plan["fields"]:
                     if f["source"] != "standard":
@@ -2828,6 +2962,12 @@ def _selftest() -> int:
 
     _orig_ab = globals()["_ab"]
     _orig_drag = globals()["_perform_iframe_drag"]
+    _orig_smoke_first = globals()["_perform_smoke_first"]
+    # B-U16 item 3: every F5 phase now runs the pre-bulk-run smoke_first() gate
+    # first — the selftest's OWN offline/no-CDP shell can't satisfy it, so it
+    # is stood in for here (like _perform_iframe_drag above) rather than
+    # weakened: a real smoke-first STOP is proven separately below.
+    globals()["_perform_smoke_first"] = lambda session, **kw: {"ok": True}
     try:
         # (a) HAPPY PATH — tiles + canvas anchors + object field all present in snapshot.
         happy = ("Form Element Quick Add Add Object Fields First Name Last Name Email "
@@ -3008,6 +3148,7 @@ def _selftest() -> int:
     finally:
         globals()["_ab"] = _orig_ab
         globals()["_perform_iframe_drag"] = _orig_drag
+        globals()["_perform_smoke_first"] = _orig_smoke_first
 
     if errors:
         for e in errors:

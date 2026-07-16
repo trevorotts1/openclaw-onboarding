@@ -18,6 +18,17 @@ if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || t
 echo ""
 echo "═══ Skill 06 — GHL Install Pages — Install QC ═══"
 echo ""
+
+# ── Relationship lattice pointer + citation tripwire (U89/GK-27) ─────────────
+# Static/offline, repo-relative — never uses $SK (the installed-skill path);
+# asserts SKILL.md carries its one-line pointer to
+# docs/CONTENT-CONVERSATION-LATTICE.md and that every edge this skill owns
+# (funnel_matcher tooling existence, the funnel-seam heading, the browser
+# build-rail file set) still cites real, unchanged ground truth on the
+# committed branch. See docs/tools/check_lattice_citation.py.
+REPO_ROOT_LATTICE="$(cd "$(dirname "$0")/.." && pwd)"
+assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 06-ghl-install-pages -q"
 SK="$SKILLS_DIR_DEFAULT/06-ghl-install-pages"
 assert "Skill 06 folder present" "[ -d \"$SK\" ]"
 assert "v3.0 hardened reference present" "[ -f \"$SK/ghl-browser-builder-full.md\" ]"
