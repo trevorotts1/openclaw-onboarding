@@ -147,11 +147,42 @@ $ python3 tests/unit/u114-no-exemption-blend-governance-conformance.test.py
   [PASS] test_skill58_behavioral_different_bundle_changes_voice
   [PASS] test_anthology_behavioral_different_bundle_changes_voice
   [PASS] test_mutation_proof_guard_fails_closed_then_passes_clean
+  [PASS] test_each_detection_rule_is_individually_pinned
   [PASS] test_u98_golden_suite_passes_unchanged
   [PASS] test_per_engine_self_tests_pass_unchanged
   [PASS] test_tone_core_sync_provers_pass_unchanged
 == U114 no-exemption blend-governance conformance proof: ALL PASSED ==
 ```
+
+## QC hardening (judge != builder, zero-trust pass)
+
+The independent QC pass re-ran every proof above from a fresh clone and
+confirmed them, then found and closed one material hollowness in the guard's
+OWN self-proof:
+
+- **Defect:** each of the static scanner's three detection rules
+  (`_find_blend_false_call`, `_find_rogue_selector_functions`,
+  `_find_hardcoded_voice_tables`) could be independently disabled
+  (`return []`) with the ENTIRE suite still reporting ALL PASSED. Root cause:
+  (i) the criterion-(a) static scans assert `findings == []` against a CLEAN
+  tree, so they stay *vacuously* green when detection dies; (ii) the single
+  omnibus mutation fixture trips two rules at once (`PERSONA_MAP` + a rogue
+  selector) and asserts only `findings != []`, so either one covers for the
+  other's death; (iii) `_find_blend_false_call` was never exercised by any
+  fixture. A rule could therefore rot in a future refactor while CI stayed
+  green and G3 silently reopened — precisely the failure criterion (c) exists
+  to prevent.
+- **Fix:** `test_each_detection_rule_is_individually_pinned` — three
+  scratch-tree fixtures, each tripping EXACTLY ONE rule and asserting that
+  rule's own finding kind + the planted file path.
+- **Re-proof (all foreground, bounded):** 13/13 PASS clean; neutering each
+  rule in turn now drives the suite RED with a rule-specific failure
+  (`_find_blend_false_call` -> FAILED, `_find_hardcoded_voice_tables` ->
+  FAILED, `_find_rogue_selector_functions` -> FAILED). Additionally, a rogue
+  voice module planted in the REAL `51-signature-presentation/scripts/` tree
+  drove `test_skill51_static_scan_zero_rogue_voice_paths` RED, confirming the
+  guard has genuine teeth against the actual threat model (fixture removed;
+  the real tree is untouched by this unit).
 
 Plus the regression suite re-run standalone (redundant confirmation):
 `u98-blend-governs-product-voice-engines.test.py` (6/6 PASS),

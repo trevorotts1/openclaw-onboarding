@@ -423,6 +423,85 @@ def test_mutation_proof_guard_fails_closed_then_passes_clean():
 
 
 # --------------------------------------------------------------------------- #
+# (c, hardened) per-rule mutation proof — the omnibus fixture above plants a
+# rogue module that trips TWO rules at once (PERSONA_MAP + a rogue selector)
+# and asserts only `findings != []`. That is not enough: any ONE of the three
+# detection rules could be silently disabled and the omnibus fixture would
+# still be caught by the other, leaving the whole suite green while the guard
+# quietly stopped guarding (the static scans in (a) assert `findings == []`
+# against a CLEAN tree, so they stay vacuously green when detection dies, and
+# _find_blend_false_call is not exercised by the omnibus fixture at all).
+# Each fixture below trips EXACTLY ONE rule and asserts THAT rule's own
+# finding kind, so the death of any individual rule fails CI.
+# --------------------------------------------------------------------------- #
+_ROGUE_BLEND_FALSE_ONLY = '''\
+"""scratch-tree fixture — trips ONLY _find_blend_false_call."""
+from persona_for_job import persona_for_job
+
+
+def get_voice_bundle(job):
+    return persona_for_job(job, blend=False)
+'''
+
+_ROGUE_SELECTOR_ONLY = '''\
+"""scratch-tree fixture — trips ONLY _find_rogue_selector_functions."""
+
+
+def select_voice_for_engine(engine_id):
+    return "hardcoded voice, never consults the blend directive"
+'''
+
+_ROGUE_TABLE_ONLY = '''\
+"""scratch-tree fixture — trips ONLY _find_hardcoded_voice_tables."""
+
+PERSONA_MAP = {"counter_intuitive": "Some Hardcoded Voice"}
+'''
+
+_PER_RULE_FIXTURES = [
+    ("blend_false_call", _ROGUE_BLEND_FALSE_ONLY,
+     "persona_for_job(blend=False)"),
+    ("rogue_selector_function", _ROGUE_SELECTOR_ONLY,
+     "voice-selector function"),
+    ("hardcoded_voice_table", _ROGUE_TABLE_ONLY,
+     "hardcoded voice/persona table"),
+]
+
+
+def _scan_scratch_with_planted(source: str) -> list:
+    """Copy Skill 58's scripts/ into a throwaway tempdir, plant `source`, scan,
+    clean up. Returns the findings list. NEVER touches the real repo tree."""
+    real_root = _REPO_ROOT / "58-podcast-production-engine" / "scripts"
+    tmp_root = Path(tempfile.mkdtemp(prefix="u114-per-rule-mutation-"))
+    try:
+        scratch = tmp_root / "scripts"
+        shutil.copytree(real_root, scratch,
+                        ignore=shutil.ignore_patterns("tests", "__pycache__"))
+        pre = scan_engine_for_rogue_voice_paths(scratch, {"blend_voice_governance.py"})
+        assert pre == [], "scratch copy must start clean: %r" % pre
+        (scratch / "u114_rogue_fixture.py").write_text(source, encoding="utf-8")
+        return scan_engine_for_rogue_voice_paths(scratch, {"blend_voice_governance.py"})
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+def test_each_detection_rule_is_individually_pinned():
+    """Binary acceptance (c), hardened: prove EVERY detection rule is live and
+    individually failable, so no single rule can rot unnoticed."""
+    for label, source, expected_kind in _PER_RULE_FIXTURES:
+        findings = _scan_scratch_with_planted(source)
+        assert findings != [], (
+            "MUTATION PROOF FAILED for rule %r: its single-rule rogue fixture "
+            "was NOT detected — that rule is dead and the guard is hollow for "
+            "it, while the rest of the suite stays green." % label)
+        kinds = " | ".join(f["kind"] for f in findings)
+        assert expected_kind in kinds, (
+            "rule %r must fire its OWN finding kind (expected %r); got: %s"
+            % (label, expected_kind, kinds))
+        assert any("u114_rogue_fixture.py" in f["file"] for f in findings), \
+            "rule %r must point at the planted fixture: %r" % (label, findings)
+
+
+# --------------------------------------------------------------------------- #
 # (d) STRUCTURAL golden fixtures + prover suites pass UNCHANGED — this unit
 # never edits U98's governance modules, the sacred structure, or the shared
 # tone-core; re-running U98's own full proof + the per-engine self-tests +
@@ -473,6 +552,7 @@ _ALL_TESTS = [
     test_skill58_behavioral_different_bundle_changes_voice,
     test_anthology_behavioral_different_bundle_changes_voice,
     test_mutation_proof_guard_fails_closed_then_passes_clean,
+    test_each_detection_rule_is_individually_pinned,
     test_u98_golden_suite_passes_unchanged,
     test_per_engine_self_tests_pass_unchanged,
     test_tone_core_sync_provers_pass_unchanged,
