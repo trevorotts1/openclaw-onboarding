@@ -1,5 +1,14 @@
 # GK-01 / U63 — Live Recovery Evidence (2026-07-13/14)
 
+> **Location note.** This file lives under `ledgers/evidence/` — the repo's evidence
+> convention (cf. `ledgers/evidence/U81-GK-19/`, `U84-GK-22/`, `U111-G4/`) — and NOT
+> inside a numbered skill directory. `scripts/update-skills.sh` stages every
+> `[0-9]*/` skill dir and copies each of its top-level items verbatim to client
+> boxes; `ledgers/` is never deployed. Operator-lane incident evidence (live
+> workflow ids, another client's episode metadata, cross-references to
+> not-yet-remediated live findings such as GK-03) must therefore never be filed
+> inside a shipped skill directory.
+
 Live source of truth: n8n workflow `TkL0rn2SH3q32SeB` ("create podcast episode from
 openclaw") on `main.blackceoautomations.com`. This file is the primary-source evidence
 trail for the three BINARY acceptance legs in the master spec (GK-01):
@@ -64,7 +73,7 @@ live, first-ever episode, this pass would have had to do one of:
    unreviewed, agent-invented art would go live on the client's public feed on
    2026-07-19 with no human checkpoint in between. This is exactly the "publishing
    something stale/wrong to a live feed" case the assignment instructs to STOP on.
-2. **Read the client's own GHL Media Library** (her own Convert & Flow
+2. **Read the client's own GHL Media Library** (that client's own Convert & Flow
    sub-account) looking for pre-existing approved art. This crosses the
    operator/client credential boundary from the operator side — out of scope for
    an operator-infra unit and against standing doctrine (never touch client
