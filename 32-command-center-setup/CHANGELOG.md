@@ -1,5 +1,19 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.39 — 2026-07-16 — X/U-X3 (U93): heartbeat-canary-probe.py renamed to heartbeat-embedding-probe.py
+
+`scripts/heartbeat-canary-probe.py` renamed to `scripts/heartbeat-embedding-probe.py`
+(D20 Option B, "CANARY, THEN HOLD" -> "PROVE ON THE OPERATOR BOX, THEN HOLD"
+doctrine scrub). A one-release shim is retained at the old path — `os.execv`'s
+the new script in the same process, forwarding `*sys.argv[1:]` — so any live-box
+cron still calling `heartbeat-canary-probe.py` keeps resolving unchanged.
+`HEARTBEAT.md` prose updated to match. `install.sh`/`update-skills.sh` persist
+BOTH the new script and the old-path shim for the one-release window. No behavior
+change to either the renamed script or the shim; verified byte-identical output
+between old-path shim and new path. See root `CHANGELOG.md` / `61-loop-protection-
+system/CHANGELOG.md` for the sibling `loop-protection-canary.sh` rename in the
+same unit.
+
 ## v12.9.38 — 2026-07-12 — fix(cc): D6 update-only credential-mirror gate + D7 detached-HEAD-safe git sync (run-full-install.sh)
 
 Two installer defects fixed together, both in `run-full-install.sh`:

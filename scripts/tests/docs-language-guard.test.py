@@ -35,7 +35,6 @@ _ALLOWLIST = _REPO_ROOT / "scripts" / "docs-language-allowlist.json"
 
 _ALLOWLIST_DATA = json.loads(_ALLOWLIST.read_text(encoding="utf-8"))
 TERM = _ALLOWLIST_DATA["term"]
-LEGACY_FILENAME = _ALLOWLIST_DATA["legacy_filenames"]["entries"][0]["path"]
 
 # vendor_literals is EMPTY by default in the real allowlist (U91's scrub
 # found zero surviving vendor-literal citations in v2 — see that file's own
@@ -47,6 +46,19 @@ LEGACY_FILENAME = _ALLOWLIST_DATA["legacy_filenames"]["entries"][0]["path"]
 # for legitimate reasons without that being this guard-mechanism test's
 # business.
 _FIXTURE_VENDOR_LITERAL = f"acme-widgets@{TERM}"  # narrow, npm-dist-tag-shaped, never a natural-English phrase
+
+# legacy_filenames is now EMPTY in the real allowlist too: it shipped at 6, and
+# both owning units landed their renames on 2026-07-16 (U30/B-U16's four,
+# U93/X-U-X3's two), spending the carve-out. This constant used to be read live
+# out of the real allowlist (`entries[0]["path"]`) — which coupled this
+# guard-MECHANISM suite to transient repo content and made the whole module fail
+# at import (IndexError on an empty list) the moment the last rename landed,
+# i.e. exactly when the guard was working as designed. The legacy-filename
+# carve-out is therefore exercised the same hermetic way the vendor-literal one
+# already is, per this file's own doctrine above: a disposable FIXTURE entry, so
+# the mechanism stays under test forever even though no real legacy filename
+# remains.
+_FIXTURE_LEGACY_FILENAME = f"99-fixture-skill/scripts/run-{TERM}-probe.sh"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
@@ -83,16 +95,21 @@ def _commit(repo: Path, msg: str) -> str:
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
-def _write_fixture_allowlist(tmp_path: Path, *, vendor_literals: list[str]) -> Path:
+def _write_fixture_allowlist(tmp_path: Path, *, vendor_literals: list[str] | None = None,
+                              legacy_filenames: list[str] | None = None) -> Path:
     """A disposable, hermetic allowlist JSON — same shape as the real repo
-    allowlist but with a caller-controlled vendor_literals list, so the
-    vendor-literal carve-out mechanism can be tested without depending on
-    (or requiring) real, currently-populated vendor_literals content."""
+    allowlist but with caller-controlled vendor_literals / legacy_filenames
+    lists, so BOTH carve-out mechanisms can be tested without depending on
+    (or requiring) real, currently-populated allowlist content. Both lists
+    are empty in the real allowlist today, so neither carve-out could be
+    exercised against it."""
     path = tmp_path / "fixture-allowlist.json"
     path.write_text(json.dumps({
         "term": TERM,
-        "legacy_filenames": _ALLOWLIST_DATA["legacy_filenames"],
-        "vendor_literals": {"entries": vendor_literals},
+        "legacy_filenames": {
+            "entries": [{"path": p, "owner": "FIXTURE"} for p in (legacy_filenames or [])]
+        },
+        "vendor_literals": {"entries": vendor_literals or []},
     }), encoding="utf-8")
     return path
 
@@ -206,12 +223,19 @@ class TestAllowlistCarveouts(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_passes_when_only_legacy_filename_cited(self):
+        """Exercises the legacy_filenames carve-out mechanism itself via a
+        hermetic FIXTURE allowlist (the real allowlist now ships this list
+        empty — both owning rename units landed — see
+        TestAllowlistFileItselfIsValid's exact-0 pin)."""
+        fixture_allowlist = _write_fixture_allowlist(
+            Path(self._tmp.name), legacy_filenames=[_FIXTURE_LEGACY_FILENAME]
+        )
         _write(self.repo, "README.md",
                "# Title\n\nOriginal line.\n\n"
-               f"See `{LEGACY_FILENAME}` for the scheduled drift check (rename pending).\n")
+               f"See `{_FIXTURE_LEGACY_FILENAME}` for the scheduled drift check (rename pending).\n")
         _commit(self.repo, "cite a legacy filename")
 
-        res = _run_guard(self.repo)
+        res = _run_guard(self.repo, allowlist=fixture_allowlist)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_passes_when_only_vendor_literal_cited(self):
@@ -233,12 +257,15 @@ class TestAllowlistCarveouts(unittest.TestCase):
         """The subtraction must be span-precise: an allowed filename citation on
         a line does NOT amnesty an extra, separate, unexplained mention on that
         same line."""
+        fixture_allowlist = _write_fixture_allowlist(
+            Path(self._tmp.name), legacy_filenames=[_FIXTURE_LEGACY_FILENAME]
+        )
         _write(self.repo, "README.md",
                "# Title\n\nOriginal line.\n\n"
-               f"See `{LEGACY_FILENAME}`, and also this unrelated {TERM} usage.\n")
+               f"See `{_FIXTURE_LEGACY_FILENAME}`, and also this unrelated {TERM} usage.\n")
         _commit(self.repo, "legacy filename plus a stray extra occurrence")
 
-        res = _run_guard(self.repo)
+        res = _run_guard(self.repo, allowlist=fixture_allowlist)
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
 
     def test_stray_occurrence_alongside_vendor_literal_still_fails(self):
@@ -355,13 +382,16 @@ class TestCLIWiring(unittest.TestCase):
         self.assertIn("term", _ALLOWLIST_DATA)
         self.assertIn("legacy_filenames", _ALLOWLIST_DATA)
         self.assertIn("vendor_literals", _ALLOWLIST_DATA)
-        # Floor, not a fixed count: this list only ever SHRINKS as each owning
-        # unit lands its rename (never grows -- see the $comment doctrine
-        # above). It shipped at 6 (4 U30-owned + 2 U93-owned). U30/B-U16
-        # (2026-07-16) landed and correctly removed its 4 entries, leaving the
-        # 2 U93-owned ones -- so the floor drops to 2 here in the SAME commit
-        # that removed them (never left stale/orphaned once a rename lands).
-        self.assertGreaterEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 2)
+        # This list only ever SHRINKS as each owning unit lands its rename,
+        # and never grows (see the $comment doctrine above). It shipped at 6
+        # (4 U30-owned + 2 U93-owned). U30/B-U16 removed its 4 and U93/X-U-X3
+        # removed its 2, both on 2026-07-16 -- so the carve-out is now spent
+        # and the list is EMPTY. Pinned as an exact 0 rather than a >=0 floor,
+        # which would assert nothing at all: with every owning unit landed,
+        # the live invariant worth guarding is that no entry ever comes BACK
+        # (a re-added legacy filename would silently re-amnesty the retired
+        # term in new doc prose).
+        self.assertEqual(len(_ALLOWLIST_DATA["legacy_filenames"]["entries"]), 0)
 
     def test_vendor_literals_empty_by_default(self):
         """Pins the allowlist's own stated default (its $comment: 'Empty by

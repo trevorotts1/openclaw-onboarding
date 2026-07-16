@@ -3,6 +3,19 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.3.2] - 2026-07-16
+
+X/U-X3 (U93), D20 Option B: `scripts/loop-protection-canary.sh` renamed to
+`scripts/loop-protection-first-proof.sh` (doctrine scrub, "CANARY, THEN HOLD" ->
+"PROVE ON THE OPERATOR BOX, THEN HOLD" — this skill's law 8 in `SKILL.md` reworded
+to match). A one-release shim is retained at the old path (`exec bash`'s the new
+script with `"$@"`, no reimplemented behavior) so a live-box cron still calling
+`loop-protection-canary.sh` keeps resolving unchanged; verified byte-identical
+output between the old-path shim and the new path. `install.sh`/`update-skills.sh`
+persist BOTH files for the one-release window. `HOW-TO-USE.md` and
+`config/rollout.json` updated to match. No box behavior change; still DISARMED
+(DRY_RUN default, rollout HELD).
+
 ## [0.3.1] - 2026-07-13
 
 Field-hardening + doc-honesty correction for the D2 token reader (QC follow-up to

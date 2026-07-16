@@ -1031,7 +1031,11 @@ main() {
     # install-ceo-intent-gate.sh + verify-routing.sh are persisted here (v16.2.19)
     # so the intent-gate wire + post-stamp verification below can resolve them after
     # the temp-clone cleanup, same as apply-routing-fix.sh / apply-fleet-standards.sh.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh activate-loop-protection.sh loop-protection-canary.sh; do
+    # D20 rename (U93): loop-protection-canary.sh -> loop-protection-first-proof.sh.
+    # BOTH names are persisted here for one release — the old path is now a thin
+    # compatibility shim that execs the new one, so an existing live-box cron
+    # registration still calling the old path keeps resolving after this cleanup.
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh activate-loop-protection.sh loop-protection-first-proof.sh loop-protection-canary.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done

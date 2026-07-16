@@ -12,18 +12,22 @@ restarts thousands of times, silently, for weeks. This skill is the reflex that
 catches that in one 15-minute tick and either fixes it (deterministic, proven,
 reversible fixes only) or hands you a one-tap proposal - never bothering the client.
 
-## First run on a box (canary first, then hold)
+## First run on a box (operator box first, then hold)
 
-The whole canary — install Skill 60 + 61, verify, burn in, arm — is wrapped in ONE
-idempotent operator script (run it on YOUR box only):
+The whole first-proof sequence — install Skill 60 + 61, verify, burn in, arm — is
+wrapped in ONE idempotent operator script (run it on YOUR box only):
 
-       bash scripts/loop-protection-canary.sh install     # 60 then 61, DRY_RUN, never arms
-       bash scripts/loop-protection-canary.sh verify      # both failable drill batteries
-       bash scripts/loop-protection-canary.sh status       # armed?, burn-in days, findings
+       bash scripts/loop-protection-first-proof.sh install     # 60 then 61, DRY_RUN, never arms
+       bash scripts/loop-protection-first-proof.sh verify      # both failable drill batteries
+       bash scripts/loop-protection-first-proof.sh status       # armed?, burn-in days, findings
        # ...let it observe for 7 days...
-       bash scripts/loop-protection-canary.sh arm --yes    # arm Tier-1 (refused before 7 days)
-       bash scripts/loop-protection-canary.sh disarm       # one-line revert
-       bash scripts/loop-protection-canary.sh runbook      # the full runbook
+       bash scripts/loop-protection-first-proof.sh arm --yes    # arm Tier-1 (refused before 7 days)
+       bash scripts/loop-protection-first-proof.sh disarm       # one-line revert
+       bash scripts/loop-protection-first-proof.sh runbook      # the full runbook
+
+(the previous script filename still resolves for one release — it is now a thin
+compatibility shim in `scripts/` that execs the file above, unchanged, so any
+existing invocation keeps working while you migrate to the path above)
 
 The manual, per-skill equivalent is unchanged:
 
@@ -46,7 +50,7 @@ The manual, per-skill equivalent is unchanged:
    Tier-2 (heartbeat re-tier, compaction correction, announce-cron conversion) stays
    a proposal everywhere until you stamp it per box. Tier-3 always asks.
 
-## Fleet rollout (AFTER the canary passes — operator-timed, ONE batch)
+## Fleet rollout (AFTER the operator-box proof passes — operator-timed, ONE batch)
 
 Skill 60 + 61 are WIRED into onboarding (`install.sh`) and the updater
 (`update-skills.sh`) via the shared `scripts/activate-loop-protection.sh`, but

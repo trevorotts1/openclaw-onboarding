@@ -3304,13 +3304,18 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
     fi
 done
 
-# LOOP / FURNACE PROTECTION activation helper + operator canary (Skill 60 EWS +
-# Skill 61 Loop Protection). Persisted to ~/.openclaw/scripts (or /data/...) so
-# the end-of-run activation step and the operator canary can resolve them after a
-# temp-clone cleanup, and so the updater's shared hook has one canonical copy (no
-# copy-paste drift). Neither ARMS a box; client activation is gated HELD by
-# default (61-loop-protection-system/config/rollout.json). See Topic 2 §2.3.
-for SCRIPT in activate-loop-protection.sh loop-protection-canary.sh; do
+# LOOP / FURNACE PROTECTION activation helper + operator-box first-proof
+# script (Skill 60 EWS + Skill 61 Loop Protection). Persisted to
+# ~/.openclaw/scripts (or /data/...) so the end-of-run activation step and the
+# operator's own first-proof run can resolve them after a temp-clone cleanup,
+# and so the updater's shared hook has one canonical copy (no copy-paste
+# drift). Neither ARMS a box; client activation is gated HELD by default
+# (61-loop-protection-system/config/rollout.json). See Topic 2 §2.3.
+# D20 rename (U93): loop-protection-canary.sh -> loop-protection-first-proof.sh.
+# BOTH names are persisted here for one release — the old path is now a thin
+# compatibility shim that execs the new one, so an existing live-box cron
+# registration still calling the old path keeps resolving after this cleanup.
+for SCRIPT in activate-loop-protection.sh loop-protection-first-proof.sh loop-protection-canary.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
@@ -7918,11 +7923,12 @@ fi
 # GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2. Runs the shared
 # activate-loop-protection.sh helper (the SAME one update-skills.sh calls — no
 # copy-paste drift). Client-box activation is GATED HELD by default per SKILL.md
-# law 8 (CANARY, THEN HOLD) + the 7-03 repo-only HOLD: the helper installs the
-# 60-then-61 per-box watchdogs (ews-tick + loop-tick crons + ledgers) in DRY_RUN
-# observe-only ONLY when the fleet rollout gate is enabled (rollout.json /
-# OPENCLAW_LOOP_PROTECTION_ROLLOUT); otherwise it prints a HELD note and no-ops.
-# It NEVER arms a box (Tier-1 arming is the operator canary's separate action).
+# law 8 (PROVE ON THE OPERATOR BOX, THEN HOLD) + the 7-03 repo-only HOLD: the
+# helper installs the 60-then-61 per-box watchdogs (ews-tick + loop-tick crons
+# + ledgers) in DRY_RUN observe-only ONLY when the fleet rollout gate is
+# enabled (rollout.json / OPENCLAW_LOOP_PROTECTION_ROLLOUT); otherwise it
+# prints a HELD note and no-ops.
+# It NEVER arms a box (Tier-1 arming is the operator's own first-proof run's separate action).
 # Runs BEFORE the final gateway restart so any registered crons are picked up.
 # Best-effort — never aborts the install.
 # ----------------------------------------------------------

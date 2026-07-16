@@ -79,3 +79,11 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   shapes. All script self-tests, four merge-gate scanners, and the fixture-drill
   battery (`verify.sh`) pass; `py_compile` clean. Skill stays DISARMED / alert-only;
   no rollout or HOLD state changed.
+
+- **Unit 4 - law 8 doctrine scrub** (version 0.1.3) - X/U-X3 (U93), D20 Option B:
+  `SKILL.md` law 8 reworded "CANARY, THEN HOLD" -> "PROVE ON THE OPERATOR BOX, THEN
+  HOLD", matching the fleet-wide operator-box-is-the-proving-ground doctrine (this
+  skill's own operator-box Mac mini, not a client box). No behavior change - doc-only
+  correction. Companion rename in Skill 61 (`loop-protection-canary.sh` ->
+  `loop-protection-first-proof.sh`, one-release shim retained at the old path) landed
+  in the same unit; see `61-loop-protection-system/CHANGELOG.md`.
