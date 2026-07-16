@@ -229,6 +229,33 @@ class TestAcceptanceDZeroCrossClientVisibility(unittest.TestCase):
                     text = f.read()
                 self.assertNotIn("client-beta", text)
 
+    def test_candidate_id_is_client_scoped(self):
+        # Two candidates identical in EVERY field except client_id must never
+        # compute the same candidate id. The id is what harvest_into_library's
+        # gate compares, so an id collision across clients would let one
+        # client's approval authorize another client's write.
+        a = _candidate("client-alpha", "same-slug", task_id="same-task")
+        b = _candidate("client-beta", "same-slug", task_id="same-task")
+        self.assertNotEqual(wh.candidate_id(a), wh.candidate_id(b))
+
+    def test_another_clients_approved_card_never_authorizes_this_clients_write(self):
+        # The sharpest edge of acceptance (d): alpha's operator approval,
+        # handed in for beta's otherwise-identical candidate, must be refused
+        # and must leave beta's library untouched.
+        with tempfile.TemporaryDirectory() as td:
+            ws = os.path.join(td, "workspaces")
+            cand_a = _candidate("client-alpha", "same-slug", task_id="same-task")
+            cand_b = _candidate("client-beta", "same-slug", task_id="same-task")
+            card_a = wh.propose_harvest_card(ws, cand_a)
+            approved_a = wh.approve_card(ws, "client-alpha", card_a["card_id"],
+                                          approved_by="op")
+            self.assertTrue(wh.is_card_approved(approved_a))
+
+            result = wh.harvest_into_library(ws, cand_b, approved_a)
+            self.assertFalse(result["harvested"])
+            self.assertEqual(result["reason"], "card_candidate_mismatch")
+            self.assertFalse(os.path.isdir(wh.library_dir_for_candidate(ws, cand_b)))
+
     def test_alphas_library_listing_never_includes_a_beta_entry(self):
         with tempfile.TemporaryDirectory() as td:
             ws = os.path.join(td, "workspaces")
