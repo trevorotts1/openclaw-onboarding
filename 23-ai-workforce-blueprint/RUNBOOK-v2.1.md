@@ -99,6 +99,23 @@ python3 shared-utils/devils-advocate.py --trigger critical_task --context-json /
 ```
 Returns one specific, data-cited challenge. Severity + confidence.
 
+### When that challenge needs to land on the Command Center board (U59/JM-U55, U55d)
+The generator above only prints JSON to stdout — it never writes anywhere. To
+also POST the challenge onto the board (`POST /api/da-challenges`, U55c), run
+it through the thin bridge instead of the raw generator directly:
+```bash
+MISSION_CONTROL_URL=https://<cc-url> MC_API_TOKEN=<tok> WEBHOOK_SECRET=<secret> \
+  python3 shared-utils/devils-advocate-bridge.py \
+    --trigger critical_task --context-json /tmp/da-context.json
+```
+Same context-JSON shape as above (`department` is what the Command Center
+route resolves via `resolveDepartment()`; `task_id`, if present, is carried
+through to the posted row). FAIL-SOFT and stdlib-only, same convention as
+`06-ghl-install-pages/tools/cc_board.py`: exits `0` on a successful post, `2`
+(non-fatal) when `MISSION_CONTROL_URL` is unset, `1` on a real failure. Add
+`--dry-run` to preview the exact payload without POSTing anything, or
+`--selftest` to run the bridge's own offline self-test (no board required).
+
 ### When a behavioral interview completes and USER.md needs updating
 ```bash
 # answers.json should have keys B-1 through B-5

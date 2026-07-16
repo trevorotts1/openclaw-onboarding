@@ -1,0 +1,66 @@
+name: u59-devils-advocate-guard
+
+# U59 (JM/U55) — Devil's Advocate end-to-end, ONB-repo slice: U55a (operator-
+# box proof the generator degrades honestly for all five triggers) + U55d
+# (the thin bridge to the Command Center's POST /api/da-challenges, U55c on
+# the other repo/train). Fails the build if:
+#   (a) shared-utils/devils-advocate.py stops producing schema-valid JSON
+#       for any of its five triggers, or the no-LLM template fallback stops
+#       parsing into the same seven-key schema the live-LLM branch would
+#       (tests/unit/u59-devils-advocate-generator-proof.test.py);
+#   (b) shared-utils/devils-advocate-bridge.py's payload contract, dual-
+#       header auth (Bearer + HMAC, same convention as
+#       06-ghl-install-pages/tools/cc_board.py), or any FAIL-SOFT branch
+#       (board unconfigured, generator load failure, unreachable host,
+#       non-2xx response) regresses — proven against a real local loopback
+#       HTTP server, not a mock (tests/unit/u59-devils-advocate-bridge.test.py).
+#
+# The captured operator-box evidence (ledgers/evidence/U59-JM-U55/) is the
+# point-in-time record; this workflow + its test files are the ongoing lock.
+
+on:
+  push:
+    paths:
+      - "shared-utils/devils-advocate.py"
+      - "shared-utils/devils-advocate-bridge.py"
+      - "ledgers/evidence/U59-JM-U55/**"
+      - tests/unit/u59-devils-advocate-generator-proof.test.py
+      - tests/unit/u59-devils-advocate-bridge.test.py
+      - .github/workflows/u59-devils-advocate-guard.yml
+  pull_request:
+    paths:
+      - "shared-utils/devils-advocate.py"
+      - "shared-utils/devils-advocate-bridge.py"
+      - "ledgers/evidence/U59-JM-U55/**"
+      - tests/unit/u59-devils-advocate-generator-proof.test.py
+      - tests/unit/u59-devils-advocate-bridge.test.py
+      - .github/workflows/u59-devils-advocate-guard.yml
+
+jobs:
+  u59-devils-advocate-guard:
+    name: "Devil's Advocate — generator (5 triggers + fallback) + bridge (real loopback HTTP)"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the generator + bridge
+        run: |
+          python3 -m py_compile shared-utils/devils-advocate.py
+          python3 -m py_compile shared-utils/devils-advocate-bridge.py
+
+      - name: Bridge self-test (offline, no network, no board required)
+        run: python3 shared-utils/devils-advocate-bridge.py --selftest
+
+      - name: U55a — generator proof (5 triggers + honest fallback, evidence byte-check)
+        run: python3 tests/unit/u59-devils-advocate-generator-proof.test.py
+
+      - name: U55d — bridge proof (real loopback HTTP, dual-header auth, all FAIL-SOFT branches)
+        run: python3 tests/unit/u59-devils-advocate-bridge.test.py

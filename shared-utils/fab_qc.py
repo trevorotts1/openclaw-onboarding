@@ -42,6 +42,16 @@ import re
 import sys
 from dataclasses import dataclass, field, asdict
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_HERE)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+try:
+    import anti_copy_guard  # noqa: E402 — sibling; A-U10 hard-miss check (optional)
+except ImportError:  # pragma: no cover — module always ships alongside fab_qc.py
+    anti_copy_guard = None
+
 THRESHOLD = 8.5
 
 # Dimension weights (sum = 100).
@@ -497,6 +507,40 @@ def score_d6(inp: dict) -> Dim:
 
 
 # --------------------------------------------------------------------------- #
+# A-U10 — Anti-copy guard (deterministic similarity ceiling vs injected
+# exemplars, key-free, hard-miss). Weight 0: this is a HARD-MISS-ONLY check,
+# never part of the weighted D1-D6 score (the six dimensions above stay
+# canonical — W's sum-to-100 invariant is untouched). It is the mechanical
+# twin of the persona-impersonation guardrail bolted onto the hard-miss
+# family, per master spec v2 A.9's A-U10 build text.
+# --------------------------------------------------------------------------- #
+def score_anti_copy(inp: dict) -> "Dim | None":
+    """Returns None (excluded from ``dims`` entirely — a true no-op, not a
+    zero-weight pass) whenever: the module is unavailable, the
+    ANTI_COPY_GUARD_ENABLED flag is off (REVERT posture — flip the flag,
+    no code revert needed), or no ``exemplar_packs`` were supplied. That last
+    condition is the same "no applicable pack -> degrade to today's
+    behavior" contract A-U9's own ``build_injection_block`` honors — a build
+    with nothing to compare against is scored exactly as it was pre-A-U10."""
+    if anti_copy_guard is None or not anti_copy_guard.guard_enabled():
+        return None
+    packs = inp.get("exemplar_packs") or []
+    if not packs:
+        return None
+    texts = _texts_of(inp.get("artifact", {}) or {})
+    if not texts:
+        return None
+    result = anti_copy_guard.anti_copy_check(texts, packs)
+    hard = bool(result.get("hard_miss"))
+    breached = result.get("breached_exemplars") or []
+    observed = (f"checked {len(texts)} copy slot(s) against {len(packs)} injected "
+                f"exemplar(s); ceiling={result.get('ceiling')}")
+    if hard:
+        observed += f" — HARD MISS (similarity ceiling breached vs {breached})"
+    return Dim("D-anti-copy Anti-copy guard", 0, 0.0 if hard else 10.0, hard, observed)
+
+
+# --------------------------------------------------------------------------- #
 # grade
 # --------------------------------------------------------------------------- #
 def grade(inp: dict) -> dict:
@@ -504,9 +548,15 @@ def grade(inp: dict) -> dict:
     artifact, verify, persona_log, link_map, persona_bundle (B-U5/U19, optional —
     the normalized persona-bundle-acquisition-ladder receipt; D4 grounds on the
     bundle's VOICE persona when active, else the legacy template-token path,
-    byte-identical, when absent). Returns the FAB-QC scorecard."""
+    byte-identical, when absent), exemplar_packs (A-U10, optional — list of
+    {exemplar_id, gold_output_path|text} the anti-copy guard checks the built
+    artifact's copy against; absent -> guard is a no-op, byte-identical to
+    pre-A-U10 behavior). Returns the FAB-QC scorecard."""
     dims = [score_d1(inp), score_d2(inp), score_d3(inp),
             score_d4(inp), score_d5(inp), score_d6(inp)]
+    anti_copy_dim = score_anti_copy(inp)
+    if anti_copy_dim is not None:
+        dims.append(anti_copy_dim)
     weighted = round(sum(d.earned for d in dims), 2)        # 0-100
     score_10 = round(weighted / 10.0, 2)                    # 0-10
     hard_misses = [d.name for d in dims if d.hard_miss]
@@ -533,6 +583,40 @@ def _load_json(path: str):
         return json.load(open(path, encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _load_exemplar_packs_from_receipt(evidence_root: str) -> list:
+    """A-U10: resolve the REAL exemplar packs this build actually injected
+    (A-U9's ``routing/exemplar-injection.json`` receipt, written by
+    ``exemplar_injection.write_injection_receipt``) back to their on-disk
+    gold-output text, so the anti-copy guard checks the built artifact
+    against exactly what was shown to the writer — never a fabricated or
+    unrelated exemplar set. Each ``exemplar_id`` is the deterministic
+    ``<skill>/<deliverable_type>/<slug>`` format ``exemplar_injection.py``
+    assigns (its own ``fallback_id`` / shipped ``provenance.json`` both use
+    it), so it is resolved generically against the repo root — this module
+    never hardcodes a specific skill directory. Returns [] (the anti-copy
+    guard degrades to a no-op, same as A-U9's own no-match receipt) when no
+    receipt exists, it named nothing, or a named exemplar can't be found on
+    disk (a dangling id never fabricates a comparison text)."""
+    doc = _load_json(os.path.join(evidence_root, "routing", "exemplar-injection.json"))
+    if not isinstance(doc, dict):
+        return []
+    seen: dict = {}
+    for injection in doc.get("injections", []) or []:
+        for ex in injection.get("exemplars", []) or []:
+            exemplar_id = ex.get("exemplar_id")
+            if not exemplar_id or exemplar_id in seen:
+                continue
+            parts = str(exemplar_id).split("/")
+            if len(parts) != 3:
+                continue
+            skill, deliverable_type, slug = parts
+            gold_path = os.path.join(_REPO_ROOT, skill, "exemplars", deliverable_type, slug,
+                                      "gold-output.md")
+            if os.path.isfile(gold_path):
+                seen[exemplar_id] = {"exemplar_id": exemplar_id, "gold_output_path": gold_path}
+    return list(seen.values())
 
 
 def load_inputs_from_evidence(evidence_root: str, kind: str) -> dict:
@@ -569,9 +653,12 @@ def load_inputs_from_evidence(evidence_root: str, kind: str) -> dict:
     # Absent on any build that hasn't wired the bundle -> {} -> D4's legacy
     # template-token path (byte-identical to pre-B-U5 behavior).
     persona_bundle = _load_json(os.path.join(routing, "persona-bundle-receipt.json")) or {}
+    # A-U10: resolve the real injected exemplars (A-U9's own receipt) so the
+    # anti-copy guard checks against exactly what the writer saw.
+    exemplar_packs = _load_exemplar_packs_from_receipt(evidence_root)
     return {"kind": kind, "match_decision": md, "template": template, "artifact": artifact,
             "verify": verify, "persona_log": persona_log, "link_map": link_map,
-            "persona_bundle": persona_bundle}
+            "persona_bundle": persona_bundle, "exemplar_packs": exemplar_packs}
 
 
 def main(argv: list[str]) -> int:

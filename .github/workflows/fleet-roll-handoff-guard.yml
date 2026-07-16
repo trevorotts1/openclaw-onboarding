@@ -1,0 +1,44 @@
+name: fleet-roll-handoff-guard
+
+# U96 (X/U-X6) — proves the push-client-embeddings ROUTED hand-off row stays
+# present, singular, and un-stale in docs/FLEET-ROLL-RUNBOOK.md (the fleet-roll
+# run's own doc): exactly one occurrence, names the receiving run + the
+# mechanism file (shared-utils/sop-embed-once/build-and-publish.sh:1-17) +
+# the 2026-07-14 gemini-embedding-001 EOL deadline context, and cites D21.
+# Also fails if the cited mechanism file or migration-check script is ever
+# removed/renamed without updating the row.
+#
+# Offline / static only — reads repo files, no embedding API calls.
+
+on:
+  push:
+    paths:
+      - docs/FLEET-ROLL-RUNBOOK.md
+      - shared-utils/sop-embed-once/build-and-publish.sh
+      - scripts/pre-july14-embedding-migration-check.sh
+      - tests/unit/fleet-roll-handoff-push-client-embeddings.test.py
+      - .github/workflows/fleet-roll-handoff-guard.yml
+  pull_request:
+    paths:
+      - docs/FLEET-ROLL-RUNBOOK.md
+      - shared-utils/sop-embed-once/build-and-publish.sh
+      - scripts/pre-july14-embedding-migration-check.sh
+      - tests/unit/fleet-roll-handoff-push-client-embeddings.test.py
+      - .github/workflows/fleet-roll-handoff-guard.yml
+  workflow_dispatch:
+
+jobs:
+  fleet-roll-handoff-guard:
+    name: "push-client-embeddings hand-off row (singular, owned, not stale)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the hand-off row guard
+        run: python3 tests/unit/fleet-roll-handoff-push-client-embeddings.test.py -v
