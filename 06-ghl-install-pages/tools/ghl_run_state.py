@@ -77,6 +77,31 @@ PHASE_DONE = "done"
 PHASE_FAILED = "failed"
 PHASE_SKIPPED = "skipped"       # resumed: already done in an earlier attempt
 
+# ── U28 (B-U14): D6 headless-guard refusal -> exit 75, not a generic exit-1 ──
+# fail. ``ghl_builder.headless_guard`` / ``browser_manager.headless_guard`` both
+# raise RuntimeError with this exact prefix (see 06-ghl-install-pages/tools/
+# ghl_builder.py::headless_guard and browser_manager.py::headless_guard — the
+# two independent implementations were kept string-identical on purpose so a
+# single prefix check here covers both). The D6 CLI contract (ENV-MATRIX.md,
+# ghl_builder.py's own `headless-guard` subcommand) promises "headed = forbidden
+# (D6, exit 75)" — but every builder's main()/cli_run() previously caught this
+# RuntimeError with the SAME generic `except Exception` that catches every other
+# build failure and returned 1, silently breaking the exit-75 promise for the
+# community/course/pipeline/form/survey live-build entry points (the U28
+# headless-guard coverage audit's finding). Duplicating just the prefix string
+# here (rather than importing browser_manager) keeps this module import-light,
+# the same rationale browser_manager.py's own docstring gives for
+# re-implementing headless_guard instead of importing ghl_builder.
+D6_HEADLESS_REFUSAL_PREFIX = "REFUSE (D6 headless guard)"
+
+
+def is_d6_headless_refusal(error_text: Optional[str]) -> bool:
+    """True iff a builder's terminal error string IS the D6 headless-guard
+    refusal (AGENT_BROWSER_HEADED would open a visible window). Callers use
+    this to map the exit code to 75 (the D6 CLI contract) instead of the
+    generic 1 an ordinary build failure gets."""
+    return D6_HEADLESS_REFUSAL_PREFIX in (error_text or "")
+
 
 class RunStateNotFound(FileNotFoundError):
     """``--resume <run_id>`` named a run with no state file under the state root."""
@@ -678,6 +703,13 @@ def cli_run(
     )
 
     if status == STATUS_FAILED:
+        # U28 (B-U14): a D6 headless-guard refusal is NOT a generic build
+        # failure — it must keep the promised exit 75 (ENV-MATRIX.md, the
+        # ghl_builder.py `headless-guard` subcommand), whether it propagated
+        # here as a raised RuntimeError (caught above, folded into `error`) or
+        # was captured into `result["error"]` by the builder itself.
+        if is_d6_headless_refusal(error):
+            return 75
         return 1
     return 0 if result.get(ok_key, True) else 1
 
