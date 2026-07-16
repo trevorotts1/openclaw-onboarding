@@ -1586,6 +1586,26 @@ def _chosen_department_slugs(selected_departments):
     return slugs
 
 
+def _read_prior_chosen_entries(company_dir):
+    """
+    U109 (E5-4, closes G2c) merge-not-replace fix: read whatever the durable
+    chosen-list artifact ALREADY contains at `company_dir`, i.e. the state
+    BEFORE this write. Read-only, called before any file in this write is
+    touched. Fail-soft: a missing/unreadable/malformed artifact returns []
+    (never raises, never fabricates a floor) so a first-ever write is
+    unaffected.
+    """
+    if not company_dir:
+        return []
+    path = os.path.join(company_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
 def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
                                       discovery_dir=None, source="reconciliation-end"):
     """
@@ -1599,13 +1619,59 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
       3. build-state canonicalReconciliation.chosenDepartments =
            {slugs, count, artifactPath, writtenAt, source}
 
+    U109 (E5-4, closes G2c) — MERGE, NEVER REPLACE. Before this fix, this
+    function was a blind overwrite: a call with a SMALLER `selected_departments`
+    (a second provisioning run, a partial/aborted interview, or a late edit
+    that only touched a subset of departments) silently WIPED every department
+    a PRIOR, larger call had already recorded — the department floor could
+    shrink with no explicit decline behind it. The fix reads whatever this
+    artifact ALREADY holds at `company_dir` (via `_read_prior_chosen_entries`,
+    read before any write in this call) and writes the UNION of that prior
+    record with this call's set — `floor ∪ derived`, never a replace — MINUS
+    any department the client has EXPLICITLY, provenance-gated DECLINED per
+    `canonical_decline.canonical_decline_set()` (the exact mechanism
+    U107/U108 and department-floor.py already honor). An explicit decline is
+    therefore the ONLY way a department can be absent from the merged result;
+    a department simply un-mentioned by THIS call is preserved, never dropped.
+
     Idempotent + never raises (a durable-write failure must never abort a build).
     Returns the list of files written.
     """
-    dept_json = generate_departments_json(selected_departments)
-    slugs = _chosen_department_slugs(selected_departments)
-    written = []
     cdir = company_dir or COMPANY_DIR
+    dept_json = generate_departments_json(selected_departments)
+
+    # ── U109 merge-not-replace ────────────────────────────────────────────
+    prior_entries = _read_prior_chosen_entries(cdir)
+    if prior_entries:
+        declined_now = _shared_canonical_decline_set(_load_build_state())
+        known_slugs = {e.get("slug") or e.get("id") for e in dept_json if isinstance(e, dict)}
+        for entry in prior_entries:
+            if not isinstance(entry, dict):
+                continue
+            eslug = entry.get("slug") or entry.get("id")
+            if not eslug or eslug in known_slugs:
+                continue
+            # Bare form for the decline comparison (mirrors canonical_dept_slug
+            # elsewhere): a legacy entry may carry only the "dept-<slug>" id.
+            bare = eslug[5:] if eslug.startswith("dept-") else eslug
+            if _decline_norm(bare) in declined_now:
+                # Explicitly declined since the prior write -- honor the
+                # decline; do NOT resurrect it via the merge.
+                print(f"[CHOSEN-LIST] '{bare}' present in the prior chosen-list "
+                      f"but now explicitly declined -- not carried forward.",
+                      file=sys.stderr)
+                continue
+            dept_json.append(entry)
+            known_slugs.add(eslug)
+
+    slugs = []
+    seen = set()
+    for entry in dept_json:
+        s = entry.get("slug") or entry.get("id")
+        if s and s not in seen:
+            seen.add(s)
+            slugs.append(s)
+    written = []
     artifact_path = None
     if cdir:
         try:

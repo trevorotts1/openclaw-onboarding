@@ -58,6 +58,20 @@ name: Skill-23 provisioning tests
 #                                           match stays in lockstep with
 #                                           department-floor.py's (no silent drift
 #                                           between the two independent copies).
+#  10. test-u109-floor-wipe-regression.sh — U109 (E5-4, closes G2c): interview
+#                                           provisioning MERGES the interview-derived
+#                                           set onto the department floor
+#                                           (floor ∪ derived) instead of REPLACING it.
+#                                           Reproduces the wipe (a second/partial
+#                                           provisioning call used to drop every
+#                                           department a prior, larger call had
+#                                           already recorded), then proves the fix:
+#                                           zero departments lost across a second
+#                                           smaller run or a partial/aborted-interview
+#                                           shaped run, and the ONLY way a department
+#                                           is absent afterward is an explicit,
+#                                           provenance-gated decline (the same
+#                                           mechanism U107/U108 already honor).
 #
 # All are hermetic: each builds its own mktemp sandbox and pins
 # ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
@@ -83,7 +97,7 @@ on:
 
 jobs:
   skill23-provisioning-tests:
-    name: Skill-23 provisioning tests (9 hermetic suites)
+    name: Skill-23 provisioning tests (10 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -111,6 +125,7 @@ jobs:
             test-phantom-dept-collision-gate.sh
             test-chosen-departments-artifact.sh
             test-vertical-derivation-guard.sh
+            test-u109-floor-wipe-regression.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do
