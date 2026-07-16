@@ -2,8 +2,8 @@
 
 AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds. Rewritten in full every reconciler run (every 10 minutes via cron). If a build session is lost to a context/session limit, this file is the fastest path back to real state — every fact below was independently re-derived from `git` (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup), never copied from a prior run or from ledger prose.
 
-Generated: 2026-07-16T06:50:02Z
-openclaw-onboarding `origin/main` HEAD: `82fbc2baabb50bb0006d6a9851c02ec9ea377bf4`
+Generated: 2026-07-16T07:00:02Z
+openclaw-onboarding `origin/main` HEAD: `121d729a1690027c8a45aa03c7c5a2bd3e1197b1`
 blackceo-command-center `origin/main` HEAD: `aa34b724968f4a95ff6cf8737e723a1d2dd9f6e3`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -33,7 +33,7 @@ No mismatches found this run.
 | U29 | `skill6-v2/U29` | `cffa32b7` | True | `a2f4dc67` | v20.0.53 | verified | - |
 | U3 | `skill6-v2/U3` | `033d223d` | True | `ba89a65d` | v20.0.22 | verified | 9.3 |
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | True | `ebef2f72` | v20.0.54 | verified | - |
-| U39 | `skill6-v2/U39` | `49015cfc` | False | - | - | pending | - |
+| U39 | `skill6-v2/U39` | `3ca7edae` | False | - | - | pending | - |
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
 | U44 | `skill6-v2/U44` | `fbd8cb3e` | False | - | - | pending | - |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
@@ -52,7 +52,7 @@ No mismatches found this run.
 | U82 | `skill6-v2/U82` | `2e349833` | True | `f7b0d9be` | v20.0.46 | verified | - |
 | U83 | `skill6-v2/U83` | `cd6e51b0` | True | `fcd029ac` | v20.0.47 | verified | - |
 | U85 | `skill6-v2/U85` | `fe21fdb6` | True | `07fcf247` | v20.0.48 | verified | - |
-| U86 | `skill6-v2/U86` | `57003f18` | False | - | - | pending | - |
+| U86 | `skill6-v2/U86` | `f06ae6c9` | False | - | - | pending | - |
 | U88 | `skill6-v2/U88` | `21ebb5bc` | True | `a3a42e1d` | v20.0.49 | verified (OFFLINE/FIXTURE tier; LIVE operator-box leg OWED) | - |
 | U9 | `skill6-v2/U9` | `b4b58f1e` | True | `ceaac642` | v20.0.50 | verified | - |
 | U9-sonnet5-b | `skill6-v2/U9-sonnet5-b` | `edc1a92c` | False | - | - | (no row) | - |
