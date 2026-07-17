@@ -17,14 +17,20 @@ credentials because they were never there.
 
 Trevor's n8n already has a live Podbean workflow, **"create podcast episode from
 openclaw"** (`POST /webhook/podbean-publish`), which injects his creds server-side
-and publishes an episode from `podcast_id` + media URLs. That one is
-**fire-and-forget**: it returns `200` immediately and emails the result — it does
-**not** return the episode permalink synchronously. The Skill 58 engine needs the
-permalink back at Step 15 to (a) write it to the GHL episode-URL field (which
-field-triggers the downstream "podcast is completed" workflow at Step 16) and
-(b) store it in the idempotency ledger. So Skill 58 uses a **token broker** (mint
-a Channel-scoped token; the box keeps the synchronous publish), not the
-full-publish proxy.
+and publishes an episode from `podcast_id` + media URLs. That one now responds
+**synchronously**, in the same request/response cycle — it is no longer
+fire-and-forget. Proven live on 2026-07-17: a refusal request to the endpoint
+completed in 0.947615 seconds total and returned a fully structured JSON error
+body in that same response, and a successful live publish that same night
+returned its result in the publish call's own response, shaped
+`{"status":"published","permalink_url":"https://automationhackswithblackceo.podbean.com/e/...","episode_id":"DK23M1B13D56","episode_number":5}`
+— the working public link comes back synchronously, in the publish call itself,
+not in a follow-up email (a second, independent publish that night returned the
+same shape). The Skill 58 engine needs the permalink back at Step 15 to (a)
+write it to the GHL episode-URL field (which field-triggers the downstream
+"podcast is completed" workflow at Step 16) and (b) store it in the idempotency
+ledger. So Skill 58 uses a **token broker** (mint a Channel-scoped token; the
+box keeps the synchronous publish), not the full-publish proxy.
 
 This asset also closes two gaps that used to exist on the live full-publish
 workflow (see "Live full-publish workflow — sanitized export" below, which
