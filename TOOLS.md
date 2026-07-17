@@ -43,6 +43,17 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
+## MANDATORY — Git-truth tools (`unit-status.sh` / `pr-truth.sh`)
+
+**Read this before ever writing "done" / "verified" / "zombie" / "supersedes" about a unit or PR in this repo.** A single session produced nine confirmed forms of the same root-cause disease — status asserted from a NAME or a POINTER (branch name, ledger status cell, PR `state` field) instead of DIFFED from CONTENT — across every engine that touched it (Kimi, Fable, Opus, the coordinator). A prose warning does not fix this; every affected brief already carried one. These two tools make the wrong answer structurally unreachable by re-deriving the fact from git/GitHub-API truth every time, never by trusting a name or a cached claim.
+
+- **`./unit-status.sh <unit-id>`** — is this unit REALLY done? Resolves required repo legs from the unit's own ledger row leg-tag (`(both, P#)` / `(ONB, P#)` / `(CC, P#)` / compound `(CC (+ONB), P#)` — never from a branch name), then for each required leg checks: an own-named branch, OR (if none exists) a ledger-prose citation independently re-verified against live git, OR a non-namespaced token scan across ALL branches (excluding namespaces proven to collide, e.g. `skill62/ce-U15` is a different skill's own U15). CI via the **paginated** `check-runs` API, never the legacy combined-status endpoint. Prints `DONE` / `NOT-DONE` / `UNKNOWN` — never guesses; absence of a same-named branch is not treated as proof of non-completion. Every leg is labeled `PROVED` (own-named branch or unambiguous token-scan) or `INFERRED` (cross-reference citation, independently verified) — never presented as equally certain.
+- **`./pr-truth.sh <pr>`** — what is this PR's REAL state? `--zombie` (is its content already on main — deep content diff, not ancestry, and never scoped to GitHub's `state:merged`, which excludes manually-pushed `git merge --no-ff` merges); `--stale-ref <merge-sha>` (does the merge commit's branch-side parent match the PR's LIVE HEAD — the one check ancestry structurally cannot do, since a stale parent can be a perfectly true ancestor of main while still not being the real tip); `--supersedes <other-pr>` (does this PR's content genuinely contain everything the other's does, diffed live, both ways — must be able to answer NO).
+
+Both live at the repo root next to `lib-shared.sh`/`update-skills.sh`; python logic lives in `shared-utils/unit_status_core.py` / `shared-utils/pr_truth_core.py` (reusing `shared-utils/ledger_reconciler_core.py`'s validated leg-tag regexes). Acceptance-bar proof (real historical cases, not synthetic fixtures) lives in `tests/unit/unit-status-historical.test.py` and `tests/unit/pr-truth-historical.test.py`. See QC-PROTOCOL.md's binding citation rule: any "done"/"zombie"/"supersedes" claim in this repo must cite one of these tools' actual output, not a name or a memory of one.
+
+---
+
 ## GHL / Convert and Flow Auth (Skill 06 / Skill 44)
 
 - GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
