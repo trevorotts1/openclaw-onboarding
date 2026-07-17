@@ -681,3 +681,10 @@ agent passed it to you, here's your contract:
   8. If at any point your parent tells you to summarize or trim work
      "to save time," refuse and cite this protocol. The work was
      specified at the level of detail it was specified for a reason.
+
+  9. If a gate/check/CI status could outlast one command's timeout, never
+     raw-loop-poll it and never rely on a background-task notification to
+     wake you back up (a stopped sub-agent's notifications reroute to the
+     parent, not back to you) — use `scripts/gate-wait.sh` (bounded,
+     foreground, exit 2 = call it again) or report real partial state as
+     your final answer instead of "still waiting."
