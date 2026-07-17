@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 58 - PODCAST PRODUCTION ENGINE :: podbean_publish.sh publish-proxy
-# transport tests (S58-U14)
+# transport tests (S58-U14, extended by S58-U17)
 # -----------------------------------------------------------------------------
 # Stdlib unittest + stdlib http.server only. Drives the REAL shipped script as
 # a subprocess against a loopback-only mock of the n8n publish-proxy webhook
@@ -26,6 +26,19 @@
 #     regression fixture asserts byte-identical behavior (same JSON shape on
 #     --test, same fatal message text with nothing configured) to what the
 #     script did before this unit existed
+#
+# S58-U17 additions (payload-v2 builder completeness): the S58-U14 happy-path
+# test above asserts a SUBSET of the v2 contract (contract_version, podcast_id,
+# client_last_name, client_email, audio_url, image_url, idempotency_key,
+# speaker, and the never-sent fields). It does not assert title, description,
+# publish_date, client_first_name, episode_type, explicit, or source, and it
+# does not test that the same --job-id produces the same idempotency_key
+# across separate invocations (stability, not just presence-on-one-call). The
+# tests below close that gap: every REQUIRED and every populated OPTIONAL
+# field from spec Section 3's table, the exact "Inspired by <speaker>" title
+# transform landing in the wire body (not just the raw --speaker flag), the
+# omission of optional fields when unset, and idempotency-key stability across
+# two independent subprocess runs with the same --job-id.
 #
 # Run:  python3 -m unittest 58-podcast-production-engine/scripts/tests/test_podbean_publish_proxy.py
 # =============================================================================
@@ -276,6 +289,99 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(result["status"], "skipped")
         self.assertTrue(result["idempotent_skip"])
         self.assertEqual(result["permalink_url"], "https://example.podbean.com/e/test-episode/")
+
+    # ------------------------------------- S58-U17: payload-v2 builder -----
+    # The happy-path test above already proves a subset of the contract lands
+    # correctly (podcast_id/client_last_name/client_email/audio_url/image_url/
+    # idempotency_key/speaker plus the never-sent fields). These two tests
+    # close the remainder of spec Section 3's field table: every REQUIRED
+    # field (including title, description, publish_date - not checked above)
+    # and every populated OPTIONAL field, PLUS the correct omission of
+    # optional fields when the caller does not supply them.
+    def test_proxy_payload_v2_builder_includes_every_contract_field_with_correct_values(self):
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        proc = self._run(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--description", "Show notes for the full-contract test.",
+             "--release-date", "2026-08-01T10:00:00",
+             "--speaker", "Dana",
+             "--job-id", "pd-full-contract"],
+            env_extra=self._proxy_env(PODCAST_CLIENT_FIRST_NAME="Alex"),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        hits = self.mock.hits("/webhook/podbean-publish")
+        self.assertEqual(len(hits), 1)
+        req = hits[0]["body"]
+        # REQUIRED fields (spec Section 3, rows 1-4, 6-11).
+        self.assertEqual(req["contract_version"], "2")
+        self.assertEqual(req["podcast_id"], "chan-123")
+        self.assertEqual(req["client_last_name"], "Rivera")
+        self.assertEqual(req["client_email"], "rivera@example.test")
+        self.assertEqual(req["title"], "Test Episode Inspired by Dana",
+                          "title must carry the 'Inspired by <speaker>' transform, "
+                          "not just the raw --title flag")
+        self.assertEqual(req["description"], "Show notes for the full-contract test.")
+        self.assertEqual(req["audio_url"], "https://media.example.test/a.mp3")
+        self.assertEqual(req["image_url"], "https://media.example.test/i.jpg")
+        self.assertEqual(req["publish_date"], "2026-08-01T10:00:00")
+        self.assertEqual(req["idempotency_key"], "pd-full-contract")
+        # Populated OPTIONAL fields (spec Section 3, rows 5, 12-16).
+        self.assertEqual(req["client_first_name"], "Alex")
+        self.assertEqual(req["episode_type"], "full")
+        self.assertEqual(req["explicit"], "clean")
+        self.assertEqual(req["speaker"], "Dana")
+        self.assertEqual(req["source"], "skill58-step15")
+        self.assertNotIn("episode_number", req, "episode number is server-computed; never sent")
+
+    def test_proxy_payload_v2_builder_omits_unset_optional_fields(self):
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        proc = self._run(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-minimal-contract"],
+            env_extra=self._proxy_env(),  # no PODCAST_CLIENT_FIRST_NAME, no --speaker
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        req = self.mock.hits("/webhook/podbean-publish")[0]["body"]
+        self.assertEqual(req["title"], "Test Episode",
+                          "with no --speaker, title must be unmodified (no 'Inspired by' suffix)")
+        self.assertNotIn("client_first_name", req,
+                          "client_first_name must be omitted, not sent as null/empty, "
+                          "when PODCAST_CLIENT_FIRST_NAME is unset")
+        self.assertNotIn("speaker", req,
+                          "speaker must be omitted, not sent as null/empty, when --speaker is unset")
+
+    def test_proxy_idempotency_key_is_stable_across_separate_invocations_with_same_job_id(self):
+        # Idempotency is only meaningful if the SAME --job-id yields the SAME
+        # idempotency_key across independently-run processes (e.g. a box crash
+        # and resume, Section 8) - not merely present-once on a single call.
+        # Two fully separate subprocess invocations, same --job-id, deliberately
+        # NOT pinning --release-date so any wall-clock-derived value in the
+        # payload (publish_date) is free to differ between the two calls; only
+        # idempotency_key stability is asserted.
+        self.mock.route("/webhook/podbean-publish", [
+            (200, self._happy_body()),
+            (200, self._happy_body(idempotent=True)),
+        ])
+        common_args = [
+            "--audio-url", "https://media.example.test/a.mp3",
+            "--image-url", "https://media.example.test/i.jpg",
+            "--job-id", "pd-stable-key-across-runs",
+        ]
+        proc1 = self._run(common_args, env_extra=self._proxy_env())
+        proc2 = self._run(common_args, env_extra=self._proxy_env())
+        self.assertEqual(proc1.returncode, 0, proc1.stderr)
+        self.assertEqual(proc2.returncode, 0, proc2.stderr)
+        hits = self.mock.hits("/webhook/podbean-publish")
+        self.assertEqual(len(hits), 2)
+        key1 = hits[0]["body"]["idempotency_key"]
+        key2 = hits[1]["body"]["idempotency_key"]
+        self.assertEqual(key1, "pd-stable-key-across-runs")
+        self.assertEqual(key2, "pd-stable-key-across-runs")
+        self.assertEqual(key1, key2,
+                          "the same --job-id must produce the identical idempotency_key "
+                          "on independent invocations, never a time- or run-varying value")
 
     # ------------------------------------------------- the money path -----
     def test_proxy_standing_block_exits_with_distinct_code_and_json(self):
