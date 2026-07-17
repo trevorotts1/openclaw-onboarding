@@ -14,31 +14,56 @@
 #
 # THE FIX: bound the entire poll loop INSIDE one foreground command that is
 # GUARANTEED to return well before the 120s auto-background threshold can
-# fire again on the NEXT call (default --max-seconds is comfortably under the
-# 600s Bash tool ceiling), and use a dedicated "still pending" exit code (2)
-# so re-invoking this exact script is the obvious, safe, natural next move —
-# no reliance on background notifications, ever.
+# fire — the new 90s default is intentionally BELOW that 120s threshold, so
+# even a caller who invokes this script with the harness's own default Bash
+# tool timeout (no explicit override) still gets a clean return, not an
+# auto-background. Every inner poll (a `gh api` call, or the caller's `cmd`)
+# is ALSO individually capped (see run_capped() below) so a single hung
+# network/process call cannot itself push the whole script past its own
+# --max-seconds deadline — the outer bound was previously the only bound,
+# which was false advertising: an outer "guarantee" whose inner step has no
+# timeout of its own is not a guarantee. Use a dedicated "still pending" exit
+# code (2) so re-invoking this exact script is the obvious, safe, natural
+# next move — no reliance on background notifications, ever.
 #
 # Usage:
-#   gate-wait.sh ci <owner/repo> <sha> [--max-seconds N] [--interval N]
+#   gate-wait.sh ci <owner/repo> <sha> [--max-seconds N] [--interval N] [--call-timeout N]
 #       Polls `gh api repos/<owner/repo>/commits/<sha>/check-runs --paginate`
-#       from inside this one foreground command.
+#       from inside this one foreground command. Each individual `gh api`
+#       call is capped at --call-timeout seconds (see run_capped()); a call
+#       that exceeds it is treated as PENDING, not a failure, and the outer
+#       loop continues.
 #
-#   gate-wait.sh cmd '<command>' --pass '<regex>' --fail '<regex>' [--max-seconds N] [--interval N]
+#   gate-wait.sh cmd '<command>' --pass '<regex>' --fail '<regex>' [--max-seconds N] [--interval N] [--call-timeout N]
 #       Generic form for any non-CI gate (a remote-log watch, a snapshot
-#       smoke-test poll, etc.). Runs <command> repeatedly via `eval`, matches
-#       its combined stdout+stderr against --fail first, then --pass
-#       (Python re.search, case-insensitive, unanchored).
+#       smoke-test poll, etc.). Runs <command> repeatedly via `bash -lc`
+#       (through run_capped(), so it can be killed cleanly on a per-call
+#       timeout — plain `eval` cannot be interrupted from outside without
+#       exiting the whole script), matches its combined stdout+stderr
+#       against --fail first, then --pass (Python re.search,
+#       case-insensitive, unanchored).
+#
+#       SECURITY NOTE: `cmd` mode executes the caller-supplied string as
+#       shell code (via `bash -lc`, same trust boundary `eval` had — this
+#       change is about killability, NOT sandboxing). This tool is for a
+#       trusted operator/agent to poll a command THEY authored. Never wire
+#       CHECK_CMD to unsanitized third-party/external input.
 #
 # Defaults:
-#   --max-seconds 480   Hard wall-clock cap. Pick a timeout for the CALLING
-#                        Bash tool call that is >= max-seconds + ~90s of
-#                        margin (e.g. pass timeout: 600000 / 600s when using
-#                        the default 480s) to absorb gh/API/process latency —
-#                        NEVER let a caller-side timeout be shorter than
-#                        max-seconds, or the harness's auto-background can
-#                        still fire.
-#   --interval    20    Seconds between polls.
+#   --max-seconds  90   Hard wall-clock cap for the WHOLE script — kept
+#                        BELOW the 120s harness auto-background threshold on
+#                        purpose, so the safe behavior is the DEFAULT
+#                        behavior, not something the caller has to remember
+#                        to configure. Raise it only if you also explicitly
+#                        raise the calling Bash tool's timeout to
+#                        max-seconds + ~90s of margin — never let a
+#                        caller-side timeout be shorter than max-seconds, or
+#                        the harness's auto-background can still fire.
+#   --interval     20   Seconds between polls.
+#   --call-timeout 30   Per-inner-call cap (gh api, or the `cmd` command).
+#                        Automatically clamped down to whatever time remains
+#                        before --max-seconds, so no single inner call can
+#                        push the script past its own deadline.
 #
 # Exit codes:
 #   0  = gate is GREEN (all checks/pattern-matched success, zero failures)
@@ -46,7 +71,8 @@
 #   2  = gate is still PENDING — call this script again (this is the
 #        load-bearing exit code: it is what makes "run it again" the obvious
 #        next move for an agent who never read the background-notification
-#        warning at all)
+#        warning at all). An inner call that times out also counts as
+#        PENDING, never as a failure — a slow `gh api` is not a broken gate.
 #   64 = usage / environment error (not a gate state — do not retry blindly)
 #
 # Every poll prints REAL PARTIAL STATE to stdout, e.g.:
@@ -60,12 +86,14 @@ print_usage() {
 gate-wait.sh — foreground, bounded gate-poll tool.
 
 USAGE:
-  gate-wait.sh ci <owner/repo> <sha> [--max-seconds N] [--interval N]
-  gate-wait.sh cmd '<command>' --pass '<regex>' --fail '<regex>' [--max-seconds N] [--interval N]
+  gate-wait.sh ci <owner/repo> <sha> [--max-seconds N] [--interval N] [--call-timeout N]
+  gate-wait.sh cmd '<command>' --pass '<regex>' --fail '<regex>' [--max-seconds N] [--interval N] [--call-timeout N]
 
 DEFAULTS:
-  --max-seconds 480   (guaranteed return before this many seconds)
-  --interval    20    (seconds between polls)
+  --max-seconds  90   (guaranteed return before this many seconds; kept
+                       below the 120s harness auto-background threshold)
+  --interval     20   (seconds between polls)
+  --call-timeout 30   (per-inner-call cap; clamped to remaining time)
 
 EXIT CODES:
   0  gate is GREEN
@@ -73,6 +101,42 @@ EXIT CODES:
   2  gate is still PENDING — call this script again
   64 usage / environment error
 EOF
+}
+
+# run_capped SECONDS ARGV...
+#   Runs ARGV (an argv vector, not a shell string) with a hard per-call
+#   timeout enforced by python3's subprocess.run(timeout=...) — deliberately
+#   NOT the GNU coreutils `timeout` command, which is not installed by
+#   default on macOS/BSD userlands this script also needs to run on.
+#   Prints the child's combined stdout+stderr. Exit code is the child's own
+#   exit code, or 124 (matching GNU `timeout`'s convention) if it had to be
+#   killed for exceeding SECONDS.
+run_capped() {
+  local cap="$1"; shift
+  python3 - "$cap" "$@" <<'PYEOF'
+import subprocess
+import sys
+
+cap = float(sys.argv[1])
+cmd = sys.argv[2:]
+try:
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=cap,
+    )
+    sys.stdout.buffer.write(proc.stdout)
+    sys.exit(proc.returncode)
+except subprocess.TimeoutExpired as exc:
+    if exc.stdout:
+        sys.stdout.buffer.write(exc.stdout)
+    sys.stdout.write("\n[run_capped] inner call exceeded {}s, killed\n".format(cap))
+    sys.exit(124)
+except FileNotFoundError as exc:
+    sys.stderr.write("[run_capped] command not found: {}\n".format(exc))
+    sys.exit(127)
+PYEOF
 }
 
 if [ $# -eq 0 ]; then
@@ -88,8 +152,9 @@ SHA=""
 CHECK_CMD=""
 PASS_PAT=""
 FAIL_PAT=""
-MAX_SECONDS=480
+MAX_SECONDS=90
 INTERVAL=20
+CALL_TIMEOUT=30
 
 case "$MODE" in
   ci)
@@ -112,7 +177,7 @@ case "$MODE" in
     ;;
   -h|--help)
     print_usage
-    exit 64
+    exit 0
     ;;
   *)
     echo "$SCRIPT_NAME: unknown mode '$MODE' (expected 'ci' or 'cmd')" >&2
@@ -129,6 +194,9 @@ while [ $# -gt 0 ]; do
     --interval)
       [ $# -ge 2 ] || { echo "$SCRIPT_NAME: --interval needs a value" >&2; exit 64; }
       INTERVAL="$2"; shift 2 ;;
+    --call-timeout)
+      [ $# -ge 2 ] || { echo "$SCRIPT_NAME: --call-timeout needs a value" >&2; exit 64; }
+      CALL_TIMEOUT="$2"; shift 2 ;;
     --pass)
       [ $# -ge 2 ] || { echo "$SCRIPT_NAME: --pass needs a value" >&2; exit 64; }
       PASS_PAT="$2"; shift 2 ;;
@@ -148,12 +216,18 @@ esac
 case "$INTERVAL" in
   ''|*[!0-9]*) echo "$SCRIPT_NAME: --interval must be a positive integer" >&2; exit 64 ;;
 esac
-if [ "$MAX_SECONDS" -eq 0 ] || [ "$INTERVAL" -eq 0 ]; then
-  echo "$SCRIPT_NAME: --max-seconds and --interval must both be > 0" >&2
+case "$CALL_TIMEOUT" in
+  ''|*[!0-9]*) echo "$SCRIPT_NAME: --call-timeout must be a positive integer" >&2; exit 64 ;;
+esac
+if [ "$MAX_SECONDS" -eq 0 ] || [ "$INTERVAL" -eq 0 ] || [ "$CALL_TIMEOUT" -eq 0 ]; then
+  echo "$SCRIPT_NAME: --max-seconds, --interval, and --call-timeout must all be > 0" >&2
   exit 64
 fi
 if [ "$MAX_SECONDS" -gt 570 ]; then
-  echo "$SCRIPT_NAME: WARNING — --max-seconds ($MAX_SECONDS) is close to or over the 600s Bash tool ceiling; leaving little margin for latency. Recommended <= 480." >&2
+  echo "$SCRIPT_NAME: WARNING — --max-seconds ($MAX_SECONDS) is close to or over the 600s Bash tool ceiling; leaving little margin for latency. Recommended <= 480, default is 90." >&2
+fi
+if [ "$MAX_SECONDS" -gt 110 ]; then
+  echo "$SCRIPT_NAME: NOTE — --max-seconds ($MAX_SECONDS) is above the 120s harness auto-background threshold this tool exists to stay under. Make sure the CALLING Bash tool timeout is explicitly raised to at least max-seconds + ~90s; do not rely on the harness's own default." >&2
 fi
 
 if [ "$MODE" = "ci" ]; then
@@ -174,8 +248,23 @@ START_TS=$(date +%s)
 DEADLINE=$((START_TS + MAX_SECONDS))
 
 while :; do
+  NOW=$(date +%s)
+  REMAIN=$((DEADLINE - NOW))
+  if [ "$REMAIN" -le 0 ]; then
+    printf '%s: max-seconds (%ds) reached, gate still PENDING. Call this script again (exit 2 by design).\n' "$SCRIPT_NAME" "$MAX_SECONDS"
+    exit 2
+  fi
+  CALL_CAP=$CALL_TIMEOUT
+  if [ "$REMAIN" -lt "$CALL_CAP" ]; then
+    CALL_CAP=$REMAIN
+  fi
+
   if [ "$MODE" = "ci" ]; then
-    RAW_OUTPUT="$(gh api "repos/${REPO}/commits/${SHA}/check-runs" --paginate 2>&1)"
+    RAW_OUTPUT="$(run_capped "$CALL_CAP" gh api "repos/${REPO}/commits/${SHA}/check-runs" --paginate 2>&1)"
+    CALL_RC=$?
+    if [ "$CALL_RC" -eq 124 ]; then
+      DECISION="PENDING|inner gh api call exceeded its ${CALL_CAP}s per-call cap (treated as pending, not a gate failure)"
+    else
     DECISION="$(printf '%s' "$RAW_OUTPUT" | python3 -c '
 import json, sys
 
@@ -224,8 +313,13 @@ elif total > 0 and len(completed) == total:
 else:
     print("PENDING|" + state)
 ')"
+    fi
   else
-    CMD_OUTPUT="$(eval "$CHECK_CMD" 2>&1)"
+    CMD_OUTPUT="$(run_capped "$CALL_CAP" bash -lc "$CHECK_CMD" 2>&1)"
+    CALL_RC=$?
+    if [ "$CALL_RC" -eq 124 ]; then
+      DECISION="PENDING|inner check command exceeded its ${CALL_CAP}s per-call cap (treated as pending, not a gate failure/pass)"
+    else
     DECISION="$(CMD_OUTPUT="$CMD_OUTPUT" PASS_PAT="$PASS_PAT" FAIL_PAT="$FAIL_PAT" python3 -c '
 import os, re
 
@@ -241,6 +335,7 @@ elif pass_pat and re.search(pass_pat, output, re.IGNORECASE):
 else:
     print("PENDING|no --pass/--fail match yet; tail: " + tail)
 ')"
+    fi
   fi
 
   STATUS="${DECISION%%|*}"
