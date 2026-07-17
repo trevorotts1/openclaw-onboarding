@@ -1,0 +1,98 @@
+name: Ledger-truth gate
+
+# Fails the build when a ledger row is edited to claim `verified`/`done` for a
+# unit whose REAL git history + GitHub check-run history cannot prove it.
+#
+# WHY THIS EXISTS: a ledger status cell is prose -- it can say anything. This
+# repository already carries the scars of that: an unattended cron once stamped
+# whole units "verified" after seeing ONE merged leg of a two-leg unit, and
+# inflated counts rode those stamps for days. The fix is machinery, not
+# promises: every ledger change that claims completion must be re-derived from
+# content (real ancestry, real check-runs), never trusted from the text itself.
+#
+# HOW: for every ledger row a push/PR adds (or modifies) to claim
+# verified/done, this workflow runs the repo's own independent checker,
+# ./unit-status.sh (merged via PRs #623 and #629), which resolves the unit's
+# required legs from the row's own leg tag and re-derives each leg from live
+# git ancestry + paginated check-run history -- it never trusts the ledger's
+# own status cell. The gate fails on any NOT-DONE or UNKNOWN verdict, and on
+# any candidate row in a ledger whose row format the tool cannot parse.
+#
+# DESIGN RULE (deliberate): this gate fails LOUD, never OPEN -- but it is not
+# a brittle wall. A red X here means "a human must look at the named unit and
+# the quoted evidence and decide": real false stamp (fix the row, don't merge)
+# or a case where the work is real but the tool's evidence trail can't reach
+# it (e.g. content that landed via cherry-pick under a different commit, so no
+# branch name or ledger citation points at it -- the human override path, with
+# the reasoning recorded, same as any required-check override).
+#
+# Security note: this workflow consumes only repo file content and git
+# history (diffs of ledgers/**, unit ids, ledger row text) -- never untrusted
+# GitHub event fields like PR title/body/commit messages -- so there is no
+# injection surface in the run: blocks.
+#
+# NOTE FOR THE APPLIER (two things this file does NOT do):
+#  1. Merging this file makes the check RUN. Making GitHub refuse to merge on
+#     its failure is a SEPARATE step: mark this check's name ("Reject ledger
+#     rows claiming verified/done that git + check-run history cannot prove")
+#     as a required status check in the branch-protection settings for main.
+#  2. The blackceo-command-center checkout below assumes that repo is
+#     readable with the default GITHUB_TOKEN (true while it is public). If it
+#     is or becomes private, wire a read token into the commented token: line
+#     from a repository secret (placeholder name CC_READ_TOKEN) -- never
+#     hardcode a credential in this file.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ledgers/**"
+      - ".github/workflows/ledger-truth-gate.yml"
+      - "scripts/ledger-truth-gate.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ledgers/**"
+      - ".github/workflows/ledger-truth-gate.yml"
+      - "scripts/ledger-truth-gate.py"
+
+jobs:
+  ledger-truth-gate:
+    name: "Reject ledger rows claiming verified/done that git + check-run history cannot prove"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (full history -- the tool needs ancestry, branches, and tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout blackceo-command-center (units with a second-repo leg)
+        uses: actions/checkout@v4
+        with:
+          repository: trevorotts1/blackceo-command-center
+          path: blackceo-command-center
+          fetch-depth: 0
+          # APPLIER: uncomment and wire a real secret ONLY if that repo is
+          # private (it is public at the time this gate was drafted):
+          # token: ${{ secrets.CC_READ_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the ledger-truth gate (every added verified/done row, re-derived from git + check-runs)
+        env:
+          # unit-status.sh internally shells out to `gh api ... --paginate`
+          # for check-run history; gh authenticates from GH_TOKEN. The
+          # automatic GITHUB_TOKEN is sufficient for public repos.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Diff range: PRs compare base..head; pushes to main compare
+          # before..after (so cron-authored ledger commits are gated too).
+          GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GATE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          GATE_CC_DIR: blackceo-command-center
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ledger-truth-gate.py --base "$GATE_BASE" --head "$GATE_HEAD" --cc-dir "$GATE_CC_DIR"
