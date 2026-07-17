@@ -8,8 +8,8 @@ WHY THIS EXISTS (the bug it kills)
 The repo carries SIX independent sources of truth that, until now, NOTHING
 cross-checked:
 
-  1. FLOOR              department-naming-map.json `.mandatory` (22) +
-                        the 6 universal-primary vertical-pack depts = 28.
+  1. FLOOR              department-naming-map.json `.mandatory` (23) +
+                        the 6 universal-primary vertical-pack depts = 29.
                         Enforced on-disk by department-floor.py.
   2. ROSTERS            suggested-roles/<dept>-suggested-roles.md, parsed by
                         create_role_workspaces.parse_roster() — the proposed

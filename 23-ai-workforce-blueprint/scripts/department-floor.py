@@ -2,10 +2,17 @@
 """
 department-floor.py - the ONE source of truth for the HARD department floor.
 
-FLOOR (computed live from department-naming-map.json v2.6.1): 28 departments =
-22 mandatory canonical + 6 universal-primary vertical-pack (one per pack that
+FLOOR (computed live from department-naming-map.json v2.6.2): 29 departments =
+23 mandatory canonical + 6 universal-primary vertical-pack (one per pack that
 EXPLICITLY flags universal_primary=true; the real-estate pack flags none as of
-v2.6.1 so its listings dept is industry-gated, not universal). The count is
+v2.6.1 so its listings dept is industry-gated, not universal). v2.6.2
+(2026-07-16, operator ruling) added Funnels as the 23rd mandatory dept: Skill
+6's cc_board.py unconditionally stamps department_slug='funnels' for every
+job_type='funnel' card regardless of a client's declared vertical, so only a
+mandatory (non-vertical-gated) registration actually closes the live misroute
+to the general-task catch-all on a standard-floor box — see
+funnels-suggested-roles.md and department-naming-map.json's mandatory.funnels
+entry for the full reasoning. The count is
 ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
 universal-primary pack depts, so no integer is hardcoded as a gate. Below the
 floor is only ever reached by an EXPLICIT recorded decline (a mandatory dept, a
@@ -104,22 +111,23 @@ from canonical_decline import (  # noqa: E402
 
 # Hardcoded MANDATORY fallback - IDENTICAL to build-workforce.load_canonical_floor()
 # so the floor is still enforced on a broken install that lost the naming map.
-# CANONICAL FRAMING: the department floor is 22 mandatory + 6 universal-primary
-# = 28, all derived LIVE from department-naming-map.json (v2.6.1). This list is
-# ONLY the 22 mandatory ids; the 6 universal-primary ids live in
+# CANONICAL FRAMING: the department floor is 23 mandatory + 6 universal-primary
+# = 29, all derived LIVE from department-naming-map.json (v2.6.2). This list is
+# ONLY the 23 mandatory ids; the 6 universal-primary ids live in
 # HARDCODED_UNIVERSAL_PRIMARY below. The full shipped role catalog (every role
-# template, far larger than the 28-department floor) is tracked separately in
+# template, far larger than the 29-department floor) is tracked separately in
 # templates/role-library/_index.json - do NOT conflate that catalog size with the
 # floor. (Historical note: earlier revisions carried stale floor arithmetic such
-# as 24/26/29 that mixed the mandatory count with the total and the old 7-universal
-# era; the ONLY authoritative numbers now are 22 + 6 = 28.)
+# as 24/26/28/29(7-universal-era) that mixed the mandatory count with the total;
+# the ONLY authoritative numbers now are 23 + 6 = 29 — v2.6.2 added "funnels" as
+# the 23rd mandatory dept, 2026-07-16, operator ruling.)
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
     "research", "communications", "crm", "openclaw-maintenance", "legal",
     "social-media", "paid-advertisement", "personal-assistant",
     "general-task", "project-architecture-office",
-    "bugs", "healer", "quality-control",
+    "bugs", "healer", "quality-control", "funnels",
 ]
 
 # Hardcoded UNIVERSAL-PRIMARY fallback - the 6 universal-primary vertical-pack
