@@ -1,0 +1,86 @@
+{
+  "_doc": [
+    "U113 (E5-8; closes G6) — Unified browser->API->MCP fallback ladder ('inability to fail').",
+    "ONE auditable declaration of the attempt order across the three transports for each",
+    "Skill 6 build surface, so the order is testable and never silently drifts from the",
+    "code paths it describes. Read by tools/ghl_fallback_ladder.py.",
+    "",
+    "GATE: the ladder only OVERLAYS existing per-surface methods when GHL_FALLBACK_LADDER=1",
+    "(see tools/ghl_fallback_ladder.py::FLAG_ENV). Flag OFF (default) => only the FIRST",
+    "declared rung is attempted, i.e. today's single-method + ad-hoc-fallback behavior is",
+    "unchanged. Revert = flip the flag back off, then revert the commit.",
+    "",
+    "Every 'order' entry is grounded in a real file this repo already ships — see the",
+    "'evidence' map per surface. A surface with only ONE real transport today (no",
+    "fabricated second rung) is listed under 'not_laddered' with the reason, never given",
+    "an invented fallback (D8 'zero invented selectors' doctrine, generalized)."
+  ],
+  "flag_env": "GHL_FALLBACK_LADDER",
+  "transports": ["browser", "api", "mcp"],
+  "taxonomy_source": "06-ghl-install-pages/tools/cc_board.py:_CC_BLOCK_REASONS (cc_board.py:103)",
+  "surfaces": {
+    "page": {
+      "order": ["api", "browser", "mcp"],
+      "evidence": {
+        "api": "tools/ghl_rest_canvas.py — pure REST JSON splice into the page blob; \"GLUE, NOT THE CLICKER\" — no drag, no browser, no network of its own.",
+        "browser": "tools/ghl_iframe_drag.py PAGE/FUNNEL CODE-ELEMENT DRAG FALLBACK (B-U16 item 1) — GHL_PAGE_CODE_DRAG flag-wired UI-drive fallback, wired in U30.",
+        "mcp": "tools/ghl_media.py — \"folders/uploads go via the GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page builder UI\" (media-object rung for page content)."
+      }
+    },
+    "funnel": {
+      "alias_of": "page",
+      "evidence": {
+        "note": "tools/ghl_iframe_drag.py groups PAGE/FUNNEL under the identical CODE-ELEMENT DRAG FALLBACK; same builder tools (ghl_rest_canvas.py, ghl_iframe_drag.py) serve both."
+      }
+    },
+    "form": {
+      "order": ["mcp", "browser"],
+      "evidence": {
+        "mcp": "tools/ghl_form_builder.py — SMART layer \"PRE-CREATES every custom field and tag through the GHL API layer (Skill 44)\" before any browser action.",
+        "browser": "tools/ghl_form_builder.py — DUMB/DO layer drags the pre-created zhc_ fields onto the canvas via snapshot-and-bind (smoke_first); no field-placement REST API exists, so 'api' is NOT a real third rung here (never fabricated)."
+      }
+    },
+    "survey": {
+      "order": ["browser", "api"],
+      "evidence": {
+        "browser": "tools/ghl_survey_builder.py — \"The survey builder's PRIMARY lane is the browser drag rail\" (ghl_survey_rest.py docstring).",
+        "api": "tools/ghl_survey_rest.py — CANVAS-FREE capture-gated REST fallback (build_method='rest'); refuses to blind-POST, derives the save route ONLY from a recorded capture receipt."
+      }
+    },
+    "workflow": {
+      "order": ["mcp", "browser"],
+      "evidence": {
+        "mcp": "tools/ghl_workflow_builder.py — \"Skill 44 documented a Tier 4 agent-browser workflow-BUILD backstop for when the Firebase token is unread/misconfigured\" implies Skill 44 (MCP) is the normal build path.",
+        "browser": "tools/ghl_workflow_builder.py — the Tier-4 agent-browser backstop itself; drives the Automations builder UI through browser_manager.sh when the MCP/token path is unavailable."
+      }
+    },
+    "community": {
+      "order": ["mcp", "browser"],
+      "evidence": {
+        "mcp": "tools/ghl_community_builder.py — \"spec §3 marks it ASSUMED until the first-hour Tier-1/Tier-2 tool-list check; the router flips primary automatically if a create tool is found.\"",
+        "browser": "tools/ghl_community_builder.py — \"GoHighLevel has NO known public create API for a community/group ... The create surface is therefore browser-only\" (today's actual path, U106-hardened)."
+      }
+    },
+    "course": {
+      "order": ["mcp", "browser"],
+      "evidence": {
+        "mcp": "tools/ghl_course_builder.py — same Tier-1/Tier-2 tool-list check as the community builder; router flips primary automatically if a create tool is found.",
+        "browser": "tools/ghl_course_builder.py — \"GoHighLevel has NO known public create API for a course ... The create + outline surface is browser-only\" (today's actual path, U106-hardened)."
+      }
+    },
+    "media": {
+      "order": ["api", "mcp"],
+      "evidence": {
+        "api": "tools/ghl_media.py — proven POST services.leadconnectorhq.com/medias/upload-file Bearer-PIT call.",
+        "mcp": "tools/ghl_media.py — \"official MCP / community MCP / Skill 44\" alternate upload path.",
+        "browser_excluded": "tools/ghl_media.py — \"NO browser control for media storage ... NEVER by driving the page builder UI\" — browser is explicitly forbidden for this surface, not merely unproven."
+      }
+    }
+  },
+  "not_laddered": {
+    "pipeline": {
+      "reason": "single-lane today: GHL exposes NO public API to create a pipeline or pipeline stage (operator-ratified 2026-07-07, confirmed against GHL's real v2 AND v3 OpenAPI specs; only GET /opportunities/pipelines is public). Browser is the ONLY transport. Declaring a second/third rung here would be a fabricated fallback (forbidden). Add a real ladder entry the day GHL ships a create API for this object.",
+      "evidence": "tools/ghl_pipeline_builder.py"
+    }
+  }
+}

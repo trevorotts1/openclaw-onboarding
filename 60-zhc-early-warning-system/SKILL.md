@@ -1,7 +1,7 @@
 ---
 name: zhc-early-warning-system
 description: The fleet Early Warning System, a deterministic, zero-model-call sentinel that runs on every OpenClaw box and tells the OPERATOR (never the client) the moment something breaks or drifts. It pins a per-box baseline, tails the native config-audit event stream, and detects ten failure classes the fleet has actually suffered - a silent model or paid-provider downgrade, a runtime fallback the config never shows, a subtractive compaction misconfig that will crash the box, a safety-cap raised without sign-off, heartbeat/idle furnace token-burn in BOTH subscription and metered billing, a root-owned config write that freezes the gateway, a dark dashboard or tunnel, a secret shape leaked into a transcript, a stale skills downgrade, and a client-spamming announce cron. Every config write is snapshotted with a one-line revert command placed in the operator's hand; it never auto-changes a client box by default (alert-only fleet-wide). One skill directory holds BOTH the per-box sentinel and the companion that can audit, install, verify, and troubleshoot the sentinel on any box, plus the operator-box aggregator with a dead-man switch for boxes too broken to self-report. Zero model calls, one cron, CPU-cheap, operator-verbose and client-silent by construction. Trigger with "audit the early warning system", "why did the model switch", "install the sentinel", "did a safety cap get raised", "check for idle token burn", "verify the early warning system", "run the fleet digest", or "revert the last config change".
-version: 0.1.2
+version: 0.1.3
 ---
 
 # ZHC Early Warning System (Skill 60)
@@ -58,9 +58,10 @@ anything, and (by default) not an auto-healer.
    the rule is satisfied vacuously at runtime AND enforced statically over every
    shipped file. NEVER ship a `claude-*` / `anthropic/*` / `us.anthropic.*` runtime
    identifier; the signature catalog names those families only as deny data.
-8. CANARY, THEN HOLD. The full install plus drill battery is proven on the OPERATOR
-   box first; fleet rollout is HELD at repo-only until the operator's explicit word.
-   A repo merge is not a roll. The system obeys the laws it enforces.
+8. PROVE ON THE OPERATOR BOX, THEN HOLD. The full install plus drill battery is
+   proven on the OPERATOR box first; fleet rollout is HELD at repo-only until the
+   operator's explicit word. A repo merge is not a roll. The system obeys the laws
+   it enforces.
 
 ## Reuse before rebuild (this skill integrates, it does not reinvent)
 

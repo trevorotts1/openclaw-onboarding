@@ -103,6 +103,40 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
 
+# === U110-OPTOUT-SYNC-BEGIN (E5-5/G2d) ===
+# U108 built department-optout-sync.py (the department-optout CONTRACT-FILE
+# writer) but its own CHANGELOG entry (v20.0.61) explicitly named the gap:
+# "provisioning caller-wiring ... routed, not fixed here (owned by U110)".
+# With no caller, provisioning/department-optout.json was NEVER produced on a
+# real box - the Command Center board (U110's own CC leg) reads a file nobody
+# writes. THIS is that caller. resume-workforce-build.sh is the one durable,
+# recurring provisioning-flow driver on every box (its own header: "the ONLY
+# autonomous-recovery layer in the workforce-build pipeline"), so it is fired
+# unconditionally on every tick, BEFORE any of the terminal/parked/stuck-cap
+# early-exit branches below - an opt-out recorded via record-dept-decision.sh
+# at any point during or after the build is reflected promptly, not only at
+# the very end. `mkdir -p` the workspace dir first: department-optout-sync.py
+# resolves its own output path the SAME way OC_ROOT is resolved above
+# (/data/.openclaw/workspace, then ~/.openclaw/workspace) but only checks
+# existence - never creates it - so a not-yet-materialized workspace dir on a
+# brand-new box would otherwise make it fall back to a repo-relative path
+# (wrong for a real box; its own module docstring calls that fallback
+# "CI-only"). Fire-and-forget by design: exit 0 (synced) and exit 1 (synced,
+# but >=1 floor decline UNCONFIRMED - never silently honored, still written)
+# are both success; this call is a best-effort refresh, never a build
+# blocker. No --state/--out override is passed so the script's own default
+# resolution (identical to OC_ROOT's) is what runs in production.
+mkdir -p "$OC_ROOT/workspace" 2>/dev/null || true
+DEPT_OPTOUT_SYNC_SCRIPT="$SCRIPT_DIR/department-optout-sync.py"
+if [[ -f "$DEPT_OPTOUT_SYNC_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
+  python3 "$DEPT_OPTOUT_SYNC_SCRIPT" >>"$LOG_FILE" 2>&1 \
+    && log "department-optout-sync: refreshed provisioning/department-optout.json" \
+    || log "department-optout-sync: exited non-zero (anomalies are still written to the file, never a build blocker - see log above)"
+else
+  log "department-optout-sync: script not found or python3 unavailable - provisioning/department-optout.json NOT refreshed this tick"
+fi
+# === U110-OPTOUT-SYNC-END ===
+
 # Remote Rescue v1 - resolve the operator ESCALATION Telegram chat ID.
 # CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
 # Lookup: env.vars.OPERATOR_ESCALATION_CHAT_ID -> env.vars.OPERATOR_TELEGRAM_CHAT_ID

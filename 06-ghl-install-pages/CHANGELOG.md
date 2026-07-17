@@ -4,6 +4,54 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.61.0] - 2026-07-16 - GK-27/U89: relationship lattice pointer + citation tripwire
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`). This unit does not touch `skill-version.txt`.
+
+### Added
+- **Relationship lattice pointer + citation tripwire.** SKILL.md gained a one-line pointer to the new `docs/CONTENT-CONVERSATION-LATTICE.md` (the canonical Skill 6/44/35/38/3 content↔conversation relationship map). `qc-ghl-install-pages.sh` now asserts that pointer is present AND that this skill's own owned edges — the funnel_matcher tooling backing Gap C, the "Full-Funnel Pipeline Integration (Skill 44 seam)" heading, and the four-file browser build-rail set — still cite real, unchanged ground truth (`docs/tools/check_lattice_citation.py`, drift tripwire; fail-first proof in `docs/tools/test_check_lattice_citation.py`). No code/behavior change to page building itself.
+
+## [v19.60.0] - 2026-07-14 - U22/B-U8: guards + fixtures + operator-box block proof for the persona-unification block
+
+> Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at
+> release); this CHANGELOG number is 06's independent per-skill log (see
+> `scripts/check-version-drift.py`).
+
+### Added
+- **`scripts/prove_skill6_block_u22.py`** (new) — the ONE end-to-end operator-box
+  fixture proof run for the whole Skill-6 persona-unification block (master
+  spec crosswalk B/B-U8). Chains B-U1 (`persona_bundle_ladder`) -> B-U2
+  (`funnel_matcher.instantiate_pages` per-page blend directives) -> B-U3
+  (`copy_persona_blend_seam` copy-stage log) -> B-U5 (`fab_qc` D4 bundle-aware
+  grounding, loaded via the real `load_inputs_from_evidence` disk path) -> B-U6
+  (declared-vs-used voice equality) against one fixture funnel, plus a legacy
+  no-bundle control run proven byte-identical to an in-memory golden baseline.
+  Honestly reports B-U4/U18 (`copy_craft_pool`) and B-U7/U21 (ingest parity) as
+  NOT-YET-LANDED per the ledger, rather than fabricating their behavior.
+- **`tests/test_prove_skill6_block_u22.py`** (new) — pytest/CI wrapper for the
+  above.
+- 3 new dispatcher-integration-level tests in `tests/test_v2_dispatcher.py`
+  (`TestPersonaBundleAcquisition`) closing the CC-rung / local-rung /
+  standalone-degradation gaps in the threaded/cc/local/absent x confirm-state
+  matrix (the 4 pre-existing tests covered threaded confirmed/pending + absent
+  + a raising ladder only).
+
+### Changed
+- **`../scripts/guard-fab-qc-gate.sh`** gained a bundle-receipt schema check
+  (asserts `persona_bundle_ladder.resolve_persona_bundle()`'s receipt carries
+  all 10 required fields; mutation-self-tested) and a forward-compatible
+  `copy_craft_pool` WARN hook for D5/U18 (intentionally non-blocking until
+  U18 lands — U18's own PR must upgrade this to a hard check).
+- **`../.github/workflows/funnel-automation-libraries-guard.yml`** — wired
+  `persona_bundle_ladder.py`, `cc_board.py`,
+  `49-signature-funnel/scripts/copy_persona_blend_seam.py` (+ its own
+  long-unwired `test_copy_persona_blend_seam.py`), and the two new U22 files
+  above into the CI path triggers and pytest/selftest steps. None of these
+  had ever triggered any CI job before this change — a pre-existing gap
+  this unit closes, not introduces.
+
 ## [v19.59.0] - 2026-07-13 - VERCEL_EMBED now archives to GitHub, non-blocking, with a reconciliation sweep
 
 > Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at

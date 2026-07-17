@@ -1,0 +1,80 @@
+name: u114-no-exemption-blend-governance-conformance-guard
+
+# U114 (E5-9, closes G3) — the enforcement half of the D1 binding ruling that
+# U98 adopts. U98 wired the governing blend IN for Skill 35, Skill 51, Skill
+# 58, and the anthology (54/59 via the shared tone-writing-core); this guard
+# is the FLEET-WIDE, always-on, CI-enforced no-exemption invariant U98's own
+# evidence explicitly deferred to U114 ("a fleet-wide conformance sweep is
+# U114's job"; tone_persona_autopick.py: "retained behind this flag UNTIL
+# U114's independent-voice-path invariant lands fleet-wide").
+#
+# Fails the build if a FUTURE commit reintroduces a rogue local-voice path in
+# any of the four named engines (Skill 51 presentation, Skill 58 podcast,
+# Skills 54/59 anthology):
+#   (a) a static AST scan finds a persona_for_job(blend=False) call, a
+#       voice-selector function that never routes through a sanctioned
+#       governance seam, or a hardcoded VOICE/PERSONA table, anywhere
+#       outside the three sanctioned governance modules;
+#   (b) the behavioral fixture proves the written voice is still GOVERNED —
+#       traceable to the bundle, changes when the bundle changes — for all
+#       three concrete seams (Skill 51, Skill 58, the shared anthology
+#       tone-core);
+#   (c) the guard's own mutation-proof self-test regresses (i.e. the guard
+#       stops being genuinely failable);
+#   (d) any STRUCTURAL golden fixture or prover suite (U98's own, unmodified
+#       by this unit) stops passing.
+#
+# Deps: U98 (`blend_voice_governance.py` x2, `tone_persona_autopick.py`) must
+# stay green — this guard re-runs U98's own full proof suite too, so a
+# regression there is caught here as well.
+
+on:
+  push:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/tone-writing-core/tone_persona_autopick.py"
+      - "shared-utils/tone-writing-core/**"
+      - "51-signature-presentation/scripts/**"
+      - "58-podcast-production-engine/scripts/**"
+      - "54-anthology-writer/scripts/**"
+      - "59-anthology-engine/scripts/**"
+      - tests/unit/u98-blend-governs-product-voice-engines.test.py
+      - tests/unit/u114-no-exemption-blend-governance-conformance.test.py
+      - .github/workflows/u114-no-exemption-blend-governance-conformance-guard.yml
+  pull_request:
+    paths:
+      - "shared-utils/persona_for_job.py"
+      - "shared-utils/tone-writing-core/tone_persona_autopick.py"
+      - "shared-utils/tone-writing-core/**"
+      - "51-signature-presentation/scripts/**"
+      - "58-podcast-production-engine/scripts/**"
+      - "54-anthology-writer/scripts/**"
+      - "59-anthology-engine/scripts/**"
+      - tests/unit/u98-blend-governs-product-voice-engines.test.py
+      - tests/unit/u114-no-exemption-blend-governance-conformance.test.py
+      - .github/workflows/u114-no-exemption-blend-governance-conformance-guard.yml
+
+jobs:
+  u114-no-exemption-blend-governance-conformance-guard:
+    name: "No-exemption blend-governance conformance — Skill 51/58/Anthology(54/59)"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the sanctioned governance seams
+        run: |
+          python3 -m py_compile shared-utils/persona_for_job.py
+          python3 -m py_compile shared-utils/tone-writing-core/tone_persona_autopick.py
+          python3 -m py_compile 51-signature-presentation/scripts/blend_voice_governance.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/blend_voice_governance.py
+
+      - name: U114 — no-exemption blend-governance conformance proof (static + behavioral + mutation + regression)
+        run: python3 tests/unit/u114-no-exemption-blend-governance-conformance.test.py

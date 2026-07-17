@@ -1,0 +1,108 @@
+name: u108-department-optout-guard
+
+# U108 (E5-3, closes G2b) — Department opt-out + functionality WARNING.
+#
+# Fails the build if the opt-out contract regresses on any of the four
+# BINARY acceptance items in the U108 slice:
+#   (a) opting a department out shows the functionality-loss warning naming
+#       the lost capabilities.
+#   (b) the opt-out is recorded (provisioning/department-optout.json) and
+#       provisioning does NOT scaffold that department (the ONB-side half;
+#       the CC board-column half is U110's own leg on the
+#       blackceo-command-center repo).
+#   (c) re-opting-in restores the department (reversible).
+#   (d) a guard proves no department is ever removed without the warning
+#       being surfaced — even against a decision object written outside
+#       record-dept-decision.sh's own --confirm-loss gate.
+#
+# Runs two suites:
+#   1. test-department-optout-sync.sh — this unit's own suite (see the
+#      department-optout-sync.py module docstring for the full design).
+#   2. test-opt-out-loss-warning.sh — the P2-05 mechanism U108 REUSES (the
+#      warning-shown gate at the record-dept-decision.sh layer). U108 builds
+#      on top of this; a regression there breaks U108's own guarantee, so it
+#      is pinned here too.
+#
+# Both are hermetic (mktemp sandboxes, explicit --state/--build-state-file
+# everywhere) and depend on python3 + jq (both present on ubuntu-latest).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/department-optout-sync.py"
+      - "23-ai-workforce-blueprint/scripts/test-department-optout-sync.sh"
+      - "23-ai-workforce-blueprint/scripts/department-loss-warning.py"
+      - "23-ai-workforce-blueprint/scripts/test-opt-out-loss-warning.sh"
+      - "23-ai-workforce-blueprint/scripts/record-dept-decision.sh"
+      - "23-ai-workforce-blueprint/scripts/canonical_decline.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - ".github/workflows/u108-department-optout-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/department-optout-sync.py"
+      - "23-ai-workforce-blueprint/scripts/test-department-optout-sync.sh"
+      - "23-ai-workforce-blueprint/scripts/department-loss-warning.py"
+      - "23-ai-workforce-blueprint/scripts/test-opt-out-loss-warning.sh"
+      - "23-ai-workforce-blueprint/scripts/record-dept-decision.sh"
+      - "23-ai-workforce-blueprint/scripts/canonical_decline.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - ".github/workflows/u108-department-optout-guard.yml"
+
+jobs:
+  u108-department-optout-guard:
+    name: "U108 — department opt-out + functionality WARNING (2 hermetic suites)"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile department-optout-sync.py
+        run: python3 -m py_compile 23-ai-workforce-blueprint/scripts/department-optout-sync.py
+
+      - name: Run the U108 suites (each exit 0 required)
+        shell: bash
+        run: |
+          set -uo pipefail
+          SCRIPTS="23-ai-workforce-blueprint/scripts"
+          SUITES=(
+            test-department-optout-sync.sh
+            test-opt-out-loss-warning.sh
+          )
+          rc=0
+          for s in "${SUITES[@]}"; do
+            path="$SCRIPTS/$s"
+            echo "======================================================================"
+            echo "RUN: $s"
+            echo "======================================================================"
+            if [ ! -f "$path" ]; then
+              echo "FATAL: $path not found" >&2
+              rc=1
+              continue
+            fi
+            if bash "$path"; then
+              echo "PASS: $s"
+            else
+              echo "FAIL: $s exited non-zero" >&2
+              rc=1
+            fi
+          done
+          echo "======================================================================"
+          if [ "$rc" -eq 0 ]; then
+            echo "ALL ${#SUITES[@]} U108 DEPARTMENT-OPTOUT SUITES PASSED"
+          else
+            echo "ONE OR MORE U108 DEPARTMENT-OPTOUT SUITES FAILED" >&2
+          fi
+          exit "$rc"

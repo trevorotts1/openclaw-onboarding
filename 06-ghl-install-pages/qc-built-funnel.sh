@@ -172,6 +172,20 @@ python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
 [ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
 
+# ── U24/B-U10 — GitHub archival receipt gate. Always on (not flag-gated): it
+# is a no-op (applicable=false) for every evidence root that never used the
+# VERCEL_EMBED path, and per the D6/B-D2 ratified non-blocking doctrine it
+# NEVER fails a build over a transient archive failure (an honest FAILED
+# receipt stays open for `ghl_github_reconcile.py --retry` / the scheduled
+# maintenance-window sweep) — it only flags total SILENCE: a VERCEL_EMBED
+# deploy with NO archive receipt at all. Also prints GitHub token presence by
+# NAME only (never a value).
+ARCHIVE_GATE="$SKILL_DIR/tools/ghl_archive_receipt_gate.py"
+if [ -f "$ARCHIVE_GATE" ]; then
+  python3 "$ARCHIVE_GATE" --evidence-root "$EVIDENCE" --gate
+  [ $? -ne 0 ] && rc=1
+fi
+
 # ── U25/B-U11 — Page-QC v2: the semantic scorer FAB-QC cannot be (six dimensions,
 # client's own judge model via model_router's qc role, 8.5, SKIP-not-fabricate).
 # Runs AFTER FAB-QC on the SAME evidence tree, producing scorecard/page-qc.json.

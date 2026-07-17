@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-14T05:41:06Z",
-  "file_count": 103,
+  "generated_at": "2026-07-15T23:08:38Z",
+  "file_count": 104,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "ab426f2c7ba20b8083605fd1b94dc154981d9b97a94388240ea4e4c805604dfb",
@@ -15,6 +15,10 @@
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
       "bytes": 9146
+    },
+    "SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md": {
+      "sha256": "220ad6b825f909aac54b416c60c0765663116c12fb59a0e99ddbcab76cd84305",
+      "bytes": 42211
     },
     "adding-capability-after-build.md": {
       "sha256": "c76d22285751b707c6d58d14e930c042122cc1f7f0426b43210e3f7979b947b8",
@@ -185,16 +189,16 @@
       "bytes": 5007
     },
     "funnel-craft/README.md": {
-      "sha256": "675a3311baed21f2f72d9063b64ee08d9b2f1a19831cfa53b2fbda76169ec8ec",
-      "bytes": 6408
+      "sha256": "8e8cf76e10ed3bd337aa8e5b24d59ef3983d21be8ac1a199461f50e6d793f1d8",
+      "bytes": 6622
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
       "bytes": 3225
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "0e1a5754c9adc8f4e9dadb36be63ed79a8bc0dd29e51ba54ff2f4d46966c9f95",
-      "bytes": 7306
+      "sha256": "3f19c738821a6d10c607bc6b2a248c4ea2c11cc924af2b2f896959a1346ddf51",
+      "bytes": 7900
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
       "sha256": "54b1afde1d66607d7c117ddaebcf0d9bfffe18c612d4732d96bc6c2e6a387539",
@@ -225,8 +229,8 @@
       "bytes": 15451
     },
     "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
-      "sha256": "4cc09f547ba684a81ccfe82eac06270cade0f6e12257fdb1c81726029ab752fc",
-      "bytes": 13366
+      "sha256": "8643a8b2eeccd616a943bd59ea2d654a3183db821a15d1ee8237b81cb924118f",
+      "bytes": 15647
     },
     "podcast-craft/SOP-PODCAST-03-REVOCATION-AND-CHURN.md": {
       "sha256": "7f9d2dd22eb19ac1f2cf318e492bc7756f08e86b7c79dbe3220b343e00d4de40",
@@ -377,8 +381,8 @@
       "bytes": 7365
     },
     "video-pipeline-craft/README.md": {
-      "sha256": "65cbb629a66ecfc799db87de5abee5ce9edd9aa4bf2bac494d224010163a4d39",
-      "bytes": 2019
+      "sha256": "55dc995bb423868047bdeb7d00b984a121353aa9f4e80a27db282ee92e262adc",
+      "bytes": 2233
     },
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
       "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",
@@ -389,8 +393,8 @@
       "bytes": 2189
     },
     "website-craft/README.md": {
-      "sha256": "8e595f634975795541328d5ba76f1af5efd1c5d14cd110a87ff799d3dab8ec83",
-      "bytes": 4282
+      "sha256": "34d7d7a0ff0fb141b7fec80c8fb33abfb881d4b4855ee7aadd8a47c9c2e43693",
+      "bytes": 5280
     },
     "website-craft/SOP-WEB-01-INTAKE.md": {
       "sha256": "862e9251f246c916ef194c90c77d12701b6336587a5e488e6866bcc0507655d8",

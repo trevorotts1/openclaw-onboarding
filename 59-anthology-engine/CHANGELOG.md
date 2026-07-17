@@ -1,5 +1,50 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+### GK-17/U79 (A7) -- the S0->mc_board silent mirror drop: root cause + a converging reconcile repair (skill-version 0.1.7 -> 0.1.8, 2026-07-16)
+
+Root-caused the S0->mc_board silent-drop defect class (A7): `intake_router.py`'s
+`spawn_stage_detached()` launches the rest of S0 (including the `mc_board.py
+ensure` card mirror at `stage_s0_intake.py` WIRING[2]) as a fully detached,
+fire-and-forget, never-retried subprocess. If that process dies before reaching
+the mirror step, the participant's ledger row is already durably committed but its
+board card is never created, and nothing surfaces the drop -- the webhook caller
+already received `200 routed`. The only pre-existing recovery was the once-daily
+`mc_board.py reconcile` tick, whose daily-tick wrapper (`reconcile_board()` in
+`anthology-smoke-test.py`, finding A2) reported "reconciled" from the subprocess
+exit code alone -- which `mc_board.py` always returns `0` for by design
+(fail-soft), even when a subject could not actually be repaired. Detection (the
+shipped v5.4.0 `checkAnthologyBoardProjection()` / `BoardDriftBanner.tsx` on the
+Command Center side) and repair were never linked by any machine-checkable signal:
+"detection is not repair," per the unit's own framing. Full trace with exact
+file:line citations: `references/gk17-a7-selfheal.md`.
+
+**The fix (ONB side only -- the CC-side banner wiring is a separate unit, see the
+reference doc's "What is still owed"):** `mc_board.py`'s `cmd_reconcile` is
+refactored into a pure `_reconcile_sweep()` helper that returns an explicit
+`converged` boolean (true iff zero subjects ended the sweep `deferred`/`error`) --
+the single source of truth for "did the repair actually converge," as opposed to
+"did the subprocess merely exit 0." `anthology-smoke-test.py`'s `reconcile_board()`
+now captures and reads that field back, reporting the daily tick's
+`board_reconcile.status` as `"unconverged"` (never `"reconciled"`) when the sweep
+ran but did not fully converge -- backward compatible: a legacy 2-tuple runner
+(no stdout) still reports the pre-existing `"reconciled"` with `converged: None`
+(unknown, never a false escalation).
+
+Tests (all green, run foreground): `mc_board.py --self-test` extended for the
+converged/unconverged/empty-sweep cases; `anthology-smoke-test.py self-test`
+extended for the legacy-2-tuple and both new capture-runner cases (58/58 pass);
+new `tests/test_a7_selfheal_reconcile.py` proves the GK-17 BINARY acceptance
+scenario end to end against a stateful `FakeBoard` that dedupes by
+`idempotency_key` exactly like the real Command Center route: an induced drop is
+repaired within one reconcile pass with the already-mirrored participant's card
+untouched, a second pass creates zero duplicate cards, and a deliberately-broken
+repair path converges to `False` (the only condition a drift-detector banner
+should escalate on) while a healthy subject in the same sweep still lands. Full
+repo test suite (166 tests across `59-anthology-engine/tests/`) confirmed green
+after this change. Rolled `skill-version.txt` / `SKILL.md` frontmatter /
+`ENGINE-MANIFEST.json` `skill_version` 0.1.7 -> 0.1.8 per this repo's lockstep
+precedent (commit `62daa0f3`).
+
 ### P3-03 QC fix-loop round 2 -- SKILL.md frontmatter `version:` lockstep (0.1.5 -> 0.1.7, 2026-07-12)
 
 **FIX-LOOP addendum (round 2):** the round-1 fix-loop rolled `skill-version.txt`

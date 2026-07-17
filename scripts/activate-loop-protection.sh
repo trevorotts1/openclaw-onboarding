@@ -11,9 +11,10 @@
 # WHAT IT DOES  (GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2):
 #   --role client    GATED. Runs the 60-then-61 per-box installers ONLY when the
 #                    fleet rollout gate is enabled. Default = HELD (skip with a
-#                    note) per SKILL.md law 8 (CANARY, THEN HOLD) + the 7-03 HOLD.
-#   --role operator  UNGATED. Always runs — this is the canary box; it proves
-#                    first (used by scripts/loop-protection-canary.sh).
+#                    note) per SKILL.md law 8 (PROVE ON THE OPERATOR BOX, THEN
+#                    HOLD) + the 7-03 HOLD.
+#   --role operator  UNGATED. Always runs — this is the operator's own box; it
+#                    proves first (used by scripts/loop-protection-first-proof.sh).
 #
 # ORDERING: Skill 60 FIRST, then Skill 61 ONLY IF 60 installed cleanly. Skill 61
 #   consumes Skill 60's ledger read-only, so 60 is a hard prerequisite (the safe
@@ -21,8 +22,9 @@
 #   skipped too (they roll together).
 #
 # NEVER ARMS: both installers leave the box in DRY_RUN observe-only (armed=false).
-#   Tier-1 arming is the operator canary's separate, post-burn-in action. This
-#   helper asserts armed==false afterward and WARNS (never silently) if it isn't.
+#   Tier-1 arming is the operator's own first-proof box's separate, post-burn-in
+#   action. This helper asserts armed==false afterward and WARNS (never silently)
+#   if it isn't.
 #
 # NON-FATAL: every failure is a warning, never an abort — activation is
 #   best-effort so it can never change its caller's exit status. On VPS the
@@ -129,7 +131,7 @@ assert_not_armed() {
 try: print(str(json.load(sys.stdin).get("armed")))
 except Exception: print("?")' 2>/dev/null || echo "?")"
     if [ "$_armed" = "True" ]; then
-        _warn "Loop Protection ledger reports armed=true after activation. Activation NEVER arms — a box is only armed by the operator canary after burn-in. Investigate (this may be a prior operator arm)."
+        _warn "Loop Protection ledger reports armed=true after activation. Activation NEVER arms — a box is only armed by the operator's own first-proof run after burn-in. Investigate (this may be a prior operator arm)."
     fi
 }
 
@@ -142,11 +144,11 @@ do_activate() {
         else
             _note "fleet rollout gate: HELD (default). Loop Protection (Skill 60 + 61) is WIRED but NOT activated on this client box."
             _note "  To roll fleet-wide (ONE batch, on the operator's word): set fleet_rollout_enabled=true in 61-loop-protection-system/config/rollout.json, or export OPENCLAW_LOOP_PROTECTION_ROLLOUT=1."
-            _note "  The operator-box canary proves it FIRST: bash scripts/loop-protection-canary.sh install (SKILL.md law 8: CANARY, THEN HOLD)."
+            _note "  The operator box proves it FIRST: bash scripts/loop-protection-first-proof.sh install (SKILL.md law 8: PROVE ON THE OPERATOR BOX, THEN HOLD)."
             return 0
         fi
     else
-        _note "role=operator — canary path (UNGATED): activating loop protection on the operator box."
+        _note "role=operator — first-proof path (UNGATED): activating loop protection on the operator box."
     fi
 
     # 60 FIRST (hard prerequisite), then 61 only if 60 installed cleanly.
@@ -159,7 +161,7 @@ do_activate() {
     fi
 
     assert_not_armed "$_sd"
-    _note "activation complete (DRY_RUN observe-only; box is NOT armed). Arm only via the operator canary after the 7-day burn-in."
+    _note "activation complete (DRY_RUN observe-only; box is NOT armed). Arm only via the operator's own first-proof run after the 7-day burn-in."
     return 0
 }
 

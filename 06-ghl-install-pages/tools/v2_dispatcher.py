@@ -120,6 +120,21 @@ except Exception:  # noqa: BLE001
     _persona_bundle = None  # type: ignore[assignment]
     _PERSONA_BUNDLE_AVAILABLE = False
 
+# ── INTEGRATION: skill6_convergence (A-U7 — THE unification unit) ────────────
+# Runs AFTER STEP 0 (task['pages'] is instantiated by funnel_matcher, B-U2/U16)
+# and BEFORE the injected builder: one REAL blend-selection call per page
+# (topic_hint = the page's role/purpose + conversion goal), the per-page
+# persona-selection-log, per-page bundle receipts, and the D-A3 P2 receipt
+# (routing/p2-persona-attach.json). Gated by SKILL6_CONSUME_BLEND (default
+# ON; flip to 0 for an instant revert to template-persona-only legacy
+# behavior). Fail-soft on availability (import failure is a clean no-op).
+try:
+    import skill6_convergence as _convergence  # noqa: E402
+    _CONVERGENCE_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _convergence = None  # type: ignore[assignment]
+    _CONVERGENCE_AVAILABLE = False
+
 # Job types that auto-resolve to ghl_survey_builder.build_survey.
 _SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "quiz"})
 # Job types that auto-resolve to ghl_form_builder.build_form. 'form' was moved out
@@ -580,6 +595,25 @@ def _resolve_persona_bundle(task: dict, evidence_root: str) -> dict:
                 "reason": f"persona bundle ladder raised: {type(exc).__name__}: {exc}"}
 
 
+# ---------------------------------------------------------------------------
+# Skill 6 convergence (A-U7 — THE unification unit)
+# ---------------------------------------------------------------------------
+
+def _run_convergence(task: dict, evidence_root: str) -> dict:
+    """Run the A-U7 convergence pass (real per-page blend selection + the
+    per-page persona-selection-log + per-page bundle receipts + the D-A3 P2
+    receipt). Called AFTER STEP 0 (task['pages'] is instantiated) and BEFORE
+    the injected builder. A no-op ({ran: False}) when the module is
+    unavailable, the SKILL6_CONSUME_BLEND gate is off, no usable bundle is
+    present, or no pages were instantiated. Never raises."""
+    if not _CONVERGENCE_AVAILABLE:
+        return {"ran": False, "reason": "skill6_convergence unavailable"}
+    try:
+        return _convergence.run_convergence(task, evidence_root)
+    except Exception as exc:  # noqa: BLE001 — convergence must never block a build
+        return {"ran": False, "reason": f"convergence raised: {type(exc).__name__}: {exc}"}
+
+
 # The bounded-dispatcher state machine (SOP §1). These are the ONLY task states.
 STATE_BACKLOG = "backlog"
 STATE_DISPATCHED = "dispatched"
@@ -1038,6 +1072,15 @@ def dispatch_one(
         task.setdefault("template_match", _step0_result.get("template_match",
                         {"decision": _step0_result.get("decision", "SKIPPED")}))
 
+    # ── SKILL 6 CONVERGENCE (A-U7 — THE unification unit) ────────────────────
+    # Runs AFTER STEP 0 (task['pages'] is now instantiated, if a template
+    # matched) and BEFORE the builder: one REAL blend-selection call per page,
+    # the per-page persona-selection-log, per-page bundle receipts, and the
+    # D-A3 P2 receipt. A no-op when SKILL6_CONSUME_BLEND is off, no bundle is
+    # present, or no pages were instantiated (advisory glue — never blocks).
+    _convergence_result = _run_convergence(task, evidence_root)
+    task["skill6_convergence"] = _convergence_result
+
     # ── backlog -> dispatched ─────────────────────────────────────────────────
     started = clock()
     rec = {"task_id": task_id, "state": STATE_DISPATCHED, "claimed_at": _ts(),
@@ -1184,6 +1227,7 @@ def dispatch_one(
     if _fab.get("ran") and not _fab.get("passed"):
         rec.update({"state": STATE_FAILED, "build_duration_s": duration,
                     "fab_qc": _fab, "fab_artifact": _fab_emit,
+                    "skill6_convergence": _convergence_result,
                     "reason": f"FAB-QC GATE: build scored {_fab.get('score')} < 8.5 "
                               f"(lowest: {_fab.get('lowest_dimension')}; "
                               f"hard_misses: {_fab.get('hard_misses')}). Not done."})
@@ -1197,6 +1241,7 @@ def dispatch_one(
         "state": STATE_VERIFIED,
         "fab_qc": _fab,
         "fab_artifact": _fab_emit,
+        "skill6_convergence": _convergence_result,
         "build_duration_s": duration,
         "verify_overall_pass": bool(summary.get("overall_pass")) if isinstance(summary, dict) else False,
         "verify_passed": summary.get("passed") if isinstance(summary, dict) else None,

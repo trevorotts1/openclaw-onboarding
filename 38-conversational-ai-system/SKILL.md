@@ -116,3 +116,5 @@ upstream is Skill 23: read its `INSTRUCTIONS.md → "Moment 3.8"`, then build th
 ## When the Agent Should Invoke This Skill
 
 After skills 05, 10, 19, 29 are installed AND the operator is ready to wire up the full conversational AI brain. Estimated install time: 60-90 minutes (per v5.14 playbook).
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for the canonical statement that this skill owns ALL inbound conversations and how its build path relates to Skill 44.

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/media-processing-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — media-processing-receipt.json (Skill 62, U13)",
+  "description": "Output of scripts/encode_scrub_media.py (spec Section 12.1: normalize frame rate/codec/pixel-format/dimensions, remove audio by default, H.264 MP4 fast-start with short GOP, desktop+mobile derivatives, poster frames). One receipt per source asset processed. A receipt is only ever written after every variant it lists has independently passed the reject checks (corrupt/empty/zero-duration/wrong-aspect/unexpected-resolution) -- its mere existence on disk is evidence the encode succeeded, not a claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "asset_id", "source_path", "source_probe", "variants", "created_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "asset_id": { "type": "string", "minLength": 1 },
+    "source_path": { "type": "string", "minLength": 1 },
+    "source_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_seconds", "width", "height", "r_frame_rate", "codec_name", "pix_fmt", "has_audio"],
+      "properties": {
+        "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "r_frame_rate": { "type": "string", "minLength": 1 },
+        "codec_name": { "type": "string", "minLength": 1 },
+        "pix_fmt": { "type": ["string", "null"] },
+        "has_audio": { "type": "boolean" }
+      }
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "variant_name", "container", "output_path", "width", "height", "fps", "gop",
+          "has_audio", "codec_name", "pix_fmt", "duration_seconds", "size_bytes",
+          "hash_sha256", "poster_frame_path", "poster_frame_hash_sha256"
+        ],
+        "properties": {
+          "variant_name": { "type": "string", "enum": ["desktop", "mobile", "desktop-webm", "mobile-webm"] },
+          "container": { "type": "string", "enum": ["mp4", "webm"] },
+          "output_path": { "type": "string", "minLength": 1 },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "fps": { "type": "number", "exclusiveMinimum": 0 },
+          "gop": { "type": "integer", "minimum": 1 },
+          "has_audio": { "type": "boolean" },
+          "codec_name": { "type": "string", "minLength": 1 },
+          "pix_fmt": { "type": ["string", "null"] },
+          "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+          "size_bytes": { "type": "integer", "exclusiveMinimum": 0 },
+          "hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+          "poster_frame_path": { "type": "string", "minLength": 1 },
+          "poster_frame_hash_sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}

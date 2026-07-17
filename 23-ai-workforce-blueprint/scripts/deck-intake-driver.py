@@ -47,6 +47,8 @@ Dependency-free: stdlib only (json, os, pathlib, datetime, argparse, sys, tempfi
 
 import argparse
 import datetime
+import hashlib
+import hmac
 import json
 import os
 import pathlib
@@ -254,6 +256,79 @@ def find_next_any(qdata: dict, ledger: dict) -> Optional[dict]:
 
 def _now() -> str:
     return datetime.datetime.now().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# TURN-LEDGER PROVENANCE (GK-23 / D18 — "one-question-at-a-time UNFAKEABLE at
+# the record layer"). The located gap: prove_sp_intake.py historically checked
+# only a caller-asserted `record_committed_atomically: true` boolean — a hand-
+# assembled record that never touched the driver could set it to True and pass.
+# The fix: the driver stamps a provenance block built ONLY from data its own
+# turn-gate loop produces (cmd_next/cmd_sp_next assigns each question its own
+# strictly-incrementing `turn` number the SAME call it surfaces that question —
+# cmd_answer/cmd_sp_answer never write a `turn` field), and the prover requires
+# that block, checks it for internal consistency (one turn per question,
+# strictly ascending, every answered required question present), and verifies
+# an embedded HMAC digest.
+#
+# THREAT MODEL, stated honestly: this is a deterministic, stdlib-only, no-
+# network, no-secrets-infrastructure prover (same constraint every other
+# prove_sp_*.py in this skill operates under) whose evaluate(intake) is called
+# with ONLY the assembled JSON dict from several independent call sites,
+# including build_deck.py's `_sp_delegate("intake", run_dir)` (a single
+# positional argument, no side channel). There is nowhere to thread a per-run
+# secret to every verifier, so TURN_LEDGER_KEY below is a published integrity
+# key, NOT a secrecy boundary: it binds the turn array + deck_type + commit id
+# together so the block cannot be edited piecemeal (e.g. copy-pasted from a
+# different record) without invalidating the signature, and it forces anyone
+# faking a record to reproduce the ENTIRE strictly-ordered, one-turn-per-
+# question structure by hand — meaningfully harder than flipping one boolean.
+# It does not, and cannot, stop a source-literate adversary; no prover in this
+# fleet's threat model claims to. MUST match TURN_LEDGER_KEY in
+# 51-signature-presentation/scripts/prove_sp_intake.py byte-for-byte.
+TURN_LEDGER_KEY = b"skill51-sp-intake-turn-ledger-provenance-v1"
+
+
+def _canonical_turns_payload(turns: list, deck_type, commit_id) -> bytes:
+    """Deterministic serialization the driver signs and the prover re-verifies.
+    Must match prove_sp_intake.py's _canonical_turns_payload() exactly."""
+    payload = {"deck_type": deck_type, "record_commit_ids": commit_id, "turns": turns}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _sign_turn_ledger(turns: list, deck_type, commit_id) -> str:
+    return hmac.new(TURN_LEDGER_KEY, _canonical_turns_payload(turns, deck_type, commit_id),
+                     hashlib.sha256).hexdigest()
+
+
+def build_turn_ledger_provenance(entries: dict, question_ids: list, deck_type, commit_id) -> Optional[dict]:
+    """Assemble the turn-ledger provenance block from the REAL ledger entries —
+    per-question turn id + asked_at/validated_at timestamps that only the
+    driver's turn-gate loop stamps. Only VALIDATED, non-skipped questions with
+    a recorded `turn` are included (a skipped conditional question was never
+    asked; a question answered without ever passing through --next/--answer's
+    surfacing call carries no `turn` and is silently omitted here — the
+    prover's completeness check catches that as a missing turn-ledger entry
+    for an answered question). Returns None when nothing qualifies (e.g.
+    answers assembled via --record without ever touching the ledger) — the
+    caller then leaves the record unstamped, which the prover's dated grace
+    window (or, once it closes, a hard AF-SP-INTAKE-UNPACED) governs."""
+    turns = []
+    for qid in question_ids:
+        e = entries.get(qid, {})
+        if not e.get("validated") or e.get("skipped") or e.get("skipped_ask_if"):
+            continue
+        if "turn" not in e:
+            continue
+        turns.append({
+            "question_id": qid,
+            "turn": e["turn"],
+            "asked_at": e.get("asked_at"),
+            "validated_at": e.get("validated_at"),
+        })
+    if not turns:
+        return None
+    return {"turns": turns, "signature": _sign_turn_ledger(turns, deck_type, commit_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +723,10 @@ def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     entries.setdefault(nxt["id"], {})
     entries[nxt["id"]]["asked_at"] = _now()
     ledger["turns"] = ledger.get("turns", 0) + 1
+    # GK-23/D18: stamp the turn id on THIS question's entry, the same call that
+    # surfaces it — the one signal a hand-assembled (never-driven) record cannot
+    # reproduce without walking this exact loop.
+    entries[nxt["id"]]["turn"] = ledger["turns"]
     save_ledger(run_dir, ledger)
 
     print(json.dumps({
@@ -774,6 +853,25 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     # --next, e.g. test fixtures or a resumed/edited ledger).
     if entries.get("presentation_type", {}).get("validated"):
         _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+
+    # GK-23/D18: non-signature deck intake gets the SAME turn-ledger provenance
+    # stamp as the signature path (deck-intake-questions.json order enforcement
+    # already runs through this same driver) — written into working/copy/
+    # intake.json so any future record-layer pacing gate over the standard
+    # flow has the same unfakeable signal to check. Fail-soft: never blocks
+    # --complete on a provenance-write error.
+    try:
+        std_ids = [q["id"] for q in ordered_questions(qdata)]
+        existing_intake = {}
+        intake_p = run_dir / INTAKE_JSON_REL
+        if intake_p.exists():
+            existing_intake = json.loads(intake_p.read_text(encoding="utf-8"))
+        provenance = build_turn_ledger_provenance(
+            entries, std_ids, existing_intake.get("deck_type"), None)
+        if provenance is not None:
+            merge_intake_json(run_dir, {"turn_ledger_provenance": provenance})
+    except (OSError, json.JSONDecodeError):
+        pass
 
     # Mark complete
     ledger["status"] = "complete"
@@ -1342,6 +1440,9 @@ def cmd_sp_next(run_dir: pathlib.Path, spec: dict, ledger: dict) -> None:
     entries.setdefault(nxt["id"], {})
     entries[nxt["id"]]["asked_at"] = _now()
     ledger["turns"] = ledger.get("turns", 0) + 1
+    # GK-23/D18: stamp the turn id on THIS question's entry, the same call
+    # that surfaces it (mirrors cmd_next's standard-path stamp above).
+    entries[nxt["id"]]["turn"] = ledger["turns"]
     save_ledger(run_dir, ledger, SP_LEDGER_REL)
 
     print(json.dumps({
@@ -1438,6 +1539,18 @@ def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
     }
     block_msg_id = _sp_block_msg_id()
     intake = assemble_sp_intake(answers_record, block_msg_id)
+
+    # GK-23/D18: stamp the turn-ledger provenance block built from the REAL sp
+    # ledger's entries — per-question turn id + timestamps only the turn-gate
+    # loop above (cmd_sp_next) produces. sp_question_ids covers the full
+    # walked set (interview_choice, q1..q8, frame_selection) in canonical
+    # order, matching sp_ordered_questions(spec).
+    sp_question_ids = [q["id"] for q in sp_ordered_questions(spec)]
+    provenance = build_turn_ledger_provenance(
+        entries, sp_question_ids, intake.get("deck_type"), intake.get("record_commit_ids"))
+    if provenance is not None:
+        intake["turn_ledger_provenance"] = provenance
+
     out_path = run_dir / "working" / "copy" / "sp_intake.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")

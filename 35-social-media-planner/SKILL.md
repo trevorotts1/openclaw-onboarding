@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v2.9.10
+version: v2.9.15
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -270,3 +270,5 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
 - `[from config: video specs]`, `[from config: image model]`, `[from config: monitor_interval]`
 - `[from memory.md: content_sheet_id]`, `[from memory.md: content_sheet_url]`
 - Pull via `read` tools before agent prompts.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's CTAs feed Skill 38's inbound pipeline and route posting through Skill 44.

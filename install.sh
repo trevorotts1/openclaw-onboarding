@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.24"
+ONBOARDING_VERSION="v20.0.66"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -833,7 +833,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/61-... (56 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/61-... (57 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -1066,11 +1066,24 @@ PYEOF
 #   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean app):
 #   export OPENCLAW_PODBEAN_CLIENT_ID="..."
 #   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
+#   # SERVER-SIDE PUBLISH-PROXY (S58-U15) — outranks the broker + legacy pairs
+#   # above; n8n does the whole publish so this box never holds a Podbean
+#   # credential in this mode:
+#   export OPENCLAW_PODBEAN_PUBLISH_URL="..."      # the n8n publish-proxy webhook (non-secret)
+#   export OPENCLAW_PODBEAN_PUBLISH_TOKEN="..."    # the shared X-Podcast-Publish-Token value
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
 #
 # Per-client install:
 #   OPENCLAW_OWNER_NAME="Sample Client" curl ...install.sh | bash
 #   (vars from operator's ~/.zshrc inherited automatically)
+#
+# Per-client PODCAST IDENTITY (S58-U15) — set PER BOX at provisioning time
+# (unlike the pairs above, these differ per client, so they belong on the
+# install command line, not in a shared ~/.zshrc):
+#   OPENCLAW_OWNER_NAME="Sample Client" \
+#     OPENCLAW_PODCAST_CLIENT_LAST_NAME="..." OPENCLAW_PODCAST_CLIENT_EMAIL="..." \
+#     curl ...install.sh | bash
+#   OPENCLAW_PODCAST_CLIENT_FIRST_NAME is optional (display/email text only).
 inject_shared_operator_secrets() {
     local injected_count=0
     local mode_oc_json_ready="no"
@@ -1167,6 +1180,64 @@ PYEOF
         injected_count=$((injected_count + 2))
     elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
+    fi
+
+    # Podbean SERVER-SIDE PUBLISH-PROXY pair (S58-U15; fleet DEFAULT for Step 15
+    # once staged, scripts/podbean_publish.sh precedence proxy -> broker -> local).
+    # n8n does the whole publish (OAuth mint, upload, create-episode) server-side;
+    # this box never holds a Podbean credential in proxy mode. UNLIKE the public
+    # Rescue Rangers webhook below, NEITHER value ships a hardcoded default in
+    # this repo — both are a non-obvious runtime endpoint and a secret, and flow
+    # ONLY from the operator's own env at install time, same both-or-neither
+    # doctrine as the broker pair above (a lone URL or a lone token is refused,
+    # never half-seeded).
+    if [ -n "${OPENCLAW_PODBEAN_PUBLISH_URL:-}" ] && [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
+        _shared_write_env "PODBEAN_PUBLISH_WEBHOOK_URL" "$OPENCLAW_PODBEAN_PUBLISH_URL"
+        _shared_write_env "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        _shared_write_ocjson "PODBEAN_PUBLISH_WEBHOOK_URL" "$OPENCLAW_PODBEAN_PUBLISH_URL"
+        _shared_write_ocjson "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        success "Podbean publish-proxy pair injected from operator env (server-side publish; outranks broker/local; chmod 600)"
+        injected_count=$((injected_count + 2))
+    elif [ -n "${OPENCLAW_PODBEAN_PUBLISH_URL:-}" ] || [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
+        warn "Only one of OPENCLAW_PODBEAN_PUBLISH_URL / OPENCLAW_PODBEAN_PUBLISH_TOKEN set — both required. Skipping Podbean publish-proxy injection (this box falls back to broker/local mode)."
+    fi
+
+    # Podbean publish IDENTITY (S58-U15): the per-box client identity the n8n
+    # good-standing + identity gate authenticates against (last_name + email
+    # together select exactly one roster row; downstream ALWAYS uses the roster
+    # row's channel id, never this box's raw podcast_id). Required TOGETHER —
+    # a lone last name or a lone email can never resolve a roster row, so half a
+    # pair is refused rather than half-seeded (same doctrine as every pair
+    # above). A malformed email is refused too: it would only ever be rejected
+    # by the n8n gate at publish time, so catching the obvious shape mistake
+    # here saves a box a guaranteed-failing round trip. PODCAST_CLIENT_FIRST_NAME
+    # is display/email text only (never authorization, per spec Section 3), so
+    # it carries no pairing requirement and is seeded alone when present.
+    if [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] && [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        case "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" in
+            *[[:space:]]*)
+                warn "OPENCLAW_PODCAST_CLIENT_EMAIL contains whitespace — refusing to seed the podcast publish identity pair (would only ever be refused by the n8n gate)."
+                ;;
+            *@*.*)
+                _shared_write_env "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+                _shared_write_env "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+                _shared_write_ocjson "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+                _shared_write_ocjson "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+                success "Podcast publish identity (last name + email) injected from operator env (server-side good-standing gate)"
+                injected_count=$((injected_count + 2))
+                ;;
+            *)
+                warn "OPENCLAW_PODCAST_CLIENT_EMAIL does not look like an email address — refusing to seed the podcast publish identity pair."
+                ;;
+        esac
+    elif [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] || [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        warn "Only one of OPENCLAW_PODCAST_CLIENT_LAST_NAME / OPENCLAW_PODCAST_CLIENT_EMAIL set — both required (they are the roster lookup key together). Skipping podcast publish identity injection; Step 15 will hard-stop until both are set."
+    fi
+    if [ -n "${OPENCLAW_PODCAST_CLIENT_FIRST_NAME:-}" ]; then
+        _shared_write_env "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+        _shared_write_ocjson "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+        success "Podcast publish client first name injected from operator env (display/email only, never authorization)"
+        injected_count=$((injected_count + 1))
     fi
 
     # Rescue Rangers escalation webhook (n8n). Client agents escalate unsolvable
@@ -2098,6 +2169,18 @@ discover_all_credentials() {
     # value the client supplies (it selects their show under BlackCEO's host
     # account) and it is not a secret.
     CRED_LIST="$CRED_LIST|PODBEAN_PODCAST_ID:Podbean Channel ID (podcast_id, per-client)"
+    # S58-U15: Podbean SERVER-SIDE PUBLISH-PROXY — the fleet default for Step 15
+    # (n8n does the whole publish; outranks the broker pair above). Discovery
+    # checks the box-LOCAL names the injector above writes (PODBEAN_PUBLISH_*),
+    # never the operator-side OPENCLAW_PODBEAN_PUBLISH_* source vars.
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_WEBHOOK_URL:Podbean n8n publish-proxy webhook URL (publish-proxy mode, outranks broker)"
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_TOKEN:Podbean n8n publish-proxy shared token (publish-proxy mode)"
+    # Per-box podcast client identity — the good-standing + identity gate's
+    # roster lookup key (last name + email together; first name is display-only,
+    # never authorization).
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_LAST_NAME:Podcast client last name (server-side identity gate lookup key)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_EMAIL:Podcast client email (server-side identity gate lookup key)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_FIRST_NAME:Podcast client first name (display/email only, optional)"
     CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
     CRED_LIST="$CRED_LIST|BRAVE_API_KEY:Brave Search"
     CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"
@@ -3304,13 +3387,18 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
     fi
 done
 
-# LOOP / FURNACE PROTECTION activation helper + operator canary (Skill 60 EWS +
-# Skill 61 Loop Protection). Persisted to ~/.openclaw/scripts (or /data/...) so
-# the end-of-run activation step and the operator canary can resolve them after a
-# temp-clone cleanup, and so the updater's shared hook has one canonical copy (no
-# copy-paste drift). Neither ARMS a box; client activation is gated HELD by
-# default (61-loop-protection-system/config/rollout.json). See Topic 2 §2.3.
-for SCRIPT in activate-loop-protection.sh loop-protection-canary.sh; do
+# LOOP / FURNACE PROTECTION activation helper + operator-box first-proof
+# script (Skill 60 EWS + Skill 61 Loop Protection). Persisted to
+# ~/.openclaw/scripts (or /data/...) so the end-of-run activation step and the
+# operator's own first-proof run can resolve them after a temp-clone cleanup,
+# and so the updater's shared hook has one canonical copy (no copy-paste
+# drift). Neither ARMS a box; client activation is gated HELD by default
+# (61-loop-protection-system/config/rollout.json). See Topic 2 §2.3.
+# D20 rename (U93): loop-protection-canary.sh -> loop-protection-first-proof.sh.
+# BOTH names are persisted here for one release — the old path is now a thin
+# compatibility shim that execs the new one, so an existing live-box cron
+# registration still calling the old path keeps resolving after this cleanup.
+for SCRIPT in activate-loop-protection.sh loop-protection-first-proof.sh loop-protection-canary.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
@@ -4913,7 +5001,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 56 active skills install in 5 dependency-aware waves, not by number order.
+The 57 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -7918,11 +8006,12 @@ fi
 # GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2. Runs the shared
 # activate-loop-protection.sh helper (the SAME one update-skills.sh calls — no
 # copy-paste drift). Client-box activation is GATED HELD by default per SKILL.md
-# law 8 (CANARY, THEN HOLD) + the 7-03 repo-only HOLD: the helper installs the
-# 60-then-61 per-box watchdogs (ews-tick + loop-tick crons + ledgers) in DRY_RUN
-# observe-only ONLY when the fleet rollout gate is enabled (rollout.json /
-# OPENCLAW_LOOP_PROTECTION_ROLLOUT); otherwise it prints a HELD note and no-ops.
-# It NEVER arms a box (Tier-1 arming is the operator canary's separate action).
+# law 8 (PROVE ON THE OPERATOR BOX, THEN HOLD) + the 7-03 repo-only HOLD: the
+# helper installs the 60-then-61 per-box watchdogs (ews-tick + loop-tick crons
+# + ledgers) in DRY_RUN observe-only ONLY when the fleet rollout gate is
+# enabled (rollout.json / OPENCLAW_LOOP_PROTECTION_ROLLOUT); otherwise it
+# prints a HELD note and no-ops.
+# It NEVER arms a box (Tier-1 arming is the operator's own first-proof run's separate action).
 # Runs BEFORE the final gateway restart so any registered crons are picked up.
 # Best-effort — never aborts the install.
 # ----------------------------------------------------------

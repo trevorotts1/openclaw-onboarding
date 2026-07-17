@@ -655,6 +655,152 @@ finally:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+section("T13  A-U6 min-2/max-4 PERSONA-COUNT INVARIANT (validate_blend_invariant)")
+
+# (a) a synthetic bundle naming 5 personas across slots → ok=false, above-max.
+synth_above_max = {
+    "content_task": True,
+    "confirm_required": False,
+    "voice": {
+        "collapsed": False,
+        "collapsed_persona_id": None,
+        "audience_persona": {"id": "aud-1", "why": "x"},
+        "topic_persona": {"id": "topic-1", "why": "x"},
+    },
+    "task_personas": [
+        {"persona_id": "task-1", "why": "x"},
+        {"persona_id": "task-2", "why": "x"},
+        {"persona_id": "task-3", "why": "x"},
+    ],
+}
+r_above = pb.validate_blend_invariant(synth_above_max)
+if (r_above["ok"] is False and r_above["count"] == 5 and r_above["reason"] == "above-max"
+        and r_above["collapsed"] is False and len(r_above["roles"]) == 5
+        and {r["role"] for r in r_above["roles"]} == {"voice", "topic", "task"}):
+    ok(f"(a) synthetic 5-persona bundle → ok=False, count=5, reason=above-max ({r_above})")
+else:
+    bad(f"(a) above-max check wrong: {r_above}")
+
+# NO-WEAKENING: exactly 4 (the ceiling) must still be ok=True.
+synth_at_max = json.loads(json.dumps(synth_above_max))
+synth_at_max["task_personas"] = synth_at_max["task_personas"][:2]  # 2 (voice+topic) + 2 task = 4
+r_at_max = pb.validate_blend_invariant(synth_at_max)
+if r_at_max["ok"] is True and r_at_max["count"] == 4:
+    ok("NO-WEAKENING: count=4 (the ceiling) is still ok=True, not falsely flagged above-max")
+else:
+    bad(f"NO-WEAKENING failed: count=4 wrongly flagged: {r_at_max}")
+
+# (b) a CONFIRMED single-persona, non-collapsed content bundle → ok=false, below-min.
+synth_below_min_confirmed = {
+    "content_task": True,
+    "confirm_required": False,  # audience already confirmed
+    "voice": {
+        "collapsed": False,
+        "collapsed_persona_id": None,
+        "audience_persona": None,
+        "topic_persona": {"id": "topic-only-1", "why": "x"},
+    },
+    "task_personas": [],
+}
+r_below = pb.validate_blend_invariant(synth_below_min_confirmed)
+if r_below == {"ok": False, "count": 1, "roles": [{"role": "topic", "persona_id": "topic-only-1"}],
+               "collapsed": False, "reason": "below-min"}:
+    ok(f"(b) confirmed single-persona non-collapsed content bundle → ok=False, reason=below-min ({r_below})")
+else:
+    bad(f"(b) below-min check wrong: {r_below}")
+
+# NO-WEAKENING: the SAME shape but audience still unconfirmed (confirm_required=True,
+# no voice/audience persona at all) must get the distinguishable pending reason, not
+# a plain 'below-min' — the invariant never conflates a LEGAL pending state with a
+# true violation (A.7).
+synth_pending = json.loads(json.dumps(synth_below_min_confirmed))
+synth_pending["confirm_required"] = True
+r_pending = pb.validate_blend_invariant(synth_pending)
+if r_pending["ok"] is False and r_pending["reason"] == "below-min (house-voice pending audience confirm)":
+    ok(f"NO-WEAKENING: unconfirmed-audience below-min gets the pending-house-voice reason ({r_pending['reason']!r})")
+else:
+    bad(f"NO-WEAKENING failed: pending-audience reason wrong: {r_pending}")
+
+# (c) COLLAPSE satisfies min-2 by ROLE COUNT (D-A2 ratified) — one persona id,
+# two roles, ok=True. Exercised both synthetically and via the REAL collapsed
+# bundle `bc` built by build_bundle() in T4 above.
+synth_collapsed = {
+    "content_task": True,
+    "confirm_required": False,
+    "voice": {
+        "collapsed": True,
+        "collapsed_persona_id": "one-persona-both-roles",
+        "audience_persona": None,
+        "topic_persona": {"id": "one-persona-both-roles", "why": "x"},
+    },
+    "task_personas": [],
+}
+r_collapsed = pb.validate_blend_invariant(synth_collapsed)
+if (r_collapsed["ok"] is True and r_collapsed["count"] == 2
+        and r_collapsed["collapsed"] is True
+        and {r["role"] for r in r_collapsed["roles"]} == {"voice", "topic"}
+        and all(r["persona_id"] == "one-persona-both-roles" for r in r_collapsed["roles"])):
+    ok(f"(c) D-A2: collapsed blend satisfies min-2 by ROLE COUNT (1 persona, 2 roles) ({r_collapsed})")
+else:
+    bad(f"(c) collapse role-count check wrong: {r_collapsed}")
+
+# NOTE: the hermetic fixture's fake task-decomposer (_fake_dt_select_persona)
+# always yields a genuinely distinct task-side persona id, so the REAL bundles
+# below carry a 3rd (task) role on top of the voice+topic role-count floor —
+# still comfortably inside the [2,4] window.
+r_collapsed_real = bc["rationale"]["invariant"]
+if (r_collapsed_real["ok"] is True and r_collapsed_real["collapsed"] is True
+        and r_collapsed_real["count"] == 3
+        and {r["role"] for r in r_collapsed_real["roles"]} == {"voice", "topic", "task"}):
+    ok(f"(c) REAL collapsed bundle (T4's Aliche collapse) validates ok=True, "
+       f"role count >= min-2 via collapse + a distinct task role ({r_collapsed_real})")
+else:
+    bad(f"(c) real collapsed bundle invariant wrong: {r_collapsed_real}")
+
+# (d) rationale.invariant is present on EVERY content bundle produced by
+# build_bundle — the distinct BLEND (b, T3) and the COLLAPSE (bc, T4) cases —
+# and ABSENT (never fabricated) on the mechanical bundle (bm, T6), which never
+# reaches the content-task branch at all.
+if ("invariant" in b["rationale"] and b["rationale"]["invariant"]["ok"] is True
+        and b["rationale"]["invariant"]["count"] == 3 and b["rationale"]["invariant"]["collapsed"] is False):
+    ok(f"(d) rationale.invariant present + correct on the T3 BLEND bundle ({b['rationale']['invariant']})")
+else:
+    bad(f"(d) T3 blend bundle missing/wrong invariant: {b['rationale'].get('invariant')}")
+
+if "invariant" in bc["rationale"]:
+    ok("(d) rationale.invariant present on the T4 COLLAPSE bundle")
+else:
+    bad("(d) T4 collapse bundle missing rationale.invariant")
+
+if "invariant" not in bm.get("rationale", {}):
+    ok("NO-WEAKENING: the mechanical bundle (never a content task) carries NO fabricated invariant")
+else:
+    bad(f"NO-WEAKENING failed: mechanical bundle wrongly carries an invariant: {bm['rationale'].get('invariant')}")
+
+# non-content (but not mechanical) bundle `bn` (T6) is EXEMPT — validator itself
+# returns exempt-non-content when called directly (build_bundle only wires the
+# invariant into rationale for content_task bundles; direct calls stay usable
+# on any bundle shape, including non-content ones, without special-casing).
+r_exempt = pb.validate_blend_invariant(bn)
+if r_exempt == {"ok": True, "count": 0, "roles": [], "collapsed": False, "reason": "exempt-non-content"}:
+    ok(f"non-content bundle is EXEMPT from the invariant (ok=True, exempt-non-content) ({r_exempt})")
+else:
+    bad(f"non-content exemption wrong: {r_exempt}")
+
+# The validator NEVER blocks: even the above-max / below-min synthetic bundles
+# above are plain dicts the caller is free to keep using unmodified — proven by
+# construction (validate_blend_invariant never raises, never mutates its input,
+# and build_bundle's own write path (T3/T4) completed normally above despite
+# recording ok=True/False either way).
+_before = json.dumps(synth_above_max, sort_keys=True)
+pb.validate_blend_invariant(synth_above_max)
+if json.dumps(synth_above_max, sort_keys=True) == _before:
+    ok("validate_blend_invariant is PURE — never mutates the bundle it inspects")
+else:
+    bad("validate_blend_invariant mutated its input bundle")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 print("=" * 72)
 print(f"RESULTS: {PASS} passed, {FAIL} failed")
 print("=" * 72)

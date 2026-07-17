@@ -581,7 +581,7 @@ def _read_cc_sop_row_counts(
     `embedding_meta` / `meta` / `settings` stamp table — _read_cc_sop_stamp()
     ALWAYS returns None on a real CC box, which made leg_b_stamp_match ALWAYS
     None regardless of how many (or how few) sop_embeddings rows existed. The
-    heartbeat probe (32-command-center-setup/scripts/heartbeat-canary-probe.py)
+    heartbeat probe (32-command-center-setup/scripts/heartbeat-embedding-probe.py)
     correctly gates on the REAL row counts of `sops` and `sop_embeddings` —
     this function reads the SAME ground truth so the two health surfaces can
     never disagree about the same box state again.
@@ -1041,7 +1041,7 @@ def check_cc_sop_index(
     # counts, and the overall `pass` gate (`leg_b_stamp_match is not False`)
     # treated None as a PASS. A brand-new box with a valid key and ZERO
     # embedded SOPs showed `pass` here while
-    # 32-command-center-setup/scripts/heartbeat-canary-probe.py correctly
+    # 32-command-center-setup/scripts/heartbeat-embedding-probe.py correctly
     # screamed `dark` from the SAME box state — the exact two-surfaces-
     # disagree bug this closes. This block reads the REAL row counts (the
     # heartbeat probe's own ground truth) and OVERRIDES leg_b_stamp_match to

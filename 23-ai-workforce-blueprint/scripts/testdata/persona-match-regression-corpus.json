@@ -1,5 +1,5 @@
 {
-  "_doc": "P4-01 step 2 -- persona-match regression corpus (20 labeled request -> expected-persona cases). Runs against the REAL, shipped 99-persona catalog (22-book-to-persona-coaching-leadership-system/persona-categories.json), never a synthetic fixture, so it measures actual production match quality. Each `request` is phrased the way a real board task/content request reads (drawing on request shapes named in the P4/spec cluster: content/comms tasks, sales scripts, coaching notes, marketing copy). `dimension` selects which pure matcher function is exercised: 'topic' -> persona_blend.match_topic_persona(catalog, request); 'audience' -> persona_blend.match_audience_persona(catalog, request) (request is then read as an audience LABEL, not a task). The gate (test-persona-match-regression-corpus.py) requires >=90% of cases to land on `expected_persona_id`. This corpus is a drift lock: an unrelated change to _tag_hit/_stem/ranking that quietly degrades match quality trips this gate before it reaches prod.",
+  "_doc": "P4-01 step 2 + A-U13 (Skill 6 v2, master-spec section A) -- persona-match regression corpus (40 labeled request -> expected-persona cases). Runs against the REAL, shipped 99-persona catalog (22-book-to-persona-coaching-leadership-system/persona-categories.json), never a synthetic fixture, so it measures actual production match quality. Each `request` is phrased the way a real board task/content request reads (drawing on request shapes named in the P4/spec cluster: content/comms tasks, sales scripts, coaching notes, marketing copy). `dimension` selects which pure matcher function is exercised: 'topic' -> persona_blend.match_topic_persona(catalog, request); 'audience' -> persona_blend.match_audience_persona(catalog, request) (request is then read as an audience LABEL, not a task). `intent_tag` (A-U13, additive) classifies WHY each case was drafted: 'topic-expertise' / 'audience-label' are the original P4-01 shapes (request reads as a task or an audience description, scored on topics[]/audiences[] tag overlap); 'emotional-register' cases (C21-C30) are phrased with an emotionally-toned ask (calming, reassuring, boundary-setting, grief/shame-aware, grit/resilience-building) so the corpus exercises the schema-1.4 (A-U3) emotional_register-carrying personas' topic/audience tags, not just their scalar emotional_register field (no dedicated emotional-register matcher function exists -- these cases still resolve via the same pure match_topic_persona/match_audience_persona tag-overlap functions, and each case's `note` records the winning persona's actual emotional_register value for traceability); 'conversion-style' cases (C31-C40) are phrased as closing/conversion-oriented asks (stack-closes, challenge-closes, negotiation, discovery-call scripting) exercising the schema-1.4 conversion_style-carrying personas the same way, with the winning persona's conversion_style value recorded in `note`. The gate (test-persona-match-regression-corpus.py) requires >=90% of cases to land on `expected_persona_id`. This corpus is a drift lock: an unrelated change to _tag_hit/_stem/ranking that quietly degrades match quality trips this gate before it reaches prod. A-U13 grew this corpus from 20 to 40 cases per master-spec v2 A-U13 (ONB, P2, dep A-U3): the original 20 (C01-C20) are UNCHANGED (byte-identical id/dimension/request/expected_persona_id/note); C21-C40 are net-new, each individually verified via a live run of persona_blend.match_topic_persona/match_audience_persona against the current shipped catalog before being locked into this file (never hand-guessed).",
   "schema_version": 1,
   "gate_pass_rate": 0.90,
   "cases": [
@@ -8,140 +8,320 @@
       "dimension": "topic",
       "request": "Write ad copy pitching a new high-ticket offer with bonuses stacking and a strong money-back guarantee",
       "expected_persona_id": "hormozi-100m-offers",
-      "note": "offer-creation / guarantees-and-risk-reversal / bonuses-and-stacking cluster"
+      "note": "offer-creation / guarantees-and-risk-reversal / bonuses-and-stacking cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C02",
       "dimension": "topic",
       "request": "Draft a cold outreach and lead generation sequence to bring in new leads via paid ads and referrals",
       "expected_persona_id": "hormozi-100m-leads",
-      "note": "lead-generation / cold-outreach / paid-ads / referrals cluster"
+      "note": "lead-generation / cold-outreach / paid-ads / referrals cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C03",
       "dimension": "topic",
       "request": "Write persuasive sales copy applying influence and persuasion psychology and reciprocity to convert skeptical buyers",
       "expected_persona_id": "cialdini-influence",
-      "note": "influence-psychology / persuasion / ethical-influence cluster"
+      "note": "influence-psychology / persuasion / ethical-influence cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C04",
       "dimension": "topic",
       "request": "Write a coaching note about identity change and continuous improvement using small systems design habits for personal development",
       "expected_persona_id": "clear-atomic-habits",
-      "note": "distinguishes from duhigg-power-of-habit via identity-change/systems-design/continuous-improvement, which duhigg does not carry"
+      "note": "distinguishes from duhigg-power-of-habit via identity-change/systems-design/continuous-improvement, which duhigg does not carry",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C05",
       "dimension": "topic",
       "request": "Prepare talking points for a crucial and difficult conversation with a direct report about accountability",
       "expected_persona_id": "grenny-crucial-conversations",
-      "note": "crucial-conversations / accountability-conversations / difficult-feedback cluster"
+      "note": "crucial-conversations / accountability-conversations / difficult-feedback cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C06",
       "dimension": "topic",
       "request": "Write an empathetic newsletter about vulnerability shame resilience and emotional courage for leaders",
       "expected_persona_id": "brown-atlas-of-heart",
-      "note": "vulnerability / shame-resilience / emotional-intelligence cluster"
+      "note": "vulnerability / shame-resilience / emotional-intelligence cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C07",
       "dimension": "topic",
       "request": "Write a positioning and brand strategy blog post about permission marketing and finding your smallest viable market",
       "expected_persona_id": "godin-this-is-marketing",
-      "note": "positioning / permission-marketing / smallest-viable-market cluster"
+      "note": "positioning / permission-marketing / smallest-viable-market cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C08",
       "dimension": "topic",
       "request": "Draft a financial planning newsletter about profit first cash flow management and owner pay for small business owners",
       "expected_persona_id": "michalowicz-profit-first",
-      "note": "cash-flow-management / owner-pay / small-business-finance cluster"
+      "note": "cash-flow-management / owner-pay / small-business-finance cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C09",
       "dimension": "topic",
       "request": "Write sales call discovery questions using the NEPQ sales-questioning and objection-reframing framework",
       "expected_persona_id": "jeremy-miner-the-nepq-black-book-of-questions",
-      "note": "sales-questioning / discovery-calls / objection-reframing cluster"
+      "note": "sales-questioning / discovery-calls / objection-reframing cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C10",
       "dimension": "topic",
       "request": "Write a scroll-stopping hook and headline for a short-form video to capture attention in the first three seconds",
       "expected_persona_id": "kane-hook-point",
-      "note": "attention-capture / hooks-and-headlines / short-form-video-openings cluster"
+      "note": "attention-capture / hooks-and-headlines / short-form-video-openings cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C11",
       "dimension": "topic",
       "request": "Write a motivational post about mental toughness discipline and overcoming adversity for our morning accountability broadcast",
       "expected_persona_id": "goggins-cant-hurt-me",
-      "note": "mental-toughness / self-discipline / overcoming-adversity cluster"
+      "note": "mental-toughness / self-discipline / overcoming-adversity cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C12",
       "dimension": "topic",
       "request": "Write a productivity newsletter about building a second brain note-taking and personal knowledge management",
       "expected_persona_id": "forte-building-second-brain",
-      "note": "personal-knowledge-management / note-taking / second-brain cluster"
+      "note": "personal-knowledge-management / note-taking / second-brain cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C13",
       "dimension": "topic",
       "request": "Draft a weekly planning email about execution discipline and the 12 week year goal execution system",
       "expected_persona_id": "moran-12-week-year",
-      "note": "execution-discipline / goal-execution / weekly-planning cluster"
+      "note": "execution-discipline / goal-execution / weekly-planning cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C14",
       "dimension": "topic",
       "request": "Write sales email copy using language patterns and influence-language techniques to change the reader's mind",
       "expected_persona_id": "charvet-words-change-minds",
-      "note": "influence-language / language-patterns / sales-messaging cluster"
+      "note": "influence-language / language-patterns / sales-messaging cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C15",
       "dimension": "topic",
       "request": "Write direct-response sales email copy with strong headlines and calls-to-action for a landing page",
       "expected_persona_id": "bly-copywriters-handbook",
-      "note": "direct-response-copy / headlines / calls-to-action cluster"
+      "note": "direct-response-copy / headlines / calls-to-action cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C16",
       "dimension": "topic",
       "request": "Write an internal memo about organizational excellence execution discipline and building a great company culture",
       "expected_persona_id": "collins-good-to-great",
-      "note": "organizational-excellence / execution-discipline / company-culture cluster"
+      "note": "organizational-excellence / execution-discipline / company-culture cluster",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C17",
       "dimension": "topic",
       "request": "Draft a sales script using magic words, assumptive phrasing, and conversation control to get buy-in during the meeting",
       "expected_persona_id": "jones-exactly-what-to-say",
-      "note": "distinguishes from gitomer-sales-bible via magic-words/assumptive-phrasing/conversation-control/meeting-and-buy-in-scripts, which gitomer does not carry"
+      "note": "distinguishes from gitomer-sales-bible via magic-words/assumptive-phrasing/conversation-control/meeting-and-buy-in-scripts, which gitomer does not carry",
+      "intent_tag": "topic-expertise"
     },
     {
       "id": "C18",
       "dimension": "audience",
       "request": "small business owners",
       "expected_persona_id": "michalowicz-profit-first",
-      "note": "audience-label match: small-business-owners / service-business-owners / agency-owners cluster (usable_as includes 'audience')"
+      "note": "audience-label match: small-business-owners / service-business-owners / agency-owners cluster (usable_as includes 'audience')",
+      "intent_tag": "audience-label"
     },
     {
       "id": "C19",
       "dimension": "audience",
       "request": "leaders and people managers doing emotional work",
       "expected_persona_id": "brown-atlas-of-heart",
-      "note": "audience-label match: leaders / people-managers / professionals-doing-emotional-work (usable_as includes 'audience')"
+      "note": "audience-label match: leaders / people-managers / professionals-doing-emotional-work (usable_as includes 'audience')",
+      "intent_tag": "audience-label"
     },
     {
       "id": "C20",
       "dimension": "audience",
       "request": "men facing adversity and discipline seekers",
       "expected_persona_id": "goggins-cant-hurt-me",
-      "note": "audience-label match: men-facing-adversity / discipline-and-mental-toughness-seekers (usable_as includes 'audience')"
+      "note": "audience-label match: men-facing-adversity / discipline-and-mental-toughness-seekers (usable_as includes 'audience')",
+      "intent_tag": "audience-label"
+    },
+    {
+      "id": "C21",
+      "dimension": "topic",
+      "request": "Write a calming grounded message about mindfulness and easing anxiety for our stressed and overwhelmed professionals who need to stay present",
+      "expected_persona_id": "tolle-the-power-of-now",
+      "note": "A-U13 emotional-register-intent case: mindfulness / stress-and-anxiety-reduction / present-moment-focus cluster; persona's schema-1.4 emotional_register=reflective-stillness",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C22",
+      "dimension": "topic",
+      "request": "Write a steady reassuring note about building confidence and managing fear for leaders navigating high stakes communication under pressure",
+      "expected_persona_id": "obama-light-we-carry",
+      "note": "A-U13 emotional-register-intent case: confidence-building / fear-management / leadership-under-pressure cluster; persona's schema-1.4 emotional_register=steady-reassurance",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C23",
+      "dimension": "topic",
+      "request": "Write a compassionate but direct message about setting boundaries and preventing burnout for people pleasers who over function",
+      "expected_persona_id": "tawwab-set-boundaries-find-peace",
+      "note": "A-U13 emotional-register-intent case: boundaries / burnout-prevention / expectation-setting cluster; persona's schema-1.4 emotional_register=compassionate-directness",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C24",
+      "dimension": "topic",
+      "request": "Write a tough love message about agency and letting go of what you cannot control for people stuck in people pleasing patterns",
+      "expected_persona_id": "robbins-let-them-theory",
+      "note": "A-U13 emotional-register-intent case: agency-and-control / letting-go / people-pleasing cluster; persona's schema-1.4 emotional_register=tough-love",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C25",
+      "dimension": "topic",
+      "request": "Write a warm encouraging note about overcoming money shame and financial beginners building confidence with saving and budgeting",
+      "expected_persona_id": "aliche-get-good-with-money",
+      "note": "A-U13 emotional-register-intent case: budgeting / saving / financial-wholeness cluster; persona's schema-1.4 emotional_register=warm-encouragement",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C26",
+      "dimension": "topic",
+      "request": "Write a reflective message about emotional regulation and deep listening for professionals navigating difficult conversations with connection",
+      "expected_persona_id": "duhigg-supercommunicators",
+      "note": "A-U13 emotional-register-intent case: deep-listening / difficult-conversations / emotional-intelligence cluster; persona's schema-1.4 emotional_register=compassionate-directness",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C27",
+      "dimension": "audience",
+      "request": "burned out caregivers and people in transition seeking calm",
+      "expected_persona_id": "obama-light-we-carry",
+      "note": "A-U13 emotional-register-intent case, audience-label shape: caregivers / people-in-transition cluster; persona's schema-1.4 emotional_register=steady-reassurance",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C28",
+      "dimension": "audience",
+      "request": "people with money shame and financial beginners",
+      "expected_persona_id": "aliche-get-good-with-money",
+      "note": "A-U13 emotional-register-intent case, audience-label shape: people-with-money-shame / financial-beginners cluster; persona's schema-1.4 emotional_register=warm-encouragement",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C29",
+      "dimension": "topic",
+      "request": "Write a motivational note about grit and perseverance and growth mindset for people pursuing long term goals despite setbacks",
+      "expected_persona_id": "duckworth-grit",
+      "note": "A-U13 emotional-register-intent case: grit / perseverance / growth-mindset cluster; persona's schema-1.4 emotional_register=tough-love",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C30",
+      "dimension": "topic",
+      "request": "Write about principle centered leadership and the character ethic and interpersonal effectiveness for personal growth",
+      "expected_persona_id": "covey-7-habits",
+      "note": "A-U13 emotional-register-intent case: principle-centered-leadership / character-ethic / interpersonal-effectiveness cluster; persona's schema-1.4 emotional_register=tough-love",
+      "intent_tag": "emotional-register"
+    },
+    {
+      "id": "C31",
+      "dimension": "topic",
+      "request": "Write conversion copywriting for a landing page with strong value propositions and voice of customer mining to fix flat conversions",
+      "expected_persona_id": "wiebe-copy-hackers",
+      "note": "A-U13 conversion-style-intent case: conversion-copywriting / value-propositions / voice-of-customer-mining cluster; persona's schema-1.4 conversion_style=logic-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C32",
+      "dimension": "topic",
+      "request": "Write a sales letter with fascination bullets and a strong guarantee for our vsl script targeting course and coaching sellers",
+      "expected_persona_id": "edwards-copywriting-secrets",
+      "note": "A-U13 conversion-style-intent case: fascination-bullets / sales-letters / vsl-scripts cluster; persona's schema-1.4 conversion_style=stack-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C33",
+      "dimension": "topic",
+      "request": "Draft a webinar stack and close sequence for a high ticket challenge funnel targeting faith driven entrepreneurs",
+      "expected_persona_id": "pedro-adao-challenge-secrets-masterclass",
+      "note": "A-U13 conversion-style-intent case: webinar-stack-and-close / challenge-funnels / high-ticket-offers cluster; persona's schema-1.4 conversion_style=challenge-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C34",
+      "dimension": "topic",
+      "request": "Write dream buyer research and an irresistible offer for a sales conversion email nurture sequence",
+      "expected_persona_id": "suby-sell-like-crazy",
+      "note": "A-U13 conversion-style-intent case: dream-buyer-research / irresistible-offers / sales-conversion cluster; persona's schema-1.4 conversion_style=stack-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C35",
+      "dimension": "topic",
+      "request": "Write negotiation talking points using tactical empathy and calibrated questions for pricing and terms negotiation",
+      "expected_persona_id": "voss-never-split-difference",
+      "note": "A-U13 conversion-style-intent case: tactical-empathy / calibrated-questions / pricing-and-terms-negotiation cluster; persona's schema-1.4 conversion_style=logic-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C36",
+      "dimension": "topic",
+      "request": "Write a complex b2b sales discovery call script using sales questioning and needs development to prevent objections",
+      "expected_persona_id": "rackham-spin-selling",
+      "note": "A-U13 conversion-style-intent case: complex-b2b-sales / discovery / needs-development cluster; persona's schema-1.4 conversion_style=logic-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C37",
+      "dimension": "topic",
+      "request": "Write a rocket fuel style accountability chart and delegate and elevate plan for a visionary integrator leadership team",
+      "expected_persona_id": "wickman-rocket-fuel",
+      "note": "A-U13 conversion-style-intent case: visionary-integrator-roles / accountability-chart-and-org-design / delegate-and-elevate cluster; persona's schema-1.4 conversion_style=stack-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C38",
+      "dimension": "audience",
+      "request": "high ticket coaches and online fitness trainers selling through instagram dms",
+      "expected_persona_id": "brian-mark-10-million-instagram-funnel",
+      "note": "A-U13 conversion-style-intent case, audience-label shape: high-ticket-coaches / online-fitness-trainers / instagram-solopreneurs cluster; persona's schema-1.4 conversion_style=challenge-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C39",
+      "dimension": "topic",
+      "request": "Write above the fold landing page copy with social proof and visual hierarchy for a direct response ab testing campaign",
+      "expected_persona_id": "landing-page-conversion-essentials",
+      "note": "A-U13 conversion-style-intent case: above-the-fold-design / social-proof / visual-hierarchy cluster; persona's schema-1.4 conversion_style=logic-close",
+      "intent_tag": "conversion-style"
+    },
+    {
+      "id": "C40",
+      "dimension": "topic",
+      "request": "Write order form and upsell copy stacking a tripwire funnel with webinar funnel page recipes and membership funnels",
+      "expected_persona_id": "russell-brunson-the-funnel-hackers-cookbook",
+      "note": "A-U13 conversion-style-intent case: order-forms-and-upsells / tripwire-funnels / funnel-stacking cluster; persona's schema-1.4 conversion_style=stack-close",
+      "intent_tag": "conversion-style"
     }
   ]
 }

@@ -342,7 +342,7 @@ _cc_model_is_reasoning_judge() {
 # SAME model naming the client's own agents already route through (whatever that
 # endpoint is). We deliberately do NOT rewrite '<m>:cloud' -> 'ollama-cloud/<m>':
 # that would strip the ':cloud' tag some endpoints require (verified on the
-# operator canary — the local Ollama proxy 404s on the bare id, 200s on <m>:cloud).
+# operator's own box — the local Ollama proxy 404s on the bare id, 200s on <m>:cloud).
 _cc_normalize_judge_id() {
   local id="${1:-}"
   id="${id#ollama-cloud/}"
@@ -557,7 +557,7 @@ cc_write_env_local() {
   #
   # JUDGE != WRITER design note: the CC scorer only enforces judge!=writer when the
   # WRITER model is known (input.writerModel). Today every agents.model column is
-  # blank fleet-wide (verified on the operator canary: 0 of 290 agents carry a
+  # blank fleet-wide (verified on the operator's own box: 0 of 290 agents carry a
   # model), so writerModel is null and the equality guard is SKIPPED — therefore
   # ANY eligible client-owned reasoning model is a safe judge. When agent models
   # are later populated, cc_resolve_judge_model's family precedence still picks a
@@ -566,7 +566,7 @@ cc_write_env_local() {
   # Idempotent: an operator-set QC_JUDGE_MODEL is PRESERVED, never overwritten.
   # NOTE (endpoint dependency, flagged separately): scoring ALSO requires the box's
   # Ollama Cloud connector to reach a working endpoint with the client's key. On
-  # the operator canary the default https://ollama.com returned 401 for every
+  # the operator's own box the default https://ollama.com returned 401 for every
   # stored key and the working sovereign path was the box's local Ollama proxy
   # (OLLAMA_CLOUD_BASE_URL). Provisioning that endpoint is intentionally OUT OF
   # SCOPE here (per-box; never guess another box's endpoint) — this block sets
@@ -1389,6 +1389,53 @@ else
   fi
   state_set '.commandCenterPhase3Done = true'
   log "INFO" "phase=3 workspace-folders: done"
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 3b — Vertical-derivation guard (U107, E5-2/G2a): a vertical is NEVER
+# force-added to a client who is not that vertical.
+# ----------------------------------------------------------------------
+# Independently audits the departments just materialized in Phase 3
+# ($OC_ROOT/workspace/departments, on disk — never trusts a JSON self-report)
+# against the verticals the interview DECLARED (build-workforce.py's
+# verticalPacks.detectedPacks record in $STATE_FILE). Asserts provisioned
+# (subset) declared for every vertical-specific department (universal-primary
+# depts, e.g. saas/engineering, are excluded by design — they ship to every
+# client). On a healthy install this NEVER fires (apply_vertical_packs already
+# only adds a pack department when its keywords matched the interview), so
+# this is defense-in-depth, not a behavior change for correct installs — it
+# only blocks the exact defect this unit exists to catch.
+log "INFO" "phase=3b vertical-derivation-guard: starting"
+if [[ "$(state_get '.commandCenterPhase3bDone')" == "true" ]]; then
+  log "INFO" "phase=3b vertical-derivation-guard: already done — skipping"
+else
+  VERTICAL_GUARD=""
+  for _vg_cand in \
+    "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py"; do
+    if [[ -f "$_vg_cand" ]]; then VERTICAL_GUARD="$_vg_cand"; break; fi
+  done
+  if [[ -z "$VERTICAL_GUARD" ]]; then
+    log "WARN" "phase=3b vertical-derivation-guard: script not found in any skill-23 location — skipping (update the Skill 23 install to a version that ships U107)"
+  elif [[ ! -d "$OC_ROOT/workspace/departments" ]]; then
+    log "WARN" "phase=3b vertical-derivation-guard: $OC_ROOT/workspace/departments missing — nothing to audit yet, skipping"
+  else
+    VG_OUT="$(python3 "$VERTICAL_GUARD" --departments-dir "$OC_ROOT/workspace/departments" \
+      --build-state "$STATE_FILE" \
+      --out "$OC_ROOT/workspace/provisioning/vertical-derivation.json" --json 2>>"$LOG_FILE")"
+    VG_RC=$?
+    printf '%s\n' "$VG_OUT" >> "$LOG_FILE"
+    if [[ "$VG_RC" -eq 0 ]]; then
+      state_set '.commandCenterPhase3bDone = true'
+      log "INFO" "phase=3b vertical-derivation-guard: PASS — provisioned vertical-specific departments all declared by the interview (receipt: $OC_ROOT/workspace/provisioning/vertical-derivation.json)"
+    elif [[ "$VG_RC" -eq 3 ]]; then
+      VG_REASON="$(printf '%s' "$VG_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("; ".join(v["reason"] for v in d.get("violations", [])) or "unknown violation")' 2>/dev/null)"
+      fail_install "phase=3b: vertical-derivation-guard found a vertical-specific department provisioned without a matching interview declaration — ${VG_REASON:-see $LOG_FILE}"
+    else
+      log "WARN" "phase=3b vertical-derivation-guard: rc=$VG_RC (unresolved departments dir / non-fatal) — see $LOG_FILE"
+    fi
+  fi
 fi
 
 # ----------------------------------------------------------------------

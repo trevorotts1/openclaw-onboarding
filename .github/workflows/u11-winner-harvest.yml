@@ -1,0 +1,55 @@
+name: u11-winner-harvest
+
+# U11 (A-U11, master-spec v2 A.10) — Winner-harvest flywheel: >=9.0 outputs
+# -> operator-approved card -> CLIENT-LOCAL exemplar library. Fails the
+# build if:
+#   (a) a >=9.0 fixture output stops producing exactly ONE approval card
+#       across repeated sweeps (idempotency regressed);
+#   (b) a candidate ever enters the library without an approved card (the
+#       card gate regressed);
+#   (c) the library path stops resolving inside the client workspace, or
+#       starts resolving under the repo tree;
+#   (d) a two-client fixture stops proving zero cross-client visibility.
+#
+# Offline/fixture only — this workflow never talks to a live Command
+# Center board (mirrors u10-anti-copy-guard.yml's key-free, network-free
+# posture).
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface in the run steps.
+
+on:
+  push:
+    paths:
+      - "shared-utils/winner_harvest.py"
+      - "shared-utils/test_winner_harvest.py"
+      - "shared-utils/exemplar_injection.py"
+      - ".github/workflows/u11-winner-harvest.yml"
+  pull_request:
+    paths:
+      - "shared-utils/winner_harvest.py"
+      - "shared-utils/test_winner_harvest.py"
+      - "shared-utils/exemplar_injection.py"
+      - ".github/workflows/u11-winner-harvest.yml"
+
+jobs:
+  u11-winner-harvest:
+    name: Winner-harvest flywheel — idempotent card, card-gated write, client-local, zero cross-client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: winner_harvest.py compiles
+        run: python3 -m py_compile shared-utils/winner_harvest.py shared-utils/exemplar_injection.py
+
+      - name: winner_harvest.py self-test (offline, no network/key, no live board)
+        run: python3 shared-utils/winner_harvest.py
+
+      - name: U11 — idempotent card (a), card-gated write (b), client-local not repo tree (c), zero cross-client (d)
+        run: python3 -m unittest shared-utils/test_winner_harvest.py -v

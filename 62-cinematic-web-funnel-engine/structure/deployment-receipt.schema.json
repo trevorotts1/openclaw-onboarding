@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/deployment-receipt.schema.json",
+  "title": "Cinematic and Web Funnel Engine — deployment-receipt.json (Skill 62, U6)",
+  "description": "Preview/production deployment receipts (spec Sections 14, 11.1 deployment{}). Must survive restart (spec 11.2: 'deployment receipts and provider task IDs must survive restart').",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "environment", "host", "commit_sha", "status", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "environment": { "type": "string", "enum": ["preview", "production"] },
+    "host": { "type": "string", "enum": ["vercel", "cloudflare-pages", "netlify", "self-hosted", "static-export"] },
+    "host_project_id": { "type": ["string", "null"] },
+    "host_deployment_id": { "type": ["string", "null"] },
+    "url": { "type": ["string", "null"] },
+    "commit_sha": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "building", "ready", "error", "cancelled"]
+    },
+    "restart_verified": {
+      "type": "boolean",
+      "description": "Set true once this receipt has been independently re-fetched from the host after a process restart (spec 19.3 'deployment restart/reload')."
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}

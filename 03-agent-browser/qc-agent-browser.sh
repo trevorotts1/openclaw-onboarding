@@ -40,6 +40,12 @@ fi
 resolve_platform_paths
 # shellcheck source=./scripts/lib-archive-diff.sh
 source "$SKILL_DIR/scripts/lib-archive-diff.sh"
+# shellcheck source=./scripts/lib-scoped-chrome-scan.sh
+source "$SKILL_DIR/scripts/lib-scoped-chrome-scan.sh"
+# shellcheck source=./scripts/lib-onbox-drift.sh
+source "$SKILL_DIR/scripts/lib-onbox-drift.sh"
+# shellcheck source=./scripts/lib-backstop-conformance.sh
+source "$SKILL_DIR/scripts/lib-backstop-conformance.sh"
 
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
 assert(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else red "  ✗ FAIL — $1"; FAIL=$((FAIL+1)); fi; }
@@ -54,6 +60,38 @@ assert "npm installed" "command -v npm"
 assert "agent-browser CLI on PATH" "command -v agent-browser || npm list -g --depth=0 2>/dev/null | grep -q agent-browser"
 warn_only "agent-browser --help responds" "agent-browser --help 2>&1 | grep -qiE 'agent.browser|usage|command'"
 warn_only "TOOLS.md references agent-browser" "grep -qiE 'agent.browser' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
+
+# ── Relationship lattice pointer + citation tripwire (U89/GK-27) ─────────────
+# Static/offline, repo-relative — asserts SKILL.md carries its one-line
+# pointer to docs/CONTENT-CONVERSATION-LATTICE.md and that the edge(s) this
+# skill owns (its own backstop-consumer acknowledgment, GK-28/U90) still cite
+# real, unchanged ground truth. Drift (a moved/edited/deleted cited line) or a
+# missing pointer both FAIL this check — see docs/tools/check_lattice_citation.py.
+#
+# This is a REPO-integrity check, not a runtime/installed-skill check: it
+# needs docs/tools/check_lattice_citation.py + docs/lattice-citations.json,
+# which live at the repo root as SIBLINGS of 03-agent-browser/, not inside
+# it. When qc-agent-browser.sh runs from a plain repo checkout, SKILL_DIR's
+# parent IS that repo root and the checker is found. When this script runs
+# against a STAGED/INSTALLED copy of just this skill directory (an installed
+# ~/.openclaw/skills/03-agent-browser/, or the P3-06 regression fixtures'
+# `cp -R` staging) SKILL_DIR's parent has no docs/ sibling at all -- the
+# checker script itself is absent, not merely reporting drift. Hard-FAILing
+# in that case would wrongly redden every staged/installed run forever (a
+# permanently-red gate), so this SKIPS (warn_only) when the checker isn't
+# present, and only hard-asserts when it is -- same "absent skips cleanly"
+# convention as the GK-28/U90 on-box drift gate below.
+echo ""
+echo "═══ Relationship lattice pointer + citation tripwire (GK-27) ═══"
+echo ""
+REPO_ROOT_LATTICE="$(cd "$SKILL_DIR/.." && pwd)"
+if [ -f "$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py" ]; then
+  assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+    "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 03-agent-browser -q"
+else
+  yellow "  ⚠ WARN — GK-27 lattice citation tripwire SKIPPED — docs/tools/check_lattice_citation.py not found at $REPO_ROOT_LATTICE (running against a staged/installed skill copy, not a full repo checkout)"
+  WARN=$((WARN+1))
+fi
 
 # ── Archive drift gate (P3-06 step (c)2) ─────────────────────────────────────
 echo ""
@@ -78,6 +116,85 @@ else
   fi
 fi
 
+# ── On-box source-of-truth drift gate (GK-28/U90 step (a)) ──────────────────
+# SKILL.md defers to ~/clawd/skills/agent-browser/SKILL.md as "the source of
+# truth" WHEN PRESENT, with no drift check between the two before this. That
+# file is box-local (outside this repo), so it is checked against a PINNED
+# sha256 baseline (references/onbox-agent-browser-skillmd.pin) instead of an
+# on-disk diff. AGENT_BROWSER_ONBOX_SKILLMD overrides the path (testing only).
+echo ""
+echo "═══ On-box source-of-truth drift gate ═══"
+echo ""
+ONBOX_SKILLMD="${AGENT_BROWSER_ONBOX_SKILLMD:-$HOME/clawd/skills/agent-browser/SKILL.md}"
+ONBOX_PIN="$SKILL_DIR/references/onbox-agent-browser-skillmd.pin"
+ONBOX_DRIFT="$(agent_browser_onbox_drift "$ONBOX_SKILLMD" "$ONBOX_PIN")"
+case "$ONBOX_DRIFT" in
+  "")
+    green "  ✓ PASS — no on-box source-of-truth copy present at $ONBOX_SKILLMD (nothing to check; SKILL.md documents this path as optional)"
+    PASS=$((PASS+1))
+    ;;
+  MATCH)
+    green "  ✓ PASS — $ONBOX_SKILLMD matches the pinned baseline"
+    PASS=$((PASS+1))
+    ;;
+  NO-BASELINE-PINNED)
+    red "  ✗ FAIL — $ONBOX_SKILLMD is present but no baseline is pinned yet (no baseline pinned — fail-closed). Review it, then run scripts/pin-onbox-source-of-truth.sh to capture one."
+    FAIL=$((FAIL+1))
+    ;;
+  DRIFT*)
+    red "  ✗ FAIL — $ONBOX_SKILLMD has DRIFTED from the pinned baseline: $ONBOX_DRIFT — review the change, then re-run scripts/pin-onbox-source-of-truth.sh to re-pin (if accepted)."
+    FAIL=$((FAIL+1))
+    ;;
+  ERROR:*)
+    red "  ✗ FAIL — $ONBOX_DRIFT"
+    FAIL=$((FAIL+1))
+    ;;
+esac
+
+# ── CLI version pin (GK-28/U90 step (b)) ─────────────────────────────────────
+# The agent-browser NPM PACKAGE version was never pinned anywhere in this
+# skill before this (the archive covers the WRAPPER docs only, P3-06). A
+# fresh `npm install -g agent-browser` could silently land any current
+# registry release. agent-browser-cli.pin + CLI-VERSION-PIN.md now record a
+# known-good, PROVEN version; this section asserts the two agree AND that the
+# installed CLI (when present) actually matches the pin.
+echo ""
+echo "═══ CLI version pin ═══"
+echo ""
+CLI_PIN_FILE="$SKILL_DIR/agent-browser-cli.pin"
+if [ ! -f "$CLI_PIN_FILE" ]; then
+  red "  ✗ FAIL — agent-browser-cli.pin missing at $CLI_PIN_FILE"
+  FAIL=$((FAIL+1))
+else
+  PIN_CHECK_OUT="$(bash "$SKILL_DIR/scripts/bump-agent-browser-cli-pin.sh" --check 2>&1)"
+  PIN_CHECK_RC=$?
+  if [ "$PIN_CHECK_RC" -ne 0 ]; then
+    red "  ✗ FAIL — $PIN_CHECK_OUT"
+    FAIL=$((FAIL+1))
+  else
+    green "  ✓ PASS — $PIN_CHECK_OUT"
+    PASS=$((PASS+1))
+  fi
+
+  PINNED_VERSION="$(tr -d '[:space:]' < "$CLI_PIN_FILE")"
+  if ! command -v agent-browser >/dev/null 2>&1; then
+    yellow "  ⚠ WARN — agent-browser not on PATH; cannot verify installed CLI version against the pin ($PINNED_VERSION) — already FAILS the 'agent-browser CLI on PATH' check above"
+    WARN=$((WARN+1))
+  else
+    INSTALLED_VERSION="$(agent-browser --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    if [ -z "$INSTALLED_VERSION" ]; then
+      yellow "  ⚠ WARN — could not parse an installed CLI version from 'agent-browser --version' output — verify manually against the pin ($PINNED_VERSION)"
+      WARN=$((WARN+1))
+    elif [ "$INSTALLED_VERSION" = "$PINNED_VERSION" ]; then
+      green "  ✓ PASS — installed agent-browser CLI version ($INSTALLED_VERSION) matches the pinned CLI version ($PINNED_VERSION)"
+      PASS=$((PASS+1))
+    else
+      red "  ✗ FAIL — installed agent-browser CLI version ($INSTALLED_VERSION) does NOT match the pinned CLI version ($PINNED_VERSION) — see CLI-VERSION-PIN.md; bump only after proving the new version on the operator's own box, via scripts/bump-agent-browser-cli-pin.sh"
+      FAIL=$((FAIL+1))
+    fi
+  fi
+fi
+
 # ── Step-4 guaranteed-close smoke test — extracted live from INSTALL.md,
 #    --headed false ASSERTED (not implied), post-test PROCESS state ASSERTED
 #    clean (P3-06 step (c)3 + (c)4) ─────────────────────────────────────────
@@ -85,21 +202,13 @@ echo ""
 echo "═══ Step-4 smoke test (guaranteed-close, --headed false) ═══"
 echo ""
 
-# Scoped Chromium-under-agent-browser-profile match, same shape as
-# scripts/agent-browser-reaper.sh's AB_MAX_LIVE tripwire (never a bare
-# chrome/Chrome/Claude match — only a Chromium whose OWN command line
-# references an agent-browser profile/user-data-dir).
-_scoped_chrome_pids() {
-  ps -axww -o pid=,command= 2>/dev/null \
-    | grep -E "(--user-data-dir|--profile|profile-directory)[= ]?[^ ]*agent-browser" \
-    | grep -Ei 'chrom|headless_shell' \
-    | grep -vi 'grep' \
-    | awk '{print $1}' \
-    | sort -u
-}
-_new_pids() {  # _new_pids <before-list> <after-list> -> pids in after not in before
-  comm -13 <(printf '%s\n' "$1" | sed '/^$/d' | sort -u) <(printf '%s\n' "$2" | sed '/^$/d' | sort -u)
-}
+# _scoped_chrome_pids / _new_pids — Scoped Chromium-under-agent-browser-profile
+# match, same shape as scripts/agent-browser-reaper.sh's AB_MAX_LIVE tripwire
+# (never a bare chrome/Chrome/Claude match — only a Chromium whose OWN command
+# line references an agent-browser profile/user-data-dir). Extracted to
+# scripts/lib-scoped-chrome-scan.sh (GK-28/U90) so this Step-4 leg and the new
+# backstop conformance battery's "guaranteed close" leg share ONE
+# implementation instead of two ad-hoc copies (sourced above).
 
 if ! command -v agent-browser >/dev/null 2>&1; then
   yellow "  ⚠ WARN — agent-browser not on PATH; Step-4 smoke test SKIPPED (already FAILS the 'agent-browser CLI on PATH' check above)"
@@ -184,6 +293,46 @@ PY
       ;;
     *)
       red "  ✗ FAIL — REFUSE: AGENT_BROWSER_HEADED='${_ambient_headed}' would open a VISIBLE window. Headless (--headed false) is mandatory. Step-4 smoke test ABORTED (exit 75 class). Unset AGENT_BROWSER_HEADED and retry."
+      FAIL=$((FAIL+1))
+      ;;
+  esac
+fi
+
+# ── Backstop conformance battery (GK-28/U90 step (c)) ────────────────────────
+# Drives the exact five operations Skill 6's browser_manager.sh and Skill 44's
+# Tier-4 fallback script against agent-browser (open / ref-based snapshot /
+# snapshot-ref stability / fill-by-ref / guaranteed close) from the CONSUMER
+# side, against a bundled offline fixture (no network dependency). Shares the
+# SAME run_conformance_battery implementation the fail-first regression test
+# (scripts/tests/backstop-conformance.test.sh) proves is fail-closed per leg.
+echo ""
+echo "═══ Backstop conformance battery (consumer contract) ═══"
+echo ""
+if ! command -v agent-browser >/dev/null 2>&1; then
+  yellow "  ⚠ WARN — agent-browser not on PATH; conformance battery SKIPPED — already FAILS the 'agent-browser CLI on PATH' check above"
+  WARN=$((WARN+1))
+else
+  case "${AGENT_BROWSER_HEADED:-}" in
+    ""|0|false|False|FALSE|no|off|No|NO)
+      # Captured to a FILE, never a command-substitution pipe: a stub/real
+      # CLI's `open` may background a long-lived stand-in process that
+      # inherits stdout — under a pipe that blocks the whole capture until
+      # that process exits (same reason Step-4's smoke test above redirects
+      # to /tmp/qc03-smoke-out.$$ instead of using "$(...)").
+      run_conformance_battery "qc-backstop-conformance-$$" >/tmp/qc03-conformance-out.$$ 2>&1
+      CONF_RC=$?
+      CONF_OUT="$(cat /tmp/qc03-conformance-out.$$ 2>/dev/null)"; rm -f /tmp/qc03-conformance-out.$$
+      echo "$CONF_OUT" | sed 's/^/  /'
+      if [ "$CONF_RC" -eq 0 ]; then
+        green "  ✓ PASS — all five backstop conformance legs pass (open, ref-based snapshot, snapshot-ref stability, fill-by-ref, guaranteed close)"
+        PASS=$((PASS+1))
+      else
+        red "  ✗ FAIL — one or more backstop conformance legs failed (see leg detail above) — Skill 6/44's fallback rail is not fully backed by this CLI"
+        FAIL=$((FAIL+1))
+      fi
+      ;;
+    *)
+      red "  ✗ FAIL — REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Conformance battery ABORTED (exit 75 class). Unset AGENT_BROWSER_HEADED and retry."
       FAIL=$((FAIL+1))
       ;;
   esac

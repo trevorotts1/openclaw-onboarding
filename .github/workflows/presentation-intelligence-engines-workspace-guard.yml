@@ -1,0 +1,58 @@
+name: presentation-intelligence-engines-workspace-guard
+
+# U86 [GK-24] guard — fails the build if intelligence_engines_check.py regresses
+# the workspace-path fix: a QC specialist running the script by hand (its own
+# docstring: "invoked by the QC specialists at the 8.5 gate") from an arbitrary
+# shell cwd must NEVER silently read an unrelated deck's working/ directory.
+#
+# It runs tests/unit/presentation-intelligence-engines-workspace.test.sh, which
+# asserts:
+#   (A) --run-dir / --workspace / a positional RUN_DIR / OC_DECK_WORKSPACE all
+#       resolve to the NAMED directory regardless of the caller's actual cwd,
+#   (B) the original bug scenario (no RUN_DIR given, cwd holds an unrelated
+#       deck's working/) now reports run_dir_source=="implicit_cwd_default" +
+#       the ACTUAL resolved path, in both --json and human output, plus a loud
+#       stderr NOTE -- never silent,
+#   (C) a missing/nonexistent --run-dir value fails LOUD (FATAL, never a
+#       Python traceback),
+#   (D) the script stays read-only (no write/mkdir call anywhere in its source),
+#   (E) build_deck.py / phase_verifiers.py -- the only canonical-render-path
+#       callers -- invoke check_copy()/check_prompts() directly with an
+#       explicit run_dir, so this fix never touches the canonical render path.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/intelligence_engines_check.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py
+      - tests/unit/presentation-intelligence-engines-workspace.test.sh
+      - .github/workflows/presentation-intelligence-engines-workspace-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/intelligence_engines_check.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py
+      - tests/unit/presentation-intelligence-engines-workspace.test.sh
+      - .github/workflows/presentation-intelligence-engines-workspace-guard.yml
+
+jobs:
+  intelligence-engines-workspace-guard:
+    name: intelligence_engines_check.py workspace-path guard (Skill 23/51, U86)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Workspace-path resolution guard
+        shell: bash
+        run: |
+          chmod +x tests/unit/presentation-intelligence-engines-workspace.test.sh
+          bash tests/unit/presentation-intelligence-engines-workspace.test.sh

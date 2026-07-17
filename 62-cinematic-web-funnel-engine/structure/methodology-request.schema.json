@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/methodology-request.schema.json",
+  "title": "Cinematic and Web Funnel Engine — methodology-request.json (Skill 62, U8)",
+  "description": "The P2-METHODOLOGY phase's OWN input contract (spec Section 7.1 'Inputs'). Written before scripts/resolve_content_engine.py runs; P1-INTAKE (a separate, later, unassigned build unit) is one legitimate producer of this file, but this schema stands on its own so the P2 router is testable and runnable without depending on an unbuilt P1. cinematic_intent is always an EXPLICIT boolean supplied by the caller — this router never infers client intent from fuzzy text (mirrors the no-silent-guessing discipline of scripts/resolve_execution_environment.py).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "requested_deliverable_type",
+    "requested_visual_treatment",
+    "cinematic_intent",
+    "request_text",
+    "conversion_requirements"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "requested_deliverable_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Spec 7.1 'requested deliverable type'. Free string; the router treats the reserved values 'video-only' and 'static-page' specially (routing rules 5 and 6) and otherwise folds this into the match-scoring text corpus."
+    },
+    "requested_visual_treatment": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Spec 7.1 'requested visual treatment'. Free string; the router treats the reserved values 'video-only' and 'static' specially (routing rules 5 and 6)."
+    },
+    "cinematic_intent": {
+      "type": "boolean",
+      "description": "Explicit, never inferred. False forces routing rule 3 or 6 (existing-funnel-selector) regardless of any other field."
+    },
+    "existing_funnel_methodology_named": {
+      "type": ["string", "null"],
+      "description": "Spec 7.1 'existing funnel methodology named by client' (e.g. 'signature funnel', 'direct response sales page'). Folded into the match-scoring text corpus."
+    },
+    "offer_summary": { "type": "string" },
+    "conversion_goal": { "type": "string" },
+    "funnel_steps": { "type": ["integer", "null"], "minimum": 0 },
+    "existing_copy_assets": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Spec 7.1 'existing copy assets' (paths/URLs to copy the client already has)."
+    },
+    "destination_platform": { "type": "string" },
+    "ghl_available": { "type": "boolean" },
+    "conversion_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["form", "calendar", "payment"],
+      "properties": {
+        "form": { "type": "boolean" },
+        "calendar": { "type": "boolean" },
+        "payment": { "type": "boolean" }
+      }
+    },
+    "request_text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Free-text description of the request. This is the text corpus the router matches against the shared STEP-0 registry's names/keywords/signals/anti_signals blocks for Skill 49 and Skill 56 (spec 7.2 rules 1-2 disambiguation)."
+    },
+    "created_at": { "type": "string" }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "exemplar_id": "35-social-media-planner/social-caption/founder-story-carousel-caption",
+  "skill": "35-social-media-planner",
+  "deliverable_type": "social-caption",
+  "slug": "founder-story-carousel-caption",
+  "source": "internal-fictional",
+  "date": "2026-07-15",
+  "quality_control_score": null,
+  "harvested_from_task_id": null,
+  "fictional_brand": "Harbor & Pine Coaching",
+  "anonymized": true,
+  "persona_register": null,
+  "notes": "Authored fresh for A-U9 (master unit U9) as Skill 35's first exemplar pack — closes the 'one point gap' playbook.md Section 18/19 self-documents (no full worked example of a finished day's output). Not harvested from any real client deliverable; no real client, person, or company is named or alluded to.",
+  "llm_content_review": {
+    "reviewed": true,
+    "reviewer": "Claude (Sonnet 5), A-U9 build pass, 2026-07-15",
+    "method": "full read of gold-output.md + WHY-GOOD.md + this file, never a name/pattern grep",
+    "verdict": "zero client-identifying content — fictional brand name only, no real people, companies, or client data referenced anywhere in the pack"
+  }
+}

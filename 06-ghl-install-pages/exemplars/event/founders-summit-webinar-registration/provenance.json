@@ -1,0 +1,20 @@
+{
+  "exemplar_id": "06-ghl-install-pages/event/founders-summit-webinar-registration",
+  "skill": "06-ghl-install-pages",
+  "deliverable_type": "event",
+  "slug": "founders-summit-webinar-registration",
+  "source": "internal-fictional",
+  "date": "2026-07-15",
+  "quality_control_score": null,
+  "harvested_from_task_id": null,
+  "fictional_brand": "The Founders Summit",
+  "anonymized": true,
+  "persona_register": null,
+  "notes": "Authored fresh for A-U9 (master unit U9) as a fictional-brand gold-standard sample for the event funnel-template category. Not harvested from any real client deliverable; no real client, person, or company is named or alluded to.",
+  "llm_content_review": {
+    "reviewed": true,
+    "reviewer": "Claude (Sonnet 5), A-U9 build pass, 2026-07-15",
+    "method": "full read of gold-output.md + WHY-GOOD.md + this file, never a name/pattern grep",
+    "verdict": "zero client-identifying content — fictional brand name only, no real people, companies, or client data referenced anywhere in the pack"
+  }
+}

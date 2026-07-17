@@ -1586,6 +1586,177 @@ def _chosen_department_slugs(selected_departments):
     return slugs
 
 
+def _read_prior_chosen_entries(company_dir):
+    """
+    U109 (E5-4, closes G2c) merge-not-replace fix: read whatever the durable
+    chosen-list artifact ALREADY contains at `company_dir`, i.e. the state
+    BEFORE this write. Read-only, called before any file in this write is
+    touched.
+
+    Returns (entries, status) where status is one of:
+      "ok"      — the file was read + parsed as a JSON list; `entries` is
+                  that list (possibly legitimately empty).
+      "absent"  — `company_dir` is falsy, or no artifact exists yet at that
+                  path. A genuine first-ever write: nothing to recover.
+      "corrupt" — the file EXISTS but could not be parsed as a JSON list of
+                  dicts (a truncated write, disk corruption, a bad hand
+                  edit). The caller MUST NOT treat this the same as
+                  "absent" — a damaged read must never be silently trusted
+                  as "there was nothing here" (that is exactly how a
+                  corrupt/truncated artifact would disarm the merge guard
+                  this unit exists to add). Callers fail safe by recovering
+                  from build-state instead (see `_resolve_prior_chosen_entries`).
+    """
+    if not company_dir:
+        return [], "absent"
+    path = os.path.join(company_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
+    if not os.path.exists(path):
+        return [], "absent"
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return [], "corrupt"
+    if not isinstance(data, list):
+        return [], "corrupt"
+    return data, "ok"
+
+
+def _bare_norm_slug(raw):
+    """Strip a legacy 'dept-' id prefix (if present) and run the SAME shared
+    normalizer used for decline comparisons, so a bare-slug entry
+    ("marketing") and a legacy id-only entry ("dept-marketing", no "slug"
+    key) collapse onto ONE identity everywhere this module compares
+    department identities — dedup, decline-lookup, all of it. Returns ""
+    for a falsy/missing raw value."""
+    if not raw:
+        return ""
+    bare = raw[5:] if raw.startswith("dept-") else raw
+    return _decline_norm(bare)
+
+
+def _reconstruct_entries_from_slugs(slugs):
+    """
+    Best-effort reconstruction of full departments.json-shaped entries
+    (id/slug/emoji/name/headTitle/workspacePath) from a BARE SLUG list —
+    the shape build-state's canonicalReconciliation.chosenDepartments.slugs
+    carries. Used ONLY by the corrupt-artifact / falsy-company_dir recovery
+    path in `_resolve_prior_chosen_entries`: build-state records slugs, not
+    full entries, so a recovered department needs SOME display metadata.
+    Prefers the canonical floor's real name/emoji/head when the slug is a
+    known canonical department; falls back to a title-cased display name
+    otherwise so a custom department is never dropped for lack of decoration.
+    The CEO column is never reconstructed here — generate_departments_json
+    always prepends it itself.
+    """
+    try:
+        floor = load_canonical_floor()
+    except Exception:
+        floor = {}
+    entries = []
+    for slug in slugs:
+        if not slug or slug in ("ceo", "dept-ceo", "master-orchestrator"):
+            continue
+        bare = slug[5:] if slug.startswith("dept-") else slug
+        info = floor.get(bare, {})
+        entries.append({
+            "id": f"dept-{bare}",
+            "slug": bare,
+            "emoji": info.get("emoji", "\U0001f4c1"),
+            "name": info.get("name") or bare.replace("-", " ").title(),
+            "headTitle": info.get("head", ""),
+            "workspacePath": f"departments/{bare}",
+        })
+    return entries
+
+
+def _resolve_prior_chosen_entries(cdir):
+    """
+    U109 hardening: resolve the FULL prior chosen-department set to merge
+    onto, from every source that can carry it — so neither a corrupt/missing
+    on-disk artifact NOR a falsy `company_dir` (both real conditions on the
+    production path: `build_from_config`'s two call sites never pass
+    `company_dir` explicitly, and that function's OWN `if COMPANY_DIR:`
+    guard one line after each call site proves COMPANY_DIR can be falsy
+    there) can make the merge silently no-op and wipe build-state's record.
+
+    Resolution order:
+      1. `cdir`'s on-disk artifact, when present and parses cleanly — the
+         richest source (full name/emoji/head per department).
+      2. build-state's OWN prior canonicalReconciliation.chosenDepartments.slugs
+         (reconstructed to full entries via `_reconstruct_entries_from_slugs`)
+         — exists independently of `cdir`, so it recovers a falsy-`cdir` call
+         AND a corrupted-artifact read alike. Folded in as a supplement even
+         when the file read succeeds, in case the file is somehow missing a
+         department build-state still remembers.
+      3. `[]` only when BOTH are genuinely absent (a first-ever write) or
+         BOTH failed (an honestly-logged, irrecoverable edge case — never a
+         SILENT one).
+    """
+    file_entries, status = _read_prior_chosen_entries(cdir)
+    prior_state = _load_build_state()
+    prior_slugs = (
+        ((prior_state.get("canonicalReconciliation") or {}).get("chosenDepartments") or {}).get("slugs")
+        or []
+    )
+
+    if status == "ok":
+        known = {_bare_norm_slug(e.get("slug") or e.get("id")) for e in file_entries if isinstance(e, dict)}
+        known.discard("")
+        extra_slugs = [s for s in prior_slugs if _bare_norm_slug(s) not in known]
+        return list(file_entries) + _reconstruct_entries_from_slugs(extra_slugs)
+
+    if status == "corrupt":
+        if prior_slugs:
+            print(f"[CHOSEN-LIST WARNING] durable artifact at {cdir} exists but is "
+                  f"corrupt/unreadable -- recovering {len(prior_slugs)} department(s) "
+                  f"from build-state rather than trusting the damaged read.",
+                  file=sys.stderr)
+            return _reconstruct_entries_from_slugs(prior_slugs)
+        print(f"[CHOSEN-LIST WARNING] durable artifact at {cdir} exists but is "
+              f"corrupt/unreadable AND build-state carries no prior chosen-list "
+              f"record -- no recovery source available; proceeding with only "
+              f"THIS call's departments (an irrecoverable data-loss edge case, "
+              f"logged loudly here, never silent).", file=sys.stderr)
+        return []
+
+    # status == "absent": no on-disk artifact readable (missing file, or a
+    # falsy `cdir`). build-state may still carry the prior chosen-list —
+    # recover from it so a falsy company_dir on the production path can
+    # never wipe the build-state record down to just this call's set.
+    if prior_slugs:
+        return _reconstruct_entries_from_slugs(prior_slugs)
+    return []
+
+
+def _atomic_write_json(path, obj):
+    """Write JSON to `path` atomically (temp file in the same directory +
+    os.replace), mirroring this module's OWN established pattern (see the
+    build-state writers elsewhere in this file). A process kill / crash /
+    disk-full mid-write leaves the ORIGINAL file untouched instead of a
+    truncated, corrupt one — the self-inflicted half of the U109 hardening:
+    this writer must never manufacture the exact damage its own reader has
+    to recover from."""
+    import tempfile as _tf
+    directory = os.path.dirname(path) or "."
+    tmp = _tf.mktemp(dir=directory, prefix=".u109.", suffix=".tmp")
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=2)
+    try:
+        os.replace(tmp, path)
+    except OSError:
+        # The commit step failed (disk full, permissions, etc.) -- the
+        # original file at `path` is untouched (that is the whole point of
+        # the atomic swap). Clean up the orphaned temp file best-effort and
+        # re-raise so the caller's existing fail-soft handling runs exactly
+        # as it did before this write became atomic.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
                                       discovery_dir=None, source="reconciliation-end"):
     """
@@ -1599,20 +1770,78 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
       3. build-state canonicalReconciliation.chosenDepartments =
            {slugs, count, artifactPath, writtenAt, source}
 
+    U109 (E5-4, closes G2c) — MERGE, NEVER REPLACE. Before this fix, this
+    function was a blind overwrite: a call with a SMALLER `selected_departments`
+    (a second provisioning run, a partial/aborted interview, or a late edit
+    that only touched a subset of departments) silently WIPED every department
+    a PRIOR, larger call had already recorded — the department floor could
+    shrink with no explicit decline behind it. The fix resolves the FULL prior
+    chosen-set from every source that can carry it (`_resolve_prior_chosen_entries`
+    — the on-disk artifact AND build-state's own record, so neither a
+    corrupt/truncated artifact nor a falsy `company_dir` on the production
+    path can silently disarm the merge) and writes the UNION of that prior
+    record with this call's set — `floor ∪ derived`, never a replace — MINUS
+    any department the client has EXPLICITLY, provenance-gated DECLINED per
+    `canonical_decline.canonical_decline_set()` (the exact mechanism
+    U107/U108 and department-floor.py already honor), compared on the SAME
+    normalized bare-slug identity used everywhere else in this module (a
+    legacy id-only "dept-<slug>" entry and a bare "<slug>" entry are ONE
+    department, never two). An explicit decline is therefore the ONLY way a
+    department can be absent from the merged result; a department simply
+    un-mentioned by THIS call is preserved, never dropped. Both the on-disk
+    artifact write and the build-state write are ATOMIC (`_atomic_write_json`)
+    so a crash/kill mid-write leaves the prior, still-valid file in place
+    instead of manufacturing the exact truncated/corrupt read this same fix
+    has to recover from.
+
     Idempotent + never raises (a durable-write failure must never abort a build).
     Returns the list of files written.
     """
-    dept_json = generate_departments_json(selected_departments)
-    slugs = _chosen_department_slugs(selected_departments)
-    written = []
     cdir = company_dir or COMPANY_DIR
+    dept_json = generate_departments_json(selected_departments)
+
+    # ── U109 merge-not-replace (fail-safe: file + build-state, normalized) ──
+    prior_entries = _resolve_prior_chosen_entries(cdir)
+    if prior_entries:
+        declined_now = _shared_canonical_decline_set(_load_build_state())
+        known_norm = {_bare_norm_slug(e.get("slug") or e.get("id")) for e in dept_json if isinstance(e, dict)}
+        known_norm.discard("")
+        for entry in prior_entries:
+            if not isinstance(entry, dict):
+                continue
+            raw_eslug = entry.get("slug") or entry.get("id")
+            # Normalized BEFORE the dedup check (not just the decline check):
+            # a legacy id-only entry ("dept-marketing", no "slug" key) must
+            # collapse onto the SAME identity as this call's bare-slug entry
+            # ("marketing") so it is skipped as a duplicate rather than
+            # appended as a second, ghost copy of an already-present dept.
+            norm_bare = _bare_norm_slug(raw_eslug)
+            if not norm_bare or norm_bare in known_norm:
+                continue
+            if norm_bare in declined_now:
+                # Explicitly declined since the prior write -- honor the
+                # decline; do NOT resurrect it via the merge.
+                print(f"[CHOSEN-LIST] '{norm_bare}' present in the prior chosen-list "
+                      f"but now explicitly declined -- not carried forward.",
+                      file=sys.stderr)
+                continue
+            dept_json.append(entry)
+            known_norm.add(norm_bare)
+
+    slugs = []
+    seen = set()
+    for entry in dept_json:
+        s = entry.get("slug") or entry.get("id")
+        if s and s not in seen:
+            seen.add(s)
+            slugs.append(s)
+    written = []
     artifact_path = None
     if cdir:
         try:
             os.makedirs(cdir, exist_ok=True)
             artifact_path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            with open(artifact_path, "w") as f:
-                json.dump(dept_json, f, indent=2)
+            _atomic_write_json(artifact_path, dept_json)
             written.append(artifact_path)
             print(f"[CHOSEN-LIST] Wrote durable departments.json "
                   f"({len(slugs)} departments) to {artifact_path}", file=sys.stderr)
@@ -1623,8 +1852,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
     if discovery_dir:
         try:
             legacy_path = os.path.join(discovery_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            with open(legacy_path, "w") as f:
-                json.dump(dept_json, f, indent=2)
+            _atomic_write_json(legacy_path, dept_json)
             written.append(legacy_path)
         except OSError as e:
             print(f"[CHOSEN-LIST WARNING] Could not write legacy mirror to {discovery_dir}: {e}",
@@ -1657,8 +1885,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             "source": source,
         }
         state["canonicalReconciliation"] = recon
-        with open(path, "w") as f:
-            json.dump(state, f, indent=2)
+        _atomic_write_json(path, state)
         print(f"[CHOSEN-LIST] Recorded {len(slugs)} chosen departments in build-state "
               f"(canonicalReconciliation.chosenDepartments)", file=sys.stderr)
     except OSError as e:

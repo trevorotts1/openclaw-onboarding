@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v20.0.24"
+  version: "v20.0.66"
   priority: HIGH
 ---
 
@@ -580,18 +580,141 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > any that don't (`--retry`), re-runs the archive job synchronously from the
 > staged source under `<evidence_root>/vercel-github-archive/<marker>/` if it
 > is still present — or FLAGS the page (never fabricates source) if it is not.
-> Run it by hand or wire it into a periodic gate:
+> Run it by hand for one root:
 > `python3 tools/ghl_github_reconcile.py --evidence-root <dir> --retry`
 > (exit 0 = every page's code is confirmed in GitHub; exit 1 = attention
-> needed — see `missing_or_failed`/`flagged` in its output). This is a
-> straightforward per-root sweep, not a fleet-wide crawler; wiring it into a
-> cron / fleet-wide gate is left to the operator.
+> needed — see `missing_or_failed`/`flagged` in its output).
+>
+> **D6/B-D2 — RATIFIED.** The non-blocking archival rail above is the
+> permanent doctrine (operator ruling, D6): it ships exactly as fast as
+> before, every failure is an honest receipt a sweep can retry, and nothing
+> in this path can ever block or roll back a live page.
+>
+> **Scheduled maintenance-window sweep (U24/B-U10 item 2).** Reconciliation
+> is NOT a fleet-wide crawler by itself, but `--sweep-base` closes the
+> "wiring it into a periodic gate is left to the operator" gap: it sweeps
+> EVERY Skill-6 evidence run under a base directory (the same run-evidence
+> ledger roots `cc_board.py reconcile`/U27 already discovers) and writes ONE
+> dated JSON log per pass under `<base>/github-archive-reconcile-logs/` —
+> proof-on-disk that the scheduled sweep actually ran, every time it runs:
+> `python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`
+> (exit 0 = every run's code is confirmed in GitHub; exit 1 = attention
+> needed on at least one run). Wire it as a daily maintenance-window cron
+> (once per box, after Skill 06 is installed — mirrors `HEARTBEAT.md`'s
+> canary-cron pattern):
+> ```
+> openclaw cron create \
+>   --name skill6-github-archive-reconcile-sweep \
+>   --schedule "0 4 * * *" \
+>   --tz "America/New_York" \
+>   --agent main \
+>   --session isolated \
+>   --model "ollama/deepseek-v4-flash:cloud" \
+>   --tools exec \
+>   --message "Sweep the Skill-6 GitHub archival rail: exec python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_github_reconcile.py --sweep-base \"$HOME/clawd/skill6-fix\" --retry --json && echo SWEEP_OK || echo SWEEP_ATTENTION"
+> ```
+> Verify with `openclaw cron list | grep skill6-github-archive-reconcile-sweep`;
+> fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
+> log lands under `github-archive-reconcile-logs/`.
+>
+> **The schedule ENTRY ships as a file, not just doctrine text (B-U10 CODE-MERGE
+> gate acceptance (c), amended 2026-07-15).** `schedule/skill6-github-archive-
+> reconcile-sweep.cron.json` is the single source of truth for the name/
+> schedule/tz/command above — both this doctrine text and `scripts/install-
+> github-archive-reconcile-cron.sh` (the idempotent installer that registers
+> it via `openclaw cron add`, by name, never duplicating) read from it, so the
+> two can never silently drift apart. Run the installer once per box (after
+> Skill 06 is installed) instead of typing the `openclaw cron create` command
+> by hand:
+> `bash scripts/install-github-archive-reconcile-cron.sh [evidence-base-dir]`
+> Proven offline in `tests/test_github_archive_maintenance_schedule.py`
+> (entry-file well-formedness + installer idempotency against a fake CLI, no
+> network); the LIVE registration + first live dated log are DEFERRED TO U22.
+>
+> **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
+> `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
+> runs on every per-build QC pass. It never fails a build over a transient
+> archive failure — an honest `failed` receipt stays open for the sweep above
+> to retry, per the non-blocking doctrine — but it DOES hard-fail the gate
+> when a `vercel_deploy` receipt exists with **no archive receipt of any
+> kind**: total silence is the one case "no receipt = not archived" must
+> never quietly pass. It also prints GitHub token presence **by name only**
+> (`GH_TOKEN` / `GITHUB_TOKEN` — `SET` or `NOT-SET`, never the value) so a
+> misconfigured build box is visible without ever printing a secret.
 >
 > **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
 > scorecards, and screenshots are written to a run-evidence root
 > (`skill6-fix/v2-<RUN_ID>/` or `/tmp`), never inside `06-ghl-install-pages/`,
 > so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
 > history. Any new tool MUST keep durable run state out of the skill dir.
+>
+> **Page inventory + staged lifecycle — nothing auto-deletes client content
+> (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted
+> in B.11 claim #19 (no GHL-side page inventory/lifecycle/retention existed
+> anywhere in this skill). Three independent, individually-callable stages:
+>
+>   1. **FLAG** (read-only, pure) — `flag_lifecycle_candidates` classifies an
+>      already-enumerated inventory into STALE (draft, unpublished past a
+>      threshold — default 30 days), SUPERSEDED (an older page in the same
+>      funnel/name-family than the newest verified one), and DUPLICATE (2+
+>      pages sharing one build marker — the EXACT ambiguity
+>      `ghl_method.resolve_install_target` would itself refuse with
+>      `InstallTargetError`; reused here, never re-derived, so the two rules
+>      can never drift apart).
+>   2. **CARD** — `post_lifecycle_card` posts ONE operator card per distinct
+>      candidate set, deduped against an on-disk event-ledger so a repeated
+>      maintenance-window run never spams a second card for the same
+>      unresolved candidates; a genuinely new/changed candidate set gets its
+>      own fresh card, and a failed notify is retried (never permanently
+>      lost) on the next run.
+>   3. **EXECUTE** — `execute_approved_deletes` is fail-closed BY
+>      CONSTRUCTION: it refuses (raises `LifecycleGuardError`, deletes
+>      nothing, anywhere in the batch) unless every id being deleted was
+>      flagged, carded, DELIVERED, and explicitly named in `approved_ids`.
+>      Every real delete follows present -> pre-delete RESTORABLE export ->
+>      delete -> absent RECEIPT — "no receipt = not deleted", the same F6
+>      discipline `ghl_receipts.py` established for creates, mirrored here
+>      for removals.
+>
+> Evidence-root **RETENTION** (`prune_evidence_roots`) is a fourth,
+> independent concern, reusing `cc_board.list_evidence_runs` (evidence-root
+> discovery is never re-derived): keeps the newest N (default 10)
+> `v2-<RUN_ID>` roots per funnel-slug group plus every root an OPEN card
+> still references, never even considers a root a `blocked` card references,
+> and only ever COMPRESSES older roots — it never deletes a run-evidence root
+> outright. `pages_total`/`drafts_stale`/`superseded`/`orphan_media` reduce
+> into the `/api/health/deep` advisory shape (`inventory_advisory`) the same
+> way `cc_board.reconcile()`'s output already does (B-U13/U27, verified).
+>
+> **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
+> SET of funnel ids for a location. Neither the official GHL public API (no
+> Funnels endpoint exists there — checked against Skill 44's own
+> `endpoints.py`) nor the proven internal SPA-canvas REST family
+> (`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
+> list-pages-within-a-known-funnel) documents a "list every funnel for a
+> location" call. `funnel_lister` is a REQUIRED caller-supplied dependency
+> with no default live implementation (`live_funnel_lister_over_browser_
+> manager` raises `NotImplementedError` rather than ever fabricate a funnel
+> list) — wiring + proving a live discovery route (most likely a DOM-snapshot
+> walk of the Sites -> Funnels list, same discipline as
+> `ghl_selector_drift_probe.py`'s `finder`) is a live leg owed to the operator,
+> parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
+> known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
+> list` step, ready the moment a funnel id is available.
+>
+> **Scheduled maintenance-window sweep (U31/B-U17).** The retention half
+> above is entirely live-wiring-free today (compress-only, zero live
+> GoHighLevel calls) and ships its own schedule ENTRY file
+> (`schedule/skill6-page-inventory-lifecycle.cron.json` — single source of
+> truth, same "entry ships as a file, not just doctrine text" discipline as
+> B-U10's amended acceptance) plus an idempotent installer:
+> `bash scripts/install-page-inventory-lifecycle-cron.sh [evidence-base-dir]`
+> Proven offline in `tests/test_page_inventory_lifecycle_schedule.py` (entry
+> well-formedness + installer idempotency + the mandatory `--no-deliver` flag
+> against a fake CLI, no network — a maintenance-window retention tick must
+> never fan out as a client-facing announcement). The live registration + the
+> live page-enumeration half (blocked on the funnel-discovery gap above) are
+> DEFERRED TO the operator.
 >
 > **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
 > `update_status`/`ingest_task`, plus the step-visibility trio `move_task`/
@@ -606,3 +729,5 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > CC repo at or above that version; if its enum, route path, or auth changes,
 > `cc_board.py` fail-softs (the card just never lands / never moves) and the
 > build continues unregistered.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's funnel seam and backstop rail relate to Skill 44 and Skill 3.

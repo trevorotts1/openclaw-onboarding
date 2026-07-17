@@ -251,27 +251,49 @@ The AI must follow these steps in this exact order:
 **Step 0a: Review Brand Guidelines (First Run / Weekly Check)**
 Before any content production begins, the AI must review the [Brand Name] core .md files on OpenClaw. Confirm brand colors, tone, voice, mission, values, and target audience. If any core .md file has been updated since the last review, re-read it. If core files are missing or incomplete, notify the client and request the missing brand information before proceeding. Do not generate any content without full brand context.
 
-**Step 0a.5: Select Content Persona (5-Layer Alignment)**
-Before writing any content, the AI selects a persona to govern this week's content style using the 5-layer alignment check:
+**Step 0a.5: Select the Content Blend — PER DAY, via Scoped Bundles (D1 binding ruling, Skill 6 U98)**
+Before writing any content, the blended persona GOVERNS each day's voice — never advisory, no
+exemptions. This replaced the old single-persona-per-week pick: a week is 7 distinct posting
+days, and each day gets its OWN governing blend bundle, resolved via the same scoped-bundle
+mechanism Skill 6's per-page funnel copy already uses (`persona_blend.build_bundle(...,
+scope_hint={"page_role": "day-N"})`, U5). Call `scripts/daily_blend_bundle.py` for the cycle:
 
-1. Layer 1 (Company Mission): Does this persona's philosophy align with the brand?
-2. Layer 2 (Owner Values): Does this persona match the owner's communication style?
-3. Layer 3 (Company Goals): Does this persona support current business objectives?
-4. Layer 4 (Department Goals): Is this persona right for marketing/content work?
-5. Layer 5 (Task Fit): Is this persona ideal for social media content about this specific weekly theme?
+```
+python3 scripts/daily_blend_bundle.py --theme "<weekly theme>" --run-dir <DEPT_WORKSPACE>
+```
 
-Search persona-categories.json for marketing-tagged personas (Seth Godin, Gary Vee, Donald Miller, Brendan Kane, Alex Hormozi). Run all 5 layers. Select the best fit. Log the selection to persona-selection-log.md in the department workspace.
+This resolves all 7 days' bundles in one pass and logs ONE entry per day (never one entry for
+the whole week) to `persona-selection-log.md` in the department workspace — each entry carries
+its own `scope` key (`day-1` … `day-7`), its own `blend_directive` (ending in the mandatory
+STYLE-INSPIRED-NEVER-IMPERSONATION guardrail clause), and the WHY (collapse reasoning or a
+shared-blend note when two days legitimately land on the same voice). A day's blend directive —
+not a locally-picked persona — governs that day's word choice, cadence, and devices; the
+Television Show Framework (Day 1 hooks, escalating pitch intensity 4/10 → 10/10, Day 7 grand
+finale) is untouched by this — it governs VOICE, never the show's structure.
 
-**Persona Override Option:**
-After selecting the recommended persona, present the choice to the client:
+**Audience/Topic Override Option:**
+The blend resolves the AUDIENCE voice from the client's onboarding ICP and the TOPIC from the
+weekly theme + each day's angle; present the resolved voice to the client before the cycle
+starts, the same ALWAYS-confirm doctrine `persona_blend.resolve_audience` already enforces
+elsewhere:
 
-"For this week's content about [theme], I recommend using [Persona Name]'s approach. [One sentence explaining why.] Would you like me to use this style, or would you prefer I write in your personal brand tone from your soul.md instead?"
+"For this week's content about [theme], the blend resolves to [Persona Name]'s voice for
+[audience]. [One sentence why.] Would you like me to use this, or would you prefer your
+personal brand tone from soul.md governs instead?"
 
-If the client says to use their personal tone: skip the persona and write using ONLY the client's soul.md tone, voice, and style.
-If the client says to use the recommended persona: proceed with the Act As If Protocol.
-If the client names a different persona: use that persona instead.
+If the client says to use their personal tone: pass `--audience-override <label>` naming the
+client's own house voice; the blend still runs (never skipped — never advisory) but resolves to
+the client's named voice for every day.
+If the client names a different audience or persona: pass that as the override; the blend
+re-resolves around it.
 
-All content this week (posts, comments, blog, email, podcast) follows the selected style consistently.
+All content this week (posts, comments, blog, email, podcast) is governed by that day's blend —
+consistently within a day, deliberately varied ACROSS days when the theme's daily angle calls
+for a different topic emphasis (never a forced-identical week with no logged reason).
+
+Flag-guarded: `SKILL35_BLEND_GOVERNS=0` reverts to the pre-U98 single-persona-per-week selection
+(the exact prose this note replaced — preserved in git history, not re-implemented in code) —
+the flag defaults to governing (`1`), per the D1 ruling's "never advisory" mandate.
 
 **Step 0b: Request the Weekly Theme (Heartbeat Task)**
 This step is automated via the heartbeat.md file. Every Saturday, the AI reaches out to the client (owner/founder) to get the weekly theme. See Section 24: Heartbeat.md Configuration for the full schedule and message flow. Once the theme is received, the AI immediately begins Step 1.
@@ -1247,65 +1269,81 @@ Follow these steps in order:
 [warm tone] And that's exactly why [Brand Name] exists.
 ```
 
-### Podcast Publishing (via n8n Webhook to Podbean)
+### Podcast Publishing (via n8n Webhook to Podbean) — contract v2
 
-The agent does NOT publish directly to Podbean. Publishing goes through an n8n webhook automation that handles all Podbean API work.
+The agent does NOT publish directly to Podbean. Publishing goes through an n8n webhook automation that handles all Podbean API work, including a good-standing plus identity gate that runs BEFORE any Podbean call.
 
 **Publishing Flow:**
 1. Agent generates podcast audio via Fish Audio S2 (MP3, 192 kbps)
-2. Agent uploads the audio file to the GHL Media Library. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL first.
+2. Agent uploads the audio file to a public HTTPS host. GHL Media Library is the DEFAULT host; a Google Drive direct-download link is the sanctioned fallback when GHL credentials are down. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL (or the Drive fallback) first.
 3. Agent generates the podcast cover image via kie.ai Nano Banana 2 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
-4. Agent uploads the cover image to the GHL Media Library.
-5. Agent sends the following JSON payload to the webhook:
+4. Agent uploads the cover image to the same host as step 2.
+5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies the REQUIRED fields below are present and non-null/non-empty in the payload, especially `image_url`, `client_last_name`, and `client_email`. A 2026-07-12 production incident sent a payload missing required fields, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real hosted `image_url`, or the client's last name/email are not known, DO NOT send the webhook request. Finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete or contract-v1 payload before making any Podbean call and sends an honest refusal (entry guard, GK-01/U63, extended for contract v2), but the agent must not rely on it as the primary check. It is a backstop, not a substitute for sending a complete payload.
+6. Agent sends the following JSON payload to the webhook, with the shared auth header.
 
 **Webhook Endpoint:**
 ```
 POST https://main.blackceoautomations.com/webhook/podbean-publish
 Content-Type: application/json
+X-Podcast-Publish-Token: [shared secret, provisioned by install.sh as PODBEAN_PUBLISH_TOKEN; never hard-code it, never log it]
 ```
 
-**Required Payload:**
+**Required Payload (contract v2):**
 ```
 {
+  "contract_version": "2",
   "podcast_id": "[client's Podbean channel ID - collected during First Run]",
-  "audio_url": "https://media.gohighlevel.com/[path-to-uploaded-audio].mp3",
-  "image_url": "https://media.gohighlevel.com/[path-to-uploaded-cover].jpg",
+  "client_last_name": "[from client profile - roster auth key, together with client_email]",
+  "client_email": "[from client profile - roster auth key, together with client_last_name]",
+  "client_first_name": "[from client profile - display/email only, never authorization]",
   "title": "[Episode title - matches the weekly theme]",
   "description": "[Show notes - plain text or HTML, under 3000 characters]",
+  "audio_url": "https://[GHL Media Library or Google-Drive-direct-download URL to the mastered MP3]",
+  "image_url": "https://[GHL Media Library or Google-Drive-direct-download URL to the cover]",
   "publish_date": "2026-04-12T09:00:00",
-  "client_first_name": "[from client profile]",
-  "client_last_name": "[from client profile]",
-  "client_email": "[from client profile]",
+  "idempotency_key": "[stable per episode-job key, e.g. the Skill 58 job key]",
   "episode_type": "full",
   "explicit": "clean"
 }
 ```
 
+Optional fields not shown above: `speaker` (appends "Inspired by [speaker]" to the title once), `season_number`, and `source` (the emitting skill/box slug for the audit trail only, never authorization).
+
 **Field Rules:**
-- podcast_id: The client's Podbean channel ID. Collected during First Run and stored in MEMORY.md.
-- audio_url: MUST be a GHL Media Library URL. Upload the Fish Audio S2 output to GHL first.
-- image_url: MUST be a GHL Media Library URL. JPEG or PNG only. 1:1, 1400x1400 minimum, under 500 KB, RGB. If image exceeds 500 KB, resize before uploading to GHL.
-- title: The episode title as it should appear in podcast apps.
-- description: Show notes. Plain text or HTML. Under 3000 characters for cross-app compatibility.
+- contract_version: REQUIRED, literal "2". Any other value is refused.
+- podcast_id: The client's Podbean channel ID. Collected during First Run and stored in MEMORY.md. Downstream publishing always routes on the operator's roster row for this identity, never on this raw field alone; a mismatch is refused as identity_mismatch.
+- client_last_name: REQUIRED. Roster lookup key together with client_email. Trimmed, compared case-insensitively.
+- client_email: REQUIRED. Roster lookup key together with client_last_name. Trimmed, compared lowercased. Also the recipient of the success confirmation email.
+- client_first_name: optional. Display and email use only, never used for authorization.
+- audio_url / image_url: REQUIRED. Any HTTPS URL (not plain http). GHL Media Library is the DEFAULT host; Google Drive direct-download is the sanctioned fallback when GHL credentials are down. Image must be JPEG or PNG only (never WebP), 1:1, 1400x1400 minimum, under 500 KB, RGB. If image exceeds 500 KB, resize before uploading.
+- title: The episode title as it should appear in podcast apps. Non-empty, 200 characters or fewer.
+- description: Show notes. Plain text or HTML. 3000 characters or fewer for cross-app compatibility.
 - publish_date: ISO 8601 format WITH time component (e.g., 2026-04-12T09:00:00). Timezone is Eastern (EST/EDT). Date-only strings will cause an error.
+- idempotency_key: REQUIRED. Stable per episode-job; the Skill 58 job key is the recommended source. The SAME key re-fired never creates a second episode; it returns the stored permalink instead.
 - episode_type: "full" (default), "trailer", or "bonus".
 - explicit: "clean" (default) or "explicit".
 
 **Do NOT send an episode number.** The automation queries Podbean for the highest existing episode and assigns the next one automatically.
 
-**What happens after sending:**
-1. Webhook returns 200 OK immediately
-2. Automation authenticates with Podbean and determines next episode number
-3. Audio is downloaded from GHL and uploaded to Podbean storage
-4. Cover image is validated (format, dimensions, size) and uploaded to Podbean storage
-5. Episode is created and scheduled on the client's Podbean channel
-6. Client receives a confirmation email with episode number, publish date, and live link
-7. If anything fails, client receives a failure email with details
+**What happens after sending (contract v2 is SYNCHRONOUS, not fire-and-forget):**
+The connection is held until the publish completes (download plus upload of a full episode; allow up to 300 seconds). The webhook responds with exactly one of:
+- `200 {"ok":true, "permalink_url":..., "episode_id":..., "episode_number":N, "scheduled":true|false, "idempotent_replay":false}` — published (or scheduled, when publish_date is in the future).
+- `200 {"ok":true, "idempotent_replay":true, "permalink_url":...}` — this idempotency_key already completed; the stored permalink is returned and no second episode was created.
+- `403 {"ok":false, "reason":"not_in_good_standing", "message":"you are not in good standing"}` — the client is not currently in good standing. "you are not in good standing" is the operator's exact required client-facing sentence; relay it per the agent's own client-comms doctrine, unparaphrased. No Podbean call is made.
+- `403 {"ok":false, "reason":"identity_unknown"}` — no roster row matches (client_last_name, client_email).
+- `403 {"ok":false, "reason":"identity_mismatch"}` — a roster row exists but its channel id differs from podcast_id. Treat as a possible cross-client mix-up. Do not retry with a different podcast_id; notify the operator.
+- `409 {"ok":false, "reason":"in_flight"}` — the same idempotency_key is currently executing. Wait, then retry with the SAME key.
+- `422 {"ok":false, "reason":"invalid_payload", "missing":[...], "bad_urls":[...]}` — one or more required fields were missing or invalid. Fix the named field(s) and resend.
+- `500 {"ok":false, "reason":"publish_failed", "detail":"..."}` — a Podbean-side failure after every gate passed. Retry with the SAME idempotency_key; it is safe.
+- Webhook auth failure (missing or wrong `X-Podcast-Publish-Token`) returns native 401/403 before the workflow runs at all.
 
 **Error handling:**
-- If webhook returns non-200: retry once after 30 seconds. If still failing, notify client via Telegram.
-- If you get no confirmation email within 15 minutes: notify client that podcast publishing may have failed and to check Podbean manually.
+- 409 or 500, or the request times out or the connection drops: retry once after 30 seconds with the SAME idempotency_key. Safe either way, because the ledger prevents a second episode.
+- 422: fix the named field(s) per the Field Rules above and resend. Do not retry blindly.
+- 403 not_in_good_standing: relay "you are not in good standing" to the client per the agent's own client-comms doctrine; do not retry until the operator flips the roster row back to YES.
+- 403 identity_unknown or identity_mismatch: do not retry automatically. Notify the operator; a client identity or channel id may be wrong.
 - Image format rejection: re-export the cover image as JPEG (not WebP) and re-send.
+- 401/403 before any gate runs at all: the box's `X-Podcast-Publish-Token` is missing or wrong. Notify the operator; do not retry with the same token.
 
 ---
 
@@ -2269,6 +2307,8 @@ This section documents what the playbook covers, confirms completeness, and iden
 ### Known Limitation
 
 This playbook does not include a full worked example of a complete day's output (showing a finished Day 1 Facebook post with all zones filled in, the comment below it, the image prompt, etc.). This was intentionally omitted to prevent the document from becoming bloated. The zone system, pitch examples, comment examples, and content flow rules provide enough guidance for the AI to produce correct output without a full example. If a full example is needed in the future, it can be added as an appendix.
+
+**Partial closure (master spec v2 A-U9 / master unit U9, 2026-07-15):** a first worked example now ships as an exemplar pack — `../exemplars/social-caption/founder-story-carousel-caption/` (gold output + `WHY-GOOD.md` rationale + `provenance.json`) — a complete, fictional-brand carousel caption (hook, body, swipe bridge, soft CTA) with the register/structure/close named explicitly, wrapped in a CALIBRATION-ONLY clause at write time so it calibrates the writer without ever being copied verbatim (`shared-utils/exemplar_injection.py`). This covers the CAPTION zone only, not a full day's output across every deliverable (image prompt, podcast script, video) — the broader gap named below is honestly still open; additional packs can be authored under the same convention as they're prioritized.
 
 ### Self-Rating: 9/10
 

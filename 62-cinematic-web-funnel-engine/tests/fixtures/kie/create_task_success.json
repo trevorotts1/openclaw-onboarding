@@ -1,0 +1,8 @@
+{
+  "_fixture_note": "Mocked Kie.ai POST /api/v1/jobs/createTask success response (spec §19.2 'Kie adapter against mocked API fixtures'). Shape verified against 07-kie-setup/kie-setup-full.md and 46-kie-callback-relay/kie-slide-submitter.js. NOT a real Kie response; no live/paid call was made to produce this file.",
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "taskId": "fixture-task-seedance-frame-pin-0001"
+  }
+}

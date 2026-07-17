@@ -725,17 +725,31 @@ def _reconcile_bucket(outcome):
     return "error"
 
 
-def cmd_reconcile(args):
-    """DAILY-TICK reconcile (SPEC 11.2 safety net): project EVERY ledger subject onto
-    its board card so any card a fail-soft swallow missed (a board outage during a
-    stage, or an S0 that held at Drive before the card was mirrored) is recovered.
-    Iterates every anthology (Assembly card) + every participant (chapter card), runs
+def _reconcile_sweep(bcfg, state_dir, timeout=10, verbose=False):
+    """The DAILY-TICK reconcile sweep itself (SPEC 11.2 safety net; GK-17/A7
+    CONVERGING-REPAIR contract), factored out of cmd_reconcile as a PURE function
+    (no printing, no argparse Namespace) so the CLI, the daily tick, and tests all
+    share the ONE implementation. Projects EVERY ledger subject (every anthology
+    Assembly card + every participant chapter card) onto its board card, running
     the idempotent ingest+move per subject, FAIL-SOFT per subject (one bad subject
-    never aborts the sweep), and ALWAYS exits 0. Idempotency keys make every re-post a
-    safe dedupe. This is the tick the SPEC promised ('the card reconciles on the daily
-    tick') and the one-time backfill mechanism for a board that fell behind."""
-    bcfg = BoardConfig(_load_config(args.config))
-    state_dir = resolve_state_dir(args)
+    never aborts the sweep). Idempotency keys make every re-post a safe dedupe, so
+    running this sweep twice in a row never creates a second card for the same
+    subject.
+
+    GK-17/A7: a bare 'the subprocess exited 0' is NOT proof every card actually
+    landed -- mc_board.py's own exit code is fail-soft-always-0 by construction, so
+    a caller that only watches the exit code cannot tell 'every subject converged'
+    apart from 'the sweep ran but some cards are still wrong' (the exact gap that
+    let a detector-only banner sit disconnected from any real repair). `converged`
+    is the explicit, machine-checkable answer: True iff every subject ended
+    'synced' (or a legitimate no-op: 'not_mirrored' / 'unknown_subject' -- states
+    this client is not responsible for, never a repair failure); False iff at
+    least one subject ended 'deferred' or 'error' after this pass. A caller (the
+    daily tick's own report, an on-demand invocation, or a future CC-side
+    drift-detector) should escalate to a human-visible signal (the v5.4.0 banner)
+    ONLY when `converged` is False -- the 'banner is the escalation of last
+    resort' contract this unit adds. Returns the result dict (never raises for a
+    board condition; the same shape cmd_reconcile prints)."""
     anth_ids = _read_all_anthology_ids(state_dir)
     part_keys = _read_all_participant_keys(state_dir)
     outcomes = {}
@@ -744,18 +758,34 @@ def cmd_reconcile(args):
     for skey in list(anth_ids) + list(part_keys):
         _kind, row = _read_subject(skey, state_dir)
         try:
-            outcome = _sync_one(skey, _kind, row, bcfg, args.timeout)
+            outcome = _sync_one(skey, _kind, row, bcfg, timeout)
         except Exception as exc:  # noqa: BLE001 one bad subject never aborts the sweep
             _warn("reconcile subject failed (%s); continuing fail-soft" % exc.__class__.__name__)
             outcome = "error"
         outcomes[skey] = outcome
         counts[_reconcile_bucket(outcome)] += 1
     total = len(anth_ids) + len(part_keys)
+    converged = (counts["deferred"] + counts["error"]) == 0
     result = {"ok": True, "action": "reconcile", "subjects": total,
               "anthologies": len(anth_ids), "participants": len(part_keys),
-              "counts": counts, "failsoft": (counts["deferred"] + counts["error"]) > 0}
-    if getattr(args, "verbose", False):
+              "counts": counts, "failsoft": not converged, "converged": converged}
+    if verbose:
         result["outcomes"] = outcomes
+    return result
+
+
+def cmd_reconcile(args):
+    """DAILY-TICK reconcile (SPEC 11.2 safety net; GK-17/A7 converging repair): thin
+    CLI wrapper over _reconcile_sweep -- resolves config/state-dir from argparse,
+    runs the sweep, and prints its result (see _reconcile_sweep for the full
+    contract, including the `converged` escalation signal). ALWAYS exits 0 (the
+    sweep itself is fail-soft per subject); a caller that needs to know whether the
+    repair actually converged reads the `converged` field, never the exit code.
+    This is the tick the SPEC promised ('the card reconciles on the daily tick')
+    and the one-time backfill mechanism for a board that fell behind."""
+    bcfg = BoardConfig(_load_config(args.config))
+    state_dir = resolve_state_dir(args)
+    result = _reconcile_sweep(bcfg, state_dir, args.timeout, getattr(args, "verbose", False))
     _emit(result, args.json)
     return EX_OK
 
@@ -1128,10 +1158,28 @@ def self_test():
         assert _reconcile_bucket("unresolved:unreachable") == "deferred"
         assert _reconcile_bucket("unknown_subject") == "unknown"
 
+        # -- GK-17/A7 CONVERGING-REPAIR signal: a fully-successful sweep converges --
+        # calling _reconcile_sweep directly (the pure function cmd_reconcile wraps)
+        # so the actual result dict -- not just the CLI's always-0 exit code -- is
+        # inspectable. A caller (a future drift-detector) must be able to tell
+        # 'every card actually landed' apart from 'the sweep merely ran'.
+        sweep_ok = _reconcile_sweep(bcfg, tmp, timeout=5, verbose=True)
+        assert sweep_ok["converged"] is True and sweep_ok["failsoft"] is False, sweep_ok
+        assert sweep_ok["counts"]["deferred"] == 0 and sweep_ok["counts"]["error"] == 0
+
         # reconcile stays exit 0 even with the board down (fail-soft daily tick), and
         # an empty ledger (mirror unavailable) is a clean zero-subject exit 0.
         _TRANSPORT = _down_transport
         assert cmd_reconcile(_RC()) == EX_OK
+
+        # -- GK-17/A7: a repair path that CANNOT succeed (the board is down for the
+        # whole sweep -- a deliberately broken repair path) must NOT converge. This
+        # is the ONLY condition under which a caller should escalate to the banner
+        # (the v5.4.0 banner becomes the escalation of last resort, never the
+        # default UX for a sweep that is merely mid-flight).
+        sweep_down = _reconcile_sweep(bcfg, tmp, timeout=5, verbose=True)
+        assert sweep_down["converged"] is False and sweep_down["failsoft"] is True, sweep_down
+        assert (sweep_down["counts"]["deferred"] + sweep_down["counts"]["error"]) == sweep_down["subjects"]
 
         class _RCEMPTY:
             state_dir = tempfile.mkdtemp(prefix="mcboard-empty-")  # no anthology_state.db
@@ -1140,6 +1188,11 @@ def self_test():
             timeout = 5
             verbose = False
         assert cmd_reconcile(_RCEMPTY()) == EX_OK
+        # an empty ledger (zero subjects) is trivially converged -- there is nothing
+        # left unresolved, so it must never manufacture a false escalation.
+        _TRANSPORT = _reconcile_transport
+        sweep_empty = _reconcile_sweep(bcfg, _RCEMPTY.state_dir, timeout=5)
+        assert sweep_empty["subjects"] == 0 and sweep_empty["converged"] is True, sweep_empty
     finally:
         _TRANSPORT = _urllib_transport
 
@@ -1147,7 +1200,8 @@ def self_test():
           "== CC scheme, header gating, ledger read+project, ingest success, "
           "two-anthology-one-contact distinct titles, board-down fail-soft, "
           "auth/scope fail-soft, Assembly transitions, archive Assembly+participants "
-          "fail-soft, reconcile sweeps every subject + empty/down fail-soft)")
+          "fail-soft, reconcile sweeps every subject + empty/down fail-soft, GK-17/A7 "
+          "converged signal true only when every subject actually landed)")
     return EX_OK
 
 

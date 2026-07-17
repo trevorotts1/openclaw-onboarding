@@ -76,6 +76,57 @@ class TestTokenResolution:
             gha.resolve_github_token({})
 
 
+# ── Token presence (U24/B-U10 item 4 — NAME only, never the value) ───────────
+
+class TestTokenPresence:
+    def test_reports_set_by_name_only(self):
+        report = gha.token_presence({"GH_TOKEN": "a-real-secret-value"})
+        assert report["GH_TOKEN"] == "SET"
+        assert report["GITHUB_TOKEN"] == "NOT-SET"
+        assert report["resolved"] is True
+
+    def test_reports_not_set_when_absent(self):
+        report = gha.token_presence({})
+        assert report["GH_TOKEN"] == "NOT-SET"
+        assert report["GITHUB_TOKEN"] == "NOT-SET"
+        assert report["resolved"] is False
+
+    def test_never_leaks_the_token_value(self):
+        secret = "ghp_totally-real-secret-do-not-leak-9f8e7d6c"
+        report = gha.token_presence({"GH_TOKEN": secret})
+        assert secret not in json.dumps(report)
+        assert secret not in repr(report)
+        assert set(report.values()) <= {"SET", "NOT-SET", True, False}
+
+    def test_falls_back_to_github_token_name(self):
+        report = gha.token_presence({"GITHUB_TOKEN": "b"})
+        assert report["GH_TOKEN"] == "NOT-SET"
+        assert report["GITHUB_TOKEN"] == "SET"
+        assert report["resolved"] is True
+
+
+# ── is_archive_verified — the ONE "verified" predicate (U24/B-U10) ───────────
+
+class TestIsArchiveVerified:
+    def test_none_is_false(self):
+        assert gha.is_archive_verified(None) is False
+
+    def test_failed_action_is_false_even_if_verify_ok(self):
+        assert gha.is_archive_verified({"action": "failed", "verify": {"ok": True}}) is False
+
+    def test_created_with_verify_ok_is_true(self):
+        assert gha.is_archive_verified({"action": "created", "verify": {"ok": True}}) is True
+
+    def test_reused_with_verify_ok_is_true(self):
+        assert gha.is_archive_verified({"action": "reused", "verify": {"ok": True}}) is True
+
+    def test_created_with_verify_not_ok_is_false(self):
+        assert gha.is_archive_verified({"action": "created", "verify": {"ok": False}}) is False
+
+    def test_missing_verify_key_is_false(self):
+        assert gha.is_archive_verified({"action": "created"}) is False
+
+
 # ── Staging (local disk only) ─────────────────────────────────────────────────
 
 class TestStageSource:
@@ -223,6 +274,60 @@ class TestRunArchiveTask:
         assert result["receipt"]["action"] == "failed"
         assert "simulated network failure" in result["receipt"]["error"]
 
+    def test_archived_content_byte_matches_deployed_source(self, tmp_path):
+        """B-U10 acceptance (a) — the 'byte-match proof' half, proven
+        deterministically offline: capture every PUT body ``run_archive_task``
+        sends and assert each pushed file's base64-decoded content is
+        byte-for-byte IDENTICAL to the corresponding file on disk in the
+        deployed project directory (the same directory ``ghl_vercel`` deploys
+        from). This is the mechanism half of the live proof — the genuine
+        live-Vercel-URL leg still requires a real operator-box run."""
+        import base64
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        index_bytes = b"<html>\x00byte-match fixture \xe2\x9c\x93 non-ascii + binary-ish bytes</html>"
+        vercel_json_bytes = b'{"builds":[{"src":"index.html","use":"@vercel/static"}]}'
+        (project_dir / "index.html").write_bytes(index_bytes)
+        (project_dir / "vercel.json").write_bytes(vercel_json_bytes)
+
+        evidence_root = str(tmp_path / "evidence")
+        src_dir = gha.stage_source(str(project_dir), evidence_root, "M-BYTEMATCH")
+
+        pushed_bodies: dict[str, bytes] = {}
+
+        def capturing_requester(method, url, body, token):
+            if method == "GET" and url.endswith("/user"):
+                return 200, {"login": "fake-owner"}
+            if method == "GET" and "/repos/" in url and "/contents/" not in url:
+                return 404, {}
+            if method == "POST" and url.endswith("/user/repos"):
+                return 201, {"full_name": "fake-owner/zhc-page-bytematch",
+                              "html_url": "https://github.com/fake-owner/zhc-page-bytematch"}
+            if method == "GET" and "/contents/" in url:
+                return 404, {}
+            if method == "PUT" and "/contents/" in url:
+                filename = url.rsplit("/contents/", 1)[1]
+                pushed_bodies[filename] = base64.b64decode(body["content"])
+                return 201, {"content": {"sha": f"sha-{filename}"}}
+            raise AssertionError((method, url))
+
+        task = {"marker": "M-BYTEMATCH", "src_dir": src_dir, "evidence_root": evidence_root,
+                "deployment_url": "https://bytematch.vercel.app", "project_name": "zhc-bytematch"}
+        result = gha.run_archive_task(task, requester=capturing_requester, env={"GH_TOKEN": "tok"})
+
+        assert result["receipt"]["verify"]["ok"] is True
+        # Byte-for-byte: what was PUT to GitHub == what's on disk in the
+        # deployed project_dir (the exact source Vercel served), not merely
+        # "some content" or a re-encoded/normalized copy.
+        assert pushed_bodies["index.html"] == index_bytes
+        assert pushed_bodies["vercel.json"] == vercel_json_bytes
+        # The manifest itself is proof-bearing (marker + deployment url) but
+        # is generated, not sourced from disk — excluded from the byte-match
+        # assertion by design; every REAL source file (2 pushed here) matched.
+        assert "ARCHIVE-MANIFEST.json" in pushed_bodies
+        assert len(pushed_bodies) == 3
+
 
 # ── archive_async (the non-blocking entry point run_pipeline calls) ──────────
 
@@ -288,6 +393,125 @@ class TestArchiveAsync:
         assert result["status"] == "failed"
         summ = ghl_receipts.reduce_receipts(evidence_root)
         assert "vercel_github_archive:M-SPAWNFAIL" in summ["failed"]
+
+
+# ── LIVE path regression (requester=None) — covers the token-kwarg defect ────
+#
+# Every test above (and the module's own --selftest) injects a ``requester``
+# whose signature is ``def fake_req(method, url, body, token):`` — 4 plain
+# positional params. That shape happens to ACCEPT a positional 4th argument,
+# so it masked a real defect: ``_http_request`` declares ``token`` as
+# keyword-only (``*, token``) but its 5 real callers (resolve_authenticated_
+# owner, ensure_repo x2, put_file x2) all passed it positionally. On the
+# actual live path (``requester=None``, i.e. ``_http_request`` itself gets
+# called) every one of those calls raised
+#   TypeError: _http_request() takes 3 positional arguments but 4 were given
+# before the token was ever used — so the archival rail never worked live,
+# while the mock-only suite stayed green forever.
+#
+# These tests close that hole: they pass ``requester=None`` so the REAL
+# ``_http_request`` runs, and stub only the lowest-level network transport
+# (``urllib.request.urlopen``) — never the ``_http_request``/``requester``
+# seam itself — so the positional-vs-keyword mismatch on every real call site
+# is actually exercised, offline, with no live GitHub call.
+import io
+import urllib.error
+import urllib.request
+
+
+class _FakeHttpResponse:
+    """Minimal stand-in for the object ``urllib.request.urlopen`` returns
+    when used as a context manager: needs ``.status`` and ``.read()``."""
+
+    def __init__(self, status: int, body: bytes):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def _fake_live_urlopen(req, timeout=None):
+    """Stands in for ``urllib.request.urlopen`` — routes by (method, url) the
+    same way the mock ``requester`` fixtures above do, but at the transport
+    level, so the real ``_http_request`` (and therefore every real call site's
+    argument-passing convention) is exercised end to end."""
+    method = req.get_method()
+    url = req.full_url
+
+    if method == "GET" and url.endswith("/user"):
+        return _FakeHttpResponse(200, json.dumps({"login": "live-owner"}).encode("utf-8"))
+    if method == "GET" and "/repos/" in url and "/contents/" not in url:
+        raise urllib.error.HTTPError(
+            url, 404, "Not Found", {}, io.BytesIO(b'{"message": "Not Found"}'))
+    if method == "POST" and url.endswith("/user/repos"):
+        return _FakeHttpResponse(201, json.dumps({
+            "full_name": "live-owner/zhc-page-live",
+            "html_url": "https://github.com/live-owner/zhc-page-live",
+        }).encode("utf-8"))
+    if method == "GET" and "/contents/" in url:
+        raise urllib.error.HTTPError(
+            url, 404, "Not Found", {}, io.BytesIO(b'{"message": "Not Found"}'))
+    if method == "PUT" and "/contents/" in url:
+        return _FakeHttpResponse(201, json.dumps({"content": {"sha": "livesha"}}).encode("utf-8"))
+    raise AssertionError(f"unexpected live urlopen call: {method} {url}")
+
+
+class TestLivePathTokenKwarg:
+    """requester=None (the actual production path) end to end. MUST FAIL
+    (TypeError / non-created receipt) on the unfixed code, MUST PASS after
+    ``token=token`` is used at every real call site."""
+
+    def test_resolve_authenticated_owner_live_path(self, monkeypatch):
+        """Most direct reproduction: calls straight into the real
+        ``_http_request`` via ``resolve_authenticated_owner(..., requester=None)``.
+        Pre-fix this raises TypeError uncaught (no try/except at this layer);
+        post-fix it returns the resolved login."""
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_live_urlopen)
+        owner = gha.resolve_authenticated_owner("live-token-value", requester=None)
+        assert owner == "live-owner"
+
+    def test_run_archive_task_live_path_end_to_end(self, tmp_path, monkeypatch):
+        """Full production path: run_archive_task(..., requester=None) with
+        only urlopen stubbed. Exercises ALL FIVE real call sites (GET /user,
+        GET+POST /repos, GET+PUT /contents x2 files). Pre-fix: every call
+        raises TypeError inside the try/except, so the job records a
+        'failed' receipt whose error message IS the captured TypeError.
+        Post-fix: a 'created' receipt with verify.ok True."""
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_live_urlopen)
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "index.html").write_text("<html>live-path ok</html>")
+        evidence_root = str(tmp_path / "evidence")
+        src_dir = gha.stage_source(str(project_dir), evidence_root, "M-LIVE")
+
+        task = {
+            "marker": "M-LIVE",
+            "src_dir": src_dir,
+            "evidence_root": evidence_root,
+            "deployment_url": "https://live.vercel.app",
+            "project_name": "zhc-live-path",
+        }
+        # requester=None -> the REAL _http_request runs (the live path).
+        result = gha.run_archive_task(task, requester=None, env={"GH_TOKEN": "live-token-value"})
+
+        error = result["receipt"].get("error", "")
+        assert result["receipt"]["action"] in ("created", "reused"), (
+            f"live path did not archive — receipt: {result['receipt']!r} "
+            f"(if this is the token-kwarg TypeError, error was: {error!r})"
+        )
+        assert result["receipt"]["verify"]["ok"] is True
+        assert result["receipt"]["response_id"] == "live-owner/zhc-page-live"
+
+        summ = ghl_receipts.reduce_receipts(evidence_root)
+        assert "vercel_github_archive:M-LIVE" in summ["created"] + summ["reused"]
 
 
 if __name__ == "__main__":

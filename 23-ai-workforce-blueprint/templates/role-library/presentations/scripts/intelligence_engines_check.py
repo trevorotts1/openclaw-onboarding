@@ -59,11 +59,31 @@ ZERO third-party deps (stdlib json / re / pathlib only).
 
 USAGE:
     python3 intelligence_engines_check.py [RUN_DIR] [--phase prompt|copy|all] [--json]
-    # RUN_DIR defaults to ./working ; reads:
+    python3 intelligence_engines_check.py --run-dir DIR [--phase prompt|copy|all] [--json]
+    python3 intelligence_engines_check.py --workspace DIR [--phase prompt|copy|all] [--json]
+    # RUN_DIR resolution order (U86/GK-24 — "an alien cwd cannot silently read the
+    # wrong live workspace"): explicit --run-dir/--workspace flag > positional
+    # RUN_DIR (back-compat) > OC_DECK_WORKSPACE env var > CWD-relative './working'
+    # (the historical default, PRESERVED for back-compat). Reads:
     #   <RUN_DIR>/prompts/slide-*.txt        (prompt-side engines)
     #   <RUN_DIR>/copy/slides_copy.md         (copy-beat engines)
     #   <RUN_DIR>/copy/price_ladder.json      (first ladder beat, for FELT_STAKES order)
     #   <RUN_DIR>/brand/hairstyle_catalog.json (catalog token set, optional asset)
+    #
+    # WORKSPACE-PATH DEFECT (U86/GK-24, VERIFIED-BY-EXECUTION): this is a
+    # standalone CLI tool "invoked by the QC specialists at the 8.5 gate" (see
+    # doctrine note above) — a human/agent runs it by hand from wherever their
+    # shell happens to be. Before this fix, forgetting RUN_DIR silently resolved
+    # './working' against the CALLER's cwd: if an unrelated deck's run dir
+    # happened to be sitting there, the script would silently grade THAT deck
+    # and report a result with zero indication it read the wrong directory. The
+    # implicit CWD-relative fallback is kept (never a breaking change to the
+    # documented default), but every invocation now REPORTS which directory it
+    # actually read and BY WHAT RESOLUTION SOURCE (run_dir_resolved /
+    # run_dir_source in --json; a loud stderr NOTE otherwise) — the ambiguity
+    # can no longer be silent. build_deck.py / phase_verifiers.py are UNAFFECTED:
+    # they always call check_copy()/check_prompts() directly with an explicit
+    # run_dir, never through this CLI default.
 
 EXIT CODES:
     0 — every engine's mechanical half passes (no triggered code).
@@ -72,6 +92,7 @@ EXIT CODES:
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -580,17 +601,80 @@ def check_narrative_harmony(run_dir, problems):
     return
 
 
+# ---------------------------------------------------------------------------
+# RUN_DIR resolution (U86/GK-24 — the "workspace-path defect" root-cause class:
+# "any sibling that resolves bare `working/`" gets an explicit --workspace flag
+# / env override, with the current directory kept as the (now VISIBLE) default).
+#
+# THREAT MODEL this closes: this script is a standalone CLI a QC specialist
+# runs BY HAND, from wherever their shell happens to be, per its own docstring
+# ("invoked by the QC specialists at the 8.5 gate"). Before this fix, a call
+# with no RUN_DIR argument silently resolved './working' against the CALLER's
+# cwd — if an unrelated deck's run dir happened to be sitting there, the script
+# would silently grade THAT deck and report a verdict with zero indication it
+# read the wrong directory (VERIFIED-BY-EXECUTION: reproduced by running the
+# identical bare command from two different cwds, each holding its own
+# working/copy/slides_copy.md, and observing the verdict flip with the command
+# unchanged). The historical implicit CWD-relative default is PRESERVED (never
+# a breaking change to documented behavior) — the fix is that the resolution is
+# now EXPLICIT, overridable, and always reported, so the ambiguity can never be
+# silent again. This does not touch check_copy()/check_prompts(): build_deck.py
+# and phase_verifiers.py always call those directly with an explicit run_dir
+# and never go through this CLI path.
+# ---------------------------------------------------------------------------
+OC_DECK_WORKSPACE_ENV = "OC_DECK_WORKSPACE"
+
+
+def resolve_run_dir(argv):
+    """Resolve RUN_DIR from argv + env, in priority order, and report the source.
+
+    Priority: --run-dir/--workspace flag > positional RUN_DIR (back-compat) >
+    OC_DECK_WORKSPACE env var > CWD-relative './working' (the historical
+    default). Returns (run_dir: Path, source: str) — source is one of
+    "flag", "positional", "env:OC_DECK_WORKSPACE", "implicit_cwd_default".
+    """
+    for flag in ("--run-dir", "--workspace"):
+        if flag in argv:
+            idx = argv.index(flag)
+            if idx + 1 >= len(argv):
+                _fatal(f"{flag} requires a directory argument")
+            return Path(argv[idx + 1]), "flag"
+
+    positional = [a for a in argv if not a.startswith("--")
+                  and a not in ("prompt", "copy", "all")]
+    if positional:
+        return Path(positional[0]), "positional"
+
+    env_val = os.environ.get(OC_DECK_WORKSPACE_ENV, "").strip()
+    if env_val:
+        return Path(env_val), f"env:{OC_DECK_WORKSPACE_ENV}"
+
+    return Path("working"), "implicit_cwd_default"
+
+
 def main():
     argv = sys.argv[1:]
     as_json = "--json" in argv
     phase = "all"
     if "--phase" in argv:
         phase = argv[argv.index("--phase") + 1]
-    positional = [a for a in argv if not a.startswith("--")
-                  and a not in ("prompt", "copy", "all")]
-    run_dir = Path(positional[0]) if positional else Path("working")
+    run_dir, run_dir_source = resolve_run_dir(argv)
+    run_dir_resolved = str(run_dir.resolve()) if run_dir.exists() else str(run_dir)
     if not run_dir.exists():
-        _fatal(f"RUN_DIR not found: {run_dir}")
+        _fatal(f"RUN_DIR not found: {run_dir} (resolved via {run_dir_source}; "
+                f"pass --run-dir/--workspace DIR, a positional RUN_DIR, or set "
+                f"{OC_DECK_WORKSPACE_ENV} to name the deck's run directory explicitly)")
+
+    # WORKSPACE-PATH DEFECT fix: never let the resolved directory be silent —
+    # every invocation, pass or fail, states which dir was actually read and how
+    # it was chosen. The implicit-default case gets a loud, explicit NOTE so a
+    # caller who forgot RUN_DIR cannot mistake this run for the deck they meant.
+    if run_dir_source == "implicit_cwd_default":
+        print(f"NOTE (intelligence_engines_check): no RUN_DIR given — defaulted to "
+              f"CWD-relative 'working/' ({run_dir_resolved}). This may NOT be the deck "
+              f"you intended. Pass RUN_DIR explicitly (or --run-dir/--workspace DIR, or "
+              f"set {OC_DECK_WORKSPACE_ENV}) to avoid silently checking the wrong "
+              f"workspace.", file=sys.stderr)
 
     problems = []
     if phase in ("all", "prompt"):
@@ -599,8 +683,14 @@ def main():
         check_copy(run_dir, problems)
 
     if as_json:
-        print(json.dumps({"ok": not problems, "triggered": problems}, indent=2))
+        print(json.dumps({
+            "ok": not problems,
+            "triggered": problems,
+            "run_dir_resolved": run_dir_resolved,
+            "run_dir_source": run_dir_source,
+        }, indent=2))
     else:
+        print(f"(run dir: {run_dir_resolved} — resolved via {run_dir_source})")
         if not problems:
             print("=== intelligence_engines_check: ALL ENGINE MECHANICAL HALVES PASS ===")
             print("Facial / World / Lighting / Representation prompt tokens present; "

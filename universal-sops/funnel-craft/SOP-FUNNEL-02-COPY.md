@@ -46,6 +46,13 @@ fail-closed gate — generation MUST NOT unlock without it.
    `voice_persona_id`, catalog-wide per D1/B-D1, never limited to a fixed surname list).
    `49-signature-funnel/scripts/copy_persona_blend_seam.py` is the machine-callable seam that
    renders the log entry + the `{{BLEND_DIRECTIVE}}` prompt variable from a bundle (below).
+   **D5/B-D1 two-part rule (RATIFIED 2026-07-14 — kills the old 5-surname copy cap):**
+   **(a) VOICE** is catalog-wide, as above — any of the 99; **(b) the copy-craft TASK slot**
+   (the bundle's `task_persona`, feeding the craft DISCIPLINE that governs how the copy is
+   executed) must instead be a member of `copy_craft_pool` — the original five
+   craft-discipline surnames' canonical ids, plus every `edwards-*` id, plus the
+   Brunson-family crosswalk targets — defined ONCE in `shared-utils/persona-crosswalk.json`
+   and machine-validated by `persona_crosswalk.py --validate`.
 2. **Log** the result to `persona-selection-log.md` in the run dir — the entry MUST keep naming a
    `selected_persona: <registered-slug>` (the bundle's VOICE persona id — back-compat, unchanged
    shape) and `selector_ran: true`, and ADDS `voice_persona:` / `topic_persona:` / `task_persona:` /

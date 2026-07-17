@@ -50,6 +50,7 @@ decompose functions it calls are monkeypatched in the test, so it never reads or
 writes a live persona DB).
 """
 import importlib.util
+import json
 import os
 import re
 from pathlib import Path
@@ -467,6 +468,55 @@ def _extract_icp_descriptors(company_cfg: dict, soul_text: str = "") -> list:
     return descriptors
 
 
+# ── A-U4 — conversion_goal as a first-class input (master-spec v2 §A.5) ───────
+# The exact question we ASK when the conversion goal is unknown — content-gated
+# identically to AUDIENCE_CONFIRM_PROMPT above (same ALWAYS-confirm shape).
+CONVERSION_GOAL_CONFIRM_PROMPT = "What must this page make the reader DO?"
+
+# goal_source values that are already an explicit, operator-visible answer (an
+# operator/task field, or a Skill-6 intake question actually asked and answered)
+# — these never re-ask. A TEMPLATE-INFERRED goal is a guess, not a confirmation,
+# so it still gates (ALWAYS-confirm doctrine, parity with resolve_audience's
+# single-ICP-descriptor rung).
+_GOAL_SOURCES_NO_CONFIRM = ("operator_confirmed", "skill6_intake")
+_GOAL_SOURCES = ("operator_confirmed", "skill6_intake", "template_inferred")
+
+
+def resolve_conversion_goal(conversion_goal: str = "", goal_source: str = "") -> dict:
+    """Resolve the conversion goal + whether it still needs operator confirmation.
+
+    The source ladder itself — 1) explicit operator/task field, 2) Skill 6
+    intake ("What must this page make the reader DO?"), 3) the funnel
+    template's offer/call-to-action framing, 4) ASK — is walked by the CALLER
+    (today: persona-selector-v2.py's `--conversion-goal` argv / the
+    OPENCLAW_CONVERSION_GOAL env passthrough; tomorrow: Skill 6's per-page
+    dispatch, A-U7) which supplies the resolved `conversion_goal` value AND
+    which rung produced it (`goal_source`). This function is the single place
+    that turns that pair into the ALWAYS-confirm-doctrine decision, mirroring
+    `resolve_audience`: an explicit operator field or an already-answered
+    intake question never re-asks; an INFERRED template goal still needs a
+    confirm prompt; nothing resolved yields the exact ASK, content-gated
+    identically to the audience ask. Never fabricates a goal (value='' when
+    nothing resolves).
+
+    Returns {value, source, ask, confirm_required}.
+    """
+    value = str(conversion_goal).strip() if conversion_goal else ""
+    if not value:
+        return {"value": "", "source": "asked",
+                "ask": CONVERSION_GOAL_CONFIRM_PROMPT, "confirm_required": True}
+
+    source = goal_source if goal_source in _GOAL_SOURCES else "operator_confirmed"
+    if source in _GOAL_SOURCES_NO_CONFIRM:
+        return {"value": value, "source": source, "ask": None,
+                "confirm_required": False}
+    return {
+        "value": value, "source": source, "confirm_required": True,
+        "ask": (f'The funnel template implies the goal is "{value}". Confirm '
+                f"this goal before I write, or tell me the goal."),
+    }
+
+
 def resolve_audience(catalog: dict, company_cfg: dict, soul_text: str = "",
                      audience_override: str = "") -> dict:
     """Resolve the audience + whether the operator must confirm before writing.
@@ -720,19 +770,33 @@ def _voice_attr_block(label: str, pid, personas: dict):
     return lines
 
 
+def _choose_closer_pid(task_persona_pid, collapsed, collapsed_pid, audience_pid, topic_pid):
+    """A-U4 slot 5 (A.6): the CONVERSION slot reuses an EXISTING blend slot as
+    the 'closer' whose conversion_style governs the close — it never invents a
+    fifth persona pick. Preference: the TASK-side persona (the work's own
+    process persona, already independent per DEP-5) -> the resolved VOICE
+    (collapsed or audience) -> TOPIC (last-resort expertise). Returns None when
+    no slot is populated (mechanical/empty bundles never reach here)."""
+    return (task_persona_pid or (collapsed_pid if collapsed else None)
+            or audience_pid or topic_pid)
+
+
 # ── blend directive (carries the mandatory guardrail) ─────────────────────────
 def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
                           collapsed_pid, content_task: bool,
                           audience_label: str = "", task_persona_pid=None,
-                          catalog: dict = None) -> str:
-    """Compose the writer's SYNERGY instruction — up to FOUR slots working
-    together (P4-02 step 7):
+                          catalog: dict = None, conversion_goal: str = "",
+                          chosen_closer_pid=None) -> str:
+    """Compose the writer's SYNERGY instruction — up to FIVE slots working
+    together (P4-02 step 7 + A-U4 slot 5):
 
         1. VOICE     — the audience persona's cadence/devices/register.
         2. AUDIENCE  — who the content is FOR (the resolved audience label).
         3. SUBSTANCE — the topic persona's expertise/frameworks.
         4. TASK      — the task-side persona (DEP-5), an INDEPENDENT dimension
                        guiding HOW the work is executed (its process/method).
+        5. CONVERSION — the resolved conversion goal + the chosen closer
+                       persona's conversion_style (A-U4, master-spec v2 §A.5).
 
     Every slot populates when available and DEGRADES GRACEFULLY when not
     (voice-only, topic-only, task-only, or the neutral house voice). The
@@ -746,6 +810,13 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
     ADDITIVE: `catalog=None` (the default), a schema-1.2 catalog, or a persona
     with no voice_style all degrade to the identical v1 prose-only directive —
     the guardrail remains the trailing, non-removable clause in every case.
+
+    A-U4 (conversion_goal as a first-class input): slot 5 appears ONLY for
+    content tasks with a resolved `conversion_goal` (content-gated exactly
+    like slot 4) and never invents a new persona pick — it reuses whichever
+    slot `_choose_closer_pid` resolved as the closer. Additive: an empty
+    `conversion_goal` (the default) leaves the directive byte-identical to
+    pre-A-U4 behavior.
     """
     def _name(pid):
         return pid.replace("-", " ").title() if pid else None
@@ -799,8 +870,28 @@ def build_blend_directive(audience_pid, topic_pid, topic: str, collapsed: bool,
         block = _voice_attr_block(label, pid, personas)
         if block:
             attr_blocks.append("\n".join(block))
-    if attr_blocks:
-        body = body + "\n\n" + "\n".join(attr_blocks) + (
+
+    # ── A-U4 slot 5 — CONVERSION GOAL. Content-gated exactly like slot 4; reuses
+    # an existing slot's persona as the closer (never a fifth persona pick). The
+    # closer's conversion_style is sourced ONLY from the catalog (A-U3), never
+    # invented — gracefully omitted when the closer or its conversion_style is
+    # unavailable (e.g. a schema<1.4 catalog).
+    conversion_line = None
+    if content_task and conversion_goal:
+        closer_style = None
+        closer_info = personas.get(chosen_closer_pid) if chosen_closer_pid else None
+        if isinstance(closer_info, dict):
+            closer_style = closer_info.get("conversion_style")
+        conversion_line = (
+            f"CONVERSION GOAL: {conversion_goal}. Close in {closer_style}."
+            if closer_style else f"CONVERSION GOAL: {conversion_goal}.")
+
+    trailer_blocks = list(attr_blocks)
+    if conversion_line:
+        trailer_blocks.append(conversion_line)
+
+    if trailer_blocks:
+        body = body + "\n\n" + "\n".join(trailer_blocks) + (
             "\nVOICE CONTRACT: echo one line into persona-selection-log "
             "confirming the register you wrote in.")
 
@@ -955,15 +1046,217 @@ def match_score_distribution(paths: dict, *, dimension: str = None,
             "min": min(scores), "max": max(scores), "buckets": buckets}
 
 
+# ── A-U6: min-2/max-4 persona-count invariant (D-A2 ratified 2026-07-14) ──────
+# Every CONTENT blend must engage AT LEAST 2 and AT MOST 4 named personas
+# across the directive's ROLE slots (voice, topic, task) — the up-to-10 TASK
+# PERSONA DECOMPOSITION (build_task_personas, above) is a SEPARATE, unbound
+# dimension: decomposed PARTS may repeat a persona id, so this invariant binds
+# the DISTINCT persona identities the blend actually NAMES to the writer
+# (voice/topic/task roles), never the raw count of decomposed parts.
+#
+# D-A2 (RATIFIED by the operator, 2026-07-14 — verbatim in MASTER SPEC E.3):
+# a COLLAPSED blend satisfies min-2 by ROLE COUNT — the single collapsed
+# persona fills BOTH the voice-role and the topic-role, so it counts as 2
+# roles even though only ONE distinct persona id is named. This honors the
+# min-2 invariant AND the operator-confirmed 2026-07-08 collapse design
+# literally — neither silently deprecates the other. The receipt records
+# collapsed=True (plus the reason) so every collapse stays auditable.
+#
+# The validator RECORDS and ALERTS; it NEVER BLOCKS a write path — a
+# below-min/above-max reading is an honest audit signal, not a gate. The
+# Command Center's board-hygiene Rule 6 companion count reads this same
+# reading (via rationale.invariant, persisted in task_persona_bundle.bundle_json)
+# to raise a persona_blend_regression alert when a CONFIRMED bundle is still
+# below-min in the trailing window (CC repo, board-hygiene.ts).
+MIN_BLEND_PERSONAS = 2
+MAX_BLEND_PERSONAS = 4
+
+
+def validate_blend_invariant(bundle: dict) -> dict:
+    """Validate the min-2/max-4 persona-count invariant against a bundle's
+    directive ROLE slots. Pure — reads the bundle, never mutates it, never
+    touches the catalog/DB/network. Returns
+    {ok, count, roles, collapsed, reason}.
+
+    Non-content bundles (mechanical tasks, or plain non-content tasks — no
+    audience-voice blend by design, A.7) are EXEMPT: always ok=True,
+    reason='exempt-non-content'.
+
+    ROLE COUNTING (roles, NOT distinct persona ids — D-A2):
+      - 'voice' — the audience persona, or the collapsed persona when the
+                  blend collapsed onto one persona covering both roles.
+      - 'topic' — the topic-expertise persona, or the SAME collapsed persona
+                  counted as its OWN role per D-A2's ratified rule (one
+                  persona id can legally fill two roles).
+      - 'task'  — every task-side persona (from task_personas, the up-to-10
+                  decomposition) that is genuinely DISTINCT from every
+                  persona id already occupying a role — mirrors
+                  build_blend_directive's own slot-4 redundancy rule so the
+                  receipt never double-counts a repeated or redundant id.
+    """
+    if not bundle.get("content_task"):
+        return {"ok": True, "count": 0, "roles": [], "collapsed": False,
+                "reason": "exempt-non-content"}
+
+    voice = bundle.get("voice") or {}
+    collapsed = bool(voice.get("collapsed"))
+    collapsed_pid = voice.get("collapsed_persona_id")
+    audience_persona = voice.get("audience_persona") or {}
+    audience_pid = audience_persona.get("id")
+    topic_persona = voice.get("topic_persona") or {}
+    topic_pid = topic_persona.get("id")
+
+    roles = []
+    if collapsed and collapsed_pid:
+        # D-A2: one persona, two roles.
+        roles.append({"role": "voice", "persona_id": collapsed_pid})
+        roles.append({"role": "topic", "persona_id": collapsed_pid})
+    else:
+        if audience_pid:
+            roles.append({"role": "voice", "persona_id": audience_pid})
+        if topic_pid:
+            roles.append({"role": "topic", "persona_id": topic_pid})
+
+    seen_ids = {r["persona_id"] for r in roles}
+    for tp in bundle.get("task_personas") or []:
+        pid = tp.get("persona_id")
+        if pid and not tp.get("no_persona_required") and pid not in seen_ids:
+            roles.append({"role": "task", "persona_id": pid})
+            seen_ids.add(pid)
+
+    count = len(roles)
+
+    if count < MIN_BLEND_PERSONAS:
+        # The unconfirmed-audience house-voice state is a LEGAL pending state,
+        # not a violation (A.7) — the invariant binds the POST-CONFIRM bundle.
+        # Emit an honest, distinguishable reason rather than fabricating a
+        # persona to close the gap.
+        pending_house_voice = (bool(bundle.get("confirm_required"))
+                                and not audience_pid and not collapsed_pid)
+        reason = ("below-min (house-voice pending audience confirm)"
+                  if pending_house_voice else "below-min")
+        ok_flag = False
+    elif count > MAX_BLEND_PERSONAS:
+        ok_flag = False
+        reason = "above-max"
+    else:
+        ok_flag = True
+        reason = "collapsed" if collapsed else "ok"
+
+    return {"ok": ok_flag, "count": count, "roles": roles,
+            "collapsed": collapsed, "reason": reason}
+
+
+# ── A-U5 — per-page / per-scope blends ─────────────────────────────────────────
+# Per-page blends are structurally impossible before this unit: build_bundle ran
+# once per TASK and the Command Center persisted ONE bundle per task
+# (`task_persona_bundle.task_id TEXT NOT NULL UNIQUE`). A 5-page funnel wrote its
+# opt-in, sales, and thank-you pages under one blend. The fix is additive: the
+# CALLER (Skill 6's per-page loop, A-U7) now MAY pass a `scope_hint` describing
+# the page it is about to write, and build_bundle folds it into topic matching +
+# echoes a stable `scope` key back for the Command Center's NEW
+# `task_persona_bundle_scope` table (keyed `(task_id, scope)` — migration 090's
+# unscoped `task_persona_bundle` table is never altered). Every existing
+# single-bundle caller (scope_hint omitted/None/empty) gets a bundle with NO
+# `scope`/`scope_hint` keys at all — byte-identical to pre-A-U5 output.
+#
+# scope_hint shape (all keys optional): {page_role, page_slug, conversion_goal,
+# part_id}. `part_id` is forward-compatible with U115's per-part / long-horizon
+# generalization of this same mechanism (Section E6) — this unit does not use it,
+# it only avoids colliding with it.
+def _resolve_scope_key(scope_hint: dict):
+    """The `(task_id, scope)` composite key's non-task-id half. Preference order:
+    an explicit `page_slug` (the stablest, URL-shaped identifier) > `page_role`
+    (e.g. 'opt-in', 'sales', 'thank-you') > `part_id` (U115's per-part id). None
+    when scope_hint is falsy/empty or names none of these — the caller then has
+    nothing scope-able and build_bundle behaves exactly as the unscoped path.
+    """
+    if not scope_hint or not isinstance(scope_hint, dict):
+        return None
+    for key in ("page_slug", "page_role", "part_id"):
+        v = scope_hint.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _scope_reason(scope_key: str, scope_hint: dict, *, shared_with: str = None) -> str:
+    """The different-blends-allowed invariant (A.6 build step 3): the per-page
+    log must state WHY pages share or differ a blend — a shared blend is legal
+    when the collapse rule fires per page; forced-identical with no logged
+    reason is a Quality-Control finding for the Section-B judge (A-U7's job to
+    enforce across a real funnel run). This unit emits the honest per-call
+    statement build_bundle already has evidence for; A-U7 threads it across
+    pages to detect the "forced-identical, no reason" case.
+    """
+    goal = (scope_hint or {}).get("conversion_goal") if isinstance(scope_hint, dict) else None
+    role = (scope_hint or {}).get("page_role") if isinstance(scope_hint, dict) else None
+    parts = [f"scope={scope_key}"]
+    if role:
+        parts.append(f"page_role={role}")
+    if goal:
+        parts.append(f"conversion_goal={goal}")
+    if shared_with:
+        parts.append(f"blend shared with scope={shared_with} (collapse/topic-match fired identically)")
+    return ", ".join(parts)
+
+
+def write_persona_selection_log_entry(run_dir, scope_key: str, bundle: dict, *,
+                                       reason: str = None) -> bool:
+    """Append ONE per-page entry to `persona-selection-log.md` in `run_dir`,
+    reusing the exact `- selected_persona: <slug>` line convention every other
+    Skill 6/49/56 build script already writes (see `run_sales_page_assets.py`,
+    the golden-momentum builder) so downstream readers (funnel_rubrics.py,
+    prove_sp_intake.py) parse it unchanged. One call per page; A-U7 is the real
+    per-page-loop caller in production, this unit only ships the writer +
+    proves it with a fixture funnel (its own binary acceptance criterion (a)).
+
+    Best-effort / non-fatal: a write failure returns False and never raises —
+    same observability-never-blocks posture as log_match_score above.
+    """
+    try:
+        rd = Path(run_dir)
+        rd.mkdir(parents=True, exist_ok=True)
+        log_path = rd / "persona-selection-log.md"
+        pid = bundle.get("persona_id") or "none"
+        lines = [f"- scope: {scope_key}", f"- selected_persona: {pid}"]
+        if reason:
+            lines.append(f"- reason: {reason}")
+        entry = "## page: " + scope_key + "\n" + "\n".join(lines) + "\n\n"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+        return True
+    except Exception:
+        return False
+
+
 # ── the bundle assembler ──────────────────────────────────────────────────────
 def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None,
                  use_llm: bool = True, record: bool = True,
                  max_task_personas: int = 10, variety: bool = True,
-                 topic_hint: str = "", audience_override: str = "") -> dict:
+                 topic_hint: str = "", audience_override: str = "",
+                 conversion_goal: str = "", goal_source: str = "",
+                 scope_hint: dict = None, force_content_task: bool = False) -> dict:
     """Assemble the voice-first persona BLEND bundle (the SUPERSET output).
 
     paths/db_path default to the live resolution when omitted; tests pass a
     hermetic paths dict and monkeypatch the selector/decompose functions.
+
+    A-U4: `conversion_goal` (+ `goal_source`) is the resolved conversion-goal
+    input — additive, default-empty, degrades byte-identically to pre-A-U4
+    behavior when unused. See `resolve_conversion_goal` for the source-ladder
+    contract and confirm-doctrine.
+
+    U116 (E6-2, ADD-2): `force_content_task` (additive, default False) lets a
+    caller that ALREADY KNOWS this is an outside-world communication (a page,
+    blog, email, text/SMS, or social post — the five comms types U116's own
+    `shared-utils/comms_audience_trigger.py` enumerates) route around the
+    `is_content_task()` keyword heuristic entirely, so a comms artifact whose
+    task text happens not to contain one of that heuristic's signal words
+    (e.g. a bare "opt-in page" brief with none of "page"/"landing"/"sales" in
+    it) is never mistakenly treated as non-content and left ungoverned. A
+    caller that never sets it is byte-identical to pre-U116 behavior — the
+    heuristic runs exactly as before.
     """
     sel = _selector()
     if paths is None:
@@ -1009,6 +1302,12 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             "blend_directive": ("Operational/mechanical task — no persona voice "
                                 "required. " + GUARDRAIL_CLAUSE),
             "task_personas": [],
+            # A-U4: mechanical tasks never carry a conversion goal (no content write).
+            "conversion_goal": "",
+            "goal_source": "n/a",
+            "goal_confirm_required": False,
+            "resolved_goal": {"value": "", "source": "n/a", "ask": None,
+                              "confirm_required": False},
             "rationale": {"note": "mechanical task — governance persona attached, "
                                   "no audience/topic blend."},
             "funnel": {"pool": 0, "category": 0, "semantic": 0, "mechanical": True},
@@ -1019,7 +1318,19 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
                         f"(governance persona '{gov_pid}' attached for oversight)."),
         }
 
-    content_task = is_content_task(task)
+    content_task = is_content_task(task) or bool(force_content_task)
+
+    # ── A-U5 scope_hint — bounded tie-breaker, additive-only ────────────────────
+    # A page's role (opt-in / sales / thank-you / ...) is a legitimate topic
+    # signal when the caller supplied no explicit topic_hint of its own. Never
+    # overrides an explicit topic_hint (explicit beats inferred, same precedence
+    # every other hint in this module already follows). scope_hint=None (the
+    # default) touches nothing here — topic_hint is used exactly as before.
+    scope_key = _resolve_scope_key(scope_hint)
+    if scope_key and not topic_hint and isinstance(scope_hint, dict):
+        _page_role = scope_hint.get("page_role")
+        if isinstance(_page_role, str) and _page_role.strip():
+            topic_hint = _page_role.strip()
 
     # ── AUDIENCE (voice decided first) ──────────────────────────────────────────
     ra = resolve_audience(catalog, company_cfg, soul_text, audience_override)
@@ -1125,6 +1436,15 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         confirm_required = bool(ra.get("confirm_required", True))
     ra["confirm_required"] = confirm_required
 
+    # ── A-U4 — conversion goal (resolved by the caller's source ladder; see
+    # resolve_conversion_goal). `goal_confirm_required` is a SEPARATE, additive
+    # gate signal (never folded into the audience-only `confirm_required` above,
+    # so every pre-A-U4 consumer that never supplies a goal is byte-identical) —
+    # a write path that cares about the conversion goal (Skill 6's dispatcher,
+    # A-U7) ORs it into its own gate check alongside `confirm_required`.
+    rg = resolve_conversion_goal(conversion_goal, goal_source)
+    goal_confirm_required = bool(rg.get("confirm_required", False)) if content_task else False
+
     # ── TASK personas (up to 10) ────────────────────────────────────────────────
     # Computed BEFORE the directive (P4-02 step 7) so the primary task-side
     # persona can populate the directive's fourth synergy slot.
@@ -1141,9 +1461,18 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         None,
     )
 
+    # A-U4 slot 5: the closer reuses an existing slot (never a fifth pick) —
+    # only meaningful for content tasks (mechanical/non-content never gets a
+    # conversion goal to close).
+    closer_pid = (_choose_closer_pid(primary_task_pid, collapsed, collapsed_pid,
+                                     audience_pid, topic_pid)
+                  if content_task else None)
+
     blend_directive = build_blend_directive(
         audience_pid, topic_pid, topic, collapsed, collapsed_pid, content_task,
-        voice_audience_label, task_persona_pid=primary_task_pid, catalog=catalog)
+        voice_audience_label, task_persona_pid=primary_task_pid, catalog=catalog,
+        conversion_goal=(rg["value"] if content_task else ""),
+        chosen_closer_pid=closer_pid)
 
     funnel = semantic_funnel if isinstance(semantic_funnel, dict) else {
         "pool": len(_persona_meta(catalog)),
@@ -1178,7 +1507,24 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
             f"{combined.get('distinct_persona_count', 0)} distinct persona(s) "
             f"[{combined.get('decomposition_method', 'n/a')}] — topic persona "
             f"doubles as task guidance"),
+        # A-U4 decision receipt (master-spec v2 §A.5 item 4).
+        "conversion_goal": rg["value"],
+        "goal_source": rg["source"],
+        "chosen_closer": closer_pid,
+        "conversion_goal_resolution": (
+            f"source={rg['source']}, confirm_required={goal_confirm_required}"
+            + ("" if not rg.get("ask") else f" — ASK: {rg['ask']}")),
     }
+    # U116 (E6-2, ADD-2): record WHY content_task fired when it was the
+    # force flag (not the keyword heuristic) that decided it — an honest,
+    # auditable receipt line, never a silent behavior change (rationale is
+    # additive; every non-forced call gets no such key, byte-identical).
+    if force_content_task and not is_content_task(task):
+        rationale["comms_governance"] = (
+            "content_task forced True — mandatory outside-world-communication "
+            "governance (U116/ADD-2), independent of the is_content_task() "
+            "keyword heuristic (which alone would have read this task as "
+            "non-content).")
 
     bundle = {
         # ── back-compat single-persona mirror (existing consumers) ──
@@ -1198,15 +1544,410 @@ def build_bundle(task: str, department: str, *, paths: dict = None, db_path=None
         "voice": voice,
         "blend_directive": blend_directive,
         "task_personas": task_personas[:10],
+        # A-U4 — conversion_goal as a first-class input (additive superset keys;
+        # empty/False when unused, so every pre-A-U4 consumer is unaffected).
+        "conversion_goal": rg["value"],
+        "goal_source": rg["source"],
+        "goal_confirm_required": goal_confirm_required,
+        "resolved_goal": rg,
         "rationale": rationale,
         "fallbacks": fallbacks,
         "catalog_version": str(catalog.get("schemaVersion", "")) or "unknown",
         "task_id": combined.get("task_id"),
         "db": db_field,
     }
+    # A-U6: min-2/max-4 invariant, recorded on every CONTENT bundle (A.7). The
+    # validator reads the bundle we just assembled (voice/task_personas/
+    # confirm_required are already final) and RECORDS/ALERTS only — it never
+    # blocks this write path.
+    if content_task:
+        bundle["rationale"]["invariant"] = validate_blend_invariant(bundle)
     if not catalog:
         bundle["warning"] = "NO_CATALOG"
         bundle.setdefault("message",
                           "persona-categories.json not found — blend ran on the "
                           "semantic selector + fallbacks only.")
+
+    # ── A-U5 — echo the scope key + WHY back to the caller (additive-only) ──────
+    # Only present when the caller supplied a resolvable scope_hint; every
+    # existing single-bundle consumer (scope_hint omitted) gets a bundle dict
+    # with NEITHER key at all — byte-identical to the pre-A-U5 shape.
+    if scope_key:
+        bundle["scope"] = scope_key
+        bundle["scope_hint"] = dict(scope_hint)
+        rationale["scope"] = _scope_reason(scope_key, scope_hint) + f" — {rationale['collapse']}"
+
     return bundle
+
+
+# ── U115 (E6-1, Section E6; implements operator ruling ADD-1; closes G7) ──────
+# Per-part / per-persona governance across multi-item & long-horizon tasks.
+#
+# Before this unit, the blend is selected per single content PIECE:
+# build_bundle runs once per TASK, and A-U5 (above) generalised that to once
+# per PAGE of one funnel via `scope_hint`. U115 generalises the SAME
+# mechanism one step further — from "per page of one funnel" to "per PART of
+# any multi-part or long-horizon task" (a campaign's sales page + a 3-email
+# nurture sequence + social posts; each stage of a launch sequence; …).
+#
+# Reuses, never replaces: the scope key A-U5 already derives from `part_id`
+# (see `_resolve_scope_key` above — that unit's own docstring calls `part_id`
+# "forward-compatible with U115"). This section adds (1) a mechanical/
+# ASK-gated task-decomposition step that NEVER invents parts, (2) a
+# per-part `build_bundle` loop keyed `(task_id, part_id)`, (3) the
+# `routing/part-persona-map.json` cross-horizon tracking record, and (4) the
+# different-blends-allowed diversity check the U117 QC judge consumes.
+#
+# Flag-gated (revert path): the decomposition + per-part loop only run when
+# `PER_PART_GOVERNANCE=1` is set in the environment; unset (default), or a
+# task with no declared parts, degrades byte-identically to a single
+# unscoped `build_bundle` call — today's pre-U115 behavior (BINARY
+# acceptance (d)). No new schema: this reuses A-U5's `scope`/`scope_hint`
+# echo, which the Command Center persists into the EXISTING
+# `task_persona_bundle_scope` table (migration 090) it already ships for
+# A-U5 — U115 adds no ONB-side schema of its own.
+#
+# The Command Center leg (Kanban board card + task-detail modal rendering
+# one per-part persona-assignment row — BINARY acceptance (c)) is OUT OF
+# SCOPE for this (openclaw-onboarding) repo and is NOT built or faked here;
+# it is logged as owed in this unit's PR/commit trail for the
+# blackceo-command-center train.
+
+PER_PART_GOVERNANCE_FLAG = "PER_PART_GOVERNANCE"
+
+
+def _per_part_governance_enabled() -> bool:
+    """Revert switch (spec `revert:`): flip `PER_PART_GOVERNANCE=1` off (or
+    never set it) and every caller of `govern_task_parts` collapses straight
+    back to the single per-task `build_bundle` call — no code revert needed
+    to disable the new behavior in production.
+    """
+    return os.environ.get(PER_PART_GOVERNANCE_FLAG, "0") == "1"
+
+
+def _slugify_part_id(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", str(text or "").strip().lower()).strip("-")
+    return s or "part"
+
+
+def parts_from_page_structure(page_structure: list) -> list:
+    """MECHANICAL decomposition source #1: a funnel template's `pageStructure`
+    (the `order`/`page`/`purpose`/`blocks` shape used across
+    06-ghl-install-pages/funnel-templates/**) already declares the funnel's
+    pages — read directly, never reinterpreted or guessed at. A malformed or
+    empty `pageStructure` yields `[]` (falls through to the ASK-gated /
+    back-compat path in `decompose_task_parts`, never a guess).
+
+    Returns the generic part shape `decompose_task_parts` produces:
+    `{part_id, part_role, audience_hint, topic_hint, stage}`.
+    """
+    parts = []
+    if not isinstance(page_structure, list):
+        return parts
+    for entry in page_structure:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("page") or entry.get("page_role") or entry.get("role")
+        if not name:
+            continue
+        role = entry.get("page_role") or entry.get("role") or _slugify_part_id(name)
+        order = entry.get("order")
+        part_id = entry.get("page_slug") or entry.get("slug") or _slugify_part_id(name)
+        parts.append({
+            "part_id": str(part_id),
+            "part_role": str(role),
+            "audience_hint": entry.get("audience_hint") or entry.get("audience") or "",
+            "topic_hint": entry.get("topic_hint") or entry.get("topic") or entry.get("purpose") or "",
+            "stage": str(order) if order is not None else "",
+        })
+    return parts
+
+
+def parts_from_campaign_manifest(campaign_manifest: dict) -> list:
+    """MECHANICAL decomposition source #2: a campaign/launch manifest's
+    declared `parts` (or `stages`) list — read directly, never invented. A
+    manifest with no `parts`/`stages` list yields `[]` (falls through, same
+    as `parts_from_page_structure`).
+
+    Returns the generic part shape `decompose_task_parts` produces:
+    `{part_id, part_role, audience_hint, topic_hint, stage}`.
+    """
+    parts = []
+    if not isinstance(campaign_manifest, dict):
+        return parts
+    raw = campaign_manifest.get("parts") or campaign_manifest.get("stages") or []
+    if not isinstance(raw, list):
+        return parts
+    for i, p in enumerate(raw):
+        if not isinstance(p, dict):
+            continue
+        part_id = p.get("part_id") or p.get("id") or p.get("slug") or f"part-{i + 1}"
+        parts.append({
+            "part_id": str(part_id),
+            "part_role": str(p.get("part_role") or p.get("role") or ""),
+            "audience_hint": p.get("audience_hint") or p.get("audience") or "",
+            "topic_hint": p.get("topic_hint") or p.get("topic") or "",
+            "stage": str(p.get("stage") or p.get("sequence") or (i + 1)),
+        })
+    return parts
+
+
+def decompose_task_parts(task: str, *, page_structure: list = None,
+                          campaign_manifest: dict = None) -> list:
+    """U115 (E6-1; ADD-1) — split a multi-part / long-horizon task into its
+    communication PARTS (e.g. sales page, nurture emails, social posts, each
+    stage of a launch sequence).
+
+    MECHANICAL when a source already declares parts: a campaign manifest's
+    declared `parts`/`stages` (`campaign_manifest=`, checked first — the
+    more explicit, purpose-built source) or a funnel's `pageStructure`
+    (`page_structure=`) are read directly via the two adapters above, never
+    reinterpreted or guessed at.
+
+    ASK-GATED otherwise: with neither source supplied (or both empty/
+    malformed) this returns `[]` — it NEVER invents parts. The caller then
+    either asks the operator/client how the task decomposes, or treats the
+    task as single-part — which is also this function's BACK-COMPAT degrade
+    path: `govern_task_parts` reads an empty return here as "no declared
+    parts" and falls straight back to ONE unscoped `build_bundle` call,
+    byte-identical to pre-U115 output (BINARY acceptance (d)).
+
+    Returns a list of `{part_id, part_role, audience_hint, topic_hint,
+    stage}` dicts (all string values; `part_id` always non-empty when the
+    list is non-empty).
+    """
+    if campaign_manifest is not None:
+        parts = parts_from_campaign_manifest(campaign_manifest)
+        if parts:
+            return parts
+    if page_structure is not None:
+        parts = parts_from_page_structure(page_structure)
+        if parts:
+            return parts
+    return []
+
+
+def write_part_persona_map(run_dir, records: list, *, merge: bool = True) -> bool:
+    """Persist/refresh `routing/part-persona-map.json` under `run_dir` — the
+    per-part/stage tracking record (U115 build step 3) so a multi-stage /
+    long-horizon project knows which blend governs each part ACROSS THE
+    WHOLE HORIZON, not just the call that just ran.
+
+    One record per part: `{part_id, part_role, voice_persona_id,
+    topic_persona_id, audience_label, audience_source, stage}` (+ an
+    additive `reason` field carrying the different-blends-allowed WHY —
+    tolerated by any reader that only looks at the six spec-named keys).
+
+    `merge=True` (default, and the mechanism BINARY acceptance (b)'s
+    "tracks the assignment across ALL stages" needs): an existing map for
+    this `run_dir` is READ first and records sharing a `part_id` are
+    UPDATED in place — a later stage of the same long-horizon project
+    revising its own governing blend never clobbers sibling parts already
+    tracked; new `part_id`s are appended. `merge=False` replaces the file
+    wholesale.
+
+    Best-effort / non-fatal — same observability-never-blocks posture as
+    `write_persona_selection_log_entry` / `log_match_score` above: a write
+    failure returns False and never raises.
+    """
+    try:
+        rd = Path(run_dir)
+        routing_dir = rd / "routing"
+        routing_dir.mkdir(parents=True, exist_ok=True)
+        map_path = routing_dir / "part-persona-map.json"
+
+        existing = []
+        if merge and map_path.exists():
+            try:
+                loaded = json.loads(map_path.read_text(encoding="utf-8"))
+                existing = loaded if isinstance(loaded, list) else []
+            except Exception:
+                existing = []
+
+        by_id = {}
+        order = []
+        for r in existing:
+            if isinstance(r, dict) and r.get("part_id"):
+                pid = r["part_id"]
+                if pid not in by_id:
+                    order.append(pid)
+                by_id[pid] = dict(r)
+
+        for rec in records:
+            if not isinstance(rec, dict) or not rec.get("part_id"):
+                continue
+            pid = rec["part_id"]
+            clean = {k: rec.get(k) for k in
+                     ("part_id", "part_role", "voice_persona_id", "topic_persona_id",
+                      "audience_label", "audience_source", "stage", "reason")}
+            if pid not in by_id:
+                order.append(pid)
+            by_id[pid] = clean
+
+        ordered = [by_id[pid] for pid in order]
+        map_path.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def _annotate_shared_blend_reasons(map_records: list) -> None:
+    """The A.6 different-blends-allowed invariant, extended to parts (U115
+    build step 4 / Section E6 closing paragraph): when 2+ parts land on the
+    SAME `voice_persona_id`, each of their records must state WHY they
+    share it. Every part built through `govern_task_parts` already carries
+    a real reason (build_bundle's own `rationale['scope']`, echoed onto
+    `reason` below) — this only ADDS the explicit "shared with part(s) ..."
+    clause when it is not already present, so a downstream reader (U117's
+    QC judge) sees the sharing relationship, not just the individual
+    collapse rationale. In-place mutation of `map_records`; never raises.
+    """
+    groups = {}
+    for rec in map_records:
+        pid = rec.get("voice_persona_id")
+        if pid:
+            groups.setdefault(pid, []).append(rec)
+    for pid, recs in groups.items():
+        if len(recs) < 2:
+            continue
+        peers = [r.get("part_id") for r in recs]
+        for rec in recs:
+            others = ", ".join(p for p in peers if p != rec.get("part_id"))
+            existing_reason = rec.get("reason") or ""
+            if "shared with part" not in existing_reason:
+                rec["reason"] = (
+                    existing_reason + (" — " if existing_reason else "") +
+                    f"blend shared with part(s) {others} (collapse/topic-match fired identically)")
+
+
+def validate_part_blend_diversity(map_records: list) -> dict:
+    """U115 BINARY acceptance (e): a shared blend across 2+ parts with NO
+    logged reason is FLAGGED — the data-level signal `U117`'s QC judge
+    consumes to hand back as a build finding; a legitimately shared blend
+    that carries a logged reason PASSES (not flagged), matching the A.6
+    different-blends-allowed invariant ("forced-identical across all parts
+    with no logged reason is a QC finding (U117)"). This function only
+    COMPUTES and RETURNS the flag — it never blocks a build itself; U117 is
+    the enforcement point.
+
+    `map_records`: a list of `{part_id, voice_persona_id, reason, ...}`
+    dicts — either `govern_task_parts`' own `part_persona_map` output or any
+    externally-supplied map with the same shape (so a caller/tester can
+    exercise this in isolation from the build_bundle pipeline).
+    """
+    if len(map_records) < 2:
+        return {"ok": True, "forced_identical": False, "flagged_groups": [],
+                "reason": "fewer than 2 parts — nothing to compare"}
+
+    persona_ids = [r.get("voice_persona_id") for r in map_records]
+    all_identical = bool(persona_ids[0]) and len(set(persona_ids)) == 1
+
+    flagged_groups = []
+    groups = {}
+    for rec in map_records:
+        pid = rec.get("voice_persona_id")
+        groups.setdefault(pid, []).append(rec)
+    for pid, recs in groups.items():
+        if pid is None or len(recs) < 2:
+            continue
+        unreasoned = [r.get("part_id") for r in recs if not (r.get("reason") or "").strip()]
+        if unreasoned:
+            flagged_groups.append({"persona_id": pid,
+                                   "part_ids": [r.get("part_id") for r in recs],
+                                   "unreasoned_part_ids": unreasoned})
+
+    flagged = bool(flagged_groups)
+    return {
+        "ok": not flagged,
+        "forced_identical": all_identical,
+        "flagged_groups": flagged_groups,
+        "reason": ("forced-identical blend across parts with no logged reason "
+                  "— hands to U117" if flagged else
+                  "every shared blend (if any) carries a logged reason, or all parts differ"),
+    }
+
+
+def govern_task_parts(task: str, department: str, *, parts: list = None,
+                       page_structure: list = None, campaign_manifest: dict = None,
+                       run_dir=None, paths: dict = None, db_path=None,
+                       use_llm: bool = True, record: bool = True,
+                       max_task_personas: int = 10, variety: bool = True,
+                       audience_override: str = "") -> dict:
+    """U115 (E6-1; ADD-1) orchestrator — decomposes `task` into parts
+    (mechanical / ASK-gated, never invented — see `decompose_task_parts`)
+    and calls `build_bundle` ONCE PER PART with a `scope_hint={part_id:
+    ...}` tie-breaker, so different parts may legally carry DIFFERENT
+    governing blends, each with its own audience + topic (BINARY
+    acceptance (a)). Writes the cross-horizon `routing/part-persona-map.json`
+    tracking record when `run_dir` is supplied (BINARY acceptance (b)).
+
+    Flag-gated (revert path, BINARY acceptance (d)): with
+    `PER_PART_GOVERNANCE` unset/`!= "1"`, OR with no parts decomposed
+    (`parts=` omitted and `decompose_task_parts` returns `[]`), this makes
+    exactly ONE unscoped `build_bundle` call and returns it — byte-identical
+    to calling `build_bundle` directly, today's pre-U115 behavior.
+
+    Returns:
+      `{"mode": "single", "bundle": <build_bundle() dict>, "parts": [],
+        "part_persona_map": []}` — the back-compat / flag-off path, OR
+      `{"mode": "per_part", "parts": [{"part_id", "part_role", "stage",
+        "bundle"}, ...], "part_persona_map": [...]}` — one bundle per
+        decomposed part.
+    """
+    def _single():
+        bundle = build_bundle(task, department, paths=paths, db_path=db_path,
+                              use_llm=use_llm, record=record,
+                              max_task_personas=max_task_personas,
+                              variety=variety, audience_override=audience_override)
+        return {"mode": "single", "bundle": bundle, "parts": [], "part_persona_map": []}
+
+    if not _per_part_governance_enabled():
+        return _single()
+
+    if parts is None:
+        parts = decompose_task_parts(task, page_structure=page_structure,
+                                     campaign_manifest=campaign_manifest)
+
+    if not parts:
+        return _single()
+
+    part_results = []
+    map_records = []
+    for p in parts:
+        if not isinstance(p, dict) or not p.get("part_id"):
+            continue
+        part_id = str(p["part_id"])
+        part_role = str(p.get("part_role") or "")
+        audience_hint = p.get("audience_hint") or ""
+        topic_hint = p.get("topic_hint") or ""
+        stage = str(p.get("stage") or "")
+
+        bundle = build_bundle(
+            task, department, paths=paths, db_path=db_path, use_llm=use_llm,
+            record=record, max_task_personas=max_task_personas, variety=variety,
+            topic_hint=topic_hint, audience_override=(audience_hint or audience_override),
+            scope_hint={"part_id": part_id})
+
+        part_results.append({"part_id": part_id, "part_role": part_role,
+                             "stage": stage, "bundle": bundle})
+
+        voice = bundle.get("voice") or {}
+        topic_persona = voice.get("topic_persona") or {}
+        resolved_audience = bundle.get("resolved_audience") or {}
+        map_records.append({
+            "part_id": part_id,
+            "part_role": part_role,
+            "voice_persona_id": bundle.get("persona_id"),
+            "topic_persona_id": topic_persona.get("id"),
+            "audience_label": resolved_audience.get("label"),
+            "audience_source": resolved_audience.get("source"),
+            "stage": stage,
+            "reason": (bundle.get("rationale") or {}).get("scope"),
+        })
+
+    _annotate_shared_blend_reasons(map_records)
+
+    if run_dir is not None:
+        write_part_persona_map(run_dir, map_records)
+
+    return {"mode": "per_part", "parts": part_results, "part_persona_map": map_records}

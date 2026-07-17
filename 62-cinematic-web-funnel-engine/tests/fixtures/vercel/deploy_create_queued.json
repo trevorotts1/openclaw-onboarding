@@ -1,0 +1,7 @@
+{
+  "_fixture_note": "Mocked Vercel POST /v13/deployments success response body, shape verified against vercel.com/docs/rest-api/deployments/create-a-new-deployment (2026-07-15): 'id', 'url', 'readyState' are required response fields; readyState begins QUEUED then transitions QUEUED -> INITIALIZING -> BUILDING -> READY|ERROR. NOT a real Vercel response; no live/paid call was made to produce this file (spec 19.2).",
+  "id": "dpl_fixture_0000000000000001",
+  "url": "cwfe-fixture-abc123.vercel.app",
+  "readyState": "QUEUED",
+  "projectId": "prj_fixture_0000000000000001"
+}

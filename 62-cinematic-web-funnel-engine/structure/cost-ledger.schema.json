@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/cinematic-web-funnel-engine/cost-ledger.schema.json",
+  "title": "Cinematic and Web Funnel Engine — cost-ledger.json (Skill 62, U6)",
+  "description": "Per-project paid-call ledger (spec Section 10.4). The idempotency/duplicate-spend source of truth: a request_hash with an existing entry whose status is queued/submitted/in_progress/complete must never be resubmitted (AF-CWFE-RESTART-DUPLICATE). Never contains secret values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "budget_cap_usd", "cumulative_spend_usd", "remaining_budget_usd", "entries", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "budget_cap_usd": { "type": "number", "minimum": 0 },
+    "cumulative_spend_usd": { "type": "number", "minimum": 0 },
+    "remaining_budget_usd": { "type": "number" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "request_hash",
+          "provider",
+          "model",
+          "status",
+          "estimated_cost_usd",
+          "actual_cost_usd",
+          "retry_count",
+          "retry_reason",
+          "refunded",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "task_id": { "type": "string", "minLength": 1 },
+          "request_hash": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "sha256 hex over the canonical (sorted-key) request payload: provider + model + operation + params. The idempotency key."
+          },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "provider_task_id": { "type": ["string", "null"] },
+          "operation": { "type": "string", "enum": ["generate_image", "generate_video", "upload_asset", "other"] },
+          "resolution": { "type": ["string", "null"] },
+          "seconds": { "type": ["number", "null"], "minimum": 0 },
+          "image_count": { "type": ["integer", "null"], "minimum": 0 },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "submitted", "in_progress", "complete", "failed", "cancelled"]
+          },
+          "estimated_cost_usd": { "type": "number", "minimum": 0 },
+          "actual_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+          "retry_count": { "type": "integer", "minimum": 0 },
+          "retry_reason": { "type": ["string", "null"] },
+          "refunded": { "type": "boolean" },
+          "status_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from_status", "to_status", "at"],
+              "properties": {
+                "from_status": { "type": ["string", "null"] },
+                "to_status": { "type": "string", "minLength": 1 },
+                "at": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "created_at": { "type": "string", "minLength": 1 },
+          "updated_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 }
+  }
+}
