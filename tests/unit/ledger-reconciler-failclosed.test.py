@@ -643,5 +643,318 @@ class TestU44U108RealWorldCounterfactual(unittest.TestCase):
         self.assertEqual(u108_alarm["kind"], "missing-leg")
 
 
+# ─── U79 defect: the compound-tag / non-namespaced-branch blind spot ────────
+# THE BUG (QC send-back on PR #614, 2026-07-16): U79's real row reads
+# "(CC (+ONB), P1)" -- a compound/modified tag, not the literal "both".
+# TWO independent structural reasons the pre-this-commit guards never
+# examine it: (1) requires_both_legs()/parse_leg_requirement() cannot parse
+# this shape at all (the inner "(+ONB)" parens break LEG_TAG_RE's "no
+# comma/paren before the first comma" assumption -- confirmed empirically,
+# not assumed, in TestCompoundLegTagParsing below), so the missing-leg loop
+# never visits rows with this tag shape regardless of branch naming; (2)
+# even if it did, U79's real CC-leg branch is
+# `u79-gk17-cc-anthology-selfheal-banner` -- entirely outside the
+# `skill6-v2/` namespace `list_remote_branches()` collects from, so it
+# would never appear in units_truth in the first place. U79 was only ever
+# confirmed correct by a one-time hand audit against fresh git truth, not
+# by any code path that ran automatically. Real, LIVE examples from this
+# repo's own ledger use this exact tag shape: U12 ("CC (+ONB probe)"), U15
+# ("ONB (+CC endpoint)"), U79 ("CC (+ONB)") -- descriptions below are the
+# verbatim text from ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md
+# as of this commit.
+class TestCompoundLegTagParsing(unittest.TestCase):
+    """Unit-level proof for parse_compound_leg_primary()."""
+
+    U12_DESCRIPTION = (
+        "[A/A-U12] (CC (+ONB probe), P2) Blend observability: match-score "
+        "distribution advisory in deep-health + `persona_grounding_degraded` "
+        "event/chip"
+    )
+    U15_DESCRIPTION = (
+        "[B/B-U1] (ONB (+CC endpoint), P0) Bundle-acquisition ladder in "
+        "`v2_dispatcher` (threaded → CC fetch → local `--blend` → "
+        "absent; receipt always)"
+    )
+    U79_DESCRIPTION = (
+        "[GK-17] (CC (+ONB), P1) The REAL A7 repair: root-cause the silent "
+        "mirror drop, then a converging self-healing reconcile (banner = "
+        "last resort)"
+    )
+
+    def test_legtagre_cannot_parse_any_of_the_three_real_compound_rows(self):
+        """Confirms the PREMISE of this whole fix, empirically: the
+        pre-existing LEG_TAG_RE/parse_leg_requirement() genuinely cannot
+        parse ANY of the 3 real compound-tag rows in the live ledger, not
+        just U79. If this ever stops being true (e.g. LEG_TAG_RE is
+        independently improved to parse compound tags), this test -- not
+        just U79's -- must be revisited."""
+        for desc in (self.U12_DESCRIPTION, self.U15_DESCRIPTION, self.U79_DESCRIPTION):
+            self.assertIsNone(parse_leg_requirement(desc))
+            self.assertFalse(requires_both_legs(desc))
+
+    def test_u79_real_shape_parses_to_cc_primary(self):
+        self.assertEqual(mod.parse_compound_leg_primary(self.U79_DESCRIPTION), "CC")
+
+    def test_u15_real_shape_parses_to_onb_primary(self):
+        self.assertEqual(mod.parse_compound_leg_primary(self.U15_DESCRIPTION), "ONB")
+
+    def test_u12_real_shape_parses_to_cc_primary(self):
+        self.assertEqual(mod.parse_compound_leg_primary(self.U12_DESCRIPTION), "CC")
+
+    def test_literal_both_tag_is_not_a_compound_tag(self):
+        desc = "[C/C-13] (both, P1) Catch-all conformance"
+        self.assertIsNone(mod.parse_compound_leg_primary(desc))
+
+    def test_plain_single_repo_tag_is_not_a_compound_tag(self):
+        desc = "[JM/U65] (CC, P2) My AI CEO Phase B"
+        self.assertIsNone(mod.parse_compound_leg_primary(desc))
+
+    def test_empty_description_is_not_a_compound_tag(self):
+        self.assertIsNone(mod.parse_compound_leg_primary(""))
+        self.assertIsNone(mod.parse_compound_leg_primary(None))
+
+
+class TestCompoundTagUnconfirmedFinding(unittest.TestCase):
+    """Mutation-test for detect_failclosed_mismatches()'s THIRD,
+    informational-only loop -- proves it catches the U79 shape (compound
+    tag + branch entirely outside units_truth) without reopening the false
+    positives the branch-name tolerance was already tuned against."""
+
+    U79_DESCRIPTION = TestCompoundLegTagParsing.U79_DESCRIPTION
+    U15_DESCRIPTION = TestCompoundLegTagParsing.U15_DESCRIPTION
+    U12_DESCRIPTION = TestCompoundLegTagParsing.U12_DESCRIPTION
+
+    def _ledger(self, uid, description, status):
+        return (
+            "| unit | description | label | status | evidence | timestamp |\n"
+            "|---|---|---|---|---|---|\n"
+            f"| {uid} | {description} | [x] | {status} | evidence | 2026-07-16T00:00:00Z |\n"
+        )
+
+    def test_u79_shape_no_cc_branch_at_all_raises_informational_finding(self):
+        """THE FIX: U79's real shape -- compound tag, primary=CC, and CC's
+        units_truth has NO `skill6-v2/U79` key at all (exactly the live,
+        real-world fact: U79's actual CC branch,
+        `u79-gk17-cc-anthology-selfheal-banner`, is outside the
+        `skill6-v2/` namespace this module ever collects from). Pre-fix:
+        zero alarms for U79, ever, from any repo, regardless of branch
+        state -- this loop is what closes that."""
+        ledger = self._ledger(
+            "U79", self.U79_DESCRIPTION,
+            "verified (auto-reconciled, needs test-proof confirmation)",
+        )
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        flagged = {a["unit"] for a in alarms}
+        self.assertIn(
+            "U79", flagged,
+            "REGRESSION: the U79 compound-tag shape (no branch anywhere in "
+            "units_truth, primary leg=CC) must produce a finding, not silence.",
+        )
+        u79_finding = next(a for a in alarms if a["unit"] == "U79")
+        self.assertEqual(u79_finding["kind"], "compound-tag-unconfirmed")
+        self.assertEqual(u79_finding["repo"], "blackceo-command-center")
+        self.assertIn("NOT", u79_finding["reason"])
+        self.assertIn("does NOT mean the leg is missing", u79_finding["reason"])
+
+    def test_u79_shape_wrong_repo_call_raises_no_finding(self):
+        """Mirror-image: U79's primary leg is CC, not ONB -- calling the
+        detector for openclaw-onboarding against the identical ledger row
+        must NOT raise a finding (the row's primary leg is the other
+        repo's problem, not ONB's)."""
+        ledger = self._ledger(
+            "U79", self.U79_DESCRIPTION,
+            "verified (auto-reconciled, needs test-proof confirmation)",
+        )
+        alarms = detect_failclosed_mismatches("openclaw-onboarding", {}, ledger)
+        flagged = {a["unit"] for a in alarms}
+        self.assertNotIn("U79", flagged)
+
+    def test_u15_shape_no_onb_branch_raises_informational_finding(self):
+        """Real second instance of the same shape, opposite primary repo:
+        U15's real ONB leg shipped inside a multi-unit branch
+        (`skill6-v2/chainA`), not its own `skill6-v2/U15` -- units_truth
+        genuinely has no key for it. Primary=ONB, so the ONB-side call
+        must raise the finding."""
+        ledger = self._ledger("U15", self.U15_DESCRIPTION, "verified")
+        alarms = detect_failclosed_mismatches("openclaw-onboarding", {}, ledger)
+        flagged = {a["unit"] for a in alarms}
+        self.assertIn("U15", flagged)
+        u15_finding = next(a for a in alarms if a["unit"] == "U15")
+        self.assertEqual(u15_finding["kind"], "compound-tag-unconfirmed")
+
+    def test_u12_shape_branch_exists_produces_no_false_positive(self):
+        """Critical false-positive guard: U12's real CC leg DOES have a
+        branch under the exact canonical name (`skill6-v2/U12`, confirmed
+        live against blackceo-command-center) -- the safe check must find
+        it and NOT raise a finding, even though the row's tag is the same
+        compound shape as U79's. Proves this loop does not just fire on
+        every compound-tag row unconditionally."""
+        ledger = self._ledger(
+            "U12", self.U12_DESCRIPTION,
+            "verified (auto-reconciled, needs test-proof confirmation)",
+        )
+        cc_units = {
+            "skill6-v2/U12": {
+                "branch": "skill6-v2/U12", "tip": "aaaaaaaa",
+                "is_ancestor_of_main": True, "merge_sha": "bbbbbbbb", "tag": "v6.0.1",
+            },
+        }
+        alarms = detect_failclosed_mismatches("blackceo-command-center", cc_units, ledger)
+        self.assertEqual(
+            alarms, [],
+            "REGRESSION: a compound-tag row whose primary-leg branch genuinely "
+            "exists under the exact canonical name must not be flagged.",
+        )
+
+    def test_compound_tag_pending_status_is_not_a_finding(self):
+        """Consistency guard, same shape as every other check in this
+        module: a compound-tag row that is honestly still 'pending' (git
+        truth and ledger already agree) must not be flagged."""
+        ledger = self._ledger("U79", self.U79_DESCRIPTION, "pending")
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        self.assertEqual(alarms, [])
+
+    def test_literal_both_tagged_row_is_unaffected_by_this_loop(self):
+        """Non-interaction guard: this new loop must never fire for a
+        literal "(both, ...)" row (that shape is already fully covered by
+        the missing-leg loop with a HARD, not informational, severity) --
+        parse_compound_leg_primary() must return None for it, so this loop
+        skips it entirely, exactly like TestMissingLegBlindSpot already
+        proves for that row's own (hard) coverage."""
+        ledger = self._ledger(
+            "U108",
+            "[E5-3 (G2b)] (both, P1) Department opt-out + functionality WARNING",
+            "verified (auto-reconciled, needs test-proof confirmation)",
+        )
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        kinds = {a["kind"] for a in alarms}
+        self.assertNotIn(
+            "compound-tag-unconfirmed", kinds,
+            "a literal both-tagged row must be caught (if at all) by the "
+            "hard missing-leg loop, never by the informational compound-tag loop.",
+        )
+        # (it SHOULD still be caught by the existing hard missing-leg loop --
+        # confirmed already by TestMissingLegBlindSpot; re-asserted here for
+        # this test's own clarity)
+        self.assertIn("missing-leg", kinds)
+
+    def test_finding_severity_is_distinct_from_hard_alarm_kinds(self):
+        """The finding's own "kind" field must never collide with either
+        hard-alarm kind string ("unmerged"/"missing-leg") -- callers (e.g.
+        render_recovery_state()) rely on this string to route severity."""
+        ledger = self._ledger(
+            "U79", self.U79_DESCRIPTION,
+            "verified (auto-reconciled, needs test-proof confirmation)",
+        )
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        u79_finding = next(a for a in alarms if a["unit"] == "U79")
+        self.assertNotIn(u79_finding["kind"], ("unmerged", "missing-leg"))
+
+
+class TestMissingLegAlarmTextStrengthened(unittest.TestCase):
+    """Proof for the third QC ask: the missing-leg alarm's rendered text
+    must explicitly remind a reader to check OTHER cross-referenced units'
+    CHANGELOGs/branches before resolving it -- the U108 blind spot already
+    produced one WRONG resolution this same session on the first pass
+    (marked 'verified (ONB half)' on branch-name absence alone, before a
+    deeper cross-reference check reversed it)."""
+
+    def test_missing_leg_reason_names_the_cross_reference_reminder(self):
+        ledger = (
+            "| unit | description | label | status | evidence | timestamp |\n"
+            "|---|---|---|---|---|---|\n"
+            "| U108 | [E5-3 (G2b)] (both, P1) Department opt-out | [x] | "
+            "verified (auto-reconciled, needs test-proof confirmation) | e | t |\n"
+        )
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        u108_alarm = next(a for a in alarms if a["unit"] == "U108")
+        self.assertEqual(u108_alarm["kind"], "missing-leg")
+        self.assertIn("cross-referenced", u108_alarm["reason"])
+        self.assertIn("CHANGELOG", u108_alarm["reason"])
+
+    def test_compound_tag_finding_also_names_the_cross_reference_reminder(self):
+        ledger = (
+            "| unit | description | label | status | evidence | timestamp |\n"
+            "|---|---|---|---|---|---|\n"
+            "| U79 | [GK-17] (CC (+ONB), P1) The REAL A7 repair | [x] | "
+            "verified (auto-reconciled, needs test-proof confirmation) | e | t |\n"
+        )
+        alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        u79_finding = next(a for a in alarms if a["unit"] == "U79")
+        self.assertIn("CHANGELOG", u79_finding["reason"])
+
+
+class TestRenderSeveritySeparation(unittest.TestCase):
+    """End-to-end proof that render_recovery_state() renders hard
+    fail-closed alarms and informational compound-tag findings in SEPARATE
+    sections, never conflating the two severities in the artifact a
+    recovery session actually reads."""
+
+    def _build_truth_with_mixed_severities(self):
+        ledger = (
+            "| unit | description | label | status | evidence | timestamp |\n"
+            "|---|---|---|---|---|---|\n"
+            "| U108 | [E5-3 (G2b)] (both, P1) Department opt-out | [x] | "
+            "verified (auto-reconciled, needs test-proof confirmation) | e | t |\n"
+            "| U79 | [GK-17] (CC (+ONB), P1) The REAL A7 repair | [x] | "
+            "verified (auto-reconciled, needs test-proof confirmation) | e | t |\n"
+        )
+        cc_alarms = detect_failclosed_mismatches("blackceo-command-center", {}, ledger)
+        truth = {
+            "generated_at": "2026-07-17T00:00:00Z",
+            "onb_main_sha": "0" * 40,
+            "cc_main_sha": "1" * 40,
+            "onb_units": {},
+            "cc_units": {},
+            "cinematic": {"branch": "skill62/cinematic-engine", "exists": False},
+            "cinematic_local_clone": {"clone_exists": False},
+            "merge_queue": {"tickets_ready": [], "done": [], "lock_held": False},
+            "journal_hits": [],
+            "ledger_edit_allowed": True,
+            "units_gap_filled": "",
+            "failclosed_alarms": cc_alarms,
+        }
+        return truth, ledger
+
+    def test_hard_and_informational_sections_both_present_and_distinct(self):
+        truth, ledger = self._build_truth_with_mixed_severities()
+        with tempfile.TemporaryDirectory() as td:
+            out_path = Path(td) / "recovery-state.md"
+            render_recovery_state(truth, ledger, out_path)
+            rendered = out_path.read_text()
+
+        self.assertIn("## INTEGRITY ALARMS", rendered)
+        self.assertIn("## INTEGRITY FINDINGS", rendered)
+        alarms_idx = rendered.index("## INTEGRITY ALARMS")
+        findings_idx = rendered.index("## INTEGRITY FINDINGS")
+        this_run_idx = rendered.index("## This run")
+        self.assertLess(alarms_idx, findings_idx)
+        self.assertLess(findings_idx, this_run_idx)
+
+        alarms_section = rendered[alarms_idx:findings_idx]
+        findings_section = rendered[findings_idx:this_run_idx]
+        # U108 (hard, missing-leg) belongs in the ALARMS section only.
+        self.assertIn("U108", alarms_section)
+        self.assertNotIn("U79", alarms_section)
+        # U79 (informational, compound-tag-unconfirmed) belongs in the
+        # FINDINGS section only.
+        self.assertIn("U79", findings_section)
+        self.assertNotIn("| U79 |", alarms_section)
+
+    def test_this_run_reports_both_counts_separately(self):
+        truth, ledger = self._build_truth_with_mixed_severities()
+        with tempfile.TemporaryDirectory() as td:
+            out_path = Path(td) / "recovery-state.md"
+            render_recovery_state(truth, ledger, out_path)
+            rendered = out_path.read_text()
+
+        this_run = rendered[rendered.index("## This run"):]
+        self.assertIn("fail-closed integrity alarms this run", this_run)
+        self.assertIn("informational leg-unconfirmed findings this run", this_run)
+        # exactly 1 hard (U108) + 1 informational (U79)
+        self.assertIn("1 (U108-blackceo-command-center)", this_run)
+        self.assertIn("1 (U79-blackceo-command-center)", this_run)
+
+
 if __name__ == "__main__":
     unittest.main()

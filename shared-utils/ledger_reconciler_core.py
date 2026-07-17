@@ -64,6 +64,37 @@ STATUS_VERIFIED_RE = re.compile(r"^verified\b", re.IGNORECASE)
 # Section E.2" pointer (no separate spec file is git-tracked here).
 LEG_TAG_RE = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?\(([^,)]+),")
 
+# A DIFFERENT tag shape LEG_TAG_RE cannot parse at all: a compound/modified
+# leg tag like "(CC (+ONB), P1)" or "(ONB (+CC endpoint), P0)" -- a primary
+# repo token immediately followed by a parenthesized "+..." secondary-leg
+# hint. Confirmed empirically (not assumed): LEG_TAG_RE's
+# "no comma/close-paren before the first comma" capture breaks on the
+# inner "(+...)" -- parse_leg_requirement() returns None for every one of
+# the 3 real compound-tag rows in the live ledger (U12, U15, U79), not just
+# the U79 row this shape was first found on. This regex exists ONLY to
+# recognize that specific shape and extract the primary repo token; it does
+# not attempt to parse the "+..." hint itself (no consistent grammar across
+# "+ONB probe" / "+CC endpoint" / "+ONB" to parse).
+COMPOUND_LEG_TAG_RE = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?\((CC|ONB)\s*\(\+", re.IGNORECASE)
+
+_COMPOUND_PRIMARY_TO_REPO_LABEL = {
+    "ONB": "openclaw-onboarding",
+    "CC": "blackceo-command-center",
+}
+
+
+def parse_compound_leg_primary(description):
+    """Detect the U79 tag shape ("CC (+ONB), P1" / "ONB (+CC endpoint), P0")
+    that parse_leg_requirement()/LEG_TAG_RE cannot parse at all. Returns the
+    primary repo token, upper-cased ("CC" or "ONB"), or None if the
+    description does not match this specific compound shape."""
+    if not description:
+        return None
+    m = COMPOUND_LEG_TAG_RE.match(description)
+    if not m:
+        return None
+    return m.group(1).upper()
+
 
 def parse_leg_requirement(description):
     """Extract the raw leg-requirement tag from a ledger row's description
@@ -594,7 +625,79 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
                 f"skill6 ledger's status cell for {uid} reads '{led_status.strip()}'. "
                 f"This is the structural blind spot: a leg with no branch produces "
                 f"no units_truth entry, so the unmerged-branch check above never "
-                f"visits it. Do not treat this repo's leg as complete."
+                f"visits it. Do not treat this repo's leg as complete. BEFORE "
+                f"resolving this finding either way, check OTHER cross-referenced "
+                f"units' CHANGELOGs/branches -- a 'never started' verdict can itself "
+                f"be wrong if the work shipped inside a DIFFERENT, cross-referenced "
+                f"unit's branch by explicit design (the real U108 shape: its CC leg "
+                f"shipped inside U110's branch, self-documented in both units' own "
+                f"CHANGELOG entries). Resolving on branch-name absence alone already "
+                f"produced one wrong correction this session (U108 was first marked "
+                f"'verified (ONB half)' on that reasoning, then reversed after a "
+                f"deeper cross-reference check) -- do not repeat it."
+            ),
+        })
+
+    # -- THIRD, INFORMATIONAL-ONLY check: compound/modified leg tags (the
+    # U79 shape) -- e.g. "(CC (+ONB), P1)"/"(ONB (+CC endpoint), P0)". This
+    # tag shape is UNPARSEABLE by parse_leg_requirement() (see
+    # COMPOUND_LEG_TAG_RE's docstring) and therefore invisible to
+    # requires_both_legs() -- so the missing-leg loop above never even
+    # considers these rows, regardless of branch naming. Deliberately NOT
+    # folded into the missing-leg loop as a hard alarm: a compound tag's
+    # primary leg genuinely CAN ship under a branch name with zero
+    # discoverable relationship to its own unit id -- proven twice, not
+    # once: U15's ONB leg shipped inside a multi-unit branch
+    # (`skill6-v2/chainA`, batching U15/U16/U17/U19), and U79's CC leg
+    # shipped as `u79-gk17-cc-anthology-selfheal-banner`. A whole-repo,
+    # whole-branch-list token scan for a literal unit-id segment (e.g.
+    # "u79") was evaluated and REJECTED for this fix: tested against this
+    # repo's own real branch list, it produces a live false match TODAY --
+    # `skill62/ce-U15` is a DIFFERENT skill's own, unrelated "U15" that
+    # would silently suppress a genuine finding here. There is no safe,
+    # general mechanical way to discover a non-namespaced, non-
+    # disambiguated branch name -- that is a structural limit of this data
+    # (branch names carry no enforced convention outside `skill6-v2/*`),
+    # not merely a coverage gap this fix chose not to close. So this check
+    # raises a LOWER-SEVERITY, explicitly non-blocking, non-fail-closed
+    # finding instead: "the safe branch check could not confirm this row's
+    # primary leg" is NOT the same claim as "this leg is missing" -- do not
+    # conflate the two severities when reading recovery-state.md.
+    for uid, row in ledger_rows.items():
+        primary = parse_compound_leg_primary(row["description"])
+        if primary is None:
+            continue  # not a compound-tag row at all
+        primary_repo_label = _COMPOUND_PRIMARY_TO_REPO_LABEL.get(primary)
+        if primary_repo_label != repo_label:
+            continue  # this row's primary leg is the OTHER repo, not this call's
+        if _any_branch_for_unit(units_truth, uid):
+            continue  # safe check (exact or disambiguated-suffix) found it
+        led_status = row["status"]
+        if not STATUS_VERIFIED_RE.match(led_status.strip()):
+            continue  # ledger already says pending/other -- consistent, no finding
+        alarms.append({
+            "unit": uid,
+            "repo": repo_label,
+            "branch": f"skill6-v2/{uid}",
+            "tip": None,
+            "ledger_status": led_status.strip(),
+            "kind": "compound-tag-unconfirmed",
+            "reason": (
+                f"{repo_label}'s PRIMARY leg of {uid} (compound leg tag, e.g. "
+                f"\"{primary} (+...)\") has no `skill6-v2/{uid}` branch (exact or "
+                f"disambiguated-suffix) in {repo_label} -- INFORMATIONAL ONLY, NOT "
+                f"a fail-closed contradiction: a compound-tagged unit's leg can "
+                f"genuinely ship under a branch name with no discoverable "
+                f"relationship to its own unit id (proven twice: U15's ONB leg "
+                f"shipped inside `skill6-v2/chainA`, U79's CC leg shipped as "
+                f"`u79-gk17-cc-anthology-selfheal-banner`) -- this finding does NOT "
+                f"mean the leg is missing. BEFORE resolving this finding either way, "
+                f"read the unit's own CHANGELOG.md entry AND any OTHER "
+                f"cross-referenced unit's CHANGELOG/spec dependency line, and check "
+                f"for a same-day merge under an unrelated or batched branch name -- "
+                f"resolving on branch-name absence alone already produced one wrong "
+                f"correction this session (U108, corrected to 'ONB half' before a "
+                f"deeper cross-reference check reversed it)."
             ),
         })
 
@@ -620,7 +723,15 @@ def render_recovery_state(truth, github_ledger_text, out_path):
     lines.append(f"blackceo-command-center `origin/main` HEAD: `{truth['cc_main_sha']}`")
     lines.append("")
 
-    alarms = truth.get("failclosed_alarms") or []
+    all_alarms = truth.get("failclosed_alarms") or []
+    # Severity split: "unmerged" and "missing-leg" are hard, fail-closed
+    # contradictions (git truth directly contradicts a "verified" status).
+    # "compound-tag-unconfirmed" is a lower-severity, non-blocking finding
+    # (the safe branch check couldn't confirm a leg -- that is NOT the same
+    # claim as "the leg is missing"; see detect_failclosed_mismatches()'s
+    # docstring for why this severity is kept separate).
+    alarms = [a for a in all_alarms if a.get("kind") != "compound-tag-unconfirmed"]
+    info_findings = [a for a in all_alarms if a.get("kind") == "compound-tag-unconfirmed"]
     alarm_lookup = {(a["repo"], a["unit"]) for a in alarms}
     lines.append("## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)")
     lines.append("")
@@ -644,6 +755,39 @@ def render_recovery_state(truth, github_ledger_text, out_path):
             )
     else:
         lines.append("No mismatches found this run.")
+    lines.append("")
+
+    lines.append(
+        "## INTEGRITY FINDINGS — informational (compound-tag leg unconfirmed by"
+        " branch, NOT a fail-closed mismatch)"
+    )
+    lines.append("")
+    if info_findings:
+        lines.append(
+            f"**{len(info_findings)} finding(s) this run.** A compound/modified leg tag row"
+            " below (e.g. \"CC (+ONB)\", \"ONB (+CC endpoint)\") has no exact or"
+            " disambiguated-suffix `skill6-v2/<unit>` branch in the repo its primary leg"
+            " needs. **This does NOT mean the leg is missing** -- a genuinely complete leg"
+            " can ship under a branch name with zero discoverable relationship to its own"
+            " unit id (proven twice: U15's ONB leg inside `skill6-v2/chainA`, U79's CC leg"
+            " as `u79-gk17-cc-anthology-selfheal-banner`). There is no safe, general way to"
+            " mechanically discover a non-namespaced branch name. Before resolving a finding"
+            " below either way, read the unit's own CHANGELOG.md entry AND any OTHER"
+            " cross-referenced unit's CHANGELOG/spec dependency line, and check for a"
+            " same-day merge under an unrelated or batched branch name -- resolving on"
+            " branch-name absence alone already produced one wrong correction this session"
+            " (U108, corrected to 'ONB half' before a deeper cross-reference check reversed"
+            " it)."
+        )
+        lines.append("")
+        lines.append("| unit | primary-leg repo | expected branch (not found) | shared ledger status |")
+        lines.append("|---|---|---|---|")
+        for a in info_findings:
+            lines.append(
+                f"| {a['unit']} | {a['repo']} | `{a['branch']}` | {a['ledger_status']} |"
+            )
+    else:
+        lines.append("No informational findings this run.")
     lines.append("")
 
     lines.append("## Skill 6 — openclaw-onboarding (`skill6-v2/*` branches)")
@@ -758,6 +902,8 @@ def render_recovery_state(truth, github_ledger_text, out_path):
     lines.append(f"- units auto-reconciled (git showed merged/tagged, ledger still said pending) this run: {truth['units_gap_filled'] or 'none'}")
     alarm_units = ", ".join(f"{a['unit']}-{a['repo']}" for a in alarms) if alarms else "none"
     lines.append(f"- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): {len(alarms)} ({alarm_units})")
+    info_units = ", ".join(f"{a['unit']}-{a['repo']}" for a in info_findings) if info_findings else "none"
+    lines.append(f"- informational leg-unconfirmed findings this run (compound-tag branches, NOT fail-closed): {len(info_findings)} ({info_units})")
     lines.append(f"- journal corroboration hits scanned: {len(truth['journal_hits'])} (informational only, never authoritative)")
     lines.append("")
 
@@ -864,10 +1010,20 @@ def main():
     render_recovery_state(truth, github_ledger_text, args.recovery_out)
     render_recovery_state(truth, github_ledger_text, args.recovery_copy_out)
 
-    # session log appends -- always safe, append-only
+    # session log appends -- always safe, append-only. Split by severity:
+    # "compound-tag-unconfirmed" findings are informational, NOT fail-closed
+    # (see detect_failclosed_mismatches()'s docstring) -- report them
+    # separately so the session log doesn't overstate a soft finding as a
+    # hard mismatch.
+    hard_alarms = [a for a in failclosed_alarms if a.get("kind") != "compound-tag-unconfirmed"]
+    info_findings = [a for a in failclosed_alarms if a.get("kind") == "compound-tag-unconfirmed"]
     alarm_units_summary = (
-        ", ".join(f"{a['unit']}-{a['repo']}" for a in failclosed_alarms)
-        if failclosed_alarms else "none"
+        ", ".join(f"{a['unit']}-{a['repo']}" for a in hard_alarms)
+        if hard_alarms else "none"
+    )
+    info_units_summary = (
+        ", ".join(f"{a['unit']}-{a['repo']}" for a in info_findings)
+        if info_findings else "none"
     )
     summary_body = [
         f"- openclaw-onboarding `origin/main` = `{onb_main_sha}`; blackceo-command-center `origin/main` = `{cc_main_sha}`.",
@@ -879,7 +1035,8 @@ def main():
         f"- ledger-edit permitted this pass: {allow_edit} "
         + ("(merge-queue writer lock was held -> ledger edit skipped this cycle, will retry next cron tick)" if not allow_edit else "(merge-queue writer lock free)"),
         f"- units auto-reconciled this pass: {', '.join(units_gap_filled) if units_gap_filled else 'none (no gap between git truth and ledger found)'}",
-        f"- FAIL-CLOSED integrity alarms this pass (verified-but-unmerged leg mismatches): {len(failclosed_alarms)} ({alarm_units_summary})",
+        f"- FAIL-CLOSED integrity alarms this pass (verified-but-unmerged leg mismatches): {len(hard_alarms)} ({alarm_units_summary})",
+        f"- informational leg-unconfirmed findings this pass (compound-tag branches, NOT fail-closed): {len(info_findings)} ({info_units_summary})",
         f"- recovery snapshot rewritten at `{args.recovery_out}`.",
     ]
     append_session_log(
@@ -916,10 +1073,21 @@ def main():
     # Machine-readable alarms for the bash wrapper (log a WARNING and fold
     # the alarm count into the commit message so it's visible in `git log`
     # without opening recovery-state.md -- never silent, never blocking).
+    # "failclosed_alarm_count"/"failclosed_alarms" stay the FULL union
+    # (hard + informational) for backward compatibility with any existing
+    # consumer of this JSON; "kind" is included per-entry (was already on
+    # each alarm dict, just not previously copied into this summary) so a
+    # consumer can filter by severity, plus two new top-level counts that
+    # split it explicitly.
     failclosed_alarms_summary = [
-        {"unit": a["unit"], "repo": a["repo"], "branch": a["branch"], "ledger_status": a["ledger_status"]}
+        {
+            "unit": a["unit"], "repo": a["repo"], "branch": a["branch"],
+            "ledger_status": a["ledger_status"], "kind": a.get("kind"),
+        }
         for a in failclosed_alarms
     ]
+    hard_alarm_count = sum(1 for a in failclosed_alarms if a.get("kind") != "compound-tag-unconfirmed")
+    compound_tag_informational_count = len(failclosed_alarms) - hard_alarm_count
 
     with open(args.result_out, "w") as fh:
         json.dump(
@@ -929,6 +1097,8 @@ def main():
                 "onb_main_sha": onb_main_sha,
                 "cc_main_sha": cc_main_sha,
                 "failclosed_alarm_count": len(failclosed_alarms),
+                "failclosed_hard_alarm_count": hard_alarm_count,
+                "compound_tag_informational_count": compound_tag_informational_count,
                 "failclosed_alarms": failclosed_alarms_summary,
             },
             fh,
@@ -939,6 +1109,8 @@ def main():
         "units_gap_filled": units_gap_filled,
         "ledger_edit_allowed": allow_edit,
         "failclosed_alarm_count": len(failclosed_alarms),
+        "failclosed_hard_alarm_count": hard_alarm_count,
+        "compound_tag_informational_count": compound_tag_informational_count,
     }))
 
 
