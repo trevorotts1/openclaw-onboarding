@@ -1,9 +1,9 @@
 {
   "deck_type": "signature_presentation",
   "record_committed_atomically": true,
-  "record_commit_ids": "rec_golden_quest_0001",
+  "record_commit_ids": "rec_sp_20260716T130406238116",
   "asked_all_at_once": true,
-  "question_block_msg_id": "rec_golden_quest_0001",
+  "question_block_msg_id": "rec_sp_20260716T130406238116",
   "answers": {
     "q1": "CALLED: Find the Work Only You Can Do",
     "q2": "yes — offer 2-3 alternates (e.g. \"Answered\", \"The Unclaimed Life\", \"The Work Only You Can Do\") before writing.",
@@ -16,12 +16,75 @@
   },
   "signature_frame": "quest",
   "offer_token_ledger": [
-    "The Called Collective",
-    "The Wayfinder VIP Intensive"
+    "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive)."
   ],
   "q7_offer_products": [
-    "The Called Collective",
-    "The Wayfinder VIP Intensive"
+    "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive)."
   ],
-  "client_overrode_slide_floor": false
+  "client_overrode_slide_floor": false,
+  "turn_ledger_provenance": {
+    "turns": [
+      {
+        "question_id": "interview_choice",
+        "turn": 1,
+        "asked_at": "2026-07-16T13:04:05.384903",
+        "validated_at": "2026-07-16T13:04:05.429340"
+      },
+      {
+        "question_id": "q1",
+        "turn": 2,
+        "asked_at": "2026-07-16T13:04:05.472653",
+        "validated_at": "2026-07-16T13:04:05.517369"
+      },
+      {
+        "question_id": "q2",
+        "turn": 3,
+        "asked_at": "2026-07-16T13:04:05.561924",
+        "validated_at": "2026-07-16T13:04:05.606567"
+      },
+      {
+        "question_id": "q3",
+        "turn": 4,
+        "asked_at": "2026-07-16T13:04:05.651818",
+        "validated_at": "2026-07-16T13:04:05.698217"
+      },
+      {
+        "question_id": "q4",
+        "turn": 5,
+        "asked_at": "2026-07-16T13:04:05.743596",
+        "validated_at": "2026-07-16T13:04:05.788751"
+      },
+      {
+        "question_id": "q5",
+        "turn": 6,
+        "asked_at": "2026-07-16T13:04:05.833303",
+        "validated_at": "2026-07-16T13:04:05.879065"
+      },
+      {
+        "question_id": "q6",
+        "turn": 7,
+        "asked_at": "2026-07-16T13:04:05.923998",
+        "validated_at": "2026-07-16T13:04:05.970558"
+      },
+      {
+        "question_id": "q7",
+        "turn": 8,
+        "asked_at": "2026-07-16T13:04:06.014967",
+        "validated_at": "2026-07-16T13:04:06.060015"
+      },
+      {
+        "question_id": "q8",
+        "turn": 9,
+        "asked_at": "2026-07-16T13:04:06.104737",
+        "validated_at": "2026-07-16T13:04:06.148360"
+      },
+      {
+        "question_id": "frame_selection",
+        "turn": 10,
+        "asked_at": "2026-07-16T13:04:06.192523",
+        "validated_at": "2026-07-16T13:04:06.237997"
+      }
+    ],
+    "signature": "c0d1b22247ef068d30d2bb26359dfd47736a8071b838ec93e579ec8a6d3dcceb"
+  }
 }

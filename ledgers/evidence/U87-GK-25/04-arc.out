@@ -1,0 +1,1 @@
+PASS: _chk_arc(51-signature-presentation/examples/golden-quest/working/copy/arc_allocation.json) -> '' (per-slide arc-section allocation present and non-empty)

@@ -1,0 +1,6 @@
+{
+  "gate": "signature-presentation-claim-routing",
+  "source": "51-signature-presentation/examples/golden-quest",
+  "pass": true,
+  "failures": []
+}
