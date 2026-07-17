@@ -3,7 +3,7 @@
 **Status: 5 of 5 applicable receipts closed honestly. The 6th named receipt
 (prompt-floor) is DESCOPED-BY-RULING for this fixture, not owed and not
 missing — see "BLOCKER 5" below and
-`ledgers/ratified-decisions-2026-07-16.md` (GK-25 (U87) entry, "Fourth pass")
+`ledgers/ratified-decisions-2026-07-16.md` (the "GK-25 (U87)" entry)
 for the full ruling and its reasoning. This directory documents the honest
 state. It does NOT self-declare `verified` — that is judge-only status at the
 standing 8.5 bar; a fresh judge (!= writer) re-grade is still owed before the
@@ -132,7 +132,7 @@ who ruled it, and an honest attestation-limit note (this evidence directory
 was not party to that exchange; it records what the coordinating agent
 relayed) are recorded in `ledgers/ratified-decisions-2026-07-16.md`, under the entry
 **"GK-25 (U87) — prompt-floor receipt DESCOPED for the `golden-quest`
-fixture"** (appended in that file's "Fourth pass" section). This directory
+fixture"**. This directory
 does not repeat that ruling's reasoning in full — see that entry for it —
 and does not fabricate a `06` PASS receipt to match it: receipt
 `06-prompt-floor-NOT-CLOSED.*` is left exactly as originally captured
