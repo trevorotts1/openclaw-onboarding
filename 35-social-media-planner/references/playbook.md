@@ -1269,67 +1269,81 @@ Follow these steps in order:
 [warm tone] And that's exactly why [Brand Name] exists.
 ```
 
-### Podcast Publishing (via n8n Webhook to Podbean)
+### Podcast Publishing (via n8n Webhook to Podbean) — contract v2
 
-The agent does NOT publish directly to Podbean. Publishing goes through an n8n webhook automation that handles all Podbean API work.
+The agent does NOT publish directly to Podbean. Publishing goes through an n8n webhook automation that handles all Podbean API work, including a good-standing plus identity gate that runs BEFORE any Podbean call.
 
 **Publishing Flow:**
 1. Agent generates podcast audio via Fish Audio S2 (MP3, 192 kbps)
-2. Agent uploads the audio file to the GHL Media Library. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL first.
+2. Agent uploads the audio file to a public HTTPS host. GHL Media Library is the DEFAULT host; a Google Drive direct-download link is the sanctioned fallback when GHL credentials are down. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL (or the Drive fallback) first.
 3. Agent generates the podcast cover image via kie.ai Nano Banana 2 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
-4. Agent uploads the cover image to the GHL Media Library.
-5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies all 7 required fields below are present and non-null/non-empty in the payload — especially `image_url` and `client_email`. A 2026-07-12 production incident sent a payload missing both, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real GHL `image_url`, or the client email is not known, DO NOT send the webhook request — finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete payload before making any Podbean call and sends an honest refusal email (entry guard, GK-01/U63), but the agent must not rely on it as the primary check — it is a backstop, not a substitute for sending a complete payload.
-6. Agent sends the following JSON payload to the webhook:
+4. Agent uploads the cover image to the same host as step 2.
+5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies the REQUIRED fields below are present and non-null/non-empty in the payload, especially `image_url`, `client_last_name`, and `client_email`. A 2026-07-12 production incident sent a payload missing required fields, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real hosted `image_url`, or the client's last name/email are not known, DO NOT send the webhook request. Finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete or contract-v1 payload before making any Podbean call and sends an honest refusal (entry guard, GK-01/U63, extended for contract v2), but the agent must not rely on it as the primary check. It is a backstop, not a substitute for sending a complete payload.
+6. Agent sends the following JSON payload to the webhook, with the shared auth header.
 
 **Webhook Endpoint:**
 ```
 POST https://main.blackceoautomations.com/webhook/podbean-publish
 Content-Type: application/json
+X-Podcast-Publish-Token: [shared secret, provisioned by install.sh as PODBEAN_PUBLISH_TOKEN; never hard-code it, never log it]
 ```
 
-**Required Payload:**
+**Required Payload (contract v2):**
 ```
 {
+  "contract_version": "2",
   "podcast_id": "[client's Podbean channel ID - collected during First Run]",
-  "audio_url": "https://media.gohighlevel.com/[path-to-uploaded-audio].mp3",
-  "image_url": "https://media.gohighlevel.com/[path-to-uploaded-cover].jpg",
+  "client_last_name": "[from client profile - roster auth key, together with client_email]",
+  "client_email": "[from client profile - roster auth key, together with client_last_name]",
+  "client_first_name": "[from client profile - display/email only, never authorization]",
   "title": "[Episode title - matches the weekly theme]",
   "description": "[Show notes - plain text or HTML, under 3000 characters]",
+  "audio_url": "https://[GHL Media Library or Google-Drive-direct-download URL to the mastered MP3]",
+  "image_url": "https://[GHL Media Library or Google-Drive-direct-download URL to the cover]",
   "publish_date": "2026-04-12T09:00:00",
-  "client_first_name": "[from client profile]",
-  "client_last_name": "[from client profile]",
-  "client_email": "[from client profile]",
+  "idempotency_key": "[stable per episode-job key, e.g. the Skill 58 job key]",
   "episode_type": "full",
   "explicit": "clean"
 }
 ```
 
+Optional fields not shown above: `speaker` (appends "Inspired by [speaker]" to the title once), `season_number`, and `source` (the emitting skill/box slug for the audit trail only, never authorization).
+
 **Field Rules:**
-- podcast_id: The client's Podbean channel ID. Collected during First Run and stored in MEMORY.md.
-- audio_url: MUST be a GHL Media Library URL. Upload the Fish Audio S2 output to GHL first.
-- image_url: MUST be a GHL Media Library URL. JPEG or PNG only. 1:1, 1400x1400 minimum, under 500 KB, RGB. If image exceeds 500 KB, resize before uploading to GHL.
-- title: The episode title as it should appear in podcast apps.
-- description: Show notes. Plain text or HTML. Under 3000 characters for cross-app compatibility.
+- contract_version: REQUIRED, literal "2". Any other value is refused.
+- podcast_id: The client's Podbean channel ID. Collected during First Run and stored in MEMORY.md. Downstream publishing always routes on the operator's roster row for this identity, never on this raw field alone; a mismatch is refused as identity_mismatch.
+- client_last_name: REQUIRED. Roster lookup key together with client_email. Trimmed, compared case-insensitively.
+- client_email: REQUIRED. Roster lookup key together with client_last_name. Trimmed, compared lowercased. Also the recipient of the success confirmation email.
+- client_first_name: optional. Display and email use only, never used for authorization.
+- audio_url / image_url: REQUIRED. Any HTTPS URL (not plain http). GHL Media Library is the DEFAULT host; Google Drive direct-download is the sanctioned fallback when GHL credentials are down. Image must be JPEG or PNG only (never WebP), 1:1, 1400x1400 minimum, under 500 KB, RGB. If image exceeds 500 KB, resize before uploading.
+- title: The episode title as it should appear in podcast apps. Non-empty, 200 characters or fewer.
+- description: Show notes. Plain text or HTML. 3000 characters or fewer for cross-app compatibility.
 - publish_date: ISO 8601 format WITH time component (e.g., 2026-04-12T09:00:00). Timezone is Eastern (EST/EDT). Date-only strings will cause an error.
+- idempotency_key: REQUIRED. Stable per episode-job; the Skill 58 job key is the recommended source. The SAME key re-fired never creates a second episode; it returns the stored permalink instead.
 - episode_type: "full" (default), "trailer", or "bonus".
 - explicit: "clean" (default) or "explicit".
 
 **Do NOT send an episode number.** The automation queries Podbean for the highest existing episode and assigns the next one automatically.
 
-**What happens after sending:**
-1. Webhook returns 200 OK immediately
-2. Automation authenticates with Podbean and determines next episode number
-3. Audio is downloaded from GHL and uploaded to Podbean storage
-4. Cover image is validated (format, dimensions, size) and uploaded to Podbean storage
-5. Episode is created and scheduled on the client's Podbean channel
-6. Client receives a confirmation email with episode number, publish date, and live link
-7. If anything fails, client receives a failure email with details
+**What happens after sending (contract v2 is SYNCHRONOUS, not fire-and-forget):**
+The connection is held until the publish completes (download plus upload of a full episode; allow up to 300 seconds). The webhook responds with exactly one of:
+- `200 {"ok":true, "permalink_url":..., "episode_id":..., "episode_number":N, "scheduled":true|false, "idempotent_replay":false}` — published (or scheduled, when publish_date is in the future).
+- `200 {"ok":true, "idempotent_replay":true, "permalink_url":...}` — this idempotency_key already completed; the stored permalink is returned and no second episode was created.
+- `403 {"ok":false, "reason":"not_in_good_standing", "message":"you are not in good standing"}` — the client is not currently in good standing. "you are not in good standing" is the operator's exact required client-facing sentence; relay it per the agent's own client-comms doctrine, unparaphrased. No Podbean call is made.
+- `403 {"ok":false, "reason":"identity_unknown"}` — no roster row matches (client_last_name, client_email).
+- `403 {"ok":false, "reason":"identity_mismatch"}` — a roster row exists but its channel id differs from podcast_id. Treat as a possible cross-client mix-up. Do not retry with a different podcast_id; notify the operator.
+- `409 {"ok":false, "reason":"in_flight"}` — the same idempotency_key is currently executing. Wait, then retry with the SAME key.
+- `422 {"ok":false, "reason":"invalid_payload", "missing":[...], "bad_urls":[...]}` — one or more required fields were missing or invalid. Fix the named field(s) and resend.
+- `500 {"ok":false, "reason":"publish_failed", "detail":"..."}` — a Podbean-side failure after every gate passed. Retry with the SAME idempotency_key; it is safe.
+- Webhook auth failure (missing or wrong `X-Podcast-Publish-Token`) returns native 401/403 before the workflow runs at all.
 
 **Error handling:**
-- If webhook returns non-200: retry once after 30 seconds. If still failing, notify client via Telegram.
-- If you get no confirmation email within 15 minutes: notify client that podcast publishing may have failed and to check Podbean manually.
+- 409 or 500, or the request times out or the connection drops: retry once after 30 seconds with the SAME idempotency_key. Safe either way, because the ledger prevents a second episode.
+- 422: fix the named field(s) per the Field Rules above and resend. Do not retry blindly.
+- 403 not_in_good_standing: relay "you are not in good standing" to the client per the agent's own client-comms doctrine; do not retry until the operator flips the roster row back to YES.
+- 403 identity_unknown or identity_mismatch: do not retry automatically. Notify the operator; a client identity or channel id may be wrong.
 - Image format rejection: re-export the cover image as JPEG (not WebP) and re-send.
-- If you receive a "Podcast Publish Refused at Entry Guard" email instead of a success or failure email: the payload was missing or had an invalid value for one of the 7 required fields (the email names which one(s)) and no Podbean call was made — treat it the same as a failure, fix the named field per the Field Rules above, and resend the complete payload.
+- 401/403 before any gate runs at all: the box's `X-Podcast-Publish-Token` is missing or wrong. Notify the operator; do not retry with the same token.
 
 ---
 
