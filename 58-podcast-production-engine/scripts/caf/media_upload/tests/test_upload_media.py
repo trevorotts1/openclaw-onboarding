@@ -212,6 +212,18 @@ def test_upload_file_happy_path():
     os.unlink(path)
 
 
+def test_upload_file_201_is_success_no_retry():
+    # GHL's /medias/upload-file returns 201 Created on a real successful upload
+    # (confirmed live, S58-U19 proof run). A 201 must be accepted on the first
+    # response, exactly like 200, with no retry and therefore no double-upload.
+    path = _tmpfile(".mp3")
+    rec = Recorder([FakeResp(201, {"fileId": "F3", "url": "https://cdn/z.mp3"})])
+    out = mu.upload_file(path, "z.mp3", None, CRED, "LOC", transport=rec)
+    assert out == {"fileId": "F3", "url": "https://cdn/z.mp3"}
+    assert len(rec.calls) == 1
+    os.unlink(path)
+
+
 def test_upload_file_retries_once_then_succeeds():
     path = _tmpfile(".jpg")
     rec = Recorder([
