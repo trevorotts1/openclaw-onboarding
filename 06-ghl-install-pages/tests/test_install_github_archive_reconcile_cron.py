@@ -167,14 +167,17 @@ class TestInstallerBuildsCorrectArgv:
         after = inner_cmd.split("--sweep-base", 1)[1].strip()
         assert after.startswith("--"), f"--sweep-base must be bare (no hardcoded dir), got trailing: {after!r}"
 
-    def test_warns_but_still_creates_when_cli_predates_no_deliver(self, tmp_path):
-        """A stale CLI without --no-deliver must never block installation
-        (plumbing, not a build gate) — it degrades to a printed warning."""
+    def test_refuses_to_create_when_cli_predates_no_deliver(self, tmp_path):
+        """A stale CLI without --no-deliver must NEVER be installed around —
+        that would risk announcing sweep output into an unintended delivery
+        channel (operator-verbose, never client). The installer must refuse
+        outright: non-zero exit, an ERROR on stdout/stderr, and zero
+        cron-add calls logged (no unsafe registration, no silent retry
+        without the flag)."""
         proc, calls = _run_installer(tmp_path, help_body=_HELP_WITHOUT_NO_DELIVER)
-        assert proc.returncode == 0, proc.stderr
-        assert "WARNING" in proc.stdout or "WARNING" in proc.stderr
-        assert len(calls) == 1
-        assert "--no-deliver" not in calls[0]
+        assert proc.returncode != 0, proc.stdout + proc.stderr
+        assert "ERROR" in proc.stdout or "ERROR" in proc.stderr
+        assert len(calls) == 0, f"expected zero cron-add calls, got: {calls}"
 
     def test_idempotent_second_run_skips(self, tmp_path):
         bin_dir, log, marker = _make_stub(tmp_path, help_body=_HELP_WITH_NO_DELIVER)

@@ -33,7 +33,10 @@
 #   0  cron present (already, or registered this run), OR an honest skip
 #      (no CLI on this box yet / script not found at the installed path) —
 #      install must never abort on this, this is plumbing, not a build gate.
-#   1  registration was attempted but failed (caller warns; continues).
+#   1  registration was attempted but failed (caller warns; continues), OR
+#      the CLI on this box predates --no-deliver — refused rather than
+#      installed unsafely (see feature-detect block below; never retry
+#      without --no-deliver just to force a registration through).
 #
 # Usage:
 #   bash install-github-archive-reconcile-cron.sh [--evidence-base-flag-check]
@@ -79,16 +82,20 @@ if [[ -z "$RECONCILE_PY" ]]; then
 fi
 
 # Feature-detect --no-deliver (same defensive pattern as
-# install-closeout-resume-cron.sh:91-95 — never assume a CLI flag exists;
-# a stale CLI must degrade to a warning, never a hard install failure).
+# install-closeout-resume-cron.sh:91-95 — never assume a CLI flag exists).
+# Unlike that pattern, a stale CLI here must REFUSE, not degrade to a
+# warning: installing without --no-deliver risks announcing sweep output
+# into whatever chat the box's default delivery channel resolves to, every
+# night (the standing "operator-verbose, never client" rule; mirrors the
+# prior qc-completeness.sh Telegram-leak incident cited above).
 _cron_add_help="$(openclaw cron add --help 2>&1 || true)"
-NO_DELIVER_FLAG=()
-if printf '%s' "$_cron_add_help" | grep -qE '(^|[[:space:]])--no-deliver([[:space:]]|$)'; then
-  NO_DELIVER_FLAG=(--no-deliver)
-else
-  _log "WARNING: this CLI does not advertise --no-deliver — installing anyway, but"
-  _log "  delivery may default to announce. Upgrade OpenClaw and re-run to silence it."
+if ! printf '%s' "$_cron_add_help" | grep -qE '(^|[[:space:]])--no-deliver([[:space:]]|$)'; then
+  _log "ERROR: this CLI does not advertise --no-deliver — refusing to install"
+  _log "  $CRON_NAME (installing without it risks announcing sweep output into"
+  _log "  an unintended delivery channel). Upgrade OpenClaw and re-run."
+  exit 1
 fi
+NO_DELIVER_FLAG=(--no-deliver)
 
 # Bare --sweep-base (no directory argument) auto-resolves the canonical
 # evidence base on THIS box via cc_board.resolve_evidence_base() inside
@@ -111,18 +118,10 @@ OUT=$(openclaw cron add \
     "${NO_DELIVER_FLAG[@]}" \
     --json 2>/dev/null) || OUT=""
 
-# If the CLI advertised --no-deliver but still rejected the combined argv,
-# retry once WITHOUT it so a flag-shape mismatch never blocks registration
-# (mirrors install-closeout-resume-cron.sh:107-113).
-if [[ -z "$OUT" && ${#NO_DELIVER_FLAG[@]} -gt 0 ]]; then
-  OUT=$(openclaw cron add \
-    --name "$CRON_NAME" \
-    --cron "0 4 * * *" \
-    --tz "America/New_York" \
-    --session isolated \
-    --command-argv "$COMMAND_ARGV_JSON" \
-    --json 2>/dev/null) || OUT=""
-fi
+# NOTE: deliberately NO retry-without-no-deliver fallback here. A rejected
+# combined argv must surface as the "creation failed" path below, not
+# silently drop the one flag that keeps sweep output out of an unintended
+# delivery channel.
 
 # Success is decided from `cron add`'s OWN JSON response (an "id" field),
 # not a follow-up `cron list` grep — the list read can lag the write by a
