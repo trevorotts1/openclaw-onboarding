@@ -209,8 +209,8 @@ The operator box (and ONLY the operator box) routes the BlackCEO management team
 | Telegram ID | Name | Role | Type | Worker Label |
 |-------------|------|------|------|--------------|
 | 5252140759 | Trevor Otts | CEO | Worker | trevor-worker |
-| 6663821679 | LeAnne Dolce | Client | Client | leanne-worker |
-| 6771245262 | E.R. Spaulding | Chief of Operations | Worker | spaulding-worker |
+| {{TEAM_MEMBER_CHAT_ID}} | A Client | Client | Client | client-worker |
+| {{TEAM_MEMBER_CHAT_ID}} | Chief of Operations | Chief of Operations | Worker | ops-worker |
 
 **If `IS_OPERATOR_BOX` is NOT set, do NOT use this roster on the box. Using it on
 a client box is the co-mingling defect this guard exists to prevent.**
