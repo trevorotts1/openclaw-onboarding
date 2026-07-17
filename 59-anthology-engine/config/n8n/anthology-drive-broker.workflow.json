@@ -1324,6 +1324,23 @@
       "parameters": {
         "jsCode": "const a = $('Authorize & Dispatch').item.json;\nconst r = $input.first().json;\nconst text = (r && typeof r.data === 'string') ? r.data : (typeof r === 'string' ? r : '');\nreturn [{ json: { ok: true, action: 'pull_doc_text', via: 'n8n_broker',\n  doc_id: a.doc_id, text: text } }];"
       }
+    },
+    {
+      "id": "u9u9u9u9-u9u9-4u9u-8u9u-u9u9u9u9u9u9",
+      "name": "UP Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        860,
+        1950
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
     }
   ],
   "connections": {
@@ -1927,7 +1944,7 @@
       "main": [
         [
           {
-            "node": "Respond OK",
+            "node": "UP Respond OK",
             "type": "main",
             "index": 0
           }
