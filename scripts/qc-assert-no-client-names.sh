@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
-# qc-assert-no-client-names.sh — v2.0.0
+# qc-assert-no-client-names.sh — v2.1.0
+#
+# v2.1.0 FIX (fleet-embeddings-CI-blind-spot): STRUCTURAL mode used to exit 0
+# ("PASS (structural)") whenever no roster was available — which is EVERY run
+# on a bare GitHub Actions runner, since CI never has $OPENCLAW_CLIENT_ROSTER
+# or ~/.openclaw/client-roster.txt. That meant the CRITICAL-1 CI step
+# (.github/workflows/qc-static.yml) had run the roster-specific check exactly
+# zero times in this repo's history and always reported success regardless.
+# Proven locally: `env -u OPENCLAW_CLIENT_ROSTER HOME=<empty> bash
+# scripts/qc-assert-no-client-names.sh` exits 0 today.
+# FIX: when running under a real CI environment (GITHUB_ACTIONS=true / CI=true
+# — GitHub's own default env vars, "Always set to true", see
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
+# AND no roster is available, this now exits non-zero with an unambiguous
+# "CANNOT VERIFY" message instead of a silent PASS. A gate that cannot do its
+# job must never report success. Local/operator/pre-commit runs (no CI env
+# vars) keep the EXACT prior warn-and-continue behavior unchanged — this repo
+# also has operator boxes with no roster file present, and hard-blocking every
+# local commit on every box was never asked for and is not this fix's scope.
+# A second, independent, roster-free signal (scripts/qc-heuristic-name-shapes.py)
+# now also runs in every mode as an ADVISORY (non-blocking) floor — see that
+# script's header for why it is advisory rather than a hard gate (measured
+# false-positive rates at three scopes, all unusable as a blocking check on
+# this repo's own tracked tree).
 #
 # STATIC QC INVARIANT: enforces the fleet-wide rule that NO real client names
 # may appear in tracked repo files. This repo is a generic template; any client-
@@ -129,6 +152,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Detect a real CI environment. Both vars are set automatically by GitHub
+# Actions on every run ("Always set to true" per GitHub's own docs) — this is
+# environment introspection, not a credential and not invented: it is the
+# documented, standard way a script tells "running in CI" from "running on a
+# human's machine". https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+IS_CI=0
+if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ]; then
+  IS_CI=1
+fi
+
 # Load the external roster (if present) and decide the mode.
 if _load_roster; then
   MODE="full"
@@ -140,6 +173,12 @@ else
        "are still enforced. Set OPENCLAW_CLIENT_ROSTER or create" \
        "~/.openclaw/client-roster.txt (see scripts/client-roster.example.txt) to" \
        "enable the full check." >&2
+  if [ "$IS_CI" = 1 ]; then
+    echo "WARNING: this is a CI environment (GITHUB_ACTIONS/CI=true) — a CI run can" \
+         "NEVER have an operator-local roster by design, so this run will FAIL" \
+         "closed below instead of silently passing. See CANNOT VERIFY message at" \
+         "the end of this run for the remedy." >&2
+  fi
 fi
 
 # Build a single ERE alternation pattern: always-on tokens in both modes, plus
@@ -248,13 +287,33 @@ if [ "${#FILES[@]}" -gt 0 ]; then
              | xargs -0 grep -E -Hin "$PATTERN" 2>/dev/null)
 fi
 
+# ─── Advisory (non-blocking) roster-free floor ─────────────────────────────
+# Independent second signal, needs no roster, runs in EVERY mode. Never
+# touches HITS or the exit code — see scripts/qc-heuristic-name-shapes.py's
+# header for why it is advisory rather than a gate (measured false-positive
+# rates at three scopes on this repo's own tree, all unusable as a blocker).
+HEURISTIC_SCRIPT="$SCRIPT_DIR/qc-heuristic-name-shapes.py"
+if [ -f "$HEURISTIC_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$HEURISTIC_SCRIPT" --repo-root "$REPO_ROOT" || true
+fi
+
 if [ "$HITS" -eq 0 ]; then
   if [ "$MODE" = "full" ]; then
     echo "[qc-assert-no-client-names] PASS (full) — no roster client names, operator paths, or placeholder leaks in tracked files."
+    exit 0
+  elif [ "$IS_CI" = 1 ]; then
+    # THE FIX: structural mode in a real CI environment must never report a
+    # bare PASS — CI can never have an operator-local roster, so "no roster,
+    # therefore PASS" was a permanent false assurance. Fail loudly instead.
+    echo "[qc-assert-no-client-names] CANNOT VERIFY (structural, CI) — no client-name roster is available in this CI environment, so the roster-specific per-name check DID NOT RUN. Always-on tokens (operator path + .example placeholder leaks) were checked and are clean, but that alone does NOT mean 'no client names' — do not report this as a pass. See the ADVISORY heuristic output above for a second, non-authoritative signal. Closing this gap for real requires giving CI authoritative roster access (see scripts/client-roster.example.txt for the format) — provisioning that is an operator decision about secret handling, not something this script may invent." >&2
+    exit 2
   else
+    # Local/operator/pre-commit context: unchanged from prior behavior. Not
+    # every operator box has a roster either; hard-blocking every local
+    # commit fleet-wide was never asked for and is out of this fix's scope.
     echo "[qc-assert-no-client-names] PASS (structural) — no operator paths or .example placeholder leaks in tracked files. NOTE: roster-specific client-name check was SKIPPED (no roster; see WARNING above)."
+    exit 0
   fi
-  exit 0
 else
   echo "[qc-assert-no-client-names] INVARIANT VIOLATED — $HITS client-name hit(s) found in repo files:"
   for line in "${OFFENDERS[@]}"; do
