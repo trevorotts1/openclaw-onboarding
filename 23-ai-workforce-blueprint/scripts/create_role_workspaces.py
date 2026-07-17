@@ -1681,6 +1681,10 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                 "crm":              ["sales", "communication", "operations"],
                 "quality-control":  ["productivity-systems", "operations", "strategy-innovation"],
                 "account-management": ["communication", "coaching", "strategy-innovation"],
+                # v2.6.2 (2026-07-16, operator ruling): "funnels" added as a
+                # mandatory floor dept — see department-naming-map.json's
+                # mandatory.funnels entry.
+                "funnels":          ["strategy-innovation", "marketing", "productivity-systems"],
             }
             hints = DEPT_DOMAIN_HINTS.get(dept_lower, [])
             ranked = []

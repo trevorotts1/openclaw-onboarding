@@ -7,7 +7,7 @@ department decisions.
 
 WHY THIS EXISTS:
 record-dept-decision.sh (P2-05) already lets an owner decline a department
-and, for a FLOOR department (22 mandatory + 6 universal-primary vertical-pack
+and, for a FLOOR department (23 mandatory + 6 universal-primary vertical-pack
 departments), REQUIRES the owner to be shown the department-loss-warning.py
 `loss_warning` text and pass --confirm-loss before the decline is written.
 department-floor.py / materialize-missing-departments.py already HONOR that

@@ -36,7 +36,7 @@ floor check to confirm nothing on the fleet side moved:
 
     python3 23-ai-workforce-blueprint/scripts/department-floor.py --json
 
-`expected_floor_count` stays 28 (22 mandatory plus 6 universal-primary-vertical),
+`expected_floor_count` stays 29 (23 mandatory plus 6 universal-primary-vertical),
 computed live, never a hardcoded integer. `department-naming-map.json`'s
 `mandatory` and `vertical_packs` blocks are not touched by this slice; a raw-text
 scan for the string "anthology" over that file returns zero hits, in either
@@ -151,7 +151,7 @@ proof plan, and WAVE-PLAN W4.3 for the mc_board.py-to-stage_cursor mapping unit.
 ## 7. Proof
 
 - Build-gate proof for this slice: `department-floor.py` returns rc 0 with
-  `expected_floor_count` unchanged at 28 and zero composition change;
+  `expected_floor_count` unchanged at 29 and zero composition change;
   `check-skill-department-map.py` returns 0 violations (the skill 59 coverage
   gap it reported before this slice is now closed); `verify-anthology-engine-wiring.py`
   returns rc 0.
