@@ -580,6 +580,45 @@ class Defect2PureClassifierFixtures(unittest.TestCase):
         self.assertEqual(result["status"], "red-fossil")
         self.assertEqual(result["failing_checks"][0]["main_conclusion"], "success")
 
+    def test_red_main_unverifiable_when_same_check_name_is_skipped_on_main(self):
+        """MUTATION PROOF for the fossil-classification hole this test was
+        written to close: BEFORE this fix, classify_ci_from_data() reused
+        _SUCCESS_CONCLUSIONS (which includes "skipped") on the MAIN-
+        comparison side too -- so a check that merely did NOT RUN on
+        current main's tip (a conditional `if:` gate, path filter, or
+        event-type gate -- all real on this repo, e.g. G1's
+        `if: github.event_name == 'push'`) was treated as an equivalent
+        pass and silently classified "red-fossil", the non-gating bucket --
+        even though nobody re-verified anything. FAILS on pre-fix code
+        (asserts "red-fossil", proven live against the pre-fix function
+        body via git stash -- see PR discussion); PASSES on the shipped
+        fix ("red-main-unverifiable" -- the fail-loud, non-lenient state,
+        never silently upgraded to the lenient fossil read)."""
+        head = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        main = self._ci("green", {"Fixture check": {"conclusion": "skipped", "status": "completed"}})
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(
+            result["status"], "red-main-unverifiable",
+            f"REGRESSION: a check that merely didn't RUN on current main (conclusion='skipped') "
+            f"is not proof its cause is gone -- must fail loud as red-main-unverifiable, never "
+            f"quietly pass as red-fossil. Got {result}",
+        )
+        self.assertEqual(result["failing_checks"][0]["main_conclusion"], "skipped")
+
+    def test_red_main_unverifiable_when_same_check_name_is_neutral_on_main(self):
+        """Same reasoning as the 'skipped' case immediately above --
+        "neutral" is also not a genuine re-verification (nobody confirmed
+        the check actually ran and passed), so it must be treated as
+        unverifiable, not silently upgraded to fossil."""
+        head = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        main = self._ci("green", {"Fixture check": {"conclusion": "neutral", "status": "completed"}})
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(
+            result["status"], "red-main-unverifiable",
+            f"REGRESSION: 'neutral' on main is not a genuine pass either -- got {result}",
+        )
+        self.assertEqual(result["failing_checks"][0]["main_conclusion"], "neutral")
+
     def test_red_check_removed_when_check_name_absent_from_main_entirely(self):
         head = self._ci("red", {"Retired check": {"conclusion": "failure", "status": "completed"}})
         main = self._ci("green", {"Some other check": {"conclusion": "success", "status": "completed"}})

@@ -536,6 +536,17 @@ def resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, own_row_text, prefi
 # --------------------------------------------------------------------------
 
 _FAILURE_CONCLUSIONS = ("failure", "cancelled", "timed_out", "action_required")
+# Used for the HEAD-SHA tally only (ci_status_for_sha()'s success/failure/
+# pending counts, deciding whether the leg's own head commit is red at
+# all) -- "skipped" and "neutral" are legitimately non-failing outcomes for
+# that purpose (a conditional check that correctly didn't need to run isn't
+# a failure). Deliberately NOT reused for the main-COMPARISON side of the
+# fossil check inside classify_ci_from_data(): there, "skipped"/"neutral"
+# on current main means the SAME check simply didn't run this time (a
+# conditional `if:` gate, path filter, or event-type gate) -- that is NOT
+# proof the original failure's cause is gone, so it must never be treated
+# as equivalent to a real "success" when deciding red-fossil vs
+# red-main-unverifiable. See classify_ci_from_data()'s docstring.
 _SUCCESS_CONCLUSIONS = ("success", "skipped", "neutral")
 
 
@@ -649,8 +660,9 @@ def classify_ci_from_data(head, main_sha, main):
                                   the ONLY red-* status that should ever
                                   gate an overall NOT-DONE verdict.
       "red-fossil"             -- every failing check NAME on head now
-                                  PASSES on current main -- historic noise;
-                                  the cause no longer exists. Reported WITH
+                                  genuinely PASSES (conclusion == "success")
+                                  on current main -- historic noise; the
+                                  cause no longer exists. Reported WITH
                                   the check name(s) and both shas -- NEVER
                                   silently upgraded to "green" (that would
                                   be inventing a lenient ruler, the same
@@ -660,19 +672,29 @@ def classify_ci_from_data(head, main_sha, main):
                                   ALL (workflow renamed/retired) -- named
                                   explicitly, never guessed as fossil or
                                   live.
-      "red-main-unverifiable"  -- head is red but current main's own
-                                  check-run data could not be fetched at
-                                  all (main itself came back "no-data") --
-                                  live-vs-fossil genuinely cannot be
-                                  determined; fails loud instead of
-                                  defaulting to the lenient (fossil) read.
+      "red-main-unverifiable"  -- EITHER current main's own check-run data
+                                  could not be fetched at all (main itself
+                                  came back "no-data"), OR a matching check
+                                  name on main exists but its conclusion is
+                                  NOT a genuine "success" (e.g. "skipped" /
+                                  "neutral" / anything else non-affirmative
+                                  -- a conditional gate, path filter, or
+                                  event-type gate that simply did not run
+                                  this time is NOT proof the cause is gone).
+                                  Either way, live-vs-fossil genuinely
+                                  cannot be determined; fails loud instead
+                                  of defaulting to the lenient (fossil)
+                                  read -- a "skipped" is "unverified", not
+                                  "passed".
     Priority when a leg has MULTIPLE failing checks in different buckets:
-    any_live wins over any_removed wins over all-fossil -- a real present
-    defect must never be hidden behind a co-occurring fossil or a removed
-    check on the same leg."""
+    any_live wins over any_removed wins over any_unverifiable wins over
+    all-fossil -- a real present defect must never be hidden behind a
+    co-occurring fossil, removed check, or unverifiable check on the same
+    leg."""
     detail = []
     any_live = False
     any_removed = False
+    any_unverifiable = False
     for name in head.get("failing_names", []):
         head_conclusion = head["checks_by_name"][name]["conclusion"]
         if main.get("status") == "no-data":
@@ -689,8 +711,24 @@ def classify_ci_from_data(head, main_sha, main):
                 if main_conclusion in _FAILURE_CONCLUSIONS:
                     any_live = True
                     note = "still fails (same check name) on current main -- real, present defect"
-                else:
+                elif main_conclusion == "success":
                     note = "now passes on current main -- historic fossil, the cause no longer exists"
+                else:
+                    # "skipped" / "neutral" / any other non-failure,
+                    # non-"success" conclusion (a conditional `if:` gate,
+                    # path filter, or event-type gate that did not run this
+                    # time on main's current tip) is NOT a re-verification --
+                    # nobody re-ran the check, so its cause being gone is
+                    # UNPROVEN. Must not be treated as equivalent to a real
+                    # pass for fossil determination (see _SUCCESS_CONCLUSIONS'
+                    # docstring -- that set is deliberately reused only for
+                    # the head-sha tally, never for this main-comparison).
+                    any_unverifiable = True
+                    note = (
+                        f"current main's matching check did not genuinely re-verify "
+                        f"(conclusion={main_conclusion!r}, not \"success\") -- unproven, "
+                        f"not a fossil"
+                    )
         detail.append({
             "name": name, "head_conclusion": head_conclusion,
             "main_conclusion": main_conclusion, "note": note,
@@ -702,6 +740,8 @@ def classify_ci_from_data(head, main_sha, main):
         status = "red-live"
     elif any_removed:
         status = "red-check-removed"
+    elif any_unverifiable:
+        status = "red-main-unverifiable"
     else:
         status = "red-fossil"
 
