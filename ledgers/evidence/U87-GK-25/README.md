@@ -1,9 +1,13 @@
 # U87 / GK-25 — 4-phase SACRED process-fidelity restoration — evidence
 
-**Status: 5 of 6 blockers closed honestly. The 6th (prompt-floor) could NOT be
-closed honestly within this pass's scope — see "BLOCKER 5" below. GK-25's
-binary acceptance (spec:2085, three conjunctive clauses) therefore does NOT
-yet clear. This directory documents the honest state, not a false "done."**
+**Status: 5 of 5 applicable receipts closed honestly. The 6th named receipt
+(prompt-floor) is DESCOPED-BY-RULING for this fixture, not owed and not
+missing — see "BLOCKER 5" below and
+`ledgers/ratified-decisions-2026-07-16.md` (GK-25 (U87) entry, "Fourth pass")
+for the full ruling and its reasoning. This directory documents the honest
+state. It does NOT self-declare `verified` — that is judge-only status at the
+standing 8.5 bar; a fresh judge (!= writer) re-grade is still owed before the
+unit's ledger row may read `verified`.**
 
 ## Root cause (unchanged from the original judge ticket)
 
@@ -60,7 +64,7 @@ below is hand-written or inferred.
 | 3 | P-SP-STRUCTURE (4-phase contract) | `03-structure.*` | **PASS** (exit 0) — unchanged from before this fix; was never one of the five blockers |
 | 4 | Phase 3 — converting arc (`_chk_arc` preflight) | `04-arc.*` | **PASS** (exit 0) |
 | 5 | P-SP-P3-HYGIENE (no-pitch) | `05-no-pitch.*` | **PASS** (exit 0) |
-| 6 | prompt-floor | `06-prompt-floor-NOT-CLOSED.*` | **FAIL-CLOSED** (exit 3) — see BLOCKER 5 below. Named honestly in the filename; not silently omitted. |
+| 6 | prompt-floor | `06-prompt-floor-NOT-CLOSED.*` | **FAIL-CLOSED** (exit 3), then **DESCOPED BY RULING, 2026-07-16** — see BLOCKER 5 below. Named honestly in the filename; not silently omitted. |
 | supplementary | fail-first: phase-order check has teeth (clause 3) | `07-failfirst-phase-order-variant-D.*` | rejected — `AF-SP-PHASE-ORDER` (exit 2), as required |
 | supplementary | certificate issuance (isolated copy only) | `08-certificate-isolated-proof.*` | **PASS** (exit 0) on `<scratchpad>/deckrun/gq-iso`, a throwaway copy — never run against this tracked path (`prove-deck.py` writes; see README warning) |
 
@@ -102,7 +106,8 @@ Receipt `07-failfirst-phase-order-variant-D.out`: exit 2,
 spec:2085 clause 3 names, not `AF-SP-PHASE-RANGE`/no-pitch/process-integrity
 (which A/B/C/E2E already prove and which are NOT the phase-order check).
 
-**BLOCKER 5 — prompt-floor: NOT CLOSED. Reported honestly, not fabricated.**
+**BLOCKER 5 — prompt-floor: DESCOPED BY RULING, 2026-07-16. Reported
+honestly at every stage, never fabricated.**
 golden-quest's own README documents that this fixture never ran `P4-RENDER`
 (paid kie.ai image generation) — the three SP gates + `prove-deck.py` were
 run directly instead, "the sanctioned way to prove structure and issue the
@@ -111,29 +116,41 @@ not exist on this fixture, and `prove_pres_prompt_floor.py --dir
 <golden-quest>` genuinely, correctly fails closed: `FAIL-CLOSED:
 .../working/prompts is not a directory` (exit 3 — receipt
 `06-prompt-floor-NOT-CLOSED.err`). There is no image-prompt content to
-grade. Two ways exist to close this, and this pass deliberately does
-neither:
-  1. **Fabricate a pass** — write fake or synthetic prompt files just to
-     clear `prove_pres_prompt_floor.py`. Refused: this is exactly the kind
-     of forged evidence GK-25 exists to prevent, and it was called out by
-     name as a risk on this unit.
-  2. **Author real prompts** — write genuine, doctrine-compliant
-     9,000-18,000-character image prompts for some or all of golden-quest's
-     103 slides so a real `working/prompts/slide-*.txt` set exists to
-     grade. This is a legitimate way to close the gap, but it is a large,
-     separate body of creative authoring work (potentially 1M+ characters
-     across 103 slides), not a natural side effect of an intake replay, and
-     arguably out of scope for a "process-fidelity of the 4-phase SACRED
-     order" unit — the prompt-floor gate belongs to `P4-RENDER`, a
-     different, already-documented-as-skipped phase of this fixture.
-  Recommendation: file this as its own follow-up unit — either run
-  golden-quest through the full canonical pipeline including `P4-RENDER` in
-  an environment where the paid kie.ai preflight is viable and archive the
-  real resulting prompts + floor receipt, or get an owner ruling on
-  whether GK-25's spec:2083 "prompt-floor receipts" clause should be
-  descoped for a fixture that intentionally never renders (mirroring the
-  already-accepted `run_method: provers-direct` precedent for the same
-  reason).
+grade. Two ways existed to close this — (A) author real, doctrine-compliant
+9,000-18,000-character image prompts for some or all of golden-quest's 103
+slides (a large, separate body of paid creative-authoring work, arguably out
+of scope for a "process-fidelity of the 4-phase SACRED order" unit, since the
+prompt-floor gate belongs to `P4-RENDER`, a different, already-documented-
+as-skipped phase of this fixture), or (B) an explicit operator ruling
+descoping the receipt for a fixture that intentionally never renders,
+mirroring the already-accepted `run_method: provers-direct` precedent for
+the same reason.
+
+**Path B was taken. The operator ruled the prompt-floor receipt DESCOPED for
+the `golden-quest` fixture on 2026-07-16.** The full ruling, its reasoning,
+who ruled it, and an honest attestation-limit note (this evidence directory
+was not party to that exchange; it records what the coordinating agent
+relayed) are recorded in `ledgers/ratified-decisions-2026-07-16.md`, under the entry
+**"GK-25 (U87) — prompt-floor receipt DESCOPED for the `golden-quest`
+fixture"** (appended in that file's "Fourth pass" section). This directory
+does not repeat that ruling's reasoning in full — see that entry for it —
+and does not fabricate a `06` PASS receipt to match it: receipt
+`06-prompt-floor-NOT-CLOSED.*` is left exactly as originally captured
+(genuine exit 3, fail-closed), because that IS the honest, correct output of
+running the real prover against a fixture that has no prompt content, and
+the ruling descopes the requirement rather than manufacturing a result that
+never happened.
+
+**Why the refusal to fabricate this receipt matters, and is preserved
+here.** The fix agent that produced blockers 1-4's closure could have
+written empty or synthetic prompt files and made `prove_pres_prompt_floor.py`
+go green in minutes — the round-2 judge ticket named that as the easiest
+blocker to fake, ahead of grading it. Instead it ran the prover for real,
+watched it fail closed, archived that failure honestly, and reported the gap
+without hedging. The judge scored claim-accuracy 10/10 and honesty-of-report
+9.5/10 for exactly that. The ruling above descopes the requirement; it does
+not, and must not be read to, retroactively fabricate the receipt that
+refusal correctly declined to fake.
 
 **Documentation defect: CLOSED.** `README.md`'s Reproduce recipe now
 includes `prove_sp_routing.py` and a `prove-deck.py`-writes warning.
@@ -141,12 +158,23 @@ includes `prove_sp_routing.py` and a `prove-deck.py`-writes warning.
 ## Net result
 
 GK-25's binary acceptance is conjunctive across all three spec:2085
-clauses and all six spec:2083 receipts. With 5 of 6 receipts genuinely
-closed and 1 of 6 honestly reported as not closeable in this pass, the
-unit **still does not clear** and must not be marked `verified`. This
-archive exists to make that state legible and auditable — not to claim
-a false "done." A fresh judge (!= writer) re-grade is owed before any
-merge, per GK-25's own acceptance rule.
+clauses and the receipts spec:2083 names. **5 of 5 applicable receipts are
+genuinely closed** — routing, intake/pacing (past the grace-window
+cutoff, on merits), structure, arc allocation, and no-pitch hygiene — plus
+the two supplementary receipts (fail-first phase-order rejection, isolated
+certificate issuance). The 6th named receipt, prompt-floor, is **descoped
+by the operator's 2026-07-16 ruling** (`ledgers/ratified-decisions-2026-07-16.md`,
+"GK-25 (U87)" entry) for this specific fixture, which is documented to never
+run the phase that receipt proves — it is not owed, and it is not "missing."
+
+**This does not mark the unit `verified`.** That status is judge-only at the
+standing 8.5 bar, and this archive — like the ruling it now points to — is
+written by the same lineage of agents that did the fix, not by an
+independent judge. A fresh judge (!= writer) re-grade is still owed before
+any merge or before the unit's ledger row may read `verified`, per GK-25's
+own acceptance rule and this queue's standing practice. This archive exists
+to make the now-descoped state legible and auditable — not to claim a false
+"done," and not to claim a status this pass has no standing to award.
 
 No client or human names. No secret values were printed. `prove-deck.py`
 was run ONLY against an isolated scratch copy, never this tracked path —
