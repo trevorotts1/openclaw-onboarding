@@ -412,31 +412,43 @@ def ingest_task(
     if job_type_norm in ("funnel", "sales-funnel", "optin", "opt-in", "multistep"):
         # NOTE (2026-07-16 — operator ruling: keep stamping 'funnels', register
         # it as its own floor department; do NOT reroute funnel cards to
-        # 'marketing'). department_slug='funnels' is STILL not a registered
-        # department anywhere as of this comment (departments.config.ts has no
-        # 'funnels' id; department-floor.py's HARDCODED_MANDATORY has no
-        # 'funnels' entry either), so on a standard-floor box (no ad hoc
-        # 'funnels' workspace already seeded) this still sends every funnel
-        # card through INGEST-06's unrecognized-slug tier (ingest/route.ts's
+        # 'marketing'. Verbatim: "THEN USE THE STANDALONE WORKSPACE IF IT
+        # ALREADY EXISTS."). department_slug='funnels' is NOW a REGISTERED
+        # mandatory floor department (23-ai-workforce-blueprint/department-
+        # naming-map.json's mandatory.funnels entry, department-floor.py's
+        # HARDCODED_MANDATORY, and a matching entry + workspace-seed migration
+        # in the separate blackceo-command-center repo's departments.config.ts
+        # / src/lib/db/migrations.ts). BEFORE this fix, every funnel card on a
+        # standard-floor box (no ad hoc 'funnels' workspace already seeded)
+        # went through INGEST-06's unrecognized-slug tier (ingest/route.ts's
         # resolveWorkspaceId, the "EXPLICIT-but-unrecognized department slug"
         # tier) to the general-task catch-all, tagged
         # resolved_by='unrecognized-slug->general' — NOT the CEO/
         # master-orchestrator workspace, which is a separate, later fallback
         # tier that only fires for a BARE task with no department_slug
-        # supplied at all. THE OPEN GAP: registering
-        # 'funnels' as a genuine floor department requires department-naming-
-        # map.json + HARDCODED_MANDATORY entries AND a real suggested-roles
-        # catalog (director title, roles, SOPs) — content only the operator
-        # can define. It also overlaps two roles ALREADY living inside
-        # Marketing's own catalog (23-ai-workforce-blueprint/suggested-
-        # roles/marketing-suggested-roles.md): role #4 "Funnel Strategist" and
-        # role #20 "Signature Funnel Specialist" ("the marketing door onto the
-        # ... Skill 49 [engine]"), which would need to move, stay, or be
-        # reconciled with the new department. Unresolved pending that
-        # decision — see the PR/session report for full detail. A box that
-        # already carries an ad hoc 'funnels' workspace (seeded outside the
-        # floor, e.g. by hand) resolves correctly today via tier-1's exact
-        # slug match; a fresh, floor-standard box does not.
+        # supplied at all. A box that already carried an ad hoc 'funnels'
+        # workspace (seeded outside the floor, e.g. by hand — the operator's
+        # own box) always resolved correctly via tier-1's exact slug match;
+        # now every standard-floor box does too. Made mandatory (not vertical-
+        # pack-gated) because this stamp is unconditional for every
+        # job_type='funnel' card regardless of a client's declared vertical —
+        # an optional registration would have left the misroute live for any
+        # client who did not declare a matching vertical. This deliberately
+        # overlaps two roles that ALREADY live inside Marketing's own catalog
+        # (23-ai-workforce-blueprint/suggested-roles/marketing-suggested-
+        # roles.md): role #4 "Funnel Strategist" and role #20
+        # "Signature Funnel Specialist" ("the marketing door onto the ...
+        # Skill 49 [engine]") — and Web Development's own catalog carries
+        # near-identical roles (Funnel Builder Specialist, its own
+        # "Signature Funnel Specialist" / Sales Page Assets Specialist
+        # doors). This THREE-way overlap is a known, deliberate,
+        # operator-ruled structure, documented honestly in
+        # funnels-suggested-roles.md's Department Purpose section — nothing
+        # in Marketing's or Web Development's existing catalogs was moved,
+        # renamed, or deleted; this department is the dedicated operational
+        # home for the automated Skill-6/GHL build queue specifically, not a
+        # replacement for either department's strategy or broader tooling
+        # roles.
         department_slug = "funnels"
         source = "funnel"
     elif job_type_norm in ("survey", "form", "quiz"):

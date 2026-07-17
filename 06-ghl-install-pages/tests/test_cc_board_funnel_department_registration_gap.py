@@ -1,42 +1,43 @@
-# test_cc_board_funnel_department_registration_gap.py — documents the OPEN,
-# UNRESOLVED gap left by the operator's 2026-07-16 ruling on Skill-6 funnel
-# routing.
+# test_cc_board_funnel_department_registration_gap.py — documents that the
+# operator's 2026-07-16 ruling on Skill-6 funnel routing has been EXECUTED,
+# not merely proposed. Kept as the (renamed intent, same filename) fixture
+# this session's own predecessor established as the gap-tracking test.
 #
 # CONTEXT: cc_board.py's ingest_task() stamps department_slug='funnels' for
 # every job_type='funnel' card. An earlier session direction proposed
 # rerouting to 'marketing' instead (a registered floor department); the
 # operator overruled that and ruled the OPPOSITE: keep stamping 'funnels',
 # and register 'funnels' as its OWN floor department instead of folding
-# funnel work into Marketing.
+# funnel work into Marketing — verbatim: "THEN USE THE STANDALONE WORKSPACE
+# IF IT ALREADY EXISTS."
 #
-# THIS TEST DOES NOT CLAIM THE BUG IS FIXED. It documents the current,
-# still-open state: 'funnels' is NOT YET a registered department anywhere
-# (no id in departments.config.ts, no entry in department-floor.py's
-# HARDCODED_MANDATORY). On a box seeded strictly from the standard floor (no
-# ad hoc 'funnels' workspace added by hand, unlike the operator's own box),
-# CC's tier-1 exact-slug match (ingest/route.ts's resolveWorkspaceId, mirrored
-# verbatim in _resolve_tier1 below) still MISSES 'funnels', so INGEST-06's
-# unrecognized-slug tier still reroutes the card to general-task.
+# THIS TEST NOW PROVES THE FIX, not the gap. As of this change:
+#   1. 'funnels' is a mandatory floor department in
+#      23-ai-workforce-blueprint/department-naming-map.json (director_title,
+#      display_name, emoji, one_liner, loss_warning, suggested_roles_file)
+#      and in department-floor.py's HARDCODED_MANDATORY.
+#   2. A real suggested-roles catalog ships at
+#      23-ai-workforce-blueprint/suggested-roles/funnels-suggested-roles.md
+#      (3 roles, each with a full 19-section role-library template under
+#      templates/role-library/funnels/), matching the bar set by
+#      healer-suggested-roles.md.
+#   3. The overlap with Marketing's existing funnel-adjacent roles (role #4
+#      "Funnel Strategist", role #20 "Signature Funnel Specialist") and with
+#      Web Development's own funnel-adjacent roles (role #1 "Funnel Builder
+#      Specialist", role #19/#20 "Signature Funnel Specialist" / "Sales Page
+#      Assets Specialist") is documented as a DELIBERATE, operator-ruled
+#      overlap in funnels-suggested-roles.md's Department Purpose section —
+#      nothing in Marketing's or Web Development's existing catalogs was
+#      moved, renamed, or deleted.
+#   4. A matching 'funnels' entry + workspace-seed migration ships in the CC
+#      repo (blackceo-command-center, a separate repo with its own serial
+#      merge-writer — see that repo's own PR for the CC-side leg + its own
+#      real fail-then-pass proof against a pre-existing DB shape).
 #
-# COMPLETING THE FIX requires (not done by this test, not done by this
-# session — flagged as an operator content decision):
-#   1. A 'funnels' entry in 23-ai-workforce-blueprint/department-naming-map.json
-#      (director_title, display_name, emoji, one_liner, loss_warning,
-#      suggested_roles_file) + department-floor.py's HARDCODED_MANDATORY.
-#   2. A real suggested-roles catalog for the new department — genuine
-#      content (roles, SOPs, persona traits), not a placeholder.
-#   3. Reconciling the overlap with TWO roles that already live inside
-#      Marketing's own catalog (23-ai-workforce-blueprint/suggested-roles/
-#      marketing-suggested-roles.md): role #4 "Funnel Strategist" and role
-#      #20 "Signature Funnel Specialist" ("the marketing door onto the ...
-#      Skill 49 [engine]") — do they move, stay, or coexist?
-#   4. A matching 'funnels' entry in the CC repo's departments.config.ts
-#      (a separate repo, its own serial merge-writer — not touched here)
-#      plus a workspace-seed migration there.
-#
-# Once that landscape is registered, THIS TEST'S ASSERTION MUST FLIP (funnel
-# cards will resolve to the real 'funnels' workspace, not None) — that flip
-# is the signal the registration work is actually done and wired.
+# This test proves the ONB-side half end to end with a faithful mirror of
+# CC's tier-1 resolveWorkspaceId SQL: a funnel card, on a box seeded strictly
+# from the standard mandatory floor (no ad hoc 'funnels' workspace added by
+# hand), now resolves to the REAL 'funnels' workspace — not general-task.
 #
 # Stdlib + pytest only, zero network, zero client/CC repo dependency.
 from __future__ import annotations
@@ -98,7 +99,9 @@ def _seed_floor_workspaces_db():
     department (real HARDCODED_MANDATORY, bare id=slug, mirroring the CC
     repo's scripts/sync-departments-from-build-state.py dept- prefix strip).
     Deliberately carries NO ad hoc extras — this is what a FRESH client box
-    looks like, not the operator's own hand-customized one.
+    looks like, not the operator's own hand-customized one. Now that
+    'funnels' is itself a member of HARDCODED_MANDATORY, this fixture seeds
+    it like every other mandatory department — no special-casing required.
     """
     floor = _load_department_floor()
     conn = sqlite3.connect(":memory:")
@@ -119,7 +122,7 @@ def _resolve_tier1(conn: sqlite3.Connection, department_slug: str):
 
         SELECT id FROM workspaces WHERE lower(slug) = ? OR lower(id) = ? LIMIT 1
 
-    Returns the resolved workspace id, or None if tier 1 misses — exactly the
+    Returns the resolved workspace id, or None if tier 1 misses — the
     condition under which INGEST-06 takes over and reroutes to general-task.
     """
     slug = department_slug.lower()
@@ -130,7 +133,7 @@ def _resolve_tier1(conn: sqlite3.Connection, department_slug: str):
     return row[0] if row else None
 
 
-class TestFunnelDepartmentRegistrationGap:
+class TestFunnelDepartmentRegistrationFixed:
     def test_producer_still_stamps_funnels(self, rec):
         """The operator's ruling: keep stamping 'funnels' (don't reroute to
         'marketing')."""
@@ -138,25 +141,26 @@ class TestFunnelDepartmentRegistrationGap:
         (call,) = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")]
         assert call["payload"]["department_slug"] == "funnels"
 
-    def test_funnels_is_not_yet_a_floor_department(self):
-        """Precondition / open-gap marker: 'funnels' is absent from the real
-        floor list. If this assertion ever flips to 'in', the registration
-        work has landed and test_KNOWN_GAP below must be revisited."""
+    def test_funnels_is_now_a_mandatory_floor_department(self):
+        """The registration landed: 'funnels' is a member of the real floor
+        list. If this assertion ever flips back to absent, the registration
+        has regressed and test_funnel_card_resolves_on_a_floor_standard_box
+        below must be revisited."""
         floor = _load_department_floor()
-        assert "funnels" not in floor.HARDCODED_MANDATORY, (
-            "'funnels' now appears in HARDCODED_MANDATORY — the department "
-            "registration has landed; update/remove this gap-tracking test "
-            "and test_KNOWN_GAP_funnel_card_does_not_resolve_on_a_floor_standard_box"
+        assert "funnels" in floor.HARDCODED_MANDATORY, (
+            "'funnels' is missing from HARDCODED_MANDATORY — the department "
+            "registration (department-naming-map.json's mandatory.funnels + "
+            "this list) has regressed"
         )
 
-    def test_KNOWN_GAP_funnel_card_does_not_resolve_on_a_floor_standard_box(self, rec):
-        """DOCUMENTS THE OPEN BUG — does not claim it is fixed. On a box
-        seeded strictly from the standard floor (no ad hoc 'funnels'
-        workspace), the real producer stamp run through a faithful mirror of
-        CC's tier-1 resolution SQL still MISSES — the card still lands in
-        general-task via INGEST-06, not a real department. This assertion is
-        EXPECTED TO FLIP once 'funnels' is properly registered (see the
-        module docstring for what that requires)."""
+    def test_funnel_card_resolves_on_a_floor_standard_box(self, rec):
+        """PROVES THE FIX — not a claim, a run. On a box seeded strictly from
+        the standard mandatory floor (no ad hoc 'funnels' workspace added by
+        hand, unlike the operator's own pre-existing box), the real producer
+        stamp run through a faithful mirror of CC's tier-1 resolution SQL now
+        RESOLVES to the real 'funnels' workspace — the card lands in the real
+        department, not general-task via INGEST-06's unrecognized-slug tier.
+        """
         cc_board.ingest_task("Signature funnel build", job_type="funnel", env=ENV)
         (call,) = [c for c in rec.calls if c["url"].endswith("/api/tasks/ingest")]
         stamped_slug = call["payload"]["department_slug"]
@@ -164,9 +168,10 @@ class TestFunnelDepartmentRegistrationGap:
         conn = _seed_floor_workspaces_db()
         resolved_id = _resolve_tier1(conn, stamped_slug)
 
-        assert resolved_id is None, (
+        assert resolved_id == "funnels", (
             f"funnel card (department_slug={stamped_slug!r}) resolved to "
-            f"{resolved_id!r} on a floor-standard box — the registration gap "
-            "this test tracks appears to be CLOSED; if so, update this test "
-            "to assert the real resolution instead of documenting the gap"
+            f"{resolved_id!r} on a floor-standard box — expected 'funnels'. "
+            "The registration fix (department-naming-map.json + "
+            "department-floor.py's HARDCODED_MANDATORY) is not correctly "
+            "wired if this fails."
         )

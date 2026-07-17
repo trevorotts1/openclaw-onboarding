@@ -1,7 +1,7 @@
 # test_cc_board_catchall_doc.py — cc_board.py producer-doc conformance for
-# Skill-6 funnel routing (2026-07-16, operator-ruling REVERSAL).
+# Skill-6 funnel routing (2026-07-16, operator-ruling REVERSAL + registration).
 #
-# HISTORY (three layers, oldest first):
+# HISTORY (four layers, oldest first):
 #   1. C-13(e)/U44 fixed a STALE claim that an unrecognized department_slug
 #      (the fake 'funnels' slug) "mis-resolves to the CEO catch-all" — the
 #      real behavior is INGEST-06 (src/app/api/tasks/ingest/route.ts's
@@ -18,17 +18,22 @@
 #   3. A same-day direction change proposed rerouting job_type='funnel' to
 #      stamp 'marketing' instead of 'funnels'. THE OPERATOR REVERSED THIS:
 #      keep stamping 'funnels'; register 'funnels' as its OWN floor
-#      department instead of folding funnel work into Marketing. That
-#      registration is NOT done (a real suggested-roles catalog + floor entry
-#      is an operator content decision, out of scope for this pass) — the
-#      funnel-branch NOTE documents the OPEN GAP honestly instead of
-#      claiming a fix that hasn't landed.
+#      department instead of folding funnel work into Marketing.
+#   4. The registration itself now LANDS in this change: a mandatory
+#      department-naming-map.json entry, department-floor.py's
+#      HARDCODED_MANDATORY, a real suggested-roles catalog
+#      (funnels-suggested-roles.md, 3 roles with full role-library templates),
+#      and a matching entry + workspace-seed migration in the separate
+#      blackceo-command-center repo. The funnel-branch NOTE documents the
+#      CLOSED gap and the deliberate, documented overlap with Marketing's and
+#      Web Development's own funnel-adjacent roles — no fix is claimed that
+#      hasn't landed.
 #
 # This is a doc + stamp conformance test — it pins cc_board.py's own
 # producer-side documentation (and the literal slug it stamps) against
-# reality so the two never drift apart silently. It does NOT claim the
-# routing bug is fixed — see test_cc_board_funnel_department_registration_gap.py
-# for the open-gap trace.
+# reality so the two never drift apart silently. See
+# test_cc_board_funnel_department_registration_gap.py (module now proves the
+# FIX, kept at its original filename) for the end-to-end resolution trace.
 from __future__ import annotations
 
 import os
@@ -108,34 +113,39 @@ class TestCatchAllProducerDocConformance:
             "Marketing"
         )
 
-    def test_funnel_note_documents_open_registration_gap(self):
+    def test_funnel_note_documents_registration_landed(self):
         """The job_type=='funnel' branch's producer NOTE must honestly
-        document that 'funnels' is NOT YET a registered department (the open
-        gap), not claim a resolution that hasn't landed."""
+        document that 'funnels' is NOW a REGISTERED mandatory department
+        (the fix), while still explaining the pre-fix unrecognized-slug
+        behavior for historical/diagnostic clarity — not silently erasing it."""
         note = _funnel_branch_note()
         for token in (
-            "not a registered",
+            "REGISTERED",
             "HARDCODED_MANDATORY",
             "unrecognized-slug->general",
-            "OPEN GAP",
         ):
             assert token in note, (
                 f"the funnel branch's producer NOTE does not mention {token!r} — "
-                "it must honestly document the current open routing gap, not "
-                "a fix that hasn't landed"
+                "it must honestly document the registration fix and its "
+                "pre-fix behavior"
             )
+        assert "OPEN GAP" not in note, (
+            "the funnel branch's producer NOTE still claims an OPEN GAP — the "
+            "registration has landed; this claim is now stale"
+        )
 
-    def test_funnel_note_flags_marketing_role_catalog_overlap(self):
-        """The NOTE must flag the overlap with Marketing's existing funnel
-        roles (Funnel Strategist, Signature Funnel Specialist) — the exact
-        reason registering 'funnels' as a standalone department is an
-        operator content decision, not a mechanical one."""
+    def test_funnel_note_flags_marketing_and_web_dev_role_catalog_overlap(self):
+        """The NOTE must flag the deliberate overlap with Marketing's AND Web
+        Development's existing funnel roles (Funnel Strategist, Signature
+        Funnel Specialist) — the exact reason registering 'funnels' as a
+        standalone department is a documented, operator-ruled overlap, not a
+        silent duplication."""
         note = _funnel_branch_note()
-        for token in ("Funnel Strategist", "Signature Funnel Specialist"):
+        for token in ("Funnel Strategist", "Signature Funnel Specialist", "Web Development"):
             assert token in note, (
-                f"the funnel branch's producer NOTE does not mention the "
-                f"existing Marketing role {token!r} — the overlap this "
-                "registration decision must reconcile is undocumented"
+                f"the funnel branch's producer NOTE does not mention {token!r} — "
+                "the overlap this registration deliberately carries is "
+                "undocumented"
             )
 
     def test_department_slug_docstring_correct(self):
