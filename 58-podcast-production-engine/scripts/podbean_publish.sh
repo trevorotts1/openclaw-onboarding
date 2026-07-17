@@ -79,6 +79,10 @@ set -euo pipefail
 readonly PODBEAN_API="${PODBEAN_API_BASE:-https://api.podbean.com/v1}"
 readonly RETRIES=3
 readonly CURL_MAX_TIME=180
+# publish-proxy mode (S58-U14): a distinct exit code for the ONE refusal reason
+# that is a client-facing business state, not an error - so the caller can
+# detect "not in good standing" without parsing JSON.
+readonly EXIT_BLOCKED_STANDING=3
 
 # ------------------------------------------------------------------ logging --
 # stderr is the operator channel. Secret values are never passed here.
@@ -93,6 +97,7 @@ redact() {
   [ -n "${PODBEAN_CLIENT_SECRET:-}" ] && s="${s//${PODBEAN_CLIENT_SECRET}/[REDACTED_CLIENT_SECRET]}"
   [ -n "${PODBEAN_BROKER_TOKEN:-}" ]  && s="${s//${PODBEAN_BROKER_TOKEN}/[REDACTED_BROKER_TOKEN]}"
   [ -n "${ACCESS_TOKEN:-}" ]          && s="${s//${ACCESS_TOKEN}/[REDACTED_TOKEN]}"
+  [ -n "${PODBEAN_PUBLISH_TOKEN:-}" ] && s="${s//${PODBEAN_PUBLISH_TOKEN}/[REDACTED_PUBLISH_TOKEN]}"
   printf '%s' "$s"
 }
 
@@ -106,6 +111,15 @@ Required environment (values are never printed):
                           per-client Podbean value; selects the show under
                           BlackCEO's single host account; not a secret. Required
                           in BOTH modes.
+  Precedence when more than one mode's variables are set: PROXY, then BROKER,
+  then LOCAL (S58-U14). PROXY is the new fleet default (Section 2 of the S58
+  server-side-publish spec):
+  PODBEAN_PUBLISH_WEBHOOK_URL  n8n publish-proxy webhook (non-secret; e.g.
+                          https://main.blackceoautomations.com/webhook/podbean-publish)
+  PODBEAN_PUBLISH_TOKEN   shared header token for the proxy (X-Podcast-Publish-Token)
+  PODCAST_CLIENT_LAST_NAME  the client's last name (proxy identity tuple, with email)
+  PODCAST_CLIENT_EMAIL      the client's email (proxy identity tuple, with last name)
+  PODCAST_CLIENT_FIRST_NAME optional; display only, never used for authorization
   Then EITHER broker mode (fleet default; no Podbean secret on this box):
   PODBEAN_BROKER_WEBHOOK_URL  n8n Podbean broker webhook (e.g.
                           https://main.blackceoautomations.com/webhook/podbean-broker)
@@ -120,6 +134,11 @@ Required arguments:
 
 Common options:
   --cover <path>          finalized cover image (jpeg or png); becomes logo_key
+  --audio-url <url>       HTTPS URL to the mastered MP3 (Step 14 output). REQUIRED
+                          in proxy mode only (n8n downloads from this URL); ignored
+                          in broker/local mode.
+  --image-url <url>       HTTPS URL to the cover (Step 14 output). REQUIRED in
+                          proxy mode only; ignored in broker/local mode.
   --speaker <name>        speaker or guest name; appends "Inspired by <name>" to the title
   --description <text>    show notes (plain text or html, kept under 3000 chars)
   --release-date <when>   contact.date_for_release (ISO 8601 or unix seconds);
@@ -318,17 +337,128 @@ broker_mint_token() {
   done
 }
 
+# ------------------------------------------------------------ publish-proxy --
+# Proxy mode (S58-U14, precedence PROXY > BROKER > LOCAL): n8n performs the
+# ENTIRE publish (download audio/image, upload to Podbean, create the
+# episode). This box sends the webhook payload contract v2 (S58 spec Section
+# 3) over HTTPS with the shared header token and gets back a synchronous JSON
+# result carrying the permalink. Podbean's app credentials never touch this
+# box in proxy mode either - only the shared publish-proxy token does, and
+# that token is a webhook credential, never a Podbean credential.
+#
+# The auth token rides in a curl config header line (a printf builtin through
+# process substitution), never in argv - the same secret-handling contract
+# already used for basic auth and the broker token above. The JSON body itself
+# carries no secret (client name/email/urls are not secrets), so it may ride
+# in argv via --data-binary.
+proxy_cfg_lines() {
+  local url="$1"
+  printf 'request = "POST"\n'
+  printf 'url = "%s"\n' "$url"
+  printf 'silent\n'
+  printf 'show-error\n'
+  printf 'location\n'
+  printf 'max-time = %s\n' "$CURL_MAX_TIME"
+  printf 'header = "Content-Type: application/json"\n'
+  printf 'header = "X-Podcast-Publish-Token: %s"\n' "$PODBEAN_PUBLISH_TOKEN"
+}
+
+# Extract one field from the JSON body on stdin, normalizing a JSON boolean to
+# the lowercase strings "true"/"false" (python str(True) prints "True", which
+# would silently defeat a plain [ "$v" = "true" ] comparison) and an absent
+# field to "". Kept separate from json_field (used by the OAuth/local paths
+# above) so existing call sites are untouched.
+proxy_field() {
+  python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+v = d.get(sys.argv[1]) if isinstance(d, dict) else None
+if isinstance(v, bool):
+    print("true" if v else "false")
+elif v is None:
+    print("")
+else:
+    print(v)
+' "$1"
+}
+
+# Build the webhook payload contract v2 JSON body (S58 spec Section 3). Never
+# sends a Podbean credential, a GHL token, an operator secret, or an episode
+# number ("Never sent" list, Section 3) - n8n computes the episode number
+# server-side from the roster-routed channel.
+build_proxy_payload() {
+  python3 -c '
+import json, sys
+(podcast_id, last_name, email, first_name, title, description, audio_url,
+ image_url, publish_date, idem_key, speaker, source) = sys.argv[1:13]
+d = {
+    "contract_version": "2",
+    "podcast_id": podcast_id,
+    "client_last_name": last_name,
+    "client_email": email,
+    "title": title,
+    "description": description,
+    "audio_url": audio_url,
+    "image_url": image_url,
+    "publish_date": publish_date,
+    "idempotency_key": idem_key,
+    "episode_type": "full",
+    "explicit": "clean",
+    "source": source,
+}
+if first_name:
+    d["client_first_name"] = first_name
+if speaker:
+    d["speaker"] = speaker
+print(json.dumps(d))
+' "$PODBEAN_PODCAST_ID" "$PODCAST_CLIENT_LAST_NAME" "$PODCAST_CLIENT_EMAIL" \
+  "${PODCAST_CLIENT_FIRST_NAME:-}" "$FINAL_TITLE" "$DESCRIPTION" "$AUDIO_URL" \
+  "$IMAGE_URL" "$PROXY_PUBLISH_DATE" "$JOB_ID" "${SPEAKER:-}" "skill58-step15"
+}
+
+# proxy_request URL BODY: POST BODY to URL with the shared header token. Sets
+# RESP_BODY / RESP_CODE. Retries ONCE, matching Section 3's box-side contract
+# ("one retry on network error with the same idempotency_key"), but ONLY on a
+# network-level failure (curl could not get a status line at all, code 000) or
+# an n8n-side HTTP 5xx. A 2xx/403/409/422 is a deterministic verdict from the
+# gate and is returned to the caller on the FIRST reply - retrying it can never
+# change the answer (Section 8: 409/403 need a human or a different key, not a
+# tight retry loop). Never returns non-zero; the caller inspects RESP_CODE.
+RESP_BODY=""; RESP_CODE=""
+proxy_request() {
+  local url="$1" body="$2" attempt=1 out
+  while :; do
+    out="$(curl -K <(proxy_cfg_lines "$url") --data-binary "$body" -w $'\n%{http_code}' 2>/dev/null || true)"
+    RESP_CODE="${out##*$'\n'}"
+    RESP_BODY="${out%$'\n'*}"
+    if [ -z "$RESP_CODE" ] || [ "$RESP_CODE" = "000" ] || [[ "$RESP_CODE" =~ ^5[0-9][0-9]$ ]]; then
+      if [ "$attempt" -ge 2 ]; then return 0; fi
+      log "publish-proxy attempt ${attempt} returned HTTP ${RESP_CODE:-000}; retrying once (same idempotency_key)"
+      sleep 1
+      attempt=$(( attempt + 1 ))
+      continue
+    fi
+    return 0
+  done
+}
+
 # ------------------------------------------------------------- argument parse --
 AUDIO=""; TITLE=""; COVER=""; SPEAKER=""; DESCRIPTION=""
 RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
 TEST_RUN=0; DRY_RUN=0
+AUDIO_URL=""; IMAGE_URL=""   # publish-proxy only (S58-U14)
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --audio)         AUDIO="${2:-}"; shift 2 ;;
     --title)         TITLE="${2:-}"; shift 2 ;;
     --cover)         COVER="${2:-}"; shift 2 ;;
+    --audio-url)     AUDIO_URL="${2:-}"; shift 2 ;;
+    --image-url)     IMAGE_URL="${2:-}"; shift 2 ;;
     --speaker)       SPEAKER="${2:-}"; shift 2 ;;
     --description)   DESCRIPTION="${2:-}"; shift 2 ;;
     --release-date)  RELEASE_DATE="${2:-}"; shift 2 ;;
@@ -392,6 +522,19 @@ case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, pre
 # The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.
 : "${PODBEAN_PODCAST_ID:?PODBEAN_PODCAST_ID is NOT SET (the client Podbean Channel ID / podcast_id)}"
 
+# Transport precedence (per box): PROXY, then BROKER, then LOCAL (S58-U14).
+# PROXY wins when both PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN
+# resolve: n8n performs the entire publish and this box holds no Podbean
+# credential at all, not even a broker-scoped one (S58 spec Section 2). When
+# PROXY is not configured, the BROKER/LOCAL selection below is unchanged and
+# runs exactly as it did before this unit (byte-identical block, only gated).
+PROXY_MODE=0
+if [ -n "${PODBEAN_PUBLISH_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_PUBLISH_TOKEN:-}" ]; then
+  PROXY_MODE=1
+fi
+
+BROKER_MODE=0
+if [ "$PROXY_MODE" != "1" ]; then
 # Mode selection (per box). BROKER if the n8n Podbean broker webhook URL and its
 # shared token both resolve (fleet default; BlackCEO's app client_id/secret stay
 # inside n8n and never touch this box). Otherwise LOCAL client_credentials, which
@@ -402,6 +545,7 @@ if [ -n "${PODBEAN_BROKER_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_BROKER_TOKEN:-}" 
 else
   : "${PODBEAN_CLIENT_ID:?PODBEAN_CLIENT_ID is NOT SET. Configure the n8n Podbean broker (PODBEAN_BROKER_WEBHOOK_URL + PODBEAN_BROKER_TOKEN) on this box, or - on the operator OWN box only - set the BlackCEO shared Podbean app client id.}"
   : "${PODBEAN_CLIENT_SECRET:?PODBEAN_CLIENT_SECRET is NOT SET (the BlackCEO shared Podbean app secret; operator OWN box only - prefer the n8n broker so no secret sits on a client box).}"
+fi
 fi
 
 # ------------------------------------------------------ title and publish plan --
@@ -449,6 +593,112 @@ if [ "$TEST_RUN" = "1" ]; then
   exit 0
 fi
 
+if [ "$PROXY_MODE" = "1" ]; then
+  # -------------------------------------------------------- publish-proxy ----
+  # Identity comes from the per-box env set by S58-U15 (never a CLI flag - the
+  # operator provisions these once per box from the roster; the skill never
+  # guesses them). Both halves of the identity tuple are required even for
+  # --dry-run, since the standing pre-check (U13) needs them to look up the
+  # roster row.
+  : "${PODCAST_CLIENT_LAST_NAME:?PODCAST_CLIENT_LAST_NAME is NOT SET (required in publish-proxy mode; half of the roster identity tuple, with email).}"
+  : "${PODCAST_CLIENT_EMAIL:?PODCAST_CLIENT_EMAIL is NOT SET (required in publish-proxy mode; half of the roster identity tuple, with last name).}"
+
+  # Standing-check endpoint (U13), derived from the publish webhook URL unless
+  # explicitly overridden. Both endpoints share the same header credential.
+  PODBEAN_STANDING_CHECK_URL="${PODBEAN_STANDING_CHECK_URL:-${PODBEAN_PUBLISH_WEBHOOK_URL%/webhook/podbean-publish}/webhook/podcast-standing-check}"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    log "dry-run (publish-proxy): probing the standing-check endpoint for reachability; no publish call"
+    precheck_body="$(python3 -c '
+import json, sys
+d = {"client_last_name": sys.argv[1], "client_email": sys.argv[2]}
+if sys.argv[3]:
+    d["podcast_id"] = sys.argv[3]
+print(json.dumps(d))
+' "$PODCAST_CLIENT_LAST_NAME" "$PODCAST_CLIENT_EMAIL" "${PODBEAN_PODCAST_ID:-}")"
+    proxy_request "$PODBEAN_STANDING_CHECK_URL" "$precheck_body"
+    if [[ "$RESP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+      GOOD_STANDING="$(printf '%s' "$RESP_BODY" | proxy_field good_standing)"
+      GOOD_STANDING_JSON="null"
+      case "$GOOD_STANDING" in
+        true)  GOOD_STANDING_JSON="true" ;;
+        false) GOOD_STANDING_JSON="false" ;;
+      esac
+      log "dry-run (publish-proxy): standing-check endpoint reachable (good_standing=${GOOD_STANDING:-unknown})"
+      emit_result "{\"status\":\"dry-run\",\"idempotent_skip\":false,\"reachable\":true,\"good_standing\":${GOOD_STANDING_JSON}}"
+      exit 0
+    fi
+    die "publish-proxy dry-run: standing-check endpoint unreachable (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  fi
+
+  [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it)"
+  [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it)"
+  [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
+
+  PROXY_PUBLISH_DATE="$RELEASE_DATE"
+  [ -n "$PROXY_PUBLISH_DATE" ] || PROXY_PUBLISH_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  log "publish-proxy: sending the v2 payload to n8n (identity and urls only; no Podbean or n8n secret in the body)"
+  PROXY_PAYLOAD="$(build_proxy_payload)"
+  proxy_request "$PODBEAN_PUBLISH_WEBHOOK_URL" "$PROXY_PAYLOAD"
+  PROXY_PAYLOAD=""
+
+  if [[ "$RESP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+    PROXY_OK="$(printf '%s' "$RESP_BODY" | proxy_field ok)"
+    if [ "$PROXY_OK" != "true" ]; then
+      die "publish-proxy returned HTTP ${RESP_CODE} but ok was not true: $(redact "$RESP_BODY")"
+    fi
+    PROXY_IDEMPOTENT="$(printf '%s' "$RESP_BODY" | proxy_field idempotent_replay)"
+    PERMALINK="$(printf '%s' "$RESP_BODY" | proxy_field permalink_url)"
+    EPISODE_ID="$(printf '%s' "$RESP_BODY" | proxy_field episode_id)"
+    EPISODE_NUMBER="$(printf '%s' "$RESP_BODY" | proxy_field episode_number)"
+    PROXY_SCHEDULED="$(printf '%s' "$RESP_BODY" | proxy_field scheduled)"
+    RESP_BODY=""
+    [ -n "$PERMALINK" ] || die "publish-proxy replied ok:true but carried no permalink_url"
+
+    SW="${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}"
+    if [ -n "$JOB_ID" ] && [ -f "$SW" ]; then
+      if python3 "$SW" output --job-id "$JOB_ID" --field podbean_permalink --value "$PERMALINK" >&2; then
+        log "permalink recorded via podcast_state.py for job ${JOB_ID}"
+      else
+        log "warning: podcast_state.py did not record the permalink; caller must persist it"
+      fi
+    fi
+
+    if [ "$PROXY_IDEMPOTENT" = "true" ]; then
+      log "publish-proxy: idempotent replay (episode already existed for this idempotency_key)"
+      emit_result "{\"status\":\"skipped\",\"reason\":\"idempotent_replay\",\"idempotent_skip\":true,\"permalink_url\":$(jstr "$PERMALINK")}"
+    else
+      log "publish-proxy: episode published"
+      EPISODE_NUMBER_JSON="null"
+      [[ "$EPISODE_NUMBER" =~ ^[0-9]+$ ]] && EPISODE_NUMBER_JSON="$EPISODE_NUMBER"
+      PUBLISH_STATUS_JSON='"publish"'
+      [ "$PROXY_SCHEDULED" = "true" ] && PUBLISH_STATUS_JSON='"future"'
+      emit_result "{\"status\":\"published\",\"idempotent_skip\":false,\"permalink_url\":$(jstr "$PERMALINK"),\"episode_id\":$(jstr "$EPISODE_ID"),\"episode_number\":${EPISODE_NUMBER_JSON},\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":${PUBLISH_STATUS_JSON},\"publish_timestamp\":null}"
+    fi
+    exit 0
+  fi
+
+  if [ "$RESP_CODE" = "403" ]; then
+    PROXY_REASON="$(printf '%s' "$RESP_BODY" | proxy_field reason)"
+    if [ "$PROXY_REASON" = "not_in_good_standing" ]; then
+      log "publish-proxy refused: not in good standing"
+      emit_result "{\"status\":\"blocked\",\"reason\":\"not_in_good_standing\"}"
+      exit "$EXIT_BLOCKED_STANDING"
+    fi
+    die "publish-proxy refused (${PROXY_REASON:-unknown_403}): $(redact "$RESP_BODY")"
+  fi
+
+  if [ "$RESP_CODE" = "409" ]; then
+    die "publish-proxy: another request for this idempotency_key is already in_flight (HTTP 409); retry later with the same --job-id"
+  fi
+
+  if [ "$RESP_CODE" = "422" ]; then
+    die "publish-proxy rejected the payload (HTTP 422): $(redact "$RESP_BODY")"
+  fi
+
+  die "publish-proxy failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+else
 # --------------------------------------------------------------- OAuth 2.0 ----
 ACCESS_TOKEN=""
 if [ "$BROKER_MODE" = "1" ]; then
@@ -592,3 +842,4 @@ fi
 # ------------------------------------------------------------------- result ----
 emit_result "{\"status\":\"published\",\"idempotent_skip\":false,\"permalink_url\":$(jstr "$PERMALINK"),\"episode_id\":$(jstr "$EPISODE_ID"),\"episode_number\":${EPISODE_NUMBER},\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS"),\"publish_timestamp\":$( [ -n "$PUBLISH_TIMESTAMP" ] && printf '%s' "$PUBLISH_TIMESTAMP" || printf 'null' )}"
 exit 0
+fi
