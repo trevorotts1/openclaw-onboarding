@@ -413,8 +413,9 @@ OC_JSON = os.path.join(OC_CONFIG, "openclaw.json")
 OC_CREDS = os.path.join(OC_CONFIG, "credentials")
 OC_LOGS = os.path.join(OC_CONFIG, "logs")
 
-# BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (Trevor /
-# E.R. Spaulding / LeAnne Dolce).  They must NEVER be returned as a client
+# BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (the
+# operator / the operator's chief of operations / a client).  They must NEVER
+# be returned as a client
 # owner-chat target — doing so routes every cron delivery to the operator
 # instead of the client.  Confirmed live misrouting on multiple client boxes
 # (all crons wired to the operator ID instead of the client).
