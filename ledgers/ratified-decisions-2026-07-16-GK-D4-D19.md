@@ -15,13 +15,19 @@ If the fuller ledger lands on `main` first, the two files will overlap on this
 section's content (not conflict in meaning); the merge-writer can fold this
 excerpt away at that point.
 
-**Provenance.** The text below is reproduced unedited in substance from commit
+**Provenance.** The text below is reproduced from commit
 `41d2d1f9ff95e81500cac0d53a2e8ecd0f20ea8b` (`chore/ratified-decisions-2026-07-16-d12-d4`),
 section "GK-D4 (D19) — RATIFIED BY TREVOR = Option A", authored 2026-07-16
-16:46:36Z. Only self-references to other sections of that file that do not
-exist here ("above") have been rewritten to point at the source ledger by
-name, so the excerpt reads correctly standalone. No claim, evidence figure, or
-ruling was altered.
+16:46:36Z, with two disclosed changes from that source: (1) self-references
+to other sections of that file that do not exist here ("above") have been
+rewritten to point at the source ledger by name, so the excerpt reads
+correctly standalone; (2) one sentence not present in commit `41d2d1f9` was
+added for clarity — the master-spec crosswalk-table citation beginning
+"Independently confirmed stronger than either of the above..." below, which
+independently equates GK-D4 and D19 via the master spec's decision crosswalk
+table (line 371). No claim, evidence figure, or ruling was altered or
+removed; the added sentence is a citation that strengthens, without changing,
+the ratification's existing basis.
 
 ---
 
