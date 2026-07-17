@@ -404,5 +404,354 @@ class CompoundLegTagFix(unittest.TestCase):
             )
 
 
+class Defect1CIResolvesOnHeadShaNotMergeCommit(unittest.TestCase):
+    """MUTATION PROOF for DEFECT 1 (the CI check ran against the SYNTHETIC
+    MERGE commit -- leg_result["raw"]["merge_sha"] -- instead of the leg's
+    OWN head sha, i.e. the commit CI actually ran on). Merge commits carry
+    ZERO check-runs on this repo's CI configuration (pull_request-triggered
+    Actions record check-runs against the PR branch's head, never the
+    merge commit GitHub creates afterward on main) -- so the pre-fix tool
+    printed "CI: no-data" for EVERY unit, always, regardless of the real
+    CI outcome. Empirically re-confirmed live below (network + gh auth
+    required) against U11's REAL commits in openclaw-onboarding, copied
+    verbatim from `gh api .../check-runs` output at the time this fix was
+    written -- not synthesized."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.onb_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/openclaw-onboarding.git",
+            "UNIT_STATUS_TEST_ONB_DIR", "openclaw-onboarding",
+        )
+        cls.cc_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/blackceo-command-center.git",
+            "UNIT_STATUS_TEST_CC_DIR", "blackceo-command-center",
+        )
+        cls.ledger_paths = [
+            str(Path(cls.onb_dir) / "ledgers" / "skill6-blended-persona-kanban-v2-2026-07-13.md"),
+        ]
+
+    def test_u11_onb_leg_merge_commit_precondition_still_has_zero_checkruns(self):
+        """PRECONDITION: the exact merge commit the pre-fix tool queried for
+        U11's ONB leg must still carry 0 check-runs -- if GitHub ever starts
+        recording check-runs against merge commits on this repo, the bug
+        this fix targets no longer exists and this whole test class needs
+        re-deriving, not blind re-running."""
+        merge_sha = "93e4c1ed596608410abf599edf37c8f8ac9069f8"
+        result = usc.ci_status_for_sha("trevorotts1/openclaw-onboarding", merge_sha)
+        self.assertEqual(
+            result["status"], "no-data",
+            f"PRECONDITION FAILED: merge commit {merge_sha} now has check-run data "
+            f"({result}) -- this fix's premise (merge commits carry ZERO check-runs "
+            f"on this repo's CI config) no longer holds; re-derive before trusting the "
+            f"assertions below.",
+        )
+
+    def test_u11_resolve_unit_ci_uses_real_head_sha_not_merge_commit(self):
+        """FAILS on pre-fix code: leg_result["ci"] would be status="no-data",
+        total=0 (queried the merge commit, which has 0 runs), and would have
+        NO "head_sha" key at all (pre-fix ci_status_for_sha() never added
+        one). PASSES on shipped code: status="green", total>=1, and
+        head_sha equals U11's REAL branch tip in each repo (not the merge
+        commit) -- both hardcoded here verbatim from real `git rev-parse`
+        output, not synthesized."""
+        result = usc.resolve_unit("U11", self.onb_dir, self.cc_dir, self.ledger_paths, skip_ci=False)
+        onb_ci = result["legs"]["onb"]["ci"]
+        self.assertEqual(onb_ci["status"], "green", f"REGRESSION: U11 ONB leg CI must be green -- got {onb_ci}")
+        self.assertGreaterEqual(onb_ci["total"], 1, f"REGRESSION: U11 ONB leg CI must show real check-run data -- got {onb_ci}")
+        self.assertEqual(onb_ci["failure"], 0)
+        self.assertEqual(
+            onb_ci["head_sha"], "f3d751f5f19f6d2edd8921382a6a4975e39a3ae8",
+            "REGRESSION: CI must be checked against U11's real ONB branch tip, not its merge commit.",
+        )
+
+        cc_ci = result["legs"]["cc"]["ci"]
+        self.assertEqual(cc_ci["status"], "green", f"REGRESSION: U11 CC leg CI must be green -- got {cc_ci}")
+        self.assertGreaterEqual(cc_ci["total"], 1, f"REGRESSION: U11 CC leg CI must show real check-run data -- got {cc_ci}")
+        self.assertEqual(
+            cc_ci["head_sha"], "d618f332b4748a34cf4831ab05771ed3f96c954a",
+            "REGRESSION: CI must be checked against U11's real CC branch tip, not its merge commit.",
+        )
+
+
+class Defect2RealFossilAndNoDataCases(unittest.TestCase):
+    """MUTATION PROOF for DEFECT 2 (a real 18-unit triage found every
+    historic `failure > 0` on an exact head sha was noise no longer present
+    on current main -- a QC gate tripping on a DIFFERENT unit's evidence
+    file, a version-bump gate, an infra flake -- yet a naive "green on the
+    exact sha" tool would have missed that entirely if it silently upgraded
+    these to green, and a naive "red on the exact sha" tool would wrongly
+    flag units that are actually fine). U24's ONB leg's real head sha
+    genuinely failed `G3 -- skill content change requires skill-version.txt
+    bump` historically; that exact check NAME now passes on current main --
+    a real, live-verified fossil, not a synthesized fixture. U5's CC leg
+    has a real head sha with 0 retained check-runs at all -- a genuine
+    `no-data` case (old direct-push era), proven distinct from DEFECT 1's
+    bug because this tool now records exactly WHICH sha (head, not merge)
+    it checked and came up empty."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.onb_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/openclaw-onboarding.git",
+            "UNIT_STATUS_TEST_ONB_DIR", "openclaw-onboarding",
+        )
+        cls.cc_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/blackceo-command-center.git",
+            "UNIT_STATUS_TEST_CC_DIR", "blackceo-command-center",
+        )
+        cls.ledger_paths = [
+            str(Path(cls.onb_dir) / "ledgers" / "skill6-blended-persona-kanban-v2-2026-07-13.md"),
+        ]
+
+    def test_u24_merge_commit_precondition_still_has_zero_checkruns(self):
+        """PRECONDITION, same shape as Defect1's -- U24's merge commit must
+        still carry 0 check-runs, or this test needs re-deriving."""
+        merge_sha = "1de2099a51a61bcf1266291b29cb02a25bf152c1"
+        result = usc.ci_status_for_sha("trevorotts1/openclaw-onboarding", merge_sha)
+        self.assertEqual(result["status"], "no-data", f"PRECONDITION FAILED: {result}")
+
+    def test_u24_onb_leg_is_red_fossil_never_upgraded_to_green_never_left_as_plain_red(self):
+        """FAILS on pre-fix code: status would be "no-data" (merge commit
+        has 0 runs) -- neither "red-fossil" nor any "failing_checks" key
+        would exist (KeyError). PASSES on shipped code: status is the
+        DISTINCT "red-fossil" value (never silently "green", never a bare
+        undifferentiated "red"), the specific failing check name is named,
+        and the overall unit verdict stays DONE -- a fossil must NOT gate
+        NOT-DONE (that would be exactly the false-negative disease this
+        fix exists to prevent, just from the opposite direction)."""
+        result = usc.resolve_unit("U24", self.onb_dir, self.cc_dir, self.ledger_paths, skip_ci=False)
+        ci = result["legs"]["onb"]["ci"]
+        self.assertEqual(ci["status"], "red-fossil", f"REGRESSION: got {ci}")
+        names = [fc["name"] for fc in ci["failing_checks"]]
+        self.assertIn("G3 — skill content change requires skill-version.txt bump", names)
+        fc = ci["failing_checks"][0]
+        self.assertEqual(fc["head_conclusion"], "failure")
+        self.assertEqual(fc["main_conclusion"], "success", f"REGRESSION: must confirm the SAME check name now passes on current main -- got {fc}")
+        self.assertEqual(
+            result["verdict"], "DONE",
+            f"REGRESSION: a red-fossil leg must not gate the unit to NOT-DONE -- got {result['verdict']}",
+        )
+
+    def test_u5_cc_leg_is_genuine_no_data_recorded_against_the_real_head_sha(self):
+        """FAILS on pre-fix code: the returned ci dict has no "head_sha" key
+        at all (KeyError) -- pre-fix code never recorded which sha it
+        queried, so a genuine no-data case was structurally indistinguishable
+        from DEFECT 1's bug (every leg showed no-data either way). PASSES on
+        shipped code: status is "no-data" AND head_sha is confirmed to be
+        U5's real CC branch tip (not a merge commit, not absent)."""
+        result = usc.resolve_unit("U5", self.onb_dir, self.cc_dir, self.ledger_paths, skip_ci=False)
+        ci = result["legs"]["cc"]["ci"]
+        self.assertEqual(ci["status"], "no-data", f"got {ci}")
+        self.assertEqual(
+            ci["head_sha"], "8922998209d956cc3db75155d4f39c52dd8cba90",
+            "REGRESSION: no-data must still record the real head sha it queried, not be silent about it.",
+        )
+
+
+class Defect2PureClassifierFixtures(unittest.TestCase):
+    """Offline, no-network coverage of classify_ci_from_data()'s full
+    state space -- including red-live and red-check-removed / red-main-
+    unverifiable, states that (per the operator brief) this repo's current
+    green main cannot currently produce a REAL example of, so these use
+    hand-built fixtures shaped exactly like ci_status_for_sha()'s real
+    return value. This is brand-new code with no pre-fix equivalent at
+    all, so every test in this class fails on pre-fix code with a hard
+    AttributeError (classify_ci_from_data does not exist) -- a legitimate,
+    unavoidable form of fail-first for a capability that is not a
+    behavior change but a wholly new one."""
+
+    @staticmethod
+    def _ci(status, checks_by_name):
+        failing = [n for n, info in checks_by_name.items() if info["conclusion"] in usc._FAILURE_CONCLUSIONS]
+        return {"status": status, "total": len(checks_by_name), "checks_by_name": checks_by_name, "failing_names": failing}
+
+    def test_red_live_when_same_check_name_still_fails_on_main(self):
+        head = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        main = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(result["status"], "red-live")
+        self.assertEqual(result["failing_checks"][0]["main_conclusion"], "failure")
+
+    def test_red_fossil_when_same_check_name_now_passes_on_main(self):
+        head = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        main = self._ci("green", {"Fixture check": {"conclusion": "success", "status": "completed"}})
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(result["status"], "red-fossil")
+        self.assertEqual(result["failing_checks"][0]["main_conclusion"], "success")
+
+    def test_red_check_removed_when_check_name_absent_from_main_entirely(self):
+        head = self._ci("red", {"Retired check": {"conclusion": "failure", "status": "completed"}})
+        main = self._ci("green", {"Some other check": {"conclusion": "success", "status": "completed"}})
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(result["status"], "red-check-removed")
+        self.assertIsNone(result["failing_checks"][0]["main_conclusion"])
+
+    def test_red_main_unverifiable_when_main_itself_has_no_data(self):
+        head = self._ci("red", {"Fixture check": {"conclusion": "failure", "status": "completed"}})
+        main = {"status": "no-data", "total": 0, "checks_by_name": {}, "failing_names": []}
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(
+            result["status"], "red-main-unverifiable",
+            "REGRESSION: when main's own check-run data can't be fetched at all, the tool "
+            "must fail loud (a distinct status), never default to the lenient 'fossil' read.",
+        )
+
+    def test_live_wins_priority_over_a_co_occurring_fossil_on_the_same_leg(self):
+        """A leg with TWO failing checks, one still-live and one fossil,
+        must never let the fossil hide the live one -- overall status must
+        be red-live, not red-fossil."""
+        head = self._ci("red", {
+            "Live check": {"conclusion": "failure", "status": "completed"},
+            "Fossil check": {"conclusion": "failure", "status": "completed"},
+        })
+        main = self._ci("red", {
+            "Live check": {"conclusion": "failure", "status": "completed"},
+            "Fossil check": {"conclusion": "success", "status": "completed"},
+        })
+        result = usc.classify_ci_from_data(head, "MAINSHA", main)
+        self.assertEqual(result["status"], "red-live")
+
+
+class Defect1LegHeadShaExtraction(unittest.TestCase):
+    """Offline, no-network coverage of _leg_head_sha() -- the function that
+    replaces the pre-fix "always use raw['merge_sha']" call site. Fixtures
+    below are the REAL raw shapes captured live from resolve_leg() for
+    U11 (own-branch), U79 (token-scan), and U108 (cross-reference) at the
+    time this fix was written -- not synthesized. Every test in this class
+    fails on pre-fix code with a hard AttributeError (_leg_head_sha does
+    not exist pre-fix -- the call site inlined raw['merge_sha'] directly)."""
+
+    def test_own_branch_returns_tip_not_merge_sha(self):
+        leg_result = {
+            "method": "own-branch",
+            "raw": {
+                "branch": "skill6-v2/U11", "tip": "f3d751f5f19f6d2edd8921382a6a4975e39a3ae8",
+                "merge_sha": "93e4c1ed596608410abf599edf37c8f8ac9069f8", "tag": "v20.0.61",
+            },
+        }
+        self.assertEqual(usc._leg_head_sha(leg_result), "f3d751f5f19f6d2edd8921382a6a4975e39a3ae8")
+
+    def test_token_scan_returns_tip_not_merge_sha(self):
+        leg_result = {
+            "method": "token-scan",
+            "raw": {
+                "branch": "u79-gk17-cc-anthology-selfheal-banner", "tip": "d8cc1ad5249e2100b35467dafdd9fe3a13f5cdce",
+                "merge_sha": "747fca41fdc78c5b6d72937bc7d74a2489dccf94", "tag": "v6.0.52",
+            },
+        }
+        self.assertEqual(usc._leg_head_sha(leg_result), "d8cc1ad5249e2100b35467dafdd9fe3a13f5cdce")
+
+    def test_cross_reference_returns_citation_full_sha_not_merge_sha(self):
+        leg_result = {
+            "method": "cross-reference",
+            "raw": {
+                "citation": {
+                    "cited_sha": "25ba6c6c", "full_sha": "25ba6c6ceb956b9cb5d71442c6de39676a6e6b18",
+                    "is_ancestor_of_main": True, "merge_sha": "b11c45b3ea2219e1bd07788f230dc1006f0fefa7",
+                    "tag": "v6.0.55", "source": "U108's own row", "repo": "blackceo-command-center",
+                },
+                "all_citation_hits": [],
+            },
+        }
+        self.assertEqual(usc._leg_head_sha(leg_result), "25ba6c6ceb956b9cb5d71442c6de39676a6e6b18")
+
+    def test_no_confirmed_commit_methods_return_none_never_a_merge_sha_fallback(self):
+        for method in ("own-branch-unmerged", "token-scan-ambiguous", "none-found"):
+            leg_result = {"method": method, "raw": {"branch": "skill6-v2/U0", "merge_sha": "shouldneverbeused"}}
+            self.assertIsNone(
+                usc._leg_head_sha(leg_result),
+                f"REGRESSION: method={method} has no single confirmed commit -- must return None, "
+                f"never silently fall back to a merge_sha.",
+            )
+
+
+class Defect2OnlyRedLiveGatesVerdict(unittest.TestCase):
+    """Proves the verdict-computation gating rule itself: of all the
+    Defect-2 CI sub-statuses, ONLY "red-live" may flip an otherwise-DONE
+    unit to NOT-DONE. Uses monkeypatching (usc.resolve_leg / usc.
+    classify_leg_ci reassigned at module level -- Python resolves these
+    names dynamically at call time, so resolve_unit()'s internal calls see
+    the patched versions) to inject a fixed leg outcome without touching
+    real git/network for the leg resolution itself. The pre-fix call site
+    (`ci_status_for_sha(owner_repo, leg_result["raw"]["merge_sha"])`) does
+    NOT call classify_leg_ci at all -- so on a pre-fix revert, the
+    classify_leg_ci patch is simply never consulted, and the pre-fix code
+    instead makes a REAL (network) `gh api` call against the fixture's
+    fake merge_sha, which 422s and resolves to "no-data" -- never "red" --
+    so the pre-fix path can NEVER produce NOT-DONE here. That is the
+    FAIL-FIRST proof: these assertions are unreachable on pre-fix code."""
+
+    ONB_PLACEHOLDER = "/nonexistent-onb"
+    CC_PLACEHOLDER = "/nonexistent-cc"
+
+    def _fixture_leg_result(self):
+        return {
+            "satisfied": True, "proved": True, "method": "own-branch",
+            "evidence": "fixture leg for gating-logic test",
+            "raw": {
+                "branch": "skill6-v2/U999999-fixture",
+                "tip": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                # A syntactically-valid-looking but NON-EXISTENT full-length
+                # hex sha -- if pre-fix code's call site is exercised (it
+                # uses this key directly), the real `gh api` call 422s fast
+                # and returns "no-data", never "red".
+                "merge_sha": "cafebabecafebabecafebabecafebabecafebabe",
+                "tag": None,
+            },
+        }
+
+    def _fixture_ledger(self, td, unit_id, tag):
+        p = Path(td) / "fixture-ledger.md"
+        p.write_text(f"| {unit_id} | [X] ({tag}, P1) fixture row for gating test | label | verified | evidence | ts |\n")
+        return str(p)
+
+    def test_red_live_gates_to_not_done(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = self._fixture_ledger(td, "U999901", "ONB")
+            orig_resolve_leg = usc.resolve_leg
+            orig_classify = usc.classify_leg_ci
+            usc.resolve_leg = lambda *a, **kw: self._fixture_leg_result()
+            usc.classify_leg_ci = lambda owner_repo, repo_dir, head_sha, main_ref="origin/main": {
+                "status": "red-live", "total": 1, "success": 0, "failure": 1, "pending": 0,
+                "head_sha": head_sha, "main_sha": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef",
+                "failing_checks": [{"name": "Fixture check", "head_conclusion": "failure",
+                                     "main_conclusion": "failure", "note": "still fails on current main"}],
+            }
+            try:
+                result = usc.resolve_unit("U999901", self.ONB_PLACEHOLDER, self.CC_PLACEHOLDER, [ledger_path], skip_ci=False)
+            finally:
+                usc.resolve_leg = orig_resolve_leg
+                usc.classify_leg_ci = orig_classify
+            self.assertEqual(
+                result["verdict"], "NOT-DONE",
+                f"REGRESSION: a red-live leg (confirmed still failing on current main) must gate "
+                f"NOT-DONE -- got {result['verdict']}: {result}",
+            )
+
+    def test_red_fossil_does_not_gate_to_not_done(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = self._fixture_ledger(td, "U999902", "ONB")
+            orig_resolve_leg = usc.resolve_leg
+            orig_classify = usc.classify_leg_ci
+            usc.resolve_leg = lambda *a, **kw: self._fixture_leg_result()
+            usc.classify_leg_ci = lambda owner_repo, repo_dir, head_sha, main_ref="origin/main": {
+                "status": "red-fossil", "total": 1, "success": 0, "failure": 1, "pending": 0,
+                "head_sha": head_sha, "main_sha": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef",
+                "failing_checks": [{"name": "Fixture check", "head_conclusion": "failure",
+                                     "main_conclusion": "success", "note": "now passes on current main -- fossil"}],
+            }
+            try:
+                result = usc.resolve_unit("U999902", self.ONB_PLACEHOLDER, self.CC_PLACEHOLDER, [ledger_path], skip_ci=False)
+            finally:
+                usc.resolve_leg = orig_resolve_leg
+                usc.classify_leg_ci = orig_classify
+            self.assertEqual(
+                result["verdict"], "DONE",
+                f"REGRESSION: a red-fossil leg (confirmed the cause no longer exists on current "
+                f"main) must NOT gate NOT-DONE -- got {result['verdict']}: {result}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
