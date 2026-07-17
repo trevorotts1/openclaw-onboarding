@@ -136,3 +136,23 @@ is each unit's own owner's job, done against its own numbered accept-criteria, n
 this session's structural read. Flagging here only so the next agent does not re-build what
 graph inspection shows already exists, and re-verifies against real executions before closing
 any of U4-U11.
+
+---
+
+## N8N-LEG RE-READ ADVISORY (2026-07-17T05:45Z) — n8n-SIDE LEGS OF U1..U11/U13 REQUIRE OPERATOR-AUTHORIZED LIVE RE-READ
+
+The repo-leg truth-up for U12/U14/U15/U16 landed on `origin/main` via PR #614's merge
+(commit `34dce869`, re-QC round 2, score 9.2): all four rows read `verified` with
+merge-commit ancestry + per-PR check-run rollups cited in-row. This addendum survives
+as its own note because one requirement is still open:
+
+**No ledger pass since the live cutover has had live n8n API access in THIS lane.** The
+n8n-side legs of U1..U11 and U13 — including the n8n-leg claims embedded in U12's row
+above and the 19:50Z structural finding — MUST be re-read fresh from the live n8n API
+by an operator-authorized session before any of those rows move. Graph-shape evidence
+is not accept-criteria proof.
+
+Rows deliberately left open: U1..U11 and U13 (n8n-side legs pending the
+operator-authorized re-read above), U17 (repo tests merged via PR #613, merge
+`c993f2b5`, scored 9.4 — the row flip is the ledger's owning pass's call, not this
+note's), U18–U20 (operator-gated fleet provisioning and live proofs), U21 (close-out).
