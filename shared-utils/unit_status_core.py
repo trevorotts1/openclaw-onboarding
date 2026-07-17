@@ -506,22 +506,90 @@ def resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, own_row_text, prefi
 # --------------------------------------------------------------------------
 # CI check-runs (paginated -- the legacy combined-status endpoint is
 # meaningless per the operator brief)
+#
+# DEFECT-1 FIX (the reason this section now takes a "head sha" and never a
+# "merge sha"): a synthetic merge commit -- the commit GitHub creates ON
+# main when a PR merges -- carries ZERO check-runs on this repo's CI
+# configuration. CI here runs on the `pull_request` event, so every
+# check-run is recorded against the PR branch's OWN head commit, never
+# against the merge commit main gets afterward. Calling ci_status_for_sha()
+# with a merge sha therefore ALWAYS returns "0 check-runs found" -- not
+# because the leg has no CI history, but because the tool was looking at a
+# commit CI never ran on. Empirically confirmed live (U11, both legs): the
+# real head sha carries 3 real check-runs (all success); the merge sha
+# carries 0. See _leg_head_sha() below for how each resolution method's
+# real head commit is extracted, and resolve_unit() for where it is passed
+# in -- never leg_result["raw"]["merge_sha"].
+#
+# DEFECT-2 FIX (why "red" alone is not the final word): a real 18-unit
+# triage found EVERY historic `failure > 0` on an exact head sha was noise
+# that no longer exists on current main -- a client-name QC gate tripping
+# on a DIFFERENT unit's evidence file during a ~2026-07-14/15 window, a
+# version-bump gate firing in the same window, an infra hang, a build-guard
+# flake. "Green on the exact sha" would have MISSED that those are all
+# fine now; but "red on the exact sha" is ALSO not truth by itself -- it
+# must be checked against what CURRENT main does for the SAME check NAME
+# before any verdict is drawn. classify_ci_from_data() below is the pure,
+# offline-testable classifier; ci_status_for_sha() is reused for BOTH the
+# head sha and current main's sha (never a second, drifted implementation)
+# so the two are always compared on equal footing.
 # --------------------------------------------------------------------------
+
+_FAILURE_CONCLUSIONS = ("failure", "cancelled", "timed_out", "action_required")
+# Used for the HEAD-SHA tally only (ci_status_for_sha()'s success/failure/
+# pending counts, deciding whether the leg's own head commit is red at
+# all) -- "skipped" and "neutral" are legitimately non-failing outcomes for
+# that purpose (a conditional check that correctly didn't need to run isn't
+# a failure). Deliberately NOT reused for the main-COMPARISON side of the
+# fossil check inside classify_ci_from_data(): there, "skipped"/"neutral"
+# on current main means the SAME check simply didn't run this time (a
+# conditional `if:` gate, path filter, or event-type gate) -- that is NOT
+# proof the original failure's cause is gone, so it must never be treated
+# as equivalent to a real "success" when deciding red-fossil vs
+# red-main-unverifiable. See classify_ci_from_data()'s docstring.
+_SUCCESS_CONCLUSIONS = ("success", "skipped", "neutral")
+
+
+def _latest_conclusion_by_name(check_runs):
+    """Collapse possibly-MULTIPLE run instances of the same check NAME
+    (GitHub creates a new check-run id per re-run, same name) down to the
+    single most-recent one per name, keyed by started_at/completed_at
+    (falling back to list position if both are missing/equal) -- so a
+    check that failed once and was later manually re-run to success is
+    never double-counted as both a failure and a success. Returns
+    {name: {"conclusion":, "status":}}."""
+    latest = {}
+    for idx, c in enumerate(check_runs):
+        name = c.get("name")
+        if name is None:
+            continue
+        ts = c.get("started_at") or c.get("completed_at") or ""
+        key = (ts, idx)
+        if name not in latest or key > latest[name][0]:
+            latest[name] = (key, c)
+    return {name: {"conclusion": c.get("conclusion"), "status": c.get("status")} for name, (key, c) in latest.items()}
+
 
 def ci_status_for_sha(owner_repo, sha):
     """Returns dict {status: "green"|"red"|"pending"|"no-data", total, success,
-    failure, pending, other, raw_conclusions}. Uses `gh api --paginate` so
-    check-run pages beyond the first (>30 by default) are not silently
-    dropped. Never raises -- a `gh api` failure (e.g. sha too old / no
-    Actions history) yields status="no-data", not a hard error, since older
-    historical merges legitimately may have no retained check-run data and
-    that must NOT be conflated with "CI failed"."""
+    failure, pending, other, checks_by_name, failing_names}. `sha` MUST be
+    the commit CI actually ran on (a leg's own head sha -- see
+    _leg_head_sha() -- or, for the comparison side, current main's own
+    tip) -- NEVER a synthetic merge commit (see this section's DEFECT-1
+    docstring above). Uses `gh api --paginate` so check-run pages beyond
+    the first (>30 by default) are not silently dropped. Never raises -- a
+    `gh api` failure (e.g. sha too old / no Actions history) yields
+    status="no-data", not a hard error, since older historical merges
+    legitimately may have no retained check-run data (real, empirically
+    confirmed case -- e.g. U5's CC leg: `total_count: 0` on its real head
+    sha, a genuine old direct-push merge, not this tool's bug) and that
+    must NOT be conflated with "CI failed"."""
     if not sha:
-        return {"status": "no-data", "total": 0, "note": "no sha to check"}
+        return {"status": "no-data", "total": 0, "note": "no sha to check", "checks_by_name": {}, "failing_names": []}
     cmd = ["gh", "api", f"repos/{owner_repo}/commits/{sha}/check-runs", "--paginate"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        return {"status": "no-data", "total": 0, "note": f"gh api failed: {r.stderr.strip()[:200]}"}
+        return {"status": "no-data", "total": 0, "note": f"gh api failed: {r.stderr.strip()[:200]}", "checks_by_name": {}, "failing_names": []}
     check_runs = []
     # --paginate concatenates one JSON object per page on stdout; each page
     # has its own top-level {"check_runs": [...], "total_count": N}.
@@ -532,21 +600,174 @@ def ci_status_for_sha(owner_repo, sha):
             continue
         check_runs.extend(page.get("check_runs", []))
     if not check_runs:
-        return {"status": "no-data", "total": 0, "note": "0 check-runs found for this sha"}
-    success = sum(1 for c in check_runs if c.get("conclusion") in ("success", "skipped", "neutral"))
-    failure = sum(1 for c in check_runs if c.get("conclusion") in ("failure", "cancelled", "timed_out", "action_required"))
-    pending = sum(1 for c in check_runs if c.get("status") in ("in_progress", "queued") or c.get("conclusion") is None)
-    other = len(check_runs) - success - failure - pending
+        return {"status": "no-data", "total": 0, "note": "0 check-runs found for this sha", "checks_by_name": {}, "failing_names": []}
+    checks_by_name = _latest_conclusion_by_name(check_runs)
+    success = sum(1 for info in checks_by_name.values() if info["conclusion"] in _SUCCESS_CONCLUSIONS)
+    failure = sum(1 for info in checks_by_name.values() if info["conclusion"] in _FAILURE_CONCLUSIONS)
+    pending = sum(1 for info in checks_by_name.values() if info["status"] in ("in_progress", "queued") or info["conclusion"] is None)
+    other = len(checks_by_name) - success - failure - pending
     if failure > 0:
         status = "red"
     elif pending > 0:
         status = "pending"
     else:
         status = "green"
+    failing_names = sorted(name for name, info in checks_by_name.items() if info["conclusion"] in _FAILURE_CONCLUSIONS)
     return {
-        "status": status, "total": len(check_runs), "success": success,
+        "status": status, "total": len(checks_by_name), "success": success,
         "failure": failure, "pending": pending, "other": other,
+        "checks_by_name": checks_by_name, "failing_names": failing_names,
     }
+
+
+def _leg_head_sha(leg_result):
+    """The commit that ACTUALLY ran CI for this leg -- never the synthetic
+    merge commit a leg_result also carries under raw["merge_sha"] (see the
+    DEFECT-1 docstring above `ci_status_for_sha`). Each resolution method
+    stores its own independently-verified commit under a different raw
+    key, so this must dispatch on method, not assume a common shape:
+      own-branch / token-scan -> raw['tip']            (the branch's own
+                                   head commit -- what a PR's CI actually
+                                   ran against).
+      cross-reference         -> raw['citation']['full_sha'] (the CITED
+                                   commit itself, independently verified as
+                                   a real ancestor of main -- NOT the
+                                   merge_sha it happened to land via).
+    Any other method (own-branch-unmerged / token-scan-ambiguous /
+    none-found) has no single confirmed commit to check CI against at all
+    -- returns None, and the caller must treat that as "cannot CI-check
+    this leg" (never silently fall back to a merge sha)."""
+    method = leg_result.get("method")
+    raw = leg_result.get("raw") or {}
+    if method in ("own-branch", "token-scan"):
+        return raw.get("tip")
+    if method == "cross-reference":
+        citation = raw.get("citation") or {}
+        return citation.get("full_sha")
+    return None
+
+
+def classify_ci_from_data(head, main_sha, main):
+    """Pure function, no network/subprocess -- fully unit-testable with
+    fixture dicts shaped like ci_status_for_sha()'s return value. `head`
+    is the leg's own head sha's CI result (already confirmed status=="red"
+    by the caller); `main` is CURRENT origin/main's CI result for the same
+    owner_repo. Matches failing checks between the two BY CHECK NAME (the
+    SHAs differ, so nothing else is comparable). Returns one of:
+      "red-live"              -- >=1 failing check NAME on head ALSO fails
+                                  (failure-class) on current main right
+                                  now -- a real, present defect. This is
+                                  the ONLY red-* status that should ever
+                                  gate an overall NOT-DONE verdict.
+      "red-fossil"             -- every failing check NAME on head now
+                                  genuinely PASSES (conclusion == "success")
+                                  on current main -- historic noise; the
+                                  cause no longer exists. Reported WITH
+                                  the check name(s) and both shas -- NEVER
+                                  silently upgraded to "green" (that would
+                                  be inventing a lenient ruler, the same
+                                  disease class as trusting the ledger).
+      "red-check-removed"      -- >=1 failing check NAME on head does not
+                                  exist in current main's check-run list AT
+                                  ALL (workflow renamed/retired) -- named
+                                  explicitly, never guessed as fossil or
+                                  live.
+      "red-main-unverifiable"  -- EITHER current main's own check-run data
+                                  could not be fetched at all (main itself
+                                  came back "no-data"), OR a matching check
+                                  name on main exists but its conclusion is
+                                  NOT a genuine "success" (e.g. "skipped" /
+                                  "neutral" / anything else non-affirmative
+                                  -- a conditional gate, path filter, or
+                                  event-type gate that simply did not run
+                                  this time is NOT proof the cause is gone).
+                                  Either way, live-vs-fossil genuinely
+                                  cannot be determined; fails loud instead
+                                  of defaulting to the lenient (fossil)
+                                  read -- a "skipped" is "unverified", not
+                                  "passed".
+    Priority when a leg has MULTIPLE failing checks in different buckets:
+    any_live wins over any_removed wins over any_unverifiable wins over
+    all-fossil -- a real present defect must never be hidden behind a
+    co-occurring fossil, removed check, or unverifiable check on the same
+    leg."""
+    detail = []
+    any_live = False
+    any_removed = False
+    any_unverifiable = False
+    for name in head.get("failing_names", []):
+        head_conclusion = head["checks_by_name"][name]["conclusion"]
+        if main.get("status") == "no-data":
+            main_conclusion = None
+            note = "current main's check-run data could not be fetched at all -- cannot verify live vs fossil"
+        else:
+            main_check = main.get("checks_by_name", {}).get(name)
+            if main_check is None:
+                main_conclusion = None
+                note = "check name does not exist on current main at all -- renamed/retired, not guessed"
+                any_removed = True
+            else:
+                main_conclusion = main_check["conclusion"]
+                if main_conclusion in _FAILURE_CONCLUSIONS:
+                    any_live = True
+                    note = "still fails (same check name) on current main -- real, present defect"
+                elif main_conclusion == "success":
+                    note = "now passes on current main -- historic fossil, the cause no longer exists"
+                else:
+                    # "skipped" / "neutral" / any other non-failure,
+                    # non-"success" conclusion (a conditional `if:` gate,
+                    # path filter, or event-type gate that did not run this
+                    # time on main's current tip) is NOT a re-verification --
+                    # nobody re-ran the check, so its cause being gone is
+                    # UNPROVEN. Must not be treated as equivalent to a real
+                    # pass for fossil determination (see _SUCCESS_CONCLUSIONS'
+                    # docstring -- that set is deliberately reused only for
+                    # the head-sha tally, never for this main-comparison).
+                    any_unverifiable = True
+                    note = (
+                        f"current main's matching check did not genuinely re-verify "
+                        f"(conclusion={main_conclusion!r}, not \"success\") -- unproven, "
+                        f"not a fossil"
+                    )
+        detail.append({
+            "name": name, "head_conclusion": head_conclusion,
+            "main_conclusion": main_conclusion, "note": note,
+        })
+
+    if main.get("status") == "no-data":
+        status = "red-main-unverifiable"
+    elif any_live:
+        status = "red-live"
+    elif any_removed:
+        status = "red-check-removed"
+    elif any_unverifiable:
+        status = "red-main-unverifiable"
+    else:
+        status = "red-fossil"
+
+    return {
+        "status": status,
+        "total": head.get("total"), "success": head.get("success"),
+        "failure": head.get("failure"), "pending": head.get("pending"),
+        "main_sha": main_sha, "failing_checks": detail,
+    }
+
+
+def classify_leg_ci(owner_repo, repo_dir, head_sha, main_ref="origin/main"):
+    """Network-calling wrapper: fetch CI for the leg's own head_sha; if it
+    isn't red (no-data / pending / green), that verdict stands as-is --
+    only a red result needs the fossil-vs-live comparison against current
+    main (fetched via the SAME ci_status_for_sha(), never a second,
+    drifted implementation of the check-runs call). See
+    classify_ci_from_data() for the pure classification logic this defers
+    to, and _leg_head_sha() for how head_sha is derived per resolution
+    method."""
+    head = ci_status_for_sha(owner_repo, head_sha)
+    if head["status"] in ("no-data", "pending", "green"):
+        return {**head, "head_sha": head_sha}
+    main_sha = sh(repo_dir, ["rev-parse", main_ref])
+    main = ci_status_for_sha(owner_repo, main_sha)
+    return {**classify_ci_from_data(head, main_sha, main), "head_sha": head_sha}
 
 
 def _split_json_objects(s):
@@ -617,16 +838,32 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
         repo_dir = repo_dirs[leg]
         repo_label = REPO_LABELS[leg]
         leg_result = resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text)
-        if not skip_ci and leg_result.get("raw", {}).get("merge_sha"):
-            owner_repo = f"trevorotts1/{repo_label}"
-            leg_result["ci"] = ci_status_for_sha(owner_repo, leg_result["raw"]["merge_sha"])
+        if not skip_ci:
+            # DEFECT-1 FIX: check CI on the leg's OWN head sha -- the commit
+            # CI actually ran on -- never leg_result["raw"]["merge_sha"] (the
+            # synthetic merge commit, which carries ZERO check-runs on this
+            # repo's CI configuration; see ci_status_for_sha()'s docstring).
+            head_sha = _leg_head_sha(leg_result)
+            if head_sha:
+                owner_repo = f"trevorotts1/{repo_label}"
+                leg_result["ci"] = classify_leg_ci(owner_repo, repo_dir, head_sha)
         leg_results[leg] = leg_result
 
     any_unknown = any(r["satisfied"] is None for r in leg_results.values())
     any_false = any(r["satisfied"] is False for r in leg_results.values())
     all_true = all(r["satisfied"] is True for r in leg_results.values())
 
-    any_ci_red = any(r.get("ci", {}).get("status") == "red" for r in leg_results.values())
+    # DEFECT-2 FIX: only "red-live" (the failing check NAME is CONFIRMED
+    # still failing on current main) is a real, present defect that may
+    # gate the verdict to NOT-DONE. "red-fossil" / "red-check-removed" /
+    # "red-main-unverifiable" all mean the exact-sha failure does NOT
+    # reflect current truth (or truth couldn't be established either way)
+    # -- letting any of THOSE force NOT-DONE would be exactly the "wrong
+    # answer from stale/irrelevant data" disease this tool exists to make
+    # unreachable, just from the opposite direction (false negative instead
+    # of false positive). They remain fully visible in leg_result["ci"] for
+    # a human to read -- never hidden, never silently upgraded to "green".
+    any_ci_red = any(r.get("ci", {}).get("status") == "red-live" for r in leg_results.values())
 
     if any_unknown and not any_false:
         verdict = "UNKNOWN"
@@ -666,6 +903,16 @@ def _print_human(result):
                 ci = r["ci"]
                 print(f"     CI: {ci.get('status')} (total={ci.get('total')}, success={ci.get('success')}, "
                       f"failure={ci.get('failure')}, pending={ci.get('pending')}) note={ci.get('note', '')}")
+                if str(ci.get("status", "")).startswith("red"):
+                    # Legible-enough-to-see-WHY, per the operator brief: never
+                    # just print "red" and move on -- show both shas and, for
+                    # each failing check name, whether current main confirms
+                    # it live, shows it as a fossil, or the check no longer
+                    # exists there at all.
+                    print(f"       head_sha={ci.get('head_sha')} main_sha={ci.get('main_sha')}")
+                    for fc in ci.get("failing_checks", []):
+                        print(f"       - {fc['name']!r}: head={fc['head_conclusion']} "
+                              f"main={fc['main_conclusion']} -- {fc['note']}")
     if "reason" in result:
         print(f"reason: {result['reason']}")
     if "ledger_status_cell" in result:
