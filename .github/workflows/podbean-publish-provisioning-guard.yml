@@ -1,0 +1,44 @@
+name: podbean-publish-provisioning-guard
+
+# S58-U15 — fails the build if install.sh's Podbean SERVER-SIDE PUBLISH-PROXY
+# provisioning injection (PODBEAN_PUBLISH_WEBHOOK_URL / PODBEAN_PUBLISH_TOKEN)
+# or the per-box podcast client identity injection (PODCAST_CLIENT_LAST_NAME /
+# _EMAIL / _FIRST_NAME) regresses: a half-seeded credential pair, a malformed
+# email seeded despite the shape guard, a broken credential-checklist entry,
+# or a broken broker-pair regression. Includes its own mutation proof (each
+# guard is neutered in a text-mutated copy and the corresponding assertion is
+# shown to flip), so a guard that stops doing anything fails the build too.
+#
+# Triggered whenever install.sh or the test itself changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - tests/unit/podbean-publish-provisioning.test.sh
+      - .github/workflows/podbean-publish-provisioning-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - install.sh
+      - tests/unit/podbean-publish-provisioning.test.sh
+      - .github/workflows/podbean-publish-provisioning-guard.yml
+
+jobs:
+  podbean-publish-provisioning-guard:
+    name: Podbean publish-proxy + identity provisioning guard (S58-U15)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run podbean-publish-provisioning tests (incl. mutation proof)
+        run: |
+          chmod +x tests/unit/podbean-publish-provisioning.test.sh
+          bash tests/unit/podbean-publish-provisioning.test.sh
