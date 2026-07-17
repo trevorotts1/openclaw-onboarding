@@ -617,6 +617,30 @@ It NEVER stops on a self-declared "done" — only on a real gate-pass (shell gua
 `scripts/resume-onboarding.sh`), with max-runs + Rescue-Rangers escalation
 identical to the workforce-build-resume cron.
 
+## PART 3.6 — GIT-TRUTH TOOLS (binding: name/pointer claims must cite live diff output)
+
+**Added 2026-07-17.** A single session produced nine confirmed forms of one
+root cause — status asserted from a NAME or a POINTER (a branch name, a
+ledger status cell, a PR `state` field) instead of DIFFED from CONTENT —
+across every engine that touched it. See `TOOLS.md`'s "Git-truth tools"
+section for the full list of forms and the two tools built to make the
+wrong answer structurally unreachable.
+
+### Rule 20: "done" / "zombie" / "supersedes" claims must cite `unit-status.sh` / `pr-truth.sh`
+
+Any claim in this repo that a **unit is done**, a **PR is a zombie**, or
+**one PR supersedes another** must cite the actual output of
+`./unit-status.sh <unit-id>` or `./pr-truth.sh <pr> --zombie|--stale-ref|--supersedes`
+— not a branch name, not a ledger status cell, not a memory of a prior run,
+not GitHub's `state:merged` (excludes manually-pushed merges). A claim with
+no cited tool output is treated as **unverified**, same as an uncited QC
+score under Rule 9. If the tool itself returns `UNKNOWN`, the claim being
+made must also be `UNKNOWN` — a human/build-session review is required
+before asserting DONE or NOT-DONE in either direction. This rule is
+binding on every engine (Kimi, Fable, Opus, the coordinator) — it is not
+satisfied by a prose statement that a check was "done manually," per Rule
+9c: a rule that is only described is not enforced.
+
 ## PART 4 — APPLICATION TO ALL SKILLS
 
 These rules apply to:
