@@ -6,8 +6,8 @@
 # These are the engine behaviors built into Skill 23 build-workforce.py +
 # department-floor.py:
 #
-#   R2.1  Floor is 22 mandatory + 6 universal-primary = 28, computed live; no
-#         stale 16/19/23/26 strings remain in the three scripts.
+#   R2.1  Floor is 23 mandatory + 6 universal-primary = 29, computed live; no
+#         stale 16/19/22/26/28 strings remain in the three scripts.
 #   R2.2  Capability 1 MERGE custom+floor still works (custom dept preserved).
 #   R2.3  Capability 2 semantic COMBINE/MERGE: a custom dept that semantically
 #         overlaps a canonical dept under a NON-slug name (Accounting ->
@@ -62,15 +62,17 @@ def _read_state():
     except Exception:
         return {}
 
-print("== R2.1 floor is 28 (22 + 6), computed live; no stale strings ==")
+print("== R2.1 floor is 29 (23 + 6), computed live; no stale strings ==")
 import subprocess
 out = subprocess.run(["python3", os.path.join(SCRIPTS, "list-canonical-departments.py"), "--json"],
                      capture_output=True, text=True)
 d = json.loads(out.stdout)
 # v2.6.1: real-estate `listings` lost its universal_primary flag (industry-gated now)
 # so universal primaries dropped 7 -> 6 and the live floor dropped 29 -> 28.
-check(d["floor"] == 28, f"list-canonical floor == 28 (got {d['floor']})")
-check(d["mandatory_count"] == 22, f"mandatory == 22 (got {d['mandatory_count']})")
+# U118: 'funnels' registered as a mandatory department, so mandatory rose 22 -> 23
+# and the live floor rose back 28 -> 29.
+check(d["floor"] == 29, f"list-canonical floor == 29 (got {d['floor']})")
+check(d["mandatory_count"] == 23, f"mandatory == 23 (got {d['mandatory_count']})")
 check(d["universal_primary_count"] == 6, f"universal-primary == 6 (got {d['universal_primary_count']})")
 
 # Stale-number scan across the three reconciliation scripts (defended strings only:
