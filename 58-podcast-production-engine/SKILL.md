@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: 0.1.11
+version: 0.1.16
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -220,10 +220,22 @@ mode confirms the custom field map fields exist by exact key (including the doub
 in podcast_survey__additional_info), the client's own private integration token and Location ID
 resolve and pair-prove against the Location, and Podbean, Fish Audio (key plus reference_id),
 and Kie.ai credentials are present. Missing custom fields STOP setup and route the client to
-support for the snapshot; the engine never creates fields silently.
+support for the snapshot; the engine never creates fields silently. A standing pre-check also
+runs here: POST client_last_name plus client_email to the operator's
+`/webhook/podcast-standing-check` endpoint (the same shared header token Step 15 uses). NOT in
+good standing STOPS setup before any credit is spent; the client's agent is told exactly
+"you are not in good standing" and no field or credential work proceeds. Endpoint unreachable
+at this pre-check is fail-OPEN (proceed and log); only Step 15's publish gate is fail-CLOSED
+and authoritative.
 
-STEP 1, INGEST. status `received`. Read every survey answer per the custom field map: style,
-mode, thesis, tone, the transparency answer, the preferred pronoun (which governs every
+STEP 1, INGEST. status `received`. A per-episode standing pre-check runs BEFORE any Step 2-plus
+work: the same `/webhook/podcast-standing-check` call as Step 0, keyed on client_last_name plus
+client_email. NOT in good standing sets status `blocked_standing`, tells the client's agent
+exactly "you are not in good standing", spends no credits, deletes nothing already produced, and
+resumes cleanly (idempotent re-fire of the same job key) the instant standing returns to YES.
+Endpoint unreachable here is fail-OPEN (proceed and log); Step 15's publish gate remains the
+fail-CLOSED, authoritative check. Otherwise: read every survey answer per the custom field map:
+style, mode, thesis, tone, the transparency answer, the preferred pronoun (which governs every
 reference to the speaker or guest), stories and quotes, additional info, guest first name for
 Interview, and release date. Compute the job key, claim the intake ledger, resolve the output
 preset. Duplicate deliveries are acknowledged without a second run. Missing required fields are
@@ -306,16 +318,40 @@ folders that setup ensured.
 STEP 15, PUBLISH TO PODBEAN. status `publishing`. Publishing uses BlackCEO's SINGLE Podbean
 OAuth app (client_id and client_secret). The operator HOSTS every client's show under his ONE
 Podbean account, so those app credentials are NEVER the client's, are NEVER asked from the
-client, and NEVER need to sit on the client box: at runtime they are injected by the operator's
-n8n Podbean credential broker (config/n8n/podbean-broker.workflow.json), which mints a
-short-lived access token SCOPED to the client's channel (Podbean multiplePodcastsToken). The ONE
-Podbean value the client supplies is their Podbean Channel ID (podcast_id) - it selects which
-show under the host account is theirs and is not a secret. Flow: obtain a channel-scoped token
-from the broker (falling back to a local client_credentials mint only on the operator's own box);
-episode number is count plus one; the title convention appends "Inspired by" plus the speaker's
-name; uploadAuthorize then PUT for audio and image; create the episode (status publish, or draft
-or scheduled when the release date is future); capture the permalink. Idempotent: if the ledger
-already holds a permalink, skip.
+client, and NEVER need to sit on the client box. The fleet DEFAULT transport is publish-proxy:
+`podbean_publish.sh` posts the contract v2 payload (channel id, client last name, client email,
+title, description, audio_url, image_url, publish_date, idempotency_key, options) with the
+shared header token straight to the operator's n8n `/webhook/podbean-publish`, which runs the
+good-standing plus identity gate, mints the channel-scoped Podbean token server-side, and
+returns the permalink synchronously in the same response; no client-box Podbean call and no
+client-box OAuth mint. Precedence is proxy first; the n8n Podbean credential broker
+(config/n8n/podbean-broker.workflow.json, which mints a short-lived access token SCOPED to the
+client's channel, Podbean multiplePodcastsToken) is the fallback; a local client_credentials
+mint on the operator's own box only is last. The ONE Podbean value the client supplies is their
+Podbean Channel ID (podcast_id) - it selects which show under the host account is theirs and is
+not a secret; the publish gate routes on the operator's roster row for that identity, never on
+the raw payload value alone (the good-standing roster is runtime data, lives only in n8n, and
+is never committed to this repo). NOT in good standing at this gate refuses with exactly
+"you are not in good standing"; nothing already produced is deleted, and a standing flip back
+to YES lets the same idempotency_key resume cleanly. Episode number is count plus one; the
+title convention appends "Inspired by" plus the speaker's name; create the episode (published
+immediately, or scheduled when the release date is future); capture the permalink from the
+response. Idempotent: a repeated idempotency_key returns the stored permalink instead of a
+second episode; the ledger's own permalink skip (if the ledger already holds a permalink,
+skip) remains a second, independent guard.
+
+Sovereignty exception (carried verbatim from the Skill 58 server-side-publish spec Section 0;
+a future agent must NOT "fix" this back to client-owned credentials, that would be introducing a
+defect, not fixing one):
+
+> The standing fleet rule is: clients own their own credentials; the operator never pays for,
+> holds, or substitutes a client's provider account. Podbean is a deliberate, operator-ratified
+> EXCEPTION to that rule. Every client's podcast show is hosted as a channel under the operator's
+> ONE Podbean account. The Podbean OAuth app `client_id`/`client_secret` are the operator's
+> single shared app. This is intentional and correct; it is the documented doctrine of the skill
+> itself... A future agent that "corrects" this back to client-owned Podbean credentials is
+> introducing a defect, not fixing one. The client-owned-OAuth idea exists only as a recorded
+> someday-option; it is NOT this spec.
 
 STEP 16, LINK BACK. status `publishing`. Write the title, description, Episode Package link, and
 Speech Script link (and the book_teaser link when that field exists) in ONE batch, then write
