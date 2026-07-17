@@ -1,34 +1,34 @@
 # test_cc_board_catchall_doc.py — cc_board.py producer-doc conformance for
-# the funnel -> Marketing routing fix (2026-07-16).
+# Skill-6 funnel routing (2026-07-16, operator-ruling REVERSAL).
 #
-# HISTORY: an earlier correction (C-13(e)/U44) fixed a STALE claim that an
-# unrecognized department_slug (e.g. the fake 'funnels' slug) "mis-resolves
-# to the CEO catch-all" — the real behavior is INGEST-06
-# (src/app/api/tasks/ingest/route.ts's resolveWorkspaceId(), the
-# "EXPLICIT-but-unrecognized department slug" tier) routing it to the honest
-# `general-task` catch-all instead. That correction's own comments then went
-# on to (wrongly) claim a 'marketing' slug ALSO hits that same
-# unrecognized-slug/general-task path — it does not: 'marketing' IS a
-# registered floor department (departments.config.ts id 'marketing'; #1 in
-# department-floor.py's HARDCODED_MANDATORY) that every box seeds with a bare
-# workspaces.slug, so INGEST's TIER-1 exact slug match resolves it directly.
+# HISTORY (three layers, oldest first):
+#   1. C-13(e)/U44 fixed a STALE claim that an unrecognized department_slug
+#      (the fake 'funnels' slug) "mis-resolves to the CEO catch-all" — the
+#      real behavior is INGEST-06 (src/app/api/tasks/ingest/route.ts's
+#      resolveWorkspaceId(), the "EXPLICIT-but-unrecognized department slug"
+#      tier) routing it to the honest `general-task` catch-all instead.
+#   2. A same-day follow-up correction fixed a SEPARATE stale claim in the
+#      SAME comment block: that a 'marketing' override slug was ALSO
+#      unregistered and fell to general-task like 'funnels' — that was never
+#      true; 'marketing' IS a registered floor department. This correction
+#      STANDS regardless of what job_type='funnel' stamps by default (see
+#      _department_slug_docstring / test_department_slug_docstring_correct
+#      below) — it describes the FIX-COPY-01 explicit-override path, not the
+#      funnel branch's default.
+#   3. A same-day direction change proposed rerouting job_type='funnel' to
+#      stamp 'marketing' instead of 'funnels'. THE OPERATOR REVERSED THIS:
+#      keep stamping 'funnels'; register 'funnels' as its OWN floor
+#      department instead of folding funnel work into Marketing. That
+#      registration is NOT done (a real suggested-roles catalog + floor entry
+#      is an operator content decision, out of scope for this pass) — the
+#      funnel-branch NOTE documents the OPEN GAP honestly instead of
+#      claiming a fix that hasn't landed.
 #
-# THE FIX THIS TEST PINS: the job_type=='funnel' branch now stamps
-# department_slug='marketing' (not the fake 'funnels' slug), and both
-# producer-side doc sites (the funnel-branch NOTE and the department_slug
-# kwarg docstring) now describe the REAL tier-1 direct-match routing instead
-# of the general-task fallback the old fake 'funnels' slug used to hit.
-#
-# This is a doc + one-line-stamp conformance test — it pins cc_board.py's own
-# producer-side documentation (and the literal slug it stamps) against the
-# real CC consumer behavior so the two never drift apart again silently.
-#
-# Proven to FAIL on the pre-fix tree: `department_slug = "funnels"` is the
-# literal in the source (the anchor below), the funnel-branch NOTE talks
-# about the general-task/unrecognized-slug path (not tier-1/HARDCODED_MANDATORY),
-# and the department_slug kwarg docstring still claims 'marketing' "has not
-# yet registered" and falls to general-task — every assertion below failed.
-# PASSES post-fix.
+# This is a doc + stamp conformance test — it pins cc_board.py's own
+# producer-side documentation (and the literal slug it stamps) against
+# reality so the two never drift apart silently. It does NOT claim the
+# routing bug is fixed — see test_cc_board_funnel_department_registration_gap.py
+# for the open-gap trace.
 from __future__ import annotations
 
 import os
@@ -44,16 +44,16 @@ def _read_source() -> str:
 
 def _funnel_branch_note() -> str:
     """The contiguous ``#`` comment block immediately preceding the funnel
-    branch's ``department_slug = "marketing"`` assignment — i.e. THE producer
+    branch's ``department_slug = "funnels"`` assignment — i.e. THE producer
     NOTE that documents where a funnel card actually lands.
 
     Site-anchored on purpose: a file-global substring check would still pass
     if this NOTE were deleted outright (the sibling docstring site mentions
-    the same tokens), which would silently un-document the exact code path
-    this fix corrects.
+    some of the same tokens), which would silently un-document the exact
+    code path this file tracks.
     """
     src = _read_source()
-    anchor = src.index('        department_slug = "marketing"')
+    anchor = src.index('        department_slug = "funnels"')
     block = []
     for line in reversed(src[:anchor].splitlines()):
         if line.strip().startswith("#"):
@@ -62,15 +62,15 @@ def _funnel_branch_note() -> str:
             break
     assert block, (
         "the funnel branch's producer NOTE (the contiguous comment block above "
-        '`department_slug = "marketing"`) is MISSING — this fix requires that '
-        "code path document the real tier-1 direct-match routing"
+        '`department_slug = "funnels"`) is MISSING — it must document the '
+        "current open-gap routing state"
     )
     return "\n".join(reversed(block))
 
 
 def _department_slug_docstring() -> str:
     """The ``department_slug:`` kwarg's docstring section (up to the next
-    ``source:`` kwarg) — the second site this fix touches."""
+    ``source:`` kwarg) — the FIX-COPY-01 explicit-override site."""
     src = _read_source()
     start = src.index("        department_slug: ")
     end = src.index("        source:  ", start)
@@ -92,49 +92,62 @@ class TestCatchAllProducerDocConformance:
             "server-side') still present in cc_board.py"
         )
 
-    def test_funnels_fake_slug_is_not_stamped(self):
-        """The historical fake slug must not be the literal stamped for a
-        funnel card. `'funnels'` may still appear in prose (citing the
-        historical bug) but never as the assigned value."""
+    def test_funnels_slug_is_stamped_per_operator_ruling(self):
+        """The operator's 2026-07-16 ruling: keep stamping the historical
+        'funnels' slug (do NOT reroute to 'marketing') while the department
+        is registered separately."""
         src = _read_source()
-        assert 'department_slug = "funnels"' not in src, (
-            "the fake 'funnels' slug is still being stamped for job_type="
-            "'funnel' — the funnel-misroute fix did not land"
+        assert 'department_slug = "funnels"' in src, (
+            "the funnel branch no longer stamps 'funnels' — this contradicts "
+            "the operator's ruling to keep the slug and register the "
+            "department separately"
         )
-        assert 'department_slug = "marketing"' in src, (
-            "the funnel branch does not stamp the real 'marketing' floor "
-            "department"
+        assert 'department_slug = "marketing"' not in src, (
+            "the funnel branch stamps 'marketing' — the operator explicitly "
+            "reversed this direction; funnel cards must NOT be rerouted to "
+            "Marketing"
         )
 
-    def test_funnel_note_documents_tier1_marketing_routing(self):
-        """The job_type=='funnel' branch's producer NOTE must name the REAL
-        routing mechanism (tier-1 exact slug match landing on the real
-        Marketing workspace) and the historical bug it replaces, so the
-        producer's own comment matches the consumer's real behavior."""
+    def test_funnel_note_documents_open_registration_gap(self):
+        """The job_type=='funnel' branch's producer NOTE must honestly
+        document that 'funnels' is NOT YET a registered department (the open
+        gap), not claim a resolution that hasn't landed."""
         note = _funnel_branch_note()
         for token in (
-            "marketing",
+            "not a registered",
             "HARDCODED_MANDATORY",
-            "tier-1",
             "unrecognized-slug->general",
+            "OPEN GAP",
         ):
             assert token in note, (
                 f"the funnel branch's producer NOTE does not mention {token!r} — "
-                "this fix requires THAT site (not merely some other comment "
-                "elsewhere in the file) describe the real tier-1 routing and "
-                "the historical bug it replaces"
+                "it must honestly document the current open routing gap, not "
+                "a fix that hasn't landed"
             )
 
-    def test_department_slug_docstring_updated_to_match(self):
-        """The department_slug kwarg's docstring used to claim an
-        unregistered 'marketing' slug also falls to general-task — that was
-        never true. It must now say 'marketing' IS a registered floor
-        department resolved by INGEST's tier-1 exact slug match."""
+    def test_funnel_note_flags_marketing_role_catalog_overlap(self):
+        """The NOTE must flag the overlap with Marketing's existing funnel
+        roles (Funnel Strategist, Signature Funnel Specialist) — the exact
+        reason registering 'funnels' as a standalone department is an
+        operator content decision, not a mechanical one."""
+        note = _funnel_branch_note()
+        for token in ("Funnel Strategist", "Signature Funnel Specialist"):
+            assert token in note, (
+                f"the funnel branch's producer NOTE does not mention the "
+                f"existing Marketing role {token!r} — the overlap this "
+                "registration decision must reconcile is undocumented"
+            )
+
+    def test_department_slug_docstring_correct(self):
+        """The department_slug kwarg's docstring (FIX-COPY-01 explicit
+        override site) must say 'marketing' IS a registered floor department
+        resolved by INGEST's tier-1 exact slug match — this correction is
+        independent of which slug the funnel branch defaults to."""
         doc = _department_slug_docstring()
         for token in ("registered floor department", "HARDCODED_MANDATORY", "tier-1"):
             assert token in doc, (
                 f"the department_slug kwarg docstring does not mention {token!r} "
-                "— this fix requires THAT site carry the correction too"
+                "— the 'marketing IS registered' correction must carry here"
             )
         assert "has not yet registered" not in doc, (
             "the stale 'has not yet registered' claim about 'marketing' is "
@@ -142,14 +155,14 @@ class TestCatchAllProducerDocConformance:
         )
 
     def test_ceo_master_orchestrator_distinction_is_explicit(self):
-        """BOTH corrected sites must explicitly say the CEO/master-orchestrator
-        fallback is a DIFFERENT, later tier than tier-1's direct slug match —
+        """BOTH sites must explicitly say the CEO/master-orchestrator
+        fallback is a DIFFERENT, later tier than the general-task catch-all —
         the exact distinction whose absence made the original comment wrong.
         Asserted per-site: a file-global count would stay green if either
         site silently lost the distinction."""
         assert "master-orchestrator" in _funnel_branch_note(), (
             "the funnel branch's producer NOTE lost the CEO/master-orchestrator "
-            "vs tier-1 distinction"
+            "vs general-task tier distinction"
         )
         assert "master-orchestrator" in _department_slug_docstring(), (
             "the department_slug kwarg docstring lost the CEO/master-orchestrator "
@@ -157,7 +170,7 @@ class TestCatchAllProducerDocConformance:
         )
 
     def test_module_still_compiles_clean(self):
-        """The fix must not have broken the module's syntax."""
+        """Doc changes must not have broken the module's syntax."""
         import py_compile
 
         py_compile.compile(_CC_BOARD_PATH, doraise=True)

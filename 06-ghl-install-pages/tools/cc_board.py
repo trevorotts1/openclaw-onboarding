@@ -295,7 +295,7 @@ def ingest_task(
                           'website' (single page / landing page / full site), or
                           'survey'|'form'|'quiz' (survey / intake / quiz builds).
                           Controls department_slug routing:
-                            'funnel'                  → department_slug='marketing'
+                            'funnel'                  → department_slug='funnels'
                             'survey'|'form'|'quiz'    → department_slug='web-development', source='survey'
                             'website' / everything else → department_slug='web-development'
         priority:         CC TaskPriority: 'low'|'medium'|'high'|'critical'.
@@ -308,7 +308,7 @@ def ingest_task(
                           the FIX-COPY-01 copy-dependency card to route a P2-COPY
                           job to ``'marketing'`` (the Conversion Copywriter's
                           department, per SOP-07 Step 3) rather than the builder's
-                          own web-development / marketing column. CORRECTED
+                          own web-development / funnels column. CORRECTED
                           (2026-07-16 — was stale: earlier wording claimed a
                           ``'marketing'`` slug was, like the historical fake
                           ``'funnels'`` slug, unregistered and also fell to
@@ -410,27 +410,34 @@ def ingest_task(
     # Map job_type -> department_slug.
     job_type_norm = (job_type or "funnel").lower().strip()
     if job_type_norm in ("funnel", "sales-funnel", "optin", "opt-in", "multistep"):
-        # NOTE (corrected 2026-07-16 — was the fake slug 'funnels'):
-        # department_slug='funnels' has no registered department anywhere in
-        # the Command Center (departments.config.ts has no 'funnels' id;
-        # department-floor.py's HARDCODED_MANDATORY has no 'funnels' entry
-        # either), so stamping it sent every funnel card through INGEST-06's
-        # unrecognized-slug tier (ingest/route.ts's resolveWorkspaceId, the
-        # "EXPLICIT-but-unrecognized department slug" tier) straight to the
-        # honest general-task catch-all, tagged
-        # resolved_by='unrecognized-slug->general' — even though
-        # departments.config.ts:100/:112 name funnels as Marketing's own
-        # purpose and routing keyword. 'marketing' IS a registered floor
-        # department (id 'marketing' in departments.config.ts; #1 in
-        # department-floor.py:116's HARDCODED_MANDATORY) and every box's
-        # workspaces.slug seed writes the BARE id (the CC repo's
-        # scripts/sync-departments-from-build-state.py strips any 'dept-'
-        # prefix before writing the slug column), so INGEST's tier-1 exact
-        # slug match now resolves a funnel card straight to the real
-        # Marketing workspace — never touching the general-task fallback or
-        # the CEO/master-orchestrator tier (a separate, later tier that only
-        # fires for a BARE task with no department_slug at all).
-        department_slug = "marketing"
+        # NOTE (2026-07-16 — operator ruling: keep stamping 'funnels', register
+        # it as its own floor department; do NOT reroute funnel cards to
+        # 'marketing'). department_slug='funnels' is STILL not a registered
+        # department anywhere as of this comment (departments.config.ts has no
+        # 'funnels' id; department-floor.py's HARDCODED_MANDATORY has no
+        # 'funnels' entry either), so on a standard-floor box (no ad hoc
+        # 'funnels' workspace already seeded) this still sends every funnel
+        # card through INGEST-06's unrecognized-slug tier (ingest/route.ts's
+        # resolveWorkspaceId, the "EXPLICIT-but-unrecognized department slug"
+        # tier) to the general-task catch-all, tagged
+        # resolved_by='unrecognized-slug->general' — NOT the CEO/
+        # master-orchestrator workspace, which is a separate, later fallback
+        # tier that only fires for a BARE task with no department_slug
+        # supplied at all. THE OPEN GAP: registering
+        # 'funnels' as a genuine floor department requires department-naming-
+        # map.json + HARDCODED_MANDATORY entries AND a real suggested-roles
+        # catalog (director title, roles, SOPs) — content only the operator
+        # can define. It also overlaps two roles ALREADY living inside
+        # Marketing's own catalog (23-ai-workforce-blueprint/suggested-
+        # roles/marketing-suggested-roles.md): role #4 "Funnel Strategist" and
+        # role #20 "Signature Funnel Specialist" ("the marketing door onto the
+        # ... Skill 49 [engine]"), which would need to move, stay, or be
+        # reconciled with the new department. Unresolved pending that
+        # decision — see the PR/session report for full detail. A box that
+        # already carries an ad hoc 'funnels' workspace (seeded outside the
+        # floor, e.g. by hand) resolves correctly today via tier-1's exact
+        # slug match; a fresh, floor-standard box does not.
+        department_slug = "funnels"
         source = "funnel"
     elif job_type_norm in ("survey", "form", "quiz"):
         # Option 1 (zero-migration, PRD §6.3 / §6.2): map survey/form/quiz to
