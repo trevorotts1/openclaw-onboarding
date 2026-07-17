@@ -72,6 +72,34 @@ name: Skill-23 provisioning tests
 #                                           is absent afterward is an explicit,
 #                                           provenance-gated decline (the same
 #                                           mechanism U107/U108 already honor).
+#  11. test-u110-optout-caller-wiring.sh — U110 (E5-5, closes G2d) provisioning
+#                                           caller-wiring: U108 built
+#                                           department-optout-sync.py but its own
+#                                           CHANGELOG named the caller-wiring gap
+#                                           ("routed, not fixed here — owned by
+#                                           U110") — with no caller,
+#                                           provisioning/department-optout.json was
+#                                           NEVER produced on a real box, so the CC
+#                                           board read a file nobody wrote. This
+#                                           suite RUNS resume-workforce-build.sh
+#                                           (the one durable, recurring
+#                                           provisioning-flow driver on every box)
+#                                           as a real subprocess in a hermetic
+#                                           $HOME sandbox and observes the contract
+#                                           file it produces — never calls the sync
+#                                           function directly. Proves: the caller
+#                                           fires unconditionally (even pre-build);
+#                                           a real provenance-gated, warning-
+#                                           acknowledged decline of a FLOOR
+#                                           department ('general-task' — declinable
+#                                           per the ratified general-task-is-not-
+#                                           exempt ruling) flows end-to-end into the
+#                                           written file; an UNCONFIRMED floor
+#                                           decline (missing lossWarningAck) never
+#                                           lands in optedOut; and a mutation guard
+#                                           programmatically excises the sentinel-
+#                                           bounded wiring block and confirms the
+#                                           contract file stops being produced.
 #
 # All are hermetic: each builds its own mktemp sandbox and pins
 # ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
@@ -97,7 +125,7 @@ on:
 
 jobs:
   skill23-provisioning-tests:
-    name: Skill-23 provisioning tests (10 hermetic suites)
+    name: Skill-23 provisioning tests (11 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -126,6 +154,7 @@ jobs:
             test-chosen-departments-artifact.sh
             test-vertical-derivation-guard.sh
             test-u109-floor-wipe-regression.sh
+            test-u110-optout-caller-wiring.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do
