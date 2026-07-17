@@ -1,0 +1,80 @@
+{
+  "status": "complete",
+  "started_at": "2026-07-16T13:04:05.384884",
+  "entries": {
+    "interview_choice": {
+      "asked_at": "2026-07-16T13:04:05.384903",
+      "turn": 1,
+      "answer": "in-depth",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.429340"
+    },
+    "q1": {
+      "asked_at": "2026-07-16T13:04:05.472653",
+      "turn": 2,
+      "answer": "CALLED: Find the Work Only You Can Do",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.517369"
+    },
+    "q2": {
+      "asked_at": "2026-07-16T13:04:05.561924",
+      "turn": 3,
+      "answer": "yes \u2014 offer 2-3 alternates (e.g. \"Answered\", \"The Unclaimed Life\", \"The Work Only You Can Do\") before writing.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.606567"
+    },
+    "q3": {
+      "asked_at": "2026-07-16T13:04:05.651818",
+      "turn": 4,
+      "answer": "the quietly capable mid-career professional: competent and credentialed but unseen; the ache of 'is my time ever going to come?'; exhaustion from auditioning for a life that is already theirs; feeling unclaimed, not stuck.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.698217"
+    },
+    "q4": {
+      "asked_at": "2026-07-16T13:04:05.743596",
+      "turn": 5,
+      "answer": "left a credentialed, established career to build the coaching practice; a first-in-family milestone; a long-ignored whisper; the leap that traded the old identity for the calling; scars that became the map; a gripping 'why'.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.788751"
+    },
+    "q5": {
+      "asked_at": "2026-07-16T13:04:05.833303",
+      "turn": 6,
+      "answer": "The Wayfinder Blueprint \u2014 a named Blueprint organized as 3 Quests (the Purpose Quest, the Confidence Quest, the Value Quest) across 5 steps: 1) Name the Ache, 2) Read the Map You Already Carry, 3) Silence the Auditor, 4) Walk Before You're Ready, 5) Give the Gift Only You Can Give.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.879065"
+    },
+    "q6": {
+      "asked_at": "2026-07-16T13:04:05.923998",
+      "turn": 7,
+      "answer": "yes \u2014 alternates like \"The Calling Map\" or \"The Wayfinder's Path\" are fine.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:05.970558"
+    },
+    "q7": {
+      "asked_at": "2026-07-16T13:04:06.014967",
+      "turn": 8,
+      "answer": "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive).",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:06.060015"
+    },
+    "q8": {
+      "asked_at": "2026-07-16T13:04:06.104737",
+      "turn": 9,
+      "answer": "carry the recurring motif hashtag #StillCalled through every phase; land the Quest-frame poetic fill-in-the-blank manifesto ending; keep it a purpose pitch, not a profit pitch; write in harmony with a warm, literary, conviction-forward brand voice.",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:06.148360"
+    },
+    "frame_selection": {
+      "asked_at": "2026-07-16T13:04:06.192523",
+      "turn": 10,
+      "answer": "quest",
+      "validated": true,
+      "validated_at": "2026-07-16T13:04:06.237997"
+    }
+  },
+  "turns": 10,
+  "budget_overrun": false,
+  "completed_at": "2026-07-16T13:04:06.277570",
+  "complete": true
+}
