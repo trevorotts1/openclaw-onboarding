@@ -2,7 +2,7 @@
 # test-p206-floor-short-probe.sh — fail-first proof for p206-floor-short-probe.py,
 # the P6-01 per-box detect verdict for P2-06 ("THE FLOOR-WIPE FIX").
 #
-#   T1. ARMED: a full 28-dept board -> exit 0, floor_short=false, overall_armed=true.
+#   T1. ARMED: a full 29-dept board -> exit 0, floor_short=false, overall_armed=true.
 #   T2. DEGRADED (no --remediate): a short board -> exit 1, floor_short=true, the
 #       missing_mandatory / missing_universal_primary delta is reported, and
 #       overall_armed=false. NOTHING on disk is touched (probe-only, no mutation
@@ -58,7 +58,7 @@ trap 'rm -rf "$TMP"' EXIT
 NEUTRAL_BS="$TMP/neutral-build-state.json"
 echo '{}' > "$NEUTRAL_BS"
 
-FULL_28="marketing sales billing-finance customer-support web-development app-development graphics video audio research communications crm openclaw-maintenance legal social-media paid-advertisement personal-assistant general-task project-architecture-office bugs healer quality-control presentations scheduling-dispatch logistics-fulfillment engineering account-management podcast"
+FULL_29="marketing sales billing-finance customer-support web-development app-development graphics funnels video audio research communications crm openclaw-maintenance legal social-media paid-advertisement personal-assistant general-task project-architecture-office bugs healer quality-control presentations scheduling-dispatch logistics-fulfillment engineering account-management podcast"
 
 mk_ws() { # <name> <depts...>
   local name="$1"; shift
@@ -69,8 +69,8 @@ mk_ws() { # <name> <depts...>
   echo "$dd"
 }
 
-echo "=== T1: ARMED -- full 28-dept board ==="
-DD1="$(mk_ws t1 $FULL_28)"
+echo "=== T1: ARMED -- full 29-dept board ==="
+DD1="$(mk_ws t1 $FULL_29)"
 OUT1="$(python3 "$PROBE" --box t1-box --departments-dir "$DD1" --build-state-file "$NEUTRAL_BS" --json)"
 RC1=$?
 echo "$OUT1" | python3 -m json.tool >/dev/null 2>&1 && ok "T1a: --json output is valid JSON" || bad "T1a: --json output is NOT valid JSON"

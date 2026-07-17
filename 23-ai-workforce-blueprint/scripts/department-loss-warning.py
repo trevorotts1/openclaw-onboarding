@@ -11,7 +11,7 @@ floor department in department-naming-map.json. record-dept-decision.sh calls
 THIS reader so the warning text has a single source of truth (the naming map)
 and can never drift from a hand-copied string in the writer.
 
-A "floor department" is one of the 28 the floor guarantees: the 22 mandatory
+A "floor department" is one of the 29 the floor guarantees: the 23 mandatory
 canonical depts (nm.mandatory) + the 6 universal-primary vertical-pack depts
 (one per pack flagged universal_primary=true). ONLY those carry a loss_warning;
 a keyword-matched industry extra or a custom department is NOT a floor dept and
@@ -69,7 +69,7 @@ def load_naming_map(path=None):
 def naming_map_is_usable(nm):
     """True only when the map is structurally usable for FLOOR determination: it
     must be a dict carrying a populated `mandatory` object. A missing/empty/
-    non-dict `mandatory` means we cannot know the 22 mandatory floor depts, so
+    non-dict `mandatory` means we cannot know the 23 mandatory floor depts, so
     floor status is UNKNOWN and rc=3 ('conclusively non-floor') would be a lie.
     A healthy naming map always ships a populated `mandatory` section."""
     if not isinstance(nm, dict):
@@ -80,7 +80,7 @@ def naming_map_is_usable(nm):
 
 def _floor_warnings(nm):
     """Return {normalized_slug: (raw_id, loss_warning)} for every FLOOR dept that
-    carries a loss_warning — the 22 mandatory + the 6 universal-primary depts."""
+    carries a loss_warning — the 23 mandatory + the 6 universal-primary depts."""
     out = {}
     for did, dept in (nm.get("mandatory") or {}).items():
         if not isinstance(dept, dict):

@@ -3783,8 +3783,8 @@ INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md"]
 
 # Legacy RECOMMENDED_DEPARTMENTS suggestion / display-metadata dict (N17 binding).
-# NOTE: this is NOT the canonical floor. The authoritative floor is 22 mandatory
-# + 6 universal-primary = 28, derived LIVE from department-naming-map.json (see
+# NOTE: this is NOT the canonical floor. The authoritative floor is 23 mandatory
+# + 6 universal-primary = 29, derived LIVE from department-naming-map.json (see
 # load_canonical_floor() + _universal_primary_ids()); the full shipped role catalog
 # is tracked in templates/role-library/_index.json. This legacy dict only supplies
 # display metadata (name/emoji/head/description) and MUST match the dashboard's

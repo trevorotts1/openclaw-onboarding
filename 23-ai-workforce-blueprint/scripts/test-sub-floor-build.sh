@@ -4,13 +4,13 @@
 #
 # PART A — SUB-FLOOR JOIN (a build with 3 declined floor departments):
 #   * department-floor.evaluate_floor honors the 3 provenanced declines: rc=0
-#     (floor MET), declined=3, expected_floor_count = 28 − 3 = 25.
-#   * the durable chosen artifact <company>/departments.json == the chosen 25.
+#     (floor MET), declined=3, expected_floor_count = 29 − 3 = 26.
+#   * the durable chosen artifact <company>/departments.json == the chosen 26.
 #   * chosen == provisioned == displayed: prove-board-join.py rc=0 on a company
-#     whose tree + board carry exactly those 25 (+ the CEO column).
+#     whose tree + board carry exactly those 26 (+ the CEO column).
 #
-# PART B — FAIL-CLOSED (OQ-7): an UNREADABLE naming map degrades to the FULL 28
-#   floor (22 mandatory + 6 universal-primary), NEVER fewer. A declines file can
+# PART B — FAIL-CLOSED (OQ-7): an UNREADABLE naming map degrades to the FULL 29
+#   floor (23 mandatory + 6 universal-primary), NEVER fewer. A declines file can
 #   shrink the floor; a broken map can NOT.
 #
 # Both parts exercise the REAL modules (department-floor.py, canonical_decline.py,
@@ -28,7 +28,7 @@ bad() { echo "  FAIL: $*"; FAIL=$((FAIL+1)); }
 
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 
-# ── Build the sub-floor fixture: chosen = 28 floor slugs − 3 declines = 25 ─────
+# ── Build the sub-floor fixture: chosen = 29 floor slugs − 3 declines = 26 ─────
 FIXTURE_JSON="$(python3 - "$SCRIPT_DIR" "$TMPD" <<'PYEOF'
 import sys, os, json, sqlite3, importlib.util
 from pathlib import Path
@@ -41,17 +41,17 @@ def load(mod, fn):
 
 lc = load("lc", "list-canonical-departments.py")
 nm = lc.load_naming_map()
-mandatory = [d["id"] for d in lc.get_mandatory(nm)]           # 22
+mandatory = [d["id"] for d in lc.get_mandatory(nm)]           # 23
 universal = [d["id"] for d in lc.get_universal_primaries(nm)] # 6
 floor = mandatory + universal
-assert len(floor) == 28, f"expected 28 floor slugs, got {len(floor)}"
+assert len(floor) == 29, f"expected 29 floor slugs, got {len(floor)}"
 
 # Decline 3 FLOOR departments (2 mandatory + 1 universal-primary).
 declines = ["app-development", "video", "account-management"]
 for d in declines:
     assert d in floor, f"{d} not a floor dept"
-chosen = [s for s in floor if s not in declines]             # 25
-assert len(chosen) == 25
+chosen = [s for s in floor if s not in declines]             # 26
+assert len(chosen) == 26
 
 company_dir = Path(tmpd) / "acme"
 dep_dir = company_dir / "departments"
@@ -100,7 +100,7 @@ res["chosen_source"] = v["chosen_departments_source"]
 res["chosen_from_floor"] = sorted(v["chosen_departments"])
 res["expected_chosen"] = sorted(chosen + ["ceo"])
 
-# Fail-closed (PART B): unreadable naming map -> FULL 28.
+# Fail-closed (PART B): unreadable naming map -> FULL 29.
 df.NAMING_MAP = Path(tmpd) / "does-not-exist.json"
 empty = df.load_naming_map()
 res["failclosed_mandatory"] = len(df.mandatory_ids(empty))
@@ -117,11 +117,11 @@ get() { echo "$FIXTURE_JSON" | python3 -c "import json,sys;print(json.load(sys.s
 # ── PART A ───────────────────────────────────────────────────────────────────
 [ "$(get floor_rc)" = "0" ] && ok "sub-floor build: department-floor rc=0 (floor MET with 3 declines)" || bad "floor rc != 0 (got $(get floor_rc))"
 [ "$(get declined_count)" = "3" ] && ok "exactly 3 declines honored" || bad "declined_count != 3 (got $(get declined_count))"
-[ "$(get expected_floor_count)" = "25" ] && ok "expected_floor_count == 25 (28 − 3)" || bad "expected_floor_count != 25 (got $(get expected_floor_count))"
+[ "$(get expected_floor_count)" = "26" ] && ok "expected_floor_count == 26 (29 − 3)" || bad "expected_floor_count != 26 (got $(get expected_floor_count))"
 [ "$(get chosen_source)" = "artifact" ] && ok "chosen list read from the durable departments.json artifact" || bad "chosen_source != artifact (got $(get chosen_source))"
 
 cf="$(get chosen_from_floor)"; ec="$(get expected_chosen)"
-if [ "$cf" = "$ec" ]; then ok "departments.json chosen set == the 25 chosen departments (+ CEO column)"; else bad "chosen artifact != expected"; echo "    got: $cf"; echo "    exp: $ec"; fi
+if [ "$cf" = "$ec" ]; then ok "departments.json chosen set == the 26 chosen departments (+ CEO column)"; else bad "chosen artifact != expected"; echo "    got: $cf"; echo "    exp: $ec"; fi
 
 # prove-board-join.py rc=0 (chosen == provisioned == displayed). Keep stdout (the
 # --json verdict) SEPARATE from stderr so the JSON parses cleanly.
@@ -131,7 +131,7 @@ pj="$(python3 "$PROVE" --company-dir "$CDIR" --db "$DB" --json 2>"$TMPD/pj.err")
 set -e
 if [ "$prc" -eq 0 ]; then ok "prove-board-join.py rc=0 on the sub-floor company (JOIN-OK)"; else bad "prove-board-join rc=$prc"; echo "$pj" | head -20; cat "$TMPD/pj.err" | head; fi
 if echo "$pj" | grep -q '"status": "JOIN-OK"'; then ok "join status JOIN-OK (no drift classes)"; else bad "join not JOIN-OK"; fi
-# and it counts exactly 26 (25 depts + CEO) on every layer. --json prints the
+# and it counts exactly 27 (26 depts + CEO) on every layer. --json prints the
 # human render FIRST then the indent=2 JSON verdict, so slice from its first
 # line that is exactly "{".
 jc="$(echo "$pj" | python3 -c '
@@ -141,13 +141,13 @@ start=next(i for i,l in enumerate(lines) if l.rstrip()=="{")
 d=json.loads("\n".join(lines[start:]))
 print(d["counts"]["chosen"],d["counts"]["provisioned"],d["counts"]["displayed"])
 ' 2>/dev/null || echo "err")"
-[ "$jc" = "26 26 26" ] && ok "chosen==provisioned==displayed count = 26 (25 depts + CEO)" || bad "layer counts != 26/26/26 (got '$jc')"
+[ "$jc" = "27 27 27" ] && ok "chosen==provisioned==displayed count = 27 (26 depts + CEO)" || bad "layer counts != 27/27/27 (got '$jc')"
 
-# ── PART B: fail-closed to full 28 ───────────────────────────────────────────
-[ "$(get failclosed_mandatory)" = "22" ] && ok "OQ-7 fail-closed: unreadable map => 22 mandatory (never fewer)" || bad "failclosed_mandatory != 22 (got $(get failclosed_mandatory))"
+# ── PART B: fail-closed to full 29 ───────────────────────────────────────────
+[ "$(get failclosed_mandatory)" = "23" ] && ok "OQ-7 fail-closed: unreadable map => 23 mandatory (never fewer)" || bad "failclosed_mandatory != 23 (got $(get failclosed_mandatory))"
 [ "$(get failclosed_universal)" = "6" ] && ok "OQ-7 fail-closed: unreadable map => 6 universal-primary (never fewer)" || bad "failclosed_universal != 6 (got $(get failclosed_universal))"
 fm="$(get failclosed_mandatory)"; fu="$(get failclosed_universal)"
-[ "$((fm + fu))" = "28" ] && ok "OQ-7 fail-closed: broken map degrades to the FULL 28 floor" || bad "fail-closed floor != 28"
+[ "$((fm + fu))" = "29" ] && ok "OQ-7 fail-closed: broken map degrades to the FULL 29 floor" || bad "fail-closed floor != 29"
 
 echo ""
 echo "── test-sub-floor-build: $PASS passed, $FAIL failed ──"

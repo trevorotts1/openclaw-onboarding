@@ -3,7 +3,7 @@
 list-canonical-departments.py - single-source-of-truth department floor printer.
 
 Reads department-naming-map.json and prints:
-  1. The 22 mandatory departments (every client gets these unless explicitly declined).
+  1. The 23 mandatory departments (every client gets these unless explicitly declined).
   2. The 6 universal-primary vertical-pack departments (one per pack that
      EXPLICITLY marks universal_primary=true - added for every client regardless
      of industry; v2.6.1 dropped real-estate `listings`, which is now industry-gated).
