@@ -130,11 +130,18 @@ class TestBoardContract:
         assert rec.calls == [], "a disabled board must touch the network NEVER"
 
     def test_ingest_routes_funnel_and_website(self, rec):
+        # 'funnel' -> 'marketing' (not the fake 'funnels' slug): 'marketing'
+        # is a real floor department (departments.config.ts id 'marketing';
+        # department-floor.py:116 HARDCODED_MANDATORY #1) that every box
+        # seeds with a bare workspaces.slug, so CC's tier-1 exact-slug match
+        # resolves it directly instead of falling through to the
+        # general-task catch-all the historical fake 'funnels' slug hit. See
+        # test_cc_board_funnel_marketing_misroute.py for the full trace.
         cc_board.ingest_task("Funnel job", job_type="funnel", env=ENV)
         cc_board.ingest_task("Site job", job_type="website", env=ENV)
         depts = [c["payload"]["department_slug"] for c in rec.calls
                  if c["url"].endswith("/api/tasks/ingest")]
-        assert depts == ["funnels", "web-development"], depts
+        assert depts == ["marketing", "web-development"], depts
 
     def test_invalid_status_never_reaches_wire(self, rec):
         assert cc_board.move_task("TASK-1", "not-a-status", env=ENV) is False

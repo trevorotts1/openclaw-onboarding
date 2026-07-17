@@ -295,7 +295,7 @@ def ingest_task(
                           'website' (single page / landing page / full site), or
                           'survey'|'form'|'quiz' (survey / intake / quiz builds).
                           Controls department_slug routing:
-                            'funnel'                  → department_slug='funnels'
+                            'funnel'                  → department_slug='marketing'
                             'survey'|'form'|'quiz'    → department_slug='web-development', source='survey'
                             'website' / everything else → department_slug='web-development'
         priority:         CC TaskPriority: 'low'|'medium'|'high'|'critical'.
@@ -308,21 +308,32 @@ def ingest_task(
                           the FIX-COPY-01 copy-dependency card to route a P2-COPY
                           job to ``'marketing'`` (the Conversion Copywriter's
                           department, per SOP-07 Step 3) rather than the builder's
-                          own web-development / funnels column. NOTE (C-13/U44 —
-                          corrected 2026-07; was stale "CEO catch-all"): like
-                          ``'funnels'``, a ``'marketing'`` slug that the Command
-                          Center's departments.config.ts has not yet registered
-                          resolves server-side to the honest ``general-task``
-                          catch-all ("General Stuff", D-C2) — tagged
-                          ``resolved_by='unrecognized-slug->general'`` by
-                          INGEST-06 (``ingest/route.ts``'s ``resolveWorkspaceId``,
-                          the "EXPLICIT-but-unrecognized department slug" tier) —
-                          NOT the CEO/master-orchestrator workspace, which is a
-                          separate, later fallback tier that only fires for a
-                          BARE task with no department_slug supplied at all.
-                          Visible, never lost either way; the LOCAL
-                          waiting_on_dependency receipt is the binding gate, the
-                          card is visibility only.
+                          own web-development / marketing column. CORRECTED
+                          (2026-07-16 — was stale: earlier wording claimed a
+                          ``'marketing'`` slug was, like the historical fake
+                          ``'funnels'`` slug, unregistered and also fell to
+                          general-task; that was never actually true).
+                          ``'marketing'`` IS a registered floor department — id
+                          ``'marketing'`` in departments.config.ts, #1 in
+                          department-floor.py's ``HARDCODED_MANDATORY`` — and
+                          every box's ``workspaces.slug`` seed writes the BARE
+                          id (the CC repo's
+                          ``scripts/sync-departments-from-build-state.py``
+                          strips any ``dept-`` prefix before writing the slug
+                          column), so INGEST's tier-1 exact slug match
+                          (``ingest/route.ts``'s ``resolveWorkspaceId``)
+                          resolves ``'marketing'`` straight to the real
+                          Marketing workspace. It never reaches INGEST-06's
+                          unrecognized-slug tier (that tier only fires when NO
+                          workspace row matches the slug at all — the
+                          historical fake ``'funnels'`` case) and never
+                          touches the CEO/master-orchestrator workspace
+                          either, which is a separate, later fallback tier
+                          that only fires for a BARE task with no
+                          department_slug supplied at all. The card lands on
+                          the real Marketing lane; the LOCAL
+                          waiting_on_dependency receipt is the binding gate,
+                          the card is visibility only.
         source:           OPTIONAL explicit source-tag override (defaults to the
                           job_type-derived source, or to ``department_slug`` when
                           only the slug is overridden).
@@ -399,21 +410,27 @@ def ingest_task(
     # Map job_type -> department_slug.
     job_type_norm = (job_type or "funnel").lower().strip()
     if job_type_norm in ("funnel", "sales-funnel", "optin", "opt-in", "multistep"):
-        # NOTE (C-13(e)/U44 — corrected 2026-07; was stale "CEO catch-all"):
-        # department_slug='funnels' has no registered department in the Command
-        # Center (departments.config.ts has no 'funnels' dept; only
-        # 'web-development' resolves at :457). At CC main, INGEST-06
-        # (ingest/route.ts's resolveWorkspaceId, the "EXPLICIT-but-unrecognized
-        # department slug" tier) routes it to the honest 'general-task'
-        # catch-all ("General Stuff", D-C2) — tagged
-        # resolved_by='unrecognized-slug->general' — NOT the CEO/
-        # master-orchestrator workspace (that fallback is a separate, later
-        # tier that only fires for a BARE task with no department_slug at
-        # all). Option 2 (D-C3, fast-follow) would add a dedicated
-        # 'funnels'/'surveys' dept + workspace-seed migration. Until then
-        # funnels land in the honest general-task catch-all column — visible,
-        # not lost, not mis-labeled as the CEO's.
-        department_slug = "funnels"
+        # NOTE (corrected 2026-07-16 — was the fake slug 'funnels'):
+        # department_slug='funnels' has no registered department anywhere in
+        # the Command Center (departments.config.ts has no 'funnels' id;
+        # department-floor.py's HARDCODED_MANDATORY has no 'funnels' entry
+        # either), so stamping it sent every funnel card through INGEST-06's
+        # unrecognized-slug tier (ingest/route.ts's resolveWorkspaceId, the
+        # "EXPLICIT-but-unrecognized department slug" tier) straight to the
+        # honest general-task catch-all, tagged
+        # resolved_by='unrecognized-slug->general' — even though
+        # departments.config.ts:100/:112 name funnels as Marketing's own
+        # purpose and routing keyword. 'marketing' IS a registered floor
+        # department (id 'marketing' in departments.config.ts; #1 in
+        # department-floor.py:116's HARDCODED_MANDATORY) and every box's
+        # workspaces.slug seed writes the BARE id (the CC repo's
+        # scripts/sync-departments-from-build-state.py strips any 'dept-'
+        # prefix before writing the slug column), so INGEST's tier-1 exact
+        # slug match now resolves a funnel card straight to the real
+        # Marketing workspace — never touching the general-task fallback or
+        # the CEO/master-orchestrator tier (a separate, later tier that only
+        # fires for a BARE task with no department_slug at all).
+        department_slug = "marketing"
         source = "funnel"
     elif job_type_norm in ("survey", "form", "quiz"):
         # Option 1 (zero-migration, PRD §6.3 / §6.2): map survey/form/quiz to
