@@ -26,10 +26,57 @@ field-triggers the downstream "podcast is completed" workflow at Step 16) and
 a Channel-scoped token; the box keeps the synchronous publish), not the
 full-publish proxy.
 
-This asset also closes two gaps that exist on the live full-publish workflow (see
-"Operator: harden the live workflow" below): it **requires a shared-token auth
-gate**, and it keeps the app credentials in n8n's **credential vault** instead of
-plaintext in the workflow JSON.
+This asset also closes two gaps that used to exist on the live full-publish
+workflow (see "Live full-publish workflow — sanitized export" below, which
+records that those same two gaps are now independently closed on the live
+workflow itself): it **requires a shared-token auth gate**, and it keeps the
+app credentials in n8n's **credential vault** instead of plaintext in the
+workflow JSON.
+
+## Live full-publish workflow — sanitized export (read-only reference)
+
+`podbean-publish.workflow.json` is a **sanitized, read-only reference export**
+of the live full-publish workflow **"create podcast episode from openclaw"**
+(id `TkL0rn2SH3q32SeB`, `POST /webhook/podbean-publish`). Unlike the broker
+asset above, this workflow already exists and runs live on the instance; the
+file in this repo is not something to import, it is a durable structural
+record of what production runs, captured for audit and onboarding.
+
+Captured state (live API re-read, published version pointer):
+`activeVersionId` / `versionId` `e13b18be-2b37-49a8-b935-39a0520625bd`,
+`updatedAt` `2026-07-16T14:29:30Z`, 51 nodes, 35 connections, `active: true`.
+
+Sanitization applied before commit (spec `SKILL 58 PODBEAN SERVER-SIDE
+PUBLISH — MASTER SPEC v1`, unit U12):
+
+- `pinData` removed entirely. The live workflow's pinned example execution
+  carried a real client's name, email, and Podbean channel id; none of that
+  reaches this file.
+- Every Gmail node's HTML message body (which is built from live-execution
+  expressions only, never a literal) is replaced with a one-line placeholder
+  comment in this export; the `sendTo` fields are kept because they are
+  either an expression (`={{ ...client_email }}`, success/failure paths) or
+  the operator's own address (refusal paths — never a client's).
+- Credentials appear only as `{id, name}` reference pairs, exactly as the n8n
+  API returns them — the API never serves credential secret values over
+  these endpoints, so there was no value to strip: `Podcast Publish Gate`
+  (`httpHeaderAuth`, id `8HTB7khC7fDcRVhN`) on the webhook node, and `Podbean
+  BlackCEO (client_credentials)` (`httpBasicAuth`, id `EZApXhsHExXctBrB`) on
+  the OAuth node. Neither credential's value is anywhere in this repository.
+- `staticData`, `meta`, `shared` (project/owner metadata), `versionCounter`,
+  `triggerCount`, and `sourceWorkflowId` were dropped as export noise with no
+  audit value.
+- Verified clean with `bash scripts/qc-assert-no-n8n-plaintext-secrets.sh`
+  (no plaintext `client_id`/`client_secret` literals — this workflow's
+  Podbean app credential is vaulted, not literal) and
+  `bash scripts/qc-assert-no-client-names.sh` (no client names, no operator
+  home path).
+
+The companion gate-test workflow `Podbean Gate Test (TEMP - delete at
+cutover)` (id `aN6MrIJ4zLeKS047`) referenced by earlier revisions of this
+README as the header-auth pattern source has been deleted from the live
+instance (confirmed `NOT_FOUND` on a fresh `GET`) now that its pattern is
+live on the production workflow above.
 
 ## Import (manual — required)
 
@@ -146,14 +193,26 @@ a credential directly), import it through the authorized operator path, and
 verify that a fresh export passes the repository guard. That live application
 and verification remain explicitly owed.
 
-## Operator: harden the live full-publish workflow (out of scope for the repo)
+## Operator: live full-publish workflow hardening — CLOSED
 
-The live **"create podcast episode from openclaw"** (`/webhook/podbean-publish`)
-has two gaps found during this build (fix in n8n, never in the repo):
+Earlier revisions of this README flagged two gaps on the live **"create
+podcast episode from openclaw"** (`/webhook/podbean-publish`) workflow. A
+live API re-read on 2026-07-16 (see "Live full-publish workflow — sanitized
+export" above) shows both are now closed on the live workflow itself, out of
+band from this repository:
 
-1. **No auth gate** — anyone with the URL can POST and trigger a real publish to
-   any `podcast_id`. Add a shared-token check like this broker's
-   `X-Podbean-Broker-Token` / `$env.PODBEAN_BROKER_TOKEN` gate.
-2. **Plaintext credentials** — the Podbean `client_id`/`client_secret` are literals
-   in the workflow JSON (readable via the API). Move them into an n8n vault
-   credential (as this broker does).
+1. **Auth gate — CLOSED.** The webhook node now carries
+   `authentication: headerAuth` with the `Podcast Publish Gate` credential
+   (id `8HTB7khC7fDcRVhN`), the same header-auth pattern this broker uses.
+   An unauthenticated POST no longer reaches the workflow.
+2. **Plaintext credentials — CLOSED, for this workflow.** The Podbean OAuth
+   node authenticates via the vaulted `httpBasicAuth` credential `Podbean
+   BlackCEO (client_credentials)` (id `EZApXhsHExXctBrB`); no `client_id` /
+   `client_secret` literal exists in this workflow's JSON.
+
+This closure covers only `TkL0rn2SH3q32SeB`. The separate, pre-existing,
+operator-deferred plaintext-credential debt inside workflows
+`BqRLOn8TP1wPaAzn` and `COfgxe6HXRcWOleV` (see "OWED — live application was
+not done by this pass" above) is unaffected and remains open; per standing
+doctrine, agents must never read, quote, or export either workflow's Code
+node contents.
