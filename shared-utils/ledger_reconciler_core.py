@@ -54,6 +54,45 @@ QC_SCORE_RE = re.compile(r"QC\s+([0-9]+\.[0-9]+)")
 # now refuses to render silently.
 STATUS_VERIFIED_RE = re.compile(r"^verified\b", re.IGNORECASE)
 
+# Every ledger row's description column starts with an optional `[bucket/id]`
+# label followed by a parenthesized leg-requirement tag, e.g.:
+#   "[C/C-13] (both, P1) Catch-all conformance: ..."
+#   "[A/A-U1] (ONB, P0) `persona_for_job` carries the blend ..."
+#   "[E5-3 (G2b)] (both, P1) **Department opt-out ...**"
+# This is the row's own, in-ledger declaration of which repo leg(s) it needs
+# -- the closest thing this repo has to a machine-readable "MASTER SPEC v2
+# Section E.2" pointer (no separate spec file is git-tracked here).
+LEG_TAG_RE = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?\(([^,)]+),")
+
+
+def parse_leg_requirement(description):
+    """Extract the raw leg-requirement tag from a ledger row's description
+    column (the text immediately after an optional `[bucket/id]` prefix,
+    inside the first parens, before the first comma) -- e.g. "both", "ONB",
+    "CC", "CC (+ONB probe)". Returns None if the row doesn't follow this
+    convention at all; callers MUST treat None as "cannot determine" and
+    fail closed (never treat unknown as either both-required or not)."""
+    if not description:
+        return None
+    m = LEG_TAG_RE.match(description)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def requires_both_legs(description):
+    """True ONLY for the exact, unmodified "both" tag -- a unit whose row
+    literally reads "(both, P1)"/"(both, P0)"/etc. Deliberately narrow: a
+    compound/modified tag such as "CC (+ONB probe)" or "ONB (+CC endpoint)"
+    is NOT treated as both-required by this guard, since those units have
+    their own, different secondary-leg semantics (probe/endpoint, not a
+    full second merged leg) that this fix does not attempt to model. This
+    matches the exact convention already used by U44/U108/U110 and the ~20
+    other "(both, P1/P0)" units in the ledger -- narrow and literal on
+    purpose, not a guess at a fuzzier rule."""
+    tag = parse_leg_requirement(description)
+    return tag is not None and tag.lower() == "both"
+
 
 def now_utc_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -308,18 +347,56 @@ def patch_ledger_file(path, gap_fills):
     return changed
 
 
-def build_gap_fill_evidence(unit_id, onb_entry, cc_entry):
+def build_gap_fill_evidence(unit_id, onb_entry, cc_entry, description=""):
     """Build (label, status, evidence, timestamp) for a unit id given
-    confirmed git truth on ONB and/or CC. Only called when at least one side
-    has a precise merge_sha + tag."""
+    confirmed git truth on ONB and/or CC.
+
+    FAIL-CLOSED (both-legs guard): when `description` marks this unit with
+    the exact "(both, P#)" tag (see requires_both_legs()), this function
+    refuses to return anything -- and therefore refuses to stamp `verified`
+    -- unless BOTH onb_entry AND cc_entry independently carry a confirmed
+    merge_sha AND tag. A single merged leg is no longer sufficient evidence
+    for a both-required unit. This is the exact defect that let U44 (ONB
+    leg merged; CC leg branch existed but its QC send-back at 5.0 was never
+    merged) and U108 (ONB leg merged; CC leg never even had a branch) get
+    gap-filled to "verified" off one leg alone -- the prior version of this
+    function only checked "at least one side has evidence", never "does
+    this unit's own row say it needs both".
+
+    For units NOT tagged "(both, ...)" (single-repo ONB/CC units, or units
+    with a modified/compound tag this guard deliberately doesn't model),
+    behavior is unchanged from before: any one side with merge_sha+tag is
+    sufficient.
+
+    If description cannot be parsed at all (parse_leg_requirement returns
+    None), requires_both_legs() returns False and legacy single-leg
+    behavior applies -- this is intentional: an unparseable description is
+    NOT proof the unit is a both-required unit, and this function must
+    never refuse to render a genuinely single-repo unit's already-correct
+    single-leg evidence just because its description prefix is unusual.
+    The reconciler's own fail-closed net for units it truly cannot classify
+    is detect_failclosed_mismatches()'s missing-leg check below, which
+    alarms on any "(both, ...)" row it CAN parse but whose branch doesn't
+    exist -- classification failures on non-"(both, ...)" rows are out of
+    scope for this specific defect."""
+    both_required = requires_both_legs(description)
+    onb_ok = bool(onb_entry and onb_entry.get("merge_sha") and onb_entry.get("tag"))
+    cc_ok = bool(cc_entry and cc_entry.get("merge_sha") and cc_entry.get("tag"))
+
+    if both_required and not (onb_ok and cc_ok):
+        # Both legs are required by this unit's own row, but at least one
+        # side is not confirmed merged+tagged (or has no branch at all).
+        # Refuse to gap-fill -- never stamp `verified` on a partial unit.
+        return None
+
     parts = []
-    if onb_entry and onb_entry.get("merge_sha") and onb_entry.get("tag"):
+    if onb_ok:
         parts.append(
             f"openclaw-onboarding: branch `skill6-v2/{unit_id}` (tip `{onb_entry['tip'][:8]}`) "
             f"confirmed merged into `origin/main` via commit `{onb_entry['merge_sha'][:8]}`, "
             f"nearest tag `{onb_entry['tag']}`."
         )
-    if cc_entry and cc_entry.get("merge_sha") and cc_entry.get("tag"):
+    if cc_ok:
         parts.append(
             f"blackceo-command-center: branch `skill6-v2/{unit_id}` (tip `{cc_entry['tip'][:8]}`) "
             f"confirmed merged into `origin/main` via commit `{cc_entry['merge_sha'][:8]}`, "
@@ -375,6 +452,49 @@ def current_ledger_status(ledger_text, unit_id):
     return None, None
 
 
+def parse_ledger_rows(ledger_text):
+    """Return {unit_id: {"description": ..., "status": ...}} for EVERY unit
+    row in the shared ledger, any status -- the superset find_pending_units
+    only covers the strict empty-pending shape. Cells 0-3 (id, description,
+    label, status) are always reliable even on the small number of rows
+    whose EVIDENCE column contains literal `|` pipe characters (e.g. quoted
+    shell commands like `grep ... | sort | uniq -d`) that throw off a naive
+    split for cells 4+ -- description/status are read BEFORE those columns,
+    so they are unaffected. Used by detect_failclosed_mismatches()'s
+    missing-leg check; deliberately does not attempt to recover evidence/
+    timestamp for the rare multi-pipe rows, since neither is needed here."""
+    out = {}
+    for line in ledger_text.splitlines():
+        m = UNIT_ROW_RE.match(line)
+        if not m:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        out[m.group(1)] = {"description": cells[1], "status": cells[3]}
+    return out
+
+
+def _any_branch_for_unit(units_truth, uid):
+    """True if units_truth has ANY branch for this unit id -- the exact
+    canonical `skill6-v2/<uid>` name, OR a disambiguated variant using the
+    same prefix followed by a non-digit separator. Branch naming in this
+    repo's own history is not perfectly uniform: real, merged CC-leg
+    branches exist as `skill6-v2/U117-cc`, `skill6-v2/U116-cc-leg`,
+    `skill6-v2/U59-cc-d15` -- checking for the exact `skill6-v2/<uid>`
+    string alone (as the missing-leg check's first draft did) produced
+    false positives on those three genuinely-complete units. Guards both
+    directions: a suffixed real branch is correctly recognized as
+    "exists", and an unrelated unit's branch (e.g. `skill6-v2/U590` vs
+    `skill6-v2/U59`) is correctly NOT treated as this unit's leg -- the
+    character right after the uid must be non-digit."""
+    exact = f"skill6-v2/{uid}"
+    if exact in units_truth:
+        return True
+    prefix = exact + "-"
+    return any(b.startswith(prefix) for b in units_truth)
+
+
 def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
     """FAIL-CLOSED integrity check for "both-repo/one-leg" units.
 
@@ -404,6 +524,21 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
     that is a fail-closed alarm: this repo's leg is NOT actually done, no
     matter what the row's global status cell says.
 
+    SECOND, STRUCTURALLY DIFFERENT CHECK (the U108 blind spot): the loop
+    above can only ever alarm on a branch that EXISTS in units_truth --
+    which is built from list_remote_branches(), i.e. it enumerates branches
+    actually present on `origin`. A leg that was NEVER STARTED has no
+    branch at all, so it has no key in units_truth, and the loop above
+    structurally never visits it -- it is blind to exactly the case it
+    should catch hardest: a unit whose row reads "(both, P1)" and status
+    "verified", for a repo that never even has a `skill6-v2/<unit>` branch.
+    (This is exactly what happened to U108's CC leg: no branch, no PR,
+    nothing built, yet the shared ledger stamped "verified".) The second
+    loop below walks every row in the ledger itself (not units_truth), and
+    for every "(both, ...)"-tagged row whose branch is ABSENT from
+    units_truth, raises the identical class of alarm. A leg that was never
+    started is now a FINDING, not a silent skip.
+
     Read-only: never mutates the ledger, never mutates units_truth. Returns
     a list of alarm dicts, sorted by unit id (numeric), empty if none.
     """
@@ -423,6 +558,7 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
             "branch": branch,
             "tip": e.get("tip"),
             "ledger_status": led_status.strip(),
+            "kind": "unmerged",
             "reason": (
                 f"{repo_label} leg of {uid} (branch `{branch}`, tip "
                 f"`{(e.get('tip') or '')[:8]}`) is NOT merged into {repo_label}'s "
@@ -432,6 +568,36 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
                 f"condition. Do not treat this repo's leg as complete."
             ),
         })
+
+    # -- missing-leg blind spot: branch never existed at all in this repo --
+    ledger_rows = parse_ledger_rows(github_ledger_text)
+    for uid, row in ledger_rows.items():
+        branch = f"skill6-v2/{uid}"
+        if _any_branch_for_unit(units_truth, uid):
+            continue  # a branch exists (canonical or disambiguated-suffix name)
+        if not requires_both_legs(row["description"]):
+            continue  # this unit's own row doesn't require a leg in THIS repo
+        led_status = row["status"]
+        if not STATUS_VERIFIED_RE.match(led_status.strip()):
+            continue  # ledger already says pending/other -- consistent, no alarm
+        alarms.append({
+            "unit": uid,
+            "repo": repo_label,
+            "branch": branch,
+            "tip": None,
+            "ledger_status": led_status.strip(),
+            "kind": "missing-leg",
+            "reason": (
+                f"{repo_label} leg of {uid} is REQUIRED (row tagged \"both\") but "
+                f"NO `{branch}` BRANCH EXISTS in {repo_label} at all -- this leg was "
+                f"never started (no branch, no PR, nothing built), yet the shared "
+                f"skill6 ledger's status cell for {uid} reads '{led_status.strip()}'. "
+                f"This is the structural blind spot: a leg with no branch produces "
+                f"no units_truth entry, so the unmerged-branch check above never "
+                f"visits it. Do not treat this repo's leg as complete."
+            ),
+        })
+
     return sorted(alarms, key=lambda a: int(a["unit"][1:]) if a["unit"][1:].isdigit() else 0)
 
 
@@ -651,7 +817,13 @@ def main():
             cc_branch = f"skill6-v2/{uid}"
             onb_entry = onb_units.get(onb_branch)
             cc_entry = cc_units.get(cc_branch)
-            fill = build_gap_fill_evidence(uid, onb_entry, cc_entry)
+            # Prefer the GitHub copy's description (canonical); fall back to
+            # the Downloads copy's only if the GitHub row wasn't itself a
+            # pending-candidate. Either way this is the unit's own row text,
+            # used only to read its leg-requirement tag -- see
+            # requires_both_legs() in build_gap_fill_evidence().
+            desc_for_uid = pending_github.get(uid) or pending_downloads.get(uid) or ""
+            fill = build_gap_fill_evidence(uid, onb_entry, cc_entry, desc_for_uid)
             if fill:
                 gap_fills[uid] = fill
 
