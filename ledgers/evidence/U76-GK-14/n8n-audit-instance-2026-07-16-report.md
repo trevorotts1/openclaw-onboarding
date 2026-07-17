@@ -249,12 +249,12 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook anthology-drive" | Webhook anthology-drive | Auto-fix |
 | ERR-001 | Medium | No error handling in workflow "Anthology Drive Broker (51-node, staged - GK-02)" | — | Review |
 
-### "Anthology Writer - Ben" (id: 62EeUqT5Da63U4Kh) [ACTIVE] — 2 findings
+### "Anthology Writer - [CLIENT]" (id: 62EeUqT5Da63U4Kh) [ACTIVE] — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
-| ERR-001 | Medium | No error handling in workflow "Anthology Writer - Ben" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "Anthology Writer - [CLIENT]" | — | Review |
 
 ### "Avatar Alchemist Brand Intelligence" (id: lEDCuz11DZMfzWyT) [ACTIVE] — 2 findings
 
@@ -389,7 +389,7 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-001 | High | Unauthenticated webhook: "GHL Trigger2" | GHL Trigger2 | Auto-fix |
 | CRED-001 | Medium | Hardcoded phone detected | ImgBB Upload1 | Review |
 
-### "Girl, I Got You | FEI" (id: 9dmzvrHtGItUWIOo) [ACTIVE] — 13 findings
+### "Girl, I Got You | [CLIENT]" (id: 9dmzvrHtGItUWIOo) [ACTIVE] — 13 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
@@ -405,7 +405,7 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | CRED-004 | Medium | Hardcoded email detected | Send a message3 | Review |
 | CRED-005 | Medium | Hardcoded email detected | Send a message4 | Review |
 | CRED-006 | Medium | Hardcoded email detected | Send a message5 | Review |
-| ERR-001 | Medium | No error handling in workflow "Girl, I Got You | FEI" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "Girl, I Got You | [CLIENT]" | — | Review |
 
 ### "GitHub Pages - Push Quiz Landing Pages" (id: QBpbgWthVLLSjoLH) [ACTIVE] — 3 findings
 
@@ -494,19 +494,19 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | CRED-001 | High | Hardcoded bearer_token detected | HTTP Request | Auto-fix |
 | ERR-001 | Medium | No error handling in workflow "My workflow 3" | — | Review |
 
-### "oneness wellness Voice Ai part 1 Check calendar & book appointments" (id: hRJk1OvOzMObem7d) [ACTIVE] — 2 findings
+### "[CLIENT] Voice Ai part 1 Check calendar & book appointments" (id: hRJk1OvOzMObem7d) [ACTIVE] — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Book appointment" | Book appointment | Auto-fix |
 | WEBHOOK-002 | High | Unauthenticated webhook: "get a calendar availability" | get a calendar availability | Auto-fix |
 
-### "oneness wellness Voice Ai Part 2 the BCEO analysis system" (id: g41PwIB9uRJ54V7I) [ACTIVE] — 2 findings
+### "[CLIENT] Voice Ai Part 2 the BCEO analysis system" (id: g41PwIB9uRJ54V7I) [ACTIVE] — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
-| ERR-001 | Medium | No error handling in workflow "oneness wellness Voice Ai Part 2 the BCEO analysis system" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] Voice Ai Part 2 the BCEO analysis system" | — | Review |
 
 ### "Orientation Video Tracking - 30% & 75%" (id: JMnsK3O6wfFX7S3m) [ACTIVE] — 3 findings
 
@@ -550,7 +550,7 @@ Workflows scanned: 286 | Scan duration: 41.3s
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
 
-### "Samanthas Voice AI Dec 1 25 UPDATE" (id: TMgfzU6PYxODp8mL) [ACTIVE] — 8 findings
+### "[CLIENT] Voice AI Dec 1 25 UPDATE" (id: TMgfzU6PYxODp8mL) [ACTIVE] — 8 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
@@ -631,7 +631,7 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-001 | High | Unauthenticated webhook: "C&F Webhook for Video Submission1" | C&F Webhook for Video Submission1 | Auto-fix |
 | ERR-001 | Medium | No error handling in workflow "sora video creator | [CLIENT]" | — | Review |
 
-### "star auto webinar updater" (id: Vm4Q9XRRmS0m5TTW) [ACTIVE] — 8 findings
+### "[CLIENT] auto webinar updater" (id: Vm4Q9XRRmS0m5TTW) [ACTIVE] — 8 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
@@ -642,24 +642,24 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook2" | Webhook2 | Auto-fix |
 | CRED-002 | Medium | Hardcoded phone detected | Send a message | Review |
 | CRED-005 | Medium | Hardcoded phone detected | Update contact fields1 | Review |
-| ERR-001 | Medium | No error handling in workflow "star auto webinar updater" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] auto webinar updater" | — | Review |
 
-### "Star Speaker Clinic Date Updater" (id: Oep5MSMbdLWAGTkX) [ACTIVE] — 4 findings
+### "[CLIENT] Speaker Clinic Date Updater" (id: Oep5MSMbdLWAGTkX) [ACTIVE] — 4 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | CRED-001 | High | Hardcoded bearer_token detected | Update Speaker Clinic Date in GHL | Auto-fix |
 | CRED-003 | High | Hardcoded credit_card detected | Update Speaker Clinic Date in GHL | Review |
 | CRED-002 | Medium | Hardcoded phone detected | Update Speaker Clinic Date in GHL | Review |
-| ERR-001 | Medium | No error handling in workflow "Star Speaker Clinic Date Updater" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] Speaker Clinic Date Updater" | — | Review |
 
-### "Star Voiceai Pt 1" (id: YgjqTE7eipf6rIeo) [ACTIVE] — 1 finding
+### "[CLIENT] Voiceai Pt 1" (id: YgjqTE7eipf6rIeo) [ACTIVE] — 1 finding
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "get a calendar availability" | get a calendar availability | Auto-fix |
 
-### "Star Voiceai pt 2" (id: Wu6WPJd98i9ywb5k) [ACTIVE] — 1 finding
+### "[CLIENT] Voiceai pt 2" (id: Wu6WPJd98i9ywb5k) [ACTIVE] — 1 finding
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
@@ -767,18 +767,18 @@ Workflows scanned: 286 | Scan duration: 41.3s
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
 
-### "Trevor/Ben Retell Book Appointment" (id: jttrrIIZzhZIKJKG) [ACTIVE] — 1 finding
+### "Trevor/[CLIENT] Retell Book Appointment" (id: jttrrIIZzhZIKJKG) [ACTIVE] — 1 finding
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
 
-### "Trevor/Ben Retell Get Slots" (id: gOksjBrIl9yOIUkS) [ACTIVE] — 2 findings
+### "Trevor/[CLIENT] Retell Get Slots" (id: gOksjBrIl9yOIUkS) [ACTIVE] — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | High | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
-| ERR-001 | Medium | No error handling in workflow "Trevor/Ben Retell Get Slots" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "Trevor/[CLIENT] Retell Get Slots" | — | Review |
 
 ### "Ultimate Prompt Creator For Slides part 1" (id: y3yZuA79ebJpLo1b) [ACTIVE] — 4 findings
 
@@ -887,19 +887,19 @@ Workflows scanned: 286 | Scan duration: 41.3s
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | Medium | Unauthenticated webhook: "On form submission" | On form submission | Auto-fix |
 
-### "Agent Samantha's Test" (id: Dz86rYCQZfSxUqrM) — 2 findings
+### "Agent [CLIENT] Test" (id: Dz86rYCQZfSxUqrM) — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
-| ERR-001 | Medium | No error handling in workflow "Agent Samantha's Test" | — | Review |
-| RETENTION-001 | Low | Excessive data retention in workflow "Agent Samantha's Test" | — | User action |
+| ERR-001 | Medium | No error handling in workflow "Agent [CLIENT] Test" | — | Review |
+| RETENTION-001 | Low | Excessive data retention in workflow "Agent [CLIENT] Test" | — | User action |
 
-### "Agent Samantha's Test" (id: Ef1NBhbCrL66QDGT) — 2 findings
+### "Agent [CLIENT] Test" (id: Ef1NBhbCrL66QDGT) — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
-| ERR-001 | Medium | No error handling in workflow "Agent Samantha's Test" | — | Review |
-| RETENTION-001 | Low | Excessive data retention in workflow "Agent Samantha's Test" | — | User action |
+| ERR-001 | Medium | No error handling in workflow "Agent [CLIENT] Test" | — | Review |
+| RETENTION-001 | Low | Excessive data retention in workflow "Agent [CLIENT] Test" | — | User action |
 
 ### "Airtable Test" (id: UDnxApPYfCmtWkUZ) — 1 finding
 
@@ -922,12 +922,12 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-002 | Medium | Unauthenticated webhook: "Producer Approval" | Producer Approval | Auto-fix |
 | ERR-001 | Medium | No error handling in workflow "anthology writer" | — | Review |
 
-### "Anthology Writer - Ben CC" (id: D3I9ylvwXIWRd7NE) — 2 findings
+### "Anthology Writer - [CLIENT] CC" (id: D3I9ylvwXIWRd7NE) — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | Medium | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
-| ERR-001 | Medium | No error handling in workflow "Anthology Writer - Ben CC" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "Anthology Writer - [CLIENT] CC" | — | Review |
 
 ### "Avatar Alchemist Test Flow" (id: kNA5M2xorQJXoGKD) — 1 finding
 
@@ -1417,11 +1417,11 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | CRED-001 | Medium | Hardcoded email detected | HTTP Request | Review |
 | CRED-002 | Medium | Hardcoded phone detected | HTTP Request | Review |
 
-### "Samantha Porter Social Media in a Box" (id: RYBmX3frEBRDHdy5) — 1 finding
+### "[CLIENT] Social Media in a Box" (id: RYBmX3frEBRDHdy5) — 1 finding
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
-| ERR-001 | Medium | No error handling in workflow "Samantha Porter Social Media in a Box" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] Social Media in a Box" | — | Review |
 
 ### "Send Remaining Christmas Emails" (id: 7xbitHJ8STaTTdVq) — 1 finding
 
@@ -1429,11 +1429,11 @@ Workflows scanned: 286 | Scan duration: 41.3s
 |----|----------|---------|------|-----|
 | ERR-001 | Medium | No error handling in workflow "Send Remaining Christmas Emails" | — | Review |
 
-### "Shifab Social Media in a Box Oneness Wellness" (id: SEX9M1dL1D9eZYo4) — 1 finding
+### "[CLIENT] Social Media in a Box [CLIENT]" (id: SEX9M1dL1D9eZYo4) — 1 finding
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
-| ERR-001 | Medium | No error handling in workflow "Shifab Social Media in a Box Oneness Wellness" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] Social Media in a Box [CLIENT]" | — | Review |
 
 ### "Single Page STEP 00 Sales Page Writer Main" (id: wmb53gbRt7bAb93Y) — 2 findings
 
@@ -1517,12 +1517,12 @@ Workflows scanned: 286 | Scan duration: 41.3s
 | WEBHOOK-003 | Medium | Unauthenticated webhook: "Webhook1" | Webhook1 | Auto-fix |
 | WEBHOOK-004 | Medium | Unauthenticated webhook: "On form submission" | On form submission | Auto-fix |
 
-### "Star VoiceAi Pt 3" (id: KT0LNuY2lC6dwqmy) — 2 findings
+### "[CLIENT] VoiceAi Pt 3" (id: KT0LNuY2lC6dwqmy) — 2 findings
 
 | ID | Severity | Finding | Node | Fix |
 |----|----------|---------|------|-----|
 | WEBHOOK-001 | Medium | Unauthenticated webhook: "Webhook" | Webhook | Auto-fix |
-| ERR-001 | Medium | No error handling in workflow "Star VoiceAi Pt 3" | — | Review |
+| ERR-001 | Medium | No error handling in workflow "[CLIENT] VoiceAi Pt 3" | — | Review |
 
 ### "STEP 02 High Ticket Images APIFRAME" (id: qXtT00ktXlfrvtrs) — 1 finding
 
