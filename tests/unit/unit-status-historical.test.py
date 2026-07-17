@@ -235,5 +235,174 @@ class MutationProofs(unittest.TestCase):
         self.assertEqual(result["live_head"], "d0f3558cc8555c2eb4657d09f9cbca7c41270bb3")
 
 
+class CompoundLegTagFix(unittest.TestCase):
+    """MUTATION PROOF -- the defect an audit found reading resolve_required_legs()
+    directly (not the tool's output, per this repo's own "paper feeds paper"
+    lesson): ANY leg tag whose text merely CONTAINED the substring "live" --
+    including a flat, un-parenthesized compound tag like "ONB + live" /
+    "CC + live" -- fell into the zero-leg return. Zero-leg means NO repo git
+    check runs at all; resolve_unit()'s zero-leg branch then trusts the
+    ledger's OWN "verified" status-cell stamp. That is exactly the disease
+    this file's module docstring says is structurally unreachable everywhere
+    else in this file -- status asserted from a ledger claim instead of
+    diffed from content.
+
+    A related, second-order gap: a '+'-joined tag NOT containing the
+    substring "live" (e.g. "ONB + n8n", "n8n + ONB", "ONB + GHL") fell
+    through every branch to "unknown" -- fail-loud, so never a false DONE,
+    but it also never checked the real, present ONB/CC repo leg via git,
+    losing real evidence the tool could have produced.
+
+    Every tag string below is copied VERBATIM from the real row in
+    ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md for the named
+    unit (not synthesized) -- this proves the fix against the exact data the
+    audit found broken. Offline / no network / no repo clone required --
+    resolve_required_legs() is a pure function of the description string.
+    """
+
+    # unit_id -> (raw description column text, expected required repo legs)
+    REAL_LIVE_TAG_UNITS = {
+        "U29": (
+            "[B/B-U15] (ONB + live, P2) ENV-MATRIX live proof: the ASSUMED VPS mount row + "
+            "first-hour ground truth on one Mac + one VPS + stale-env preflight",
+            {"onb"},
+        ),
+        "U86": (
+            "[GK-24] (ONB + live, P1) Reproduce + fix the on-box presentation Python breakage "
+            "by root-cause class (stale content / deps preflight / `--workspace` flag)",
+            {"onb"},
+        ),
+        "U106": (
+            "[E5-1 (G1)] (ONB + live, P2) **Communities / courses / channels build + "
+            "live-prove** (Skill-6 companion to U30): live-create a community",
+            {"onb"},
+        ),
+        "U112": (
+            "[E5-7 (G5)] (ONB + live, P2) **Skill 6 bulk-send GHL workflow**: add many "
+            "contacts via tag / arrays into a GHL workflow (surfaced in a live SMS firefight) "
+            "— build + prove",
+            {"onb"},
+        ),
+        "U41": (
+            "[C/C-10] (CC + live, P1) Create-task proven end-to-end ON-BOX: shipped Playwright "
+            "suite + workspace-scoped create + SSE assertion",
+            {"cc"},
+        ),
+        "U43": (
+            "[C/C-12] (CC + live, P1) Home-dashboard missing-cards: induced-failure proof on "
+            "the operator box + fleet version/build audit field",
+            {"cc"},
+        ),
+    }
+
+    REAL_UNPARSEABLE_COMPOUND_UNITS = {
+        "U63": (
+            "[GK-01] (ONB + n8n, P0) **P0 live**: fix the podcast publish path that failed on "
+            "`image_url = null` + fail-closed entry guard + retry the episode",
+            {"onb"},
+        ),
+        "U71": (
+            "[GK-09] (ONB + GHL, P1) Clear the WAF/edge 403 on `verify-imported`; run the "
+            "never-yet-run snapshot chain end-to-end once",
+            {"onb"},
+        ),
+        "U74": (
+            "[GK-12] (n8n + ONB, P1) Canonicalize the podcast pipeline per D19 (kill the "
+            "double-publish risk)",
+            {"onb"},
+        ),
+    }
+
+    def test_naive_substring_check_reproduces_the_bug(self):
+        """PRECONDITION / proves the bug was real, not assumed: reproduce the
+        exact pre-fix substring check inline and confirm it really did
+        classify these real 'ONB + live' / 'CC + live' rows as zero-leg."""
+        def naive_classify(tag_l):
+            if "live" in tag_l or "read-only" in tag_l or tag_l in ("n/a", "na", "doc", "none"):
+                return "zero-leg"
+            return "not-zero-leg"
+
+        for uid, (desc, _expected_legs) in self.REAL_LIVE_TAG_UNITS.items():
+            tag = usc.parse_leg_requirement(desc)
+            self.assertEqual(
+                naive_classify(tag.strip().lower()), "zero-leg",
+                f"PRECONDITION FAILED for {uid}: the naive pre-fix substring check no longer "
+                f"reproduces zero-leg on tag {tag!r} -- update this precondition.",
+            )
+
+    def test_real_live_compound_tags_resolve_their_repo_leg_not_zero_leg(self):
+        """FAILS on pre-fix code (mode would be 'zero-leg', legs would be
+        empty -- no git check, verdict falls through to trusting the
+        ledger's status cell). PASSES on shipped code: mode 'compound',
+        legs = the real repo leg(s)."""
+        for uid, (desc, expected_legs) in self.REAL_LIVE_TAG_UNITS.items():
+            legs, mode, note = usc.resolve_required_legs(desc)
+            self.assertEqual(mode, "compound", f"{uid}: expected mode 'compound', got {mode!r} ({note})")
+            self.assertEqual(legs, expected_legs, f"{uid}: expected legs {expected_legs}, got {legs} ({note})")
+            self.assertNotEqual(mode, "zero-leg", f"REGRESSION for {uid}: fell back to zero-leg -- repo git check skipped again.")
+
+    def test_real_unparseable_compound_tags_now_resolve_their_repo_leg(self):
+        """FAILS on pre-fix code (mode would be 'unknown', legs empty -- the
+        real ONB leg present in the tag was never checked). PASSES on shipped
+        code: mode 'compound', legs = {'onb'} for all three, regardless of
+        whether ONB is the first or second '+'-joined token."""
+        for uid, (desc, expected_legs) in self.REAL_UNPARSEABLE_COMPOUND_UNITS.items():
+            legs, mode, note = usc.resolve_required_legs(desc)
+            self.assertEqual(mode, "compound", f"{uid}: expected mode 'compound', got {mode!r} ({note})")
+            self.assertEqual(legs, expected_legs, f"{uid}: expected legs {expected_legs}, got {legs} ({note})")
+
+    def test_pure_live_tag_with_no_repo_component_stays_zero_leg(self):
+        """Guard against over-correction: a tag that is GENUINELY non-repo
+        (no onb/cc component at all) must still resolve zero-leg, not get
+        dragged into 'unknown' or invent a repo leg that isn't there. Covers
+        both a bare single-word tag and a '+'-joined tag where every part is
+        a recognized non-repo token."""
+        legs, mode, note = usc.resolve_required_legs(
+            "[X] (live, P1) bare non-repo, no repo component at all"
+        )
+        self.assertEqual(mode, "zero-leg", f"got {mode!r}: {note}")
+        self.assertEqual(legs, set())
+
+        legs, mode, note = usc.resolve_required_legs(
+            "[X] (GHL + n8n, P1) bare compound, both parts non-repo"
+        )
+        self.assertEqual(mode, "zero-leg", f"got {mode!r}: {note}")
+        self.assertEqual(legs, set())
+
+    def test_unparseable_compound_never_silently_degrades_to_ledger_trust(self):
+        """The tool's whole reason to exist: an unparseable tag must fail
+        LOUD (an explicit 'unknown' verdict the caller cannot mistake for
+        DONE), never silently fall back to trusting the ledger's own status
+        cell. A '+'-joined tag with a garbled/mistyped repo token ('0NB'
+        instead of 'ONB') must NOT be guessed as zero-leg (which would
+        silently trust the ledger) and must NOT be guessed as a repo leg
+        either (which would assert a fact never git-checked) -- it must come
+        back 'unknown'."""
+        legs, mode, note = usc.resolve_required_legs("[X] (0NB + live, P1) garbled repo token")
+        self.assertEqual(mode, "unknown", f"must fail loud, got {mode!r}: {note}")
+        self.assertEqual(legs, set())
+
+    def test_unparseable_compound_end_to_end_via_resolve_unit_is_unknown_not_done(self):
+        """End-to-end (still offline -- skip_ci and a throwaway fixture
+        ledger, no real git dirs touched): a unit whose row carries a
+        garbled '+'-joined tag must resolve_unit() to UNKNOWN, and MUST NOT
+        read as DONE even though the ledger's own status cell says
+        'verified' -- the exact silent-ledger-trust shape this fix exists
+        to prevent."""
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = Path(td) / "fixture-ledger.md"
+            ledger_path.write_text(
+                "| U999001 | [X] (0NB + live, P1) garbled repo token | label | verified | evidence | ts |\n"
+            )
+            result = usc.resolve_unit(
+                "U999001", "/nonexistent-onb", "/nonexistent-cc", [str(ledger_path)], skip_ci=True
+            )
+            self.assertEqual(
+                result["verdict"], "UNKNOWN",
+                f"REGRESSION: an unparseable '+'-joined tag must never resolve DONE off the "
+                f"ledger's own 'verified' status cell -- got {result['verdict']}: {result}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

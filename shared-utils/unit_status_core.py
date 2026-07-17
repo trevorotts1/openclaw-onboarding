@@ -58,6 +58,17 @@ REPO_LABELS = {
     "cc": "blackceo-command-center",
 }
 
+# Non-repo leg tokens recognized inside a flat, un-parenthesized "+"-joined
+# compound leg tag (e.g. "ONB + live", "CC + live", "ONB + n8n", "n8n + ONB",
+# "ONB + GHL") -- see resolve_required_legs()'s '+' branch. Each names a leg
+# this tool cannot git-check at all (proven by execution/live-run, never by
+# a branch/merge), so a component that IS one of these is flagged OWED, not
+# silently dropped. This set is deliberately used ONLY to classify '+'-
+# joined parts, never to reclassify an existing bare single-token tag
+# (e.g. a lone "(n8n, ...)" row keeps its pre-existing classification --
+# widening that is a separate, out-of-scope decision this fix does not make).
+NON_REPO_LEG_TOKENS = frozenset({"live", "read-only", "n8n", "ghl", "n/a", "na", "doc", "none"})
+
 
 # --------------------------------------------------------------------------
 # Ledger row lookup
@@ -145,6 +156,57 @@ def resolve_required_legs(description):
         return {"onb"}, "single", "literal '(ONB, ...)' tag -- openclaw-onboarding leg only."
     if tag_l == "cc":
         return {"cc"}, "single", "literal '(CC, ...)' tag -- blackceo-command-center leg only."
+
+    # A DIFFERENT compound shape than parse_compound_leg_primary()'s
+    # parenthesized "(CC (+ONB), ...)" form above: a flat, un-parenthesized
+    # "+"-joined tag like "ONB + live" / "CC + live" / "ONB + n8n" /
+    # "n8n + ONB" / "ONB + GHL". THE BUG this branch fixes: the substring
+    # check below ("live" in tag_l) used to fire on this shape too --
+    # "live" IS a substring of "onb + live" -- so a tag like "ONB + live"
+    # fell straight into the zero-leg return, meaning NO repo git check ran
+    # at all and the verdict fell through to trusting the ledger's own
+    # status cell (resolve_unit()'s zero-leg branch). That is exactly the
+    # disease this tool exists to make unreachable: status asserted from a
+    # ledger claim instead of diffed from content. Every "+"-joined part
+    # that names a real repo (onb/cc) MUST be mechanically required and
+    # independently git-checked -- never silently collapsed to zero legs.
+    if "+" in tag_l:
+        parts = [p.strip() for p in tag_l.split("+")]
+        repo_parts = [p for p in parts if p in ("onb", "cc")]
+        other_parts = [p for p in parts if p not in ("onb", "cc")]
+        if repo_parts:
+            legs = set(repo_parts)
+            return (
+                legs,
+                "compound",
+                f"flat '+'-joined compound leg tag '{tag}' -- repo leg(s) {sorted(legs)} are "
+                f"ALL mechanically required and independently git-checked by this tool "
+                f"(never collapsed to zero-leg); non-repo component(s) {other_parts} are "
+                f"flagged OWED separately -- proven by execution/live-run (e.g. live/n8n/GHL), "
+                f"never by this tool's git check and never by trusting the ledger's own status "
+                f"cell for that component.",
+            )
+        # No onb/cc token among the '+'-joined parts. This is legitimately
+        # zero-repo-leg ONLY if every part is a recognized non-repo token --
+        # an unrecognized part could be a garbled/mistyped repo token, and
+        # defaulting THAT to zero-leg silently would resurrect the exact
+        # bug this branch exists to kill. Fail loud instead of guessing.
+        if all(p in NON_REPO_LEG_TOKENS for p in parts):
+            return (
+                set(),
+                "zero-leg",
+                f"flat '+'-joined compound leg tag '{tag}' -- every component ({parts}) is a "
+                f"recognized non-repo (live/doc/evidence-only) token; no repo leg present -- "
+                f"no branch/merge to check.",
+            )
+        return (
+            set(),
+            "unknown",
+            f"leg tag '{tag}' is a '+'-joined compound but at least one component is neither "
+            f"a repo token (onb/cc) nor a recognized non-repo token "
+            f"({sorted(NON_REPO_LEG_TOKENS)}) -- refusing to guess zero-leg or a repo leg.",
+        )
+
     if "live" in tag_l or "read-only" in tag_l or tag_l in ("n/a", "na", "doc", "none"):
         return set(), "zero-leg", f"leg tag '{tag}' declares a non-repo (live/doc/evidence-only) unit -- no branch/merge to check."
     return set(), "unknown", f"leg tag '{tag}' does not match any known convention (both/ONB/CC/compound/zero-leg)."
