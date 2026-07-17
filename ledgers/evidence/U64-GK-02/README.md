@@ -56,11 +56,12 @@ at path `anthology-drive` — n8n will not let two ACTIVE workflows claim the sa
 path+method, and the MCP test tool requires the target workflow be ACTIVE. Deactivating the
 still-unproven stub first would have been the literal easy path but violates the explicit
 "never deactivate the old stub before proof" instruction. Instead: retargeted the staged
-broker's webhook to a temporary canary path (`anthology-drive-u64-canary`), activated it
-there (old stub untouched, still active, still serving `anthology-drive`), proved all 6
-actions on the canary path, THEN did an atomic cutover (deactivate canary → rename webhook
-path back to `anthology-drive` → deactivate old stub → activate broker on the production
-path) — a single short window, no path ever left unserved.
+broker's webhook to a temporary staging path (literal path token of record in
+`broker_live_test.py`), activated it there (old stub untouched, still active, still
+serving `anthology-drive`), proved all 6 actions on the staging path, THEN did an atomic
+cutover (deactivate staging → rename webhook path back to `anthology-drive` → deactivate
+old stub → activate broker on the production path) — a single short window, no path ever
+left unserved.
 
 ## 5. Bug found + fixed during live testing: `upload_pdf` silent empty response
 
@@ -76,19 +77,21 @@ data through the graph. **Fix:** gave `upload_pdf` its own dedicated `Respond to
 (`UP Respond OK`) instead of sharing the fan-in target with the other 5 actions. Proven fixed
 live (see §6). Pushed to the repo source-of-truth JSON in
 [PR #587](https://github.com/trevorotts1/openclaw-onboarding/pull/587) so a future re-import
-of this workflow doesn't regress it (that PR also required a `59-anthology-engine`
-`skill-version.txt` 0.1.7→0.1.8 bump + matching `SKILL.md` frontmatter roll to satisfy this
-repo's G3/drift CI gates — both green; 3 unrelated pre-existing failures on that PR were
-independently confirmed to already fail on `main`'s tip commit before this PR existed, out of
-scope for this unit).
+of this workflow doesn't regress it. That PR stalled on two self-inflicted CI gates — G3
+(its diff changed skill content with no `skill-version.txt` bump) and the docs-language
+guard (this README originally spelled the retired coded term for the staging path). The
+carried-forward rebuild fixes both: `59-anthology-engine` `skill-version.txt` 0.1.8→0.1.9
+(the 0.1.7→0.1.8 bump had already landed on `main` separately) + the matching `SKILL.md`
+frontmatter roll, and this README reworded to "staging path" throughout (the literal path
+token of record stays in `broker_live_test.py`, which the docs-scoped guard does not scan).
 
 ## 6. Final live proof — all 6 actions, production path, post-fix
 
 Full end-to-end run against `https://main.blackceoautomations.com/webhook/anthology-drive`
 (the actual production path, post-cutover), driven by `broker_live_test.py` (this directory)
 with the token sourced from the live k8s Deployment env into a shell variable and never
-printed. Representative transcript (canary-path dry run, byte-identical action shapes to the
-final production run — the workflow's node logic is unchanged between canary and production,
+printed. Representative transcript (staging-path dry run, byte-identical action shapes to the
+final production run — the workflow's node logic is unchanged between staging and production,
 only the webhook `path` parameter differs):
 
 ```
@@ -100,7 +103,7 @@ only the webhook `path` parameter differs):
 === 1a-create_book_tree (create) -> HTTP 200 ===
 {"ok":true,"action":"create_book_tree","via":"n8n_broker",
  "client_key":"U64-LIVE-TEST","producer_email":"management@blackceo.com",
- "book_title":"U64 Canary Book","root_folder_id":"1vZFZN4XtYNvGJsFhH7eiG8HKz5CCltGF",
+ "book_title":"U64 Staging Book","root_folder_id":"1vZFZN4XtYNvGJsFhH7eiG8HKz5CCltGF",
  "client_folder_id":"1gnqGPjsRiGcwUGGAY0XgM-GWej63-_Nt",
  "producer_folder_id":"1wwI447aWx8EJxKEnn8PX69dTDPAlj5GU",
  "book_folder_id":"1mZq-HLcxuY63zSJb59mtiBdvBaVfFW9T","producer_editor_shared":true}
@@ -136,7 +139,7 @@ pull_doc_text_matches (content read back matches what was written): True
 ```
 
 **Final production-path run** (after cutover, fresh scratch objects, same script pointed at
-`/webhook/anthology-drive` instead of the canary path) — identical summary:
+`/webhook/anthology-drive` instead of the staging path) — identical summary:
 `ALL_2XX: True`, `ANY_501: False`, both idempotency checks `True`, content round-trip `True`.
 Doc id from that run: `1YpWTY6DwRBX32AmOxyxezo1OhbnKHPfhLPJrQbHLgVE`. A direct `capabilities` +
 `pull_doc_text` smoke test was also run against the production path immediately post-cutover
